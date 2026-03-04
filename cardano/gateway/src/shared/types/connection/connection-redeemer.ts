@@ -1,9 +1,15 @@
 import { AuthToken } from '../auth-token';
-import { Data } from '@lucid-evolution/lucid';
 import { Height } from '../height';
 import { MerkleProof } from '../isc-23/merkle';
-import { CardanoClientState } from '../cardano';
 import { MithrilClientState } from '../mithril';
+import {
+  createAuthTokenSchema,
+  createHeightSchema,
+  createIcs23MerkleProofSchema,
+  createMithrilClientStateSchema,
+} from '../schema-fragments';
+
+type LucidData = typeof import('@lucid-evolution/lucid').Data;
 
 export type MintConnectionRedeemer =
   | {
@@ -20,6 +26,7 @@ export type MintConnectionRedeemer =
         proof_height: Height;
       };
     };
+
 export type SpendConnectionRedeemer =
   | {
       ConnOpenAck: {
@@ -35,91 +42,14 @@ export type SpendConnectionRedeemer =
         proof_height: Height;
       };
     };
-export async function encodeMintConnectionRedeemer(
-  mintConnectionRedeemer: MintConnectionRedeemer,
-  Lucid: typeof import('@lucid-evolution/lucid'),
-) {
-  const { Data } = Lucid;
-  const AuthTokenSchema = Data.Object({
-    policyId: Data.Bytes(),
-    name: Data.Bytes(),
-  });
-  //merkle proof schema
 
-  const LeafOpSchema = Data.Object({
-    hash: Data.Integer(),
-    prehash_key: Data.Integer(),
-    prehash_value: Data.Integer(),
-    length: Data.Integer(),
-    prefix: Data.Bytes(),
-  });
-  const InnerOpSchema = Data.Object({
-    hash: Data.Integer(),
-    prefix: Data.Bytes(),
-    suffix: Data.Bytes(),
-  });
-  const ExistenceProofSchema = Data.Object({
-    key: Data.Bytes(),
-    value: Data.Bytes(),
-    leaf: LeafOpSchema,
-    path: Data.Array(InnerOpSchema),
-  });
-  const NonExistenceProofSchema = Data.Object({
-    key: Data.Bytes(),
-    left: ExistenceProofSchema,
-    right: ExistenceProofSchema,
-  });
+function buildMintConnectionRedeemerSchema(Data: LucidData) {
+  const AuthTokenSchema = createAuthTokenSchema(Data);
+  const HeightSchema = createHeightSchema(Data);
+  const MithrilClientStateSchema = createMithrilClientStateSchema(Data);
+  const { MerkleProofSchema } = createIcs23MerkleProofSchema(Data);
 
-  const CommitmentProof_ProofSchema = Data.Enum([
-    Data.Object({
-      CommitmentProof_Exist: Data.Object({
-        exist: ExistenceProofSchema,
-      }),
-    }),
-    Data.Object({
-      CommitmentProof_Nonexist: Data.Object({
-        non_exist: NonExistenceProofSchema,
-      }),
-    }),
-    Data.Literal('CommitmentProof_Batch'),
-    Data.Literal('CommitmentProof_Compressed'),
-  ]);
-  const CommitmentProofSchema = Data.Object({
-    proof: CommitmentProof_ProofSchema,
-  });
-  const MerkleProofSchema = Data.Object({
-    proofs: Data.Array(CommitmentProofSchema),
-  });
-
-  const HeightSchema = Data.Object({
-    revisionNumber: Data.Integer(),
-    revisionHeight: Data.Integer(),
-  });
-  const MithrilHeightSchema = Data.Object({
-    revisionNumber: Data.Integer(),
-    revisionHeight: Data.Integer(),
-  });
-  const FractionSchema = Data.Object({
-    numerator: Data.Integer(),
-    denominator: Data.Integer(),
-  });
-  const MithrilProtocolParametersSchema = Data.Object({
-    k: Data.Integer(),
-    m: Data.Integer(),
-    phi_f: FractionSchema,
-  });
-  const MithrilClientStateSchema = Data.Object({
-    chain_id: Data.Bytes(),
-    latest_height: MithrilHeightSchema,
-    frozen_height: MithrilHeightSchema,
-    current_epoch: Data.Integer(),
-    trusting_period: Data.Integer(),
-    protocol_parameters: MithrilProtocolParametersSchema,
-    upgrade_path: Data.Array(Data.Bytes()),
-    host_state_nft_policy_id: Data.Bytes(),
-    host_state_nft_token_name: Data.Bytes(),
-  });
-  const MintConnectionRedeemerSchema = Data.Enum([
+  return Data.Enum([
     Data.Object({
       ConnOpenInit: Data.Object({
         handler_auth_token: AuthTokenSchema,
@@ -135,89 +65,14 @@ export async function encodeMintConnectionRedeemer(
       }),
     }),
   ]);
-  type TMintConnectionRedeemer = Data.Static<typeof MintConnectionRedeemerSchema>;
-  const TMintConnectionRedeemer = MintConnectionRedeemerSchema as unknown as MintConnectionRedeemer;
-  return Data.to(mintConnectionRedeemer, TMintConnectionRedeemer, { canonical: true });
 }
-export async function encodeSpendConnectionRedeemer(
-  spendConnectionRedeemer: SpendConnectionRedeemer,
-  Lucid: typeof import('@lucid-evolution/lucid'),
-) {
-  const { Data } = Lucid;
-  const HeightSchema = Data.Object({
-    revisionNumber: Data.Integer(),
-    revisionHeight: Data.Integer(),
-  });
-  const MithrilHeightSchema = Data.Object({
-    revisionNumber: Data.Integer(),
-    revisionHeight: Data.Integer(),
-  });
-  const FractionSchema = Data.Object({
-    numerator: Data.Integer(),
-    denominator: Data.Integer(),
-  });
-  const MithrilProtocolParametersSchema = Data.Object({
-    k: Data.Integer(),
-    m: Data.Integer(),
-    phi_f: FractionSchema,
-  });
-  const MithrilClientStateSchema = Data.Object({
-    chain_id: Data.Bytes(),
-    latest_height: MithrilHeightSchema,
-    frozen_height: MithrilHeightSchema,
-    current_epoch: Data.Integer(),
-    trusting_period: Data.Integer(),
-    protocol_parameters: MithrilProtocolParametersSchema,
-    upgrade_path: Data.Array(Data.Bytes()),
-    host_state_nft_policy_id: Data.Bytes(),
-    host_state_nft_token_name: Data.Bytes(),
-  });
-  const LeafOpSchema = Data.Object({
-    hash: Data.Integer(),
-    prehash_key: Data.Integer(),
-    prehash_value: Data.Integer(),
-    length: Data.Integer(),
-    prefix: Data.Bytes(),
-  });
-  const InnerOpSchema = Data.Object({
-    hash: Data.Integer(),
-    prefix: Data.Bytes(),
-    suffix: Data.Bytes(),
-  });
-  const ExistenceProofSchema = Data.Object({
-    key: Data.Bytes(),
-    value: Data.Bytes(),
-    leaf: LeafOpSchema,
-    path: Data.Array(InnerOpSchema),
-  });
-  const NonExistenceProofSchema = Data.Object({
-    key: Data.Bytes(),
-    left: ExistenceProofSchema,
-    right: ExistenceProofSchema,
-  });
 
-  const CommitmentProof_ProofSchema = Data.Enum([
-    Data.Object({
-      CommitmentProof_Exist: Data.Object({
-        exist: ExistenceProofSchema,
-      }),
-    }),
-    Data.Object({
-      CommitmentProof_Nonexist: Data.Object({
-        non_exist: NonExistenceProofSchema,
-      }),
-    }),
-    Data.Literal('CommitmentProof_Batch'),
-    Data.Literal('CommitmentProof_Compressed'),
-  ]);
-  const CommitmentProofSchema = Data.Object({
-    proof: CommitmentProof_ProofSchema,
-  });
-  const MerkleProofSchema = Data.Object({
-    proofs: Data.Array(CommitmentProofSchema),
-  });
+function buildSpendConnectionRedeemerSchema(Data: LucidData) {
+  const HeightSchema = createHeightSchema(Data);
+  const MithrilClientStateSchema = createMithrilClientStateSchema(Data);
+  const { MerkleProofSchema } = createIcs23MerkleProofSchema(Data);
 
-  const SpendConnectionRedeemerSchema = Data.Enum([
+  return Data.Enum([
     Data.Object({
       ConnOpenAck: Data.Object({
         counterparty_client_state: MithrilClientStateSchema,
@@ -233,9 +88,28 @@ export async function encodeSpendConnectionRedeemer(
       }),
     }),
   ]);
-  type TSpendConnectionRedeemer = Data.Static<typeof SpendConnectionRedeemerSchema>;
-  const TSpendConnectionRedeemer = SpendConnectionRedeemerSchema as unknown as SpendConnectionRedeemer;
-  return Data.to(spendConnectionRedeemer, TSpendConnectionRedeemer, { canonical: true });
+}
+
+export async function encodeMintConnectionRedeemer(
+  mintConnectionRedeemer: MintConnectionRedeemer,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+) {
+  const { Data } = Lucid;
+  const MintConnectionRedeemerSchema = buildMintConnectionRedeemerSchema(Data);
+  return Data.to(mintConnectionRedeemer, MintConnectionRedeemerSchema as unknown as MintConnectionRedeemer, {
+    canonical: true,
+  });
+}
+
+export async function encodeSpendConnectionRedeemer(
+  spendConnectionRedeemer: SpendConnectionRedeemer,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+) {
+  const { Data } = Lucid;
+  const SpendConnectionRedeemerSchema = buildSpendConnectionRedeemerSchema(Data);
+  return Data.to(spendConnectionRedeemer, SpendConnectionRedeemerSchema as unknown as SpendConnectionRedeemer, {
+    canonical: true,
+  });
 }
 
 export function decodeMintConnectionRedeemer(
@@ -243,201 +117,15 @@ export function decodeMintConnectionRedeemer(
   Lucid: typeof import('@lucid-evolution/lucid'),
 ): MintConnectionRedeemer {
   const { Data } = Lucid;
-  const AuthTokenSchema = Data.Object({
-    policyId: Data.Bytes(),
-    name: Data.Bytes(),
-  });
-  //merkle proof schema
-
-  const LeafOpSchema = Data.Object({
-    hash: Data.Integer(),
-    prehash_key: Data.Integer(),
-    prehash_value: Data.Integer(),
-    length: Data.Integer(),
-    prefix: Data.Bytes(),
-  });
-  const InnerOpSchema = Data.Object({
-    hash: Data.Integer(),
-    prefix: Data.Bytes(),
-    suffix: Data.Bytes(),
-  });
-  const ExistenceProofSchema = Data.Object({
-    key: Data.Bytes(),
-    value: Data.Bytes(),
-    leaf: LeafOpSchema,
-    path: Data.Array(InnerOpSchema),
-  });
-  const NonExistenceProofSchema = Data.Object({
-    key: Data.Bytes(),
-    left: ExistenceProofSchema,
-    right: ExistenceProofSchema,
-  });
-
-  const CommitmentProof_ProofSchema = Data.Enum([
-    Data.Object({
-      CommitmentProof_Exist: Data.Object({
-        exist: ExistenceProofSchema,
-      }),
-    }),
-    Data.Object({
-      CommitmentProof_Nonexist: Data.Object({
-        non_exist: NonExistenceProofSchema,
-      }),
-    }),
-    Data.Literal('CommitmentProof_Batch'),
-    Data.Literal('CommitmentProof_Compressed'),
-  ]);
-  const CommitmentProofSchema = Data.Object({
-    proof: CommitmentProof_ProofSchema,
-  });
-  const MerkleProofSchema = Data.Object({
-    proofs: Data.Array(CommitmentProofSchema),
-  });
-
-  const MithrilHeightSchema = Data.Object({
-    revisionNumber: Data.Integer(),
-    revisionHeight: Data.Integer(),
-  });
-  const FractionSchema = Data.Object({
-    numerator: Data.Integer(),
-    denominator: Data.Integer(),
-  });
-  const MithrilProtocolParametersSchema = Data.Object({
-    k: Data.Integer(),
-    m: Data.Integer(),
-    phi_f: FractionSchema,
-  });
-  const MithrilClientStateSchema = Data.Object({
-    chain_id: Data.Bytes(),
-    latest_height: MithrilHeightSchema,
-    frozen_height: MithrilHeightSchema,
-    current_epoch: Data.Integer(),
-    trusting_period: Data.Integer(),
-    protocol_parameters: MithrilProtocolParametersSchema,
-    upgrade_path: Data.Array(Data.Bytes()),
-    host_state_nft_policy_id: Data.Bytes(),
-    host_state_nft_token_name: Data.Bytes(),
-  });
-  const HeightSchema = Data.Object({
-    revisionNumber: Data.Integer(),
-    revisionHeight: Data.Integer(),
-  });
-
-  const MintConnectionRedeemerSchema = Data.Enum([
-    Data.Object({
-      ConnOpenInit: Data.Object({
-        handler_auth_token: AuthTokenSchema,
-      }),
-    }),
-    Data.Object({
-      ConnOpenTry: Data.Object({
-        handler_auth_token: AuthTokenSchema,
-        client_state: MithrilClientStateSchema,
-        proof_init: MerkleProofSchema,
-        proof_client: MerkleProofSchema,
-        proof_height: HeightSchema,
-      }),
-    }),
-  ]);
-  type TMintConnectionRedeemer = Data.Static<typeof MintConnectionRedeemerSchema>;
-  const TMintConnectionRedeemer = MintConnectionRedeemerSchema as unknown as MintConnectionRedeemer;
-  return Data.from(mintConnectionRedeemer, TMintConnectionRedeemer);
+  const MintConnectionRedeemerSchema = buildMintConnectionRedeemerSchema(Data);
+  return Data.from(mintConnectionRedeemer, MintConnectionRedeemerSchema as unknown as MintConnectionRedeemer);
 }
+
 export function decodeSpendConnectionRedeemer(
   spendConnectionRedeemer: string,
   Lucid: typeof import('@lucid-evolution/lucid'),
 ): SpendConnectionRedeemer {
   const { Data } = Lucid;
-  const HeightSchema = Data.Object({
-    revisionNumber: Data.Integer(),
-    revisionHeight: Data.Integer(),
-  });
-  const MithrilHeightSchema = Data.Object({
-    revisionNumber: Data.Integer(),
-    revisionHeight: Data.Integer(),
-  });
-  const FractionSchema = Data.Object({
-    numerator: Data.Integer(),
-    denominator: Data.Integer(),
-  });
-  const MithrilProtocolParametersSchema = Data.Object({
-    k: Data.Integer(),
-    m: Data.Integer(),
-    phi_f: FractionSchema,
-  });
-  const MithrilClientStateSchema = Data.Object({
-    chain_id: Data.Bytes(),
-    latest_height: MithrilHeightSchema,
-    frozen_height: MithrilHeightSchema,
-    current_epoch: Data.Integer(),
-    trusting_period: Data.Integer(),
-    protocol_parameters: MithrilProtocolParametersSchema,
-    upgrade_path: Data.Array(Data.Bytes()),
-    host_state_nft_policy_id: Data.Bytes(),
-    host_state_nft_token_name: Data.Bytes(),
-  });
-  const LeafOpSchema = Data.Object({
-    hash: Data.Integer(),
-    prehash_key: Data.Integer(),
-    prehash_value: Data.Integer(),
-    length: Data.Integer(),
-    prefix: Data.Bytes(),
-  });
-  const InnerOpSchema = Data.Object({
-    hash: Data.Integer(),
-    prefix: Data.Bytes(),
-    suffix: Data.Bytes(),
-  });
-  const ExistenceProofSchema = Data.Object({
-    key: Data.Bytes(),
-    value: Data.Bytes(),
-    leaf: LeafOpSchema,
-    path: Data.Array(InnerOpSchema),
-  });
-  const NonExistenceProofSchema = Data.Object({
-    key: Data.Bytes(),
-    left: ExistenceProofSchema,
-    right: ExistenceProofSchema,
-  });
-
-  const CommitmentProof_ProofSchema = Data.Enum([
-    Data.Object({
-      CommitmentProof_Exist: Data.Object({
-        exist: ExistenceProofSchema,
-      }),
-    }),
-    Data.Object({
-      CommitmentProof_Nonexist: Data.Object({
-        non_exist: NonExistenceProofSchema,
-      }),
-    }),
-    Data.Literal('CommitmentProof_Batch'),
-    Data.Literal('CommitmentProof_Compressed'),
-  ]);
-  const CommitmentProofSchema = Data.Object({
-    proof: CommitmentProof_ProofSchema,
-  });
-  const MerkleProofSchema = Data.Object({
-    proofs: Data.Array(CommitmentProofSchema),
-  });
-
-  const SpendConnectionRedeemerSchema = Data.Enum([
-    Data.Object({
-      ConnOpenAck: Data.Object({
-        counterparty_client_state: MithrilClientStateSchema,
-        proof_try: MerkleProofSchema,
-        proof_client: MerkleProofSchema,
-        proof_height: HeightSchema,
-      }),
-    }),
-    Data.Object({
-      ConnOpenConfirm: Data.Object({
-        proof_ack: MerkleProofSchema,
-        proof_height: HeightSchema,
-      }),
-    }),
-  ]);
-  type TSpendConnectionRedeemer = Data.Static<typeof SpendConnectionRedeemerSchema>;
-  const TSpendConnectionRedeemer = SpendConnectionRedeemerSchema as unknown as SpendConnectionRedeemer;
-  return Data.from(spendConnectionRedeemer, TSpendConnectionRedeemer);
+  const SpendConnectionRedeemerSchema = buildSpendConnectionRedeemerSchema(Data);
+  return Data.from(spendConnectionRedeemer, SpendConnectionRedeemerSchema as unknown as SpendConnectionRedeemer);
 }

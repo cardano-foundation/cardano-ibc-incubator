@@ -1,32 +1,29 @@
-import { PolicyId, UTxO } from '@lucid-evolution/lucid';
-import { AuthToken } from '@shared/types/auth-token';
+import { UTxO } from '@lucid-evolution/lucid';
+import {
+  WithChannelSpend,
+  WithConstructedAddress,
+  WithHostStateUpdate,
+  WithLegacyChannelContext,
+  WithLegacyTransferModuleUtxo,
+  WithMintVoucherRedeemer,
+  WithPacketPolicyAndChannelToken,
+  WithTransferAmount,
+  WithTransferModuleSpend,
+} from './fragments';
 
-export type UnsignedSendPacketBurnDto = {
-  hostStateUtxo: UTxO;
-  channelUTxO: UTxO;
-  connectionUTxO: UTxO;
-  clientUTxO: UTxO;
-  transferModuleUTxO: UTxO;
+export type UnsignedSendPacketBurnDto = WithHostStateUpdate &
+  WithLegacyChannelContext &
+  WithLegacyTransferModuleUtxo &
+  WithChannelSpend &
+  WithTransferModuleSpend &
+  WithMintVoucherRedeemer &
+  WithTransferAmount &
+  WithConstructedAddress &
+  WithPacketPolicyAndChannelToken<'sendPacketPolicyId'> & {
   senderVoucherTokenUtxo: UTxO;
   walletUtxos?: UTxO[];
-
-  encodedHostStateRedeemer: string;
-  encodedUpdatedHostStateDatum: string;
-  encodedSpendChannelRedeemer: string;
-  encodedSpendTransferModuleRedeemer: string;
-  encodedMintVoucherRedeemer: string;
-  encodedUpdatedChannelDatum: string;
-
-  channelTokenUnit: string;
   voucherTokenUnit: string;
-
   senderAddress: string;
   receiverAddress: string;
-  transferAmount: bigint;
   denomToken: string;
-
-  constructedAddress: string;
-
-  sendPacketPolicyId: PolicyId;
-  channelToken: AuthToken;
 };
