@@ -61,7 +61,9 @@ extract_channel_end_state() {
 }
 
 is_open_channel_state() {
-  [ "${1,,}" = "open" ]
+  local state_lower
+  state_lower="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  [ "$state_lower" = "open" ]
 }
 
 get_latest_transfer_channel_id() {
