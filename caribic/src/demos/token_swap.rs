@@ -83,8 +83,8 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
     logger::verbose(&format!("{}", osmosis_dir.display()));
 
     let required_services = [
-        "gateway", "cardano", "postgres", "kupo", "ogmios", "hermes", "mithril", "cosmos",
-        "osmosis", "redis",
+        "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril", "cosmos", "osmosis",
+        "redis",
     ];
     if let Err(error) =
         ensure_demo_services_ready(project_root_path, &required_services, "token-swap")
@@ -130,16 +130,10 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
         }
     }
 
-    if restart_relayer_after_setup {
-        match start::start_hermes_daemon() {
-            Ok(_) => logger::log("PASS: Hermes daemon restarted for token relay"),
-            Err(error) => {
-                return fail_with_cleanup(
-                    osmosis_dir.as_path(),
-                    &format!("ERROR: Failed to restart Hermes daemon: {}", error),
-                )
-            }
-        }
+    if let Err(error) =
+        ensure_hermes_daemon_for_token_swap(project_root_path, restart_relayer_after_setup)
+    {
+        return fail_with_cleanup(osmosis_dir.as_path(), &error);
     }
 
     let setup_script_path = osmosis_dir
@@ -237,7 +231,6 @@ async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result
         "postgres",
         "kupo",
         "ogmios",
-        "hermes",
         "mithril",
         "cosmos",
         "injective",
@@ -283,16 +276,10 @@ async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result
         }
     }
 
-    if restart_relayer_after_setup {
-        match start::start_hermes_daemon() {
-            Ok(_) => logger::log("PASS: Hermes daemon restarted for token relay"),
-            Err(error) => {
-                return fail_with_injective_cleanup(
-                    injective_dir.as_path(),
-                    &format!("ERROR: Failed to restart Hermes daemon: {}", error),
-                )
-            }
-        }
+    if let Err(error) =
+        ensure_hermes_daemon_for_token_swap(project_root_path, restart_relayer_after_setup)
+    {
+        return fail_with_injective_cleanup(injective_dir.as_path(), &error);
     }
 
     let swap_script_path = project_root_path
@@ -366,6 +353,40 @@ fn ensure_demo_services_ready(
     );
 
     Err(message)
+}
+
+fn ensure_hermes_daemon_for_token_swap(
+    project_root_path: &Path,
+    was_running_before_setup: bool,
+) -> Result<(), String> {
+    if let Ok((true, _)) = start::check_service_health(project_root_path, "hermes") {
+        if was_running_before_setup {
+            logger::log("PASS: Hermes daemon restarted for token relay");
+        } else {
+            logger::log("PASS: Hermes daemon is running for token relay");
+        }
+        return Ok(());
+    }
+
+    let action = if was_running_before_setup {
+        "restart"
+    } else {
+        "start"
+    };
+    logger::verbose(&format!(
+        "Hermes daemon not running after setup; attempting to {} it before token relay",
+        action
+    ));
+
+    start::start_hermes_daemon()
+        .map_err(|error| format!("ERROR: Failed to {} Hermes daemon: {}", action, error))?;
+
+    if was_running_before_setup {
+        logger::log("PASS: Hermes daemon restarted for token relay");
+    } else {
+        logger::log("PASS: Hermes daemon started for token relay");
+    }
+    Ok(())
 }
 
 /// Waits until Mithril exposes stake and transaction artifacts needed by demo client creation.

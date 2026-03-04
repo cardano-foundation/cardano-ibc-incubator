@@ -1056,7 +1056,7 @@ async fn start_mithril_with_progress(
 
 pub fn wait_and_start_mithril_genesis(
     project_root_dir: &Path,
-    cardano_epoch_on_mithril_start: u64,
+    _cardano_epoch_on_mithril_start: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Mithril has two practical prerequisites on a fresh local Cardano devnet:
     //
@@ -1077,33 +1077,14 @@ pub fn wait_and_start_mithril_genesis(
     let mithril_script_dir = mithril_dir.join("scripts");
     let mithril_data_dir = mithril_dir.join("data");
 
-    let mut current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
-
-    let slots_per_epoch = get_cardano_state(project_root_dir, CardanoQuery::SlotsToEpochEnd)?
-        + get_cardano_state(project_root_dir, CardanoQuery::SlotInEpoch)?;
-
-    let target_epoch = cardano_epoch_on_mithril_start + 2;
-    let target_slot = target_epoch * slots_per_epoch;
-    let mut slots_left = target_slot.saturating_sub(current_slot);
-
-    if slots_left > 0 {
-        verbose(
-            "Mithril needs to wait at least two epochs for the immutable files to be created ..",
-        );
-    }
-
-    while slots_left > 0 {
-        current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
-        slots_left = target_slot.saturating_sub(current_slot);
-
-        verbose(&format!(
-            "Current slot: {}, Slots left: {}",
-            current_slot, slots_left
-        ));
-        std::thread::sleep(Duration::from_secs(10));
-    }
-
     let mithril_config = config::get_config().mithril;
+    let cardano_node_dir = Path::new(mithril_config.cardano_node_dir.as_str());
+    let aggregator_base_url = mithril_config
+        .aggregator_url
+        .trim_end_matches('/')
+        .to_string();
+
+    wait_for_cardano_immutable_files(cardano_node_dir, Duration::from_secs(20 * 60))?;
 
     // Reuse the same environment variables with UID/GID
     let docker_env = get_docker_env_vars();
@@ -1145,7 +1126,7 @@ pub fn wait_and_start_mithril_genesis(
     // The genesis bootstrap command requires signers for the *next signer retrieval epoch*.
     // On fresh devnets this can lag behind the Cardano epoch progression, running bootstrap too
     // early results in "Missing signers for epoch X".
-    let epoch_settings_url = "http://127.0.0.1:8080/aggregator/epoch-settings";
+    let epoch_settings_url = format!("{aggregator_base_url}/aggregator/epoch-settings");
     let required_next_signers = 1;
     let signers_poll_interval = Duration::from_secs(5);
     let signers_poll_attempts = 240; // 20 minutes
@@ -1155,7 +1136,7 @@ pub fn wait_and_start_mithril_genesis(
         .map_err(|e| format!("Failed to build HTTP client for Mithril checks: {e}"))?;
     let mut last_epoch_settings_error: Option<String> = None;
     for attempt in 1..=signers_poll_attempts {
-        match http_client.get(epoch_settings_url).send() {
+        match http_client.get(epoch_settings_url.as_str()).send() {
             Ok(resp) if resp.status().is_success() => match resp.text() {
                 Ok(body) => match serde_json::from_str::<Value>(&body) {
                     Ok(json) => {
@@ -1309,28 +1290,237 @@ pub fn wait_and_start_mithril_genesis(
         }
     }
 
-    current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
-
-    let target_epoch = cardano_epoch_on_mithril_start + 3;
-    let target_slot = target_epoch * slots_per_epoch;
-    slots_left = target_slot.saturating_sub(current_slot);
-
-    if slots_left > 0 {
-        verbose("Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets ..");
-    }
-
-    while slots_left > 0 {
-        current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
-        slots_left = target_slot.saturating_sub(current_slot);
-
+    const ARTIFACT_READY_ATTEMPTS: usize = 240; // 20 minutes @ 5s
+    const ARTIFACT_READY_POLL_INTERVAL: Duration = Duration::from_secs(5);
+    if let Err(error) = wait_for_mithril_artifact_readiness(
+        &http_client,
+        aggregator_base_url.as_str(),
+        ARTIFACT_READY_ATTEMPTS,
+        ARTIFACT_READY_POLL_INTERVAL,
+    ) {
+        // Recovery attempt:
+        // On some starts, bootstrap succeeds but the running aggregator/signer set remains in a
+        // bad epoch-service state. Restarting all Mithril runtime services once is often enough to
+        // recover and start producing artifacts.
         verbose(&format!(
-            "Current slot: {}, Slots left: {}",
-            current_slot, slots_left
+            "Mithril artifacts not ready after bootstrap, restarting runtime services once: {}",
+            error
         ));
-        std::thread::sleep(Duration::from_secs(10));
+
+        execute_script(
+            &mithril_script_dir,
+            "docker",
+            vec![
+                "compose",
+                "-f",
+                "docker-compose.yaml",
+                "--profile",
+                "mithril",
+                "up",
+                "-d",
+                "--no-build",
+                "mithril-aggregator",
+                "mithril-signer-1",
+                "mithril-signer-2",
+            ],
+            Some(mithril_genesis_env.clone()),
+        )
+        .map_err(|restart_error| {
+            format!(
+                "Failed to restart Mithril runtime services after bootstrap: {}",
+                restart_error
+            )
+        })?;
+
+        wait_for_mithril_artifact_readiness(
+            &http_client,
+            aggregator_base_url.as_str(),
+            ARTIFACT_READY_ATTEMPTS,
+            ARTIFACT_READY_POLL_INTERVAL,
+        )
+        .map_err(|final_error| {
+            format!(
+                "Mithril artifacts were not ready after bootstrap and one runtime restart: {}",
+                final_error
+            )
+        })?;
     }
 
     Ok(())
+}
+
+fn wait_for_cardano_immutable_files(
+    cardano_node_dir: &Path,
+    timeout: Duration,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let immutable_dir = cardano_node_dir.join("db").join("immutable");
+    let poll_interval = Duration::from_secs(5);
+    let started_at = Instant::now();
+
+    while started_at.elapsed() < timeout {
+        if has_any_immutable_chunk(immutable_dir.as_path()) {
+            return Ok(());
+        }
+        verbose(&format!(
+            "Waiting for Cardano immutable files at {} ...",
+            immutable_dir.display()
+        ));
+        std::thread::sleep(poll_interval);
+    }
+
+    Err(format!(
+        "Timed out after {}s waiting for Cardano immutable files at {}",
+        timeout.as_secs(),
+        immutable_dir.display()
+    )
+    .into())
+}
+
+fn has_any_immutable_chunk(immutable_dir: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(immutable_dir) else {
+        return false;
+    };
+
+    entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .any(|path| path.extension().and_then(|ext| ext.to_str()) == Some("chunk"))
+}
+
+fn wait_for_mithril_artifact_readiness(
+    http_client: &reqwest::blocking::Client,
+    aggregator_base_url: &str,
+    attempts: usize,
+    poll_interval: Duration,
+) -> Result<(), String> {
+    let stake_distributions_url =
+        format!("{aggregator_base_url}/aggregator/artifact/mithril-stake-distributions");
+    let cardano_transactions_url =
+        format!("{aggregator_base_url}/aggregator/artifact/cardano-transactions");
+    let epoch_settings_url = format!("{aggregator_base_url}/aggregator/epoch-settings");
+
+    let mut last_status = String::from("unknown");
+    for attempt in 1..=attempts {
+        let mut stake_ready = false;
+        let mut tx_ready = false;
+        let mut epoch_settings_summary = String::from("unavailable");
+
+        match http_client.get(stake_distributions_url.as_str()).send() {
+            Ok(response) if response.status().is_success() => match response.json::<Value>() {
+                Ok(value) => {
+                    let count = value.as_array().map(|v| v.len()).unwrap_or(0);
+                    stake_ready = count > 0;
+                    epoch_settings_summary = format!(
+                        "{}; stake_distributions_count={}",
+                        epoch_settings_summary, count
+                    );
+                }
+                Err(error) => {
+                    epoch_settings_summary = format!(
+                        "{}; stake_distributions_parse_error={}",
+                        epoch_settings_summary, error
+                    );
+                }
+            },
+            Ok(response) => {
+                epoch_settings_summary = format!(
+                    "{}; stake_distributions_status={}",
+                    epoch_settings_summary,
+                    response.status()
+                );
+            }
+            Err(error) => {
+                epoch_settings_summary = format!(
+                    "{}; stake_distributions_error={}",
+                    epoch_settings_summary, error
+                );
+            }
+        }
+
+        match http_client.get(cardano_transactions_url.as_str()).send() {
+            Ok(response) if response.status().is_success() => match response.json::<Value>() {
+                Ok(value) => {
+                    let count = value.as_array().map(|v| v.len()).unwrap_or(0);
+                    tx_ready = count > 0;
+                    epoch_settings_summary = format!(
+                        "{}; cardano_transactions_count={}",
+                        epoch_settings_summary, count
+                    );
+                }
+                Err(error) => {
+                    epoch_settings_summary = format!(
+                        "{}; cardano_transactions_parse_error={}",
+                        epoch_settings_summary, error
+                    );
+                }
+            },
+            Ok(response) => {
+                epoch_settings_summary = format!(
+                    "{}; cardano_transactions_status={}",
+                    epoch_settings_summary,
+                    response.status()
+                );
+            }
+            Err(error) => {
+                epoch_settings_summary = format!(
+                    "{}; cardano_transactions_error={}",
+                    epoch_settings_summary, error
+                );
+            }
+        }
+
+        match http_client.get(epoch_settings_url.as_str()).send() {
+            Ok(response) if response.status().is_success() => match response.json::<Value>() {
+                Ok(value) => {
+                    let next_signers = value
+                        .get("next_signers")
+                        .and_then(Value::as_array)
+                        .map(|v| v.len())
+                        .unwrap_or(0);
+                    epoch_settings_summary = format!(
+                        "{}; epoch_settings_next_signers={}",
+                        epoch_settings_summary, next_signers
+                    );
+                }
+                Err(error) => {
+                    epoch_settings_summary = format!(
+                        "{}; epoch_settings_parse_error={}",
+                        epoch_settings_summary, error
+                    );
+                }
+            },
+            Ok(response) => {
+                epoch_settings_summary = format!(
+                    "{}; epoch_settings_status={}",
+                    epoch_settings_summary,
+                    response.status()
+                );
+            }
+            Err(error) => {
+                epoch_settings_summary =
+                    format!("{}; epoch_settings_error={}", epoch_settings_summary, error);
+            }
+        }
+
+        last_status = format!(
+            "attempt {attempt}/{attempts}: stake_ready={stake_ready}, tx_ready={tx_ready}, {}",
+            epoch_settings_summary
+        );
+        if stake_ready && tx_ready {
+            return Ok(());
+        }
+
+        verbose(&format!(
+            "Mithril artifact readiness check: {}",
+            last_status.as_str()
+        ));
+        std::thread::sleep(poll_interval);
+    }
+
+    Err(format!(
+        "artifact endpoints were not ready after {} attempts: {}",
+        attempts, last_status
+    ))
 }
 
 pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
@@ -1778,17 +1968,38 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
 
     log_or_show_progress("Launching Hermes daemon process", &optional_progress_bar);
 
-    // Start Hermes in background
-    let mut child = Command::new(&hermes_binary)
-        .arg("--config")
-        .arg(hermes_config.to_str().ok_or("Invalid Hermes config path")?)
-        .arg("start")
-        .stdout(std::fs::File::create(&hermes_log)?)
-        .stderr(std::fs::File::create(hermes_log.with_extension("err"))?)
-        .spawn()
-        .map_err(|e| format!("Failed to start Hermes: {}", e))?;
+    let hermes_err_log = hermes_log.with_extension("err");
 
-    log(&format!("Hermes started (PID: {})", child.id()));
+    // Start Hermes detached from the current process group so it keeps running after
+    // `caribic` exits in both interactive and non-interactive launch contexts.
+    let launch_output = Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "nohup '{}' --config '{}' start >> '{}' 2>> '{}' < /dev/null & echo $!",
+            hermes_binary.display(),
+            hermes_config.display(),
+            hermes_log.display(),
+            hermes_err_log.display()
+        ))
+        .output()
+        .map_err(|e| format!("Failed to launch Hermes daemon: {}", e))?;
+
+    if !launch_output.status.success() {
+        return Err(format!(
+            "Failed to launch Hermes daemon shell command: {}",
+            String::from_utf8_lossy(&launch_output.stderr).trim()
+        )
+        .into());
+    }
+
+    let pid_str = String::from_utf8_lossy(&launch_output.stdout)
+        .trim()
+        .to_string();
+    let pid = pid_str
+        .parse::<u32>()
+        .map_err(|_| format!("Failed to parse Hermes daemon PID from '{}'", pid_str))?;
+
+    log(&format!("Hermes started (PID: {})", pid));
     log(&format!("   Logs: {}", hermes_log.display()));
     log("   Monitor: tail -f ~/.hermes/hermes.log");
 
@@ -1796,32 +2007,28 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
     log_or_show_progress("Verifying daemon startup", &optional_progress_bar);
     thread::sleep(Duration::from_millis(1000));
 
-    // Check if process is still running
-    match child.try_wait() {
-        Ok(Some(status)) => {
-            // Process exited immediately - read error log
-            let error_log = hermes_log.with_extension("err");
-            let error_content = std::fs::read_to_string(&error_log)
-                .unwrap_or_else(|_| "Could not read error log".to_string());
-            return Err(format!(
-                "Hermes daemon exited immediately with status {}:\n{}",
-                status,
-                error_content
-                    .lines()
-                    .take(10)
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            )
-            .into());
-        }
-        Ok(None) => {
-            // Process is still running - success
-            log_or_show_progress("Hermes daemon is running", &optional_progress_bar);
-        }
-        Err(e) => {
-            return Err(format!("Failed to check Hermes status: {}", e).into());
-        }
+    // Check if process is still running.
+    let is_running = Command::new("kill")
+        .args(["-0", pid.to_string().as_str()])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+
+    if !is_running {
+        let error_content = std::fs::read_to_string(&hermes_err_log)
+            .unwrap_or_else(|_| "Could not read error log".to_string());
+        return Err(format!(
+            "Hermes daemon exited immediately (pid={}):\n{}",
+            pid,
+            error_content
+                .lines()
+                .take(10)
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+        .into());
     }
+    log_or_show_progress("Hermes daemon is running", &optional_progress_bar);
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();

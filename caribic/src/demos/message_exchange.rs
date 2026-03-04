@@ -671,7 +671,8 @@ fn ensure_message_exchange_channel() -> Result<MessageChannelPair, String> {
                 .to_string(),
         );
     }
-    let channel_discovery_retry_delay_secs = message_exchange_config.channel_discovery_retry_delay_secs;
+    let channel_discovery_retry_delay_secs =
+        message_exchange_config.channel_discovery_retry_delay_secs;
     if channel_discovery_retry_delay_secs == 0 {
         return Err(
             "Invalid config: demo.message_exchange.channel_discovery_retry_delay_secs must be > 0 in ~/.caribic/config.json"
@@ -681,8 +682,7 @@ fn ensure_message_exchange_channel() -> Result<MessageChannelPair, String> {
     if let Some(pair) = wait_for_open_message_channel_pair(
         channel_discovery_max_retries,
         channel_discovery_retry_delay_secs,
-    )?
-    {
+    )? {
         logger::log(&format!(
             "PASS: Message-exchange channel already open (cardano={}, vesseloracle={})",
             pair.cardano_channel_id, pair.vessel_channel_id
@@ -702,9 +702,8 @@ fn ensure_message_exchange_channel() -> Result<MessageChannelPair, String> {
         channel_discovery_retry_delay_secs,
     )?
     .ok_or_else(|| {
-            "Created message-exchange channel, but no open channel pair could be discovered"
-                .to_string()
-        })?;
+        "Created message-exchange channel, but no open channel pair could be discovered".to_string()
+    })?;
     logger::log(&format!(
         "PASS: Created message-exchange channel (cardano={}, vesseloracle={})",
         pair.cardano_channel_id, pair.vessel_channel_id
@@ -1081,12 +1080,10 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
                 .to_string(),
         );
     }
-    if let Some(open_connection_id) =
-        wait_for_open_message_connection(
-            connection_discovery_max_retries,
-            connection_discovery_retry_delay_secs,
-        )?
-    {
+    if let Some(open_connection_id) = wait_for_open_message_connection(
+        connection_discovery_max_retries,
+        connection_discovery_retry_delay_secs,
+    )? {
         logger::verbose(&format!(
             "Using existing open Cardano↔vesseloracle connection {}",
             open_connection_id
@@ -1175,11 +1172,10 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
             )
         })?;
 
-    let Some(open_connection_id) =
-        wait_for_open_message_connection(
-            connection_discovery_max_retries,
-            connection_discovery_retry_delay_secs,
-        )?
+    let Some(open_connection_id) = wait_for_open_message_connection(
+        connection_discovery_max_retries,
+        connection_discovery_retry_delay_secs,
+    )?
     else {
         return Err(format!(
             "Created Cardano↔vesseloracle connection artifacts from {}, but no open symmetric connection is currently usable",

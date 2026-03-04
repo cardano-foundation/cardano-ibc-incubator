@@ -567,7 +567,10 @@ pub fn prepare_db_sync_and_gateway(
         ("OGMIOS_ENDPOINT", "http://cardano-node-ogmios:1337"),
         ("CARDANO_CHAIN_HOST", "cardano-node"),
         ("CARDANO_CHAIN_PORT", "3001"),
-        ("MITHRIL_ENDPOINT", "http://mithril-aggregator:8080/aggregator"),
+        (
+            "MITHRIL_ENDPOINT",
+            "http://mithril-aggregator:8080/aggregator",
+        ),
     ];
     for (key, value) in gateway_network_defaults {
         replace_text_in_file(

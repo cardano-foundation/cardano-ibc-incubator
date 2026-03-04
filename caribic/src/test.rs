@@ -482,7 +482,9 @@ mod test_selection_tests {
 {}: transfer/channel-1 --- cardano-devnet: transfer/channel-0\n\
 {}: transfer/channel-2 --- cardano-devnet: transfer/channel-1\n\
 {}: transfer/channel-3 --- cardano-devnet: transfer/channel-2\n",
-            entrypoint_chain_id(), entrypoint_chain_id(), entrypoint_chain_id()
+            entrypoint_chain_id(),
+            entrypoint_chain_id(),
+            entrypoint_chain_id()
         );
 
         let resolved = resolve_counterparty_channel_from_query_output(

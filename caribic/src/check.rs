@@ -459,9 +459,8 @@ fn detect_colima_allocated_space(estimated_used_bytes: u64) -> Option<DockerAvai
     Some(DockerAvailableSpace {
         free_bytes,
         total_bytes: Some(total_bytes),
-        source:
-            "computed as (`colima status --json`.disk) minus (`docker system df` total size)"
-                .to_string(),
+        source: "computed as (`colima status --json`.disk) minus (`docker system df` total size)"
+            .to_string(),
     })
 }
 
