@@ -60,6 +60,7 @@ import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { TxEventsService } from './tx-events.service';
 import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
+import { TxOperationRunnerService } from './tx-operation-runner.service';
 
 @Injectable()
 export class ConnectionService {
@@ -69,6 +70,7 @@ export class ConnectionService {
     @Inject(LucidService) private lucidService: LucidService,
     private readonly txEventsService: TxEventsService,
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
+    private readonly txOperationRunnerService: TxOperationRunnerService,
   ) {}
 
   private toUtxoRef(utxo: UTxO | undefined): string {
@@ -259,35 +261,40 @@ export class ConnectionService {
         constructedAddress,
       );
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const unsignedConnectionOpenInitTxValidTo: TxBuilder = unsignedConnectionOpenInitTx.validTo(validToTime);
+
+      const { unsignedTxCbor, unsignedTxHash, unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
+        operationName: 'connectionOpenInit',
+        unsignedTx: unsignedConnectionOpenInitTx,
+        validity: {
+          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+        },
+        wallet: {
+          mode: 'refresh_from_address',
+          address: constructedAddress,
+          context: 'connectionOpenInit',
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
+        pendingTreeUpdate,
+        syntheticEvents: [
+          {
+            type: 'connection_open_init',
+            attributes: [
+              { key: 'connection_id', value: connectionId },
+              { key: 'client_id', value: data.client_id },
+              { key: 'counterparty_client_id', value: data.counterparty.client_id },
+              { key: 'counterparty_connection_id', value: data.counterparty.connection_id || '' },
+            ],
+          },
+        ],
+      });
 
       // DEBUG: emit CBOR and key inputs so we can reproduce Ogmios eval failures
-      await this.refreshWalletContext(constructedAddress, 'connectionOpenInit');
-      const completedUnsignedTx = await unsignedConnectionOpenInitTxValidTo.complete({
-        localUPLCEval: false,
-        setCollateral: TRANSACTION_SET_COLLATERAL,
-      });
-      const unsignedTxCbor = completedUnsignedTx.toCBOR();
       this.logger.log(
         `[DEBUG] connectionOpenInit unsigned CBOR len=${unsignedTxCbor.length}, head=${unsignedTxCbor.substring(0, 80)}`,
       );
-      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
-      const unsignedTxHash = completedUnsignedTx.toHash();
-
-      // Register the pending in-memory tree update keyed by the finalized tx body hash.
-      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
-
-      this.txEventsService.register(unsignedTxHash, [
-        {
-          type: 'connection_open_init',
-          attributes: [
-            { key: 'connection_id', value: connectionId },
-            { key: 'client_id', value: data.client_id },
-            { key: 'counterparty_client_id', value: data.counterparty.client_id },
-            { key: 'counterparty_connection_id', value: data.counterparty.connection_id || '' },
-          ],
-        },
-      ]);
 
       // Return unsigned transaction for Hermes to sign
       this.logger.log('Returning unsigned tx for connection open init');

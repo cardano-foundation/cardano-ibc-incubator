@@ -11,6 +11,8 @@ import { TxEventsService } from './tx-events.service';
 import { KupoModule } from 'src/shared/modules/kupo/kupo.module';
 import { IbcTreeCacheService } from '../shared/services/ibc-tree-cache.service';
 import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
+import { TxOperationRunnerService } from './tx-operation-runner.service';
+import { WalletContextService } from './wallet-context.service';
 
 @Module({
   imports: [LucidModule, QueryModule, KupoModule],
@@ -22,6 +24,8 @@ import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pendin
     PacketService,
     SubmissionService,
     TxEventsService,
+    TxOperationRunnerService,
+    WalletContextService,
     IbcTreeCacheService,
     IbcTreePendingUpdatesService,
     Logger,

@@ -72,6 +72,7 @@ import {
   isTreeAligned,
 } from '../shared/helpers/ibc-state-root';
 import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
+import { TxOperationRunnerService } from './tx-operation-runner.service';
 
 @Injectable()
 export class ChannelService {
@@ -81,6 +82,7 @@ export class ChannelService {
     @Inject(LucidService) private lucidService: LucidService,
     private readonly txEventsService: TxEventsService,
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
+    private readonly txOperationRunnerService: TxOperationRunnerService,
   ) {}
 
   private async refreshWalletContext(address: string, context: string): Promise<void> {
@@ -196,35 +198,36 @@ export class ChannelService {
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
-      const unsignedChannelOpenInitTxValidTo: TxBuilder = unsignedChannelOpenInitTx.validTo(validToTime);
-      
-      // Return unsigned transaction for Hermes to sign
-      await this.refreshWalletContext(constructedAddress, 'channelOpenInit');
-      const completedUnsignedTx = await unsignedChannelOpenInitTxValidTo.complete({
-        localUPLCEval: false,
-        setCollateral: TRANSACTION_SET_COLLATERAL,
-      });
-      const unsignedTxCbor = completedUnsignedTx.toCBOR();
-      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
-      const unsignedTxHash = completedUnsignedTx.toHash();
 
-      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
-
-      // Hermes expects an ABCI-style event list from the tx submission response.
-      // Cardano has no native events, so the Gateway synthesizes the equivalent IBC events
-      // and returns them from the SubmitSignedTx response (keyed by tx hash).
-      this.txEventsService.register(unsignedTxHash, [
-        {
-          type: 'channel_open_init',
-          attributes: [
-            { key: 'port_id', value: channelOpenInitOperator.port_id },
-            { key: 'channel_id', value: channelId },
-            { key: 'connection_id', value: channelOpenInitOperator.connectionId },
-            { key: 'counterparty_port_id', value: channelOpenInitOperator.counterpartyPortId },
-            { key: 'counterparty_channel_id', value: '' },
-          ],
+      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
+        operationName: 'channelOpenInit',
+        unsignedTx: unsignedChannelOpenInitTx,
+        validity: {
+          apply: (builder: TxBuilder) => builder.validTo(validToTime),
         },
-      ]);
+        wallet: {
+          mode: 'refresh_from_address',
+          address: constructedAddress,
+          context: 'channelOpenInit',
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
+        pendingTreeUpdate,
+        syntheticEvents: [
+          {
+            type: 'channel_open_init',
+            attributes: [
+              { key: 'port_id', value: channelOpenInitOperator.port_id },
+              { key: 'channel_id', value: channelId },
+              { key: 'connection_id', value: channelOpenInitOperator.connectionId },
+              { key: 'counterparty_port_id', value: channelOpenInitOperator.counterpartyPortId },
+              { key: 'counterparty_channel_id', value: '' },
+            ],
+          },
+        ],
+      });
 
       this.logger.log('Returning unsigned tx for channel open init');
       const response: MsgChannelOpenInitResponse = {

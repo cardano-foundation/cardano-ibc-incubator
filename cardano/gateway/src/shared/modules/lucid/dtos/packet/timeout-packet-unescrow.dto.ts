@@ -1,31 +1,26 @@
-import { UTxO, PolicyId } from '@lucid-evolution/lucid';
-import { AuthToken } from '../../../../types/auth-token';
+import {
+  WithChannelContext,
+  WithChannelSpend,
+  WithConstructedAddress,
+  WithHostStateUpdate,
+  WithPacketPolicyAndChannelToken,
+  WithTransferAmount,
+  WithTransferModuleSpend,
+  WithTransferModuleUtxo,
+  WithVerifyProof,
+} from './fragments';
 
-export type UnsignedTimeoutPacketUnescrowDto = {
-  hostStateUtxo: UTxO;
-  channelUtxo: UTxO;
-  transferModuleUtxo: UTxO;
-  connectionUtxo: UTxO;
-  clientUtxo: UTxO;
-
-  encodedHostStateRedeemer: string;
-  encodedUpdatedHostStateDatum: string;
-  encodedSpendChannelRedeemer: string;
-  encodedSpendTransferModuleRedeemer: string;
-  encodedUpdatedChannelDatum: string;
-
-  transferAmount: bigint;
+export type UnsignedTimeoutPacketUnescrowDto = WithHostStateUpdate &
+  WithChannelContext &
+  WithTransferModuleUtxo &
+  WithChannelSpend &
+  WithTransferModuleSpend &
+  WithTransferAmount &
+  WithConstructedAddress &
+  WithPacketPolicyAndChannelToken<'timeoutPacketPolicyId'> &
+  WithVerifyProof & {
   senderAddress: string;
-
   spendChannelAddress: string;
-  channelTokenUnit: string;
   transferModuleAddress: string;
   denomToken: string;
-  constructedAddress: string;
-
-  timeoutPacketPolicyId: PolicyId;
-  channelToken: AuthToken;
-
-  verifyProofPolicyId: PolicyId;
-  encodedVerifyProofRedeemer: string;
 };

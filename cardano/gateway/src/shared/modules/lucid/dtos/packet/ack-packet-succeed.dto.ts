@@ -1,24 +1,19 @@
-import { UTxO, PolicyId } from '@lucid-evolution/lucid';
-import { AuthToken } from '../../../../types/auth-token';
+import {
+  WithChannelContext,
+  WithChannelSpend,
+  WithConstructedAddress,
+  WithHostStateUpdate,
+  WithPacketPolicyAndChannelToken,
+  WithTransferModuleSpend,
+  WithTransferModuleUtxo,
+  WithVerifyProof,
+} from './fragments';
 
-export type UnsignedAckPacketSucceedDto = {
-  hostStateUtxo: UTxO;
-  channelUtxo: UTxO;
-  connectionUtxo: UTxO;
-  clientUtxo: UTxO;
-  transferModuleUtxo: UTxO;
-
-  encodedHostStateRedeemer: string;
-  encodedUpdatedHostStateDatum: string;
-  encodedSpendChannelRedeemer: string;
-  encodedSpendTransferModuleRedeemer: string;
-  channelTokenUnit: string;
-  encodedUpdatedChannelDatum: string;
-  constructedAddress: string;
-
-  ackPacketPolicyId: PolicyId;
-  channelToken: AuthToken;
-
-  verifyProofPolicyId: PolicyId;
-  encodedVerifyProofRedeemer: string;
-};
+export type UnsignedAckPacketSucceedDto = WithHostStateUpdate &
+  WithChannelContext &
+  WithTransferModuleUtxo &
+  WithChannelSpend &
+  WithTransferModuleSpend &
+  WithConstructedAddress &
+  WithPacketPolicyAndChannelToken<'ackPacketPolicyId'> &
+  WithVerifyProof;
