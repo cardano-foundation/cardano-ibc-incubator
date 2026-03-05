@@ -121,6 +121,30 @@ pub(super) async fn start_testnet(
     spec: &CosmosNodeSpec,
     trust_rpc_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let first_start_error = match start_managed_node(
+        spec,
+        Some(trust_rpc_url),
+        180,
+        3000,
+        "Injective testnet node",
+    )
+    .await
+    {
+        Ok(()) => return Ok(()),
+        Err(error) => error.to_string(),
+    };
+
+    let paths = spec.paths()?;
+    if !should_reset_corrupted_testnet_store(paths.log_path.as_path()) {
+        return Err(first_start_error.into());
+    }
+
+    warn("Detected corrupted Injective testnet store; resetting local testnet home and retrying once.");
+    let _ = stop_managed_node(spec, "Injective testnet node");
+    if paths.home_dir.exists() {
+        fs::remove_dir_all(paths.home_dir.as_path())?;
+    }
+    initialize_testnet_home(spec, paths.home_dir.as_path()).await?;
     start_managed_node(
         spec,
         Some(trust_rpc_url),
@@ -354,4 +378,13 @@ fn sync_workspace_assets_from_repo(
 
     log("PASS: Injective configuration files copied successfully");
     Ok(())
+}
+
+fn should_reset_corrupted_testnet_store(log_path: &Path) -> bool {
+    let Ok(log_contents) = fs::read_to_string(log_path) else {
+        return false;
+    };
+
+    let lowered = log_contents.to_lowercase();
+    lowered.contains("failed to load latest version") && lowered.contains("version does not exist")
 }

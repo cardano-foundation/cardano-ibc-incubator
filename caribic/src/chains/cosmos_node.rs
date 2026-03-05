@@ -16,8 +16,6 @@ use dirs::home_dir;
 use serde_json::Value;
 
 use crate::chains::{check_port_health, check_rpc_health, ChainFlags, ChainHealthStatus};
-use crate::utils::wait_for_health_check;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CosmosNetworkKind {
     Local,
@@ -79,6 +77,7 @@ impl CosmosChainOptions {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct CosmosStateSyncSpec {
     pub default_trust_rpc_url: &'static str,
+    pub fallback_trust_rpc_urls: &'static [&'static str],
     pub trust_offset: u64,
     pub seeds: &'static str,
     pub persistent_peers: &'static str,
@@ -126,21 +125,29 @@ pub(crate) async fn start_managed_node(
     process_label: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let paths = spec.paths()?;
-    if let Some(existing_pid) = read_pid_file(paths.pid_path.as_path()) {
-        if is_process_alive(existing_pid) {
-            return Err(format!(
-                "{} is already running (pid {})",
-                process_label, existing_pid
-            )
-            .into());
-        }
+    if let Some(existing_pid) = resolve_running_pid(
+        spec.binary,
+        paths.home_dir.as_path(),
+        paths.pid_path.as_path(),
+    ) {
+        return Err(format!(
+            "{} is already running (pid {})",
+            process_label, existing_pid
+        )
+        .into());
     }
 
+    let state_sync_enabled = spec.state_sync.is_some();
     let state_sync_params = if let Some(state_sync_spec) = spec.state_sync {
         let trust_rpc_url = trust_rpc_url_override.unwrap_or(state_sync_spec.default_trust_rpc_url);
         Some((
-            fetch_statesync_params(trust_rpc_url, state_sync_spec.trust_offset, spec.chain_name)
-                .await?,
+            fetch_statesync_params(
+                trust_rpc_url,
+                state_sync_spec.fallback_trust_rpc_urls,
+                state_sync_spec.trust_offset,
+                spec.chain_name,
+            )
+            .await?,
             state_sync_spec,
         ))
     } else {
@@ -217,22 +224,54 @@ pub(crate) async fn start_managed_node(
         return Err(format!("{} exited early.\n{}", process_label, log_tail).into());
     }
 
-    let is_healthy = wait_for_health_check(
-        spec.status_url,
-        health_retries,
-        health_retry_interval_ms,
-        Some(|response_body: &String| {
-            let json: Value = serde_json::from_str(response_body).unwrap_or_default();
-            json["result"]["sync_info"]["latest_block_height"]
-                .as_str()
-                .and_then(|height| height.parse::<u64>().ok())
-                .is_some_and(|height| height > 0)
-        }),
-    )
-    .await;
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(3))
+        .build()?;
 
-    if is_healthy.is_ok() {
-        return Ok(());
+    for _ in 0..health_retries {
+        if !is_process_alive(child.id()) {
+            let log_tail = read_log_tail(paths.log_path.as_path(), 120)
+                .unwrap_or_else(|_| format!("Unable to read {} log file", process_label));
+            return Err(format!(
+                "{} exited before becoming healthy.\n{}",
+                process_label, log_tail
+            )
+            .into());
+        }
+
+        let response = client.get(spec.status_url).send().await;
+        let healthy = match response {
+            Ok(resp) if resp.status().is_success() => {
+                let body = resp.text().await.unwrap_or_default();
+                let json: Value = serde_json::from_str(body.as_str()).unwrap_or_default();
+                if state_sync_enabled {
+                    // During state-sync bootstrap, CometBFT can keep latest_block_height at 0 for
+                    // several minutes while snapshots are discovered and restored. Treat the node as
+                    // ready once RPC is serving a valid sync_info shape so we don't kill a healthy
+                    // syncing process prematurely.
+                    let catching_up_present =
+                        json["result"]["sync_info"]["catching_up"].is_boolean();
+                    let latest_height_present = json["result"]["sync_info"]["latest_block_height"]
+                        .as_str()
+                        .is_some();
+                    catching_up_present || latest_height_present
+                } else {
+                    json["result"]["sync_info"]["latest_block_height"]
+                        .as_str()
+                        .and_then(|height| height.parse::<u64>().ok())
+                        .is_some_and(|height| height > 0)
+                }
+            }
+            _ => false,
+        };
+
+        if healthy {
+            return Ok(());
+        }
+
+        thread::sleep(Duration::from_millis(health_retry_interval_ms));
     }
 
     let _ = stop_managed_node(spec, process_label);
@@ -250,13 +289,18 @@ pub(crate) fn stop_managed_node(
     process_label: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let paths = spec.paths()?;
-    let pid = read_pid_file(paths.pid_path.as_path()).or_else(|| {
-        find_node_pids_for_home(spec.binary, paths.home_dir.as_path())
-            .into_iter()
-            .next()
-    });
+    let pid_from_file =
+        read_pid_file(paths.pid_path.as_path()).filter(|pid| is_process_alive(*pid));
+    let mut pids = find_node_pids_for_home(spec.binary, paths.home_dir.as_path());
+    if let Some(pid) = pid_from_file {
+        if !pids.contains(&pid) {
+            pids.push(pid);
+        }
+    }
 
-    if let Some(pid) = pid {
+    pids.sort_unstable();
+    pids.dedup();
+    for pid in pids {
         stop_process(pid, process_label)?;
     }
 
@@ -265,6 +309,24 @@ pub(crate) fn stop_managed_node(
     }
 
     Ok(())
+}
+
+fn resolve_running_pid(
+    binary_name: &str,
+    node_home_path: &Path,
+    pid_file_path: &Path,
+) -> Option<u32> {
+    if let Some(pid) = read_pid_file(pid_file_path) {
+        if is_process_alive(pid) {
+            return Some(pid);
+        }
+        let _ = fs::remove_file(pid_file_path);
+    }
+
+    let mut running = find_node_pids_for_home(binary_name, node_home_path);
+    running.sort_unstable();
+    running.dedup();
+    running.into_iter().next()
 }
 
 pub(crate) fn managed_node_health(
@@ -396,13 +458,18 @@ pub(crate) fn add_directory_to_process_path(directory: &Path) {
 /// state-sync startup.
 pub(crate) async fn fetch_statesync_params(
     trust_rpc_url: &str,
+    fallback_trust_rpc_urls: &[&str],
     trust_offset: u64,
     chain_name: &str,
 ) -> Result<(String, u64, String), Box<dyn std::error::Error>> {
     let trust_rpc_base_url = normalize_trust_rpc_url(trust_rpc_url)?;
     let status_url = trust_rpc_base_url.join("status")?;
+    let http_client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(12))
+        .build()?;
 
-    let status_response = reqwest::get(status_url.as_str()).await?;
+    let status_response = http_client.get(status_url.as_str()).send().await?;
     if !status_response.status().is_success() {
         return Err(format!(
             "Failed to fetch status from trusted {} RPC {} (HTTP {})",
@@ -435,7 +502,7 @@ pub(crate) async fn fetch_statesync_params(
     let trust_height = latest_height - trust_offset;
     let block_url = trust_rpc_base_url.join(format!("block?height={}", trust_height).as_str())?;
 
-    let block_response = reqwest::get(block_url.as_str()).await?;
+    let block_response = http_client.get(block_url.as_str()).send().await?;
     if !block_response.status().is_success() {
         return Err(format!(
             "Failed to fetch trusted block at height {} from {} (HTTP {})",
@@ -457,8 +524,22 @@ pub(crate) async fn fetch_statesync_params(
         })?
         .to_string();
 
-    let rpc_server = format_rpc_server_address(&trust_rpc_base_url)?;
-    let rpc_servers = format!("{},{}", rpc_server, rpc_server);
+    let primary_rpc_server = format_rpc_server_address(&trust_rpc_base_url)?;
+    let mut secondary_rpc_server: Option<String> = None;
+    for fallback_url in fallback_trust_rpc_urls {
+        if fallback_url.trim().is_empty() {
+            continue;
+        }
+        if let Ok(parsed_fallback) = normalize_trust_rpc_url(fallback_url) {
+            let fallback_rpc_server = format_rpc_server_address(&parsed_fallback)?;
+            if fallback_rpc_server != primary_rpc_server {
+                secondary_rpc_server = Some(fallback_rpc_server);
+                break;
+            }
+        }
+    }
+    let witness_rpc_server = secondary_rpc_server.unwrap_or_else(|| primary_rpc_server.clone());
+    let rpc_servers = format!("{},{}", primary_rpc_server, witness_rpc_server);
 
     Ok((rpc_servers, trust_height, trust_hash))
 }
@@ -516,13 +597,32 @@ pub(crate) fn stop_process(
 
 /// Checks whether a process ID is currently alive.
 pub(crate) fn is_process_alive(pid: u32) -> bool {
-    Command::new("kill")
+    let exists = Command::new("kill")
         .args(["-0", pid.to_string().as_str()])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
         .ok()
-        .is_some_and(|status| status.success())
+        .is_some_and(|status| status.success());
+
+    if !exists {
+        return false;
+    }
+
+    // Treat zombie processes as not alive for startup/health purposes.
+    let state_output = Command::new("ps")
+        .args(["-o", "stat=", "-p", pid.to_string().as_str()])
+        .output();
+    if let Ok(output) = state_output {
+        if output.status.success() {
+            let state = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if state.starts_with('Z') {
+                return false;
+            }
+        }
+    }
+
+    true
 }
 
 /// Finds running node PIDs for a specific binary and `--home` directory.
