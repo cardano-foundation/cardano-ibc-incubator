@@ -2,7 +2,7 @@ use crate::logger::error;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process;
 use std::sync::Mutex;
 
@@ -11,33 +11,27 @@ pub struct Config {
     pub project_root: String,
     pub chains: Chains,
     pub mithril: Mithril,
-    pub runtime: Runtime,
-    pub relayer: Relayer,
+    pub health: Health,
+    pub demo: Demo,
     pub cardano: Cardano,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Chains {
-    pub cardano: ChainConfig,
-    pub entrypoint: EntrypointChainConfig,
+    pub cardano: CardanoChain,
+    pub entrypoint: EntrypointChain,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct ChainConfig {
+pub struct CardanoChain {
     pub chain_id: String,
     pub message_port_id: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct EntrypointChainConfig {
+pub struct EntrypointChain {
     pub chain_id: String,
     pub message_port_id: String,
-    pub rpc_addr: String,
-    pub grpc_addr: String,
-    pub container_name: String,
-    pub home_dir: String,
-    pub keyring_container_path: String,
-    pub relayer_key_name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -55,22 +49,23 @@ pub struct Mithril {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Runtime {
+pub struct Health {
     pub cosmos_status_url: String,
     pub cosmos_max_retries: u32,
     pub cosmos_retry_interval_ms: u64,
     pub gateway_max_retries: u32,
     pub gateway_retry_interval_ms: u64,
-    pub mithril_artifact_max_retries: usize,
-    pub mithril_artifact_retry_delay_secs: u64,
-    pub message_exchange: MessageExchangeRuntime,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct MessageExchangeRuntime {
-    pub vessel_default_imo: String,
-    pub cardano_min_sync_progress: f64,
-    pub cardano_max_safe_epoch: u64,
+pub struct Demo {
+    pub mithril_artifact_max_retries: usize,
+    pub mithril_artifact_retry_delay_secs: u64,
+    pub message_exchange: MessageExchangeDemo,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MessageExchangeDemo {
     pub consolidated_report_max_retries: usize,
     pub consolidated_report_retry_delay_secs: u64,
     pub channel_discovery_max_retries: usize,
@@ -81,11 +76,6 @@ pub struct MessageExchangeRuntime {
     pub mithril_readiness_progress_interval_secs: u64,
     pub relay_max_retries: usize,
     pub relay_retry_delay_secs: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Relayer {
-    pub entrypoint_mnemonic: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -110,70 +100,75 @@ pub struct Services {
 }
 
 impl Config {
-    fn default() -> Self {
-        serde_json::from_str(include_str!("../config/default-config.json"))
-            .expect("Failed to parse bundled default config template")
-    }
-
-    fn resolve_path_from_config_dir(config_dir: &Path, configured_path: &str) -> String {
-        let raw_path = Path::new(configured_path);
-        if raw_path.is_absolute() {
+    fn resolve_path_from_config_dir(config_path: &Path, configured_path: &str) -> String {
+        let path = Path::new(configured_path);
+        if path.is_absolute() {
             return configured_path.to_string();
         }
 
-        let resolved_path = config_dir.join(raw_path);
-        if let Ok(canonicalized) = resolved_path.canonicalize() {
-            return canonicalized.to_string_lossy().to_string();
-        }
+        let Some(config_dir) = config_path.parent() else {
+            return configured_path.to_string();
+        };
 
-        resolved_path.to_string_lossy().to_string()
+        let joined_path = config_dir.join(path);
+        joined_path
+            .canonicalize()
+            .unwrap_or(joined_path)
+            .to_string_lossy()
+            .to_string()
     }
 
     fn resolve_runtime_paths(mut config: Self, config_path: &Path) -> Self {
-        if let Some(config_dir) = config_path.parent() {
-            config.project_root =
-                Self::resolve_path_from_config_dir(config_dir, &config.project_root);
-            config.mithril.cardano_node_dir =
-                Self::resolve_path_from_config_dir(config_dir, &config.mithril.cardano_node_dir);
-        }
-
+        config.project_root = Self::resolve_path_from_config_dir(config_path, &config.project_root);
+        config.mithril.cardano_node_dir =
+            Self::resolve_path_from_config_dir(config_path, &config.mithril.cardano_node_dir);
         config
     }
 
-    async fn load_from_file(config_path: &str) -> Self {
-        let config_path_buf = PathBuf::from(config_path);
-
+    fn load_from_file(config_path: &str) -> Self {
+        let config_path_buf = Path::new(config_path);
         if !config_path_buf.exists() {
             error(&format!(
-                "Config file not found: {}. caribic requires caribic/config/default-config.json to exist.",
-                config_path
+                "Required config file not found at {}",
+                config_path_buf.display()
             ));
             process::exit(1);
         }
 
-        let file_content =
-            fs::read_to_string(&config_path_buf).expect("Failed to read config file.");
-        let config = serde_json::from_str(&file_content).unwrap_or_else(|parse_error| {
+        let file_content = fs::read_to_string(config_path_buf).unwrap_or_else(|read_error| {
             error(&format!(
-                "Failed to parse config file at {}: {}",
-                config_path, parse_error
+                "Failed to read config file at {}: {}",
+                config_path_buf.display(),
+                read_error
             ));
             process::exit(1);
         });
 
-        Self::resolve_runtime_paths(config, &config_path_buf)
+        let config: Self = serde_json::from_str(&file_content).unwrap_or_else(|parse_error| {
+            error(&format!(
+                "Failed to parse config file at {}: {}",
+                config_path_buf.display(),
+                parse_error
+            ));
+            process::exit(1);
+        });
+
+        Self::resolve_runtime_paths(config, config_path_buf)
     }
 }
 
 lazy_static! {
-    static ref CONFIG: Mutex<Config> = Mutex::new(Config::default());
+    static ref CONFIG: Mutex<Option<Config>> = Mutex::new(None);
 }
 
 pub async fn init(config_path: &str) {
     let mut config = CONFIG.lock().unwrap();
-    *config = Config::load_from_file(config_path).await;
+    *config = Some(Config::load_from_file(config_path));
 }
 
 pub fn get_config() -> Config {
-    CONFIG.lock().unwrap().clone()
+    CONFIG.lock().unwrap().clone().unwrap_or_else(|| {
+        error("Configuration was accessed before initialization.");
+        process::exit(1);
+    })
 }

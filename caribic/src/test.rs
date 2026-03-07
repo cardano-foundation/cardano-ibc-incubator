@@ -1,18 +1,19 @@
-use crate::config;
 use crate::logger::{self, verbose};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, IsTerminal};
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
-use std::sync::mpsc;
+use std::sync::{mpsc, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
-fn entrypoint_chain_id() -> String {
-    config::get_config().chains.entrypoint.chain_id
+fn entrypoint_chain_id() -> &'static str {
+    static ENTRYPOINT_CHAIN_ID: OnceLock<String> = OnceLock::new();
+    ENTRYPOINT_CHAIN_ID
+        .get_or_init(|| crate::config::get_config().chains.entrypoint.chain_id)
+        .as_str()
 }
-
 
 /// Run a command while streaming its stdout/stderr to the user (for long-running steps),
 /// while also capturing the full output for later parsing.
@@ -455,7 +456,7 @@ mod test_selection_tests {
     fn extract_channel_ids_parses_transfer_channel_tokens() {
         let line = &format!(
             "cardano-devnet: transfer/channel-1 --- {}: transfer/channel-2",
-            entrypoint_chain_id().as_str()
+            entrypoint_chain_id()
         );
         let channel_ids = extract_channel_ids_from_line(line);
         assert_eq!(channel_ids, vec!["channel-1", "channel-2"]);
@@ -465,10 +466,10 @@ mod test_selection_tests {
     fn parse_hermes_channel_pair_line_extracts_chain_and_channel_ids() {
         let line = &format!(
             "{}: transfer/channel-3 --- cardano-devnet: transfer/channel-2",
-            entrypoint_chain_id().as_str()
+            entrypoint_chain_id()
         );
         let pair = parse_hermes_channel_pair_line(line).expect("pair should parse");
-        assert_eq!(pair.local_chain, entrypoint_chain_id().as_str());
+        assert_eq!(pair.local_chain, entrypoint_chain_id());
         assert_eq!(pair.local_channel, "channel-3");
         assert_eq!(pair.counterparty_chain, "cardano-devnet");
         assert_eq!(pair.counterparty_channel, "channel-2");
@@ -481,14 +482,16 @@ mod test_selection_tests {
 {}: transfer/channel-1 --- cardano-devnet: transfer/channel-0\n\
 {}: transfer/channel-2 --- cardano-devnet: transfer/channel-1\n\
 {}: transfer/channel-3 --- cardano-devnet: transfer/channel-2\n",
-            entrypoint_chain_id().as_str(), entrypoint_chain_id().as_str(), entrypoint_chain_id().as_str()
+            entrypoint_chain_id(),
+            entrypoint_chain_id(),
+            entrypoint_chain_id()
         );
 
         let resolved = resolve_counterparty_channel_from_query_output(
             &output,
             "cardano-devnet",
             "channel-2",
-            entrypoint_chain_id().as_str(),
+            entrypoint_chain_id(),
         )
         .expect("counterparty channel should resolve");
 
@@ -1047,7 +1050,7 @@ pub async fn run_integration_tests(
                 cardano_channel_id.clone()
             });
 
-            let entrypoint_address = get_hermes_chain_address(project_root, entrypoint_chain_id().as_str())?;
+            let entrypoint_address = get_hermes_chain_address(project_root, entrypoint_chain_id())?;
             let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
             let cardano_receiver_address = cardano_enterprise_address_from_payment_credential(
                 project_root,
@@ -1084,7 +1087,7 @@ pub async fn run_integration_tests(
 
             match hermes_ft_transfer(
                 project_root,
-                entrypoint_chain_id().as_str(),
+                entrypoint_chain_id(),
                 "cardano-devnet",
                 "transfer",
                 &entrypoint_channel_id,
@@ -1096,7 +1099,7 @@ pub async fn run_integration_tests(
             ) {
                 Ok(_) => match hermes_clear_packets(
                     project_root,
-                    entrypoint_chain_id().as_str(),
+                    entrypoint_chain_id(),
                     "transfer",
                     &entrypoint_channel_id,
                     "cardano-devnet",
@@ -1350,7 +1353,7 @@ pub async fn run_integration_tests(
                 });
 
                 let entrypoint_address =
-                    get_hermes_chain_address(project_root, entrypoint_chain_id().as_str())?;
+                    get_hermes_chain_address(project_root, entrypoint_chain_id())?;
                 let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
                 let cardano_receiver_address = cardano_enterprise_address_from_payment_credential(
                     project_root,
@@ -1397,7 +1400,7 @@ pub async fn run_integration_tests(
                     match hermes_ft_transfer(
                         project_root,
                         "cardano-devnet",
-                        entrypoint_chain_id().as_str(),
+                        entrypoint_chain_id(),
                         "transfer",
                         cardano_channel_id,
                         amount,
@@ -1439,7 +1442,7 @@ pub async fn run_integration_tests(
                         "cardano-devnet",
                         "transfer",
                         cardano_channel_id,
-                        entrypoint_chain_id().as_str(),
+                        entrypoint_chain_id(),
                         &entrypoint_channel_id,
                         None,
                     ) {
@@ -1608,7 +1611,7 @@ pub async fn run_integration_tests(
                 cardano_channel_id.clone()
             });
 
-            let entrypoint_address = get_hermes_chain_address(project_root, entrypoint_chain_id().as_str())?;
+            let entrypoint_address = get_hermes_chain_address(project_root, entrypoint_chain_id())?;
             let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
             let cardano_sender_address = cardano_enterprise_address_from_payment_credential(
                 project_root,
@@ -1632,7 +1635,7 @@ pub async fn run_integration_tests(
             match hermes_ft_transfer(
                 project_root,
                 "cardano-devnet",
-                entrypoint_chain_id().as_str(),
+                entrypoint_chain_id(),
                 "transfer",
                 cardano_channel_id,
                 amount,
@@ -1646,7 +1649,7 @@ pub async fn run_integration_tests(
                     "cardano-devnet",
                     "transfer",
                     cardano_channel_id,
-                    entrypoint_chain_id().as_str(),
+                    entrypoint_chain_id(),
                     &entrypoint_channel_id,
                     None,
                 ) {
@@ -1848,7 +1851,7 @@ pub async fn run_integration_tests(
                 &cardano_native_base_denom,
             ) {
                 let entrypoint_address =
-                    get_hermes_chain_address(project_root, entrypoint_chain_id().as_str())?;
+                    get_hermes_chain_address(project_root, entrypoint_chain_id())?;
                 let cardano_receiver_credential = get_cardano_payment_credential_hex(project_root)?;
                 let cardano_receiver_address = cardano_enterprise_address_from_payment_credential(
                     project_root,
@@ -1875,7 +1878,7 @@ pub async fn run_integration_tests(
 
                 match hermes_ft_transfer(
                     project_root,
-                    entrypoint_chain_id().as_str(),
+                    entrypoint_chain_id(),
                     "cardano-devnet",
                     "transfer",
                     entrypoint_channel_id,
@@ -1890,7 +1893,7 @@ pub async fn run_integration_tests(
                         // Bound the clear loop for this test and validate the transfer end-state directly.
                         let clear_packets_result = hermes_clear_packets(
                             project_root,
-                            entrypoint_chain_id().as_str(),
+                            entrypoint_chain_id(),
                             "transfer",
                             entrypoint_channel_id,
                             "cardano-devnet",
@@ -2621,8 +2624,8 @@ fn query_client_state(
     }
 
     // If we couldn't parse structured output, try to detect success from raw output
-    if info.chain_id.is_empty() && stdout.contains(entrypoint_chain_id().as_str()) {
-        info.chain_id = entrypoint_chain_id().as_str().to_string();
+    if info.chain_id.is_empty() && stdout.contains(entrypoint_chain_id()) {
+        info.chain_id = entrypoint_chain_id().to_string();
     }
     if info.latest_height.is_empty() {
         // Try to extract any number that looks like a height
@@ -2715,7 +2718,7 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
         "--host-chain",
         "cardano-devnet",
         "--reference-chain",
-        entrypoint_chain_id().as_str(),
+        entrypoint_chain_id(),
     ]);
     let output = run_command_streaming(command, "hermes create client")?;
 
@@ -2728,7 +2731,7 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
              Ensure Hermes is configured and keys are added:\n\
              - hermes keys add --chain cardano-devnet --mnemonic-file ~/cardano.txt\n\
              - hermes keys add --chain entrypoint --mnemonic-file ~/entrypoint.txt (Hermes chain id: {})",
-            entrypoint_chain_id().as_str(),
+            entrypoint_chain_id(),
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         )
@@ -2798,7 +2801,7 @@ async fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn s
         "--a-chain",
         "cardano-devnet",
         "--b-chain",
-        entrypoint_chain_id().as_str(),
+        entrypoint_chain_id(),
     ]);
     let run_connection_handshake =
         |hermes_binary: &std::path::Path| -> Result<String, Box<dyn std::error::Error>> {
@@ -2809,7 +2812,7 @@ async fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn s
                 "--a-chain",
                 "cardano-devnet",
                 "--b-chain",
-                entrypoint_chain_id().as_str(),
+                entrypoint_chain_id(),
             ]);
             let output = run_command_streaming(command, "hermes create connection")?;
 
@@ -3009,20 +3012,18 @@ fn get_hermes_chain_address(
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let entrypoint_chain_id = entrypoint_chain_id();
-    let cardano_chain_id = config::get_config().chains.cardano.chain_id;
     for token in stdout.split_whitespace() {
         let cleaned =
             token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-');
 
-        if chain_id == entrypoint_chain_id.as_str() {
+        if chain_id == entrypoint_chain_id() {
             if cleaned.starts_with("cosmos1") {
                 return Ok(cleaned.to_string());
             }
             continue;
         }
 
-        if chain_id == cardano_chain_id.as_str() {
+        if chain_id == "cardano-devnet" {
             // Cardano uses a different "address" representation in Hermes: the relayer key is a
             // hex-encoded enterprise address bytes (constructed from the payment key hash).
             if cleaned.starts_with("addr_test1") || cleaned.starts_with("addr1") {
@@ -3471,7 +3472,7 @@ fn resolve_cardano_transfer_channel_id(project_root: &Path) -> Option<String> {
             "--chain",
             "cardano-devnet",
             "--counterparty-chain",
-            entrypoint_chain_id().as_str(),
+            entrypoint_chain_id(),
             "--show-counterparty",
         ])
         .output()
@@ -4307,7 +4308,7 @@ fn dump_test_11_ics20_diagnostics(
         project_root,
         &[
             ("cardano-devnet", cardano_channel_id),
-            (entrypoint_chain_id().as_str(), entrypoint_channel_id),
+            (entrypoint_chain_id(), entrypoint_channel_id),
         ],
     );
 
@@ -4351,7 +4352,7 @@ fn dump_test_9_ics20_diagnostics(
     dump_packet_queries_for_transfer_channels(
         project_root,
         &[
-            (entrypoint_chain_id().as_str(), entrypoint_channel_id),
+            (entrypoint_chain_id(), entrypoint_channel_id),
             ("cardano-devnet", cardano_channel_id),
         ],
     );
@@ -4440,7 +4441,7 @@ fn dump_test_12_ics20_diagnostics(
     dump_packet_queries_for_transfer_channels(
         project_root,
         &[
-            (entrypoint_chain_id().as_str(), entrypoint_channel_id),
+            (entrypoint_chain_id(), entrypoint_channel_id),
             ("cardano-devnet", cardano_channel_id),
         ],
     );

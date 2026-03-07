@@ -25,7 +25,8 @@ pub fn run_stop(
                 project_root_path.join("cosmos").as_path(),
                 "Cosmos Entrypoint chain",
             );
-            stop_optional_chain(project_root_path, "osmosis", None, Vec::new())?;
+            stop_all_managed_optional_chain_networks(project_root_path, "osmosis")?;
+            stop_all_managed_optional_chain_networks(project_root_path, "injective")?;
             bridge_down(project_root_path);
             network_down(project_root_path);
             logger::log("\nAll services stopped successfully");
@@ -45,13 +46,13 @@ pub fn run_stop(
             );
             logger::log("\nCosmos Entrypoint chain stopped successfully");
         }
-        Some(StopTarget::Osmosis) => {
-            stop_optional_chain(
-                project_root_path,
-                optional_chain_alias.unwrap_or("osmosis"),
-                network,
-                chain_flags,
-            )?;
+        Some(StopTarget::Osmosis) | Some(StopTarget::Injective) => {
+            let chain_id = optional_chain_alias.unwrap_or("osmosis");
+            if network.is_some() || !chain_flags.is_empty() {
+                stop_optional_chain(project_root_path, chain_id, network, chain_flags)?;
+            } else {
+                stop_all_managed_optional_chain_networks(project_root_path, chain_id)?;
+            }
             logger::log("\nOptional chain stopped successfully");
         }
         Some(StopTarget::Demo) => {
@@ -59,7 +60,8 @@ pub fn run_stop(
                 project_root_path.join("cosmos").as_path(),
                 "Cosmos Entrypoint chain",
             );
-            stop_optional_chain(project_root_path, "osmosis", None, Vec::new())?;
+            stop_all_managed_optional_chain_networks(project_root_path, "osmosis")?;
+            stop_all_managed_optional_chain_networks(project_root_path, "injective")?;
             logger::log("\nDemo services stopped successfully");
         }
         Some(StopTarget::Gateway) => {
@@ -96,10 +98,42 @@ fn stop_optional_chain(
     adapter.stop(project_root_path, resolved_network.as_str(), &parsed_flags)
 }
 
+fn stop_all_managed_optional_chain_networks(
+    project_root_path: &Path,
+    chain_id: &str,
+) -> Result<(), String> {
+    let adapter = chains::get_chain_adapter(chain_id).ok_or_else(|| {
+        format!(
+            "ERROR: Optional chain adapter '{}' is not registered",
+            chain_id
+        )
+    })?;
+
+    for network in adapter
+        .supported_networks()
+        .iter()
+        .filter(|network| network.managed_by_caribic)
+    {
+        adapter
+            .stop(project_root_path, network.name, &chains::ChainFlags::new())
+            .map_err(|error| {
+                format!(
+                    "ERROR: Failed to stop {} network '{}': {}",
+                    adapter.display_name(),
+                    network.name,
+                    error
+                )
+            })?;
+    }
+
+    Ok(())
+}
+
 /// Returns the optional-chain alias handled by `caribic stop <target>` aliases.
 fn resolve_optional_chain_alias(target: Option<&StopTarget>) -> Option<&'static str> {
     match target {
         Some(StopTarget::Osmosis) => Some("osmosis"),
+        Some(StopTarget::Injective) => Some("injective"),
         _ => None,
     }
 }

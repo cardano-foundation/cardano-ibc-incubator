@@ -5,9 +5,12 @@ use std::process::Command;
 use async_trait::async_trait;
 
 pub mod cheqd;
+pub(crate) mod cosmos_node;
+pub mod injective;
 pub mod osmosis;
 
 pub use cheqd::CHEQD_CHAIN_ADAPTER;
+pub use injective::INJECTIVE_CHAIN_ADAPTER;
 pub use osmosis::OSMOSIS_CHAIN_ADAPTER;
 
 pub type ChainFlags = HashMap<String, String>;
@@ -140,7 +143,11 @@ pub trait ChainAdapter: Sync {
 }
 
 pub fn registered_chain_adapters() -> Vec<&'static dyn ChainAdapter> {
-    vec![&OSMOSIS_CHAIN_ADAPTER, &CHEQD_CHAIN_ADAPTER]
+    vec![
+        &OSMOSIS_CHAIN_ADAPTER,
+        &CHEQD_CHAIN_ADAPTER,
+        &INJECTIVE_CHAIN_ADAPTER,
+    ]
 }
 
 pub fn get_chain_adapter(chain_id: &str) -> Option<&'static dyn ChainAdapter> {
@@ -189,25 +196,6 @@ pub fn parse_chain_flags(raw_flags: &[String]) -> Result<ChainFlags, String> {
     Ok(parsed_flags)
 }
 
-pub fn parse_bool_flag(
-    flags: &ChainFlags,
-    flag_name: &str,
-    default_value: bool,
-) -> Result<bool, String> {
-    let Some(raw_value) = flags.get(flag_name) else {
-        return Ok(default_value);
-    };
-
-    match raw_value.to_lowercase().as_str() {
-        "1" | "true" | "yes" => Ok(true),
-        "0" | "false" | "no" => Ok(false),
-        _ => Err(format!(
-            "Flag '{}' expects a boolean value (true/false), got '{}'",
-            flag_name, raw_value
-        )),
-    }
-}
-
 pub fn check_port_health(id: &'static str, port: u16, label: &'static str) -> ChainHealthStatus {
     let is_healthy = Command::new("nc")
         .args(["-z", "localhost", &port.to_string()])
@@ -238,18 +226,26 @@ pub fn check_rpc_health(
     default_port: u16,
     label: &'static str,
 ) -> ChainHealthStatus {
-    let parsed_port = reqwest::Url::parse(url)
-        .ok()
+    let parsed_url = reqwest::Url::parse(url).ok();
+    let parsed_port = parsed_url
+        .as_ref()
         .and_then(|parsed_url| parsed_url.port_or_known_default())
         .unwrap_or(default_port);
+    let host = parsed_url
+        .as_ref()
+        .and_then(|parsed_url| parsed_url.host_str())
+        .unwrap_or("localhost");
+    let local_host = matches!(host, "localhost" | "127.0.0.1" | "::1");
 
-    let port_status = check_port_health(id, parsed_port, label);
-    if !port_status.healthy {
-        return port_status;
+    if local_host {
+        let port_status = check_port_health(id, parsed_port, label);
+        if !port_status.healthy {
+            return port_status;
+        }
     }
 
     let rpc_response_ok = Command::new("curl")
-        .args(["-s", "--connect-timeout", "3", url])
+        .args(["-sS", "--connect-timeout", "3", "--max-time", "8", url])
         .output()
         .ok()
         .filter(|output| output.status.success())
@@ -261,16 +257,16 @@ pub fn check_rpc_health(
             id,
             label,
             healthy: true,
-            status: format!("Running on port {}", parsed_port),
+            status: format!("RPC reachable at {} (port {})", host, parsed_port),
         }
     } else {
         ChainHealthStatus {
             id,
             label,
-            healthy: true,
+            healthy: false,
             status: format!(
-                "Port {} accessible but RPC response is not ready",
-                parsed_port
+                "RPC endpoint did not return a valid status response: {}",
+                url
             ),
         }
     }

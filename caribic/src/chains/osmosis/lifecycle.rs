@@ -1,36 +1,45 @@
-use std::env;
+use std::fs;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
-use std::thread;
-use std::time::Duration;
 
 use console::style;
-use dirs::home_dir;
 use fs_extra::{copy_items, file::copy};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
 
+use super::config;
+use crate::chains::cosmos_node::{
+    add_directory_to_process_path, locate_binary_in_path_or_go_bin, resolve_home_relative_path,
+    start_managed_node, stop_managed_node, CosmosNodeSpec,
+};
 use crate::logger::{self, log, log_or_show_progress, verbose, warn};
 use crate::setup::download_repository;
-use crate::utils::{execute_script, execute_script_interactive, wait_for_health_check};
+use crate::utils::{execute_script, wait_for_health_check};
 
 pub(super) async fn prepare_local(
+    project_root_path: &Path,
     osmosis_dir: &Path,
-    osmosis_source_zip_url: &str,
+    stateful: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    ensure_osmosisd_available(osmosis_dir, osmosis_source_zip_url).await?;
+    ensure_osmosis_source_available(osmosis_dir).await?;
+    sync_workspace_assets_from_repo(project_root_path, osmosis_dir)?;
     copy_local_config_files(osmosis_dir)?;
     verbose("PASS: Osmosis configuration files copied successfully");
-    init_local_network(osmosis_dir)?;
+
+    if !stateful {
+        stop_local(osmosis_dir);
+
+        let local_home_dir = resolve_home_relative_path(config::LOCAL_HOME_DIR)?;
+        if local_home_dir.exists() {
+            fs::remove_dir_all(local_home_dir.as_path())?;
+        }
+    }
+
     Ok(())
 }
 
-pub(super) async fn start_local(
-    osmosis_dir: &Path,
-    osmosis_status_url: &str,
-    redis_port: Option<u16>,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn start_local(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -49,14 +58,11 @@ pub(super) async fn start_local(
         Vec::from([
             "compose",
             "-f",
-            "tests/localosmosis/docker-compose.yml",
+            config::LOCAL_DOCKER_COMPOSE_FILE,
             "up",
             "-d",
         ]),
-        Some(Vec::from([(
-            "OSMOSISD_CONTAINER_NAME",
-            "localosmosis-osmosisd-1",
-        )])),
+        None,
     );
 
     if status.is_ok() {
@@ -65,6 +71,7 @@ pub(super) async fn start_local(
             &optional_progress_bar,
         );
 
+        let osmosis_status_url = config::LOCAL_STATUS_URL;
         let is_healthy = wait_for_health_check(
             osmosis_status_url,
             30,
@@ -93,27 +100,11 @@ pub(super) async fn start_local(
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
         }
-        if is_healthy.is_err() {
-            return Err(format!("Run into timeout while checking {}", osmosis_status_url).into());
+        if is_healthy.is_ok() {
+            Ok(())
+        } else {
+            Err(format!("Run into timeout while checking {}", osmosis_status_url).into())
         }
-
-        if let Some(port) = redis_port {
-            log_or_show_progress(
-                &format!(
-                    "Waiting for the Osmosis Redis sidecar to become healthy on port {} ...",
-                    port
-                ),
-                &optional_progress_bar,
-            );
-            wait_for_port(port, 30, 3000).map_err(|error| {
-                format!(
-                    "Run into timeout while checking Redis sidecar on port {}: {}",
-                    port, error
-                )
-            })?;
-        }
-
-        Ok(())
     } else {
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
@@ -123,46 +114,58 @@ pub(super) async fn start_local(
     }
 }
 
-fn wait_for_port(port: u16, retries: u32, interval_ms: u64) -> Result<(), String> {
-    for attempt in 1..=retries {
-        let is_accessible = Command::new("nc")
-            .args(["-z", "localhost", &port.to_string()])
-            .output()
-            .ok()
-            .is_some_and(|output| output.status.success());
-
-        if is_accessible {
-            verbose(&format!(
-                "Port {} is accessible on attempt {}",
-                port, attempt
-            ));
-            return Ok(());
+pub(super) fn stop_local(osmosis_path: &Path) {
+    for compose_file in [
+        config::LOCAL_DOCKER_COMPOSE_FILE,
+        config::LOCAL_LEGACY_DOCKER_COMPOSE_FILE,
+    ] {
+        if !osmosis_path.join(compose_file).exists() {
+            continue;
         }
 
-        thread::sleep(Duration::from_millis(interval_ms));
+        let _ = execute_script(
+            osmosis_path,
+            "docker",
+            Vec::from(["compose", "-f", compose_file, "down"]),
+            None,
+        );
     }
-
-    Err(format!(
-        "Port {} was not accessible after {} attempts",
-        port, retries
-    ))
 }
 
-pub(super) fn stop_local(osmosis_path: &Path) {
-    let _ = execute_script(osmosis_path, "make", Vec::from(["localnet-stop"]), None);
-}
-
-async fn ensure_osmosisd_available(
+pub(super) async fn prepare_testnet(
+    project_root_path: &Path,
     osmosis_dir: &Path,
-    osmosis_source_zip_url: &str,
+    spec: &CosmosNodeSpec,
+    stateful: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if osmosis_dir.exists() {
-        verbose("Osmosis directory already exists");
-    } else {
-        download_osmosis_source(osmosis_dir, osmosis_source_zip_url).await?;
+    ensure_osmosisd_available(osmosis_dir).await?;
+    sync_workspace_assets_from_repo(project_root_path, osmosis_dir)?;
+    copy_local_config_files(osmosis_dir)?;
+
+    let paths = spec.paths()?;
+    if !stateful && paths.home_dir.exists() {
+        fs::remove_dir_all(paths.home_dir.as_path())?;
     }
 
-    let mut binary = locate_osmosisd_binary();
+    initialize_testnet_home(spec, paths.home_dir.as_path())?;
+    Ok(())
+}
+
+pub(super) async fn start_testnet(
+    spec: &CosmosNodeSpec,
+    trust_rpc_url: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    start_managed_node(spec, Some(trust_rpc_url), 120, 3000, "Osmosis testnet node").await
+}
+
+pub(super) fn stop_testnet(spec: &CosmosNodeSpec) -> Result<(), Box<dyn std::error::Error>> {
+    stop_managed_node(spec, "Osmosis testnet node")
+}
+
+async fn ensure_osmosisd_available(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    ensure_osmosis_source_available(osmosis_dir).await?;
+
+    let mut binary = locate_binary_in_path_or_go_bin("osmosisd");
     if binary.is_none() {
         log("ERROR: osmosisd is not installed or not available in the PATH.");
 
@@ -171,7 +174,7 @@ async fn ensure_osmosisd_available(
             return Err("osmosisd is required for local Osmosis startup".into());
         }
 
-        binary = locate_osmosisd_binary();
+        binary = locate_binary_in_path_or_go_bin("osmosisd");
     }
 
     let (osmosisd_binary, path_visible) =
@@ -194,6 +197,9 @@ async fn ensure_osmosisd_available(
             ));
 
             if !path_visible {
+                if let Some(binary_dir) = osmosisd_binary.parent() {
+                    add_directory_to_process_path(binary_dir);
+                }
                 warn(&format!(
                     "osmosisd is installed at {} but not visible in PATH. Add '$HOME/go/bin' to PATH for direct shell usage.",
                     osmosisd_binary.display()
@@ -221,11 +227,19 @@ async fn ensure_osmosisd_available(
     Ok(())
 }
 
-async fn download_osmosis_source(
-    osmosis_path: &Path,
-    osmosis_source_zip_url: &str,
+async fn ensure_osmosis_source_available(
+    osmosis_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    download_repository(osmosis_source_zip_url, osmosis_path, "osmosis").await
+    if osmosis_dir.exists() {
+        verbose("Osmosis directory already exists");
+        return Ok(());
+    }
+
+    download_osmosis_source(osmosis_dir).await
+}
+
+async fn download_osmosis_source(osmosis_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    download_repository(config::SOURCE_ZIP_URL, osmosis_path, "osmosis").await
 }
 
 async fn prompt_and_install_osmosisd(
@@ -263,32 +277,39 @@ async fn prompt_and_install_osmosisd(
     }
 }
 
-fn locate_osmosisd_binary() -> Option<(PathBuf, bool)> {
-    if let Some(path_var) = env::var_os("PATH") {
-        for directory in env::split_paths(&path_var) {
-            let candidate = directory.join("osmosisd");
-            if candidate.is_file() {
-                return Some((candidate, true));
-            }
-        }
+fn initialize_testnet_home(
+    spec: &CosmosNodeSpec,
+    home_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config_toml_path = home_path.join("config/config.toml");
+    let genesis_path = home_path.join("config/genesis.json");
+    if config_toml_path.exists() && genesis_path.exists() {
+        return Ok(());
     }
 
-    home_dir().and_then(|home| {
-        let candidate = home.join("go/bin/osmosisd");
-        if candidate.is_file() {
-            Some((candidate, false))
-        } else {
-            None
-        }
-    })
-}
+    fs::create_dir_all(home_path)?;
 
-fn init_local_network(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    if !logger::is_quite() {
-        log("Initialize local Osmosis network ...");
+    let output = Command::new(spec.binary)
+        .args([
+            "init",
+            spec.moniker,
+            "--chain-id",
+            spec.chain_id,
+            "--home",
+            home_path
+                .to_str()
+                .ok_or("Invalid testnet home directory path")?,
+        ])
+        .output()?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to initialize Osmosis testnet home: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
     }
 
-    execute_script_interactive(osmosis_dir, "make", Vec::from(["localnet-init"]))?;
     Ok(())
 }
 
@@ -333,47 +354,6 @@ fn copy_local_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::Er
     )?;
 
     verbose(&format!(
-        "Copying localnet.mk from {} to {}",
-        osmosis_dir.join("../scripts/localnet.mk").display(),
-        osmosis_dir.join("scripts/makefiles/localnet.mk").display()
-    ));
-    copy(
-        osmosis_dir.join("../scripts/localnet.mk"),
-        osmosis_dir.join("scripts/makefiles/localnet.mk"),
-        &options,
-    )?;
-
-    verbose(&format!(
-        "Copying setup_osmosis_local.sh from {} to {}",
-        osmosis_dir
-            .join("../scripts/setup_osmosis_local.sh")
-            .display(),
-        osmosis_dir
-            .join("tests/localosmosis/scripts/setup.sh")
-            .display()
-    ));
-    copy(
-        osmosis_dir.join("../scripts/setup_osmosis_local.sh"),
-        osmosis_dir.join("tests/localosmosis/scripts/setup.sh"),
-        &options,
-    )?;
-
-    verbose(&format!(
-        "Copying docker-compose.yml from {} to {}",
-        osmosis_dir
-            .join("../configuration/docker-compose.yml")
-            .display(),
-        osmosis_dir
-            .join("tests/localosmosis/docker-compose.yml")
-            .display()
-    ));
-    copy(
-        osmosis_dir.join("../configuration/docker-compose.yml"),
-        osmosis_dir.join("tests/localosmosis/docker-compose.yml"),
-        &options,
-    )?;
-
-    verbose(&format!(
         "Copying Dockerfile from {} to {}",
         osmosis_dir.join("../configuration/Dockerfile").display(),
         osmosis_dir.join("Dockerfile").display()
@@ -382,6 +362,38 @@ fn copy_local_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::Er
         osmosis_dir.join("../configuration/Dockerfile"),
         osmosis_dir.join("Dockerfile"),
         &options,
+    )?;
+
+    Ok(())
+}
+
+fn sync_workspace_assets_from_repo(
+    project_root_path: &Path,
+    osmosis_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let source_root = project_root_path.join("chains").join("osmosis");
+    let configuration_source = source_root.join("configuration");
+    let scripts_source = source_root.join("scripts");
+
+    if !configuration_source.exists() || !scripts_source.exists() {
+        return Err(format!(
+            "Missing Osmosis asset templates under {}. Expected {}/configuration and {}/scripts",
+            source_root.display(),
+            source_root.display(),
+            source_root.display()
+        )
+        .into());
+    }
+
+    let workspace_root = osmosis_dir
+        .parent()
+        .ok_or("Failed to resolve Osmosis workspace root")?;
+    fs::create_dir_all(workspace_root)?;
+
+    copy_items(
+        &vec![configuration_source, scripts_source],
+        workspace_root,
+        &fs_extra::dir::CopyOptions::new().overwrite(true),
     )?;
 
     Ok(())
