@@ -1,7 +1,13 @@
+use std::fs;
+use std::path::Path;
+
+use serde::Deserialize;
+
 pub(super) const SOURCE_REPO_URL: &str =
     "https://github.com/InjectiveFoundation/injective-core.git";
 pub(super) const SOURCE_DIR: &str = ".caribic/injective/injective-core";
 pub(super) const LOCAL_DOCKER_IMAGE: &str = "injectivelabs/injective-core:v1.18.0";
+pub(super) const LOCAL_CONFIGURATION_FILE: &str = "chains/injective/configuration/config.yml";
 
 pub(super) const LOCAL_CHAIN_ID: &str = "injective-777";
 pub(super) const LOCAL_MONIKER: &str = "caribic-injective-local";
@@ -10,8 +16,9 @@ pub(super) const LOCAL_RPC_PORT: u16 = 26660;
 pub(super) const LOCAL_GRPC_PORT: u16 = 9097;
 pub(super) const LOCAL_HOME_DIR: &str = ".injectived-local";
 pub(super) const LOCAL_VALIDATOR_KEY: &str = "validator";
-pub(super) const LOCAL_VALIDATOR_MNEMONIC: &str =
-    "bottom loan skill merry east cradle onion journey palm apology verb edit desert impose absurd oil bubble sweet glove shallow size build burst effort";
+pub(super) const LOCAL_VALIDATOR_MNEMONIC_ACCOUNT: &str = "injective-local-validator";
+pub(super) const LOCAL_RELAYER_MNEMONIC_ACCOUNT: &str = "injective-local-relayer";
+pub(super) const ENTRYPOINT_RELAYER_MNEMONIC_ACCOUNT: &str = "entrypoint-relayer";
 pub(super) const LOCAL_GENESIS_ACCOUNT_AMOUNT: &str =
     "100000000000000000000stake,100000000000000000000inj";
 pub(super) const LOCAL_GENTX_AMOUNT: &str = "50000000000000000000stake";
@@ -33,3 +40,62 @@ pub(super) const TESTNET_SEEDS: &str =
     "20a548c1ede8f31d13309171f76e0f4624e126b8@seed.testnet.injective.network:26656";
 pub(super) const TESTNET_PERSISTENT_PEERS: &str =
     "3f472746f46493309650e5a033076689996c8881@testnet-seed.injective.network:26656,dacd5d0afce07bd5e43f33b1f5be4ad2f7f9f273@134.209.251.247:26656,8e7a64daa7793f36f68f4cb1ee2f9744a10f94ac@143.198.139.33:26656,e265d636f4f7731207a70f9fcf7b51532aae5820@68.183.176.90:26656,fc86277053c2e045790d44591e8f375f16d991f2@143.198.29.21:26656";
+
+#[derive(Debug, Deserialize)]
+struct InjectiveConfigFile {
+    accounts: Vec<AccountEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AccountEntry {
+    name: String,
+    mnemonic: Option<String>,
+}
+
+/// Load a deterministic local-demo mnemonic by account name from chains/injective/configuration/config.yml.
+pub(super) fn load_demo_mnemonic(
+    project_root_path: &Path,
+    account_name: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let config_path = project_root_path.join(LOCAL_CONFIGURATION_FILE);
+    if !config_path.is_file() {
+        return Err(format!(
+            "Injective config file not found at {}",
+            config_path.display()
+        )
+        .into());
+    }
+
+    let file_contents = fs::read_to_string(config_path.as_path()).map_err(|error| {
+        format!(
+            "Failed to read Injective config file {}: {}",
+            config_path.display(),
+            error
+        )
+    })?;
+
+    let parsed: InjectiveConfigFile =
+        serde_yaml::from_str(file_contents.as_str()).map_err(|error| {
+            format!(
+                "Failed to parse Injective config file {}: {}",
+                config_path.display(),
+                error
+            )
+        })?;
+
+    parsed
+        .accounts
+        .iter()
+        .find(|account| account.name == account_name)
+        .and_then(|account| account.mnemonic.as_ref())
+        .map(|mnemonic| mnemonic.trim().to_string())
+        .filter(|mnemonic| !mnemonic.is_empty())
+        .ok_or_else(|| {
+            format!(
+                "Missing mnemonic for Injective account '{}' in {}",
+                account_name,
+                config_path.display()
+            )
+            .into()
+        })
+}
