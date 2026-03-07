@@ -26,6 +26,22 @@ check_string_empty() {
   fi
 }
 
+extract_first_injective_address() {
+  grep -Eo 'inj1[0-9a-z]{38}' | head -n 1
+}
+
+resolve_injective_receiver_from_hermes() {
+  local chain_id="$1"
+  local key_list_output
+  key_list_output="$("$HERMES_BIN" keys list --chain "$chain_id" 2>/dev/null || true)"
+  if [ -z "$key_list_output" ]; then
+    echo ""
+    return 1
+  fi
+
+  printf '%s\n' "$key_list_output" | extract_first_injective_address
+}
+
 get_mock_token_denom() {
   local handler_file="$1"
 
@@ -550,6 +566,7 @@ fi
 INJECTIVE_DIR="${CARIBIC_INJECTIVE_DIR:-$(realpath "$script_dir/..")}"
 HERMES_BIN="$repo_root/relayer/target/release/hermes"
 INJECTIVE_COMPOSE_FILE="$INJECTIVE_DIR/configuration/docker-compose.yml"
+INJECTIVE_NETWORK="${INJECTIVE_NETWORK:-local}"
 
 if [ ! -x "$HERMES_BIN" ]; then
   echo "Local Hermes binary not found at $HERMES_BIN."
@@ -557,14 +574,31 @@ if [ ! -x "$HERMES_BIN" ]; then
   exit 1
 fi
 
-if [ ! -f "$INJECTIVE_COMPOSE_FILE" ]; then
+case "$INJECTIVE_NETWORK" in
+  local|testnet)
+    ;;
+  *)
+    echo "Unsupported INJECTIVE_NETWORK '$INJECTIVE_NETWORK'. Expected 'local' or 'testnet'."
+    exit 1
+    ;;
+esac
+
+if [ "$INJECTIVE_NETWORK" = "local" ] && [ ! -f "$INJECTIVE_COMPOSE_FILE" ]; then
   echo "Injective compose file not found at $INJECTIVE_COMPOSE_FILE"
   exit 1
 fi
 
 CARDANO_CHAIN_ID="${CARDANO_CHAIN_ID:-cardano-devnet}"
 ENTRYPOINT_CHAIN_ID="${ENTRYPOINT_CHAIN_ID:-entrypoint}"
-INJECTIVE_CHAIN_ID="${INJECTIVE_CHAIN_ID:-injective-777}"
+if [ -z "${INJECTIVE_CHAIN_ID:-}" ]; then
+  if [ "$INJECTIVE_NETWORK" = "testnet" ]; then
+    INJECTIVE_CHAIN_ID="injective-888"
+  else
+    INJECTIVE_CHAIN_ID="injective-777"
+  fi
+else
+  INJECTIVE_CHAIN_ID="${INJECTIVE_CHAIN_ID}"
+fi
 ENTRYPOINT_RECEIVER="${ENTRYPOINT_RECEIVER:-pfm}"
 CARDANO_RECEIVER="${CARDANO_RECEIVER:-247570b8ba7dc725e9ff37e9757b8148b4d5a125958edac2fd4417b8}"
 INJECTIVE_LOCAL_VALIDATOR_KEY="${INJECTIVE_LOCAL_VALIDATOR_KEY:-validator}"
@@ -608,11 +642,24 @@ if [ -z "$baseline_entrypoint_cardano_seq" ]; then
 fi
 
 INJECTIVE_RECEIVER="$(
-  docker compose -f "$INJECTIVE_COMPOSE_FILE" exec -T injectived \
-    injectived keys show "$INJECTIVE_LOCAL_VALIDATOR_KEY" -a --keyring-backend test --home /root/.injectived 2>/dev/null |
-    tr -d '\r' | tail -n 1
-)" || true
-check_string_empty "$INJECTIVE_RECEIVER" "Unable to resolve Injective validator address from local container."
+  printf '%s' "${INJECTIVE_RECEIVER:-}" | tr -d '\r' | tail -n 1
+)"
+
+if [ -z "$INJECTIVE_RECEIVER" ]; then
+  if [ "$INJECTIVE_NETWORK" = "local" ]; then
+    INJECTIVE_RECEIVER="$(
+      docker compose -f "$INJECTIVE_COMPOSE_FILE" exec -T injectived \
+        injectived keys show "$INJECTIVE_LOCAL_VALIDATOR_KEY" -a --keyring-backend test --home /root/.injectived 2>/dev/null |
+        tr -d '\r' | tail -n 1
+    )" || true
+    check_string_empty "$INJECTIVE_RECEIVER" "Unable to resolve Injective validator address from local container."
+  else
+    INJECTIVE_RECEIVER="$(resolve_injective_receiver_from_hermes "$INJECTIVE_CHAIN_ID" || true)"
+    check_string_empty "$INJECTIVE_RECEIVER" \
+      "Unable to resolve Injective receiver from Hermes keys for chain '$INJECTIVE_CHAIN_ID'. Add/fund a testnet key (caribic keys add --chain $INJECTIVE_CHAIN_ID --mnemonic-file <path>) or set INJECTIVE_RECEIVER."
+  fi
+fi
+
 echo "Injective receiver address: $INJECTIVE_RECEIVER"
 
 forward_to_injective_memo="$(

@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::process::Command;
 use std::time::Duration;
 
 use serde_json::Value;
@@ -8,7 +9,11 @@ use crate::{
         self,
         injective::{
             configure_hermes_for_demo as configure_injective_hermes_for_demo,
-            stop_local as stop_injective_local, workspace_dir as injective_workspace_dir,
+            configure_hermes_for_testnet_demo as configure_injective_hermes_for_testnet_demo,
+            local_chain_id as injective_local_chain_id, stop_local as stop_injective_local,
+            stop_testnet as stop_injective_testnet,
+            testnet_chain_id as injective_testnet_chain_id,
+            workspace_dir as injective_workspace_dir,
         },
         osmosis::{configure_hermes_for_demo, stop_local, workspace_dir},
     },
@@ -20,8 +25,14 @@ use crate::{
 };
 
 const TOKEN_SWAP_DEFAULT_CHAIN: DemoChain = DemoChain::Osmosis;
-const TOKEN_SWAP_SUPPORTED_TARGETS: [(&str, &str); 2] =
-    [("osmosis", "local"), ("injective", "local")];
+const TOKEN_SWAP_SUPPORTED_TARGETS: [(&str, &str); 3] = [
+    ("osmosis", "local"),
+    ("injective", "local"),
+    ("injective", "testnet"),
+];
+const INJECTIVE_TESTNET_MIN_FIRST_BLOCK_WAIT_MS: u64 = 30 * 60 * 1000;
+const INJECTIVE_TESTNET_RECOVERY_HINT: &str =
+    "caribic start injective --network testnet --chain-flag stateful=false";
 
 fn cardano_chain_id() -> String {
     config::get_config().chains.cardano.chain_id
@@ -49,6 +60,9 @@ pub async fn run_token_swap_demo(
     match (chain_id.as_str(), resolved_network.as_str()) {
         ("osmosis", "local") => run_osmosis_local_token_swap_demo(project_root_path).await,
         ("injective", "local") => run_injective_local_token_swap_demo(project_root_path).await,
+        ("injective", "testnet") => {
+            run_injective_testnet_token_swap_demo(project_root_path).await
+        }
         _ => Err(format!(
             "Token-swap demo is not implemented for chain '{}' on network '{}'. Currently supported: {}",
             chain_id,
@@ -83,8 +97,7 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
     logger::verbose(&format!("{}", osmosis_dir.display()));
 
     let required_services = [
-        "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril", "cosmos", "osmosis",
-        "redis",
+        "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril", "cosmos", "osmosis", "redis",
     ];
     if let Err(error) =
         ensure_demo_services_ready(project_root_path, &required_services, "token-swap")
@@ -222,23 +235,60 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
 }
 
 async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result<(), String> {
+    run_injective_token_swap_demo(project_root_path, "local").await
+}
+
+async fn run_injective_testnet_token_swap_demo(project_root_path: &Path) -> Result<(), String> {
+    run_injective_token_swap_demo(project_root_path, "testnet").await
+}
+
+async fn run_injective_token_swap_demo(
+    project_root_path: &Path,
+    network: &str,
+) -> Result<(), String> {
     let injective_dir = injective_workspace_dir(project_root_path);
     logger::verbose(&format!("{}", injective_dir.display()));
 
     let required_services = [
-        "gateway",
-        "cardano",
-        "postgres",
-        "kupo",
-        "ogmios",
-        "mithril",
-        "cosmos",
-        "injective",
+        "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril", "cosmos",
     ];
     if let Err(error) =
         ensure_demo_services_ready(project_root_path, &required_services, "token-swap")
     {
-        return fail_with_injective_cleanup(injective_dir.as_path(), &error);
+        return fail_with_injective_cleanup(injective_dir.as_path(), network, &error);
+    }
+
+    if let Err(error) = ensure_optional_chain_network_ready(project_root_path, "injective", network)
+    {
+        return fail_with_injective_cleanup(injective_dir.as_path(), network, &error);
+    }
+
+    if network == "testnet" {
+        if let Err(initial_error) =
+            wait_for_injective_first_block_for_demo(network, injective_dir.as_path()).await
+        {
+            logger::warn(&format!(
+                "WARN: Initial Injective testnet readiness failed. Attempting one clean recovery restart.\n{}",
+                initial_error
+            ));
+
+            if let Err(recovery_error) =
+                recover_injective_testnet_for_demo(project_root_path, injective_dir.as_path())
+                    .await
+            {
+                return fail_with_injective_cleanup(
+                    injective_dir.as_path(),
+                    network,
+                    &format!("{}\n{}", initial_error, recovery_error),
+                );
+            }
+
+            if let Err(error) =
+                wait_for_injective_first_block_for_demo(network, injective_dir.as_path()).await
+            {
+                return fail_with_injective_cleanup(injective_dir.as_path(), network, &error);
+            }
+        }
     }
 
     logger::log("PASS: Required token-swap services are running");
@@ -259,6 +309,7 @@ async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result
     if let Err(error) = ensure_cardano_entrypoint_transfer_channel() {
         return fail_with_injective_cleanup(
             injective_dir.as_path(),
+            network,
             &format!(
                 "ERROR: Failed to prepare Cardano↔Entrypoint transfer path: {}",
                 error
@@ -266,11 +317,24 @@ async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result
         );
     }
 
-    match configure_injective_hermes_for_demo(project_root_path, injective_dir.as_path()) {
+    let configure_hermes_result = match network {
+        "local" => configure_injective_hermes_for_demo(project_root_path, injective_dir.as_path()),
+        "testnet" => {
+            configure_injective_hermes_for_testnet_demo(project_root_path, injective_dir.as_path())
+        }
+        _ => Err(format!(
+            "Unsupported Injective network '{}' for token-swap demo",
+            network
+        )
+        .into()),
+    };
+
+    match configure_hermes_result {
         Ok(_) => logger::log("PASS: Hermes configured successfully and channels built"),
         Err(error) => {
             return fail_with_injective_cleanup(
                 injective_dir.as_path(),
+                network,
                 &format!("ERROR: Failed to configure Hermes for Injective: {}", error),
             )
         }
@@ -279,8 +343,19 @@ async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result
     if let Err(error) =
         ensure_hermes_daemon_for_token_swap(project_root_path, restart_relayer_after_setup)
     {
-        return fail_with_injective_cleanup(injective_dir.as_path(), &error);
+        return fail_with_injective_cleanup(injective_dir.as_path(), network, &error);
     }
+
+    let injective_chain_id = match network {
+        "local" => injective_local_chain_id(),
+        "testnet" => injective_testnet_chain_id(),
+        _ => {
+            return Err(format!(
+                "Unsupported Injective network '{}' for token-swap demo",
+                network
+            ))
+        }
+    };
 
     let swap_script_path = project_root_path
         .join("chains")
@@ -308,6 +383,8 @@ async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result
                     .to_str()
                     .ok_or_else(|| "ERROR: Invalid injective workspace path".to_string())?,
             ),
+            ("INJECTIVE_CHAIN_ID", injective_chain_id),
+            ("INJECTIVE_NETWORK", network),
         ]),
     )
     .map_err(|error| {
@@ -317,10 +394,297 @@ async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result
         )
     })?;
 
-    logger::log("PASS: Cardano-to-Injective token swap completed");
+    logger::log(&format!(
+        "PASS: Cardano-to-Injective token swap completed (network: {})",
+        network
+    ));
     logger::log("\nPASS: Token swap demo flow completed successfully");
 
     Ok(())
+}
+
+fn injective_status_url_for_network(network: &str) -> Result<&'static str, String> {
+    match network {
+        "local" => Ok("http://127.0.0.1:26660/status"),
+        "testnet" => Ok("http://127.0.0.1:26659/status"),
+        _ => Err(format!(
+            "Unsupported Injective network '{}' for status readiness check",
+            network
+        )),
+    }
+}
+
+async fn wait_for_injective_first_block_for_demo(
+    network: &str,
+    injective_dir: &Path,
+) -> Result<(), String> {
+    let status_url = injective_status_url_for_network(network)?;
+    let health_config = config::get_config().health;
+    let retry_interval_ms = health_config.cosmos_retry_interval_ms.max(500);
+    let configured_retries = health_config.cosmos_max_retries.max(1);
+    let min_testnet_retries = (INJECTIVE_TESTNET_MIN_FIRST_BLOCK_WAIT_MS / retry_interval_ms)
+        .max(1)
+        .min(u32::MAX as u64) as u32;
+    let max_retries = if network == "testnet" {
+        configured_retries.max(min_testnet_retries)
+    } else {
+        configured_retries
+    };
+    let log_every_attempts = 6_u32;
+    let mut stagnant_not_syncing_checks = 0_u32;
+
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .map_err(|error| {
+            format!(
+                "Failed to build HTTP client for Injective readiness check: {}",
+                error
+            )
+        })?;
+
+    logger::log(&format!(
+        "Waiting for Injective {} to produce first block before Hermes client creation...",
+        network
+    ));
+    if network == "testnet" && max_retries > configured_retries {
+        logger::log(&format!(
+            "Injective testnet readiness window extended to {} attempts (~{} min) to allow snapshot restore and p2p catch-up.",
+            max_retries,
+            (max_retries as u64 * retry_interval_ms) / 60_000
+        ));
+    }
+
+    for attempt in 1..=max_retries {
+        let (latest_height, catching_up) = match client.get(status_url).send().await {
+            Ok(response) if response.status().is_success() => {
+                let payload = response.json::<Value>().await.unwrap_or_default();
+                payload["result"]["sync_info"]["latest_block_height"]
+                    .as_str()
+                    .and_then(|raw| raw.parse::<u64>().ok())
+                    .or_else(|| payload["result"]["sync_info"]["latest_block_height"].as_u64())
+                    .map(|height| {
+                        (
+                            height,
+                            payload["result"]["sync_info"]["catching_up"]
+                                .as_bool()
+                                .unwrap_or(false),
+                        )
+                    })
+                    .unwrap_or((0, false))
+            }
+            _ => (0, false),
+        };
+
+        if latest_height > 0 {
+            logger::log(&format!(
+                "PASS: Injective {} produced first block at height {}",
+                network, latest_height
+            ));
+            return Ok(());
+        }
+
+        if network == "testnet" {
+            if !catching_up {
+                stagnant_not_syncing_checks = stagnant_not_syncing_checks.saturating_add(1);
+            } else {
+                stagnant_not_syncing_checks = 0;
+            }
+
+            if stagnant_not_syncing_checks >= 6 {
+                let log_tail = injective_testnet_log_tail(injective_dir);
+                return Err(format!(
+                    "Injective testnet RPC is reachable but still at height 0 with catching_up=false.\n\
+                     This usually means snapshot bootstrap or peer synchronization stalled.\n\
+                     Restart with a clean bootstrap, for example:\n\
+                     {}\n\
+                     Status endpoint checked: {}\n{}",
+                    INJECTIVE_TESTNET_RECOVERY_HINT, status_url, log_tail
+                ));
+            }
+        }
+
+        if network == "testnet" && !injective_testnet_container_running(injective_dir) {
+            let log_tail = injective_testnet_log_tail(injective_dir);
+            return Err(format!(
+                "Injective testnet container is no longer running before first block.\n\
+                 Status endpoint checked: {}\n{}",
+                status_url, log_tail
+            ));
+        }
+
+        if network == "testnet" && (attempt == 1 || attempt % log_every_attempts == 0) {
+            let log_tail = injective_testnet_log_tail(injective_dir);
+            if injective_testnet_bootstrap_failed(log_tail.as_str()) {
+                return Err(format!(
+                    "Injective testnet snapshot bootstrap failed while latest block height is still 0.\n\
+                     Hermes client creation would fail until the local testnet node produces blocks.\n\
+                     Status endpoint checked: {}\n{}",
+                    status_url, log_tail
+                ));
+            }
+        }
+
+        if attempt == 1 || attempt % log_every_attempts == 0 || attempt == max_retries {
+            if network == "testnet" {
+                logger::log(&format!(
+                    "Injective {} not ready yet (attempt {}/{}): latest block height is {}, catching_up={}",
+                    network, attempt, max_retries, latest_height, catching_up
+                ));
+            } else {
+                logger::log(&format!(
+                    "Injective {} not ready yet (attempt {}/{}): latest block height is {}",
+                    network, attempt, max_retries, latest_height
+                ));
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(retry_interval_ms)).await;
+    }
+
+    let log_tail = injective_testnet_log_tail(injective_dir);
+    let mut message = format!(
+        "Injective {} stayed at block height 0 during readiness window. Hermes client creation would fail.\n\
+         Status endpoint checked: {}",
+        network, status_url
+    );
+    if network == "testnet" {
+        let lower_log_tail = log_tail.to_ascii_lowercase();
+        if lower_log_tail.contains("snapshot bootstrap failed")
+            || lower_log_tail.contains("unable to resolve injective testnet snapshot url")
+            || lower_log_tail.contains("no space left on device")
+            || lower_log_tail.contains("failed to fetch snapshot")
+        {
+            message.push_str(
+                "\nSnapshot bootstrap failed before Injective testnet produced first block.\n\
+                 Retry with a clean bootstrap:\n",
+            );
+            message.push_str(INJECTIVE_TESTNET_RECOVERY_HINT);
+        }
+        message.push('\n');
+        message.push_str(log_tail.as_str());
+    }
+    Err(message)
+}
+
+async fn recover_injective_testnet_for_demo(
+    project_root_path: &Path,
+    injective_dir: &Path,
+) -> Result<(), String> {
+    logger::warn("WARN: Restarting Injective testnet with clean snapshot bootstrap...");
+    stop_injective_testnet(injective_dir);
+
+    let adapter = chains::get_chain_adapter("injective")
+        .ok_or_else(|| "Injective chain adapter is not registered".to_string())?;
+    let mut recovery_flags = chains::ChainFlags::new();
+    recovery_flags.insert("stateful".to_string(), "false".to_string());
+    let request = chains::ChainStartRequest {
+        network: "testnet",
+        flags: &recovery_flags,
+    };
+    adapter
+        .start(project_root_path, &request)
+        .await
+        .map_err(|error| {
+            format!(
+                "ERROR: Automatic Injective testnet recovery start failed: {}",
+                error
+            )
+        })?;
+
+    logger::log("PASS: Injective testnet recovered with clean bootstrap");
+    Ok(())
+}
+
+fn injective_testnet_bootstrap_failed(log_tail: &str) -> bool {
+    let lower = log_tail.to_ascii_lowercase();
+    lower.contains("snapshot bootstrap failed")
+        || lower.contains("unable to resolve injective testnet snapshot url")
+        || lower.contains("snapshot restore completed but")
+        || lower.contains("no space left on device")
+}
+
+fn injective_testnet_container_running(injective_dir: &Path) -> bool {
+    let output = Command::new("docker")
+        .current_dir(injective_dir)
+        .args([
+            "compose",
+            "-f",
+            "configuration/docker-compose.yml",
+            "ps",
+            "-q",
+            "injectived-testnet",
+        ])
+        .output();
+
+    let Ok(output) = output else {
+        return false;
+    };
+
+    if !output.status.success() {
+        return false;
+    }
+
+    let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if container_id.is_empty() {
+        return false;
+    }
+
+    let inspect_output = Command::new("docker")
+        .args([
+            "inspect",
+            "--format",
+            "{{.State.Status}}",
+            container_id.as_str(),
+        ])
+        .output();
+
+    let Ok(inspect_output) = inspect_output else {
+        return false;
+    };
+    if !inspect_output.status.success() {
+        return false;
+    }
+
+    String::from_utf8_lossy(&inspect_output.stdout).trim() == "running"
+}
+
+fn injective_testnet_log_tail(injective_dir: &Path) -> String {
+    let output = Command::new("docker")
+        .current_dir(injective_dir)
+        .args([
+            "compose",
+            "-f",
+            "configuration/docker-compose.yml",
+            "logs",
+            "--tail",
+            "300",
+            "injectived-testnet",
+        ])
+        .output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if stdout.trim().is_empty() {
+                "Injective testnet container log is empty".to_string()
+            } else {
+                stdout.to_string()
+            }
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            format!(
+                "Unable to read Injective testnet container logs:\n{}",
+                stderr.trim()
+            )
+        }
+        Err(error) => format!(
+            "Unable to run docker compose logs for Injective testnet container: {}",
+            error
+        ),
+    }
 }
 
 /// Ensures all services required by a demo flow are healthy before continuing.
@@ -349,8 +713,50 @@ fn ensure_demo_services_ready(
         message.push_str(&format!("  - {failure}\n"));
     }
     message.push_str(
-        "\nStart services first:\n  - caribic start --clean --with-mithril\n  - caribic start osmosis",
+        "\nStart services first:\n  - caribic start --clean --with-mithril\n  - caribic start <chain> --network <network>",
     );
+
+    Err(message)
+}
+
+fn ensure_optional_chain_network_ready(
+    project_root_path: &Path,
+    chain_id: &str,
+    network: &str,
+) -> Result<(), String> {
+    let adapter = chains::get_chain_adapter(chain_id)
+        .ok_or_else(|| format!("Optional chain adapter '{}' is not registered", chain_id))?;
+    let flags = chains::ChainFlags::new();
+    let statuses = adapter
+        .health(project_root_path, network, &flags)
+        .map_err(|error| {
+            format!(
+                "Failed to check '{}' health for network '{}': {}",
+                chain_id, network, error
+            )
+        })?;
+
+    let unhealthy = statuses
+        .into_iter()
+        .filter(|status| !status.healthy)
+        .map(|status| format!("{}: {}", status.label, status.status))
+        .collect::<Vec<_>>();
+
+    if unhealthy.is_empty() {
+        return Ok(());
+    }
+
+    let mut message = format!(
+        "ERROR: '{}' chain network '{}' is not healthy for token-swap demo.\n",
+        chain_id, network
+    );
+    for failure in unhealthy {
+        message.push_str(&format!("  - {}\n", failure));
+    }
+    message.push_str(&format!(
+        "\nStart services first:\n  - caribic start {} --network {}",
+        chain_id, network
+    ));
 
     Err(message)
 }
@@ -1152,9 +1558,17 @@ fn fail_with_cleanup(osmosis_dir: &Path, message: &str) -> Result<(), String> {
     Err(message.to_string())
 }
 
-fn fail_with_injective_cleanup(injective_dir: &Path, message: &str) -> Result<(), String> {
+fn fail_with_injective_cleanup(
+    injective_dir: &Path,
+    network: &str,
+    message: &str,
+) -> Result<(), String> {
     logger::error(message);
     logger::log("Stopping services...");
-    stop_injective_local(injective_dir);
+    if network == "local" {
+        stop_injective_local(injective_dir);
+    } else if network == "testnet" {
+        stop_injective_testnet(injective_dir);
+    }
     Err(message.to_string())
 }
