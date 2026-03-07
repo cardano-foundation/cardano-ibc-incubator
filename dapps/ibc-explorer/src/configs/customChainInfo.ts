@@ -14,6 +14,7 @@ const getEntrypointRestEndpoint = () =>
   process.env.REACT_APP_ENTRYPOINT_REST_ENDPOINT || '';
 const entrypointChainConfig: Chain = {
   chain_name: ENTRYPOINT_CHAIN_ID,
+  chain_type: 'cosmos',
   status: 'active',
   network_type: 'testnet',
   pretty_name: 'Entrypoint chain Localnet',
@@ -66,6 +67,7 @@ const entrypointChainConfig: Chain = {
 
 const localOsmosisChainConfig: Chain = {
   chain_name: 'localosmosis',
+  chain_type: 'cosmos',
   status: 'active',
   network_type: 'testnet',
   pretty_name: 'Local Osmosis',
@@ -121,6 +123,7 @@ export const isCardanoMainnet =
 
 const cardanoChain: Chain = {
   chain_name: 'cardano',
+  chain_type: 'unknown',
   status: 'active',
   network_type: isCardanoMainnet ? 'mainnet' : 'devnet',
   pretty_name: 'Cardano',
@@ -157,6 +160,18 @@ export const chainsMapping: { [key: string]: any } = allChains.reduce(
 export const CARDANO_LOVELACE_HEX = '6c6f76656c616365';
 
 export const UNKNOWN_TOKEN_IMG = UnknownTokenIcon;
+
+type ChainAssetEntry = {
+  base: string;
+  logo_URIs?: {
+    svg?: string;
+  };
+};
+
+type ChainAssetListLike = {
+  chain_name: string;
+  assets: ChainAssetEntry[];
+};
 
 const entrypointChainAssetList: AssetList = {
   chain_name: ENTRYPOINT_CHAIN_ID,
@@ -257,11 +272,11 @@ const cardanoAssetList: AssetList = {
   ],
 };
 
-const allAssetsAndChain = [
-  ...assets,
-  entrypointChainAssetList,
-  localOsmosisAssetList,
-  cardanoAssetList,
+const allAssetsAndChain: ChainAssetListLike[] = [
+  ...(assets as unknown as ChainAssetListLike[]),
+  entrypointChainAssetList as ChainAssetListLike,
+  localOsmosisAssetList as ChainAssetListLike,
+  cardanoAssetList as ChainAssetListLike,
 ];
 
 export const findTokenImg = (chainId: string, tokenNameStr: string): string => {
@@ -275,9 +290,9 @@ export const findTokenImg = (chainId: string, tokenNameStr: string): string => {
   );
   if (!chainAssets) return UNKNOWN_TOKEN_IMG;
   const assetsData = chainAssets.assets;
-  const asset = assetsData.find(
-    (a) => a.base.toLowerCase() === tokenName.toLowerCase(),
-  );
+  const asset = assetsData.find((a: ChainAssetEntry) => {
+    return a.base.toLowerCase() === tokenName.toLowerCase();
+  });
   if (!asset || !asset?.logo_URIs?.svg) return UNKNOWN_TOKEN_IMG;
   return asset?.logo_URIs?.svg;
 };
