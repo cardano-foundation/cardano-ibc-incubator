@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use dirs::home_dir;
 
 use crate::chains::{
-    check_port_health, check_rpc_health,
+    check_rpc_health,
     cosmos_node::{
         managed_node_health, CosmosChainOptions, CosmosNetworkKind, CosmosNodeSpec,
         CosmosStateSyncSpec,
@@ -271,16 +271,11 @@ fn local_redis_sidecar_health(project_root_path: &Path) -> ChainHealthStatus {
             };
         }
 
-        let port_status = check_port_health("redis", 6379, "Osmosis Redis sidecar");
-        if port_status.healthy {
-            return port_status;
-        }
-
         return ChainHealthStatus {
             id: "redis",
             label: "Osmosis Redis sidecar",
-            healthy: false,
-            status: "Container running, but port 6379 is not accessible".to_string(),
+            healthy: true,
+            status: "Container running".to_string(),
         };
     }
 
