@@ -29,5 +29,19 @@ After set up the `.env`, run:
 yarn && yarn dev
 ```
 
+## Containerized local run
+This frontend is optional and is not started by `caribic start`.
+
+To run it as a containerized demo UI:
+
+```bash
+docker compose -f dapps/docker-compose.yml up --build ibc-swap-client
+```
+
+By default the container is published on `http://localhost:3000`. Override
+that with `IBC_SWAP_HOST_PORT` if needed.
+
+See [dapps/README.md](../../README.md) for compose variables and default local endpoint wiring.
+
 ## Note
 This project required Node >= 18
