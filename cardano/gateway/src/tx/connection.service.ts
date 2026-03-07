@@ -64,6 +64,9 @@ import { TxOperationRunnerService } from './tx-operation-runner.service';
 
 @Injectable()
 export class ConnectionService {
+  private static readonly CONN_OPEN_ACK_COMPLETE_MAX_ATTEMPTS = 5;
+  private static readonly CONN_OPEN_ACK_COMPLETE_BASE_DELAY_MS = 1000;
+
   constructor(
     private readonly logger: Logger,
     private configService: ConfigService,
@@ -84,6 +87,33 @@ export class ConnectionService {
     if (txHashA < txHashB) return -1;
     if (txHashA > txHashB) return 1;
     return a.outputIndex - b.outputIndex;
+  }
+
+  private isTransientKupmiosTransportError(error: unknown): boolean {
+    const errorText = inspect(error, { depth: 10 }).toLowerCase();
+    const transientMarkers = [
+      'kupmioserror',
+      'transport error',
+      'requesterror',
+      'etimedout',
+      'econnreset',
+      'econnrefused',
+      'socket hang up',
+      'fetch failed',
+      'kupo',
+      '/matches/',
+    ];
+    return transientMarkers.some((marker) => errorText.includes(marker));
+  }
+
+  private computeRetryDelayMs(attempt: number): number {
+    const exp = Math.max(0, attempt - 1);
+    const raw = ConnectionService.CONN_OPEN_ACK_COMPLETE_BASE_DELAY_MS * Math.pow(2, exp);
+    return Math.round(raw);
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private async refreshWalletContext(address: string, context: string): Promise<void> {
@@ -445,11 +475,46 @@ export class ConnectionService {
       //
       // If you need to fall back to local evaluation during debugging, switch this to:
       //   `.complete({ localUPLCEval: true })`
-      await this.refreshWalletContext(constructedAddress, 'connectionOpenAck');
-      const completedUnsignedTx = await unsignedConnectionOpenAckTxValidTo.complete({
-        localUPLCEval: false,
-        setCollateral: TRANSACTION_SET_COLLATERAL,
-      });
+      let completedUnsignedTx: Awaited<ReturnType<TxBuilder['complete']>> | undefined;
+      let lastCompleteError: unknown = null;
+      for (
+        let attempt = 1;
+        attempt <= ConnectionService.CONN_OPEN_ACK_COMPLETE_MAX_ATTEMPTS;
+        attempt += 1
+      ) {
+        try {
+          await this.refreshWalletContext(constructedAddress, 'connectionOpenAck');
+          completedUnsignedTx = await unsignedConnectionOpenAckTxValidTo.complete({
+            localUPLCEval: false,
+            setCollateral: TRANSACTION_SET_COLLATERAL,
+          });
+          break;
+        } catch (completeError) {
+          lastCompleteError = completeError;
+          const isTransient = this.isTransientKupmiosTransportError(completeError);
+          if (
+            !isTransient ||
+            attempt === ConnectionService.CONN_OPEN_ACK_COMPLETE_MAX_ATTEMPTS
+          ) {
+            throw completeError;
+          }
+
+          const retryDelayMs = this.computeRetryDelayMs(attempt);
+          this.logger.warn(
+            `[connectionOpenAck] transient Kupmios/Kupo transport failure while completing tx (attempt ${attempt}/${ConnectionService.CONN_OPEN_ACK_COMPLETE_MAX_ATTEMPTS}); retrying in ${retryDelayMs}ms`,
+          );
+          this.logger.warn(
+            `[connectionOpenAck] transient error detail: ${inspect(completeError, { depth: 5 })}`,
+          );
+          await this.sleep(retryDelayMs);
+        }
+      }
+
+      if (!completedUnsignedTx) {
+        throw new GrpcInternalException(
+          `connectionOpenAck failed to complete unsigned tx after ${ConnectionService.CONN_OPEN_ACK_COMPLETE_MAX_ATTEMPTS} attempts: ${inspect(lastCompleteError, { depth: 5 })}`,
+        );
+      }
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       const unsignedTxHash = completedUnsignedTx.toHash();
