@@ -41,7 +41,7 @@ caribic start injective --network testnet
 
 Injective startup note:
 - `caribic start injective --network local` starts a local single-node Injective devnet.
-- `caribic start injective --network testnet` starts a local `injectived` process that state-syncs from public testnet RPC.
+- `caribic start injective --network testnet` starts a local `injectived` process bootstrapped from a public Injective testnet snapshot.
 - `caribic start injective --network mainnet` is intentionally not implemented yet.
 - If `injectived` is missing, caribic prompts to install it from source (`InjectiveFoundation/injective-core`) and runs `make install`.
 
@@ -93,6 +93,7 @@ Convenience wrapper around Hermes keyring operations.
 ```bash
 caribic keys list
 caribic keys add --chain entrypoint --mnemonic-file ./my-mnemonic.txt --overwrite
+caribic keys add --chain injective-888 --mnemonic-file ./injective.txt --key-name injective-888-relayer --hd-path "m/44'/60'/0'/0/0" --overwrite
 caribic keys delete --chain entrypoint --key-name relayer
 ```
 
