@@ -2042,6 +2042,7 @@ pub fn hermes_keys_add(
     chain: &str,
     mnemonic_file: &Path,
     key_name: Option<&str>,
+    hd_path: Option<&str>,
     overwrite: bool,
 ) -> Result<String, Box<dyn std::error::Error>> {
     if !mnemonic_file.exists() {
@@ -2056,6 +2057,11 @@ pub fn hermes_keys_add(
     if let Some(name) = key_name {
         args.push("--key-name");
         args.push(name);
+    }
+
+    if let Some(path) = hd_path {
+        args.push("--hd-path");
+        args.push(path);
     }
 
     if overwrite {
@@ -2102,6 +2108,89 @@ fn parse_hermes_key_line(line: &str) -> Option<(String, String)> {
     None
 }
 
+fn parse_toml_quoted_assignment(line: &str, key: &str) -> Option<String> {
+    let (lhs, rhs) = line.split_once('=')?;
+    if lhs.trim() != key {
+        return None;
+    }
+
+    let rhs = rhs.trim();
+    let quote = rhs.chars().next()?;
+    if quote != '\'' && quote != '"' {
+        return None;
+    }
+
+    let value = &rhs[1..];
+    let end = value.find(quote)?;
+    Some(value[..end].to_string())
+}
+
+fn hermes_chain_ids_from_config() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let home = home_dir().ok_or("Could not determine home directory")?;
+    let config_path = home.join(".hermes").join("config.toml");
+    let config_contents = fs::read_to_string(&config_path).map_err(|error| {
+        format!(
+            "Failed to read Hermes config at {}: {}",
+            config_path.display(),
+            error
+        )
+    })?;
+
+    let mut chain_ids = Vec::new();
+    let mut in_chain_block = false;
+    let mut current_chain_id: Option<String> = None;
+
+    for raw_line in config_contents.lines() {
+        let line = raw_line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        if line == "[[chains]]" {
+            if let Some(id) = current_chain_id.take() {
+                chain_ids.push(id);
+            }
+            in_chain_block = true;
+            continue;
+        }
+
+        if line.starts_with("[[") {
+            if let Some(id) = current_chain_id.take() {
+                chain_ids.push(id);
+            }
+            in_chain_block = false;
+            continue;
+        }
+
+        if in_chain_block && current_chain_id.is_none() {
+            if let Some(id) = parse_toml_quoted_assignment(line, "id") {
+                current_chain_id = Some(id);
+            }
+        }
+    }
+
+    if let Some(id) = current_chain_id.take() {
+        chain_ids.push(id);
+    }
+
+    let mut unique_chain_ids = Vec::new();
+    for id in chain_ids {
+        if !unique_chain_ids.contains(&id) {
+            unique_chain_ids.push(id);
+        }
+    }
+
+    if unique_chain_ids.is_empty() {
+        return Err(format!(
+            "No [[chains]] ids found in Hermes config at {}",
+            config_path.display()
+        )
+        .into());
+    }
+
+    Ok(unique_chain_ids)
+}
+
 /// List keys in Hermes keyring via caribic
 pub fn hermes_keys_list(chain: Option<&str>) -> Result<String, Box<dyn std::error::Error>> {
     if let Some(chain_id) = chain {
@@ -2124,54 +2213,49 @@ pub fn hermes_keys_list(chain: Option<&str>) -> Result<String, Box<dyn std::erro
             Ok(output_str)
         }
     } else {
-        // List keys for all configured chains
+        // List keys for all chains currently present in ~/.hermes/config.toml
         log("Listing keys for all chains...");
 
+        let chain_ids = hermes_chain_ids_from_config()?;
         let mut result = String::new();
         let mut found_any_keys = false;
 
-        // List for cardano-devnet
-        let cardano_output = run_hermes_command(&["keys", "list", "--chain", "cardano-devnet"])?;
+        for chain_id in chain_ids {
+            let output = run_hermes_command(&["keys", "list", "--chain", chain_id.as_str()])?;
+            result.push_str(&format!("{}:\n", chain_id));
 
-        if cardano_output.status.success() {
-            let output_str = String::from_utf8_lossy(&cardano_output.stdout);
-            result.push_str("cardano-devnet:\n");
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                result.push_str(&format!("  Failed to list keys: {}\n\n", stderr.trim()));
+                continue;
+            }
+
+            let output_str = String::from_utf8_lossy(&output.stdout);
             if output_str.trim().is_empty() {
                 result.push_str("  No keys found\n");
             } else {
-                // Parse and reformat the output for clarity
+                let mut parsed_any = false;
                 for line in output_str.lines() {
                     if let Some(key_info) = parse_hermes_key_line(line) {
                         result.push_str(&format!("  key_name: {}\n", key_info.0));
                         result.push_str(&format!("  address:  {}\n", key_info.1));
+                        parsed_any = true;
                     }
                 }
+
+                if !parsed_any {
+                    for line in output_str.lines() {
+                        let trimmed = line.trim();
+                        if !trimmed.is_empty() {
+                            result.push_str(&format!("  {}\n", trimmed));
+                        }
+                    }
+                }
+
                 found_any_keys = true;
             }
+
             result.push('\n');
-        }
-        // List for Cosmos Entrypoint chain.
-        let entrypoint_output =
-            run_hermes_command(&["keys", "list", "--chain", ENTRYPOINT_CHAIN_ID])?;
-
-        if entrypoint_output.status.success() {
-            let output_str = String::from_utf8_lossy(&entrypoint_output.stdout);
-            result.push_str(&format!(
-                "entrypoint-chain (Hermes chain id: {}):\n",
-                ENTRYPOINT_CHAIN_ID
-            ));
-            if output_str.trim().is_empty() {
-                result.push_str("  No keys found\n");
-            } else {
-                // Parse and reformat the output for clarity
-                for line in output_str.lines() {
-                    if let Some(key_info) = parse_hermes_key_line(line) {
-                        result.push_str(&format!("  key_name: {}\n", key_info.0));
-                        result.push_str(&format!("  address:  {}\n", key_info.1));
-                    }
-                }
-                found_any_keys = true;
-            }
         }
 
         if !found_any_keys {
@@ -2373,6 +2457,7 @@ const CORE_HEALTH_SERVICES: [CoreHealthService; 8] = [
     },
 ];
 
+#[derive(Clone)]
 struct HealthServiceStatus {
     name: String,
     label: String,
@@ -2456,28 +2541,115 @@ fn collect_optional_chain_health_statuses(project_root_path: &Path) -> Vec<Healt
     let mut optional_statuses = Vec::new();
 
     for adapter in chains::registered_chain_adapters() {
-        let network = adapter.default_network();
         let flags = chains::ChainFlags::new();
-        match adapter.health(project_root_path, network, &flags) {
-            Ok(statuses) => {
-                for status in statuses {
-                    optional_statuses.push(HealthServiceStatus {
-                        name: status.id.to_string(),
-                        label: status.label.to_string(),
-                        healthy: status.healthy,
-                        status: status.status,
-                    });
-                }
-            }
-            Err(error) => {
-                optional_statuses.push(HealthServiceStatus {
-                    name: adapter.id().to_string(),
-                    label: format!("{} (optional chain)", adapter.display_name()),
-                    healthy: false,
-                    status: format!("Failed to run adapter health check: {}", error),
+        let default_network = adapter.default_network();
+        let mut network_results: Vec<(String, Result<Vec<HealthServiceStatus>, String>)> =
+            Vec::new();
+
+        for network in adapter
+            .supported_networks()
+            .iter()
+            .map(|network| network.name)
+        {
+            let result = adapter
+                .health(project_root_path, network, &flags)
+                .map(|statuses| {
+                    statuses
+                        .into_iter()
+                        .map(|status| HealthServiceStatus {
+                            name: status.id.to_string(),
+                            label: format!("{} (network: {})", status.label, network),
+                            healthy: status.healthy,
+                            status: status.status,
+                        })
+                        .collect::<Vec<_>>()
                 });
-            }
+            network_results.push((network.to_string(), result));
         }
+
+        // Prefer default-network health when it is healthy.
+        let default_healthy = network_results.iter().find_map(|(network, result)| {
+            if network == default_network {
+                result
+                    .as_ref()
+                    .ok()
+                    .filter(|statuses| statuses.iter().any(|status| status.healthy))
+                    .cloned()
+            } else {
+                None
+            }
+        });
+
+        // If the default network is down, surface any healthy non-default network
+        // (for example Injective testnet while Injective local is not running).
+        let non_default_healthy = network_results.iter().find_map(|(network, result)| {
+            if network != default_network {
+                result
+                    .as_ref()
+                    .ok()
+                    .filter(|statuses| statuses.iter().any(|status| status.healthy))
+                    .cloned()
+            } else {
+                None
+            }
+        });
+
+        // If nothing is healthy, prefer a non-default network status before falling back
+        // to default. This avoids misleading "local node down" reports when users are
+        // operating testnet/mainnet profiles.
+        let non_default_any = network_results.iter().find_map(|(network, result)| {
+            if network != default_network {
+                result.as_ref().ok().cloned()
+            } else {
+                None
+            }
+        });
+
+        // If still nothing else is available, keep default-network behavior.
+        let default_any = network_results.iter().find_map(|(network, result)| {
+            if network == default_network {
+                result.as_ref().ok().cloned()
+            } else {
+                None
+            }
+        });
+
+        let fallback_any = network_results
+            .iter()
+            .find_map(|(_, result)| result.as_ref().ok().cloned());
+
+        if let Some(statuses) = default_healthy
+            .or(non_default_healthy)
+            .or(non_default_any)
+            .or(default_any)
+            .or(fallback_any)
+        {
+            optional_statuses.extend(statuses);
+            continue;
+        }
+
+        let error_message = network_results
+            .iter()
+            .find_map(|(network, result)| {
+                if network == default_network {
+                    result.as_ref().err().cloned()
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
+                network_results
+                    .iter()
+                    .find_map(|(_, result)| result.as_ref().err().cloned())
+            })
+            .unwrap_or_else(|| "unknown optional chain health error".to_string());
+
+        optional_statuses.push(HealthServiceStatus {
+            name: adapter.id().to_string(),
+            label: format!("{} (optional chain)", adapter.display_name()),
+            healthy: false,
+            status: format!("Failed to run adapter health check: {}", error_message),
+        });
     }
 
     optional_statuses

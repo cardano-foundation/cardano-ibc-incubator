@@ -215,6 +215,9 @@ enum KeysCommand {
         /// Key name (optional, defaults to chain's configured key_name)
         #[arg(long)]
         key_name: Option<String>,
+        /// Optional HD derivation path (useful for Ethermint chains, e.g. m/44'/60'/0'/0/0)
+        #[arg(long)]
+        hd_path: Option<String>,
         /// Overwrite existing key if it exists
         #[arg(long, default_value_t = false)]
         overwrite: bool,
