@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::thread;
 use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use dirs::home_dir;
 use serde_json::Value;
@@ -26,8 +27,12 @@ pub(super) fn configure_hermes_for_demo(
     )?;
 
     let hermes_binary = resolve_local_hermes_binary(project_root_path, injective_dir)?;
-    let cosmos_mnemonic_path = resolve_mnemonic_path(injective_dir, "cosmos")?;
-    let injective_mnemonic_path = resolve_mnemonic_path(injective_dir, "injective")?;
+    let cosmos_mnemonic = config::load_demo_mnemonic(
+        project_root_path,
+        config::ENTRYPOINT_RELAYER_MNEMONIC_ACCOUNT,
+    )?;
+    let injective_mnemonic =
+        config::load_demo_mnemonic(project_root_path, config::LOCAL_RELAYER_MNEMONIC_ACCOUNT)?;
 
     if has_open_transfer_channel(
         hermes_binary.as_path(),
@@ -42,20 +47,10 @@ pub(super) fn configure_hermes_for_demo(
     let hermes_binary_str = hermes_binary
         .to_str()
         .ok_or_else(|| format!("Invalid Hermes binary path: {}", hermes_binary.display()))?;
-    let cosmos_mnemonic = cosmos_mnemonic_path.to_str().ok_or_else(|| {
-        format!(
-            "Invalid mnemonic file path: {}",
-            cosmos_mnemonic_path.display()
-        )
-    })?;
-    let injective_mnemonic = injective_mnemonic_path.to_str().ok_or_else(|| {
-        format!(
-            "Invalid mnemonic file path: {}",
-            injective_mnemonic_path.display()
-        )
-    })?;
 
-    execute_script(
+    let cosmos_mnemonic_file = write_temp_mnemonic_file("entrypoint-relayer", cosmos_mnemonic)?;
+    let cosmos_mnemonic_arg = cosmos_mnemonic_file.to_string_lossy().to_string();
+    let cosmos_key_result = execute_script(
         injective_dir,
         hermes_binary_str,
         vec![
@@ -65,12 +60,17 @@ pub(super) fn configure_hermes_for_demo(
             "--chain",
             "entrypoint",
             "--mnemonic-file",
-            cosmos_mnemonic,
+            cosmos_mnemonic_arg.as_str(),
         ],
         None,
-    )?;
+    );
+    let _ = fs::remove_file(cosmos_mnemonic_file.as_path());
+    cosmos_key_result?;
 
-    execute_script(
+    let injective_mnemonic_file =
+        write_temp_mnemonic_file("injective-local-relayer", injective_mnemonic)?;
+    let injective_mnemonic_arg = injective_mnemonic_file.to_string_lossy().to_string();
+    let injective_key_result = execute_script(
         injective_dir,
         hermes_binary_str,
         vec![
@@ -82,10 +82,12 @@ pub(super) fn configure_hermes_for_demo(
             "--hd-path",
             INJECTIVE_ETH_HD_PATH,
             "--mnemonic-file",
-            injective_mnemonic,
+            injective_mnemonic_arg.as_str(),
         ],
         None,
-    )?;
+    );
+    let _ = fs::remove_file(injective_mnemonic_file.as_path());
+    injective_key_result?;
 
     let injective_client_id = create_client_with_retry(
         hermes_binary.as_path(),
@@ -344,22 +346,20 @@ fn resolve_local_hermes_binary(
     .into())
 }
 
-fn resolve_mnemonic_path(
-    injective_dir: &Path,
-    mnemonic_name: &str,
+fn write_temp_mnemonic_file(
+    prefix: &str,
+    mnemonic: String,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let path = injective_dir
-        .join("configuration/hermes")
-        .join(mnemonic_name);
-    if path.is_file() {
-        return Ok(path);
-    }
-
-    Err(format!(
-        "Injective Hermes mnemonic file not found at {}",
-        path.display()
-    )
-    .into())
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    let file_path = std::env::temp_dir().join(format!(
+        "caribic-{}-{}-{}.mnemonic",
+        prefix,
+        std::process::id(),
+        timestamp
+    ));
+    fs::write(file_path.as_path(), mnemonic)
+        .map_err(|error| format!("Failed to write temporary mnemonic file: {}", error))?;
+    Ok(file_path)
 }
 
 fn ensure_chain_in_hermes_config(

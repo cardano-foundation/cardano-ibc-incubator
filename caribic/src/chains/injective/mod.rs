@@ -129,7 +129,7 @@ impl ChainAdapter for InjectiveChainAdapter {
                 )
                 .await
                 .map_err(|error| format!("Failed to prepare Injective local node: {}", error))?;
-                lifecycle::start_local(injective_dir.as_path())
+                lifecycle::start_local(project_root_path, injective_dir.as_path())
                     .await
                     .map_err(|error| format!("Failed to start Injective local node: {}", error))?;
                 Ok(())

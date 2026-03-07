@@ -33,7 +33,13 @@ pub(super) async fn prepare_local(
     Ok(())
 }
 
-pub(super) async fn start_local(injective_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn start_local(
+    project_root_path: &Path,
+    injective_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let local_validator_mnemonic =
+        config::load_demo_mnemonic(project_root_path, config::LOCAL_VALIDATOR_MNEMONIC_ACCOUNT)?;
+
     execute_script(
         injective_dir,
         "docker",
@@ -51,7 +57,7 @@ pub(super) async fn start_local(injective_dir: &Path) -> Result<(), Box<dyn std:
             ("INJECTIVE_LOCAL_VALIDATOR_KEY", config::LOCAL_VALIDATOR_KEY),
             (
                 "INJECTIVE_LOCAL_VALIDATOR_MNEMONIC",
-                config::LOCAL_VALIDATOR_MNEMONIC,
+                local_validator_mnemonic.as_str(),
             ),
             (
                 "INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT",
