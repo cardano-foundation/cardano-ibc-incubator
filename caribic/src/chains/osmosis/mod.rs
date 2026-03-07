@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use async_trait::async_trait;
 use dirs::home_dir;
@@ -178,7 +179,7 @@ impl ChainAdapter for OsmosisChainAdapter {
 
     fn health(
         &self,
-        _project_root_path: &Path,
+        project_root_path: &Path,
         network: &str,
         flags: &ChainFlags,
     ) -> Result<Vec<ChainHealthStatus>, String> {
@@ -192,7 +193,7 @@ impl ChainAdapter for OsmosisChainAdapter {
                     26658,
                     "Osmosis appchain (RPC)",
                 ),
-                check_port_health("redis", 6379, "Osmosis Redis sidecar"),
+                local_redis_sidecar_health(project_root_path),
             ]),
             CosmosNetworkKind::Testnet => Ok(vec![managed_node_health(
                 "osmosis",
@@ -235,4 +236,58 @@ pub fn stop_local(osmosis_path: &Path) {
 /// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Osmosis.
 pub fn configure_hermes_for_demo(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     hermes::configure_hermes_for_demo(osmosis_dir)
+}
+
+fn local_redis_sidecar_health(project_root_path: &Path) -> ChainHealthStatus {
+    let osmosis_dir = workspace_dir(project_root_path);
+
+    for compose_file in [
+        config::LOCAL_DOCKER_COMPOSE_FILE,
+        config::LOCAL_LEGACY_DOCKER_COMPOSE_FILE,
+    ] {
+        if !osmosis_dir.join(compose_file).exists() {
+            continue;
+        }
+
+        let output = Command::new("docker")
+            .current_dir(osmosis_dir.as_path())
+            .args(["compose", "-f", compose_file, "ps", "--status", "running", "-q", "redis"])
+            .output();
+
+        let Ok(output) = output else {
+            continue;
+        };
+
+        if !output.status.success() {
+            continue;
+        }
+
+        if String::from_utf8_lossy(&output.stdout).trim().is_empty() {
+            return ChainHealthStatus {
+                id: "redis",
+                label: "Osmosis Redis sidecar",
+                healthy: false,
+                status: "Container not running".to_string(),
+            };
+        }
+
+        let port_status = check_port_health("redis", 6379, "Osmosis Redis sidecar");
+        if port_status.healthy {
+            return port_status;
+        }
+
+        return ChainHealthStatus {
+            id: "redis",
+            label: "Osmosis Redis sidecar",
+            healthy: false,
+            status: "Container running, but port 6379 is not accessible".to_string(),
+        };
+    }
+
+    ChainHealthStatus {
+        id: "redis",
+        label: "Osmosis Redis sidecar",
+        healthy: false,
+        status: "Osmosis compose file not found".to_string(),
+    }
 }
