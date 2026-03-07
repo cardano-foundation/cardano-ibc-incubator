@@ -2,15 +2,24 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
-use crate::DemoType;
+use crate::{DemoChain, DemoType};
 
 mod message_exchange;
 mod token_swap;
 
+struct DemoRunOptions<'a> {
+    chain: Option<DemoChain>,
+    network: Option<&'a str>,
+}
+
 #[async_trait]
 trait DemoDriver: Sync {
     fn use_case(&self) -> DemoType;
-    async fn run(&self, project_root_path: &Path) -> Result<(), String>;
+    async fn run(
+        &self,
+        project_root_path: &Path,
+        options: &DemoRunOptions<'_>,
+    ) -> Result<(), String>;
 }
 
 struct TokenSwapDemoDriver;
@@ -25,8 +34,12 @@ impl DemoDriver for TokenSwapDemoDriver {
         DemoType::TokenSwap
     }
 
-    async fn run(&self, project_root_path: &Path) -> Result<(), String> {
-        token_swap::run_token_swap_demo(project_root_path).await
+    async fn run(
+        &self,
+        project_root_path: &Path,
+        options: &DemoRunOptions<'_>,
+    ) -> Result<(), String> {
+        token_swap::run_token_swap_demo(project_root_path, options.chain, options.network).await
     }
 }
 
@@ -36,7 +49,17 @@ impl DemoDriver for MessageExchangeDemoDriver {
         DemoType::MessageExchange
     }
 
-    async fn run(&self, project_root_path: &Path) -> Result<(), String> {
+    async fn run(
+        &self,
+        project_root_path: &Path,
+        options: &DemoRunOptions<'_>,
+    ) -> Result<(), String> {
+        if options.chain.is_some() || options.network.is_some() {
+            return Err(
+                "message-exchange demo does not support --chain/--network options".to_string(),
+            );
+        }
+
         message_exchange::run_message_exchange_demo(project_root_path).await
     }
 }
@@ -46,10 +69,17 @@ fn registered_demo_drivers() -> Vec<&'static dyn DemoDriver> {
 }
 
 /// Dispatches demo execution through registered demo drivers.
-pub async fn run_demo(use_case: DemoType, project_root_path: &Path) -> Result<(), String> {
+pub async fn run_demo(
+    use_case: DemoType,
+    chain: Option<DemoChain>,
+    network: Option<&str>,
+    project_root_path: &Path,
+) -> Result<(), String> {
+    let options = DemoRunOptions { chain, network };
+
     for driver in registered_demo_drivers() {
         if driver.use_case() == use_case {
-            return driver.run(project_root_path).await;
+            return driver.run(project_root_path, &options).await;
         }
     }
 

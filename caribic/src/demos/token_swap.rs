@@ -4,13 +4,24 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::{
-    chains::osmosis::{configure_hermes_for_demo, stop_local, workspace_dir},
-    config,
-    logger,
+    chains::{
+        self,
+        injective::{
+            configure_hermes_for_demo as configure_injective_hermes_for_demo,
+            stop_local as stop_injective_local, workspace_dir as injective_workspace_dir,
+        },
+        osmosis::{configure_hermes_for_demo, stop_local, workspace_dir},
+    },
+    config, logger,
     start::{self, run_hermes_command},
     stop::stop_relayer,
     utils::{execute_script, parse_tendermint_client_id, parse_tendermint_connection_id},
+    DemoChain,
 };
+
+const TOKEN_SWAP_DEFAULT_CHAIN: DemoChain = DemoChain::Osmosis;
+const TOKEN_SWAP_SUPPORTED_TARGETS: [(&str, &str); 2] =
+    [("osmosis", "local"), ("injective", "local")];
 
 fn cardano_chain_id() -> String {
     config::get_config().chains.cardano.chain_id
@@ -24,14 +35,56 @@ fn entrypoint_chain_id() -> String {
     config::get_config().chains.entrypoint.chain_id
 }
 
+fn entrypoint_message_port_id() -> String {
+    config::get_config().chains.entrypoint.message_port_id
+}
+
 /// Runs the full token swap demo and validates required services before execution.
-pub async fn run_token_swap_demo(project_root_path: &Path) -> Result<(), String> {
+pub async fn run_token_swap_demo(
+    project_root_path: &Path,
+    chain: Option<DemoChain>,
+    network: Option<&str>,
+) -> Result<(), String> {
+    let (chain_id, resolved_network) = resolve_token_swap_target(chain, network)?;
+    match (chain_id.as_str(), resolved_network.as_str()) {
+        ("osmosis", "local") => run_osmosis_local_token_swap_demo(project_root_path).await,
+        ("injective", "local") => run_injective_local_token_swap_demo(project_root_path).await,
+        _ => Err(format!(
+            "Token-swap demo is not implemented for chain '{}' on network '{}'. Currently supported: {}",
+            chain_id,
+            resolved_network,
+            TOKEN_SWAP_SUPPORTED_TARGETS
+                .iter()
+                .map(|(chain, network)| format!("--chain {} --network {}", chain, network))
+                .collect::<Vec<String>>()
+                .join(", ")
+        )),
+    }
+}
+
+fn resolve_token_swap_target(
+    chain: Option<DemoChain>,
+    network: Option<&str>,
+) -> Result<(String, String), String> {
+    let resolved_chain = chain.unwrap_or(TOKEN_SWAP_DEFAULT_CHAIN);
+    let chain_id = match resolved_chain {
+        DemoChain::Osmosis => "osmosis",
+        DemoChain::Injective => "injective",
+    };
+
+    let adapter = chains::get_chain_adapter(chain_id)
+        .ok_or_else(|| format!("Optional chain adapter '{}' is not registered", chain_id))?;
+    let resolved_network = adapter.resolve_network(network)?;
+    Ok((chain_id.to_string(), resolved_network))
+}
+
+async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(), String> {
     let osmosis_dir = workspace_dir(project_root_path);
     logger::verbose(&format!("{}", osmosis_dir.display()));
 
     let required_services = [
-        "gateway", "cardano", "postgres", "kupo", "ogmios", "hermes", "mithril", "cosmos",
-        "osmosis", "redis",
+        "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril", "cosmos", "osmosis",
+        "redis",
     ];
     if let Err(error) =
         ensure_demo_services_ready(project_root_path, &required_services, "token-swap")
@@ -77,16 +130,10 @@ pub async fn run_token_swap_demo(project_root_path: &Path) -> Result<(), String>
         }
     }
 
-    if restart_relayer_after_setup {
-        match start::start_hermes_daemon() {
-            Ok(_) => logger::log("PASS: Hermes daemon restarted for token relay"),
-            Err(error) => {
-                return fail_with_cleanup(
-                    osmosis_dir.as_path(),
-                    &format!("ERROR: Failed to restart Hermes daemon: {}", error),
-                )
-            }
-        }
+    if let Err(error) =
+        ensure_hermes_daemon_for_token_swap(project_root_path, restart_relayer_after_setup)
+    {
+        return fail_with_cleanup(osmosis_dir.as_path(), &error);
     }
 
     let setup_script_path = osmosis_dir
@@ -103,7 +150,21 @@ pub async fn run_token_swap_demo(project_root_path: &Path) -> Result<(), String>
         project_root_path,
         setup_script,
         Vec::new(),
-        Some(vec![("CARIBIC_CLEAR_SWAP_PACKETS", "true")]),
+        Some(vec![
+            ("CARIBIC_CLEAR_SWAP_PACKETS", "true"),
+            (
+                "CARIBIC_PROJECT_ROOT",
+                project_root_path
+                    .to_str()
+                    .ok_or_else(|| "ERROR: Invalid project root path".to_string())?,
+            ),
+            (
+                "CARIBIC_OSMOSIS_DIR",
+                osmosis_dir
+                    .to_str()
+                    .ok_or_else(|| "ERROR: Invalid osmosis workspace path".to_string())?,
+            ),
+        ]),
     ) {
         Ok(output) => {
             logger::log("\nPASS: Token swap demo setup script completed");
@@ -160,6 +221,108 @@ pub async fn run_token_swap_demo(project_root_path: &Path) -> Result<(), String>
     Ok(())
 }
 
+async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result<(), String> {
+    let injective_dir = injective_workspace_dir(project_root_path);
+    logger::verbose(&format!("{}", injective_dir.display()));
+
+    let required_services = [
+        "gateway",
+        "cardano",
+        "postgres",
+        "kupo",
+        "ogmios",
+        "mithril",
+        "cosmos",
+        "injective",
+    ];
+    if let Err(error) =
+        ensure_demo_services_ready(project_root_path, &required_services, "token-swap")
+    {
+        return fail_with_injective_cleanup(injective_dir.as_path(), &error);
+    }
+
+    logger::log("PASS: Required token-swap services are running");
+
+    logger::verbose("Checking Mithril artifact readiness before setting up transfer paths");
+    wait_for_mithril_artifacts_for_demo().await?;
+
+    let relayer_path = project_root_path.join("relayer");
+    let mut restart_relayer_after_setup = false;
+    if let Ok((true, _)) = start::check_service_health(project_root_path, "hermes") {
+        logger::verbose(
+            "Stopping Hermes daemon during token-swap setup to avoid account sequence contention",
+        );
+        stop_relayer(relayer_path.as_path());
+        restart_relayer_after_setup = true;
+    }
+
+    if let Err(error) = ensure_cardano_entrypoint_transfer_channel() {
+        return fail_with_injective_cleanup(
+            injective_dir.as_path(),
+            &format!(
+                "ERROR: Failed to prepare Cardano↔Entrypoint transfer path: {}",
+                error
+            ),
+        );
+    }
+
+    match configure_injective_hermes_for_demo(project_root_path, injective_dir.as_path()) {
+        Ok(_) => logger::log("PASS: Hermes configured successfully and channels built"),
+        Err(error) => {
+            return fail_with_injective_cleanup(
+                injective_dir.as_path(),
+                &format!("ERROR: Failed to configure Hermes for Injective: {}", error),
+            )
+        }
+    }
+
+    if let Err(error) =
+        ensure_hermes_daemon_for_token_swap(project_root_path, restart_relayer_after_setup)
+    {
+        return fail_with_injective_cleanup(injective_dir.as_path(), &error);
+    }
+
+    let swap_script_path = project_root_path
+        .join("chains")
+        .join("injective")
+        .join("scripts")
+        .join("run_injective_token_swap.sh");
+    let swap_script = swap_script_path
+        .to_str()
+        .ok_or_else(|| "ERROR: Invalid run_injective_token_swap.sh path".to_string())?;
+
+    execute_script(
+        project_root_path,
+        swap_script,
+        Vec::new(),
+        Some(vec![
+            (
+                "CARIBIC_PROJECT_ROOT",
+                project_root_path
+                    .to_str()
+                    .ok_or_else(|| "ERROR: Invalid project root path".to_string())?,
+            ),
+            (
+                "CARIBIC_INJECTIVE_DIR",
+                injective_dir
+                    .to_str()
+                    .ok_or_else(|| "ERROR: Invalid injective workspace path".to_string())?,
+            ),
+        ]),
+    )
+    .map_err(|error| {
+        format!(
+            "ERROR: Failed to run injective token swap transfer script: {}",
+            error
+        )
+    })?;
+
+    logger::log("PASS: Cardano-to-Injective token swap completed");
+    logger::log("\nPASS: Token swap demo flow completed successfully");
+
+    Ok(())
+}
+
 /// Ensures all services required by a demo flow are healthy before continuing.
 fn ensure_demo_services_ready(
     project_root_path: &Path,
@@ -192,24 +355,59 @@ fn ensure_demo_services_ready(
     Err(message)
 }
 
+fn ensure_hermes_daemon_for_token_swap(
+    project_root_path: &Path,
+    was_running_before_setup: bool,
+) -> Result<(), String> {
+    if let Ok((true, _)) = start::check_service_health(project_root_path, "hermes") {
+        if was_running_before_setup {
+            logger::log("PASS: Hermes daemon restarted for token relay");
+        } else {
+            logger::log("PASS: Hermes daemon is running for token relay");
+        }
+        return Ok(());
+    }
+
+    let action = if was_running_before_setup {
+        "restart"
+    } else {
+        "start"
+    };
+    logger::verbose(&format!(
+        "Hermes daemon not running after setup; attempting to {} it before token relay",
+        action
+    ));
+
+    start::start_hermes_daemon()
+        .map_err(|error| format!("ERROR: Failed to {} Hermes daemon: {}", action, error))?;
+
+    if was_running_before_setup {
+        logger::log("PASS: Hermes daemon restarted for token relay");
+    } else {
+        logger::log("PASS: Hermes daemon started for token relay");
+    }
+    Ok(())
+}
+
 /// Waits until Mithril exposes stake and transaction artifacts needed by demo client creation.
 async fn wait_for_mithril_artifacts_for_demo() -> Result<(), String> {
-    let runtime_config = crate::config::get_config().runtime;
-    let max_retries = runtime_config.mithril_artifact_max_retries;
+    let demo_config = crate::config::get_config().demo;
+    let max_retries = demo_config.mithril_artifact_max_retries;
     if max_retries == 0 {
         return Err(
-            "Invalid config: runtime.mithril_artifact_max_retries must be > 0 in ~/.caribic/config.json"
+            "Invalid config: demo.mithril_artifact_max_retries must be > 0 in ~/.caribic/config.json"
                 .to_string(),
         );
     }
-    let retry_delay_secs = runtime_config.mithril_artifact_retry_delay_secs;
+    let retry_delay_secs = demo_config.mithril_artifact_retry_delay_secs;
     if retry_delay_secs == 0 {
         return Err(
-            "Invalid config: runtime.mithril_artifact_retry_delay_secs must be > 0 in ~/.caribic/config.json"
+            "Invalid config: demo.mithril_artifact_retry_delay_secs must be > 0 in ~/.caribic/config.json"
                 .to_string(),
         );
     }
     let total_wait_secs = (max_retries as u64).saturating_mul(retry_delay_secs);
+
     logger::verbose("Waiting for Mithril stake distributions and cardano-transactions artifacts");
     logger::log(&format!(
         "Waiting for Mithril artifacts to become available (up to {} minutes)...",
@@ -252,7 +450,8 @@ async fn wait_for_mithril_artifacts_for_demo() -> Result<(), String> {
         };
 
         logger::verbose(&format!(
-            "Mithril artifact readiness check (attempt {attempt}/{max_retries}): stake_distributions={stake_ready}, cardano_transactions={tx_ready}"
+            "Mithril artifact readiness check (attempt {attempt}/{}): stake_distributions={stake_ready}, cardano_transactions={tx_ready}",
+            max_retries
         ));
 
         if stake_ready && tx_ready {
@@ -327,6 +526,7 @@ fn parse_connection_sequence(connection_id: &str) -> Option<u64> {
 /// frequently remain in local dev environments after interrupted handshakes.
 fn query_transfer_channel_end_status(
     chain_id: &str,
+    port_id: &str,
     channel_id: &str,
 ) -> Result<Option<TransferChannelEndStatus>, String> {
     let output = run_hermes_command(&[
@@ -337,7 +537,7 @@ fn query_transfer_channel_end_status(
         "--chain",
         chain_id,
         "--port",
-        "transfer",
+        port_id,
         "--channel",
         channel_id,
     ])
@@ -596,8 +796,9 @@ fn query_cardano_entrypoint_open_connection() -> Result<Option<String>, String> 
     let cardano_chain_id = cardano_chain_id();
     let candidate_connection_ids = query_connection_ids_for_chain(cardano_chain_id.as_str())?;
     logger::verbose(&format!(
-        "Hermes query returned {} cardano-devnet connection candidates",
-        candidate_connection_ids.len()
+        "Hermes query returned {} {} connection candidates",
+        candidate_connection_ids.len(),
+        cardano_chain_id
     ));
 
     for connection_id in candidate_connection_ids {
@@ -623,8 +824,12 @@ fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Resu
     let cardano_chain_id = cardano_chain_id();
     let cardano_port_id = cardano_message_port_id();
     let entrypoint_chain_id = entrypoint_chain_id();
-    let Some(cardano_end) =
-        query_transfer_channel_end_status(cardano_chain_id.as_str(), cardano_channel_id)?
+    let entrypoint_port_id = entrypoint_message_port_id();
+    let Some(cardano_end) = query_transfer_channel_end_status(
+        cardano_chain_id.as_str(),
+        cardano_port_id.as_str(),
+        cardano_channel_id,
+    )?
     else {
         return Ok(false);
     };
@@ -637,9 +842,10 @@ fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Resu
         return Ok(false);
     }
 
-    if cardano_end.remote_port_id.as_deref() != Some(cardano_port_id.as_str()) {
+    if cardano_end.remote_port_id.as_deref() != Some(entrypoint_port_id.as_str()) {
         logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: counterparty port is not transfer",
+            "Skipping cardano-devnet channel {cardano_channel_id}: counterparty port is not {}",
+            entrypoint_port_id
         ));
         return Ok(false);
     }
@@ -651,11 +857,11 @@ fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Resu
         return Ok(false);
     };
 
-    let Some(entrypoint_end) =
-        query_transfer_channel_end_status(
-            entrypoint_chain_id.as_str(),
-            entrypoint_channel_id.as_str(),
-        )?
+    let Some(entrypoint_end) = query_transfer_channel_end_status(
+        entrypoint_chain_id.as_str(),
+        entrypoint_port_id.as_str(),
+        entrypoint_channel_id.as_str(),
+    )?
     else {
         return Ok(false);
     };
@@ -670,8 +876,8 @@ fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Resu
 
     if entrypoint_end.remote_port_id.as_deref() != Some(cardano_port_id.as_str()) {
         logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: entrypoint counterparty {} port is not transfer",
-            entrypoint_channel_id
+            "Skipping cardano-devnet channel {cardano_channel_id}: entrypoint counterparty {} port is not {}",
+            entrypoint_channel_id, cardano_port_id
         ));
         return Ok(false);
     }
@@ -725,11 +931,16 @@ fn query_cardano_entrypoint_channel() -> Result<Option<String>, String> {
 
     if let Some(channels) = chain_channels {
         logger::verbose(&format!(
-            "Hermes query returned {} chain channels on cardano-devnet↔entrypoint",
-            channels.len()
+            "Hermes query returned {} chain channels on {}↔{}",
+            channels.len(),
+            cardano_chain_id,
+            entrypoint_chain_id
         ));
     } else {
-        logger::verbose("Hermes query returned no channel list for cardano-devnet↔entrypoint");
+        logger::verbose(&format!(
+            "Hermes query returned no channel list for {}↔{}",
+            cardano_chain_id, entrypoint_chain_id
+        ));
     }
 
     if let Some(channels) = chain_channels {
@@ -764,6 +975,9 @@ fn query_cardano_entrypoint_channel() -> Result<Option<String>, String> {
 fn create_cardano_entrypoint_transfer_channel_on_connection(
     connection_id: &str,
 ) -> Result<(), String> {
+    let cardano_chain_id = cardano_chain_id();
+    let cardano_port_id = cardano_message_port_id();
+    let entrypoint_port_id = entrypoint_message_port_id();
     logger::verbose("Creating transfer channel on the Cardano↔Entrypoint connection");
     logger::verbose(&format!(
         "Creating transfer channel on connection {connection_id} (Cardano↔Entrypoint)"
@@ -772,13 +986,13 @@ fn create_cardano_entrypoint_transfer_channel_on_connection(
         "create",
         "channel",
         "--a-chain",
-        "cardano-devnet",
+        cardano_chain_id.as_str(),
         "--a-connection",
         connection_id,
         "--a-port",
-        "transfer",
+        cardano_port_id.as_str(),
         "--b-port",
-        "transfer",
+        entrypoint_port_id.as_str(),
     ])
     .map_err(|error| error.to_string())?;
     if !create_channel_output.status.success() {
@@ -788,11 +1002,14 @@ fn create_cardano_entrypoint_transfer_channel_on_connection(
             String::from_utf8_lossy(&create_channel_output.stderr)
         ));
     }
+
     Ok(())
 }
 
 /// Ensures the Cardano to Entrypoint transfer path exists by creating client, connection, and channel as needed.
 fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
+    let cardano_chain_id = cardano_chain_id();
+    let entrypoint_chain_id = entrypoint_chain_id();
     if let Some(open_channel_id) = query_cardano_entrypoint_channel()? {
         logger::log(&format!(
             "PASS: Cardano->Entrypoint transfer channel already exists and is open ({open_channel_id})"
@@ -829,9 +1046,9 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
         "create",
         "client",
         "--host-chain",
-        cardano_chain_id().as_str(),
+        cardano_chain_id.as_str(),
         "--reference-chain",
-        entrypoint_chain_id().as_str(),
+        entrypoint_chain_id.as_str(),
     ])
     .map_err(|error| error.to_string())?;
     if !create_cardano_client_output.status.success() {
@@ -858,9 +1075,9 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
         "create",
         "client",
         "--host-chain",
-        entrypoint_chain_id().as_str(),
+        entrypoint_chain_id.as_str(),
         "--reference-chain",
-        cardano_chain_id().as_str(),
+        cardano_chain_id.as_str(),
     ])
     .map_err(|error| error.to_string())?;
     if !create_entrypoint_client_output.status.success() {
@@ -887,7 +1104,7 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
         "create",
         "connection",
         "--a-chain",
-        "cardano-devnet",
+        cardano_chain_id.as_str(),
         "--a-client",
         cardano_client_id.as_str(),
         "--b-client",
@@ -932,5 +1149,12 @@ fn fail_with_cleanup(osmosis_dir: &Path, message: &str) -> Result<(), String> {
     logger::error(message);
     logger::log("Stopping services...");
     stop_local(osmosis_dir);
+    Err(message.to_string())
+}
+
+fn fail_with_injective_cleanup(injective_dir: &Path, message: &str) -> Result<(), String> {
+    logger::error(message);
+    logger::log("Stopping services...");
+    stop_injective_local(injective_dir);
     Err(message.to_string())
 }

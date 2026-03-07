@@ -1,3 +1,4 @@
+use crate::constants::ENTRYPOINT_CHAIN_ID;
 use crate::logger::{log_or_print_progress, log_or_show_progress, verbose};
 use crate::setup::{
     configure_local_cardano_devnet, copy_cardano_env_file, download_mithril,
@@ -18,11 +19,16 @@ use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
 use std::cmp::min;
 use std::fs::{self};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 use std::u64;
+
+const ENTRYPOINT_CONTAINER_NAME: &str = "entrypoint-node-prod";
+const HERMES_PROGRESS_LOG_INTERVAL_SECS: u64 = 30;
+const HERMES_PROGRESS_POLL_INTERVAL_MILLIS: u64 = 500;
 
 /// Get environment variables for Docker Compose, including UID/GID
 /// - macOS: Uses 0:0 (root) for compatibility
@@ -111,17 +117,7 @@ pub fn start_relayer(
     );
 
     // Cosmos Entrypoint chain: Use the pre-funded "relayer" account from the chain config.
-    let entrypoint_mnemonic = config::get_config().relayer.entrypoint_mnemonic;
-    if entrypoint_mnemonic.trim().is_empty() {
-        return Err(
-            "Invalid config: relayer.entrypoint_mnemonic must be set in ~/.caribic/config.json"
-                .into(),
-        );
-    }
-
-    let entrypoint_chain = config::get_config().chains.entrypoint;
-    let entrypoint_chain_id = entrypoint_chain.chain_id;
-
+    let entrypoint_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
     let entrypoint_mnemonic_file = std::env::temp_dir().join("entrypoint-mnemonic.txt");
     fs::write(&entrypoint_mnemonic_file, entrypoint_mnemonic)
         .map_err(|e| format!("Failed to write entrypoint chain mnemonic: {}", e))?;
@@ -131,7 +127,7 @@ pub fn start_relayer(
             "keys",
             "add",
             "--chain",
-            entrypoint_chain_id.as_str(),
+            ENTRYPOINT_CHAIN_ID,
             "--mnemonic-file",
             entrypoint_mnemonic_file.to_str().unwrap(),
             "--overwrite",
@@ -695,9 +691,10 @@ pub fn start_cosmos_entrypoint_chain_services(
     cosmos_dir: &Path,
     clean: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let node_service_name = "entrypoint-node-prod";
+    let init_service_name = "entrypoint-init";
+
     if clean {
-        let entrypoint_chain = config::get_config().chains.entrypoint;
-        let cleanup_command = format!("rm -rf {} /root/.ignite", entrypoint_chain.home_dir);
         execute_script(
             cosmos_dir,
             "docker",
@@ -707,28 +704,24 @@ pub fn start_cosmos_entrypoint_chain_services(
         execute_script(
             cosmos_dir,
             "docker",
-            Vec::from([
-                "compose",
-                "run",
-                "--rm",
-                "--entrypoint",
-                "bash",
-                entrypoint_chain.container_name.as_str(),
-                "-lc",
-                cleanup_command.as_str(),
-            ]),
+            Vec::from(["compose", "build", init_service_name]),
             None,
         )?;
-    } else {
-        execute_script(cosmos_dir, "docker", Vec::from(["compose", "stop"]), None)?;
     }
 
-    let mut args = vec!["compose", "up", "-d"];
-    if clean {
-        args.push("--build");
-    }
+    execute_script(
+        cosmos_dir,
+        "docker",
+        Vec::from(["compose", "run", "--rm", init_service_name]),
+        None,
+    )?;
 
-    execute_script(cosmos_dir, "docker", args, None)?;
+    execute_script(
+        cosmos_dir,
+        "docker",
+        Vec::from(["compose", "up", "-d", node_service_name]),
+        None,
+    )?;
     Ok(())
 }
 
@@ -759,19 +752,19 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     // - Disk space errors (requires freeing up disk space)
     // Use the chain RPC to detect readiness instead of relying on the (optional) faucet endpoint.
     // This allows us to keep the faucet non-public while still having a stable readiness signal.
-    let runtime_config = config::get_config().runtime;
-    let cosmos_status_url = runtime_config.cosmos_status_url;
-    let max_retries = runtime_config.cosmos_max_retries;
+    let health_config = config::get_config().health;
+    let cosmos_status_url = health_config.cosmos_status_url;
+    let max_retries = health_config.cosmos_max_retries;
     if max_retries == 0 {
         return Err(
-            "Invalid config: runtime.cosmos_max_retries must be > 0 in ~/.caribic/config.json"
+            "Invalid config: health.cosmos_max_retries must be > 0 in ~/.caribic/config.json"
                 .into(),
         );
     }
-    let interval_ms = runtime_config.cosmos_retry_interval_ms;
+    let interval_ms = health_config.cosmos_retry_interval_ms;
     if interval_ms == 0 {
         return Err(
-            "Invalid config: runtime.cosmos_retry_interval_ms must be > 0 in ~/.caribic/config.json"
+            "Invalid config: health.cosmos_retry_interval_ms must be > 0 in ~/.caribic/config.json"
                 .into(),
         );
     }
@@ -833,8 +826,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
 
         // Check container health every 5 retries (~50 seconds) to fail fast on unrecoverable errors
         if retry > 0 && retry % 5 == 0 {
-            let entrypoint_container_name = config::get_config().chains.entrypoint.container_name;
-            let container_names = [entrypoint_container_name.as_str()];
+            let container_names = [ENTRYPOINT_CONTAINER_NAME];
             let (diagnostics, should_fail_fast) = diagnose_container_failure(&container_names);
             if should_fail_fast {
                 if let Some(progress_bar) = &optional_progress_bar {
@@ -852,8 +844,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     }
 
     // Final diagnostic check after timeout
-    let entrypoint_container_name = config::get_config().chains.entrypoint.container_name;
-    let container_names = [entrypoint_container_name.as_str()];
+    let container_names = [ENTRYPOINT_CONTAINER_NAME];
     let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
 
     if let Some(progress_bar) = &optional_progress_bar {
@@ -1065,7 +1056,7 @@ async fn start_mithril_with_progress(
 
 pub fn wait_and_start_mithril_genesis(
     project_root_dir: &Path,
-    cardano_epoch_on_mithril_start: u64,
+    _cardano_epoch_on_mithril_start: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Mithril has two practical prerequisites on a fresh local Cardano devnet:
     //
@@ -1086,33 +1077,14 @@ pub fn wait_and_start_mithril_genesis(
     let mithril_script_dir = mithril_dir.join("scripts");
     let mithril_data_dir = mithril_dir.join("data");
 
-    let mut current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
-
-    let slots_per_epoch = get_cardano_state(project_root_dir, CardanoQuery::SlotsToEpochEnd)?
-        + get_cardano_state(project_root_dir, CardanoQuery::SlotInEpoch)?;
-
-    let target_epoch = cardano_epoch_on_mithril_start + 2;
-    let target_slot = target_epoch * slots_per_epoch;
-    let mut slots_left = target_slot.saturating_sub(current_slot);
-
-    if slots_left > 0 {
-        verbose(
-            "Mithril needs to wait at least two epochs for the immutable files to be created ..",
-        );
-    }
-
-    while slots_left > 0 {
-        current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
-        slots_left = target_slot.saturating_sub(current_slot);
-
-        verbose(&format!(
-            "Current slot: {}, Slots left: {}",
-            current_slot, slots_left
-        ));
-        std::thread::sleep(Duration::from_secs(10));
-    }
-
     let mithril_config = config::get_config().mithril;
+    let cardano_node_dir = Path::new(mithril_config.cardano_node_dir.as_str());
+    let aggregator_base_url = mithril_config
+        .aggregator_url
+        .trim_end_matches('/')
+        .to_string();
+
+    wait_for_cardano_immutable_files(cardano_node_dir, Duration::from_secs(20 * 60))?;
 
     // Reuse the same environment variables with UID/GID
     let docker_env = get_docker_env_vars();
@@ -1154,7 +1126,7 @@ pub fn wait_and_start_mithril_genesis(
     // The genesis bootstrap command requires signers for the *next signer retrieval epoch*.
     // On fresh devnets this can lag behind the Cardano epoch progression, running bootstrap too
     // early results in "Missing signers for epoch X".
-    let epoch_settings_url = "http://127.0.0.1:8080/aggregator/epoch-settings";
+    let epoch_settings_url = format!("{aggregator_base_url}/aggregator/epoch-settings");
     let required_next_signers = 1;
     let signers_poll_interval = Duration::from_secs(5);
     let signers_poll_attempts = 240; // 20 minutes
@@ -1164,7 +1136,7 @@ pub fn wait_and_start_mithril_genesis(
         .map_err(|e| format!("Failed to build HTTP client for Mithril checks: {e}"))?;
     let mut last_epoch_settings_error: Option<String> = None;
     for attempt in 1..=signers_poll_attempts {
-        match http_client.get(epoch_settings_url).send() {
+        match http_client.get(epoch_settings_url.as_str()).send() {
             Ok(resp) if resp.status().is_success() => match resp.text() {
                 Ok(body) => match serde_json::from_str::<Value>(&body) {
                     Ok(json) => {
@@ -1318,28 +1290,237 @@ pub fn wait_and_start_mithril_genesis(
         }
     }
 
-    current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
-
-    let target_epoch = cardano_epoch_on_mithril_start + 3;
-    let target_slot = target_epoch * slots_per_epoch;
-    slots_left = target_slot.saturating_sub(current_slot);
-
-    if slots_left > 0 {
-        verbose("Mithril now needs to wait at least one epoch for the the aggregator to start working and generating signatures for transaction sets ..");
-    }
-
-    while slots_left > 0 {
-        current_slot = get_cardano_state(project_root_dir, CardanoQuery::Slot)?;
-        slots_left = target_slot.saturating_sub(current_slot);
-
+    const ARTIFACT_READY_ATTEMPTS: usize = 240; // 20 minutes @ 5s
+    const ARTIFACT_READY_POLL_INTERVAL: Duration = Duration::from_secs(5);
+    if let Err(error) = wait_for_mithril_artifact_readiness(
+        &http_client,
+        aggregator_base_url.as_str(),
+        ARTIFACT_READY_ATTEMPTS,
+        ARTIFACT_READY_POLL_INTERVAL,
+    ) {
+        // Recovery attempt:
+        // On some starts, bootstrap succeeds but the running aggregator/signer set remains in a
+        // bad epoch-service state. Restarting all Mithril runtime services once is often enough to
+        // recover and start producing artifacts.
         verbose(&format!(
-            "Current slot: {}, Slots left: {}",
-            current_slot, slots_left
+            "Mithril artifacts not ready after bootstrap, restarting runtime services once: {}",
+            error
         ));
-        std::thread::sleep(Duration::from_secs(10));
+
+        execute_script(
+            &mithril_script_dir,
+            "docker",
+            vec![
+                "compose",
+                "-f",
+                "docker-compose.yaml",
+                "--profile",
+                "mithril",
+                "up",
+                "-d",
+                "--no-build",
+                "mithril-aggregator",
+                "mithril-signer-1",
+                "mithril-signer-2",
+            ],
+            Some(mithril_genesis_env.clone()),
+        )
+        .map_err(|restart_error| {
+            format!(
+                "Failed to restart Mithril runtime services after bootstrap: {}",
+                restart_error
+            )
+        })?;
+
+        wait_for_mithril_artifact_readiness(
+            &http_client,
+            aggregator_base_url.as_str(),
+            ARTIFACT_READY_ATTEMPTS,
+            ARTIFACT_READY_POLL_INTERVAL,
+        )
+        .map_err(|final_error| {
+            format!(
+                "Mithril artifacts were not ready after bootstrap and one runtime restart: {}",
+                final_error
+            )
+        })?;
     }
 
     Ok(())
+}
+
+fn wait_for_cardano_immutable_files(
+    cardano_node_dir: &Path,
+    timeout: Duration,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let immutable_dir = cardano_node_dir.join("db").join("immutable");
+    let poll_interval = Duration::from_secs(5);
+    let started_at = Instant::now();
+
+    while started_at.elapsed() < timeout {
+        if has_any_immutable_chunk(immutable_dir.as_path()) {
+            return Ok(());
+        }
+        verbose(&format!(
+            "Waiting for Cardano immutable files at {} ...",
+            immutable_dir.display()
+        ));
+        std::thread::sleep(poll_interval);
+    }
+
+    Err(format!(
+        "Timed out after {}s waiting for Cardano immutable files at {}",
+        timeout.as_secs(),
+        immutable_dir.display()
+    )
+    .into())
+}
+
+fn has_any_immutable_chunk(immutable_dir: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(immutable_dir) else {
+        return false;
+    };
+
+    entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .any(|path| path.extension().and_then(|ext| ext.to_str()) == Some("chunk"))
+}
+
+fn wait_for_mithril_artifact_readiness(
+    http_client: &reqwest::blocking::Client,
+    aggregator_base_url: &str,
+    attempts: usize,
+    poll_interval: Duration,
+) -> Result<(), String> {
+    let stake_distributions_url =
+        format!("{aggregator_base_url}/aggregator/artifact/mithril-stake-distributions");
+    let cardano_transactions_url =
+        format!("{aggregator_base_url}/aggregator/artifact/cardano-transactions");
+    let epoch_settings_url = format!("{aggregator_base_url}/aggregator/epoch-settings");
+
+    let mut last_status = String::from("unknown");
+    for attempt in 1..=attempts {
+        let mut stake_ready = false;
+        let mut tx_ready = false;
+        let mut epoch_settings_summary = String::from("unavailable");
+
+        match http_client.get(stake_distributions_url.as_str()).send() {
+            Ok(response) if response.status().is_success() => match response.json::<Value>() {
+                Ok(value) => {
+                    let count = value.as_array().map(|v| v.len()).unwrap_or(0);
+                    stake_ready = count > 0;
+                    epoch_settings_summary = format!(
+                        "{}; stake_distributions_count={}",
+                        epoch_settings_summary, count
+                    );
+                }
+                Err(error) => {
+                    epoch_settings_summary = format!(
+                        "{}; stake_distributions_parse_error={}",
+                        epoch_settings_summary, error
+                    );
+                }
+            },
+            Ok(response) => {
+                epoch_settings_summary = format!(
+                    "{}; stake_distributions_status={}",
+                    epoch_settings_summary,
+                    response.status()
+                );
+            }
+            Err(error) => {
+                epoch_settings_summary = format!(
+                    "{}; stake_distributions_error={}",
+                    epoch_settings_summary, error
+                );
+            }
+        }
+
+        match http_client.get(cardano_transactions_url.as_str()).send() {
+            Ok(response) if response.status().is_success() => match response.json::<Value>() {
+                Ok(value) => {
+                    let count = value.as_array().map(|v| v.len()).unwrap_or(0);
+                    tx_ready = count > 0;
+                    epoch_settings_summary = format!(
+                        "{}; cardano_transactions_count={}",
+                        epoch_settings_summary, count
+                    );
+                }
+                Err(error) => {
+                    epoch_settings_summary = format!(
+                        "{}; cardano_transactions_parse_error={}",
+                        epoch_settings_summary, error
+                    );
+                }
+            },
+            Ok(response) => {
+                epoch_settings_summary = format!(
+                    "{}; cardano_transactions_status={}",
+                    epoch_settings_summary,
+                    response.status()
+                );
+            }
+            Err(error) => {
+                epoch_settings_summary = format!(
+                    "{}; cardano_transactions_error={}",
+                    epoch_settings_summary, error
+                );
+            }
+        }
+
+        match http_client.get(epoch_settings_url.as_str()).send() {
+            Ok(response) if response.status().is_success() => match response.json::<Value>() {
+                Ok(value) => {
+                    let next_signers = value
+                        .get("next_signers")
+                        .and_then(Value::as_array)
+                        .map(|v| v.len())
+                        .unwrap_or(0);
+                    epoch_settings_summary = format!(
+                        "{}; epoch_settings_next_signers={}",
+                        epoch_settings_summary, next_signers
+                    );
+                }
+                Err(error) => {
+                    epoch_settings_summary = format!(
+                        "{}; epoch_settings_parse_error={}",
+                        epoch_settings_summary, error
+                    );
+                }
+            },
+            Ok(response) => {
+                epoch_settings_summary = format!(
+                    "{}; epoch_settings_status={}",
+                    epoch_settings_summary,
+                    response.status()
+                );
+            }
+            Err(error) => {
+                epoch_settings_summary =
+                    format!("{}; epoch_settings_error={}", epoch_settings_summary, error);
+            }
+        }
+
+        last_status = format!(
+            "attempt {attempt}/{attempts}: stake_ready={stake_ready}, tx_ready={tx_ready}, {}",
+            epoch_settings_summary
+        );
+        if stake_ready && tx_ready {
+            return Ok(());
+        }
+
+        verbose(&format!(
+            "Mithril artifact readiness check: {}",
+            last_status.as_str()
+        ));
+        std::thread::sleep(poll_interval);
+    }
+
+    Err(format!(
+        "artifact endpoints were not ready after {} attempts: {}",
+        attempts, last_status
+    ))
 }
 
 pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
@@ -1406,23 +1587,28 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         "Waiting for Gateway gRPC server to be ready",
         &optional_progress_bar,
     );
-    let runtime_config = config::get_config().runtime;
+    let health_config = config::get_config().health;
 
-    let max_retries = runtime_config.gateway_max_retries;
+    let max_retries = health_config.gateway_max_retries;
     if max_retries == 0 {
         return Err(
-            "Invalid config: runtime.gateway_max_retries must be > 0 in ~/.caribic/config.json"
+            "Invalid config: health.gateway_max_retries must be > 0 in ~/.caribic/config.json"
                 .into(),
         );
     }
-    let interval_ms = runtime_config.gateway_retry_interval_ms;
+    let interval_ms = health_config.gateway_retry_interval_ms;
     if interval_ms == 0 {
         return Err(
-            "Invalid config: runtime.gateway_retry_interval_ms must be > 0 in ~/.caribic/config.json"
+            "Invalid config: health.gateway_retry_interval_ms must be > 0 in ~/.caribic/config.json"
                 .into(),
         );
     }
     let mut gateway_ready = false;
+
+    verbose(&format!(
+        "Gateway readiness polling configured with max_retries={} interval_ms={}",
+        max_retries, interval_ms
+    ));
 
     for i in 0..max_retries {
         // Check if gRPC port 5001 is accessible
@@ -1447,6 +1633,7 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     }
 
     if !gateway_ready {
+        dump_gateway_startup_logs(gateway_dir, &optional_progress_bar);
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
         }
@@ -1460,6 +1647,224 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     }
 
     Ok(())
+}
+
+fn dump_gateway_startup_logs(gateway_dir: &Path, optional_progress_bar: &Option<ProgressBar>) {
+    log_or_print_progress(
+        "Gateway gRPC did not become ready in time. Collecting startup diagnostics",
+        optional_progress_bar,
+    );
+
+    let compose_ps = run_command_capture(
+        Command::new("docker")
+            .current_dir(gateway_dir)
+            .args(["compose", "ps"]),
+    );
+    match compose_ps {
+        Ok(output) if !output.trim().is_empty() => {
+            log_or_print_progress("Gateway compose status", optional_progress_bar);
+            logger::log(output.as_str());
+        }
+        Ok(_) => {}
+        Err(error) => {
+            log_or_print_progress(
+                &format!("WARN: Failed to collect `docker compose ps`: {}", error),
+                optional_progress_bar,
+            );
+        }
+    }
+
+    let compose_logs = run_command_capture(
+        Command::new("docker")
+            .current_dir(gateway_dir)
+            .args(["compose", "logs", "--tail", "200", "app"]),
+    );
+    match compose_logs {
+        Ok(output) if !output.trim().is_empty() => {
+            log_or_print_progress(
+                "Gateway compose logs (last 200 lines)",
+                optional_progress_bar,
+            );
+            logger::log(output.as_str());
+            return;
+        }
+        Ok(_) => {}
+        Err(error) => {
+            log_or_print_progress(
+                &format!(
+                    "WARN: Failed to collect compose logs for app service: {}",
+                    error
+                ),
+                optional_progress_bar,
+            );
+        }
+    }
+
+    let docker_logs =
+        run_command_capture(Command::new("docker").args(["logs", "--tail", "200", "gateway-app"]));
+    match docker_logs {
+        Ok(output) if !output.trim().is_empty() => {
+            log_or_print_progress(
+                "Gateway container logs (last 200 lines)",
+                optional_progress_bar,
+            );
+            logger::log(output.as_str());
+        }
+        Ok(_) => {}
+        Err(error) => {
+            log_or_print_progress(
+                &format!(
+                    "WARN: Failed to collect `docker logs gateway-app`: {}",
+                    error
+                ),
+                optional_progress_bar,
+            );
+        }
+    }
+}
+
+fn run_command_capture(command: &mut Command) -> Result<String, String> {
+    let output = command
+        .output()
+        .map_err(|error| format!("failed to execute command: {}", error))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let combined = match (stdout.is_empty(), stderr.is_empty()) {
+        (false, false) => format!("{}\n{}", stdout, stderr),
+        (false, true) => stdout,
+        (true, false) => stderr,
+        (true, true) => String::new(),
+    };
+
+    if output.status.success() {
+        Ok(combined)
+    } else {
+        let details = if combined.is_empty() {
+            "no output".to_string()
+        } else {
+            combined
+        };
+        Err(format!(
+            "command exited with status {}: {}",
+            output.status.code().unwrap_or(-1),
+            details
+        ))
+    }
+}
+
+fn collect_command_output<R: std::io::Read>(
+    reader: R,
+    stream_name: &str,
+    verbose_stream: bool,
+) -> Vec<u8> {
+    let mut buffered_reader = BufReader::new(reader);
+    let mut line_buffer = String::new();
+    let mut output_bytes = Vec::new();
+
+    loop {
+        line_buffer.clear();
+        match buffered_reader.read_line(&mut line_buffer) {
+            Ok(0) => break,
+            Ok(_) => {
+                output_bytes.extend_from_slice(line_buffer.as_bytes());
+                if verbose_stream {
+                    verbose(&format!(
+                        "[Hermes/{stream_name}] {}",
+                        line_buffer.trim_end()
+                    ));
+                }
+            }
+            Err(error) => {
+                if verbose_stream {
+                    verbose(&format!(
+                        "[Hermes/{stream_name}] failed to read command output: {error}"
+                    ));
+                }
+                break;
+            }
+        }
+    }
+
+    output_bytes
+}
+
+fn run_hermes_command_with_progress(
+    hermes_binary: &Path,
+    args: &[&str],
+) -> Result<Output, Box<dyn std::error::Error>> {
+    let command_display = format!("{} {}", hermes_binary.display(), args.join(" "));
+    let mut child = Command::new(hermes_binary)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            format!(
+                "Failed to spawn Hermes command '{}': {}",
+                command_display, error
+            )
+        })?;
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| format!("Failed to capture Hermes stdout for '{}'", command_display))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| format!("Failed to capture Hermes stderr for '{}'", command_display))?;
+
+    let verbose_stream = logger::get_verbosity() == logger::Verbosity::Verbose;
+    let stdout_thread =
+        thread::spawn(move || collect_command_output(stdout, "stdout", verbose_stream));
+    let stderr_thread =
+        thread::spawn(move || collect_command_output(stderr, "stderr", verbose_stream));
+
+    let started_at = Instant::now();
+    let mut next_progress_log = Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS);
+
+    let exit_status = loop {
+        if let Some(status) = child.try_wait().map_err(|error| {
+            format!(
+                "Failed while waiting on Hermes command '{}': {}",
+                command_display, error
+            )
+        })? {
+            break status;
+        }
+
+        let elapsed = started_at.elapsed();
+        if elapsed >= next_progress_log {
+            log(&format!(
+                "Hermes command still running after {}s: {}",
+                elapsed.as_secs(),
+                args.join(" ")
+            ));
+            next_progress_log += Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS);
+        }
+
+        thread::sleep(Duration::from_millis(HERMES_PROGRESS_POLL_INTERVAL_MILLIS));
+    };
+
+    let stdout_output = stdout_thread.join().map_err(|_| {
+        format!(
+            "Failed to join Hermes stdout reader for '{}'",
+            command_display
+        )
+    })?;
+    let stderr_output = stderr_thread.join().map_err(|_| {
+        format!(
+            "Failed to join Hermes stderr reader for '{}'",
+            command_display
+        )
+    })?;
+
+    Ok(Output {
+        status: exit_status,
+        stdout: stdout_output,
+        stderr: stderr_output,
+    })
 }
 
 /// Resolves the Hermes binary from the relayer build output and fails if missing.
@@ -1486,21 +1891,20 @@ pub fn run_hermes_command(args: &[&str]) -> Result<Output, Box<dyn std::error::E
         args.join(" ")
     ));
 
-    let output = Command::new(&hermes_binary)
-        .args(args)
-        .output()
-        .map_err(|error| {
-            format!(
-                "Failed to execute Hermes command '{} {}': {}",
-                hermes_binary.display(),
-                args.join(" "),
-                error
-            )
-        })?;
+    let output = run_hermes_command_with_progress(&hermes_binary, args)?;
+
+    let elapsed = started_at.elapsed();
+    if elapsed >= Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS) {
+        log(&format!(
+            "Hermes command completed in {}s: {}",
+            elapsed.as_secs(),
+            args.join(" ")
+        ));
+    }
 
     logger::verbose(&format!(
         "Hermes command completed in {:.2}s (success={})",
-        started_at.elapsed().as_secs_f32(),
+        elapsed.as_secs_f32(),
         output.status.success()
     ));
     logger::verbose(&format!(
@@ -1564,17 +1968,38 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
 
     log_or_show_progress("Launching Hermes daemon process", &optional_progress_bar);
 
-    // Start Hermes in background
-    let mut child = Command::new(&hermes_binary)
-        .arg("--config")
-        .arg(hermes_config.to_str().ok_or("Invalid Hermes config path")?)
-        .arg("start")
-        .stdout(std::fs::File::create(&hermes_log)?)
-        .stderr(std::fs::File::create(hermes_log.with_extension("err"))?)
-        .spawn()
-        .map_err(|e| format!("Failed to start Hermes: {}", e))?;
+    let hermes_err_log = hermes_log.with_extension("err");
 
-    log(&format!("Hermes started (PID: {})", child.id()));
+    // Start Hermes detached from the current process group so it keeps running after
+    // `caribic` exits in both interactive and non-interactive launch contexts.
+    let launch_output = Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "nohup '{}' --config '{}' start >> '{}' 2>> '{}' < /dev/null & echo $!",
+            hermes_binary.display(),
+            hermes_config.display(),
+            hermes_log.display(),
+            hermes_err_log.display()
+        ))
+        .output()
+        .map_err(|e| format!("Failed to launch Hermes daemon: {}", e))?;
+
+    if !launch_output.status.success() {
+        return Err(format!(
+            "Failed to launch Hermes daemon shell command: {}",
+            String::from_utf8_lossy(&launch_output.stderr).trim()
+        )
+        .into());
+    }
+
+    let pid_str = String::from_utf8_lossy(&launch_output.stdout)
+        .trim()
+        .to_string();
+    let pid = pid_str
+        .parse::<u32>()
+        .map_err(|_| format!("Failed to parse Hermes daemon PID from '{}'", pid_str))?;
+
+    log(&format!("Hermes started (PID: {})", pid));
     log(&format!("   Logs: {}", hermes_log.display()));
     log("   Monitor: tail -f ~/.hermes/hermes.log");
 
@@ -1582,32 +2007,28 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
     log_or_show_progress("Verifying daemon startup", &optional_progress_bar);
     thread::sleep(Duration::from_millis(1000));
 
-    // Check if process is still running
-    match child.try_wait() {
-        Ok(Some(status)) => {
-            // Process exited immediately - read error log
-            let error_log = hermes_log.with_extension("err");
-            let error_content = std::fs::read_to_string(&error_log)
-                .unwrap_or_else(|_| "Could not read error log".to_string());
-            return Err(format!(
-                "Hermes daemon exited immediately with status {}:\n{}",
-                status,
-                error_content
-                    .lines()
-                    .take(10)
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            )
-            .into());
-        }
-        Ok(None) => {
-            // Process is still running - success
-            log_or_show_progress("Hermes daemon is running", &optional_progress_bar);
-        }
-        Err(e) => {
-            return Err(format!("Failed to check Hermes status: {}", e).into());
-        }
+    // Check if process is still running.
+    let is_running = Command::new("kill")
+        .args(["-0", pid.to_string().as_str()])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+
+    if !is_running {
+        let error_content = std::fs::read_to_string(&hermes_err_log)
+            .unwrap_or_else(|_| "Could not read error log".to_string());
+        return Err(format!(
+            "Hermes daemon exited immediately (pid={}):\n{}",
+            pid,
+            error_content
+                .lines()
+                .take(10)
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+        .into());
     }
+    log_or_show_progress("Hermes daemon is running", &optional_progress_bar);
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();
@@ -1730,15 +2151,14 @@ pub fn hermes_keys_list(chain: Option<&str>) -> Result<String, Box<dyn std::erro
             result.push('\n');
         }
         // List for Cosmos Entrypoint chain.
-        let entrypoint_chain_id = config::get_config().chains.entrypoint.chain_id;
         let entrypoint_output =
-            run_hermes_command(&["keys", "list", "--chain", entrypoint_chain_id.as_str()])?;
+            run_hermes_command(&["keys", "list", "--chain", ENTRYPOINT_CHAIN_ID])?;
 
         if entrypoint_output.status.success() {
             let output_str = String::from_utf8_lossy(&entrypoint_output.stdout);
             result.push_str(&format!(
                 "entrypoint-chain (Hermes chain id: {}):\n",
-                entrypoint_chain_id
+                ENTRYPOINT_CHAIN_ID
             ));
             if output_str.trim().is_empty() {
                 result.push_str("  No keys found\n");
@@ -2005,7 +2425,7 @@ fn run_core_health_check(
         CoreHealthCheckType::Mithril => check_mithril_service(context.mithril_dir.as_path()),
         CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
         CoreHealthCheckType::Cosmos => check_rpc_service(
-            config::get_config().runtime.cosmos_status_url.as_str(),
+            config::get_config().health.cosmos_status_url.as_str(),
             26657,
         ),
     }
@@ -2370,6 +2790,12 @@ fn check_rpc_service(url: &str, default_port: u16) -> (bool, String) {
     if endpoint_contains_result(url) {
         (true, format!("Running on port {}", port_label))
     } else {
-        (true, format!("Port {} accessible", port_label))
+        (
+            false,
+            format!(
+                "Port {} is accessible but {} did not return a valid status payload",
+                port_label, url
+            ),
+        )
     }
 }

@@ -35,7 +35,15 @@ caribic start --clean --with-mithril
 caribic start bridge
 caribic start cosmos --clean
 caribic start osmosis
+caribic start injective --network local
+caribic start injective --network testnet
 ```
+
+Injective startup note:
+- `caribic start injective --network local` starts a local single-node Injective devnet.
+- `caribic start injective --network testnet` starts a local `injectived` process that state-syncs from public testnet RPC.
+- `caribic start injective --network mainnet` is intentionally not implemented yet.
+- If `injectived` is missing, caribic prompts to install it from source (`InjectiveFoundation/injective-core`) and runs `make install`.
 
 Cosmos startup note:
 - `caribic start cosmos` sets `IGNITE_SKIP_PROTO=1` by default in the container startup path to avoid Ignite regenerating OpenAPI/proto artifacts on every boot.
@@ -50,7 +58,7 @@ Hermes config note:
 
 Stops services. With no target, it behaves like `all`.
 
-- **Targets**: `all`, `network`, `bridge`, `cosmos`, `osmosis`, `demo`, `gateway`, `relayer`, `mithril`
+- **Targets**: `all`, `network`, `bridge`, `cosmos`, `osmosis`, `injective`, `demo`, `gateway`, `relayer`, `mithril`
 
 Examples:
 
@@ -58,11 +66,13 @@ Examples:
 caribic stop
 caribic stop bridge
 caribic stop osmosis
+caribic stop injective --network local
+caribic stop injective --network testnet
 ```
 
 ### `caribic health-check [--service <name>]`
 
-Checks whether key services appear to be up (gateway, cardano, postgres, kupo, ogmios, hermes, mithril, cosmos, osmosis, redis). Use this before running tests if you are unsure about your current state.
+Checks whether key services appear to be up (gateway, cardano, postgres, kupo, ogmios, hermes, mithril, cosmos, osmosis, redis, plus optional chain adapter checks such as Injective). Use this before running tests if you are unsure about your current state.
 
 ```bash
 caribic health-check
@@ -103,7 +113,41 @@ Starts a demo setup step on top of already running services.
 `caribic demo message-exchange` now runs directly against the native `cosmos/entrypoint` chain and uses the built-in datasource at `cosmos/entrypoint/datasource` (no separate demo chain bootstrap required).
 
 Both demo flows wait for Mithril stake distributions + cardano-transactions artifacts before IBC setup.  
-If your machine is slower, tune retry windows in `~/.caribic/config.json`.
+If your machine is slower, tune retry windows in `caribic/config/default-config.json` (or whichever file you pass via `--config`).
+
+Operator-facing retry/timeout tuning is configurable in one place: `caribic/config/default-config.json` by default.
+For example:
+
+```json
+{
+  "health": {
+    "cosmos_max_retries": 60,
+    "cosmos_retry_interval_ms": 10000,
+    "gateway_max_retries": 180,
+    "gateway_retry_interval_ms": 2000
+  },
+  "demo": {
+    "mithril_artifact_max_retries": 240,
+    "mithril_artifact_retry_delay_secs": 5,
+    "message_exchange": {
+      "consolidated_report_max_retries": 40,
+      "consolidated_report_retry_delay_secs": 3,
+      "channel_discovery_max_retries": 20,
+      "channel_discovery_max_retries_after_create": 120,
+      "channel_discovery_retry_delay_secs": 3,
+      "connection_discovery_max_retries": 20,
+      "connection_discovery_retry_delay_secs": 3,
+      "mithril_readiness_progress_interval_secs": 30,
+      "relay_max_retries": 20,
+      "relay_retry_delay_secs": 3
+    }
+  }
+}
+```
+
+These values are read directly from the selected config file (default: `caribic/config/default-config.json`).
+If the default config file is missing, caribic fails fast at startup.
+If a required key is missing or set to `0`, caribic now fails fast with an explicit config error.
 
 ## `caribic test`
 

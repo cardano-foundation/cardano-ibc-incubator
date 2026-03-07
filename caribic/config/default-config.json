@@ -7,13 +7,7 @@
     },
     "entrypoint": {
       "chain_id": "entrypoint",
-      "message_port_id": "vesseloracle",
-      "rpc_addr": "http://127.0.0.1:26657",
-      "grpc_addr": "http://127.0.0.1:9090",
-      "container_name": "entrypoint-node-prod",
-      "home_dir": "/root/.entrypoint",
-      "keyring_container_path": "/root/.entrypoint/keyring-test",
-      "relayer_key_name": "entrypoint-relayer"
+      "message_port_id": "transfer"
     }
   },
   "mithril": {
@@ -28,18 +22,17 @@
     "client_image": "ghcr.io/input-output-hk/mithril-client:2450.0-c6c7eba",
     "signer_image": "ghcr.io/input-output-hk/mithril-signer:2450.0-c6c7eba"
   },
-  "runtime": {
+  "health": {
     "cosmos_status_url": "http://127.0.0.1:26657/status",
     "cosmos_max_retries": 60,
     "cosmos_retry_interval_ms": 10000,
     "gateway_max_retries": 60,
-    "gateway_retry_interval_ms": 1000,
+    "gateway_retry_interval_ms": 1000
+  },
+  "demo": {
     "mithril_artifact_max_retries": 240,
     "mithril_artifact_retry_delay_secs": 5,
     "message_exchange": {
-      "vessel_default_imo": "9525338",
-      "cardano_min_sync_progress": 99.0,
-      "cardano_max_safe_epoch": 50,
       "consolidated_report_max_retries": 40,
       "consolidated_report_retry_delay_secs": 3,
       "channel_discovery_max_retries": 20,
@@ -51,9 +44,6 @@
       "relay_max_retries": 20,
       "relay_retry_delay_secs": 3
     }
-  },
-  "relayer": {
-    "entrypoint_mnemonic": "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance"
   },
   "cardano": {
     "services": {

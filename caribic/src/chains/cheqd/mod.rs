@@ -6,30 +6,32 @@ use crate::chains::{
     ChainAdapter, ChainFlagSpec, ChainFlags, ChainHealthStatus, ChainNetwork, ChainStartRequest,
 };
 
+mod config;
+
 pub struct CheqdChainAdapter;
 
 pub static CHEQD_CHAIN_ADAPTER: CheqdChainAdapter = CheqdChainAdapter;
 
 const CHEQD_NETWORKS: [ChainNetwork; 1] = [ChainNetwork {
-    name: "testnet",
-    description: "Public cheqd testnet endpoint",
+    name: config::NETWORK_TESTNET_NAME,
+    description: config::NETWORK_TESTNET_DESCRIPTION,
     managed_by_caribic: false,
 }];
 
 const CHEQD_TESTNET_FLAGS: [ChainFlagSpec; 3] = [
     ChainFlagSpec {
-        name: "chain-id",
-        description: "cheqd chain id (for example: cheqd-testnet-6)",
+        name: config::FLAG_CHAIN_ID_NAME,
+        description: config::FLAG_CHAIN_ID_DESCRIPTION,
         required: false,
     },
     ChainFlagSpec {
-        name: "rpc-url",
-        description: "cheqd RPC status endpoint URL",
+        name: config::FLAG_RPC_URL_NAME,
+        description: config::FLAG_RPC_URL_DESCRIPTION,
         required: false,
     },
     ChainFlagSpec {
-        name: "grpc-url",
-        description: "cheqd gRPC endpoint URL",
+        name: config::FLAG_GRPC_URL_NAME,
+        description: config::FLAG_GRPC_URL_DESCRIPTION,
         required: false,
     },
 ];
@@ -37,15 +39,15 @@ const CHEQD_TESTNET_FLAGS: [ChainFlagSpec; 3] = [
 #[async_trait]
 impl ChainAdapter for CheqdChainAdapter {
     fn id(&self) -> &'static str {
-        "cheqd"
+        config::DISPLAY_NAME
     }
 
     fn display_name(&self) -> &'static str {
-        "cheqd"
+        config::DISPLAY_NAME
     }
 
     fn default_network(&self) -> &'static str {
-        "testnet"
+        config::NETWORK_TESTNET_NAME
     }
 
     fn supported_networks(&self) -> &'static [ChainNetwork] {
@@ -86,7 +88,7 @@ impl ChainAdapter for CheqdChainAdapter {
     ) -> Result<Vec<ChainHealthStatus>, String> {
         self.validate_flags(network, flags)?;
         Ok(vec![ChainHealthStatus {
-            id: "cheqd",
+            id: config::DISPLAY_NAME,
             label: "Cheqd",
             healthy: false,
             status: "Not implemented for cheqd.".to_string(),

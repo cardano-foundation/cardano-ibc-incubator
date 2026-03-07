@@ -12,6 +12,8 @@ use crate::utils::{
     execute_script, extract_tendermint_client_id, extract_tendermint_connection_id,
 };
 
+const OSMOSIS_TESTNET_CHAIN_ID: &str = "osmo-test-5";
+
 fn entrypoint_chain_id() -> String {
     config::get_config().chains.entrypoint.chain_id
 }
@@ -241,7 +243,25 @@ pub(super) fn configure_hermes_for_demo(
     Ok(())
 }
 
+/// Ensures Hermes config contains an Osmosis testnet chain block (`osmo-test-5`).
+pub(super) fn ensure_testnet_chain_in_hermes_config(
+    osmosis_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let script_dir = osmosis_dir.join("scripts");
+    ensure_chain_in_hermes_config(
+        script_dir.as_path(),
+        OSMOSIS_TESTNET_CHAIN_ID,
+        "Osmosis testnet chain used by local state-sync node",
+    )
+}
+
 fn resolve_local_hermes_binary(osmosis_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let configured_project_root = PathBuf::from(config::get_config().project_root);
+    let configured_candidate = configured_project_root.join("relayer/target/release/hermes");
+    if configured_candidate.is_file() {
+        return Ok(configured_candidate);
+    }
+
     let mut current = Some(osmosis_dir);
     while let Some(directory) = current {
         let candidate = directory.join("relayer/target/release/hermes");
@@ -251,7 +271,11 @@ fn resolve_local_hermes_binary(osmosis_dir: &Path) -> Result<PathBuf, Box<dyn st
         current = directory.parent();
     }
 
-    Err("Hermes binary not found at relayer/target/release/hermes. Run 'caribic start relayer' first so the demo uses the local Cardano-enabled Hermes binary.".into())
+    Err(format!(
+        "Hermes binary not found at {}. Run 'caribic start relayer' first so the demo uses the local Cardano-enabled Hermes binary.",
+        configured_project_root.join("relayer/target/release/hermes").display()
+    )
+    .into())
 }
 
 fn ensure_chain_in_hermes_config(
