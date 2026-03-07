@@ -5,10 +5,7 @@ use dirs::home_dir;
 
 use crate::chains::{
     check_port_health, check_rpc_health,
-    cosmos_node::{
-        managed_node_health, CosmosChainOptions, CosmosNetworkKind, CosmosNodeSpec,
-        CosmosStateSyncSpec,
-    },
+    cosmos_node::CosmosNetworkKind,
     ChainAdapter, ChainFlagSpec, ChainFlags, ChainHealthStatus, ChainNetwork, ChainStartRequest,
 };
 
@@ -28,7 +25,7 @@ const INJECTIVE_NETWORKS: [ChainNetwork; 3] = [
     },
     ChainNetwork {
         name: "testnet",
-        description: "Local injectived node synced to Injective testnet via state sync",
+        description: "Dockerized Injective testnet node bootstrapped from snapshot",
         managed_by_caribic: true,
     },
     ChainNetwork {
@@ -44,43 +41,25 @@ const INJECTIVE_LOCAL_FLAGS: [ChainFlagSpec; 1] = [ChainFlagSpec {
     required: false,
 }];
 
-const INJECTIVE_TESTNET_FLAGS: [ChainFlagSpec; 2] = [
+const INJECTIVE_TESTNET_FLAGS: [ChainFlagSpec; 3] = [
     ChainFlagSpec {
         name: "stateful",
         description: "Keep local Injective testnet state in ~/.injectived-testnet between runs",
         required: false,
     },
     ChainFlagSpec {
+        name: "snapshot-url",
+        description: "Override Injective testnet snapshot archive URL used for local bootstrap",
+        required: false,
+    },
+    ChainFlagSpec {
         name: "trust-rpc-url",
-        description: "Trusted Injective testnet RPC base URL used for state sync bootstrap",
+        description: "Deprecated alias of --chain-flag snapshot-url",
         required: false,
     },
 ];
 
 const INJECTIVE_MAINNET_FLAGS: [ChainFlagSpec; 0] = [];
-
-const INJECTIVE_TESTNET_STATE_SYNC_SPEC: CosmosStateSyncSpec = CosmosStateSyncSpec {
-    default_trust_rpc_url: config::TESTNET_TRUST_RPC_URL,
-    trust_offset: config::TESTNET_TRUST_OFFSET,
-    seeds: config::TESTNET_SEEDS,
-    persistent_peers: config::TESTNET_PERSISTENT_PEERS,
-};
-
-const INJECTIVE_TESTNET_NODE_SPEC: CosmosNodeSpec = CosmosNodeSpec {
-    chain_name: "Injective",
-    binary: "injectived",
-    chain_id: config::TESTNET_CHAIN_ID,
-    moniker: config::TESTNET_MONIKER,
-    status_url: config::TESTNET_STATUS_URL,
-    rpc_laddr: config::TESTNET_RPC_LADDR,
-    grpc_address: config::TESTNET_GRPC_ADDRESS,
-    grpc_web_address: None,
-    api_address: config::TESTNET_API_ADDRESS,
-    home_dir: config::TESTNET_HOME_DIR,
-    pid_file: config::TESTNET_PID_FILE,
-    log_file: config::TESTNET_LOG_FILE,
-    state_sync: Some(INJECTIVE_TESTNET_STATE_SYNC_SPEC),
-};
 
 #[async_trait]
 impl ChainAdapter for InjectiveChainAdapter {
@@ -116,7 +95,7 @@ impl ChainAdapter for InjectiveChainAdapter {
     ) -> Result<(), String> {
         self.validate_flags(request.network, request.flags)?;
         let network = CosmosNetworkKind::parse(request.network)?;
-        let options = CosmosChainOptions::from_flags(request.flags)?;
+        let options = InjectiveChainOptions::from_flags(request.flags)?;
 
         match network {
             CosmosNetworkKind::Local => {
@@ -135,7 +114,11 @@ impl ChainAdapter for InjectiveChainAdapter {
             }
             CosmosNetworkKind::Testnet => {
                 let injective_dir = workspace_dir(project_root_path);
-                lifecycle::prepare_testnet(&INJECTIVE_TESTNET_NODE_SPEC, options.stateful_or(true))
+                lifecycle::prepare_testnet(
+                    project_root_path,
+                    injective_dir.as_path(),
+                    options.stateful_or(true),
+                )
                     .await
                     .map_err(|error| {
                         format!("Failed to prepare Injective testnet node: {}", error)
@@ -153,8 +136,8 @@ impl ChainAdapter for InjectiveChainAdapter {
                 })?;
 
                 lifecycle::start_testnet(
-                    &INJECTIVE_TESTNET_NODE_SPEC,
-                    options.trust_rpc_url(INJECTIVE_TESTNET_STATE_SYNC_SPEC.default_trust_rpc_url),
+                    injective_dir.as_path(),
+                    options.snapshot_url(),
                 )
                 .await
                 .map_err(|error| format!("Failed to start Injective testnet node: {}", error))?;
@@ -180,8 +163,11 @@ impl ChainAdapter for InjectiveChainAdapter {
                 lifecycle::stop_local(injective_dir.as_path());
                 Ok(())
             }
-            CosmosNetworkKind::Testnet => lifecycle::stop_testnet(&INJECTIVE_TESTNET_NODE_SPEC)
-                .map_err(|error| format!("Failed to stop local Injective testnet node: {}", error)),
+            CosmosNetworkKind::Testnet => {
+                let injective_dir = workspace_dir(project_root_path);
+                lifecycle::stop_testnet(injective_dir.as_path());
+                Ok(())
+            }
             CosmosNetworkKind::Mainnet => Ok(()),
         }
     }
@@ -225,11 +211,40 @@ impl ChainAdapter for InjectiveChainAdapter {
                     ),
                 }])
             }
-            CosmosNetworkKind::Testnet => Ok(vec![managed_node_health(
-                "injective",
-                "Injective node",
-                &INJECTIVE_TESTNET_NODE_SPEC,
-            )?]),
+            CosmosNetworkKind::Testnet => {
+                let rpc_status = check_rpc_health(
+                    "injective",
+                    config::TESTNET_STATUS_URL,
+                    config::TESTNET_RPC_PORT,
+                    "Injective testnet node",
+                );
+                let grpc_status = check_port_health(
+                    "injective",
+                    config::TESTNET_GRPC_PORT,
+                    "Injective testnet node",
+                );
+
+                Ok(vec![ChainHealthStatus {
+                    id: "injective",
+                    label: "Injective testnet node",
+                    healthy: rpc_status.healthy && grpc_status.healthy,
+                    status: format!(
+                        "RPC ({}): {}; gRPC ({}): {}",
+                        config::TESTNET_RPC_PORT,
+                        if rpc_status.healthy {
+                            "reachable"
+                        } else {
+                            "not reachable"
+                        },
+                        config::TESTNET_GRPC_PORT,
+                        if grpc_status.healthy {
+                            "reachable"
+                        } else {
+                            "not reachable"
+                        }
+                    ),
+                }])
+            }
             CosmosNetworkKind::Mainnet => Ok(vec![ChainHealthStatus {
                 id: "injective",
                 label: "Injective mainnet",
@@ -238,6 +253,69 @@ impl ChainAdapter for InjectiveChainAdapter {
                     .to_string(),
             }]),
         }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+struct InjectiveChainOptions {
+    stateful: Option<bool>,
+    snapshot_url: Option<String>,
+}
+
+impl InjectiveChainOptions {
+    fn from_flags(flags: &ChainFlags) -> Result<Self, String> {
+        let mut options = Self::default();
+
+        for (flag_name, raw_value) in flags {
+            match flag_name.as_str() {
+                "stateful" => {
+                    options.stateful = Some(parse_bool_flag("stateful", raw_value)?);
+                }
+                "snapshot-url" => {
+                    options.snapshot_url = Some(raw_value.clone());
+                }
+                // Backward compatibility for older commands that still pass trust-rpc-url.
+                "trust-rpc-url" => {
+                    if let Some(snapshot_url) = &options.snapshot_url {
+                        if snapshot_url != raw_value {
+                            return Err(
+                                "Conflicting Injective values for snapshot-url and trust-rpc-url"
+                                    .to_string(),
+                            );
+                        }
+                    } else {
+                        options.snapshot_url = Some(raw_value.clone());
+                    }
+                }
+                _ => {
+                    return Err(format!(
+                        "Unsupported Injective flag '{}'. Allowed options: stateful, snapshot-url",
+                        flag_name
+                    ));
+                }
+            }
+        }
+
+        Ok(options)
+    }
+
+    fn stateful_or(&self, default_value: bool) -> bool {
+        self.stateful.unwrap_or(default_value)
+    }
+
+    fn snapshot_url(&self) -> Option<&str> {
+        self.snapshot_url.as_deref()
+    }
+}
+
+fn parse_bool_flag(flag_name: &str, raw_value: &str) -> Result<bool, String> {
+    match raw_value.to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" => Ok(true),
+        "0" | "false" | "no" => Ok(false),
+        _ => Err(format!(
+            "Option '{}' expects a boolean value (true/false), got '{}'",
+            flag_name, raw_value
+        )),
     }
 }
 
@@ -263,10 +341,33 @@ pub fn stop_local(injective_path: &Path) {
     lifecycle::stop_local(injective_path);
 }
 
+/// Stops Injective testnet container if it exists.
+pub fn stop_testnet(injective_path: &Path) {
+    lifecycle::stop_testnet(injective_path);
+}
+
 /// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Injective.
 pub fn configure_hermes_for_demo(
     project_root_path: &Path,
     injective_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     hermes::configure_hermes_for_demo(project_root_path, injective_dir)
+}
+
+/// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Injective testnet.
+pub fn configure_hermes_for_testnet_demo(
+    project_root_path: &Path,
+    injective_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    hermes::configure_hermes_for_testnet_demo(project_root_path, injective_dir)
+}
+
+/// Returns the Injective testnet chain id used by Caribic.
+pub fn testnet_chain_id() -> &'static str {
+    config::TESTNET_CHAIN_ID
+}
+
+/// Returns the Injective local chain id used by Caribic.
+pub fn local_chain_id() -> &'static str {
+    config::LOCAL_CHAIN_ID
 }

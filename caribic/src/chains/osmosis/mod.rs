@@ -54,6 +54,7 @@ const OSMOSIS_TESTNET_FLAGS: [ChainFlagSpec; 2] = [
 
 const OSMOSIS_TESTNET_STATE_SYNC_SPEC: CosmosStateSyncSpec = CosmosStateSyncSpec {
     default_trust_rpc_url: config::TESTNET_RPC_URL,
+    fallback_trust_rpc_urls: &[],
     trust_offset: config::TESTNET_TRUST_OFFSET,
     seeds: config::TESTNET_SEEDS,
     persistent_peers: config::TESTNET_PERSISTENT_PEERS,
