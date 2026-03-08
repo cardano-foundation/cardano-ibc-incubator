@@ -5,6 +5,7 @@ import { PacketService } from '~@/tx/packet.service';
 import { MsgTransfer } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import { DenomTraceService } from '~@/query/services/denom-trace.service';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
+import { TransferPlannerService } from './transfer-planner.service';
 
 describe('ApiController (modern)', () => {
   let controller: ApiController;
@@ -21,6 +22,9 @@ describe('ApiController (modern)', () => {
   let swapPlannerServiceMock: {
     getSwapOptions: jest.Mock;
     estimateSwap: jest.Mock;
+  };
+  let transferPlannerServiceMock: {
+    planTransferRoute: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -40,6 +44,9 @@ describe('ApiController (modern)', () => {
       getSwapOptions: jest.fn(),
       estimateSwap: jest.fn(),
     };
+    transferPlannerServiceMock = {
+      planTransferRoute: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ApiController],
@@ -48,6 +55,7 @@ describe('ApiController (modern)', () => {
         { provide: PacketService, useValue: packetServiceMock },
         { provide: DenomTraceService, useValue: denomTraceServiceMock },
         { provide: LocalOsmosisSwapPlannerService, useValue: swapPlannerServiceMock },
+        { provide: TransferPlannerService, useValue: transferPlannerServiceMock },
       ],
     }).compile();
 
@@ -112,6 +120,46 @@ describe('ApiController (modern)', () => {
         type_url: '/ibc.core.channel.v1.MsgTransfer',
         value: Buffer.from([0xde, 0xad, 0xbe, 0xef]).toString('base64'),
       },
+    });
+  });
+
+  it('delegates transfer route planning to TransferPlannerService', async () => {
+    transferPlannerServiceMock.planTransferRoute.mockResolvedValue({
+      foundRoute: true,
+      mode: 'unwind',
+      chains: ['localosmosis', 'entrypoint'],
+      routes: ['transfer/channel-0'],
+      tokenTrace: {
+        kind: 'ibc_voucher',
+        path: 'transfer/channel-0',
+        baseDenom: 'stake',
+        fullDenom: 'transfer/channel-0/stake',
+      },
+    });
+
+    await expect(
+      controller.planTransferRoute({
+        from_chain_id: 'localosmosis',
+        to_chain_id: 'entrypoint',
+        token_denom: 'ibc/ABC',
+      }),
+    ).resolves.toEqual({
+      foundRoute: true,
+      mode: 'unwind',
+      chains: ['localosmosis', 'entrypoint'],
+      routes: ['transfer/channel-0'],
+      tokenTrace: {
+        kind: 'ibc_voucher',
+        path: 'transfer/channel-0',
+        baseDenom: 'stake',
+        fullDenom: 'transfer/channel-0/stake',
+      },
+    });
+
+    expect(transferPlannerServiceMock.planTransferRoute).toHaveBeenCalledWith({
+      fromChainId: 'localosmosis',
+      toChainId: 'entrypoint',
+      tokenDenom: 'ibc/ABC',
     });
   });
 

@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, HttpCode, Param, ParseBoolPipe, ParseIntPipe, Post, Query, UseFilters } from '@nestjs/common';
-import { EstimateLocalOsmosisSwapDto, MsgtransferDto } from './api.dto';
+import { EstimateLocalOsmosisSwapDto, MsgtransferDto, PlanTransferRouteDto } from './api.dto';
 import { ChannelService } from '~@/query/services/channel.service';
 import { QueryChannelsRequest } from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { IdentifiedChannel } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
@@ -10,6 +10,7 @@ import { DenomTraceService } from '~@/query/services/denom-trace.service';
 import { DenomTrace } from '../shared/entities/denom-trace.entity';
 import { LOVELACE } from '../constant';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
+import { TransferPlannerService } from './transfer-planner.service';
 
 type ApiCardanoAssetDenomTrace = {
   asset_id: string;
@@ -41,6 +42,7 @@ export class ApiController {
     private readonly packetService: PacketService,
     private readonly denomTraceService: DenomTraceService,
     private readonly localOsmosisSwapPlannerService: LocalOsmosisSwapPlannerService,
+    private readonly transferPlannerService: TransferPlannerService,
   ) {}
 
   @Get('channels')
@@ -88,6 +90,16 @@ export class ApiController {
         value: Buffer.from(response.unsigned_tx.value).toString('base64'),
       },
     };
+  }
+
+  @Post('transfer/plan')
+  @HttpCode(200)
+  async planTransferRoute(@Body() planTransferRouteDto: PlanTransferRouteDto) {
+    return this.transferPlannerService.planTransferRoute({
+      fromChainId: planTransferRouteDto.from_chain_id,
+      toChainId: planTransferRouteDto.to_chain_id,
+      tokenDenom: planTransferRouteDto.token_denom,
+    });
   }
 
   @Get('cardano/assets/:assetId/denom-trace')

@@ -8,10 +8,11 @@ import { MiniProtocalsModule } from '@shared/modules/mini-protocals/mini-protoca
 import { MithrilModule } from '../shared/modules/mithril/mithril.module';
 import { TxModule } from '~@/tx/tx.module';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
+import { TransferPlannerService } from './transfer-planner.service';
 
 @Module({
   imports: [QueryModule, TxModule, LucidModule, HttpModule, MiniProtocalsModule, MithrilModule],
   controllers: [ApiController],
-  providers: [ChannelService, Logger, LocalOsmosisSwapPlannerService],
+  providers: [ChannelService, Logger, LocalOsmosisSwapPlannerService, TransferPlannerService],
 })
 export class ApiModule {}
