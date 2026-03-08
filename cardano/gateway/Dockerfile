@@ -1,5 +1,5 @@
 # Image proto type
-FROM node:20 AS protos
+FROM node:20@sha256:bd3086f61c05f8925ed2026bee608a40ad9f8a5d28b6e593342237469ee5b621 AS protos
 
 WORKDIR /usr/src/proto-types
 
@@ -20,7 +20,7 @@ RUN npm config set fetch-retries 5 \
 RUN npm run build
 
 # Base image
-FROM node:20
+FROM node:20@sha256:bd3086f61c05f8925ed2026bee608a40ad9f8a5d28b6e593342237469ee5b621
 
 ARG MAIN_CONTEXT=cardano/gateway
 # Create app directory
