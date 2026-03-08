@@ -27,6 +27,7 @@ import {
   unsignedTxTransferFromCosmos,
   unsignedTxTransferFromCardano,
 } from '@/utils/buildTransferTx';
+import { planTransferRoute } from '@/apis/restapi/cardano';
 import { Loading } from '@/components/Loading/Loading';
 import { useAddress, useWallet } from '@meshsdk/react';
 import { formatPrice } from '@/utils/string';
@@ -101,7 +102,7 @@ const Transfer = () => {
     setIsProcessingTransfer,
     isProcessingTransfer,
   } = useContext(TransferContext);
-  const { calculateTransferRoutes, getPfmFee } = useContext(IBCParamsContext);
+  const { getPfmFee } = useContext(IBCParamsContext);
   const { handleResetData: handleResetSwapData } = useContext(SwapContext);
 
   const {
@@ -156,12 +157,20 @@ const Transfer = () => {
       return initEstData;
     }
     const dataTransfer = getDataTransfer();
-    const { chains, foundRoute, routes, failureCode, failureMessage } =
-      calculateTransferRoutes(
-      dataTransfer.fromNetwork.ibcChainId || dataTransfer.fromNetwork.networkId!,
-      dataTransfer.toNetwork.ibcChainId || dataTransfer.toNetwork.networkId!,
-      4,
-    );
+    const routePlan = await planTransferRoute({
+      fromChainId:
+        dataTransfer.fromNetwork.ibcChainId || dataTransfer.fromNetwork.networkId!,
+      toChainId:
+        dataTransfer.toNetwork.ibcChainId || dataTransfer.toNetwork.networkId!,
+      tokenDenom: selectedToken.tokenId!,
+    });
+
+    if (!routePlan) {
+      return initEstData;
+    }
+
+    const { chains, foundRoute, routes, failureCode, failureMessage } = routePlan;
+
     if (!foundRoute) {
       const fromChainName =
         dataTransfer.fromNetwork.networkPrettyName ||
@@ -176,6 +185,12 @@ const Transfer = () => {
         'destination-chain-unavailable': `No discovered IBC transfer channels reach ${toChainName}.`,
         'no-outbound-channels': `${fromChainName} has no outbound IBC transfer channels.`,
         'no-route-found': `No IBC transfer route found from ${fromChainName} to ${toChainName}. For this local stack, that path should typically exist via Entrypoint, so check that the Entrypoint<->${toChainName} transfer channels were created successfully.`,
+        'missing-unwind-hop': `Token ${selectedToken.tokenName || selectedToken.tokenId} must unwind on a specific IBC hop before it can reach ${toChainName}, but that reverse hop is not currently available.`,
+        'ambiguous-unwind-hop': `Token ${selectedToken.tokenName || selectedToken.tokenId} can unwind through multiple local channels on the way to ${toChainName}; refusing to guess.`,
+        'no-forward-route': `No canonical transfer route exists from ${fromChainName} to ${toChainName}.`,
+        'ambiguous-forward-route': `Multiple forward IBC routes exist from ${fromChainName} to ${toChainName}; refusing to guess.`,
+        'ambiguous-forward-hop': `A transfer hop on the route from ${fromChainName} to ${toChainName} has multiple open channels; refusing to guess.`,
+        'invalid-request': 'Transfer route planning request was invalid.',
       };
       const message =
         (failureCode && messageByFailureCode[failureCode]) ||

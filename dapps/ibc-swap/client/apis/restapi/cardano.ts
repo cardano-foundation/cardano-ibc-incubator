@@ -67,6 +67,32 @@ export interface SwapEstimateResponse {
   transferChains: string[];
 }
 
+export interface TransferPlanResponse {
+  foundRoute: boolean;
+  mode: 'same-chain' | 'native-forward' | 'unwind' | 'unwind-then-forward' | null;
+  chains: string[];
+  routes: string[];
+  tokenTrace: {
+    kind: 'native' | 'ibc_voucher';
+    path: string;
+    baseDenom: string;
+    fullDenom: string;
+  } | null;
+  failureCode?:
+    | 'invalid-request'
+    | 'missing-unwind-hop'
+    | 'ambiguous-unwind-hop'
+    | 'no-forward-route'
+    | 'ambiguous-forward-route'
+    | 'ambiguous-forward-hop'
+    | 'channels-not-loaded'
+    | 'source-chain-unavailable'
+    | 'destination-chain-unavailable'
+    | 'no-outbound-channels'
+    | 'no-route-found';
+  failureMessage?: string;
+}
+
 function getGatewayErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
     const responseData = error.response?.data as
@@ -197,6 +223,29 @@ export async function estimateLocalOsmosisSwap(params: {
       },
     });
     return response.data as SwapEstimateResponse;
+  } catch (error) {
+    const errorMessage = getGatewayErrorMessage(error);
+    toast.error(errorMessage, { theme: 'colored' });
+    return null;
+  }
+}
+
+export async function planTransferRoute(params: {
+  fromChainId: string;
+  toChainId: string;
+  tokenDenom: string;
+}): Promise<TransferPlanResponse | null> {
+  try {
+    const response = await API({
+      method: 'POST',
+      url: '/api/transfer/plan',
+      data: {
+        from_chain_id: params.fromChainId,
+        to_chain_id: params.toChainId,
+        token_denom: params.tokenDenom,
+      },
+    });
+    return response.data as TransferPlanResponse;
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);
     toast.error(errorMessage, { theme: 'colored' });

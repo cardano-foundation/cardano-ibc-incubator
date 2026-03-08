@@ -82,3 +82,20 @@ export class EstimateLocalOsmosisSwapDto {
   @IsNotEmpty()
   token_out_denom: string;
 }
+
+export class PlanTransferRouteDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  from_chain_id: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  to_chain_id: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  token_denom: string;
+}
