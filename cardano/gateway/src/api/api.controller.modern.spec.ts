@@ -4,7 +4,7 @@ import { ChannelService } from '~@/query/services/channel.service';
 import { PacketService } from '~@/tx/packet.service';
 import { MsgTransfer } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import { DenomTraceService } from '~@/query/services/denom-trace.service';
-import { SwapPlannerService } from './swap-planner.service';
+import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 
 describe('ApiController (modern)', () => {
   let controller: ApiController;
@@ -47,7 +47,7 @@ describe('ApiController (modern)', () => {
         { provide: ChannelService, useValue: channelServiceMock },
         { provide: PacketService, useValue: packetServiceMock },
         { provide: DenomTraceService, useValue: denomTraceServiceMock },
-        { provide: SwapPlannerService, useValue: swapPlannerServiceMock },
+        { provide: LocalOsmosisSwapPlannerService, useValue: swapPlannerServiceMock },
       ],
     }).compile();
 
@@ -237,17 +237,17 @@ describe('ApiController (modern)', () => {
     ]);
   });
 
-  it('delegates swap options to SwapPlannerService', async () => {
+  it('delegates local Osmosis swap options to LocalOsmosisSwapPlannerService', async () => {
     swapPlannerServiceMock.getSwapOptions.mockResolvedValue({
-      from_chain_id: '42',
+      from_chain_id: 'cardano-devnet',
       from_chain_name: 'Cardano',
       to_chain_id: 'localosmosis',
       to_chain_name: 'Local Osmosis',
       to_tokens: [{ token_id: 'uosmo', token_name: 'uosmo', token_logo: null }],
     });
 
-    await expect(controller.getSwapOptions()).resolves.toEqual({
-      from_chain_id: '42',
+    await expect(controller.getLocalOsmosisSwapOptions()).resolves.toEqual({
+      from_chain_id: 'cardano-devnet',
       from_chain_name: 'Cardano',
       to_chain_id: 'localosmosis',
       to_chain_name: 'Local Osmosis',
@@ -256,7 +256,7 @@ describe('ApiController (modern)', () => {
     expect(swapPlannerServiceMock.getSwapOptions).toHaveBeenCalled();
   });
 
-  it('delegates swap estimates to SwapPlannerService', async () => {
+  it('delegates local Osmosis swap estimates to LocalOsmosisSwapPlannerService', async () => {
     swapPlannerServiceMock.estimateSwap.mockResolvedValue({
       message: '',
       tokenOutAmount: '123',
@@ -265,11 +265,11 @@ describe('ApiController (modern)', () => {
       outToken: 'uosmo',
       transferRoutes: ['transfer/channel-0'],
       transferBackRoutes: ['transfer/channel-1'],
-      transferChains: ['42', 'entrypoint', 'localosmosis'],
+      transferChains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
     });
 
-    const response = await controller.estimateSwap({
-      from_chain_id: '42',
+    const response = await controller.estimateLocalOsmosisSwap({
+      from_chain_id: 'cardano-devnet',
       token_in_denom: 'lovelace',
       token_in_amount: '100',
       to_chain_id: 'localosmosis',
@@ -277,7 +277,7 @@ describe('ApiController (modern)', () => {
     });
 
     expect(swapPlannerServiceMock.estimateSwap).toHaveBeenCalledWith({
-      fromChainId: '42',
+      fromChainId: 'cardano-devnet',
       tokenInDenom: 'lovelace',
       tokenInAmount: '100',
       toChainId: 'localosmosis',
@@ -291,7 +291,7 @@ describe('ApiController (modern)', () => {
       outToken: 'uosmo',
       transferRoutes: ['transfer/channel-0'],
       transferBackRoutes: ['transfer/channel-1'],
-      transferChains: ['42', 'entrypoint', 'localosmosis'],
+      transferChains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
     });
   });
 });

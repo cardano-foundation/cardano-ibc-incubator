@@ -163,11 +163,11 @@ export async function listCardanoIbcAssets(): Promise<CardanoAssetDenomTrace[]> 
   }
 }
 
-export async function getSwapOptions(): Promise<SwapOptions | null> {
+export async function getLocalOsmosisSwapOptions(): Promise<SwapOptions | null> {
   try {
     const response = await API({
       method: 'GET',
-      url: '/api/swap/options',
+      url: '/api/local-osmosis/swap/options',
     });
     return response.data as SwapOptions;
   } catch (error) {
@@ -177,7 +177,7 @@ export async function getSwapOptions(): Promise<SwapOptions | null> {
   }
 }
 
-export async function estimateSwap(params: {
+export async function estimateLocalOsmosisSwap(params: {
   fromChainId: string;
   tokenInDenom: string;
   tokenInAmount: string;
@@ -187,7 +187,7 @@ export async function estimateSwap(params: {
   try {
     const response = await API({
       method: 'POST',
-      url: '/api/swap/estimate',
+      url: '/api/local-osmosis/swap/estimate',
       data: {
         from_chain_id: params.fromChainId,
         token_in_denom: params.tokenInDenom,

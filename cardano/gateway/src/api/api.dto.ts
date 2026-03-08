@@ -56,7 +56,7 @@ export class MsgtransferDto {
   signer: string;
 }
 
-export class EstimateSwapDto {
+export class EstimateLocalOsmosisSwapDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()

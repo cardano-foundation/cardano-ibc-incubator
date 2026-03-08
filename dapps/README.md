@@ -41,6 +41,5 @@ starting the service, for example:
 export IBC_EXPLORER_HOST_PORT=18080
 export IBC_SWAP_GATEWAY_ENDPOINT=http://localhost:8000
 export IBC_SWAP_CROSSCHAIN_SWAP_ADDRESS=<osmosis-contract-address>
-export IBC_SWAP_SWAP_ROUTER_ADDRESS=<osmosis-router-address>
 docker compose -f dapps/docker-compose.yml up --build ibc-swap-client
 ```

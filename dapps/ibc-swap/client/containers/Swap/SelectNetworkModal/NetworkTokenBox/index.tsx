@@ -15,7 +15,7 @@ import { debounce } from '@/utils/helper';
 import { Loading } from '@/components/Loading/Loading';
 import { useCardanoChain } from '@/hooks/useCardanoChain';
 import { CARDANO_CHAIN_ID } from '@/configs/runtime';
-import { getSwapOptions } from '@/apis/restapi/cardano';
+import { getLocalOsmosisSwapOptions } from '@/apis/restapi/cardano';
 import DefaultCosmosNetworkIcon from '@/assets/icons/cosmos-icon.svg';
 
 import { StyledNetworkBox, StyledNetworkBoxHeader } from './index.style';
@@ -139,7 +139,7 @@ const NetworkTokenBox = ({
           return;
         }
 
-        const swapOptions = await getSwapOptions();
+        const swapOptions = await getLocalOsmosisSwapOptions();
         const formatTokenList =
           swapOptions?.toChainId === selectedNetworkId
             ? swapOptions.toTokens.map((token) => ({
