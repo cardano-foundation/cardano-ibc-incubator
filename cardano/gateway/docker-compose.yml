@@ -9,8 +9,6 @@ services:
       - "5001:5001"
     environment:
       PORT: 8000
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks:
       - cardano_network
     volumes:

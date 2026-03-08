@@ -185,15 +185,23 @@ export class SwapPlannerService {
   }
 
   private get entrypointRestEndpoint(): string {
-    return this.configService.get<string>('entrypointRestEndpoint') || 'http://host.docker.internal:1317';
+    return this.requireConfig('entrypointRestEndpoint', 'ENTRYPOINT_REST_ENDPOINT');
   }
 
   private get localOsmosisRestEndpoint(): string {
-    return this.configService.get<string>('localOsmosisRestEndpoint') || 'http://host.docker.internal:1318';
+    return this.requireConfig('localOsmosisRestEndpoint', 'LOCAL_OSMOSIS_REST_ENDPOINT');
   }
 
   private get swapRouterAddress(): string {
     return this.configService.get<string>('swapRouterAddress') || '';
+  }
+
+  private requireConfig(configKey: string, envKey: string): string {
+    const value = this.configService.get<string>(configKey)?.trim();
+    if (!value) {
+      throw new Error(`${envKey} must be configured for Gateway swap planning APIs.`);
+    }
+    return value;
   }
 
   private async getMetadata(): Promise<SwapMetadata> {
