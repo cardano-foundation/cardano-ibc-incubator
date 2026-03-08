@@ -29,7 +29,7 @@ import { verifyAddress } from '@/utils/address';
 import { HOUR_IN_NANOSEC } from '@/constants';
 import { unsignedTxSwapFromCardano } from '@/utils/buildSwapTx';
 import { CARDANO_CHAIN_ID } from '@/configs/runtime';
-import { estimateSwap } from '@/apis/restapi/cardano';
+import { estimateLocalOsmosisSwap } from '@/apis/restapi/cardano';
 import TransactionFee from './TransactionFee';
 import SettingSlippage from './SettingSlippage';
 import SelectNetworkModal from './SelectNetworkModal';
@@ -167,11 +167,15 @@ const SwapContainer = () => {
     setIsEstimating(true);
 
     try {
-      const res = await estimateSwap({
-        fromChainId: swapData.fromToken.network.networkId!,
+      const res = await estimateLocalOsmosisSwap({
+        fromChainId:
+          swapData.fromToken.network.ibcChainId ||
+          swapData.fromToken.network.networkId!,
         tokenInDenom: swapData.fromToken.tokenId,
         tokenInAmount: swapData.fromToken.swapAmount!,
-        toChainId: swapData.toToken.network.networkId!,
+        toChainId:
+          swapData.toToken.network.ibcChainId ||
+          swapData.toToken.network.networkId!,
         tokenOutDenom: swapData.toToken.tokenId,
       });
 
@@ -312,7 +316,11 @@ const SwapContainer = () => {
           <StyledWrapContainer>
             <StyledSwap>
               <Box display="flex" justifyContent="space-between">
-                <Heading className="title">Swap</Heading>
+          <Heading className="title">Swap Via Local Osmosis</Heading>
+          <Text color={COLOR.neutral_3} mt="8px" mb="12px">
+            This demo routes Cardano assets through Entrypoint, executes the
+            swap on Local Osmosis, and returns the result to Cardano.
+          </Text>
                 <SettingSlippage />
               </Box>
               <SelectNetworkModal

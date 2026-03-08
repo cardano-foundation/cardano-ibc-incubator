@@ -47,10 +47,6 @@ export const KUPMIOS_URL =
   firstNonEmpty(process.env.NEXT_PUBLIC_KUPMIOS_URL) ||
   'http://localhost:1442,http://localhost:1337';
 
-export const SWAP_ROUTER_ADDRESS = firstNonEmpty(
-  process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS,
-);
-
 export const CROSSCHAIN_SWAP_ADDRESS = firstNonEmpty(
   process.env.NEXT_PUBLIC_CROSSCHAIN_SWAP_ADDRESS,
 );

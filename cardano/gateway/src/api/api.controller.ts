@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, HttpCode, Param, ParseBoolPipe, ParseIntPipe, Post, Query, UseFilters } from '@nestjs/common';
-import { EstimateSwapDto, MsgtransferDto } from './api.dto';
+import { EstimateLocalOsmosisSwapDto, MsgtransferDto } from './api.dto';
 import { ChannelService } from '~@/query/services/channel.service';
 import { QueryChannelsRequest } from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { IdentifiedChannel } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
@@ -9,7 +9,7 @@ import { GrpcExceptionFilter } from '~@/exception/exception.filter';
 import { DenomTraceService } from '~@/query/services/denom-trace.service';
 import { DenomTrace } from '../shared/entities/denom-trace.entity';
 import { LOVELACE } from '../constant';
-import { SwapPlannerService } from './swap-planner.service';
+import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 
 type ApiCardanoAssetDenomTrace = {
   asset_id: string;
@@ -40,7 +40,7 @@ export class ApiController {
     private readonly channelService: ChannelService,
     private readonly packetService: PacketService,
     private readonly denomTraceService: DenomTraceService,
-    private readonly swapPlannerService: SwapPlannerService,
+    private readonly localOsmosisSwapPlannerService: LocalOsmosisSwapPlannerService,
   ) {}
 
   @Get('channels')
@@ -113,15 +113,17 @@ export class ApiController {
     );
   }
 
-  @Get('swap/options')
-  async getSwapOptions() {
-    return this.swapPlannerService.getSwapOptions();
+  @Get('local-osmosis/swap/options')
+  async getLocalOsmosisSwapOptions() {
+    return this.localOsmosisSwapPlannerService.getSwapOptions();
   }
 
-  @Post('swap/estimate')
+  @Post('local-osmosis/swap/estimate')
   @HttpCode(200)
-  async estimateSwap(@Body() estimateSwapDto: EstimateSwapDto) {
-    return this.swapPlannerService.estimateSwap({
+  async estimateLocalOsmosisSwap(
+    @Body() estimateSwapDto: EstimateLocalOsmosisSwapDto,
+  ) {
+    return this.localOsmosisSwapPlannerService.estimateSwap({
       fromChainId: estimateSwapDto.from_chain_id,
       tokenInDenom: estimateSwapDto.token_in_denom,
       tokenInAmount: estimateSwapDto.token_in_amount,

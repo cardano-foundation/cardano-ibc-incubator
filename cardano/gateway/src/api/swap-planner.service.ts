@@ -138,7 +138,9 @@ export type SwapEstimateResponse = {
 };
 
 @Injectable()
-export class SwapPlannerService {
+// This planner is intentionally scoped to the local Osmosis demo swap path.
+// Generic ICS-20 transfers should not depend on pool/router-specific logic.
+export class LocalOsmosisSwapPlannerService {
   private metadataCache?: {
     expiresAt: number;
     value: Promise<SwapMetadata>;
@@ -163,7 +165,7 @@ export class SwapPlannerService {
       }));
 
     return {
-      from_chain_id: this.cardanoChainId,
+      from_chain_id: this.cardanoIbcChainId,
       from_chain_name: 'Cardano',
       to_chain_id: LOCAL_OSMOSIS_CHAIN_ID,
       to_chain_name: 'Local Osmosis',
@@ -180,8 +182,8 @@ export class SwapPlannerService {
     return this.findRouteAndPools(request, metadata);
   }
 
-  private get cardanoChainId(): string {
-    return String(this.configService.get<number>('cardanoChainNetworkMagic') || 42);
+  private get cardanoIbcChainId(): string {
+    return this.configService.get<string>('cardanoChainId') || 'cardano-devnet';
   }
 
   private get entrypointRestEndpoint(): string {
@@ -692,7 +694,7 @@ export class SwapPlannerService {
 
   private async getTokenDenomTrace(chainId: string, tokenString: string): Promise<TokenTrace> {
     if (!tokenString.startsWith('ibc/')) {
-      if (chainId === this.cardanoChainId) {
+      if (chainId === this.cardanoIbcChainId) {
         const trace = await this.getCardanoAssetTrace(tokenString);
         if (trace) {
           return trace;
@@ -707,7 +709,7 @@ export class SwapPlannerService {
       };
     }
 
-    if (chainId === this.cardanoChainId) {
+    if (chainId === this.cardanoIbcChainId) {
       return {
         path: '',
         base_denom: tokenString.replace('ibc/', ''),
