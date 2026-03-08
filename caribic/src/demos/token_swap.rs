@@ -50,6 +50,14 @@ fn entrypoint_message_port_id() -> String {
     config::get_config().chains.entrypoint.message_port_id
 }
 
+const TRANSFER_PORT_ID: &str = "transfer";
+
+#[derive(Debug, Clone)]
+struct TransferChannelPair {
+    a_channel_id: String,
+    b_channel_id: String,
+}
+
 /// Runs the full token swap demo and validates required services before execution.
 pub async fn run_token_swap_demo(
     project_root_path: &Path,
@@ -123,15 +131,18 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
         restart_relayer_after_setup = true;
     }
 
-    if let Err(error) = ensure_cardano_entrypoint_transfer_channel() {
+    let cardano_entrypoint_channel_pair = match ensure_cardano_entrypoint_transfer_channel() {
+        Ok(pair) => pair,
+        Err(error) => {
         return fail_with_cleanup(
             osmosis_dir.as_path(),
             &format!(
                 "ERROR: Failed to prepare Cardano↔Entrypoint transfer path: {}",
                 error
             ),
-        );
-    }
+        )
+        }
+    };
 
     match configure_hermes_for_demo(osmosis_dir.as_path()) {
         Ok(_) => logger::log("PASS: Hermes configured successfully and channels built"),
@@ -142,6 +153,30 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
             )
         }
     }
+
+    let entrypoint_osmosis_channel_pair = match query_open_transfer_channel_pair(
+        entrypoint_chain_id().as_str(),
+        TRANSFER_PORT_ID,
+        "localosmosis",
+        TRANSFER_PORT_ID,
+    ) {
+        Ok(Some(pair)) => pair,
+        Ok(None) => {
+            return fail_with_cleanup(
+                osmosis_dir.as_path(),
+                "ERROR: No open Entrypoint↔Osmosis transfer channel pair is currently usable",
+            )
+        }
+        Err(error) => {
+            return fail_with_cleanup(
+                osmosis_dir.as_path(),
+                &format!(
+                    "ERROR: Failed to resolve Entrypoint↔Osmosis transfer channel pair: {}",
+                    error
+                ),
+            )
+        }
+    };
 
     if let Err(error) =
         ensure_hermes_daemon_for_token_swap(project_root_path, restart_relayer_after_setup)
@@ -176,6 +211,18 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
                 osmosis_dir
                     .to_str()
                     .ok_or_else(|| "ERROR: Invalid osmosis workspace path".to_string())?,
+            ),
+            (
+                "CARDANO_ENTRYPOINT_CHANNEL_ID",
+                cardano_entrypoint_channel_pair.a_channel_id.as_str(),
+            ),
+            (
+                "ENTRYPOINT_OSMOSIS_CHANNEL_ID",
+                entrypoint_osmosis_channel_pair.a_channel_id.as_str(),
+            ),
+            (
+                "OSMOSIS_ENTRYPOINT_CHANNEL_ID",
+                entrypoint_osmosis_channel_pair.b_channel_id.as_str(),
             ),
         ]),
     ) {
@@ -306,7 +353,9 @@ async fn run_injective_token_swap_demo(
         restart_relayer_after_setup = true;
     }
 
-    if let Err(error) = ensure_cardano_entrypoint_transfer_channel() {
+    let cardano_entrypoint_channel_pair = match ensure_cardano_entrypoint_transfer_channel() {
+        Ok(pair) => pair,
+        Err(error) => {
         return fail_with_injective_cleanup(
             injective_dir.as_path(),
             network,
@@ -314,8 +363,9 @@ async fn run_injective_token_swap_demo(
                 "ERROR: Failed to prepare Cardano↔Entrypoint transfer path: {}",
                 error
             ),
-        );
-    }
+        )
+        }
+    };
 
     let configure_hermes_result = match network {
         "local" => configure_injective_hermes_for_demo(project_root_path, injective_dir.as_path()),
@@ -340,12 +390,6 @@ async fn run_injective_token_swap_demo(
         }
     }
 
-    if let Err(error) =
-        ensure_hermes_daemon_for_token_swap(project_root_path, restart_relayer_after_setup)
-    {
-        return fail_with_injective_cleanup(injective_dir.as_path(), network, &error);
-    }
-
     let injective_chain_id = match network {
         "local" => injective_local_chain_id(),
         "testnet" => injective_testnet_chain_id(),
@@ -356,6 +400,38 @@ async fn run_injective_token_swap_demo(
             ))
         }
     };
+
+    let entrypoint_injective_channel_pair = match query_open_transfer_channel_pair(
+        entrypoint_chain_id().as_str(),
+        TRANSFER_PORT_ID,
+        injective_chain_id,
+        TRANSFER_PORT_ID,
+    ) {
+        Ok(Some(pair)) => pair,
+        Ok(None) => {
+            return fail_with_injective_cleanup(
+                injective_dir.as_path(),
+                network,
+                "ERROR: No open Entrypoint↔Injective transfer channel pair is currently usable",
+            )
+        }
+        Err(error) => {
+            return fail_with_injective_cleanup(
+                injective_dir.as_path(),
+                network,
+                &format!(
+                    "ERROR: Failed to resolve Entrypoint↔Injective transfer channel pair: {}",
+                    error
+                ),
+            )
+        }
+    };
+
+    if let Err(error) =
+        ensure_hermes_daemon_for_token_swap(project_root_path, restart_relayer_after_setup)
+    {
+        return fail_with_injective_cleanup(injective_dir.as_path(), network, &error);
+    }
 
     let swap_script_path = project_root_path
         .join("chains")
@@ -385,6 +461,22 @@ async fn run_injective_token_swap_demo(
             ),
             ("INJECTIVE_CHAIN_ID", injective_chain_id),
             ("INJECTIVE_NETWORK", network),
+            (
+                "CARDANO_ENTRYPOINT_CHANNEL_ID",
+                cardano_entrypoint_channel_pair.a_channel_id.as_str(),
+            ),
+            (
+                "ENTRYPOINT_CARDANO_CHANNEL_ID",
+                cardano_entrypoint_channel_pair.b_channel_id.as_str(),
+            ),
+            (
+                "ENTRYPOINT_INJECTIVE_CHANNEL_ID",
+                entrypoint_injective_channel_pair.a_channel_id.as_str(),
+            ),
+            (
+                "INJECTIVE_ENTRYPOINT_CHANNEL_ID",
+                entrypoint_injective_channel_pair.b_channel_id.as_str(),
+            ),
         ]),
     )
     .map_err(|error| {
@@ -1005,6 +1097,122 @@ fn is_open_transfer_state(state: &str) -> bool {
     state.eq_ignore_ascii_case("open")
 }
 
+fn extract_transfer_channel_id_for_ports(
+    entry: &Value,
+    local_port_id: &str,
+    remote_port_id: &str,
+) -> Option<String> {
+    let entry_local_port = entry.get("port_id").and_then(Value::as_str);
+    let entry_remote_port = entry
+        .get("counterparty")
+        .and_then(|counterparty| counterparty.get("port_id"))
+        .and_then(Value::as_str);
+
+    if entry_local_port != Some(local_port_id) {
+        return None;
+    }
+
+    if let Some(entry_remote_port) = entry_remote_port {
+        if entry_remote_port != remote_port_id {
+            return None;
+        }
+    }
+
+    extract_transfer_channel_id(entry)
+}
+
+fn query_open_transfer_channel_pair(
+    a_chain_id: &str,
+    a_port_id: &str,
+    b_chain_id: &str,
+    b_port_id: &str,
+) -> Result<Option<TransferChannelPair>, String> {
+    let output = run_hermes_command(&[
+        "--json",
+        "query",
+        "channels",
+        "--chain",
+        a_chain_id,
+        "--counterparty-chain",
+        b_chain_id,
+    ])
+    .map_err(|error| error.to_string())?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Hermes query channels failed for {}↔{}:\n{}",
+            a_chain_id,
+            b_chain_id,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let parsed_lines: Vec<Value> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect();
+
+    let channel_entries = parsed_lines
+        .iter()
+        .filter_map(|entry| match entry.get("result") {
+            Some(result) if result.is_array() => result.as_array(),
+            Some(result) if result.is_object() => result.get("channels").and_then(Value::as_array),
+            _ => None,
+        })
+        .next_back()
+        .cloned()
+        .unwrap_or_default();
+
+    let mut a_channel_ids: Vec<String> = channel_entries
+        .iter()
+        .filter_map(|entry| extract_transfer_channel_id_for_ports(entry, a_port_id, b_port_id))
+        .collect();
+    a_channel_ids.sort_by(|left, right| {
+        let left_seq = parse_channel_sequence(left).unwrap_or(0);
+        let right_seq = parse_channel_sequence(right).unwrap_or(0);
+        right_seq.cmp(&left_seq).then_with(|| right.cmp(left))
+    });
+    a_channel_ids.dedup();
+
+    for a_channel_id in a_channel_ids {
+        let Some(a_end) = query_transfer_channel_end_status(a_chain_id, a_port_id, a_channel_id.as_str())?
+        else {
+            continue;
+        };
+        if !is_open_transfer_state(a_end.state.as_str()) {
+            continue;
+        }
+        if a_end.remote_port_id.as_deref() != Some(b_port_id) {
+            continue;
+        }
+        let Some(b_channel_id) = a_end.remote_channel_id else {
+            continue;
+        };
+
+        let Some(b_end) =
+            query_transfer_channel_end_status(b_chain_id, b_port_id, b_channel_id.as_str())?
+        else {
+            continue;
+        };
+        if !is_open_transfer_state(b_end.state.as_str()) {
+            continue;
+        }
+        if b_end.remote_port_id.as_deref() != Some(a_port_id) {
+            continue;
+        }
+        if b_end.remote_channel_id.as_deref() != Some(a_channel_id.as_str()) {
+            continue;
+        }
+
+        return Ok(Some(TransferChannelPair {
+            a_channel_id,
+            b_channel_id,
+        }));
+    }
+
+    Ok(None)
+}
+
 /// Queries all connection ids known by Hermes for one chain.
 fn query_connection_ids_for_chain(chain_id: &str) -> Result<Vec<String>, String> {
     let output = run_hermes_command(&["--json", "query", "connections", "--chain", chain_id])
@@ -1216,166 +1424,17 @@ fn query_cardano_entrypoint_open_connection() -> Result<Option<String>, String> 
     Ok(None)
 }
 
-/// Verifies that a Cardano transfer channel is truly usable for swaps.
-///
-/// Validation rules:
-/// - Cardano side must be `Open`
-/// - Counterparty channel id must exist
-/// - Entrypoint counterparty must be `Open`
-/// - Counterparty channel must point back to the same Cardano channel id
-/// - Both ends must use transfer port routing
-///
-/// This prevents selecting stale channel ids that exist but are not open.
-fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Result<bool, String> {
+fn query_cardano_entrypoint_channel_pair() -> Result<Option<TransferChannelPair>, String> {
     let cardano_chain_id = cardano_chain_id();
     let cardano_port_id = cardano_message_port_id();
     let entrypoint_chain_id = entrypoint_chain_id();
     let entrypoint_port_id = entrypoint_message_port_id();
-    let Some(cardano_end) = query_transfer_channel_end_status(
+    query_open_transfer_channel_pair(
         cardano_chain_id.as_str(),
         cardano_port_id.as_str(),
-        cardano_channel_id,
-    )?
-    else {
-        return Ok(false);
-    };
-
-    if !is_open_transfer_state(&cardano_end.state) {
-        logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: state={} (expected Open)",
-            cardano_end.state
-        ));
-        return Ok(false);
-    }
-
-    if cardano_end.remote_port_id.as_deref() != Some(entrypoint_port_id.as_str()) {
-        logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: counterparty port is not {}",
-            entrypoint_port_id
-        ));
-        return Ok(false);
-    }
-
-    let Some(entrypoint_channel_id) = cardano_end.remote_channel_id else {
-        logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: missing counterparty channel id",
-        ));
-        return Ok(false);
-    };
-
-    let Some(entrypoint_end) = query_transfer_channel_end_status(
         entrypoint_chain_id.as_str(),
         entrypoint_port_id.as_str(),
-        entrypoint_channel_id.as_str(),
-    )?
-    else {
-        return Ok(false);
-    };
-
-    if !is_open_transfer_state(&entrypoint_end.state) {
-        logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: entrypoint counterparty {} is {} (expected Open)",
-            entrypoint_channel_id, entrypoint_end.state
-        ));
-        return Ok(false);
-    }
-
-    if entrypoint_end.remote_port_id.as_deref() != Some(cardano_port_id.as_str()) {
-        logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: entrypoint counterparty {} port is not {}",
-            entrypoint_channel_id, cardano_port_id
-        ));
-        return Ok(false);
-    }
-
-    if entrypoint_end.remote_channel_id.as_deref() != Some(cardano_channel_id) {
-        logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: entrypoint counterparty {} does not point back to it",
-            entrypoint_channel_id
-        ));
-        return Ok(false);
-    }
-
-    Ok(true)
-}
-
-/// Queries Hermes for the latest Cardano to Entrypoint transfer channel id.
-fn query_cardano_entrypoint_channel() -> Result<Option<String>, String> {
-    let cardano_chain_id = cardano_chain_id();
-    let entrypoint_chain_id = entrypoint_chain_id();
-    let output = run_hermes_command(&[
-        "--json",
-        "query",
-        "channels",
-        "--chain",
-        cardano_chain_id.as_str(),
-        "--counterparty-chain",
-        entrypoint_chain_id.as_str(),
-    ])
-    .map_err(|error| error.to_string())?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "Hermes query channels for Cardano-Entrypoint chain pair failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    let parsed_lines: Vec<Value> = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .collect();
-
-    let chain_channels = parsed_lines
-        .iter()
-        .filter_map(|entry| match entry.get("result") {
-            Some(result) if result.is_array() => result.as_array(),
-            Some(result) if result.is_object() => result.get("channels").and_then(Value::as_array),
-            _ => None,
-        })
-        .next_back();
-
-    if let Some(channels) = chain_channels {
-        logger::verbose(&format!(
-            "Hermes query returned {} chain channels on {}↔{}",
-            channels.len(),
-            cardano_chain_id,
-            entrypoint_chain_id
-        ));
-    } else {
-        logger::verbose(&format!(
-            "Hermes query returned no channel list for {}↔{}",
-            cardano_chain_id, entrypoint_chain_id
-        ));
-    }
-
-    if let Some(channels) = chain_channels {
-        // Important: channel existence is not enough for token transfers.
-        // Interrupted handshakes leave stale channel ids in Init/TryOpen state.
-        // We collect every transfer channel candidate first, then validate each one
-        // against both chain ends and only accept channels that are Open on both sides.
-        let mut candidate_channel_ids: Vec<String> = channels
-            .iter()
-            .filter_map(extract_transfer_channel_id)
-            .collect();
-
-        // Prefer newer channel ids first because local dev runs often create multiple
-        // channels over time after resets, failed handshakes, or interrupted demos.
-        candidate_channel_ids.sort_by(|left, right| {
-            let left_seq = parse_channel_sequence(left).unwrap_or(0);
-            let right_seq = parse_channel_sequence(right).unwrap_or(0);
-            right_seq.cmp(&left_seq).then_with(|| right.cmp(left))
-        });
-        candidate_channel_ids.dedup();
-
-        for channel_id in candidate_channel_ids {
-            if is_open_cardano_entrypoint_transfer_channel(channel_id.as_str())? {
-                return Ok(Some(channel_id));
-            }
-        }
-    }
-
-    Ok(None)
+    )
 }
 
 fn create_cardano_entrypoint_transfer_channel_on_connection(
@@ -1413,14 +1472,15 @@ fn create_cardano_entrypoint_transfer_channel_on_connection(
 }
 
 /// Ensures the Cardano to Entrypoint transfer path exists by creating client, connection, and channel as needed.
-fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
+fn ensure_cardano_entrypoint_transfer_channel() -> Result<TransferChannelPair, String> {
     let cardano_chain_id = cardano_chain_id();
     let entrypoint_chain_id = entrypoint_chain_id();
-    if let Some(open_channel_id) = query_cardano_entrypoint_channel()? {
+    if let Some(open_channel_pair) = query_cardano_entrypoint_channel_pair()? {
         logger::log(&format!(
-            "PASS: Cardano->Entrypoint transfer channel already exists and is open ({open_channel_id})"
+            "PASS: Cardano->Entrypoint transfer channel already exists and is open ({})",
+            open_channel_pair.a_channel_id
         ));
-        return Ok(());
+        return Ok(open_channel_pair);
     }
 
     logger::log("No open Cardano->Entrypoint transfer channel detected. Creating one now.");
@@ -1435,15 +1495,16 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
             existing_open_connection_id.as_str(),
         )?;
 
-        let Some(open_channel_id) = query_cardano_entrypoint_channel()? else {
+        let Some(open_channel_pair) = query_cardano_entrypoint_channel_pair()? else {
             return Err(
                 "Created transfer channel on an open Cardano↔Entrypoint connection, but no open transfer channel is currently usable".to_string(),
             );
         };
         logger::log(&format!(
-            "PASS: Created Cardano<->Entrypoint transfer channel for token-swap demo ({open_channel_id})"
+            "PASS: Created Cardano<->Entrypoint transfer channel for token-swap demo ({})",
+            open_channel_pair.a_channel_id
         ));
-        return Ok(());
+        return Ok(open_channel_pair);
     }
 
     logger::verbose("Creating Cardano-devnet client with entrypoint reference");
@@ -1538,16 +1599,17 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
 
     // Validate post-creation state explicitly so we fail fast with a clear reason
     // instead of continuing into the swap script with a non-open channel id.
-    let Some(open_channel_id) = query_cardano_entrypoint_channel()? else {
+    let Some(open_channel_pair) = query_cardano_entrypoint_channel_pair()? else {
         return Err(
             "Created Cardano↔Entrypoint channel artifacts but no open transfer channel is currently usable".to_string(),
         );
     };
 
     logger::log(&format!(
-        "PASS: Created Cardano<->Entrypoint transfer channel for token-swap demo ({open_channel_id})"
+        "PASS: Created Cardano<->Entrypoint transfer channel for token-swap demo ({})",
+        open_channel_pair.a_channel_id
     ));
-    Ok(())
+    Ok(open_channel_pair)
 }
 
 /// Logs an error, stops Osmosis demo services, and returns the original error message.

@@ -61,77 +61,6 @@ get_mock_token_denom() {
   return 1
 }
 
-extract_channel_end_json_field() {
-  local chain="$1"
-  local channel="$2"
-  local jq_expression="$3"
-
-  "$HERMES_BIN" --json query channel end --chain "$chain" --port transfer --channel "$channel" 2>/dev/null |
-    jq -r "select(.result) | ${jq_expression} // empty" 2>/dev/null |
-    head -n 1
-}
-
-extract_counterparty_channel_id() {
-  extract_channel_end_json_field "$1" "$2" '.result.remote.channel_id'
-}
-
-extract_channel_end_state() {
-  extract_channel_end_json_field "$1" "$2" '.result.state'
-}
-
-is_open_channel_state() {
-  local state_lower
-  state_lower="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
-  [ "$state_lower" = "open" ]
-}
-
-get_latest_transfer_channel_id() {
-  local channel_chain="$1"
-  local counterparty_chain="$2"
-
-  local channel_candidates
-  channel_candidates=$(
-    "$HERMES_BIN" --json query channels --chain "$channel_chain" --counterparty-chain "$counterparty_chain" 2>/dev/null |
-      jq -r '
-        select(.result) |
-        (if (.result | type) == "array" then .result[] else .result end) |
-        .channel_id // .channel_a // empty
-      ' 2>/dev/null |
-      sort -t- -k2,2nr
-  )
-
-  while IFS= read -r candidate_channel_id; do
-    if [ -z "$candidate_channel_id" ]; then
-      continue
-    fi
-    local candidate_state
-    candidate_state="$(extract_channel_end_state "$channel_chain" "$candidate_channel_id")"
-    if ! is_open_channel_state "$candidate_state"; then
-      continue
-    fi
-    local counterparty_channel_id
-    counterparty_channel_id="$(extract_counterparty_channel_id "$channel_chain" "$candidate_channel_id")"
-    if [ -z "$counterparty_channel_id" ]; then
-      continue
-    fi
-    local counterparty_state
-    counterparty_state="$(extract_channel_end_state "$counterparty_chain" "$counterparty_channel_id")"
-    if ! is_open_channel_state "$counterparty_state"; then
-      continue
-    fi
-    local reverse_counterparty_channel_id
-    reverse_counterparty_channel_id="$(extract_counterparty_channel_id "$counterparty_chain" "$counterparty_channel_id")"
-    if [ "$reverse_counterparty_channel_id" = "$candidate_channel_id" ]; then
-      echo "$candidate_channel_id"
-      return 0
-    fi
-  done <<EOF
-$channel_candidates
-EOF
-
-  echo ""
-}
-
 run_with_timeout() {
   local timeout_seconds="$1"
   shift
@@ -608,20 +537,20 @@ HANDLER_JSON="$repo_root/cardano/offchain/deployments/handler.json"
 SENT_DENOM="$(get_mock_token_denom "$HANDLER_JSON" || true)"
 check_string_empty "$SENT_DENOM" "Could not resolve mock token denom from handler.json. Please ensure it exists."
 
-cardano_entrypoint_channel_id="$(get_latest_transfer_channel_id "$CARDANO_CHAIN_ID" "$ENTRYPOINT_CHAIN_ID" || true)"
-check_string_empty "$cardano_entrypoint_channel_id" "Cardano->Entrypoint channel not found."
+cardano_entrypoint_channel_id="${CARDANO_ENTRYPOINT_CHANNEL_ID:-}"
+check_string_empty "$cardano_entrypoint_channel_id" "CARDANO_ENTRYPOINT_CHANNEL_ID is required. caribic should pass the exact Cardano->Entrypoint transfer channel."
 echo "Cardano->Entrypoint channel id: $cardano_entrypoint_channel_id"
 
-entrypoint_cardano_channel_id="$(get_latest_transfer_channel_id "$ENTRYPOINT_CHAIN_ID" "$CARDANO_CHAIN_ID" || true)"
-check_string_empty "$entrypoint_cardano_channel_id" "Entrypoint->Cardano channel not found."
+entrypoint_cardano_channel_id="${ENTRYPOINT_CARDANO_CHANNEL_ID:-}"
+check_string_empty "$entrypoint_cardano_channel_id" "ENTRYPOINT_CARDANO_CHANNEL_ID is required. caribic should pass the exact Entrypoint->Cardano transfer channel."
 echo "Entrypoint->Cardano channel id: $entrypoint_cardano_channel_id"
 
-entrypoint_injective_channel_id="$(get_latest_transfer_channel_id "$ENTRYPOINT_CHAIN_ID" "$INJECTIVE_CHAIN_ID" || true)"
-check_string_empty "$entrypoint_injective_channel_id" "Entrypoint->Injective channel not found."
+entrypoint_injective_channel_id="${ENTRYPOINT_INJECTIVE_CHANNEL_ID:-}"
+check_string_empty "$entrypoint_injective_channel_id" "ENTRYPOINT_INJECTIVE_CHANNEL_ID is required. caribic should pass the exact Entrypoint->Injective transfer channel."
 echo "Entrypoint->Injective channel id: $entrypoint_injective_channel_id"
 
-injective_entrypoint_channel_id="$(get_latest_transfer_channel_id "$INJECTIVE_CHAIN_ID" "$ENTRYPOINT_CHAIN_ID" || true)"
-check_string_empty "$injective_entrypoint_channel_id" "Injective->Entrypoint channel not found."
+injective_entrypoint_channel_id="${INJECTIVE_ENTRYPOINT_CHANNEL_ID:-}"
+check_string_empty "$injective_entrypoint_channel_id" "INJECTIVE_ENTRYPOINT_CHANNEL_ID is required. caribic should pass the exact Injective->Entrypoint transfer channel."
 echo "Injective->Entrypoint channel id: $injective_entrypoint_channel_id"
 
 baseline_cardano_entrypoint_seq="$(current_max_commitment_seq "$CARDANO_CHAIN_ID" "$cardano_entrypoint_channel_id" || true)"

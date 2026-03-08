@@ -30,73 +30,6 @@ if [ ! -x "$HERMES_BIN" ]; then
   exit 1
 fi
 
-# Returns the counterparty channel id for one transfer channel end.
-extract_channel_end_json_field() {
-  _chain="$1"
-  _channel="$2"
-  _jq_expression="$3"
-
-  "$HERMES_BIN" --json query channel end --chain "$_chain" --port transfer --channel "$_channel" 2>/dev/null |
-    jq -r "select(.result) | ${_jq_expression} // empty" 2>/dev/null |
-    head -n 1
-}
-
-extract_counterparty_channel_id() {
-  extract_channel_end_json_field "$1" "$2" '.result.remote.channel_id'
-}
-
-extract_channel_end_state() {
-  extract_channel_end_json_field "$1" "$2" '.result.state'
-}
-
-is_open_channel_state() {
-  _state_lower=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
-  [ "$_state_lower" = "open" ]
-}
-
-# Resolve a transfer channel id that has a valid, symmetric counterparty channel end.
-get_latest_transfer_channel_id() {
-  _channel_chain="$1"
-  _counterparty_chain="$2"
-
-  _channel_candidates=$(
-    "$HERMES_BIN" --json query channels --chain "$_channel_chain" --counterparty-chain "$_counterparty_chain" 2>/dev/null |
-      jq -r '
-        select(.result) |
-        (if (.result | type) == "array" then .result[] else .result end) |
-        .channel_id // .channel_a // empty
-      ' 2>/dev/null |
-      sort -t- -k2,2nr
-  )
-
-  while IFS= read -r _candidate_channel_id; do
-    [ -z "$_candidate_channel_id" ] && continue
-    # Token-swap transfers require a fully open channel end.
-    # We intentionally skip stale ids in Init or TryOpen state.
-    _candidate_state=$(extract_channel_end_state "$_channel_chain" "$_candidate_channel_id")
-    if ! is_open_channel_state "$_candidate_state"; then
-      continue
-    fi
-    _counterparty_channel_id=$(extract_counterparty_channel_id "$_channel_chain" "$_candidate_channel_id")
-    [ -z "$_counterparty_channel_id" ] && continue
-    # Both ends must be open before we treat this channel pair as usable.
-    _counterparty_state=$(extract_channel_end_state "$_counterparty_chain" "$_counterparty_channel_id")
-    if ! is_open_channel_state "$_counterparty_state"; then
-      continue
-    fi
-    _reverse_counterparty_channel_id=$(extract_counterparty_channel_id "$_counterparty_chain" "$_counterparty_channel_id")
-    if [ "$_reverse_counterparty_channel_id" = "$_candidate_channel_id" ]; then
-      echo "$_candidate_channel_id"
-      return 0
-    fi
-  done <<EOF
-$_channel_candidates
-EOF
-  # Return empty when no open symmetric channel exists.
-  # Callers handle this as a hard prerequisite failure.
-  echo ""
-}
-
 # Function to extract and print txhash from piped input
 log_tx() {
   _raw_output="$(cat)"
@@ -356,12 +289,12 @@ SWAPROUTER_WASM="$OSMOSIS_WORKSPACE_DIR/cosmwasm/wasm/swaprouter.wasm"
 CROSSCHAIN_SWAPS_WASM="$OSMOSIS_WORKSPACE_DIR/cosmwasm/wasm/crosschain_swaps.wasm"
 
 # query channels' id
-cardano_entrypoint_channel_id=$(get_latest_transfer_channel_id "$HERMES_CARDANO_NAME" "$HERMES_ENTRYPOINT_NAME")
-check_string_empty "$cardano_entrypoint_channel_id" "Cardano->Entrypoint chain channel not found. Exiting..."
+cardano_entrypoint_channel_id="${CARDANO_ENTRYPOINT_CHANNEL_ID:-}"
+check_string_empty "$cardano_entrypoint_channel_id" "CARDANO_ENTRYPOINT_CHANNEL_ID is required. caribic should pass the exact Cardano->Entrypoint transfer channel."
 echo "Cardano->Entrypoint chain channel id: $cardano_entrypoint_channel_id"
 
-entrypoint_osmosis_channel_id=$(get_latest_transfer_channel_id "$HERMES_ENTRYPOINT_NAME" "$HERMES_OSMOSIS_NAME")
-check_string_empty "$entrypoint_osmosis_channel_id" "Entrypoint chain->Osmosis channel not found. Exiting..."
+entrypoint_osmosis_channel_id="${ENTRYPOINT_OSMOSIS_CHANNEL_ID:-}"
+check_string_empty "$entrypoint_osmosis_channel_id" "ENTRYPOINT_OSMOSIS_CHANNEL_ID is required. caribic should pass the exact Entrypoint->Osmosis transfer channel."
 echo "Entrypoint chain->Osmosis channel id: $entrypoint_osmosis_channel_id"
 
 memo=$(
@@ -465,8 +398,8 @@ set_route_msg=$(jq -n --arg denom "$denom" --arg pool_id "$pool_id" \
   check_string_empty "$crosschain_swaps_code_id" "crosschain_swaps code id on Osmosis not found. Exiting..."
   echo "crosschain_swaps code id: $crosschain_swaps_code_id"
 
-osmosis_entrypoint_channel_id=$(get_latest_transfer_channel_id "$HERMES_OSMOSIS_NAME" "$HERMES_ENTRYPOINT_NAME")
-check_string_empty "$osmosis_entrypoint_channel_id" "Osmosis->Entrypoint chain channel not found in Open state. Exiting..."
+osmosis_entrypoint_channel_id="${OSMOSIS_ENTRYPOINT_CHANNEL_ID:-}"
+check_string_empty "$osmosis_entrypoint_channel_id" "OSMOSIS_ENTRYPOINT_CHANNEL_ID is required. caribic should pass the exact Osmosis->Entrypoint transfer channel."
 echo "Osmosis->Entrypoint chain channel id: $osmosis_entrypoint_channel_id"
 
 # Instantiate crosschain_swaps
