@@ -6,7 +6,9 @@ interface StyledTokenItemWrapperProps extends BoxProps {
   isActive?: boolean;
 }
 
-const StyledTokenItemWrapper = styled(Box)<StyledTokenItemWrapperProps>`
+const StyledTokenItemWrapper = styled(Box, {
+  shouldForwardProp: (prop) => prop !== 'isActive',
+})<StyledTokenItemWrapperProps>`
   display: flex;
   gap: 16px;
   align-content: center;

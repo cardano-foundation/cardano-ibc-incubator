@@ -1,8 +1,9 @@
 import axios from 'axios';
 import camelCase from 'camelcase-keys';
+import { GATEWAY_TX_BUILDER_ENDPOINT } from '@/configs/runtime';
 
 const axiosInstance = axios.create({
-  baseURL: `${process.env.NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT}`,
+  baseURL: GATEWAY_TX_BUILDER_ENDPOINT,
   responseType: 'json',
   timeout: 30 * 1000,
   transformResponse: [

@@ -34,6 +34,7 @@ import { useCardanoChain } from '@/hooks/useCardanoChain';
 import SwapContext from '@/contexts/SwapContext';
 import BigNumber from 'bignumber.js';
 import { debounce } from '@/utils/helper';
+import { CARDANO_CHAIN_ID, CARDANO_IBC_CHAIN_ID } from '@/configs/runtime';
 import SelectNetwork from './SelectNetwork';
 import SelectToken from './SelectToken';
 import { NetworkModal } from './modal/NetworkModal';
@@ -155,14 +156,39 @@ const Transfer = () => {
       return initEstData;
     }
     const dataTransfer = getDataTransfer();
-    const { chains, foundRoute, routes } = calculateTransferRoutes(
-      dataTransfer.fromNetwork.networkId!,
-      dataTransfer.toNetwork.networkId!,
+    const { chains, foundRoute, routes, failureCode, failureMessage } =
+      calculateTransferRoutes(
+      dataTransfer.fromNetwork.ibcChainId || dataTransfer.fromNetwork.networkId!,
+      dataTransfer.toNetwork.ibcChainId || dataTransfer.toNetwork.networkId!,
       4,
     );
     if (!foundRoute) {
-      console.log('route not found');
-      toast.error('route not found', { theme: 'colored' });
+      const fromChainName =
+        dataTransfer.fromNetwork.networkPrettyName ||
+        dataTransfer.fromNetwork.networkId;
+      const toChainName =
+        dataTransfer.toNetwork.networkPrettyName ||
+        dataTransfer.toNetwork.networkId;
+      const messageByFailureCode: Record<string, string> = {
+        'channels-not-loaded':
+          'IBC transfer channels have not loaded yet. Wait for channel discovery to complete and make sure the local bridge stack is running.',
+        'source-chain-unavailable': `No discovered IBC transfer channels start from ${fromChainName}.`,
+        'destination-chain-unavailable': `No discovered IBC transfer channels reach ${toChainName}.`,
+        'no-outbound-channels': `${fromChainName} has no outbound IBC transfer channels.`,
+        'no-route-found': `No IBC transfer route found from ${fromChainName} to ${toChainName}. For this local stack, that path should typically exist via Entrypoint, so check that the Entrypoint<->${toChainName} transfer channels were created successfully.`,
+      };
+      const message =
+        (failureCode && messageByFailureCode[failureCode]) ||
+        failureMessage ||
+        `No IBC transfer route found from ${fromChainName} to ${toChainName}.`;
+      console.error('IBC transfer route resolution failed', {
+        fromChainId: dataTransfer.fromNetwork.networkId,
+        toChainId: dataTransfer.toNetwork.networkId,
+        failureCode,
+        failureMessage: message,
+        routeBuilderDetail: failureMessage,
+      });
+      toast.error(message, { theme: 'colored', autoClose: 7000 });
       return initEstData;
     }
 
@@ -188,7 +214,7 @@ const Transfer = () => {
       });
     }
 
-    if (fromNetwork.networkId !== process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID) {
+    if (fromNetwork.networkId !== CARDANO_CHAIN_ID) {
       const senderAddress = await getAccount();
       const msg = unsignedTxTransferFromCosmos(
         chains,
@@ -290,7 +316,7 @@ const Transfer = () => {
   };
 
   const handleTransfer = async () => {
-    if (fromNetwork.networkId === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID) {
+    if (fromNetwork.networkId === CARDANO_CHAIN_ID) {
       handleTransferFromCardano();
     } else {
       handleTransferFromCosmos();
@@ -300,6 +326,7 @@ const Transfer = () => {
   const fetchNetworkList = async () => {
     const networkListData: NetworkItemProps[] = allChains.map((chain) => ({
       networkId: chain.chain_id,
+      ibcChainId: chain.ibc_chain_id || chain.chain_id,
       networkLogo: chain?.logo_URIs?.svg || DefaultCosmosNetworkIcon.src,
       networkName: chain.chain_name,
       networkPrettyName: chain?.pretty_name,
@@ -337,7 +364,7 @@ const Transfer = () => {
     // Cardano
     if (
       fromNetwork.networkId &&
-      fromNetwork.networkId === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID
+      fromNetwork.networkId === CARDANO_CHAIN_ID
     ) {
       try {
         setIsFetchDataLoading(true);

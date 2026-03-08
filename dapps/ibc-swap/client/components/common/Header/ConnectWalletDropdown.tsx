@@ -18,9 +18,39 @@ import CosmosIcon from '@/assets/icons/cosmos-icon.svg';
 import LogoutIcon from '@/assets/icons/Logout.svg';
 import CardanoIcon from '@/assets/icons/cardano.svg';
 import { capitalizeString } from '@/utils/string';
-import { useWallet } from '@meshsdk/react';
+import { useWallet, useWalletList } from '@meshsdk/react';
 import { UseCosmosWallet } from './UseCosmosWallet';
 import CardanoWalletModal, { WalletProps } from './CardanoWalletModal';
+
+const CARDANO_WALLET_STORAGE_KEY = 'cardano-wallet';
+
+const getStoredCardanoWalletName = (): string | undefined => {
+  const rawWallet = localStorage.getItem(CARDANO_WALLET_STORAGE_KEY);
+
+  if (!rawWallet) {
+    return undefined;
+  }
+
+  try {
+    const parsedWallet = JSON.parse(rawWallet);
+
+    if (typeof parsedWallet === 'string') {
+      return parsedWallet;
+    }
+
+    if (
+      parsedWallet &&
+      typeof parsedWallet === 'object' &&
+      typeof parsedWallet.name === 'string'
+    ) {
+      return parsedWallet.name;
+    }
+  } catch {
+    return rawWallet;
+  }
+
+  return undefined;
+};
 
 export const ConnectWalletDropdown = () => {
   // cosmos wallet hook
@@ -32,9 +62,18 @@ export const ConnectWalletDropdown = () => {
   } = UseCosmosWallet();
 
   // cardano wallet hook
-  const { disconnect: disconnectCardanoWallet } = useWallet();
-
-  const [walletCardano, setWalletCardano] = useState<WalletProps>();
+  const {
+    connect: connectCardanoWallet,
+    connecting: isConnectingCardanoWallet,
+    connected: isCardanoWalletConnected,
+    name: connectedCardanoWalletName,
+    disconnect: disconnectCardanoWallet,
+    error: cardanoWalletError,
+  } = useWallet();
+  const cardanoWallets = useWalletList();
+  const [pendingCardanoWalletName, setPendingCardanoWalletName] =
+    useState<string>();
+  const [hasAttemptedRestore, setHasAttemptedRestore] = useState(false);
 
   const {
     isOpen: isOpenCardanoWalletModal,
@@ -42,24 +81,75 @@ export const ConnectWalletDropdown = () => {
     onClose: onCloseCardanoWalletModal,
   } = useDisclosure();
 
+  const walletCardano = isCardanoWalletConnected
+    ? cardanoWallets.find(
+        (wallet) => wallet.name === connectedCardanoWalletName,
+      )
+    : undefined;
+
+  const cardanoWalletLabel =
+    walletCardano?.name || connectedCardanoWalletName || undefined;
+
+  let cardanoWalletErrorMessage: string | undefined;
+
+  if (typeof cardanoWalletError === 'string') {
+    cardanoWalletErrorMessage = cardanoWalletError;
+  } else if (cardanoWalletError instanceof Error) {
+    cardanoWalletErrorMessage = cardanoWalletError.message;
+  }
+
   const handleOpenCardanoWalletModal = () => {
     onOpenCardanoWalletModal();
   };
 
+  const handleConnectCardanoWallet = async (wallet: WalletProps) => {
+    setPendingCardanoWalletName(wallet.name);
+    await connectCardanoWallet(wallet.name);
+  };
+
   const handleDisconnectCardanoWallet = async () => {
-    setWalletCardano(undefined);
-    localStorage.removeItem('cardano-wallet');
+    setPendingCardanoWalletName(undefined);
+    localStorage.removeItem(CARDANO_WALLET_STORAGE_KEY);
     disconnectCardanoWallet();
   };
 
   useEffect(() => {
-    const walletConnected = localStorage?.getItem('cardano-wallet');
-
-    if (walletConnected) {
-      const cardanoWallet = JSON.parse(walletConnected);
-      setWalletCardano(cardanoWallet);
+    if (hasAttemptedRestore) {
+      return;
     }
-  }, []);
+
+    setHasAttemptedRestore(true);
+
+    const storedWalletName = getStoredCardanoWalletName();
+
+    if (storedWalletName) {
+      setPendingCardanoWalletName(storedWalletName);
+      connectCardanoWallet(storedWalletName);
+    }
+  }, [connectCardanoWallet, hasAttemptedRestore]);
+
+  useEffect(() => {
+    if (isCardanoWalletConnected && connectedCardanoWalletName) {
+      localStorage.setItem(
+        CARDANO_WALLET_STORAGE_KEY,
+        JSON.stringify(connectedCardanoWalletName),
+      );
+      setPendingCardanoWalletName(undefined);
+      onCloseCardanoWalletModal();
+      return;
+    }
+
+    if (pendingCardanoWalletName && !isConnectingCardanoWallet) {
+      localStorage.removeItem(CARDANO_WALLET_STORAGE_KEY);
+      setPendingCardanoWalletName(undefined);
+    }
+  }, [
+    connectedCardanoWalletName,
+    isCardanoWalletConnected,
+    isConnectingCardanoWallet,
+    onCloseCardanoWalletModal,
+    pendingCardanoWalletName,
+  ]);
 
   return (
     <Menu closeOnSelect={false} closeOnBlur={false}>
@@ -77,11 +167,12 @@ export const ConnectWalletDropdown = () => {
       >
         <Box display="flex" flexDirection="row">
           {/* cardano */}
-          {walletCardano?.icon ? (
+          {isCardanoWalletConnected ? (
             <Image
               src={CardanoIcon}
               width={24}
               height={24}
+              style={{ width: '24px', height: '24px' }}
               alt="cardano-icon"
             />
           ) : (
@@ -96,6 +187,7 @@ export const ConnectWalletDropdown = () => {
                 width={24}
                 height={24}
                 src={CosmosIcon}
+                style={{ width: '24px', height: '24px' }}
                 alt="Cosmos Wallet"
               />
             )}
@@ -124,15 +216,16 @@ export const ConnectWalletDropdown = () => {
           background={COLOR.neutral_6}
           cursor="default"
         >
-          {walletCardano?.name ? (
+          {cardanoWalletLabel ? (
             <>
               <Image
                 src={CardanoIcon.src}
                 width={24}
                 height={24}
+                style={{ width: '24px', height: '24px' }}
                 alt="cardano-icon"
               />
-              <span>{capitalizeString(walletCardano?.name)}</span>
+              <span>{capitalizeString(cardanoWalletLabel)}</span>
             </>
           ) : (
             <Box
@@ -145,7 +238,7 @@ export const ConnectWalletDropdown = () => {
               <span>Cardano Wallet</span>
             </Box>
           )}
-          {walletCardano?.name && (
+          {cardanoWalletLabel && (
             <>
               <Spacer />
               <Box cursor="pointer">
@@ -160,7 +253,10 @@ export const ConnectWalletDropdown = () => {
           <CardanoWalletModal
             isOpen={isOpenCardanoWalletModal}
             onClose={onCloseCardanoWalletModal}
-            onChooseWallet={(wal) => setWalletCardano(wal)}
+            onSelectWallet={handleConnectCardanoWallet}
+            connectingWalletName={pendingCardanoWalletName}
+            errorMessage={cardanoWalletErrorMessage}
+            wallets={cardanoWallets}
           />
         </MenuItem>
         <MenuItem
@@ -185,6 +281,7 @@ export const ConnectWalletDropdown = () => {
                 width={24}
                 height={24}
                 src={CosmosIcon}
+                style={{ width: '24px', height: '24px' }}
                 alt="Cosmos Wallet"
               />
               <span>{cosmosWallet?.prettyName}</span>

@@ -1,15 +1,10 @@
-import { useChain, useChains, useWalletClient } from '@cosmos-kit/react';
+import { useChain, useWalletClient } from '@cosmos-kit/react';
 import { ChainName } from 'cosmos-kit';
 import { defaultChainName } from '@/constants';
 import { customChainassets, customChains } from '@/configs/customChainInfo';
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 
 export const UseCosmosWallet = (providedChainName?: ChainName) => {
-  const chains = useChains(
-    customChains.map((i) => i.chain_id),
-    true,
-  );
-
   const {
     connect,
     disconnect,
@@ -24,7 +19,7 @@ export const UseCosmosWallet = (providedChainName?: ChainName) => {
 
   const { client } = useWalletClient(wallet?.name);
 
-  const addCustomChainWalet = async () => {
+  const addCustomChainWalet = useCallback(async () => {
     const suggestChains = customChains.map((chain) => {
       const assetList = customChainassets.find(
         (chainAsset) => chainAsset.chain_name === chain.chain_name,
@@ -37,18 +32,18 @@ export const UseCosmosWallet = (providedChainName?: ChainName) => {
     });
     try {
       await Promise.all(
-        suggestChains.map((chain) => client?.addChain?.(chain)),
+        suggestChains.map((chain) => client?.addChain?.(chain as any)),
       );
-    } catch (error) {
-      console.log(error);
+    } catch {
+      // Some wallet clients do not support custom chain suggestion.
     }
-  };
+  }, [client]);
 
   useEffect(() => {
     if (client && status === 'Connected') {
       addCustomChainWalet();
     }
-  }, [status]);
+  }, [addCustomChainWalet, client, status]);
 
   return {
     connect,

@@ -60,4 +60,11 @@ export type TransferRoutes = {
   foundRoute: boolean;
   chains: string[];
   routes: string[];
+  failureCode?:
+    | 'channels-not-loaded'
+    | 'source-chain-unavailable'
+    | 'destination-chain-unavailable'
+    | 'no-outbound-channels'
+    | 'no-route-found';
+  failureMessage?: string;
 };

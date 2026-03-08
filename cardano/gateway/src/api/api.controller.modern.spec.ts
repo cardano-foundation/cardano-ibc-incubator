@@ -3,6 +3,8 @@ import { ApiController } from './api.controller';
 import { ChannelService } from '~@/query/services/channel.service';
 import { PacketService } from '~@/tx/packet.service';
 import { MsgTransfer } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+import { DenomTraceService } from '~@/query/services/denom-trace.service';
+import { SwapPlannerService } from './swap-planner.service';
 
 describe('ApiController (modern)', () => {
   let controller: ApiController;
@@ -11,6 +13,14 @@ describe('ApiController (modern)', () => {
   };
   let packetServiceMock: {
     sendPacket: jest.Mock;
+  };
+  let denomTraceServiceMock: {
+    findByHash: jest.Mock;
+    findAll: jest.Mock;
+  };
+  let swapPlannerServiceMock: {
+    getSwapOptions: jest.Mock;
+    estimateSwap: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -22,12 +32,22 @@ describe('ApiController (modern)', () => {
     packetServiceMock = {
       sendPacket: jest.fn(),
     };
+    denomTraceServiceMock = {
+      findByHash: jest.fn(),
+      findAll: jest.fn(),
+    };
+    swapPlannerServiceMock = {
+      getSwapOptions: jest.fn(),
+      estimateSwap: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ApiController],
       providers: [
         { provide: ChannelService, useValue: channelServiceMock },
         { provide: PacketService, useValue: packetServiceMock },
+        { provide: DenomTraceService, useValue: denomTraceServiceMock },
+        { provide: SwapPlannerService, useValue: swapPlannerServiceMock },
       ],
     }).compile();
 
@@ -110,5 +130,168 @@ describe('ApiController (modern)', () => {
     } as any;
 
     await expect(controller.buildTransferMsg(dto)).rejects.toThrow('Invalid denom');
+  });
+
+  it('returns a synthetic native trace for lovelace', async () => {
+    const response = await controller.getCardanoAssetDenomTrace('lovelace');
+
+    expect(denomTraceServiceMock.findByHash).not.toHaveBeenCalled();
+    expect(response).toEqual({
+      asset_id: 'lovelace',
+      kind: 'native',
+      path: '',
+      base_denom: Buffer.from('lovelace', 'utf8').toString('hex'),
+      full_denom: 'lovelace',
+      voucher_token_name: null,
+      voucher_policy_id: null,
+      ibc_denom_hash: null,
+      tx_hash: null,
+      first_seen: null,
+    });
+  });
+
+  it('returns a persisted voucher trace when policy id and voucher token match', async () => {
+    const voucherPolicyId = 'a'.repeat(56);
+    const voucherTokenName = 'b'.repeat(64);
+    denomTraceServiceMock.findByHash.mockResolvedValue({
+      hash: voucherTokenName,
+      path: 'transfer/channel-7',
+      base_denom: 'uatom',
+      voucher_policy_id: voucherPolicyId.toUpperCase(),
+      ibc_denom_hash: 'c'.repeat(64),
+      tx_hash: 'deadbeef',
+      first_seen: new Date('2026-03-07T12:00:00.000Z'),
+    });
+
+    const response = await controller.getCardanoAssetDenomTrace(`${voucherPolicyId}${voucherTokenName}`);
+
+    expect(denomTraceServiceMock.findByHash).toHaveBeenCalledWith(voucherTokenName);
+    expect(response).toEqual({
+      asset_id: `${voucherPolicyId}${voucherTokenName}`,
+      kind: 'ibc_voucher',
+      path: 'transfer/channel-7',
+      base_denom: 'uatom',
+      full_denom: 'transfer/channel-7/uatom',
+      voucher_token_name: voucherTokenName,
+      voucher_policy_id: voucherPolicyId.toUpperCase(),
+      ibc_denom_hash: 'c'.repeat(64),
+      tx_hash: 'deadbeef',
+      first_seen: '2026-03-07T12:00:00.000Z',
+    });
+  });
+
+  it('falls back to a native asset response when the asset unit is not a stored voucher', async () => {
+    const nativeAssetId = `${'d'.repeat(56)}${'ab'.repeat(4)}`;
+    denomTraceServiceMock.findByHash.mockResolvedValue(null);
+
+    const response = await controller.getCardanoAssetDenomTrace(nativeAssetId);
+
+    expect(response).toEqual({
+      asset_id: nativeAssetId,
+      kind: 'native',
+      path: '',
+      base_denom: nativeAssetId,
+      full_denom: nativeAssetId,
+      voucher_token_name: null,
+      voucher_policy_id: null,
+      ibc_denom_hash: null,
+      tx_hash: null,
+      first_seen: null,
+    });
+  });
+
+  it('rejects malformed cardano asset ids', async () => {
+    await expect(controller.getCardanoAssetDenomTrace('not-hex')).rejects.toThrow('"assetId"');
+    expect(denomTraceServiceMock.findByHash).not.toHaveBeenCalled();
+  });
+
+  it('lists persisted ibc voucher assets through the http api', async () => {
+    denomTraceServiceMock.findAll.mockResolvedValue([
+      {
+        hash: 'e'.repeat(64),
+        path: 'transfer/channel-3',
+        base_denom: 'gamm/pool/1',
+        voucher_policy_id: 'f'.repeat(56),
+        ibc_denom_hash: '1'.repeat(64),
+        tx_hash: null,
+        first_seen: new Date('2026-03-07T13:00:00.000Z'),
+      },
+    ]);
+
+    const response = await controller.listCardanoIbcAssets();
+
+    expect(denomTraceServiceMock.findAll).toHaveBeenCalled();
+    expect(response).toEqual([
+      {
+        asset_id: `${'f'.repeat(56)}${'e'.repeat(64)}`,
+        kind: 'ibc_voucher',
+        path: 'transfer/channel-3',
+        base_denom: 'gamm/pool/1',
+        full_denom: 'transfer/channel-3/gamm/pool/1',
+        voucher_token_name: 'e'.repeat(64),
+        voucher_policy_id: 'f'.repeat(56),
+        ibc_denom_hash: '1'.repeat(64),
+        tx_hash: null,
+        first_seen: '2026-03-07T13:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('delegates swap options to SwapPlannerService', async () => {
+    swapPlannerServiceMock.getSwapOptions.mockResolvedValue({
+      from_chain_id: '42',
+      from_chain_name: 'Cardano',
+      to_chain_id: 'localosmosis',
+      to_chain_name: 'Local Osmosis',
+      to_tokens: [{ token_id: 'uosmo', token_name: 'uosmo', token_logo: null }],
+    });
+
+    await expect(controller.getSwapOptions()).resolves.toEqual({
+      from_chain_id: '42',
+      from_chain_name: 'Cardano',
+      to_chain_id: 'localosmosis',
+      to_chain_name: 'Local Osmosis',
+      to_tokens: [{ token_id: 'uosmo', token_name: 'uosmo', token_logo: null }],
+    });
+    expect(swapPlannerServiceMock.getSwapOptions).toHaveBeenCalled();
+  });
+
+  it('delegates swap estimates to SwapPlannerService', async () => {
+    swapPlannerServiceMock.estimateSwap.mockResolvedValue({
+      message: '',
+      tokenOutAmount: '123',
+      tokenOutTransferBackAmount: '120',
+      tokenSwapAmount: '100',
+      outToken: 'uosmo',
+      transferRoutes: ['transfer/channel-0'],
+      transferBackRoutes: ['transfer/channel-1'],
+      transferChains: ['42', 'entrypoint', 'localosmosis'],
+    });
+
+    const response = await controller.estimateSwap({
+      from_chain_id: '42',
+      token_in_denom: 'lovelace',
+      token_in_amount: '100',
+      to_chain_id: 'localosmosis',
+      token_out_denom: 'uosmo',
+    });
+
+    expect(swapPlannerServiceMock.estimateSwap).toHaveBeenCalledWith({
+      fromChainId: '42',
+      tokenInDenom: 'lovelace',
+      tokenInAmount: '100',
+      toChainId: 'localosmosis',
+      tokenOutDenom: 'uosmo',
+    });
+    expect(response).toEqual({
+      message: '',
+      tokenOutAmount: '123',
+      tokenOutTransferBackAmount: '120',
+      tokenSwapAmount: '100',
+      outToken: 'uosmo',
+      transferRoutes: ['transfer/channel-0'],
+      transferBackRoutes: ['transfer/channel-1'],
+      transferChains: ['42', 'entrypoint', 'localosmosis'],
+    });
   });
 });

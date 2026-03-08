@@ -1,12 +1,10 @@
 import { transfer } from '@/apis/restapi/cardano';
-import apolloClient from '@/apis/apollo/apolloClient';
+import { lookupCardanoAssetDenomTrace } from '@/apis/restapi/cardano';
+import { CROSSCHAIN_SWAP_ADDRESS } from '@/configs/runtime';
 import { getPublicKeyHashFromAddress } from './address';
-import { GET_CARDANO_DENOM_BY_ID } from '@/apis/apollo/query';
 import { FORWARD_TIMEOUT } from '@/constants';
 
 const pfmReceiver = 'pfm';
-const CROSSCHAIN_SWAPS_ADDRESS =
-  process.env.NEXT_PUBLIC_CROSSCHAIN_SWAP_ADDRESS!;
 
 const buildNextMemo = (transferBackRoutes: string[], receiver: string): any => {
   let result = {};
@@ -48,7 +46,7 @@ const buildOsmosisSwapMemo = ({
 }): any => {
   const result = {
     wasm: {
-      contract: CROSSCHAIN_SWAPS_ADDRESS,
+      contract: CROSSCHAIN_SWAP_ADDRESS,
       msg: {
         osmosis_swap: {
           output_denom: tokenOutDenom,
@@ -81,7 +79,7 @@ const buildForwardMemo = ({
     if (index === 0) {
       result = {
         forward: {
-          receiver: CROSSCHAIN_SWAPS_ADDRESS,
+          receiver: CROSSCHAIN_SWAP_ADDRESS,
           port: srcPort,
           channel: srcChannel,
           next: osmosisSwapMemo,
@@ -126,6 +124,11 @@ export async function unsignedTxSwapFromCardano({
   slippagePercentage: string;
   timeoutTimeOffset: bigint; // nanosec
 }): Promise<{ typeUrl: string; value: any }[]> {
+  if (!CROSSCHAIN_SWAP_ADDRESS) {
+    throw new Error(
+      'NEXT_PUBLIC_CROSSCHAIN_SWAP_ADDRESS is required to build swap transactions.',
+    );
+  }
   const currentTimeStamp = BigInt(Date.now()) * BigInt(1000000);
   // pfm
   const [route, ...restRoutes] = transferRoutes;
@@ -143,19 +146,9 @@ export async function unsignedTxSwapFromCardano({
     transferRoutes: restRoutes,
     osmosisSwapMemo,
   });
-  const cardanoTokenTrace = await apolloClient
-    .query({
-      query: GET_CARDANO_DENOM_BY_ID,
-      variables: { id: tokenIn.denom.replaceAll('.', '') },
-      fetchPolicy: 'network-only',
-    })
-    .then((res) => res.data?.cardanoIbcAsset)
-    .catch(() => ({
-      denom: '',
-      path: '',
-    }));
-  const sendTokenDenom = cardanoTokenTrace?.denom
-    ? `${cardanoTokenTrace?.path}/${cardanoTokenTrace?.denom}`
+  const cardanoTokenTrace = await lookupCardanoAssetDenomTrace(tokenIn.denom);
+  const sendTokenDenom = cardanoTokenTrace?.fullDenom
+    ? cardanoTokenTrace.fullDenom
     : tokenIn.denom;
   const data = await transfer({
     sourcePort: srcPort,

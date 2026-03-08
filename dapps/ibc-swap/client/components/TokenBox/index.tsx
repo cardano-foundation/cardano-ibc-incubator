@@ -7,6 +7,7 @@ import { useContext, useEffect, useState } from 'react';
 import { useCosmosChain } from '@/hooks/useCosmosChain';
 import { useCardanoChain } from '@/hooks/useCardanoChain';
 import SwapContext from '@/contexts/SwapContext';
+import { CARDANO_CHAIN_ID } from '@/configs/runtime';
 
 import StyledTokenBox from './index.style';
 
@@ -38,7 +39,7 @@ const TokenBox = ({
         let balanceData = '0';
         if (
           token?.network?.networkId &&
-          token.network.networkId === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID
+          token.network.networkId === CARDANO_CHAIN_ID
         ) {
           balanceData = cardano.getBalanceByDenom(token.tokenId);
         } else {
@@ -63,7 +64,14 @@ const TokenBox = ({
     };
 
     fetchBalance();
-  }, [token?.tokenId]);
+  }, [
+    cardano,
+    cosmosChain,
+    fromOrTo,
+    setSwapData,
+    token?.network?.networkId,
+    token?.tokenId,
+  ]);
   const boxValue =
     fromOrTo === FROM_TO.FROM
       ? { value: token?.swapAmount || '0' }

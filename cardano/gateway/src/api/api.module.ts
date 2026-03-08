@@ -7,10 +7,11 @@ import { HttpModule } from '@nestjs/axios';
 import { MiniProtocalsModule } from '@shared/modules/mini-protocals/mini-protocals.module';
 import { MithrilModule } from '../shared/modules/mithril/mithril.module';
 import { TxModule } from '~@/tx/tx.module';
+import { SwapPlannerService } from './swap-planner.service';
 
 @Module({
   imports: [QueryModule, TxModule, LucidModule, HttpModule, MiniProtocalsModule, MithrilModule],
   controllers: [ApiController],
-  providers: [ChannelService, Logger],
+  providers: [ChannelService, Logger, SwapPlannerService],
 })
 export class ApiModule {}

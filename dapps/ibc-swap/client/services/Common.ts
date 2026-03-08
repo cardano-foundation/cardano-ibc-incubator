@@ -1,9 +1,9 @@
 import { CARDANO_LOVELACE_HEX_STRING, OSMOSIS_CHAIN_ID } from '@/constants';
 import { chainsRestEndpoints } from '@/configs/customChainInfo';
+import { isCardanoChainRef } from '@/configs/runtime';
 import { getPathTrace } from '@/utils/string';
 import BigNumber from 'bignumber.js';
-import apolloClient from '@/apis/apollo/apolloClient';
-import { GET_CARDANO_DENOM_BY_ID } from '@/apis/apollo/query';
+import { lookupCardanoAssetDenomTrace } from '@/apis/restapi/cardano';
 import { toast } from 'react-toastify';
 import {
   fetchOsmosisDenomTraces,
@@ -14,24 +14,16 @@ import { getTokenDenomTraceCosmos } from './CommonCosmosServices';
 
 export async function getTokenDenomTrace(chainId: string, tokenString: string) {
   if (!tokenString.startsWith('ibc/')) {
-    if (chainId === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID) {
-      try {
-        const response = await apolloClient.query({
-          query: GET_CARDANO_DENOM_BY_ID,
-          variables: { id: tokenString },
-          fetchPolicy: 'network-only',
-        });
-        const denom = response.data?.cardanoIbcAsset;
-
+    if (isCardanoChainRef(chainId)) {
+      const trace = await lookupCardanoAssetDenomTrace(tokenString);
+      if (trace) {
         return {
-          path: denom?.path || '',
+          path: trace.path || '',
           base_denom:
             tokenString.toLowerCase() === 'lovelace'
               ? CARDANO_LOVELACE_HEX_STRING
-              : denom?.denom || tokenString,
+              : trace.baseDenom || tokenString,
         };
-      } catch (error) {
-        // toast.error('Failed to fetch data from GraphQL.', { theme: 'colored' });
       }
     }
     return {
@@ -43,7 +35,7 @@ export async function getTokenDenomTrace(chainId: string, tokenString: string) {
     };
   }
   let trace: any = {};
-  if (chainId !== process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID) {
+  if (!isCardanoChainRef(chainId)) {
     // cosmos
     trace = await getTokenDenomTraceCosmos(
       chainsRestEndpoints[chainId],

@@ -34,7 +34,12 @@ export const CosmosWalletModal = ({
       await wallet.connect(true);
       setOpen(false);
     } catch (error) {
-      console.log(error);
+      toast.error(
+        (error as Error)?.message?.toString() || 'Failed to connect wallet',
+        {
+          theme: 'colored',
+        },
+      );
     }
   };
 
@@ -61,6 +66,12 @@ export const CosmosWalletModal = ({
           color={COLOR.neutral_3}
         />
         <ModalBody mt="10px">
+          {walletRepo?.wallets.length === 0 && (
+            <Text color={COLOR.neutral_2} textAlign="center" mt="80px">
+              No Cosmos wallet extension detected. Install Keplr, Leap, or
+              Cosmostation.
+            </Text>
+          )}
           <Box display="flex" gap="24px">
             {walletRepo?.wallets.slice(0, 2).map((wallet) => (
               <Box
