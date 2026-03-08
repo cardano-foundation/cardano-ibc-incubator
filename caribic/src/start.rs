@@ -18,8 +18,10 @@ use fs_extra::file::copy;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
 use std::cmp::min;
-use std::fs::{self};
+use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::thread;
@@ -29,6 +31,87 @@ use std::u64;
 const ENTRYPOINT_CONTAINER_NAME: &str = "entrypoint-node-prod";
 const HERMES_PROGRESS_LOG_INTERVAL_SECS: u64 = 30;
 const HERMES_PROGRESS_POLL_INTERVAL_MILLIS: u64 = 500;
+const HERMES_PID_FILE_NAME: &str = "hermes.pid";
+const HERMES_STARTUP_CHECK_ATTEMPTS: u32 = 5;
+const HERMES_STARTUP_CHECK_INTERVAL_MILLIS: u64 = 1000;
+
+pub(crate) fn hermes_pid_file_path() -> Option<PathBuf> {
+    home_dir().map(|home| home.join(".hermes").join(HERMES_PID_FILE_NAME))
+}
+
+pub(crate) fn read_hermes_pid_file() -> Option<u32> {
+    let pid_file = hermes_pid_file_path()?;
+    let contents = fs::read_to_string(pid_file).ok()?;
+    contents.trim().parse::<u32>().ok()
+}
+
+pub(crate) fn write_hermes_pid_file(pid: u32) -> Result<(), String> {
+    let pid_file = hermes_pid_file_path().ok_or("Could not determine home directory")?;
+    if let Some(parent) = pid_file.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create Hermes runtime directory: {}", e))?;
+    }
+    fs::write(&pid_file, format!("{}\n", pid)).map_err(|e| {
+        format!(
+            "Failed to write Hermes pid file '{}': {}",
+            pid_file.display(),
+            e
+        )
+    })
+}
+
+pub(crate) fn remove_hermes_pid_file() {
+    if let Some(pid_file) = hermes_pid_file_path() {
+        if pid_file.exists() {
+            let _ = fs::remove_file(pid_file);
+        }
+    }
+}
+
+pub(crate) fn is_process_alive(pid: u32) -> bool {
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+pub(crate) fn process_command(pid: u32) -> Option<String> {
+    let output = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "command="])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let command = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if command.is_empty() {
+        None
+    } else {
+        Some(command)
+    }
+}
+
+pub(crate) fn is_expected_hermes_daemon_pid(pid: u32, expected_binary_path: Option<&str>) -> bool {
+    process_command(pid)
+        .map(|command| is_hermes_daemon_command(command.as_str(), expected_binary_path))
+        .unwrap_or(false)
+}
+
+pub(crate) fn is_hermes_daemon_command(command: &str, expected_binary_path: Option<&str>) -> bool {
+    let normalized_command = command.trim();
+    if normalized_command.is_empty() || !normalized_command.contains("--config") {
+        return false;
+    }
+
+    if let Some(path) = expected_binary_path {
+        if normalized_command.starts_with(path) {
+            return normalized_command.ends_with(" start");
+        }
+    }
+
+    normalized_command.contains("hermes") && normalized_command.ends_with(" start")
+}
 
 /// Get environment variables for Docker Compose, including UID/GID
 /// - macOS: Uses 0:0 (root) for compatibility
@@ -1943,6 +2026,24 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
     let home_path = home_dir().ok_or("Could not determine home directory")?;
     let hermes_log = home_path.join(".hermes/hermes.log");
     let hermes_config = home_path.join(".hermes/config.toml");
+    let hermes_err_log = hermes_log.with_extension("err");
+    let expected_binary_str = hermes_binary.to_str();
+
+    if let Some(existing_pid) = read_hermes_pid_file() {
+        if is_process_alive(existing_pid)
+            && is_expected_hermes_daemon_pid(existing_pid, expected_binary_str)
+        {
+            log_or_show_progress(
+                &format!("Hermes daemon already running (pid={})", existing_pid),
+                &optional_progress_bar,
+            );
+            if let Some(progress_bar) = &optional_progress_bar {
+                progress_bar.finish_and_clear();
+            }
+            return Ok(());
+        }
+        remove_hermes_pid_file();
+    }
 
     // Validate config before starting
     log_or_show_progress("Validating Hermes configuration", &optional_progress_bar);
@@ -1968,53 +2069,80 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
 
     log_or_show_progress("Launching Hermes daemon process", &optional_progress_bar);
 
-    let hermes_err_log = hermes_log.with_extension("err");
+    fs::create_dir_all(home_path.join(".hermes"))
+        .map_err(|e| format!("Failed to create Hermes runtime directory: {}", e))?;
+    let _ = fs::remove_file(&hermes_err_log);
 
-    // Start Hermes detached from the current process group so it keeps running after
-    // `caribic` exits in both interactive and non-interactive launch contexts.
-    let launch_output = Command::new("sh")
-        .arg("-c")
-        .arg(format!(
-            "nohup '{}' --config '{}' start >> '{}' 2>> '{}' < /dev/null & echo $!",
-            hermes_binary.display(),
-            hermes_config.display(),
-            hermes_log.display(),
-            hermes_err_log.display()
-        ))
-        .output()
-        .map_err(|e| format!("Failed to launch Hermes daemon: {}", e))?;
+    let hermes_stdout = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&hermes_log)
+        .map_err(|e| {
+            format!(
+                "Failed to open Hermes log '{}': {}",
+                hermes_log.display(),
+                e
+            )
+        })?;
+    let hermes_stderr = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&hermes_err_log)
+        .map_err(|e| {
+            format!(
+                "Failed to open Hermes error log '{}': {}",
+                hermes_err_log.display(),
+                e
+            )
+        })?;
+    let dev_null = OpenOptions::new()
+        .read(true)
+        .open("/dev/null")
+        .map_err(|e| format!("Failed to open /dev/null for Hermes stdin: {}", e))?;
 
-    if !launch_output.status.success() {
-        return Err(format!(
-            "Failed to launch Hermes daemon shell command: {}",
-            String::from_utf8_lossy(&launch_output.stderr).trim()
-        )
-        .into());
+    let mut child_command = Command::new(&hermes_binary);
+    child_command
+        .args([
+            "--config",
+            hermes_config.to_str().ok_or("Invalid Hermes config path")?,
+            "start",
+        ])
+        .stdin(Stdio::from(dev_null))
+        .stdout(Stdio::from(hermes_stdout))
+        .stderr(Stdio::from(hermes_stderr));
+
+    #[cfg(unix)]
+    {
+        // Put Hermes into its own process group so `caribic` exiting does not keep it tied
+        // to the caller's foreground job control state.
+        child_command.process_group(0);
     }
 
-    let pid_str = String::from_utf8_lossy(&launch_output.stdout)
-        .trim()
-        .to_string();
-    let pid = pid_str
-        .parse::<u32>()
-        .map_err(|_| format!("Failed to parse Hermes daemon PID from '{}'", pid_str))?;
+    let child = child_command
+        .spawn()
+        .map_err(|e| format!("Failed to launch Hermes daemon: {}", e))?;
+    let pid = child.id();
+    drop(child);
+    write_hermes_pid_file(pid)?;
 
     log(&format!("Hermes started (PID: {})", pid));
     log(&format!("   Logs: {}", hermes_log.display()));
     log("   Monitor: tail -f ~/.hermes/hermes.log");
 
-    // Wait briefly to ensure process doesn't immediately crash
+    // Verify Hermes survives a short startup window and that the tracked pid really is the
+    // expected Hermes daemon command, not just a short-lived child that happened to exist.
     log_or_show_progress("Verifying daemon startup", &optional_progress_bar);
-    thread::sleep(Duration::from_millis(1000));
-
-    // Check if process is still running.
-    let is_running = Command::new("kill")
-        .args(["-0", pid.to_string().as_str()])
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false);
+    let mut is_running = false;
+    for _ in 0..HERMES_STARTUP_CHECK_ATTEMPTS {
+        thread::sleep(Duration::from_millis(HERMES_STARTUP_CHECK_INTERVAL_MILLIS));
+        if is_process_alive(pid) && is_expected_hermes_daemon_pid(pid, expected_binary_str) {
+            is_running = true;
+            break;
+        }
+    }
 
     if !is_running {
+        remove_hermes_pid_file();
         let error_content = std::fs::read_to_string(&hermes_err_log)
             .unwrap_or_else(|_| "Could not read error log".to_string());
         return Err(format!(
@@ -2886,17 +3014,27 @@ fn check_mithril_service(mithril_dir: &Path) -> (bool, String) {
 fn check_hermes_daemon_service() -> (bool, String) {
     let expected_binary =
         Path::new(config::get_config().project_root.as_str()).join("relayer/target/release/hermes");
+    let expected_binary_str = expected_binary.to_str();
 
-    let daemon_running = find_running_hermes_daemon(expected_binary.to_str());
-    if daemon_running {
-        let home = home_dir().unwrap_or_default();
-        let log_file = home.join(".hermes/hermes.log");
+    if let Some(pid) = read_hermes_pid_file() {
+        if is_process_alive(pid) && is_expected_hermes_daemon_pid(pid, expected_binary_str) {
+            let home = home_dir().unwrap_or_default();
+            let log_file = home.join(".hermes/hermes.log");
 
-        if log_file.exists() {
-            return (true, "Daemon running".to_string());
+            if log_file.exists() {
+                return (true, format!("Daemon running (pid={})", pid));
+            }
+
+            return (true, format!("Process running (pid={})", pid));
         }
 
-        return (true, "Process running".to_string());
+        remove_hermes_pid_file();
+        return (false, format!("Daemon pid file was stale (pid={})", pid));
+    }
+
+    let daemon_running = find_running_hermes_daemon(expected_binary_str);
+    if daemon_running {
+        return (true, "Process running without managed pid file".to_string());
     }
 
     (false, "Daemon not running".to_string())
@@ -2928,21 +3066,6 @@ fn parse_pid_and_command(line: &str) -> Option<(u32, String)> {
     let pid = pid_str.parse::<u32>().ok()?;
 
     Some((pid, command))
-}
-
-fn is_hermes_daemon_command(command: &str, expected_binary_path: Option<&str>) -> bool {
-    let normalized_command = command.trim();
-    if normalized_command.is_empty() || !normalized_command.contains("--config") {
-        return false;
-    }
-
-    if let Some(path) = expected_binary_path {
-        if normalized_command.starts_with(path) {
-            return normalized_command.ends_with(" start");
-        }
-    }
-
-    normalized_command.contains("hermes") && normalized_command.ends_with(" start")
 }
 
 fn check_rpc_service(url: &str, default_port: u16) -> (bool, String) {
