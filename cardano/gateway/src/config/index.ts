@@ -102,9 +102,8 @@ export default (): Partial<Config> => {
   return {
     ogmiosEndpoint: process.env.OGMIOS_ENDPOINT,
     kupoEndpoint: process.env.KUPO_ENDPOINT,
-    entrypointRestEndpoint: process.env.ENTRYPOINT_REST_ENDPOINT || 'http://host.docker.internal:1317',
-    localOsmosisRestEndpoint:
-      process.env.LOCAL_OSMOSIS_REST_ENDPOINT || 'http://host.docker.internal:1318',
+    entrypointRestEndpoint: process.env.ENTRYPOINT_REST_ENDPOINT,
+    localOsmosisRestEndpoint: process.env.LOCAL_OSMOSIS_REST_ENDPOINT,
     swapRouterAddress: process.env.SWAP_ROUTER_ADDRESS || '',
     deployerSk: process.env.DEPLOYER_SK,
 
