@@ -8,15 +8,17 @@ import {
   querySwapRouterState,
   sqsQueryPoolsUrl,
 } from '@/constants';
+import {
+  LOCAL_OSMOSIS_REST_ENDPOINT,
+  SWAP_ROUTER_ADDRESS,
+} from '@/configs/runtime';
 import { EstimateSwapExactAmountInResponse } from 'osmojs/osmosis/poolmanager/v1beta1/query';
 import { fetchAllDenomTraces } from './CommonCosmosServices';
 
 const routeTableStrPrefix = '\x00\rrouting_table\x00D';
 
 export async function fetchOsmosisDenomTraces(): Promise<IBCDenomTrace> {
-  const restUrl =
-    process.env.NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT ||
-    OSMOSIS_MAINNET_REST_ENDPOINT;
+  const restUrl = LOCAL_OSMOSIS_REST_ENDPOINT || OSMOSIS_MAINNET_REST_ENDPOINT;
   return fetchAllDenomTraces(restUrl);
 }
 
@@ -34,12 +36,13 @@ function isValidTokenInPool(tokenString: string) {
 }
 
 export async function fetchCrossChainSwapRouterState() {
-  const restUrl =
-    process.env.NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT ||
-    OSMOSIS_MAINNET_REST_ENDPOINT;
+  const restUrl = LOCAL_OSMOSIS_REST_ENDPOINT || OSMOSIS_MAINNET_REST_ENDPOINT;
+  if (!SWAP_ROUTER_ADDRESS) {
+    return [];
+  }
   const fetchUrl = `${restUrl}${querySwapRouterState.replace(
     'SWAP_ROUTER_ADDRESS',
-    process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDRESS!,
+    SWAP_ROUTER_ADDRESS,
   )}`;
   const data = await fetch(fetchUrl)
     .then((res) => res.json())

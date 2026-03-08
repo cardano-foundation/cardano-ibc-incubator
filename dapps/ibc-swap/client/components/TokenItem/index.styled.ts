@@ -7,9 +7,10 @@ interface StyledCustomTokenItemWrapperProps extends BoxProps {
   disabled?: boolean;
 }
 
-const StyledCustomTokenItemWrapper = styled(
-  Box,
-)<StyledCustomTokenItemWrapperProps>`
+const StyledCustomTokenItemWrapper = styled(Box, {
+  shouldForwardProp: (prop) =>
+    !['isActive', 'disabled'].includes(prop as string),
+})<StyledCustomTokenItemWrapperProps>`
   display: flex;
   gap: 16px;
   align-items: center;

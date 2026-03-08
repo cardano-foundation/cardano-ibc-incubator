@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useContext, useEffect, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   Box,
   Checkbox,
@@ -13,6 +14,7 @@ import {
 import { toast } from 'react-toastify';
 import { useAddress, useWallet } from '@meshsdk/react';
 import { FaArrowDown } from 'react-icons/fa6';
+import * as CSL from '@emurgo/cardano-serialization-lib-browser';
 import TokenBox from '@/components/TokenBox';
 import CustomInput from '@/components/CustomInput';
 import InfoIcon from '@/assets/icons/info.svg';
@@ -20,15 +22,14 @@ import DefaultCosmosNetworkIcon from '@/assets/icons/cosmos-icon.svg';
 import { COLOR } from '@/styles/color';
 import SwapContext from '@/contexts/SwapContext';
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
-import * as CSL from '@emurgo/cardano-serialization-lib-browser';
 import { formatNumberInput, formatPrice } from '@/utils/string';
 import { allChains } from '@/configs/customChainInfo';
 import TransferContext from '@/contexts/TransferContext';
 import { verifyAddress } from '@/utils/address';
-import IBCParamsContext from '@/contexts/IBCParamsContext';
 import { HOUR_IN_NANOSEC } from '@/constants';
-import { debounce } from '@/utils/helper';
 import { unsignedTxSwapFromCardano } from '@/utils/buildSwapTx';
+import { CARDANO_CHAIN_ID } from '@/configs/runtime';
+import { estimateSwap } from '@/apis/restapi/cardano';
 import TransactionFee from './TransactionFee';
 import SettingSlippage from './SettingSlippage';
 import SelectNetworkModal from './SelectNetworkModal';
@@ -71,15 +72,13 @@ const SwapContainer = () => {
   const [lastTxHash, setLastTxHash] = useState<string>('');
   const [isSubmitSwap, setIsSubmitSwap] = useState<boolean>(false);
   const [errorAddressMsg, setErrorAddressMsg] = useState<string>('');
+  const [isEstimating, setIsEstimating] = useState<boolean>(false);
 
-  // swap est state
   const [estData, setEstimateData] = useState<EstimateFeeType>(initEstData);
-  // swap est state
 
   const { isOpen, onOpen, onClose } = useDisclosure();
 
   const { swapData, setSwapData, handleResetData } = useContext(SwapContext);
-  const { calculateSwapEst } = useContext(IBCParamsContext);
   const { handleReset: handleResetTransferData } = useContext(TransferContext);
 
   const resetLastTxData = () => {
@@ -92,16 +91,9 @@ const SwapContainer = () => {
     onOpen();
   };
 
-  // const handleChangePositionToken = () => {
-  //   handleSwitchToken();
-  // };
-
   const handleChangeReceiveAdrress = (value: string) => {
     if (isCheckedAnotherWallet) {
-      const isValidAddress = verifyAddress(
-        value,
-        process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID,
-      );
+      const isValidAddress = verifyAddress(value, CARDANO_CHAIN_ID);
       if (!value) {
         setErrorAddressMsg('Address is required');
       } else if (!isValidAddress) {
@@ -122,7 +114,6 @@ const SwapContainer = () => {
     const { fromToken, toToken } = swapData;
 
     const maxAmount = fromToken.balance;
-
     const exponent = isFromToken
       ? fromToken.tokenExponent
       : toToken.tokenExponent;
@@ -138,18 +129,6 @@ const SwapContainer = () => {
         ...swapData.toToken,
       },
     });
-  };
-
-  const onShowEstimateFee = (): React.JSX.Element | null => {
-    if (estData.canEst) {
-      return (
-        <TransactionFee
-          minimumReceived={estData.estMinimumReceived}
-          estFee={estData.estFee}
-        />
-      );
-    }
-    return null;
   };
 
   const handleSwap = async () => {
@@ -169,33 +148,38 @@ const SwapContainer = () => {
       // @ts-ignore
       toast.error(e?.message?.toString() || '', { theme: 'colored' });
     }
-    // setIsCheckAnotherWallet(false);
   };
 
   useEffect(() => {
-    const fetchNetworkList = async () => {
-      // TODO: fetch network list
-      const networkListData: NetworkItemProps[] = allChains.map((chain) => ({
-        networkId: chain.chain_id,
-        networkLogo: chain?.logo_URIs?.svg || DefaultCosmosNetworkIcon.src,
-        networkName: chain.chain_name,
-        networkPrettyName: chain?.pretty_name,
-      }));
-      setNetworkList(networkListData);
-    };
+    const networkListData: NetworkItemProps[] = allChains.map((chain) => ({
+      networkId: chain.chain_id,
+      ibcChainId: chain.ibc_chain_id || chain.chain_id,
+      networkLogo: chain?.logo_URIs?.svg || DefaultCosmosNetworkIcon.src,
+      networkName: chain.chain_name,
+      networkPrettyName: chain?.pretty_name,
+    }));
     handleResetTransferData();
-    fetchNetworkList();
-  }, []);
+    setNetworkList(networkListData);
+  }, [handleResetTransferData]);
 
-  const calculateAndSetSwapEst = () => {
+  const calculateAndSetSwapEst = async () => {
     setEstimateData({ ...initEstData });
-    calculateSwapEst({
-      fromChain: swapData.fromToken.network.networkId!,
-      tokenInDenom: swapData.fromToken.tokenId,
-      tokenInAmount: swapData.fromToken.swapAmount!,
-      toChain: swapData.toToken.network.networkId!,
-      tokenOutDenom: swapData.toToken.tokenId,
-    }).then(async (res: any) => {
+    setIsEstimating(true);
+
+    try {
+      const res = await estimateSwap({
+        fromChainId: swapData.fromToken.network.networkId!,
+        tokenInDenom: swapData.fromToken.tokenId,
+        tokenInAmount: swapData.fromToken.swapAmount!,
+        toChainId: swapData.toToken.network.networkId!,
+        tokenOutDenom: swapData.toToken.tokenId,
+      });
+
+      if (!res) {
+        setEstimateData({ ...initEstData });
+        return;
+      }
+
       const {
         message,
         tokenOutAmount,
@@ -204,67 +188,75 @@ const SwapContainer = () => {
         transferRoutes,
         transferBackRoutes,
       } = res;
+
       if (message) {
         toast.error(message, { theme: 'colored' });
         setEstimateData({ ...initEstData });
-      } else {
-        setSwapData({
-          ...swapData,
-          toToken: {
-            ...swapData.toToken,
-            swapAmount: tokenOutAmount.toString(),
-          },
-        });
-        const msg = await unsignedTxSwapFromCardano({
-          sender: cardanoAddress!,
-          tokenIn: {
-            amount: swapData.fromToken.swapAmount!,
-            denom: swapData.fromToken.tokenId,
-          },
-          tokenOutDenom: outToken,
-          receiver: swapData.receiveAdrress || cardanoAddress!,
-          transferRoutes,
-          transferBackRoutes,
-          slippagePercentage: swapData.slippageTolerance!,
-          timeoutTimeOffset: HOUR_IN_NANOSEC,
-        });
-        let estDataResult: any;
-        try {
-          const unsignedTx = Buffer.from(msg[0].value, 'base64').toString(
-            'hex',
-          );
-          const tx = CSL.Transaction.from_hex(unsignedTx);
-          const estFee = tx.body().fee().to_str();
-          estDataResult = {
-            display: true,
-            canEst: true,
-            msgs: [unsignedTx],
-            estFee: `${formatPrice(estFee)} lovelace`,
-            estTime: '~2 mins',
-          };
-        } catch (e) {
-          console.log(e);
-          estDataResult = {
-            display: false,
-            canEst: false,
-            msgs: [],
-          };
-        }
-        setEstimateData({
-          ...initEstData,
-          ...estDataResult,
-          estReceiveAmount: tokenOutAmount.toString(),
-          estMinimumReceived: `${tokenOutTransferBackAmount.toString()} ${swapData.toToken.tokenId.toUpperCase()}`,
-        });
+        return;
       }
-    });
-  };
 
-  const debounceEstAmount = () => debounce(calculateAndSetSwapEst, 1000)();
+      if (!outToken) {
+        setEstimateData({ ...initEstData });
+        return;
+      }
+
+      setSwapData({
+        ...swapData,
+        toToken: {
+          ...swapData.toToken,
+          swapAmount: tokenOutAmount,
+        },
+      });
+
+      const msg = await unsignedTxSwapFromCardano({
+        sender: cardanoAddress!,
+        tokenIn: {
+          amount: swapData.fromToken.swapAmount!,
+          denom: swapData.fromToken.tokenId,
+        },
+        tokenOutDenom: outToken,
+        receiver: swapData.receiveAdrress || cardanoAddress!,
+        transferRoutes,
+        transferBackRoutes,
+        slippagePercentage: swapData.slippageTolerance!,
+        timeoutTimeOffset: HOUR_IN_NANOSEC,
+      });
+
+      let estDataResult: any;
+      try {
+        const unsignedTx = Buffer.from(msg[0].value, 'base64').toString('hex');
+        const tx = CSL.Transaction.from_hex(unsignedTx);
+        const estFee = tx.body().fee().to_str();
+        estDataResult = {
+          display: true,
+          canEst: true,
+          msgs: [unsignedTx],
+          estFee: `${formatPrice(estFee)} lovelace`,
+          estTime: '~2 mins',
+        };
+      } catch (e) {
+        console.log(e);
+        estDataResult = {
+          display: false,
+          canEst: false,
+          msgs: [],
+        };
+      }
+
+      setEstimateData({
+        ...initEstData,
+        ...estDataResult,
+        estReceiveAmount: tokenOutAmount,
+        estMinimumReceived: `${tokenOutTransferBackAmount} ${swapData.toToken.tokenId.toUpperCase()}`,
+      });
+    } finally {
+      setIsEstimating(false);
+    }
+  };
 
   useEffect(() => {
     setEstimateData(initEstData);
-    // check amount out
+
     if (
       swapData?.fromToken?.swapAmount &&
       cardanoAddress &&
@@ -273,9 +265,16 @@ const SwapContainer = () => {
       swapData?.toToken?.network?.networkId &&
       swapData?.toToken?.tokenId
     ) {
-      debounceEstAmount();
+      const timeout = window.setTimeout(() => {
+        calculateAndSetSwapEst();
+      }, 450);
+
+      return () => {
+        window.clearTimeout(timeout);
+      };
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    return undefined;
   }, [
     JSON.stringify(swapData?.fromToken),
     JSON.stringify(swapData?.toToken?.network),
@@ -284,92 +283,135 @@ const SwapContainer = () => {
     cardanoAddress,
   ]);
 
-  return isSubmitSwap ? (
-    <SwapResult
-      setIsSubmitted={setIsSubmitSwap}
-      minimumReceived={estData.estMinimumReceived || ''}
-      estFee={estData.estFee}
-      resetLastTxData={resetLastTxData}
-      lastTxHash={lastTxHash}
-    />
-  ) : (
-    <StyledWrapContainer>
-      <StyledSwap>
-        <Box display="flex" justifyContent="space-between">
-          <Heading className="title">Swap</Heading>
-          <SettingSlippage />
-        </Box>
-        <SelectNetworkModal
-          isOpen={isOpen}
-          onClose={onClose}
-          networkList={networkList}
-        />
-        <TokenBox
-          handleClick={openModalSelectNetwork}
-          token={swapData.fromToken}
-          handleChangeAmount={(event: React.ChangeEvent<HTMLInputElement>) =>
-            handleChangeAmount(event.target.value, true)
-          }
-        />
-        <StyledSwitchNetwork
-        // _hover={{
-        //   bgColor: enableSwitch && COLOR.neutral_4,
-        //   cursor: enableSwitch ? 'pointer' : 'default',
-        // }}
-        // onClick={enableSwitch ? handleChangePositionToken : () => {}}
+  return (
+    <AnimatePresence mode="wait">
+      {isSubmitSwap ? (
+        <motion.div
+          key="swap-result"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -12 }}
+          transition={{ duration: 0.2 }}
         >
-          {/* <Image src={SwitchIcon.src} alt="" /> */}
-          <FaArrowDown color={COLOR.neutral_1} />
-        </StyledSwitchNetwork>
-        <TokenBox
-          fromOrTo="To"
-          handleClick={openModalSelectNetwork}
-          token={swapData.toToken}
-          handleChangeAmount={() => {}}
-        />
-        {onShowEstimateFee()}
-        <Box display="flex" alignItems="center" mt={4} gap={2}>
-          <Checkbox
-            isChecked={isCheckedAnotherWallet}
-            onChange={(e) => {
-              setIsCheckAnotherWallet(e.target.checked);
-              handleChangeReceiveAdrress('');
-              const errMsg = e.target.checked ? 'Address is requred' : '';
-              setErrorAddressMsg(errMsg);
-            }}
-            size="md"
-          >
-            Receive to another wallet
-          </Checkbox>
-          <Tooltip
-            borderRadius="8px"
-            bg={COLOR.background}
-            hasArrow
-            label="Receive to another wallet"
-          >
-            <Image src={InfoIcon.src} alt="" />
-          </Tooltip>
-        </Box>
-        {isCheckedAnotherWallet && (
-          <CustomInput
-            title="Destination address"
-            placeholder="Enter destination address here..."
-            onChange={handleChangeReceiveAdrress}
-            errorMsg={errorAddressMsg}
+          <SwapResult
+            setIsSubmitted={setIsSubmitSwap}
+            minimumReceived={estData.estMinimumReceived || ''}
+            estFee={estData.estFee}
+            resetLastTxData={resetLastTxData}
+            lastTxHash={lastTxHash}
           />
-        )}
-
-        {/* <StyledSwapButton disabled={!enableSwap} onClick={() => handleSwap()}> */}
-        <StyledSwapButton
-          disabled={!estData.canEst}
-          onClick={() => handleSwap()}
+        </motion.div>
+      ) : (
+        <motion.div
+          key="swap-form"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -16 }}
+          transition={{ duration: 0.22 }}
         >
-          <Text fontSize={18} fontWeight={700} lineHeight="24px">
-            Swap
-          </Text>
-        </StyledSwapButton>
-      </StyledSwap>
-    </StyledWrapContainer>
+          <StyledWrapContainer>
+            <StyledSwap>
+              <Box display="flex" justifyContent="space-between">
+                <Heading className="title">Swap</Heading>
+                <SettingSlippage />
+              </Box>
+              <SelectNetworkModal
+                isOpen={isOpen}
+                onClose={onClose}
+                networkList={networkList}
+              />
+              <TokenBox
+                handleClick={openModalSelectNetwork}
+                token={swapData.fromToken}
+                handleChangeAmount={(event: React.ChangeEvent<HTMLInputElement>) =>
+                  handleChangeAmount(event.target.value, true)
+                }
+              />
+              <motion.div
+                animate={{ y: [0, -2, 0] }}
+                transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+              >
+                <StyledSwitchNetwork>
+                  <FaArrowDown color={COLOR.neutral_1} />
+                </StyledSwitchNetwork>
+              </motion.div>
+              <TokenBox
+                fromOrTo="To"
+                handleClick={openModalSelectNetwork}
+                token={swapData.toToken}
+                handleChangeAmount={() => {}}
+              />
+              <AnimatePresence initial={false}>
+                {(isEstimating || estData.canEst) && (
+                  <motion.div
+                    key="swap-estimate"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.18 }}
+                  >
+                    <TransactionFee
+                      minimumReceived={estData.estMinimumReceived}
+                      estFee={estData.estFee}
+                      isLoading={isEstimating}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              <Box display="flex" alignItems="center" mt={4} gap={2}>
+                <Checkbox
+                  isChecked={isCheckedAnotherWallet}
+                  onChange={(e) => {
+                    setIsCheckAnotherWallet(e.target.checked);
+                    handleChangeReceiveAdrress('');
+                    const errMsg = e.target.checked ? 'Address is requred' : '';
+                    setErrorAddressMsg(errMsg);
+                  }}
+                  size="md"
+                >
+                  Receive to another wallet
+                </Checkbox>
+                <Tooltip
+                  borderRadius="8px"
+                  bg={COLOR.background}
+                  hasArrow
+                  label="Receive to another wallet"
+                >
+                  <Image src={InfoIcon.src} alt="" />
+                </Tooltip>
+              </Box>
+              <AnimatePresence initial={false}>
+                {isCheckedAnotherWallet && (
+                  <motion.div
+                    key="alternate-receiver"
+                    initial={{ opacity: 0, height: 0, y: -8 }}
+                    animate={{ opacity: 1, height: 'auto', y: 0 }}
+                    exit={{ opacity: 0, height: 0, y: -8 }}
+                    transition={{ duration: 0.18 }}
+                    style={{ overflow: 'hidden' }}
+                  >
+                    <CustomInput
+                      title="Destination address"
+                      placeholder="Enter destination address here..."
+                      onChange={handleChangeReceiveAdrress}
+                      errorMsg={errorAddressMsg}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              <StyledSwapButton
+                disabled={!estData.canEst || isEstimating}
+                onClick={() => handleSwap()}
+              >
+                <Text fontSize={18} fontWeight={700} lineHeight="24px">
+                  {isEstimating ? 'Estimating...' : 'Swap'}
+                </Text>
+              </StyledSwapButton>
+            </StyledSwap>
+          </StyledWrapContainer>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
 

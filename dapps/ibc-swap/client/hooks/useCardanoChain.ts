@@ -1,22 +1,30 @@
 'use client';
 
-import { useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Asset } from '@meshsdk/common';
 import { useAddress, WalletContext } from '@meshsdk/react';
-import {
-  Lucid,
-  Blockfrost,
-  Kupmios,
-  Provider,
-  toText,
-} from '@lucid-evolution/lucid';
+
+const hexToText = (hex: string): string => {
+  if (!hex || hex.length % 2 !== 0) {
+    return hex;
+  }
+
+  try {
+    const bytes = new Uint8Array(
+      hex.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) ?? [],
+    );
+    return new TextDecoder().decode(bytes);
+  } catch {
+    return hex;
+  }
+};
 
 const tryAssetName = (assetHex: string): string => {
   const tokenName = assetHex.slice(56);
   if (tokenName === '') {
     return assetHex;
   }
-  return toText(tokenName);
+  return hexToText(tokenName);
 };
 
 export const useCardanoChain = () => {
@@ -24,52 +32,31 @@ export const useCardanoChain = () => {
   const { hasConnectedWallet, connectedWalletName, connectedWalletInstance } =
     useContext(WalletContext);
   const cardanoAddress = useAddress();
-  let provider: Provider;
 
-  if (process.env.NEXT_PUBLIC_BLOCKFROST_PROJECT_ID) {
-    provider = new Blockfrost(
-      'https://cardano-preview.blockfrost.io/api/v0',
-      process.env.NEXT_PUBLIC_BLOCKFROST_PROJECT_ID,
-    );
-  } else {
-    const [kupoUrl, ogmiosUrl] =
-      process.env.NEXT_PUBLIC_KUPMIOS_URL!.split(',');
-    provider = new Kupmios(kupoUrl, ogmiosUrl);
-  }
-  const getAssets = async (): Promise<Asset[]> => {
-    // TODO: check networkId
-    const lucid = await Lucid.new(provider, 'Preview');
-    lucid.selectWalletFrom({
-      address: cardanoAddress!,
-    });
-    const utxos = await lucid.wallet.getUtxos();
-    const assets: { [key: string]: bigint } = {};
-    utxos.forEach((utxo) => {
-      const assetsUtxo = utxo.assets;
-      Object.keys(assetsUtxo).forEach((key) => {
-        if (!assets[key]) {
-          assets[key] = BigInt(0);
-        }
-        assets[key] += assetsUtxo[key];
-      });
-    });
-    const result = (Object.keys(assets) || []).map((assetKey) => {
+  const getAssets = useCallback(async (): Promise<Asset[]> => {
+    if (!connectedWalletInstance) {
+      return [];
+    }
+    const balance = await connectedWalletInstance.getBalance();
+    return balance.map((asset) => {
+      const assetKey = asset.unit;
       return {
         unit: assetKey,
-        quantity: assets[assetKey].toString(),
+        quantity: asset.quantity,
         assetName: tryAssetName(assetKey),
       } as Asset;
     });
-    return result;
-  };
+  }, [connectedWalletInstance]);
 
   useEffect(() => {
     if (hasConnectedWallet && cardanoAddress) {
       getAssets().then(setAssets);
+      return;
     }
-  }, [cardanoAddress, connectedWalletName]);
+    setAssets(undefined);
+  }, [cardanoAddress, connectedWalletName, getAssets, hasConnectedWallet]);
 
-  const sortAssetsByQuantity = (assets: Asset[]): Asset[] => {
+  const sortAssetsByQuantity = useCallback((assets: Asset[]): Asset[] => {
     return assets.sort((assetA, assetB) => {
       const quantityA = BigInt(assetA.quantity);
       const quantityB = BigInt(assetB.quantity);
@@ -82,19 +69,22 @@ export const useCardanoChain = () => {
       }
       return 0;
     });
-  };
+  }, []);
 
-  const getTotalSupply = (): Asset[] => {
+  const getTotalSupply = useCallback((): Asset[] => {
     return sortAssetsByQuantity(assets ?? []);
-  };
+  }, [assets, sortAssetsByQuantity]);
 
-  const getBalanceByDenom = (denom: string): string => {
+  const getBalanceByDenom = useCallback((denom: string): string => {
     const assetData = assets?.find((asset) => asset?.unit === denom);
     if (!assetData) {
       return '0';
     }
     return assetData?.quantity.toString();
-  };
+  }, [assets]);
 
-  return { getTotalSupply, getBalanceByDenom };
+  return useMemo(
+    () => ({ getTotalSupply, getBalanceByDenom }),
+    [getBalanceByDenom, getTotalSupply],
+  );
 };

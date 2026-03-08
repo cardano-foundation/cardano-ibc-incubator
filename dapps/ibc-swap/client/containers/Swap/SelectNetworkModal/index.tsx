@@ -19,6 +19,7 @@ import { SwapTokenType } from '@/types/SwapDataType';
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
 import SwapContext from '@/contexts/SwapContext';
 import { FROM_TO, OSMOSIS_CHAIN_ID } from '@/constants';
+import { CARDANO_CHAIN_ID } from '@/configs/runtime';
 import NetworkTokenBox from './NetworkTokenBox';
 
 import { StyledSwitchNetwork } from './index.style';
@@ -130,9 +131,7 @@ const SelectNetworkModal = ({
             <NetworkTokenBox
               onChooseToken={setTokenFromSelected}
               networkList={networkList.filter(
-                (network) =>
-                  network.networkId ===
-                  process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID,
+                (network) => network.networkId === CARDANO_CHAIN_ID,
               )}
               selectedToken={tokenFromSelected}
               disabledToken={tokenToSelected}

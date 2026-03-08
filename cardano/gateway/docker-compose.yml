@@ -5,8 +5,10 @@ services:
       context: ../..
       dockerfile: cardano/gateway/Dockerfile
     ports:
-      - "5000:5000"
+      - "8000:8000"
       - "5001:5001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - cardano_network
     volumes:

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, Matches } from 'class-validator';
+import { IsNotEmpty, IsString, Matches } from 'class-validator';
 
 export class Coin {
   @ApiProperty()
@@ -54,4 +54,31 @@ export class MsgtransferDto {
   @ApiProperty()
   @IsNotEmpty()
   signer: string;
+}
+
+export class EstimateSwapDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  from_chain_id: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  token_in_denom: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  token_in_amount: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  to_chain_id: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  token_out_denom: string;
 }
