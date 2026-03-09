@@ -148,6 +148,12 @@ enum Commands {
     },
     /// Runs security and validator audits (gateway npm, caribic cargo, onchain aiken)
     Audit,
+    /// List IBC clients hosted on a given chain
+    ListClients {
+        /// Chain identifier hosting the clients to query
+        #[arg(long = "chain", alias = "host-chain")]
+        chain: String,
+    },
     /// Create an IBC client on chain A that tracks chain B
     CreateClient {
         /// Chain identifier where the client will be created
@@ -328,6 +334,7 @@ async fn main() {
             commands::run_health_check(project_root_path, service.as_deref())
         }
         Commands::Audit => commands::run_audit(project_root_path),
+        Commands::ListClients { chain } => commands::run_list_clients(&chain),
         Commands::CreateClient { a_chain, b_chain } => {
             commands::run_create_client(project_root_path, &a_chain, &b_chain)
         }
