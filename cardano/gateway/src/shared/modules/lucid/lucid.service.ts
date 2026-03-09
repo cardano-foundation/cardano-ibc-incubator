@@ -350,7 +350,10 @@ export class LucidService {
   public getChannelPolicyId(): string {
     return this.configService.get('deployment').validators.mintChannelStt.scriptHash;
   }
-  public getClientAuthTokenUnit(handlerDatum: HandlerDatum, clientId: bigint): string {
+  public getClientAuthTokenUnit(clientId: bigint): string {
+    // Cardano client auth tokens are sequence-derived from the host-state NFT.
+    // Do not thread handler state into this helper: CreateClient uses the host-state
+    // sequence as the canonical client id source of truth.
     const mintClientPolicyId = this.configService.get('deployment').validators.mintClientStt.scriptHash;
     const hostStateNFT = this.configService.get('deployment').hostStateNFT;
     const clientStateTokenName = this.generateTokenName(hostStateNFT, CLIENT_PREFIX, clientId);

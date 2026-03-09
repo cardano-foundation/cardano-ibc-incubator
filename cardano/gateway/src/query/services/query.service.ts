@@ -33,7 +33,7 @@ import { LucidService } from '@shared/modules/lucid/lucid.service';
 import { KupoService } from '@shared/modules/kupo/kupo.service';
 import { ConfigService } from '@nestjs/config';
 import { decodeHandlerDatum, HandlerDatum } from '@shared/types/handler-datum';
-import { HostStateDatum } from '@shared/types/host-state-datum';
+import { decodeHostStateDatum, HostStateDatum } from '@shared/types/host-state-datum';
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
 import { normalizeConsensusStateFromDatum } from '@shared/helpers/consensus-state';
 import { ClientDatum, decodeClientDatum } from '@shared/types/client-datum';
@@ -363,11 +363,6 @@ export class QueryService {
     return latestHeightResponse as unknown as QueryLatestHeightResponse;
   }
 
-  private async getClientDatum(clientId: string): Promise<[ClientDatum, UTxO]> {
-    const handlerDatum = await this.getHandlerDatum();
-    return this.getClientDatumFromHandlerDatum(handlerDatum, clientId);
-  }
-
   private async getHandlerDatum(): Promise<HandlerDatum> {
     // The handler UTxO is the root of the on-chain IBC state machine on Cardano.
     // It tracks the next client/connection/channel sequences and lets us derive
@@ -378,14 +373,24 @@ export class QueryService {
     return decodeHandlerDatum(handlerUtxo.datum, this.lucidService.LucidImporter);
   }
 
-  private async getClientDatumFromHandlerDatum(
-    handlerDatum: HandlerDatum,
-    clientId: string,
-  ): Promise<[ClientDatum, UTxO]> {
-    // Client UTxOs are addressed by sequence-derived auth tokens. Reusing the
-    // already-decoded handler datum avoids reloading the handler UTxO on every
-    // iteration of a batch query.
-    const clientAuthTokenUnit = this.lucidService.getClientAuthTokenUnit(handlerDatum, BigInt(clientId));
+  private async getHostStateDatum(): Promise<HostStateDatum> {
+    // Cardano client identifiers are minted from the host-state sequence, not the
+    // handler sequence. Batch enumeration therefore has to use host state as the
+    // authoritative bound when reconstructing the existing client ids.
+    //
+    // This is intentionally different from `getHandlerDatum()`: the handler tracks
+    // top-level IBC bookkeeping, but CreateClient increments `hostState.next_client_sequence`.
+    // If we scan against the handler sequence here, single-client queries can succeed
+    // while the batch query incorrectly returns an empty list.
+    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+    return decodeHostStateDatum(hostStateUtxo.datum, this.lucidService.LucidImporter);
+  }
+
+  private async getClientDatum(clientId: string): Promise<[ClientDatum, UTxO]> {
+    // Client auth tokens are derived from the host-state NFT + client sequence.
+    // The sequence alone is enough to derive the token unit; the handler datum is
+    // not part of the addressing scheme for persisted client UTxOs.
+    const clientAuthTokenUnit = this.lucidService.getClientAuthTokenUnit(BigInt(clientId));
     const spendClientUTXO = await this.lucidService.findUtxoByUnit(clientAuthTokenUnit);
 
     const clientDatum = await decodeClientDatum(spendClientUTXO.datum, this.lucidService.LucidImporter);
@@ -395,17 +400,19 @@ export class QueryService {
   async queryClientStates(_request: QueryClientStatesRequest): Promise<QueryClientStatesResponse> {
     this.logger.log('queryClientStates');
 
-    const handlerDatum = await this.getHandlerDatum();
-    const nextClientSequence = Number(handlerDatum.state.next_client_sequence);
+    const hostStateDatum = await this.getHostStateDatum();
+    const nextClientSequence = Number(hostStateDatum.state.next_client_sequence);
     const clientStates: IdentifiedClientState[] = [];
 
     // Cardano stores clients as sequence-addressed UTxOs. There is no secondary
     // index of "live client ids", so the batch query reconstructs the list by
     // scanning the sequence space up to `next_client_sequence` and skipping holes.
+    // This matches how single-client queries resolve `07-tendermint-{n}` today,
+    // but does it across the full minted sequence range.
     for (let clientSequence = 0; clientSequence < nextClientSequence; clientSequence += 1) {
       try {
         const clientId = clientSequence.toString();
-        const [clientDatum] = await this.getClientDatumFromHandlerDatum(handlerDatum, clientId);
+        const [clientDatum] = await this.getClientDatum(clientId);
 
         // At the moment Cardano only hosts Tendermint clients. Mithril clients are
         // hosted on the Cosmos side, not on Cardano, so the batch response can use
