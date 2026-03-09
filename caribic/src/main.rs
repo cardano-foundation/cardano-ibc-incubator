@@ -45,6 +45,8 @@ enum StartTarget {
     Entrypoint,
     /// Starts the Osmosis optional chain (network selected via --network)
     Osmosis,
+    /// Starts the cheqd optional chain (network selected via --network)
+    Cheqd,
     /// Starts the Injective optional chain (network selected via --network)
     Injective,
     /// Starts only the Gateway service
@@ -67,6 +69,8 @@ enum StopTarget {
     Entrypoint,
     /// Stops the Osmosis optional chain (network selected via --network)
     Osmosis,
+    /// Stops the cheqd optional chain (network selected via --network)
+    Cheqd,
     /// Stops the Injective optional chain (network selected via --network)
     Injective,
     /// Stops the demo services
@@ -100,7 +104,7 @@ enum Commands {
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, entrypoint, osmosis, injective, gateway, relayer, mithril
+    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, entrypoint, osmosis, cheqd, injective, gateway, relayer, mithril
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
@@ -117,7 +121,7 @@ enum Commands {
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
     },
-    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, entrypoint, osmosis, injective, demo, gateway, relayer, mithril
+    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, entrypoint, osmosis, cheqd, injective, demo, gateway, relayer, mithril
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
@@ -142,7 +146,7 @@ enum Commands {
     },
     /// Check health of bridge services
     HealthCheck {
-        /// Optional: specific service to check (gateway, cardano, postgres, kupo, ogmios, mithril, hermes, entrypoint, osmosis, redis, injective)
+        /// Optional: specific service to check (gateway, cardano, postgres, kupo, ogmios, mithril, hermes, entrypoint, osmosis, redis, cheqd, injective)
         #[arg(long)]
         service: Option<String>,
     },
@@ -249,7 +253,7 @@ enum KeysCommand {
 enum ChainCommand {
     /// Start an optional chain adapter
     Start {
-        /// Chain identifier (for example: osmosis, injective)
+        /// Chain identifier (for example: osmosis, cheqd, injective)
         chain: String,
         /// Optional network profile (for example: local, testnet)
         #[arg(long)]
@@ -260,7 +264,7 @@ enum ChainCommand {
     },
     /// Stop an optional chain adapter
     Stop {
-        /// Chain identifier (for example: osmosis, injective)
+        /// Chain identifier (for example: osmosis, cheqd, injective)
         chain: String,
         /// Optional network profile (for example: local, testnet)
         #[arg(long)]
@@ -271,7 +275,7 @@ enum ChainCommand {
     },
     /// Check health for an optional chain adapter
     Health {
-        /// Chain identifier (for example: osmosis, injective)
+        /// Chain identifier (for example: osmosis, cheqd, injective)
         chain: String,
         /// Optional network profile (for example: local, testnet)
         #[arg(long)]
