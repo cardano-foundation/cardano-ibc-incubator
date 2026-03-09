@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
-  QueryBlockDataRequest,
-  QueryBlockDataResponse,
   QueryClientStateRequest,
   QueryClientStateResponse,
   QueryClientStatesRequest,
@@ -14,7 +12,6 @@ import {
   QueryNewClientRequest,
   QueryNewClientResponse,
 } from '@plus/proto-types/build/ibc/core/client/v1/query';
-import { BlockData } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
 import {
   ClientState as ClientStateTendermint,
   ConsensusState as ConsensusStateTendermint,
@@ -26,7 +23,6 @@ import {
   MithrilHeader,
 } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 import { TransactionBody, hash_transaction } from '@dcspark/cardano-multiplatform-lib-nodejs';
-import { BlockDto } from '../dtos/block.dto';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { IdentifiedClientState } from '@plus/proto-types/build/ibc/core/client/v1/client';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
@@ -37,7 +33,6 @@ import { decodeHostStateDatum, HostStateDatum } from '@shared/types/host-state-d
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
 import { normalizeConsensusStateFromDatum } from '@shared/helpers/consensus-state';
 import { ClientDatum, decodeClientDatum } from '@shared/types/client-datum';
-import { normalizeBlockDataFromOuroboros } from '@shared/helpers/block-data';
 import {
   GrpcInternalException,
   GrpcInvalidArgumentException,
@@ -589,53 +584,6 @@ export class QueryService {
       },
     };
     return response as unknown as QueryConsensusStateResponse;
-  }
-
-  async queryBlockData(request: QueryBlockDataRequest): Promise<QueryBlockDataResponse> {
-    // Legacy query used by the old Ouroboros/Cardano light client implementation.
-    //
-    // The production Cosmos-side Cardano client is the Mithril client, and Hermes uses
-    // `queryIBCHeader()` + ICS-23 proofs for verification. Keeping this endpoint around is
-    // useful when comparing historical approaches, but it is not part of the relaying path.
-    const { height } = request;
-    this.logger.log(height, 'queryBlockData');
-    if (!height) {
-      throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
-    }
-
-    const blockDto: BlockDto = await this.dbService.findBlockByHeight(height);
-    let blockHeader = null;
-    try {
-      blockHeader = await this.miniProtocalsService.fetchBlockHeader(blockDto.hash, BigInt(blockDto.slot));
-    } catch (err) {
-      this.logger.warn(
-        `Failed to fetch block header via mini-protocols for height=${height} slot=${blockDto.slot}: ${err?.message ?? err}`,
-        'queryBlockData',
-      );
-    }
-    try {
-      const blockDataOuroboros = normalizeBlockDataFromOuroboros(blockDto, blockHeader);
-      blockDataOuroboros.chain_id = `${this.configService.get('cardanoChainNetworkMagic')}`;
-      blockDataOuroboros.epoch_nonce = this.configService.get('cardanoEpochNonceGenesis');
-      if (blockDto.epoch > 0) {
-        const epochParam = await this.dbService.findEpochParamByEpochNo(BigInt(blockDto.epoch));
-        blockDataOuroboros.epoch_nonce = epochParam.nonce;
-      }
-
-      const blockData: QueryBlockDataResponse = {
-        block_data: {
-          type_url: '/ibc.clients.cardano.v1.BlockData',
-          value: BlockData.encode(blockDataOuroboros).finish(),
-        },
-      } as unknown as QueryBlockDataResponse;
-      return blockData;
-    } catch (err) {
-      this.logger.error('queryBlockData ERR:', err);
-
-      this.logger.error(err.message, 'queryBlockData ERR:');
-
-      throw new GrpcInternalException(err.message);
-    }
   }
 
   async queryBlockResults(request: QueryBlockResultsRequest): Promise<QueryBlockResultsResponse> {

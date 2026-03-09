@@ -105,10 +105,6 @@ describe('QueryController (modern)', () => {
     );
   });
 
-  it('delegates queryBlockData to QueryService', async () => {
-    await expectDelegation('queryBlockData', queryServiceMock, 'queryBlockData', { height: 10n }, { ok: 1 });
-  });
-
   it('delegates LatestHeight to QueryService', async () => {
     await expectDelegation('LatestHeight', queryServiceMock, 'latestHeight', {}, { height: 777n });
   });
