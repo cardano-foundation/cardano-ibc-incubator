@@ -1,32 +1,37 @@
-import { GET_CARDANO_IBC_ASSETS } from '@/apis/apollo/query';
-import { useQuery } from '@apollo/client';
+import {
+  listCardanoIbcAssets,
+  type CardanoAssetDenomTrace,
+} from '@/apis/restapi/cardano';
 import SendToken from '@/containers/SendToken';
-
-interface Node {
-  id: string;
-  accountAddress: string;
-  denom: string;
-  voucherTokenName: string;
-}
-
-interface CardanoIbcAssets {
-  cardanoIbcAssets: {
-    node: Node;
-  };
-}
+import { useEffect, useState } from 'react';
 
 export default function TestComponent() {
-  const { loading, error, data } = useQuery<CardanoIbcAssets>(
-    GET_CARDANO_IBC_ASSETS,
-  );
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [data, setData] = useState<CardanoAssetDenomTrace[]>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const response = await listCardanoIbcAssets();
+        setData(response);
+      } catch (err) {
+        setError((err as Error).message || 'Failed to load Cardano IBC assets');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, []);
 
   if (loading) return <p>Loading...</p>;
-  if (error) return <p>Error: {error.message}</p>;
+  if (error) return <p>Error: {error}</p>;
 
   return (
     <div>
       <SendToken />
-      <h1>Data from GraphQL:</h1>
+      <h1>Data from Gateway:</h1>
       <pre>{JSON.stringify(data, null, 2)}</pre>
     </div>
   );

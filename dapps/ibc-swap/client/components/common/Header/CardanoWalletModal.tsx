@@ -10,8 +10,8 @@ import {
   ModalOverlay,
   Image,
   Text,
+  Spinner,
 } from '@chakra-ui/react';
-import { useWallet, useWalletList } from '@meshsdk/react';
 import React from 'react';
 
 export type WalletProps = {
@@ -24,22 +24,26 @@ export type CardanoWalletModalProps = {
   isOpen: boolean;
   onClose: () => void;
   // eslint-disable-next-line no-unused-vars
-  onChooseWallet: (wal: WalletProps) => void;
+  onSelectWallet: (wal: WalletProps) => Promise<void> | void;
+  connectingWalletName?: string;
+  errorMessage?: string;
+  wallets: WalletProps[];
 };
 
 const CardanoWalletModal = ({
   isOpen,
   onClose,
-  onChooseWallet,
+  onSelectWallet,
+  connectingWalletName,
+  errorMessage,
+  wallets,
 }: CardanoWalletModalProps) => {
-  const wallets = useWalletList();
-  const { connect } = useWallet();
+  const handleSelectWallet = (wal: WalletProps) => {
+    if (connectingWalletName) {
+      return;
+    }
 
-  const handleChooseWallet = async (wal: WalletProps) => {
-    connect(wal.name);
-    onChooseWallet(wal);
-    localStorage.setItem('cardano-wallet', JSON.stringify(wal));
-    onClose();
+    onSelectWallet(wal);
   };
 
   return (
@@ -78,7 +82,9 @@ const CardanoWalletModal = ({
                   background: ' #2767FC1A',
                   cursor: 'pointer',
                 }}
-                onClick={() => handleChooseWallet(wal)}
+                onClick={() => {
+                  handleSelectWallet(wal);
+                }}
               >
                 <Box
                   display="flex"
@@ -94,14 +100,27 @@ const CardanoWalletModal = ({
                       height="56px"
                       alt=""
                     />
-                    <Text
+                    <Box
                       fontSize="16"
                       fontWeight="600"
                       mt="10px"
                       textAlign="center"
                     >
-                      {capitalizeString(wal.name)}
-                    </Text>
+                      {connectingWalletName === wal.name ? (
+                        <Box
+                          as="span"
+                          display="inline-flex"
+                          alignItems="center"
+                          justifyContent="center"
+                          gap="8px"
+                        >
+                          <Spinner size="sm" />
+                          <span>Connecting...</span>
+                        </Box>
+                      ) : (
+                        capitalizeString(wal.name)
+                      )}
+                    </Box>
                   </Box>
                 </Box>
               </Box>
@@ -112,16 +131,24 @@ const CardanoWalletModal = ({
             gap="12px"
             display="flex"
             flexDirection="column"
-            // overflowY="scroll"
             maxH="200px"
+            overflowY="auto"
           >
-            {wallets.slice(2, wallets.length - 1).map((wal) => (
+            {wallets.slice(2).map((wal) => (
               <Box
                 key={wal.name}
                 background="#FAFAFA14"
                 borderRadius="14px"
                 height="48px"
                 display="flex"
+                _hover={{
+                  border: '1px solid #2767FC',
+                  background: ' #2767FC1A',
+                  cursor: 'pointer',
+                }}
+                onClick={() => {
+                  handleSelectWallet(wal);
+                }}
               >
                 <Box display="flex" alignItems="center" height="100%">
                   <Image
@@ -132,12 +159,19 @@ const CardanoWalletModal = ({
                     alt=""
                   />
                   <Text fontSize="16" fontWeight="600" textAlign="center">
-                    {capitalizeString(wal.name)}
+                    {connectingWalletName === wal.name
+                      ? 'Connecting...'
+                      : capitalizeString(wal.name)}
                   </Text>
                 </Box>
               </Box>
             ))}
           </Box>
+          {errorMessage && (
+            <Text color="#FF6B6B" fontSize="14px" mt="16px">
+              {errorMessage}
+            </Text>
+          )}
         </ModalBody>
       </ModalContent>
     </Modal>

@@ -66,6 +66,9 @@ interface Config {
   deployment: DeploymentConfig;
   ogmiosEndpoint: string;
   kupoEndpoint: string;
+  entrypointRestEndpoint: string;
+  localOsmosisRestEndpoint: string;
+  swapRouterAddress: string;
   
   // Used by Gateway to build transactions (UTXO selection, fees, change address)
   // Hermes handles actual transaction signing
@@ -99,6 +102,9 @@ export default (): Partial<Config> => {
   return {
     ogmiosEndpoint: process.env.OGMIOS_ENDPOINT,
     kupoEndpoint: process.env.KUPO_ENDPOINT,
+    entrypointRestEndpoint: process.env.ENTRYPOINT_REST_ENDPOINT,
+    localOsmosisRestEndpoint: process.env.LOCAL_OSMOSIS_REST_ENDPOINT,
+    swapRouterAddress: process.env.SWAP_ROUTER_ADDRESS || '',
     deployerSk: process.env.DEPLOYER_SK,
 
     cardanoChainHost: process.env.CARDANO_CHAIN_HOST,

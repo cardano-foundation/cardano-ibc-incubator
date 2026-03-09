@@ -13,15 +13,14 @@ Create `.env` files with the following variables:
 | NEXT_PUBLIC_ENTRYPOINT_RPC_ENDPOINT     | RPC end-point of Entrypoint chain                                                                                                       | Default: http://localhost:26657                                          |
 | NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT    | Rest end-point of Entrypoint chain                                                                                                      | Default: http://localhost:1317                                           |
 | NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT    | RPC end-point of local Osmosis                                                                                                          | Default: http://localhost:26658                                          |
-| NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT | Rest end-point of gateway                                                                                                               | Default: http://localhost:8000                                           |
-| NEXT_PUBLIC_GRAPHQL_SUBQUERY_ENDPOINT   | Rest end-point of subql-query                                                                                                           | You will get it after running indexer, will be the url to graphql-engine |
+| NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT   | Rest end-point of local Osmosis                                                                                                         | Default: http://localhost:1318                                           |
+| NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT | Rest end-point of gateway                                                                                                               | Default: http://localhost:8000. This is used for tx building and Cardano asset-to-IBC metadata lookup. |
 | NEXT_PUBLIC_KUPMIOS_URL                 | Url of Kupo and Ogmios instances, should not be use when using NEXT_PUBLIC_BLOCKFROST_PROJECT_ID                                        | Default: "http://localhost:1442,http://localhost:1337"                   |
 | NEXT_PUBLIC_BLOCKFROST_PROJECT_ID       | Blockfrost Project ID, currently only support network preview, should not be use when using NEXT_PUBLIC_KUPMIOS_URL                     | Default: "previewVi2O..."                                                |
-| NEXT_PUBLIC_CROSSCHAIN_SWAP_ADDRESS     | Cross-chain swap address on local Osmosis                                                                                               | You will get this after run `setup_crosschain_swaps.sh`                  |
-| NEXT_PUBLIC_SWAP_ROUTER_ADDRESS         | Cross-chain swap router address on local Osmosis                                                                                        | You will get this after run `setup_crosschain_swaps.sh`                  |
+| NEXT_PUBLIC_CROSSCHAIN_SWAP_ADDRESS     | Cross-chain swap address on local Osmosis. This is still required by the local browser demo swap memo builder.                          | You will get this after run `setup_crosschain_swaps.sh`                  |
 | NEXT_PUBLIC_FORWARD_TIMEOUT             | Timeout for packet forwarding                                                                                                           | Default: "60m"                                                           |
 
-Legacy compatibility: `NEXT_PUBLIC_SIDECHAIN_RPC_ENDPOINT` and `NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT` are still accepted as fallbacks.
+Legacy compatibility: `NEXT_PUBLIC_SIDECHAIN_RPC_ENDPOINT`, `NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT`, `NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT`, and `NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT` are still accepted as fallbacks.
 
 ## Running
 After set up the `.env`, run:

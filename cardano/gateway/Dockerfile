@@ -1,5 +1,5 @@
 # Image proto type
-FROM node:18@sha256:c6ae79e38498325db67193d391e6ec1d224d96c693a8a4d943498556716d3783 AS protos
+FROM node:20@sha256:bd3086f61c05f8925ed2026bee608a40ad9f8a5d28b6e593342237469ee5b621 AS protos
 
 WORKDIR /usr/src/proto-types
 
@@ -10,7 +10,7 @@ RUN npm ci
 RUN npm run build
 
 # Base image
-FROM node:18@sha256:c6ae79e38498325db67193d391e6ec1d224d96c693a8a4d943498556716d3783
+FROM node:20@sha256:bd3086f61c05f8925ed2026bee608a40ad9f8a5d28b6e593342237469ee5b621
 
 ARG MAIN_CONTEXT=cardano/gateway
 # Create app directory

@@ -1,9 +1,9 @@
-/* eslint-disable no-console */
 /* eslint-disable consistent-return */
 import { cosmosChainsSupported, defaultChainName } from '@/constants';
 import { useChain } from '@cosmos-kit/react';
 import { Coin } from 'cosmjs-types/cosmos/base/v1beta1/coin';
 import { cosmos } from 'interchain';
+import { useCallback, useMemo } from 'react';
 
 export const useCosmosChain = (chainName: string) => {
   // handle chainName if not supported
@@ -14,7 +14,7 @@ export const useCosmosChain = (chainName: string) => {
   const cosmosChain = useChain(useChainName, true);
   const { address, getRpcEndpoint } = cosmosChain;
 
-  const getAllBalances = async () => {
+  const getAllBalances = useCallback(async () => {
     const rpcEndpoint = (await getRpcEndpoint()) as string;
 
     if (!rpcEndpoint || !address) {
@@ -30,14 +30,13 @@ export const useCosmosChain = (chainName: string) => {
       const allBalances = await client.cosmos.bank.v1beta1.allBalances({
         address,
       });
-      // eslint-disable-next-line consistent-return
       return allBalances.balances as Coin[];
-    } catch (error) {
-      console.log({ error });
+    } catch {
+      return [];
     }
-  };
+  }, [address, getRpcEndpoint]);
 
-  const getBalanceByDenom = async ({
+  const getBalanceByDenom = useCallback(async ({
     denom,
   }: {
     denom: string;
@@ -60,13 +59,12 @@ export const useCosmosChain = (chainName: string) => {
       });
       // eslint-disable-next-line consistent-return
       return balance.balance?.amount || '0';
-    } catch (error) {
-      console.log({ error });
+    } catch {
       return '0';
     }
-  };
+  }, [address, getRpcEndpoint]);
 
-  const getTotalSupply = async (): Promise<Coin[] | undefined> => {
+  const getTotalSupply = useCallback(async (): Promise<Coin[] | undefined> => {
     const rpcEndpoint = (await getRpcEndpoint()) as string;
 
     if (!rpcEndpoint || !address) {
@@ -81,15 +79,18 @@ export const useCosmosChain = (chainName: string) => {
     try {
       const totalSupply = await client.cosmos.bank.v1beta1.totalSupply();
       return totalSupply.supply as Coin[];
-    } catch (error) {
-      console.log({ error });
+    } catch {
+      return [];
     }
-  };
+  }, [address, getRpcEndpoint]);
 
-  return {
-    ...cosmosChain,
-    getAllBalances,
-    getTotalSupply,
-    getBalanceByDenom,
-  };
+  return useMemo(
+    () => ({
+      ...cosmosChain,
+      getAllBalances,
+      getTotalSupply,
+      getBalanceByDenom,
+    }),
+    [cosmosChain, getAllBalances, getBalanceByDenom, getTotalSupply],
+  );
 };

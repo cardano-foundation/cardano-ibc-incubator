@@ -35,7 +35,9 @@ interface StyledSelectBoxProps extends BoxProps {
   disabled?: boolean;
 }
 
-const StyledSelectBox = styled.div<StyledSelectBoxProps>`
+const StyledSelectBox = styled('div', {
+  shouldForwardProp: (prop) => prop !== 'disabled',
+})<StyledSelectBoxProps>`
   height: 64px;
   padding: 16px;
   background: ${COLOR.neutral_5};
@@ -56,7 +58,9 @@ interface StyledSwitchNetworkProps extends BoxProps {
   disabled?: boolean;
 }
 
-const StyledSwitchNetwork = styled(Box)<StyledSwitchNetworkProps>`
+const StyledSwitchNetwork = styled(Box, {
+  shouldForwardProp: (prop) => prop !== 'disabled',
+})<StyledSwitchNetworkProps>`
   width: 36px;
   height: 36px;
   padding: 8px;
@@ -100,7 +104,9 @@ interface StyledSelectTokenBoxProps extends BoxProps {
   disabled?: boolean;
 }
 
-const StyledSelectTokenBox = styled.div<StyledSelectTokenBoxProps>`
+const StyledSelectTokenBox = styled('div', {
+  shouldForwardProp: (prop) => prop !== 'disabled',
+})<StyledSelectTokenBoxProps>`
   display: flex;
   justify-content: space-between;
   bottom: 0;
@@ -136,7 +142,9 @@ interface StyledNetworkBoxProps extends BoxProps {
   isActive?: boolean;
 }
 
-const StyledNetworkBox = styled.div<StyledNetworkBoxProps>`
+const StyledNetworkBox = styled('div', {
+  shouldForwardProp: (prop) => prop !== 'isActive',
+})<StyledNetworkBoxProps>`
   width: 320px;
   height: 100%;
   gap: 16px;
@@ -150,7 +158,9 @@ interface StyledNetworkBoxHeaderProps extends BoxProps {
   isActive?: boolean;
 }
 
-const StyledNetworkBoxHeader = styled.div<StyledNetworkBoxHeaderProps>`
+const StyledNetworkBoxHeader = styled('div', {
+  shouldForwardProp: (prop) => prop !== 'isActive',
+})<StyledNetworkBoxHeaderProps>`
   width: 100%;
   height: 56px;
   padding: 14px 12px 14px 12px;

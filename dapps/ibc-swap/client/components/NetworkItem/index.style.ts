@@ -7,7 +7,10 @@ interface StyledNetworkItemWrapperProps extends BoxProps {
   isDisabled?: boolean;
 }
 
-const StyledNetworkItemWrapper = styled(Box)<StyledNetworkItemWrapperProps>`
+const StyledNetworkItemWrapper = styled(Box, {
+  shouldForwardProp: (prop) =>
+    !['isActive', 'isDisabled'].includes(prop as string),
+})<StyledNetworkItemWrapperProps>`
   display: flex;
   gap: 16px;
   align-content: center;

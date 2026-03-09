@@ -4,6 +4,7 @@ import { StyledNetworkItemName, StyledNetworkItemWrapper } from './index.style';
 
 export type NetworkItemProps = {
   networkId?: string;
+  ibcChainId?: string;
   networkName?: string;
   networkLogo?: string;
   networkPrettyName?: string;
@@ -14,6 +15,7 @@ export type NetworkItemProps = {
 
 export const NetworkItem = ({
   networkId,
+  ibcChainId,
   networkName,
   networkLogo,
   networkPrettyName,
@@ -26,6 +28,7 @@ export const NetworkItem = ({
       onClick={isDisabled ? () => {} : onClick}
       isActive={isActive}
       id={`${networkId}`}
+      data-ibc-chain-id={ibcChainId}
       isDisabled={isDisabled}
     >
       <Box borderRadius="100%" width={30}>

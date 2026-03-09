@@ -30,8 +30,8 @@ Default local endpoints target the host-published bridge services:
 - Entrypoint REST: `http://localhost:1317`
 - Osmosis RPC: `http://localhost:26658`
 - Osmosis REST: `http://localhost:1318`
-- Gateway: `http://localhost:8000`
-- GraphQL/SubQuery: `http://localhost:3001/v1/graphql`
+- Gateway: `http://localhost:8000` for swap UI tx building and Cardano asset lookup
+- GraphQL/SubQuery: `http://localhost:3001/v1/graphql` for explorer only
 - Kupo/Ogmios: `http://localhost:1442,http://localhost:1337`
 
 Override any value by exporting the corresponding compose variable before
@@ -41,6 +41,5 @@ starting the service, for example:
 export IBC_EXPLORER_HOST_PORT=18080
 export IBC_SWAP_GATEWAY_ENDPOINT=http://localhost:8000
 export IBC_SWAP_CROSSCHAIN_SWAP_ADDRESS=<osmosis-contract-address>
-export IBC_SWAP_SWAP_ROUTER_ADDRESS=<osmosis-router-address>
 docker compose -f dapps/docker-compose.yml up --build ibc-swap-client
 ```

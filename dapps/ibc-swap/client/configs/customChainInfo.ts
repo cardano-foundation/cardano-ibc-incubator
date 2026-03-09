@@ -1,15 +1,66 @@
 import { CARDANO_MAINNET_MAGIC } from '@/constants';
-import { AssetList, Chain } from '@chain-registry/types';
+import {
+  CARDANO_CHAIN_ID,
+  CARDANO_IBC_CHAIN_ID,
+  ENTRYPOINT_REST_ENDPOINT,
+  ENTRYPOINT_RPC_ENDPOINT,
+  LOCAL_OSMOSIS_REST_ENDPOINT,
+  LOCAL_OSMOSIS_RPC_ENDPOINT,
+} from '@/configs/runtime';
+import { AssetList } from '@chain-registry/types';
+import DefaultCardanoNetworkIcon from '@/assets/icons/cardano.svg';
+
+type CustomChain = {
+  chain_name: string;
+  chain_type: 'cosmos' | 'unknown';
+  status: string;
+  network_type: string;
+  pretty_name: string;
+  chain_id: string;
+  ibc_chain_id?: string;
+  bech32_prefix: string;
+  slip44: number;
+  fees?: {
+    fee_tokens: Array<{
+      denom: string;
+      fixed_min_gas_price?: number;
+      low_gas_price?: number;
+      average_gas_price?: number;
+      high_gas_price?: number;
+    }>;
+  };
+  staking?: {
+    staking_tokens: Array<{
+      denom: string;
+    }>;
+  };
+  apis?: {
+    rpc?: Array<{
+      address: string;
+      provider?: string;
+    }>;
+    rest?: Array<{
+      address: string;
+      provider?: string;
+    }>;
+  };
+  key_algos?: string[];
+  codebase?: {
+    ics_enabled?: string[];
+  };
+  logo_URIs?: {
+    png?: string;
+    svg?: string;
+    jpeg?: string;
+  };
+  keywords?: string[];
+};
 
 const ENTRYPOINT_CHAIN_ID = 'entrypoint';
 
-const getEntrypointRpcEndpoint = () =>
-  process.env.NEXT_PUBLIC_ENTRYPOINT_RPC_ENDPOINT || '';
-
-const getEntrypointRestEndpoint = () =>
-  process.env.NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT || '';
-const entrypointChainConfig: Chain = {
+const entrypointChainConfig: CustomChain = {
   chain_name: ENTRYPOINT_CHAIN_ID,
+  chain_type: 'cosmos',
   status: 'active',
   network_type: 'testnet',
   pretty_name: 'Entrypoint chain Localnet',
@@ -40,13 +91,13 @@ const entrypointChainConfig: Chain = {
   apis: {
     rpc: [
       {
-        address: getEntrypointRpcEndpoint(),
+        address: ENTRYPOINT_RPC_ENDPOINT,
         provider: 'local',
       },
     ],
     rest: [
       {
-        address: getEntrypointRestEndpoint(),
+        address: ENTRYPOINT_REST_ENDPOINT,
         provider: 'local',
       },
     ],
@@ -91,8 +142,9 @@ const entrypointChainAssetList: AssetList = {
   ],
 };
 
-const localOsmosisChainConfig: Chain = {
+const localOsmosisChainConfig: CustomChain = {
   chain_name: 'localosmosis',
+  chain_type: 'cosmos',
   status: 'active',
   network_type: 'testnet',
   pretty_name: 'Local Osmosis',
@@ -123,12 +175,12 @@ const localOsmosisChainConfig: Chain = {
   apis: {
     rpc: [
       {
-        address: process.env.NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT || '',
+        address: LOCAL_OSMOSIS_RPC_ENDPOINT,
       },
     ],
     rest: [
       {
-        address: process.env.NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT || '',
+        address: LOCAL_OSMOSIS_REST_ENDPOINT,
       },
     ],
   },
@@ -172,24 +224,25 @@ const localOsmosisAssetList: AssetList = {
   ],
 };
 
-export const customChains: Chain[] = [
+export const customChains: CustomChain[] = [
   entrypointChainConfig,
   localOsmosisChainConfig,
 ];
 
-const isCardanoMainnet =
-  process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID === CARDANO_MAINNET_MAGIC;
+const isCardanoMainnet = CARDANO_CHAIN_ID === CARDANO_MAINNET_MAGIC;
 
-const cardanoChain: Chain = {
+const cardanoChain: CustomChain = {
   chain_name: 'cardano',
+  chain_type: 'unknown',
   status: 'active',
   network_type: isCardanoMainnet ? 'mainnet' : 'devnet',
   pretty_name: 'Cardano',
-  chain_id: process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID || CARDANO_MAINNET_MAGIC,
+  chain_id: CARDANO_CHAIN_ID,
+  ibc_chain_id: CARDANO_IBC_CHAIN_ID,
   bech32_prefix: isCardanoMainnet ? 'addr' : 'addr_test',
   slip44: 1815,
   logo_URIs: {
-    svg: 'https://beta.explorer.cardano.org/assets/ada-price-dark-D1XAVnue.svg',
+    svg: DefaultCardanoNetworkIcon.src,
   },
 };
 

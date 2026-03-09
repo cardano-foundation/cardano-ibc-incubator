@@ -6,7 +6,9 @@ interface StyledNetworkBoxProps extends BoxProps {
   isChoseToken?: boolean;
 }
 
-const StyledNetworkBox = styled(Box)<StyledNetworkBoxProps>`
+const StyledNetworkBox = styled(Box, {
+  shouldForwardProp: (prop) => prop !== 'isChoseToken',
+})<StyledNetworkBoxProps>`
   width: 984px;
   height: 100%;
   gap: 16px;
@@ -16,7 +18,9 @@ const StyledNetworkBox = styled(Box)<StyledNetworkBoxProps>`
   border: ${(props) => !props.isChoseToken ? `1px solid #fd4c80` : undefined};
 `;
 
-const StyledNetworkBoxHeader = styled(Box)<StyledNetworkBoxProps>`
+const StyledNetworkBoxHeader = styled(Box, {
+  shouldForwardProp: (prop) => prop !== 'isChoseToken',
+})<StyledNetworkBoxProps>`
   width: 100%;
   height: 56px;
   padding: 14px 12px 14px 12px;

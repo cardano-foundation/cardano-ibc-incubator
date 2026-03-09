@@ -1,10 +1,10 @@
 /* global BigInt */
 import { transfer } from '@/apis/restapi/cardano';
+import { lookupCardanoAssetDenomTrace } from '@/apis/restapi/cardano';
+import { isCardanoChainRef } from '@/configs/runtime';
 import { Coin } from 'cosmjs-types/cosmos/base/v1beta1/coin';
 import { MsgTransfer } from 'cosmjs-types/ibc/applications/transfer/v1/tx';
 import { getPublicKeyHashFromAddress } from './address';
-import apolloClient from '@/apis/apollo/apolloClient';
-import { GET_CARDANO_DENOM_BY_ID } from '@/apis/apollo/query';
 import { FORWARD_TIMEOUT } from '@/constants';
 
 const pfmReceiver = 'pfm';
@@ -54,7 +54,7 @@ export function unsignedTxTransferFromCosmos(
   let msg: MsgTransfer;
 
   let tmpReceiver = receiver;
-  if (chains[chains.length - 1] === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID) {
+  if (isCardanoChainRef(chains[chains.length - 1])) {
     tmpReceiver = getPublicKeyHashFromAddress(receiver)!;
   }
 
@@ -107,19 +107,9 @@ export async function unsignedTxTransferFromCardano(
   token: Token,
 ): Promise<{ typeUrl: string; value: any }[]> {
   const currentTimeStamp = BigInt(Date.now()) * BigInt(1000000);
-  const cardanoTokenTrace = await apolloClient
-    .query({
-      query: GET_CARDANO_DENOM_BY_ID,
-      variables: { id: token.denom.replaceAll('.', '') },
-      fetchPolicy: 'network-only',
-    })
-    .then((res) => res.data?.cardanoIbcAsset)
-    .catch(() => ({
-      denom: '',
-      path: '',
-    }));
-  const sendTokenDenom = cardanoTokenTrace?.denom
-    ? `${cardanoTokenTrace?.path}/${cardanoTokenTrace?.denom}`
+  const cardanoTokenTrace = await lookupCardanoAssetDenomTrace(token.denom);
+  const sendTokenDenom = cardanoTokenTrace?.fullDenom
+    ? cardanoTokenTrace.fullDenom
     : token.denom;
   let data: any;
   if (routes.length === 1) {

@@ -10,15 +10,14 @@ import {
   ModalFooter,
   Button,
   Box,
-  Image,
 } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
-import SwitchIcon from '@/assets/icons/transfer.svg';
 import { FaArrowRight } from 'react-icons/fa';
 import { SwapTokenType } from '@/types/SwapDataType';
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
 import SwapContext from '@/contexts/SwapContext';
 import { FROM_TO, OSMOSIS_CHAIN_ID } from '@/constants';
+import { CARDANO_CHAIN_ID } from '@/configs/runtime';
 import NetworkTokenBox from './NetworkTokenBox';
 
 import { StyledSwitchNetwork } from './index.style';
@@ -56,17 +55,6 @@ const SelectNetworkModal = ({
       });
       onClose();
     }
-  };
-
-  const handleChangePositionToken = () => {
-    const tokenFrom = tokenFromSelected;
-    const tokenTo = tokenToSelected;
-    setTokenFromSelected(tokenTo);
-    setTokenToSelected(tokenFrom);
-    setDisabledNetwork({
-      fromNetworkDisabled: tokenFrom?.network,
-      toNetworkDisabled: tokenTo?.network,
-    });
   };
 
   const handleCancel = () => {
@@ -118,9 +106,13 @@ const SelectNetworkModal = ({
         h="694px"
         maxW="990px"
       >
-        <ModalHeader p={0}>Select network & token</ModalHeader>
+        <ModalHeader p={0}>Select Cardano Input And Local Osmosis Output</ModalHeader>
         <ModalCloseButton w="24px" h="24px" top="24px" right="24px" />
         <ModalBody p={0}>
+          <Box color={COLOR.neutral_3} fontSize="14px" mb="16px">
+            Transfers are generic ICS-20 flows. This modal is only for the
+            Local Osmosis swap demo path.
+          </Box>
           <Box
             h="528px"
             gap="16px"
@@ -130,9 +122,7 @@ const SelectNetworkModal = ({
             <NetworkTokenBox
               onChooseToken={setTokenFromSelected}
               networkList={networkList.filter(
-                (network) =>
-                  network.networkId ===
-                  process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID,
+                (network) => network.networkId === CARDANO_CHAIN_ID,
               )}
               selectedToken={tokenFromSelected}
               disabledToken={tokenToSelected}
@@ -142,13 +132,7 @@ const SelectNetworkModal = ({
               }
             />
             <StyledSwitchNetwork
-            // _hover={{
-            //   bgColor: enableSwitch && COLOR.neutral_4,
-            //   cursor: enableSwitch ? 'pointer' : 'default',
-            // }}
-            // onClick={enableSwitch ? handleChangePositionToken : () => {}}
             >
-              {/* <Image src={SwitchIcon.src} alt="" /> */}
               <FaArrowRight color={COLOR.neutral_1} />
             </StyledSwitchNetwork>
             <NetworkTokenBox
