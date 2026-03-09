@@ -158,14 +158,14 @@ enum Commands {
         #[arg(long = "chain", alias = "host-chain")]
         chain: String,
     },
-    /// Create an IBC client on chain A that tracks chain B
+    /// Create an IBC client on the host chain that tracks the reference chain
     CreateClient {
         /// Chain identifier where the client will be created
-        #[arg(long = "a-chain", alias = "host-chain")]
-        a_chain: String,
+        #[arg(long = "host-chain")]
+        host_chain: String,
         /// Chain identifier that the new client will track
-        #[arg(long = "b-chain", alias = "reference-chain")]
-        b_chain: String,
+        #[arg(long = "reference-chain")]
+        reference_chain: String,
     },
     /// Create IBC connection between two chains
     CreateConnection {
@@ -339,8 +339,11 @@ async fn main() {
         }
         Commands::Audit => commands::run_audit(project_root_path),
         Commands::ListClients { chain } => commands::run_list_clients(&chain),
-        Commands::CreateClient { a_chain, b_chain } => {
-            commands::run_create_client(project_root_path, &a_chain, &b_chain)
+        Commands::CreateClient {
+            host_chain,
+            reference_chain,
+        } => {
+            commands::run_create_client(project_root_path, &host_chain, &reference_chain)
         }
         Commands::CreateConnection { a_chain, b_chain } => {
             commands::run_create_connection(project_root_path, &a_chain, &b_chain)
