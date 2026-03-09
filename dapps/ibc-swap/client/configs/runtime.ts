@@ -12,9 +12,6 @@ export const CARDANO_IBC_CHAIN_ID =
   firstNonEmpty(process.env.NEXT_PUBLIC_CARDANO_IBC_CHAIN_ID) ||
   LOCAL_CARDANO_IBC_CHAIN_ID;
 
-export const isCardanoChainRef = (chainId?: string): boolean =>
-  chainId === CARDANO_CHAIN_ID || chainId === CARDANO_IBC_CHAIN_ID;
-
 export const ENTRYPOINT_RPC_ENDPOINT =
   firstNonEmpty(process.env.NEXT_PUBLIC_ENTRYPOINT_RPC_ENDPOINT) ||
   'http://localhost:26657';

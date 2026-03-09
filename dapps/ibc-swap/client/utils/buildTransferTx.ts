@@ -1,7 +1,7 @@
 /* global BigInt */
 import { transfer } from '@/apis/restapi/cardano';
 import { lookupCardanoAssetDenomTrace } from '@/apis/restapi/cardano';
-import { isCardanoChainRef } from '@/configs/runtime';
+import { CARDANO_IBC_CHAIN_ID } from '@/configs/runtime';
 import { Coin } from 'cosmjs-types/cosmos/base/v1beta1/coin';
 import { MsgTransfer } from 'cosmjs-types/ibc/applications/transfer/v1/tx';
 import { getPublicKeyHashFromAddress } from './address';
@@ -54,7 +54,7 @@ export function unsignedTxTransferFromCosmos(
   let msg: MsgTransfer;
 
   let tmpReceiver = receiver;
-  if (isCardanoChainRef(chains[chains.length - 1])) {
+  if (chains[chains.length - 1] === CARDANO_IBC_CHAIN_ID) {
     tmpReceiver = getPublicKeyHashFromAddress(receiver)!;
   }
 
