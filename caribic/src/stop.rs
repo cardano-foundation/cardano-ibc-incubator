@@ -6,6 +6,7 @@ use std::time::Duration;
 use crate::{
     config,
     logger::{error, log},
+    start,
     utils::execute_script,
 };
 
@@ -100,10 +101,26 @@ pub fn stop_cosmos(cosmos_path: &Path, chain_name: &str) {
 }
 
 pub fn stop_relayer(relayer_path: &Path) {
-    // Stop Hermes daemon by targeting the exact local relayer binary process that caribic starts:
-    //   <project>/relayer/target/release/hermes --config ... start
-    // Matching on "hermes start" is not reliable because "--config" sits between those tokens.
-    let running_pids = find_running_hermes_daemon_pids(relayer_path);
+    let expected_binary = relayer_path.join("target/release/hermes");
+    let expected_binary_str = expected_binary.to_str();
+
+    let mut running_pids = Vec::new();
+
+    if let Some(pid) = start::read_hermes_pid_file() {
+        if start::is_process_alive(pid)
+            && start::is_expected_hermes_daemon_pid(pid, expected_binary_str)
+        {
+            running_pids.push(pid);
+        } else {
+            start::remove_hermes_pid_file();
+        }
+    }
+
+    if running_pids.is_empty() {
+        // Legacy cleanup path for Hermes processes started before pid-file tracking existed.
+        running_pids = find_running_hermes_daemon_pids(relayer_path);
+    }
+
     if running_pids.is_empty() {
         log("Hermes relayer was not running");
         return;
@@ -125,7 +142,7 @@ pub fn stop_relayer(relayer_path: &Path) {
 
     let remaining_pids: Vec<u32> = running_pids
         .into_iter()
-        .filter(|pid| is_process_alive(*pid))
+        .filter(|pid| start::is_process_alive(*pid))
         .collect();
 
     for pid in &remaining_pids {
@@ -141,6 +158,7 @@ pub fn stop_relayer(relayer_path: &Path) {
     }
 
     if remaining_pids.is_empty() {
+        start::remove_hermes_pid_file();
         log("Hermes relayer stopped successfully");
     } else {
         log(&format!(
@@ -152,14 +170,6 @@ pub fn stop_relayer(relayer_path: &Path) {
                 .join(", ")
         ));
     }
-}
-
-fn is_process_alive(pid: u32) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
 }
 
 fn find_running_hermes_daemon_pids(relayer_path: &Path) -> Vec<u32> {
@@ -175,7 +185,7 @@ fn find_running_hermes_daemon_pids(relayer_path: &Path) -> Vec<u32> {
             .lines()
             .filter_map(|line| parse_pid_and_command(line))
             .filter_map(|(pid, command)| {
-                if is_hermes_daemon_command(command.as_str(), expected_binary_str) {
+                if start::is_hermes_daemon_command(command.as_str(), expected_binary_str) {
                     Some(pid)
                 } else {
                     None
@@ -198,26 +208,6 @@ fn parse_pid_and_command(line: &str) -> Option<(u32, String)> {
     let pid = pid_str.parse::<u32>().ok()?;
 
     Some((pid, command))
-}
-
-fn is_hermes_daemon_command(command: &str, expected_binary_path: Option<&str>) -> bool {
-    let normalized_command = command.trim();
-
-    if normalized_command.is_empty() || !normalized_command.contains("--config") {
-        return false;
-    }
-
-    if let Some(path) = expected_binary_path {
-        if normalized_command.starts_with(path) {
-            // This is the strongest match because it ties the process to this repo's
-            // Hermes binary, not just any `hermes` executable on the machine.
-            return normalized_command.ends_with(" start");
-        }
-    }
-
-    // Fallback only when we cannot match the absolute binary path, still requiring
-    // daemon invocation shape so we do not kill unrelated Hermes commands.
-    normalized_command.contains("hermes") && normalized_command.ends_with(" start")
 }
 
 pub fn stop_mithril(mithril_path: &Path) {
