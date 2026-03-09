@@ -36,7 +36,7 @@ pub async fn run_start(
     // Determine what to start.
     let start_all = target.is_none() || target == Some(StartTarget::All);
     let start_network = start_all || target == Some(StartTarget::Network);
-    let start_cosmos = start_all || target == Some(StartTarget::Cosmos);
+    let start_cosmos = start_all || target == Some(StartTarget::Entrypoint);
     let start_bridge = start_all || target == Some(StartTarget::Bridge);
     let optional_chain_alias = resolve_optional_chain_alias(target.as_ref());
 

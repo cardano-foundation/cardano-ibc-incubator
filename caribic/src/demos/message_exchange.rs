@@ -133,7 +133,13 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
 
 fn ensure_message_exchange_prerequisites(project_root_path: &Path) -> Result<(), String> {
     let required_services = [
-        "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril", "cosmos",
+        "gateway",
+        "cardano",
+        "postgres",
+        "kupo",
+        "ogmios",
+        "mithril",
+        "entrypoint",
     ];
     let mut failures = Vec::new();
 

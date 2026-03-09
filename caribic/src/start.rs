@@ -2579,8 +2579,8 @@ const CORE_HEALTH_SERVICES: [CoreHealthService; 8] = [
         check_type: CoreHealthCheckType::HermesDaemon,
     },
     CoreHealthService {
-        name: "cosmos",
-        label: "Cosmos Entrypoint chain",
+        name: "entrypoint",
+        label: "Entrypoint chain",
         check_type: CoreHealthCheckType::Cosmos,
     },
 ];

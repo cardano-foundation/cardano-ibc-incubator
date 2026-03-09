@@ -105,7 +105,15 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
     logger::verbose(&format!("{}", osmosis_dir.display()));
 
     let required_services = [
-        "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril", "cosmos", "osmosis", "redis",
+        "gateway",
+        "cardano",
+        "postgres",
+        "kupo",
+        "ogmios",
+        "mithril",
+        "entrypoint",
+        "osmosis",
+        "redis",
     ];
     if let Err(error) =
         ensure_demo_services_ready(project_root_path, &required_services, "token-swap")
@@ -297,7 +305,7 @@ async fn run_injective_token_swap_demo(
     logger::verbose(&format!("{}", injective_dir.display()));
 
     let required_services = [
-        "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril", "cosmos",
+        "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril", "entrypoint",
     ];
     if let Err(error) =
         ensure_demo_services_ready(project_root_path, &required_services, "token-swap")

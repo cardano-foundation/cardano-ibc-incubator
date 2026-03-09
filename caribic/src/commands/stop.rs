@@ -40,7 +40,7 @@ pub fn run_stop(
             network_down(project_root_path);
             logger::log("\nCardano Network stopped successfully");
         }
-        Some(StopTarget::Cosmos) => {
+        Some(StopTarget::Entrypoint) => {
             stop::stop_cosmos(
                 project_root_path.join("cosmos").as_path(),
                 "Cosmos Entrypoint chain",
