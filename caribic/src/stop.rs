@@ -84,7 +84,12 @@ pub fn stop_cosmos(cosmos_path: &Path, chain_name: &str) {
         return;
     }
 
-    let cosmos_result = execute_script(cosmos_path, "docker", Vec::from(["compose", "down"]), None);
+    let cosmos_result = execute_script(
+        cosmos_path,
+        "docker",
+        Vec::from(["compose", "-f", "docker-compose.yml", "down"]),
+        None,
+    );
     match cosmos_result {
         Ok(_) => {
             log(&format!("{} stopped successfully", chain_name));

@@ -776,18 +776,30 @@ pub fn start_cosmos_entrypoint_chain_services(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let node_service_name = "entrypoint-node-prod";
     let init_service_name = "entrypoint-init";
+    let compose_file = "docker-compose.yml";
 
     if clean {
         execute_script(
             cosmos_dir,
             "docker",
-            Vec::from(["compose", "down", "-v", "--remove-orphans"]),
+            Vec::from([
+                "compose",
+                "-f",
+                compose_file,
+                "down",
+                "-v",
+                "--remove-orphans",
+            ]),
             None,
         )?;
+        // Both init and steady-state services share the same image. Build the compose project
+        // once instead of targeting the init service specifically. This avoids brittle service
+        // name lookups in the full parallel startup path and keeps clean startup behavior
+        // consistent with the single-target `caribic start entrypoint --clean` flow.
         execute_script(
             cosmos_dir,
             "docker",
-            Vec::from(["compose", "build", init_service_name]),
+            Vec::from(["compose", "-f", compose_file, "build"]),
             None,
         )?;
     }
@@ -795,14 +807,21 @@ pub fn start_cosmos_entrypoint_chain_services(
     execute_script(
         cosmos_dir,
         "docker",
-        Vec::from(["compose", "run", "--rm", init_service_name]),
+        Vec::from(["compose", "-f", compose_file, "run", "--rm", init_service_name]),
         None,
     )?;
 
     execute_script(
         cosmos_dir,
         "docker",
-        Vec::from(["compose", "up", "-d", node_service_name]),
+        Vec::from([
+            "compose",
+            "-f",
+            compose_file,
+            "up",
+            "-d",
+            node_service_name,
+        ]),
         None,
     )?;
     Ok(())
