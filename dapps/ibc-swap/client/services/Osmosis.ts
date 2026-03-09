@@ -15,7 +15,7 @@ const routeTableStrPrefix = '\x00\rrouting_table\x00D';
 
 export async function fetchOsmosisDenomTraces(): Promise<IBCDenomTrace> {
   const restUrl =
-    process.env.NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT ||
+    process.env.NEXT_PUBLIC_LOCALOSMOSIS_REST_ENDPOINT ||
     OSMOSIS_MAINNET_REST_ENDPOINT;
   return fetchAllDenomTraces(restUrl);
 }
@@ -35,7 +35,7 @@ function isValidTokenInPool(tokenString: string) {
 
 export async function fetchCrossChainSwapRouterState() {
   const restUrl =
-    process.env.NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT ||
+    process.env.NEXT_PUBLIC_LOCALOSMOSIS_REST_ENDPOINT ||
     OSMOSIS_MAINNET_REST_ENDPOINT;
   const fetchUrl = `${restUrl}${querySwapRouterState.replace(
     'SWAP_ROUTER_ADDRESS',

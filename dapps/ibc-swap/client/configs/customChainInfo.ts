@@ -123,12 +123,12 @@ const localOsmosisChainConfig: Chain = {
   apis: {
     rpc: [
       {
-        address: process.env.NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT || '',
+        address: process.env.NEXT_PUBLIC_LOCALOSMOSIS_RPC_ENDPOINT || '',
       },
     ],
     rest: [
       {
-        address: process.env.NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT || '',
+        address: process.env.NEXT_PUBLIC_LOCALOSMOSIS_REST_ENDPOINT || '',
       },
     ],
   },

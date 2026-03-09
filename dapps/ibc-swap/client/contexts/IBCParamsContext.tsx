@@ -84,7 +84,7 @@ export const IBCParamsProvider = ({
   };
 
   const initRPCClient = async () => {
-    const rpcEndpoint = process.env.NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT!;
+    const rpcEndpoint = process.env.NEXT_PUBLIC_LOCALOSMOSIS_RPC_ENDPOINT!;
     const rpcClient = await osmosis.ClientFactory.createRPCQueryClient({
       rpcEndpoint,
     });
@@ -99,8 +99,7 @@ export const IBCParamsProvider = ({
 
   const fetchRawChannelsMapping = async () => {
     const entrypointRestEndpoint =
-      process.env.NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT ||
-      process.env.NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT!;
+      process.env.NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT!;
     fetchAllChannels(
       ENTRYPOINT_CHAIN_ID,
       entrypointRestEndpoint,

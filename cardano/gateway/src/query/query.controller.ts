@@ -9,8 +9,6 @@ import {
   QueryLatestHeightResponse,
   QueryNewClientRequest,
   QueryNewClientResponse,
-  QueryBlockDataRequest,
-  QueryBlockDataResponse,
 } from '@plus/proto-types/build/ibc/core/client/v1/query';
 import {
   QueryConnectionRequest,
@@ -90,12 +88,6 @@ export class QueryController {
   @GrpcMethod('Query', 'ConsensusState')
   async queryConsensusState(data: QueryConsensusStateRequest): Promise<QueryConsensusStateResponse> {
     const response: QueryConsensusStateResponse = await this.queryService.queryConsensusState(data);
-    return response;
-  }
-
-  @GrpcMethod('Query', 'BlockData')
-  async queryBlockData(data: QueryBlockDataRequest): Promise<QueryBlockDataResponse> {
-    const response: QueryBlockDataResponse = await this.queryService.queryBlockData(data);
     return response;
   }
 

@@ -8,6 +8,7 @@ import { GET_CARDANO_DENOM_BY_ID } from '@/apis/apollo/query';
 import { FORWARD_TIMEOUT } from '@/constants';
 
 const pfmReceiver = 'pfm';
+const CARDANO_IBC_CHAIN_ID = 'cardano-devnet';
 
 interface Token {
   denom: string;
@@ -54,7 +55,7 @@ export function unsignedTxTransferFromCosmos(
   let msg: MsgTransfer;
 
   let tmpReceiver = receiver;
-  if (chains[chains.length - 1] === process.env.NEXT_PUBLIC_CARDANO_CHAIN_ID) {
+  if (chains[chains.length - 1] === CARDANO_IBC_CHAIN_ID) {
     tmpReceiver = getPublicKeyHashFromAddress(receiver)!;
   }
 
