@@ -19,3 +19,26 @@ services:
       - "1320:1317"
       - "9097:9090"
     restart: unless-stopped
+
+  injectived-testnet:
+    image: ${INJECTIVE_TESTNET_IMAGE:-injectivelabs/injective-core:v1.18.0-beta}
+    entrypoint: ["/bin/bash", "/injective/scripts/setup_injective_testnet.sh"]
+    environment:
+      INJECTIVE_HOME: /root/.injectived
+      INJECTIVE_TESTNET_CHAIN_ID: ${INJECTIVE_TESTNET_CHAIN_ID:-injective-888}
+      INJECTIVE_TESTNET_MONIKER: ${INJECTIVE_TESTNET_MONIKER:-caribic-injective-testnet}
+      INJECTIVE_TESTNET_GENESIS_URL: ${INJECTIVE_TESTNET_GENESIS_URL:-https://injective-snapshots.s3.amazonaws.com/testnet/genesis.json}
+      INJECTIVE_TESTNET_MIN_GAS_PRICES: ${INJECTIVE_TESTNET_MIN_GAS_PRICES:-0.025inj}
+      INJECTIVE_TESTNET_BOOTSTRAP_MODE: ${INJECTIVE_TESTNET_BOOTSTRAP_MODE:-snapshot}
+      INJECTIVE_TESTNET_SNAPSHOT_URL: ${INJECTIVE_TESTNET_SNAPSHOT_URL:-}
+      INJECTIVE_TESTNET_SNAPSHOT_PAGE_URL: ${INJECTIVE_TESTNET_SNAPSHOT_PAGE_URL:-https://www.polkachu.com/testnets/injective/snapshots}
+      INJECTIVED_P2P_SEEDS: ${INJECTIVED_P2P_SEEDS:-}
+      INJECTIVED_P2P_PERSISTENT_PEERS: ${INJECTIVED_P2P_PERSISTENT_PEERS:-}
+    volumes:
+      - ../scripts:/injective/scripts:ro
+      - ${HOME}/.injectived-testnet:/root/.injectived
+    ports:
+      - "26659:26657"
+      - "1319:1317"
+      - "9096:9090"
+    restart: unless-stopped

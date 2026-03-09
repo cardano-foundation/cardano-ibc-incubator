@@ -1,17 +1,14 @@
 use std::fs;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
 use fs_extra::copy_items;
 use serde_json::Value;
 
 use super::config;
-use crate::chains::cosmos_node::{
-    add_directory_to_process_path, command_exists, locate_binary_in_path_or_go_bin,
-    resolve_home_relative_path, start_managed_node, stop_managed_node, CosmosNodeSpec,
-};
-use crate::logger::{log, verbose, warn};
+use crate::chains::cosmos_node::resolve_home_relative_path;
+use crate::logger::{log, warn};
 use crate::utils::{execute_script, wait_for_health_check};
 
 pub(super) async fn prepare_local(
@@ -49,6 +46,7 @@ pub(super) async fn start_local(
             "configuration/docker-compose.yml",
             "up",
             "-d",
+            "injectived",
         ]),
         Some(vec![
             ("INJECTIVE_LOCAL_IMAGE", config::LOCAL_DOCKER_IMAGE),
@@ -97,36 +95,56 @@ pub(super) fn stop_local(injective_path: &Path) {
     let _ = execute_script(
         injective_path,
         "docker",
-        Vec::from(["compose", "-f", "configuration/docker-compose.yml", "down"]),
+        Vec::from([
+            "compose",
+            "-f",
+            "configuration/docker-compose.yml",
+            "stop",
+            "injectived",
+        ]),
+        None,
+    );
+    let _ = execute_script(
+        injective_path,
+        "docker",
+        Vec::from([
+            "compose",
+            "-f",
+            "configuration/docker-compose.yml",
+            "rm",
+            "-f",
+            "injectived",
+        ]),
         None,
     );
 }
 
 pub(super) async fn prepare_testnet(
-    spec: &CosmosNodeSpec,
+    project_root_path: &Path,
+    injective_dir: &Path,
     stateful: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    ensure_injectived_available()?;
+    sync_workspace_assets_from_repo(project_root_path, injective_dir)?;
 
-    let paths = spec.paths()?;
-    if !stateful && paths.home_dir.exists() {
-        fs::remove_dir_all(paths.home_dir.as_path())?;
+    if !stateful {
+        stop_testnet(injective_dir);
+
+        let testnet_home_dir = resolve_home_relative_path(config::TESTNET_HOME_DIR)?;
+        if testnet_home_dir.exists() {
+            fs::remove_dir_all(testnet_home_dir.as_path())?;
+        }
     }
 
-    initialize_testnet_home(spec, paths.home_dir.as_path()).await?;
     Ok(())
 }
 
 pub(super) async fn start_testnet(
-    spec: &CosmosNodeSpec,
-    trust_rpc_url: &str,
+    injective_dir: &Path,
+    snapshot_url_override: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let first_start_error = match start_managed_node(
-        spec,
-        Some(trust_rpc_url),
-        180,
-        3000,
-        "Injective testnet node",
+    let first_start_error = match start_testnet_container(
+        injective_dir,
+        snapshot_url_override,
     )
     .await
     {
@@ -134,220 +152,163 @@ pub(super) async fn start_testnet(
         Err(error) => error.to_string(),
     };
 
-    let paths = spec.paths()?;
-    if !should_reset_corrupted_testnet_store(paths.log_path.as_path()) {
+    if !should_reset_corrupted_testnet_store(injective_dir) {
         return Err(first_start_error.into());
     }
 
     warn("Detected corrupted Injective testnet store; resetting local testnet home and retrying once.");
-    let _ = stop_managed_node(spec, "Injective testnet node");
-    if paths.home_dir.exists() {
-        fs::remove_dir_all(paths.home_dir.as_path())?;
+    stop_testnet(injective_dir);
+    let testnet_home_dir = resolve_home_relative_path(config::TESTNET_HOME_DIR)?;
+    if testnet_home_dir.exists() {
+        fs::remove_dir_all(testnet_home_dir.as_path())?;
     }
-    initialize_testnet_home(spec, paths.home_dir.as_path()).await?;
-    start_managed_node(
-        spec,
-        Some(trust_rpc_url),
-        180,
-        3000,
-        "Injective testnet node",
+
+    start_testnet_container(
+        injective_dir,
+        snapshot_url_override,
     )
     .await
 }
 
-pub(super) fn stop_testnet(spec: &CosmosNodeSpec) -> Result<(), Box<dyn std::error::Error>> {
-    stop_managed_node(spec, "Injective testnet node")
+pub(super) fn stop_testnet(injective_path: &Path) {
+    let _ = execute_script(
+        injective_path,
+        "docker",
+        Vec::from([
+            "compose",
+            "-f",
+            "configuration/docker-compose.yml",
+            "stop",
+            "injectived-testnet",
+        ]),
+        None,
+    );
+    let _ = execute_script(
+        injective_path,
+        "docker",
+        Vec::from([
+            "compose",
+            "-f",
+            "configuration/docker-compose.yml",
+            "rm",
+            "-f",
+            "injectived-testnet",
+        ]),
+        None,
+    );
 }
 
-fn ensure_injectived_available() -> Result<(), Box<dyn std::error::Error>> {
-    let mut injectived_location = locate_binary_in_path_or_go_bin("injectived");
-    if injectived_location.is_none() {
-        let should_continue = prompt_and_install_injectived()?;
-        if !should_continue {
-            return Err("injectived is required for Injective testnet startup".into());
-        }
-        injectived_location = locate_binary_in_path_or_go_bin("injectived");
+async fn start_testnet_container(
+    injective_dir: &Path,
+    snapshot_url_override: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut environment = vec![
+        ("INJECTIVE_TESTNET_IMAGE", config::TESTNET_DOCKER_IMAGE),
+        ("INJECTIVE_TESTNET_CHAIN_ID", config::TESTNET_CHAIN_ID),
+        ("INJECTIVE_TESTNET_MONIKER", config::TESTNET_MONIKER),
+        ("INJECTIVE_TESTNET_GENESIS_URL", config::TESTNET_GENESIS_URL),
+        ("INJECTIVE_TESTNET_BOOTSTRAP_MODE", "snapshot"),
+        (
+            "INJECTIVE_TESTNET_SNAPSHOT_PAGE_URL",
+            config::TESTNET_SNAPSHOT_PAGE_URL,
+        ),
+        ("INJECTIVED_P2P_SEEDS", config::TESTNET_SEEDS),
+        (
+            "INJECTIVED_P2P_PERSISTENT_PEERS",
+            config::TESTNET_PERSISTENT_PEERS,
+        ),
+    ];
+    let snapshot_url = snapshot_url_override.unwrap_or(config::TESTNET_SNAPSHOT_URL);
+    if !snapshot_url.trim().is_empty() {
+        environment.push(("INJECTIVE_TESTNET_SNAPSHOT_URL", snapshot_url));
     }
 
-    let (injectived_binary, path_visible) = injectived_location.ok_or(
-        "injectived is still not available after install step. Install injectived and retry.",
+    execute_script(
+        injective_dir,
+        "docker",
+        Vec::from([
+            "compose",
+            "-f",
+            "configuration/docker-compose.yml",
+            "up",
+            "-d",
+            "injectived-testnet",
+        ]),
+        Some(environment),
     )?;
 
-    match Command::new(&injectived_binary).arg("version").output() {
-        Ok(output) if output.status.success() => {
-            let stdout_version = String::from_utf8_lossy(&output.stdout);
-            let stderr_version = String::from_utf8_lossy(&output.stderr);
-            let version_line = stdout_version
-                .lines()
-                .next()
-                .or_else(|| stderr_version.lines().next())
-                .unwrap_or("version unavailable");
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(3))
+        .build()?;
 
-            verbose(&format!(
-                "PASS: injectived {} ({})",
-                version_line,
-                injectived_binary.display()
-            ));
-
-            if !path_visible {
-                if let Some(binary_dir) = injectived_binary.parent() {
-                    add_directory_to_process_path(binary_dir);
-                }
-                warn(&format!(
-                    "injectived is installed at {} but not visible in PATH. Add '$HOME/go/bin' to PATH for direct shell usage.",
-                    injectived_binary.display()
-                ));
+    let max_attempts = 1800;
+    let mut last_reported_height = 0_u64;
+    for attempt in 1..=max_attempts {
+        if attempt == 1 || attempt % 10 == 0 {
+            if let Some(fatal_reason) = testnet_fatal_bootstrap_reason(injective_dir) {
+                stop_testnet(injective_dir);
+                return Err(format!(
+                    "Injective testnet bootstrap failed before readiness: {}\n{}",
+                    fatal_reason,
+                    testnet_container_log_tail(injective_dir)
+                )
+                .into());
             }
         }
-        Ok(output) => {
+
+        if !is_testnet_container_running(injective_dir) {
             return Err(format!(
-                "injectived exists at {} but 'injectived version' failed (exit code {})",
-                injectived_binary.display(),
-                output.status.code().unwrap_or(-1)
+                "Injective testnet container exited before health became ready.\n{}",
+                testnet_container_log_tail(injective_dir)
             )
             .into());
         }
-        Err(error) => {
-            return Err(format!(
-                "Failed to run injectived at {}: {}",
-                injectived_binary.display(),
-                error
-            )
-            .into());
-        }
-    }
 
-    Ok(())
-}
+        let response = client.get(config::TESTNET_STATUS_URL).send().await;
+        let (latest_height, catching_up) = match response {
+            Ok(resp) if resp.status().is_success() => {
+                let body = resp.text().await.unwrap_or_default();
+                let json: Value = serde_json::from_str(body.as_str()).unwrap_or_default();
+                let sync_info = &json["result"]["sync_info"];
+                let latest_height = sync_info["latest_block_height"]
+                    .as_str()
+                    .and_then(|value| value.parse::<u64>().ok())
+                    .or_else(|| sync_info["latest_block_height"].as_u64())
+                    .unwrap_or(0);
+                let catching_up = sync_info["catching_up"].as_bool().unwrap_or(false);
+                (latest_height, catching_up)
+            }
+            _ => (0, false),
+        };
 
-fn prompt_and_install_injectived() -> Result<bool, Box<dyn std::error::Error>> {
-    let question = "injectived is missing. Do you want to install it now from source? (yes/no): ";
-    print!("{}", question);
-    io::stdout().flush()?;
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    let input = input.trim().to_lowercase();
-    if !(input == "yes" || input == "y") {
-        return Ok(false);
-    }
-
-    install_injectived_from_source()?;
-    Ok(true)
-}
-
-fn install_injectived_from_source() -> Result<(), Box<dyn std::error::Error>> {
-    if !command_exists("go") {
-        return Err("`go` is required to install injectived. Run `caribic install` first.".into());
-    }
-    if !command_exists("git") {
-        return Err("`git` is required to install injectived from source.".into());
-    }
-    if !command_exists("make") {
-        return Err("`make` is required to install injectived from source.".into());
-    }
-
-    let source_path = injective_source_path()?;
-    let parent_path = source_path
-        .parent()
-        .ok_or("Failed to resolve parent directory for Injective source checkout")?;
-    fs::create_dir_all(parent_path)?;
-
-    if source_path.exists() {
-        let fetch_status = Command::new("git")
-            .current_dir(source_path.as_path())
-            .args(["fetch", "--all", "--tags"])
-            .status()?;
-        if !fetch_status.success() {
-            return Err("Failed to refresh Injective source repository".into());
+        if latest_height > 0 {
+            return Ok(());
         }
 
-        let reset_status = Command::new("git")
-            .current_dir(source_path.as_path())
-            .args(["reset", "--hard", "origin/master"])
-            .status()?;
-        if !reset_status.success() {
-            return Err("Failed to reset Injective source repository to origin/master".into());
+        if attempt == 1 || attempt % 12 == 0 {
+            log(&format!(
+                "Injective testnet bootstrap still waiting for first block (attempt {}/{}): latest block height={}, catching_up={}",
+                attempt, max_attempts, latest_height, catching_up
+            ));
+        } else if latest_height > last_reported_height {
+            log(&format!(
+                "Injective testnet sync progress: latest block height={}",
+                latest_height
+            ));
+            last_reported_height = latest_height;
         }
-    } else {
-        let clone_status = Command::new("git")
-            .args([
-                "clone",
-                "--depth",
-                "1",
-                config::SOURCE_REPO_URL,
-                source_path
-                    .to_str()
-                    .ok_or("Invalid injective source path")?,
-            ])
-            .status()?;
-        if !clone_status.success() {
-            return Err("Failed to clone Injective source repository".into());
-        }
+
+        tokio::time::sleep(Duration::from_millis(3000)).await;
     }
 
-    let make_status = Command::new("make")
-        .current_dir(source_path.as_path())
-        .arg("install")
-        .status()?;
-
-    if !make_status.success() {
-        return Err("Failed to build/install injectived via `make install`".into());
-    }
-
-    Ok(())
-}
-
-async fn initialize_testnet_home(
-    spec: &CosmosNodeSpec,
-    home_path: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let config_toml_path = home_path.join("config/config.toml");
-    let genesis_path = home_path.join("config/genesis.json");
-    if config_toml_path.exists() && genesis_path.exists() {
-        return Ok(());
-    }
-
-    fs::create_dir_all(home_path)?;
-
-    let output = Command::new(spec.binary)
-        .args([
-            "init",
-            spec.moniker,
-            "--chain-id",
-            spec.chain_id,
-            "--home",
-            home_path
-                .to_str()
-                .ok_or("Invalid testnet home directory path")?,
-        ])
-        .output()?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "Failed to initialize Injective testnet home: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )
-        .into());
-    }
-
-    let genesis_response = reqwest::get(config::TESTNET_GENESIS_URL).await?;
-    if !genesis_response.status().is_success() {
-        return Err(format!(
-            "Failed to download Injective testnet genesis from {} (HTTP {})",
-            config::TESTNET_GENESIS_URL,
-            genesis_response.status()
-        )
-        .into());
-    }
-
-    let genesis_bytes = genesis_response.bytes().await?;
-    fs::write(genesis_path.as_path(), genesis_bytes.as_ref())?;
-    Ok(())
-}
-
-fn injective_source_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    resolve_home_relative_path(config::SOURCE_DIR)
+    stop_testnet(injective_dir);
+    Err(format!(
+        "Timed out while waiting for Injective testnet node at {}\n{}",
+        config::TESTNET_STATUS_URL,
+        testnet_container_log_tail(injective_dir)
+    )
+    .into())
 }
 
 fn sync_workspace_assets_from_repo(
@@ -380,11 +341,154 @@ fn sync_workspace_assets_from_repo(
     Ok(())
 }
 
-fn should_reset_corrupted_testnet_store(log_path: &Path) -> bool {
-    let Ok(log_contents) = fs::read_to_string(log_path) else {
+fn should_reset_corrupted_testnet_store(injective_dir: &Path) -> bool {
+    let output = Command::new("docker")
+        .current_dir(injective_dir)
+        .args([
+            "compose",
+            "-f",
+            "configuration/docker-compose.yml",
+            "logs",
+            "--tail",
+            "200",
+            "injectived-testnet",
+        ])
+        .output();
+
+    let Ok(output) = output else {
         return false;
     };
 
-    let lowered = log_contents.to_lowercase();
-    lowered.contains("failed to load latest version") && lowered.contains("version does not exist")
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}\n{}", stdout, stderr).to_ascii_lowercase();
+
+    let corrupted_store = combined.contains("failed to load latest version")
+        && combined.contains("version does not exist");
+    let incompatible_bootstrap_state = combined.contains("panic: unknown field \"abstain\"")
+        && combined.contains("tallyresult");
+    let objstorage_missing_files = combined.contains("failed to initialize database")
+        && combined.contains("unknown to the objstorage provider")
+        && combined.contains("file does not exist");
+
+    corrupted_store || incompatible_bootstrap_state || objstorage_missing_files
+}
+
+fn is_testnet_container_running(injective_dir: &Path) -> bool {
+    let Some(container_id) = testnet_container_id(injective_dir) else {
+        return false;
+    };
+
+    let output = Command::new("docker")
+        .args([
+            "inspect",
+            "--format",
+            "{{.State.Status}}",
+            container_id.as_str(),
+        ])
+        .output();
+
+    let Ok(output) = output else {
+        return false;
+    };
+    if !output.status.success() {
+        return false;
+    }
+
+    String::from_utf8_lossy(&output.stdout).trim() == "running"
+}
+
+fn testnet_container_id(injective_dir: &Path) -> Option<String> {
+    let output = Command::new("docker")
+        .current_dir(injective_dir)
+        .args([
+            "compose",
+            "-f",
+            "configuration/docker-compose.yml",
+            "ps",
+            "-q",
+            "injectived-testnet",
+        ])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if id.is_empty() {
+        None
+    } else {
+        Some(id)
+    }
+}
+
+fn testnet_container_log_tail(injective_dir: &Path) -> String {
+    let output = Command::new("docker")
+        .current_dir(injective_dir)
+        .args([
+            "compose",
+            "-f",
+            "configuration/docker-compose.yml",
+            "logs",
+            "--tail",
+            "80",
+            "injectived-testnet",
+        ])
+        .output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if stdout.trim().is_empty() {
+                "Injective testnet container logs are empty".to_string()
+            } else {
+                stdout.to_string()
+            }
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            format!(
+                "Unable to read Injective testnet container logs:\n{}",
+                stderr.trim()
+            )
+        }
+        Err(error) => format!(
+            "Unable to query Injective testnet container logs: {}",
+            error
+        ),
+    }
+}
+
+fn testnet_fatal_bootstrap_reason(injective_dir: &Path) -> Option<String> {
+    let output = Command::new("docker")
+        .current_dir(injective_dir)
+        .args([
+            "compose",
+            "-f",
+            "configuration/docker-compose.yml",
+            "logs",
+            "--tail",
+            "120",
+            "injectived-testnet",
+        ])
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}\n{}", stdout, stderr).to_ascii_lowercase();
+
+    if combined.contains("failed to initialize database")
+        && combined.contains("unknown to the objstorage provider")
+    {
+        return Some("snapshot store is inconsistent (objstorage files missing)".to_string());
+    }
+
+    if combined.contains("panic: unknown field \"abstain\"") && combined.contains("tallyresult") {
+        return Some("incompatible legacy testnet home detected".to_string());
+    }
+
+    None
 }

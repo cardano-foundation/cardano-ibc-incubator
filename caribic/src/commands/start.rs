@@ -173,7 +173,35 @@ pub async fn run_start(
             flags: &parsed_flags,
         };
 
-        chain_adapter
+        let optional_progress_bar = match logger::get_verbosity() {
+            logger::Verbosity::Verbose => None,
+            _ => Some(ProgressBar::new_spinner()),
+        };
+
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.enable_steady_tick(Duration::from_millis(100));
+            progress_bar.set_style(
+                ProgressStyle::with_template(
+                    "{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}",
+                )
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+            );
+            progress_bar
+                .set_prefix(format!("Starting {} ...", chain_adapter.display_name()).to_owned());
+            progress_bar.set_message(format!(
+                "network={} (this can take a while)",
+                resolved_network
+            ));
+        } else {
+            logger::log(&format!(
+                "Starting {} (network: {}) ...",
+                chain_adapter.display_name(),
+                resolved_network
+            ));
+        }
+
+        let start_result = chain_adapter
             .start(project_root_path, &request)
             .await
             .map_err(|error| {
@@ -182,7 +210,14 @@ pub async fn run_start(
                     chain_adapter.display_name(),
                     error
                 )
-            })?;
+            });
+
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.finish_and_clear();
+        }
+
+        start_result?;
+
         logger::log(&format!(
             "PASS: {} started successfully (network: {})",
             chain_adapter.display_name(),

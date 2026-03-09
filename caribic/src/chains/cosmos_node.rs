@@ -405,15 +405,6 @@ pub(crate) fn parse_port_from_socket_address(
     })
 }
 
-/// Returns true if `binary` is available on `PATH`.
-pub(crate) fn command_exists(binary: &str) -> bool {
-    let Some(path_var) = env::var_os("PATH") else {
-        return false;
-    };
-
-    env::split_paths(&path_var).any(|directory| directory.join(binary).is_file())
-}
-
 /// Resolves a binary either from `PATH` or from `$HOME/go/bin`.
 ///
 /// The returned boolean indicates whether the binary came from `PATH` (`true`)
@@ -462,86 +453,176 @@ pub(crate) async fn fetch_statesync_params(
     trust_offset: u64,
     chain_name: &str,
 ) -> Result<(String, u64, String), Box<dyn std::error::Error>> {
-    let trust_rpc_base_url = normalize_trust_rpc_url(trust_rpc_url)?;
-    let status_url = trust_rpc_base_url.join("status")?;
+    let mut rpc_candidates: Vec<reqwest::Url> = Vec::new();
+    for raw_candidate in std::iter::once(&trust_rpc_url).chain(fallback_trust_rpc_urls.iter()) {
+        let parsed = normalize_trust_rpc_url(raw_candidate)?;
+        if !rpc_candidates.contains(&parsed) {
+            rpc_candidates.push(parsed);
+        }
+    }
+
+    if rpc_candidates.is_empty() {
+        return Err(format!(
+            "No trusted {} RPC endpoints were provided for state-sync",
+            chain_name
+        )
+        .into());
+    }
+
     let http_client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(12))
         .build()?;
 
-    let status_response = http_client.get(status_url.as_str()).send().await?;
-    if !status_response.status().is_success() {
-        return Err(format!(
-            "Failed to fetch status from trusted {} RPC {} (HTTP {})",
-            chain_name,
-            status_url,
-            status_response.status()
-        )
-        .into());
+    let mut selected_trust: Option<(reqwest::Url, u64, String)> = None;
+    let mut probe_failures: Vec<String> = Vec::new();
+    for candidate in &rpc_candidates {
+        let latest_height = match fetch_latest_height_from_rpc(&http_client, candidate, chain_name).await
+        {
+            Ok(height) => height,
+            Err(error) => {
+                probe_failures.push(format!("{}: {}", candidate, error));
+                continue;
+            }
+        };
+
+        if latest_height <= trust_offset {
+            probe_failures.push(format!(
+                "{}: latest height {} is too low for trust offset {}",
+                candidate, latest_height, trust_offset
+            ));
+            continue;
+        }
+
+        let trust_height = latest_height - trust_offset;
+        match fetch_block_hash_from_rpc(&http_client, candidate, trust_height, chain_name).await {
+            Ok(trust_hash) => {
+                selected_trust = Some((candidate.clone(), trust_height, trust_hash));
+                break;
+            }
+            Err(error) => {
+                probe_failures.push(format!(
+                    "{}: cannot fetch trust block at height {} ({})",
+                    candidate, trust_height, error
+                ));
+            }
+        }
     }
 
-    let status_payload: Value = status_response.json().await?;
-    let latest_height = status_payload["result"]["sync_info"]["latest_block_height"]
+    let (selected_rpc, trust_height, trust_hash) = selected_trust.ok_or_else(|| {
+        format!(
+            "Failed to resolve trust height/hash from trusted {} RPC candidates. Tried: {}",
+            chain_name,
+            probe_failures.join("; ")
+        )
+    })?;
+
+    // Keep only endpoints that can serve the selected trust height with the same hash.
+    // This avoids configuring witness RPCs that immediately fail light verification.
+    let mut rpc_server_candidates: Vec<String> = Vec::new();
+    for candidate in &rpc_candidates {
+        let candidate_hash =
+            fetch_block_hash_from_rpc(&http_client, candidate, trust_height, chain_name).await;
+        if let Ok(hash) = candidate_hash {
+            if hash == trust_hash {
+                let formatted = format_rpc_server_address(candidate)?;
+                if !rpc_server_candidates.contains(&formatted) {
+                    rpc_server_candidates.push(formatted);
+                }
+            }
+        }
+    }
+
+    if rpc_server_candidates.is_empty() {
+        rpc_server_candidates.push(format_rpc_server_address(&selected_rpc)?);
+    }
+
+    // CometBFT expects at least one witness; duplicate the primary if only one passed probes.
+    if rpc_server_candidates.len() == 1 {
+        rpc_server_candidates.push(rpc_server_candidates[0].clone());
+    }
+
+    let rpc_servers = rpc_server_candidates.join(",");
+
+    Ok((rpc_servers, trust_height, trust_hash))
+}
+
+async fn fetch_latest_height_from_rpc(
+    http_client: &reqwest::Client,
+    rpc_base_url: &reqwest::Url,
+    chain_name: &str,
+) -> Result<u64, String> {
+    let status_url = rpc_base_url
+        .join("status")
+        .map_err(|error| format!("failed to build status URL: {}", error))?;
+    let response = http_client
+        .get(status_url.as_str())
+        .send()
+        .await
+        .map_err(|error| {
+            format!(
+                "failed to fetch status from {} trusted RPC {}: {}",
+                chain_name, status_url, error
+            )
+        })?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "status endpoint returned HTTP {} from {}",
+            response.status(),
+            status_url
+        ));
+    }
+
+    let payload: Value = response
+        .json()
+        .await
+        .map_err(|error| format!("failed to parse status payload from {}: {}", status_url, error))?;
+    payload["result"]["sync_info"]["latest_block_height"]
         .as_str()
         .and_then(|height| height.parse::<u64>().ok())
         .ok_or_else(|| {
             format!(
-                "Unable to parse latest_block_height from trusted {} RPC status response",
-                chain_name
+                "unable to parse latest_block_height from status response at {}",
+                status_url
+            )
+        })
+}
+
+async fn fetch_block_hash_from_rpc(
+    http_client: &reqwest::Client,
+    rpc_base_url: &reqwest::Url,
+    block_height: u64,
+    chain_name: &str,
+) -> Result<String, String> {
+    let block_url = rpc_base_url
+        .join(format!("block?height={}", block_height).as_str())
+        .map_err(|error| format!("failed to build block URL: {}", error))?;
+    let response = http_client
+        .get(block_url.as_str())
+        .send()
+        .await
+        .map_err(|error| {
+            format!(
+                "failed to fetch block {} from {} trusted RPC {}: {}",
+                block_height, chain_name, block_url, error
             )
         })?;
-
-    if latest_height <= trust_offset {
+    if !response.status().is_success() {
         return Err(format!(
-            "Latest {} testnet height {} is too low to compute trust height with offset {}",
-            chain_name, latest_height, trust_offset
-        )
-        .into());
+            "block endpoint returned HTTP {} from {}",
+            response.status(),
+            block_url
+        ));
     }
 
-    let trust_height = latest_height - trust_offset;
-    let block_url = trust_rpc_base_url.join(format!("block?height={}", trust_height).as_str())?;
-
-    let block_response = http_client.get(block_url.as_str()).send().await?;
-    if !block_response.status().is_success() {
-        return Err(format!(
-            "Failed to fetch trusted block at height {} from {} (HTTP {})",
-            trust_height,
-            block_url,
-            block_response.status()
-        )
-        .into());
-    }
-
-    let block_payload: Value = block_response.json().await?;
-    let trust_hash = block_payload["result"]["block_id"]["hash"]
+    let payload: Value = response
+        .json()
+        .await
+        .map_err(|error| format!("failed to parse block payload from {}: {}", block_url, error))?;
+    payload["result"]["block_id"]["hash"]
         .as_str()
-        .ok_or_else(|| {
-            format!(
-                "Unable to parse trusted block hash from {} RPC block response",
-                chain_name
-            )
-        })?
-        .to_string();
-
-    let primary_rpc_server = format_rpc_server_address(&trust_rpc_base_url)?;
-    let mut secondary_rpc_server: Option<String> = None;
-    for fallback_url in fallback_trust_rpc_urls {
-        if fallback_url.trim().is_empty() {
-            continue;
-        }
-        if let Ok(parsed_fallback) = normalize_trust_rpc_url(fallback_url) {
-            let fallback_rpc_server = format_rpc_server_address(&parsed_fallback)?;
-            if fallback_rpc_server != primary_rpc_server {
-                secondary_rpc_server = Some(fallback_rpc_server);
-                break;
-            }
-        }
-    }
-    let witness_rpc_server = secondary_rpc_server.unwrap_or_else(|| primary_rpc_server.clone());
-    let rpc_servers = format!("{},{}", primary_rpc_server, witness_rpc_server);
-
-    Ok((rpc_servers, trust_height, trust_hash))
+        .map(|hash| hash.to_string())
+        .ok_or_else(|| format!("missing block hash in response from {}", block_url))
 }
 
 /// Reads a PID from a pid-file.
@@ -692,7 +773,7 @@ fn normalize_trust_rpc_url(raw_url: &str) -> Result<reqwest::Url, Box<dyn std::e
     Ok(parsed)
 }
 
-/// Formats a URL as `{scheme}://{host}:{port}` for state-sync RPC servers.
+/// Formats a URL as `host:port` for CometBFT state-sync RPC servers.
 fn format_rpc_server_address(url: &reqwest::Url) -> Result<String, Box<dyn std::error::Error>> {
     let host = url
         .host_str()
@@ -700,7 +781,11 @@ fn format_rpc_server_address(url: &reqwest::Url) -> Result<String, Box<dyn std::
     let port = url
         .port_or_known_default()
         .ok_or("Trusted RPC URL is missing a known port")?;
-    Ok(format!("{}://{}:{}", url.scheme(), host, port))
+    if host.contains(':') {
+        Ok(format!("[{}]:{}", host, port))
+    } else {
+        Ok(format!("{}:{}", host, port))
+    }
 }
 
 /// Parses `ps` output lines of the shape `pid command...`.
