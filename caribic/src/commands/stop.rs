@@ -39,12 +39,12 @@ pub fn run_stop(
             network_down(project_root_path);
             logger::log("\nCardano Network stopped successfully");
         }
-        Some(StopTarget::Cosmos) => {
+        Some(StopTarget::Entrypoint) => {
             stop::stop_cosmos(
                 project_root_path.join("cosmos").as_path(),
-                "Cosmos Entrypoint chain",
+                "Entrypoint chain",
             );
-            logger::log("\nCosmos Entrypoint chain stopped successfully");
+            logger::log("\nEntrypoint chain stopped successfully");
         }
         Some(StopTarget::Osmosis) | Some(StopTarget::Injective) => {
             let chain_id = optional_chain_alias.unwrap_or("osmosis");

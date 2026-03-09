@@ -195,11 +195,11 @@ pub fn start_relayer(
 
     // Auto-configure Hermes keys for both chains
     log_or_show_progress(
-        "Setting up Hermes keys for cardano-devnet and Cosmos Entrypoint chain",
+        "Setting up Hermes keys for cardano-devnet and Entrypoint chain",
         &optional_progress_bar,
     );
 
-    // Cosmos Entrypoint chain: Use the pre-funded "relayer" account from the chain config.
+    // Entrypoint chain: Use the pre-funded "relayer" account from the chain config.
     let entrypoint_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
     let entrypoint_mnemonic_file = std::env::temp_dir().join("entrypoint-mnemonic.txt");
     fs::write(&entrypoint_mnemonic_file, entrypoint_mnemonic)
@@ -222,7 +222,7 @@ pub fn start_relayer(
     match entrypoint_key_output {
         Ok(output) if output.status.success() => {
             log_or_show_progress(
-                "Added key for Cosmos Entrypoint chain",
+                "Added key for Entrypoint chain",
                 &optional_progress_bar,
             );
         }
@@ -821,9 +821,9 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
                 .unwrap()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
-        progress_bar.set_prefix("Waiting for Cosmos Entrypoint chain to start".to_owned());
+        progress_bar.set_prefix("Waiting for Entrypoint chain to start".to_owned());
     } else {
-        log("Waiting for Cosmos Entrypoint chain to start ...");
+        log("Waiting for Entrypoint chain to start ...");
     }
 
     // Wait for health check with fail-fast error detection
@@ -887,7 +887,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
                     }
 
                     verbose(&format!(
-                        "Cosmos Entrypoint RPC is up but chain has not produced blocks yet (retry {})",
+                        "Entrypoint RPC is up but chain has not produced blocks yet (retry {})",
                         retry + 1
                     ));
                 } else {
@@ -916,7 +916,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
                     progress_bar.finish_and_clear();
                 }
                 return Err(format!(
-                    "Cosmos Entrypoint chain has unrecoverable errors that require developer intervention:{}",
+                    "Entrypoint chain has unrecoverable errors that require developer intervention:{}",
                     diagnostics
                 )
                 .into());
@@ -935,7 +935,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     }
 
     Err(format!(
-        "Health check on {} failed after {} attempts. The Cosmos Entrypoint chain may have crashed or is not responding.{}",
+        "Health check on {} failed after {} attempts. The Entrypoint chain may have crashed or is not responding.{}",
         cosmos_status_url,
         max_retries,
         diagnostics
@@ -2579,8 +2579,8 @@ const CORE_HEALTH_SERVICES: [CoreHealthService; 8] = [
         check_type: CoreHealthCheckType::HermesDaemon,
     },
     CoreHealthService {
-        name: "cosmos",
-        label: "Cosmos Entrypoint chain",
+        name: "entrypoint",
+        label: "Entrypoint chain",
         check_type: CoreHealthCheckType::Cosmos,
     },
 ];
