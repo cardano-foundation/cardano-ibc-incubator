@@ -9,10 +9,19 @@ import { MithrilModule } from '../shared/modules/mithril/mithril.module';
 import { TxModule } from '~@/tx/tx.module';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { TransferPlannerService } from './transfer-planner.service';
+import { LocalOsmosisSwapClientService } from './local-osmosis-swap-client.service';
+import { TransferRouteResolverService } from './transfer-route-resolver.service';
 
 @Module({
   imports: [QueryModule, TxModule, LucidModule, HttpModule, MiniProtocalsModule, MithrilModule],
   controllers: [ApiController],
-  providers: [ChannelService, Logger, LocalOsmosisSwapPlannerService, TransferPlannerService],
+  providers: [
+    ChannelService,
+    Logger,
+    LocalOsmosisSwapPlannerService,
+    LocalOsmosisSwapClientService,
+    TransferRouteResolverService,
+    TransferPlannerService,
+  ],
 })
 export class ApiModule {}
