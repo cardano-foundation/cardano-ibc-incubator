@@ -18,6 +18,7 @@ describe('QueryController (modern)', () => {
     // can verify routing/shape behavior without coupling to service internals.
     queryServiceMock = {
       queryClientState: jest.fn(),
+      queryClientStates: jest.fn(),
       queryConsensusState: jest.fn(),
       queryBlockData: jest.fn(),
       latestHeight: jest.fn(),
@@ -88,6 +89,10 @@ describe('QueryController (modern)', () => {
 
   it('delegates queryClientState to QueryService', async () => {
     await expectDelegation('queryClientState', queryServiceMock, 'queryClientState', { client_id: 'c0' }, { ok: 1 });
+  });
+
+  it('delegates queryClientStates to QueryService', async () => {
+    await expectDelegation('queryClientStates', queryServiceMock, 'queryClientStates', { pagination: {} }, { client_states: [] });
   });
 
   it('delegates queryConsensusState to QueryService', async () => {
