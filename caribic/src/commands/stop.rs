@@ -26,6 +26,7 @@ pub fn run_stop(
                 "Cosmos Entrypoint chain",
             );
             stop_all_managed_optional_chain_networks(project_root_path, "osmosis")?;
+            stop_all_managed_optional_chain_networks(project_root_path, "cheqd")?;
             stop_all_managed_optional_chain_networks(project_root_path, "injective")?;
             bridge_down(project_root_path);
             network_down(project_root_path);
@@ -46,7 +47,7 @@ pub fn run_stop(
             );
             logger::log("\nCosmos Entrypoint chain stopped successfully");
         }
-        Some(StopTarget::Osmosis) | Some(StopTarget::Injective) => {
+        Some(StopTarget::Osmosis) | Some(StopTarget::Cheqd) | Some(StopTarget::Injective) => {
             let chain_id = optional_chain_alias.unwrap_or("osmosis");
             if network.is_some() || !chain_flags.is_empty() {
                 stop_optional_chain(project_root_path, chain_id, network, chain_flags)?;
@@ -61,6 +62,7 @@ pub fn run_stop(
                 "Cosmos Entrypoint chain",
             );
             stop_all_managed_optional_chain_networks(project_root_path, "osmosis")?;
+            stop_all_managed_optional_chain_networks(project_root_path, "cheqd")?;
             stop_all_managed_optional_chain_networks(project_root_path, "injective")?;
             logger::log("\nDemo services stopped successfully");
         }
@@ -133,6 +135,7 @@ fn stop_all_managed_optional_chain_networks(
 fn resolve_optional_chain_alias(target: Option<&StopTarget>) -> Option<&'static str> {
     match target {
         Some(StopTarget::Osmosis) => Some("osmosis"),
+        Some(StopTarget::Cheqd) => Some("cheqd"),
         Some(StopTarget::Injective) => Some("injective"),
         _ => None,
     }
