@@ -19,11 +19,51 @@ pub(super) fn configure_hermes_for_demo(
     project_root_path: &Path,
     injective_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    ensure_chain_in_hermes_config(
+    configure_hermes_for_demo_chain(
         project_root_path,
         injective_dir,
         config::LOCAL_CHAIN_ID,
         "Injective local chain used by token-swap demo",
+    )
+}
+
+/// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Injective testnet demo routing.
+pub(super) fn configure_hermes_for_testnet_demo(
+    project_root_path: &Path,
+    injective_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    configure_hermes_for_demo_chain(
+        project_root_path,
+        injective_dir,
+        config::TESTNET_CHAIN_ID,
+        "Injective testnet chain used by token-swap demo",
+    )
+}
+
+/// Ensures Hermes config contains an Injective testnet chain block (`injective-888`).
+pub(super) fn ensure_testnet_chain_in_hermes_config(
+    project_root_path: &Path,
+    injective_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    ensure_chain_in_hermes_config(
+        project_root_path,
+        injective_dir,
+        config::TESTNET_CHAIN_ID,
+        "Injective testnet chain used by local bootstrap node",
+    )
+}
+
+fn configure_hermes_for_demo_chain(
+    project_root_path: &Path,
+    injective_dir: &Path,
+    chain_id: &str,
+    chain_block_comment: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    ensure_chain_in_hermes_config(
+        project_root_path,
+        injective_dir,
+        chain_id,
+        chain_block_comment,
     )?;
 
     let hermes_binary = resolve_local_hermes_binary(project_root_path, injective_dir)?;
@@ -31,14 +71,12 @@ pub(super) fn configure_hermes_for_demo(
         project_root_path,
         config::ENTRYPOINT_RELAYER_MNEMONIC_ACCOUNT,
     )?;
-    let injective_mnemonic =
-        config::load_demo_mnemonic(project_root_path, config::LOCAL_RELAYER_MNEMONIC_ACCOUNT)?;
 
     if has_open_transfer_channel(
         hermes_binary.as_path(),
         injective_dir,
         "entrypoint",
-        config::LOCAL_CHAIN_ID,
+        chain_id,
     )? {
         log("PASS: Hermes transfer channel already open for Entrypoint↔Injective");
         return Ok(());
@@ -47,52 +85,71 @@ pub(super) fn configure_hermes_for_demo(
     let hermes_binary_str = hermes_binary
         .to_str()
         .ok_or_else(|| format!("Invalid Hermes binary path: {}", hermes_binary.display()))?;
-
     let cosmos_mnemonic_file = write_temp_mnemonic_file("entrypoint-relayer", cosmos_mnemonic)?;
     let cosmos_mnemonic_arg = cosmos_mnemonic_file.to_string_lossy().to_string();
-    let cosmos_key_result = execute_script(
+    let cosmos_key_result = add_hermes_key(
         injective_dir,
         hermes_binary_str,
-        vec![
-            "keys",
-            "add",
-            "--overwrite",
-            "--chain",
-            "entrypoint",
-            "--mnemonic-file",
-            cosmos_mnemonic_arg.as_str(),
-        ],
+        "entrypoint",
         None,
+        cosmos_mnemonic_arg.as_str(),
+        true,
     );
     let _ = fs::remove_file(cosmos_mnemonic_file.as_path());
     cosmos_key_result?;
 
-    let injective_mnemonic_file =
-        write_temp_mnemonic_file("injective-local-relayer", injective_mnemonic)?;
-    let injective_mnemonic_arg = injective_mnemonic_file.to_string_lossy().to_string();
-    let injective_key_result = execute_script(
-        injective_dir,
-        hermes_binary_str,
-        vec![
-            "keys",
-            "add",
-            "--overwrite",
-            "--chain",
-            config::LOCAL_CHAIN_ID,
-            "--hd-path",
-            INJECTIVE_ETH_HD_PATH,
-            "--mnemonic-file",
-            injective_mnemonic_arg.as_str(),
-        ],
-        None,
-    );
-    let _ = fs::remove_file(injective_mnemonic_file.as_path());
-    injective_key_result?;
+    // For testnet, preserve existing Hermes key if present (it may be user-funded).
+    // For local devnet, overwrite to keep behavior deterministic.
+    let overwrite_injective_key = chain_id == config::LOCAL_CHAIN_ID;
+    if overwrite_injective_key
+        || !chain_has_any_keys(hermes_binary.as_path(), injective_dir, chain_id)?
+    {
+        let injective_mnemonic = match chain_id {
+            config::LOCAL_CHAIN_ID => config::load_demo_mnemonic(
+                project_root_path,
+                config::LOCAL_RELAYER_MNEMONIC_ACCOUNT,
+            )?,
+            config::TESTNET_CHAIN_ID => {
+                return Err(format!(
+                    "No Hermes key configured for chain '{}'. Add one first with:\n  caribic keys add --chain {} --mnemonic-file <path> --hd-path {}",
+                    chain_id,
+                    chain_id,
+                    INJECTIVE_ETH_HD_PATH
+                )
+                .into())
+            }
+            _ => {
+                return Err(format!(
+                    "Unsupported Injective chain '{}' for Hermes key setup",
+                    chain_id
+                )
+                .into())
+            }
+        };
+        let mnemonic_file =
+            write_temp_mnemonic_file("injective-relayer", injective_mnemonic)?;
+        let mnemonic_arg = mnemonic_file.to_string_lossy().to_string();
+        let injective_key_result = add_hermes_key(
+            injective_dir,
+            hermes_binary_str,
+            chain_id,
+            Some(INJECTIVE_ETH_HD_PATH),
+            mnemonic_arg.as_str(),
+            overwrite_injective_key,
+        );
+        let _ = fs::remove_file(mnemonic_file.as_path());
+        injective_key_result?;
+    } else {
+        verbose(&format!(
+            "Preserving existing Hermes key(s) for chain {}",
+            chain_id
+        ));
+    }
 
     let injective_client_id = create_client_with_retry(
         hermes_binary.as_path(),
         injective_dir,
-        config::LOCAL_CHAIN_ID,
+        chain_id,
         "entrypoint",
         None,
     )?;
@@ -100,7 +157,7 @@ pub(super) fn configure_hermes_for_demo(
         hermes_binary.as_path(),
         injective_dir,
         "entrypoint",
-        config::LOCAL_CHAIN_ID,
+        chain_id,
         Some("86000s"),
     )?;
 
@@ -119,7 +176,8 @@ pub(super) fn configure_hermes_for_demo(
         .output()?;
     if !create_connection_output.status.success() {
         return Err(format!(
-            "Failed to create Entrypoint↔Injective connection:\n{}",
+            "Failed to create Entrypoint↔Injective connection for chain {}:\n{}",
+            chain_id,
             String::from_utf8_lossy(&create_connection_output.stderr)
         )
         .into());
@@ -144,7 +202,8 @@ pub(super) fn configure_hermes_for_demo(
         .output()?;
     if !create_channel_output.status.success() {
         return Err(format!(
-            "Failed to create Entrypoint↔Injective transfer channel:\n{}",
+            "Failed to create Entrypoint↔Injective transfer channel for chain {}:\n{}",
+            chain_id,
             String::from_utf8_lossy(&create_channel_output.stderr)
         )
         .into());
@@ -153,17 +212,53 @@ pub(super) fn configure_hermes_for_demo(
     Ok(())
 }
 
-/// Ensures Hermes config contains an Injective testnet chain block (`injective-888`).
-pub(super) fn ensure_testnet_chain_in_hermes_config(
-    project_root_path: &Path,
-    injective_dir: &Path,
+fn add_hermes_key(
+    working_dir: &Path,
+    hermes_binary: &str,
+    chain_id: &str,
+    hd_path: Option<&str>,
+    mnemonic_file: &str,
+    overwrite: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    ensure_chain_in_hermes_config(
-        project_root_path,
-        injective_dir,
-        config::TESTNET_CHAIN_ID,
-        "Injective testnet chain used by local state-sync node",
-    )
+    let mut args = vec!["keys", "add"];
+    if overwrite {
+        args.push("--overwrite");
+    }
+    args.extend(["--chain", chain_id]);
+    if let Some(hd_path) = hd_path {
+        args.extend(["--hd-path", hd_path]);
+    }
+    args.extend(["--mnemonic-file", mnemonic_file]);
+
+    execute_script(working_dir, hermes_binary, args, None)?;
+    Ok(())
+}
+
+fn chain_has_any_keys(
+    hermes_binary: &Path,
+    working_dir: &Path,
+    chain_id: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let output = Command::new(hermes_binary)
+        .current_dir(working_dir)
+        .args(["keys", "list", "--chain", chain_id])
+        .output()?;
+    if !output.status.success() {
+        return Ok(false);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}\n{}", stdout, stderr);
+    let lower = combined.to_ascii_lowercase();
+    if lower.contains("no keys found") {
+        return Ok(false);
+    }
+
+    Ok(combined.contains("inj1")
+        || combined.contains("cosmos1")
+        || combined.contains("osmo1")
+        || !combined.trim().is_empty())
 }
 
 fn create_client_with_retry(

@@ -128,7 +128,7 @@ enum Commands {
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
     },
-    /// List supported optional chains and their available network profiles
+    /// List supported chains and their available network profiles
     Chains,
     /// Manage optional chains using chain adapters
     Chain {
@@ -148,14 +148,20 @@ enum Commands {
     },
     /// Runs security and validator audits (gateway npm, caribic cargo, onchain aiken)
     Audit,
-    /// Create IBC client on target chain
+    /// List IBC clients hosted on a given chain
+    ListClients {
+        /// Chain identifier hosting the clients to query
+        #[arg(long = "chain", alias = "host-chain")]
+        chain: String,
+    },
+    /// Create an IBC client on chain A that tracks chain B
     CreateClient {
-        /// Source chain identifier
-        #[arg(long)]
-        host_chain: String,
-        /// Target chain identifier (creates light client for this chain on host)
-        #[arg(long)]
-        reference_chain: String,
+        /// Chain identifier where the client will be created
+        #[arg(long = "a-chain", alias = "host-chain")]
+        a_chain: String,
+        /// Chain identifier that the new client will track
+        #[arg(long = "b-chain", alias = "reference-chain")]
+        b_chain: String,
     },
     /// Create IBC connection between two chains
     CreateConnection {
@@ -215,6 +221,9 @@ enum KeysCommand {
         /// Key name (optional, defaults to chain's configured key_name)
         #[arg(long)]
         key_name: Option<String>,
+        /// Optional HD derivation path (useful for Ethermint chains, e.g. m/44'/60'/0'/0/0)
+        #[arg(long)]
+        hd_path: Option<String>,
         /// Overwrite existing key if it exists
         #[arg(long, default_value_t = false)]
         overwrite: bool,
@@ -325,10 +334,10 @@ async fn main() {
             commands::run_health_check(project_root_path, service.as_deref())
         }
         Commands::Audit => commands::run_audit(project_root_path),
-        Commands::CreateClient {
-            host_chain,
-            reference_chain,
-        } => commands::run_create_client(project_root_path, &host_chain, &reference_chain),
+        Commands::ListClients { chain } => commands::run_list_clients(&chain),
+        Commands::CreateClient { a_chain, b_chain } => {
+            commands::run_create_client(project_root_path, &a_chain, &b_chain)
+        }
         Commands::CreateConnection { a_chain, b_chain } => {
             commands::run_create_connection(project_root_path, &a_chain, &b_chain)
         }

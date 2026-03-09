@@ -1,6 +1,7 @@
 const path = require('path');
 const { join } = path;
 const { access, symlink } = require('fs/promises');
+const webpack = require('webpack');
 
 const basePath = process?.env?.BASE_PATH || '';
 
@@ -14,6 +15,8 @@ const nextConfig = {
       layers: true,
     };
     config.plugins = config.plugins || [];
+    config.module = config.module || {};
+    config.module.rules = config.module.rules || [];
 
     config.optimization.providedExports = true;
 
@@ -25,6 +28,24 @@ const nextConfig = {
       ...config.output.environment,
       asyncFunction: true,
     };
+
+    config.module.rules.push({
+      test: /\.wasm$/,
+      type: 'webassembly/async',
+    });
+
+    // libsodium-wrappers-sumo ships an ESM entrypoint that imports a sibling
+    // file it does not actually publish. Redirect that request to the real
+    // module from libsodium-sumo so the swap UI can compile reliably.
+    config.plugins.push(
+      new webpack.NormalModuleReplacementPlugin(
+        /^\.\/libsodium-sumo\.mjs$/,
+        path.resolve(
+          __dirname,
+          'node_modules/libsodium-sumo/dist/modules-sumo-esm/libsodium-sumo.mjs',
+        ),
+      ),
+    );
 
     config.plugins.push(
       new (class {

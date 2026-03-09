@@ -11,8 +11,15 @@ pub fn run_keys(project_root_path: &Path, command: KeysCommand) -> Result<(), St
             chain,
             mnemonic_file,
             key_name,
+            hd_path,
             overwrite,
-        } => match start::hermes_keys_add(&chain, &mnemonic_file, key_name.as_deref(), overwrite) {
+        } => match start::hermes_keys_add(
+            &chain,
+            &mnemonic_file,
+            key_name.as_deref(),
+            hd_path.as_deref(),
+            overwrite,
+        ) {
             Ok(msg) => logger::log(&msg),
             Err(error) => return Err(format!("Failed to add key: {}", error)),
         },

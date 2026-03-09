@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::process::Command;
 use std::time::Duration;
 
 use serde_json::Value;
@@ -8,7 +9,11 @@ use crate::{
         self,
         injective::{
             configure_hermes_for_demo as configure_injective_hermes_for_demo,
-            stop_local as stop_injective_local, workspace_dir as injective_workspace_dir,
+            configure_hermes_for_testnet_demo as configure_injective_hermes_for_testnet_demo,
+            local_chain_id as injective_local_chain_id, stop_local as stop_injective_local,
+            stop_testnet as stop_injective_testnet,
+            testnet_chain_id as injective_testnet_chain_id,
+            workspace_dir as injective_workspace_dir,
         },
         osmosis::{configure_hermes_for_demo, stop_local, workspace_dir},
     },
@@ -20,8 +25,14 @@ use crate::{
 };
 
 const TOKEN_SWAP_DEFAULT_CHAIN: DemoChain = DemoChain::Osmosis;
-const TOKEN_SWAP_SUPPORTED_TARGETS: [(&str, &str); 2] =
-    [("osmosis", "local"), ("injective", "local")];
+const TOKEN_SWAP_SUPPORTED_TARGETS: [(&str, &str); 3] = [
+    ("osmosis", "local"),
+    ("injective", "local"),
+    ("injective", "testnet"),
+];
+const INJECTIVE_TESTNET_MIN_FIRST_BLOCK_WAIT_MS: u64 = 30 * 60 * 1000;
+const INJECTIVE_TESTNET_RECOVERY_HINT: &str =
+    "caribic start injective --network testnet --chain-flag stateful=false";
 
 fn cardano_chain_id() -> String {
     config::get_config().chains.cardano.chain_id
@@ -39,6 +50,14 @@ fn entrypoint_message_port_id() -> String {
     config::get_config().chains.entrypoint.message_port_id
 }
 
+const TRANSFER_PORT_ID: &str = "transfer";
+
+#[derive(Debug, Clone)]
+struct TransferChannelPair {
+    a_channel_id: String,
+    b_channel_id: String,
+}
+
 /// Runs the full token swap demo and validates required services before execution.
 pub async fn run_token_swap_demo(
     project_root_path: &Path,
@@ -49,6 +68,9 @@ pub async fn run_token_swap_demo(
     match (chain_id.as_str(), resolved_network.as_str()) {
         ("osmosis", "local") => run_osmosis_local_token_swap_demo(project_root_path).await,
         ("injective", "local") => run_injective_local_token_swap_demo(project_root_path).await,
+        ("injective", "testnet") => {
+            run_injective_testnet_token_swap_demo(project_root_path).await
+        }
         _ => Err(format!(
             "Token-swap demo is not implemented for chain '{}' on network '{}'. Currently supported: {}",
             chain_id,
@@ -117,15 +139,18 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
         restart_relayer_after_setup = true;
     }
 
-    if let Err(error) = ensure_cardano_entrypoint_transfer_channel() {
+    let cardano_entrypoint_channel_pair = match ensure_cardano_entrypoint_transfer_channel() {
+        Ok(pair) => pair,
+        Err(error) => {
         return fail_with_cleanup(
             osmosis_dir.as_path(),
             &format!(
                 "ERROR: Failed to prepare Cardano↔Entrypoint transfer path: {}",
                 error
             ),
-        );
-    }
+        )
+        }
+    };
 
     match configure_hermes_for_demo(osmosis_dir.as_path()) {
         Ok(_) => logger::log("PASS: Hermes configured successfully and channels built"),
@@ -136,6 +161,30 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
             )
         }
     }
+
+    let entrypoint_osmosis_channel_pair = match query_open_transfer_channel_pair(
+        entrypoint_chain_id().as_str(),
+        TRANSFER_PORT_ID,
+        "localosmosis",
+        TRANSFER_PORT_ID,
+    ) {
+        Ok(Some(pair)) => pair,
+        Ok(None) => {
+            return fail_with_cleanup(
+                osmosis_dir.as_path(),
+                "ERROR: No open Entrypoint↔Osmosis transfer channel pair is currently usable",
+            )
+        }
+        Err(error) => {
+            return fail_with_cleanup(
+                osmosis_dir.as_path(),
+                &format!(
+                    "ERROR: Failed to resolve Entrypoint↔Osmosis transfer channel pair: {}",
+                    error
+                ),
+            )
+        }
+    };
 
     if let Err(error) =
         ensure_hermes_daemon_for_token_swap(project_root_path, restart_relayer_after_setup)
@@ -170,6 +219,18 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
                 osmosis_dir
                     .to_str()
                     .ok_or_else(|| "ERROR: Invalid osmosis workspace path".to_string())?,
+            ),
+            (
+                "CARDANO_ENTRYPOINT_CHANNEL_ID",
+                cardano_entrypoint_channel_pair.a_channel_id.as_str(),
+            ),
+            (
+                "ENTRYPOINT_OSMOSIS_CHANNEL_ID",
+                entrypoint_osmosis_channel_pair.a_channel_id.as_str(),
+            ),
+            (
+                "OSMOSIS_ENTRYPOINT_CHANNEL_ID",
+                entrypoint_osmosis_channel_pair.b_channel_id.as_str(),
             ),
         ]),
     ) {
@@ -229,23 +290,60 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
 }
 
 async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result<(), String> {
+    run_injective_token_swap_demo(project_root_path, "local").await
+}
+
+async fn run_injective_testnet_token_swap_demo(project_root_path: &Path) -> Result<(), String> {
+    run_injective_token_swap_demo(project_root_path, "testnet").await
+}
+
+async fn run_injective_token_swap_demo(
+    project_root_path: &Path,
+    network: &str,
+) -> Result<(), String> {
     let injective_dir = injective_workspace_dir(project_root_path);
     logger::verbose(&format!("{}", injective_dir.display()));
 
     let required_services = [
-        "gateway",
-        "cardano",
-        "postgres",
-        "kupo",
-        "ogmios",
-        "mithril",
-        "cosmos",
-        "injective",
+        "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril", "cosmos",
     ];
     if let Err(error) =
         ensure_demo_services_ready(project_root_path, &required_services, "token-swap")
     {
-        return fail_with_injective_cleanup(injective_dir.as_path(), &error);
+        return fail_with_injective_cleanup(injective_dir.as_path(), network, &error);
+    }
+
+    if let Err(error) = ensure_optional_chain_network_ready(project_root_path, "injective", network)
+    {
+        return fail_with_injective_cleanup(injective_dir.as_path(), network, &error);
+    }
+
+    if network == "testnet" {
+        if let Err(initial_error) =
+            wait_for_injective_first_block_for_demo(network, injective_dir.as_path()).await
+        {
+            logger::warn(&format!(
+                "WARN: Initial Injective testnet readiness failed. Attempting one clean recovery restart.\n{}",
+                initial_error
+            ));
+
+            if let Err(recovery_error) =
+                recover_injective_testnet_for_demo(project_root_path, injective_dir.as_path())
+                    .await
+            {
+                return fail_with_injective_cleanup(
+                    injective_dir.as_path(),
+                    network,
+                    &format!("{}\n{}", initial_error, recovery_error),
+                );
+            }
+
+            if let Err(error) =
+                wait_for_injective_first_block_for_demo(network, injective_dir.as_path()).await
+            {
+                return fail_with_injective_cleanup(injective_dir.as_path(), network, &error);
+            }
+        }
     }
 
     logger::log("PASS: Required token-swap services are running");
@@ -263,30 +361,84 @@ async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result
         restart_relayer_after_setup = true;
     }
 
-    if let Err(error) = ensure_cardano_entrypoint_transfer_channel() {
+    let cardano_entrypoint_channel_pair = match ensure_cardano_entrypoint_transfer_channel() {
+        Ok(pair) => pair,
+        Err(error) => {
         return fail_with_injective_cleanup(
             injective_dir.as_path(),
+            network,
             &format!(
                 "ERROR: Failed to prepare Cardano↔Entrypoint transfer path: {}",
                 error
             ),
-        );
-    }
+        )
+        }
+    };
 
-    match configure_injective_hermes_for_demo(project_root_path, injective_dir.as_path()) {
+    let configure_hermes_result = match network {
+        "local" => configure_injective_hermes_for_demo(project_root_path, injective_dir.as_path()),
+        "testnet" => {
+            configure_injective_hermes_for_testnet_demo(project_root_path, injective_dir.as_path())
+        }
+        _ => Err(format!(
+            "Unsupported Injective network '{}' for token-swap demo",
+            network
+        )
+        .into()),
+    };
+
+    match configure_hermes_result {
         Ok(_) => logger::log("PASS: Hermes configured successfully and channels built"),
         Err(error) => {
             return fail_with_injective_cleanup(
                 injective_dir.as_path(),
+                network,
                 &format!("ERROR: Failed to configure Hermes for Injective: {}", error),
             )
         }
     }
 
+    let injective_chain_id = match network {
+        "local" => injective_local_chain_id(),
+        "testnet" => injective_testnet_chain_id(),
+        _ => {
+            return Err(format!(
+                "Unsupported Injective network '{}' for token-swap demo",
+                network
+            ))
+        }
+    };
+
+    let entrypoint_injective_channel_pair = match query_open_transfer_channel_pair(
+        entrypoint_chain_id().as_str(),
+        TRANSFER_PORT_ID,
+        injective_chain_id,
+        TRANSFER_PORT_ID,
+    ) {
+        Ok(Some(pair)) => pair,
+        Ok(None) => {
+            return fail_with_injective_cleanup(
+                injective_dir.as_path(),
+                network,
+                "ERROR: No open Entrypoint↔Injective transfer channel pair is currently usable",
+            )
+        }
+        Err(error) => {
+            return fail_with_injective_cleanup(
+                injective_dir.as_path(),
+                network,
+                &format!(
+                    "ERROR: Failed to resolve Entrypoint↔Injective transfer channel pair: {}",
+                    error
+                ),
+            )
+        }
+    };
+
     if let Err(error) =
         ensure_hermes_daemon_for_token_swap(project_root_path, restart_relayer_after_setup)
     {
-        return fail_with_injective_cleanup(injective_dir.as_path(), &error);
+        return fail_with_injective_cleanup(injective_dir.as_path(), network, &error);
     }
 
     let swap_script_path = project_root_path
@@ -315,6 +467,24 @@ async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result
                     .to_str()
                     .ok_or_else(|| "ERROR: Invalid injective workspace path".to_string())?,
             ),
+            ("INJECTIVE_CHAIN_ID", injective_chain_id),
+            ("INJECTIVE_NETWORK", network),
+            (
+                "CARDANO_ENTRYPOINT_CHANNEL_ID",
+                cardano_entrypoint_channel_pair.a_channel_id.as_str(),
+            ),
+            (
+                "ENTRYPOINT_CARDANO_CHANNEL_ID",
+                cardano_entrypoint_channel_pair.b_channel_id.as_str(),
+            ),
+            (
+                "ENTRYPOINT_INJECTIVE_CHANNEL_ID",
+                entrypoint_injective_channel_pair.a_channel_id.as_str(),
+            ),
+            (
+                "INJECTIVE_ENTRYPOINT_CHANNEL_ID",
+                entrypoint_injective_channel_pair.b_channel_id.as_str(),
+            ),
         ]),
     )
     .map_err(|error| {
@@ -324,10 +494,297 @@ async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result
         )
     })?;
 
-    logger::log("PASS: Cardano-to-Injective token swap completed");
+    logger::log(&format!(
+        "PASS: Cardano-to-Injective token swap completed (network: {})",
+        network
+    ));
     logger::log("\nPASS: Token swap demo flow completed successfully");
 
     Ok(())
+}
+
+fn injective_status_url_for_network(network: &str) -> Result<&'static str, String> {
+    match network {
+        "local" => Ok("http://127.0.0.1:26660/status"),
+        "testnet" => Ok("http://127.0.0.1:26659/status"),
+        _ => Err(format!(
+            "Unsupported Injective network '{}' for status readiness check",
+            network
+        )),
+    }
+}
+
+async fn wait_for_injective_first_block_for_demo(
+    network: &str,
+    injective_dir: &Path,
+) -> Result<(), String> {
+    let status_url = injective_status_url_for_network(network)?;
+    let health_config = config::get_config().health;
+    let retry_interval_ms = health_config.cosmos_retry_interval_ms.max(500);
+    let configured_retries = health_config.cosmos_max_retries.max(1);
+    let min_testnet_retries = (INJECTIVE_TESTNET_MIN_FIRST_BLOCK_WAIT_MS / retry_interval_ms)
+        .max(1)
+        .min(u32::MAX as u64) as u32;
+    let max_retries = if network == "testnet" {
+        configured_retries.max(min_testnet_retries)
+    } else {
+        configured_retries
+    };
+    let log_every_attempts = 6_u32;
+    let mut stagnant_not_syncing_checks = 0_u32;
+
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .map_err(|error| {
+            format!(
+                "Failed to build HTTP client for Injective readiness check: {}",
+                error
+            )
+        })?;
+
+    logger::log(&format!(
+        "Waiting for Injective {} to produce first block before Hermes client creation...",
+        network
+    ));
+    if network == "testnet" && max_retries > configured_retries {
+        logger::log(&format!(
+            "Injective testnet readiness window extended to {} attempts (~{} min) to allow snapshot restore and p2p catch-up.",
+            max_retries,
+            (max_retries as u64 * retry_interval_ms) / 60_000
+        ));
+    }
+
+    for attempt in 1..=max_retries {
+        let (latest_height, catching_up) = match client.get(status_url).send().await {
+            Ok(response) if response.status().is_success() => {
+                let payload = response.json::<Value>().await.unwrap_or_default();
+                payload["result"]["sync_info"]["latest_block_height"]
+                    .as_str()
+                    .and_then(|raw| raw.parse::<u64>().ok())
+                    .or_else(|| payload["result"]["sync_info"]["latest_block_height"].as_u64())
+                    .map(|height| {
+                        (
+                            height,
+                            payload["result"]["sync_info"]["catching_up"]
+                                .as_bool()
+                                .unwrap_or(false),
+                        )
+                    })
+                    .unwrap_or((0, false))
+            }
+            _ => (0, false),
+        };
+
+        if latest_height > 0 {
+            logger::log(&format!(
+                "PASS: Injective {} produced first block at height {}",
+                network, latest_height
+            ));
+            return Ok(());
+        }
+
+        if network == "testnet" {
+            if !catching_up {
+                stagnant_not_syncing_checks = stagnant_not_syncing_checks.saturating_add(1);
+            } else {
+                stagnant_not_syncing_checks = 0;
+            }
+
+            if stagnant_not_syncing_checks >= 6 {
+                let log_tail = injective_testnet_log_tail(injective_dir);
+                return Err(format!(
+                    "Injective testnet RPC is reachable but still at height 0 with catching_up=false.\n\
+                     This usually means snapshot bootstrap or peer synchronization stalled.\n\
+                     Restart with a clean bootstrap, for example:\n\
+                     {}\n\
+                     Status endpoint checked: {}\n{}",
+                    INJECTIVE_TESTNET_RECOVERY_HINT, status_url, log_tail
+                ));
+            }
+        }
+
+        if network == "testnet" && !injective_testnet_container_running(injective_dir) {
+            let log_tail = injective_testnet_log_tail(injective_dir);
+            return Err(format!(
+                "Injective testnet container is no longer running before first block.\n\
+                 Status endpoint checked: {}\n{}",
+                status_url, log_tail
+            ));
+        }
+
+        if network == "testnet" && (attempt == 1 || attempt % log_every_attempts == 0) {
+            let log_tail = injective_testnet_log_tail(injective_dir);
+            if injective_testnet_bootstrap_failed(log_tail.as_str()) {
+                return Err(format!(
+                    "Injective testnet snapshot bootstrap failed while latest block height is still 0.\n\
+                     Hermes client creation would fail until the local testnet node produces blocks.\n\
+                     Status endpoint checked: {}\n{}",
+                    status_url, log_tail
+                ));
+            }
+        }
+
+        if attempt == 1 || attempt % log_every_attempts == 0 || attempt == max_retries {
+            if network == "testnet" {
+                logger::log(&format!(
+                    "Injective {} not ready yet (attempt {}/{}): latest block height is {}, catching_up={}",
+                    network, attempt, max_retries, latest_height, catching_up
+                ));
+            } else {
+                logger::log(&format!(
+                    "Injective {} not ready yet (attempt {}/{}): latest block height is {}",
+                    network, attempt, max_retries, latest_height
+                ));
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(retry_interval_ms)).await;
+    }
+
+    let log_tail = injective_testnet_log_tail(injective_dir);
+    let mut message = format!(
+        "Injective {} stayed at block height 0 during readiness window. Hermes client creation would fail.\n\
+         Status endpoint checked: {}",
+        network, status_url
+    );
+    if network == "testnet" {
+        let lower_log_tail = log_tail.to_ascii_lowercase();
+        if lower_log_tail.contains("snapshot bootstrap failed")
+            || lower_log_tail.contains("unable to resolve injective testnet snapshot url")
+            || lower_log_tail.contains("no space left on device")
+            || lower_log_tail.contains("failed to fetch snapshot")
+        {
+            message.push_str(
+                "\nSnapshot bootstrap failed before Injective testnet produced first block.\n\
+                 Retry with a clean bootstrap:\n",
+            );
+            message.push_str(INJECTIVE_TESTNET_RECOVERY_HINT);
+        }
+        message.push('\n');
+        message.push_str(log_tail.as_str());
+    }
+    Err(message)
+}
+
+async fn recover_injective_testnet_for_demo(
+    project_root_path: &Path,
+    injective_dir: &Path,
+) -> Result<(), String> {
+    logger::warn("WARN: Restarting Injective testnet with clean snapshot bootstrap...");
+    stop_injective_testnet(injective_dir);
+
+    let adapter = chains::get_chain_adapter("injective")
+        .ok_or_else(|| "Injective chain adapter is not registered".to_string())?;
+    let mut recovery_flags = chains::ChainFlags::new();
+    recovery_flags.insert("stateful".to_string(), "false".to_string());
+    let request = chains::ChainStartRequest {
+        network: "testnet",
+        flags: &recovery_flags,
+    };
+    adapter
+        .start(project_root_path, &request)
+        .await
+        .map_err(|error| {
+            format!(
+                "ERROR: Automatic Injective testnet recovery start failed: {}",
+                error
+            )
+        })?;
+
+    logger::log("PASS: Injective testnet recovered with clean bootstrap");
+    Ok(())
+}
+
+fn injective_testnet_bootstrap_failed(log_tail: &str) -> bool {
+    let lower = log_tail.to_ascii_lowercase();
+    lower.contains("snapshot bootstrap failed")
+        || lower.contains("unable to resolve injective testnet snapshot url")
+        || lower.contains("snapshot restore completed but")
+        || lower.contains("no space left on device")
+}
+
+fn injective_testnet_container_running(injective_dir: &Path) -> bool {
+    let output = Command::new("docker")
+        .current_dir(injective_dir)
+        .args([
+            "compose",
+            "-f",
+            "configuration/docker-compose.yml",
+            "ps",
+            "-q",
+            "injectived-testnet",
+        ])
+        .output();
+
+    let Ok(output) = output else {
+        return false;
+    };
+
+    if !output.status.success() {
+        return false;
+    }
+
+    let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if container_id.is_empty() {
+        return false;
+    }
+
+    let inspect_output = Command::new("docker")
+        .args([
+            "inspect",
+            "--format",
+            "{{.State.Status}}",
+            container_id.as_str(),
+        ])
+        .output();
+
+    let Ok(inspect_output) = inspect_output else {
+        return false;
+    };
+    if !inspect_output.status.success() {
+        return false;
+    }
+
+    String::from_utf8_lossy(&inspect_output.stdout).trim() == "running"
+}
+
+fn injective_testnet_log_tail(injective_dir: &Path) -> String {
+    let output = Command::new("docker")
+        .current_dir(injective_dir)
+        .args([
+            "compose",
+            "-f",
+            "configuration/docker-compose.yml",
+            "logs",
+            "--tail",
+            "300",
+            "injectived-testnet",
+        ])
+        .output();
+
+    match output {
+        Ok(output) if output.status.success() => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            if stdout.trim().is_empty() {
+                "Injective testnet container log is empty".to_string()
+            } else {
+                stdout.to_string()
+            }
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            format!(
+                "Unable to read Injective testnet container logs:\n{}",
+                stderr.trim()
+            )
+        }
+        Err(error) => format!(
+            "Unable to run docker compose logs for Injective testnet container: {}",
+            error
+        ),
+    }
 }
 
 /// Ensures all services required by a demo flow are healthy before continuing.
@@ -356,8 +813,50 @@ fn ensure_demo_services_ready(
         message.push_str(&format!("  - {failure}\n"));
     }
     message.push_str(
-        "\nStart services first:\n  - caribic start --clean --with-mithril\n  - caribic start osmosis",
+        "\nStart services first:\n  - caribic start --clean --with-mithril\n  - caribic start <chain> --network <network>",
     );
+
+    Err(message)
+}
+
+fn ensure_optional_chain_network_ready(
+    project_root_path: &Path,
+    chain_id: &str,
+    network: &str,
+) -> Result<(), String> {
+    let adapter = chains::get_chain_adapter(chain_id)
+        .ok_or_else(|| format!("Optional chain adapter '{}' is not registered", chain_id))?;
+    let flags = chains::ChainFlags::new();
+    let statuses = adapter
+        .health(project_root_path, network, &flags)
+        .map_err(|error| {
+            format!(
+                "Failed to check '{}' health for network '{}': {}",
+                chain_id, network, error
+            )
+        })?;
+
+    let unhealthy = statuses
+        .into_iter()
+        .filter(|status| !status.healthy)
+        .map(|status| format!("{}: {}", status.label, status.status))
+        .collect::<Vec<_>>();
+
+    if unhealthy.is_empty() {
+        return Ok(());
+    }
+
+    let mut message = format!(
+        "ERROR: '{}' chain network '{}' is not healthy for token-swap demo.\n",
+        chain_id, network
+    );
+    for failure in unhealthy {
+        message.push_str(&format!("  - {}\n", failure));
+    }
+    message.push_str(&format!(
+        "\nStart services first:\n  - caribic start {} --network {}",
+        chain_id, network
+    ));
 
     Err(message)
 }
@@ -606,6 +1105,122 @@ fn is_open_transfer_state(state: &str) -> bool {
     state.eq_ignore_ascii_case("open")
 }
 
+fn extract_transfer_channel_id_for_ports(
+    entry: &Value,
+    local_port_id: &str,
+    remote_port_id: &str,
+) -> Option<String> {
+    let entry_local_port = entry.get("port_id").and_then(Value::as_str);
+    let entry_remote_port = entry
+        .get("counterparty")
+        .and_then(|counterparty| counterparty.get("port_id"))
+        .and_then(Value::as_str);
+
+    if entry_local_port != Some(local_port_id) {
+        return None;
+    }
+
+    if let Some(entry_remote_port) = entry_remote_port {
+        if entry_remote_port != remote_port_id {
+            return None;
+        }
+    }
+
+    extract_transfer_channel_id(entry)
+}
+
+fn query_open_transfer_channel_pair(
+    a_chain_id: &str,
+    a_port_id: &str,
+    b_chain_id: &str,
+    b_port_id: &str,
+) -> Result<Option<TransferChannelPair>, String> {
+    let output = run_hermes_command(&[
+        "--json",
+        "query",
+        "channels",
+        "--chain",
+        a_chain_id,
+        "--counterparty-chain",
+        b_chain_id,
+    ])
+    .map_err(|error| error.to_string())?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Hermes query channels failed for {}↔{}:\n{}",
+            a_chain_id,
+            b_chain_id,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let parsed_lines: Vec<Value> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .collect();
+
+    let channel_entries = parsed_lines
+        .iter()
+        .filter_map(|entry| match entry.get("result") {
+            Some(result) if result.is_array() => result.as_array(),
+            Some(result) if result.is_object() => result.get("channels").and_then(Value::as_array),
+            _ => None,
+        })
+        .next_back()
+        .cloned()
+        .unwrap_or_default();
+
+    let mut a_channel_ids: Vec<String> = channel_entries
+        .iter()
+        .filter_map(|entry| extract_transfer_channel_id_for_ports(entry, a_port_id, b_port_id))
+        .collect();
+    a_channel_ids.sort_by(|left, right| {
+        let left_seq = parse_channel_sequence(left).unwrap_or(0);
+        let right_seq = parse_channel_sequence(right).unwrap_or(0);
+        right_seq.cmp(&left_seq).then_with(|| right.cmp(left))
+    });
+    a_channel_ids.dedup();
+
+    for a_channel_id in a_channel_ids {
+        let Some(a_end) = query_transfer_channel_end_status(a_chain_id, a_port_id, a_channel_id.as_str())?
+        else {
+            continue;
+        };
+        if !is_open_transfer_state(a_end.state.as_str()) {
+            continue;
+        }
+        if a_end.remote_port_id.as_deref() != Some(b_port_id) {
+            continue;
+        }
+        let Some(b_channel_id) = a_end.remote_channel_id else {
+            continue;
+        };
+
+        let Some(b_end) =
+            query_transfer_channel_end_status(b_chain_id, b_port_id, b_channel_id.as_str())?
+        else {
+            continue;
+        };
+        if !is_open_transfer_state(b_end.state.as_str()) {
+            continue;
+        }
+        if b_end.remote_port_id.as_deref() != Some(a_port_id) {
+            continue;
+        }
+        if b_end.remote_channel_id.as_deref() != Some(a_channel_id.as_str()) {
+            continue;
+        }
+
+        return Ok(Some(TransferChannelPair {
+            a_channel_id,
+            b_channel_id,
+        }));
+    }
+
+    Ok(None)
+}
+
 /// Queries all connection ids known by Hermes for one chain.
 fn query_connection_ids_for_chain(chain_id: &str) -> Result<Vec<String>, String> {
     let output = run_hermes_command(&["--json", "query", "connections", "--chain", chain_id])
@@ -817,166 +1432,17 @@ fn query_cardano_entrypoint_open_connection() -> Result<Option<String>, String> 
     Ok(None)
 }
 
-/// Verifies that a Cardano transfer channel is truly usable for swaps.
-///
-/// Validation rules:
-/// - Cardano side must be `Open`
-/// - Counterparty channel id must exist
-/// - Entrypoint counterparty must be `Open`
-/// - Counterparty channel must point back to the same Cardano channel id
-/// - Both ends must use transfer port routing
-///
-/// This prevents selecting stale channel ids that exist but are not open.
-fn is_open_cardano_entrypoint_transfer_channel(cardano_channel_id: &str) -> Result<bool, String> {
+fn query_cardano_entrypoint_channel_pair() -> Result<Option<TransferChannelPair>, String> {
     let cardano_chain_id = cardano_chain_id();
     let cardano_port_id = cardano_message_port_id();
     let entrypoint_chain_id = entrypoint_chain_id();
     let entrypoint_port_id = entrypoint_message_port_id();
-    let Some(cardano_end) = query_transfer_channel_end_status(
+    query_open_transfer_channel_pair(
         cardano_chain_id.as_str(),
         cardano_port_id.as_str(),
-        cardano_channel_id,
-    )?
-    else {
-        return Ok(false);
-    };
-
-    if !is_open_transfer_state(&cardano_end.state) {
-        logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: state={} (expected Open)",
-            cardano_end.state
-        ));
-        return Ok(false);
-    }
-
-    if cardano_end.remote_port_id.as_deref() != Some(entrypoint_port_id.as_str()) {
-        logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: counterparty port is not {}",
-            entrypoint_port_id
-        ));
-        return Ok(false);
-    }
-
-    let Some(entrypoint_channel_id) = cardano_end.remote_channel_id else {
-        logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: missing counterparty channel id",
-        ));
-        return Ok(false);
-    };
-
-    let Some(entrypoint_end) = query_transfer_channel_end_status(
         entrypoint_chain_id.as_str(),
         entrypoint_port_id.as_str(),
-        entrypoint_channel_id.as_str(),
-    )?
-    else {
-        return Ok(false);
-    };
-
-    if !is_open_transfer_state(&entrypoint_end.state) {
-        logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: entrypoint counterparty {} is {} (expected Open)",
-            entrypoint_channel_id, entrypoint_end.state
-        ));
-        return Ok(false);
-    }
-
-    if entrypoint_end.remote_port_id.as_deref() != Some(cardano_port_id.as_str()) {
-        logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: entrypoint counterparty {} port is not {}",
-            entrypoint_channel_id, cardano_port_id
-        ));
-        return Ok(false);
-    }
-
-    if entrypoint_end.remote_channel_id.as_deref() != Some(cardano_channel_id) {
-        logger::verbose(&format!(
-            "Skipping cardano-devnet channel {cardano_channel_id}: entrypoint counterparty {} does not point back to it",
-            entrypoint_channel_id
-        ));
-        return Ok(false);
-    }
-
-    Ok(true)
-}
-
-/// Queries Hermes for the latest Cardano to Entrypoint transfer channel id.
-fn query_cardano_entrypoint_channel() -> Result<Option<String>, String> {
-    let cardano_chain_id = cardano_chain_id();
-    let entrypoint_chain_id = entrypoint_chain_id();
-    let output = run_hermes_command(&[
-        "--json",
-        "query",
-        "channels",
-        "--chain",
-        cardano_chain_id.as_str(),
-        "--counterparty-chain",
-        entrypoint_chain_id.as_str(),
-    ])
-    .map_err(|error| error.to_string())?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "Hermes query channels for Cardano-Entrypoint chain pair failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    let parsed_lines: Vec<Value> = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .collect();
-
-    let chain_channels = parsed_lines
-        .iter()
-        .filter_map(|entry| match entry.get("result") {
-            Some(result) if result.is_array() => result.as_array(),
-            Some(result) if result.is_object() => result.get("channels").and_then(Value::as_array),
-            _ => None,
-        })
-        .next_back();
-
-    if let Some(channels) = chain_channels {
-        logger::verbose(&format!(
-            "Hermes query returned {} chain channels on {}↔{}",
-            channels.len(),
-            cardano_chain_id,
-            entrypoint_chain_id
-        ));
-    } else {
-        logger::verbose(&format!(
-            "Hermes query returned no channel list for {}↔{}",
-            cardano_chain_id, entrypoint_chain_id
-        ));
-    }
-
-    if let Some(channels) = chain_channels {
-        // Important: channel existence is not enough for token transfers.
-        // Interrupted handshakes leave stale channel ids in Init/TryOpen state.
-        // We collect every transfer channel candidate first, then validate each one
-        // against both chain ends and only accept channels that are Open on both sides.
-        let mut candidate_channel_ids: Vec<String> = channels
-            .iter()
-            .filter_map(extract_transfer_channel_id)
-            .collect();
-
-        // Prefer newer channel ids first because local dev runs often create multiple
-        // channels over time after resets, failed handshakes, or interrupted demos.
-        candidate_channel_ids.sort_by(|left, right| {
-            let left_seq = parse_channel_sequence(left).unwrap_or(0);
-            let right_seq = parse_channel_sequence(right).unwrap_or(0);
-            right_seq.cmp(&left_seq).then_with(|| right.cmp(left))
-        });
-        candidate_channel_ids.dedup();
-
-        for channel_id in candidate_channel_ids {
-            if is_open_cardano_entrypoint_transfer_channel(channel_id.as_str())? {
-                return Ok(Some(channel_id));
-            }
-        }
-    }
-
-    Ok(None)
+    )
 }
 
 fn create_cardano_entrypoint_transfer_channel_on_connection(
@@ -1014,14 +1480,15 @@ fn create_cardano_entrypoint_transfer_channel_on_connection(
 }
 
 /// Ensures the Cardano to Entrypoint transfer path exists by creating client, connection, and channel as needed.
-fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
+fn ensure_cardano_entrypoint_transfer_channel() -> Result<TransferChannelPair, String> {
     let cardano_chain_id = cardano_chain_id();
     let entrypoint_chain_id = entrypoint_chain_id();
-    if let Some(open_channel_id) = query_cardano_entrypoint_channel()? {
+    if let Some(open_channel_pair) = query_cardano_entrypoint_channel_pair()? {
         logger::log(&format!(
-            "PASS: Cardano->Entrypoint transfer channel already exists and is open ({open_channel_id})"
+            "PASS: Cardano->Entrypoint transfer channel already exists and is open ({})",
+            open_channel_pair.a_channel_id
         ));
-        return Ok(());
+        return Ok(open_channel_pair);
     }
 
     logger::log("No open Cardano->Entrypoint transfer channel detected. Creating one now.");
@@ -1036,15 +1503,16 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
             existing_open_connection_id.as_str(),
         )?;
 
-        let Some(open_channel_id) = query_cardano_entrypoint_channel()? else {
+        let Some(open_channel_pair) = query_cardano_entrypoint_channel_pair()? else {
             return Err(
                 "Created transfer channel on an open Cardano↔Entrypoint connection, but no open transfer channel is currently usable".to_string(),
             );
         };
         logger::log(&format!(
-            "PASS: Created Cardano<->Entrypoint transfer channel for token-swap demo ({open_channel_id})"
+            "PASS: Created Cardano<->Entrypoint transfer channel for token-swap demo ({})",
+            open_channel_pair.a_channel_id
         ));
-        return Ok(());
+        return Ok(open_channel_pair);
     }
 
     logger::verbose("Creating Cardano-devnet client with entrypoint reference");
@@ -1139,16 +1607,17 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<(), String> {
 
     // Validate post-creation state explicitly so we fail fast with a clear reason
     // instead of continuing into the swap script with a non-open channel id.
-    let Some(open_channel_id) = query_cardano_entrypoint_channel()? else {
+    let Some(open_channel_pair) = query_cardano_entrypoint_channel_pair()? else {
         return Err(
             "Created Cardano↔Entrypoint channel artifacts but no open transfer channel is currently usable".to_string(),
         );
     };
 
     logger::log(&format!(
-        "PASS: Created Cardano<->Entrypoint transfer channel for token-swap demo ({open_channel_id})"
+        "PASS: Created Cardano<->Entrypoint transfer channel for token-swap demo ({})",
+        open_channel_pair.a_channel_id
     ));
-    Ok(())
+    Ok(open_channel_pair)
 }
 
 /// Logs an error, stops Osmosis demo services, and returns the original error message.
@@ -1159,9 +1628,17 @@ fn fail_with_cleanup(osmosis_dir: &Path, message: &str) -> Result<(), String> {
     Err(message.to_string())
 }
 
-fn fail_with_injective_cleanup(injective_dir: &Path, message: &str) -> Result<(), String> {
+fn fail_with_injective_cleanup(
+    injective_dir: &Path,
+    network: &str,
+    message: &str,
+) -> Result<(), String> {
     logger::error(message);
     logger::log("Stopping services...");
-    stop_injective_local(injective_dir);
+    if network == "local" {
+        stop_injective_local(injective_dir);
+    } else if network == "testnet" {
+        stop_injective_testnet(injective_dir);
+    }
     Err(message.to_string())
 }
