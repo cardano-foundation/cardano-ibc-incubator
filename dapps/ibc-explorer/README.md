@@ -13,8 +13,8 @@ Create `.env` files with the following variables:
 | REACT_APP_CARDANO_CHAIN_ID          | Network magic of Cardano chain       | Currently we use 42 for local Cardano, for preview, it will be 2         |
 | REACT_APP_ENTRYPOINT_RPC_ENDPOINT   | RPC end-point of Entrypoint chain    | Default: http://localhost:26657                                          |
 | REACT_APP_ENTRYPOINT_REST_ENDPOINT  | Rest end-point of Entrypoint chain   | Default: http://localhost:1317                                           |
-| REACT_APP_LOCALOSMOIS_RPC_ENDPOINT  | RPC end-point of local Osmosis       | Default: http://localhost:26658                                          |
-| REACT_APP_LOCALOSMOIS_REST_ENDPOINT | Rest end-point of local Osmosis      | Default: http://localhost:1318                                           |
+| REACT_APP_LOCALOSMOSIS_RPC_ENDPOINT | RPC end-point of local Osmosis       | Default: http://localhost:26658                                          |
+| REACT_APP_LOCALOSMOSIS_REST_ENDPOINT| Rest end-point of local Osmosis      | Default: http://localhost:1318                                           |
 
 Legacy compatibility: `REACT_APP_SIDECHAIN_RPC_ENDPOINT` and `REACT_APP_SIDECHAIN_REST_ENDPOINT` are still accepted as fallbacks.
 
