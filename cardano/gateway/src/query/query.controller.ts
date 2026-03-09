@@ -3,6 +3,8 @@ import { GrpcMethod } from '@nestjs/microservices';
 import {
   QueryClientStateResponse,
   QueryClientStateRequest,
+  QueryClientStatesRequest,
+  QueryClientStatesResponse,
   QueryConsensusStateRequest,
   QueryConsensusStateResponse,
   QueryLatestHeightRequest,
@@ -84,6 +86,16 @@ export class QueryController {
   @GrpcMethod('Query', 'ClientState')
   async queryClientState(request: QueryClientStateRequest): Promise<QueryClientStateResponse> {
     const response: QueryClientStateResponse = await this.queryService.queryClientState(request);
+    return response;
+  }
+
+  @GrpcMethod('Query', 'ClientStates')
+  async queryClientStates(request: QueryClientStatesRequest): Promise<QueryClientStatesResponse> {
+    // Hermes uses this batch query to enumerate the clients hosted by the chain.
+    // Cardano previously implemented only the single-client query path, which meant
+    // relayer tooling could discover `ClientState` for a known id but could not list
+    // the ids that exist on-chain in the first place.
+    const response: QueryClientStatesResponse = await this.queryService.queryClientStates(request);
     return response;
   }
 

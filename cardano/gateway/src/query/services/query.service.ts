@@ -5,6 +5,8 @@ import {
   QueryBlockDataResponse,
   QueryClientStateRequest,
   QueryClientStateResponse,
+  QueryClientStatesRequest,
+  QueryClientStatesResponse,
   QueryConsensusStateRequest,
   QueryConsensusStateResponse,
   QueryLatestHeightRequest,
@@ -26,10 +28,11 @@ import {
 import { TransactionBody, hash_transaction } from '@dcspark/cardano-multiplatform-lib-nodejs';
 import { BlockDto } from '../dtos/block.dto';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
+import { IdentifiedClientState } from '@plus/proto-types/build/ibc/core/client/v1/client';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
 import { KupoService } from '@shared/modules/kupo/kupo.service';
 import { ConfigService } from '@nestjs/config';
-import { decodeHandlerDatum } from '@shared/types/handler-datum';
+import { decodeHandlerDatum, HandlerDatum } from '@shared/types/handler-datum';
 import { HostStateDatum } from '@shared/types/host-state-datum';
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
 import { normalizeConsensusStateFromDatum } from '@shared/helpers/consensus-state';
@@ -361,17 +364,77 @@ export class QueryService {
   }
 
   private async getClientDatum(clientId: string): Promise<[ClientDatum, UTxO]> {
-    // Get handlerUTXO
+    const handlerDatum = await this.getHandlerDatum();
+    return this.getClientDatumFromHandlerDatum(handlerDatum, clientId);
+  }
+
+  private async getHandlerDatum(): Promise<HandlerDatum> {
+    // The handler UTxO is the root of the on-chain IBC state machine on Cardano.
+    // It tracks the next client/connection/channel sequences and lets us derive
+    // the auth token names for child UTxOs deterministically.
     const handlerAuthToken = this.configService.get('deployment').handlerAuthToken;
     const handlerAuthTokenUnit = handlerAuthToken.policyId + handlerAuthToken.name;
     const handlerUtxo = await this.lucidService.findUtxoByUnit(handlerAuthTokenUnit);
-    const handlerDatum = await decodeHandlerDatum(handlerUtxo.datum, this.lucidService.LucidImporter);
+    return decodeHandlerDatum(handlerUtxo.datum, this.lucidService.LucidImporter);
+  }
 
+  private async getClientDatumFromHandlerDatum(
+    handlerDatum: HandlerDatum,
+    clientId: string,
+  ): Promise<[ClientDatum, UTxO]> {
+    // Client UTxOs are addressed by sequence-derived auth tokens. Reusing the
+    // already-decoded handler datum avoids reloading the handler UTxO on every
+    // iteration of a batch query.
     const clientAuthTokenUnit = this.lucidService.getClientAuthTokenUnit(handlerDatum, BigInt(clientId));
     const spendClientUTXO = await this.lucidService.findUtxoByUnit(clientAuthTokenUnit);
 
     const clientDatum = await decodeClientDatum(spendClientUTXO.datum, this.lucidService.LucidImporter);
     return [clientDatum, spendClientUTXO];
+  }
+
+  async queryClientStates(_request: QueryClientStatesRequest): Promise<QueryClientStatesResponse> {
+    this.logger.log('queryClientStates');
+
+    const handlerDatum = await this.getHandlerDatum();
+    const nextClientSequence = Number(handlerDatum.state.next_client_sequence);
+    const clientStates: IdentifiedClientState[] = [];
+
+    // Cardano stores clients as sequence-addressed UTxOs. There is no secondary
+    // index of "live client ids", so the batch query reconstructs the list by
+    // scanning the sequence space up to `next_client_sequence` and skipping holes.
+    for (let clientSequence = 0; clientSequence < nextClientSequence; clientSequence += 1) {
+      try {
+        const clientId = clientSequence.toString();
+        const [clientDatum] = await this.getClientDatumFromHandlerDatum(handlerDatum, clientId);
+
+        // At the moment Cardano only hosts Tendermint clients. Mithril clients are
+        // hosted on the Cosmos side, not on Cardano, so the batch response can use
+        // the canonical Tendermint type URL and `07-tendermint-<n>` identifier form.
+        const clientStateTendermint = normalizeClientStateFromDatum(clientDatum.state.clientState);
+        const clientStateAny: Any = {
+          type_url: '/ibc.lightclients.tendermint.v1.ClientState',
+          value: ClientStateTendermint.encode(clientStateTendermint).finish(),
+        };
+
+        clientStates.push({
+          client_id: `07-tendermint-${clientId}`,
+          client_state: clientStateAny,
+        });
+      } catch (error) {
+        // Client auth tokens are sequence-derived. If a sequence is missing on-chain,
+        // skip it rather than failing the whole batch query. That preserves the
+        // monotonic sequence model while still letting Hermes enumerate the clients
+        // that actually exist.
+        if (error instanceof GrpcNotFoundException) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    return {
+      client_states: clientStates,
+    } as QueryClientStatesResponse;
   }
 
   /**
