@@ -41,8 +41,8 @@ enum StartTarget {
     Network,
     /// Deploys the light client contracts and starts the gateway and relayer
     Bridge,
-    /// Starts the Cosmos Entrypoint chain (packet-forwarding chain)
-    Cosmos,
+    /// Starts the Entrypoint chain (packet-forwarding chain)
+    Entrypoint,
     /// Starts the Osmosis optional chain (network selected via --network)
     Osmosis,
     /// Starts the Injective optional chain (network selected via --network)
@@ -63,8 +63,8 @@ enum StopTarget {
     Network,
     /// Tears down the gateway and relayer
     Bridge,
-    /// Stops the Cosmos Entrypoint chain
-    Cosmos,
+    /// Stops the Entrypoint chain
+    Entrypoint,
     /// Stops the Osmosis optional chain (network selected via --network)
     Osmosis,
     /// Stops the Injective optional chain (network selected via --network)
@@ -100,7 +100,7 @@ enum Commands {
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, cosmos, osmosis, injective, gateway, relayer, mithril
+    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, entrypoint, osmosis, injective, gateway, relayer, mithril
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
@@ -117,7 +117,7 @@ enum Commands {
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
     },
-    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, cosmos, osmosis, injective, demo, gateway, relayer, mithril
+    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, entrypoint, osmosis, injective, demo, gateway, relayer, mithril
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
@@ -142,7 +142,7 @@ enum Commands {
     },
     /// Check health of bridge services
     HealthCheck {
-        /// Optional: specific service to check (gateway, cardano, postgres, kupo, ogmios, mithril, hermes, cosmos, osmosis, redis, injective)
+        /// Optional: specific service to check (gateway, cardano, postgres, kupo, ogmios, mithril, hermes, entrypoint, osmosis, redis, injective)
         #[arg(long)]
         service: Option<String>,
     },

@@ -83,7 +83,14 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
     logger::verbose(&format!("{}", osmosis_dir.display()));
 
     let required_services = [
-        "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril", "cosmos", "osmosis",
+        "gateway",
+        "cardano",
+        "postgres",
+        "kupo",
+        "ogmios",
+        "mithril",
+        "entrypoint",
+        "osmosis",
         "redis",
     ];
     if let Err(error) =
