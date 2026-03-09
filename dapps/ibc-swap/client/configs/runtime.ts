@@ -16,28 +16,20 @@ export const isCardanoChainRef = (chainId?: string): boolean =>
   chainId === CARDANO_CHAIN_ID || chainId === CARDANO_IBC_CHAIN_ID;
 
 export const ENTRYPOINT_RPC_ENDPOINT =
-  firstNonEmpty(
-    process.env.NEXT_PUBLIC_ENTRYPOINT_RPC_ENDPOINT,
-    process.env.NEXT_PUBLIC_SIDECHAIN_RPC_ENDPOINT,
-  ) || 'http://localhost:26657';
+  firstNonEmpty(process.env.NEXT_PUBLIC_ENTRYPOINT_RPC_ENDPOINT) ||
+  'http://localhost:26657';
 
 export const ENTRYPOINT_REST_ENDPOINT =
-  firstNonEmpty(
-    process.env.NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT,
-    process.env.NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT,
-  ) || 'http://localhost:1317';
+  firstNonEmpty(process.env.NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT) ||
+  'http://localhost:1317';
 
 export const LOCAL_OSMOSIS_RPC_ENDPOINT =
-  firstNonEmpty(
-    process.env.NEXT_PUBLIC_LOCALOSMOSIS_RPC_ENDPOINT,
-    process.env.NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT,
-  ) || 'http://localhost:26658';
+  firstNonEmpty(process.env.NEXT_PUBLIC_LOCALOSMOSIS_RPC_ENDPOINT) ||
+  'http://localhost:26658';
 
 export const LOCAL_OSMOSIS_REST_ENDPOINT =
-  firstNonEmpty(
-    process.env.NEXT_PUBLIC_LOCALOSMOSIS_REST_ENDPOINT,
-    process.env.NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT,
-  ) || 'http://localhost:1318';
+  firstNonEmpty(process.env.NEXT_PUBLIC_LOCALOSMOSIS_REST_ENDPOINT) ||
+  'http://localhost:1318';
 
 export const GATEWAY_TX_BUILDER_ENDPOINT =
   firstNonEmpty(process.env.NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT) ||
