@@ -3,15 +3,16 @@ package mithril
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"strings"
 
 	"cosmossdk.io/store/prefix"
 	storetypes "cosmossdk.io/store/types"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
-	host "github.com/cosmos/ibc-go/v8/modules/core/24-host"
-	"github.com/cosmos/ibc-go/v8/modules/core/exported"
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	host "github.com/cosmos/ibc-go/v10/modules/core/24-host"
+	"github.com/cosmos/ibc-go/v10/modules/core/exported"
 )
 
 const KeyIterateConsensusStatePrefix = "iterateConsensusStates"
@@ -30,6 +31,24 @@ func setClientState(clientStore storetypes.KVStore, cdc codec.BinaryCodec, clien
 	key := host.ClientStateKey()
 	val := clienttypes.MustMarshalClientState(cdc, clientState)
 	clientStore.Set(key, val)
+}
+
+// getClientState retrieves the client state from the store using the provided
+// KVStore and codec. The v10 LightClientModule uses this helper to access the
+// subject client state through the shared client store provider.
+func getClientState(store storetypes.KVStore, cdc codec.BinaryCodec) (*ClientState, bool) {
+	bz := store.Get(host.ClientStateKey())
+	if len(bz) == 0 {
+		return nil, false
+	}
+
+	clientStateI := clienttypes.MustUnmarshalClientState(cdc, bz)
+	clientState, ok := clientStateI.(*ClientState)
+	if !ok {
+		panic(fmt.Errorf("cannot convert %T to %T", clientStateI, clientState))
+	}
+
+	return clientState, true
 }
 
 // setConsensusState stores the consensus state at the given height.
