@@ -17,5 +17,4 @@ pub(super) const TESTNET_SEEDS: &str = "bb197876fd952d245ef6377e3651c157e3d7ed81
 pub(super) const TESTNET_PERSISTENT_PEERS: &str = "51084fccec1c309a415e89d39e6f0881c49493ed@95.217.144.107:12556,a5c34bdd777dd418ff7152a8646fd2f31f53f8a5@46.232.248.117:2000";
 pub(super) const TESTNET_RPC_LADDR: &str = "tcp://0.0.0.0:26658";
 pub(super) const TESTNET_GRPC_ADDRESS: &str = "0.0.0.0:9094";
-pub(super) const TESTNET_GRPC_WEB_ADDRESS: &str = "0.0.0.0:9091";
 pub(super) const TESTNET_API_ADDRESS: &str = "tcp://0.0.0.0:1318";
