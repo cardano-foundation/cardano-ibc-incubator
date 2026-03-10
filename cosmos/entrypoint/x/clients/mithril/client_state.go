@@ -14,9 +14,9 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	cmttypes "github.com/cometbft/cometbft/types"
-	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
-	commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"
-	"github.com/cosmos/ibc-go/v8/modules/core/exported"
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	commitmenttypesv2 "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types/v2"
+	"github.com/cosmos/ibc-go/v10/modules/core/exported"
 )
 
 var _ exported.ClientState = (*ClientState)(nil)
@@ -299,7 +299,7 @@ func (cs ClientState) VerifyNonMembership(
 }
 
 func ibcStateKeyFromPath(path exported.Path) ([]byte, error) {
-	mpath, ok := path.(commitmenttypes.MerklePath)
+	mpath, ok := path.(commitmenttypesv2.MerklePath)
 	if !ok {
 		return nil, fmt.Errorf("path is not a MerklePath")
 	}
@@ -321,20 +321,21 @@ func ibcStateKeyFromPath(path exported.Path) ([]byte, error) {
 	// here so the light client verifies against the key actually committed under
 	// `ibc_state_root`.
 	key := mpath.KeyPath[len(mpath.KeyPath)-1]
-	if strings.Contains(key, "/consensusStates/") {
-		parts := strings.SplitN(key, "/consensusStates/", 2)
+	keyStr := string(key)
+	if strings.Contains(keyStr, "/consensusStates/") {
+		parts := strings.SplitN(keyStr, "/consensusStates/", 2)
 		if len(parts) == 2 {
 			heightPart := parts[1]
 			if revParts := strings.SplitN(heightPart, "-", 2); len(revParts) == 2 {
 				// Expected pattern is "<revisionNumber>-<revisionHeight>".
 				// If it matches, drop the revisionNumber.
 				if revParts[0] != "" && revParts[1] != "" {
-					key = parts[0] + "/consensusStates/" + revParts[1]
+					key = []byte(parts[0] + "/consensusStates/" + revParts[1])
 				}
 			}
 		}
 	}
-	return []byte(key), nil
+	return key, nil
 }
 
 // verifyDelayPeriodPassed ensures the packet delay period has passed since the consensus state at `height`

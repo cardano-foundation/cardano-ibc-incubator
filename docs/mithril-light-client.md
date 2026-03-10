@@ -3,7 +3,7 @@
 
 Author: Julius Tranquilli,https://github.com/floor-licker
 
-Date: February 6, 2026 
+Date: March 10, 2026
 
 **Important Note**:  Mithril is in beta and regularly has protocol upgrades, often they are breaking, i.e, require the whole network to upgrade their local infra. Breaking Mithril protocol upgrades will break the IBC bridge and we will have to update and react accordingly whenever Mithril has breaking changes. Because of the nature of a network, its not really an option to just stay on an old version of the protocol, the whole point is that everyone is forming a network
 
@@ -18,6 +18,22 @@ The true intent of the Mithril project is to bootstrap nodes and allow them to s
 For example, if the aggregator tries to get a certificate signed at a point that is so close to the chain tip that many honest Nodes simply have different views of the ledger, i.e, maybe there’s a fork of 1-3 blocks (which is not all that strange), they would simply compute a different digest than the one they’re being asked to sign by the aggregator, and no certificate could be produced at that height. i.e, what I’m calling “Mithril misses” (like a cache miss) would basically mean that you tried to produce a certificate at a height where most SPOs were genuinely not agreeing on a canonical ledger view. 
 
 In this repo, the Mithril light client is an IBC 02-client implementation that lets a Cosmos chain verify Cardano-side IBC state by anchoring it to Mithril certificates plus Cardano transaction evidence. 
+
+## ibc-go v10.x.x Design
+
+As of March 10, 2026, the Cosmos-side implementation in this repo follows the **ibc-go v10.x classic light-client model**, and the current Entrypoint module pin is **ibc-go v10.2.0**. This is important because the custom-client integration shape in ibc-go v10 is different from the older v8-era design.
+
+At a high level, the current design is:
+
+- The Cardano client type is `08-cardano`.
+- The runtime logic is exposed through a dedicated `LightClientModule`, not through capability-era custom wiring.
+- The app registers that module with the IBC client keeper router via `ClientKeeper.AddRoute("08-cardano", ...)`.
+- The Mithril `AppModule` is intentionally thin; it mainly exists so interfaces/types are registered and the custom client can participate cleanly in the ibc-go v10 module model.
+- This remains **IBC Classic**, not IBC v2.
+
+In practice that means the v10 adapter layer handles the standard ibc-go light-client entrypoints such as initialization, header verification, misbehaviour handling, state updates, membership / non-membership verification, status queries, recovery, and upgrade handling, while the actual Cardano-specific verification logic still lives in the Mithril `ClientState` methods and helper code.
+
+In this repo, the v10 adapter lives under `cosmos/entrypoint/x/clients/mithril/light_client_module.go`, the recovery logic lives under `cosmos/entrypoint/x/clients/mithril/proposal_handle.go`, and the app-level client registration happens in `cosmos/entrypoint/app/ibc.go`.
 
 The core idea is that Mithril does not directly sign the Cardano IBC commitment root, instead Mithril certifies a transaction snapshot that can prove a specific Cardano transaction happened at a given Cardano block number, and that transaction is used to locate and authenticate the HostState UTxO, whose inline datum contains the `ibc_state_root`. Once that root is authenticated and stored in the client’s consensus state for that height, the normal IBC membership and non-membership verification methods can operate against it. 
 So to be clear, it’s not the case that you can “do” the kind of UTxO membership/non-membership proofs we initially endeavoured to do (which are ostensibly not possible at the moment), rather you can get around this by building a system based on transaction inclusion attestation and then cryptographic proofs of the output of those transactions. Inherently we are talking about transactions which operate on Cardano’s on-chain host state as thats where we’ve implemented the underlying validators and STT architecture + spending conditions that allow us to enforce this and operate as we do, that is, the cryptographic guarantees I’m describing are not true for arbitrary Cardano transactions, this is an explicitly designed architecture that relies on the integrity of the validators and HostState UTxO we have deployed on Cardano.
@@ -65,7 +81,25 @@ The intuitive partition between client and consensus states is that consensus st
 Client state holds things that don’t change every update or are global across most/many state changes. In general, the proof material or material we are proving against/with, would not exist in client state, rather consensus state. 
 A given consensus state is basically the verified result of a mithril update at a specific height, which amounts to a timestamp taken from the transaction snapshot certificate `sealed_at`, the certificate references that anchor what was verified (first stake distribution certificate for the epoch, and the latest transaction snapshot certificate hash), and the authenticated ibc_state_root that the client extracted from the HostState transaction that was proven to be included in the Mithril-certified transaction set. So in summary, its not really the Mithril certificate + some other things, its more like the minimal per-height anchor material derived from each certificate that we need to be able to do inclusion/exclusion membership proofs for IBC. 
 
-The update flow is: a relayer submits a Mithril header, the light client validates the certificate chain and signatures, and then it verifies host-state commitment evidence to ensure the `ibc_state_root` it will store is actually tied to Mithril-certified Cardano data. The header validation enforces that stake distribution and transaction snapshot certificates link correctly via `previous_hash`, that the snapshot merkle root is consistent with what the snapshot certificate commits to, and that the update is newer than the current client state. It also supports epoch catch-up by allowing a bounded list of prior stake distribution certificates to be includedso the client can backfill gaps and keep the previous_hash chain contiguous enough for on-chain verification.
+The update flow is: a relayer submits a Mithril header, the light client validates the certificate chain and signatures, and then it verifies host-state commitment evidence to ensure the `ibc_state_root` it will store is actually tied to Mithril-certified Cardano data. The header validation enforces that stake distribution and transaction snapshot certificates link correctly via `previous_hash`, that the snapshot merkle root is consistent with what the snapshot certificate commits to, and that the update is newer than the current client state. It also supports epoch catch-up by allowing a bounded list of prior stake distribution certificates to be included so the client can backfill gaps and keep the previous_hash chain contiguous enough for on-chain verification.
+
+## Recovery And Upgrade Semantics
+
+The current design now includes **ibc-go v10-style client recovery** for the Mithril light client.
+
+Recovery works by using a **substitute `08-cardano` client** that is already active and at a strictly greater latest height than the subject client. In line with the ibc-go v10 recovery model, the subject and substitute must match on the recovery-invariant parts of the client configuration. In this implementation, that means the substitute must represent the same underlying Cardano / HostState tracking configuration, while fields that naturally advance over time can differ, such as:
+
+- latest height
+- frozen height
+- current epoch
+- trusting period
+- chain id
+
+When recovery succeeds, the subject client copies the substitute client’s latest consensus state and the corresponding processed time / processed height metadata. It also restores the Mithril-specific certificate indexes needed for future verification, namely the first stake distribution certificate for the substitute’s current epoch, the latest transaction snapshot certificate reference for that epoch, and the certificate-hash lookup needed for certificate-chain continuity. The subject client then updates its latest height, current epoch, chain id, trusting period, and unfreezes itself.
+
+This is useful because it lets the bridge preserve the original client identifier, and therefore the existing IBC connection / channel topology that depends on that client, instead of forcing a full teardown whenever the old client has expired or become frozen.
+
+By contrast, **client upgrade remains unsupported** in the current Mithril design. The `VerifyUpgradeAndUpdateState` path explicitly returns an error for the Mithril client, so there is presently no supported “standard IBC client upgrade” flow for `08-cardano`.
 
 ## Proof Logic
 
@@ -101,4 +135,4 @@ SignedEntityType is parsed because it tells you what the certificate actu
 
 If it’s down long enough that we just miss some Mithril epochs, but the client is still within its trusting period, the design here is meant to recover without resetting the client. The next update can include not just the current stake distribution certificate, but also a chain of prior stake distribution certificates, and the light client will verify and store the missing links until the previous_hash chain is contiguous again. That’s exactly why the header format allows an optional list of previous stake distribution certificates, and why the client stores stake distribution certificates by hash and remembers the “first certificate in epoch”: it gives the on-chain verifier enough local anchor points to validate the next certificate even after gaps.
 
-If the relayer is down long enough that the client passes its trusting period, the client becomes expired. At that point, the IBC security model says you should no longer accept new headers, because you can’t bound “how far you might have drifted” without an external trust assumption. In many IBC light clients, recovery from expiry is done via client recovery (substitute client) or governance-assisted mechanisms, but in this Mithril client implementation those recovery/upgrade paths are currently not implemented, so the practical recovery is typically to create a fresh client from a new trusted checkpoint and re-establish connectivity at the IBC level.
+If the relayer is down long enough that the client passes its trusting period, the client becomes expired. At that point, the IBC security model says you should no longer accept new headers, because you can’t bound “how far you might have drifted” without an external trust assumption. In the current Mithril implementation, recovery from expiry or freezing is handled through the ibc-go v10 substitute-client recovery path: you create a fresh active `08-cardano` substitute client from a trusted checkpoint, then recover the expired / frozen subject client from that substitute. That allows the original client identifier to continue being used by the existing IBC connection and channel graph. What is still **not** implemented is the standard IBC client-upgrade path; upgrades remain an explicit unsupported case for Mithril today.
