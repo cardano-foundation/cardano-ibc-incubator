@@ -2204,6 +2204,20 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
     Ok(())
 }
 
+fn hermes_chain_health_line_present(output: &str, chain_id: &str) -> bool {
+    let healthy_marker = format!("health_check{{chain={}}}: chain is healthy", chain_id);
+    output.lines().any(|line| line.contains(&healthy_marker))
+}
+
+fn hermes_chain_health_lines(output: &str, chain_id: &str) -> Vec<String> {
+    let chain_marker = format!("health_check{{chain={}}}", chain_id);
+    output
+        .lines()
+        .filter(|line| line.contains(&chain_marker))
+        .map(|line| line.to_string())
+        .collect()
+}
+
 /// Run Hermes health-check to verify Gateway connectivity
 ///
 /// This exercises the Hermes -> Gateway gRPC connection by querying LatestHeight.
@@ -2254,25 +2268,23 @@ fn run_hermes_health_check(project_root: &Path) -> Result<(), Box<dyn std::error
         .into());
     }
 
-    // Check that the Cardano chain is reported as healthy
-    // Hermes health-check output typically includes chain status
     let combined_output = format!("{}{}", stdout, stderr);
-
-    if combined_output.to_lowercase().contains("unhealthy")
-        || combined_output.to_lowercase().contains("error")
-        || combined_output.to_lowercase().contains("failed")
-    {
-        return Err(format!(
-            "Hermes health-check reported unhealthy chain(s):\n{}",
-            combined_output
-        )
-        .into());
-    }
-
-    // Look for cardano-devnet being healthy
-    if combined_output.contains("cardano-devnet") {
-        if combined_output.contains("healthy") || combined_output.contains("Healthy") {
-            verbose("   cardano-devnet chain is healthy");
+    for required_chain in ["cardano-devnet", "entrypoint"] {
+        if !hermes_chain_health_line_present(&combined_output, required_chain) {
+            let chain_lines = hermes_chain_health_lines(&combined_output, required_chain);
+            let chain_output = if chain_lines.is_empty() {
+                format!(
+                    "No health-check log lines were emitted for chain '{}'.\nFull output:\n{}",
+                    required_chain, combined_output
+                )
+            } else {
+                format!(
+                    "Hermes did not confirm '{}' as healthy.\nRelevant output:\n{}",
+                    required_chain,
+                    chain_lines.join("\n")
+                )
+            };
+            return Err(chain_output.into());
         }
     }
 

@@ -69,7 +69,7 @@ const OSMOSIS_TESTNET_NODE_SPEC: CosmosNodeSpec = CosmosNodeSpec {
     status_url: config::TESTNET_STATUS_URL,
     rpc_laddr: config::TESTNET_RPC_LADDR,
     grpc_address: config::TESTNET_GRPC_ADDRESS,
-    grpc_web_address: Some(config::TESTNET_GRPC_WEB_ADDRESS),
+    grpc_web_address: None,
     api_address: config::TESTNET_API_ADDRESS,
     home_dir: config::TESTNET_HOME_DIR,
     pid_file: config::TESTNET_PID_FILE,
