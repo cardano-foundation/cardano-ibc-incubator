@@ -94,7 +94,7 @@ genesis:
 
     "transfer":
       "port_id": "transfer"
-      "denom_traces": []
+      "denoms": []
       "params":
         "send_enabled": true
         "receive_enabled": true
@@ -107,8 +107,7 @@ genesis:
       forward_relayers: []
 
     packetfowardmiddleware:
-      params:
-        fee_percentage: "0.100000000000000000"
+      in_flight_packets: {}
 
 validators:
   - name: alice
