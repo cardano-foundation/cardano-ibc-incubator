@@ -32,6 +32,11 @@ resolve_entrypointd_binary() {
         return 0
     fi
 
+    if [ -x "/go/bin/entrypointd" ]; then
+        echo "/go/bin/entrypointd"
+        return 0
+    fi
+
     if [ -x "${CHAIN_WORKDIR}/build/entrypointd" ]; then
         echo "${CHAIN_WORKDIR}/build/entrypointd"
         return 0
