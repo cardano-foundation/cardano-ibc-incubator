@@ -93,6 +93,20 @@ func TestLightClientModuleVerifyUpgradeAndUpdateStateReturnsUnsupported(t *testi
 	require.ErrorContains(t, err, "cannot upgrade mithril client")
 }
 
+func TestClientStateGetLatestHeightReturnsCoreHeight(t *testing.T) {
+	clientState := newTestClientState(10, 4, "cardano-test", 24*time.Hour)
+
+	height := clientState.GetLatestHeight()
+	coreHeight, ok := height.(clienttypes.Height)
+	require.True(t, ok)
+	require.Equal(t, clienttypes.NewHeight(0, 10), coreHeight)
+
+	clientState.LatestHeight = nil
+	zeroHeight, ok := clientState.GetLatestHeight().(clienttypes.Height)
+	require.True(t, ok)
+	require.True(t, zeroHeight.IsZero())
+}
+
 func newTestCodec() codec.BinaryCodec {
 	registry := codectypes.NewInterfaceRegistry()
 	RegisterInterfaces(registry)
