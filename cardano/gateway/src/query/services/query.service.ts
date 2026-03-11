@@ -108,12 +108,12 @@ import {
 import { getCurrentTree, isTreeAligned, alignTreeWithChain } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import {
-  QueryDenomTraceRequest,
-  QueryDenomTraceResponse,
-  QueryDenomTracesRequest,
-  QueryDenomTracesResponse,
+  QueryDenomRequest,
+  QueryDenomResponse,
+  QueryDenomsRequest,
+  QueryDenomsResponse,
 } from '@plus/proto-types/build/ibc/applications/transfer/v1/query';
-import { DenomTrace } from '@plus/proto-types/build/ibc/applications/transfer/v1/transfer';
+import { Denom, Hop } from '@plus/proto-types/build/ibc/applications/transfer/v1/token';
 import { DenomTraceService } from './denom-trace.service';
 import { convertHex2String } from '@shared/helpers/hex';
 
@@ -1402,40 +1402,37 @@ export class QueryService {
   }
 
   /**
-   * Query a denom trace by the standard ICS-20 hash input.
+   * Query a denom by the standard ICS-20 hash input.
    *
    * The protobuf request field is named `hash` and Cosmos tooling typically sends either:
    * - raw 64-char hex hash
    * - `ibc/<hash>`
    *
    * We normalize both forms into the same lowercase hash and always query by
-   * `ibc_denom_hash` so the endpoint stays compatible with standard denom-trace clients.
+   * `ibc_denom_hash` so the endpoint stays compatible with standard denom clients.
    */
-  async queryDenomTrace(request: QueryDenomTraceRequest): Promise<QueryDenomTraceResponse> {
-    this.logger.log(`Querying denom trace for hash: ${request.hash}`);
+  async queryDenom(request: QueryDenomRequest): Promise<QueryDenomResponse> {
+    this.logger.log(`Querying denom for hash: ${request.hash}`);
     
     try {
       const ibcDenomHash = this.normalizeIbcDenomHashInput(request.hash);
       const denomTrace = await this.denomTraceService.findByIbcDenomHash(ibcDenomHash);
       
       if (!denomTrace) {
-        throw new GrpcNotFoundException(`Denom trace not found for hash: ${request.hash}`);
+        throw new GrpcNotFoundException(`Denom not found for hash: ${request.hash}`);
       }
 
-      const response: QueryDenomTraceResponse = {
-        denom_trace: {
-          path: denomTrace.path,
-          base_denom: denomTrace.base_denom,
-        },
+      const response: QueryDenomResponse = {
+        denom: this.toDenom(denomTrace.path, denomTrace.base_denom),
       };
 
       return response;
     } catch (error) {
-      this.logger.error(`Failed to query denom trace: ${error.message}`);
+      this.logger.error(`Failed to query denom: ${error.message}`);
       if (error instanceof GrpcNotFoundException || error instanceof GrpcInvalidArgumentException) {
         throw error;
       }
-      throw new GrpcInternalException(`Failed to query denom trace: ${error.message}`);
+      throw new GrpcInternalException(`Failed to query denom: ${error.message}`);
     }
   }
 
@@ -1462,20 +1459,17 @@ export class QueryService {
   }
 
   /**
-   * Query all denom traces with optional pagination
+   * Query all denoms with optional pagination.
    */
-  async queryDenomTraces(request: QueryDenomTracesRequest): Promise<QueryDenomTracesResponse> {
-    this.logger.log('Querying all denom traces');
+  async queryDenoms(request: QueryDenomsRequest): Promise<QueryDenomsResponse> {
+    this.logger.log('Querying all denoms');
     
     try {
       const pagination = request.pagination ? { offset: Number(request.pagination.offset || 0) } : undefined;
       const denomTraces = await this.denomTraceService.findAll(pagination);
       
-      const response: QueryDenomTracesResponse = {
-        denom_traces: denomTraces.map(trace => ({
-          path: trace.path,
-          base_denom: trace.base_denom,
-        })),
+      const response: QueryDenomsResponse = {
+        denoms: denomTraces.map((trace) => this.toDenom(trace.path, trace.base_denom)),
         pagination: {
           next_key: new Uint8Array(),
           total: BigInt(await this.denomTraceService.getCount()),
@@ -1484,8 +1478,36 @@ export class QueryService {
 
       return response;
     } catch (error) {
-      this.logger.error(`Failed to query denom traces: ${error.message}`);
-      throw new GrpcInternalException(`Failed to query denom traces: ${error.message}`);
+      this.logger.error(`Failed to query denoms: ${error.message}`);
+      throw new GrpcInternalException(`Failed to query denoms: ${error.message}`);
     }
+  }
+
+  private toDenom(path: string, baseDenom: string): Denom {
+    return {
+      base: baseDenom,
+      trace: this.pathToTrace(path),
+    };
+  }
+
+  private pathToTrace(path: string): Hop[] {
+    if (!path) {
+      return [];
+    }
+
+    const segments = path.split('/').filter(Boolean);
+    if (segments.length % 2 !== 0) {
+      throw new Error(`Invalid denom trace path: ${path}`);
+    }
+
+    const trace: Hop[] = [];
+    for (let i = 0; i < segments.length; i += 2) {
+      trace.push({
+        port_id: segments[i],
+        channel_id: segments[i + 1],
+      });
+    }
+
+    return trace;
   }
 }

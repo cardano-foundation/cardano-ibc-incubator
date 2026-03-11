@@ -25,31 +25,39 @@ export async function fetchAllDenomTraces(
 ): Promise<IBCDenomTrace> {
   const fetchUrl = `${restUrl}${queryAllDenomTracesUrl}?pagination.limit=10000`;
   const tmpTrace: IBCDenomTrace = {};
+
+  const toPath = (trace: { port_id: string; channel_id: string }[] = []) =>
+    trace.map(({ port_id, channel_id }) => `${port_id}/${channel_id}`).join('/');
+
   const firstFetch = await fetch(fetchUrl)
     .then((res) => res.json())
     .catch(() => {
       toast.error('Failed to fetch denom trace.', { theme: 'colored' });
     });
-  const denomTraces = (firstFetch?.denom_traces || []) as any[];
+  const denomTraces = (firstFetch?.denoms || []) as any[];
   denomTraces.forEach((tracing) => {
-    const { path, base_denom } = tracing;
-    const ibcHash = `ibc/${sha256(`${path}/${base_denom}`).toUpperCase()}`;
+    const path = toPath(tracing.trace);
+    const baseDenom = tracing.base;
+    const fullDenom = path ? `${path}/${baseDenom}` : baseDenom;
+    const ibcHash = `ibc/${sha256(fullDenom).toUpperCase()}`;
     tmpTrace[`${ibcHash}`] = {
       path,
-      baseDenom: base_denom,
+      baseDenom,
     };
   });
   let nextKey = firstFetch?.pagination?.next_key;
   while (nextKey && typeof nextKey === 'string') {
     const nextFetchUrl = `${fetchUrl}&pagination.key=${nextKey}`;
     const nextFetch = await fetch(nextFetchUrl).then((res) => res.json());
-    const denomTracesNext = (nextFetch?.denom_traces || []) as any[];
+    const denomTracesNext = (nextFetch?.denoms || []) as any[];
     denomTracesNext.forEach((tracing) => {
-      const { path, base_denom } = tracing;
-      const ibcHash = `ibc/${sha256(`${path}/${base_denom}`).toUpperCase()}`;
+      const path = toPath(tracing.trace);
+      const baseDenom = tracing.base;
+      const fullDenom = path ? `${path}/${baseDenom}` : baseDenom;
+      const ibcHash = `ibc/${sha256(fullDenom).toUpperCase()}`;
       tmpTrace[`${ibcHash}`] = {
         path,
-        baseDenom: base_denom,
+        baseDenom,
       };
     });
     nextKey = nextFetch?.pagination?.next_key;
