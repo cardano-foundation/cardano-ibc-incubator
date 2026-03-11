@@ -168,6 +168,14 @@ describe('PacketService denom regression coverage', () => {
     const spendChannelCall = lucidServiceMock.encode.mock.calls.find(([, type]) => type === 'spendChannelRedeemer');
     expect(spendChannelCall).toBeDefined();
     const packetDataHex = spendChannelCall?.[0]?.SendPacket?.packet?.data as string;
+    expect(convertHex2String(packetDataHex)).toBe(
+      JSON.stringify({
+        denom: canonicalDenom,
+        amount: '10',
+        sender: senderAddress,
+        receiver: 'cosmos1receiver',
+      }),
+    );
     const packetData = JSON.parse(convertHex2String(packetDataHex));
     expect(packetData.denom).toBe(canonicalDenom);
 
