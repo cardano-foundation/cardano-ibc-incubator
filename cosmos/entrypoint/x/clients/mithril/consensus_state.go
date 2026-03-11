@@ -7,8 +7,8 @@ import (
 	errorsmod "cosmossdk.io/errors"
 	cmttypes "github.com/cometbft/cometbft/types"
 
-	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
-	"github.com/cosmos/ibc-go/v8/modules/core/exported"
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	"github.com/cosmos/ibc-go/v10/modules/core/exported"
 )
 
 var _ exported.ConsensusState = (*ConsensusState)(nil)

@@ -47,61 +47,61 @@ describe('QueryService denom trace queries', () => {
     );
   });
 
-  it('rejects queryDenomTrace when hash is missing', async () => {
-    await expect(service.queryDenomTrace({ hash: '' } as any)).rejects.toThrow(GrpcInvalidArgumentException);
+  it('rejects queryDenom when hash is missing', async () => {
+    await expect(service.queryDenom({ hash: '' } as any)).rejects.toThrow(GrpcInvalidArgumentException);
   });
 
-  it('rejects queryDenomTrace when hash is not a 64-character hex value', async () => {
-    await expect(service.queryDenomTrace({ hash: 'abcd' } as any)).rejects.toThrow(GrpcInvalidArgumentException);
+  it('rejects queryDenom when hash is not a 64-character hex value', async () => {
+    await expect(service.queryDenom({ hash: 'abcd' } as any)).rejects.toThrow(GrpcInvalidArgumentException);
     expect(denomTraceServiceMock.findByIbcDenomHash).not.toHaveBeenCalled();
   });
 
-  it('normalizes ibc/<hash> input and returns not found when denom trace does not exist', async () => {
+  it('normalizes ibc/<hash> input and returns not found when denom does not exist', async () => {
     const upperHash = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
     denomTraceServiceMock.findByIbcDenomHash.mockResolvedValue(null);
 
-    await expect(service.queryDenomTrace({ hash: `ibc/${upperHash}` } as any)).rejects.toThrow(GrpcNotFoundException);
+    await expect(service.queryDenom({ hash: `ibc/${upperHash}` } as any)).rejects.toThrow(GrpcNotFoundException);
     expect(denomTraceServiceMock.findByIbcDenomHash).toHaveBeenCalledWith(upperHash.toLowerCase());
   });
 
-  it('returns denom trace for raw 64-character hash input', async () => {
+  it('returns denom for raw 64-character hash input', async () => {
     const mixedCaseHash = 'AaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa';
     denomTraceServiceMock.findByIbcDenomHash.mockResolvedValue({
       path: 'transfer/channel-0',
       base_denom: 'stake',
     });
 
-    const response = await service.queryDenomTrace({ hash: mixedCaseHash } as any);
+    const response = await service.queryDenom({ hash: mixedCaseHash } as any);
 
     expect(response).toEqual({
-      denom_trace: {
-        path: 'transfer/channel-0',
-        base_denom: 'stake',
+      denom: {
+        base: 'stake',
+        trace: [{ port_id: 'transfer', channel_id: 'channel-0' }],
       },
     });
     expect(denomTraceServiceMock.findByIbcDenomHash).toHaveBeenCalledWith(mixedCaseHash.toLowerCase());
   });
 
-  it('returns denom traces and total count for pagination', async () => {
+  it('returns denoms and total count for pagination', async () => {
     denomTraceServiceMock.findAll.mockResolvedValue([
       { path: 'transfer/channel-0', base_denom: 'stake' },
       { path: 'transfer/channel-1', base_denom: 'token' },
     ]);
     denomTraceServiceMock.getCount.mockResolvedValue(42);
 
-    const response = await service.queryDenomTraces({ pagination: { offset: 5n } } as any);
+    const response = await service.queryDenoms({ pagination: { offset: 5n } } as any);
 
     expect(denomTraceServiceMock.findAll).toHaveBeenCalledWith({ offset: 5 });
-    expect(response.denom_traces).toEqual([
-      { path: 'transfer/channel-0', base_denom: 'stake' },
-      { path: 'transfer/channel-1', base_denom: 'token' },
+    expect(response.denoms).toEqual([
+      { base: 'stake', trace: [{ port_id: 'transfer', channel_id: 'channel-0' }] },
+      { base: 'token', trace: [{ port_id: 'transfer', channel_id: 'channel-1' }] },
     ]);
     expect(response.pagination?.total).toBe(42n);
   });
 
-  it('wraps unexpected queryDenomTraces errors as internal errors', async () => {
+  it('wraps unexpected queryDenoms errors as internal errors', async () => {
     denomTraceServiceMock.findAll.mockRejectedValue(new Error('db down'));
 
-    await expect(service.queryDenomTraces({} as any)).rejects.toThrow(GrpcInternalException);
+    await expect(service.queryDenoms({} as any)).rejects.toThrow(GrpcInternalException);
   });
 });

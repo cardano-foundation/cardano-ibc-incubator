@@ -17,6 +17,11 @@ const LOCAL_OSMOSIS_REST_ENDPOINT = 'http://localosmosis:1318';
 const ibcHash = (fullDenom: string) =>
   `ibc/${createHash('sha256').update(fullDenom).digest('hex').toUpperCase()}`;
 
+const denom = (base: string, trace: Array<{ port_id: string; channel_id: string }> = []) => ({
+  base,
+  trace,
+});
+
 const openChannel = ({
   channelId,
   counterpartyChannelId,
@@ -108,10 +113,10 @@ describe('TransferPlannerService', () => {
       ],
       entrypointDenomTraces: [],
       localOsmosisDenomTraces: [
-        {
-          path: 'transfer/channel-1/transfer/channel-9',
-          base_denom: 'lovelace',
-        },
+        denom('lovelace', [
+          { port_id: 'transfer', channel_id: 'channel-1' },
+          { port_id: 'transfer', channel_id: 'channel-9' },
+        ]),
       ],
     });
 
@@ -145,10 +150,10 @@ describe('TransferPlannerService', () => {
       ],
       entrypointDenomTraces: [],
       localOsmosisDenomTraces: [
-        {
-          path: 'transfer/channel-77/transfer/channel-9',
-          base_denom: 'lovelace',
-        },
+        denom('lovelace', [
+          { port_id: 'transfer', channel_id: 'channel-77' },
+          { port_id: 'transfer', channel_id: 'channel-9' },
+        ]),
       ],
     });
 
@@ -203,8 +208,14 @@ describe('TransferPlannerService', () => {
       counterpartyChannelId: string;
       destChainId: string;
     }>;
-    entrypointDenomTraces: Array<{ path: string; base_denom: string }>;
-    localOsmosisDenomTraces: Array<{ path: string; base_denom: string }>;
+    entrypointDenomTraces: Array<{
+      base: string;
+      trace: Array<{ port_id: string; channel_id: string }>;
+    }>;
+    localOsmosisDenomTraces: Array<{
+      base: string;
+      trace: Array<{ port_id: string; channel_id: string }>;
+    }>;
   }) => {
     fetchMock.mockImplementation((url: string): Promise<FetchJsonResponse> => {
       if (url === `${ENTRYPOINT_REST_ENDPOINT}/ibc/core/channel/v1/channels?pagination.count_total=true&pagination.limit=10000`) {
@@ -235,11 +246,11 @@ describe('TransferPlannerService', () => {
 
       if (
         url ===
-        `${ENTRYPOINT_REST_ENDPOINT}/ibc/apps/transfer/v1/denom_traces?pagination.limit=10000`
+        `${ENTRYPOINT_REST_ENDPOINT}/ibc/apps/transfer/v1/denoms?pagination.limit=10000`
       ) {
         return Promise.resolve(
           jsonResponse({
-            denom_traces: entrypointDenomTraces,
+            denoms: entrypointDenomTraces,
             pagination: {},
           }),
         );
@@ -247,11 +258,11 @@ describe('TransferPlannerService', () => {
 
       if (
         url ===
-        `${LOCAL_OSMOSIS_REST_ENDPOINT}/ibc/apps/transfer/v1/denom_traces?pagination.limit=10000`
+        `${LOCAL_OSMOSIS_REST_ENDPOINT}/ibc/apps/transfer/v1/denoms?pagination.limit=10000`
       ) {
         return Promise.resolve(
           jsonResponse({
-            denom_traces: localOsmosisDenomTraces,
+            denoms: localOsmosisDenomTraces,
             pagination: {},
           }),
         );

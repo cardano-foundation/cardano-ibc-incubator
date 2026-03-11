@@ -1,4 +1,4 @@
-FROM golang:1.21.4@sha256:9baee0edab4139ae9b108fffabb8e2e98a67f0b259fd25283c2a084bd74fea0d as builder
+FROM golang:1.23.8 as builder
 
 ENV PATH="/root/.ignite/bin:/go/bin:/usr/local/go/bin:${PATH}"
 

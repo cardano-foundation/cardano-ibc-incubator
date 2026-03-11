@@ -8,7 +8,7 @@ const LOCAL_OSMOSIS_CHAIN_ID = 'localosmosis';
 const QUERY_CHANNELS_PREFIX_URL = '/ibc/core/channel/v1/channels';
 const QUERY_ALL_CHANNELS_URL =
   `${QUERY_CHANNELS_PREFIX_URL}?pagination.count_total=true&pagination.limit=10000`;
-const QUERY_ALL_DENOM_TRACES_URL = '/ibc/apps/transfer/v1/denom_traces';
+const QUERY_ALL_DENOMS_URL = '/ibc/apps/transfer/v1/denoms';
 const CARDANO_POLICY_ID_HEX_LENGTH = 56;
 
 type QueryChannelResponse = {
@@ -452,23 +452,32 @@ export class TransferPlannerService {
     return hops;
   }
 
+  private stringifyTrace(trace: Array<{ port_id: string; channel_id: string }>): string {
+    return trace.flatMap((hop) => [hop.port_id, hop.channel_id]).join('/');
+  }
+
   private async fetchAllDenomTraces(restUrl: string): Promise<IbcDenomTraceMap> {
     const traces: IbcDenomTraceMap = {};
-    const baseUrl = `${restUrl}${QUERY_ALL_DENOM_TRACES_URL}?pagination.limit=10000`;
+    const baseUrl = `${restUrl}${QUERY_ALL_DENOMS_URL}?pagination.limit=10000`;
     let nextKey: string | undefined;
 
     do {
       const url = nextKey ? `${baseUrl}&pagination.key=${encodeURIComponent(nextKey)}` : baseUrl;
       const data = await this.fetchJson<{
-        denom_traces?: Array<{ path: string; base_denom: string }>;
+        denoms?: Array<{
+          base: string;
+          trace?: Array<{ port_id: string; channel_id: string }>;
+        }>;
         pagination?: { next_key?: string };
       }>(url);
 
-      for (const trace of data.denom_traces || []) {
-        const ibcHash = this.hashIbcDenom(`${trace.path}/${trace.base_denom}`);
+      for (const denom of data.denoms || []) {
+        const path = this.stringifyTrace(denom.trace || []);
+        const fullDenom = path ? `${path}/${denom.base}` : denom.base;
+        const ibcHash = this.hashIbcDenom(fullDenom);
         traces[ibcHash] = {
-          path: trace.path,
-          baseDenom: trace.base_denom,
+          path,
+          baseDenom: denom.base,
         };
       }
 

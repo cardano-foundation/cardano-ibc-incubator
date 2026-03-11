@@ -12,3 +12,7 @@ Dockerfile
 # cabal-install
 haskell-part/dist-newstyle/
 go/libcardano-ibc-helper.so
+
+# local chain build artifacts
+entrypoint/entrypointd
+entrypoint/build/
