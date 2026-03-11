@@ -3591,59 +3591,52 @@ fn query_entrypoint_json(url: &str, timeout_secs: u64) -> Result<serde_json::Val
 }
 
 fn query_entrypoint_denom_trace(hash: &str) -> Result<(String, String), String> {
-    let candidates = [
+    let url = format!("http://127.0.0.1:1317/ibc/apps/transfer/v1/denoms/{}", hash);
+    let json = query_entrypoint_json(&url, 3)?;
+
+    let denom = json.get("denom").ok_or_else(|| {
         format!(
-            "http://127.0.0.1:1317/ibc/apps/transfer/v1/denom_traces/{}",
-            hash
-        ),
-        format!(
-            "http://127.0.0.1:1317/ibc/apps/transfer/v1beta1/denom_traces/{}",
-            hash
-        ),
-    ];
+            "Entrypoint chain v10 denom response missing denom: {}",
+            json
+        )
+    })?;
 
-    let mut last_err: Option<String> = None;
-    for url in candidates {
-        let json = match query_entrypoint_json(&url, 3) {
-            Ok(json) => json,
-            Err(e) => {
-                last_err = Some(e);
-                continue;
-            }
-        };
+    let base_denom = denom
+        .get("base")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| format!("Entrypoint chain v10 denom response missing base: {}", json))?;
 
-        let trace = json
-            .get("denom_trace")
-            .or_else(|| json.get("denomTrace"))
-            .ok_or_else(|| {
-                format!(
-                    "Entrypoint chain denom-trace response missing denom_trace: {}",
-                    json
-                )
-            })?;
+    let trace_path = denom
+        .get("trace")
+        .and_then(|v| v.as_array())
+        .map(|trace| {
+            trace
+                .iter()
+                .map(|hop| {
+                    let port_id = hop.get("port_id").and_then(|v| v.as_str()).ok_or_else(|| {
+                        format!(
+                            "Entrypoint chain v10 denom response missing trace.port_id: {}",
+                            json
+                        )
+                    })?;
+                    let channel_id =
+                        hop.get("channel_id")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| {
+                                format!(
+                                "Entrypoint chain v10 denom response missing trace.channel_id: {}",
+                                json
+                            )
+                            })?;
+                    Ok(format!("{}/{}", port_id, channel_id))
+                })
+                .collect::<Result<Vec<_>, String>>()
+        })
+        .transpose()?
+        .unwrap_or_default()
+        .join("/");
 
-        let path = trace.get("path").and_then(|v| v.as_str()).ok_or_else(|| {
-            format!(
-                "Entrypoint chain denom-trace response missing path: {}",
-                json
-            )
-        })?;
-
-        let base_denom = trace
-            .get("base_denom")
-            .or_else(|| trace.get("baseDenom"))
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                format!(
-                    "Entrypoint chain denom-trace response missing base_denom: {}",
-                    json
-                )
-            })?;
-
-        return Ok((path.to_string(), base_denom.to_string()));
-    }
-
-    Err(last_err.unwrap_or_else(|| "Entrypoint chain denom-trace query failed".to_string()))
+    Ok((trace_path, base_denom.to_string()))
 }
 
 fn assert_entrypoint_denom_trace(
@@ -3908,23 +3901,31 @@ fn find_policy_asset_with_min_delta(
 }
 
 #[derive(Clone, PartialEq, ::prost::Message)]
-struct QueryDenomTraceRequest {
+struct QueryDenomRequest {
     #[prost(string, tag = "1")]
     hash: String,
 }
 
 #[derive(Clone, PartialEq, ::prost::Message)]
-struct QueryDenomTraceResponse {
+struct QueryDenomResponse {
     #[prost(message, optional, tag = "1")]
-    denom_trace: Option<DenomTrace>,
+    denom: Option<Denom>,
 }
 
 #[derive(Clone, PartialEq, ::prost::Message)]
-struct DenomTrace {
+struct Denom {
     #[prost(string, tag = "1")]
-    path: String,
+    base: String,
+    #[prost(message, repeated, tag = "3")]
+    trace: Vec<Hop>,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+struct Hop {
+    #[prost(string, tag = "1")]
+    port_id: String,
     #[prost(string, tag = "2")]
-    base_denom: String,
+    channel_id: String,
 }
 
 fn ibc_denom_trace_hash(path: &str, base_denom: &str) -> Result<String, String> {
@@ -3986,25 +3987,32 @@ async fn query_gateway_denom_trace(hash: &str) -> Result<(String, String), Strin
     grpc.ready()
         .await
         .map_err(|e| format!("Gateway gRPC service not ready: {}", e))?;
-    let request = tonic::Request::new(QueryDenomTraceRequest {
+    let request = tonic::Request::new(QueryDenomRequest {
         hash: hash.to_string(),
     });
 
     let path = tonic::codegen::http::uri::PathAndQuery::from_static(
-        "/ibc.applications.transfer.v1.Query/DenomTrace",
+        "/ibc.applications.transfer.v1.Query/Denom",
     );
 
-    let response: QueryDenomTraceResponse = grpc
+    let response: QueryDenomResponse = grpc
         .unary(request, path, tonic::codec::ProstCodec::default())
         .await
         .map_err(|e| format!("Gateway denom-trace query failed: {}", e))?
         .into_inner();
 
-    let trace = response
-        .denom_trace
-        .ok_or_else(|| "Gateway denom-trace response missing denom_trace".to_string())?;
+    let denom = response
+        .denom
+        .ok_or_else(|| "Gateway denom response missing denom".to_string())?;
 
-    Ok((trace.path, trace.base_denom))
+    let path = denom
+        .trace
+        .iter()
+        .flat_map(|hop| [hop.port_id.clone(), hop.channel_id.clone()])
+        .collect::<Vec<_>>()
+        .join("/");
+
+    Ok((path, denom.base))
 }
 
 async fn assert_gateway_denom_trace(

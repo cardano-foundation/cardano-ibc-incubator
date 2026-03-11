@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 /**
- * Test helper: Query a denom trace by hash from Gateway gRPC endpoint
+ * Test helper: Query a denom by hash from Gateway gRPC endpoint
  * 
- * This script queries the Gateway's Query.DenomTrace gRPC endpoint to retrieve
- * denom trace information for a given hash (voucher token name).
+ * This script queries the Gateway's Query.Denom gRPC endpoint to retrieve
+ * denomination information for a given hash (voucher token name).
  * 
  * Usage:
  *   node query-denom-trace.js <hash>
@@ -12,7 +12,7 @@
  * Example:
  *   node query-denom-trace.js abc123def456...
  * 
- * Output: JSON object with denom_trace containing path and base_denom
+ * Output: JSON object with denom containing base and trace hops
  */
 
 const path = require('path');
@@ -31,7 +31,7 @@ if (!hash) {
   process.exit(1);
 }
 
-// Load proto definitions for QueryDenomTrace
+// Load proto definitions for QueryDenom
 const PROTO_PATH = path.join(protoTypesPath, 'protos/ibc-go/ibc/applications/transfer/v1/query.proto');
 const packageDefinition = protoLoader.loadSync(PROTO_PATH, {
   keepCase: true,
@@ -54,10 +54,10 @@ const request = {
   hash: hash,
 };
 
-// Call DenomTrace query
-client.DenomTrace(request, (error, response) => {
+// Call Denom query
+client.Denom(request, (error, response) => {
   if (error) {
-    console.error('ERROR: Failed to query denom trace');
+    console.error('ERROR: Failed to query denom');
     console.error('Code:', error.code);
     console.error('Message:', error.message);
     console.error('Details:', error.details);
@@ -67,10 +67,8 @@ client.DenomTrace(request, (error, response) => {
   // Output JSON response
   console.log(JSON.stringify({
     hash: hash,
-    path: response.denom_trace?.path || null,
-    base_denom: response.denom_trace?.base_denom || null,
+    denom: response.denom || null,
   }, null, 2));
   
   process.exit(0);
 });
-

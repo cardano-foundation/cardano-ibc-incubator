@@ -28,8 +28,8 @@ describe('QueryController (modern)', () => {
       queryTransactionByHash: jest.fn(),
       queryIBCHeader: jest.fn(),
       queryEvents: jest.fn(),
-      queryDenomTrace: jest.fn(),
-      queryDenomTraces: jest.fn(),
+      queryDenom: jest.fn(),
+      queryDenoms: jest.fn(),
     };
 
     connectionServiceMock = {
@@ -290,23 +290,23 @@ describe('QueryController (modern)', () => {
     await expectDelegation('queryEvents', queryServiceMock, 'queryEvents', { key: 'tx.height' }, { events: [] });
   });
 
-  it('delegates denomTrace to QueryService', async () => {
+  it('delegates denom to QueryService', async () => {
     await expectDelegation(
-      'denomTrace',
+      'denom',
       queryServiceMock,
-      'queryDenomTrace',
+      'queryDenom',
       { hash: 'abc123' },
-      { denom_trace: { path: 'transfer/channel-0', base_denom: 'stake' } },
+      { denom: { base: 'stake', trace: [{ port_id: 'transfer', channel_id: 'channel-0' }] } },
     );
   });
 
-  it('delegates denomTraces to QueryService', async () => {
+  it('delegates denoms to QueryService', async () => {
     await expectDelegation(
-      'denomTraces',
+      'denoms',
       queryServiceMock,
-      'queryDenomTraces',
+      'queryDenoms',
       { pagination: {} },
-      { denom_traces: [] },
+      { denoms: [] },
     );
   });
 });
