@@ -32,7 +32,7 @@ const TOKEN_SWAP_SUPPORTED_TARGETS: [(&str, &str); 3] = [
 ];
 const INJECTIVE_TESTNET_MIN_FIRST_BLOCK_WAIT_MS: u64 = 30 * 60 * 1000;
 const INJECTIVE_TESTNET_RECOVERY_HINT: &str =
-    "caribic start injective --network testnet --chain-flag stateful=false";
+    "caribic start --chain injective --network testnet --chain-flag stateful=false";
 
 fn cardano_chain_id() -> String {
     config::get_config().chains.cardano.chain_id

@@ -1,20 +1,58 @@
 use std::path::Path;
 
-use crate::{chains, logger, stop, StopTarget};
+use crate::{logger, stop, StopTarget};
 
 /// Stops the requested service group and keeps stop ordering consistent.
 pub fn run_stop(
     target: Option<StopTarget>,
+    chain: Option<String>,
     network: Option<String>,
     chain_flags: Vec<String>,
 ) -> Result<(), String> {
     let project_config = crate::config::get_config();
     let project_root_path = Path::new(&project_config.project_root);
-    let optional_chain_alias = resolve_optional_chain_alias(target.as_ref());
 
-    if optional_chain_alias.is_none() && (network.is_some() || !chain_flags.is_empty()) {
+    if let Some(chain_id) = chain.as_deref() {
+        if target.is_some() {
+            return Err(
+                "ERROR: --chain cannot be combined with a stop target. Use either `caribic stop bridge` or `caribic stop --chain <chain>`."
+                    .to_string(),
+            );
+        }
+
+        if network.is_some() || !chain_flags.is_empty() {
+            let (display_name, resolved_network) = crate::commands::chain::stop_optional_chain(
+                project_root_path,
+                chain_id,
+                network.as_deref(),
+                chain_flags.as_slice(),
+            )
+            .map_err(|error| {
+                format!("ERROR: Failed to stop optional chain '{}': {}", chain_id, error)
+            })?;
+
+            logger::log(&format!(
+                "\n{} stopped successfully (network: {})",
+                display_name, resolved_network,
+            ));
+        } else {
+            crate::commands::chain::stop_all_managed_optional_chain_networks(
+                project_root_path,
+                chain_id,
+            )
+            .map_err(|error| {
+                format!("ERROR: Failed to stop optional chain '{}': {}", chain_id, error)
+            })?;
+
+            logger::log("\nOptional chain stopped successfully");
+        }
+
+        return Ok(());
+    }
+
+    if network.is_some() || !chain_flags.is_empty() {
         return Err(
-            "ERROR: --network and --chain-flag are only supported with `caribic stop <optional-chain-alias>` or `caribic chain stop ...`"
+            "ERROR: --network and --chain-flag require --chain. Use `caribic stop --chain <chain> --network <network>`."
                 .to_string(),
         );
     }
@@ -25,9 +63,18 @@ pub fn run_stop(
                 project_root_path.join("cosmos").as_path(),
                 "Cosmos Entrypoint chain",
             );
-            stop_all_managed_optional_chain_networks(project_root_path, "osmosis")?;
-            stop_all_managed_optional_chain_networks(project_root_path, "cheqd")?;
-            stop_all_managed_optional_chain_networks(project_root_path, "injective")?;
+            crate::commands::chain::stop_all_managed_optional_chain_networks(
+                project_root_path,
+                "osmosis",
+            )?;
+            crate::commands::chain::stop_all_managed_optional_chain_networks(
+                project_root_path,
+                "cheqd",
+            )?;
+            crate::commands::chain::stop_all_managed_optional_chain_networks(
+                project_root_path,
+                "injective",
+            )?;
             bridge_down(project_root_path);
             network_down(project_root_path);
             logger::log("\nAll services stopped successfully");
@@ -47,23 +94,23 @@ pub fn run_stop(
             );
             logger::log("\nCosmos Entrypoint chain stopped successfully");
         }
-        Some(StopTarget::Osmosis) | Some(StopTarget::Cheqd) | Some(StopTarget::Injective) => {
-            let chain_id = optional_chain_alias.unwrap_or("osmosis");
-            if network.is_some() || !chain_flags.is_empty() {
-                stop_optional_chain(project_root_path, chain_id, network, chain_flags)?;
-            } else {
-                stop_all_managed_optional_chain_networks(project_root_path, chain_id)?;
-            }
-            logger::log("\nOptional chain stopped successfully");
-        }
         Some(StopTarget::Demo) => {
             stop::stop_cosmos(
                 project_root_path.join("cosmos").as_path(),
                 "Cosmos Entrypoint chain",
             );
-            stop_all_managed_optional_chain_networks(project_root_path, "osmosis")?;
-            stop_all_managed_optional_chain_networks(project_root_path, "cheqd")?;
-            stop_all_managed_optional_chain_networks(project_root_path, "injective")?;
+            crate::commands::chain::stop_all_managed_optional_chain_networks(
+                project_root_path,
+                "osmosis",
+            )?;
+            crate::commands::chain::stop_all_managed_optional_chain_networks(
+                project_root_path,
+                "cheqd",
+            )?;
+            crate::commands::chain::stop_all_managed_optional_chain_networks(
+                project_root_path,
+                "injective",
+            )?;
             logger::log("\nDemo services stopped successfully");
         }
         Some(StopTarget::Gateway) => {
@@ -81,64 +128,6 @@ pub fn run_stop(
     }
 
     Ok(())
-}
-
-fn stop_optional_chain(
-    project_root_path: &Path,
-    chain_id: &str,
-    network: Option<String>,
-    chain_flags: Vec<String>,
-) -> Result<(), String> {
-    let adapter = chains::get_chain_adapter(chain_id).ok_or_else(|| {
-        format!(
-            "ERROR: Optional chain adapter '{}' is not registered",
-            chain_id
-        )
-    })?;
-    let resolved_network = adapter.resolve_network(network.as_deref())?;
-    let parsed_flags = chains::parse_chain_flags(chain_flags.as_slice())?;
-    adapter.stop(project_root_path, resolved_network.as_str(), &parsed_flags)
-}
-
-fn stop_all_managed_optional_chain_networks(
-    project_root_path: &Path,
-    chain_id: &str,
-) -> Result<(), String> {
-    let adapter = chains::get_chain_adapter(chain_id).ok_or_else(|| {
-        format!(
-            "ERROR: Optional chain adapter '{}' is not registered",
-            chain_id
-        )
-    })?;
-
-    for network in adapter
-        .supported_networks()
-        .iter()
-        .filter(|network| network.managed_by_caribic)
-    {
-        adapter
-            .stop(project_root_path, network.name, &chains::ChainFlags::new())
-            .map_err(|error| {
-                format!(
-                    "ERROR: Failed to stop {} network '{}': {}",
-                    adapter.display_name(),
-                    network.name,
-                    error
-                )
-            })?;
-    }
-
-    Ok(())
-}
-
-/// Returns the optional-chain alias handled by `caribic stop <target>` aliases.
-fn resolve_optional_chain_alias(target: Option<&StopTarget>) -> Option<&'static str> {
-    match target {
-        Some(StopTarget::Osmosis) => Some("osmosis"),
-        Some(StopTarget::Cheqd) => Some("cheqd"),
-        Some(StopTarget::Injective) => Some("injective"),
-        _ => None,
-    }
 }
 
 /// Stops the local Cardano network and Mithril services.

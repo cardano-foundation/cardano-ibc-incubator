@@ -6,7 +6,6 @@ use std::time::Instant;
 use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::{
-    chains::{self, ChainStartRequest},
     config, logger,
     start::{
         build_aiken_validators_if_needed, build_hermes_if_needed, deploy_contracts,
@@ -25,6 +24,7 @@ pub async fn run_start(
     target: Option<StartTarget>,
     clean: bool,
     with_mithril: bool,
+    chain: Option<String>,
     network: Option<String>,
     chain_flags: Vec<String>,
 ) -> Result<(), String> {
@@ -33,19 +33,85 @@ pub async fn run_start(
     let project_config = config::get_config();
     let project_root_path = Path::new(&project_config.project_root);
 
+    if let Some(chain_id) = chain.as_deref() {
+        if target.is_some() {
+            return Err(
+                "ERROR: --chain cannot be combined with a start target. Use either `caribic start bridge` or `caribic start --chain <chain>`."
+                    .to_string(),
+            );
+        }
+
+        let optional_progress_bar = match logger::get_verbosity() {
+            logger::Verbosity::Verbose => None,
+            _ => Some(ProgressBar::new_spinner()),
+        };
+
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.enable_steady_tick(Duration::from_millis(100));
+            progress_bar.set_style(
+                ProgressStyle::with_template(
+                    "{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}",
+                )
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+            );
+            progress_bar.set_prefix(format!("Starting {} ...", chain_id));
+            progress_bar.set_message(
+                network
+                    .as_deref()
+                    .map(|resolved_network| format!("network={} (this can take a while)", resolved_network))
+                    .unwrap_or_else(|| "resolving network (this can take a while)".to_string()),
+            );
+        } else {
+            logger::log(&format!(
+                "Starting optional chain {}{} ...",
+                chain_id,
+                network
+                    .as_deref()
+                    .map(|resolved_network| format!(" (network: {})", resolved_network))
+                    .unwrap_or_default()
+            ));
+        }
+
+        let start_result = crate::commands::chain::start_optional_chain(
+            project_root_path,
+            chain_id,
+            network.as_deref(),
+            chain_flags.as_slice(),
+        )
+        .await;
+
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.finish_and_clear();
+        }
+
+        let (display_name, resolved_network) = start_result.map_err(|error| {
+            format!("ERROR: Failed to start optional chain '{}': {}", chain_id, error)
+        })?;
+
+        logger::log(&format!(
+            "PASS: {} started successfully (network: {})",
+            display_name, resolved_network,
+        ));
+        logger::log(&format!(
+            "\ncaribic start completed in {}",
+            format_elapsed_duration(start_elapsed_timer.elapsed())
+        ));
+        return Ok(());
+    }
+
+    if network.is_some() || !chain_flags.is_empty() {
+        return Err(
+            "ERROR: --network and --chain-flag require --chain. Use `caribic start --chain <chain> --network <network>`."
+                .to_string(),
+        );
+    }
+
     // Determine what to start.
     let start_all = target.is_none() || target == Some(StartTarget::All);
     let start_network = start_all || target == Some(StartTarget::Network);
     let start_cosmos = start_all || target == Some(StartTarget::Entrypoint);
     let start_bridge = start_all || target == Some(StartTarget::Bridge);
-    let optional_chain_alias = resolve_optional_chain_alias(target.as_ref());
-
-    if optional_chain_alias.is_none() && (network.is_some() || !chain_flags.is_empty()) {
-        return Err(
-            "ERROR: --network and --chain-flag are only supported with `caribic start <optional-chain-alias>` or `caribic chain start ...`"
-                .to_string(),
-        );
-    }
 
     let mut aiken_build_handle = None;
     let mut cosmos_entrypoint_chain_start_handle = None;
@@ -151,79 +217,6 @@ pub async fn run_start(
             }
             Err(error) => return Err(format!("ERROR: Failed to start Mithril: {}", error)),
         }
-        logger::log(&format!(
-            "\ncaribic start completed in {}",
-            format_elapsed_duration(start_elapsed_timer.elapsed())
-        ));
-        return Ok(());
-    }
-
-    if let Some(optional_chain_id) = optional_chain_alias {
-        let chain_adapter = chains::get_chain_adapter(optional_chain_id).ok_or_else(|| {
-            format!(
-                "ERROR: Optional chain adapter '{}' is not registered",
-                optional_chain_id
-            )
-        })?;
-        let resolved_network = chain_adapter.resolve_network(network.as_deref())?;
-        let parsed_flags = chains::parse_chain_flags(chain_flags.as_slice())?;
-        chain_adapter.validate_flags(resolved_network.as_str(), &parsed_flags)?;
-        let request = ChainStartRequest {
-            network: resolved_network.as_str(),
-            flags: &parsed_flags,
-        };
-
-        let optional_progress_bar = match logger::get_verbosity() {
-            logger::Verbosity::Verbose => None,
-            _ => Some(ProgressBar::new_spinner()),
-        };
-
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.enable_steady_tick(Duration::from_millis(100));
-            progress_bar.set_style(
-                ProgressStyle::with_template(
-                    "{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}",
-                )
-                .unwrap()
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-            );
-            progress_bar
-                .set_prefix(format!("Starting {} ...", chain_adapter.display_name()).to_owned());
-            progress_bar.set_message(format!(
-                "network={} (this can take a while)",
-                resolved_network
-            ));
-        } else {
-            logger::log(&format!(
-                "Starting {} (network: {}) ...",
-                chain_adapter.display_name(),
-                resolved_network
-            ));
-        }
-
-        let start_result = chain_adapter
-            .start(project_root_path, &request)
-            .await
-            .map_err(|error| {
-                format!(
-                    "ERROR: Failed to start {}: {}",
-                    chain_adapter.display_name(),
-                    error
-                )
-            });
-
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.finish_and_clear();
-        }
-
-        start_result?;
-
-        logger::log(&format!(
-            "PASS: {} started successfully (network: {})",
-            chain_adapter.display_name(),
-            resolved_network,
-        ));
-
         logger::log(&format!(
             "\ncaribic start completed in {}",
             format_elapsed_duration(start_elapsed_timer.elapsed())
@@ -542,16 +535,6 @@ pub async fn run_start(
     Ok(())
 }
 
-/// Returns the optional-chain alias handled by `caribic start <target>` aliases.
-fn resolve_optional_chain_alias(target: Option<&StartTarget>) -> Option<&'static str> {
-    match target {
-        Some(StartTarget::Osmosis) => Some("osmosis"),
-        Some(StartTarget::Cheqd) => Some("cheqd"),
-        Some(StartTarget::Injective) => Some("injective"),
-        _ => None,
-    }
-}
-
 /// Logs a startup failure, stops the requested service group, and returns the same error.
 fn fail_and_stop_started_services(
     _project_root_path: &Path,
@@ -560,7 +543,7 @@ fn fail_and_stop_started_services(
 ) -> Result<(), String> {
     logger::error(message);
     logger::log("Stopping services...");
-    crate::commands::stop::run_stop(Some(stop_target), None, Vec::new()).unwrap_or_default();
+    crate::commands::stop::run_stop(Some(stop_target), None, None, Vec::new()).unwrap_or_default();
     Err(message.to_string())
 }
 
