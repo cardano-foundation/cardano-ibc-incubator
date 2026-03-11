@@ -30,7 +30,7 @@ import {
   getDenomPrefix,
   insertSortMapWithNumberKey,
   prependToMap,
-  sortedStringify,
+  stringifyIcs20PacketData,
 } from '@shared/helpers/helper';
 import { RpcException } from '@nestjs/microservices';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
@@ -1394,7 +1394,7 @@ export class PacketService {
       source_channel: convertString2Hex(sendPacketOperator.sourceChannel),
       destination_port: channelDatum.state.channel.counterparty.port_id,
       destination_channel: channelDatum.state.channel.counterparty.channel_id,
-      data: convertString2Hex(sortedStringify(fTokenPacketData)),
+      data: convertString2Hex(stringifyIcs20PacketData(fTokenPacketData)),
       // data: encodeFungibleTokenPacketDatum(fTokenPacketData, this.lucidService.LucidImporter),
       timeout_height: sendPacketOperator.timeoutHeight,
       timeout_timestamp: sendPacketOperator.timeoutTimestamp,
