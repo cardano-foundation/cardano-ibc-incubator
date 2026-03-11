@@ -6,6 +6,7 @@ use async_trait::async_trait;
 
 pub mod cheqd;
 pub(crate) mod cosmos_node;
+pub(crate) mod hermes_support;
 pub mod injective;
 pub mod osmosis;
 
