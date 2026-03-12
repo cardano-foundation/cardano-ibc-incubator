@@ -167,7 +167,7 @@ export class ConnectionService {
         total: count_total ? Object.values(connectionFilters).length : 0,
       },
       height: {
-        revision_number: BigInt(0), // TODO
+        revision_number: BigInt(0), // Cardano uses fixed revision 0; semantic height is Mithril snapshot block_number.
         revision_height: queryHeight,
       },
     } as unknown as QueryConnectionsResponse;
