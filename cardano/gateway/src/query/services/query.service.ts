@@ -1189,9 +1189,10 @@ export class QueryService {
     // - a Mithril inclusion proof for the HostState update transaction
     // - the HostState transaction body CBOR + output index so the client can extract `ibc_state_root`
     //
-    // TODO(ibc): Support heights where the HostState does not change (root carried forward),
-    // and ensure the selected HostState output is the one live at end-of-block if multiple
-    // updates occur within a single block.
+    // Under the STT HostState model, the authenticated IBC root is transaction-scoped and
+    // may be carried forward across many certified Mithril heights. `height` therefore acts
+    // as a certified snapshot bound, while the Gateway resolves the single canonical
+    // HostState transaction/output at or before the certified snapshot it materializes.
     // Note: Use the HTTP Mithril API for listing artifacts and fetching certificates.
     //
     // The WASM mithril client performs strict JSON deserialization which can break if our
