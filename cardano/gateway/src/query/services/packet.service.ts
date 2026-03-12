@@ -200,7 +200,7 @@ export class PacketService {
       },
       /** query block height */
       height: {
-        revision_number: BigInt(0), // TODO
+        revision_number: BigInt(0), // Cardano uses fixed revision 0; semantic height is Mithril snapshot block_number.
         revision_height: queryHeight,
       },
     } as unknown as QueryPacketAcknowledgementsResponse;
@@ -305,7 +305,7 @@ export class PacketService {
       },
       /** query block height */
       height: {
-        revision_number: BigInt(0), // TODO
+        revision_number: BigInt(0), // Cardano uses fixed revision 0; semantic height is Mithril snapshot block_number.
         revision_height: queryHeight,
       },
     } as unknown as QueryPacketCommitmentsResponse;
@@ -386,7 +386,7 @@ export class PacketService {
       sequences: sequences,
       /** query block height */
       height: {
-        revision_number: BigInt(0), // TODO
+        revision_number: BigInt(0), // Cardano uses fixed revision 0; semantic height is Mithril snapshot block_number.
         revision_height: queryHeight,
       },
     } as unknown as QueryUnreceivedPacketsResponse;
@@ -417,7 +417,7 @@ export class PacketService {
       sequences: sequences,
       /** query block height */
       height: {
-        revision_number: BigInt(0), // TODO
+        revision_number: BigInt(0), // Cardano uses fixed revision 0; semantic height is Mithril snapshot block_number.
         revision_height: queryHeight,
       },
     } as unknown as QueryUnreceivedAcksResponse;
