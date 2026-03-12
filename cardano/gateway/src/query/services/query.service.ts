@@ -151,7 +151,14 @@ export class QueryService {
    * 4. alignTreeWithChain() queries all IBC UTXOs and rebuilds the tree
    * 5. Proof generation proceeds normally
    * 6. Subsequent queries find the tree aligned (cheap root comparison)
-   * TO-DO: Will a growing amount of IBC UTXOs be a problem in the future for this recovery but also for any in-memory limits?
+   * SCALING NOTE:
+   * The number of live IBC UTXOs is expected to scale roughly as:
+   *   total_live_ibc_utxos = 1 HostState + numClients + numConnections + numChannels
+   * so the raw UTXO scan is not expected to be the dominant scaling issue by itself.
+   * The more likely long-term pressure is datum growth inside those live UTXOs,
+   * especially client consensus states and channel packet maps
+   * (commitments / receipts / acknowledgements), since rebuild cost scales with the
+   * number of reconstructed ICS-24 tree entries, not just the count of live UTXOs.
    * PERFORMANCE NOTE:
    * Tree rebuilding is expensive (queries all IBC UTXOs), but it only happens when
    * the tree is actually stale. In normal operation, this is a cheap root comparison.
