@@ -88,3 +88,33 @@ It should be clear that Mithril certificates are **not** produced on a per-block
 This also introduces a height asymmetry: the proof height that the Cosmos chain can safely accept is the Mithril-certified snapshot height and not a Cardano slot number. If we keep Mithril as the attestation layer in production, we need to ensure the Gateway and relayer treat this consistently as the “proof height”, and we need to ensure our retry and waiting behaviour is driven by observed snapshot progression rather than arbitrary sleep intervals.
 
 A noteworthy CIP in discussing trade-offs of Mithril cadence + lag: https://cips.cardano.org/cip/CIP-0137#mithril-message-diffusion-extra-networking-cost
+
+## Relayer Event Liveness Under Deep Rollback
+
+Even if Mithril protects us from most ordinary short-range rollbacks, the current Cardano relayer event pipeline should still be understood as **height-watermark based** rather than truly **branch-aware**, and that distinction matters in the event of a sufficiently deep rollback or long service interruption.
+
+Today the relayer polls the Gateway for events "since height H", where `H` is a single stored watermark. The Gateway then returns:
+
+- a `current_height`, which is currently the latest Mithril snapshot height when available or the latest `db-sync` block height otherwise
+- block events for a bounded range above `since_height`
+
+The core issue is that this cursor model tracks only a single height and not any notion of branch identity or "last scanned canonical range". That creates several failure modes:
+
+- If the relayer watermark is `1000` and Cardano experiences a deep rollback to `900`, the Gateway will report `current_height = 900`. Because `since_height >= current_height`, the current query path returns an empty response rather than an explicit rollback signal.
+
+- The relayer does not currently rewind its watermark on such an empty response. It simply keeps `last_fetched_height = 1000` and tries again later.
+
+- As the chain grows back from `901` to `1000`, the relayer will continue to see empty responses. Once the chain reaches `1001`, the relayer resumes from `1001`, which means it has permanently skipped canonical events that occurred on the new branch in the range `901..1000`.
+
+That means the failure mode here is primarily one of **liveness and correctness of event observation**, not acceptance of unauthenticated proofs. The proof path is still protected by Mithril and by proof verification against the authenticated `ibc_state_root`, but the relayer can become blind to valid work that should be performed on the new canonical branch.
+
+There is also a second cursor-related issue independent of rollback: the Gateway currently bounds each `QueryEvents` scan to a relatively small height range, but still reports the full latest height as `current_height`. If the relayer receives any events in that bounded window and then advances its watermark all the way to `current_height`, it can skip intermediate heights that were never actually scanned. Conversely, if the first scanned window contains no IBC events, the relayer can get stuck repeatedly rescanning the same empty range and never progress to later heights with events.
+
+The upshot is that the current cursor semantics are not yet robust enough for a fully rollback-safe or outage-safe production relayer. A stronger design would likely need:
+
+- a cursor that represents the last **scanned** canonical height rather than the latest observed chain height
+- explicit progress information from the Gateway such as `scanned_until` or `next_cursor`
+- explicit rollback detection when `current_height < cursor`
+- ideally some branch-aware identity beyond plain height if we want the event stream itself to become truly rollback-resilient
+
+In practice Mithril's finality buffer should make this class of issue rare, but it is still important to document because rare does not mean impossible, and the current relayer behavior under such conditions should be treated as an operational limitation rather than as a solved problem.
