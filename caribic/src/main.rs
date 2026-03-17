@@ -33,6 +33,14 @@ enum DemoChain {
     Injective,
 }
 
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum BridgeMode {
+    /// Deploy a new Cardano bridge instance before starting Gateway and relayer
+    Deploy,
+    /// Join an already deployed Cardano bridge instance using existing deployment artifacts
+    Join,
+}
+
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StartTarget {
     /// Starts everything (network + packet-forwarding chain + bridge)
@@ -105,9 +113,12 @@ enum Commands {
         /// Optional chain adapter id (for example: osmosis, cheqd, injective)
         #[arg(long)]
         chain: Option<String>,
-        /// Optional network profile for optional chain targets (for example: local, testnet)
+        /// Optional Cardano network profile. Without --chain, selects the core Cardano mode (local managed devnet or external preprod).
         #[arg(long)]
         network: Option<String>,
+        /// Bridge startup mode. Defaults to deploy for local and join for preprod.
+        #[arg(long, value_enum)]
+        bridge_mode: Option<BridgeMode>,
         /// Chain-specific KEY=VALUE flag (repeatable), only when --chain is set
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
@@ -119,7 +130,7 @@ enum Commands {
         /// Optional chain adapter id (for example: osmosis, cheqd, injective)
         #[arg(long)]
         chain: Option<String>,
-        /// Optional network profile for optional chain targets (for example: local, testnet)
+        /// Optional Cardano network profile. Without --chain, selects the core Cardano mode (local managed devnet or external preprod).
         #[arg(long)]
         network: Option<String>,
         /// Chain-specific KEY=VALUE flag (repeatable), only when --chain is set
@@ -284,8 +295,20 @@ async fn main() {
             with_mithril,
             chain,
             network,
+            bridge_mode,
             chain_flag,
-        } => commands::run_start(target, clean, with_mithril, chain, network, chain_flag).await,
+        } => {
+            commands::run_start(
+                target,
+                clean,
+                with_mithril,
+                chain,
+                network,
+                bridge_mode,
+                chain_flag,
+            )
+            .await
+        }
         Commands::Keys { command } => commands::run_keys(project_root_path, command),
         Commands::HealthCheck { service } => {
             commands::run_health_check(project_root_path, service.as_deref())
@@ -295,9 +318,7 @@ async fn main() {
         Commands::CreateClient {
             host_chain,
             reference_chain,
-        } => {
-            commands::run_create_client(project_root_path, &host_chain, &reference_chain)
-        }
+        } => commands::run_create_client(project_root_path, &host_chain, &reference_chain),
         Commands::CreateConnection { a_chain, b_chain } => {
             commands::run_create_connection(project_root_path, &a_chain, &b_chain)
         }

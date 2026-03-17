@@ -7,6 +7,15 @@ use crate::{
 
 /// Runs integration tests and returns an error if any test fails.
 pub async fn run_tests(project_root_path: &Path, tests: Option<&str>) -> Result<(), String> {
+    if crate::config::active_core_cardano_network(project_root_path)
+        == crate::config::CoreCardanoNetwork::Preprod
+    {
+        return Err(
+            "Integration tests are local-devnet-only in this milestone. Start the managed Cardano runtime with `caribic start` or `caribic start --network local` before running `caribic test`."
+                .to_string(),
+        );
+    }
+
     let results = match test::run_integration_tests(project_root_path, tests).await {
         Ok(results) => results,
         Err(error) => return Err(format!("Integration tests failed: {}", error)),

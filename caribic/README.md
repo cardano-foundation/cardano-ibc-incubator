@@ -54,6 +54,11 @@ Hermes config note:
 - If you change Hermes config manually, restart Hermes (`caribic stop relayer` then `caribic start relayer`).
 - `caribic` writes Hermes config during setup and, for `caribic demo token-swap`, augments it with the `localosmosis` chain block before Hermes is used for channel creation.
 
+Cardano runtime note:
+- `--network local` uses a managed local Cardano devnet.
+- `--network preprod` uses external Cardano services/APIs; `caribic` does not start a local Cardano node for it.
+- Mainnet should follow the same external-services model when supported.
+
 ### `caribic stop [target]`
 
 Stops services. With no target, it behaves like `all`.

@@ -75,6 +75,15 @@ pub async fn run_demo(
     network: Option<&str>,
     project_root_path: &Path,
 ) -> Result<(), String> {
+    if crate::config::active_core_cardano_network(project_root_path)
+        == crate::config::CoreCardanoNetwork::Preprod
+    {
+        return Err(
+            "Demo flows are local-devnet-only in this milestone. Start the managed Cardano runtime with `caribic start` or `caribic start --network local` before running `caribic demo`."
+                .to_string(),
+        );
+    }
+
     let options = DemoRunOptions { chain, network };
 
     for driver in registered_demo_drivers() {

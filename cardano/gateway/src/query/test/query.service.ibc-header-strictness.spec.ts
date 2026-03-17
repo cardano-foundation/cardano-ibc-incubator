@@ -62,7 +62,6 @@ describe('QueryService IBC header strictness regressions', () => {
   };
   let dbServiceMock: {
     findHostStateUtxoAtOrBeforeBlockNo: jest.Mock;
-    findBlockByHeight: jest.Mock;
   };
   let mithrilServiceMock: {
     getMostRecentMithrilStakeDistributions: jest.Mock;
@@ -103,8 +102,6 @@ describe('QueryService IBC header strictness regressions', () => {
         .mockResolvedValueOnce({ txHash: 'tx-A', blockNo: 300, outputIndex: 0 })
         .mockResolvedValueOnce({ txHash: 'tx-B', blockNo: 200, outputIndex: 1 })
         .mockResolvedValueOnce({ txHash: 'tx-C', blockNo: 100, outputIndex: 2 }),
-      // Should never be reached in failure-first tests below.
-      findBlockByHeight: jest.fn().mockResolvedValue({ hash: 'block-100', slot: 123 }),
     };
 
     // Snapshot index the service can search by block number and/or certificate hash.
@@ -183,13 +180,11 @@ describe('QueryService IBC header strictness regressions', () => {
       {} as KupoService,
       dbServiceMock as unknown as DbSyncService,
       {
-        fetchBlockHeader: jest.fn().mockResolvedValue({ bodyCbor: 'beef' }),
+        fetchTransactionBodyCbor: jest.fn().mockResolvedValue(Buffer.from('beef', 'hex')),
       } as unknown as MiniProtocalsService,
       mithrilServiceMock as unknown as MithrilService,
       {} as DenomTraceService,
     );
-
-    jest.spyOn(service as any, 'findTxBodyHexInBlock').mockReturnValue('beef');
   });
 
   it('fails hard when snapshot/proof/HostState alignment cannot converge in bounded attempts', async () => {
@@ -199,7 +194,7 @@ describe('QueryService IBC header strictness regressions', () => {
       'Failed to converge Mithril snapshot/proof/HostState alignment',
     );
     // Hard failure must happen before block-body fetch / header materialization.
-    expect(dbServiceMock.findBlockByHeight).not.toHaveBeenCalled();
+    expect((service as any).miniProtocalsService.fetchTransactionBodyCbor).not.toHaveBeenCalled();
   });
 
   it('truncates previous certificate chain when older stake-distribution artifact is missing', async () => {
@@ -265,9 +260,6 @@ describe('QueryService IBC header strictness regressions', () => {
     expect(loggerMock.warn).toHaveBeenCalledWith(
       'Mithril stake distribution artifact missing for previous certificate older-cert; truncating previous certificate chain',
     );
-    // Again, fail before trying to build the final block/header payload.
-    // Current behavior intentionally materializes the header payload.
-    // Unlike the fail-hard case, this path still materializes the header payload.
-    expect(dbServiceMock.findBlockByHeight).toHaveBeenCalled();
+    expect((service as any).miniProtocalsService.fetchTransactionBodyCbor).toHaveBeenCalledWith('tx-A');
   });
 });

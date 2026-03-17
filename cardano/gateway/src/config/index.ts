@@ -76,26 +76,28 @@ interface Config {
   
   database: PostgresConnectionOptions;
 
-  cardanoChainHost: string;
-  cardanoChainPort: number;
   cardanoChainNetworkMagic: number;
   // Logical identifier for the Cardano chain used by Hermes (e.g., "cardano-devnet").
   // Cardano itself does not have a Cosmos-style chain-id; we use this as the IBC identifier.
   cardanoChainId: string;
   cardanoNetwork: Network;
   cardanoEpochNonceGenesis: string;
+  blockfrostApiUrl: string;
+  blockfrostProjectId: string;
 
   mithrilEndpoint: string;
   mtithrilGenesisVerificationKey: string;
 }
 
 export default (): Partial<Config> => {
+  const cardanoNetworkMagic =
+    process.env.CARDANO_CHAIN_NETWORK_MAGIC || process.env.CARDANO_NETWORK_MAGIC || '42';
   let cardanoNetwork: Network = 'Custom';
-  if (process.env.CARDANO_NETWORK_MAGIC === '1') {
+  if (cardanoNetworkMagic === '1') {
     cardanoNetwork = 'Preprod';
-  } else if (process.env.CARDANO_NETWORK_MAGIC === '2') {
+  } else if (cardanoNetworkMagic === '2') {
     cardanoNetwork = 'Preview';
-  } else if (process.env.CARDANO_NETWORK_MAGIC === '764824073') {
+  } else if (cardanoNetworkMagic === '764824073') {
     cardanoNetwork = 'Mainnet';
   }
 
@@ -107,12 +109,12 @@ export default (): Partial<Config> => {
     swapRouterAddress: process.env.SWAP_ROUTER_ADDRESS || '',
     deployerSk: process.env.DEPLOYER_SK,
 
-    cardanoChainHost: process.env.CARDANO_CHAIN_HOST,
-    cardanoChainPort: Number(process.env.CARDANO_CHAIN_PORT || 3001),
-    cardanoChainNetworkMagic: Number(process.env.CARDANO_CHAIN_NETWORK_MAGIC || 42),
+    cardanoChainNetworkMagic: Number(cardanoNetworkMagic),
     cardanoChainId: process.env.CARDANO_CHAIN_ID || 'cardano-devnet',
     cardanoNetwork: cardanoNetwork,
     cardanoEpochNonceGenesis: process.env.CARDANO_EPOCH_NONCE_GENESIS,
+    blockfrostApiUrl: process.env.BLOCKFROST_API_URL || '',
+    blockfrostProjectId: process.env.BLOCKFROST_PROJECT_ID || '',
 
     mithrilEndpoint: process.env.MITHRIL_ENDPOINT,
     mtithrilGenesisVerificationKey: process.env.MITHRIL_GENESIS_VERIFICATION_KEY,

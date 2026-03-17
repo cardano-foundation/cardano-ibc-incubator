@@ -22,7 +22,6 @@ import {
   MithrilCertificate,
   MithrilHeader,
 } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
-import { TransactionBody, hash_transaction } from '@dcspark/cardano-multiplatform-lib-nodejs';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { IdentifiedClientState } from '@plus/proto-types/build/ibc/core/client/v1/client';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
@@ -78,7 +77,6 @@ import {
 import { DbSyncService } from './db-sync.service';
 import { ChannelDatum, decodeChannelDatum } from '@shared/types/channel/channel-datum';
 import { getChannelIdByTokenName, getConnectionIdFromConnectionHops } from '@shared/helpers/channel';
-import cbor from 'cbor';
 import { getConnectionIdByTokenName } from '@shared/helpers/connection';
 import { UTxO } from '@lucid-evolution/lucid';
 import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
@@ -1282,17 +1280,7 @@ export class QueryService {
 
     const hostStateTxHash = hostStateUtxo.txHash;
 
-    // Fetch the block body that contains the HostState transaction and locate the transaction body CBOR.
-    //
-    // The HostState transaction can occur earlier than the requested certified height (root carried forward),
-    // so we must scan the block where that transaction actually appears.
-    const block = await this.dbService.findBlockByHeight(BigInt(hostStateUtxo.blockNo));
-    const blockHeader = await this.miniProtocalsService.fetchBlockHeader(block.hash, BigInt(block.slot));
-    if (!blockHeader?.bodyCbor) {
-      throw new GrpcInternalException(`Unable to fetch block body for height ${height.toString()}`);
-    }
-    const hostStateTxBodyHex = this.findTxBodyHexInBlock(blockHeader.bodyCbor, hostStateTxHash);
-    const hostStateTxBodyCbor = Buffer.from(hostStateTxBodyHex, 'hex');
+    const hostStateTxBodyCbor = await this.miniProtocalsService.fetchTransactionBodyCbor(hostStateTxHash);
 
     const mithrilHeader: MithrilHeader = {
       mithril_stake_distribution: normalizeMithrilStakeDistribution(mithrilStakeDistribution, distributionCertificate),
@@ -1333,27 +1321,6 @@ export class QueryService {
       header: mithrilHeaderAny,
     };
     return response;
-  }
-
-  private findTxBodyHexInBlock(blockBodyCborHex: string, txHashHex: string): string {
-    const decoded = cbor.decodeFirstSync(Buffer.from(blockBodyCborHex, 'hex'));
-    if (!Array.isArray(decoded)) {
-      throw new Error('Unexpected block body format: expected CBOR array');
-    }
-
-    const wanted = txHashHex.toLowerCase();
-    for (const entry of decoded) {
-      if (!Array.isArray(entry) || entry.length < 1) continue;
-      const txBodyHex = entry[0];
-      if (typeof txBodyHex !== 'string' || txBodyHex.length === 0) continue;
-
-      const computedHash = hash_transaction(TransactionBody.from_cbor_hex(txBodyHex)).to_hex().toLowerCase();
-      if (computedHash === wanted) {
-        return txBodyHex;
-      }
-    }
-
-    throw new Error(`Transaction body not found in block for tx hash ${txHashHex}`);
   }
 
   /**

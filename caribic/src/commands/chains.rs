@@ -7,8 +7,11 @@ pub fn run_chains() -> Result<(), String> {
 
     logger::log("Supported chains:\n");
 
-    logger::log(&format!("{} (Cardano devnet)", runtime_config.chains.cardano.chain_id));
+    logger::log("cardano (core Cardano profile)");
     logger::log("  - network: local (managed) - Core local Cardano devnet used by the bridge");
+    logger::log(
+        "  - network: preprod (external) - External Cardano preprod infrastructure plus public Mithril release-preprod",
+    );
     logger::log("");
 
     logger::log(&format!(
