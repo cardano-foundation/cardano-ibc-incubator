@@ -41,7 +41,7 @@ sequenceDiagram
   participant H as Hermes
   participant N as Cardano Node
   participant K as Kupo
-  participant D as db-sync
+  participant Y as Yaci Bridge History
 
   U->>F: Enter amount and destination
   F->>T: MsgTransfer request
@@ -60,7 +60,7 @@ sequenceDiagram
     H->>N: submit signed tx
     N-->>H: tx hash
     N-->>K: new UTxOs indexed
-    N-->>D: tx and block indexed
+    N-->>Y: tx evidence and bridge history indexed
   end
 ```
 
@@ -100,6 +100,29 @@ See [`../../docs/bridge-discovery-manifest.md`](../../docs/bridge-discovery-mani
 The Gateway's historical Cardano reads now go through the Yaci-backed bridge history service.
 
 `HISTORY_DB_*` is the preferred database config surface. Existing `DBSYNC_*` variables are still accepted as compatibility aliases.
+
+## Cardano Data Plane
+
+The Gateway now uses two Cardano data planes with different responsibilities:
+
+- Live data plane: `Ogmios + Kupo + Mithril`
+- Historical data plane: `Yaci Store + bridge-specific projection`
+
+The Yaci-backed projection is the Gateway's authoritative history backend. It stores the bridge-specific evidence the Gateway needs instead of querying a generic `db-sync` schema directly.
+
+Current bridge history tables include:
+
+- `bridge_tx_history`: light tx summary by block/slot
+- `bridge_tx_evidence`: tx CBOR, tx body CBOR, decoded redeemers, HostState evidence
+- `bridge_utxo_history`: historical bridge-relevant UTxOs by asset and block
+- `bridge_spo_event_history`: historical SPO register/unregister markers
+
+So the runtime split is:
+
+- use `Ogmios` for live chain progression and exact inclusion tracking
+- use `Kupo` for current live UTxO state
+- use `Mithril` for certified Cardano state roots / heights
+- use `Yaci` for historical bridge state and tx evidence
 
 ## Running the app
 
