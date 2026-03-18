@@ -18,8 +18,8 @@ export class HealthController {
     private metricsService: MetricsService,
     @InjectDataSource('gateway')
     private gatewayDataSource: DataSource,
-    @InjectDataSource('dbsync')
-    private dbsyncDataSource: DataSource,
+    @InjectDataSource('history')
+    private historyDataSource: DataSource,
   ) {}
 
   /**
@@ -31,15 +31,15 @@ export class HealthController {
   async check() {
     const result = await this.health.check([
       () => this.db.pingCheck('gateway_db', { connection: this.gatewayDataSource }),
-      () => this.db.pingCheck('dbsync', { connection: this.dbsyncDataSource }),
+      () => this.db.pingCheck('history_backend', { connection: this.historyDataSource }),
     ]);
 
     // Update Prometheus metrics based on health check results
     const gatewayHealthy = result.status === 'ok' && result.details?.gateway_db?.status === 'up';
-    const dbsyncHealthy = result.status === 'ok' && result.details?.dbsync?.status === 'up';
+    const historyHealthy = result.status === 'ok' && result.details?.history_backend?.status === 'up';
 
     this.metricsService.gatewayDbConnectionStatus.set(gatewayHealthy ? 1 : 0);
-    this.metricsService.dbSyncConnectionStatus.set(dbsyncHealthy ? 1 : 0);
+    this.metricsService.historyBackendConnectionStatus.set(historyHealthy ? 1 : 0);
 
     return result;
   }
@@ -52,7 +52,7 @@ export class HealthController {
   async databaseHealth() {
     try {
       const gatewayConnected = this.gatewayDataSource.isInitialized;
-      const dbsyncConnected = this.dbsyncDataSource.isInitialized;
+      const historyConnected = this.historyDataSource.isInitialized;
 
       // Get denom trace count
       let denomTraceCount = 0;
@@ -75,9 +75,9 @@ export class HealthController {
           connection: gatewayConnected,
           denom_traces_count: denomTraceCount,
         },
-        dbsync: {
-          status: dbsyncConnected ? 'healthy' : 'unhealthy',
-          connection: dbsyncConnected,
+        history_backend: {
+          status: historyConnected ? 'healthy' : 'unhealthy',
+          connection: historyConnected,
         },
       };
     } catch (error) {
@@ -89,7 +89,7 @@ export class HealthController {
           status: 'error',
           connection: false,
         },
-        dbsync: {
+        history_backend: {
           status: 'error',
           connection: false,
         },

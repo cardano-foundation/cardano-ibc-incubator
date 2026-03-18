@@ -13,7 +13,7 @@ export class MetricsService {
 
   // Database Connection Metrics
   public readonly gatewayDbConnectionStatus: Gauge;
-  public readonly dbSyncConnectionStatus: Gauge;
+  public readonly historyBackendConnectionStatus: Gauge;
 
   constructor() {
     // Enable default metrics (CPU, memory, etc.)
@@ -50,9 +50,9 @@ export class MetricsService {
       help: 'Gateway database connection status (1 = connected, 0 = disconnected)',
     });
 
-    this.dbSyncConnectionStatus = new Gauge({
-      name: 'gateway_dbsync_connection_status',
-      help: 'DB-Sync database connection status (1 = connected, 0 = disconnected)',
+    this.historyBackendConnectionStatus = new Gauge({
+      name: 'gateway_history_backend_connection_status',
+      help: 'Historical backend database connection status (1 = connected, 0 = disconnected)',
     });
 
     this.logger.log('Metrics service initialized');

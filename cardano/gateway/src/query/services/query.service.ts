@@ -74,7 +74,6 @@ import {
   ResultBlockResults,
   ResultBlockSearch,
 } from '@plus/proto-types/build/ibc/core/types/v1/block';
-import { DbSyncService } from './db-sync.service';
 import { ChannelDatum, decodeChannelDatum } from '@shared/types/channel/channel-datum';
 import { getChannelIdByTokenName, getConnectionIdFromConnectionHops } from '@shared/helpers/channel';
 import { getConnectionIdByTokenName } from '@shared/helpers/connection';
@@ -92,7 +91,7 @@ import { decodeSpendClientRedeemer } from '@shared/types/client-redeemer';
 import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
-import { getNanoseconds } from '../../shared/helpers/time';
+import { getNanoseconds, queryNetworkBlockHeight } from '../../shared/helpers/time';
 import { doubleToFraction } from '../../shared/helpers/number';
 import {
   normalizeMithrilStakeDistribution,
@@ -109,15 +108,24 @@ import {
 import { Denom, Hop } from '@plus/proto-types/build/ibc/applications/transfer/v1/token';
 import { DenomTraceService } from './denom-trace.service';
 import { convertHex2String } from '@shared/helpers/hex';
+import { HISTORY_SERVICE, HistoryService } from './history.service';
+
+type ParsedTxRedeemer = {
+  type: string;
+  data: string;
+  index: bigint;
+};
 
 @Injectable()
 export class QueryService {
+  private readonly txRedeemerCache = new Map<string, Promise<ParsedTxRedeemer[]>>();
+
   constructor(
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     @Inject(KupoService) private kupoService: KupoService,
-    @Inject(DbSyncService) private dbService: DbSyncService,
+    @Inject(HISTORY_SERVICE) private dbService: HistoryService,
     @Inject(MiniProtocalsService) private miniProtocalsService: MiniProtocalsService,
     @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(DenomTraceService) private denomTraceService: DenomTraceService,
@@ -200,6 +208,76 @@ export class QueryService {
     const result = await alignTreeWithChain();
     
     this.logger.log(`Tree rebuilt successfully, new root: ${result.root.substring(0, 16)}...`);
+  }
+
+  private async getTransactionRedeemers(txHash: string): Promise<ParsedTxRedeemer[]> {
+    const cacheKey = txHash.toLowerCase();
+    if (!this.txRedeemerCache.has(cacheKey)) {
+      this.txRedeemerCache.set(cacheKey, this.loadTransactionRedeemers(cacheKey));
+    }
+    return this.txRedeemerCache.get(cacheKey)!;
+  }
+
+  private async loadTransactionRedeemers(txHash: string): Promise<ParsedTxRedeemer[]> {
+    const txCborHex = await this.miniProtocalsService.fetchTransactionCborHex(txHash);
+    const { CML } = this.lucidService.LucidImporter;
+    const transaction = CML.Transaction.from_cbor_hex(txCborHex);
+    const redeemers = transaction.witness_set().redeemers();
+    if (!redeemers) {
+      return [];
+    }
+
+    const toParsedRedeemer = (type: string, index: bigint, dataCborHex: string): ParsedTxRedeemer => ({
+      type,
+      index,
+      data: dataCborHex,
+    });
+
+    const parsedRedeemers: ParsedTxRedeemer[] = [];
+    const redeemersKind = redeemers.kind();
+
+    if (redeemersKind === CML.RedeemersKind.MapRedeemerKeyToRedeemerVal) {
+      const redeemerMap = redeemers.as_map_redeemer_key_to_redeemer_val();
+      const keys = redeemerMap?.keys();
+      if (!redeemerMap || !keys) {
+        return [];
+      }
+
+      for (let i = 0; i < keys.len(); i += 1) {
+        const key = keys.get(i);
+        const value = redeemerMap.get(key);
+        if (!value) continue;
+        parsedRedeemers.push(
+          toParsedRedeemer(this.redeemerTagToType(CML, key.tag()), key.index(), value.data().to_cbor_hex()),
+        );
+      }
+      return parsedRedeemers;
+    }
+
+    const legacyRedeemers = redeemers.as_arr_legacy_redeemer();
+    if (!legacyRedeemers) {
+      return [];
+    }
+
+    for (let i = 0; i < legacyRedeemers.len(); i += 1) {
+      const redeemer = legacyRedeemers.get(i);
+      parsedRedeemers.push(
+        toParsedRedeemer(this.redeemerTagToType(CML, redeemer.tag()), redeemer.index(), redeemer.data().to_cbor_hex()),
+      );
+    }
+
+    return parsedRedeemers;
+  }
+
+  private redeemerTagToType(CML: any, tag: number): string {
+    switch (tag) {
+      case CML.RedeemerTag.Mint:
+        return REDEEMER_TYPE.MINT;
+      case CML.RedeemerTag.Spend:
+        return REDEEMER_TYPE.SPEND;
+      default:
+        return `tag_${tag}`;
+    }
   }
 
 	  async queryNewMithrilClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
@@ -338,7 +416,8 @@ export class QueryService {
   }
 
   async latestHeight(request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
-    // Prefer Mithril snapshots when available; fall back to db-sync for devnet/when Mithril is disabled.
+    // Prefer Mithril snapshots when available; fall back to Ogmios block height when Mithril is disabled
+    // or transaction snapshots are not yet available.
     try {
       const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
       if (listSnapshots?.length) {
@@ -350,12 +429,12 @@ export class QueryService {
       }
     } catch (error) {
       this.logger.warn(
-        `Mithril snapshot unavailable, falling back to db-sync latest block height: ${error?.message ?? error}`,
+        `Mithril snapshot unavailable, falling back to Ogmios latest block height: ${error?.message ?? error}`,
         'QueryLatestHeight',
       );
     }
 
-    const latestBlockNo = await this.dbService.queryLatestBlockNo();
+    const latestBlockNo = await queryNetworkBlockHeight(this.configService.get('ogmiosEndpoint'));
     const latestHeightResponse = {
       height: latestBlockNo,
     };
@@ -611,18 +690,20 @@ export class QueryService {
       for (const blockNo of [height]) {
         // connection +channel
         const utxosInBlock = await this.dbService.findUtxosByBlockNo(parseInt(blockNo.toString()));
-        const txsResults = await Promise.all(
-          utxosInBlock
-            .filter((utxo) => [mintConnScriptHash, mintChannelScriptHash].includes(utxo.assetsPolicy))
-            .map(async (utxo) => {
-              switch (utxo.assetsPolicy) {
-                case mintConnScriptHash:
-                  return await this._parseEventConnection(utxo, connectionBaseToken, mintConnScriptHash);
-                case mintChannelScriptHash:
-                  return await this._parseEventChannel(utxo, channelBaseToken, mintChannelScriptHash);
-              }
-            }),
-        );
+        const txsResults = (
+          await Promise.all(
+            utxosInBlock
+              .filter((utxo) => [mintConnScriptHash, mintChannelScriptHash].includes(utxo.assetsPolicy))
+              .map(async (utxo) => {
+                switch (utxo.assetsPolicy) {
+                  case mintConnScriptHash:
+                    return await this._parseEventConnection(utxo, connectionBaseToken, mintConnScriptHash);
+                  case mintChannelScriptHash:
+                    return await this._parseEventChannel(utxo, channelBaseToken, mintChannelScriptHash);
+                }
+              }),
+          )
+        ).filter((txsResult): txsResult is ResponseDeliverTx => txsResult !== null && txsResult !== undefined);
 
         // client state + consensus state
         const authOrClientUTxos = await this.dbService.findUtxoClientOrAuthHandler(parseInt(blockNo.toString()));
@@ -750,32 +831,45 @@ export class QueryService {
     utxo: UtxoDto,
     tokenBase: AuthToken,
     mintScriptHash: string,
-  ): Promise<ResponseDeliverTx> {
-    const connDatumDecoded: ConnectionDatum = await decodeConnectionDatum(utxo.datum!, this.lucidService.LucidImporter);
+  ): Promise<ResponseDeliverTx | null> {
+    let connDatumDecoded: ConnectionDatum;
+    try {
+      connDatumDecoded = await decodeConnectionDatum(utxo.datum!, this.lucidService.LucidImporter);
+    } catch {
+      return null;
+    }
     const currentConnectionId = getConnectionIdByTokenName(utxo.assetsName, tokenBase, CONNECTION_TOKEN_PREFIX);
     const txsResult = normalizeTxsResultFromConnDatum(connDatumDecoded, currentConnectionId);
 
     const spendAddress = this.configService.get('deployment').validators.spendConnection.address;
-    const redeemers = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
-      utxo.txId.toString(),
-      mintScriptHash,
-      spendAddress,
-    );
+    const redeemers = await this.getTransactionRedeemers(utxo.txHash);
     redeemers
       .filter((redeemer) => redeemer.data !== REDEEMER_EMPTY_DATA && redeemer.data.length > 10)
       .map((redeemer) => {
         switch (redeemer.type) {
-          case REDEEMER_TYPE.MINT:
-            const mintRedeemer = decodeMintConnectionRedeemer(redeemer.data, this.lucidService.LucidImporter);
+          case REDEEMER_TYPE.MINT: {
+            let mintRedeemer;
+            try {
+              mintRedeemer = decodeMintConnectionRedeemer(redeemer.data, this.lucidService.LucidImporter);
+            } catch {
+              break;
+            }
             if (mintRedeemer.hasOwnProperty('ConnOpenInit')) txsResult.events[0].type = EVENT_TYPE_CONNECTION.OPEN_INIT;
             if (mintRedeemer.hasOwnProperty('ConnOpenTry')) txsResult.events[0].type = EVENT_TYPE_CONNECTION.OPEN_TRY;
             break;
-          case REDEEMER_TYPE.SPEND:
-            const spendRedeemer = decodeSpendConnectionRedeemer(redeemer.data, this.lucidService.LucidImporter);
+          }
+          case REDEEMER_TYPE.SPEND: {
+            let spendRedeemer;
+            try {
+              spendRedeemer = decodeSpendConnectionRedeemer(redeemer.data, this.lucidService.LucidImporter);
+            } catch {
+              break;
+            }
             if (spendRedeemer.hasOwnProperty('ConnOpenAck')) txsResult.events[0].type = EVENT_TYPE_CONNECTION.OPEN_ACK;
             if (spendRedeemer.hasOwnProperty('ConnOpenConfirm'))
               txsResult.events[0].type = EVENT_TYPE_CONNECTION.OPEN_CONFIRM;
             break;
+          }
           default:
         }
       });
@@ -792,8 +886,13 @@ export class QueryService {
     utxo: UtxoDto,
     tokenBase: AuthToken,
     mintScriptHash: string,
-  ): Promise<ResponseDeliverTx> {
-    const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+  ): Promise<ResponseDeliverTx | null> {
+    let channelDatumDecoded: ChannelDatum;
+    try {
+      channelDatumDecoded = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    } catch {
+      return null;
+    }
 
     const currentChannelId = getChannelIdByTokenName(utxo.assetsName, tokenBase, CHANNEL_TOKEN_PREFIX);
     const currentConnectionId = getConnectionIdFromConnectionHops(channelDatumDecoded.state.channel.connection_hops[0]);
@@ -801,23 +900,30 @@ export class QueryService {
     const txsResult = normalizeTxsResultFromChannelDatum(channelDatumDecoded, currentConnectionId, currentChannelId);
 
     const spendAddress = this.configService.get('deployment').validators.spendChannel.address;
-    let redeemers = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
-      utxo.txId.toString(),
-      mintScriptHash,
-      spendAddress,
-    );
+    let redeemers = await this.getTransactionRedeemers(utxo.txHash);
 
     redeemers = redeemers.filter((redeemer) => ![REDEEMER_EMPTY_DATA].includes(redeemer.data));
     for (const redeemer of redeemers) {
       switch (redeemer.type) {
-        case REDEEMER_TYPE.MINT:
-          const mintRedeemer = decodeMintChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+        case REDEEMER_TYPE.MINT: {
+          let mintRedeemer;
+          try {
+            mintRedeemer = decodeMintChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+          } catch {
+            break;
+          }
 
           if (mintRedeemer.hasOwnProperty('ChanOpenInit')) txsResult.events[0].type = EVENT_TYPE_CHANNEL.OPEN_INIT;
           if (mintRedeemer.hasOwnProperty('ChanOpenTry')) txsResult.events[0].type = EVENT_TYPE_CHANNEL.OPEN_TRY;
           break;
-        case REDEEMER_TYPE.SPEND:
-          const spendRedeemer = decodeSpendChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+        }
+        case REDEEMER_TYPE.SPEND: {
+          let spendRedeemer;
+          try {
+            spendRedeemer = decodeSpendChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+          } catch {
+            break;
+          }
 
           if (spendRedeemer.hasOwnProperty('ChanOpenAck')) txsResult.events[0].type = EVENT_TYPE_CHANNEL.OPEN_ACK;
           if (spendRedeemer.hasOwnProperty('ChanOpenConfirm'))
@@ -830,41 +936,47 @@ export class QueryService {
             txsResult.events = packetEvent.events;
             if (spendRedeemer.hasOwnProperty('SendPacket')) break;
 
-            const moduleRedeemer = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
-              utxo.txId.toString(),
-              '',
-              spendTransferModuleAddress,
-            );
+            const moduleRedeemer = redeemers.filter((candidate) => candidate.type === REDEEMER_TYPE.SPEND);
             if (moduleRedeemer.length > 0) {
-              const moduleRedeemerDecoded = decodeIBCModuleRedeemer(
-                moduleRedeemer[0].data,
-                this.lucidService.LucidImporter,
-              );
-              const writeAckTxsResult = normalizeTxsResultFromModuleRedeemer(
-                moduleRedeemerDecoded,
-                spendRedeemer,
-                channelDatumDecoded,
-              );
-              txsResult.events.push(...writeAckTxsResult.events);
+              for (const candidate of moduleRedeemer) {
+                try {
+                  const moduleRedeemerDecoded = decodeIBCModuleRedeemer(
+                    candidate.data,
+                    this.lucidService.LucidImporter,
+                  );
+                  const writeAckTxsResult = normalizeTxsResultFromModuleRedeemer(
+                    moduleRedeemerDecoded,
+                    spendRedeemer,
+                    channelDatumDecoded,
+                  );
+                  txsResult.events.push(...writeAckTxsResult.events);
+                  break;
+                } catch {
+                  continue;
+                }
+              }
             }
 
             if (spendMockModuleAddress) {
-              const mockModuleRedeemer = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
-                utxo.txId.toString(),
-                '',
-                spendMockModuleAddress,
-              );
-              if (mockModuleRedeemer.length > 0) {
-                const mockModuleRedeemerDecoded = decodeIBCModuleRedeemer(
-                  mockModuleRedeemer[0].data,
-                  this.lucidService.LucidImporter,
-                );
-                const writeAckTxsResult = normalizeTxsResultFromModuleRedeemer(
-                  mockModuleRedeemerDecoded,
-                  spendRedeemer,
-                  channelDatumDecoded,
-                );
-                txsResult.events.push(...writeAckTxsResult.events);
+              const mockModuleRedeemers = redeemers.filter((candidate) => candidate.type === REDEEMER_TYPE.SPEND);
+              if (mockModuleRedeemers.length > 0) {
+                for (const candidate of mockModuleRedeemers) {
+                  try {
+                    const mockModuleRedeemerDecoded = decodeIBCModuleRedeemer(
+                      candidate.data,
+                      this.lucidService.LucidImporter,
+                    );
+                    const writeAckTxsResult = normalizeTxsResultFromModuleRedeemer(
+                      mockModuleRedeemerDecoded,
+                      spendRedeemer,
+                      channelDatumDecoded,
+                    );
+                    txsResult.events.push(...writeAckTxsResult.events);
+                    break;
+                  } catch {
+                    continue;
+                  }
+                }
               }
             }
           }
@@ -883,6 +995,7 @@ export class QueryService {
             txsResult.events[0].type = EVENT_TYPE_CHANNEL.CLOSE_CONFIRM;
           }
           break;
+        }
         default:
       }
     }
@@ -911,20 +1024,25 @@ export class QueryService {
         .map(async (clientUtxo) => {
           const eventClient = hasHandlerUtxo ? EVENT_TYPE_CLIENT.CREATE_CLIENT : EVENT_TYPE_CLIENT.UPDATE_CLIENT;
           const clientId = getIdByTokenName(clientUtxo.assetsName, tokenBase, CLIENT_PREFIX);
-          const clientDatum = await decodeClientDatum(clientUtxo.datum, this.lucidService.LucidImporter);
+          let clientDatum: ClientDatum;
+          try {
+            clientDatum = await decodeClientDatum(clientUtxo.datum, this.lucidService.LucidImporter);
+          } catch {
+            return null;
+          }
 
-          const redeemers = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
-            clientUtxo.txId.toString(),
-            mintClientScriptHash,
-            spendClientAddress,
-          );
+          const redeemers = await this.getTransactionRedeemers(clientUtxo.txHash);
           const spendClientRedeemer = redeemers.find((e) => e.type == 'spend');
           let spendClientRedeemerData = null;
           if (spendClientRedeemer) {
-            spendClientRedeemerData = decodeSpendClientRedeemer(
-              spendClientRedeemer.data,
-              this.lucidService.LucidImporter,
-            );
+            try {
+              spendClientRedeemerData = decodeSpendClientRedeemer(
+                spendClientRedeemer.data,
+                this.lucidService.LucidImporter,
+              );
+            } catch {
+              spendClientRedeemerData = null;
+            }
           }
 
           const txsResult = normalizeTxsResultFromClientDatum(
@@ -936,14 +1054,15 @@ export class QueryService {
           return txsResult as unknown as ResponseDeliverTx;
         }),
     );
+    const filteredTxsResults = txsResults.filter((txsResult): txsResult is ResponseDeliverTx => txsResult !== null);
     console.dir(
       {
-        txsResults,
+        txsResults: filteredTxsResults,
       },
       { depth: 10 },
     );
 
-    return txsResults;
+    return filteredTxsResults;
   }
 
   async queryBlockSearch(request: QueryBlockSearchRequest): Promise<QueryBlockSearchResponse> {
@@ -984,7 +1103,7 @@ export class QueryService {
       );
 
       // The same tx output can appear while scanning each side, so dedupe by out-ref.
-      const utxosByRef = new Map<string, Awaited<ReturnType<DbSyncService['findUtxosByPolicyIdAndPrefixTokenName']>>[number]>();
+      const utxosByRef = new Map<string, UtxoDto>();
       for (const channelTokenName of channelTokenNames) {
         const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(
           mintChannelScriptHash,
@@ -998,18 +1117,19 @@ export class QueryService {
       const utxosOfChannel = Array.from(utxosByRef.values());
       let blockResults: ResultBlockSearch[] = await Promise.all(
         utxosOfChannel.map(async (utxo) => {
-          let redeemers = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
-            utxo.txId.toString(),
-            mintChannelScriptHash,
-            spendAddress,
-          );
+          let redeemers = await this.getTransactionRedeemers(utxo.txHash);
           redeemers = redeemers.filter(
             (redeemer) => redeemer.data !== REDEEMER_EMPTY_DATA && redeemer.data.length > 10,
           );
           let isMatched = false;
           for (const redeemer of redeemers) {
             if (redeemer.type !== REDEEMER_TYPE.SPEND) continue;
-            const spendRedeemer = decodeSpendChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+            let spendRedeemer;
+            try {
+              spendRedeemer = decodeSpendChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+            } catch {
+              continue;
+            }
             let packet: Packet = null;
             if (spendRedeemer['RecvPacket']) packet = spendRedeemer['RecvPacket']?.packet as unknown as Packet;
             if (spendRedeemer['AcknowledgePacket'])
@@ -1019,7 +1139,7 @@ export class QueryService {
             if (!packet) continue;
             const packetSourceChannel = convertHex2String(packet.source_channel);
             const packetDestinationChannel = convertHex2String(packet.destination_channel);
-            // Match either orientation because db-sync scanning is channel-centric and can
+            // Match either orientation because historical channel scanning is channel-centric and can
             // surface redeemers from sends, receives, acks, or timeouts across both ends.
             const directChannelMatch =
               packetSourceChannel === srcChannelId && packetDestinationChannel === dstChannelId;

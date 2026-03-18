@@ -56,6 +56,8 @@ import {
   QueryIBCHeaderResponse,
 } from '@plus/proto-types/build/ibc/core/types/v1/query';
 import {
+  QueryBridgeManifestRequest,
+  QueryBridgeManifestResponse,
   QueryEventsRequest,
   QueryEventsResponse,
 } from '@plus/proto-types/build/ibc/cardano/v1/query';
@@ -70,6 +72,7 @@ import { ConnectionService } from './services/connection.service';
 import { ChannelService } from './services/channel.service';
 import { PacketService } from './services/packet.service';
 import { DenomTraceService } from './services/denom-trace.service';
+import { BridgeManifestService } from './services/bridge-manifest.service';
 
 @Controller()
 export class QueryController {
@@ -79,6 +82,7 @@ export class QueryController {
     private readonly channelService: ChannelService,
     private readonly packetService: PacketService,
     private readonly denomTraceService: DenomTraceService,
+    private readonly bridgeManifestService: BridgeManifestService,
   ) {}
 
   @GrpcMethod('Query', 'ClientState')
@@ -233,6 +237,12 @@ export class QueryController {
   async queryEvents(request: QueryEventsRequest): Promise<QueryEventsResponse> {
     const response: QueryEventsResponse = await this.queryService.queryEvents(request);
     return response as unknown as QueryEventsResponse;
+  }
+
+  @GrpcMethod('Query', 'BridgeManifest')
+  async queryBridgeManifest(_: QueryBridgeManifestRequest): Promise<QueryBridgeManifestResponse> {
+    const response = this.bridgeManifestService.getGrpcBridgeManifestResponse();
+    return response as unknown as QueryBridgeManifestResponse;
   }
 
   @GrpcMethod('Query', 'Denom')

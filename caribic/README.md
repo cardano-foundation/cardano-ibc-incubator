@@ -56,6 +56,7 @@ Hermes config note:
 
 Cardano runtime note:
 - `--network local` uses a managed local Cardano devnet.
+- that local devnet now uses `Yaci Store` for historical Cardano bridge reads instead of `cardano-db-sync`.
 - `--network preprod` uses external Cardano services/APIs; `caribic` does not start a local Cardano node for it.
 - Mainnet should follow the same external-services model when supported.
 

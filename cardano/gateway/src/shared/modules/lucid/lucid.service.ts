@@ -1,4 +1,4 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { bech32 } from 'bech32';
 import {
@@ -90,7 +90,7 @@ type ReferenceScripts = {
   mintConnection: UTxO;
   spendConnection: UTxO;
   spendClient: UTxO;
-  spendMockModule: UTxO;
+  spendMockModule?: UTxO;
   spendTransferModule: UTxO;
   verifyProof: UTxO;
   hostStateStt: UTxO;
@@ -104,15 +104,18 @@ type ReferenceScripts = {
 };
 
 @Injectable()
-export class LucidService {
-  private readonly referenceScripts: ReferenceScripts;
+export class LucidService implements OnModuleInit {
+  private readonly referenceScriptOutRefs: {
+    [K in keyof ReferenceScripts]: Pick<UTxO, 'txHash' | 'outputIndex'> | undefined;
+  };
+  private referenceScripts!: ReferenceScripts;
   constructor(
     @Inject(LUCID_IMPORTER) public LucidImporter: typeof import('@lucid-evolution/lucid'),
     @Inject(LUCID_CLIENT) public lucid: LucidEvolution,
     private configService: ConfigService,
   ) {
     const deploymentConfig = this.configService.get('deployment');
-    this.referenceScripts = {
+    this.referenceScriptOutRefs = {
       spendHandler: deploymentConfig.validators.spendHandler.refUtxo,
       spendConnection: deploymentConfig.validators.spendConnection.refUtxo,
       spendChannel: deploymentConfig.validators.spendChannel.refUtxo,
@@ -133,6 +136,63 @@ export class LucidService {
       timeoutPacket: deploymentConfig.validators.spendChannel.refValidator.timeout_packet.refUtxo,
     };
   }
+
+  async onModuleInit(): Promise<void> {
+    this.referenceScripts = await this.loadReferenceScripts();
+  }
+
+  private async loadReferenceScripts(): Promise<ReferenceScripts> {
+    const entries = await Promise.all(
+      (Object.entries(this.referenceScriptOutRefs) as Array<
+        [keyof ReferenceScripts, Pick<UTxO, 'txHash' | 'outputIndex'> | undefined]
+      >)
+        .filter(([, outRef]) => !!outRef)
+        .map(async ([label, outRef]) => {
+        const utxo = await this.resolveReferenceScriptUtxo(label, outRef);
+        return [label, utxo] as const;
+        }),
+    );
+
+    return Object.fromEntries(entries) as ReferenceScripts;
+  }
+
+  private async resolveReferenceScriptUtxo(
+    label: keyof ReferenceScripts,
+    outRef: Pick<UTxO, 'txHash' | 'outputIndex'> | undefined,
+  ): Promise<UTxO> {
+    if (!outRef) {
+      throw new Error(`Missing reference script out-ref for "${String(label)}"`);
+    }
+
+    const maxAttempts = 30;
+    const retryDelayMs = 1000;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const utxos = await this.lucid.utxosByOutRef([
+        {
+          txHash: outRef.txHash,
+          outputIndex: outRef.outputIndex,
+        },
+      ]);
+
+      const utxo = utxos.find((candidate) => {
+        return candidate.txHash === outRef.txHash && candidate.outputIndex === outRef.outputIndex;
+      });
+
+      if (utxo?.address) {
+        return utxo;
+      }
+
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+
+    throw new Error(
+      `Unable to resolve reference script UTxO "${String(label)}" at ${outRef.txHash}#${outRef.outputIndex}`,
+    );
+  }
+
   // ========================== Public functions ==========================
   // ========================== UTXO-related methods ==========================
   private normalizeAddressOrCredential(addressOrCredential: string): string {
@@ -930,7 +990,7 @@ export class LucidService {
       .readFrom([
         this.referenceScripts.spendHandler,
         this.referenceScripts.mintChannel,
-        this.referenceScripts.spendMockModule,
+        this.referenceScripts.spendMockModule!,
         this.referenceScripts.hostStateStt,
       ])
       .mintAssets(
@@ -1026,7 +1086,7 @@ export class LucidService {
 
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.referenceScripts.spendMockModule,
+      this.referenceScripts.spendMockModule!,
       this.referenceScripts.channelCloseInit,
       this.referenceScripts.hostStateStt,
     ])
@@ -1095,7 +1155,7 @@ export class LucidService {
       datumHash: undefined,
     };
 
-    tx.readFrom([this.referenceScripts.spendChannel, this.referenceScripts.spendMockModule, this.referenceScripts.hostStateStt])
+    tx.readFrom([this.referenceScripts.spendChannel, this.referenceScripts.spendMockModule!, this.referenceScripts.hostStateStt])
 
       .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
       .collectFrom([channelUtxo], encodedSpendChannelRedeemer)

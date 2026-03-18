@@ -13,14 +13,15 @@ import { EpochParamDto } from '../dtos/epoch-param.dto';
 import { RedeemerDto } from '../dtos/redeemer';
 import { TxDto } from '../dtos/tx.dto';
 import { GrpcInvalidArgumentException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
+import { HistoryService } from './history.service';
 
 @Injectable()
-export class DbSyncService {
+export class DbSyncService implements HistoryService {
   constructor(
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
-    @InjectEntityManager('dbsync') private entityManager: EntityManager,
+    @InjectEntityManager('history') private entityManager: EntityManager,
   ) {}
 
   async findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]> {

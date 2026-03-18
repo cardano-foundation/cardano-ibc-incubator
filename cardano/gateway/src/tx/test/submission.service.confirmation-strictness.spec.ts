@@ -11,9 +11,8 @@ describe('SubmissionService confirmation strictness regressions', () => {
     findUtxoAtHostStateNFT: jest.Mock;
     decodeDatum: jest.Mock;
   };
-  let dbSyncServiceMock: {
-    findHeightByTxHash: jest.Mock;
-    queryLatestBlockNo: jest.Mock;
+  let configServiceMock: {
+    get: jest.Mock;
   };
   let txEventsServiceMock: {
     take: jest.Mock;
@@ -41,9 +40,21 @@ describe('SubmissionService confirmation strictness regressions', () => {
       decodeDatum: jest.fn(),
     };
 
-    dbSyncServiceMock = {
-      findHeightByTxHash: jest.fn().mockResolvedValue(undefined),
-      queryLatestBlockNo: jest.fn().mockResolvedValue(9999),
+    configServiceMock = {
+      get: jest.fn().mockImplementation((key: string) => {
+        if (key === 'ogmiosEndpoint') {
+          return 'ws://localhost:1337';
+        }
+        if (key === 'deployment') {
+          return {
+            hostStateNFT: {
+              policyId: 'policy-id',
+              name: 'token-name',
+            },
+          };
+        }
+        return undefined;
+      }),
     };
 
     txEventsServiceMock = {
@@ -64,9 +75,8 @@ describe('SubmissionService confirmation strictness regressions', () => {
 
     service = new SubmissionService(
       lucidServiceMock as any,
-      dbSyncServiceMock as any,
+      configServiceMock as any,
       txEventsServiceMock as any,
-      {} as any,
       ibcTreePendingUpdatesServiceMock as any,
       ibcTreeCacheServiceMock as any,
       denomTraceServiceMock as any,
@@ -77,9 +87,8 @@ describe('SubmissionService confirmation strictness regressions', () => {
     await expect((service as any).waitForConfirmation('tx-timeout', 0)).rejects.toThrow();
   });
 
-  it('fails hard when db-sync height lookup times out instead of falling back', async () => {
-    await expect((service as any).waitForDbSyncTxHeight('tx-no-height', 0)).rejects.toThrow();
-    expect(dbSyncServiceMock.queryLatestBlockNo).not.toHaveBeenCalled();
+  it('fails hard when exact Ogmios inclusion height lookup times out instead of falling back', async () => {
+    await expect((service as any).waitForTxInclusionBlockHeight('tx-no-height', 'origin', 0)).rejects.toThrow();
   });
 
   it('does not finalize denom traces if on-chain root verification fails', async () => {
@@ -88,7 +97,7 @@ describe('SubmissionService confirmation strictness regressions', () => {
       commit: jest.fn(),
       denomTraceHashes: ['voucher-hash'],
     });
-    lucidServiceMock.findUtxoAtHostStateNFT.mockRejectedValueOnce(new Error('hoststate unavailable'));
+    jest.spyOn(service as any, 'readConfirmedTxRoot').mockRejectedValueOnce(new Error('hoststate unavailable'));
 
     await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'tx-hash-abc')).rejects.toThrow();
     expect(denomTraceServiceMock.setTxHashForTraces).not.toHaveBeenCalled();
@@ -100,15 +109,11 @@ describe('SubmissionService confirmation strictness regressions', () => {
       commit: jest.fn(),
       denomTraceHashes: ['voucher-hash'],
     });
-    lucidServiceMock.findUtxoAtHostStateNFT.mockResolvedValueOnce({ datum: 'host-datum' });
-    lucidServiceMock.decodeDatum.mockResolvedValueOnce({
-      state: {
-        ibc_state_root: 'expected-root',
-      },
-    });
+    jest.spyOn(service as any, 'capturePreSubmitPoint').mockResolvedValueOnce('origin');
+    jest.spyOn(service as any, 'readConfirmedTxRoot').mockResolvedValueOnce('expected-root');
 
     jest.spyOn(service as any, 'waitForConfirmation').mockResolvedValueOnce(undefined);
-    jest.spyOn(service as any, 'waitForDbSyncTxHeight').mockResolvedValueOnce(9999);
+    jest.spyOn(service as any, 'waitForTxInclusionBlockHeight').mockResolvedValueOnce(9999);
 
     await expect(
       service.submitSignedTransaction({

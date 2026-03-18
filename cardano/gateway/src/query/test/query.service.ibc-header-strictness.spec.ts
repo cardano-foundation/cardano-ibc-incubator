@@ -3,10 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
-import { DbSyncService } from '../services/db-sync.service';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { DenomTraceService } from '../services/denom-trace.service';
+import { HistoryService } from '../services/history.service';
 
 // We only care that queryIBCHeader reaches "header build" paths.
 // The exact protobuf bytes are not relevant for these failure-path regressions.
@@ -178,7 +178,7 @@ describe('QueryService IBC header strictness regressions', () => {
       configServiceMock,
       {} as LucidService,
       {} as KupoService,
-      dbServiceMock as unknown as DbSyncService,
+      dbServiceMock as unknown as HistoryService,
       {
         fetchTransactionBodyCbor: jest.fn().mockResolvedValue(Buffer.from('beef', 'hex')),
       } as unknown as MiniProtocalsService,

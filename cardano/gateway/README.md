@@ -76,6 +76,34 @@ Related diagrams:
 $ npm install
 ```
 
+## Bridge Discovery Manifest
+
+The Gateway now has one default startup source and one explicit alternative:
+
+- default: legacy `handler.json`
+- override: `HANDLER_JSON_PATH`
+- alternative: `BRIDGE_MANIFEST_PATH`
+
+`BRIDGE_MANIFEST_PATH` points to the public bridge discovery manifest. This contains the public deployment metadata an independent operator needs to discover the bridge deployment, without bundling private infra config or signing material.
+
+`BRIDGE_MANIFEST_PATH` and `HANDLER_JSON_PATH` are mutually exclusive. If both are set, startup fails.
+
+The Gateway also exposes this manifest publicly at:
+
+- `GET /api/bridge-manifest`
+- `ibc.cardano.v1.Query/BridgeManifest`
+
+See [`../../docs/bridge-discovery-manifest.md`](../../docs/bridge-discovery-manifest.md) for details and export instructions.
+
+## Historical Backend
+
+The Gateway's historical Cardano reads now go through a generic history backend:
+
+- local devnet default: `HISTORY_BACKEND=yaci`
+- external runtimes can still point at either `yaci` or `dbsync` while the rollout completes
+
+`HISTORY_DB_*` is the preferred database config surface. Existing `DBSYNC_*` variables are still accepted as compatibility aliases.
+
 ## Running the app
 
 ```bash

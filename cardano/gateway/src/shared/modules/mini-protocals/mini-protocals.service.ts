@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
-import { lastValueFrom, map } from 'rxjs';
+import { AxiosResponse } from 'axios';
+import { lastValueFrom } from 'rxjs';
 import { Transaction } from '@dcspark/cardano-multiplatform-lib-nodejs';
 
 @Injectable()
@@ -12,35 +13,60 @@ export class MiniProtocalsService {
     private readonly logger: Logger,
   ) {}
 
-  async fetchTransactionBodyCbor(txHash: string): Promise<Buffer> {
-    const blockfrostApiUrl = this.configService.get<string>('blockfrostApiUrl')?.trim();
-    const blockfrostProjectId = this.configService.get<string>('blockfrostProjectId')?.trim();
+  async fetchTransactionCborHex(txHash: string): Promise<string> {
+    const txCborApiUrl = this.configService.get<string>('blockfrostApiUrl')?.trim();
+    const txCborApiKey = this.configService.get<string>('blockfrostProjectId')?.trim();
 
-    if (!blockfrostApiUrl || !blockfrostProjectId) {
+    if (!txCborApiUrl) {
       throw new Error(
-        'Missing BLOCKFROST_API_URL or BLOCKFROST_PROJECT_ID. Configure a Blockfrost-compatible transaction CBOR API for hosted Cardano header assembly.',
+        'Missing BLOCKFROST_API_URL. Configure a transaction CBOR API for Cardano header assembly.',
       );
     }
 
-    const normalizedBaseUrl = blockfrostApiUrl.replace(/\/+$/, '');
+    const normalizedBaseUrl = txCborApiUrl.replace(/\/+$/, '');
     const requestUrl = `${normalizedBaseUrl}/txs/${txHash}/cbor`;
-
-    const response = await lastValueFrom(
-      this.httpService
-        .get(requestUrl, {
-          headers: {
-            project_id: blockfrostProjectId,
-          },
-        })
-        .pipe(map((res) => res.data)),
-    );
-
-    const fullTxCborHex = response?.cbor;
-    if (typeof fullTxCborHex !== 'string' || fullTxCborHex.length === 0) {
-      this.logger.error(`Transaction CBOR API returned no cbor field for tx ${txHash}`);
-      throw new Error(`Transaction CBOR unavailable for tx ${txHash}`);
+    const headers: Record<string, string> = {};
+    if (txCborApiKey) {
+      headers.project_id = txCborApiKey;
     }
 
+    const response = await lastValueFrom<AxiosResponse<ArrayBuffer>>(
+      this.httpService.get<ArrayBuffer>(requestUrl, {
+        headers,
+        responseType: 'arraybuffer',
+      }),
+    );
+
+    const responseBuffer = Buffer.from(new Uint8Array(response.data ?? new ArrayBuffer(0)));
+    const contentType = String(response.headers?.['content-type'] || '').toLowerCase();
+
+    if (contentType.includes('application/octet-stream')) {
+      if (responseBuffer.length === 0) {
+        this.logger.error(`Transaction CBOR API returned an empty binary body for tx ${txHash}`);
+        throw new Error(`Transaction CBOR unavailable for tx ${txHash}`);
+      }
+      return responseBuffer.toString('hex');
+    }
+
+    if (contentType.includes('application/json') || contentType.includes('text/json')) {
+      const parsed = JSON.parse(responseBuffer.toString('utf8'));
+      const fullTxCborHex = parsed?.cbor ?? parsed?.cborHex;
+      if (typeof fullTxCborHex === 'string' && fullTxCborHex.length > 0) {
+        return fullTxCborHex;
+      }
+    }
+
+    const rawText = responseBuffer.toString('utf8').trim();
+    if (/^[0-9a-fA-F]+$/.test(rawText) && rawText.length > 0) {
+      return rawText;
+    }
+
+    this.logger.error(`Transaction CBOR API returned an unsupported response for tx ${txHash}`);
+    throw new Error(`Transaction CBOR unavailable for tx ${txHash}`);
+  }
+
+  async fetchTransactionBodyCbor(txHash: string): Promise<Buffer> {
+    const fullTxCborHex = await this.fetchTransactionCborHex(txHash);
     const tx = Transaction.from_cbor_hex(fullTxCborHex);
     return Buffer.from(tx.body().to_cbor_hex(), 'hex');
   }

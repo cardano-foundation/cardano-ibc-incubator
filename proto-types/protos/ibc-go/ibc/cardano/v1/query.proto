@@ -14,6 +14,12 @@ service Query {
   rpc Events(QueryEventsRequest) returns (QueryEventsResponse) {
     option (google.api.http).get = "/ibc/cardano/v1/events";
   }
+
+  // BridgeManifest returns the public deployment manifest required to bootstrap
+  // an independent Gateway/relayer stack against this Cardano bridge deployment.
+  rpc BridgeManifest(QueryBridgeManifestRequest) returns (QueryBridgeManifestResponse) {
+    option (google.api.http).get = "/ibc/cardano/v1/bridge_manifest";
+  }
 }
 
 // QueryEventsRequest is the request type for the Query/Events RPC method.
@@ -40,4 +46,90 @@ message BlockEvents {
   
   // IBC events that occurred in this block
   repeated ibc.core.types.v1.ResponseDeliverTx events = 2;
+}
+
+message QueryBridgeManifestRequest {}
+
+message QueryBridgeManifestResponse {
+  BridgeManifest manifest = 1;
+}
+
+message BridgeManifest {
+  uint32 schema_version = 1;
+  string deployment_id = 2;
+  BridgeManifestCardanoInfo cardano = 3;
+  BridgeManifestAuthToken host_state_nft = 4;
+  BridgeManifestAuthToken handler_auth_token = 5;
+  BridgeManifestValidators validators = 6;
+  BridgeManifestModules modules = 7;
+}
+
+message BridgeManifestCardanoInfo {
+  string chain_id = 1;
+  uint64 network_magic = 2;
+  string network = 3;
+}
+
+message BridgeManifestAuthToken {
+  string policy_id = 1;
+  string token_name = 2;
+}
+
+message BridgeManifestRefUtxo {
+  string tx_hash = 1;
+  uint64 output_index = 2;
+}
+
+message BridgeManifestValidator {
+  string script_hash = 1;
+  string address = 2;
+  BridgeManifestRefUtxo ref_utxo = 3;
+}
+
+message BridgeManifestReferredValidator {
+  string script_hash = 1;
+  BridgeManifestRefUtxo ref_utxo = 2;
+}
+
+message BridgeManifestSpendChannelRefValidators {
+  BridgeManifestReferredValidator acknowledge_packet = 1;
+  BridgeManifestReferredValidator chan_close_confirm = 2;
+  BridgeManifestReferredValidator chan_close_init = 3;
+  BridgeManifestReferredValidator chan_open_ack = 4;
+  BridgeManifestReferredValidator chan_open_confirm = 5;
+  BridgeManifestReferredValidator recv_packet = 6;
+  BridgeManifestReferredValidator send_packet = 7;
+  BridgeManifestReferredValidator timeout_packet = 8;
+}
+
+message BridgeManifestSpendChannelValidator {
+  string script_hash = 1;
+  string address = 2;
+  BridgeManifestRefUtxo ref_utxo = 3;
+  BridgeManifestSpendChannelRefValidators ref_validator = 4;
+}
+
+message BridgeManifestValidators {
+  BridgeManifestValidator host_state_stt = 1;
+  BridgeManifestValidator spend_handler = 2;
+  BridgeManifestValidator spend_client = 3;
+  BridgeManifestValidator spend_connection = 4;
+  BridgeManifestSpendChannelValidator spend_channel = 5;
+  BridgeManifestValidator spend_transfer_module = 6;
+  BridgeManifestValidator verify_proof = 7;
+  BridgeManifestValidator mint_client_stt = 8;
+  BridgeManifestValidator mint_connection_stt = 9;
+  BridgeManifestValidator mint_channel_stt = 10;
+  BridgeManifestValidator mint_voucher = 11;
+}
+
+message BridgeManifestModule {
+  string identifier = 1;
+  string address = 2;
+}
+
+message BridgeManifestModules {
+  BridgeManifestModule handler = 1;
+  BridgeManifestModule transfer = 2;
+  BridgeManifestModule mock = 3;
 }

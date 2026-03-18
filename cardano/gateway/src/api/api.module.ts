@@ -1,6 +1,5 @@
 import { Logger, Module } from '@nestjs/common';
 import { ApiController } from './api.controller';
-import { ChannelService } from '~@/query/services/channel.service';
 import { QueryModule } from '~@/query/query.module';
 import { LucidModule } from '@shared/modules/lucid/lucid.module';
 import { HttpModule } from '@nestjs/axios';
@@ -16,7 +15,6 @@ import { TransferRouteResolverService } from './transfer-route-resolver.service'
   imports: [QueryModule, TxModule, LucidModule, HttpModule, MiniProtocalsModule, MithrilModule],
   controllers: [ApiController],
   providers: [
-    ChannelService,
     Logger,
     LocalOsmosisSwapPlannerService,
     LocalOsmosisSwapClientService,

@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
+import { KupoService } from '@shared/modules/kupo/kupo.service';
 import {
   QueryChannelRequest,
   QueryChannelResponse,
@@ -10,7 +11,6 @@ import {
   QueryConnectionChannelsResponse,
 } from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
-import { DbSyncService } from './db-sync.service';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import {
   Channel,
@@ -30,6 +30,10 @@ import { GrpcInternalException } from '~@/exception/grpc_exceptions';
 import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { HostStateDatum } from '../../shared/types/host-state-datum';
+import { queryNetworkBlockHeight } from '../../shared/helpers/time';
+import { AuthToken } from '../../shared/types/auth-token';
+import { CHANNEL_TOKEN_PREFIX } from '../../constant';
+import { getChannelIdByTokenName } from '../../shared/helpers/channel';
 
 @Injectable()
 export class ChannelService {
@@ -37,7 +41,7 @@ export class ChannelService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
-    @Inject(DbSyncService) private dbService: DbSyncService,
+    @Inject(KupoService) private kupoService: KupoService,
     @Inject(MithrilService) private mithrilService: MithrilService,
   ) {}
 
@@ -71,13 +75,27 @@ export class ChannelService {
       return height > 0n ? height : 1n;
     } catch {
       try {
-        const latestBlockNo = await this.dbService.queryLatestBlockNo();
+        const latestBlockNo = await queryNetworkBlockHeight(this.configService.get('ogmiosEndpoint'));
         const height = BigInt(latestBlockNo);
         return height > 0n ? height : 1n;
       } catch {
         return 1n;
       }
     }
+  }
+
+  private getChannelTokenPrefix(): { policyId: string; tokenNamePrefix: string; baseToken: AuthToken } {
+    const deploymentConfig = this.configService.get('deployment');
+    const baseToken = deploymentConfig.hostStateNFT as unknown as AuthToken;
+    const policyId = deploymentConfig.validators.mintChannelStt.scriptHash;
+    const sampleChannelTokenName = this.lucidService.generateTokenName(baseToken, CHANNEL_TOKEN_PREFIX, 0n);
+    const tokenNamePrefix = sampleChannelTokenName.slice(0, 48);
+    return { policyId, tokenNamePrefix, baseToken };
+  }
+
+  private getChannelIdFromMatchedTokenName(tokenName: string, baseToken: AuthToken): string {
+    const channelId = getChannelIdByTokenName(tokenName, baseToken, CHANNEL_TOKEN_PREFIX);
+    return channelId ? `${CHANNEL_ID_PREFIX}-${channelId}` : `${CHANNEL_ID_PREFIX}-`;
   }
 
   async queryChannels(request: QueryChannelsRequest): Promise<QueryChannelsResponse> {
@@ -92,9 +110,12 @@ export class ChannelService {
     let { 'pagination.offset': offset } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const [mintChannelPolicyId, sampleChannelTokenName] = this.lucidService.getChannelTokenUnit(0n);
-    const channelTokenPrefix = sampleChannelTokenName.slice(0, 48);
-    const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(mintChannelPolicyId, channelTokenPrefix);
+    const { policyId: mintChannelPolicyId, tokenNamePrefix: channelTokenPrefix, baseToken } = this.getChannelTokenPrefix();
+    const utxos = await this.kupoService.queryUtxosAtAddressByPolicyAndTokenPrefix(
+      this.configService.get('deployment').validators.spendChannel.address,
+      mintChannelPolicyId,
+      channelTokenPrefix,
+    );
 
     const identifiedChannels = await Promise.all(
       utxos.map(async (utxo) => {
@@ -127,14 +148,7 @@ export class ChannelService {
           /** port identifier */
           port_id: convertHex2String(channelDatumDecoded.port),
           /** channel identifier */
-          channel_id: (() => {
-            const tokenNameHex = utxo.assetsName;
-            if (!tokenNameHex || tokenNameHex.length < 48 + 2) return `${CHANNEL_ID_PREFIX}-`;
-            const postfixHex = tokenNameHex.slice(48);
-            const channelSequenceStr = Buffer.from(postfixHex, 'hex').toString('utf8');
-            if (!/^\d+$/.test(channelSequenceStr)) return `${CHANNEL_ID_PREFIX}-`;
-            return `${CHANNEL_ID_PREFIX}-${channelSequenceStr}`;
-          })(),
+          channel_id: this.getChannelIdFromMatchedTokenName(utxo.matchedTokenNames[0] ?? '', baseToken),
         };
 
         return identifiedChannel as unknown as IdentifiedChannel;
@@ -256,9 +270,12 @@ export class ChannelService {
     let { 'pagination.offset': offset } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const [mintChannelPolicyId, sampleChannelTokenName] = this.lucidService.getChannelTokenUnit(0n);
-    const channelTokenPrefix = sampleChannelTokenName.slice(0, 48);
-    const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(mintChannelPolicyId, channelTokenPrefix);
+    const { policyId: mintChannelPolicyId, tokenNamePrefix: channelTokenPrefix, baseToken } = this.getChannelTokenPrefix();
+    const utxos = await this.kupoService.queryUtxosAtAddressByPolicyAndTokenPrefix(
+      this.configService.get('deployment').validators.spendChannel.address,
+      mintChannelPolicyId,
+      channelTokenPrefix,
+    );
 
     const identifiedChannels = await Promise.all(
       utxos.map(async (utxo) => {
@@ -291,14 +308,7 @@ export class ChannelService {
           /** port identifier */
           port_id: convertHex2String(channelDatumDecoded.port),
           /** channel identifier */
-          channel_id: (() => {
-            const tokenNameHex = utxo.assetsName;
-            if (!tokenNameHex || tokenNameHex.length < 48 + 2) return `${CHANNEL_ID_PREFIX}-`;
-            const postfixHex = tokenNameHex.slice(48);
-            const channelSequenceStr = Buffer.from(postfixHex, 'hex').toString('utf8');
-            if (!/^\d+$/.test(channelSequenceStr)) return `${CHANNEL_ID_PREFIX}-`;
-            return `${CHANNEL_ID_PREFIX}-${channelSequenceStr}`;
-          })(),
+          channel_id: this.getChannelIdFromMatchedTokenName(utxo.matchedTokenNames[0] ?? '', baseToken),
         };
 
         return identifiedChannel as unknown as IdentifiedChannel;

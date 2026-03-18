@@ -691,12 +691,21 @@ pub async fn start_local_cardano_network(
         let docker_env = get_docker_env_vars();
         let docker_env_refs: Vec<(&str, &str)> =
             docker_env.iter().map(|(k, v)| (*k, v.as_str())).collect();
-        execute_script(
-            &cardano_dir,
-            "docker",
-            vec!["compose", "up", "-d", "cardano-db-sync"],
-            Some(docker_env_refs),
-        )?;
+        if network == config::CoreCardanoNetwork::Local {
+            execute_script(
+                &cardano_dir,
+                "docker",
+                vec![
+                    "compose",
+                    "up",
+                    "-d",
+                    "yaci-store-postgres",
+                    "yaci-store",
+                    "yaci-bridge-history-sync",
+                ],
+                Some(docker_env_refs),
+            )?;
+        }
     }
 
     log_or_show_progress(
@@ -809,6 +818,8 @@ pub async fn deploy_contracts(
             &optional_progress_bar,
         );
 
+        wait_for_local_offchain_wallet_utxos(project_root_path, &optional_progress_bar)?;
+
         let deployment_result = execute_script(
             project_root_path.join("cardano").join("offchain").as_path(),
             "deno",
@@ -903,6 +914,60 @@ fn restore_handler_json(
                         error
                     )
                 })?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn wait_for_local_offchain_wallet_utxos(
+    project_root_path: &Path,
+    optional_progress_bar: &Option<ProgressBar>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    const MAX_ATTEMPTS: u64 = 24;
+    const POLL_INTERVAL_SECS: u64 = 5;
+
+    let offchain_dir = project_root_path.join("cardano").join("offchain");
+
+    for attempt in 1..=MAX_ATTEMPTS {
+        let probe = execute_script(
+            offchain_dir.as_path(),
+            "deno",
+            vec![
+                "run",
+                "--env-file=.env.default",
+                "--allow-net",
+                "--allow-env",
+                "--allow-read",
+                "--allow-ffi",
+                "scripts/check-wallet-utxos.ts",
+            ],
+            None,
+        );
+
+        match probe {
+            Ok(_) => return Ok(()),
+            Err(error) if attempt < MAX_ATTEMPTS => {
+                log_or_show_progress(
+                    &format!(
+                        "Waiting for seeded deployer UTxOs to become visible to Kupmios (attempt {}/{})",
+                        attempt, MAX_ATTEMPTS
+                    ),
+                    optional_progress_bar,
+                );
+                verbose(&format!(
+                    "Wallet UTxO readiness probe failed on attempt {}: {}",
+                    attempt, error
+                ));
+                std::thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
+            }
+            Err(error) => {
+                return Err(format!(
+                    "Wallet UTxOs never became visible to the offchain Kupmios provider after {} attempts: {}",
+                    MAX_ATTEMPTS, error
+                )
+                .into())
             }
         }
     }
@@ -3013,7 +3078,7 @@ const CORE_HEALTH_SERVICES: [CoreHealthService; 8] = [
     },
     CoreHealthService {
         name: "postgres",
-        label: "PostgreSQL (db-sync)",
+        label: "History Backend Database",
         check_type: CoreHealthCheckType::Postgres,
     },
     CoreHealthService {
@@ -3141,17 +3206,19 @@ fn run_core_health_check(
                 }
             }
             CoreHealthCheckType::Postgres => {
-                let host = external_gateway_env_value(context, "DBSYNC_HOST")
+                let host = external_gateway_env_value(context, "HISTORY_DB_HOST")
+                    .or_else(|| external_gateway_env_value(context, "DBSYNC_HOST"))
                     .unwrap_or_else(|| "<unset>".to_string());
-                let port = external_gateway_env_value(context, "DBSYNC_PORT")
+                let port = external_gateway_env_value(context, "HISTORY_DB_PORT")
+                    .or_else(|| external_gateway_env_value(context, "DBSYNC_PORT"))
                     .unwrap_or_else(|| "<unset>".to_string());
                 if host == "<unset>" || port == "<unset>" {
                     (
                         false,
-                        "Missing DBSYNC_HOST/DBSYNC_PORT in cardano/gateway/.env".to_string(),
+                        "Missing HISTORY_DB_HOST/HISTORY_DB_PORT (or DBSYNC aliases) in cardano/gateway/.env".to_string(),
                     )
                 } else {
-                    check_external_host_port(host.as_str(), port.as_str(), "db-sync postgres")
+                    check_external_host_port(host.as_str(), port.as_str(), "history backend postgres")
                 }
             }
             CoreHealthCheckType::Kupo => external_gateway_env_value(context, "KUPO_ENDPOINT")
@@ -3541,7 +3608,7 @@ fn check_postgres_service() -> (bool, String) {
     if ready {
         (
             true,
-            "Database accepting connections on port 6432".to_string(),
+            "Gateway app database accepting connections on port 6432".to_string(),
         )
     } else {
         (true, "Container running".to_string())

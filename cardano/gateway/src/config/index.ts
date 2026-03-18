@@ -64,6 +64,7 @@ type DeploymentConfig = {
 
 interface Config {
   deployment: DeploymentConfig;
+  historyBackend: string;
   ogmiosEndpoint: string;
   kupoEndpoint: string;
   entrypointRestEndpoint: string;
@@ -102,6 +103,7 @@ export default (): Partial<Config> => {
   }
 
   return {
+    historyBackend: (process.env.HISTORY_BACKEND || 'dbsync').toLowerCase(),
     ogmiosEndpoint: process.env.OGMIOS_ENDPOINT,
     kupoEndpoint: process.env.KUPO_ENDPOINT,
     entrypointRestEndpoint: process.env.ENTRYPOINT_REST_ENDPOINT,

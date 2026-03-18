@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ConnectionDatum, decodeConnectionDatum } from 'src/shared/types/connection/connection-datum';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
+import { KupoService } from '../../shared/modules/kupo/kupo.service';
 
 import { CONNECTION_ID_PREFIX, CONNECTION_TOKEN_PREFIX, STATE_MAPPING_CONNECTION } from '../../constant';
 import {
@@ -20,7 +21,6 @@ import {
   stateFromJSON,
 } from '@plus/proto-types/build/ibc/core/connection/v1/connection';
 import { getConnectionIdByTokenName } from '../../shared/helpers/connection';
-import { DbSyncService } from './db-sync.service';
 import { validPagination } from '../helpers/helper';
 import { convertHex2String, fromHex } from '../../shared/helpers/hex';
 import { validQueryConnectionParam } from '../helpers/connection.validate';
@@ -29,6 +29,7 @@ import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exceptio
 import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { HostStateDatum } from '../../shared/types/host-state-datum';
+import { queryNetworkBlockHeight } from '../../shared/helpers/time';
 
 @Injectable()
 export class ConnectionService {
@@ -36,7 +37,7 @@ export class ConnectionService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
-    @Inject(DbSyncService) private dbService: DbSyncService,
+    @Inject(KupoService) private kupoService: KupoService,
     @Inject(MithrilService) private mithrilService: MithrilService,
   ) {}
 
@@ -69,7 +70,7 @@ export class ConnectionService {
     }
 
     try {
-      const latestBlockNo = await this.dbService.queryLatestBlockNo();
+      const latestBlockNo = await queryNetworkBlockHeight(this.configService.get('ogmiosEndpoint'));
       const height = BigInt(latestBlockNo);
       return height > 0n ? height : 1n;
     } catch {
@@ -99,7 +100,8 @@ export class ConnectionService {
     const sampleConnectionTokenName = this.lucidService.generateTokenName(baseToken, CONNECTION_TOKEN_PREFIX, 0n);
     const connectionTokenPrefix = sampleConnectionTokenName.slice(0, 48);
 
-    const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(
+    const utxos = await this.kupoService.queryUtxosAtAddressByPolicyAndTokenPrefix(
+      deploymentConfig.validators.spendConnection.address,
       mintConnScriptHash,
       connectionTokenPrefix,
     );
@@ -110,8 +112,9 @@ export class ConnectionService {
           utxo.datum!,
           this.lucidService.LucidImporter,
         );
+        const tokenName = utxo.matchedTokenNames[0] ?? '';
         const identifiedConnection = {
-          id: `${CONNECTION_ID_PREFIX}-${getConnectionIdByTokenName(utxo.assetsName, baseToken, CONNECTION_TOKEN_PREFIX)}`,
+          id: `${CONNECTION_ID_PREFIX}-${getConnectionIdByTokenName(tokenName, baseToken, CONNECTION_TOKEN_PREFIX)}`,
           /** client associated with this connection. */
           client_id: convertHex2String(connDatumDecoded.state.client_id),
           /**

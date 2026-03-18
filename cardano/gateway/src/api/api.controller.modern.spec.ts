@@ -6,6 +6,7 @@ import { MsgTransfer } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import { DenomTraceService } from '~@/query/services/denom-trace.service';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { TransferPlannerService } from './transfer-planner.service';
+import { BridgeManifestService } from '~@/query/services/bridge-manifest.service';
 
 describe('ApiController (modern)', () => {
   let controller: ApiController;
@@ -25,6 +26,9 @@ describe('ApiController (modern)', () => {
   };
   let transferPlannerServiceMock: {
     planTransferRoute: jest.Mock;
+  };
+  let bridgeManifestServiceMock: {
+    getBridgeManifest: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -47,6 +51,9 @@ describe('ApiController (modern)', () => {
     transferPlannerServiceMock = {
       planTransferRoute: jest.fn(),
     };
+    bridgeManifestServiceMock = {
+      getBridgeManifest: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ApiController],
@@ -56,6 +63,7 @@ describe('ApiController (modern)', () => {
         { provide: DenomTraceService, useValue: denomTraceServiceMock },
         { provide: LocalOsmosisSwapPlannerService, useValue: swapPlannerServiceMock },
         { provide: TransferPlannerService, useValue: transferPlannerServiceMock },
+        { provide: BridgeManifestService, useValue: bridgeManifestServiceMock },
       ],
     }).compile();
 
@@ -161,6 +169,19 @@ describe('ApiController (modern)', () => {
       toChainId: 'entrypoint',
       tokenDenom: 'ibc/ABC',
     });
+  });
+
+  it('returns the public bridge manifest', async () => {
+    bridgeManifestServiceMock.getBridgeManifest.mockReturnValue({
+      schema_version: 1,
+      deployment_id: 'cardano-devnet:policy.token',
+    });
+
+    await expect(controller.getBridgeManifest()).resolves.toEqual({
+      schema_version: 1,
+      deployment_id: 'cardano-devnet:policy.token',
+    });
+    expect(bridgeManifestServiceMock.getBridgeManifest).toHaveBeenCalledWith();
   });
 
   it('propagates buildTransferMsg errors from PacketService', async () => {

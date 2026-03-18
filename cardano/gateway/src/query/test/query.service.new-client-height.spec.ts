@@ -1,13 +1,13 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GrpcNotFoundException } from '~@/exception/grpc_exceptions';
-import { DbSyncService } from '../services/db-sync.service';
 import { DenomTraceService } from '../services/denom-trace.service';
 import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
+import { HistoryService } from '../services/history.service';
 
 describe('QueryService new client height strictness', () => {
   let service: QueryService;
@@ -65,7 +65,7 @@ describe('QueryService new client height strictness', () => {
         decodeDatum: jest.fn(),
       } as unknown as LucidService,
       {} as KupoService,
-      {} as DbSyncService,
+      {} as HistoryService,
       {} as MiniProtocalsService,
       mithrilServiceMock as unknown as MithrilService,
       {} as DenomTraceService,
