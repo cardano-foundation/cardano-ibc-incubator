@@ -13,7 +13,7 @@ import { ApiModule } from './api/api.module';
 import { MithrilModule } from './shared/modules/mithril/mithril.module';
 import { TreeInitService } from './shared/services/tree-init.service';
 import { HealthModule } from './health/health.module';
-import { requireSttDeploymentConfig } from './config/deployment.validation';
+import { loadBridgeConfigFromEnv } from './config/bridge-manifest';
 
 @Module({
   imports: [
@@ -24,13 +24,9 @@ import { requireSttDeploymentConfig } from './config/deployment.validation';
         configuration,
         () => {
           const fs = require('fs');
-          const handlerPath = process.env.HANDLER_JSON_PATH || '../deployment/offchain/handler.json';
-          const handlerJson = JSON.parse(fs.readFileSync(handlerPath, 'utf8'));
-          // Fail fast with a clear error if the deployment config is not STT-enabled.
-          // This avoids confusing runtime failures when `HANDLER_JSON_PATH` points to an
-          // older/partial `handler.json` missing required STT fields.
-          requireSttDeploymentConfig(handlerJson);
-          return { deployment: handlerJson };
+          // Manifest and handler.json startup intentionally converge here so
+          // the rest of the application always receives one normalized config shape.
+          return loadBridgeConfigFromEnv(process.env, fs);
         },
       ],
       isGlobal: true,
