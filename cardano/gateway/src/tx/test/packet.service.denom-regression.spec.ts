@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { convertHex2String, convertString2Hex, hashSHA256, hashSha3_256 } from '@shared/helpers/hex';
 import { DenomTraceService } from '../../query/services/denom-trace.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
-import { IbcTreePendingUpdatesService } from '../../shared/services/ibc-tree-pending-updates.service';
 import { PacketService } from '../packet.service';
 
 jest.mock('../../shared/types/connection/verify-proof-redeemer', () => ({
@@ -69,7 +68,6 @@ describe('PacketService denom regression coverage', () => {
       configServiceMock,
       lucidServiceMock as unknown as LucidService,
       denomTraceServiceMock as unknown as DenomTraceService,
-      {} as IbcTreePendingUpdatesService,
       {} as any,
     );
 
@@ -246,7 +244,6 @@ describe('PacketService denom regression coverage', () => {
       configServiceMock,
       lucidServiceMock as unknown as LucidService,
       denomTraceServiceMock as unknown as DenomTraceService,
-      {} as IbcTreePendingUpdatesService,
       {} as any,
     );
 
@@ -319,7 +316,7 @@ describe('PacketService denom regression coverage', () => {
       memo: '',
     };
 
-    await service.buildUnsignedAcknowlegementPacketTx(
+    const result = await service.buildUnsignedAcknowlegementPacketTx(
       {
         channelId: 'channel-7',
         packetSequence,
@@ -419,7 +416,6 @@ describe('PacketService denom regression coverage', () => {
       configServiceMock,
       lucidServiceMock as unknown as LucidService,
       denomTraceServiceMock as unknown as DenomTraceService,
-      {} as IbcTreePendingUpdatesService,
       {} as any,
     );
 
@@ -483,7 +479,7 @@ describe('PacketService denom regression coverage', () => {
       return {};
     });
 
-    await service.buildUnsignedAcknowlegementPacketTx(
+    const result = await service.buildUnsignedAcknowlegementPacketTx(
       {
         channelId: 'channel-7',
         packetSequence,
@@ -513,7 +509,11 @@ describe('PacketService denom regression coverage', () => {
         denomToken: 'lovelace',
       }),
     );
-    expect(refreshWalletContextSpy).toHaveBeenNthCalledWith(2, 'addr_test1operator', 'acknowledgementPacket(unescrow)', undefined);
+    expect(result.walletSelection).toEqual({
+      context: 'acknowledgementPacket(unescrow)',
+      excludeAssetUnit: undefined,
+    });
+    expect(refreshWalletContextSpy).not.toHaveBeenCalled();
     expect(lucidServiceMock.createUnsignedAckPacketMintTx).not.toHaveBeenCalled();
     expect(lucidServiceMock.createUnsignedAckPacketSucceedTx).not.toHaveBeenCalled();
   });
@@ -579,7 +579,6 @@ describe('PacketService denom regression coverage', () => {
       configServiceMock,
       lucidServiceMock as unknown as LucidService,
       denomTraceServiceMock as unknown as DenomTraceService,
-      {} as IbcTreePendingUpdatesService,
       {} as any,
     );
 

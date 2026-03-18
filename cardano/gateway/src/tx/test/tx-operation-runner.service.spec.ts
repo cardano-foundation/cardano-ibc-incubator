@@ -4,8 +4,40 @@ import { TxOperationRunnerService } from '../tx-operation-runner.service';
 
 describe('TxOperationRunnerService', () => {
   const makeService = () => {
+    const walletSelectionState = {
+      nextScopeId: 0,
+      activeScopeId: null as number | null,
+      explicitSelectionScopeId: null as number | null,
+    };
+    const lucidService = {
+      beginWalletSelectionScope: jest.fn(() => {
+        const scopeId = ++walletSelectionState.nextScopeId;
+        walletSelectionState.activeScopeId = scopeId;
+        walletSelectionState.explicitSelectionScopeId = null;
+        return scopeId;
+      }),
+      assertWalletSelectionScopeSatisfied: jest.fn((scopeId: number, operationName: string) => {
+        if (
+          walletSelectionState.activeScopeId !== scopeId ||
+          walletSelectionState.explicitSelectionScopeId !== scopeId
+        ) {
+          throw new Error(`${operationName} failed: no explicit address-backed wallet context was selected before complete()`);
+        }
+      }),
+      endWalletSelectionScope: jest.fn((scopeId: number) => {
+        if (walletSelectionState.activeScopeId === scopeId) {
+          walletSelectionState.activeScopeId = null;
+          walletSelectionState.explicitSelectionScopeId = null;
+        }
+      }),
+      selectWalletFromAddress: jest.fn(() => {
+        walletSelectionState.explicitSelectionScopeId = walletSelectionState.activeScopeId;
+      }),
+    } as any;
     const walletContextService = {
-      selectWalletFromAddressWithRetry: jest.fn(),
+      selectWalletFromAddressWithRetry: jest.fn(async () => {
+        lucidService.selectWalletFromAddress();
+      }),
     } as any;
     const txEventsService = {
       register: jest.fn(),
@@ -15,6 +47,7 @@ describe('TxOperationRunnerService', () => {
     } as any;
 
     const service = new TxOperationRunnerService(
+      lucidService,
       walletContextService,
       txEventsService,
       ibcTreePendingUpdatesService,
@@ -22,6 +55,7 @@ describe('TxOperationRunnerService', () => {
 
     return {
       service,
+      lucidService,
       walletContextService,
       txEventsService,
       ibcTreePendingUpdatesService,
@@ -31,6 +65,7 @@ describe('TxOperationRunnerService', () => {
   it('completes tx and registers pending update/events for refresh wallet mode', async () => {
     const {
       service,
+      lucidService,
       walletContextService,
       txEventsService,
       ibcTreePendingUpdatesService,
@@ -74,6 +109,9 @@ describe('TxOperationRunnerService', () => {
       'addr_test1xyz',
       'createClient',
     );
+    expect(lucidService.beginWalletSelectionScope).toHaveBeenCalledTimes(1);
+    expect(lucidService.assertWalletSelectionScopeSatisfied).toHaveBeenCalledTimes(1);
+    expect(lucidService.endWalletSelectionScope).toHaveBeenCalledTimes(1);
     expect(complete).toHaveBeenCalledWith({
       localUPLCEval: false,
       setCollateral: TRANSACTION_SET_COLLATERAL,
@@ -91,12 +129,15 @@ describe('TxOperationRunnerService', () => {
   it('runs custom wallet hook and returns extra response fields', async () => {
     const {
       service,
+      lucidService,
       walletContextService,
       txEventsService,
       ibcTreePendingUpdatesService,
     } = makeService();
 
-    const customWalletHook = jest.fn().mockResolvedValue(undefined);
+    const customWalletHook = jest.fn().mockImplementation(async () => {
+      lucidService.selectWalletFromAddress();
+    });
     const txBuilder = {
       complete: jest.fn().mockResolvedValue({
         toCBOR: () => 'deadbeef',
@@ -128,8 +169,31 @@ describe('TxOperationRunnerService', () => {
     });
   });
 
-  it('propagates complete() errors', async () => {
+  it('fails hard when no explicit wallet selection happened before complete', async () => {
     const { service } = makeService();
+
+    const txBuilder = {
+      complete: jest.fn(),
+    } as any;
+
+    await expect(
+      service.run({
+        operationName: 'recvPacket',
+        unsignedTx: txBuilder,
+        validity: {
+          apply: () => txBuilder,
+        },
+        wallet: {
+          mode: 'custom_before_complete',
+          run: async () => {},
+        },
+      }),
+    ).rejects.toThrow('recvPacket failed: no explicit address-backed wallet context was selected before complete()');
+    expect(txBuilder.complete).not.toHaveBeenCalled();
+  });
+
+  it('propagates complete() errors after explicit wallet selection', async () => {
+    const { service, lucidService } = makeService();
 
     const expectedError = new Error('completion failed');
     const txBuilder = {
@@ -145,7 +209,9 @@ describe('TxOperationRunnerService', () => {
         },
         wallet: {
           mode: 'custom_before_complete',
-          run: async () => {},
+          run: async () => {
+            lucidService.selectWalletFromAddress();
+          },
         },
       }),
     ).rejects.toBe(expectedError);

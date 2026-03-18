@@ -3,12 +3,13 @@ import { TxBuilder } from '@lucid-evolution/lucid';
 
 import { TRANSACTION_SET_COLLATERAL } from '~@/config/constant.config';
 
+import { LucidService } from '../shared/modules/lucid/lucid.service';
 import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 
 import { GatewayEvent, TxEventsService } from './tx-events.service';
 import { WalletContextService } from './wallet-context.service';
 
-type CompletedUnsignedTx = {
+export type CompletedUnsignedTx = {
   toCBOR(): string;
   toHash(): string;
 };
@@ -33,12 +34,20 @@ export type TxCompleteOptions = {
   setCollateral?: bigint;
 };
 
+export type TxCompleteRetryPolicy = {
+  maxAttempts: number;
+  isRetryable: (error: unknown) => boolean;
+  getDelayMs: (attempt: number) => number;
+  onRetry?: (error: unknown, attempt: number, maxAttempts: number, delayMs: number) => Promise<void> | void;
+};
+
 export type TxOperationPlan<TExtraResponseFields = Record<string, never>> = {
   operationName: string;
   unsignedTx: TxBuilder;
   validity: TxValidityPolicy;
   wallet: TxWalletInstruction;
   completeOptions?: TxCompleteOptions;
+  completeRetry?: TxCompleteRetryPolicy;
   pendingTreeUpdate?: PendingTreeUpdate;
   syntheticEvents?: GatewayEvent[];
   extraResponseFields?: TExtraResponseFields;
@@ -48,12 +57,16 @@ export type TxOperationRunnerResult<TExtraResponseFields = Record<string, never>
   unsignedTxHash: string;
   unsignedTxCbor: string;
   unsignedTxBytes: Uint8Array;
+  completedUnsignedTx: CompletedUnsignedTx;
   extraResponseFields?: TExtraResponseFields;
 };
 
 @Injectable()
 export class TxOperationRunnerService {
+  private completionChain: Promise<void> = Promise.resolve();
+
   constructor(
+    private readonly lucidService: LucidService,
     private readonly walletContextService: WalletContextService,
     private readonly txEventsService: TxEventsService,
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
@@ -63,13 +76,9 @@ export class TxOperationRunnerService {
     plan: TxOperationPlan<TExtraResponseFields>,
   ): Promise<TxOperationRunnerResult<TExtraResponseFields>> {
     const txWithValidity = plan.validity.apply(plan.unsignedTx);
-    await this.applyWalletInstruction(plan.wallet);
-
-    const completedUnsignedTx = (await txWithValidity.complete({
-      localUPLCEval: false,
-      setCollateral: TRANSACTION_SET_COLLATERAL,
-      ...(plan.completeOptions || {}),
-    })) as CompletedUnsignedTx;
+    const completedUnsignedTx = await this.withCompletionLock(() =>
+      this.completeWithExplicitWalletSelection(txWithValidity, plan),
+    );
 
     const unsignedTxCbor = completedUnsignedTx.toCBOR();
     const unsignedTxHash = completedUnsignedTx.toHash();
@@ -87,8 +96,67 @@ export class TxOperationRunnerService {
       unsignedTxHash,
       unsignedTxCbor,
       unsignedTxBytes,
+      completedUnsignedTx,
       extraResponseFields: plan.extraResponseFields,
     };
+  }
+
+  private async withCompletionLock<T>(fn: () => Promise<T>): Promise<T> {
+    const previous = this.completionChain;
+    let release!: () => void;
+    this.completionChain = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await previous;
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  }
+
+  private async completeWithExplicitWalletSelection<TExtraResponseFields>(
+    txWithValidity: TxBuilder,
+    plan: TxOperationPlan<TExtraResponseFields>,
+  ): Promise<CompletedUnsignedTx> {
+    const maxAttempts = Math.max(1, plan.completeRetry?.maxAttempts ?? 1);
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const walletScopeId = this.lucidService.beginWalletSelectionScope();
+      try {
+        await this.applyWalletInstruction(plan.wallet);
+        this.lucidService.assertWalletSelectionScopeSatisfied(walletScopeId, plan.operationName);
+
+        return (await txWithValidity.complete({
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+          ...(plan.completeOptions || {}),
+        })) as CompletedUnsignedTx;
+      } catch (error) {
+        lastError = error;
+        const retryPolicy = plan.completeRetry;
+        const shouldRetry =
+          retryPolicy &&
+          attempt < maxAttempts &&
+          retryPolicy.isRetryable(error);
+
+        if (!shouldRetry) {
+          throw error;
+        }
+
+        const delayMs = Math.max(0, retryPolicy.getDelayMs(attempt));
+        await retryPolicy.onRetry?.(error, attempt, maxAttempts, delayMs);
+        if (delayMs > 0) {
+          await this.sleep(delayMs);
+        }
+      } finally {
+        this.lucidService.endWalletSelectionScope(walletScopeId);
+      }
+    }
+
+    throw lastError;
   }
 
   private async applyWalletInstruction(wallet: TxWalletInstruction): Promise<void> {
@@ -98,5 +166,9 @@ export class TxOperationRunnerService {
     }
 
     await wallet.run();
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

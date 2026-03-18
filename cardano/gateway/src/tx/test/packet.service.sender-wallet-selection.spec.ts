@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { convertString2Hex } from '@shared/helpers/hex';
 import { DenomTraceService } from '../../query/services/denom-trace.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
-import { IbcTreePendingUpdatesService } from '../../shared/services/ibc-tree-pending-updates.service';
 import { PacketService } from '../packet.service';
 
 describe('PacketService sender wallet selection for escrow', () => {
@@ -67,7 +66,6 @@ describe('PacketService sender wallet selection for escrow', () => {
       configServiceMock,
       lucidServiceMock as unknown as LucidService,
       {} as DenomTraceService,
-      {} as IbcTreePendingUpdatesService,
       {} as any,
     );
 

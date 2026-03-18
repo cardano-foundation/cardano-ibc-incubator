@@ -1,4 +1,4 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { bech32 } from 'bech32';
 import {
@@ -90,7 +90,7 @@ type ReferenceScripts = {
   mintConnection: UTxO;
   spendConnection: UTxO;
   spendClient: UTxO;
-  spendMockModule: UTxO;
+  spendMockModule?: UTxO;
   spendTransferModule: UTxO;
   verifyProof: UTxO;
   hostStateStt: UTxO;
@@ -104,15 +104,22 @@ type ReferenceScripts = {
 };
 
 @Injectable()
-export class LucidService {
-  private readonly referenceScripts: ReferenceScripts;
+export class LucidService implements OnModuleInit {
+  private readonly referenceScriptOutRefs: {
+    [K in keyof ReferenceScripts]: Pick<UTxO, 'txHash' | 'outputIndex'> | undefined;
+  };
+  private referenceScripts!: ReferenceScripts;
+  private walletSelectionScopeCounter = 0;
+  private activeWalletSelectionScopeId: number | null = null;
+  private explicitWalletSelectionForScopeId: number | null = null;
+  private explicitWalletSelectionAddress: string | null = null;
   constructor(
     @Inject(LUCID_IMPORTER) public LucidImporter: typeof import('@lucid-evolution/lucid'),
     @Inject(LUCID_CLIENT) public lucid: LucidEvolution,
     private configService: ConfigService,
   ) {
     const deploymentConfig = this.configService.get('deployment');
-    this.referenceScripts = {
+    this.referenceScriptOutRefs = {
       spendHandler: deploymentConfig.validators.spendHandler.refUtxo,
       spendConnection: deploymentConfig.validators.spendConnection.refUtxo,
       spendChannel: deploymentConfig.validators.spendChannel.refUtxo,
@@ -133,6 +140,63 @@ export class LucidService {
       timeoutPacket: deploymentConfig.validators.spendChannel.refValidator.timeout_packet.refUtxo,
     };
   }
+
+  async onModuleInit(): Promise<void> {
+    this.referenceScripts = await this.loadReferenceScripts();
+  }
+
+  private async loadReferenceScripts(): Promise<ReferenceScripts> {
+    const entries = await Promise.all(
+      (Object.entries(this.referenceScriptOutRefs) as Array<
+        [keyof ReferenceScripts, Pick<UTxO, 'txHash' | 'outputIndex'> | undefined]
+      >)
+        .filter(([, outRef]) => !!outRef)
+        .map(async ([label, outRef]) => {
+        const utxo = await this.resolveReferenceScriptUtxo(label, outRef);
+        return [label, utxo] as const;
+        }),
+    );
+
+    return Object.fromEntries(entries) as ReferenceScripts;
+  }
+
+  private async resolveReferenceScriptUtxo(
+    label: keyof ReferenceScripts,
+    outRef: Pick<UTxO, 'txHash' | 'outputIndex'> | undefined,
+  ): Promise<UTxO> {
+    if (!outRef) {
+      throw new Error(`Missing reference script out-ref for "${String(label)}"`);
+    }
+
+    const maxAttempts = 30;
+    const retryDelayMs = 1000;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const utxos = await this.lucid.utxosByOutRef([
+        {
+          txHash: outRef.txHash,
+          outputIndex: outRef.outputIndex,
+        },
+      ]);
+
+      const utxo = utxos.find((candidate) => {
+        return candidate.txHash === outRef.txHash && candidate.outputIndex === outRef.outputIndex;
+      });
+
+      if (utxo?.address) {
+        return utxo;
+      }
+
+      if (attempt < maxAttempts) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+
+    throw new Error(
+      `Unable to resolve reference script UTxO "${String(label)}" at ${outRef.txHash}#${outRef.outputIndex}`,
+    );
+  }
+
   // ========================== Public functions ==========================
   // ========================== UTXO-related methods ==========================
   private normalizeAddressOrCredential(addressOrCredential: string): string {
@@ -280,6 +344,39 @@ export class LucidService {
   public selectWalletFromAddress(addressOrCredential: string, utxos: UTxO[]): void {
     const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
     this.lucid.selectWallet.fromAddress(normalizedAddress, utxos);
+    if (this.activeWalletSelectionScopeId !== null) {
+      this.explicitWalletSelectionForScopeId = this.activeWalletSelectionScopeId;
+      this.explicitWalletSelectionAddress = normalizedAddress;
+    }
+  }
+
+  public beginWalletSelectionScope(): number {
+    const scopeId = ++this.walletSelectionScopeCounter;
+    this.activeWalletSelectionScopeId = scopeId;
+    this.explicitWalletSelectionForScopeId = null;
+    this.explicitWalletSelectionAddress = null;
+    return scopeId;
+  }
+
+  public assertWalletSelectionScopeSatisfied(scopeId: number, operationName: string): void {
+    if (
+      this.activeWalletSelectionScopeId !== scopeId ||
+      this.explicitWalletSelectionForScopeId !== scopeId ||
+      !this.explicitWalletSelectionAddress
+    ) {
+      throw new GrpcInternalException(
+        `${operationName} failed: no explicit address-backed wallet context was selected before complete()`,
+      );
+    }
+  }
+
+  public endWalletSelectionScope(scopeId: number): void {
+    if (this.activeWalletSelectionScopeId !== scopeId) {
+      return;
+    }
+    this.activeWalletSelectionScopeId = null;
+    this.explicitWalletSelectionForScopeId = null;
+    this.explicitWalletSelectionAddress = null;
   }
 
 
@@ -564,7 +661,7 @@ export class LucidService {
     constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: TxBuilder = this.txFromWallet(constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
 
     // Keep the datum bytes exactly as they exist on-chain. This avoids any chance
@@ -607,7 +704,7 @@ export class LucidService {
   ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
-    const tx: TxBuilder = this.txFromWallet(constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
 
     console.log('[DEBUG TX] ========== CREATE CLIENT TRANSACTION ==========');
     console.log('[DEBUG TX] HostState NFT:', hostStateNFT);
@@ -676,7 +773,7 @@ export class LucidService {
     constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: TxBuilder = this.txFromWallet(constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...hostStateUtxo,
@@ -723,7 +820,7 @@ export class LucidService {
     constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: TxBuilder = this.txFromWallet(constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...hostStateUtxo,
@@ -758,7 +855,7 @@ export class LucidService {
   }
   public createUnsignedConnectionOpenAckTransaction(dto: UnsignedConnectionOpenAckDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
@@ -814,7 +911,7 @@ export class LucidService {
     constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: TxBuilder = this.txFromWallet(constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...hostStateUtxo,
@@ -854,7 +951,7 @@ export class LucidService {
   }
   public createUnsignedChannelOpenInitTransaction(dto: UnsignedChannelOpenInitDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
@@ -916,7 +1013,7 @@ export class LucidService {
     constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: TxBuilder = this.txFromWallet(constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...hostStateUtxo,
@@ -930,7 +1027,7 @@ export class LucidService {
       .readFrom([
         this.referenceScripts.spendHandler,
         this.referenceScripts.mintChannel,
-        this.referenceScripts.spendMockModule,
+        this.referenceScripts.spendMockModule!,
         this.referenceScripts.hostStateStt,
       ])
       .mintAssets(
@@ -959,7 +1056,7 @@ export class LucidService {
 
   public createUnsignedChannelOpenAckTransaction(dto: UnsignedChannelOpenAckDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
@@ -1016,7 +1113,7 @@ export class LucidService {
   }
   public createUnsignedChannelCloseInitTransaction(dto: UnsignedChannelCloseInitDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...dto.hostStateUtxo,
@@ -1026,7 +1123,7 @@ export class LucidService {
 
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.referenceScripts.spendMockModule,
+      this.referenceScripts.spendMockModule!,
       this.referenceScripts.channelCloseInit,
       this.referenceScripts.hostStateStt,
     ])
@@ -1087,7 +1184,7 @@ export class LucidService {
     constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: TxBuilder = this.txFromWallet(constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
       ...hostStateUtxo,
@@ -1095,7 +1192,7 @@ export class LucidService {
       datumHash: undefined,
     };
 
-    tx.readFrom([this.referenceScripts.spendChannel, this.referenceScripts.spendMockModule, this.referenceScripts.hostStateStt])
+    tx.readFrom([this.referenceScripts.spendChannel, this.referenceScripts.spendMockModule!, this.referenceScripts.hostStateStt])
 
       .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
       .collectFrom([channelUtxo], encodedSpendChannelRedeemer)
@@ -1141,7 +1238,7 @@ export class LucidService {
       datumHash: undefined,
     };
 
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
@@ -1205,7 +1302,7 @@ export class LucidService {
       datum: dto.hostStateUtxo.datum,
       datumHash: undefined,
     };
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
 
     tx.readFrom([
       this.referenceScripts.spendChannel,
@@ -1261,7 +1358,7 @@ export class LucidService {
       datumHash: undefined,
     };
 
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
@@ -1331,7 +1428,7 @@ export class LucidService {
       datumHash: undefined,
     };
 
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
@@ -1393,7 +1490,7 @@ export class LucidService {
       datumHash: undefined,
     };
 
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
@@ -1457,7 +1554,7 @@ export class LucidService {
       datumHash: undefined,
     };
 
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
@@ -1540,9 +1637,7 @@ export class LucidService {
     if (!dto.walletUtxos || dto.walletUtxos.length === 0) {
       throw new GrpcInternalException('Sender wallet UTxOs are required for escrow send packet');
     }
-    // Build the tx under the sender's address context for deterministic coin selection.
-    this.selectWalletFromAddress(dto.senderAddress, dto.walletUtxos);
-    const tx: TxBuilder = this.lucid.newTx();
+    const tx: TxBuilder = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
@@ -1596,14 +1691,7 @@ export class LucidService {
       datum: dto.hostStateUtxo.datum,
       datumHash: undefined,
     };
-    let tx: TxBuilder;
-    if (dto.walletUtxos && dto.walletUtxos.length > 0) {
-      const normalizedAddress = this.normalizeAddressOrCredential(dto.senderAddress);
-      this.lucid.selectWallet.fromAddress(normalizedAddress, dto.walletUtxos);
-      tx = this.lucid.newTx();
-    } else {
-      tx = this.txFromWallet(dto.constructedAddress);
-    }
+    const tx = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
@@ -1665,7 +1753,7 @@ export class LucidService {
       datum: dto.hostStateUtxo.datum,
       datumHash: undefined,
     };
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
@@ -1737,7 +1825,7 @@ export class LucidService {
       datum: dto.hostStateUtxo.datum,
       datumHash: undefined,
     };
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
@@ -1794,7 +1882,7 @@ export class LucidService {
   }
   public createUnsignedTimeoutRefreshTx(dto: UnsignedTimeoutRefreshDto): TxBuilder {
     const deploymentConfig = this.configService.get('deployment');
-    const tx: TxBuilder = this.txFromWallet(dto.constructedAddress);
+    const tx: TxBuilder = this.newTxBuilder();
 
     tx.readFrom([this.referenceScripts.spendChannel])
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
@@ -1830,13 +1918,7 @@ export class LucidService {
     return fullName;
   };
 
-  private txFromWallet(constructedAddress: string, preserveSelectedWallet = false): TxBuilder {
-    // Use the deployer's private key to build transactions
-    // Hermes must be configured with the same key (DEPLOYER_SK) to sign correctly
-    const deployerSk = this.configService.get('deployerSk');
-    if (deployerSk && !preserveSelectedWallet) {
-      this.lucid.selectWallet.fromPrivateKey(deployerSk);
-    }
+  private newTxBuilder(): TxBuilder {
     return this.lucid.newTx();
   }
 }
