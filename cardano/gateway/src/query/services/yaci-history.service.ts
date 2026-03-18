@@ -7,7 +7,7 @@ import { CLIENT_PREFIX } from '../../constant';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { UtxoDto } from '../dtos/utxo.dto';
 import { TxDto } from '../dtos/tx.dto';
-import { HistoryService } from './history.service';
+import { HistoryService, HistoryTxEvidence, HistoryTxRedeemer } from './history.service';
 
 type BridgeUtxoHistoryRow = {
   address: string;
@@ -28,6 +28,23 @@ type BridgeTxHistoryRow = {
   gas_fee: string | number;
   tx_size: string | number;
   block_no: string | number;
+};
+
+type BridgeTxEvidenceRow = {
+  tx_hash: string;
+  block_no: string | number;
+  block_hash?: string | null;
+  slot_no?: string | number | null;
+  tx_index: string | number;
+  tx_cbor_hex: string;
+  tx_body_cbor_hex: string;
+  redeemers_json: HistoryTxRedeemer[] | null;
+  host_state_output_index?: string | number | null;
+  host_state_datum?: string | null;
+  host_state_datum_hash?: string | null;
+  host_state_root?: string | null;
+  gas_fee?: string | number | null;
+  tx_size?: string | number | null;
 };
 
 @Injectable()
@@ -196,6 +213,34 @@ export class YaciHistoryService implements HistoryService {
     return this.mapTxRow(rows[0]);
   }
 
+  async findTransactionEvidenceByHash(hash: string): Promise<HistoryTxEvidence | null> {
+    const query = `
+      SELECT
+        tx_hash,
+        block_no,
+        block_hash,
+        slot_no,
+        tx_index,
+        encode(tx_cbor, 'hex') AS tx_cbor_hex,
+        encode(tx_body_cbor, 'hex') AS tx_body_cbor_hex,
+        redeemers_json,
+        host_state_output_index,
+        host_state_datum,
+        host_state_datum_hash,
+        host_state_root,
+        gas_fee,
+        tx_size
+      FROM bridge_tx_evidence
+      WHERE tx_hash = $1
+      LIMIT 1
+    `;
+    const rows = await this.entityManager.query(query, [hash.toLowerCase()]);
+    if (rows.length <= 0) {
+      return null;
+    }
+    return this.mapTxEvidenceRow(rows[0]);
+  }
+
   private mapUtxoRow(row: BridgeUtxoHistoryRow): UtxoDto {
     return {
       address: row.address,
@@ -218,6 +263,28 @@ export class YaciHistoryService implements HistoryService {
       gas_fee: Number(row.gas_fee),
       tx_size: Number(row.tx_size),
       height: Number(row.block_no),
+    };
+  }
+
+  private mapTxEvidenceRow(row: BridgeTxEvidenceRow): HistoryTxEvidence {
+    return {
+      txHash: row.tx_hash,
+      blockNo: Number(row.block_no),
+      blockHash: row.block_hash ?? null,
+      slotNo: row.slot_no === undefined || row.slot_no === null ? null : BigInt(row.slot_no),
+      txIndex: Number(row.tx_index),
+      txCborHex: row.tx_cbor_hex,
+      txBodyCborHex: row.tx_body_cbor_hex,
+      redeemers: Array.isArray(row.redeemers_json) ? row.redeemers_json : [],
+      hostStateOutputIndex:
+        row.host_state_output_index === undefined || row.host_state_output_index === null
+          ? null
+          : Number(row.host_state_output_index),
+      hostStateDatum: row.host_state_datum ?? null,
+      hostStateDatumHash: row.host_state_datum_hash ?? null,
+      hostStateRoot: row.host_state_root ?? null,
+      gasFee: row.gas_fee === undefined || row.gas_fee === null ? null : Number(row.gas_fee),
+      txSize: row.tx_size === undefined || row.tx_size === null ? null : Number(row.tx_size),
     };
   }
 }

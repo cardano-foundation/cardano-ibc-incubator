@@ -827,7 +827,6 @@ fn validate_external_gateway_env(gateway_env: &Path) -> Result<(), Box<dyn std::
         ("GATEWAY_DB_PORT", vec!["GATEWAY_DB_PORT"]),
         ("KUPO_ENDPOINT", vec!["KUPO_ENDPOINT"]),
         ("OGMIOS_ENDPOINT", vec!["OGMIOS_ENDPOINT"]),
-        ("BLOCKFROST_API_URL", vec!["BLOCKFROST_API_URL"]),
     ];
 
     let missing = required_groups
@@ -856,7 +855,6 @@ fn validate_external_gateway_env(gateway_env: &Path) -> Result<(), Box<dyn std::
         ("GATEWAY_DB_HOST", "postgres"),
         ("KUPO_ENDPOINT", "http://kupo:1442"),
         ("OGMIOS_ENDPOINT", "http://cardano-node-ogmios:1337"),
-        ("BLOCKFROST_API_URL", "http://cardano-tx-cbor-api:8080"),
     ];
     let still_local = disallowed_local_defaults
         .iter()
@@ -950,7 +948,6 @@ fn write_gateway_env_for_network(
     match network {
         config::CoreCardanoNetwork::Local => {
             let local_gateway_defaults = [
-                ("HISTORY_BACKEND", "yaci"),
                 ("HISTORY_DB_HOST", "yaci-store-postgres"),
                 ("HISTORY_DB_PORT", "5432"),
                 ("HISTORY_DB_NAME", "yaci_store"),
@@ -965,8 +962,6 @@ fn write_gateway_env_for_network(
                 ("GATEWAY_DB_PORT", "5432"),
                 ("KUPO_ENDPOINT", "http://kupo:1442"),
                 ("OGMIOS_ENDPOINT", "http://cardano-node-ogmios:1337"),
-                ("BLOCKFROST_API_URL", "http://cardano-tx-cbor-api:8080"),
-                ("BLOCKFROST_PROJECT_ID", ""),
             ];
             for (key, value) in local_gateway_defaults {
                 set_or_append_env_var(&gateway_env, key, value)?;
@@ -1005,11 +1000,6 @@ fn write_gateway_env_for_network(
                 &gateway_env,
                 "OGMIOS_ENDPOINT",
                 "http://cardano-node-ogmios:1337",
-            )?;
-            clear_external_runtime_placeholder(
-                &gateway_env,
-                "BLOCKFROST_API_URL",
-                "http://cardano-tx-cbor-api:8080",
             )?;
             set_or_append_env_var(&gateway_env, "CARDANO_EPOCH_NONCE_GENESIS", "\"\"")?;
             set_or_append_env_var(&gateway_env, "DEPLOYER_SK", "")?;

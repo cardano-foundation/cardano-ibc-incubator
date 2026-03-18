@@ -97,10 +97,7 @@ See [`../../docs/bridge-discovery-manifest.md`](../../docs/bridge-discovery-mani
 
 ## Historical Backend
 
-The Gateway's historical Cardano reads now go through a generic history backend:
-
-- local devnet default: `HISTORY_BACKEND=yaci`
-- external runtimes can still point at either `yaci` or `dbsync` while the rollout completes
+The Gateway's historical Cardano reads now go through the Yaci-backed bridge history service.
 
 `HISTORY_DB_*` is the preferred database config surface. Existing `DBSYNC_*` variables are still accepted as compatibility aliases.
 

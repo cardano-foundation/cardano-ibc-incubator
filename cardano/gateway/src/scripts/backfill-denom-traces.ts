@@ -21,25 +21,30 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../app.module';
 import { DenomTraceService } from '../query/services/denom-trace.service';
-import { DbSyncService } from '../query/services/db-sync.service';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import * as Lucid from '@lucid-evolution/lucid';
+import * as CML from '@dcspark/cardano-multiplatform-lib-nodejs';
+import { getDataSourceToken } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { BackfillRedeemerRecord, deriveVoucherTraceCandidatesForTx, splitTracePath } from './backfill-denom-traces.helpers';
 
-type MintTokenRow = {
-  tx_id: number | string;
-  tx_hash: Buffer | string;
-  token_name: Buffer | string;
-};
-
-type RedeemerRow = {
-  purpose: string;
-  redeemer_bytes: Buffer | string | null;
+type BridgeVoucherCandidateRow = {
+  tx_hash: string;
+  tx_cbor_hex: string;
+  redeemers_json: Array<{
+    type: string;
+    data: string;
+    index: number;
+  }> | null;
+  block_no: number | string;
+  tx_index: number | string;
 };
 
 type TxMintGroup = {
   txHash: string;
+  txCborHex: string;
+  redeemers: BackfillRedeemerRecord[];
   tokenNames: Set<string>;
 };
 
@@ -53,8 +58,8 @@ async function bootstrap() {
     app = await NestFactory.createApplicationContext(AppModule);
 
     const denomTraceService = app.get(DenomTraceService);
-    const dbSyncService = app.get(DbSyncService);
     const configService = app.get(ConfigService);
+    const historyDataSource = app.get<DataSource>(getDataSourceToken('history'));
 
     const voucherMintingPolicyId = configService.get('deployment').validators.mintVoucher.scriptHash;
     
@@ -65,50 +70,50 @@ async function bootstrap() {
     logger.log(`Voucher minting policy ID: ${voucherMintingPolicyId}`);
     logger.log('Querying historical voucher minting transactions...');
 
-    const mintRowsQuery = `
+    const voucherCandidateQuery = `
       SELECT
-        tx.hash AS tx_hash,
-        tx.id AS tx_id,
-        ma.name AS token_name
-      FROM tx
-      INNER JOIN ma_tx_mint mtm ON mtm.tx_id = tx.id
-      INNER JOIN multi_asset ma ON ma.id = mtm.ident
-      WHERE ma.policy = $1
-        AND mtm.quantity > 0
-      ORDER BY tx.id ASC
+        e.tx_hash,
+        encode(e.tx_cbor, 'hex') AS tx_cbor_hex,
+        e.redeemers_json,
+        e.block_no,
+        e.tx_index
+      FROM bridge_tx_evidence e
+      INNER JOIN bridge_utxo_history u ON u.tx_hash = e.tx_hash
+      WHERE u.assets_policy = $1
+      GROUP BY e.tx_hash, e.tx_cbor, e.redeemers_json, e.block_no, e.tx_index
+      ORDER BY e.block_no ASC, e.tx_index ASC
     `;
 
-    const mintRows = (await dbSyncService['entityManager'].query(mintRowsQuery, [
-      `\\x${voucherMintingPolicyId}`,
-    ])) as MintTokenRow[];
+    const candidateRows = (await historyDataSource.query(voucherCandidateQuery, [
+      voucherMintingPolicyId.toLowerCase(),
+    ])) as BridgeVoucherCandidateRow[];
 
-    logger.log(`Found ${mintRows.length} voucher mint rows`);
+    logger.log(`Found ${candidateRows.length} historical voucher candidate transactions`);
 
-    const mintsByTxId = new Map<string, TxMintGroup>();
-    for (const row of mintRows) {
-      const txId = String(row.tx_id);
-      const txHash = toHex(row.tx_hash);
-      const tokenName = toHex(row.token_name);
-      if (!txHash || !tokenName) {
-        logger.warn(`Skipping tx_id=${txId}: missing tx hash or token name bytes`);
+    const mintsByTxHash = new Map<string, TxMintGroup>();
+    for (const row of candidateRows) {
+      const txHash = row.tx_hash.toLowerCase();
+      const tokenNames = extractPositiveMintedTokenNames(row.tx_cbor_hex, voucherMintingPolicyId);
+      if (tokenNames.size === 0) {
         continue;
       }
 
-      // Group by tx because one tx can mint multiple voucher token names.
-      const group = mintsByTxId.get(txId) ?? { txHash, tokenNames: new Set<string>() };
-      group.tokenNames.add(tokenName.toLowerCase());
-      mintsByTxId.set(txId, group);
+      const redeemers: BackfillRedeemerRecord[] = (row.redeemers_json ?? [])
+        .filter((redeemer) => typeof redeemer?.type === 'string' && typeof redeemer?.data === 'string')
+        .map((redeemer) => ({
+          purpose: redeemer.type,
+          redeemerHex: redeemer.data.toLowerCase(),
+        }));
+
+      mintsByTxHash.set(txHash, {
+        txHash,
+        txCborHex: row.tx_cbor_hex.toLowerCase(),
+        redeemers,
+        tokenNames,
+      });
     }
 
-    logger.log(`Found ${mintsByTxId.size} transactions with voucher mints`);
-
-    const redeemersByTxQuery = `
-      SELECT rd.purpose AS purpose, rd_data.bytes AS redeemer_bytes
-      FROM redeemer rd
-      INNER JOIN redeemer_data rd_data ON rd_data.id = rd.redeemer_data_id
-      WHERE rd.tx_id = $1
-      ORDER BY rd.id ASC
-    `;
+    logger.log(`Found ${mintsByTxHash.size} transactions with positive voucher mints`);
 
     let txProcessed = 0;
     let tokenMintsProcessed = 0;
@@ -118,19 +123,10 @@ async function bootstrap() {
     let conflictingExistingRows = 0;
     let hardErrors = 0;
 
-    for (const [txId, txGroup] of mintsByTxId.entries()) {
+    for (const txGroup of mintsByTxHash.values()) {
       try {
         txProcessed++;
-
-        const redeemerRows = (await dbSyncService['entityManager'].query(redeemersByTxQuery, [txId])) as RedeemerRow[];
-        const redeemers: BackfillRedeemerRecord[] = redeemerRows
-          .map((row) => ({
-            purpose: row.purpose,
-            redeemerHex: toHex(row.redeemer_bytes),
-          }))
-          .filter((row) => !!row.redeemerHex);
-
-        const candidates = deriveVoucherTraceCandidatesForTx(redeemers, Lucid);
+        const candidates = deriveVoucherTraceCandidatesForTx(txGroup.redeemers, Lucid);
         const candidatesByHash = new Map<string, Set<string>>();
         for (const candidate of candidates) {
           // Keep all candidate paths per token hash so we can detect ambiguity explicitly.
@@ -193,11 +189,11 @@ async function bootstrap() {
         }
       } catch (error) {
         hardErrors++;
-        logger.error(`Error processing tx_id=${txId}: ${error.message}`);
+        logger.error(`Error processing tx=${txGroup.txHash}: ${error.message}`);
       } finally {
         if (txProcessed % 25 === 0) {
           logger.log(
-            `Progress: tx=${txProcessed}/${mintsByTxId.size}, token_mints=${tokenMintsProcessed}, saved=${tracesSaved}, unresolved=${unresolvedTokenMints}, ambiguous=${ambiguousTokenMints}, conflicts=${conflictingExistingRows}, errors=${hardErrors}`,
+            `Progress: tx=${txProcessed}/${mintsByTxHash.size}, token_mints=${tokenMintsProcessed}, saved=${tracesSaved}, unresolved=${unresolvedTokenMints}, ambiguous=${ambiguousTokenMints}, conflicts=${conflictingExistingRows}, errors=${hardErrors}`,
           );
         }
       }
@@ -228,13 +224,41 @@ async function bootstrap() {
   }
 }
 
-function toHex(value: Buffer | string | null | undefined): string {
-  if (!value) return '';
-  if (Buffer.isBuffer(value)) return value.toString('hex');
-  if (typeof value === 'string') {
-    return value.startsWith('\\x') ? value.slice(2) : value;
+function extractPositiveMintedTokenNames(txCborHex: string, voucherMintingPolicyId: string): Set<string> {
+  const tokenNames = new Set<string>();
+  const transaction = CML.Transaction.from_cbor_hex(txCborHex);
+  const mint = transaction.body().mint();
+  if (!mint) {
+    return tokenNames;
   }
-  return '';
+
+  const positiveMint = mint.as_positive_multiasset();
+  const policyIds = positiveMint.keys();
+  const wantedPolicy = voucherMintingPolicyId.toLowerCase();
+
+  for (let policyIndex = 0; policyIndex < policyIds.len(); policyIndex += 1) {
+    const policyId = policyIds.get(policyIndex);
+    const policyHex = policyId.to_hex().toLowerCase();
+    if (policyHex !== wantedPolicy) {
+      continue;
+    }
+
+    const assets = positiveMint.get_assets(policyId);
+    const assetNames = assets?.keys();
+    if (!assets || !assetNames) {
+      continue;
+    }
+
+    for (let assetIndex = 0; assetIndex < assetNames.len(); assetIndex += 1) {
+      const assetName = assetNames.get(assetIndex);
+      const quantity = positiveMint.get(policyId, assetName);
+      if (quantity && quantity > 0n) {
+        tokenNames.add(assetName.to_hex().toLowerCase());
+      }
+    }
+  }
+
+  return tokenNames;
 }
 
 bootstrap();

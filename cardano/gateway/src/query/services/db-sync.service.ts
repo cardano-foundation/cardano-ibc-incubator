@@ -13,7 +13,7 @@ import { EpochParamDto } from '../dtos/epoch-param.dto';
 import { RedeemerDto } from '../dtos/redeemer';
 import { TxDto } from '../dtos/tx.dto';
 import { GrpcInvalidArgumentException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
-import { HistoryService } from './history.service';
+import { HistoryService, HistoryTxEvidence } from './history.service';
 
 @Injectable()
 export class DbSyncService implements HistoryService {
@@ -529,5 +529,12 @@ export class DbSyncService implements HistoryService {
       throw new GrpcNotFoundException(`Not found: No blocks found.`);
     }
     return results.length > 0 ? results[0].block_no : 0;
+  }
+
+  async findTransactionEvidenceByHash(_hash: string): Promise<HistoryTxEvidence | null> {
+    this.logger.warn(
+      'findTransactionEvidenceByHash() was called on the legacy DbSyncService compatibility path',
+    );
+    return null;
   }
 }

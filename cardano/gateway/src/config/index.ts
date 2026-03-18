@@ -64,7 +64,6 @@ type DeploymentConfig = {
 
 interface Config {
   deployment: DeploymentConfig;
-  historyBackend: string;
   ogmiosEndpoint: string;
   kupoEndpoint: string;
   entrypointRestEndpoint: string;
@@ -83,8 +82,6 @@ interface Config {
   cardanoChainId: string;
   cardanoNetwork: Network;
   cardanoEpochNonceGenesis: string;
-  blockfrostApiUrl: string;
-  blockfrostProjectId: string;
 
   mithrilEndpoint: string;
   mtithrilGenesisVerificationKey: string;
@@ -103,7 +100,6 @@ export default (): Partial<Config> => {
   }
 
   return {
-    historyBackend: (process.env.HISTORY_BACKEND || 'dbsync').toLowerCase(),
     ogmiosEndpoint: process.env.OGMIOS_ENDPOINT,
     kupoEndpoint: process.env.KUPO_ENDPOINT,
     entrypointRestEndpoint: process.env.ENTRYPOINT_REST_ENDPOINT,
@@ -115,8 +111,6 @@ export default (): Partial<Config> => {
     cardanoChainId: process.env.CARDANO_CHAIN_ID || 'cardano-devnet',
     cardanoNetwork: cardanoNetwork,
     cardanoEpochNonceGenesis: process.env.CARDANO_EPOCH_NONCE_GENESIS,
-    blockfrostApiUrl: process.env.BLOCKFROST_API_URL || '',
-    blockfrostProjectId: process.env.BLOCKFROST_PROJECT_ID || '',
 
     mithrilEndpoint: process.env.MITHRIL_ENDPOINT,
     mtithrilGenesisVerificationKey: process.env.MITHRIL_GENESIS_VERIFICATION_KEY,

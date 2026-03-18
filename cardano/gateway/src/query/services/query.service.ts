@@ -219,65 +219,12 @@ export class QueryService {
   }
 
   private async loadTransactionRedeemers(txHash: string): Promise<ParsedTxRedeemer[]> {
-    const txCborHex = await this.miniProtocalsService.fetchTransactionCborHex(txHash);
-    const { CML } = this.lucidService.LucidImporter;
-    const transaction = CML.Transaction.from_cbor_hex(txCborHex);
-    const redeemers = transaction.witness_set().redeemers();
-    if (!redeemers) {
-      return [];
-    }
-
-    const toParsedRedeemer = (type: string, index: bigint, dataCborHex: string): ParsedTxRedeemer => ({
-      type,
-      index,
-      data: dataCborHex,
-    });
-
-    const parsedRedeemers: ParsedTxRedeemer[] = [];
-    const redeemersKind = redeemers.kind();
-
-    if (redeemersKind === CML.RedeemersKind.MapRedeemerKeyToRedeemerVal) {
-      const redeemerMap = redeemers.as_map_redeemer_key_to_redeemer_val();
-      const keys = redeemerMap?.keys();
-      if (!redeemerMap || !keys) {
-        return [];
-      }
-
-      for (let i = 0; i < keys.len(); i += 1) {
-        const key = keys.get(i);
-        const value = redeemerMap.get(key);
-        if (!value) continue;
-        parsedRedeemers.push(
-          toParsedRedeemer(this.redeemerTagToType(CML, key.tag()), key.index(), value.data().to_cbor_hex()),
-        );
-      }
-      return parsedRedeemers;
-    }
-
-    const legacyRedeemers = redeemers.as_arr_legacy_redeemer();
-    if (!legacyRedeemers) {
-      return [];
-    }
-
-    for (let i = 0; i < legacyRedeemers.len(); i += 1) {
-      const redeemer = legacyRedeemers.get(i);
-      parsedRedeemers.push(
-        toParsedRedeemer(this.redeemerTagToType(CML, redeemer.tag()), redeemer.index(), redeemer.data().to_cbor_hex()),
-      );
-    }
-
-    return parsedRedeemers;
-  }
-
-  private redeemerTagToType(CML: any, tag: number): string {
-    switch (tag) {
-      case CML.RedeemerTag.Mint:
-        return REDEEMER_TYPE.MINT;
-      case CML.RedeemerTag.Spend:
-        return REDEEMER_TYPE.SPEND;
-      default:
-        return `tag_${tag}`;
-    }
+    const evidence = await this.miniProtocalsService.fetchTransactionEvidence(txHash);
+    return evidence.redeemers.map((redeemer) => ({
+      type: redeemer.type,
+      index: BigInt(redeemer.index),
+      data: redeemer.data,
+    }));
   }
 
 	  async queryNewMithrilClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {

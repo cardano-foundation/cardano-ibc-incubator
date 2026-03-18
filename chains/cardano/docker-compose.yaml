@@ -173,35 +173,12 @@ services:
       - HISTORY_DB_USERNAME=yaci
       - HISTORY_DB_PASSWORD=dbpass
       - BRIDGE_HISTORY_SYNC_INTERVAL_MS=2000
-    command: ["node", "dist/scripts/yaci-bridge-history-sync.js"]
-    restart: on-failure
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "200k"
-        max-file: "10"
-
-  cardano-tx-cbor-api:
-    build:
-      context: ../..
-      dockerfile: cardano/gateway/Dockerfile
-    depends_on:
-      cardano-node:
-        condition: service_started
-      yaci-store-postgres:
-        condition: service_healthy
-    environment:
-      - TX_CBOR_API_PORT=8080
-      - HISTORY_BACKEND=yaci
-      - HISTORY_DB_HOST=yaci-store-postgres
-      - HISTORY_DB_PORT=5432
-      - HISTORY_DB_NAME=yaci_store
-      - HISTORY_DB_USERNAME=yaci
-      - HISTORY_DB_PASSWORD=dbpass
-      - CARDANO_CHAIN_HOST=cardano-node
-      - CARDANO_CHAIN_PORT=3001
+      - HANDLER_JSON_PATH=/usr/src/app/cardano/offchain/deployments/handler.json
+      - CARDANO_CHAIN_ID=cardano-devnet
       - CARDANO_CHAIN_NETWORK_MAGIC=42
-    command: ["node", "dist/scripts/local-tx-cbor-api.js"]
+    volumes:
+      - ../../cardano/offchain/deployments:/usr/src/app/cardano/offchain/deployments
+    command: ["node", "dist/scripts/yaci-bridge-history-sync.js"]
     restart: on-failure
     logging:
       driver: "json-file"
