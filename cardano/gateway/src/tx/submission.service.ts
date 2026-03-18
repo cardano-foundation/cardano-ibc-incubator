@@ -123,7 +123,7 @@ export class SubmissionService {
     // submitted transaction even when later steps fail or process restarts occur.
     // Resolve HostState from the exact confirmed transaction.
     // We intentionally do not accept "latest HostState" here because that can
-    // mask db-sync/runtime failures and attach traces to the wrong tx context.
+    // mask history-backend/runtime failures and attach traces to the wrong tx context.
     // Verify on-chain root matches what we computed when building the tx.
     if (!confirmedRoot) {
       confirmedRoot = await this.readConfirmedTxRoot(signedTxCbor, txHash);

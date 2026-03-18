@@ -54,15 +54,16 @@ sequenceDiagram
   participant H as Hermes
   participant Q as Gateway Query Service
   participant M as Mithril APIs
-  participant D as db-sync
+  participant Y as Yaci Bridge History
   participant K as Kupo
   participant C as Counterparty Chain
 
   H->>Q: Request client update at Cardano height H
-  Q->>M: Get snapshots
-  alt requested height missing
-    Q-->>H: error (height not found)
-  else snapshot exists
+    Q->>M: Get snapshots
+    alt requested height missing
+      Q-->>H: error (height not found)
+    else snapshot exists
+      Q->>Y: Load historical HostState / tx evidence
     Q->>M: Get certificate + transaction proof
     Q->>D: Resolve tx/block context
     Q->>K: Read HostState output/datum

@@ -3,7 +3,7 @@ import { Pool, PoolClient } from 'pg';
 import * as CML from '@dcspark/cardano-multiplatform-lib-nodejs';
 import * as Lucid from '@lucid-evolution/lucid';
 import { REDEEMER_TYPE } from '../constant';
-import { loadBridgeConfigFromEnv } from '../config/bridge-manifest';
+import { LoadedBridgeConfig, loadBridgeConfigFromEnv } from '../config/bridge-manifest';
 import { decodeHostStateDatum } from '../shared/types/host-state-datum';
 
 type YaciTxRow = {
@@ -71,6 +71,12 @@ type HostStateToken = {
   name: string;
 };
 
+type BridgeProjectionFilter = {
+  hostStateToken: HostStateToken;
+  relevantAddresses: string[];
+  relevantPolicies: string[];
+};
+
 type SyncStateRow = {
   last_block: string | number;
   last_block_hash: string | null;
@@ -84,14 +90,14 @@ type BlockRow = {
 
 const pollIntervalMs = Number(process.env.BRIDGE_HISTORY_SYNC_INTERVAL_MS || 2000);
 const historyPool = new Pool({
-  host: process.env.HISTORY_DB_HOST || process.env.DBSYNC_HOST || 'yaci-postgres',
-  port: Number(process.env.HISTORY_DB_PORT || process.env.DBSYNC_PORT || 5432),
-  database: process.env.HISTORY_DB_NAME || process.env.DBSYNC_NAME || 'yaci_store',
-  user: process.env.HISTORY_DB_USERNAME || process.env.DBSYNC_USERNAME || 'yaci',
-  password: process.env.HISTORY_DB_PASSWORD || process.env.DBSYNC_PASSWORD || 'dbpass',
+  host: process.env.HISTORY_DB_HOST || 'yaci-postgres',
+  port: Number(process.env.HISTORY_DB_PORT || 5432),
+  database: process.env.HISTORY_DB_NAME || 'yaci_store',
+  user: process.env.HISTORY_DB_USERNAME || 'yaci',
+  password: process.env.HISTORY_DB_PASSWORD || 'dbpass',
 });
 
-let cachedHostStateToken: HostStateToken | null = null;
+let cachedBridgeProjectionFilter: BridgeProjectionFilter | null = null;
 let loggedMissingBridgeConfig = false;
 const bridgeConfigFileReader = {
   readFileSync(path: string, _encoding: string) {
@@ -204,6 +210,10 @@ function normalizeHex(value: string | null | undefined): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
+function uniqueSorted(values: Array<string | null | undefined>): string[] {
+  return Array.from(new Set(values.map((value) => normalizeHex(value)).filter((value): value is string => !!value))).sort();
+}
+
 function redeemerTagToType(CML: any, tag: number): string {
   switch (tag) {
     case CML.RedeemerTag.Mint:
@@ -264,6 +274,7 @@ function buildBridgeUtxoRows(
   txIdsByHash: Map<string, number>,
   txIndexesByHash: Map<string, number>,
   blockNo: number,
+  relevantPolicies: ReadonlySet<string>,
 ) {
   const rows: BridgeUtxoInsertRow[] = [];
 
@@ -287,6 +298,9 @@ function buildBridgeUtxoRows(
     for (const amountRow of amounts) {
       const policyId = amountRow.policy_id?.toLowerCase();
       if (!policyId || amountRow.unit === 'lovelace') {
+        continue;
+      }
+      if (!relevantPolicies.has(policyId)) {
         continue;
       }
 
@@ -317,9 +331,37 @@ function buildBridgeUtxoRows(
   return rows;
 }
 
-function tryResolveHostStateToken(): HostStateToken | null {
-  if (cachedHostStateToken) {
-    return cachedHostStateToken;
+function deriveBridgeProjectionFilter(bridgeConfig: LoadedBridgeConfig): BridgeProjectionFilter {
+  const deployment = bridgeConfig.deployment;
+  const validatorAddresses = Object.values(deployment.validators)
+    .flatMap((validator) => ('address' in validator ? [validator.address] : []))
+    .filter((address) => typeof address === 'string' && address.trim().length > 0);
+  const moduleAddresses = Object.values(deployment.modules)
+    .map((module) => module?.address)
+    .filter((address): address is string => typeof address === 'string' && address.trim().length > 0);
+
+  const relevantPolicies = uniqueSorted([
+    deployment.hostStateNFT.policyId,
+    deployment.handlerAuthToken.policyId,
+    deployment.validators.mintClientStt.scriptHash,
+    deployment.validators.mintConnectionStt.scriptHash,
+    deployment.validators.mintChannelStt.scriptHash,
+    deployment.validators.mintVoucher.scriptHash,
+  ]);
+
+  return {
+    hostStateToken: {
+      policyId: deployment.hostStateNFT.policyId.toLowerCase(),
+      name: deployment.hostStateNFT.name.toLowerCase(),
+    },
+    relevantAddresses: uniqueSorted([...validatorAddresses, ...moduleAddresses]),
+    relevantPolicies,
+  };
+}
+
+function tryResolveBridgeProjectionFilter(): BridgeProjectionFilter | null {
+  if (cachedBridgeProjectionFilter) {
+    return cachedBridgeProjectionFilter;
   }
 
   try {
@@ -327,15 +369,12 @@ function tryResolveHostStateToken(): HostStateToken | null {
       process.env as Record<string, string | undefined>,
       bridgeConfigFileReader,
     );
-    cachedHostStateToken = {
-      policyId: bridgeConfig.deployment.hostStateNFT.policyId.toLowerCase(),
-      name: bridgeConfig.deployment.hostStateNFT.name.toLowerCase(),
-    };
+    cachedBridgeProjectionFilter = deriveBridgeProjectionFilter(bridgeConfig);
     if (loggedMissingBridgeConfig) {
       process.stdout.write('bridge-history-sync detected bridge deployment config and is resuming indexing\n');
       loggedMissingBridgeConfig = false;
     }
-    return cachedHostStateToken;
+    return cachedBridgeProjectionFilter;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (
@@ -353,6 +392,32 @@ function tryResolveHostStateToken(): HostStateToken | null {
     }
     throw error;
   }
+}
+
+async function getRelevantUtxoRowsForBlock(
+  client: PoolClient,
+  blockNo: number,
+  filter: BridgeProjectionFilter,
+): Promise<YaciAddressUtxoRow[]> {
+  const result = await client.query<YaciAddressUtxoRow>(
+    `
+      SELECT tx_hash, output_index, owner_addr, owner_addr_full, data_hash, inline_datum, reference_script_hash, amounts
+      FROM address_utxo
+      WHERE block = $1
+        AND (
+          owner_addr = ANY($2::text[])
+          OR owner_addr_full = ANY($2::text[])
+          OR EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(COALESCE(amounts::jsonb, '[]'::jsonb)) AS amount
+            WHERE lower(COALESCE(amount->>'policy_id', '')) = ANY($3::text[])
+          )
+        )
+      ORDER BY tx_hash ASC, output_index ASC
+    `,
+    [blockNo, filter.relevantAddresses, filter.relevantPolicies],
+  );
+  return result.rows;
 }
 
 async function deriveHostStateEvidence(
@@ -614,140 +679,6 @@ async function reconcileCursor(client: PoolClient) {
 }
 
 async function processBlock(client: PoolClient, hostStateToken: HostStateToken, blockNo: number): Promise<boolean> {
-  const txResult = await client.query<YaciTxRow>(
-    `
-      SELECT tx_hash, fee, block, block_hash, tx_index, slot
-      FROM transaction
-      WHERE block = $1
-      ORDER BY tx_index ASC, tx_hash ASC
-    `,
-    [blockNo],
-  );
-
-  if (txResult.rows.length === 0) {
-    const canonicalBlock = await getCanonicalBlock(client, blockNo);
-    await updateSyncState(client, blockNo, normalizeHex(canonicalBlock?.hash) ?? null);
-    return true;
-  }
-
-  const txHashes = txResult.rows.map((row) => row.tx_hash.toLowerCase());
-
-  const txCborResult = await client.query<YaciTxCborRow>(
-    `
-      SELECT tx_hash, encode(cbor_data, 'hex') AS cbor_hex, cbor_size
-      FROM transaction_cbor
-      WHERE tx_hash = ANY($1::varchar[])
-    `,
-    [txHashes],
-  );
-  const txCborByHash = new Map<string, YaciTxCborRow>(
-    txCborResult.rows.map((row) => [row.tx_hash.toLowerCase(), row]),
-  );
-
-  const txIdsByHash = new Map<string, number>();
-  const txIndexesByHash = new Map<string, number>();
-
-  for (const txRow of txResult.rows) {
-    const txHash = txRow.tx_hash.toLowerCase();
-    const txCborRow = txCborByHash.get(txHash);
-    if (!txCborRow?.cbor_hex) {
-      throw new Error(`Missing transaction_cbor row for tx ${txHash} at block ${blockNo}`);
-    }
-
-    const txSize = Number(txCborRow.cbor_size ?? Math.floor(txCborRow.cbor_hex.length / 2));
-    const txId = await upsertBridgeTx(client, txRow, txSize);
-    txIdsByHash.set(txHash, txId);
-    txIndexesByHash.set(txHash, Number(txRow.tx_index ?? 0));
-  }
-
-  const utxoResult = await client.query<YaciAddressUtxoRow>(
-    `
-      SELECT tx_hash, output_index, owner_addr, owner_addr_full, data_hash, inline_datum, reference_script_hash, amounts
-      FROM address_utxo
-      WHERE block = $1
-        AND tx_hash = ANY($2::varchar[])
-      ORDER BY tx_hash ASC, output_index ASC
-    `,
-    [blockNo, txHashes],
-  );
-
-  const outputRows = buildBridgeUtxoRows(utxoResult.rows, txIdsByHash, txIndexesByHash, blockNo);
-  for (const outputRow of outputRows) {
-    await client.query(
-      `
-        INSERT INTO bridge_utxo_history(
-          tx_hash,
-          tx_id,
-          output_index,
-          address,
-          datum,
-          datum_hash,
-          assets_policy,
-          assets_name,
-          block_no,
-          block_id,
-          tx_index,
-          reference_script_hash,
-          updated_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now())
-        ON CONFLICT (tx_hash, output_index, assets_policy, assets_name) DO UPDATE SET
-          tx_id = EXCLUDED.tx_id,
-          address = EXCLUDED.address,
-          datum = EXCLUDED.datum,
-          datum_hash = EXCLUDED.datum_hash,
-          block_no = EXCLUDED.block_no,
-          block_id = EXCLUDED.block_id,
-          tx_index = EXCLUDED.tx_index,
-          reference_script_hash = EXCLUDED.reference_script_hash,
-          updated_at = now()
-      `,
-      [
-        outputRow.txHash,
-        outputRow.txId,
-        outputRow.outputIndex,
-        outputRow.address,
-        outputRow.datum,
-        outputRow.datumHash,
-        outputRow.assetsPolicy,
-        outputRow.assetsName,
-        outputRow.blockNo,
-        outputRow.blockId,
-        outputRow.txIndex,
-        outputRow.referenceScriptHash,
-      ],
-    );
-  }
-
-  for (const txRow of txResult.rows) {
-    const txHash = txRow.tx_hash.toLowerCase();
-    const txCborRow = txCborByHash.get(txHash);
-    if (!txCborRow?.cbor_hex) {
-      throw new Error(`Missing transaction_cbor row for tx ${txHash} at block ${blockNo}`);
-    }
-
-    const txCborHex = txCborRow.cbor_hex.toLowerCase();
-    const { txBodyCborHex, redeemers } = decodeTransactionEvidence(txCborHex);
-    const hostStateEvidence = await deriveHostStateEvidence(hostStateToken, txHash, outputRows);
-
-    await upsertBridgeTxEvidence(client, {
-      txHash,
-      blockNo,
-      blockHash: normalizeHex(txRow.block_hash),
-      slotNo: Number(txRow.slot),
-      txIndex: Number(txRow.tx_index ?? 0),
-      txCborHex,
-      txBodyCborHex,
-      redeemers,
-      hostStateOutputIndex: hostStateEvidence.hostStateOutputIndex,
-      hostStateDatum: hostStateEvidence.hostStateDatum,
-      hostStateDatumHash: hostStateEvidence.hostStateDatumHash,
-      hostStateRoot: hostStateEvidence.hostStateRoot,
-      gasFee: Number(txRow.fee ?? 0),
-      txSize: Number(txCborRow.cbor_size ?? Math.floor(txCborHex.length / 2)),
-    });
-  }
-
   const poolRegistrations = await client.query<SpoEventRow>(
     `SELECT tx_hash FROM pool_registration WHERE block = $1 ORDER BY tx_index ASC`,
     [blockNo],
@@ -778,14 +709,147 @@ async function processBlock(client: PoolClient, hostStateToken: HostStateToken, 
     );
   }
 
-  await updateSyncState(client, blockNo, normalizeHex(txResult.rows[0]?.block_hash) ?? null);
+  const projectionFilter = tryResolveBridgeProjectionFilter();
+  if (!projectionFilter) {
+    return false;
+  }
+
+  const relevantUtxoRows = await getRelevantUtxoRowsForBlock(client, blockNo, projectionFilter);
+  const relevantTxHashes = Array.from(new Set(relevantUtxoRows.map((row) => row.tx_hash.toLowerCase())));
+
+  if (relevantTxHashes.length > 0) {
+    const txResult = await client.query<YaciTxRow>(
+      `
+        SELECT tx_hash, fee, block, block_hash, tx_index, slot
+        FROM transaction
+        WHERE block = $1
+          AND tx_hash = ANY($2::varchar[])
+        ORDER BY tx_index ASC, tx_hash ASC
+      `,
+      [blockNo, relevantTxHashes],
+    );
+
+    const txCborResult = await client.query<YaciTxCborRow>(
+      `
+        SELECT tx_hash, encode(cbor_data, 'hex') AS cbor_hex, cbor_size
+        FROM transaction_cbor
+        WHERE tx_hash = ANY($1::varchar[])
+      `,
+      [relevantTxHashes],
+    );
+    const txCborByHash = new Map<string, YaciTxCborRow>(
+      txCborResult.rows.map((row) => [row.tx_hash.toLowerCase(), row]),
+    );
+
+    const txIdsByHash = new Map<string, number>();
+    const txIndexesByHash = new Map<string, number>();
+
+    for (const txRow of txResult.rows) {
+      const txHash = txRow.tx_hash.toLowerCase();
+      const txCborRow = txCborByHash.get(txHash);
+      if (!txCborRow?.cbor_hex) {
+        throw new Error(`Missing transaction_cbor row for tx ${txHash} at block ${blockNo}`);
+      }
+
+      const txSize = Number(txCborRow.cbor_size ?? Math.floor(txCborRow.cbor_hex.length / 2));
+      const txId = await upsertBridgeTx(client, txRow, txSize);
+      txIdsByHash.set(txHash, txId);
+      txIndexesByHash.set(txHash, Number(txRow.tx_index ?? 0));
+    }
+
+    const outputRows = buildBridgeUtxoRows(
+      relevantUtxoRows,
+      txIdsByHash,
+      txIndexesByHash,
+      blockNo,
+      new Set(projectionFilter.relevantPolicies),
+    );
+    for (const outputRow of outputRows) {
+      await client.query(
+        `
+          INSERT INTO bridge_utxo_history(
+            tx_hash,
+            tx_id,
+            output_index,
+            address,
+            datum,
+            datum_hash,
+            assets_policy,
+            assets_name,
+            block_no,
+            block_id,
+            tx_index,
+            reference_script_hash,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, now())
+          ON CONFLICT (tx_hash, output_index, assets_policy, assets_name) DO UPDATE SET
+            tx_id = EXCLUDED.tx_id,
+            address = EXCLUDED.address,
+            datum = EXCLUDED.datum,
+            datum_hash = EXCLUDED.datum_hash,
+            block_no = EXCLUDED.block_no,
+            block_id = EXCLUDED.block_id,
+            tx_index = EXCLUDED.tx_index,
+            reference_script_hash = EXCLUDED.reference_script_hash,
+            updated_at = now()
+        `,
+        [
+          outputRow.txHash,
+          outputRow.txId,
+          outputRow.outputIndex,
+          outputRow.address,
+          outputRow.datum,
+          outputRow.datumHash,
+          outputRow.assetsPolicy,
+          outputRow.assetsName,
+          outputRow.blockNo,
+          outputRow.blockId,
+          outputRow.txIndex,
+          outputRow.referenceScriptHash,
+        ],
+      );
+    }
+
+    for (const txRow of txResult.rows) {
+      const txHash = txRow.tx_hash.toLowerCase();
+      const txCborRow = txCborByHash.get(txHash);
+      if (!txCborRow?.cbor_hex) {
+        throw new Error(`Missing transaction_cbor row for tx ${txHash} at block ${blockNo}`);
+      }
+
+      const txCborHex = txCborRow.cbor_hex.toLowerCase();
+      const { txBodyCborHex, redeemers } = decodeTransactionEvidence(txCborHex);
+      const hostStateEvidence = await deriveHostStateEvidence(hostStateToken, txHash, outputRows);
+
+      await upsertBridgeTxEvidence(client, {
+        txHash,
+        blockNo,
+        blockHash: normalizeHex(txRow.block_hash),
+        slotNo: Number(txRow.slot),
+        txIndex: Number(txRow.tx_index ?? 0),
+        txCborHex,
+        txBodyCborHex,
+        redeemers,
+        hostStateOutputIndex: hostStateEvidence.hostStateOutputIndex,
+        hostStateDatum: hostStateEvidence.hostStateDatum,
+        hostStateDatumHash: hostStateEvidence.hostStateDatumHash,
+        hostStateRoot: hostStateEvidence.hostStateRoot,
+        gasFee: Number(txRow.fee ?? 0),
+        txSize: Number(txCborRow.cbor_size ?? Math.floor(txCborHex.length / 2)),
+      });
+    }
+  }
+
+  const canonicalBlock = await getCanonicalBlock(client, blockNo);
+  await updateSyncState(client, blockNo, normalizeHex(canonicalBlock?.hash) ?? null);
   process.stdout.write(`bridge-history-sync indexed block ${blockNo}\n`);
   return true;
 }
 
 async function processNextBlock(): Promise<boolean> {
-  const hostStateToken = tryResolveHostStateToken();
-  if (!hostStateToken) {
+  const projectionFilter = tryResolveBridgeProjectionFilter();
+  if (!projectionFilter) {
     return false;
   }
 
@@ -796,11 +860,32 @@ async function processNextBlock(): Promise<boolean> {
 
     const nextBlockResult = await client.query<{ block_no: string | null }>(
       `
-        SELECT MIN(block)::text AS block_no
-        FROM transaction
-        WHERE block > $1
+        SELECT MIN(candidate_block)::text AS block_no
+        FROM (
+          SELECT MIN(block)::bigint AS candidate_block
+          FROM address_utxo
+          WHERE block > $1
+            AND (
+              owner_addr = ANY($2::text[])
+              OR owner_addr_full = ANY($2::text[])
+              OR EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(COALESCE(amounts::jsonb, '[]'::jsonb)) AS amount
+                WHERE lower(COALESCE(amount->>'policy_id', '')) = ANY($3::text[])
+              )
+            )
+          UNION ALL
+          SELECT MIN(block)::bigint AS candidate_block
+          FROM pool_registration
+          WHERE block > $1
+          UNION ALL
+          SELECT MIN(block)::bigint AS candidate_block
+          FROM pool_retirement
+          WHERE block > $1
+        ) next_blocks
+        WHERE candidate_block IS NOT NULL
       `,
-      [syncState.lastBlock],
+      [syncState.lastBlock, projectionFilter.relevantAddresses, projectionFilter.relevantPolicies],
     );
 
     const nextBlock = nextBlockResult.rows[0]?.block_no;
@@ -809,7 +894,7 @@ async function processNextBlock(): Promise<boolean> {
       return false;
     }
 
-    const processed = await processBlock(client, hostStateToken, Number(nextBlock));
+    const processed = await processBlock(client, projectionFilter.hostStateToken, Number(nextBlock));
     if (!processed) {
       await client.query('ROLLBACK');
       return false;

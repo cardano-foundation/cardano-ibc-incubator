@@ -107,23 +107,21 @@ pub fn write_cardano_runtime_selection(
     network: config::CoreCardanoNetwork,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let runtime_dir = network.runtime_dir();
-    let (config_file, block_producer, db_sync_network, node_image) = match network {
+    let (config_file, block_producer, node_image) = match network {
         config::CoreCardanoNetwork::Local => (
             "cardano-node.json",
             "true",
-            "devnet",
             "ghcr.io/blinklabs-io/cardano-node:10.1.4-3",
         ),
         config::CoreCardanoNetwork::Preprod => (
             "config.json",
             "false",
-            "preprod",
             "ghcr.io/intersectmbo/cardano-node:10.6.2",
         ),
     };
 
     let env_contents = format!(
-        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_DB_SYNC_NETWORK={db_sync_network}\nCARDANO_DB_SYNC_CONFIG_FILE=db-sync-config.json\nCARDANO_NODE_IMAGE={node_image}\n",
+        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\n",
         network = network.as_str(),
     );
 
@@ -188,9 +186,6 @@ pub async fn configure_cardano_preprod_runtime(
     let service_folders = vec![
         runtime_dir.clone(),
         cardano_dir.join("kupo-db"),
-        cardano_dir.join("db-sync-data"),
-        cardano_dir.join("db-sync-configuration"),
-        cardano_dir.join("db-sync-log-dir"),
         cardano_dir.join("postgres"),
     ];
 
@@ -211,7 +206,6 @@ pub async fn configure_cardano_preprod_runtime(
         ("shelley-genesis.json", "shelley-genesis.json"),
         ("alonzo-genesis.json", "alonzo-genesis.json"),
         ("conway-genesis.json", "conway-genesis.json"),
-        ("db-sync-config.json", "db-sync-config.json"),
     ] {
         download_preprod_runtime_file(&runtime_dir, remote_name, local_name).await?;
     }
@@ -821,8 +815,8 @@ fn clear_external_runtime_placeholder(
 fn validate_external_gateway_env(gateway_env: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let env_values = parse_env_file(gateway_env)?;
     let required_groups = [
-        ("HISTORY_DB_HOST / DBSYNC_HOST", vec!["HISTORY_DB_HOST", "DBSYNC_HOST"]),
-        ("HISTORY_DB_PORT / DBSYNC_PORT", vec!["HISTORY_DB_PORT", "DBSYNC_PORT"]),
+        ("HISTORY_DB_HOST", vec!["HISTORY_DB_HOST"]),
+        ("HISTORY_DB_PORT", vec!["HISTORY_DB_PORT"]),
         ("GATEWAY_DB_HOST", vec!["GATEWAY_DB_HOST"]),
         ("GATEWAY_DB_PORT", vec!["GATEWAY_DB_PORT"]),
         ("KUPO_ENDPOINT", vec!["KUPO_ENDPOINT"]),
@@ -851,7 +845,6 @@ fn validate_external_gateway_env(gateway_env: &Path) -> Result<(), Box<dyn std::
 
     let disallowed_local_defaults = [
         ("HISTORY_DB_HOST", "yaci-store-postgres"),
-        ("DBSYNC_HOST", "yaci-store-postgres"),
         ("GATEWAY_DB_HOST", "postgres"),
         ("KUPO_ENDPOINT", "http://kupo:1442"),
         ("OGMIOS_ENDPOINT", "http://cardano-node-ogmios:1337"),
@@ -953,11 +946,6 @@ fn write_gateway_env_for_network(
                 ("HISTORY_DB_NAME", "yaci_store"),
                 ("HISTORY_DB_USERNAME", "yaci"),
                 ("HISTORY_DB_PASSWORD", "dbpass"),
-                ("DBSYNC_HOST", "yaci-store-postgres"),
-                ("DBSYNC_PORT", "5432"),
-                ("DBSYNC_NAME", "yaci_store"),
-                ("DBSYNC_USERNAME", "yaci"),
-                ("DBSYNC_PASSWORD", "dbpass"),
                 ("GATEWAY_DB_HOST", "postgres"),
                 ("GATEWAY_DB_PORT", "5432"),
                 ("KUPO_ENDPOINT", "http://kupo:1442"),
@@ -979,7 +967,6 @@ fn write_gateway_env_for_network(
         }
         config::CoreCardanoNetwork::Preprod => {
             clear_external_runtime_placeholder(&gateway_env, "HISTORY_DB_HOST", "yaci-store-postgres")?;
-            clear_external_runtime_placeholder(&gateway_env, "DBSYNC_HOST", "yaci-store-postgres")?;
             clear_external_runtime_placeholder(&gateway_env, "GATEWAY_DB_HOST", "postgres")?;
             clear_external_runtime_placeholder(&gateway_env, "KUPO_ENDPOINT", "http://kupo:1442")?;
             clear_external_runtime_placeholder(

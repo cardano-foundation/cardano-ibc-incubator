@@ -4,7 +4,6 @@ import { QueryService } from './services/query.service';
 import { QueryController } from './query.controller';
 import { LucidModule } from '../shared/modules/lucid/lucid.module';
 import { KupoModule } from '../shared/modules/kupo/kupo.module';
-import { DbSyncService } from './services/db-sync.service';
 import { HISTORY_SERVICE } from './services/history.service';
 import { ConnectionService } from './services/connection.service';
 import { ChannelService } from './services/channel.service';
@@ -29,7 +28,6 @@ import { YaciHistoryService } from './services/yaci-history.service';
   providers: [
     QueryService,
     Logger,
-    DbSyncService,
     YaciHistoryService,
     {
       provide: HISTORY_SERVICE,

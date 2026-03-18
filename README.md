@@ -53,7 +53,7 @@ flowchart LR
   subgraph CardanoInfra["Cardano Infrastructure"]
     NODE["cardano-node"]
     KUPO["Kupo"]
-    DBSYNC["db-sync + Postgres"]
+    YACI["Yaci Store<br/>+ Bridge Projection"]
     MITHRIL["Mithril Snapshot<br/>+ Proof APIs"]
   end
 
@@ -78,13 +78,13 @@ flowchart LR
   HERMES <-->|"IBC packets and proofs"| COSMOS
 
   QUERY -->|"UTxO and datum reads"| KUPO
-  QUERY -->|"indexed tx/block queries"| DBSYNC
+  QUERY -->|"historical tx/block evidence"| YACI
   QUERY -->|"snapshot and proof queries"| MITHRIL
   TX -->|"denom trace writes<br/>and updates"| TRACE
-  TRACE -->|"persist trace rows"| DBSYNC
+  TRACE -->|"persist trace rows"| YACI
 
   NODE -->|"chain indexing feed"| KUPO
-  NODE -->|"chain indexing feed"| DBSYNC
+  NODE -->|"chain indexing feed"| YACI
 
   classDef client fill:#e8f1ff,stroke:#2b5cab,color:#0f172a
   classDef gateway fill:#e9f8ee,stroke:#2f7d4a,color:#0b1f14
@@ -95,7 +95,7 @@ flowchart LR
   class UI,UW client
   class TX,QUERY,LUCID,TRACE gateway
   class HOST,CH_SEND,CH_RECV,CH_ACK,CH_TIMEOUT,TRANSFER,VOUCHER onchain
-  class NODE,KUPO,DBSYNC,MITHRIL infra
+  class NODE,KUPO,YACI,MITHRIL infra
   class HERMES,COSMOS relay
 ```
 
@@ -220,7 +220,7 @@ TO-DO: Prior to BuilderFest 2026 we need to plan and document architecture/OS-sp
 
 ### Running a local Cardano network
 
-To start the Cardano node, Mithril, Ogmios, and Kupo and db-sync locally run:
+To start the Cardano node, Mithril, Ogmios, Kupo, and the Yaci-backed history services locally run:
 
 Mithril note:
 In local devnet, Caribic starts a local Mithril aggregator and signers so that certificates, transaction snapshots, and inclusion proofs correspond to the local Cardano chain. This is necessary for testing because public Mithril endpoints only certify their own networks and cannot attest to transactions produced by a local devnet.

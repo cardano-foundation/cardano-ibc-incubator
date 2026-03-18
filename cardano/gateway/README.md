@@ -99,7 +99,7 @@ See [`../../docs/bridge-discovery-manifest.md`](../../docs/bridge-discovery-mani
 
 The Gateway's historical Cardano reads now go through the Yaci-backed bridge history service.
 
-`HISTORY_DB_*` is the preferred database config surface. Existing `DBSYNC_*` variables are still accepted as compatibility aliases.
+`HISTORY_DB_*` is the Gateway's database config surface for the historical backend.
 
 ## Cardano Data Plane
 
@@ -108,7 +108,7 @@ The Gateway now uses two Cardano data planes with different responsibilities:
 - Live data plane: `Ogmios + Kupo + Mithril`
 - Historical data plane: `Yaci Store + bridge-specific projection`
 
-The Yaci-backed projection is the Gateway's authoritative history backend. It stores the bridge-specific evidence the Gateway needs instead of querying a generic `db-sync` schema directly.
+The Yaci-backed projection is the Gateway's authoritative history backend. It stores the bridge-specific evidence the Gateway needs instead of querying a generic historical Cardano schema directly.
 
 Current bridge history tables include:
 

@@ -125,7 +125,7 @@ export class QueryService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     @Inject(KupoService) private kupoService: KupoService,
-    @Inject(HISTORY_SERVICE) private dbService: HistoryService,
+    @Inject(HISTORY_SERVICE) private historyService: HistoryService,
     @Inject(MiniProtocalsService) private miniProtocalsService: MiniProtocalsService,
     @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(DenomTraceService) private denomTraceService: DenomTraceService,
@@ -636,7 +636,7 @@ export class QueryService {
       const totalEventResults: ResponseDeliverTx[] = [];
       for (const blockNo of [height]) {
         // connection +channel
-        const utxosInBlock = await this.dbService.findUtxosByBlockNo(parseInt(blockNo.toString()));
+        const utxosInBlock = await this.historyService.findUtxosByBlockNo(parseInt(blockNo.toString()));
         const txsResults = (
           await Promise.all(
             utxosInBlock
@@ -653,7 +653,7 @@ export class QueryService {
         ).filter((txsResult): txsResult is ResponseDeliverTx => txsResult !== null && txsResult !== undefined);
 
         // client state + consensus state
-        const authOrClientUTxos = await this.dbService.findUtxoClientOrAuthHandler(parseInt(blockNo.toString()));
+        const authOrClientUTxos = await this.historyService.findUtxoClientOrAuthHandler(parseInt(blockNo.toString()));
         const txsAuthOrClientsResults = await this._parseEventClient(authOrClientUTxos);
 
         // register/unregister event spo
@@ -745,7 +745,7 @@ export class QueryService {
 
   private async _querySpoEvents(height: BigInt): Promise<ResponseDeliverTx[]> {
     const txsResults: ResponseDeliverTx[] = [];
-    const hasEventRegister = await this.dbService.checkExistPoolUpdateByBlockNo(parseInt(height.toString()));
+    const hasEventRegister = await this.historyService.checkExistPoolUpdateByBlockNo(parseInt(height.toString()));
     if (hasEventRegister) {
       txsResults.push(<ResponseDeliverTx>{
         code: 0,
@@ -758,7 +758,7 @@ export class QueryService {
       });
     }
 
-    const hasEventUnRegister = await this.dbService.checkExistPoolRetireByBlockNo(parseInt(height.toString()));
+    const hasEventUnRegister = await this.historyService.checkExistPoolRetireByBlockNo(parseInt(height.toString()));
     if (hasEventUnRegister) {
       txsResults.push(<ResponseDeliverTx>{
         code: 0,
@@ -1052,7 +1052,7 @@ export class QueryService {
       // The same tx output can appear while scanning each side, so dedupe by out-ref.
       const utxosByRef = new Map<string, UtxoDto>();
       for (const channelTokenName of channelTokenNames) {
-        const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(
+        const utxos = await this.historyService.findUtxosByPolicyIdAndPrefixTokenName(
           mintChannelScriptHash,
           channelTokenName,
         );
@@ -1139,14 +1139,14 @@ export class QueryService {
     const { hash } = request;
     if (!hash) throw new GrpcInvalidArgumentException(`Invalid argument: "hash" must be provided`);
 
-    const tx = await this.dbService.findTxByHash(hash);
+    const tx = await this.historyService.findTxByHash(hash);
     if (!tx) {
       throw new GrpcNotFoundException(`Not found: "hash" ${hash} not found`);
     }
     this.logger.log(`found tx for hash = ${request.hash}`, 'queryTransactionByHash');
 
     // get create_client events from tx
-    const authOrClientUTxos = await this.dbService.findUtxoClientOrAuthHandler(tx.height);
+    const authOrClientUTxos = await this.historyService.findUtxoClientOrAuthHandler(tx.height);
     let createClientEvent = null;
     if (authOrClientUTxos.length) {
       const txsAuthOrClientsResults = await this._parseEventClient(authOrClientUTxos);
@@ -1262,7 +1262,7 @@ export class QueryService {
 
     // Start from the latest certified height (proof endpoint certifies against latest).
     let snapshot = latestSnapshot;
-    let hostStateUtxo = await this.dbService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(snapshot.block_number));
+    let hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(snapshot.block_number));
     let hostStateTxProof: any;
 
     // Ensure snapshot/proof/HostState tx are mutually consistent with strict bounded retries.
@@ -1284,7 +1284,7 @@ export class QueryService {
       }
 
       snapshot = snapshotForProof;
-      const hostStateAtSnapshot = await this.dbService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(snapshot.block_number));
+      const hostStateAtSnapshot = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(snapshot.block_number));
       if (hostStateAtSnapshot.txHash === hostStateUtxo.txHash) {
         hostStateUtxo = hostStateAtSnapshot;
         converged = true;

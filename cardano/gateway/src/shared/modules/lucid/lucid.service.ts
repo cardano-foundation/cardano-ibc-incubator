@@ -1691,14 +1691,7 @@ export class LucidService implements OnModuleInit {
       datum: dto.hostStateUtxo.datum,
       datumHash: undefined,
     };
-    let tx: TxBuilder;
-    if (dto.walletUtxos && dto.walletUtxos.length > 0) {
-      const normalizedAddress = this.normalizeAddressOrCredential(dto.senderAddress);
-      this.lucid.selectWallet.fromAddress(normalizedAddress, dto.walletUtxos);
-      tx = this.lucid.newTx();
-    } else {
-      tx = this.newTxBuilder();
-    }
+    const tx = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,

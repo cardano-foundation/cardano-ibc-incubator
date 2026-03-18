@@ -124,7 +124,6 @@
       ".mock.ts",
       "<rootDir>/src/ibc-event-watcher/ibc-event-watcher.module.ts",
       "<rootDir>/src/ibc-event-watcher/ibc-event-watcher.service.ts",
-      "<rootDir>/src/query/services/db-sync.service.ts",
       "<rootDir>/src/shared/modules/lucid/lucid.service.ts"
     ],
     "collectCoverageFrom": [

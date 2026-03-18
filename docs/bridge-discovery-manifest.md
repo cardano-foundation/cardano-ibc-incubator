@@ -23,7 +23,7 @@ It is a bootstrap artifact, not a redeployment artifact.
 The manifest does not include:
 
 - private keys
-- Ogmios / Kupo / db-sync / Mithril endpoints
+- Ogmios / Kupo / history backend / Mithril endpoints
 - database credentials
 - script bytecode
 - any other operator-local infrastructure config

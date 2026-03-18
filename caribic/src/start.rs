@@ -3205,15 +3205,13 @@ fn run_core_health_check(
             }
             CoreHealthCheckType::Postgres => {
                 let host = external_gateway_env_value(context, "HISTORY_DB_HOST")
-                    .or_else(|| external_gateway_env_value(context, "DBSYNC_HOST"))
                     .unwrap_or_else(|| "<unset>".to_string());
                 let port = external_gateway_env_value(context, "HISTORY_DB_PORT")
-                    .or_else(|| external_gateway_env_value(context, "DBSYNC_PORT"))
                     .unwrap_or_else(|| "<unset>".to_string());
                 if host == "<unset>" || port == "<unset>" {
                     (
                         false,
-                        "Missing HISTORY_DB_HOST/HISTORY_DB_PORT (or DBSYNC aliases) in cardano/gateway/.env".to_string(),
+                        "Missing HISTORY_DB_HOST/HISTORY_DB_PORT in cardano/gateway/.env".to_string(),
                     )
                 } else {
                     check_external_host_port(host.as_str(), port.as_str(), "history backend postgres")

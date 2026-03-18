@@ -95,7 +95,7 @@ Even if Mithril protects us from most ordinary short-range rollbacks, the curren
 
 Today the relayer polls the Gateway for events "since height H", where `H` is a single stored watermark. The Gateway then returns:
 
-- a `current_height`, which is currently the latest Mithril snapshot height when available or the latest `db-sync` block height otherwise
+- a `current_height`, which is currently the latest Mithril snapshot height when available or the latest Ogmios block height otherwise
 - block events for a bounded range above `since_height`
 
 The core issue is that this cursor model tracks only a single height and not any notion of branch identity or "last scanned canonical range". That creates several failure modes:
