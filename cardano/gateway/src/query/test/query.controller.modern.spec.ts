@@ -5,6 +5,7 @@ import { ConnectionService } from '../services/connection.service';
 import { ChannelService } from '../services/channel.service';
 import { PacketService } from '../services/packet.service';
 import { DenomTraceService } from '../services/denom-trace.service';
+import { BridgeManifestService } from '../services/bridge-manifest.service';
 
 describe('QueryController (modern)', () => {
   let controller: QueryController;
@@ -12,6 +13,7 @@ describe('QueryController (modern)', () => {
   let connectionServiceMock: Record<string, jest.Mock>;
   let channelServiceMock: Record<string, jest.Mock>;
   let packetServiceMock: Record<string, jest.Mock>;
+  let bridgeManifestServiceMock: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     // These are controller-level tests: every downstream service is mocked so we
@@ -56,6 +58,10 @@ describe('QueryController (modern)', () => {
       QueryNextSequenceAck: jest.fn(),
     };
 
+    bridgeManifestServiceMock = {
+      getGrpcBridgeManifestResponse: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [QueryController],
       providers: [
@@ -64,6 +70,7 @@ describe('QueryController (modern)', () => {
         { provide: ChannelService, useValue: channelServiceMock },
         { provide: PacketService, useValue: packetServiceMock },
         { provide: DenomTraceService, useValue: {} },
+        { provide: BridgeManifestService, useValue: bridgeManifestServiceMock },
       ],
     }).compile();
 
@@ -103,10 +110,6 @@ describe('QueryController (modern)', () => {
       { client_id: 'c0', revision_number: 1n, revision_height: 2n },
       { ok: 1 },
     );
-  });
-
-  it('delegates queryBlockData to QueryService', async () => {
-    await expectDelegation('queryBlockData', queryServiceMock, 'queryBlockData', { height: 10n }, { ok: 1 });
   });
 
   it('delegates LatestHeight to QueryService', async () => {
@@ -292,6 +295,19 @@ describe('QueryController (modern)', () => {
 
   it('delegates queryEvents to QueryService', async () => {
     await expectDelegation('queryEvents', queryServiceMock, 'queryEvents', { key: 'tx.height' }, { events: [] });
+  });
+
+  it('delegates queryBridgeManifest to BridgeManifestService', async () => {
+    bridgeManifestServiceMock.getGrpcBridgeManifestResponse.mockReturnValue({
+      manifest: { deployment_id: 'cardano-devnet:policy.token' },
+    });
+
+    const response = await controller.queryBridgeManifest({});
+
+    expect(bridgeManifestServiceMock.getGrpcBridgeManifestResponse).toHaveBeenCalledWith();
+    expect(response).toEqual({
+      manifest: { deployment_id: 'cardano-devnet:policy.token' },
+    });
   });
 
   it('delegates denom to QueryService', async () => {

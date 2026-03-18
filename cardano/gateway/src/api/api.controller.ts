@@ -11,6 +11,7 @@ import { DenomTrace } from '../shared/entities/denom-trace.entity';
 import { LOVELACE } from '../constant';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { TransferPlannerService } from './transfer-planner.service';
+import { BridgeManifestService } from '~@/query/services/bridge-manifest.service';
 
 type ApiCardanoAssetDenomTrace = {
   asset_id: string;
@@ -43,6 +44,7 @@ export class ApiController {
     private readonly denomTraceService: DenomTraceService,
     private readonly localOsmosisSwapPlannerService: LocalOsmosisSwapPlannerService,
     private readonly transferPlannerService: TransferPlannerService,
+    private readonly bridgeManifestService: BridgeManifestService,
   ) {}
 
   @Get('channels')
@@ -77,6 +79,14 @@ export class ApiController {
       },
     };
   }
+
+  @Get('bridge-manifest')
+  async getBridgeManifest() {
+    // Exposes the public bootstrap document for operators that want to point a
+    // separate Gateway/relayer stack at this already-deployed Cardano bridge.
+    return this.bridgeManifestService.getBridgeManifest();
+  }
+
   @Post('transfer')
   @HttpCode(200)
   async buildTransferMsg(@Body() msgtransferDto: MsgtransferDto) {

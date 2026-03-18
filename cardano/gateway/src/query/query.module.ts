@@ -14,6 +14,7 @@ import { MithrilModule } from '../shared/modules/mithril/mithril.module';
 import { DenomTraceService } from './services/denom-trace.service';
 import { DenomTrace } from '../shared/entities/denom-trace.entity';
 import { HealthModule } from '../health/health.module';
+import { BridgeManifestService } from './services/bridge-manifest.service';
 
 @Module({
   imports: [
@@ -26,7 +27,7 @@ import { HealthModule } from '../health/health.module';
     HealthModule,
   ],
   controllers: [QueryController],
-  providers: [QueryService, Logger, DbSyncService, ConnectionService, ChannelService, PacketService, DenomTraceService],
-  exports: [QueryService, DbSyncService, ConnectionService, ChannelService, PacketService, DenomTraceService],
+  providers: [QueryService, Logger, DbSyncService, ConnectionService, ChannelService, PacketService, DenomTraceService, BridgeManifestService],
+  exports: [QueryService, DbSyncService, ConnectionService, ChannelService, PacketService, DenomTraceService, BridgeManifestService],
 })
 export class QueryModule {}

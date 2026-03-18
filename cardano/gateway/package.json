@@ -7,6 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "export:bridge-manifest": "ts-node -r tsconfig-paths/register src/scripts/export-bridge-manifest.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -123,7 +124,6 @@
       ".mock.ts",
       "<rootDir>/src/ibc-event-watcher/ibc-event-watcher.module.ts",
       "<rootDir>/src/ibc-event-watcher/ibc-event-watcher.service.ts",
-      "<rootDir>/src/query/services/db-sync.service.ts",
       "<rootDir>/src/shared/modules/lucid/lucid.service.ts"
     ],
     "collectCoverageFrom": [

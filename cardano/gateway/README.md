@@ -70,6 +70,10 @@ Related diagrams:
 - Denom trace lifecycle: `../../docs/denom-trace-mapping.md`
 - Mithril proof flow: `../../docs/mithril-light-client.md#mithril-proof-flow-for-relaying`
 
+## Bridge Discovery Manifest
+
+The Gateway can expose a public bridge manifest at `GET /api/bridge-manifest` and the Cardano gRPC `Query/BridgeManifest` method. That manifest is the operator-facing bootstrap document for reconnecting another Gateway/relayer stack to the same deployed Cardano bridge, including script hashes, reference UTxOs, modules, and auth tokens. At startup, the Gateway accepts either `HANDLER_JSON_PATH` or `BRIDGE_MANIFEST_PATH` and normalizes both sources into the same internal deployment config. If you already have a `handler.json`, you can export the equivalent public manifest with `npm run export:bridge-manifest -- <handler-json-path> <output-path>`.
+
 ## Installation
 
 ```bash
