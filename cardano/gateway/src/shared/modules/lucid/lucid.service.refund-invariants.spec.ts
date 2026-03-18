@@ -48,7 +48,9 @@ const createService = (txBuilder: ChainableTxBuilder): any => {
   service.configService = {
     get: jest.fn().mockReturnValue(deploymentConfig),
   };
-  service.txFromWallet = jest.fn().mockReturnValue(txBuilder);
+  service.lucid = {
+    newTx: jest.fn().mockReturnValue(txBuilder),
+  };
   service.referenceScripts = {
     spendChannel: { txHash: 'ref-spend-channel', outputIndex: 0 },
     spendTransferModule: { txHash: 'ref-spend-transfer', outputIndex: 1 },

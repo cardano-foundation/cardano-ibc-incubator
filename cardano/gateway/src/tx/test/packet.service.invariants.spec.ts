@@ -6,7 +6,6 @@ import { insertSortMapWithNumberKey, prependToMap } from '@shared/helpers/helper
 import { PacketService } from '../packet.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { DenomTraceService } from '../../query/services/denom-trace.service';
-import { IbcTreePendingUpdatesService } from '../../shared/services/ibc-tree-pending-updates.service';
 
 describe('PacketService denom invariants', () => {
   let service: PacketService;
@@ -44,7 +43,6 @@ describe('PacketService denom invariants', () => {
       configServiceMock,
       lucidServiceMock as unknown as LucidService,
       denomTraceServiceMock as unknown as DenomTraceService,
-      {} as IbcTreePendingUpdatesService,
       {} as any,
     );
   });
