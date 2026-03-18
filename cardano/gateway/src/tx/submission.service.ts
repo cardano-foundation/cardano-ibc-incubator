@@ -1,15 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { LucidService } from '../shared/modules/lucid/lucid.service';
 import { GrpcInternalException } from '../exception/grpc_exceptions';
 import { SubmitSignedTxRequest, SubmitSignedTxResponse } from './dto/submit-signed-tx.dto';
-import { DbSyncService } from '../query/services/db-sync.service';
 import { TxEventsService } from './tx-events.service';
-import { KupoService } from '../shared/modules/kupo/kupo.service';
 import { HostStateDatum } from '../shared/types/host-state-datum';
 import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
 import { IbcTreeCacheService } from '../shared/services/ibc-tree-cache.service';
 import { getCurrentTree } from '../shared/helpers/ibc-state-root';
 import { DenomTraceService } from '../query/services/denom-trace.service';
+import { queryNetworkTipPoint, queryTransactionInclusionBlockHeight } from '../shared/helpers/time';
 
 @Injectable()
 export class SubmissionService {
@@ -17,9 +17,8 @@ export class SubmissionService {
 
   constructor(
     private readonly lucidService: LucidService,
-    private readonly dbSyncService: DbSyncService,
+    private readonly configService: ConfigService,
     private readonly txEventsService: TxEventsService,
-    private readonly kupoService: KupoService,
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
     private readonly ibcTreeCacheService: IbcTreeCacheService,
     private readonly denomTraceService: DenomTraceService,
@@ -51,6 +50,8 @@ export class SubmissionService {
         throw new GrpcInternalException('Signed transaction CBOR is empty');
       }
 
+      const preSubmitPoint = await this.capturePreSubmitPoint();
+
       // Submit to Cardano network via Lucid/Ogmios
       // Note: Lucid's submit expects a Transaction object or signed CBOR
       const txHash = await this.submitToCardano(signedTxCbor);
@@ -62,10 +63,9 @@ export class SubmissionService {
         throw new GrpcInternalException(`Transaction ${txHash} was not confirmed`);
       }
 
-      // Hermes expects a non-empty IBC height string in the form "revisionNumber-revisionHeight".
-      // For Cardano devnet we use revisionNumber=0 and revisionHeight=block_no from db-sync.
-      // This is a Cardano block number (db-sync `block_no`), not a slot.
-      const confirmedBlockNo = await this.waitForDbSyncTxHeight(txHash);
+      // Hermes expects the exact tx inclusion height in "revisionNumber-revisionHeight" form.
+      // Capture the pre-submit point and follow Ogmios forward until the submitted tx appears.
+      const confirmedBlockNo = await this.waitForTxInclusionBlockHeight(txHash, preSubmitPoint);
 
       await this.applyPendingIbcTreeUpdate(signedTxCbor, txHash);
 
@@ -89,7 +89,7 @@ export class SubmissionService {
     // Tree updates are registered when building unsigned txs and keyed by tx hash.
     // We only commit them after confirmation, to avoid stale in-memory state if submission fails.
     let pending = this.ibcTreePendingUpdatesService.take(txHash);
-    let onChainRoot: string | undefined;
+    let confirmedRoot: string | undefined;
 
     // Best-effort: if hashes don't line up due to encoding/formatting, compute the canonical body hash.
     if (!pending) {
@@ -100,14 +100,14 @@ export class SubmissionService {
     }
 
     // Strict fallback: if hash matching fails, resolve the pending update by the resulting
-    // on-chain root. This keeps correctness strict (root must match exactly) while handling
+    // confirmed transaction root. This keeps correctness strict (root must match exactly) while handling
     // signer/tooling paths that produce a different tx hash key than we recorded pre-signing.
     if (!pending) {
-      onChainRoot = await this.readOnChainRoot(txHash);
-      pending = this.ibcTreePendingUpdatesService.takeByExpectedRoot(onChainRoot);
+      confirmedRoot = await this.readConfirmedTxRoot(signedTxCbor, txHash);
+      pending = this.ibcTreePendingUpdatesService.takeByExpectedRoot(confirmedRoot);
       if (pending) {
         this.logger.warn(
-          `Resolved pending IBC update for tx ${txHash} via on-chain root fallback (hash-key lookup missed)`,
+          `Resolved pending IBC update for tx ${txHash} via confirmed-tx root fallback (hash-key lookup missed)`,
         );
       }
     }
@@ -122,15 +122,15 @@ export class SubmissionService {
     // submitted transaction even when later steps fail or process restarts occur.
     // Resolve HostState from the exact confirmed transaction.
     // We intentionally do not accept "latest HostState" here because that can
-    // mask db-sync/runtime failures and attach traces to the wrong tx context.
-    // Verify on-chain root matches what we computed when building the tx.
-    if (!onChainRoot) {
-      onChainRoot = await this.readOnChainRoot(txHash);
+    // mask runtime failures and attach traces to the wrong tx context.
+    // Verify the confirmed transaction root matches what we computed when building the tx.
+    if (!confirmedRoot) {
+      confirmedRoot = await this.readConfirmedTxRoot(signedTxCbor, txHash);
     }
 
-    if (onChainRoot !== pending.expectedNewRoot) {
+    if (confirmedRoot !== pending.expectedNewRoot) {
       throw new GrpcInternalException(
-        `On-chain root mismatch for tx ${txHash}: expected ${pending.expectedNewRoot.substring(0, 16)}..., got ${onChainRoot.substring(0, 16)}...`,
+        `Confirmed tx root mismatch for tx ${txHash}: expected ${pending.expectedNewRoot.substring(0, 16)}..., got ${confirmedRoot.substring(0, 16)}...`,
       );
     }
 
@@ -149,24 +149,50 @@ export class SubmissionService {
     }
   }
 
-  private async readOnChainRoot(txHash: string): Promise<string> {
+  private async readConfirmedTxRoot(signedTxCbor: string, txHash: string): Promise<string> {
     try {
-      // This lookup is tx-scoped by design: if this fails, finalization must fail.
-      const hostStateAtTx = await this.dbSyncService.findHostStateUtxoByTxHash(txHash);
-      if (!hostStateAtTx?.datum) {
-        throw new GrpcInternalException(
-          `Missing HostState datum in tx ${txHash}; refusing to finalize denom traces/tree`,
-        );
-      }
-      const hostStateDatumAtTx = await this.lucidService.decodeDatum<HostStateDatum>(hostStateAtTx.datum, 'host_state');
+      const hostStateDatumCbor = this.extractHostStateDatumCborFromSignedTx(signedTxCbor, txHash);
+      const hostStateDatumAtTx = await this.lucidService.decodeDatum<HostStateDatum>(hostStateDatumCbor, 'host_state');
       return hostStateDatumAtTx.state.ibc_state_root;
     } catch (error) {
-      // Propagate as a hard failure; callers must never downgrade this into
-      // a "best-effort" path using current/latest state.
       throw new GrpcInternalException(
-        `Failed to resolve HostState root for tx ${txHash} from db-sync: ${error?.message ?? error}`,
+        `Failed to resolve HostState root for tx ${txHash} from the confirmed transaction: ${error?.message ?? error}`,
       );
     }
+  }
+
+  private extractHostStateDatumCborFromSignedTx(signedTxCbor: string, txHash: string): string {
+    const hostStateOutput = this.findHostStateOutputInSignedTx(signedTxCbor, txHash);
+    const datumOption = hostStateOutput.datum?.();
+    const plutusDatum = datumOption?.as_datum?.();
+    if (!plutusDatum) {
+      throw new Error(`Missing inline HostState datum in confirmed tx ${txHash}`);
+    }
+    return plutusDatum.to_cbor_hex();
+  }
+
+  private findHostStateOutputInSignedTx(signedTxCbor: string, txHash: string): any {
+    const { CML } = this.lucidService.LucidImporter as any;
+    const hostStateNft = this.configService.get('deployment').hostStateNFT;
+    const transaction = CML.Transaction.from_cbor_hex(signedTxCbor);
+    const outputs = transaction.body().outputs();
+    const policyId = CML.ScriptHash.from_hex(hostStateNft.policyId);
+    const tokenName = CML.AssetName.from_hex(hostStateNft.name);
+
+    for (let index = 0; index < outputs.len(); index += 1) {
+      const output = outputs.get(index);
+      const amount = output.amount?.();
+      if (!amount?.has_multiassets?.()) {
+        continue;
+      }
+
+      const quantity = amount.multi_asset?.()?.get?.(policyId, tokenName);
+      if (typeof quantity === 'bigint' ? quantity > 0n : quantity !== undefined) {
+        return output;
+      }
+    }
+
+    throw new Error(`Confirmed tx ${txHash} does not contain a HostState output`);
   }
 
   private async finalizePendingDenomTraces(traceHashes: string[] | undefined, txHash: string): Promise<void> {
@@ -203,6 +229,21 @@ export class SubmissionService {
       return null;
     } catch {
       return null;
+    }
+  }
+
+  private async capturePreSubmitPoint(): Promise<{ slot: number; id: string } | 'origin'> {
+    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    if (!ogmiosEndpoint) {
+      throw new GrpcInternalException('Missing OGMIOS_ENDPOINT for pre-submit chain point lookup');
+    }
+
+    try {
+      return await queryNetworkTipPoint(ogmiosEndpoint);
+    } catch (error) {
+      throw new GrpcInternalException(
+        `Failed to capture pre-submit chain point from Ogmios: ${error?.message ?? error}`,
+      );
     }
   }
 
@@ -337,26 +378,22 @@ export class SubmissionService {
     throw new GrpcInternalException(`Transaction ${txHash} confirmation timeout after ${timeoutMs}ms`);
   }
 
-  /**
-   * Wait for db-sync to index the transaction and return its block height (block_no).
-   */
-  private async waitForDbSyncTxHeight(txHash: string, timeoutMs: number = 60000): Promise<number> {
-    const startTime = Date.now();
-    const pollInterval = 1000;
-
-    while (Date.now() - startTime < timeoutMs) {
-      try {
-        const height = await this.dbSyncService.findHeightByTxHash(txHash);
-        if (typeof height === 'number' && Number.isFinite(height)) {
-          return height;
-        }
-      } catch (error) {
-        // db-sync may not have indexed this tx yet; keep polling
-      }
-
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
+  private async waitForTxInclusionBlockHeight(
+    txHash: string,
+    fromPoint: { slot: number; id: string } | 'origin',
+    timeoutMs: number = 60000,
+  ): Promise<number> {
+    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    if (!ogmiosEndpoint) {
+      throw new GrpcInternalException('Missing OGMIOS_ENDPOINT for inclusion height lookup');
     }
 
-    throw new GrpcInternalException(`db-sync did not return a height for tx ${txHash} within ${timeoutMs}ms`);
+    try {
+      return await queryTransactionInclusionBlockHeight(ogmiosEndpoint, txHash, fromPoint, timeoutMs);
+    } catch (error) {
+      throw new GrpcInternalException(
+        `Failed to resolve exact inclusion height for tx ${txHash} from Ogmios: ${error?.message ?? error}`,
+      );
+    }
   }
 }
