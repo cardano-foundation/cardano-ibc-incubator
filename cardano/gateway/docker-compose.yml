@@ -9,7 +9,6 @@ services:
       - "5001:5001"
     environment:
       PORT: 8000
-      DEPLOYER_SK: ${DEPLOYER_SK:-}
     networks:
       - cardano_network
     volumes:

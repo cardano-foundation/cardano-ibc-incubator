@@ -62,7 +62,7 @@ import {
   TimeoutPacketOperator,
   TimeoutRefreshOperator,
 } from './dto';
-import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
+import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import {
   UnsignedAckPacketMintDto,
   UnsignedAckPacketSucceedDto,
@@ -87,7 +87,6 @@ export class PacketService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     private denomTraceService: DenomTraceService,
-    private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
   ) {}
   /**
@@ -491,20 +490,23 @@ export class PacketService {
         constructedAddress,
       );
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const unsignedSendPacketTxValidTo: TxBuilder = unsignedSendPacketTx.validTo(validToTime);
-
-      await this.refreshWalletContext(constructedAddress, 'timeoutPacket');
-
-      // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedSendPacketTxValidTo.complete({
-        localUPLCEval: false,
-        setCollateral: TRANSACTION_SET_COLLATERAL,
+      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
+        operationName: 'timeoutPacket',
+        unsignedTx: unsignedSendPacketTx,
+        validity: {
+          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+        },
+        wallet: {
+          mode: 'refresh_from_address',
+          address: constructedAddress,
+          context: 'timeoutPacket',
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
+        pendingTreeUpdate,
       });
-      const unsignedTxCbor = completedUnsignedTx.toCBOR();
-      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
-      const unsignedTxHash = completedUnsignedTx.toHash();
-
-      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.logger.log('Returning unsigned tx for timeout packet');
       const response: MsgTimeoutResponse = {
@@ -560,17 +562,22 @@ export class PacketService {
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('recv packet failed: tx time invalid');
       }
-      const unsignedTimeoutRefreshTxValidTo: TxBuilder = unsignedTimeoutRefreshTx.validTo(validToTime);
-
-      await this.refreshWalletContext(constructedAddress, 'timeoutRefresh');
-
-      // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedTimeoutRefreshTxValidTo.complete({
-        localUPLCEval: false,
-        setCollateral: TRANSACTION_SET_COLLATERAL,
+      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
+        operationName: 'timeoutRefresh',
+        unsignedTx: unsignedTimeoutRefreshTx,
+        validity: {
+          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+        },
+        wallet: {
+          mode: 'refresh_from_address',
+          address: constructedAddress,
+          context: 'timeoutRefresh',
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
       });
-      const unsignedTxCbor = completedUnsignedTx.toCBOR();
-      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
       this.logger.log('Returning unsigned tx for timeout refresh');
       const response: MsgTimeoutRefreshResponse = {
@@ -602,23 +609,39 @@ export class PacketService {
       this.logger.log('AcknowledgementPacket ackPacketOperator: ', ackPacketOperator);
 
       // Build and complete the unsigned transaction
-      const { unsignedTx: unsignedAckPacketTx, pendingTreeUpdate } = await this.buildUnsignedAcknowlegementPacketTx(
+      const {
+        unsignedTx: unsignedAckPacketTx,
+        pendingTreeUpdate,
+        walletSelection,
+      } = await this.buildUnsignedAcknowlegementPacketTx(
         ackPacketOperator,
         constructedAddress,
       );
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const unsignedAckPacketTxValidTo: TxBuilder = unsignedAckPacketTx.validTo(validToTime);
-
-      // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unsignedAckPacketTxValidTo.complete({
-        localUPLCEval: false,
-        setCollateral: TRANSACTION_SET_COLLATERAL,
+      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
+        operationName: 'acknowledgementPacket',
+        unsignedTx: unsignedAckPacketTx,
+        validity: {
+          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+        },
+        wallet: {
+          mode: 'custom_before_complete',
+          run: async () => {
+            await this.refreshWalletContext(
+              constructedAddress,
+              walletSelection?.context ?? 'acknowledgementPacket',
+              walletSelection?.excludeAssetUnit
+                ? { excludeAssetUnit: walletSelection.excludeAssetUnit }
+                : undefined,
+            );
+          },
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
+        pendingTreeUpdate,
       });
-      const unsignedTxCbor = completedUnsignedTx.toCBOR();
-      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
-      const unsignedTxHash = completedUnsignedTx.toHash();
-
-      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.logger.log('Returning unsigned tx for ack packet');
       const response: MsgAcknowledgementResponse = {
@@ -1586,9 +1609,14 @@ export class PacketService {
   async buildUnsignedAcknowlegementPacketTx(
     ackPacketOperator: AckPacketOperator,
     constructedAddress: string,
-  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
-    await this.refreshWalletContext(constructedAddress, 'acknowledgementPacket');
-
+  ): Promise<{
+    unsignedTx: TxBuilder;
+    pendingTreeUpdate: PendingTreeUpdate;
+    walletSelection?: {
+      context: string;
+      excludeAssetUnit?: string;
+    };
+  }> {
     const channelSequence: string = ackPacketOperator.channelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
     // Get the token unit associated with the client
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
@@ -1791,7 +1819,13 @@ export class PacketService {
         encodedVerifyProofRedeemer,
       };
       const unsignedTx = this.lucidService.createUnsignedAckPacketSucceedTx(unsignedAckPacketSucceedParams);
-      return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
+      return {
+        unsignedTx,
+        pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+        walletSelection: {
+          context: 'acknowledgementPacket',
+        },
+      };
     }
 
     const acknowledgementError = this.extractAcknowledgementError(acknowledgementResponse);
@@ -1822,15 +1856,6 @@ export class PacketService {
     ) {
       this.logger.log('AckPacketUnescrow');
       const denomToken = mapLovelaceDenom(fungibleTokenPacketData.denom, 'packet_to_asset');
-      await this.refreshWalletContext(
-        constructedAddress,
-        'acknowledgementPacket(unescrow)',
-        denomToken === LOVELACE
-          ? undefined
-          : {
-              excludeAssetUnit: denomToken,
-            },
-      );
       // build update channel datum
       const updatedChannelDatum: ChannelDatum = {
         ...channelDatum,
@@ -1871,7 +1896,14 @@ export class PacketService {
         encodedVerifyProofRedeemer,
       };
       const unsignedTx = this.lucidService.createUnsignedAckPacketUnescrowTx(unsignedAckPacketUnescrowParams);
-      return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
+      return {
+        unsignedTx,
+        pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+        walletSelection: {
+          context: 'acknowledgementPacket(unescrow)',
+          excludeAssetUnit: denomToken === LOVELACE ? undefined : denomToken,
+        },
+      };
     }
 
     // build encode mint voucher redeemer
@@ -1955,6 +1987,9 @@ export class PacketService {
         expectedNewRoot: newRoot,
         commit,
         denomTraceHashes: [voucherTokenName],
+      },
+      walletSelection: {
+        context: 'acknowledgementPacket',
       },
     };
   }

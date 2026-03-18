@@ -69,7 +69,6 @@ fn target_requires_runtime_deployer_sk(target: Option<StartTarget>) -> bool {
     target.is_none()
         || target == Some(StartTarget::All)
         || target == Some(StartTarget::Bridge)
-        || target == Some(StartTarget::Gateway)
         || target == Some(StartTarget::Relayer)
 }
 
@@ -267,7 +266,6 @@ pub async fn run_start(
         match start_gateway(
             project_root_path.join("cardano/gateway").as_path(),
             clean,
-            runtime_deployer_sk.as_deref(),
         ) {
             Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
             Err(error) => return Err(format!("ERROR: Failed to start gateway: {}", error)),
@@ -545,7 +543,6 @@ pub async fn run_start(
         match start_gateway(
             project_root_path.join("cardano/gateway").as_path(),
             clean,
-            runtime_deployer_sk.as_deref(),
         ) {
             Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
             Err(error) => {

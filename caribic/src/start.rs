@@ -2127,7 +2127,6 @@ fn wait_for_mithril_artifact_readiness(
 pub fn start_gateway(
     gateway_dir: &Path,
     clean: bool,
-    runtime_deployer_sk: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     const SHARED_CARDANO_NETWORK: &str = "cardano_ibc_net";
     let optional_progress_bar = match logger::get_verbosity() {
@@ -2185,8 +2184,7 @@ pub fn start_gateway(
         log_or_show_progress("Starting Gateway containers", &optional_progress_bar);
     }
 
-    let gateway_env = runtime_deployer_sk.map(|deployer_sk| vec![("DEPLOYER_SK", deployer_sk)]);
-    execute_script(&gateway_dir, "docker", script_args, gateway_env)?;
+    execute_script(&gateway_dir, "docker", script_args, None)?;
 
     // Wait for Gateway gRPC port to be accessible
     log_or_show_progress(

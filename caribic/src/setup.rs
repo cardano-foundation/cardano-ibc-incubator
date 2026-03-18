@@ -976,20 +976,6 @@ fn write_gateway_env_for_network(
                 epoch_nonce_value.as_str(),
             )?;
 
-            let deployer_sk_path = cardano_dir.join("config/credentials/me.sk");
-            if deployer_sk_path.exists() {
-                let deployer_sk = fs::read_to_string(&deployer_sk_path).map_err(|error| {
-                    format!(
-                        "Failed to read deployer signing key at {}: {}",
-                        deployer_sk_path.display(),
-                        error
-                    )
-                })?;
-                let deployer_sk = deployer_sk.trim();
-                if !deployer_sk.is_empty() {
-                    set_or_append_env_var(&gateway_env, "DEPLOYER_SK", deployer_sk)?;
-                }
-            }
         }
         config::CoreCardanoNetwork::Preprod => {
             clear_external_runtime_placeholder(&gateway_env, "HISTORY_DB_HOST", "yaci-store-postgres")?;
@@ -1002,7 +988,6 @@ fn write_gateway_env_for_network(
                 "http://cardano-node-ogmios:1337",
             )?;
             set_or_append_env_var(&gateway_env, "CARDANO_EPOCH_NONCE_GENESIS", "\"\"")?;
-            set_or_append_env_var(&gateway_env, "DEPLOYER_SK", "")?;
         }
     }
 
