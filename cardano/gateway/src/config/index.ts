@@ -71,8 +71,6 @@ interface Config {
   swapRouterAddress: string;
   database: PostgresConnectionOptions;
 
-  cardanoChainHost: string;
-  cardanoChainPort: number;
   cardanoChainNetworkMagic: number;
   // Logical identifier for the Cardano chain used by Hermes (e.g., "cardano-devnet").
   // Cardano itself does not have a Cosmos-style chain-id; we use this as the IBC identifier.
@@ -85,12 +83,14 @@ interface Config {
 }
 
 export default (): Partial<Config> => {
+  const cardanoNetworkMagic =
+    process.env.CARDANO_CHAIN_NETWORK_MAGIC || process.env.CARDANO_NETWORK_MAGIC || '42';
   let cardanoNetwork: Network = 'Custom';
-  if (process.env.CARDANO_NETWORK_MAGIC === '1') {
+  if (cardanoNetworkMagic === '1') {
     cardanoNetwork = 'Preprod';
-  } else if (process.env.CARDANO_NETWORK_MAGIC === '2') {
+  } else if (cardanoNetworkMagic === '2') {
     cardanoNetwork = 'Preview';
-  } else if (process.env.CARDANO_NETWORK_MAGIC === '764824073') {
+  } else if (cardanoNetworkMagic === '764824073') {
     cardanoNetwork = 'Mainnet';
   }
 
@@ -101,9 +101,7 @@ export default (): Partial<Config> => {
     localOsmosisRestEndpoint: process.env.LOCAL_OSMOSIS_REST_ENDPOINT,
     swapRouterAddress: process.env.SWAP_ROUTER_ADDRESS || '',
 
-    cardanoChainHost: process.env.CARDANO_CHAIN_HOST,
-    cardanoChainPort: Number(process.env.CARDANO_CHAIN_PORT || 3001),
-    cardanoChainNetworkMagic: Number(process.env.CARDANO_CHAIN_NETWORK_MAGIC || 42),
+    cardanoChainNetworkMagic: Number(cardanoNetworkMagic),
     cardanoChainId: process.env.CARDANO_CHAIN_ID || 'cardano-devnet',
     cardanoNetwork: cardanoNetwork,
     cardanoEpochNonceGenesis: process.env.CARDANO_EPOCH_NONCE_GENESIS,

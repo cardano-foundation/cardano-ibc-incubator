@@ -1,8 +1,4 @@
-import { Module, Logger } from '@nestjs/common';
-import { MiniProtocalsService } from './mini-protocals.service';
+import { Module } from '@nestjs/common';
 
-@Module({
-  providers: [MiniProtocalsService, Logger],
-  exports: [MiniProtocalsService],
-})
+@Module({})
 export class MiniProtocalsModule {}

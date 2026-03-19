@@ -31,8 +31,10 @@ import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
 import { MockModuleDatum } from '@shared/types/apps/mock/mock-module-datum';
 import { insertSortMap } from '../shared/helpers/helper';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
+import { sumLovelaceFromUtxos } from './helper/helper';
 import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
+import { TxEventsService } from './tx-events.service';
 import {
   validateAndFormatChannelOpenAckParams,
   validateAndFormatChannelOpenConfirmParams,
@@ -69,7 +71,7 @@ import {
   computeRootWithUpdateChannelUpdate,
   isTreeAligned,
 } from '../shared/helpers/ibc-state-root';
-import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
+import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 
 @Injectable()
@@ -78,8 +80,24 @@ export class ChannelService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
+    private readonly txEventsService: TxEventsService,
+    private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
   ) {}
+
+  private async refreshWalletContext(address: string, context: string): Promise<void> {
+    const walletUtxos = await this.lucidService.tryFindUtxosAt(address, {
+      maxAttempts: 6,
+      retryDelayMs: 1000,
+    });
+    if (walletUtxos.length === 0) {
+      throw new GrpcInternalException(`${context} failed: no spendable UTxOs found for ${address}`);
+    }
+    this.lucidService.selectWalletFromAddress(address, walletUtxos);
+    this.logger.log(
+      `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(walletUtxos)}`,
+    );
+  }
 
   /**
    * Compute the new IBC state root for CreateChannel, and also return the per-key witnesses.
@@ -244,22 +262,16 @@ export class ChannelService {
         constructedAddress,
       );
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
-        operationName: 'channelOpenTry',
-        unsignedTx: unsignedChannelOpenTryTx,
-        validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
-        },
-        wallet: {
-          mode: 'refresh_from_address',
-          address: constructedAddress,
-          context: 'channelOpenTry',
-        },
-        completeOptions: {
-          localUPLCEval: false,
-          setCollateral: TRANSACTION_SET_COLLATERAL,
-        },
+      const unsignedChannelOpenTryTxValidTo: TxBuilder = unsignedChannelOpenTryTx.validTo(validToTime);
+      
+      // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'channelOpenTry');
+      const completedUnsignedTx = await unsignedChannelOpenTryTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
       });
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
       this.logger.log('Returning unsigned tx for channel open try');
       const response: MsgChannelOpenTryResponse = {
@@ -296,35 +308,32 @@ export class ChannelService {
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
-      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
-        operationName: 'channelOpenAck',
-        unsignedTx: unsignedChannelOpenAckTx,
-        validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
-        },
-        wallet: {
-          mode: 'refresh_from_address',
-          address: constructedAddress,
-          context: 'channelOpenAck',
-        },
-        completeOptions: {
-          localUPLCEval: false,
-          setCollateral: TRANSACTION_SET_COLLATERAL,
-        },
-        pendingTreeUpdate,
-        syntheticEvents: [
-          {
-            type: 'channel_open_ack',
-            attributes: [
-              { key: 'port_id', value: channelOpenAckEvent.port_id },
-              { key: 'channel_id', value: channelOpenAckEvent.channel_id },
-              { key: 'connection_id', value: channelOpenAckEvent.connection_id },
-              { key: 'counterparty_port_id', value: channelOpenAckEvent.counterparty_port_id },
-              { key: 'counterparty_channel_id', value: channelOpenAckEvent.counterparty_channel_id },
-            ],
-          },
-        ],
+      const unsignedChannelOpenAckTxValidTo: TxBuilder = unsignedChannelOpenAckTx.validTo(validToTime);
+
+      // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'channelOpenAck');
+      const completedUnsignedTx = await unsignedChannelOpenAckTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
       });
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
+
+      this.txEventsService.register(unsignedTxHash, [
+        {
+          type: 'channel_open_ack',
+          attributes: [
+            { key: 'port_id', value: channelOpenAckEvent.port_id },
+            { key: 'channel_id', value: channelOpenAckEvent.channel_id },
+            { key: 'connection_id', value: channelOpenAckEvent.connection_id },
+            { key: 'counterparty_port_id', value: channelOpenAckEvent.counterparty_port_id },
+            { key: 'counterparty_channel_id', value: channelOpenAckEvent.counterparty_channel_id },
+          ],
+        },
+      ]);
 
       await sleep(7000);
       this.logger.log('Returning unsigned tx for channel open ack');
@@ -356,23 +365,19 @@ export class ChannelService {
         constructedAddress,
       );
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
-        operationName: 'channelOpenConfirm',
-        unsignedTx: unsignedChannelConfirmInitTx,
-        validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
-        },
-        wallet: {
-          mode: 'refresh_from_address',
-          address: constructedAddress,
-          context: 'channelOpenConfirm',
-        },
-        completeOptions: {
-          localUPLCEval: false,
-          setCollateral: TRANSACTION_SET_COLLATERAL,
-        },
-        pendingTreeUpdate,
+      const unsignedChannelConfirmInitTxValidTo: TxBuilder = unsignedChannelConfirmInitTx.validTo(validToTime);
+
+      // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'channelOpenConfirm');
+      const completedUnsignedTx = await unsignedChannelConfirmInitTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
       });
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.logger.log('Returning unsigned tx for channel open confirm');
       const response: MsgChannelOpenConfirmResponse = {
@@ -403,23 +408,19 @@ export class ChannelService {
         constructedAddress,
       );
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
-        operationName: 'channelCloseInit',
-        unsignedTx: unsignedChannelCloseInitTx,
-        validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
-        },
-        wallet: {
-          mode: 'refresh_from_address',
-          address: constructedAddress,
-          context: 'channelCloseInit',
-        },
-        completeOptions: {
-          localUPLCEval: false,
-          setCollateral: TRANSACTION_SET_COLLATERAL,
-        },
-        pendingTreeUpdate,
+      const unsignedChannelCloseInitTxValidTo: TxBuilder = unsignedChannelCloseInitTx.validTo(validToTime);
+
+      // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'channelCloseInit');
+      const completedUnsignedTx = await unsignedChannelCloseInitTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
       });
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       this.logger.log('Returning unsigned tx for channel close init');
       const response: MsgChannelCloseInitResponse = {

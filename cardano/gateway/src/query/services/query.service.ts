@@ -1,8 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
-  QueryBlockDataRequest,
-  QueryBlockDataResponse,
   QueryClientStateRequest,
   QueryClientStateResponse,
   QueryClientStatesRequest,
@@ -14,7 +12,6 @@ import {
   QueryNewClientRequest,
   QueryNewClientResponse,
 } from '@plus/proto-types/build/ibc/core/client/v1/query';
-import { BlockData } from '@plus/proto-types/build/ibc/lightclients/ouroboros/ouroboros';
 import {
   ClientState as ClientStateTendermint,
   ConsensusState as ConsensusStateTendermint,
@@ -25,8 +22,6 @@ import {
   MithrilCertificate,
   MithrilHeader,
 } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
-import { TransactionBody, hash_transaction } from '@dcspark/cardano-multiplatform-lib-nodejs';
-import { BlockDto } from '../dtos/block.dto';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { IdentifiedClientState } from '@plus/proto-types/build/ibc/core/client/v1/client';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
@@ -37,7 +32,6 @@ import { decodeHostStateDatum, HostStateDatum } from '@shared/types/host-state-d
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
 import { normalizeConsensusStateFromDatum } from '@shared/helpers/consensus-state';
 import { ClientDatum, decodeClientDatum } from '@shared/types/client-datum';
-import { normalizeBlockDataFromOuroboros } from '@shared/helpers/block-data';
 import {
   GrpcInternalException,
   GrpcInvalidArgumentException,
@@ -80,10 +74,8 @@ import {
   ResultBlockResults,
   ResultBlockSearch,
 } from '@plus/proto-types/build/ibc/core/types/v1/block';
-import { DbSyncService } from './db-sync.service';
 import { ChannelDatum, decodeChannelDatum } from '@shared/types/channel/channel-datum';
 import { getChannelIdByTokenName, getConnectionIdFromConnectionHops } from '@shared/helpers/channel';
-import cbor from 'cbor';
 import { getConnectionIdByTokenName } from '@shared/helpers/connection';
 import { UTxO } from '@lucid-evolution/lucid';
 import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
@@ -116,15 +108,24 @@ import {
 import { Denom, Hop } from '@plus/proto-types/build/ibc/applications/transfer/v1/token';
 import { DenomTraceService } from './denom-trace.service';
 import { convertHex2String } from '@shared/helpers/hex';
+import { HISTORY_SERVICE, HistoryService } from './history.service';
+
+type ParsedTxRedeemer = {
+  type: string;
+  data: string;
+  index: bigint;
+};
 
 @Injectable()
 export class QueryService {
+  private readonly txRedeemerCache = new Map<string, Promise<ParsedTxRedeemer[]>>();
+
   constructor(
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     @Inject(KupoService) private kupoService: KupoService,
-    @Inject(DbSyncService) private dbService: DbSyncService,
+    @Inject(HISTORY_SERVICE) private historyService: HistoryService,
     @Inject(MiniProtocalsService) private miniProtocalsService: MiniProtocalsService,
     @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(DenomTraceService) private denomTraceService: DenomTraceService,
@@ -156,7 +157,14 @@ export class QueryService {
    * 4. alignTreeWithChain() queries all IBC UTXOs and rebuilds the tree
    * 5. Proof generation proceeds normally
    * 6. Subsequent queries find the tree aligned (cheap root comparison)
-   * TO-DO: Will a growing amount of IBC UTXOs be a problem in the future for this recovery but also for any in-memory limits?
+   * SCALING NOTE:
+   * The number of live IBC UTXOs is expected to scale roughly as:
+   *   total_live_ibc_utxos = 1 HostState + numClients + numConnections + numChannels
+   * so the raw UTXO scan is not expected to be the dominant scaling issue by itself.
+   * The more likely long-term pressure is datum growth inside those live UTXOs,
+   * especially client consensus states and channel packet maps
+   * (commitments / receipts / acknowledgements), since rebuild cost scales with the
+   * number of reconstructed ICS-24 tree entries, not just the count of live UTXOs.
    * PERFORMANCE NOTE:
    * Tree rebuilding is expensive (queries all IBC UTXOs), but it only happens when
    * the tree is actually stale. In normal operation, this is a cheap root comparison.
@@ -200,6 +208,23 @@ export class QueryService {
     const result = await alignTreeWithChain();
     
     this.logger.log(`Tree rebuilt successfully, new root: ${result.root.substring(0, 16)}...`);
+  }
+
+  private async getTransactionRedeemers(txHash: string): Promise<ParsedTxRedeemer[]> {
+    const cacheKey = txHash.toLowerCase();
+    if (!this.txRedeemerCache.has(cacheKey)) {
+      this.txRedeemerCache.set(cacheKey, this.loadTransactionRedeemers(cacheKey));
+    }
+    return this.txRedeemerCache.get(cacheKey)!;
+  }
+
+  private async loadTransactionRedeemers(txHash: string): Promise<ParsedTxRedeemer[]> {
+    const evidence = await this.miniProtocalsService.fetchTransactionEvidence(txHash);
+    return evidence.redeemers.map((redeemer) => ({
+      type: redeemer.type,
+      index: BigInt(redeemer.index),
+      data: redeemer.data,
+    }));
   }
 
 	  async queryNewMithrilClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
@@ -343,9 +368,8 @@ export class QueryService {
       throw new GrpcInternalException('Mithril transaction snapshots unavailable for latest height');
     }
 
-    const latestBlockNo = listSnapshots[0].block_number;
     const latestHeightResponse = {
-      height: latestBlockNo,
+      height: listSnapshots[0].block_number,
     };
     this.logger.log(latestHeightResponse.height, 'QueryLatestHeight');
     return latestHeightResponse as unknown as QueryLatestHeightResponse;
@@ -579,53 +603,6 @@ export class QueryService {
     return response as unknown as QueryConsensusStateResponse;
   }
 
-  async queryBlockData(request: QueryBlockDataRequest): Promise<QueryBlockDataResponse> {
-    // Legacy query used by the old Ouroboros/Cardano light client implementation.
-    //
-    // The production Cosmos-side Cardano client is the Mithril client, and Hermes uses
-    // `queryIBCHeader()` + ICS-23 proofs for verification. Keeping this endpoint around is
-    // useful when comparing historical approaches, but it is not part of the relaying path.
-    const { height } = request;
-    this.logger.log(height, 'queryBlockData');
-    if (!height) {
-      throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
-    }
-
-    const blockDto: BlockDto = await this.dbService.findBlockByHeight(height);
-    let blockHeader = null;
-    try {
-      blockHeader = await this.miniProtocalsService.fetchBlockHeader(blockDto.hash, BigInt(blockDto.slot));
-    } catch (err) {
-      this.logger.warn(
-        `Failed to fetch block header via mini-protocols for height=${height} slot=${blockDto.slot}: ${err?.message ?? err}`,
-        'queryBlockData',
-      );
-    }
-    try {
-      const blockDataOuroboros = normalizeBlockDataFromOuroboros(blockDto, blockHeader);
-      blockDataOuroboros.chain_id = `${this.configService.get('cardanoChainNetworkMagic')}`;
-      blockDataOuroboros.epoch_nonce = this.configService.get('cardanoEpochNonceGenesis');
-      if (blockDto.epoch > 0) {
-        const epochParam = await this.dbService.findEpochParamByEpochNo(BigInt(blockDto.epoch));
-        blockDataOuroboros.epoch_nonce = epochParam.nonce;
-      }
-
-      const blockData: QueryBlockDataResponse = {
-        block_data: {
-          type_url: '/ibc.clients.cardano.v1.BlockData',
-          value: BlockData.encode(blockDataOuroboros).finish(),
-        },
-      } as unknown as QueryBlockDataResponse;
-      return blockData;
-    } catch (err) {
-      this.logger.error('queryBlockData ERR:', err);
-
-      this.logger.error(err.message, 'queryBlockData ERR:');
-
-      throw new GrpcInternalException(err.message);
-    }
-  }
-
   async queryBlockResults(request: QueryBlockResultsRequest): Promise<QueryBlockResultsResponse> {
     const { height } = request;
     this.logger.log(height, 'queryBlockResults');
@@ -645,22 +622,24 @@ export class QueryService {
       const totalEventResults: ResponseDeliverTx[] = [];
       for (const blockNo of [height]) {
         // connection +channel
-        const utxosInBlock = await this.dbService.findUtxosByBlockNo(parseInt(blockNo.toString()));
-        const txsResults = await Promise.all(
-          utxosInBlock
-            .filter((utxo) => [mintConnScriptHash, mintChannelScriptHash].includes(utxo.assetsPolicy))
-            .map(async (utxo) => {
-              switch (utxo.assetsPolicy) {
-                case mintConnScriptHash:
-                  return await this._parseEventConnection(utxo, connectionBaseToken, mintConnScriptHash);
-                case mintChannelScriptHash:
-                  return await this._parseEventChannel(utxo, channelBaseToken, mintChannelScriptHash);
-              }
-            }),
-        );
+        const utxosInBlock = await this.historyService.findUtxosByBlockNo(parseInt(blockNo.toString()));
+        const txsResults = (
+          await Promise.all(
+            utxosInBlock
+              .filter((utxo) => [mintConnScriptHash, mintChannelScriptHash].includes(utxo.assetsPolicy))
+              .map(async (utxo) => {
+                switch (utxo.assetsPolicy) {
+                  case mintConnScriptHash:
+                    return await this._parseEventConnection(utxo, connectionBaseToken, mintConnScriptHash);
+                  case mintChannelScriptHash:
+                    return await this._parseEventChannel(utxo, channelBaseToken, mintChannelScriptHash);
+                }
+              }),
+          )
+        ).filter((txsResult): txsResult is ResponseDeliverTx => txsResult !== null && txsResult !== undefined);
 
         // client state + consensus state
-        const authOrClientUTxos = await this.dbService.findUtxoClientOrAuthHandler(parseInt(blockNo.toString()));
+        const authOrClientUTxos = await this.historyService.findUtxoClientOrAuthHandler(parseInt(blockNo.toString()));
         const txsAuthOrClientsResults = await this._parseEventClient(authOrClientUTxos);
 
         // register/unregister event spo
@@ -752,7 +731,7 @@ export class QueryService {
 
   private async _querySpoEvents(height: BigInt): Promise<ResponseDeliverTx[]> {
     const txsResults: ResponseDeliverTx[] = [];
-    const hasEventRegister = await this.dbService.checkExistPoolUpdateByBlockNo(parseInt(height.toString()));
+    const hasEventRegister = await this.historyService.checkExistPoolUpdateByBlockNo(parseInt(height.toString()));
     if (hasEventRegister) {
       txsResults.push(<ResponseDeliverTx>{
         code: 0,
@@ -765,7 +744,7 @@ export class QueryService {
       });
     }
 
-    const hasEventUnRegister = await this.dbService.checkExistPoolRetireByBlockNo(parseInt(height.toString()));
+    const hasEventUnRegister = await this.historyService.checkExistPoolRetireByBlockNo(parseInt(height.toString()));
     if (hasEventUnRegister) {
       txsResults.push(<ResponseDeliverTx>{
         code: 0,
@@ -785,32 +764,45 @@ export class QueryService {
     utxo: UtxoDto,
     tokenBase: AuthToken,
     mintScriptHash: string,
-  ): Promise<ResponseDeliverTx> {
-    const connDatumDecoded: ConnectionDatum = await decodeConnectionDatum(utxo.datum!, this.lucidService.LucidImporter);
+  ): Promise<ResponseDeliverTx | null> {
+    let connDatumDecoded: ConnectionDatum;
+    try {
+      connDatumDecoded = await decodeConnectionDatum(utxo.datum!, this.lucidService.LucidImporter);
+    } catch {
+      return null;
+    }
     const currentConnectionId = getConnectionIdByTokenName(utxo.assetsName, tokenBase, CONNECTION_TOKEN_PREFIX);
     const txsResult = normalizeTxsResultFromConnDatum(connDatumDecoded, currentConnectionId);
 
     const spendAddress = this.configService.get('deployment').validators.spendConnection.address;
-    const redeemers = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
-      utxo.txId.toString(),
-      mintScriptHash,
-      spendAddress,
-    );
+    const redeemers = await this.getTransactionRedeemers(utxo.txHash);
     redeemers
       .filter((redeemer) => redeemer.data !== REDEEMER_EMPTY_DATA && redeemer.data.length > 10)
       .map((redeemer) => {
         switch (redeemer.type) {
-          case REDEEMER_TYPE.MINT:
-            const mintRedeemer = decodeMintConnectionRedeemer(redeemer.data, this.lucidService.LucidImporter);
+          case REDEEMER_TYPE.MINT: {
+            let mintRedeemer;
+            try {
+              mintRedeemer = decodeMintConnectionRedeemer(redeemer.data, this.lucidService.LucidImporter);
+            } catch {
+              break;
+            }
             if (mintRedeemer.hasOwnProperty('ConnOpenInit')) txsResult.events[0].type = EVENT_TYPE_CONNECTION.OPEN_INIT;
             if (mintRedeemer.hasOwnProperty('ConnOpenTry')) txsResult.events[0].type = EVENT_TYPE_CONNECTION.OPEN_TRY;
             break;
-          case REDEEMER_TYPE.SPEND:
-            const spendRedeemer = decodeSpendConnectionRedeemer(redeemer.data, this.lucidService.LucidImporter);
+          }
+          case REDEEMER_TYPE.SPEND: {
+            let spendRedeemer;
+            try {
+              spendRedeemer = decodeSpendConnectionRedeemer(redeemer.data, this.lucidService.LucidImporter);
+            } catch {
+              break;
+            }
             if (spendRedeemer.hasOwnProperty('ConnOpenAck')) txsResult.events[0].type = EVENT_TYPE_CONNECTION.OPEN_ACK;
             if (spendRedeemer.hasOwnProperty('ConnOpenConfirm'))
               txsResult.events[0].type = EVENT_TYPE_CONNECTION.OPEN_CONFIRM;
             break;
+          }
           default:
         }
       });
@@ -827,8 +819,13 @@ export class QueryService {
     utxo: UtxoDto,
     tokenBase: AuthToken,
     mintScriptHash: string,
-  ): Promise<ResponseDeliverTx> {
-    const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+  ): Promise<ResponseDeliverTx | null> {
+    let channelDatumDecoded: ChannelDatum;
+    try {
+      channelDatumDecoded = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    } catch {
+      return null;
+    }
 
     const currentChannelId = getChannelIdByTokenName(utxo.assetsName, tokenBase, CHANNEL_TOKEN_PREFIX);
     const currentConnectionId = getConnectionIdFromConnectionHops(channelDatumDecoded.state.channel.connection_hops[0]);
@@ -836,23 +833,30 @@ export class QueryService {
     const txsResult = normalizeTxsResultFromChannelDatum(channelDatumDecoded, currentConnectionId, currentChannelId);
 
     const spendAddress = this.configService.get('deployment').validators.spendChannel.address;
-    let redeemers = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
-      utxo.txId.toString(),
-      mintScriptHash,
-      spendAddress,
-    );
+    let redeemers = await this.getTransactionRedeemers(utxo.txHash);
 
     redeemers = redeemers.filter((redeemer) => ![REDEEMER_EMPTY_DATA].includes(redeemer.data));
     for (const redeemer of redeemers) {
       switch (redeemer.type) {
-        case REDEEMER_TYPE.MINT:
-          const mintRedeemer = decodeMintChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+        case REDEEMER_TYPE.MINT: {
+          let mintRedeemer;
+          try {
+            mintRedeemer = decodeMintChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+          } catch {
+            break;
+          }
 
           if (mintRedeemer.hasOwnProperty('ChanOpenInit')) txsResult.events[0].type = EVENT_TYPE_CHANNEL.OPEN_INIT;
           if (mintRedeemer.hasOwnProperty('ChanOpenTry')) txsResult.events[0].type = EVENT_TYPE_CHANNEL.OPEN_TRY;
           break;
-        case REDEEMER_TYPE.SPEND:
-          const spendRedeemer = decodeSpendChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+        }
+        case REDEEMER_TYPE.SPEND: {
+          let spendRedeemer;
+          try {
+            spendRedeemer = decodeSpendChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+          } catch {
+            break;
+          }
 
           if (spendRedeemer.hasOwnProperty('ChanOpenAck')) txsResult.events[0].type = EVENT_TYPE_CHANNEL.OPEN_ACK;
           if (spendRedeemer.hasOwnProperty('ChanOpenConfirm'))
@@ -865,41 +869,47 @@ export class QueryService {
             txsResult.events = packetEvent.events;
             if (spendRedeemer.hasOwnProperty('SendPacket')) break;
 
-            const moduleRedeemer = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
-              utxo.txId.toString(),
-              '',
-              spendTransferModuleAddress,
-            );
+            const moduleRedeemer = redeemers.filter((candidate) => candidate.type === REDEEMER_TYPE.SPEND);
             if (moduleRedeemer.length > 0) {
-              const moduleRedeemerDecoded = decodeIBCModuleRedeemer(
-                moduleRedeemer[0].data,
-                this.lucidService.LucidImporter,
-              );
-              const writeAckTxsResult = normalizeTxsResultFromModuleRedeemer(
-                moduleRedeemerDecoded,
-                spendRedeemer,
-                channelDatumDecoded,
-              );
-              txsResult.events.push(...writeAckTxsResult.events);
+              for (const candidate of moduleRedeemer) {
+                try {
+                  const moduleRedeemerDecoded = decodeIBCModuleRedeemer(
+                    candidate.data,
+                    this.lucidService.LucidImporter,
+                  );
+                  const writeAckTxsResult = normalizeTxsResultFromModuleRedeemer(
+                    moduleRedeemerDecoded,
+                    spendRedeemer,
+                    channelDatumDecoded,
+                  );
+                  txsResult.events.push(...writeAckTxsResult.events);
+                  break;
+                } catch {
+                  continue;
+                }
+              }
             }
 
             if (spendMockModuleAddress) {
-              const mockModuleRedeemer = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
-                utxo.txId.toString(),
-                '',
-                spendMockModuleAddress,
-              );
-              if (mockModuleRedeemer.length > 0) {
-                const mockModuleRedeemerDecoded = decodeIBCModuleRedeemer(
-                  mockModuleRedeemer[0].data,
-                  this.lucidService.LucidImporter,
-                );
-                const writeAckTxsResult = normalizeTxsResultFromModuleRedeemer(
-                  mockModuleRedeemerDecoded,
-                  spendRedeemer,
-                  channelDatumDecoded,
-                );
-                txsResult.events.push(...writeAckTxsResult.events);
+              const mockModuleRedeemers = redeemers.filter((candidate) => candidate.type === REDEEMER_TYPE.SPEND);
+              if (mockModuleRedeemers.length > 0) {
+                for (const candidate of mockModuleRedeemers) {
+                  try {
+                    const mockModuleRedeemerDecoded = decodeIBCModuleRedeemer(
+                      candidate.data,
+                      this.lucidService.LucidImporter,
+                    );
+                    const writeAckTxsResult = normalizeTxsResultFromModuleRedeemer(
+                      mockModuleRedeemerDecoded,
+                      spendRedeemer,
+                      channelDatumDecoded,
+                    );
+                    txsResult.events.push(...writeAckTxsResult.events);
+                    break;
+                  } catch {
+                    continue;
+                  }
+                }
               }
             }
           }
@@ -918,6 +928,7 @@ export class QueryService {
             txsResult.events[0].type = EVENT_TYPE_CHANNEL.CLOSE_CONFIRM;
           }
           break;
+        }
         default:
       }
     }
@@ -946,20 +957,25 @@ export class QueryService {
         .map(async (clientUtxo) => {
           const eventClient = hasHandlerUtxo ? EVENT_TYPE_CLIENT.CREATE_CLIENT : EVENT_TYPE_CLIENT.UPDATE_CLIENT;
           const clientId = getIdByTokenName(clientUtxo.assetsName, tokenBase, CLIENT_PREFIX);
-          const clientDatum = await decodeClientDatum(clientUtxo.datum, this.lucidService.LucidImporter);
+          let clientDatum: ClientDatum;
+          try {
+            clientDatum = await decodeClientDatum(clientUtxo.datum, this.lucidService.LucidImporter);
+          } catch {
+            return null;
+          }
 
-          const redeemers = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
-            clientUtxo.txId.toString(),
-            mintClientScriptHash,
-            spendClientAddress,
-          );
+          const redeemers = await this.getTransactionRedeemers(clientUtxo.txHash);
           const spendClientRedeemer = redeemers.find((e) => e.type == 'spend');
           let spendClientRedeemerData = null;
           if (spendClientRedeemer) {
-            spendClientRedeemerData = decodeSpendClientRedeemer(
-              spendClientRedeemer.data,
-              this.lucidService.LucidImporter,
-            );
+            try {
+              spendClientRedeemerData = decodeSpendClientRedeemer(
+                spendClientRedeemer.data,
+                this.lucidService.LucidImporter,
+              );
+            } catch {
+              spendClientRedeemerData = null;
+            }
           }
 
           const txsResult = normalizeTxsResultFromClientDatum(
@@ -971,14 +987,15 @@ export class QueryService {
           return txsResult as unknown as ResponseDeliverTx;
         }),
     );
+    const filteredTxsResults = txsResults.filter((txsResult): txsResult is ResponseDeliverTx => txsResult !== null);
     console.dir(
       {
-        txsResults,
+        txsResults: filteredTxsResults,
       },
       { depth: 10 },
     );
 
-    return txsResults;
+    return filteredTxsResults;
   }
 
   async queryBlockSearch(request: QueryBlockSearchRequest): Promise<QueryBlockSearchResponse> {
@@ -1019,9 +1036,9 @@ export class QueryService {
       );
 
       // The same tx output can appear while scanning each side, so dedupe by out-ref.
-      const utxosByRef = new Map<string, Awaited<ReturnType<DbSyncService['findUtxosByPolicyIdAndPrefixTokenName']>>[number]>();
+      const utxosByRef = new Map<string, UtxoDto>();
       for (const channelTokenName of channelTokenNames) {
-        const utxos = await this.dbService.findUtxosByPolicyIdAndPrefixTokenName(
+        const utxos = await this.historyService.findUtxosByPolicyIdAndPrefixTokenName(
           mintChannelScriptHash,
           channelTokenName,
         );
@@ -1033,18 +1050,19 @@ export class QueryService {
       const utxosOfChannel = Array.from(utxosByRef.values());
       let blockResults: ResultBlockSearch[] = await Promise.all(
         utxosOfChannel.map(async (utxo) => {
-          let redeemers = await this.dbService.getRedeemersByTxIdAndMintScriptOrSpendAddr(
-            utxo.txId.toString(),
-            mintChannelScriptHash,
-            spendAddress,
-          );
+          let redeemers = await this.getTransactionRedeemers(utxo.txHash);
           redeemers = redeemers.filter(
             (redeemer) => redeemer.data !== REDEEMER_EMPTY_DATA && redeemer.data.length > 10,
           );
           let isMatched = false;
           for (const redeemer of redeemers) {
             if (redeemer.type !== REDEEMER_TYPE.SPEND) continue;
-            const spendRedeemer = decodeSpendChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+            let spendRedeemer;
+            try {
+              spendRedeemer = decodeSpendChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+            } catch {
+              continue;
+            }
             let packet: Packet = null;
             if (spendRedeemer['RecvPacket']) packet = spendRedeemer['RecvPacket']?.packet as unknown as Packet;
             if (spendRedeemer['AcknowledgePacket'])
@@ -1054,7 +1072,7 @@ export class QueryService {
             if (!packet) continue;
             const packetSourceChannel = convertHex2String(packet.source_channel);
             const packetDestinationChannel = convertHex2String(packet.destination_channel);
-            // Match either orientation because db-sync scanning is channel-centric and can
+            // Match either orientation because historical channel scanning is channel-centric and can
             // surface redeemers from sends, receives, acks, or timeouts across both ends.
             const directChannelMatch =
               packetSourceChannel === srcChannelId && packetDestinationChannel === dstChannelId;
@@ -1107,14 +1125,14 @@ export class QueryService {
     const { hash } = request;
     if (!hash) throw new GrpcInvalidArgumentException(`Invalid argument: "hash" must be provided`);
 
-    const tx = await this.dbService.findTxByHash(hash);
+    const tx = await this.historyService.findTxByHash(hash);
     if (!tx) {
       throw new GrpcNotFoundException(`Not found: "hash" ${hash} not found`);
     }
     this.logger.log(`found tx for hash = ${request.hash}`, 'queryTransactionByHash');
 
     // get create_client events from tx
-    const authOrClientUTxos = await this.dbService.findUtxoClientOrAuthHandler(tx.height);
+    const authOrClientUTxos = await this.historyService.findUtxoClientOrAuthHandler(tx.height);
     let createClientEvent = null;
     if (authOrClientUTxos.length) {
       const txsAuthOrClientsResults = await this._parseEventClient(authOrClientUTxos);
@@ -1177,10 +1195,9 @@ export class QueryService {
     // - a Mithril inclusion proof for the HostState update transaction
     // - the HostState transaction body CBOR + output index so the client can extract `ibc_state_root`
     //
-    // Under the STT HostState model, the authenticated IBC root is transaction-scoped and
-    // may be carried forward across many certified Mithril heights. `height` therefore acts
-    // as a certified snapshot bound, while the Gateway resolves the single canonical
-    // HostState transaction/output at or before the certified snapshot it materializes.
+    // TODO(ibc): Support heights where the HostState does not change (root carried forward),
+    // and ensure the selected HostState output is the one live at end-of-block if multiple
+    // updates occur within a single block.
     // Note: Use the HTTP Mithril API for listing artifacts and fetching certificates.
     //
     // The WASM mithril client performs strict JSON deserialization which can break if our
@@ -1231,7 +1248,7 @@ export class QueryService {
 
     // Start from the latest certified height (proof endpoint certifies against latest).
     let snapshot = latestSnapshot;
-    let hostStateUtxo = await this.dbService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(snapshot.block_number));
+    let hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(snapshot.block_number));
     let hostStateTxProof: any;
 
     // Ensure snapshot/proof/HostState tx are mutually consistent with strict bounded retries.
@@ -1253,7 +1270,7 @@ export class QueryService {
       }
 
       snapshot = snapshotForProof;
-      const hostStateAtSnapshot = await this.dbService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(snapshot.block_number));
+      const hostStateAtSnapshot = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(snapshot.block_number));
       if (hostStateAtSnapshot.txHash === hostStateUtxo.txHash) {
         hostStateUtxo = hostStateAtSnapshot;
         converged = true;
@@ -1316,17 +1333,7 @@ export class QueryService {
 
     const hostStateTxHash = hostStateUtxo.txHash;
 
-    // Fetch the block body that contains the HostState transaction and locate the transaction body CBOR.
-    //
-    // The HostState transaction can occur earlier than the requested certified height (root carried forward),
-    // so we must scan the block where that transaction actually appears.
-    const block = await this.dbService.findBlockByHeight(BigInt(hostStateUtxo.blockNo));
-    const blockHeader = await this.miniProtocalsService.fetchBlockHeader(block.hash, BigInt(block.slot));
-    if (!blockHeader?.bodyCbor) {
-      throw new GrpcInternalException(`Unable to fetch block body for height ${height.toString()}`);
-    }
-    const hostStateTxBodyHex = this.findTxBodyHexInBlock(blockHeader.bodyCbor, hostStateTxHash);
-    const hostStateTxBodyCbor = Buffer.from(hostStateTxBodyHex, 'hex');
+    const hostStateTxBodyCbor = await this.miniProtocalsService.fetchTransactionBodyCbor(hostStateTxHash);
 
     const mithrilHeader: MithrilHeader = {
       mithril_stake_distribution: normalizeMithrilStakeDistribution(mithrilStakeDistribution, distributionCertificate),
@@ -1367,27 +1374,6 @@ export class QueryService {
       header: mithrilHeaderAny,
     };
     return response;
-  }
-
-  private findTxBodyHexInBlock(blockBodyCborHex: string, txHashHex: string): string {
-    const decoded = cbor.decodeFirstSync(Buffer.from(blockBodyCborHex, 'hex'));
-    if (!Array.isArray(decoded)) {
-      throw new Error('Unexpected block body format: expected CBOR array');
-    }
-
-    const wanted = txHashHex.toLowerCase();
-    for (const entry of decoded) {
-      if (!Array.isArray(entry) || entry.length < 1) continue;
-      const txBodyHex = entry[0];
-      if (typeof txBodyHex !== 'string' || txBodyHex.length === 0) continue;
-
-      const computedHash = hash_transaction(TransactionBody.from_cbor_hex(txBodyHex)).to_hex().toLowerCase();
-      if (computedHash === wanted) {
-        return txBodyHex;
-      }
-    }
-
-    throw new Error(`Transaction body not found in block for tx hash ${txHashHex}`);
   }
 
   /**

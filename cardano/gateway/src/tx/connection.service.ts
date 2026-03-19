@@ -28,6 +28,7 @@ import { parseClientSequence } from 'src/shared/helpers/sequence';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
 import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
+import { sumLovelaceFromUtxos } from './helper/helper';
 import {
   validateAndFormatConnectionOpenAckParams,
   validateAndFormatConnectionOpenConfirmParams,
@@ -57,18 +58,18 @@ import {
 import { UnsignedConnectionOpenAckDto } from '~@/shared/modules/lucid/dtos';
 import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
-import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
+import { TxEventsService } from './tx-events.service';
+import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 
 @Injectable()
 export class ConnectionService {
-  private static readonly CONN_OPEN_ACK_COMPLETE_MAX_ATTEMPTS = 5;
-  private static readonly CONN_OPEN_ACK_COMPLETE_BASE_DELAY_MS = 1000;
-
   constructor(
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
+    private readonly txEventsService: TxEventsService,
+    private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
   ) {}
 
@@ -85,27 +86,18 @@ export class ConnectionService {
     return a.outputIndex - b.outputIndex;
   }
 
-  private isTransientKupmiosTransportError(error: unknown): boolean {
-    const errorText = inspect(error, { depth: 10 }).toLowerCase();
-    const transientMarkers = [
-      'kupmioserror',
-      'transport error',
-      'requesterror',
-      'etimedout',
-      'econnreset',
-      'econnrefused',
-      'socket hang up',
-      'fetch failed',
-      'kupo',
-      '/matches/',
-    ];
-    return transientMarkers.some((marker) => errorText.includes(marker));
-  }
-
-  private computeRetryDelayMs(attempt: number): number {
-    const exp = Math.max(0, attempt - 1);
-    const raw = ConnectionService.CONN_OPEN_ACK_COMPLETE_BASE_DELAY_MS * Math.pow(2, exp);
-    return Math.round(raw);
+  private async refreshWalletContext(address: string, context: string): Promise<void> {
+    const walletUtxos = await this.lucidService.tryFindUtxosAt(address, {
+      maxAttempts: 6,
+      retryDelayMs: 1000,
+    });
+    if (walletUtxos.length === 0) {
+      throw new GrpcInternalException(`${context} failed: no spendable UTxOs found for ${address}`);
+    }
+    this.lucidService.selectWalletFromAddress(address, walletUtxos);
+    this.logger.log(
+      `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(walletUtxos)}`,
+    );
   }
 
   /**
@@ -340,34 +332,31 @@ export class ConnectionService {
         constructedAddress,
       );
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
-        operationName: 'connectionOpenTry',
-        unsignedTx: unsignedConnectionOpenTryTx,
-        validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
-        },
-        wallet: {
-          mode: 'refresh_from_address',
-          address: constructedAddress,
-          context: 'connectionOpenTry',
-        },
-        completeOptions: {
-          localUPLCEval: false,
-          setCollateral: TRANSACTION_SET_COLLATERAL,
-        },
-        pendingTreeUpdate,
-        syntheticEvents: [
-          {
-            type: 'connection_open_try',
-            attributes: [
-              { key: 'connection_id', value: connectionId },
-              { key: 'client_id', value: data.client_id },
-              { key: 'counterparty_client_id', value: data.counterparty.client_id },
-              { key: 'counterparty_connection_id', value: data.counterparty.connection_id },
-            ],
-          },
-        ],
+      const unsignedConnectionOpenTryTxValidTo: TxBuilder = unsignedConnectionOpenTryTx.validTo(validToTime);
+      
+      // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'connectionOpenTry');
+      const completedUnsignedTx = await unsignedConnectionOpenTryTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
       });
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
+
+      this.txEventsService.register(unsignedTxHash, [
+        {
+          type: 'connection_open_try',
+          attributes: [
+            { key: 'connection_id', value: connectionId },
+            { key: 'client_id', value: data.client_id },
+            { key: 'counterparty_client_id', value: data.counterparty.client_id },
+            { key: 'counterparty_connection_id', value: data.counterparty.connection_id },
+          ],
+        },
+      ]);
 
       this.logger.log('Returning unsigned tx for connection open try');
       const response: MsgConnectionOpenTryResponse = {
@@ -453,50 +442,22 @@ export class ConnectionService {
         this.logger.warn(`[DEBUG] connectionOpenAck failed to read rawConfig: ${e}`);
       }
 
-      const {
-        unsignedTxBytes: cborHexBytes,
-        completedUnsignedTx,
-      } = await this.txOperationRunnerService.run({
-        operationName: 'connectionOpenAck',
-        unsignedTx: unsignedConnectionOpenAckTxValidTo,
-        validity: {
-          apply: (builder: TxBuilder) => builder,
-        },
-        wallet: {
-          mode: 'refresh_from_address',
-          address: constructedAddress,
-          context: 'connectionOpenAck',
-        },
-        completeOptions: {
-          localUPLCEval: false,
-          setCollateral: TRANSACTION_SET_COLLATERAL,
-        },
-        completeRetry: {
-          maxAttempts: ConnectionService.CONN_OPEN_ACK_COMPLETE_MAX_ATTEMPTS,
-          isRetryable: (error) => this.isTransientKupmiosTransportError(error),
-          getDelayMs: (attempt) => this.computeRetryDelayMs(attempt),
-          onRetry: async (error, attempt, maxAttempts, delayMs) => {
-            this.logger.warn(
-              `[connectionOpenAck] transient Kupmios/Kupo transport failure while completing tx (attempt ${attempt}/${maxAttempts}); retrying in ${delayMs}ms`,
-            );
-            this.logger.warn(
-              `[connectionOpenAck] transient error detail: ${inspect(error, { depth: 5 })}`,
-            );
-          },
-        },
-        pendingTreeUpdate,
-        syntheticEvents: [
-          {
-            type: 'connection_open_ack',
-            attributes: [
-              { key: 'connection_id', value: data.connection_id },
-              { key: 'client_id', value: clientId },
-              { key: 'counterparty_client_id', value: counterpartyClientId },
-              { key: 'counterparty_connection_id', value: data.counterparty_connection_id },
-            ],
-          },
-        ],
+      // Return unsigned transaction for Hermes to sign
+      // Use Ogmios evaluation by default so we can surface Aiken `trace` logs and
+      // structured failure reasons when a script fails.
+      //
+      // If you need to fall back to local evaluation during debugging, switch this to:
+      //   `.complete({ localUPLCEval: true })`
+      await this.refreshWalletContext(constructedAddress, 'connectionOpenAck');
+      const completedUnsignedTx = await unsignedConnectionOpenAckTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
       });
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
 
       // DEBUG: emit CBOR and input/redeemer mapping so Ogmios failures like Spend[0]
       // can be mapped back to a specific UTxO / validator.
@@ -505,6 +466,18 @@ export class ConnectionService {
         connectionUtxo,
         clientUtxo,
       });
+
+      this.txEventsService.register(unsignedTxHash, [
+        {
+          type: 'connection_open_ack',
+          attributes: [
+            { key: 'connection_id', value: data.connection_id },
+            { key: 'client_id', value: clientId },
+            { key: 'counterparty_client_id', value: counterpartyClientId },
+            { key: 'counterparty_connection_id', value: data.counterparty_connection_id },
+          ],
+        },
+      ]);
 
       this.logger.log('Returning unsigned tx for connection open ack');
       const response: MsgConnectionOpenAckResponse = {
@@ -564,34 +537,31 @@ export class ConnectionService {
         constructedAddress,
       );
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
-        operationName: 'connectionOpenConfirm',
-        unsignedTx: unsignedConnectionOpenConfirmTx,
-        validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
-        },
-        wallet: {
-          mode: 'refresh_from_address',
-          address: constructedAddress,
-          context: 'connectionOpenConfirm',
-        },
-        completeOptions: {
-          localUPLCEval: false,
-          setCollateral: TRANSACTION_SET_COLLATERAL,
-        },
-        pendingTreeUpdate,
-        syntheticEvents: [
-          {
-            type: 'connection_open_confirm',
-            attributes: [
-              { key: 'connection_id', value: data.connection_id },
-              { key: 'client_id', value: clientId },
-              { key: 'counterparty_client_id', value: counterpartyClientId },
-              { key: 'counterparty_connection_id', value: counterpartyConnectionId },
-            ],
-          },
-        ],
+      const unsignedConnectionOpenConfirmTxValidTo: TxBuilder = unsignedConnectionOpenConfirmTx.validTo(validToTime);
+      
+      // Return unsigned transaction for Hermes to sign
+      await this.refreshWalletContext(constructedAddress, 'connectionOpenConfirm');
+      const completedUnsignedTx = await unsignedConnectionOpenConfirmTxValidTo.complete({
+        localUPLCEval: false,
+        setCollateral: TRANSACTION_SET_COLLATERAL,
       });
+      const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+      const unsignedTxHash = completedUnsignedTx.toHash();
+
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
+
+      this.txEventsService.register(unsignedTxHash, [
+        {
+          type: 'connection_open_confirm',
+          attributes: [
+            { key: 'connection_id', value: data.connection_id },
+            { key: 'client_id', value: clientId },
+            { key: 'counterparty_client_id', value: counterpartyClientId },
+            { key: 'counterparty_connection_id', value: counterpartyConnectionId },
+          ],
+        },
+      ]);
 
       this.logger.log('Returning unsigned tx for connection open confirm');
       const response: MsgConnectionOpenConfirmResponse = {
