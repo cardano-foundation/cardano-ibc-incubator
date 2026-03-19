@@ -341,6 +341,7 @@ pub fn configure_local_cardano_devnet(
         "yaci/genesis",
         "yaci/data",
         "yaci/logs",
+        "yaci-postgres",
         "baseinfo",
     ];
 
@@ -435,6 +436,69 @@ pub fn configure_local_cardano_devnet(
             start_time.to_rfc3339_opts(SecondsFormat::Secs, true)
         ),
     )?;
+
+    let yaci_genesis_dir = cardano_dir.join("yaci").join("genesis");
+    fs::create_dir_all(&yaci_genesis_dir).map_err(|error| {
+        format!(
+            "Failed to create Yaci genesis directory: {}",
+            error.to_string()
+        )
+    })?;
+
+    for genesis_file in [
+        "genesis-byron.json",
+        "genesis-shelley.json",
+        "genesis-alonzo.json",
+        "genesis-conway.json",
+    ] {
+        let source = devnet_dir.join(genesis_file);
+        let destination = yaci_genesis_dir.join(genesis_file);
+        let options = fs_extra::file::CopyOptions::new().overwrite(true);
+        copy(&source, &destination, &options).map_err(|error| {
+            format!(
+                "Failed to copy {} into Yaci genesis directory: {}",
+                genesis_file,
+                error.to_string()
+            )
+        })?;
+    }
+
+    // Yaci Store 2.0.0 crashes on the seeded local devnet Shelley genesis when staking pools and
+    // stake mappings are present. For local development we only need the genesis timing/network
+    // parameters, so keep a Yaci-specific copy with an empty staking section.
+    let mut yaci_shelley_genesis: Value = serde_json::from_str(
+        &fs::read_to_string(yaci_genesis_dir.join("genesis-shelley.json")).map_err(|error| {
+            format!(
+                "Failed to read Yaci Shelley genesis file: {}",
+                error.to_string()
+            )
+        })?,
+    )
+    .map_err(|error| format!("Failed to parse Yaci Shelley genesis file: {}", error))?;
+
+    if let Some(staking) = yaci_shelley_genesis
+        .get_mut("staking")
+        .and_then(|value| value.as_object_mut())
+    {
+        staking.insert("pools".to_string(), Value::Object(serde_json::Map::new()));
+        staking.insert("stake".to_string(), Value::Object(serde_json::Map::new()));
+    }
+
+    fs::write(
+        yaci_genesis_dir.join("genesis-shelley.json"),
+        serde_json::to_string_pretty(&yaci_shelley_genesis).map_err(|error| {
+            format!(
+                "Failed to serialize Yaci Shelley genesis file: {}",
+                error.to_string()
+            )
+        })?,
+    )
+    .map_err(|error| {
+        format!(
+            "Failed to write Yaci Shelley genesis file: {}",
+            error.to_string()
+        )
+    })?;
 
     change_dir_permissions_read_only(&devnet_dir, &vec!["cardano-node-db.json"]).map_err(|error| {
         format!(
@@ -950,6 +1014,8 @@ fn write_gateway_env_for_network(
                 ("GATEWAY_DB_PORT", "5432"),
                 ("KUPO_ENDPOINT", "http://kupo:1442"),
                 ("OGMIOS_ENDPOINT", "http://cardano-node-ogmios:1337"),
+                ("CARDANO_CHAIN_HOST", "cardano-node"),
+                ("CARDANO_CHAIN_PORT", "3001"),
             ];
             for (key, value) in local_gateway_defaults {
                 set_or_append_env_var(&gateway_env, key, value)?;
@@ -1010,51 +1076,69 @@ fn write_gateway_env_for_network(
 }
 
 fn ensure_gateway_databases(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let mut postgres_ready = false;
-    for attempt in 1..=30 {
-        let health_check = Command::new("docker")
-            .current_dir(cardano_dir)
-            .args(&[
-                "compose",
-                "exec",
-                "-T",
-                "postgres",
-                "pg_isready",
-                "-U",
-                "postgres",
-            ])
-            .output();
+    let wait_for_postgres = |service_name: &str,
+                             username: &str,
+                             label: &str|
+     -> Result<(), Box<dyn std::error::Error>> {
+        let mut ready = false;
+        for attempt in 1..=30 {
+            let health_check = Command::new("docker")
+                .current_dir(cardano_dir)
+                .args(&[
+                    "compose",
+                    "exec",
+                    "-T",
+                    service_name,
+                    "pg_isready",
+                    "-U",
+                    username,
+                ])
+                .output();
 
-        if health_check.is_ok() && health_check.unwrap().status.success() {
-            postgres_ready = true;
-            break;
+            if health_check.is_ok() && health_check.unwrap().status.success() {
+                ready = true;
+                break;
+            }
+
+            if attempt < 30 {
+                verbose(&format!(
+                    "Waiting for {label} to be ready (attempt {}/30)...",
+                    attempt
+                ));
+                thread::sleep(Duration::from_secs(2));
+            }
         }
 
-        if attempt < 30 {
-            verbose(&format!(
-                "Waiting for postgres to be ready (attempt {}/30)...",
-                attempt
-            ));
-            thread::sleep(Duration::from_secs(2));
+        if ready {
+            Ok(())
+        } else {
+            Err(format!("{label} failed to become ready after 60 seconds").into())
         }
+    };
+
+    wait_for_postgres("postgres", "postgres", "gateway postgres")?;
+    if crate::config::get_config().cardano.services.history_backend_enabled() {
+        wait_for_postgres("yaci-store-postgres", "yaci", "Yaci history postgres")?;
     }
 
-    if !postgres_ready {
-        return Err("Postgres failed to become ready after 60 seconds".into());
-    }
-
-    let ensure_database_exists =
-        |database_name: &str, label: &str| -> Result<(), Box<dyn std::error::Error>> {
+    let ensure_database_exists = |service_name: &str,
+                                  database_user: &str,
+                                  admin_database: &str,
+                                  database_name: &str,
+                                  label: &str|
+     -> Result<(), Box<dyn std::error::Error>> {
             let db_check = Command::new("docker")
                 .current_dir(cardano_dir)
                 .args(&[
                     "compose",
                     "exec",
                     "-T",
-                    "postgres",
+                    service_name,
                     "psql",
                     "-U",
-                    "postgres",
+                    database_user,
+                    "-d",
+                    admin_database,
                     "-tc",
                     &format!(
                         "SELECT 1 FROM pg_database WHERE datname = '{}'",
@@ -1081,10 +1165,12 @@ fn ensure_gateway_databases(cardano_dir: &Path) -> Result<(), Box<dyn std::error
                     "compose",
                     "exec",
                     "-T",
-                    "postgres",
+                    service_name,
                     "psql",
                     "-U",
-                    "postgres",
+                    database_user,
+                    "-d",
+                    admin_database,
                     "-c",
                     &format!("CREATE DATABASE {}", database_name),
                 ])
@@ -1108,7 +1194,17 @@ fn ensure_gateway_databases(cardano_dir: &Path) -> Result<(), Box<dyn std::error
             Ok(())
         };
 
-    ensure_database_exists("gateway_app", "Gateway application")?;
+    ensure_database_exists("postgres", "postgres", "postgres", "gateway_app", "Gateway application")?;
+    if crate::config::get_config().cardano.services.history_backend_enabled() {
+        ensure_database_exists(
+            "yaci-store-postgres",
+            "yaci",
+            "postgres",
+            "yaci_store",
+            "Yaci history backend",
+        )?;
+    }
+
     Ok(())
 }
 

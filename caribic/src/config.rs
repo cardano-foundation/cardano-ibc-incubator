@@ -153,10 +153,18 @@ pub struct BootstrapAddress {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Services {
     pub db_sync: bool,
+    #[serde(default)]
+    pub yaci: bool,
     pub kupo: bool,
     pub ogmios: bool,
     pub cardano_node: bool,
     pub postgres: bool,
+}
+
+impl Services {
+    pub fn history_backend_enabled(&self) -> bool {
+        self.yaci || self.db_sync
+    }
 }
 
 impl Config {

@@ -368,7 +368,7 @@ pub async fn run_start(
             Ok(handle) => {
                 mithril_genesis_handle = handle;
                 logger::log(&format!(
-                    "PASS: Managed Cardano {} containers started (cardano-node, ogmios, kupo, postgres, yaci-store)",
+                    "PASS: Managed Cardano {} containers started (cardano-node, ogmios, kupo, postgres, yaci-store, yaci-store-postgres)",
                     core_cardano_network.as_str()
                 ));
             }
