@@ -187,6 +187,7 @@ export class ChannelService {
     try {
       this.logger.log('Channel Open Init is processing');
       const { channelOpenInitOperator, constructedAddress } = validateAndFormatChannelOpenInitParams(data);
+      await this.refreshWalletContext(constructedAddress, 'channelOpenInitBuilder');
       // Build and complete the unsigned transaction
       const { unsignedTx: unsignedChannelOpenInitTx, channelId, pendingTreeUpdate } = await this.buildUnsignedChannelOpenInitTx(
         channelOpenInitOperator,
@@ -254,6 +255,7 @@ export class ChannelService {
     try {
       this.logger.log('Channel Open Try is processing');
       const { constructedAddress, channelOpenTryOperator } = validateAndFormatChannelOpenTryParams(data);
+      await this.refreshWalletContext(constructedAddress, 'channelOpenTryBuilder');
       // Build and complete the unsigned transaction
       const unsignedChannelOpenTryTx: TxBuilder = await this.buildUnsignedChannelOpenTryTx(
         channelOpenTryOperator,
@@ -293,6 +295,7 @@ export class ChannelService {
     try {
       this.logger.log('Channel Open Ack is processing');
       const { constructedAddress, channelOpenAckOperator } = validateAndFormatChannelOpenAckParams(data);
+      await this.refreshWalletContext(constructedAddress, 'channelOpenAckBuilder');
       // Build and complete the unsigned transaction
       const { unsignedTx: unsignedChannelOpenAckTx, event: channelOpenAckEvent, pendingTreeUpdate } =
         await this.buildUnsignedChannelOpenAckTx(
@@ -355,6 +358,7 @@ export class ChannelService {
     try {
       this.logger.log('Channel Open Confirm is processing');
       const { constructedAddress, channelOpenConfirmOperator } = validateAndFormatChannelOpenConfirmParams(data);
+      await this.refreshWalletContext(constructedAddress, 'channelOpenConfirmBuilder');
       // Build and complete the unsigned transaction
       const { unsignedTx: unsignedChannelConfirmInitTx, pendingTreeUpdate } = await this.buildUnsignedChannelOpenConfirmTx(
         channelOpenConfirmOperator,
@@ -397,6 +401,7 @@ export class ChannelService {
     try {
       this.logger.log('Channel Close Init is processing');
       const { constructedAddress, channelCloseInitOperator } = validateAndFormatChannelCloseInitParams(data);
+      await this.refreshWalletContext(constructedAddress, 'channelCloseInitBuilder');
       // Build and complete the unsigned transaction
       const { unsignedTx: unsignedChannelCloseInitTx, pendingTreeUpdate } = await this.buildUnsignedChannelCloseInitTx(
         channelCloseInitOperator,
