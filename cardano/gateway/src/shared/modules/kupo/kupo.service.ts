@@ -51,6 +51,34 @@ export class KupoService {
     this.channelAddress = deployment.validators.spendChannel.address;
   }
 
+  private getMatchingAssetNames(utxo: UTxO, policyId: string, tokenNamePrefix?: string): string[] {
+    return Object.keys(utxo.assets)
+      .filter((assetId) => assetId !== 'lovelace')
+      .filter((assetId) => assetId.startsWith(policyId))
+      .map((assetId) => assetId.slice(policyId.length))
+      .filter((tokenName) => !tokenNamePrefix || tokenName.startsWith(tokenNamePrefix));
+  }
+
+  async queryUtxosAtAddressByPolicyAndTokenPrefix(
+    address: string,
+    policyId: string,
+    tokenNamePrefix?: string,
+  ): Promise<Array<UTxO & { matchedTokenNames: string[] }>> {
+    try {
+      const utxos = await this.lucidService.findUtxoAt(address);
+      return utxos
+        .map((utxo) => ({
+          ...utxo,
+          // Keep the matching token names so callers can recover the sequence-derived
+          // connection/channel id without depending on a db-sync-specific row shape.
+          matchedTokenNames: this.getMatchingAssetNames(utxo, policyId, tokenNamePrefix),
+        }))
+        .filter((utxo) => utxo.matchedTokenNames.length > 0);
+    } catch (_error) {
+      return [];
+    }
+  }
+
   /**
    * Query all Client UTXOs from the chain
    * Used for rebuilding the IBC state tree
@@ -81,20 +109,7 @@ export class KupoService {
    * @returns Array of Connection UTXOs with their datums
    */
   async queryAllConnectionUtxos(): Promise<UTxO[]> {
-    try {
-      const utxos = await this.lucidService.findUtxoAt(this.connectionAddress);
-      
-      // Filter to only UTXOs with connection tokens
-      return utxos.filter(utxo => {
-        const assets = utxo.assets;
-        return Object.keys(assets).some(assetId => 
-          assetId.startsWith(this.connectionTokenPrefix)
-        );
-      });
-    } catch (error) {
-      // If no UTXOs found, return empty array (no connections exist yet)
-      return [];
-    }
+    return this.queryUtxosAtAddressByPolicyAndTokenPrefix(this.connectionAddress, this.connectionTokenPrefix);
   }
 
   /**
@@ -104,20 +119,7 @@ export class KupoService {
    * @returns Array of Channel UTXOs with their datums
    */
   async queryAllChannelUtxos(): Promise<UTxO[]> {
-    try {
-      const utxos = await this.lucidService.findUtxoAt(this.channelAddress);
-      
-      // Filter to only UTXOs with channel tokens
-      return utxos.filter(utxo => {
-        const assets = utxo.assets;
-        return Object.keys(assets).some(assetId => 
-          assetId.startsWith(this.channelTokenPrefix)
-        );
-      });
-    } catch (error) {
-      // If no UTXOs found, return empty array (no channels exist yet)
-      return [];
-    }
+    return this.queryUtxosAtAddressByPolicyAndTokenPrefix(this.channelAddress, this.channelTokenPrefix);
   }
 
 }

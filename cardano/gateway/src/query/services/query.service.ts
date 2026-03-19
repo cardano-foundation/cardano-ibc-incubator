@@ -338,24 +338,12 @@ export class QueryService {
   }
 
   async latestHeight(request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
-    // Prefer Mithril snapshots when available; fall back to db-sync for devnet/when Mithril is disabled.
-    try {
-      const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
-      if (listSnapshots?.length) {
-        const latestHeightResponse = {
-          height: listSnapshots[0].block_number,
-        };
-        this.logger.log(latestHeightResponse.height, 'QueryLatestHeight');
-        return latestHeightResponse as unknown as QueryLatestHeightResponse;
-      }
-    } catch (error) {
-      this.logger.warn(
-        `Mithril snapshot unavailable, falling back to db-sync latest block height: ${error?.message ?? error}`,
-        'QueryLatestHeight',
-      );
+    const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
+    if (!listSnapshots?.length) {
+      throw new GrpcInternalException('Mithril transaction snapshots unavailable for latest height');
     }
 
-    const latestBlockNo = await this.dbService.queryLatestBlockNo();
+    const latestBlockNo = listSnapshots[0].block_number;
     const latestHeightResponse = {
       height: latestBlockNo,
     };

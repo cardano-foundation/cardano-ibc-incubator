@@ -263,6 +263,7 @@ export class ConnectionService {
     try {
       this.logger.log('Connection Open Init is processing');
       const { constructedAddress, connectionOpenInitOperator } = validateAndFormatConnectionOpenInitParams(data);
+      await this.refreshWalletContext(constructedAddress, 'connectionOpenInitBuilder');
       // Build and complete the unsigned transaction
       const { unsignedTx: unsignedConnectionOpenInitTx, connectionId, pendingTreeUpdate } = await this.buildUnsignedConnectionOpenInitTx(
         connectionOpenInitOperator,
@@ -332,6 +333,7 @@ export class ConnectionService {
   async connectionOpenTry(data: MsgConnectionOpenTry): Promise<MsgConnectionOpenTryResponse> {
     try {
       const { constructedAddress, connectionOpenTryOperator } = validateAndFormatConnectionOpenTryParams(data);
+      await this.refreshWalletContext(constructedAddress, 'connectionOpenTryBuilder');
       // Build and complete the unsigned transaction
       const { unsignedTx: unsignedConnectionOpenTryTx, connectionId, pendingTreeUpdate } = await this.buildUnsignedConnectionOpenTryTx(
         connectionOpenTryOperator,
@@ -393,6 +395,7 @@ export class ConnectionService {
     this.logger.log('Connection Open Ack is processing', 'connectionOpenAck');
     try {
       const { constructedAddress, connectionOpenAckOperator } = validateAndFormatConnectionOpenAckParams(data);
+      await this.refreshWalletContext(constructedAddress, 'connectionOpenAckBuilder');
       // Build and complete the unsigned transaction
       const {
         unsignedTx: unsignedConnectionOpenAckTx,
@@ -548,6 +551,7 @@ export class ConnectionService {
     try {
       this.logger.log('Connection Open Confirm is processing');
       const { constructedAddress, connectionOpenConfirmOperator } = validateAndFormatConnectionOpenConfirmParams(data);
+      await this.refreshWalletContext(constructedAddress, 'connectionOpenConfirmBuilder');
       // Build and complete the unsigned transaction
       const {
         unsignedTx: unsignedConnectionOpenConfirmTx,

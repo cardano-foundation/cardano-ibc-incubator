@@ -98,6 +98,7 @@ export class ClientService {
     try {
       this.logger.log('Create client is processing', 'createClient');
       const { constructedAddress, clientState, consensusState } = validateAndFormatCreateClientParams(data);
+      await this.refreshWalletContext(constructedAddress, 'createClientBuilder');
       // Build unsigned create client transaction
       const { unsignedTx: unsignedCreateClientTx, clientId, pendingTreeUpdate } = await this.buildUnsignedCreateClientTx(
         clientState,
@@ -196,6 +197,7 @@ export class ClientService {
       const foundMisbehaviour = checkForMisbehaviour(data.client_message, currentClientDatum);
 
       if (foundMisbehaviour) {
+        await this.refreshWalletContext(constructedAddress, 'updateClientOnMisbehaviourBuilder');
         // Build and complete the unsigned transaction
         const updateOnMisbehaviourOperator: UpdateOnMisbehaviourOperatorDto = {
           clientId,
@@ -287,6 +289,7 @@ export class ClientService {
         txValidFrom: txValidFromNs,
       };
 
+      await this.refreshWalletContext(constructedAddress, 'updateClientBuilder');
       const { unsignedTx: unsignedUpdateClientTx, pendingTreeUpdate } =
         await this.buildUnsignedUpdateClientTx(updateClientHeaderOperator);
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({

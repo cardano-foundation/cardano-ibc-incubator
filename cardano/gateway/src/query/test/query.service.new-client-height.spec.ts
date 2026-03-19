@@ -78,4 +78,10 @@ describe('QueryService new client height strictness', () => {
     // Guard against regressions where code silently substitutes "latest" and continues.
     expect(mithrilServiceMock.getCertificateByHash).not.toHaveBeenCalled();
   });
+
+  it('fails hard when latest certified height is unavailable', async () => {
+    mithrilServiceMock.getCardanoTransactionsSetSnapshot.mockResolvedValueOnce([]);
+
+    await expect(service.latestHeight({} as any)).rejects.toThrow('Mithril transaction snapshots unavailable');
+  });
 });
