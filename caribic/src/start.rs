@@ -2,7 +2,7 @@ use crate::constants::ENTRYPOINT_CHAIN_ID;
 use crate::logger::{log_or_print_progress, log_or_show_progress, verbose};
 use crate::setup::{
     configure_local_cardano_devnet, copy_cardano_env_file, download_mithril,
-    prepare_db_sync_and_gateway, seed_cardano_devnet,
+    prepare_history_backend_and_gateway, seed_cardano_devnet,
 };
 use crate::utils::{
     diagnose_container_failure, execute_script, execute_script_with_progress, get_cardano_state,
@@ -422,6 +422,14 @@ pub async fn start_local_cardano_network(
     }
 
     let cardano_dir = project_root_path.join("chains/cardano");
+    if clean {
+        execute_script(
+            cardano_dir.as_path(),
+            "docker",
+            Vec::from(["compose", "down", "-v", "--remove-orphans"]),
+            None,
+        )?;
+    }
     log_or_show_progress(
         &format!(
             "{} Configuring local Cardano devnet",
@@ -456,6 +464,8 @@ pub async fn start_local_cardano_network(
             "cardano-node",
             "cardano-cardano-node-ogmios-1",
             "cardano-postgres-1",
+            "cardano-yaci-store-postgres-1",
+            "cardano-yaci-store-1",
         ];
         let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
         return Err(format!(
@@ -463,6 +473,28 @@ pub async fn start_local_cardano_network(
             diagnostics
         )
         .into());
+    }
+
+    if config::get_config().cardano.services.history_backend_enabled() {
+        let yaci_ready = wait_for_health_check(
+            "http://localhost:8081/actuator/health",
+            20,
+            5000,
+            Some(|body: &String| {
+                body.contains("\"status\":\"UP\"") || body.contains("\"status\": \"UP\"")
+            }),
+        )
+        .await;
+
+        if yaci_ready.is_err() {
+            let container_names = ["cardano-yaci-store-postgres-1", "cardano-yaci-store-1"];
+            let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
+            return Err(format!(
+                "Failed to start Yaci services - health check failed after 100 seconds{}",
+                diagnostics
+            )
+            .into());
+        }
     }
 
     // wait until network is running (with timeout)
@@ -607,17 +639,8 @@ pub async fn start_local_cardano_network(
         &optional_progress_bar,
     );
 
-    if config::get_config().cardano.services.db_sync {
-        prepare_db_sync_and_gateway(cardano_dir.as_path(), clean)?;
-        let docker_env = get_docker_env_vars();
-        let docker_env_refs: Vec<(&str, &str)> =
-            docker_env.iter().map(|(k, v)| (*k, v.as_str())).collect();
-        execute_script(
-            &cardano_dir,
-            "docker",
-            vec!["compose", "up", "-d", "cardano-db-sync"],
-            Some(docker_env_refs),
-        )?;
+    if config::get_config().cardano.services.history_backend_enabled() {
+        prepare_history_backend_and_gateway(cardano_dir.as_path(), clean)?;
     }
 
     log_or_show_progress(
@@ -977,6 +1000,10 @@ pub fn start_local_cardano_services(cardano_dir: &Path) -> Result<(), Box<dyn st
     }
     if configuration.services.postgres {
         services.push("postgres");
+    }
+    if configuration.services.history_backend_enabled() {
+        services.push("yaci-store-postgres");
+        services.push("yaci-store");
     }
     if configuration.services.kupo {
         services.push("kupo");
@@ -1667,7 +1694,16 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         "Stopping existing Gateway containers",
         &optional_progress_bar,
     );
-    execute_script(&gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
+    if clean {
+        execute_script(
+            &gateway_dir,
+            "docker",
+            Vec::from(["compose", "down", "--remove-orphans"]),
+            None,
+        )?;
+    } else {
+        execute_script(&gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
+    }
 
     let mut script_args = vec!["compose", "up", "-d"];
     if clean {
@@ -2545,6 +2581,7 @@ enum CoreHealthCheckType {
     Gateway,
     CardanoNode,
     Postgres,
+    Yaci,
     Kupo,
     Ogmios,
     Mithril,
@@ -2559,7 +2596,7 @@ struct CoreHealthService {
     check_type: CoreHealthCheckType,
 }
 
-const CORE_HEALTH_SERVICES: [CoreHealthService; 8] = [
+const CORE_HEALTH_SERVICES: [CoreHealthService; 9] = [
     CoreHealthService {
         name: "gateway",
         label: "Gateway (NestJS gRPC Server)",
@@ -2572,8 +2609,13 @@ const CORE_HEALTH_SERVICES: [CoreHealthService; 8] = [
     },
     CoreHealthService {
         name: "postgres",
-        label: "PostgreSQL (db-sync)",
+        label: "PostgreSQL (Gateway app db)",
         check_type: CoreHealthCheckType::Postgres,
+    },
+    CoreHealthService {
+        name: "yaci",
+        label: "Yaci Store",
+        check_type: CoreHealthCheckType::Yaci,
     },
     CoreHealthService {
         name: "kupo",
@@ -2640,6 +2682,12 @@ fn run_core_health_check(
         ),
         CoreHealthCheckType::CardanoNode => check_container_only("cardano-node"),
         CoreHealthCheckType::Postgres => check_postgres_service(),
+        CoreHealthCheckType::Yaci => check_container_with_optional_port(
+            "yaci-store-1",
+            8081,
+            "Running on port 8081",
+            "Container running",
+        ),
         CoreHealthCheckType::Kupo => check_container_with_optional_port(
             "cardano-kupo",
             1442,

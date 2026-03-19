@@ -242,7 +242,7 @@ pub async fn run_start(
             Ok(handle) => {
                 mithril_genesis_handle = handle;
                 logger::log(
-                    "PASS: Local Cardano network started (cardano-node, ogmios, kupo, postgres, db-sync)",
+                    "PASS: Local Cardano network started (cardano-node, ogmios, kupo, postgres, yaci-store, yaci-store-postgres)",
                 );
             }
             Err(error) => {

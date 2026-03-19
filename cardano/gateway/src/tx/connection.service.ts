@@ -28,6 +28,7 @@ import { parseClientSequence } from 'src/shared/helpers/sequence';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
 import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
+import { sumLovelaceFromUtxos } from './helper/helper';
 import {
   validateAndFormatConnectionOpenAckParams,
   validateAndFormatConnectionOpenConfirmParams,
@@ -71,6 +72,20 @@ export class ConnectionService {
     @Inject(LucidService) private lucidService: LucidService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
   ) {}
+
+  private async refreshWalletContext(address: string, context: string): Promise<void> {
+    const walletUtxos = await this.lucidService.tryFindUtxosAt(address, {
+      maxAttempts: 6,
+      retryDelayMs: 1000,
+    });
+    if (walletUtxos.length === 0) {
+      throw new GrpcInternalException(`${context} failed: no spendable UTxOs found for ${address}`);
+    }
+    this.lucidService.selectWalletFromAddress(address, walletUtxos);
+    this.logger.log(
+      `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(walletUtxos)}`,
+    );
+  }
 
   private toUtxoRef(utxo: UTxO | undefined): string {
     if (!utxo) return '<undefined>';

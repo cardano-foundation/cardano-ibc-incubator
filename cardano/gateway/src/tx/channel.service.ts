@@ -31,6 +31,7 @@ import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
 import { MockModuleDatum } from '@shared/types/apps/mock/mock-module-datum';
 import { insertSortMap } from '../shared/helpers/helper';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
+import { sumLovelaceFromUtxos } from './helper/helper';
 import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
 import {
@@ -80,6 +81,20 @@ export class ChannelService {
     @Inject(LucidService) private lucidService: LucidService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
   ) {}
+
+  private async refreshWalletContext(address: string, context: string): Promise<void> {
+    const walletUtxos = await this.lucidService.tryFindUtxosAt(address, {
+      maxAttempts: 6,
+      retryDelayMs: 1000,
+    });
+    if (walletUtxos.length === 0) {
+      throw new GrpcInternalException(`${context} failed: no spendable UTxOs found for ${address}`);
+    }
+    this.lucidService.selectWalletFromAddress(address, walletUtxos);
+    this.logger.log(
+      `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(walletUtxos)}`,
+    );
+  }
 
   /**
    * Compute the new IBC state root for CreateChannel, and also return the per-key witnesses.

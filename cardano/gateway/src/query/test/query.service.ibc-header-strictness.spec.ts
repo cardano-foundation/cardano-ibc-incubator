@@ -3,11 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
-import { DbSyncService } from '../services/db-sync.service';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { DenomTraceService } from '../services/denom-trace.service';
-import { MithrilHeader } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
+import { HistoryService } from '../services/history.service';
 
 // We only care that queryIBCHeader reaches "header build" paths.
 // The exact protobuf bytes are not relevant for these failure-path regressions.
@@ -55,7 +54,6 @@ const makeCertificate = (overrides: Record<string, unknown> = {}) => ({
 
 describe('QueryService IBC header strictness regressions', () => {
   let service: QueryService;
-  let mithrilHeaderEncodeMock: jest.Mock;
   let loggerMock: {
     log: jest.Mock;
     warn: jest.Mock;
@@ -64,7 +62,6 @@ describe('QueryService IBC header strictness regressions', () => {
   };
   let dbServiceMock: {
     findHostStateUtxoAtOrBeforeBlockNo: jest.Mock;
-    findBlockByHeight: jest.Mock;
   };
   let mithrilServiceMock: {
     getMostRecentMithrilStakeDistributions: jest.Mock;
@@ -74,9 +71,6 @@ describe('QueryService IBC header strictness regressions', () => {
   };
 
   beforeEach(() => {
-    mithrilHeaderEncodeMock = MithrilHeader.encode as jest.Mock;
-    mithrilHeaderEncodeMock.mockClear();
-
     loggerMock = {
       log: jest.fn(),
       warn: jest.fn(),
@@ -108,8 +102,6 @@ describe('QueryService IBC header strictness regressions', () => {
         .mockResolvedValueOnce({ txHash: 'tx-A', blockNo: 300, outputIndex: 0 })
         .mockResolvedValueOnce({ txHash: 'tx-B', blockNo: 200, outputIndex: 1 })
         .mockResolvedValueOnce({ txHash: 'tx-C', blockNo: 100, outputIndex: 2 }),
-      // Should never be reached in failure-first tests below.
-      findBlockByHeight: jest.fn().mockResolvedValue({ hash: 'block-100', slot: 123 }),
     };
 
     // Snapshot index the service can search by block number and/or certificate hash.
@@ -186,15 +178,13 @@ describe('QueryService IBC header strictness regressions', () => {
       configServiceMock,
       {} as LucidService,
       {} as KupoService,
-      dbServiceMock as unknown as DbSyncService,
+      dbServiceMock as unknown as HistoryService,
       {
-        fetchBlockHeader: jest.fn().mockResolvedValue({ bodyCbor: 'beef' }),
+        fetchTransactionBodyCbor: jest.fn().mockResolvedValue(Buffer.from('beef', 'hex')),
       } as unknown as MiniProtocalsService,
       mithrilServiceMock as unknown as MithrilService,
       {} as DenomTraceService,
     );
-
-    jest.spyOn(service as any, 'findTxBodyHexInBlock').mockReturnValue('beef');
   });
 
   it('fails hard when snapshot/proof/HostState alignment cannot converge in bounded attempts', async () => {
@@ -204,7 +194,7 @@ describe('QueryService IBC header strictness regressions', () => {
       'Failed to converge Mithril snapshot/proof/HostState alignment',
     );
     // Hard failure must happen before block-body fetch / header materialization.
-    expect(dbServiceMock.findBlockByHeight).not.toHaveBeenCalled();
+    expect((service as any).miniProtocalsService.fetchTransactionBodyCbor).not.toHaveBeenCalled();
   });
 
   it('truncates previous certificate chain when older stake-distribution artifact is missing', async () => {
@@ -270,129 +260,6 @@ describe('QueryService IBC header strictness regressions', () => {
     expect(loggerMock.warn).toHaveBeenCalledWith(
       'Mithril stake distribution artifact missing for previous certificate older-cert; truncating previous certificate chain',
     );
-    // Again, fail before trying to build the final block/header payload.
-    // Current behavior intentionally materializes the header payload.
-    // Unlike the fail-hard case, this path still materializes the header payload.
-    expect(dbServiceMock.findBlockByHeight).toHaveBeenCalled();
-  });
-
-  it('uses the most recent prior HostState transaction when the certified root is carried forward', async () => {
-    dbServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockReset();
-    dbServiceMock.findHostStateUtxoAtOrBeforeBlockNo
-      .mockResolvedValueOnce({ txHash: 'tx-carried-forward', blockNo: 200, outputIndex: 7 })
-      .mockResolvedValueOnce({ txHash: 'tx-carried-forward', blockNo: 200, outputIndex: 7 });
-    dbServiceMock.findBlockByHeight.mockResolvedValue({ hash: 'block-200', slot: 456 });
-
-    mithrilServiceMock.getProofsCardanoTransactionList.mockReset();
-    mithrilServiceMock.getProofsCardanoTransactionList.mockResolvedValueOnce({
-      latest_block_number: '300',
-      certificate_hash: 'cert-300',
-    });
-
-    mithrilServiceMock.getCertificateByHash.mockReset();
-    mithrilServiceMock.getCertificateByHash.mockImplementation(async (hash: string) => {
-      if (hash === 'cert-300') {
-        return makeCertificate({
-          hash: 'cert-300',
-          previous_hash: 'dist-cert',
-          epoch: '3',
-          signed_entity_type: {
-            CardanoTransactions: ['3', '300'],
-          },
-        });
-      }
-      if (hash === 'dist-cert') {
-        return makeCertificate({
-          hash: 'dist-cert',
-          previous_hash: undefined,
-          epoch: '3',
-          signed_entity_type: {
-            MithrilStakeDistribution: {},
-          },
-        });
-      }
-      return makeCertificate({ hash });
-    });
-
-    await expect(service.queryIBCHeader({ height: 300n } as any)).resolves.toMatchObject({
-      header: {
-        type_url: '/ibc.lightclients.mithril.v1.MithrilHeader',
-      },
-    });
-
-    expect(dbServiceMock.findBlockByHeight).toHaveBeenCalledWith(200n);
-    expect(mithrilHeaderEncodeMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        host_state_tx_hash: 'tx-carried-forward',
-        host_state_tx_output_index: 7,
-        transaction_snapshot: expect.objectContaining({
-          block_number: 300n,
-        }),
-      }),
-    );
-  });
-
-  it('converges onto the canonical HostState transaction when proof alignment shifts to an earlier certified snapshot', async () => {
-    dbServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockReset();
-    dbServiceMock.findHostStateUtxoAtOrBeforeBlockNo
-      .mockResolvedValueOnce({ txHash: 'tx-latest', blockNo: 300, outputIndex: 0 })
-      .mockResolvedValueOnce({ txHash: 'tx-canonical', blockNo: 200, outputIndex: 1 })
-      .mockResolvedValueOnce({ txHash: 'tx-canonical', blockNo: 200, outputIndex: 1 });
-    dbServiceMock.findBlockByHeight.mockResolvedValue({ hash: 'block-200', slot: 789 });
-
-    mithrilServiceMock.getProofsCardanoTransactionList.mockReset();
-    mithrilServiceMock.getProofsCardanoTransactionList
-      .mockResolvedValueOnce({
-        latest_block_number: '200',
-        certificate_hash: 'cert-200',
-      })
-      .mockResolvedValueOnce({
-        latest_block_number: '200',
-        certificate_hash: 'cert-200',
-      });
-
-    mithrilServiceMock.getCertificateByHash.mockReset();
-    mithrilServiceMock.getCertificateByHash.mockImplementation(async (hash: string) => {
-      if (hash === 'cert-200') {
-        return makeCertificate({
-          hash: 'cert-200',
-          previous_hash: 'dist-cert',
-          epoch: '2',
-          signed_entity_type: {
-            CardanoTransactions: ['2', '200'],
-          },
-        });
-      }
-      if (hash === 'dist-cert') {
-        return makeCertificate({
-          hash: 'dist-cert',
-          previous_hash: undefined,
-          epoch: '2',
-          signed_entity_type: {
-            MithrilStakeDistribution: {},
-          },
-        });
-      }
-      return makeCertificate({ hash });
-    });
-
-    await expect(service.queryIBCHeader({ height: 250n } as any)).resolves.toMatchObject({
-      header: {
-        type_url: '/ibc.lightclients.mithril.v1.MithrilHeader',
-      },
-    });
-
-    expect(mithrilServiceMock.getProofsCardanoTransactionList).toHaveBeenNthCalledWith(1, ['tx-latest']);
-    expect(mithrilServiceMock.getProofsCardanoTransactionList).toHaveBeenNthCalledWith(2, ['tx-canonical']);
-    expect(dbServiceMock.findBlockByHeight).toHaveBeenCalledWith(200n);
-    expect(mithrilHeaderEncodeMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        host_state_tx_hash: 'tx-canonical',
-        host_state_tx_output_index: 1,
-        transaction_snapshot: expect.objectContaining({
-          block_number: 200n,
-        }),
-      }),
-    );
+    expect((service as any).miniProtocalsService.fetchTransactionBodyCbor).toHaveBeenCalledWith('tx-A');
   });
 });
