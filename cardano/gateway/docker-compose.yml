@@ -17,6 +17,20 @@ services:
     env_file:
       - .env
 
+  bridge-history-sync:
+    container_name: gateway-bridge-history-sync
+    build:
+      context: ../..
+      dockerfile: cardano/gateway/Dockerfile
+    command: ["node", "dist/scripts/yaci-bridge-history-sync.js"]
+    restart: on-failure
+    networks:
+      - cardano_network
+    volumes:
+      - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments
+    env_file:
+      - .env
+
 networks:
   cardano_network:
     external: true

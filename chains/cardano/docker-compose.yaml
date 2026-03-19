@@ -129,6 +129,56 @@ services:
         max-size: "200k"
         max-file: "10"
 
+  yaci-store-postgres:
+    image: postgres:15
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      - POSTGRES_DB=yaci_store
+      - POSTGRES_USER=yaci
+      - POSTGRES_PASSWORD=dbpass
+    depends_on:
+      - cardano-node
+    volumes:
+      - ./yaci-postgres:/var/lib/postgresql/data
+    restart: on-failure
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U yaci -d yaci_store" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
+
+  yaci-store:
+    image: bloxbean/yaci-store:2.0.0
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - ${YACI_STORE_PORT:-8081}:8080
+    depends_on:
+      - cardano-node
+      - yaci-store-postgres
+    environment:
+      - SPRING_CONFIG_ADDITIONAL_LOCATION=/app/config/application.properties
+    volumes:
+      - ./yaci/genesis:/app/genesis:ro
+      - ./yaci/config:/app/config:ro
+      - ./yaci/data:/app/data
+      - ./yaci/logs:/app/logs
+    restart: on-failure
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8080/actuator/health | grep -q '\"status\":\"UP\"'" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
+
   cardano-db-sync:
     image: ${CARDANO_DB_SYNC_IMAGE:-ghcr.io/blinklabs-io/cardano-db-sync:main@sha256:04b04848fb062e8993a39da863a87cb9863de1bc4cd3baf0a84b60a7b772d8f7}
     user: "${UID:-1000}:${GID:-1000}"

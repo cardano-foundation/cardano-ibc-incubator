@@ -47,7 +47,8 @@
   },
   "cardano": {
     "services": {
-      "db_sync": true,
+      "db_sync": false,
+      "yaci": true,
       "kupo": true,
       "ogmios": true,
       "cardano_node": true,

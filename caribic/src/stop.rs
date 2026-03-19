@@ -37,7 +37,7 @@ pub fn stop_gateway(project_root_path: &Path) {
     let gateway_result = execute_script(
         &gateway_path,
         "docker",
-        Vec::from(["compose", "down"]),
+        Vec::from(["compose", "down", "--remove-orphans"]),
         None,
     );
     match gateway_result {
@@ -61,7 +61,7 @@ pub fn stop_cardano_network(project_root_path: &Path) {
     let cardano_result = execute_script(
         &cardano_path,
         "docker",
-        Vec::from(["compose", "down"]),
+        Vec::from(["compose", "down", "--remove-orphans"]),
         None,
     );
     match cardano_result {

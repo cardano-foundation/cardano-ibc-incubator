@@ -1,2 +1,11 @@
-yaci/
 db-sync-configuration/
+!yaci/
+yaci/data/
+yaci/logs/
+yaci/genesis/
+!yaci-postgres/
+yaci-postgres/*
+!yaci/.gitignore
+!yaci/config/
+!yaci/config/application.properties
+!yaci-postgres/.gitignore

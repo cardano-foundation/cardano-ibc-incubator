@@ -747,11 +747,9 @@ async function processBlock(client: PoolClient, hostStateToken: HostStateToken, 
     for (const txRow of txResult.rows) {
       const txHash = txRow.tx_hash.toLowerCase();
       const txCborRow = txCborByHash.get(txHash);
-      if (!txCborRow?.cbor_hex) {
-        throw new Error(`Missing transaction_cbor row for tx ${txHash} at block ${blockNo}`);
-      }
-
-      const txSize = Number(txCborRow.cbor_size ?? Math.floor(txCborRow.cbor_hex.length / 2));
+      const txSize = txCborRow?.cbor_hex
+        ? Number(txCborRow.cbor_size ?? Math.floor(txCborRow.cbor_hex.length / 2))
+        : 0;
       const txId = await upsertBridgeTx(client, txRow, txSize);
       txIdsByHash.set(txHash, txId);
       txIndexesByHash.set(txHash, Number(txRow.tx_index ?? 0));
@@ -815,7 +813,10 @@ async function processBlock(client: PoolClient, hostStateToken: HostStateToken, 
       const txHash = txRow.tx_hash.toLowerCase();
       const txCborRow = txCborByHash.get(txHash);
       if (!txCborRow?.cbor_hex) {
-        throw new Error(`Missing transaction_cbor row for tx ${txHash} at block ${blockNo}`);
+        process.stdout.write(
+          `bridge-history-sync skipping tx evidence for ${txHash} at block ${blockNo}: transaction_cbor row unavailable\n`,
+        );
+        continue;
       }
 
       const txCborHex = txCborRow.cbor_hex.toLowerCase();
