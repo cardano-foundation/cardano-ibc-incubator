@@ -41,8 +41,7 @@ import {
   alignTreeWithChain,
   isTreeAligned,
 } from '../shared/helpers/ibc-state-root';
-import { TxEventsService } from './tx-events.service';
-import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
+import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 
 @Injectable()
@@ -51,8 +50,6 @@ export class ClientService {
     private readonly logger: Logger,
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
-    private readonly txEventsService: TxEventsService,
-    private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
   ) {}
 
@@ -239,23 +236,23 @@ export class ClientService {
         );
         const validFromTimeMs = nowMs - safeBackdateMs;
         const validToTime = nowMs + TRANSACTION_TIME_TO_LIVE;
-        const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx
-          .validFrom(validFromTimeMs)
-          .validTo(validToTime);
-
-        await this.refreshWalletContext(constructedAddress, 'updateClientOnMisbehaviour');
-        
-        // Return unsigned transaction for Hermes to sign
-        const completedUnsignedTx = await unSignedTxValidTo.complete({
-          localUPLCEval: false,
-          setCollateral: TRANSACTION_SET_COLLATERAL,
+        const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
+          operationName: 'updateClientOnMisbehaviour',
+          unsignedTx: unsignedUpdateClientTx,
+          validity: {
+            apply: (builder: TxBuilder) => builder.validFrom(validFromTimeMs).validTo(validToTime),
+          },
+          wallet: {
+            mode: 'refresh_from_address',
+            address: constructedAddress,
+            context: 'updateClientOnMisbehaviour',
+          },
+          completeOptions: {
+            localUPLCEval: false,
+            setCollateral: TRANSACTION_SET_COLLATERAL,
+          },
+          pendingTreeUpdate,
         });
-        // Register after complete because the finalized tx hash is only stable once
-        // balancing and fee selection have finished.
-        const unsignedTxHash = completedUnsignedTx.toHash();
-        this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
-        const unsignedTxCbor = completedUnsignedTx.toCBOR();
-        const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
         this.logger.log(`Returning unsigned tx for update client on misbehaviour (client_id: ${clientId})`);
         
@@ -310,21 +307,23 @@ export class ClientService {
       await this.refreshWalletContext(constructedAddress, 'updateClientBuilder');
       const { unsignedTx: unsignedUpdateClientTx, pendingTreeUpdate } =
         await this.buildUnsignedUpdateClientTx(updateClientHeaderOperator);
-      const unSignedTxValidTo: TxBuilder = unsignedUpdateClientTx.validFrom(validFromTimeMs).validTo(validToTimeMs);
-
-      await this.refreshWalletContext(constructedAddress, 'updateClient');
-
-      // Return unsigned transaction for Hermes to sign
-      const completedUnsignedTx = await unSignedTxValidTo.complete({
-        localUPLCEval: false,
-        setCollateral: TRANSACTION_SET_COLLATERAL,
+      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
+        operationName: 'updateClient',
+        unsignedTx: unsignedUpdateClientTx,
+        validity: {
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTimeMs).validTo(validToTimeMs),
+        },
+        wallet: {
+          mode: 'refresh_from_address',
+          address: constructedAddress,
+          context: 'updateClient',
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
+        pendingTreeUpdate,
       });
-      // Register after complete because the finalized tx hash is only stable once
-      // balancing and fee selection have finished.
-      const unsignedTxHash = completedUnsignedTx.toHash();
-      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
-      const unsignedTxCbor = completedUnsignedTx.toCBOR();
-      const cborHexBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
       
       this.logger.log(`Returning unsigned tx for update client (client_id: ${clientId})`);
 

@@ -70,30 +70,9 @@ Related diagrams:
 - Denom trace lifecycle: `../../docs/denom-trace-mapping.md`
 - Mithril proof flow: `../../docs/mithril-light-client.md#mithril-proof-flow-for-relaying`
 
-## Installation
-
-```bash
-$ npm install
-```
-
 ## Bridge Discovery Manifest
 
-The Gateway now has one default startup source and one explicit alternative:
-
-- default: legacy `handler.json`
-- override: `HANDLER_JSON_PATH`
-- alternative: `BRIDGE_MANIFEST_PATH`
-
-`BRIDGE_MANIFEST_PATH` points to the public bridge discovery manifest. This contains the public deployment metadata an independent operator needs to discover the bridge deployment, without bundling private infra config or signing material.
-
-`BRIDGE_MANIFEST_PATH` and `HANDLER_JSON_PATH` are mutually exclusive. If both are set, startup fails.
-
-The Gateway also exposes this manifest publicly at:
-
-- `GET /api/bridge-manifest`
-- `ibc.cardano.v1.Query/BridgeManifest`
-
-See [`../../docs/bridge-discovery-manifest.md`](../../docs/bridge-discovery-manifest.md) for details and export instructions.
+The Gateway can expose a public bridge manifest at `GET /api/bridge-manifest` and the Cardano gRPC `Query/BridgeManifest` method. That manifest is the operator-facing bootstrap document for reconnecting another Gateway/relayer stack to the same deployed Cardano bridge, including script hashes, reference UTxOs, modules, and auth tokens. At startup, the Gateway accepts either `HANDLER_JSON_PATH` or `BRIDGE_MANIFEST_PATH` and normalizes both sources into the same internal deployment config. If you already have a `handler.json`, you can export the equivalent public manifest with `npm run export:bridge-manifest -- <handler-json-path> <output-path>`.
 
 ## Historical Backend
 
@@ -123,6 +102,12 @@ So the runtime split is:
 - use `Kupo` for current live UTxO state
 - use `Mithril` for certified Cardano state roots / heights
 - use `Yaci` for historical bridge state and tx evidence
+
+## Installation
+
+```bash
+$ npm install
+```
 
 ## Running the app
 
