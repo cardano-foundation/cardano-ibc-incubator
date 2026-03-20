@@ -1,21 +1,52 @@
-# Cardano IBC Incubator
-This project is working towards a bridge implementation to allow exchange of information from a Cardano blockchain to Cosmos SDK based blockchains.
+<p align="center">
+  <img src="docs/assets/readme/cardano-ibc-incubator-header.svg" alt="Cardano IBC Incubator" width="100%" />
+</p>
 
-It follows the [inter-blockchain communication protocol](https://github.com/cosmos/ibc) and is trying to achieve full compliance with the parts of the specification identified necessary for the developed framework.
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Status: Pre-production](https://img.shields.io/badge/Status-Pre--production-orange.svg)](#status)
+[![Docs: Architecture](https://img.shields.io/badge/Docs-Architecture-6b7280.svg)](#architecture)
+
+This is a work-in-progress implementation of IBC v1 for Cardano. It implements a Cardano-native realization of the IBC protocol semantics which allow trustless interop between Cardano and the Cosmos ecosystem. The bridge implements ICS-02 (clients), ICS-03 (connections), ICS-04 (channels and packets), ICS-20 (fungible token transfer), and the proof/path model of ICS-23 and ICS-24, while adapting Cardano to the IBC client model through a custom Mithril light client.
+
+The implementation adheres to the [inter-blockchain communication protocol](https://github.com/cosmos/ibc) standards.
 
 > [!CAUTION]
 > *Disclaimer*
 >
-> Please be aware that this is an incubator project and by this means it is neither complete nor sufficiently tested at the current point in time to be used for production grade operation of a bridge. So the use of the source code and software artifacts in this repository are subject to your own discretion and risk.
+> Please be aware that this is an incubator project, and it is neither complete nor sufficiently tested at this time. The source code and software artifacts in this repository are subject to your own discretion and risk, and are not suggested as adequate for a production bridge deployment.
 >
-> The software withing this repository is provided to you on an "as is" and "as available" basis.
->
-> While we strive for high functionality and user satisfaction and endeavour to maintain reliability and accuracy, unforeseen issues may arise due to the experimental nature of this project.
+> While we strive for high functionality and user satisfaction, unforeseen issues may arise due to the experimental nature of this project.
+
+## Index
+
+- [Status](#status)
+- [Trust Model & Security Considerations](#trust-model--security-considerations)
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Getting Started](#getting-started)
+- [Testing Against Cosmos Chains](#testing-against-cosmos-chains)
+- [Demo: Sending a Demo Message from Cosmos to Cardano](#demo-sending-a-demo-message-from-cosmos-to-cardano)
+- [Demo: Cross-chain Token Swap](#demo-cross-chain-token-swap)
+- [Additional Resources](#additional-resources)
+- [Contributing](#contributing)
+
+## Status
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Local devnet stack | Active | Managed through `caribic` with Cardano, Entrypoint, Hermes, Kupo, Ogmios, Mithril, and Yaci-backed history services |
+| Core IBC semantics | Active | Implements clients, connections, channels, packets, acknowledgements, and timeouts |
+| ICS-20 transfer path | Active in maintained demo and test flows | Exercised through `caribic demo` and `caribic test` |
+| Historical query backend | Active | Uses `Yaci Store + Bridge Projection` rather than a generic `db-sync` query surface |
+| Public network integrations | Pre-production | Select paths exist for public testnets and external Cardano services, but the operating model is still evolving |
+| Production deployment | Not recommended | This repository should be treated as pre-production software |
 
 ## Trust Model & Security Considerations
 
-> [!WARNING]
-> There are currently consensus-level constraints that prevent Cosmos/IBC-style proofs of on-chain state, for example UTxO inclusion proofs. A valuable conversation on that topic can be found here: [CIP-0165 (Canonical Ledger State)](https://github.com/cardano-foundation/CIPs/pull/1083). Under the current strategy, we do attain similar functionality with a combination of a Mithril light client and an on-chain STT architecture which allows us to have a transaction-inclusion-based avenue into understanding the on-chain IBC host-state of Cardano.
+
+There are currently protocol-level constraints that prevent IBC-style state proofs of Cardano, for example UTxO inclusion proofs. A valuable conversation on that topic can be found here: [CIP-0165 (Canonical Ledger State)](https://github.com/cardano-foundation/CIPs/pull/1083).
+
+The Cardano-native approach is to use Mithril in conjunction with a proprietary STT architecture to attain an analogous IBC state machine in Cardano semantics. The strategy for IBC proofs under this architecture is that we use our STT architecture over the IBC host state keyspace to function as an authenticated mutex for IBC host state mutation, and rather than trying to directly prove this on-chain state, we instead use Mithril certificates to prove transaction inclusion, and deduce IBC-state mutation from the transaction outputs of certified transactions.
 
 ## Overview
 This repository is divided into five main directories:
@@ -24,7 +55,7 @@ This repository is divided into five main directories:
 - `relayer`: A fork of [Hermes](https://hermes.informal.systems/) (Rust IBC relayer) with Cardano integration. This replaces the deprecated Go relayer and provides native `ChainEndpoint` implementation for Cardano chains.
 - `caribic`: A command-line tool responsible for starting and stopping all services, as well as providing a simple interface for users to interact with and configure the bridge services.
 
-## Architecture At A Glance
+## Architecture
 
 ```mermaid
 flowchart LR
@@ -123,37 +154,6 @@ The Cardano implementation resides in `relayer/crates/relayer/src/chain/cardano/
 - Full async runtime integration with Hermes's message-passing architecture
 - Complete protobuf generation for Gateway Query and Msg services
 
-The Cardano implementation follows the same architectural patterns as Cosmos and Penumbra chains within Hermes, ensuring seamless integration with the broader IBC ecosystem.
-
-#### Working with the Hermes Submodule
-
-```bash
-# Initial clone (includes submodule)
-git clone --recurse-submodules https://github.com/cardano-foundation/cardano-ibc-incubator.git
-
-# Or if already cloned, initialize the submodule
-git submodule update --init --recursive
-
-# Update submodule to latest
-cd relayer
-git pull origin feat/cardano-integration
-
-# Make changes to Hermes
-cd relayer
-# ... make changes ...
-git add -A
-git commit -m "feat: your changes"
-git push origin feat/cardano-integration
-
-# Update main repo to point to new submodule commit
-cd ..
-git add relayer
-git commit -m "chore: update Hermes submodule to latest"
-```
-
-This submodule approach maintains a clean separation between the Hermes fork (which can be contributed upstream to `informalsystems/hermes`) and the broader IBC bridge project.
-
-
 #### Hermes Configuration
 
 > [!CAUTION]
@@ -215,18 +215,15 @@ This project uses Docker containers that require platform-specific images depend
 
 The `chains/cardano/docker-compose.yaml` file includes platform specifications where needed. If you're running on a different architecture or encounter compatibility issues, you may need to adjust these platform settings accordingly.
 
-> [!NOTE]
-TO-DO: Prior to BuilderFest 2026 we need to plan and document architecture/OS-specific setup instructions for hackathon participants who may be using different machines (Windows, Linux, macOS on Intel vs Apple Silicon, etc.). This includes ensuring all Docker images and dependencies work across platforms.
-
 ### Running a local Cardano network
 
 To start the Cardano node, Mithril, Ogmios, and Kupo and db-sync locally run:
 
-Mithril note:
+**Mithril note:**
 In local devnet, Caribic starts a local Mithril aggregator and signers so that certificates, transaction snapshots, and inclusion proofs correspond to the local Cardano chain. This is necessary for testing because public Mithril endpoints only certify their own networks and cannot attest to transactions produced by a local devnet.
 When running a local devnet, start Caribic with `caribic start --with-mithril` so the local Mithril aggregator and signers attest to state on your local network.
 
-Mithril transaction snapshots are periodic checkpoints, not one certificate per Cardano block/slot. In this repository, the Mithril "height" used for IBC verification refers to the snapshot `block_number` (Cardano block height), not Cardano slot. The latest certified snapshot height can lag behind the Cardano node tip. The Gateway currently treats the Mithril transaction proof API as "latest snapshot only", so after submitting a HostState update transaction the relayer may need to wait until a newer snapshot includes that transaction before Cosmos-side verification can succeed. The snapshot cadence and stability tradeoffs are controlled by the Mithril config in `chains/mithrils/scripts/docker-compose.yaml`.
+Mithril transaction snapshots are periodic checkpoints, not one certificate per Cardano block/slot. In this repository, the Mithril "height" used for IBC verification refers to the snapshot `block_number` (Cardano block height), not Cardano slot. The latest certified snapshot height can lag behind the Cardano node tip. The Gateway currently treats the Mithril transaction proof API as "latest snapshot only", so after submitting a HostState update transaction the relayer may need to wait until a newer snapshot includes that transaction before Cosmos-side verification can succeed. The snapshot cadence and stability tradeoffs are controlled by the Mithril config in `chains/mithrils/scripts/docker-compose.yaml`. As a frame of reference, as of March 2026 there is generally a hard Mithril-level constraint on a minimum certificate cadence of 15 blocks, irrespective of configurable values and tip lag. 
 
 **Mithril Configuration Parameters:**
 
@@ -258,170 +255,87 @@ This means on mainnet you can expect a new `CardanoTransactions` certification a
 
 In production deployments on public Cardano networks, the IBC stack is not intended to run its own Mithril aggregator or signers. Instead, the Gateway and relayer are configured to consume an existing Mithril aggregator endpoint for the target Cardano network; the counterparty chain verifies Mithril certificates and proofs and does not need to trust the aggregator as an authority (it is a data source and availability dependency).
 
+Before using the CLI, build and install `caribic` locally:
+
 ```sh
 cd caribic
-cargo run start network 
-# "cargo run start" without argument 
-# will start network and bridge components
+cargo install --path . --force
+cd ..
 ```
 
-### Deploying the bridge components
-
-To start the gateway, relayer and to deploy the light client contracts run:
+To start the managed local Cardano devnet together with the bridge components and local Mithril services, run:
 
 ```sh
-cargo run start bridge
-# "cargo run start" without argument 
-# will start network and bridge components
+caribic start --clean --with-mithril
 ```
 
-### Testing against Cheqd / Osmosis
+If you need to start components separately, use:
+
+```sh
+caribic start network
+caribic start bridge
+```
+
+### Testing against Cosmos chains
 
 > [!IMPORTANT]
-> Even in the testing phase, chains like Cheqd and Osmosis must explicitly support the Cardano light client and allow it via `ibc.core.client.v1.Params.allowed_clients` (e.g., `08-cardano`). If the client type is not registered/allowed on the Cosmos chain, creating the counterparty client will fail and IBC connection/channel handshakes cannot proceed. Also ensure the relayer key on those chains is funded; Cosmos SDK accounts can return `NotFound` until they receive tokens.
+> Chains like Cheqd and Osmosis must explicitly support the Cardano light client and allow it via `ibc.core.client.v1.Params.allowed_clients` (e.g., `08-cardano`). If the client type is not registered/allowed on the Cosmos chain, creating the counterparty client will fail and IBC connection/channel handshakes cannot proceed. Also ensure the relayer key on those chains is funded; Cosmos SDK accounts can return `NotFound` until they receive tokens.
 
 ### Stopping the services
 
 To stop the services:
 
 ```sh
-cargo run stop # network|bridge|demo|all (default: all)
+caribic stop
 ```
 
 ### Demo: Sending a demo message from Cosmos to Cardano
 
-Make sure you have the bridge and network components running. Then, run the following command:
+The maintained message-exchange flow runs against the native `cosmos/entrypoint` chain and its built-in datasource in `cosmos/entrypoint/datasource`.
+
+Start the local bridge stack first:
 
 ```sh
-cargo run demo message-exchange
+caribic start --clean --with-mithril
 ```
 
-To demonstrate message exchange, a vessel-oracle module is integrated directly into the local `entrypoint` chain.  
-It simulates vessels sending their positions and requesting a harbor in a trustless and decentralized way. The data is consolidated and cleaned on the Cosmos side and sent out as an IBC packet. This packet is picked up by Hermes and written to the Cardano blockchain, acting as an oracle.
-
-You can run the demo use case by following these steps:
-
-- Follow the steps above to run a local Cardano network and the bridge components.
-- Make sure you see a message like `successfully created channel` in the logs of the relayer container.
-- The demo command runs the datasource flow from `cosmos/entrypoint/datasource` automatically (`report`, `consolidate`, `transmit`), including channel discovery and relay steps.
-
-- Check in the relayer or gateway if the message has been picked up and delivered to Cardano. Usually it should invoke the recvPacket function. This function would also be able to handle business logic.
-
-## Demo: Transfering tokens from Cosmos to Cardano and vice versa
-
-> [!CAUTION]  
-> Use case under construction:  
-> We are currently refactoring the code, so this use case might not work properly.
-
-Make sure you have the bridge and network components running. Then, run the following command:
+Then run the demo:
 
 ```sh
-cargo run demo token-swap
+caribic --verbose 5 demo message-exchange
 ```
+
+To demonstrate message exchange, a vessel-oracle module is integrated into the local `entrypoint` chain. It simulates vessels sending their positions and requesting a harbor in a trustless and decentralized way. The data is consolidated and cleaned on the Cosmos side and sent out as an IBC packet. This packet is picked up by Hermes and written to the Cardano blockchain, acting as an oracle.
+
+The demo command prepares Hermes, waits for Mithril artifacts, creates the message-exchange channel if needed, and runs the datasource flow automatically (`report`, `consolidate`, `transmit`).
+
+## Demo: Cross-chain token swap
+
+The maintained token-swap entrypoint is `caribic demo token-swap`. It prepares Hermes, creates transfer paths if needed, runs the Osmosis/Injective-side setup scripts, and executes the swap flow end to end. The internal scripts such as `setup_crosschain_swaps.sh` and `swap.sh` are invoked by the demo and are not the recommended operator entrypoint.
+
+For local Osmosis:
 
 ```sh
-docker exec -it relayer sh # Access to relayer container
-cd /root && ./scripts/xtransfer.sh # Start submit transfer packet
+caribic start --clean --with-mithril
+caribic start --chain osmosis --network local
+caribic demo token-swap --chain osmosis --network local
 ```
 
-After running `xtransfer.sh`, the relayer will capture the packet, relay a message to Cardano, call Ack on Cosmos, and by that complete the cycle.
+For Injective:
 
 ```sh
-2024-03-04T09:26:53.779140Z	info	Successful transaction	{"provider_type": "cardano", "chain_id": "cardano", "gas_used": 0, "height": 0, "msg_types": ["/ibc.core.channel.v1.MsgRecvPacket"], "tx_hash": "a35bc010a9e5e78c88469707aa10c3501bf19e51e0539b4720d70479d44fc3bc"}
-...
-2024-03-04T09:27:01.748158Z	info	Successful transaction	{"provider_type": "cosmos", "chain_id": "entrypoint", "packet_src_channel": "channel-7", "packet_dst_channel": "channel-7", "gas_used": 55261, "fees": "", "fee_payer": "cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6", "height": 8573, "msg_types": ["/ibc.core.channel.v1.MsgAcknowledgement"], "tx_hash": "D162CC2356A09F09C80D616987FE4BE965FDEA7C3C93AC0F2D1D5BE4589C8A46"}  # packet-forwarding chain run by us
+caribic start --clean --with-mithril
+caribic start --chain injective --network local
+caribic demo token-swap --chain injective --network local
 ```
 
-You can query balance using this endpoint:
-#### Query balance on Cosmos:
-```sh
-http://localhost:1317/cosmos/bank/v1beta1/balances/cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6
-```
-Notice that you will have voucher token with prefix: "ibc/"
-Example:
-```json
-{
-  "balances": [
-    {
-      "denom": "ibc/018463FA736C852FA78B23CE6CAE123B9182D18658E0F323B130BB4B1FBB6A52",
-      "amount": "13578"
-    }
-  ]
-}
-```
-
-#### Query balance on Cardano:
-```sh
-http://localhost:1442/matches/addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql?unspent&order=most_recent_first
-```
-Notice that you will have UTXO, asset with amount 2000:
-Example:
-```json
-[
-  {
-    "transaction_index": 0,
-    "transaction_id": "4ceee14cffdf8a03bba53e058bc02f0ed5e3cc1169d1e45963c02b780694b1af",
-    "output_index": 2,
-    "address": "addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql",
-    "value": {
-      "coins": 1150770,
-      "assets": {
-        "901a270744d7eee7a2ef5e0199a29ca2636b3ede7e6fa520aba1a1c1.84916548b2860f827f717b20796c9ddd4742325677e9534cd5e92c8ca260c553": 2000
-      }
-    },
-    "datum_hash": null,
-    "script_hash": null,
-    "created_at": {
-      "slot_no": 4202,
-      "header_hash": "3d2e1690468685cf5c95364b7200812f7252994d6a9620be0cc1f74991656020"
-    },
-    "spent_at": null
-  }
-]
-```
-
-### Demo: Crosschain Swap
-
-> [!CAUTION]  
-> Use case under construction:  
-> We are currently refactoring the code, so this use case might not work properly.
-
-From this repo, you can run the full flow with:
-
-```sh
-caribic demo token-swap
-```
-
-That command expects the bridge and osmosis services to already be running. It validates those services, prepares Hermes, sets up swap contracts, and executes the Cardano-to-Osmosis swap path end-to-end.
-
-1. Run:
-  ```sh
-  chains/osmosis/osmosis/scripts/setup_crosschain_swaps.sh
-  ```
-  to transfer Cardano mock token to Osmosis via IBC, create swap pool with this token and deploy contracts relates to crosschain swap. 
-
-2. Copy address of `crosschain_swaps` contract in result of the previous command to variable `CROSSCHAIN_SWAPS_ADDRESS` of file `swap.sh`.
-
-3. Run:
-  ```sh
-  swap.sh
-  ```
-  This command will send mock token in Cardano to Osmosis via IBC Packet Forward Middleware, swap this token to `uosmo` on created pool and send swapped token back to Cardano via Packet Forward Middleware again.
-
+See `caribic/README.md` for the maintained token-swap prerequisites and supported target networks.
 
 ## Useful commands for local networks
 
-#### Using the faucet to create and fund accounts in the test environment
+#### Local account configuration
 
-Packet-forwarding chain (Cosmos):
-(The faucet endpoint is bound to localhost by default and is not exposed publicly.)
-```sh
-curl -X POST "http://localhost:4500/" -H  "accept: application/json" -H  "Content-Type: application/json" -d "{  \"address\": \"cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6\",  \"coins\": [    \"10token\",\"10stake\"  ]}"
-```
-
-or access to `http://localhost:4500`
-
-To seed the Cardano addresses, you can use the `config.json` file generated by `caribic`. This file will be created the first time you run `caribic`. By default, it can be found at `<USER_HOME>/.caribic/config.json`.
+`caribic` generates the local Cardano account material in `config.json` the first time it runs. By default, it can be found at `<USER_HOME>/.caribic/config.json`.
 
 
 #### Register a new stake pool on the local Cardano blockchain
@@ -467,37 +381,14 @@ Stop the running script above, then wait for about 100 blocks (~2 mins), then ch
 curl -X GET "http://localhost:1317/cosmos/base/tendermint/v1beta1/validatorsets/latest" -H  "accept: application/json"
 ```
 
-#### Test timeout packet
-After successful create clients, connections, channels, terminate that terminal(A).
+#### Test IBC primitives and lifecycles
+
+For current end-to-end timeout and packet lifecycle validation, use the maintained integration suite:
 
 ```sh
-Access this url to check current balance in Cardano: http://localhost:1442/matches/addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql?unspent&order=most_recent_first
-
-Access this url to check current balance in Cosmos: http://localhost:1317/cosmos/bank/v1beta1/balances/cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6
-
+caribic start --clean --with-mithril
+caribic --verbose 5 test
 ```
-Update script `/scripts/xtransfer.sh`, `timeout-time-offset` from `1h` to `10s`
-
-Open another terminal(B) and run:
-```sh
-docker exec -it relayer sh
-cd /root && ./scripts/xtransfer.sh
-```
-
-Recheck you current balance, notice that your balance will be deduct.
-```sh
-Access this url to check current balance in Cardano: http://localhost:1442/matches/addr_test1vqj82u9chf7uwf0flum7jatms9ytf4dpyk2cakkzl4zp0wqgsqnql?unspent&order=most_recent_first
-
-Access this url to check current balance in Cosmos: http://localhost:1317/cosmos/bank/v1beta1/balances/cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6
-
-```
-
-In the terminal A, run this to execute timeout
-```sh
-cd /root && ./bin/rly start demo --processor legacy
-```
-
-After seeing something like `/ibc.core.channel.v1.MsgTimeout`, recheck you current balance, notice that your token will be return back.
 
 ## Additional Resources
 
@@ -528,6 +419,10 @@ This project stands on the shoulders of some incredible frameworks and tools dev
 All contributions are welcome! Please feel free to open a new thread on the issue tracker or submit a new pull request.
 
 Please read [Contributing](CONTRIBUTING.md) in advance. Thank you for contributing!
+
+## License
+
+This project is licensed under [Apache 2.0](LICENSE).
 
 ## Additional Documents
 - [Code of Conduct](CODE_OF_CONDUCT.md)

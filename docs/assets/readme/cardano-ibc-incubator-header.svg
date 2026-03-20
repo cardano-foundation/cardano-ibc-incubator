@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1531 768" role="img" aria-labelledby="title desc">
+  <title id="title">Cardano IBC Incubator</title>
+  <desc id="desc">Header artwork for the Cardano IBC Incubator README.</desc>
+
+  <defs>
+    <style>
+      .title {
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 176px;
+        font-weight: 700;
+        fill: #070707;
+      }
+
+      .subtitle {
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 72px;
+        font-weight: 500;
+        fill: #111111;
+      }
+
+      .accent {
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 180px;
+        font-weight: 700;
+        fill: #0b0b0b;
+      }
+    </style>
+  </defs>
+
+  <rect width="1531" height="768" fill="#cad4ff" />
+
+  <circle cx="168" cy="316" r="188" fill="#95a8ff" opacity="0.42" />
+  <circle cx="1240" cy="548" r="182" fill="#95a8ff" opacity="0.40" />
+  <circle cx="1515" cy="26" r="42" fill="#a6b5ff" opacity="0.40" />
+  <circle cx="194" cy="678" r="28" fill="#a6b5ff" opacity="0.42" />
+
+  <circle cx="402" cy="122" r="236" fill="none" stroke="#7d95f0" stroke-width="2" opacity="0.22" />
+  <circle cx="514" cy="326" r="254" fill="none" stroke="#7d95f0" stroke-width="2" opacity="0.22" />
+  <circle cx="998" cy="210" r="284" fill="none" stroke="#7d95f0" stroke-width="2" opacity="0.20" />
+  <circle cx="1438" cy="338" r="216" fill="none" stroke="#7d95f0" stroke-width="2" opacity="0.18" />
+  <circle cx="1446" cy="628" r="154" fill="none" stroke="#7d95f0" stroke-width="2" opacity="0.16" />
+
+  <text class="title" x="56" y="210">Cardano IBC</text>
+  <text class="title" x="56" y="420">Incubator</text>
+
+  <text class="subtitle" x="52" y="566">The Cardano implementation</text>
+  <text class="subtitle" x="52" y="654">of the IBC protocol</text>
+
+  <text class="accent" x="1220" y="648">IBC</text>
+</svg>
