@@ -9,6 +9,7 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::fs::Permissions;
 use std::io::BufRead;
+use std::io::IsTerminal;
 use std::io::{self, BufReader, Write};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -37,6 +38,32 @@ pub fn print_header() {
     \|_______|\|__|\|__|\|__|\|__|\|__|\|_______|\|__|\|_______| v0.2.0
     "#
     );
+}
+
+pub fn prompt_runtime_deployer_sk() -> Result<String, Box<dyn Error>> {
+    if let Ok(value) = std::env::var("DEPLOYER_SK") {
+        let trimmed = value.trim().to_string();
+        if !trimmed.is_empty() {
+            return Ok(trimmed);
+        }
+    }
+
+    if io::stdin().is_terminal() && io::stderr().is_terminal() {
+        eprint!("Enter DEPLOYER_SK: ");
+        io::stderr().flush()?;
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let trimmed = input.trim().to_string();
+        if !trimmed.is_empty() {
+            return Ok(trimmed);
+        }
+        return Err("DEPLOYER_SK prompt was empty".into());
+    }
+
+    Err(
+        "DEPLOYER_SK is required for this operation. Set DEPLOYER_SK in the environment for non-interactive runs."
+            .into(),
+    )
 }
 
 pub struct IndicatorMessage {
@@ -69,6 +96,10 @@ pub fn default_config_path() -> PathBuf {
 pub fn get_cardano_tip_state(
     project_root_dir: &Path,
 ) -> Result<String, Box<dyn std::error::Error>> {
+    let active_network = crate::config::active_core_cardano_network(project_root_dir);
+    let network_magic = crate::config::cardano_network_profile(active_network)
+        .network_magic
+        .to_string();
     let mut command = Command::new("docker");
     let query_output = command
         .current_dir(&project_root_dir.join("chains/cardano"))
@@ -81,7 +112,7 @@ pub fn get_cardano_tip_state(
             "tip",
             "--cardano-mode",
             "--testnet-magic",
-            "42",
+            network_magic.as_str(),
         ]);
 
     let output = query_output.output().map_err(|error| {

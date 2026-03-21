@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{chains, logger, stop, StopTarget};
+use crate::{chains, config, logger, stop, StopTarget};
 
 /// Stops the requested service group and keeps stop ordering consistent.
 pub fn run_stop(
@@ -12,12 +12,27 @@ pub fn run_stop(
     let project_root_path = Path::new(&project_config.project_root);
     let optional_chain_alias = resolve_optional_chain_alias(target.as_ref());
 
-    if optional_chain_alias.is_none() && (network.is_some() || !chain_flags.is_empty()) {
+    if let Some(chain_id) = optional_chain_alias {
+        if network.is_some() || !chain_flags.is_empty() {
+            stop_optional_chain(project_root_path, chain_id, network, chain_flags)?;
+        } else {
+            stop_all_managed_optional_chain_networks(project_root_path, chain_id)?;
+        }
+        logger::log("\nOptional chain stopped successfully");
+        return Ok(());
+    }
+
+    if !chain_flags.is_empty() {
         return Err(
-            "ERROR: --network and --chain-flag are only supported with `caribic stop <optional-chain-alias>` or `caribic chain stop ...`"
+            "ERROR: --chain-flag requires an optional chain target. Use `caribic stop <optional-chain-alias> --network <network>` or `caribic chain stop ...`."
                 .to_string(),
         );
     }
+
+    let core_cardano_network = match network.as_deref() {
+        Some(requested_network) => config::CoreCardanoNetwork::parse(Some(requested_network))?,
+        None => config::active_core_cardano_network(project_root_path),
+    };
 
     match target {
         Some(StopTarget::All) | None => {
@@ -37,8 +52,14 @@ pub fn run_stop(
             logger::log("\nBridge stopped successfully");
         }
         Some(StopTarget::Network) => {
-            network_down(project_root_path);
-            logger::log("\nCardano Network stopped successfully");
+            if core_cardano_network.uses_managed_runtime() {
+                network_down(project_root_path);
+                logger::log("\nCardano Network stopped successfully");
+            } else {
+                logger::log(
+                    "\nCardano preprod uses external infrastructure in this mode; no local Cardano network services were running",
+                );
+            }
         }
         Some(StopTarget::Entrypoint) => {
             stop::stop_cosmos(
@@ -46,15 +67,6 @@ pub fn run_stop(
                 "Entrypoint chain",
             );
             logger::log("\nEntrypoint chain stopped successfully");
-        }
-        Some(StopTarget::Osmosis) | Some(StopTarget::Cheqd) | Some(StopTarget::Injective) => {
-            let chain_id = optional_chain_alias.unwrap_or("osmosis");
-            if network.is_some() || !chain_flags.is_empty() {
-                stop_optional_chain(project_root_path, chain_id, network, chain_flags)?;
-            } else {
-                stop_all_managed_optional_chain_networks(project_root_path, chain_id)?;
-            }
-            logger::log("\nOptional chain stopped successfully");
         }
         Some(StopTarget::Demo) => {
             stop::stop_cosmos(
@@ -75,8 +87,19 @@ pub fn run_stop(
             logger::log("\nRelayer stopped successfully");
         }
         Some(StopTarget::Mithril) => {
-            stop::stop_mithril(project_root_path.join("chains/mithrils").as_path());
-            logger::log("\nMithril stopped successfully (mithril-aggregator, mithril-signer-1, mithril-signer-2)");
+            if core_cardano_network.uses_local_mithril() {
+                stop::stop_mithril(project_root_path.join("chains/mithrils").as_path());
+                logger::log(
+                    "\nMithril stopped successfully (mithril-aggregator, mithril-signer-1, mithril-signer-2)",
+                );
+            } else {
+                logger::log(
+                    "\nUsing public Mithril release-preprod; no local Mithril containers to stop",
+                );
+            }
+        }
+        Some(StopTarget::Osmosis) | Some(StopTarget::Cheqd) | Some(StopTarget::Injective) => {
+            unreachable!("optional chain aliases return earlier");
         }
     }
 
@@ -143,18 +166,20 @@ fn resolve_optional_chain_alias(target: Option<&StopTarget>) -> Option<&'static 
 
 /// Stops the local Cardano network and Mithril services.
 fn network_down(project_root_path: &Path) {
-    // Stop local cardano network
+    let active_network = crate::config::active_core_cardano_network(project_root_path);
+    if !active_network.uses_managed_runtime() {
+        return;
+    }
+
     stop::stop_cardano_network(project_root_path);
 
-    // Stop Mithril
-    stop::stop_mithril(project_root_path.join("chains/mithrils").as_path());
+    if active_network.uses_local_mithril() {
+        stop::stop_mithril(project_root_path.join("chains/mithrils").as_path());
+    }
 }
 
 /// Stops bridge-facing components that are safe to restart independently.
 fn bridge_down(project_root_path: &Path) {
-    // Stop Relayer
     stop::stop_relayer(project_root_path.join("relayer").as_path());
-
-    // Stop Gateway
     stop::stop_gateway(project_root_path);
 }

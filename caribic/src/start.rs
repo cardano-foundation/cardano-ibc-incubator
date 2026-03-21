@@ -1,12 +1,13 @@
 use crate::constants::ENTRYPOINT_CHAIN_ID;
 use crate::logger::{log_or_print_progress, log_or_show_progress, verbose};
 use crate::setup::{
-    configure_local_cardano_devnet, copy_cardano_env_file, download_mithril,
-    prepare_history_backend_and_gateway, seed_cardano_devnet,
+    configure_cardano_preprod_runtime, configure_local_cardano_devnet, copy_cardano_env_file,
+    download_mithril, prepare_db_sync_and_gateway, seed_cardano_devnet,
+    write_cardano_runtime_selection,
 };
 use crate::utils::{
     diagnose_container_failure, execute_script, execute_script_with_progress, get_cardano_state,
-    get_user_ids, wait_for_health_check, CardanoQuery,
+    get_user_ids, replace_text_in_file, wait_for_health_check, CardanoQuery,
 };
 use crate::{
     chains, config,
@@ -121,11 +122,24 @@ fn get_docker_env_vars() -> Vec<(&'static str, String)> {
     vec![("UID", uid), ("GID", gid)]
 }
 
+fn managed_cardano_network_running(cardano_dir: &Path) -> bool {
+    Command::new("docker")
+        .current_dir(cardano_dir)
+        .args(["compose", "ps", "-q"])
+        .output()
+        .ok()
+        .map(|output| !String::from_utf8_lossy(&output.stdout).trim().is_empty())
+        .unwrap_or(false)
+}
+
 pub fn start_relayer(
     relayer_path: &Path,
     _relayer_env_template_path: &Path,
     _relayer_config_source_path: &Path,
     _chain_handler_path: &Path,
+    cardano_chain_id: &str,
+    allow_devnet_key_fallback: bool,
+    runtime_deployer_sk: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
@@ -184,6 +198,12 @@ pub fn start_relayer(
         &options,
     )
     .map_err(|e| format!("Failed to copy Hermes config: {}", e))?;
+    replace_text_in_file(
+        hermes_dir.join("config.toml").as_path(),
+        r#"id = 'cardano-devnet'"#,
+        format!("id = '{}'", cardano_chain_id).as_str(),
+    )
+    .map_err(|e| format!("Failed to update Hermes Cardano chain id: {}", e))?;
 
     log_or_show_progress(
         &format!(
@@ -195,11 +215,14 @@ pub fn start_relayer(
 
     // Auto-configure Hermes keys for both chains
     log_or_show_progress(
-        "Setting up Hermes keys for cardano-devnet and Entrypoint chain",
+        &format!(
+            "Setting up Hermes keys for {} and Cosmos Entrypoint chain",
+            cardano_chain_id
+        ),
         &optional_progress_bar,
     );
 
-    // Entrypoint chain: Use the pre-funded "relayer" account from the chain config.
+    // Cosmos Entrypoint chain: Use the pre-funded "relayer" account from the chain config.
     let entrypoint_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
     let entrypoint_mnemonic_file = std::env::temp_dir().join("entrypoint-mnemonic.txt");
     fs::write(&entrypoint_mnemonic_file, entrypoint_mnemonic)
@@ -222,7 +245,7 @@ pub fn start_relayer(
     match entrypoint_key_output {
         Ok(output) if output.status.success() => {
             log_or_show_progress(
-                "Added key for Entrypoint chain",
+                "Added key for Cosmos Entrypoint chain",
                 &optional_progress_bar,
             );
         }
@@ -249,20 +272,31 @@ pub fn start_relayer(
     let project_root = relayer_path
         .parent()
         .ok_or("Failed to resolve project root from relayer path")?;
-    let cardano_key = std::env::var("DEPLOYER_SK")
-        .ok()
-        .map(|k| k.trim().to_string())
-        .filter(|k| !k.is_empty())
+    let cardano_key = runtime_deployer_sk
+        .map(|key| key.trim().to_string())
+        .filter(|key| !key.is_empty())
         .or_else(|| {
+            std::env::var("DEPLOYER_SK")
+                .ok()
+                .map(|k| k.trim().to_string())
+                .filter(|k| !k.is_empty())
+        })
+        .or_else(|| {
+            if !allow_devnet_key_fallback {
+                return None;
+            }
             let deployer_sk_path = project_root.join("chains/cardano/config/credentials/me.sk");
             fs::read_to_string(&deployer_sk_path)
                 .ok()
                 .map(|k| k.trim().to_string())
                 .filter(|k| !k.is_empty())
         })
-        .unwrap_or_else(|| {
-            "ed25519_sk1wzj3500dft0g38h9ldqmkl9urn5erf2jy5rh5dfpxhxjyqsn0awsjalfmy".to_string()
-        });
+        .ok_or_else(|| {
+            format!(
+                "No Cardano signing key available for {}. Set DEPLOYER_SK before starting Hermes.",
+                cardano_chain_id
+            )
+        })?;
     let cardano_key_file = std::env::temp_dir().join("cardano-key.txt");
     fs::write(&cardano_key_file, &cardano_key)
         .map_err(|e| format!("Failed to write cardano key: {}", e))?;
@@ -272,7 +306,7 @@ pub fn start_relayer(
             "keys",
             "add",
             "--chain",
-            "cardano-devnet",
+            cardano_chain_id,
             "--mnemonic-file",
             cardano_key_file.to_str().unwrap(),
             "--overwrite",
@@ -283,16 +317,23 @@ pub fn start_relayer(
 
     match cardano_key_output {
         Ok(output) if output.status.success() => {
-            log_or_show_progress("Added key for cardano-devnet", &optional_progress_bar);
+            log_or_show_progress(
+                &format!("Added key for {}", cardano_chain_id),
+                &optional_progress_bar,
+            );
         }
         Ok(output) => {
             verbose(&format!(
-                "Warning: Failed to add cardano-devnet key: {}",
+                "Warning: Failed to add {} key: {}",
+                cardano_chain_id,
                 String::from_utf8_lossy(&output.stderr)
             ));
         }
         Err(e) => {
-            verbose(&format!("Warning: Failed to add cardano-devnet key: {}", e));
+            verbose(&format!(
+                "Warning: Failed to add {} key: {}",
+                cardano_chain_id, e
+            ));
         }
     }
 
@@ -403,7 +444,16 @@ pub async fn start_local_cardano_network(
     project_root_path: &Path,
     clean: bool,
     with_mithril: bool,
+    network: config::CoreCardanoNetwork,
 ) -> Result<Option<tokio::task::JoinHandle<Result<(), String>>>, Box<dyn std::error::Error>> {
+    if !network.uses_managed_runtime() {
+        return Err(format!(
+            "Cardano network '{}' uses external infrastructure in this mode, so there is no managed local Cardano runtime to start.",
+            network.as_str()
+        )
+        .into());
+    }
+
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -422,6 +472,18 @@ pub async fn start_local_cardano_network(
     }
 
     let cardano_dir = project_root_path.join("chains/cardano");
+    let active_network = config::active_core_cardano_network(project_root_path);
+    let reset_runtime_state = clean || active_network != network;
+    if managed_cardano_network_running(cardano_dir.as_path()) && active_network != network {
+        return Err(format!(
+            "Managed Cardano runtime '{}' is already running. Stop it before starting '{}'.",
+            active_network.as_str(),
+            network.as_str()
+        )
+        .into());
+    }
+
+    write_cardano_runtime_selection(cardano_dir.as_path(), network)?;
     if clean {
         execute_script(
             cardano_dir.as_path(),
@@ -432,12 +494,20 @@ pub async fn start_local_cardano_network(
     }
     log_or_show_progress(
         &format!(
-            "{} Configuring local Cardano devnet",
+            "{} Configuring Cardano {} runtime",
             style("Step 1/3").bold().dim(),
+            network.as_str(),
         ),
         &optional_progress_bar,
     );
-    configure_local_cardano_devnet(cardano_dir.as_path())?;
+    match network {
+        config::CoreCardanoNetwork::Local => {
+            configure_local_cardano_devnet(cardano_dir.as_path())?;
+        }
+        config::CoreCardanoNetwork::Preprod => {
+            configure_cardano_preprod_runtime(cardano_dir.as_path(), reset_runtime_state).await?;
+        }
+    }
     log_or_show_progress(
         &format!(
             "{} Starting Cardano services",
@@ -445,37 +515,48 @@ pub async fn start_local_cardano_network(
         ),
         &optional_progress_bar,
     );
-    start_local_cardano_services(cardano_dir.as_path())?;
+    start_local_cardano_services(cardano_dir.as_path(), network)?;
 
     log_or_show_progress(
         "Waiting for the Cardano services to start ...",
         &optional_progress_bar,
     );
 
-    // TODO: make the url configurable
-    let ogmios_url = "http://localhost:1337";
-    let ogmios_connected =
-        wait_for_health_check(ogmios_url, 20, 5000, None::<fn(&String) -> bool>).await;
-
-    if ogmios_connected.is_ok() {
-        verbose("Cardano services started successfully");
-    } else {
-        let container_names = [
-            "cardano-node",
-            "cardano-cardano-node-ogmios-1",
-            "cardano-postgres-1",
-            "cardano-yaci-store-postgres-1",
-            "cardano-yaci-store-1",
-        ];
-        let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
-        return Err(format!(
-            "Failed to start Cardano services - Ogmios health check failed after 100 seconds{}",
-            diagnostics
+    if matches!(network, config::CoreCardanoNetwork::Local) {
+        let ogmios_connected = wait_for_health_check(
+            "http://localhost:1337",
+            20,
+            5000,
+            None::<fn(&String) -> bool>,
         )
-        .into());
+        .await;
+
+        if ogmios_connected.is_ok() {
+            verbose("Cardano services started successfully");
+        } else {
+            let container_names = [
+                "cardano-node",
+                "cardano-cardano-node-ogmios-1",
+                "cardano-postgres-1",
+                "cardano-yaci-store-postgres-1",
+                "cardano-yaci-store-1",
+            ];
+            let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
+            return Err(format!(
+                "Failed to start Cardano services - Ogmios health check failed after 100 seconds{}",
+                diagnostics
+            )
+            .into());
+        }
+    } else {
+        verbose("Cardano preprod relay and history services started successfully");
     }
 
-    if config::get_config().cardano.services.history_backend_enabled() {
+    if config::get_config()
+        .cardano
+        .services
+        .history_backend_enabled()
+    {
         let yaci_ready = wait_for_health_check(
             "http://localhost:8081/actuator/health",
             20,
@@ -557,7 +638,7 @@ pub async fn start_local_cardano_network(
     // - the devnet seeding transactions,
     // - Cosmos chain startup, Hermes build, contract deployment, etc.
     let mut mithril_genesis_handle = None;
-    if with_mithril {
+    if with_mithril && network.uses_local_mithril() {
         let cardano_epoch_on_mithril_start =
             start_mithril_with_progress(project_root_path, &optional_progress_bar)
                 .await
@@ -581,66 +662,80 @@ pub async fn start_local_cardano_network(
             .map_err(|e| e.to_string())
         }));
     } else {
-        log_or_print_progress(
-            "Skipping Mithril services (use --with-mithril to enable light client testing)",
+        let skip_message = if network.uses_local_mithril() {
+            "Skipping Mithril services (use --with-mithril to enable light client testing)"
+                .to_string()
+        } else {
+            "Using public Mithril release-preprod instead of local Mithril containers".to_string()
+        };
+        log_or_print_progress(skip_message.as_str(), &optional_progress_bar);
+    }
+
+    if matches!(network, config::CoreCardanoNetwork::Local) {
+        let mut current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
+        let target_epoch: u64 = 1;
+        let target_slot: u64 =
+            target_epoch * get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?;
+
+        if current_epoch < target_epoch {
+            if let Some(progress_bar) = &optional_progress_bar {
+                progress_bar.enable_steady_tick(Duration::from_millis(100));
+                progress_bar.set_style(
+                    ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
+                        .unwrap()
+                        .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
+                        .progress_chars("#>-"),
+                );
+                progress_bar.set_prefix(
+                    "Seeding the network needs to wait until network forked into Conway which it does with Epoch 1 .."
+                        .to_owned(),
+                );
+                progress_bar.set_length(target_slot);
+                progress_bar
+                    .set_position(get_cardano_state(project_root_path, CardanoQuery::Slot)?);
+            } else {
+                log(
+                    "Seeding the network needs to wait until network forked into Conway which it does with Epoch 1 ..",
+                );
+            }
+        }
+
+        while current_epoch < target_epoch {
+            current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
+
+            if let Some(progress_bar) = &optional_progress_bar {
+                progress_bar.set_position(min(
+                    get_cardano_state(project_root_path, CardanoQuery::Slot)?,
+                    target_slot,
+                ));
+            } else {
+                verbose(&format!(
+                    "Current slot: {}, Slots left: {}",
+                    get_cardano_state(project_root_path, CardanoQuery::Slot)?,
+                    get_cardano_state(project_root_path, CardanoQuery::SlotsToEpochEnd)?
+                ));
+            }
+            std::thread::sleep(Duration::from_secs(10));
+        }
+
+        seed_cardano_devnet(cardano_dir.as_path(), &optional_progress_bar);
+        log_or_show_progress(
+            "Deploying the client, channel and connection contracts",
+            &optional_progress_bar,
+        );
+    } else {
+        log_or_show_progress(
+            "Skipping local devnet seeding/deployment for preprod runtime",
             &optional_progress_bar,
         );
     }
 
-    // wait until network hard forked into Conway era after 1 epoch
-    let mut current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
-    let target_epoch: u64 = 1;
-    let target_slot: u64 =
-        target_epoch * get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?;
-
-    if current_epoch < target_epoch {
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.enable_steady_tick(Duration::from_millis(100));
-            progress_bar.set_style(
-            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {wide_msg}")
-                .unwrap()
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ ")
-                .progress_chars("#>-")
-        );
-            progress_bar.set_prefix(
-            "Seeding the network needs to wait until network forked into Conway which it does with Epoch 1 .."
-                .to_owned(),
-        );
-            progress_bar.set_length(target_slot);
-            progress_bar.set_position(get_cardano_state(project_root_path, CardanoQuery::Slot)?);
-        } else {
-            log(
-            "Seeding the network needs to wait until network forked into Conway which it does with Epoch 1 ..",
-        );
-        }
-    }
-
-    while current_epoch < target_epoch {
-        current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
-
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.set_position(min(
-                get_cardano_state(project_root_path, CardanoQuery::Slot)?,
-                target_slot,
-            ));
-        } else {
-            verbose(&format!(
-                "Current slot: {}, Slots left: {}",
-                get_cardano_state(project_root_path, CardanoQuery::Slot)?,
-                get_cardano_state(project_root_path, CardanoQuery::SlotsToEpochEnd)?
-            ));
-        }
-        std::thread::sleep(Duration::from_secs(10));
-    }
-
-    seed_cardano_devnet(cardano_dir.as_path(), &optional_progress_bar);
-    log_or_show_progress(
-        "Deploying the client, channel and connection contracts",
-        &optional_progress_bar,
-    );
-
-    if config::get_config().cardano.services.history_backend_enabled() {
-        prepare_history_backend_and_gateway(cardano_dir.as_path(), clean)?;
+    if config::get_config()
+        .cardano
+        .services
+        .history_backend_enabled()
+    {
+        prepare_db_sync_and_gateway(cardano_dir.as_path(), clean, network)?;
     }
 
     log_or_show_progress(
@@ -753,6 +848,8 @@ pub async fn deploy_contracts(
             &optional_progress_bar,
         );
 
+        wait_for_local_offchain_wallet_utxos(project_root_path, &optional_progress_bar)?;
+
         let deployment_result = execute_script(
             project_root_path.join("cardano").join("offchain").as_path(),
             "deno",
@@ -793,6 +890,415 @@ pub async fn deploy_contracts(
     }
 }
 
+fn backup_handler_json(
+    handler_json_path: &Path,
+) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    if !handler_json_path.exists() {
+        return Ok(None);
+    }
+
+    let backup_suffix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let backup_path = std::env::temp_dir().join(format!(
+        "caribic-handler-backup-{}-{}.json",
+        std::process::id(),
+        backup_suffix
+    ));
+
+    fs::copy(handler_json_path, &backup_path).map_err(|error| {
+        format!(
+            "Failed to back up handler.json from {} to {}: {}",
+            handler_json_path.display(),
+            backup_path.display(),
+            error
+        )
+    })?;
+
+    Ok(Some(backup_path))
+}
+
+fn restore_handler_json(
+    handler_json_path: &Path,
+    backup_path: Option<PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match backup_path {
+        Some(backup_path) => {
+            fs::copy(&backup_path, handler_json_path).map_err(|error| {
+                format!(
+                    "Failed to restore handler.json from {} to {}: {}",
+                    backup_path.display(),
+                    handler_json_path.display(),
+                    error
+                )
+            })?;
+            let _ = fs::remove_file(backup_path);
+        }
+        None => {
+            if handler_json_path.exists() {
+                fs::remove_file(handler_json_path).map_err(|error| {
+                    format!(
+                        "Failed to remove temporary handler.json at {}: {}",
+                        handler_json_path.display(),
+                        error
+                    )
+                })?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn wait_for_local_offchain_wallet_utxos(
+    project_root_path: &Path,
+    optional_progress_bar: &Option<ProgressBar>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    const MAX_ATTEMPTS: u64 = 24;
+    const POLL_INTERVAL_SECS: u64 = 5;
+
+    let offchain_dir = project_root_path.join("cardano").join("offchain");
+
+    for attempt in 1..=MAX_ATTEMPTS {
+        let probe = execute_script(
+            offchain_dir.as_path(),
+            "deno",
+            vec![
+                "run",
+                "--env-file=.env.default",
+                "--allow-net",
+                "--allow-env",
+                "--allow-read",
+                "--allow-ffi",
+                "scripts/check-wallet-utxos.ts",
+            ],
+            None,
+        );
+
+        match probe {
+            Ok(_) => return Ok(()),
+            Err(error) if attempt < MAX_ATTEMPTS => {
+                log_or_show_progress(
+                    &format!(
+                        "Waiting for seeded deployer UTxOs to become visible to Kupmios (attempt {}/{})",
+                        attempt, MAX_ATTEMPTS
+                    ),
+                    optional_progress_bar,
+                );
+                verbose(&format!(
+                    "Wallet UTxO readiness probe failed on attempt {}: {}",
+                    attempt, error
+                ));
+                std::thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
+            }
+            Err(error) => {
+                return Err(format!(
+                    "Wallet UTxOs never became visible to the offchain Kupmios provider after {} attempts: {}",
+                    MAX_ATTEMPTS, error
+                )
+                .into())
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn wait_for_ogmios_protocol_parameters(
+    ogmios_url: &str,
+    optional_progress_bar: &Option<ProgressBar>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    const MAX_ATTEMPTS: u64 = 12;
+    const POLL_INTERVAL_SECS: u64 = 5;
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(POLL_INTERVAL_SECS))
+        .build()
+        .map_err(|error| format!("Failed to initialize Ogmios readiness client: {}", error))?;
+    let request_body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "queryLedgerState/protocolParameters",
+        "params": {},
+        "id": null
+    });
+
+    let mut attempt: u64 = 0;
+    loop {
+        attempt += 1;
+        let readiness_check = client.post(ogmios_url).json(&request_body).send().await;
+
+        match readiness_check {
+            Ok(response) => {
+                let status = response.status();
+                let response_body = response.text().await.unwrap_or_default();
+                let parsed_response = serde_json::from_str::<Value>(&response_body).ok();
+                if status.is_success()
+                    && parsed_response
+                        .as_ref()
+                        .is_some_and(|json| json.get("error").is_none())
+                {
+                    return Ok(());
+                }
+
+                verbose(&format!(
+                    "Cardano deployment readiness not met yet at {} (attempt {}): status={}, response={}",
+                    ogmios_url, attempt, status, response_body
+                ));
+            }
+            Err(error) => {
+                verbose(&format!(
+                    "Cardano deployment readiness check failed at {} (attempt {}): {}",
+                    ogmios_url, attempt, error
+                ));
+            }
+        }
+
+        if attempt >= MAX_ATTEMPTS {
+            return Err(format!(
+                "Ogmios at {} did not answer protocolParameters after {} attempts. Confirm your external Cardano infrastructure is reachable and synced enough for deployment.",
+                ogmios_url, MAX_ATTEMPTS
+            )
+            .into());
+        }
+
+        log_or_show_progress(
+            &format!(
+                "Waiting for Ogmios readiness before deployment at {} (attempt {})",
+                ogmios_url, attempt
+            ),
+            optional_progress_bar,
+        );
+        tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
+    }
+}
+
+pub async fn deploy_preprod_bridge(
+    project_root_path: &Path,
+    validators_already_built: bool,
+    deployer_sk: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let optional_progress_bar = match logger::get_verbosity() {
+        logger::Verbosity::Verbose => None,
+        _ => Some(ProgressBar::new_spinner()),
+    };
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.enable_steady_tick(Duration::from_millis(100));
+        progress_bar.set_style(
+            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+        );
+        progress_bar.set_prefix("Deploying Cardano preprod bridge ...".to_owned());
+    } else {
+        log("Deploying Cardano preprod bridge ...");
+    }
+
+    let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
+
+    if validators_already_built {
+        log_or_show_progress(
+            &format!(
+                "{} Aiken validators already built",
+                style("Step 1/3").bold().dim()
+            ),
+            &optional_progress_bar,
+        );
+    } else if !project_root_path
+        .join("cardano")
+        .join("plutus.json")
+        .as_path()
+        .exists()
+        || is_verbose
+    {
+        log_or_show_progress(
+            &format!(
+                "{} Building Aiken validators",
+                style("Step 1/3").bold().dim()
+            ),
+            &optional_progress_bar,
+        );
+
+        let build_args = if is_verbose {
+            vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
+        } else {
+            vec!["build"]
+        };
+
+        execute_script(
+            project_root_path.join("cardano").join("onchain").as_path(),
+            "aiken",
+            build_args,
+            None,
+        )?;
+    } else {
+        log_or_show_progress(
+            &format!(
+                "{} Aiken validators already built",
+                style("Step 1/3").bold().dim()
+            ),
+            &optional_progress_bar,
+        );
+    }
+
+    let profile = config::cardano_network_profile(config::CoreCardanoNetwork::Preprod);
+    let cardano_dir = project_root_path.join("chains/cardano");
+    let offchain_dir = project_root_path.join("cardano/offchain");
+    let gateway_dir = project_root_path.join("cardano/gateway");
+    let deployment_dir = offchain_dir.join("deployments");
+    let generic_handler_path = deployment_dir.join("handler.json");
+    let preprod_handler_path = PathBuf::from(profile.handler_json_path.clone());
+    let preprod_manifest_path = profile
+        .bridge_manifest_path
+        .clone()
+        .map(PathBuf::from)
+        .ok_or("Preprod bridge manifest path is not configured")?;
+    let network_magic = profile.network_magic.to_string();
+    let kupmios_submit_timeout_ms = String::from("120000");
+    let (ogmios_url, kupo_url) =
+        crate::setup::resolve_external_cardano_deploy_endpoints(cardano_dir.as_path())?;
+
+    wait_for_ogmios_protocol_parameters(ogmios_url.as_str(), &optional_progress_bar).await?;
+
+    fs::create_dir_all(&deployment_dir).map_err(|error| {
+        format!(
+            "Failed to create offchain deployments directory {}: {}",
+            deployment_dir.display(),
+            error
+        )
+    })?;
+    if let Some(parent) = preprod_handler_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to create preprod handler directory {}: {}",
+                parent.display(),
+                error
+            )
+        })?;
+    }
+    if let Some(parent) = preprod_manifest_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to create preprod manifest directory {}: {}",
+                parent.display(),
+                error
+            )
+        })?;
+    }
+
+    let handler_backup = backup_handler_json(generic_handler_path.as_path())?;
+
+    log_or_show_progress(
+        &format!(
+            "{} Running offchain deployment against preprod",
+            style("Step 2/3").bold().dim()
+        ),
+        &optional_progress_bar,
+    );
+
+    let offchain_env = vec![
+        ("DEPLOYER_SK", deployer_sk),
+        ("KUPO_URL", kupo_url.as_str()),
+        ("OGMIOS_URL", ogmios_url.as_str()),
+        ("CARDANO_NETWORK_MAGIC", network_magic.as_str()),
+        (
+            "KUPMIOS_SUBMIT_TIMEOUT_MS",
+            kupmios_submit_timeout_ms.as_str(),
+        ),
+    ];
+    let deployment_result = execute_script(
+        offchain_dir.as_path(),
+        "deno",
+        vec![
+            "run",
+            "--frozen",
+            "--allow-net",
+            "--allow-env",
+            "--allow-read",
+            "--allow-ffi",
+            "--allow-write",
+            "index.ts",
+        ],
+        Some(offchain_env),
+    );
+
+    if let Err(error) = deployment_result {
+        let _ = restore_handler_json(generic_handler_path.as_path(), handler_backup);
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.finish_and_clear();
+        }
+        return Err(format!("Preprod offchain deployment failed: {}", error).into());
+    }
+
+    if !generic_handler_path.exists() {
+        let _ = restore_handler_json(generic_handler_path.as_path(), handler_backup);
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.finish_and_clear();
+        }
+        return Err(format!(
+            "Offchain deployment finished but handler.json was not created at {}",
+            generic_handler_path.display()
+        )
+        .into());
+    }
+
+    if let Err(error) = fs::copy(&generic_handler_path, &preprod_handler_path) {
+        let _ = restore_handler_json(generic_handler_path.as_path(), handler_backup);
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.finish_and_clear();
+        }
+        return Err(format!(
+            "Failed to publish preprod handler.json from {} to {}: {}",
+            generic_handler_path.display(),
+            preprod_handler_path.display(),
+            error
+        )
+        .into());
+    }
+
+    log_or_show_progress(
+        &format!(
+            "{} Exporting public bridge manifest",
+            style("Step 3/3").bold().dim()
+        ),
+        &optional_progress_bar,
+    );
+
+    let export_env = vec![
+        ("CARDANO_CHAIN_ID", profile.chain_id.as_str()),
+        ("CARDANO_CHAIN_NETWORK_MAGIC", network_magic.as_str()),
+        ("CARDANO_NETWORK", "preprod"),
+    ];
+    let export_result = execute_script(
+        gateway_dir.as_path(),
+        "npm",
+        vec![
+            "run",
+            "export:bridge-manifest",
+            "--",
+            preprod_handler_path
+                .to_str()
+                .ok_or("Failed to stringify preprod handler path")?,
+            preprod_manifest_path
+                .to_str()
+                .ok_or("Failed to stringify preprod bridge manifest path")?,
+        ],
+        Some(export_env),
+    );
+
+    restore_handler_json(generic_handler_path.as_path(), handler_backup)?;
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.finish_and_clear();
+    }
+
+    if let Err(error) = export_result {
+        return Err(format!("Failed to export preprod bridge manifest: {}", error).into());
+    }
+
+    Ok(())
+}
+
 pub fn start_cosmos_entrypoint_chain_services(
     cosmos_dir: &Path,
     clean: bool,
@@ -815,8 +1321,10 @@ pub fn start_cosmos_entrypoint_chain_services(
             ]),
             None,
         )?;
-        // Both init and runtime services share the same image. Build the compose project once
-        // instead of targeting the init service specifically.
+        // Both init and steady-state services share the same image. Build the compose project
+        // once instead of targeting the init service specifically. This avoids brittle service
+        // name lookups in the full parallel startup path and keeps clean startup behavior
+        // consistent with the single-target `caribic start entrypoint --clean` flow.
         execute_script(
             cosmos_dir,
             "docker",
@@ -828,21 +1336,21 @@ pub fn start_cosmos_entrypoint_chain_services(
     execute_script(
         cosmos_dir,
         "docker",
-        Vec::from(["compose", "-f", compose_file, "run", "--rm", init_service_name]),
+        Vec::from([
+            "compose",
+            "-f",
+            compose_file,
+            "run",
+            "--rm",
+            init_service_name,
+        ]),
         None,
     )?;
 
     execute_script(
         cosmos_dir,
         "docker",
-        Vec::from([
-            "compose",
-            "-f",
-            compose_file,
-            "up",
-            "-d",
-            node_service_name,
-        ]),
+        Vec::from(["compose", "-f", compose_file, "up", "-d", node_service_name]),
         None,
     )?;
     Ok(())
@@ -861,9 +1369,9 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
                 .unwrap()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
-        progress_bar.set_prefix("Waiting for Entrypoint chain to start".to_owned());
+        progress_bar.set_prefix("Waiting for Cosmos Entrypoint chain to start".to_owned());
     } else {
-        log("Waiting for Entrypoint chain to start ...");
+        log("Waiting for Cosmos Entrypoint chain to start ...");
     }
 
     // Wait for health check with fail-fast error detection
@@ -927,7 +1435,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
                     }
 
                     verbose(&format!(
-                        "Entrypoint RPC is up but chain has not produced blocks yet (retry {})",
+                        "Cosmos Entrypoint RPC is up but chain has not produced blocks yet (retry {})",
                         retry + 1
                     ));
                 } else {
@@ -956,7 +1464,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
                     progress_bar.finish_and_clear();
                 }
                 return Err(format!(
-                    "Entrypoint chain has unrecoverable errors that require developer intervention:{}",
+                    "Cosmos Entrypoint chain has unrecoverable errors that require developer intervention:{}",
                     diagnostics
                 )
                 .into());
@@ -975,7 +1483,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     }
 
     Err(format!(
-        "Health check on {} failed after {} attempts. The Entrypoint chain may have crashed or is not responding.{}",
+        "Health check on {} failed after {} attempts. The Cosmos Entrypoint chain may have crashed or is not responding.{}",
         cosmos_status_url,
         max_retries,
         diagnostics
@@ -991,7 +1499,10 @@ pub async fn start_cosmos_entrypoint_chain(
     wait_for_cosmos_entrypoint_chain_ready().await
 }
 
-pub fn start_local_cardano_services(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub fn start_local_cardano_services(
+    cardano_dir: &Path,
+    network: config::CoreCardanoNetwork,
+) -> Result<(), Box<dyn std::error::Error>> {
     let configuration = config::get_config().cardano;
 
     let mut services = vec![];
@@ -1005,10 +1516,10 @@ pub fn start_local_cardano_services(cardano_dir: &Path) -> Result<(), Box<dyn st
         services.push("yaci-store-postgres");
         services.push("yaci-store");
     }
-    if configuration.services.kupo {
+    if configuration.services.kupo && matches!(network, config::CoreCardanoNetwork::Local) {
         services.push("kupo");
     }
-    if configuration.services.ogmios {
+    if configuration.services.ogmios && matches!(network, config::CoreCardanoNetwork::Local) {
         services.push("cardano-node-ogmios");
     }
 
@@ -1028,6 +1539,23 @@ pub fn start_local_cardano_services(cardano_dir: &Path) -> Result<(), Box<dyn st
         script_start_args,
         Some(docker_env_refs),
     )?;
+    Ok(())
+}
+
+pub async fn ensure_managed_cardano_runtime(
+    project_root_path: &Path,
+    clean: bool,
+    network: config::CoreCardanoNetwork,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cardano_dir = project_root_path.join("chains/cardano");
+    let active_network = config::active_core_cardano_network(project_root_path);
+
+    if managed_cardano_network_running(cardano_dir.as_path()) && active_network == network && !clean
+    {
+        return Ok(());
+    }
+
+    let _ = start_local_cardano_network(project_root_path, clean, false, network).await?;
     Ok(())
 }
 
@@ -2604,7 +3132,7 @@ const CORE_HEALTH_SERVICES: [CoreHealthService; 9] = [
     },
     CoreHealthService {
         name: "cardano",
-        label: "Cardano Node",
+        label: "Cardano chain access",
         check_type: CoreHealthCheckType::CardanoNode,
     },
     CoreHealthService {
@@ -2654,12 +3182,60 @@ struct HealthServiceStatus {
 
 struct HealthContext {
     mithril_dir: PathBuf,
+    core_cardano_network: config::CoreCardanoNetwork,
+    preprod_mithril_endpoint: String,
+    gateway_env_path: PathBuf,
 }
 
 fn build_health_context(project_root_path: &Path) -> HealthContext {
+    let preprod_profile = config::cardano_network_profile(config::CoreCardanoNetwork::Preprod);
     HealthContext {
         mithril_dir: project_root_path.join("chains/mithrils"),
+        core_cardano_network: config::active_core_cardano_network(project_root_path),
+        preprod_mithril_endpoint: preprod_profile.mithril_aggregator_url,
+        gateway_env_path: project_root_path.join("cardano/gateway/.env"),
     }
+}
+
+fn external_gateway_env_value(context: &HealthContext, key: &str) -> Option<String> {
+    crate::setup::read_gateway_env_value(context.gateway_env_path.as_path(), key)
+        .ok()
+        .flatten()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn check_external_host_port(host: &str, port: &str, label: &str) -> (bool, String) {
+    let reachable = Command::new("nc")
+        .args(["-z", host, port])
+        .output()
+        .ok()
+        .is_some_and(|output| output.status.success());
+    if reachable {
+        (
+            true,
+            format!("External {} reachable at {}:{}", label, host, port),
+        )
+    } else {
+        (
+            false,
+            format!("External {} not reachable at {}:{}", label, host, port),
+        )
+    }
+}
+
+fn check_external_url_port(url: &str, label: &str) -> (bool, String) {
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return (false, format!("External {} URL is invalid: {}", label, url));
+    };
+    let Some(host) = parsed.host_str() else {
+        return (
+            false,
+            format!("External {} URL is missing a host: {}", label, url),
+        );
+    };
+    let port = parsed.port_or_known_default().unwrap_or(80).to_string();
+    check_external_host_port(host, port.as_str(), label)
 }
 
 fn find_core_health_service(service_name: &str) -> Option<CoreHealthService> {
@@ -2673,6 +3249,134 @@ fn run_core_health_check(
     check_type: CoreHealthCheckType,
     context: &HealthContext,
 ) -> (bool, String) {
+    if context.core_cardano_network == config::CoreCardanoNetwork::Preprod {
+        return match check_type {
+            CoreHealthCheckType::Gateway => check_container_with_optional_port(
+                "gateway-app",
+                5001,
+                "Container running, gRPC port 5001 accessible",
+                "Container running (gRPC not ready yet)",
+            ),
+            CoreHealthCheckType::CardanoNode => check_container_only("cardano-node"),
+            CoreHealthCheckType::Postgres => check_postgres_service(),
+            CoreHealthCheckType::Yaci => check_container_with_optional_port(
+                "yaci-store-1",
+                8081,
+                "Running on port 8081",
+                "Container running",
+            ),
+            CoreHealthCheckType::Kupo => external_gateway_env_value(context, "KUPO_ENDPOINT")
+                .map(|url| check_external_url_port(url.as_str(), "Kupo"))
+                .unwrap_or_else(|| {
+                    (
+                        false,
+                        "Missing KUPO_ENDPOINT in cardano/gateway/.env".to_string(),
+                    )
+                }),
+            CoreHealthCheckType::Ogmios => external_gateway_env_value(context, "OGMIOS_ENDPOINT")
+                .map(|url| check_external_url_port(url.as_str(), "Ogmios"))
+                .unwrap_or_else(|| {
+                    (
+                        false,
+                        "Missing OGMIOS_ENDPOINT in cardano/gateway/.env".to_string(),
+                    )
+                }),
+            CoreHealthCheckType::Mithril => check_mithril_service(
+                context.mithril_dir.as_path(),
+                context.core_cardano_network,
+                context.preprod_mithril_endpoint.as_str(),
+            ),
+            CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
+            CoreHealthCheckType::Cosmos => check_rpc_service(
+                config::get_config().health.cosmos_status_url.as_str(),
+                26657,
+            ),
+        };
+    }
+
+    if !context.core_cardano_network.uses_managed_runtime() {
+        return match check_type {
+            CoreHealthCheckType::Gateway => check_container_with_optional_port(
+                "gateway-app",
+                5001,
+                "Container running, gRPC port 5001 accessible",
+                "Container running (gRPC not ready yet)",
+            ),
+            CoreHealthCheckType::CardanoNode => {
+                let url = external_gateway_env_value(context, "OGMIOS_ENDPOINT")
+                    .unwrap_or_else(|| "<unset>".to_string());
+                if url == "<unset>" {
+                    (
+                        false,
+                        "Missing OGMIOS_ENDPOINT in cardano/gateway/.env".to_string(),
+                    )
+                } else {
+                    check_external_url_port(url.as_str(), "Cardano/Ogmios")
+                }
+            }
+            CoreHealthCheckType::Postgres => {
+                let host = external_gateway_env_value(context, "HISTORY_DB_HOST")
+                    .unwrap_or_else(|| "<unset>".to_string());
+                let port = external_gateway_env_value(context, "HISTORY_DB_PORT")
+                    .unwrap_or_else(|| "<unset>".to_string());
+                if host == "<unset>" || port == "<unset>" {
+                    (
+                        false,
+                        "Missing HISTORY_DB_HOST/HISTORY_DB_PORT in cardano/gateway/.env"
+                            .to_string(),
+                    )
+                } else {
+                    check_external_host_port(
+                        host.as_str(),
+                        port.as_str(),
+                        "history backend postgres",
+                    )
+                }
+            }
+            CoreHealthCheckType::Yaci => {
+                let host = external_gateway_env_value(context, "HISTORY_DB_HOST")
+                    .unwrap_or_else(|| "<unset>".to_string());
+                if host == "<unset>" {
+                    (
+                        false,
+                        "Missing HISTORY_DB_HOST in cardano/gateway/.env".to_string(),
+                    )
+                } else {
+                    (
+                        true,
+                        format!("Managed externally via history backend at {}", host),
+                    )
+                }
+            }
+            CoreHealthCheckType::Kupo => external_gateway_env_value(context, "KUPO_ENDPOINT")
+                .map(|url| check_external_url_port(url.as_str(), "Kupo"))
+                .unwrap_or_else(|| {
+                    (
+                        false,
+                        "Missing KUPO_ENDPOINT in cardano/gateway/.env".to_string(),
+                    )
+                }),
+            CoreHealthCheckType::Ogmios => external_gateway_env_value(context, "OGMIOS_ENDPOINT")
+                .map(|url| check_external_url_port(url.as_str(), "Ogmios"))
+                .unwrap_or_else(|| {
+                    (
+                        false,
+                        "Missing OGMIOS_ENDPOINT in cardano/gateway/.env".to_string(),
+                    )
+                }),
+            CoreHealthCheckType::Mithril => check_mithril_service(
+                context.mithril_dir.as_path(),
+                context.core_cardano_network,
+                context.preprod_mithril_endpoint.as_str(),
+            ),
+            CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
+            CoreHealthCheckType::Cosmos => check_rpc_service(
+                config::get_config().health.cosmos_status_url.as_str(),
+                26657,
+            ),
+        };
+    }
+
     match check_type {
         CoreHealthCheckType::Gateway => check_container_with_optional_port(
             "gateway-app",
@@ -2700,7 +3404,11 @@ fn run_core_health_check(
             "Running on port 1337",
             "Container running",
         ),
-        CoreHealthCheckType::Mithril => check_mithril_service(context.mithril_dir.as_path()),
+        CoreHealthCheckType::Mithril => check_mithril_service(
+            context.mithril_dir.as_path(),
+            context.core_cardano_network,
+            context.preprod_mithril_endpoint.as_str(),
+        ),
         CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
         CoreHealthCheckType::Cosmos => check_rpc_service(
             config::get_config().health.cosmos_status_url.as_str(),
@@ -2980,6 +3688,14 @@ fn endpoint_contains_result(url: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn endpoint_responds(url: &str) -> bool {
+    Command::new("curl")
+        .args(&["-sfL", "--connect-timeout", "5", url])
+        .output()
+        .ok()
+        .is_some_and(|output| output.status.success())
+}
+
 fn check_container_only(name_filter: &str) -> (bool, String) {
     if docker_running_container_name(name_filter).is_some() {
         (true, "Container running".to_string())
@@ -3025,14 +3741,40 @@ fn check_postgres_service() -> (bool, String) {
     if ready {
         (
             true,
-            "Database accepting connections on port 6432".to_string(),
+            "Gateway app database accepting connections on port 6432".to_string(),
         )
     } else {
         (true, "Container running".to_string())
     }
 }
 
-fn check_mithril_service(mithril_dir: &Path) -> (bool, String) {
+fn check_mithril_service(
+    mithril_dir: &Path,
+    core_cardano_network: config::CoreCardanoNetwork,
+    preprod_mithril_endpoint: &str,
+) -> (bool, String) {
+    if !core_cardano_network.uses_local_mithril() {
+        let artifact_url = format!("{}/artifact/snapshots", preprod_mithril_endpoint);
+        let healthy = endpoint_responds(artifact_url.as_str());
+        return if healthy {
+            (
+                true,
+                format!(
+                    "Public Mithril release-preprod reachable at {}",
+                    preprod_mithril_endpoint
+                ),
+            )
+        } else {
+            (
+                false,
+                format!(
+                    "Failed to query public Mithril release-preprod at {}",
+                    preprod_mithril_endpoint
+                ),
+            )
+        };
+    }
+
     let mithril_compose = mithril_dir.join("scripts/docker-compose.yaml");
     if !mithril_compose.exists() {
         return (

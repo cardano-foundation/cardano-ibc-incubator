@@ -10,15 +10,54 @@ use crate::{
     config, logger,
     start::{
         build_aiken_validators_if_needed, build_hermes_if_needed, deploy_contracts,
-        start_cosmos_entrypoint_chain, start_cosmos_entrypoint_chain_services, start_gateway,
-        start_hermes_daemon, start_mithril, start_relayer, wait_for_cosmos_entrypoint_chain_ready,
+        deploy_preprod_bridge, start_cosmos_entrypoint_chain,
+        start_cosmos_entrypoint_chain_services, start_gateway, start_hermes_daemon, start_mithril,
+        start_relayer, wait_for_cosmos_entrypoint_chain_ready,
     },
-    utils::query_balance,
+    utils::{prompt_runtime_deployer_sk, query_balance},
     StartTarget, StopTarget,
 };
 
 const HERMES_BUILD_PROGRESS_LOG_INTERVAL_SECS: u64 = 10;
 const HERMES_BUILD_POLL_INTERVAL_SECS: u64 = 2;
+
+fn require_preprod_bridge_artifact(artifact_path: &Path, label: &str) -> Result<(), String> {
+    if artifact_path.exists() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "ERROR: Missing required preprod {} at {}.\nProvide an existing preprod bridge deployment artifact before starting against --network preprod.",
+        label,
+        artifact_path.display()
+    ))
+}
+
+fn require_preprod_gateway_bootstrap_artifact(
+    manifest_path: Option<&str>,
+    handler_path: &Path,
+) -> Result<(), String> {
+    if manifest_path
+        .map(Path::new)
+        .is_some_and(|path| path.exists())
+        || handler_path.exists()
+    {
+        return Ok(());
+    }
+
+    Err(format!(
+        "ERROR: Missing required preprod gateway bootstrap artifact.\nExpected either bridge manifest at {} or handler.json at {}.",
+        manifest_path.unwrap_or("<unset>"),
+        handler_path.display()
+    ))
+}
+
+fn target_requires_runtime_deployer_sk(target: Option<StartTarget>) -> bool {
+    target.is_none()
+        || target == Some(StartTarget::All)
+        || target == Some(StartTarget::Bridge)
+        || target == Some(StartTarget::Relayer)
+}
 
 /// Starts the requested target and orchestrates startup dependencies for network and bridge components.
 pub async fn run_start(
@@ -39,124 +78,6 @@ pub async fn run_start(
     let start_cosmos = start_all || target == Some(StartTarget::Entrypoint);
     let start_bridge = start_all || target == Some(StartTarget::Bridge);
     let optional_chain_alias = resolve_optional_chain_alias(target.as_ref());
-
-    if optional_chain_alias.is_none() && (network.is_some() || !chain_flags.is_empty()) {
-        return Err(
-            "ERROR: --network and --chain-flag are only supported with `caribic start <optional-chain-alias>` or `caribic chain start ...`"
-                .to_string(),
-        );
-    }
-
-    let mut aiken_build_handle = None;
-    let mut cosmos_entrypoint_chain_start_handle = None;
-    let mut hermes_build_handle = None;
-    let mut mithril_genesis_handle = None;
-
-    if start_all {
-        if start_cosmos {
-            let cosmos_dir = project_root_path.join("cosmos");
-            let clean = clean;
-            cosmos_entrypoint_chain_start_handle = Some(tokio::task::spawn_blocking(move || {
-                start_cosmos_entrypoint_chain_services(cosmos_dir.as_path(), clean)
-                    .map_err(|e| e.to_string())
-            }));
-        }
-
-        if start_bridge {
-            let relayer_dir = project_root_path.join("relayer");
-            hermes_build_handle = Some(tokio::task::spawn_blocking(move || {
-                build_hermes_if_needed(relayer_dir.as_path()).map_err(|e| e.to_string())
-            }));
-        }
-
-        if start_bridge {
-            let project_root_path = project_root_path.to_path_buf();
-            let clean = clean;
-            aiken_build_handle = Some(tokio::task::spawn_blocking(move || {
-                build_aiken_validators_if_needed(project_root_path.as_path(), clean)
-                    .map_err(|e| e.to_string())
-            }));
-        }
-    }
-
-    if target == Some(StartTarget::Gateway) {
-        match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
-            Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
-            Err(error) => return Err(format!("ERROR: Failed to start gateway: {}", error)),
-        };
-        return Ok(());
-    }
-
-    if target == Some(StartTarget::Relayer) {
-        match start_relayer(
-            project_root_path.join("relayer").as_path(),
-            project_root_path.join("relayer/.env.example").as_path(),
-            project_root_path.join("relayer/examples").as_path(),
-            project_root_path
-                .join("cardano/offchain/deployments/handler.json")
-                .as_path(),
-        ) {
-            Ok(_) => logger::log("PASS: Hermes relayer built and configured"),
-            Err(error) => {
-                return Err(format!(
-                    "ERROR: Failed to configure Hermes relayer: {}",
-                    error
-                ))
-            }
-        };
-
-        match start_hermes_daemon() {
-            Ok(_) => logger::log("PASS: Hermes daemon started successfully"),
-            Err(error) => return Err(format!("ERROR: Failed to start Hermes daemon: {}", error)),
-        };
-        logger::log(&format!(
-            "\ncaribic start completed in {}",
-            format_elapsed_duration(start_elapsed_timer.elapsed())
-        ));
-        return Ok(());
-    }
-
-    if target == Some(StartTarget::Mithril) {
-        match start_mithril(&project_root_path).await {
-            Ok(cardano_epoch_on_mithril_start) => {
-                logger::log("PASS: Mithril services started (1 aggregator, 2 signers)");
-
-                let project_root_path = project_root_path.to_path_buf();
-                let bootstrap_result = tokio::task::spawn_blocking(move || {
-                    crate::start::wait_and_start_mithril_genesis(
-                        project_root_path.as_path(),
-                        cardano_epoch_on_mithril_start,
-                    )
-                    .map_err(|e| e.to_string())
-                })
-                .await;
-
-                match bootstrap_result {
-                    Ok(Ok(())) => logger::log(
-                        "PASS: Mithril genesis bootstrap completed (certificates/artifacts ready)",
-                    ),
-                    Ok(Err(error)) => {
-                        return Err(format!(
-                            "ERROR: Mithril genesis bootstrap failed: {}",
-                            error
-                        ))
-                    }
-                    Err(error) => {
-                        return Err(format!(
-                            "ERROR: Mithril genesis bootstrap task failed: {}",
-                            error
-                        ))
-                    }
-                }
-            }
-            Err(error) => return Err(format!("ERROR: Failed to start Mithril: {}", error)),
-        }
-        logger::log(&format!(
-            "\ncaribic start completed in {}",
-            format_elapsed_duration(start_elapsed_timer.elapsed())
-        ));
-        return Ok(());
-    }
 
     if let Some(optional_chain_id) = optional_chain_alias {
         let chain_adapter = chains::get_chain_adapter(optional_chain_id).ok_or_else(|| {
@@ -223,7 +144,180 @@ pub async fn run_start(
             chain_adapter.display_name(),
             resolved_network,
         ));
+        logger::log(&format!(
+            "\ncaribic start completed in {}",
+            format_elapsed_duration(start_elapsed_timer.elapsed())
+        ));
+        return Ok(());
+    }
 
+    if !chain_flags.is_empty() {
+        return Err(
+            "ERROR: --chain-flag requires an optional chain target. Use `caribic start <optional-chain-alias> --network <network>` or `caribic chain start ...`."
+                .to_string(),
+        );
+    }
+
+    let core_cardano_network = config::CoreCardanoNetwork::parse(network.as_deref())?;
+    let core_cardano_profile = config::cardano_network_profile(core_cardano_network);
+
+    if core_cardano_network == config::CoreCardanoNetwork::Preprod && with_mithril {
+        return Err(
+            "ERROR: --with-mithril is not supported with --network preprod. Use public Mithril release-preprod instead.".to_string(),
+        );
+    }
+
+    let runtime_deployer_sk = if core_cardano_network != config::CoreCardanoNetwork::Local
+        && target_requires_runtime_deployer_sk(target.clone())
+    {
+        Some(
+            prompt_runtime_deployer_sk()
+                .map_err(|error| format!("ERROR: Failed to load DEPLOYER_SK: {}", error))?,
+        )
+    } else {
+        None
+    };
+
+    let mut aiken_build_handle = None;
+    let mut cosmos_entrypoint_chain_start_handle = None;
+    let mut hermes_build_handle = None;
+    let mut mithril_genesis_handle = None;
+
+    if start_all {
+        if start_cosmos {
+            let cosmos_dir = project_root_path.join("cosmos");
+            cosmos_entrypoint_chain_start_handle = Some(tokio::task::spawn_blocking(move || {
+                start_cosmos_entrypoint_chain_services(cosmos_dir.as_path(), clean)
+                    .map_err(|e| e.to_string())
+            }));
+        }
+
+        if start_bridge {
+            let relayer_dir = project_root_path.join("relayer");
+            hermes_build_handle = Some(tokio::task::spawn_blocking(move || {
+                build_hermes_if_needed(relayer_dir.as_path()).map_err(|e| e.to_string())
+            }));
+        }
+
+        if start_bridge {
+            let project_root_path = project_root_path.to_path_buf();
+            aiken_build_handle = Some(tokio::task::spawn_blocking(move || {
+                build_aiken_validators_if_needed(project_root_path.as_path(), clean)
+                    .map_err(|e| e.to_string())
+            }));
+        }
+    }
+
+    if target == Some(StartTarget::Gateway) {
+        if core_cardano_network == config::CoreCardanoNetwork::Preprod {
+            require_preprod_gateway_bootstrap_artifact(
+                core_cardano_profile.bridge_manifest_path.as_deref(),
+                Path::new(core_cardano_profile.handler_json_path.as_str()),
+            )?;
+            crate::start::ensure_managed_cardano_runtime(
+                project_root_path,
+                clean,
+                core_cardano_network,
+            )
+            .await
+            .map_err(|error| {
+                format!(
+                    "ERROR: Failed to start preprod history sidecar runtime: {}",
+                    error
+                )
+            })?;
+            crate::setup::prepare_db_sync_and_gateway(
+                project_root_path.join("chains/cardano").as_path(),
+                clean,
+                core_cardano_network,
+            )
+            .map_err(|error| format!("ERROR: Failed to prepare gateway runtime: {}", error))?;
+        }
+        match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
+            Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
+            Err(error) => return Err(format!("ERROR: Failed to start gateway: {}", error)),
+        };
+        return Ok(());
+    }
+
+    if target == Some(StartTarget::Relayer) {
+        if core_cardano_network == config::CoreCardanoNetwork::Preprod {
+            require_preprod_bridge_artifact(
+                Path::new(core_cardano_profile.handler_json_path.as_str()),
+                "handler.json",
+            )?;
+        }
+
+        match start_relayer(
+            project_root_path.join("relayer").as_path(),
+            project_root_path.join("relayer/.env.example").as_path(),
+            project_root_path.join("relayer/examples").as_path(),
+            Path::new(core_cardano_profile.handler_json_path.as_str()),
+            core_cardano_profile.chain_id.as_str(),
+            core_cardano_network == config::CoreCardanoNetwork::Local,
+            runtime_deployer_sk.as_deref(),
+        ) {
+            Ok(_) => logger::log("PASS: Hermes relayer built and configured"),
+            Err(error) => {
+                return Err(format!(
+                    "ERROR: Failed to configure Hermes relayer: {}",
+                    error
+                ))
+            }
+        };
+
+        match start_hermes_daemon() {
+            Ok(_) => logger::log("PASS: Hermes daemon started successfully"),
+            Err(error) => return Err(format!("ERROR: Failed to start Hermes daemon: {}", error)),
+        };
+        logger::log(&format!(
+            "\ncaribic start completed in {}",
+            format_elapsed_duration(start_elapsed_timer.elapsed())
+        ));
+        return Ok(());
+    }
+
+    if target == Some(StartTarget::Mithril) {
+        if !core_cardano_network.uses_local_mithril() {
+            return Err(
+                "ERROR: Local Mithril containers are not used with --network preprod.".to_string(),
+            );
+        }
+
+        match start_mithril(&project_root_path).await {
+            Ok(cardano_epoch_on_mithril_start) => {
+                logger::log("PASS: Mithril services started (1 aggregator, 2 signers)");
+
+                let project_root_path = project_root_path.to_path_buf();
+                let bootstrap_result = tokio::task::spawn_blocking(move || {
+                    crate::start::wait_and_start_mithril_genesis(
+                        project_root_path.as_path(),
+                        cardano_epoch_on_mithril_start,
+                    )
+                    .map_err(|e| e.to_string())
+                })
+                .await;
+
+                match bootstrap_result {
+                    Ok(Ok(())) => logger::log(
+                        "PASS: Mithril genesis bootstrap completed (certificates/artifacts ready)",
+                    ),
+                    Ok(Err(error)) => {
+                        return Err(format!(
+                            "ERROR: Mithril genesis bootstrap failed: {}",
+                            error
+                        ))
+                    }
+                    Err(error) => {
+                        return Err(format!(
+                            "ERROR: Mithril genesis bootstrap task failed: {}",
+                            error
+                        ))
+                    }
+                }
+            }
+            Err(error) => return Err(format!("ERROR: Failed to start Mithril: {}", error)),
+        }
         logger::log(&format!(
             "\ncaribic start completed in {}",
             format_elapsed_duration(start_elapsed_timer.elapsed())
@@ -236,24 +330,42 @@ pub async fn run_start(
             &project_root_path,
             clean,
             with_mithril && start_all,
+            core_cardano_network,
         )
         .await
         {
             Ok(handle) => {
                 mithril_genesis_handle = handle;
-                logger::log(
-                    "PASS: Local Cardano network started (cardano-node, ogmios, kupo, postgres, yaci-store, yaci-store-postgres)",
-                );
+                let managed_services = match core_cardano_network {
+                    config::CoreCardanoNetwork::Local => {
+                        "cardano-node, ogmios, kupo, postgres, yaci-store, yaci-store-postgres"
+                    }
+                    config::CoreCardanoNetwork::Preprod => {
+                        "cardano-node, postgres, yaci-store, yaci-store-postgres"
+                    }
+                };
+                logger::log(&format!(
+                    "PASS: Managed Cardano {} containers started ({})",
+                    core_cardano_network.as_str(),
+                    managed_services
+                ));
             }
             Err(error) => {
                 return fail_and_stop_started_services(
                     project_root_path,
                     StopTarget::Network,
-                    &format!("ERROR: Failed to start local Cardano network: {}", error),
+                    &format!(
+                        "ERROR: Failed to start managed Cardano {} runtime: {}",
+                        core_cardano_network.as_str(),
+                        error
+                    ),
                 );
             }
         }
-        logger::log("\nPASS: Cardano Network started successfully");
+        logger::log(&format!(
+            "\nPASS: Cardano {} runtime started successfully",
+            core_cardano_network.as_str()
+        ));
     }
 
     if start_cosmos && !start_all {
@@ -272,14 +384,16 @@ pub async fn run_start(
     }
 
     if start_bridge {
-        let balance = query_balance(
-            project_root_path,
-            "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
-        );
-        logger::info(&format!(
-            "Initial balance {}",
-            &balance.to_string().as_str()
-        ));
+        if core_cardano_network == config::CoreCardanoNetwork::Local {
+            let balance = query_balance(
+                project_root_path,
+                "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
+            );
+            logger::info(&format!(
+                "Initial balance {}",
+                &balance.to_string().as_str()
+            ));
+        }
 
         let mut validators_built = false;
         if let Some(handle) = aiken_build_handle.take() {
@@ -302,27 +416,83 @@ pub async fn run_start(
             }
         }
 
-        match deploy_contracts(&project_root_path, clean, validators_built).await {
-            Ok(_) => logger::log(
-                "PASS: IBC smart contracts deployed (client, connection, channel, packet handlers)",
-            ),
-            Err(error) => {
-                return fail_and_stop_started_services(
+        if core_cardano_network == config::CoreCardanoNetwork::Preprod {
+            if !start_network {
+                crate::start::ensure_managed_cardano_runtime(
                     project_root_path,
-                    StopTarget::Bridge,
-                    &format!("ERROR: Failed to deploy Cardano Scripts: {}", error),
+                    clean,
+                    core_cardano_network,
                 )
+                .await
+                .map_err(|error| {
+                    format!(
+                        "ERROR: Failed to start preprod history sidecar runtime: {}",
+                        error
+                    )
+                })?;
+            }
+            crate::setup::prepare_db_sync_and_gateway(
+                project_root_path.join("chains/cardano").as_path(),
+                clean,
+                core_cardano_network,
+            )
+            .map_err(|error| {
+                format!(
+                    "ERROR: Failed to prepare preprod gateway runtime: {}",
+                    error
+                )
+            })?;
+        }
+
+        match core_cardano_network {
+            config::CoreCardanoNetwork::Local => {
+                match deploy_contracts(&project_root_path, clean, validators_built).await {
+                    Ok(_) => logger::log(
+                        "PASS: IBC smart contracts deployed (client, connection, channel, packet handlers)",
+                    ),
+                    Err(error) => {
+                        return fail_and_stop_started_services(
+                            project_root_path,
+                            StopTarget::Bridge,
+                            &format!("ERROR: Failed to deploy Cardano Scripts: {}", error),
+                        )
+                    }
+                }
+            }
+            config::CoreCardanoNetwork::Preprod => {
+                match deploy_preprod_bridge(
+                    &project_root_path,
+                    validators_built,
+                    runtime_deployer_sk
+                        .as_deref()
+                        .ok_or("ERROR: Missing runtime DEPLOYER_SK for preprod deploy")?,
+                )
+                .await
+                {
+                    Ok(_) => logger::log(
+                        "PASS: IBC smart contracts deployed to Cardano preprod and deployment artifacts exported",
+                    ),
+                    Err(error) => {
+                        return fail_and_stop_started_services(
+                            project_root_path,
+                            StopTarget::Bridge,
+                            &format!("ERROR: Failed to deploy Cardano preprod bridge: {}", error),
+                        )
+                    }
+                }
             }
         }
 
-        let balance = query_balance(
-            project_root_path,
-            "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
-        );
-        logger::info(&format!(
-            "Post deploy contract balance {}",
-            &balance.to_string().as_str()
-        ));
+        if core_cardano_network == config::CoreCardanoNetwork::Local {
+            let balance = query_balance(
+                project_root_path,
+                "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
+            );
+            logger::info(&format!(
+                "Post deploy contract balance {}",
+                &balance.to_string().as_str()
+            ));
+        }
 
         match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
             Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
@@ -335,9 +505,6 @@ pub async fn run_start(
             }
         }
 
-        // In full startup mode, Cosmos is started in parallel at the beginning of `run_start`.
-        // We intentionally defer the Cosmos readiness gate until right before relayer startup so
-        // Cardano contract deployment and Gateway startup can progress independently.
         if start_all && start_cosmos {
             if let Some(handle) = cosmos_entrypoint_chain_start_handle.take() {
                 logger::log(
@@ -445,9 +612,10 @@ pub async fn run_start(
             project_root_path.join("relayer").as_path(),
             project_root_path.join("relayer/.env.example").as_path(),
             project_root_path.join("relayer/examples").as_path(),
-            project_root_path
-                .join("cardano/offchain/deployments/handler.json")
-                .as_path(),
+            Path::new(core_cardano_profile.handler_json_path.as_str()),
+            core_cardano_profile.chain_id.as_str(),
+            core_cardano_network == config::CoreCardanoNetwork::Local,
+            runtime_deployer_sk.as_deref(),
         ) {
             Ok(_) => logger::log("PASS: Hermes relayer built and configured"),
             Err(error) => {
@@ -472,11 +640,13 @@ pub async fn run_start(
             }
         }
 
-        let balance = query_balance(
-            project_root_path,
-            "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
-        );
-        logger::log(&format!("Final balance {}", &balance.to_string().as_str()));
+        if core_cardano_network == config::CoreCardanoNetwork::Local {
+            let balance = query_balance(
+                project_root_path,
+                "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
+            );
+            logger::log(&format!("Final balance {}", &balance.to_string().as_str()));
+        }
 
         if let Some(handle) = mithril_genesis_handle.take() {
             let optional_progress_bar = match logger::get_verbosity() {
@@ -528,11 +698,20 @@ pub async fn run_start(
         }
 
         logger::log("\nBridge started successfully!");
-        logger::log("Keys have been automatically configured for cardano-devnet and the Entrypoint chain.");
-        logger::log("Next steps:");
-        logger::log("   1. Check health: caribic health-check");
-        logger::log("   2. View keys: caribic keys list");
-        logger::log("   3. Run tests: caribic test");
+        if core_cardano_network == config::CoreCardanoNetwork::Local {
+            logger::log(
+                "Keys have been automatically configured for cardano-devnet and the Entrypoint chain.",
+            );
+            logger::log("Next steps:");
+            logger::log("   1. Check health: caribic health-check");
+            logger::log("   2. View keys: caribic keys list");
+            logger::log("   3. Run tests: caribic test");
+        } else {
+            logger::log("Next steps:");
+            logger::log("   1. Check health: caribic health-check");
+            logger::log("   2. Review exported preprod artifacts in cardano/offchain/deployments");
+            logger::log("   3. Restart gateway/relayer independently with `caribic start gateway --network preprod` or `caribic start relayer --network preprod`");
+        }
     }
 
     logger::log(&format!(

@@ -64,6 +64,9 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
         project_root_path
             .join("cardano/offchain/deployments/handler.json")
             .as_path(),
+        CARDANO_CHAIN_ID,
+        true,
+        None,
     )
     .map_err(|error| format!("ERROR: Failed to prepare Hermes relayer: {}", error))?;
     logger::log("PASS: Hermes relayer configuration prepared");

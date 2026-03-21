@@ -9,10 +9,15 @@ use console::style;
 use fs_extra::{copy_items, file::copy};
 use indicatif::ProgressBar;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::process::Output;
 use std::thread;
 use std::time::Duration;
 use std::{fs, path::Path, process::Command};
+
+const CARDANO_RUNTIME_NETWORK_MARKER: &str = ".caribic-network";
+const PREPROD_ENVIRONMENT_BASE_URL: &str =
+    "https://book.world.dev.cardano.org/environments/preprod";
 
 pub async fn download_repository(
     url: &str,
@@ -97,6 +102,339 @@ pub fn copy_cardano_env_file(cardano_dir: &Path) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
+pub fn write_cardano_runtime_selection(
+    cardano_dir: &Path,
+    network: config::CoreCardanoNetwork,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let runtime_dir = network.runtime_dir();
+    let network_magic = config::cardano_network_profile(network).network_magic;
+    let (config_file, block_producer, node_image) = match network {
+        config::CoreCardanoNetwork::Local => (
+            "cardano-node.json",
+            "true",
+            "ghcr.io/blinklabs-io/cardano-node:10.1.4-3",
+        ),
+        config::CoreCardanoNetwork::Preprod => (
+            "config.json",
+            "false",
+            "ghcr.io/intersectmbo/cardano-node:10.6.2",
+        ),
+    };
+
+    let env_contents = format!(
+        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\n",
+        network = network.as_str(),
+    );
+
+    fs::write(cardano_dir.join(".env"), env_contents).map_err(|error| {
+        format!(
+            "Failed to write Cardano runtime compose env at {}: {}",
+            cardano_dir.join(".env").display(),
+            error
+        )
+    })?;
+
+    fs::write(
+        cardano_dir.join(CARDANO_RUNTIME_NETWORK_MARKER),
+        format!("{}\n", network.as_str()),
+    )
+    .map_err(|error| {
+        format!(
+            "Failed to write Cardano runtime network marker at {}: {}",
+            cardano_dir.join(CARDANO_RUNTIME_NETWORK_MARKER).display(),
+            error
+        )
+    })?;
+
+    Ok(())
+}
+
+async fn download_preprod_runtime_file(
+    target_dir: &Path,
+    remote_name: &str,
+    local_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let destination = target_dir.join(local_name);
+    if destination.exists() {
+        return Ok(());
+    }
+
+    let url = format!("{PREPROD_ENVIRONMENT_BASE_URL}/{remote_name}");
+    download_file(
+        &url,
+        destination.as_path(),
+        Some(IndicatorMessage {
+            message: format!("Downloading Cardano preprod {}", remote_name),
+            step: "Bootstrap".to_string(),
+            emoji: "".to_string(),
+        }),
+    )
+    .await
+    .map_err(|error| {
+        format!(
+            "Failed to download Cardano preprod runtime file '{}' from {}: {}",
+            remote_name, url, error
+        )
+    })?;
+
+    Ok(())
+}
+
+pub async fn configure_cardano_preprod_runtime(
+    cardano_dir: &Path,
+    reset_state: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let runtime_dir = cardano_dir.join("preprod");
+    let service_folders = vec![
+        runtime_dir.clone(),
+        cardano_dir.join("kupo-db"),
+        cardano_dir.join("postgres"),
+        cardano_dir.join("yaci/genesis"),
+        cardano_dir.join("yaci/data"),
+        cardano_dir.join("yaci/logs"),
+        cardano_dir.join("yaci-postgres"),
+    ];
+
+    if reset_state {
+        for service_folder in &service_folders {
+            if service_folder.exists() && service_folder.is_dir() {
+                fs::remove_dir_all(service_folder).map_err(|error| {
+                    format!(
+                        "Failed to reset Cardano preprod service folder {}: {}",
+                        service_folder.display(),
+                        error
+                    )
+                })?;
+            }
+        }
+    }
+
+    for service_folder in service_folders {
+        fs::create_dir_all(&service_folder).map_err(|error| {
+            format!(
+                "Failed to create Cardano preprod service folder {}: {}",
+                service_folder.display(),
+                error
+            )
+        })?;
+    }
+
+    for (remote_name, local_name) in [
+        ("config.json", "config.json"),
+        ("topology.json", "topology.json"),
+        ("peer-snapshot.json", "peer-snapshot.json"),
+        ("byron-genesis.json", "byron-genesis.json"),
+        ("shelley-genesis.json", "shelley-genesis.json"),
+        ("alonzo-genesis.json", "alonzo-genesis.json"),
+        ("conway-genesis.json", "conway-genesis.json"),
+    ] {
+        download_preprod_runtime_file(&runtime_dir, remote_name, local_name).await?;
+    }
+
+    write_yaci_preprod_genesis_files(cardano_dir, &runtime_dir)?;
+
+    Ok(())
+}
+
+fn write_yaci_preprod_genesis_files(
+    cardano_dir: &Path,
+    runtime_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let yaci_genesis_dir = cardano_dir.join("yaci/genesis");
+    fs::create_dir_all(&yaci_genesis_dir).map_err(|error| {
+        format!(
+            "Failed to create Yaci preprod genesis directory {}: {}",
+            yaci_genesis_dir.display(),
+            error
+        )
+    })?;
+
+    for (source_name, destination_name) in [
+        ("byron-genesis.json", "genesis-byron.json"),
+        ("shelley-genesis.json", "genesis-shelley.json"),
+        ("alonzo-genesis.json", "genesis-alonzo.json"),
+        ("conway-genesis.json", "genesis-conway.json"),
+    ] {
+        fs::copy(
+            runtime_dir.join(source_name),
+            yaci_genesis_dir.join(destination_name),
+        )
+        .map_err(|error| {
+            format!(
+                "Failed to copy {} into Yaci preprod genesis dir: {}",
+                source_name, error
+            )
+        })?;
+    }
+
+    let shelley_path = yaci_genesis_dir.join("genesis-shelley.json");
+    let mut shelley_json: Value =
+        serde_json::from_str(&fs::read_to_string(&shelley_path).map_err(|error| {
+            format!(
+                "Failed to read Yaci preprod Shelley genesis file {}: {}",
+                shelley_path.display(),
+                error
+            )
+        })?)
+        .map_err(|error| {
+            format!(
+                "Failed to parse Yaci preprod Shelley genesis file {}: {}",
+                shelley_path.display(),
+                error
+            )
+        })?;
+
+    if let Some(staking) = shelley_json
+        .get_mut("staking")
+        .and_then(|value| value.as_object_mut())
+    {
+        staking.insert("pools".to_string(), Value::Object(serde_json::Map::new()));
+        staking.insert("stake".to_string(), Value::Object(serde_json::Map::new()));
+    }
+
+    fs::write(
+        &shelley_path,
+        serde_json::to_string_pretty(&shelley_json).map_err(|error| {
+            format!(
+                "Failed to serialize Yaci preprod Shelley genesis file {}: {}",
+                shelley_path.display(),
+                error
+            )
+        })?,
+    )
+    .map_err(|error| {
+        format!(
+            "Failed to write Yaci preprod Shelley genesis file {}: {}",
+            shelley_path.display(),
+            error
+        )
+    })?;
+
+    Ok(())
+}
+
+fn set_or_append_env_var(
+    env_path: &Path,
+    key: &str,
+    value: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let line = format!("{key}={value}");
+    let pattern = format!(r#"{}=.*"#, regex::escape(key));
+    let original = fs::read_to_string(env_path).unwrap_or_default();
+
+    if original
+        .lines()
+        .any(|candidate| candidate.starts_with(&format!("{key}=")))
+    {
+        replace_text_in_file(env_path, pattern.as_str(), line.as_str())?;
+    } else {
+        let mut updated = original;
+        if !updated.is_empty() && !updated.ends_with('\n') {
+            updated.push('\n');
+        }
+        updated.push_str(line.as_str());
+        updated.push('\n');
+        fs::write(env_path, updated).map_err(|error| {
+            format!(
+                "Failed to update environment file {}: {}",
+                env_path.display(),
+                error
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+fn write_yaci_local_genesis_files(
+    cardano_dir: &Path,
+    devnet_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let yaci_genesis_dir = cardano_dir.join("yaci/genesis");
+    fs::create_dir_all(&yaci_genesis_dir).map_err(|error| {
+        format!(
+            "Failed to create Yaci genesis directory {}: {}",
+            yaci_genesis_dir.display(),
+            error
+        )
+    })?;
+
+    for filename in [
+        "genesis-byron.json",
+        "genesis-alonzo.json",
+        "genesis-conway.json",
+    ] {
+        fs::copy(devnet_dir.join(filename), yaci_genesis_dir.join(filename)).map_err(|error| {
+            format!(
+                "Failed to copy {} into Yaci genesis dir: {}",
+                filename, error
+            )
+        })?;
+    }
+
+    let shelley_path = devnet_dir.join("genesis-shelley.json");
+    let mut shelley_json: Value =
+        serde_json::from_str(&fs::read_to_string(&shelley_path).map_err(|error| {
+            format!(
+                "Failed to read Shelley genesis file {}: {}",
+                shelley_path.display(),
+                error
+            )
+        })?)
+        .map_err(|error| {
+            format!(
+                "Failed to parse Shelley genesis file {}: {}",
+                shelley_path.display(),
+                error
+            )
+        })?;
+
+    if let Some(staking) = shelley_json
+        .get_mut("staking")
+        .and_then(|value| value.as_object_mut())
+    {
+        staking.insert("pools".to_string(), Value::Object(serde_json::Map::new()));
+        staking.insert("stake".to_string(), Value::Object(serde_json::Map::new()));
+    }
+
+    fs::write(
+        yaci_genesis_dir.join("genesis-shelley.json"),
+        serde_json::to_string_pretty(&shelley_json)
+            .map_err(|error| format!("Failed to serialize Yaci Shelley genesis: {}", error))?,
+    )
+    .map_err(|error| {
+        format!(
+            "Failed to write Yaci Shelley genesis file {}: {}",
+            yaci_genesis_dir.join("genesis-shelley.json").display(),
+            error
+        )
+    })?;
+
+    Ok(())
+}
+
+fn remove_local_yaci_postgres_volume() -> Result<(), Box<dyn std::error::Error>> {
+    let output = Command::new("docker")
+        .args(["volume", "rm", "-f", "cardano_yaci_store_postgres_data"])
+        .output()
+        .map_err(|error| format!("Failed to remove local Yaci postgres volume: {}", error))?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("No such volume") {
+        return Ok(());
+    }
+
+    Err(format!(
+        "Failed to remove local Yaci postgres volume: {}",
+        stderr.trim()
+    )
+    .into())
+}
+
 pub fn configure_local_cardano_devnet(
     cardano_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -104,9 +442,6 @@ pub fn configure_local_cardano_devnet(
     let service_folders = vec![
         "devnet",
         "kupo-db",
-        "db-sync-data",
-        "db-sync-configuration",
-        "db-sync-log-dir",
         "postgres",
         "yaci/genesis",
         "yaci/data",
@@ -138,6 +473,8 @@ pub fn configure_local_cardano_devnet(
             )
         })?;
     }
+
+    remove_local_yaci_postgres_volume()?;
 
     let devnet_dir = cardano_dir.join("devnet");
 
@@ -283,6 +620,8 @@ pub fn configure_local_cardano_devnet(
         )
     })?;
 
+    write_yaci_local_genesis_files(cardano_dir, &devnet_dir)?;
+
     Ok(())
 }
 
@@ -304,17 +643,24 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
             "address",
             "build",
             "--payment-verification-key-file",
-            "/devnet/credentials/faucet.vk",
+            "/runtime/credentials/faucet.vk",
             "--testnet-magic",
             "42",
         ];
-        let address = Command::new("docker")
+        let address_output = Command::new("docker")
             .current_dir(cardano_dir)
             .args(&cardano_cli_args)
             .args(build_address_args)
             .output()
-            .expect("Failed to build address")
-            .stdout;
+            .expect("Failed to build address");
+        if !address_output.status.success() {
+            warn(&format!(
+                "Failed to build faucet address: {}",
+                String::from_utf8_lossy(&address_output.stderr)
+            ));
+            return;
+        }
+        let address = address_output.stdout;
 
         let faucet_address = String::from_utf8(address).expect("Failed to get faucet address");
         let faucet_txin_args = vec![
@@ -364,9 +710,9 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
 
                     let wallet_address = &bootstrap_address.address;
                     let tx_out = &format!("{}+{}", wallet_address, bootstrap_address.amount);
-                    let draft_tx_file = &format!("/devnet/seed-{}.draft", wallet_address.as_str());
+                    let draft_tx_file = &format!("/runtime/seed-{}.draft", wallet_address.as_str());
                     let signed_tx_file =
-                        &format!("/devnet/seed-{}.signed", wallet_address.as_str());
+                        &format!("/runtime/seed-{}.signed", wallet_address.as_str());
 
                     let build_tx_args = vec![
                         "conway",
@@ -384,12 +730,20 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
                         "42",
                     ];
 
-                    let _ = Command::new("docker")
+                    let build_tx_output = Command::new("docker")
                         .current_dir(cardano_dir)
                         .args(&cardano_cli_args)
                         .args(build_tx_args)
                         .output()
                         .expect("Failed to build transaction");
+                    if !build_tx_output.status.success() {
+                        warn(&format!(
+                            "Failed to build seed transaction for {}: {}",
+                            wallet_address,
+                            String::from_utf8_lossy(&build_tx_output.stderr)
+                        ));
+                        return;
+                    }
 
                     let sign_tx_args = vec![
                         "conway",
@@ -398,27 +752,43 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
                         "--tx-body-file",
                         draft_tx_file,
                         "--signing-key-file",
-                        "/devnet/credentials/faucet.sk",
+                        "/runtime/credentials/faucet.sk",
                         "--out-file",
                         signed_tx_file,
                         "--testnet-magic",
                         "42",
                     ];
 
-                    let _ = Command::new("docker")
+                    let sign_tx_output = Command::new("docker")
                         .current_dir(cardano_dir)
                         .args(&cardano_cli_args)
                         .args(sign_tx_args)
                         .output()
                         .expect("Failed to sign transaction");
+                    if !sign_tx_output.status.success() {
+                        warn(&format!(
+                            "Failed to sign seed transaction for {}: {}",
+                            wallet_address,
+                            String::from_utf8_lossy(&sign_tx_output.stderr)
+                        ));
+                        return;
+                    }
 
-                    let tx_id = Command::new("docker")
+                    let tx_id_output = Command::new("docker")
                         .current_dir(cardano_dir)
                         .args(&cardano_cli_args)
                         .args(&["conway", "transaction", "txid", "--tx-file", signed_tx_file])
                         .output()
-                        .expect("Failed to get txid")
-                        .stdout;
+                        .expect("Failed to get txid");
+                    if !tx_id_output.status.success() {
+                        warn(&format!(
+                            "Failed to compute seed tx id for {}: {}",
+                            wallet_address,
+                            String::from_utf8_lossy(&tx_id_output.stderr)
+                        ));
+                        return;
+                    }
+                    let tx_id = tx_id_output.stdout;
 
                     let raw_tx_id = String::from_utf8(tx_id).expect("Failed to get txid");
                     let tx_id: String = raw_tx_id.chars().filter(|c| !c.is_whitespace()).collect();
@@ -433,12 +803,20 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
                         "--testnet-magic",
                         "42",
                     ];
-                    let _ = Command::new("docker")
+                    let submit_tx_output = Command::new("docker")
                         .current_dir(cardano_dir)
                         .args(&cardano_cli_args)
                         .args(submit_tx_args)
                         .output()
                         .expect("Failed to submit transaction");
+                    if !submit_tx_output.status.success() {
+                        warn(&format!(
+                            "Failed to submit seed transaction for {}: {}",
+                            wallet_address,
+                            String::from_utf8_lossy(&submit_tx_output.stderr)
+                        ));
+                        return;
+                    }
 
                     let query_utxo_args = vec![
                         "query",
@@ -497,9 +875,9 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
     }
 }
 
-fn get_genesis_hash(era: String, script_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {
+fn get_genesis_hash(era: String, cardano_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {
     let cli_args;
-    let genesis_file = format!("/devnet/genesis-{}.json", era);
+    let genesis_file = format!("/runtime/genesis-{}.json", era);
     if era == "byron" {
         cli_args = vec![
             "byron",
@@ -519,7 +897,7 @@ fn get_genesis_hash(era: String, script_dir: &Path) -> Result<String, Box<dyn st
     }
 
     let genesis_hash = Command::new("docker")
-        .current_dir(script_dir)
+        .current_dir(cardano_dir)
         .args(&["compose", "exec", "cardano-node", "cardano-cli"])
         .args(cli_args)
         .output()
@@ -531,46 +909,19 @@ fn get_genesis_hash(era: String, script_dir: &Path) -> Result<String, Box<dyn st
     Ok(hash)
 }
 
-pub fn prepare_history_backend_and_gateway(
+fn query_epoch_nonce(
     cardano_dir: &Path,
-    clean: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let devnet_dir = cardano_dir.join("devnet");
-    let cardano_node_db = devnet_dir.join("cardano-node-db.json");
-
-    let byron_genesis_hash = get_genesis_hash("byron".to_string(), &devnet_dir)?;
-    let shelley_genesis_hash = get_genesis_hash("shelley".to_string(), &devnet_dir)?;
-    let alonzo_genesis_hash = get_genesis_hash("alonzo".to_string(), &devnet_dir)?;
-    let conway_genesis_hash = get_genesis_hash("conway".to_string(), &devnet_dir)?;
-
-    replace_text_in_file(
-        &cardano_node_db,
-        r#"xByronGenesisHash"#,
-        &byron_genesis_hash.trim(),
-    )?;
-
-    replace_text_in_file(
-        &cardano_node_db,
-        r#"xShelleyGenesisHash"#,
-        &shelley_genesis_hash.trim(),
-    )?;
-
-    replace_text_in_file(
-        &cardano_node_db,
-        r#"xAlonzoGenesisHash"#,
-        &alonzo_genesis_hash.trim(),
-    )?;
-
-    replace_text_in_file(
-        &cardano_node_db,
-        r#"xConwayGenesisHash"#,
-        &conway_genesis_hash.trim(),
-    )?;
-
+    network_magic: u64,
+) -> Result<String, Box<dyn std::error::Error>> {
     let epoch_nonce = Command::new("docker")
         .current_dir(cardano_dir)
         .args(&["compose", "exec", "cardano-node", "cardano-cli"])
-        .args(&["query", "protocol-state", "--testnet-magic", "42"])
+        .args(&[
+            "query",
+            "protocol-state",
+            "--testnet-magic",
+            &network_magic.to_string(),
+        ])
         .output()
         .map_err(|error| format!("Failed to get epoch nonce: {}", error.to_string()))?
         .stdout;
@@ -583,38 +934,154 @@ pub fn prepare_history_backend_and_gateway(
         .as_str()
         .ok_or("Failed to extract epoch nonce")?;
 
-    let pool_params = Command::new("docker")
-        .current_dir(cardano_dir)
-        .args(&["compose", "exec", "cardano-node", "cardano-cli"])
-        .args(&["query", "ledger-state", "--testnet-magic", "42"])
-        .output()
-        .map_err(|error| format!("Failed to get pool params: {}", error.to_string()))?
-        .stdout;
+    Ok(epoch_nonce.trim().to_string())
+}
 
-    let pool_params = String::from_utf8(pool_params)
-        .map_err(|error| format!("Failed to get pool params: {}", error.to_string()))?;
+fn parse_env_file(env_path: &Path) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+    let contents = fs::read_to_string(env_path).map_err(|error| {
+        format!(
+            "Failed to read gateway environment file {}: {}",
+            env_path.display(),
+            error
+        )
+    })?;
+    let mut values = HashMap::new();
 
-    let pool_params: Value = serde_json::from_str(&pool_params)
-        .map_err(|error| format!("Failed to parse pool params: {}", error.to_string()))?;
-    let pool_params = pool_params["stateBefore"]["esSnapshots"]["pstakeMark"]["poolParams"]
-        .as_object()
-        .ok_or("Failed to extract pool params")?;
+    for raw_line in contents.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        values.insert(key.trim().to_string(), value.trim().to_string());
+    }
 
-    let base_info_dir = cardano_dir.join("baseinfo");
-    fs::create_dir_all(&base_info_dir)
-        .map_err(|error| format!("Failed to create baseinfo directory: {}", error.to_string()))?;
+    Ok(values)
+}
 
-    let pool_params_str = serde_json::to_string(pool_params)
-        .map_err(|error| format!("Failed to serialize poolParams: {}", error.to_string()))?;
+pub fn read_gateway_env_value(
+    gateway_env: &Path,
+    key: &str,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    Ok(parse_env_file(gateway_env)?.get(key).cloned())
+}
 
-    let info = format!(
-        "{{\"Epoch0Nonce\": \"{}\", \"poolParams\": {}}}",
-        epoch_nonce.trim(),
-        pool_params_str.trim()
-    );
-    fs::write(base_info_dir.join("info.json"), info)
-        .map_err(|error| format!("Failed to write info.json file: {}", error.to_string()))?;
+fn validate_preprod_gateway_env(gateway_env: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let env_values = parse_env_file(gateway_env)?;
+    let required_groups = [
+        ("KUPO_ENDPOINT", vec!["KUPO_ENDPOINT"]),
+        ("OGMIOS_ENDPOINT", vec!["OGMIOS_ENDPOINT"]),
+    ];
 
+    let missing = required_groups
+        .iter()
+        .filter(|(_, keys)| {
+            !keys.iter().any(|key| {
+                env_values
+                    .get(*key)
+                    .map(|value| !value.trim().is_empty())
+                    .unwrap_or(false)
+            })
+        })
+        .map(|(label, _)| *label)
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(format!(
+            "Preprod startup uses managed local history services but still requires external live Cardano endpoints. cardano/gateway/.env is missing: {}.\nSet those keys to host-reachable preprod infrastructure before starting.",
+            missing.join(", ")
+        )
+        .into());
+    }
+
+    let disallowed_local_defaults = [
+        ("KUPO_ENDPOINT", "http://kupo:1442"),
+        ("OGMIOS_ENDPOINT", "http://cardano-node-ogmios:1337"),
+    ];
+    let still_local = disallowed_local_defaults
+        .iter()
+        .filter(|(key, local_default)| {
+            env_values
+                .get(*key)
+                .is_some_and(|value| value.trim() == *local_default)
+        })
+        .map(|(key, _)| *key)
+        .collect::<Vec<_>>();
+    if !still_local.is_empty() {
+        return Err(format!(
+            "Preprod startup still points {} at local docker-only defaults.\nReplace those values with host-reachable preprod endpoints before starting.",
+            still_local.join(", ")
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
+fn resolve_preprod_live_endpoint(
+    gateway_env: &Path,
+    gateway_key: &str,
+    env_keys: &[&str],
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    let env_value = env_keys
+        .iter()
+        .find_map(|key| std::env::var(key).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let gateway_value = read_gateway_env_value(gateway_env, gateway_key)?
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    Ok(env_value.or(gateway_value))
+}
+
+pub fn resolve_external_cardano_deploy_endpoints(
+    cardano_dir: &Path,
+) -> Result<(String, String), Box<dyn std::error::Error>> {
+    let gateway_env = cardano_dir.join("../../cardano/gateway/.env");
+    let env_ogmios = std::env::var("CARIBIC_OGMIOS_URL")
+        .ok()
+        .or_else(|| std::env::var("OGMIOS_URL").ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let env_kupo = std::env::var("CARIBIC_KUPO_URL")
+        .ok()
+        .or_else(|| std::env::var("KUPO_URL").ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let ogmios = env_ogmios
+        .or(read_gateway_env_value(&gateway_env, "OGMIOS_ENDPOINT")?)
+        .ok_or("Missing OGMIOS endpoint for external Cardano deploy")?;
+    let kupo = env_kupo
+        .or(read_gateway_env_value(&gateway_env, "KUPO_ENDPOINT")?)
+        .ok_or("Missing KUPO endpoint for external Cardano deploy")?;
+
+    if ogmios.trim().is_empty() || kupo.trim().is_empty() {
+        return Err(
+            "Missing external Cardano deploy endpoints. Set CARIBIC_OGMIOS_URL/CARIBIC_KUPO_URL or configure OGMIOS_ENDPOINT/KUPO_ENDPOINT in cardano/gateway/.env."
+                .into(),
+        );
+    }
+    if ogmios.trim() == "http://cardano-node-ogmios:1337" || kupo.trim() == "http://kupo:1442" {
+        return Err(
+            "External Cardano deploy endpoints still point at local docker-only defaults. Set CARIBIC_OGMIOS_URL/CARIBIC_KUPO_URL, or replace OGMIOS_ENDPOINT/KUPO_ENDPOINT in cardano/gateway/.env with host-reachable external endpoints."
+                .into(),
+        );
+    }
+
+    Ok((ogmios, kupo))
+}
+
+fn write_gateway_env_for_network(
+    cardano_dir: &Path,
+    clean: bool,
+    network: config::CoreCardanoNetwork,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let profile = config::cardano_network_profile(network);
+    let network_magic = profile.network_magic.to_string();
     let cardano_source_dir = cardano_dir.join("../../cardano");
     let gateway_dir = cardano_source_dir.join("gateway");
     let gateway_env = gateway_dir.join(".env");
@@ -624,64 +1091,117 @@ pub fn prepare_history_backend_and_gateway(
         copy(gateway_dir.join(".env.example"), &gateway_env, &options)?;
     }
 
-    // Keep gateway networking aligned with docker-compose service DNS instead of host loopback.
-    let gateway_network_defaults = [
-        ("HISTORY_DB_HOST", "yaci-store-postgres"),
-        ("HISTORY_DB_PORT", "5432"),
-        ("HISTORY_DB_NAME", "yaci_store"),
-        ("HISTORY_DB_USERNAME", "yaci"),
-        ("HISTORY_DB_PASSWORD", "dbpass"),
-        ("GATEWAY_DB_HOST", "postgres"),
-        ("GATEWAY_DB_PORT", "5432"),
-        ("KUPO_ENDPOINT", "http://kupo:1442"),
-        ("OGMIOS_ENDPOINT", "http://cardano-node-ogmios:1337"),
-        ("CARDANO_CHAIN_HOST", "cardano-node"),
-        ("CARDANO_CHAIN_PORT", "3001"),
+    let shared_gateway_network_defaults = [
+        ("CARDANO_CHAIN_ID", profile.chain_id.as_str()),
+        ("CARDANO_CHAIN_NETWORK_MAGIC", network_magic.as_str()),
+        ("CARDANO_NETWORK_MAGIC", network_magic.as_str()),
+        ("MITHRIL_ENDPOINT", profile.mithril_aggregator_url.as_str()),
         (
-            "MITHRIL_ENDPOINT",
-            "http://mithril-aggregator:8080/aggregator",
+            "MITHRIL_GENESIS_VERIFICATION_KEY",
+            profile.mithril_genesis_verification_key.as_str(),
         ),
     ];
-    for (key, value) in gateway_network_defaults {
-        replace_text_in_file(
-            &gateway_env,
-            format!(r#"{}=.*"#, key).as_str(),
-            format!("{}={}", key, value).as_str(),
-        )?;
+
+    for (key, value) in shared_gateway_network_defaults {
+        set_or_append_env_var(&gateway_env, key, value)?;
     }
 
-    replace_text_in_file(
-        &gateway_env,
-        r#"CARDANO_EPOCH_NONCE_GENESIS=.*"#,
-        &format!("CARDANO_EPOCH_NONCE_GENESIS=\"{}\"", epoch_nonce.trim()),
-    )?;
+    match network {
+        config::CoreCardanoNetwork::Local => {
+            let local_gateway_defaults = [
+                ("HISTORY_DB_HOST", "yaci-store-postgres"),
+                ("HISTORY_DB_PORT", "5432"),
+                ("HISTORY_DB_NAME", "yaci_store"),
+                ("HISTORY_DB_USERNAME", "yaci"),
+                ("HISTORY_DB_PASSWORD", "dbpass"),
+                ("GATEWAY_DB_HOST", "postgres"),
+                ("GATEWAY_DB_PORT", "5432"),
+                ("KUPO_ENDPOINT", "http://kupo:1442"),
+                ("OGMIOS_ENDPOINT", "http://cardano-node-ogmios:1337"),
+                ("CARDANO_CHAIN_HOST", "cardano-node"),
+                ("CARDANO_CHAIN_PORT", "3001"),
+            ];
+            for (key, value) in local_gateway_defaults {
+                set_or_append_env_var(&gateway_env, key, value)?;
+            }
 
-    // The Gateway builds unsigned transactions using Lucid. Even though Hermes performs signing,
-    // the Gateway still needs a wallet context to select UTxOs for fees and change.
-    //
-    // For local devnet testing, we use the same signing key that funds the devnet address
-    // (`chains/cardano/config/credentials/me.sk`).
-    //
-    // Note: this writes into `cardano/gateway/.env` which is intentionally not tracked by git.
-    let deployer_sk_path = cardano_dir.join("config/credentials/me.sk");
-    if deployer_sk_path.exists() {
-        let deployer_sk = fs::read_to_string(&deployer_sk_path).map_err(|error| {
-            format!(
-                "Failed to read deployer signing key at {}: {}",
-                deployer_sk_path.display(),
-                error
-            )
-        })?;
-        let deployer_sk = deployer_sk.trim();
-        if !deployer_sk.is_empty() {
-            replace_text_in_file(
+            let epoch_nonce = query_epoch_nonce(cardano_dir, profile.network_magic)
+                .unwrap_or_else(|_| String::new());
+            let epoch_nonce_value = format!("\"{}\"", epoch_nonce);
+            set_or_append_env_var(
                 &gateway_env,
-                r#"DEPLOYER_SK=.*"#,
-                &format!("DEPLOYER_SK={}", deployer_sk),
+                "CARDANO_EPOCH_NONCE_GENESIS",
+                epoch_nonce_value.as_str(),
             )?;
+        }
+        config::CoreCardanoNetwork::Preprod => {
+            let preprod_gateway_defaults = [
+                ("HISTORY_DB_HOST", "yaci-store-postgres"),
+                ("HISTORY_DB_PORT", "5432"),
+                ("HISTORY_DB_NAME", "yaci_store"),
+                ("HISTORY_DB_USERNAME", "yaci"),
+                ("HISTORY_DB_PASSWORD", "dbpass"),
+                ("GATEWAY_DB_HOST", "postgres"),
+                ("GATEWAY_DB_PORT", "5432"),
+                ("CARDANO_CHAIN_HOST", "cardano-node"),
+                ("CARDANO_CHAIN_PORT", "3001"),
+            ];
+            for (key, value) in preprod_gateway_defaults {
+                set_or_append_env_var(&gateway_env, key, value)?;
+            }
+
+            if let Some(kupo_endpoint) = resolve_preprod_live_endpoint(
+                &gateway_env,
+                "KUPO_ENDPOINT",
+                &["CARIBIC_KUPO_URL", "KUPO_URL"],
+            )? {
+                set_or_append_env_var(&gateway_env, "KUPO_ENDPOINT", kupo_endpoint.as_str())?;
+            }
+
+            if let Some(ogmios_endpoint) = resolve_preprod_live_endpoint(
+                &gateway_env,
+                "OGMIOS_ENDPOINT",
+                &["CARIBIC_OGMIOS_URL", "OGMIOS_URL"],
+            )? {
+                set_or_append_env_var(&gateway_env, "OGMIOS_ENDPOINT", ogmios_endpoint.as_str())?;
+            }
+
+            set_or_append_env_var(&gateway_env, "CARDANO_EPOCH_NONCE_GENESIS", "\"\"")?;
         }
     }
 
+    let manifest_container_path = profile
+        .bridge_manifest_path
+        .as_deref()
+        .filter(|path| Path::new(path).exists())
+        .and_then(|path| {
+            Path::new(path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|file_name| format!("/usr/src/app/cardano/offchain/deployments/{file_name}"))
+        });
+    let handler_container_path = Path::new(profile.handler_json_path.as_str())
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|file_name| format!("/usr/src/app/cardano/offchain/deployments/{file_name}"))
+        .ok_or("Failed to derive deployment artifact container path")?;
+
+    if let Some(manifest_path) = manifest_container_path {
+        set_or_append_env_var(&gateway_env, "BRIDGE_MANIFEST_PATH", manifest_path.as_str())?;
+        set_or_append_env_var(&gateway_env, "HANDLER_JSON_PATH", "")?;
+    } else {
+        set_or_append_env_var(
+            &gateway_env,
+            "HANDLER_JSON_PATH",
+            handler_container_path.as_str(),
+        )?;
+        set_or_append_env_var(&gateway_env, "BRIDGE_MANIFEST_PATH", "")?;
+    }
+
+    Ok(())
+}
+
+fn ensure_gateway_databases(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let wait_for_postgres = |service_name: &str,
                              username: &str,
                              label: &str|
@@ -723,7 +1243,11 @@ pub fn prepare_history_backend_and_gateway(
     };
 
     wait_for_postgres("postgres", "postgres", "gateway postgres")?;
-    if crate::config::get_config().cardano.services.history_backend_enabled() {
+    if crate::config::get_config()
+        .cardano
+        .services
+        .history_backend_enabled()
+    {
         wait_for_postgres("yaci-store-postgres", "yaci", "Yaci history postgres")?;
     }
 
@@ -733,75 +1257,85 @@ pub fn prepare_history_backend_and_gateway(
                                   database_name: &str,
                                   label: &str|
      -> Result<(), Box<dyn std::error::Error>> {
-            let db_check = Command::new("docker")
-                .current_dir(cardano_dir)
-                .args(&[
-                    "compose",
-                    "exec",
-                    "-T",
-                    service_name,
-                    "psql",
-                    "-U",
-                    database_user,
-                    "-d",
-                    admin_database,
-                    "-tc",
-                    &format!(
-                        "SELECT 1 FROM pg_database WHERE datname = '{}'",
-                        database_name
-                    ),
-                ])
-                .output();
+        let db_check = Command::new("docker")
+            .current_dir(cardano_dir)
+            .args(&[
+                "compose",
+                "exec",
+                "-T",
+                service_name,
+                "psql",
+                "-U",
+                database_user,
+                "-d",
+                admin_database,
+                "-tc",
+                &format!(
+                    "SELECT 1 FROM pg_database WHERE datname = '{}'",
+                    database_name
+                ),
+            ])
+            .output();
 
-            let db_exists = db_check
-                .ok()
-                .and_then(|output| String::from_utf8(output.stdout).ok())
-                .map(|result| result.trim().contains("1"))
-                .unwrap_or(false);
+        let db_exists = db_check
+            .ok()
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .map(|result| result.trim().contains("1"))
+            .unwrap_or(false);
 
-            if db_exists {
-                verbose(&format!("{label} database already exists"));
-                return Ok(());
-            }
+        if db_exists {
+            verbose(&format!("{label} database already exists"));
+            return Ok(());
+        }
 
-            log(&format!("Creating {database_name} database..."));
-            let create_result = Command::new("docker")
-                .current_dir(cardano_dir)
-                .args(&[
-                    "compose",
-                    "exec",
-                    "-T",
-                    service_name,
-                    "psql",
-                    "-U",
-                    database_user,
-                    "-d",
-                    admin_database,
-                    "-c",
-                    &format!("CREATE DATABASE {}", database_name),
-                ])
-                .output()
-                .map_err(|error| {
-                    format!(
-                        "Failed to create {} database: {}",
-                        database_name,
-                        error.to_string()
-                    )
-                })?;
+        log(&format!("Creating {database_name} database..."));
+        let create_result = Command::new("docker")
+            .current_dir(cardano_dir)
+            .args(&[
+                "compose",
+                "exec",
+                "-T",
+                service_name,
+                "psql",
+                "-U",
+                database_user,
+                "-d",
+                admin_database,
+                "-c",
+                &format!("CREATE DATABASE {}", database_name),
+            ])
+            .output()
+            .map_err(|error| {
+                format!(
+                    "Failed to create {} database: {}",
+                    database_name,
+                    error.to_string()
+                )
+            })?;
 
-            if !create_result.status.success() {
-                let error_msg = String::from_utf8_lossy(&create_result.stderr);
-                return Err(
-                    format!("Failed to create {} database: {}", database_name, error_msg).into(),
-                );
-            }
+        if !create_result.status.success() {
+            let error_msg = String::from_utf8_lossy(&create_result.stderr);
+            return Err(
+                format!("Failed to create {} database: {}", database_name, error_msg).into(),
+            );
+        }
 
-            log(&format!("{label} database created successfully"));
-            Ok(())
-        };
+        log(&format!("{label} database created successfully"));
+        Ok(())
+    };
 
-    ensure_database_exists("postgres", "postgres", "postgres", "gateway_app", "Gateway application")?;
-    if crate::config::get_config().cardano.services.history_backend_enabled() {
+    ensure_database_exists(
+        "postgres",
+        "postgres",
+        "postgres",
+        "gateway_app",
+        "Gateway application",
+    )?;
+    if crate::config::get_config()
+        .cardano
+        .services
+        .history_backend_enabled()
+    {
         ensure_database_exists(
             "yaci-store-postgres",
             "yaci",
@@ -809,6 +1343,92 @@ pub fn prepare_history_backend_and_gateway(
             "yaci_store",
             "Yaci history backend",
         )?;
+    }
+
+    Ok(())
+}
+
+pub fn prepare_db_sync_and_gateway(
+    cardano_dir: &Path,
+    clean: bool,
+    network: config::CoreCardanoNetwork,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if matches!(network, config::CoreCardanoNetwork::Local) {
+        let devnet_dir = cardano_dir.join("devnet");
+        let cardano_node_db = devnet_dir.join("cardano-node-db.json");
+
+        let byron_genesis_hash = get_genesis_hash("byron".to_string(), cardano_dir)?;
+        let shelley_genesis_hash = get_genesis_hash("shelley".to_string(), cardano_dir)?;
+        let alonzo_genesis_hash = get_genesis_hash("alonzo".to_string(), cardano_dir)?;
+        let conway_genesis_hash = get_genesis_hash("conway".to_string(), cardano_dir)?;
+
+        replace_text_in_file(
+            &cardano_node_db,
+            r#"xByronGenesisHash"#,
+            &byron_genesis_hash.trim(),
+        )?;
+
+        replace_text_in_file(
+            &cardano_node_db,
+            r#"xShelleyGenesisHash"#,
+            &shelley_genesis_hash.trim(),
+        )?;
+
+        replace_text_in_file(
+            &cardano_node_db,
+            r#"xAlonzoGenesisHash"#,
+            &alonzo_genesis_hash.trim(),
+        )?;
+
+        replace_text_in_file(
+            &cardano_node_db,
+            r#"xConwayGenesisHash"#,
+            &conway_genesis_hash.trim(),
+        )?;
+
+        let epoch_nonce = query_epoch_nonce(cardano_dir, 42)?;
+
+        let pool_params = Command::new("docker")
+            .current_dir(cardano_dir)
+            .args(&["compose", "exec", "cardano-node", "cardano-cli"])
+            .args(&["query", "ledger-state", "--testnet-magic", "42"])
+            .output()
+            .map_err(|error| format!("Failed to get pool params: {}", error.to_string()))?
+            .stdout;
+
+        let pool_params = String::from_utf8(pool_params)
+            .map_err(|error| format!("Failed to get pool params: {}", error.to_string()))?;
+
+        let pool_params: Value = serde_json::from_str(&pool_params)
+            .map_err(|error| format!("Failed to parse pool params: {}", error.to_string()))?;
+        let pool_params = pool_params["stateBefore"]["esSnapshots"]["pstakeMark"]["poolParams"]
+            .as_object()
+            .ok_or("Failed to extract pool params")?;
+
+        let base_info_dir = cardano_dir.join("baseinfo");
+        fs::create_dir_all(&base_info_dir).map_err(|error| {
+            format!("Failed to create baseinfo directory: {}", error.to_string())
+        })?;
+
+        let pool_params_str = serde_json::to_string(pool_params)
+            .map_err(|error| format!("Failed to serialize poolParams: {}", error.to_string()))?;
+
+        let info = format!(
+            "{{\"Epoch0Nonce\": \"{}\", \"poolParams\": {}}}",
+            epoch_nonce.trim(),
+            pool_params_str.trim()
+        );
+        fs::write(base_info_dir.join("info.json"), info)
+            .map_err(|error| format!("Failed to write info.json file: {}", error.to_string()))?;
+    }
+
+    write_gateway_env_for_network(cardano_dir, clean, network)?;
+    match network {
+        config::CoreCardanoNetwork::Local => ensure_gateway_databases(cardano_dir)?,
+        config::CoreCardanoNetwork::Preprod => {
+            validate_preprod_gateway_env(&cardano_dir.join("../../cardano/gateway/.env"))?;
+            ensure_gateway_databases(cardano_dir)?
+        }
     }
 
     Ok(())
