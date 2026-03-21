@@ -718,7 +718,7 @@ pub async fn start_local_cardano_network(
             std::thread::sleep(Duration::from_secs(10));
         }
 
-        seed_cardano_devnet(cardano_dir.as_path(), &optional_progress_bar);
+        seed_cardano_devnet(cardano_dir.as_path(), &optional_progress_bar)?;
         log_or_show_progress(
             "Deploying the client, channel and connection contracts",
             &optional_progress_bar,
@@ -853,8 +853,22 @@ pub async fn deploy_contracts(
         let deployment_result = execute_script(
             project_root_path.join("cardano").join("offchain").as_path(),
             "deno",
-            Vec::from(["task", "--frozen", "start"]),
-            None,
+            Vec::from([
+                "run",
+                "--frozen",
+                "--env-file=.env.default",
+                "--allow-net",
+                "--allow-env",
+                "--allow-read",
+                "--allow-ffi",
+                "--allow-write",
+                "index.ts",
+            ]),
+            Some(vec![
+                ("KUPO_URL", "http://localhost:1442"),
+                ("OGMIOS_URL", "http://localhost:1337"),
+                ("CARDANO_NETWORK_MAGIC", "42"),
+            ]),
         );
 
         if let Some(progress_bar) = &optional_progress_bar {
@@ -959,6 +973,11 @@ fn wait_for_local_offchain_wallet_utxos(
     const POLL_INTERVAL_SECS: u64 = 5;
 
     let offchain_dir = project_root_path.join("cardano").join("offchain");
+    let local_kupmios_env = vec![
+        ("KUPO_URL", "http://localhost:1442"),
+        ("OGMIOS_URL", "http://localhost:1337"),
+        ("CARDANO_NETWORK_MAGIC", "42"),
+    ];
 
     for attempt in 1..=MAX_ATTEMPTS {
         let probe = execute_script(
@@ -973,7 +992,7 @@ fn wait_for_local_offchain_wallet_utxos(
                 "--allow-ffi",
                 "scripts/check-wallet-utxos.ts",
             ],
-            None,
+            Some(local_kupmios_env.clone()),
         );
 
         match probe {
@@ -981,7 +1000,7 @@ fn wait_for_local_offchain_wallet_utxos(
             Err(error) if attempt < MAX_ATTEMPTS => {
                 log_or_show_progress(
                     &format!(
-                        "Waiting for seeded deployer UTxOs to become visible to Kupmios (attempt {}/{})",
+                        "Waiting for seeded deployer UTxOs to become visible to local Kupmios at localhost:1442/1337 (attempt {}/{})",
                         attempt, MAX_ATTEMPTS
                     ),
                     optional_progress_bar,

@@ -1,5 +1,5 @@
 use crate::config;
-use crate::logger::{log, log_or_show_progress, verbose, warn};
+use crate::logger::{log, log_or_show_progress, verbose};
 use crate::utils::{
     change_dir_permissions_read_only, delete_file, download_file, replace_text_in_file, unzip_file,
     IndicatorMessage,
@@ -625,7 +625,10 @@ pub fn configure_local_cardano_devnet(
     Ok(())
 }
 
-pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<ProgressBar>) {
+pub fn seed_cardano_devnet(
+    cardano_dir: &Path,
+    optional_progress_bar: &Option<ProgressBar>,
+) -> Result<(), Box<dyn std::error::Error>> {
     log_or_show_progress("Seeding Cardano Devnet", &optional_progress_bar);
     let bootstrap_addresses = config::get_config().cardano.bootstrap_addresses;
 
@@ -652,17 +655,18 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
             .args(&cardano_cli_args)
             .args(build_address_args)
             .output()
-            .expect("Failed to build address");
+            .map_err(|error| format!("Failed to build faucet address: {}", error))?;
         if !address_output.status.success() {
-            warn(&format!(
+            return Err(format!(
                 "Failed to build faucet address: {}",
                 String::from_utf8_lossy(&address_output.stderr)
-            ));
-            return;
+            )
+            .into());
         }
         let address = address_output.stdout;
 
-        let faucet_address = String::from_utf8(address).expect("Failed to get faucet address");
+        let faucet_address = String::from_utf8(address)
+            .map_err(|error| format!("Failed to decode faucet address: {}", error))?;
         let faucet_txin_args = vec![
             "query",
             "utxo",
@@ -681,7 +685,7 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
                     .args(&cardano_cli_args)
                     .args(&faucet_txin_args)
                     .output()
-                    .expect("Failed to get faucet txin"),
+                    .map_err(|error| format!("Failed to get faucet txin: {}", error))?,
             );
 
             if faucet_txin_output.as_ref().unwrap().status.success() {
@@ -701,12 +705,12 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
             Some(output) => {
                 if output.status.success() {
                     let output_str = String::from_utf8_lossy(&output.stdout);
-                    let parsed_json: Value =
-                        serde_json::from_str(&output_str).expect("Failed to parse JSON");
+                    let parsed_json: Value = serde_json::from_str(&output_str)
+                        .map_err(|error| format!("Failed to parse faucet UTxO JSON: {}", error))?;
                     let faucet_txin = parsed_json
                         .as_object()
                         .and_then(|obj| obj.keys().next())
-                        .expect("Failed to extract key");
+                        .ok_or("Failed to extract faucet txin from query result")?;
 
                     let wallet_address = &bootstrap_address.address;
                     let tx_out = &format!("{}+{}", wallet_address, bootstrap_address.amount);
@@ -735,14 +739,14 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
                         .args(&cardano_cli_args)
                         .args(build_tx_args)
                         .output()
-                        .expect("Failed to build transaction");
+                        .map_err(|error| format!("Failed to build seed transaction: {}", error))?;
                     if !build_tx_output.status.success() {
-                        warn(&format!(
+                        return Err(format!(
                             "Failed to build seed transaction for {}: {}",
                             wallet_address,
                             String::from_utf8_lossy(&build_tx_output.stderr)
-                        ));
-                        return;
+                        )
+                        .into());
                     }
 
                     let sign_tx_args = vec![
@@ -764,14 +768,14 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
                         .args(&cardano_cli_args)
                         .args(sign_tx_args)
                         .output()
-                        .expect("Failed to sign transaction");
+                        .map_err(|error| format!("Failed to sign seed transaction: {}", error))?;
                     if !sign_tx_output.status.success() {
-                        warn(&format!(
+                        return Err(format!(
                             "Failed to sign seed transaction for {}: {}",
                             wallet_address,
                             String::from_utf8_lossy(&sign_tx_output.stderr)
-                        ));
-                        return;
+                        )
+                        .into());
                     }
 
                     let tx_id_output = Command::new("docker")
@@ -779,18 +783,19 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
                         .args(&cardano_cli_args)
                         .args(&["conway", "transaction", "txid", "--tx-file", signed_tx_file])
                         .output()
-                        .expect("Failed to get txid");
+                        .map_err(|error| format!("Failed to compute seed tx id: {}", error))?;
                     if !tx_id_output.status.success() {
-                        warn(&format!(
+                        return Err(format!(
                             "Failed to compute seed tx id for {}: {}",
                             wallet_address,
                             String::from_utf8_lossy(&tx_id_output.stderr)
-                        ));
-                        return;
+                        )
+                        .into());
                     }
                     let tx_id = tx_id_output.stdout;
 
-                    let raw_tx_id = String::from_utf8(tx_id).expect("Failed to get txid");
+                    let raw_tx_id = String::from_utf8(tx_id)
+                        .map_err(|error| format!("Failed to decode seed tx id: {}", error))?;
                     let tx_id: String = raw_tx_id.chars().filter(|c| !c.is_whitespace()).collect();
 
                     let tx_in = &format!("{}#0", tx_id);
@@ -808,14 +813,14 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
                         .args(&cardano_cli_args)
                         .args(submit_tx_args)
                         .output()
-                        .expect("Failed to submit transaction");
+                        .map_err(|error| format!("Failed to submit seed transaction: {}", error))?;
                     if !submit_tx_output.status.success() {
-                        warn(&format!(
+                        return Err(format!(
                             "Failed to submit seed transaction for {}: {}",
                             wallet_address,
                             String::from_utf8_lossy(&submit_tx_output.stderr)
-                        ));
-                        return;
+                        )
+                        .into());
                     }
 
                     let query_utxo_args = vec![
@@ -842,13 +847,13 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
                             .args(&cardano_cli_args)
                             .args(&query_utxo_args)
                             .output()
-                            .expect("Failed to query utxo");
+                            .map_err(|error| format!("Failed to query settlement UTxO: {}", error))?;
 
                         if utxo_output.status.success() {
-                            let utxo_str =
-                                String::from_utf8(utxo_output.stdout).expect("Failed to get utxo");
-                            let parsed_utxo: Value =
-                                serde_json::from_str(&utxo_str).expect("Failed to parse utxo");
+                            let utxo_str = String::from_utf8(utxo_output.stdout)
+                                .map_err(|error| format!("Failed to decode settlement UTxO response: {}", error))?;
+                            let parsed_utxo: Value = serde_json::from_str(&utxo_str)
+                                .map_err(|error| format!("Failed to parse settlement UTxO response: {}", error))?;
                             verbose(&format!(
                                 "Successfully see transaction on-chain:\n{}",
                                 utxo_str
@@ -868,11 +873,15 @@ pub fn seed_cardano_devnet(cardano_dir: &Path, optional_progress_bar: &Option<Pr
                 }
             }
             None => {
-                warn("It seems the cardano-node has an issue. Please check the logs in your docker container logs if there is any issue.");
-                return;
+                return Err(
+                    "It seems the cardano-node has an issue. Please check the logs in your docker container logs if there is any issue."
+                        .into(),
+                );
             }
         }
     }
+
+    Ok(())
 }
 
 fn get_genesis_hash(era: String, cardano_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {

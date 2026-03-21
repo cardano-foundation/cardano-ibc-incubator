@@ -1,41 +1,21 @@
 services:
   cardano-node:
-    image: ghcr.io/blinklabs-io/cardano-node:10.1.4-3
+    image: ${CARDANO_NODE_IMAGE:-ghcr.io/blinklabs-io/cardano-node:10.1.4-3}
     container_name: cardano-node
     user: "${UID:-1000}:${GID:-1000}"
     volumes:
-      - ./devnet:/devnet
+      - ./${CARDANO_RUNTIME_DIR:-devnet}:/runtime
+      - ./run-cardano-node.sh:/run-cardano-node.sh:ro
     environment:
-      - CARDANO_BLOCK_PRODUCER=true
-      - CARDANO_SOCKET_PATH=/devnet/node.socket # used by cardano-node
-      - CARDANO_NODE_SOCKET_PATH=/devnet/node.socket # used by cardano-cli
+      - CARDANO_BLOCK_PRODUCER=${CARDANO_BLOCK_PRODUCER:-true}
+      - CARDANO_RUNTIME_CONFIG_FILE=${CARDANO_NODE_CONFIG_FILE:-cardano-node.json}
+      - CARDANO_RUNTIME_TOPOLOGY_FILE=${CARDANO_TOPOLOGY_FILE:-topology.json}
+      - CARDANO_SOCKET_PATH=/runtime/node.socket # used by cardano-node
+      - CARDANO_NODE_SOCKET_PATH=/runtime/node.socket # used by cardano-cli
       - RESTORE_SNAPSHOT=false
     ports:
       - 3001:3001
-    command:
-      [
-        "run",
-        "--config",
-        "/devnet/cardano-node.json",
-        "--topology",
-        "/devnet/topology.json",
-        "--database-path",
-        "/devnet/db",
-        "--shelley-kes-key",
-        "/devnet/kes.skey",
-        "--shelley-vrf-key",
-        "/devnet/vrf.skey",
-        "--shelley-operational-certificate",
-        "/devnet/opcert.cert",
-        "--byron-delegation-certificate",
-        "/devnet/byron-delegation.cert",
-        "--byron-signing-key",
-        "/devnet/byron-delegate.key",
-        "--host-addr",
-        "0.0.0.0",
-        "--port",
-        "3001"
-      ]
+    entrypoint: ["/bin/sh", "/run-cardano-node.sh"]
 
   cardano-node-ogmios:
     image: cardanosolutions/ogmios:v6.10.0
@@ -51,16 +31,16 @@ services:
     depends_on:
       - cardano-node
     volumes:
-      - ./devnet:/devnet
-      - ./devnet/db:/db
+      - ./${CARDANO_RUNTIME_DIR:-devnet}:/runtime
+      - ./${CARDANO_RUNTIME_DIR:-devnet}/db:/db
     command:
       [
         "--node-config",
-        "/devnet/cardano-node.json",
+        "/runtime/${CARDANO_NODE_CONFIG_FILE:-cardano-node.json}",
         "--host",
         "0.0.0.0",
         "--node-socket",
-        "/devnet/node.socket"
+        "/runtime/node.socket"
       ]
 
   kupo:
@@ -78,9 +58,9 @@ services:
     command:
       [
         "--node-socket",
-        "/devnet/node.socket",
+        "/runtime/node.socket",
         "--node-config",
-        "/devnet/cardano-node.json",
+        "/runtime/${CARDANO_NODE_CONFIG_FILE:-cardano-node.json}",
         "--since",
         "${KUPO_SINCE:-origin}",
         "--match",
@@ -93,7 +73,7 @@ services:
         "1442"
       ]
     volumes:
-      - ./devnet:/devnet
+      - ./${CARDANO_RUNTIME_DIR:-devnet}:/runtime
       - ./kupo-db:/db
 
   postgres:
