@@ -12,7 +12,9 @@ const ogmiosUrl = Deno.env.get("OGMIOS_URL");
 const cardanoNetworkMagic = Deno.env.get("CARDANO_NETWORK_MAGIC");
 
 if (!deployerSk || !kupoUrl || !ogmiosUrl || !cardanoNetworkMagic) {
-  throw new Error("Missing env for wallet UTxO probe");
+  throw new Error(
+    "Missing required env for wallet UTxO probe: DEPLOYER_SK, KUPO_URL, OGMIOS_URL, CARDANO_NETWORK_MAGIC",
+  );
 }
 
 let cardanoNetwork: Network = "Custom";
@@ -39,9 +41,15 @@ const lucid = await Lucid(
 
 lucid.selectWallet.fromPrivateKey(deployerSk);
 
+const walletAddress = await lucid.wallet().address();
 const utxos = await lucid.wallet().getUtxos();
-if (utxos.length < 1) {
-  throw new Error("Wallet UTxOs not visible yet");
+
+if (utxos.length === 0) {
+  throw new Error(
+    `No wallet UTxOs are visible yet for ${walletAddress} via ${kupoUrl}`,
+  );
 }
 
-console.log(`wallet_utxos=${utxos.length}`);
+console.log(
+  `Wallet UTxOs visible for ${walletAddress}: ${utxos.length} via ${kupoUrl}`,
+);
