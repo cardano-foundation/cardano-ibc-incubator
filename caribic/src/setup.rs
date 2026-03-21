@@ -107,6 +107,7 @@ pub fn write_cardano_runtime_selection(
     network: config::CoreCardanoNetwork,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let runtime_dir = network.runtime_dir();
+    let network_magic = config::cardano_network_profile(network).network_magic;
     let (config_file, block_producer, node_image) = match network {
         config::CoreCardanoNetwork::Local => (
             "cardano-node.json",
@@ -121,7 +122,7 @@ pub fn write_cardano_runtime_selection(
     };
 
     let env_contents = format!(
-        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\n",
+        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\n",
         network = network.as_str(),
     );
 
@@ -181,13 +182,32 @@ async fn download_preprod_runtime_file(
 
 pub async fn configure_cardano_preprod_runtime(
     cardano_dir: &Path,
+    reset_state: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let runtime_dir = cardano_dir.join("preprod");
     let service_folders = vec![
         runtime_dir.clone(),
         cardano_dir.join("kupo-db"),
         cardano_dir.join("postgres"),
+        cardano_dir.join("yaci/genesis"),
+        cardano_dir.join("yaci/data"),
+        cardano_dir.join("yaci/logs"),
+        cardano_dir.join("yaci-postgres"),
     ];
+
+    if reset_state {
+        for service_folder in &service_folders {
+            if service_folder.exists() && service_folder.is_dir() {
+                fs::remove_dir_all(service_folder).map_err(|error| {
+                    format!(
+                        "Failed to reset Cardano preprod service folder {}: {}",
+                        service_folder.display(),
+                        error
+                    )
+                })?;
+            }
+        }
+    }
 
     for service_folder in service_folders {
         fs::create_dir_all(&service_folder).map_err(|error| {
@@ -202,6 +222,7 @@ pub async fn configure_cardano_preprod_runtime(
     for (remote_name, local_name) in [
         ("config.json", "config.json"),
         ("topology.json", "topology.json"),
+        ("peer-snapshot.json", "peer-snapshot.json"),
         ("byron-genesis.json", "byron-genesis.json"),
         ("shelley-genesis.json", "shelley-genesis.json"),
         ("alonzo-genesis.json", "alonzo-genesis.json"),
@@ -209,6 +230,83 @@ pub async fn configure_cardano_preprod_runtime(
     ] {
         download_preprod_runtime_file(&runtime_dir, remote_name, local_name).await?;
     }
+
+    write_yaci_preprod_genesis_files(cardano_dir, &runtime_dir)?;
+
+    Ok(())
+}
+
+fn write_yaci_preprod_genesis_files(
+    cardano_dir: &Path,
+    runtime_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let yaci_genesis_dir = cardano_dir.join("yaci/genesis");
+    fs::create_dir_all(&yaci_genesis_dir).map_err(|error| {
+        format!(
+            "Failed to create Yaci preprod genesis directory {}: {}",
+            yaci_genesis_dir.display(),
+            error
+        )
+    })?;
+
+    for (source_name, destination_name) in [
+        ("byron-genesis.json", "genesis-byron.json"),
+        ("shelley-genesis.json", "genesis-shelley.json"),
+        ("alonzo-genesis.json", "genesis-alonzo.json"),
+        ("conway-genesis.json", "genesis-conway.json"),
+    ] {
+        fs::copy(
+            runtime_dir.join(source_name),
+            yaci_genesis_dir.join(destination_name),
+        )
+        .map_err(|error| {
+            format!(
+                "Failed to copy {} into Yaci preprod genesis dir: {}",
+                source_name, error
+            )
+        })?;
+    }
+
+    let shelley_path = yaci_genesis_dir.join("genesis-shelley.json");
+    let mut shelley_json: Value = serde_json::from_str(
+        &fs::read_to_string(&shelley_path).map_err(|error| {
+            format!(
+                "Failed to read Yaci preprod Shelley genesis file {}: {}",
+                shelley_path.display(),
+                error
+            )
+        })?,
+    )
+    .map_err(|error| {
+        format!(
+            "Failed to parse Yaci preprod Shelley genesis file {}: {}",
+            shelley_path.display(),
+            error
+        )
+    })?;
+
+    if let Some(staking) = shelley_json.get_mut("staking").and_then(|value| value.as_object_mut()) {
+        staking.insert("pools".to_string(), Value::Object(serde_json::Map::new()));
+        staking.insert("stake".to_string(), Value::Object(serde_json::Map::new()));
+    }
+
+    fs::write(
+        &shelley_path,
+        serde_json::to_string_pretty(&shelley_json).map_err(|error| {
+            format!(
+                "Failed to serialize Yaci preprod Shelley genesis file {}: {}",
+                shelley_path.display(),
+                error
+            )
+        })?,
+    )
+    .map_err(|error| {
+        format!(
+            "Failed to write Yaci preprod Shelley genesis file {}: {}",
+            shelley_path.display(),
+            error
+        )
+    })?;
 
     Ok(())
 }
@@ -864,25 +962,9 @@ pub fn read_gateway_env_value(
     Ok(parse_env_file(gateway_env)?.get(key).cloned())
 }
 
-fn clear_external_runtime_placeholder(
-    gateway_env: &Path,
-    key: &str,
-    local_default: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let current_value = read_gateway_env_value(gateway_env, key)?.unwrap_or_default();
-    if current_value == local_default {
-        set_or_append_env_var(gateway_env, key, "")?;
-    }
-    Ok(())
-}
-
-fn validate_external_gateway_env(gateway_env: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn validate_preprod_gateway_env(gateway_env: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let env_values = parse_env_file(gateway_env)?;
     let required_groups = [
-        ("HISTORY_DB_HOST", vec!["HISTORY_DB_HOST"]),
-        ("HISTORY_DB_PORT", vec!["HISTORY_DB_PORT"]),
-        ("GATEWAY_DB_HOST", vec!["GATEWAY_DB_HOST"]),
-        ("GATEWAY_DB_PORT", vec!["GATEWAY_DB_PORT"]),
         ("KUPO_ENDPOINT", vec!["KUPO_ENDPOINT"]),
         ("OGMIOS_ENDPOINT", vec!["OGMIOS_ENDPOINT"]),
     ];
@@ -901,15 +983,13 @@ fn validate_external_gateway_env(gateway_env: &Path) -> Result<(), Box<dyn std::
         .collect::<Vec<_>>();
     if !missing.is_empty() {
         return Err(format!(
-            "External Cardano runtime is selected, but cardano/gateway/.env is missing required values: {}.\nSet those keys to your external Cardano infrastructure before starting preprod.",
+            "Preprod startup uses managed local history services but still requires external live Cardano endpoints. cardano/gateway/.env is missing: {}.\nSet those keys to host-reachable preprod infrastructure before starting.",
             missing.join(", ")
         )
         .into());
     }
 
     let disallowed_local_defaults = [
-        ("HISTORY_DB_HOST", "yaci-store-postgres"),
-        ("GATEWAY_DB_HOST", "postgres"),
         ("KUPO_ENDPOINT", "http://kupo:1442"),
         ("OGMIOS_ENDPOINT", "http://cardano-node-ogmios:1337"),
     ];
@@ -924,13 +1004,31 @@ fn validate_external_gateway_env(gateway_env: &Path) -> Result<(), Box<dyn std::
         .collect::<Vec<_>>();
     if !still_local.is_empty() {
         return Err(format!(
-            "External Cardano runtime is selected, but cardano/gateway/.env still contains local-only defaults for: {}.\nReplace those values with your external Cardano infrastructure before starting preprod.",
+            "Preprod startup still points {} at local docker-only defaults.\nReplace those values with host-reachable preprod endpoints before starting.",
             still_local.join(", ")
         )
         .into());
     }
 
     Ok(())
+}
+
+fn resolve_preprod_live_endpoint(
+    gateway_env: &Path,
+    gateway_key: &str,
+    env_keys: &[&str],
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    let env_value = env_keys
+        .iter()
+        .find_map(|key| std::env::var(key).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let gateway_value = read_gateway_env_value(gateway_env, gateway_key)?
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    Ok(env_value.or(gateway_value))
 }
 
 pub fn resolve_external_cardano_deploy_endpoints(
@@ -1032,14 +1130,41 @@ fn write_gateway_env_for_network(
 
         }
         config::CoreCardanoNetwork::Preprod => {
-            clear_external_runtime_placeholder(&gateway_env, "HISTORY_DB_HOST", "yaci-store-postgres")?;
-            clear_external_runtime_placeholder(&gateway_env, "GATEWAY_DB_HOST", "postgres")?;
-            clear_external_runtime_placeholder(&gateway_env, "KUPO_ENDPOINT", "http://kupo:1442")?;
-            clear_external_runtime_placeholder(
+            let preprod_gateway_defaults = [
+                ("HISTORY_DB_HOST", "yaci-store-postgres"),
+                ("HISTORY_DB_PORT", "5432"),
+                ("HISTORY_DB_NAME", "yaci_store"),
+                ("HISTORY_DB_USERNAME", "yaci"),
+                ("HISTORY_DB_PASSWORD", "dbpass"),
+                ("GATEWAY_DB_HOST", "postgres"),
+                ("GATEWAY_DB_PORT", "5432"),
+                ("CARDANO_CHAIN_HOST", "cardano-node"),
+                ("CARDANO_CHAIN_PORT", "3001"),
+            ];
+            for (key, value) in preprod_gateway_defaults {
+                set_or_append_env_var(&gateway_env, key, value)?;
+            }
+
+            if let Some(kupo_endpoint) = resolve_preprod_live_endpoint(
+                &gateway_env,
+                "KUPO_ENDPOINT",
+                &["CARIBIC_KUPO_URL", "KUPO_URL"],
+            )? {
+                set_or_append_env_var(&gateway_env, "KUPO_ENDPOINT", kupo_endpoint.as_str())?;
+            }
+
+            if let Some(ogmios_endpoint) = resolve_preprod_live_endpoint(
                 &gateway_env,
                 "OGMIOS_ENDPOINT",
-                "http://cardano-node-ogmios:1337",
-            )?;
+                &["CARIBIC_OGMIOS_URL", "OGMIOS_URL"],
+            )? {
+                set_or_append_env_var(
+                    &gateway_env,
+                    "OGMIOS_ENDPOINT",
+                    ogmios_endpoint.as_str(),
+                )?;
+            }
+
             set_or_append_env_var(&gateway_env, "CARDANO_EPOCH_NONCE_GENESIS", "\"\"")?;
         }
     }
@@ -1286,7 +1411,8 @@ pub fn prepare_db_sync_and_gateway(
     match network {
         config::CoreCardanoNetwork::Local => ensure_gateway_databases(cardano_dir)?,
         config::CoreCardanoNetwork::Preprod => {
-            validate_external_gateway_env(&cardano_dir.join("../../cardano/gateway/.env"))?
+            validate_preprod_gateway_env(&cardano_dir.join("../../cardano/gateway/.env"))?;
+            ensure_gateway_databases(cardano_dir)?
         }
     }
 

@@ -201,12 +201,6 @@ pub async fn run_start(
     let start_cosmos = start_all || target == Some(StartTarget::Entrypoint);
     let start_bridge = start_all || target == Some(StartTarget::Bridge);
 
-    if core_cardano_network == config::CoreCardanoNetwork::Preprod && clean {
-        return Err(
-            "ERROR: --clean is not supported with --network preprod in this milestone.".to_string(),
-        );
-    }
-
     if core_cardano_network == config::CoreCardanoNetwork::Preprod && with_mithril {
         return Err(
             "ERROR: --with-mithril is not supported with --network preprod. Use public Mithril release-preprod instead.".to_string(),
@@ -251,11 +245,13 @@ pub async fn run_start(
                 core_cardano_profile.bridge_manifest_path.as_deref(),
                 Path::new(core_cardano_profile.handler_json_path.as_str()),
             )?;
-            crate::setup::write_cardano_runtime_selection(
-                project_root_path.join("chains/cardano").as_path(),
+            crate::start::ensure_managed_cardano_runtime(
+                project_root_path,
+                clean,
                 core_cardano_network,
             )
-            .map_err(|error| format!("ERROR: Failed to select Cardano runtime: {}", error))?;
+            .await
+            .map_err(|error| format!("ERROR: Failed to start preprod history sidecar runtime: {}", error))?;
             crate::setup::prepare_db_sync_and_gateway(
                 project_root_path.join("chains/cardano").as_path(),
                 clean,
@@ -367,9 +363,18 @@ pub async fn run_start(
         {
             Ok(handle) => {
                 mithril_genesis_handle = handle;
+                let managed_services = match core_cardano_network {
+                    config::CoreCardanoNetwork::Local => {
+                        "cardano-node, ogmios, kupo, postgres, yaci-store, yaci-store-postgres"
+                    }
+                    config::CoreCardanoNetwork::Preprod => {
+                        "cardano-node, postgres, yaci-store, yaci-store-postgres"
+                    }
+                };
                 logger::log(&format!(
-                    "PASS: Managed Cardano {} containers started (cardano-node, ogmios, kupo, postgres, yaci-store, yaci-store-postgres)",
-                    core_cardano_network.as_str()
+                    "PASS: Managed Cardano {} containers started ({})",
+                    core_cardano_network.as_str(),
+                    managed_services
                 ));
             }
             Err(error) => {
@@ -463,11 +468,20 @@ pub async fn run_start(
         }
 
         if core_cardano_network == config::CoreCardanoNetwork::Preprod {
-            crate::setup::write_cardano_runtime_selection(
-                project_root_path.join("chains/cardano").as_path(),
-                core_cardano_network,
-            )
-            .map_err(|error| format!("ERROR: Failed to select Cardano runtime: {}", error))?;
+            if !start_network {
+                crate::start::ensure_managed_cardano_runtime(
+                    project_root_path,
+                    clean,
+                    core_cardano_network,
+                )
+                .await
+                .map_err(|error| {
+                    format!(
+                        "ERROR: Failed to start preprod history sidecar runtime: {}",
+                        error
+                    )
+                })?;
+            }
             crate::setup::prepare_db_sync_and_gateway(
                 project_root_path.join("chains/cardano").as_path(),
                 clean,

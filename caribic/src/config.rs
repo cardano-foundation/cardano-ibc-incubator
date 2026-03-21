@@ -45,7 +45,7 @@ impl CoreCardanoNetwork {
     }
 
     pub fn uses_managed_runtime(self) -> bool {
-        matches!(self, Self::Local)
+        matches!(self, Self::Local | Self::Preprod)
     }
 }
 
