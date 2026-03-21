@@ -19,6 +19,8 @@ import {
 import {
   MsgAcknowledgement,
   MsgAcknowledgementResponse,
+  MsgChannelCloseConfirm,
+  MsgChannelCloseConfirmResponse,
   MsgChannelOpenAck,
   MsgChannelOpenAckResponse,
   MsgChannelOpenConfirm,
@@ -137,6 +139,11 @@ export class TxController {
   @GrpcMethod('Msg', 'ChannelCloseInit')
   async ChannelCloseInit(data: MsgChannelCloseInit): Promise<MsgChannelCloseInitResponse> {
     const response: MsgChannelCloseInitResponse = await this.channelService.channelCloseInit(data);
+    return response;
+  }
+  @GrpcMethod('Msg', 'ChannelCloseConfirm')
+  async ChannelCloseConfirm(data: MsgChannelCloseConfirm): Promise<MsgChannelCloseConfirmResponse> {
+    const response: MsgChannelCloseConfirmResponse = await this.channelService.channelCloseConfirm(data);
     return response;
   }
 
