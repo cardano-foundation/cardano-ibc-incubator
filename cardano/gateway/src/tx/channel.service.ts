@@ -5,6 +5,8 @@ import { LucidService } from 'src/shared/modules/lucid/lucid.service';
 import { GrpcInternalException } from '~@/exception/grpc_exceptions';
 import { RpcException } from '@nestjs/microservices';
 import {
+  MsgChannelCloseConfirm,
+  MsgChannelCloseConfirmResponse,
   MsgChannelCloseInit,
   MsgChannelCloseInitResponse,
   MsgChannelOpenAck,
@@ -35,6 +37,7 @@ import { sumLovelaceFromUtxos } from './helper/helper';
 import { ClientDatum } from '@shared/types/client-datum';
 import { isValidProofHeight } from './helper/height.validate';
 import {
+  validateAndFormatChannelCloseConfirmParams,
   validateAndFormatChannelOpenAckParams,
   validateAndFormatChannelOpenConfirmParams,
   validateAndFormatChannelOpenInitParams,
@@ -52,6 +55,7 @@ import {
 import { ORDER_MAPPING_CHANNEL } from '~@/constant/channel';
 import { sleep } from '../shared/helpers/time';
 import {
+  ChannelCloseConfirmOperator,
   ChannelCloseInitOperator,
   ChannelOpenAckOperator,
   ChannelOpenConfirmOperator,
@@ -59,8 +63,10 @@ import {
   ChannelOpenTryOperator,
 } from './dto';
 import {
+  UnsignedChannelCloseConfirmDto,
   UnsignedChannelCloseInitDto,
   UnsignedChannelOpenAckDto,
+  UnsignedChannelOpenConfirmDto,
   UnsignedChannelOpenInitDto,
 } from '~@/shared/modules/lucid/dtos';
 import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
@@ -169,7 +175,7 @@ export class ChannelService {
 
     return computeRootWithUpdateChannelUpdate(oldRoot, portId, channelId, channelValue);
   }
-  
+
   /**
    * Ensure the in-memory Merkle tree is aligned with on-chain state
    */
@@ -186,10 +192,11 @@ export class ChannelService {
       const { channelOpenInitOperator, constructedAddress } = validateAndFormatChannelOpenInitParams(data);
       await this.refreshWalletContext(constructedAddress, 'channelOpenInitBuilder');
       // Build and complete the unsigned transaction
-      const { unsignedTx: unsignedChannelOpenInitTx, channelId, pendingTreeUpdate } = await this.buildUnsignedChannelOpenInitTx(
-        channelOpenInitOperator,
-        constructedAddress,
-      );
+      const {
+        unsignedTx: unsignedChannelOpenInitTx,
+        channelId,
+        pendingTreeUpdate,
+      } = await this.buildUnsignedChannelOpenInitTx(channelOpenInitOperator, constructedAddress);
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
@@ -300,11 +307,11 @@ export class ChannelService {
       const { constructedAddress, channelOpenAckOperator } = validateAndFormatChannelOpenAckParams(data);
       await this.refreshWalletContext(constructedAddress, 'channelOpenAckBuilder');
       // Build and complete the unsigned transaction
-      const { unsignedTx: unsignedChannelOpenAckTx, event: channelOpenAckEvent, pendingTreeUpdate } =
-        await this.buildUnsignedChannelOpenAckTx(
-        channelOpenAckOperator,
-        constructedAddress,
-      );
+      const {
+        unsignedTx: unsignedChannelOpenAckTx,
+        event: channelOpenAckEvent,
+        pendingTreeUpdate,
+      } = await this.buildUnsignedChannelOpenAckTx(channelOpenAckOperator, constructedAddress);
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
@@ -366,10 +373,8 @@ export class ChannelService {
       const { constructedAddress, channelOpenConfirmOperator } = validateAndFormatChannelOpenConfirmParams(data);
       await this.refreshWalletContext(constructedAddress, 'channelOpenConfirmBuilder');
       // Build and complete the unsigned transaction
-      const { unsignedTx: unsignedChannelConfirmInitTx, pendingTreeUpdate } = await this.buildUnsignedChannelOpenConfirmTx(
-        channelOpenConfirmOperator,
-        constructedAddress,
-      );
+      const { unsignedTx: unsignedChannelConfirmInitTx, pendingTreeUpdate } =
+        await this.buildUnsignedChannelOpenConfirmTx(channelOpenConfirmOperator, constructedAddress);
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'channelOpenConfirm',
@@ -453,6 +458,49 @@ export class ChannelService {
       }
     }
   }
+
+  async channelCloseConfirm(data: MsgChannelCloseConfirm): Promise<MsgChannelCloseConfirmResponse> {
+    try {
+      this.logger.log('Channel Close Confirm is processing');
+      const { constructedAddress, channelCloseConfirmOperator } = validateAndFormatChannelCloseConfirmParams(data);
+      const { unsignedTx: unsignedChannelCloseConfirmTx, pendingTreeUpdate } =
+        await this.buildUnsignedChannelCloseConfirmTx(channelCloseConfirmOperator, constructedAddress);
+      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
+        operationName: 'channelCloseConfirm',
+        unsignedTx: unsignedChannelCloseConfirmTx,
+        validity: {
+          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+        },
+        wallet: {
+          mode: 'refresh_from_address',
+          address: constructedAddress,
+          context: 'channelCloseConfirm',
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
+        pendingTreeUpdate,
+      });
+
+      this.logger.log('Returning unsigned tx for channel close confirm');
+      const response: MsgChannelCloseConfirmResponse = {
+        unsigned_tx: {
+          type_url: '',
+          value: cborHexBytes,
+        },
+      } as unknown as MsgChannelCloseConfirmResponse;
+      return response;
+    } catch (error) {
+      this.logger.error(`channelCloseConfirm: ${error}`);
+      if (!(error instanceof RpcException)) {
+        throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
+      } else {
+        throw error;
+      }
+    }
+  }
   async buildUnsignedChannelOpenInitTx(
     channelOpenInitOperator: ChannelOpenInitOperator,
     constructedAddress: string,
@@ -500,7 +548,7 @@ export class ChannelService {
       spendHandlerRedeemer,
       'handlerOperator',
     );
-    
+
     // Derive the new channel identifier from the HostState sequence.
     const channelSequence = hostStateDatum.state.next_channel_sequence;
     const channelId = `channel-${channelSequence}`;
@@ -623,7 +671,11 @@ export class ChannelService {
     };
     const unsignedUnorderedChannelTx =
       this.lucidService.createUnsignedChannelOpenInitTransaction(unsignedChannelOpenInitParams);
-    return { unsignedTx: unsignedUnorderedChannelTx, channelId, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
+    return {
+      unsignedTx: unsignedUnorderedChannelTx,
+      channelId,
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+    };
   }
   /* istanbul ignore next */
   async buildUnsignedChannelOpenTryTx(
@@ -650,7 +702,7 @@ export class ChannelService {
         `Handler/HostState channel sequence mismatch: handler=${handlerDatum.state.next_channel_sequence}, hostState=${hostStateDatum.state.next_channel_sequence}`,
       );
     }
-    
+
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(channelOpenTryOperator.connectionId),
     );
@@ -714,18 +766,13 @@ export class ChannelService {
       token: channelToken,
     };
 
-    const {
-      newRoot,
-      channelSiblings,
-      nextSequenceSendSiblings,
-      nextSequenceRecvSiblings,
-      nextSequenceAckSiblings,
-    } = await this.computeRootWithCreateChannelUpdate(
-      hostStateDatum.state.ibc_state_root,
-      channelOpenTryOperator.port_id,
-      channelId,
-      channelDatum,
-    );
+    const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings } =
+      await this.computeRootWithCreateChannelUpdate(
+        hostStateDatum.state.ibc_state_root,
+        channelOpenTryOperator.port_id,
+        channelId,
+        channelDatum,
+      );
 
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
@@ -1088,6 +1135,14 @@ export class ChannelService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+
+    const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
+    if (!isValidProofHeight(heightsArray, channelOpenConfirmOperator.proofHeight)) {
+      throw new GrpcInternalException(
+        `Invalid proof height: ${channelOpenConfirmOperator.proofHeight.revisionNumber}/${channelOpenConfirmOperator.proofHeight.revisionHeight}`,
+      );
+    }
 
     const updatedChannelDatum: ChannelDatum = {
       ...channelDatum,
@@ -1142,6 +1197,60 @@ export class ChannelService {
       updatedChannelDatum,
       'channel',
     );
+    const channelToken = {
+      policyId: mintChannelPolicyId,
+      name: channelTokenName,
+    };
+    const chanOpenConfirmPolicyId =
+      this.configService.get('deployment').validators.spendChannel.refValidator.chan_open_confirm.scriptHash;
+    const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
+    const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) =>
+        key.revisionNumber === channelOpenConfirmOperator.proofHeight.revisionNumber &&
+        key.revisionHeight === channelOpenConfirmOperator.proofHeight.revisionHeight,
+    );
+    if (!consensusEntry) {
+      throw new GrpcInternalException(
+        `Missing consensus state at proof height ${channelOpenConfirmOperator.proofHeight.revisionNumber}/${channelOpenConfirmOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const consensusState = consensusEntry[1];
+    const cardanoChannelEnd: CardanoChannel = {
+      state: CardanoChannelState.STATE_OPEN,
+      ordering: orderFromJSON(ORDER_MAPPING_CHANNEL[channelDatum.state.channel.ordering]),
+      counterparty: {
+        port_id: portId,
+        channel_id: channelIdForRoot,
+      },
+      connection_hops: [convertHex2String(connectionDatum.state.counterparty.connection_id)],
+      version: convertHex2String(updatedChannelDatum.state.channel.version),
+    };
+    const verifyProofRedeemer: VerifyProofRedeemer = {
+      VerifyMembership: {
+        cs: clientDatum.state.clientState,
+        cons_state: consensusState,
+        height: channelOpenConfirmOperator.proofHeight,
+        delay_time_period: connectionDatum.state.delay_period,
+        delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
+        proof: channelOpenConfirmOperator.proofAck,
+        path: {
+          key_path: [
+            connectionDatum.state.counterparty.prefix.key_prefix,
+            convertString2Hex(
+              channelPath(
+                convertHex2String(updatedChannelDatum.state.channel.counterparty.port_id),
+                convertHex2String(updatedChannelDatum.state.channel.counterparty.channel_id),
+              ),
+            ),
+          ],
+        },
+        value: toHex(CardanoChannel.encode(cardanoChannelEnd).finish()),
+      },
+    };
+    const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
+      verifyProofRedeemer,
+      this.lucidService.LucidImporter,
+    );
     const mockModuleIdentifier = this.configService.get('deployment').modules.mock.identifier;
 
     const mockModuleUtxo = await this.lucidService.findUtxoByUnit(mockModuleIdentifier);
@@ -1168,7 +1277,7 @@ export class ChannelService {
       newMockModuleDatum,
       'mockModule',
     );
-    const unsignedTx = this.lucidService.createUnsignedChannelOpenConfirmTransaction(
+    const unsignedChannelOpenConfirmParams: UnsignedChannelOpenConfirmDto = {
       hostStateUtxo,
       encodedHostStateRedeemer,
       encodedUpdatedHostStateDatum,
@@ -1182,7 +1291,12 @@ export class ChannelService {
       encodedUpdatedChannelDatum,
       encodedNewMockModuleDatum,
       constructedAddress,
-    );
+      chanOpenConfirmPolicyId,
+      channelToken,
+      verifyProofPolicyId,
+      encodedVerifyProofRedeemer,
+    };
+    const unsignedTx = this.lucidService.createUnsignedChannelOpenConfirmTransaction(unsignedChannelOpenConfirmParams);
     return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
   }
 
@@ -1331,6 +1445,212 @@ export class ChannelService {
     };
 
     const unsignedTx = this.lucidService.createUnsignedChannelCloseInitTransaction(unsignedChannelCloseInitParams);
+    return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
+  }
+
+  async buildUnsignedChannelCloseConfirmTx(
+    channelCloseConfirmOperator: ChannelCloseConfirmOperator,
+    constructedAddress: string,
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(
+      BigInt(channelCloseConfirmOperator.channelSequence),
+    );
+    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
+    const channelUtxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+    const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+
+    if (channelDatum.state.channel.state === ChannelState.Close) {
+      throw new GrpcInternalException('ChanCloseConfirm to channel already in Close state');
+    }
+
+    const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo.datum) {
+      throw new GrpcInternalException('HostState UTXO has no datum');
+    }
+    const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+      hostStateUtxo.datum,
+      'host_state',
+    );
+
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+
+    const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
+      parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
+    );
+    const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
+    const connectionUtxo = await this.lucidService.findUtxoByUnit(connectionTokenUnit);
+    const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
+      connectionUtxo.datum!,
+      'connection',
+    );
+    const clientSequence = parseClientSequence(convertHex2String(connectionDatum.state.client_id));
+    const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
+    const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+
+    const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
+    if (!isValidProofHeight(heightsArray, channelCloseConfirmOperator.proofHeight)) {
+      throw new GrpcInternalException(
+        `Invalid proof height: ${channelCloseConfirmOperator.proofHeight.revisionNumber}/${channelCloseConfirmOperator.proofHeight.revisionHeight}`,
+      );
+    }
+
+    const updatedChannelDatum: ChannelDatum = {
+      ...channelDatum,
+      state: {
+        ...channelDatum.state,
+        channel: {
+          ...channelDatum.state.channel,
+          state: ChannelState.Close,
+        },
+      },
+    };
+
+    const portId = convertHex2String(channelDatum.port);
+    const channelIdForRoot = `${CHANNEL_ID_PREFIX}-${channelCloseConfirmOperator.channelSequence}`;
+    const { newRoot, channelSiblings, commit } = await this.computeRootWithUpdateChannelUpdate(
+      hostStateDatum.state.ibc_state_root,
+      portId,
+      channelIdForRoot,
+      updatedChannelDatum,
+    );
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
+      state: {
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
+      },
+    };
+
+    const hostStateRedeemer = {
+      UpdateChannel: {
+        channel_siblings: channelSiblings,
+      },
+    };
+    const spendChannelRedeemer: SpendChannelRedeemer = {
+      ChanCloseConfirm: {
+        proof_init: channelCloseConfirmOperator.proofInit,
+        proof_height: channelCloseConfirmOperator.proofHeight,
+      },
+    };
+    const encodedSpendChannelRedeemer: string = await this.lucidService.encode(
+      spendChannelRedeemer,
+      'spendChannelRedeemer',
+    );
+    const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
+    const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
+    const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
+      updatedChannelDatum,
+      'channel',
+    );
+
+    const channelToken = {
+      policyId: mintChannelPolicyId,
+      name: channelTokenName,
+    };
+    const channelCloseConfirmPolicyId =
+      this.configService.get('deployment').validators.spendChannel.refValidator.chan_close_confirm.scriptHash;
+    const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
+    const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) =>
+        key.revisionNumber === channelCloseConfirmOperator.proofHeight.revisionNumber &&
+        key.revisionHeight === channelCloseConfirmOperator.proofHeight.revisionHeight,
+    );
+    if (!consensusEntry) {
+      throw new GrpcInternalException(
+        `Missing consensus state at proof height ${channelCloseConfirmOperator.proofHeight.revisionNumber}/${channelCloseConfirmOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const consensusState = consensusEntry[1];
+    const cardanoChannelEnd: CardanoChannel = {
+      state: CardanoChannelState.STATE_CLOSED,
+      ordering: orderFromJSON(ORDER_MAPPING_CHANNEL[channelDatum.state.channel.ordering]),
+      counterparty: {
+        port_id: portId,
+        channel_id: channelIdForRoot,
+      },
+      connection_hops: [convertHex2String(connectionDatum.state.counterparty.connection_id)],
+      version: convertHex2String(updatedChannelDatum.state.channel.version),
+    };
+    const verifyProofRedeemer: VerifyProofRedeemer = {
+      VerifyMembership: {
+        cs: clientDatum.state.clientState,
+        cons_state: consensusState,
+        height: channelCloseConfirmOperator.proofHeight,
+        delay_time_period: connectionDatum.state.delay_period,
+        delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
+        proof: channelCloseConfirmOperator.proofInit,
+        path: {
+          key_path: [
+            connectionDatum.state.counterparty.prefix.key_prefix,
+            convertString2Hex(
+              channelPath(
+                convertHex2String(updatedChannelDatum.state.channel.counterparty.port_id),
+                convertHex2String(updatedChannelDatum.state.channel.counterparty.channel_id),
+              ),
+            ),
+          ],
+        },
+        value: toHex(CardanoChannel.encode(cardanoChannelEnd).finish()),
+      },
+    };
+    const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
+      verifyProofRedeemer,
+      this.lucidService.LucidImporter,
+    );
+
+    const mockModuleIdentifier = this.configService.get('deployment').modules.mock.identifier;
+    const mockModuleUtxo = await this.lucidService.findUtxoByUnit(mockModuleIdentifier);
+    const channelId = convertString2Hex(CHANNEL_ID_PREFIX + '-' + channelCloseConfirmOperator.channelSequence);
+    const spendMockModuleRedeemer: IBCModuleRedeemer = {
+      Callback: [
+        {
+          // Mirror the current on-chain validator expectation literally.
+          OnChanOpenConfirm: {
+            channel_id: channelId,
+          },
+        },
+      ],
+    };
+    const encodedSpendMockModuleRedeemer: string = await this.lucidService.encode(
+      spendMockModuleRedeemer,
+      'iBCModuleRedeemer',
+    );
+    const currentMockModuleDatum = await this.lucidService.decodeDatum<MockModuleDatum>(
+      mockModuleUtxo.datum!,
+      'mockModule',
+    );
+    const newMockModuleDatum: MockModuleDatum = currentMockModuleDatum;
+    const encodedNewMockModuleDatum: string = await this.lucidService.encode<MockModuleDatum>(
+      newMockModuleDatum,
+      'mockModule',
+    );
+
+    const unsignedChannelCloseConfirmParams: UnsignedChannelCloseConfirmDto = {
+      hostStateUtxo,
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum,
+      channelUtxo,
+      connectionUtxo,
+      clientUtxo,
+      mockModuleUtxo,
+      encodedSpendChannelRedeemer,
+      encodedSpendMockModuleRedeemer,
+      channelTokenUnit,
+      channelToken,
+      encodedUpdatedChannelDatum,
+      encodedNewMockModuleDatum,
+      constructedAddress,
+      channelCloseConfirmPolicyId,
+      verifyProofPolicyId,
+      encodedVerifyProofRedeemer,
+    };
+
+    const unsignedTx = this.lucidService.createUnsignedChannelCloseConfirmTransaction(
+      unsignedChannelCloseConfirmParams,
+    );
     return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
   }
 }

@@ -1,11 +1,13 @@
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import {
+  MsgChannelCloseConfirm,
   MsgChannelOpenAck,
   MsgChannelOpenConfirm,
   MsgChannelOpenInit,
   MsgChannelOpenTry,
   MsgChannelCloseInit,
 } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+import { ChannelCloseConfirmOperator } from '../dto/channel/channel-close-confirm-operator.dto';
 import { ChannelOpenInitOperator } from '../dto/channel/channel-open-init-operator.dto';
 import { Order } from 'src/shared/types/channel/order';
 import { ChannelOpenTryOperator } from '../dto/channel/channel-open-try-operator.dto';
@@ -156,4 +158,34 @@ export function validateAndFormatChannelCloseInitParams(data: MsgChannelCloseIni
     signer: data.signer,
   };
   return { constructedAddress, channelCloseInitOperator };
+}
+
+export function validateAndFormatChannelCloseConfirmParams(data: MsgChannelCloseConfirm): {
+  constructedAddress: string;
+  channelCloseConfirmOperator: ChannelCloseConfirmOperator;
+} {
+  const constructedAddress: string = data.signer;
+  if (!constructedAddress) {
+    throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
+  }
+  if (!data.channel_id?.startsWith(`${CHANNEL_ID_PREFIX}-`)) {
+    throw new GrpcInvalidArgumentException(
+      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
+    );
+  }
+
+  const decodedProofInitMsg: MerkleProof = decodeMerkleProof(data.proof_init);
+  const channelSequence: string = data.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
+
+  const channelCloseConfirmOperator: ChannelCloseConfirmOperator = {
+    port_id: data.port_id,
+    channelSequence,
+    proofInit: initializeMerkleProof(decodedProofInitMsg),
+    proofHeight: {
+      revisionHeight: BigInt(data.proof_height?.revision_height || 0n),
+      revisionNumber: BigInt(data.proof_height?.revision_number || 0n),
+    },
+  };
+
+  return { constructedAddress, channelCloseConfirmOperator };
 }

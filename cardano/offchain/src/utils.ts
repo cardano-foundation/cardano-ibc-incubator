@@ -1,20 +1,20 @@
 import blueprint from "../../onchain/plutus.json" with { type: "json" };
 import { crypto } from "@std/crypto";
 import {
-  validatorToScriptHash,
-  validatorToAddress,
   Address,
   applyParamsToScript,
   Data,
   Exact,
   fromHex,
   fromText,
+  LucidEvolution,
   Script,
   ScriptHash,
   toHex,
   TxBuilder,
   UTxO,
-  LucidEvolution,
+  validatorToAddress,
+  validatorToScriptHash,
 } from "@lucid-evolution/lucid";
 import { AuthToken, OutputReference } from "../types/index.ts";
 
@@ -22,7 +22,7 @@ export const readValidator = <T extends unknown[] = Data[]>(
   title: string,
   lucid: LucidEvolution,
   params?: Exact<[...T]>,
-  type?: T
+  type?: T,
 ): [Script, ScriptHash, Address] => {
   const rawValidator = blueprint.validators.find((v) => v.title === title);
   if (!rawValidator) {
@@ -42,7 +42,11 @@ export const readValidator = <T extends unknown[] = Data[]>(
     };
   }
 
-  return [validator, validatorToScriptHash(validator), validatorToAddress(lucid.config().network || 'Custom', validator)];
+  return [
+    validator,
+    validatorToScriptHash(validator),
+    validatorToAddress(lucid.config().network || "Custom", validator),
+  ];
 };
 
 export const submitTx = async (
@@ -50,16 +54,26 @@ export const submitTx = async (
   lucid: LucidEvolution,
   txName: string,
   logSize = true,
-  localUPLCEval = false // Default to false to use Ogmios for script evaluation
+  localUPLCEval = false, // Default to false to use Ogmios for script evaluation
 ) => {
   console.log("Submitting tx [", txName, "]");
   const completedTx = await tx.complete({ localUPLCEval });
   if (logSize) {
-    console.log("Submitting tx [", txName, "]: size in bytes", completedTx.toCBOR().length / 2);
+    console.log(
+      "Submitting tx [",
+      txName,
+      "]: size in bytes",
+      completedTx.toCBOR().length / 2,
+    );
   }
   console.log("Submitting tx [", txName, "]: signing ...");
   const signedTx = await completedTx.sign.withWallet().complete();
-  console.log("Submitting tx [", txName, "]: signed tx size in bytes", signedTx.toCBOR().length / 2);
+  console.log(
+    "Submitting tx [",
+    txName,
+    "]: signed tx size in bytes",
+    signedTx.toCBOR().length / 2,
+  );
   console.log("Submitting tx [", txName, "]: submitting ...");
   const txHash = await signedTx.submit();
   console.log("Submitting tx [", txName, "]: tx hash is", txHash);
@@ -88,7 +102,7 @@ export const formatTimestamp = (timestampInMilliseconds: number): string => {
 export const generateTokenName = async (
   baseToken: AuthToken,
   prefix: string,
-  sequence: bigint
+  sequence: bigint,
 ): Promise<string> => {
   if (sequence < 0) throw new Error("sequence must be unsigned integer");
 
@@ -97,7 +111,7 @@ export const generateTokenName = async (
   if (postfix.length > 16) throw new Error("postfix size > 8 bytes");
 
   const baseTokenPart = (await hashSha3_256(
-    baseToken.policy_id + baseToken.name
+    baseToken.policy_id + baseToken.name,
   )).slice(0, 40);
 
   const prefixPart = (await hashSha3_256(prefix)).slice(0, 8);
@@ -109,14 +123,17 @@ export const generateTokenName = async (
 
 export const hashSha3_256 = async (data: string) => {
   const hexData = fromHex(data);
-  const digest = await crypto.subtle.digest('SHA3-256', new Uint8Array(hexData));
+  const digest = await crypto.subtle.digest(
+    "SHA3-256",
+    new Uint8Array(hexData),
+  );
   return toHex(new Uint8Array(digest));
 };
 
 const ogmiosWsp = async (
   ogmiosUrl: string,
   methodname: string,
-  args: unknown
+  args: unknown,
 ) => {
   const client = new WebSocket(ogmiosUrl);
   await new Promise((res) => {
@@ -129,7 +146,7 @@ const ogmiosWsp = async (
       jsonrpc: "2.0",
       method: methodname,
       params: args,
-    })
+    }),
   );
   return client;
 };
@@ -137,17 +154,23 @@ const ogmiosWsp = async (
 export const querySystemStart = async (ogmiosUrl: string) => {
   const client = await ogmiosWsp(ogmiosUrl, "queryNetwork/startTime", {});
 
-  client.addEventListener('open', () => console.log('WebSocket connection opened.'));
-  client.addEventListener('close', (event) => {
+  client.addEventListener(
+    "open",
+    () => console.log("WebSocket connection opened."),
+  );
+  client.addEventListener("close", (event) => {
     if (!event.wasClean) {
-      console.log('WebSocket connection closed.', {
+      console.log("WebSocket connection closed.", {
         code: event.code,
         reason: event.reason,
         wasClean: event.wasClean,
       });
     }
   });
-  client.addEventListener('error', (err) => console.log('WebSocket error:', err));
+  client.addEventListener(
+    "error",
+    (err) => console.log("WebSocket error:", err),
+  );
 
   const systemStart = await new Promise<string>((res, rej) => {
     client.addEventListener(
@@ -163,7 +186,7 @@ export const querySystemStart = async (ogmiosUrl: string) => {
       },
       {
         once: true,
-      }
+      },
     );
   });
   const parsedSystemTime = Date.parse(systemStart);
@@ -179,7 +202,7 @@ export const generateIdentifierTokenName = (outRef: OutputReference) => {
 };
 
 export const getNonceOutRef = async (
-  lucid: LucidEvolution
+  lucid: LucidEvolution,
 ): Promise<[UTxO, OutputReference]> => {
   const signerUtxos = await lucid.wallet().getUtxos();
   if (signerUtxos.length < 1) throw new Error("No UTXO founded");
@@ -194,19 +217,13 @@ export const getNonceOutRef = async (
 
 type Validator =
   | "spendHandler"
-  | "mintClient"
   | "spendClient"
-  | "mintConnection"
   | "spendConnection"
-  | "mintChannel"
   | "spendChannel"
-  | "mintPort"
-  | "mintIdentifier"
   | "spendTransferModule"
   | "mintVoucher"
   | "verifyProof"
   | "hostStateStt"
-  | "mintHostStateNFT"
   | "mintClientStt"
   | "mintConnectionStt"
   | "mintChannelStt";
