@@ -3,7 +3,6 @@ import { ApiController } from './api.controller';
 import { QueryModule } from '~@/query/query.module';
 import { LucidModule } from '@shared/modules/lucid/lucid.module';
 import { HttpModule } from '@nestjs/axios';
-import { MiniProtocalsModule } from '@shared/modules/mini-protocals/mini-protocals.module';
 import { MithrilModule } from '../shared/modules/mithril/mithril.module';
 import { TxModule } from '~@/tx/tx.module';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
@@ -12,7 +11,7 @@ import { LocalOsmosisSwapClientService } from './local-osmosis-swap-client.servi
 import { TransferRouteResolverService } from './transfer-route-resolver.service';
 
 @Module({
-  imports: [QueryModule, TxModule, LucidModule, HttpModule, MiniProtocalsModule, MithrilModule],
+  imports: [QueryModule, TxModule, LucidModule, HttpModule, MithrilModule],
   controllers: [ApiController],
   providers: [
     Logger,
