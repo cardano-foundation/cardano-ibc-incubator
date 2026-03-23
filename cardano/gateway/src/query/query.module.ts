@@ -40,6 +40,15 @@ import { YaciHistoryService } from './services/yaci-history.service';
     DenomTraceService,
     BridgeManifestService,
   ],
-  exports: [QueryService, HISTORY_SERVICE, ConnectionService, ChannelService, PacketService, DenomTraceService, BridgeManifestService],
+  exports: [
+    QueryService,
+    HISTORY_SERVICE,
+    MiniProtocalsService,
+    ConnectionService,
+    ChannelService,
+    PacketService,
+    DenomTraceService,
+    BridgeManifestService,
+  ],
 })
 export class QueryModule {}

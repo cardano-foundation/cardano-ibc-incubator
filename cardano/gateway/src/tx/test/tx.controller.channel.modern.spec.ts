@@ -14,6 +14,7 @@ describe('TxController - Channel (modern)', () => {
     channelOpenAck: jest.Mock;
     channelOpenConfirm: jest.Mock;
     channelCloseInit: jest.Mock;
+    channelCloseConfirm: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -25,6 +26,7 @@ describe('TxController - Channel (modern)', () => {
       channelOpenAck: jest.fn(),
       channelOpenConfirm: jest.fn(),
       channelCloseInit: jest.fn(),
+      channelCloseConfirm: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -55,9 +57,7 @@ describe('TxController - Channel (modern)', () => {
   it('propagates ChannelOpenInit errors from ChannelService', async () => {
     // Controller should preserve service-side validation messages.
     const request = { signer: '' } as any;
-    channelServiceMock.channelOpenInit.mockRejectedValue(
-      new Error('Invalid constructed address: Signer is not valid'),
-    );
+    channelServiceMock.channelOpenInit.mockRejectedValue(new Error('Invalid constructed address: Signer is not valid'));
 
     await expect(controller.ChannelOpenInit(request)).rejects.toThrow(
       'Invalid constructed address: Signer is not valid',
@@ -106,6 +106,28 @@ describe('TxController - Channel (modern)', () => {
     const response = await controller.ChannelOpenConfirm(request);
 
     expect(channelServiceMock.channelOpenConfirm).toHaveBeenCalledWith(request);
+    expect(response).toBe(expected);
+  });
+
+  it('delegates ChannelCloseInit to ChannelService', async () => {
+    const request = { channel_id: 'channel-0' } as any;
+    const expected = { unsigned_tx: Buffer.from([5]) } as any;
+    channelServiceMock.channelCloseInit.mockResolvedValue(expected);
+
+    const response = await controller.ChannelCloseInit(request);
+
+    expect(channelServiceMock.channelCloseInit).toHaveBeenCalledWith(request);
+    expect(response).toBe(expected);
+  });
+
+  it('delegates ChannelCloseConfirm to ChannelService', async () => {
+    const request = { channel_id: 'channel-0' } as any;
+    const expected = { unsigned_tx: Buffer.from([6]) } as any;
+    channelServiceMock.channelCloseConfirm.mockResolvedValue(expected);
+
+    const response = await controller.ChannelCloseConfirm(request);
+
+    expect(channelServiceMock.channelCloseConfirm).toHaveBeenCalledWith(request);
     expect(response).toBe(expected);
   });
 });

@@ -9,6 +9,7 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::fs::Permissions;
 use std::io::BufRead;
+use std::io::IsTerminal;
 use std::io::{self, BufReader, Write};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -37,6 +38,32 @@ pub fn print_header() {
     \|_______|\|__|\|__|\|__|\|__|\|__|\|_______|\|__|\|_______| v0.2.0
     "#
     );
+}
+
+pub fn prompt_runtime_deployer_sk() -> Result<String, Box<dyn Error>> {
+    if let Ok(value) = std::env::var("DEPLOYER_SK") {
+        let trimmed = value.trim().to_string();
+        if !trimmed.is_empty() {
+            return Ok(trimmed);
+        }
+    }
+
+    if io::stdin().is_terminal() && io::stderr().is_terminal() {
+        eprint!("Enter DEPLOYER_SK: ");
+        io::stderr().flush()?;
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let trimmed = input.trim().to_string();
+        if !trimmed.is_empty() {
+            return Ok(trimmed);
+        }
+        return Err("DEPLOYER_SK prompt was empty".into());
+    }
+
+    Err(
+        "DEPLOYER_SK is required for this operation. Set DEPLOYER_SK in the environment for non-interactive runs."
+            .into(),
+    )
 }
 
 pub struct IndicatorMessage {
@@ -69,10 +96,14 @@ pub fn default_config_path() -> PathBuf {
 pub fn get_cardano_tip_state(
     project_root_dir: &Path,
 ) -> Result<String, Box<dyn std::error::Error>> {
+    let active_network = crate::config::active_core_cardano_network(project_root_dir);
+    let network_magic = crate::config::cardano_network_profile(active_network)
+        .network_magic
+        .to_string();
     let mut command = Command::new("docker");
     let query_output = command
-        .current_dir(&project_root_dir.join("chains/cardano"))
-        .args(&[
+        .current_dir(project_root_dir.join("chains/cardano"))
+        .args([
             "compose",
             "exec",
             "cardano-node",
@@ -81,14 +112,11 @@ pub fn get_cardano_tip_state(
             "tip",
             "--cardano-mode",
             "--testnet-magic",
-            "42",
+            network_magic.as_str(),
         ]);
 
     let output = query_output.output().map_err(|error| {
-        format!(
-            "Failed to query tip from cardano-node: {}",
-            error.to_string()
-        )
+        format!("Failed to query tip from cardano-node: {}", error)
     })?;
 
     if output.status.success() {
@@ -133,22 +161,22 @@ pub fn get_cardano_state(
     let epoch_json = cardano_tip_json.get(query.as_str());
     if let Some(epoch) = epoch_json {
         if epoch.is_i64() {
-            return Ok(epoch.as_i64().unwrap() as u64);
+            Ok(epoch.as_i64().unwrap() as u64)
         } else {
-            return Err(format!(
+            Err(format!(
                 "Failed to parse {} from cardano-node: {}",
                 query.as_str(),
                 cardano_tip_state
             )
-            .into());
+            .into())
         }
     } else {
-        return Err(format!(
+        Err(format!(
             "Failed to extract {} from cardano-node: {}",
             query.as_str(),
             cardano_tip_state
         )
-        .into());
+        .into())
     }
 }
 
@@ -164,7 +192,7 @@ pub fn replace_text_in_file(path: &Path, pattern: &str, replacement: &str) -> io
 
 pub fn change_dir_permissions_read_only(
     dir: &Path,
-    exclude_files: &Vec<&str>,
+    exclude_files: &[&str],
 ) -> std::io::Result<()> {
     if dir.is_dir() {
         for entry in fs::read_dir(dir)? {
@@ -172,7 +200,7 @@ pub fn change_dir_permissions_read_only(
             let path = entry.path();
 
             if path.is_dir() {
-                change_dir_permissions_read_only(&path, &exclude_files)?;
+                change_dir_permissions_read_only(&path, exclude_files)?;
             } else if path.is_file()
                 && !exclude_files.contains(&path.file_name().unwrap().to_str().unwrap())
             {
@@ -233,7 +261,7 @@ pub async fn download_file(
     }
 
     progress_bar.finish_with_message(format!("Downloaded {} to {}", url, path.to_string_lossy()));
-    return Ok(());
+    Ok(())
 }
 
 pub fn delete_file(file_path: &Path) -> io::Result<()> {
@@ -297,10 +325,10 @@ pub async fn wait_for_health_check(
         thread::sleep(Duration::from_millis(interval));
     }
 
-    return Err(format!(
+    Err(format!(
         "Health check on {} failed after {} attempts",
         url, retries
-    ));
+    ))
 }
 
 pub fn execute_script(
@@ -329,11 +357,11 @@ pub fn execute_script(
     let stdout = cmd
         .stdout
         .take()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Failed to capture stdout"))?;
+        .ok_or_else(|| io::Error::other("Failed to capture stdout"))?;
     let stderr = cmd
         .stderr
         .take()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Failed to capture stderr"))?;
+        .ok_or_else(|| io::Error::other("Failed to capture stderr"))?;
 
     let (line_tx, line_rx) = mpsc::channel::<String>();
 
@@ -373,15 +401,14 @@ pub fn execute_script(
     let status = cmd.wait()?;
     let output = stdout_handle
         .join()
-        .map_err(|_| io::Error::new(io::ErrorKind::Other, "Failed to join stdout reader"))??;
+        .map_err(|_| io::Error::other("Failed to join stdout reader"))??;
     let stderr_output = stderr_handle
         .join()
-        .map_err(|_| io::Error::new(io::ErrorKind::Other, "Failed to join stderr reader"))??;
+        .map_err(|_| io::Error::other("Failed to join stderr reader"))??;
 
     logger::info(&format!("Script exited with status: {}", status));
     if !status.success() {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
+        return Err(io::Error::other(
             format!(
                 "Command failed (status={}): {} {}\nstdout:\n{}\nstderr:\n{}",
                 status,
@@ -426,7 +453,7 @@ pub fn execute_script_with_progress(
 
             for line in reader.lines() {
                 let line = line.unwrap_or_else(|_| "Failed to read line".to_string());
-                progress_bar.set_message(format!("{}", line.trim()));
+                progress_bar.set_message(line.trim().to_string());
             }
         }
         logger::Verbosity::Info => {
@@ -447,7 +474,7 @@ pub fn execute_script_with_progress(
                         .collect::<Vec<String>>()
                         .join("\n");
 
-                    progress_bar.set_message(format!("{}", output));
+                    progress_bar.set_message(output.to_string());
                 }
             }
         }
@@ -457,7 +484,7 @@ pub fn execute_script_with_progress(
 
                 for line in reader.lines() {
                     let last_line = line.unwrap_or_else(|_| "Failed to read line".to_string());
-                    progress_bar.set_message(format!("{}", last_line.trim()));
+                    progress_bar.set_message(last_line.trim().to_string());
                 }
             }
         }
@@ -510,7 +537,7 @@ pub fn unzip_file(file_path: &Path, destination: &Path) -> Result<(), Box<dyn st
         } else {
             if let Some(p) = outpath.parent() {
                 if !p.exists() {
-                    fs::create_dir_all(&p)?;
+                    fs::create_dir_all(p)?;
                 }
             }
             let mut outfile = File::create(&outpath)?;
@@ -752,7 +779,7 @@ pub fn diagnose_container_failure(container_names: &[&str]) -> (String, bool) {
                         }
 
                         // Determine if we should fail fast based on container state and error type
-                        if has_unrecoverable_error(&logs) {
+                        if has_unrecoverable_error(logs) {
                             // Unrecoverable errors should always fail fast, regardless of container state
                             diagnostics.push_str("\n   UNRECOVERABLE ERROR detected - requires developer intervention");
                             should_fail_fast = true;

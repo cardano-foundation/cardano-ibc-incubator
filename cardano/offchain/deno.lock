@@ -1,15 +1,23 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@std/assert@*": "1.0.19",
     "jsr:@std/crypto@^1.0.5": "1.0.5",
     "jsr:@std/fs@^1.0.13": "1.0.19",
     "jsr:@std/internal@^1.0.10": "1.0.12",
+    "jsr:@std/internal@^1.0.12": "1.0.12",
     "jsr:@std/internal@^1.0.9": "1.0.12",
     "jsr:@std/path@^1.1.1": "1.1.2",
     "npm:@lucid-evolution/lucid@0.4.29": "0.4.29_effect@3.19.2",
     "npm:cbor@10": "10.0.11"
   },
   "jsr": {
+    "@std/assert@1.0.19": {
+      "integrity": "eaada96ee120cb980bc47e040f82814d786fe8162ecc53c91d8df60b8755991e",
+      "dependencies": [
+        "jsr:@std/internal@^1.0.12"
+      ]
+    },
     "@std/crypto@1.0.5": {
       "integrity": "0dcfbb319fe0bba1bd3af904ceb4f948cde1b92979ec1614528380ed308a3b40"
     },

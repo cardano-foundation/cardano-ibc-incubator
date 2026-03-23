@@ -114,7 +114,7 @@ enum Commands {
         /// Start Mithril services for light client testing (adds 5-10 minute startup time)
         #[arg(long, default_value_t = false)]
         with_mithril: bool,
-        /// Optional network profile for optional chain targets (for example: local, testnet)
+        /// Optional network profile for optional chain targets or the managed Cardano runtime (local, preprod)
         #[arg(long)]
         network: Option<String>,
         /// Chain-specific KEY=VALUE flag (repeatable), only for optional chain targets
@@ -125,7 +125,7 @@ enum Commands {
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
-        /// Optional network profile for optional chain targets (for example: local, testnet)
+        /// Optional network profile for optional chain targets or the managed Cardano runtime (local, preprod)
         #[arg(long)]
         network: Option<String>,
         /// Chain-specific KEY=VALUE flag (repeatable), only for optional chain targets
