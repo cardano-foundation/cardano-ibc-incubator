@@ -52,14 +52,8 @@ pub fn run_stop(
             logger::log("\nBridge stopped successfully");
         }
         Some(StopTarget::Network) => {
-            if core_cardano_network.uses_managed_runtime() {
-                network_down(project_root_path);
-                logger::log("\nCardano Network stopped successfully");
-            } else {
-                logger::log(
-                    "\nCardano preprod uses external infrastructure in this mode; no local Cardano network services were running",
-                );
-            }
+            network_down(project_root_path);
+            logger::log("\nCardano Network stopped successfully");
         }
         Some(StopTarget::Entrypoint) => {
             stop::stop_cosmos(
@@ -167,10 +161,6 @@ fn resolve_optional_chain_alias(target: Option<&StopTarget>) -> Option<&'static 
 /// Stops the local Cardano network and Mithril services.
 fn network_down(project_root_path: &Path) {
     let active_network = crate::config::active_core_cardano_network(project_root_path);
-    if !active_network.uses_managed_runtime() {
-        return;
-    }
-
     stop::stop_cardano_network(project_root_path);
 
     if active_network.uses_local_mithril() {

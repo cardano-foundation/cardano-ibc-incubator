@@ -446,14 +446,6 @@ pub async fn start_local_cardano_network(
     with_mithril: bool,
     network: config::CoreCardanoNetwork,
 ) -> Result<Option<tokio::task::JoinHandle<Result<(), String>>>, Box<dyn std::error::Error>> {
-    if !network.uses_managed_runtime() {
-        return Err(format!(
-            "Cardano network '{}' uses external infrastructure in this mode, so there is no managed local Cardano runtime to start.",
-            network.as_str()
-        )
-        .into());
-    }
-
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -466,9 +458,9 @@ pub async fn start_local_cardano_network(
                 .unwrap()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
-        progress_bar.set_prefix("Creating local Cardano network ...".to_owned());
+        progress_bar.set_prefix("Creating Cardano runtime ...".to_owned());
     } else {
-        log("Creating local Cardano network ...");
+        log("Creating Cardano runtime ...");
     }
 
     let cardano_dir = project_root_path.join("chains/cardano");
@@ -3284,89 +3276,6 @@ fn run_core_health_check(
                 "Running on port 8081",
                 "Container running",
             ),
-            CoreHealthCheckType::Kupo => external_gateway_env_value(context, "KUPO_ENDPOINT")
-                .map(|url| check_external_url_port(url.as_str(), "Kupo"))
-                .unwrap_or_else(|| {
-                    (
-                        false,
-                        "Missing KUPO_ENDPOINT in cardano/gateway/.env".to_string(),
-                    )
-                }),
-            CoreHealthCheckType::Ogmios => external_gateway_env_value(context, "OGMIOS_ENDPOINT")
-                .map(|url| check_external_url_port(url.as_str(), "Ogmios"))
-                .unwrap_or_else(|| {
-                    (
-                        false,
-                        "Missing OGMIOS_ENDPOINT in cardano/gateway/.env".to_string(),
-                    )
-                }),
-            CoreHealthCheckType::Mithril => check_mithril_service(
-                context.mithril_dir.as_path(),
-                context.core_cardano_network,
-                context.preprod_mithril_endpoint.as_str(),
-            ),
-            CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
-            CoreHealthCheckType::Cosmos => check_rpc_service(
-                config::get_config().health.cosmos_status_url.as_str(),
-                26657,
-            ),
-        };
-    }
-
-    if !context.core_cardano_network.uses_managed_runtime() {
-        return match check_type {
-            CoreHealthCheckType::Gateway => check_container_with_optional_port(
-                "gateway-app",
-                5001,
-                "Container running, gRPC port 5001 accessible",
-                "Container running (gRPC not ready yet)",
-            ),
-            CoreHealthCheckType::CardanoNode => {
-                let url = external_gateway_env_value(context, "OGMIOS_ENDPOINT")
-                    .unwrap_or_else(|| "<unset>".to_string());
-                if url == "<unset>" {
-                    (
-                        false,
-                        "Missing OGMIOS_ENDPOINT in cardano/gateway/.env".to_string(),
-                    )
-                } else {
-                    check_external_url_port(url.as_str(), "Cardano/Ogmios")
-                }
-            }
-            CoreHealthCheckType::Postgres => {
-                let host = external_gateway_env_value(context, "HISTORY_DB_HOST")
-                    .unwrap_or_else(|| "<unset>".to_string());
-                let port = external_gateway_env_value(context, "HISTORY_DB_PORT")
-                    .unwrap_or_else(|| "<unset>".to_string());
-                if host == "<unset>" || port == "<unset>" {
-                    (
-                        false,
-                        "Missing HISTORY_DB_HOST/HISTORY_DB_PORT in cardano/gateway/.env"
-                            .to_string(),
-                    )
-                } else {
-                    check_external_host_port(
-                        host.as_str(),
-                        port.as_str(),
-                        "history backend postgres",
-                    )
-                }
-            }
-            CoreHealthCheckType::Yaci => {
-                let host = external_gateway_env_value(context, "HISTORY_DB_HOST")
-                    .unwrap_or_else(|| "<unset>".to_string());
-                if host == "<unset>" {
-                    (
-                        false,
-                        "Missing HISTORY_DB_HOST in cardano/gateway/.env".to_string(),
-                    )
-                } else {
-                    (
-                        true,
-                        format!("Managed externally via history backend at {}", host),
-                    )
-                }
-            }
             CoreHealthCheckType::Kupo => external_gateway_env_value(context, "KUPO_ENDPOINT")
                 .map(|url| check_external_url_port(url.as_str(), "Kupo"))
                 .unwrap_or_else(|| {

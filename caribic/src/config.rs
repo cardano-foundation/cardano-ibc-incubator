@@ -43,10 +43,6 @@ impl CoreCardanoNetwork {
     pub fn uses_local_mithril(self) -> bool {
         matches!(self, Self::Local)
     }
-
-    pub fn uses_managed_runtime(self) -> bool {
-        matches!(self, Self::Local | Self::Preprod)
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
