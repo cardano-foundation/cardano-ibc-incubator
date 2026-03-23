@@ -27,7 +27,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::u64;
 
 const ENTRYPOINT_CONTAINER_NAME: &str = "entrypoint-node-prod";
 const HERMES_PROGRESS_LOG_INTERVAL_SECS: u64 = 30;
@@ -229,7 +228,7 @@ pub fn start_relayer(
         .map_err(|e| format!("Failed to write entrypoint chain mnemonic: {}", e))?;
 
     let entrypoint_key_output = Command::new(&hermes_binary)
-        .args(&[
+        .args([
             "keys",
             "add",
             "--chain",
@@ -302,7 +301,7 @@ pub fn start_relayer(
         .map_err(|e| format!("Failed to write cardano key: {}", e))?;
 
     let cardano_key_output = Command::new(&hermes_binary)
-        .args(&[
+        .args([
             "keys",
             "add",
             "--chain",
@@ -779,45 +778,43 @@ pub async fn deploy_contracts(
             ),
             &optional_progress_bar,
         );
-    } else {
-        if !project_root_path
-            .join("cardano")
-            .join("plutus.json")
-            .as_path()
-            .exists()
-            || clean
-            || is_verbose
-        {
-            log_or_show_progress(
-                &format!(
-                    "{} Building Aiken validators",
-                    style("Step 1/2").bold().dim()
-                ),
-                &optional_progress_bar,
-            );
+    } else if !project_root_path
+        .join("cardano")
+        .join("plutus.json")
+        .as_path()
+        .exists()
+        || clean
+        || is_verbose
+    {
+        log_or_show_progress(
+            &format!(
+                "{} Building Aiken validators",
+                style("Step 1/2").bold().dim()
+            ),
+            &optional_progress_bar,
+        );
 
-            let build_args = if is_verbose {
-                vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
-            } else {
-                vec!["build"]
-            };
-
-            execute_script(
-                project_root_path.join("cardano").join("onchain").as_path(),
-                "aiken",
-                build_args,
-                None,
-            )?;
-            validators_rebuild = true;
+        let build_args = if is_verbose {
+            vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
         } else {
-            log_or_show_progress(
-                &format!(
-                    "{} Aiken validators already built",
-                    style("Step 1/2").bold().dim()
-                ),
-                &optional_progress_bar,
-            );
-        }
+            vec!["build"]
+        };
+
+        execute_script(
+            project_root_path.join("cardano").join("onchain").as_path(),
+            "aiken",
+            build_args,
+            None,
+        )?;
+        validators_rebuild = true;
+    } else {
+        log_or_show_progress(
+            &format!(
+                "{} Aiken validators already built",
+                style("Step 1/2").bold().dim()
+            ),
+            &optional_progress_bar,
+        );
     }
 
     if validators_rebuild {
@@ -1169,6 +1166,8 @@ pub async fn deploy_preprod_bridge(
     let (ogmios_url, kupo_url) =
         crate::setup::resolve_external_cardano_deploy_endpoints(cardano_dir.as_path())?;
 
+    // Preprod deployment targets live Cardano infra; the local managed runtime
+    // only supports history/indexing and gateway bootstrap around that network.
     wait_for_ogmios_protocol_parameters(ogmios_url.as_str(), &optional_progress_bar).await?;
 
     fs::create_dir_all(&deployment_dir).map_err(|error| {
@@ -1197,6 +1196,8 @@ pub async fn deploy_preprod_bridge(
         })?;
     }
 
+    // The offchain deploy still emits the generic handler.json used by local mode.
+    // Keep that behavior intact, then copy out a preprod-specific artifact beside it.
     let handler_backup = backup_handler_json(generic_handler_path.as_path())?;
 
     log_or_show_progress(
@@ -1599,16 +1600,12 @@ async fn start_mithril_with_progress(
         fs::remove_dir_all(&mithril_data_dir).map_err(|error| {
             format!(
                 "Failed to remove existing mithril data directory: {}",
-                error.to_string()
+                error
             )
         })?;
     }
-    fs::create_dir_all(&mithril_data_dir).map_err(|error| {
-        format!(
-            "Failed to create mithril data directory: {}",
-            error.to_string()
-        )
-    })?;
+    fs::create_dir_all(&mithril_data_dir)
+        .map_err(|error| format!("Failed to create mithril data directory: {}", error))?;
 
     if !mithril_project_dir.exists() {
         download_mithril(&mithril_project_dir)
@@ -1640,7 +1637,7 @@ async fn start_mithril_with_progress(
             "{} Configuring Mithril services",
             style("Step 1/2").bold().dim()
         ),
-        &optional_progress_bar,
+        optional_progress_bar,
     );
     let docker_env = get_docker_env_vars();
     let mut mithril_env = vec![
@@ -1689,7 +1686,7 @@ async fn start_mithril_with_progress(
             "{} Starting Mithril services",
             style("Step 2/2").bold().dim()
         ),
-        &optional_progress_bar,
+        optional_progress_bar,
     );
     execute_script(
         &mithril_script_dir,
@@ -2209,7 +2206,7 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     }
 
     let network_exists = Command::new("docker")
-        .args(&["network", "inspect", SHARED_CARDANO_NETWORK])
+        .args(["network", "inspect", SHARED_CARDANO_NETWORK])
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false);
@@ -2235,13 +2232,13 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     );
     if clean {
         execute_script(
-            &gateway_dir,
+            gateway_dir,
             "docker",
             Vec::from(["compose", "down", "--remove-orphans"]),
             None,
         )?;
     } else {
-        execute_script(&gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
+        execute_script(gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
     }
 
     let mut script_args = vec!["compose", "up", "-d"];
@@ -2255,7 +2252,7 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         log_or_show_progress("Starting Gateway containers", &optional_progress_bar);
     }
 
-    execute_script(&gateway_dir, "docker", script_args, None)?;
+    execute_script(gateway_dir, "docker", script_args, None)?;
 
     // Wait for Gateway gRPC port to be accessible
     log_or_show_progress(
@@ -2288,7 +2285,7 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     for i in 0..max_retries {
         // Check if gRPC port 5001 is accessible
         let port_check = Command::new("nc")
-            .args(&["-z", "localhost", "5001"])
+            .args(["-z", "localhost", "5001"])
             .output();
 
         if let Ok(output) = port_check {
@@ -2640,7 +2637,7 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
     // Validate config before starting
     log_or_show_progress("Validating Hermes configuration", &optional_progress_bar);
     let config_check = Command::new(&hermes_binary)
-        .args(&[
+        .args([
             "--config",
             hermes_config.to_str().ok_or("Invalid Hermes config path")?,
             "config",
@@ -3575,7 +3572,7 @@ pub fn comprehensive_health_check(
 fn docker_running_container_name(name_filter: &str) -> Option<String> {
     let filter = format!("name={name_filter}");
     let output = Command::new("docker")
-        .args(&[
+        .args([
             "ps",
             "--filter",
             filter.as_str(),
@@ -3600,7 +3597,7 @@ fn docker_running_container_name(name_filter: &str) -> Option<String> {
 
 fn is_port_accessible(port: u16) -> bool {
     Command::new("nc")
-        .args(&["-z", "localhost", &port.to_string()])
+        .args(["-z", "localhost", &port.to_string()])
         .output()
         .ok()
         .is_some_and(|output| output.status.success())
@@ -3608,7 +3605,7 @@ fn is_port_accessible(port: u16) -> bool {
 
 fn endpoint_contains_result(url: &str) -> bool {
     Command::new("curl")
-        .args(&["-s", "--connect-timeout", "3", url])
+        .args(["-s", "--connect-timeout", "3", url])
         .output()
         .ok()
         .filter(|output| output.status.success())
@@ -3618,7 +3615,7 @@ fn endpoint_contains_result(url: &str) -> bool {
 
 fn endpoint_responds(url: &str) -> bool {
     Command::new("curl")
-        .args(&["-sfL", "--connect-timeout", "5", url])
+        .args(["-sfL", "--connect-timeout", "5", url])
         .output()
         .ok()
         .is_some_and(|output| output.status.success())
@@ -3655,7 +3652,7 @@ fn check_postgres_service() -> (bool, String) {
     };
 
     let ready = Command::new("docker")
-        .args(&[
+        .args([
             "exec",
             container_name.as_str(),
             "pg_isready",

@@ -1137,6 +1137,8 @@ export class ChannelService {
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
     const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
 
+    // ChannelOpenConfirm must prove the counterparty's acknowledged channel end
+    // against a concrete client consensus state before we mark the local side Open.
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
     if (!isValidProofHeight(heightsArray, channelOpenConfirmOperator.proofHeight)) {
       throw new GrpcInternalException(
@@ -1215,6 +1217,8 @@ export class ChannelService {
       );
     }
     const consensusState = consensusEntry[1];
+    // The membership proof commits to the counterparty's view of this channel,
+    // which is now expected to be fully Open after our confirm step.
     const cardanoChannelEnd: CardanoChannel = {
       state: CardanoChannelState.STATE_OPEN,
       ordering: orderFromJSON(ORDER_MAPPING_CHANNEL[channelDatum.state.channel.ordering]),

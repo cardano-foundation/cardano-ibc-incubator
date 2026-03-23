@@ -284,7 +284,7 @@ pub async fn run_start(
             );
         }
 
-        match start_mithril(&project_root_path).await {
+        match start_mithril(project_root_path).await {
             Ok(cardano_epoch_on_mithril_start) => {
                 logger::log("PASS: Mithril services started (1 aggregator, 2 signers)");
 
@@ -327,7 +327,7 @@ pub async fn run_start(
 
     if start_network {
         match crate::start::start_local_cardano_network(
-            &project_root_path,
+            project_root_path,
             clean,
             with_mithril && start_all,
             core_cardano_network,
@@ -446,7 +446,7 @@ pub async fn run_start(
 
         match core_cardano_network {
             config::CoreCardanoNetwork::Local => {
-                match deploy_contracts(&project_root_path, clean, validators_built).await {
+                match deploy_contracts(project_root_path, clean, validators_built).await {
                     Ok(_) => logger::log(
                         "PASS: IBC smart contracts deployed (client, connection, channel, packet handlers)",
                     ),
@@ -461,7 +461,7 @@ pub async fn run_start(
             }
             config::CoreCardanoNetwork::Preprod => {
                 match deploy_preprod_bridge(
-                    &project_root_path,
+                    project_root_path,
                     validators_built,
                     runtime_deployer_sk
                         .as_deref()

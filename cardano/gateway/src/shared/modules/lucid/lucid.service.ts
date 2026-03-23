@@ -1203,6 +1203,8 @@ export class LucidService implements OnModuleInit {
       datumHash: undefined,
     };
 
+    // Confirm reads both the confirm auth policy and verify-proof ref because
+    // on-chain validation expects the spend and the two mint witnesses together.
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendMockModule!,

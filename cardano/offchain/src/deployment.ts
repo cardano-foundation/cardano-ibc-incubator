@@ -505,6 +505,8 @@ export const buildReferenceValidatorBatches = (
   maxTxSize: number,
 ): ReferenceValidatorBatch[] => {
   const batches: ReferenceValidatorBatch[] = [];
+  // Keep a small fixed overhead aside so we batch optimistically up front
+  // without relying on the full Lucid builder for every split decision.
   const payloadBudget = Math.max(
     1,
     maxTxSize - REFERENCE_UTXO_TX_OVERHEAD_BYTES,
@@ -628,6 +630,8 @@ async function createReferenceUtxos(
     const pendingBatches = [...initialBatches];
 
     while (pendingBatches.length > 0) {
+      // We still submit sequentially because each successful batch updates the
+      // wallet UTxO set used to build the next one.
       const batch = pendingBatches.shift()!;
       console.log(
         "Preparing reference batch for validators",
@@ -665,6 +669,8 @@ async function createReferenceUtxos(
           batch.validators.length > 1 &&
           isLikelyReferenceBatchTooLarge(error)
         ) {
+          // The coarse size estimate can still under-shoot once fees/change are
+          // fully materialized, so split and retry instead of failing the whole deploy.
           const midpoint = Math.ceil(batch.validators.length / 2);
           console.warn(
             `Reference batch ${batch.startIndex + 1}-${

@@ -847,7 +847,7 @@ fn extract_cardano_message_channel_id(entry: &Value) -> Option<String> {
     if channel_id.starts_with("channel-") {
         Some(channel_id.to_string())
     } else {
-        return None;
+        None
     }
 }
 
