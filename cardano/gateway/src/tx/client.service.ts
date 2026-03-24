@@ -43,6 +43,7 @@ import {
 } from '../shared/helpers/ibc-state-root';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
+import { applyGatewayTxValidity } from './helper/tx-validity';
 
 @Injectable()
 export class ClientService {
@@ -137,7 +138,11 @@ export class ClientService {
         operationName: 'createClient',
         unsignedTx: unsignedCreateClientTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validFrom(validFromTimestamp).validTo(validToTimestamp),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validFromMs: validFromTimestamp,
+              validToMs: validToTimestamp,
+            }),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -240,7 +245,11 @@ export class ClientService {
           operationName: 'updateClientOnMisbehaviour',
           unsignedTx: unsignedUpdateClientTx,
           validity: {
-            apply: (builder: TxBuilder) => builder.validFrom(validFromTimeMs).validTo(validToTime),
+            apply: (builder: TxBuilder) =>
+              applyGatewayTxValidity(builder, this.configService, {
+                validFromMs: validFromTimeMs,
+                validToMs: validToTime,
+              }),
           },
           wallet: {
             mode: 'refresh_from_address',
@@ -311,7 +320,11 @@ export class ClientService {
         operationName: 'updateClient',
         unsignedTx: unsignedUpdateClientTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validFrom(validFromTimeMs).validTo(validToTimeMs),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validFromMs: validFromTimeMs,
+              validToMs: validToTimeMs,
+            }),
         },
         wallet: {
           mode: 'refresh_from_address',

@@ -60,6 +60,7 @@ import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
+import { applyGatewayTxValidity } from './helper/tx-validity';
 
 @Injectable()
 export class ConnectionService {
@@ -290,7 +291,10 @@ export class ConnectionService {
         operationName: 'connectionOpenInit',
         unsignedTx: unsignedConnectionOpenInitTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validToMs: validToTime,
+            }),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -359,7 +363,10 @@ export class ConnectionService {
         operationName: 'connectionOpenTry',
         unsignedTx: unsignedConnectionOpenTryTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validToMs: validToTime,
+            }),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -426,7 +433,11 @@ export class ConnectionService {
         constructedAddress,
       );
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const unsignedConnectionOpenAckTxValidTo: TxBuilder = unsignedConnectionOpenAckTx.validTo(validToTime);
+      const unsignedConnectionOpenAckTxWithValidity: TxBuilder = applyGatewayTxValidity(
+        unsignedConnectionOpenAckTx,
+        this.configService,
+        { validToMs: validToTime },
+      );
       
       // DEBUG: `.complete()` asks the node to evaluate scripts to pick fees/execution units.
       // When it fails, we *won't* have a transaction body to decode, so we must log as
@@ -437,7 +448,7 @@ export class ConnectionService {
       // empty arrays even if `.collectFrom()` was already called.
       try {
         const deploymentConfig = this.configService.get('deployment');
-        const raw = unsignedConnectionOpenAckTxValidTo.rawConfig();
+        const raw = unsignedConnectionOpenAckTxWithValidity.rawConfig();
         const knownByRef = new Map<string, string>([
           [this.toUtxoRef(hostStateUtxo), 'hostStateUtxo'],
           [this.toUtxoRef(connectionUtxo), 'connectionUtxo'],
@@ -473,7 +484,7 @@ export class ConnectionService {
         completedUnsignedTx,
       } = await this.txOperationRunnerService.run({
         operationName: 'connectionOpenAck',
-        unsignedTx: unsignedConnectionOpenAckTxValidTo,
+        unsignedTx: unsignedConnectionOpenAckTxWithValidity,
         validity: {
           apply: (builder: TxBuilder) => builder,
         },
@@ -583,7 +594,10 @@ export class ConnectionService {
         operationName: 'connectionOpenConfirm',
         unsignedTx: unsignedConnectionOpenConfirmTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validToMs: validToTime,
+            }),
         },
         wallet: {
           mode: 'refresh_from_address',

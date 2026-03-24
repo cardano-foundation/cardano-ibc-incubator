@@ -240,6 +240,47 @@ export class LucidService implements OnModuleInit {
     return normalized;
   }
 
+  private async queryKupoUnspentOutRefs(
+    addressOrCredential: string,
+  ): Promise<Array<Pick<UTxO, 'txHash' | 'outputIndex'>>> {
+    const kupoEndpoint = this.configService.get<string>('kupoEndpoint');
+    if (!kupoEndpoint) {
+      return [];
+    }
+
+    const normalizedEndpoint = kupoEndpoint.replace(/\/+$/, '');
+    const target = encodeURIComponent(addressOrCredential);
+    const response = await fetch(`${normalizedEndpoint}/matches/${target}?unspent`, {
+      headers: {
+        accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Kupo query failed with status ${response.status}`);
+    }
+
+    const payload = await response.json();
+    if (!Array.isArray(payload)) {
+      return [];
+    }
+
+    const refs: Array<Pick<UTxO, 'txHash' | 'outputIndex'>> = [];
+    for (const entry of payload) {
+      const txHash = entry?.transaction_id;
+      const outputIndex = entry?.output_index;
+      if (typeof txHash !== 'string' || typeof outputIndex !== 'number') {
+        continue;
+      }
+      refs.push({
+        txHash,
+        outputIndex,
+      });
+    }
+
+    return refs;
+  }
+
   public async findUtxoAtWithUnit(addressOrCredential: string, unit: string): Promise<UTxO> {
     const normalizedAddress = this.normalizeAddressOrCredential(addressOrCredential);
     const utxos = await this.lucid.utxosAtWithUnit(normalizedAddress, unit);
@@ -325,6 +366,18 @@ export class LucidService implements OnModuleInit {
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
+        // Prefer Kupo's exact unspent out-ref view for wallet selection. In local devnet
+        // handshakes we observed Lucid's broad address query occasionally surfacing a
+        // wallet change output that had already been consumed, which then poisoned the
+        // signed tx with a permanently-unknown input reference.
+        const kupoOutRefs = await this.queryKupoUnspentOutRefs(normalizedAddress);
+        if (kupoOutRefs.length > 0) {
+          const liveFromKupo = await this.lucid.utxosByOutRef(kupoOutRefs);
+          if (liveFromKupo.length > 0) {
+            return liveFromKupo;
+          }
+        }
+
         const utxos = await this.lucid.utxosAt(normalizedAddress);
         if (utxos.length > 0) {
           // A non-empty list is not enough on its own, we still verify liveness

@@ -77,6 +77,7 @@ import {
 } from '../shared/helpers/ibc-state-root';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
+import { applyGatewayTxValidity } from './helper/tx-validity';
 
 @Injectable()
 export class ChannelService {
@@ -182,17 +183,14 @@ export class ChannelService {
         pendingTreeUpdate,
       } = await this.buildUnsignedChannelOpenInitTx(channelOpenInitOperator, constructedAddress);
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
-      const currentSlot = this.lucidService.lucid.currentSlot();
-      if (currentSlot > validToSlot) {
-        throw new GrpcInternalException('channel init failed: tx time invalid');
-      }
-
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'channelOpenInit',
         unsignedTx: unsignedChannelOpenInitTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validToMs: validToTime,
+            }),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -253,7 +251,10 @@ export class ChannelService {
         operationName: 'channelOpenTry',
         unsignedTx: unsignedChannelOpenTryTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validToMs: validToTime,
+            }),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -295,16 +296,14 @@ export class ChannelService {
         pendingTreeUpdate,
       } = await this.buildUnsignedChannelOpenAckTx(channelOpenAckOperator, constructedAddress);
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
-      const currentSlot = this.lucidService.lucid.currentSlot();
-      if (currentSlot > validToSlot) {
-        throw new GrpcInternalException('channel init failed: tx time invalid');
-      }
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'channelOpenAck',
         unsignedTx: unsignedChannelOpenAckTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validToMs: validToTime,
+            }),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -361,7 +360,10 @@ export class ChannelService {
         operationName: 'channelOpenConfirm',
         unsignedTx: unsignedChannelConfirmInitTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validToMs: validToTime,
+            }),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -407,7 +409,10 @@ export class ChannelService {
         operationName: 'channelCloseInit',
         unsignedTx: unsignedChannelCloseInitTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validToMs: validToTime,
+            }),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -450,7 +455,10 @@ export class ChannelService {
         operationName: 'channelCloseConfirm',
         unsignedTx: unsignedChannelCloseConfirmTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validToMs: validToTime,
+            }),
         },
         wallet: {
           mode: 'refresh_from_address',

@@ -12,6 +12,7 @@ use crate::utils::{
 use crate::{
     chains, config,
     logger::{self, log},
+    stop,
 };
 use console::style;
 use dirs::home_dir;
@@ -476,6 +477,11 @@ pub async fn start_local_cardano_network(
 
     write_cardano_runtime_selection(cardano_dir.as_path(), network)?;
     if clean {
+        // The gateway compose stack includes bridge-history-sync, which writes bridge_* tables
+        // into the Yaci history database. On a clean Cardano runtime reset we need Yaci's own
+        // Flyway migrations to run first against an empty schema, so tear the gateway stack down
+        // before recreating the local history backend.
+        stop::stop_gateway(project_root_path);
         execute_script(
             cardano_dir.as_path(),
             "docker",

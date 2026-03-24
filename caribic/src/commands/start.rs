@@ -494,6 +494,60 @@ pub async fn run_start(
             ));
         }
 
+        if let Some(handle) = mithril_genesis_handle.take() {
+            let optional_progress_bar = match logger::get_verbosity() {
+                logger::Verbosity::Verbose => None,
+                _ => Some(ProgressBar::new_spinner()),
+            };
+
+            if let Some(progress_bar) = &optional_progress_bar {
+                progress_bar.enable_steady_tick(Duration::from_millis(100));
+                progress_bar.set_style(
+                    ProgressStyle::with_template(
+                        "{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}",
+                    )
+                    .unwrap()
+                    .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+                );
+                progress_bar.set_prefix("Waiting for Mithril to become ready ...".to_owned());
+                progress_bar.set_message(
+                    "Delaying gateway/relayer startup until certified Cardano artifacts exist"
+                        .to_owned(),
+                );
+            } else {
+                logger::log(
+                    "Waiting for Mithril to become ready before starting gateway/relayer ...",
+                );
+            }
+
+            // Keep the Cardano node as quiet as possible during the initial Mithril bootstrap.
+            // Gateway/Hermes add steady Ogmios and history traffic, which is not required until
+            // after Mithril can already serve the certified artifacts needed for local demos.
+            let result = handle.await;
+
+            if let Some(progress_bar) = &optional_progress_bar {
+                progress_bar.finish_and_clear();
+            }
+
+            match result {
+                Ok(Ok(())) => logger::log(
+                    "PASS: Immutable Cardano node files have been created, and Mithril is working as expected",
+                ),
+                Ok(Err(error)) => {
+                    return fail_and_stop_started_services(project_root_path, StopTarget::Bridge, &format!(
+                        "ERROR: Mithril failed to read the immutable cardano node files: {}",
+                        error
+                    ))
+                }
+                Err(error) => {
+                    return fail_and_stop_started_services(project_root_path, StopTarget::Bridge, &format!(
+                        "ERROR: Mithril genesis bootstrap task failed: {}",
+                        error
+                    ))
+                }
+            }
+        }
+
         match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
             Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
             Err(error) => {
@@ -646,55 +700,6 @@ pub async fn run_start(
                 "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
             );
             logger::log(&format!("Final balance {}", &balance.to_string().as_str()));
-        }
-
-        if let Some(handle) = mithril_genesis_handle.take() {
-            let optional_progress_bar = match logger::get_verbosity() {
-                logger::Verbosity::Verbose => None,
-                _ => Some(ProgressBar::new_spinner()),
-            };
-
-            if let Some(progress_bar) = &optional_progress_bar {
-                progress_bar.enable_steady_tick(Duration::from_millis(100));
-                progress_bar.set_style(
-                    ProgressStyle::with_template(
-                        "{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}",
-                    )
-                    .unwrap()
-                    .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-                );
-                progress_bar.set_prefix("Waiting for Mithril to become ready ...".to_owned());
-                progress_bar
-                    .set_message("This can take a few minutes on a fresh devnet".to_owned());
-            } else {
-                logger::log(
-                    "Waiting for Mithril to become ready (this can take a few minutes on a fresh devnet) ...",
-                );
-            }
-
-            let result = handle.await;
-
-            if let Some(progress_bar) = &optional_progress_bar {
-                progress_bar.finish_and_clear();
-            }
-
-            match result {
-                Ok(Ok(())) => logger::log(
-                    "PASS: Immutable Cardano node files have been created, and Mithril is working as expected",
-                ),
-                Ok(Err(error)) => {
-                    return fail_and_stop_started_services(project_root_path, StopTarget::Bridge, &format!(
-                        "ERROR: Mithril failed to read the immutable cardano node files: {}",
-                        error
-                    ))
-                }
-                Err(error) => {
-                    return fail_and_stop_started_services(project_root_path, StopTarget::Bridge, &format!(
-                        "ERROR: Mithril genesis bootstrap task failed: {}",
-                        error
-                    ))
-                }
-            }
         }
 
         logger::log("\nBridge started successfully!");

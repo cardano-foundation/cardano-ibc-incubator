@@ -10,6 +10,7 @@ import { IbcTreeCacheService } from '../shared/services/ibc-tree-cache.service';
 import { getCurrentTree } from '../shared/helpers/ibc-state-root';
 import { DenomTraceService } from '../query/services/denom-trace.service';
 import { queryNetworkTipPoint, queryTransactionInclusionBlockHeight } from '../shared/helpers/time';
+import { isLocalCardanoDevnet } from './helper/tx-validity';
 
 @Injectable()
 export class SubmissionService {
@@ -262,9 +263,11 @@ export class SubmissionService {
     //   data.validityInterval.invalidBefore = 2966
     //
     // In that case we can safely wait until the node reaches `invalidBefore` and retry submission.
-    const maxRetries = 5;
+    const localDevnet = isLocalCardanoDevnet(this.configService);
+    const maxRetries = localDevnet ? 20 : 10;
     const slotLengthMs = 1000; // Devnet + mainnet are 1s slots in Shelley+ eras.
     const retryBackoffMs = 250; // Small cushion to avoid edge-of-slot races.
+    const unknownInputRetryBaseDelayMs = localDevnet ? 500 : 3000;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
@@ -273,9 +276,33 @@ export class SubmissionService {
       } catch (error) {
         const tooEarly = this.parseTxSubmittedTooEarlyError(error);
         if (!tooEarly) {
-          const message = typeof error?.message === 'string' ? error.message : String(error);
-          this.logger.error(`Failed to submit to Cardano: ${message}`);
-          throw new GrpcInternalException(`Cardano submission failed: ${message}`);
+          const unknownInputs = this.parseUnknownInputVisibilityError(error);
+          if (!unknownInputs) {
+            const message = typeof error?.message === 'string' ? error.message : String(error);
+            this.logger.error(`Failed to submit to Cardano: ${message}`);
+            throw new GrpcInternalException(`Cardano submission failed: ${message}`);
+          }
+
+          if (attempt >= maxRetries) {
+            const message = typeof error?.message === 'string' ? error.message : String(error);
+            this.logger.error(
+              `Tx inputs still unknown to Ogmios after ${maxRetries} retries (${unknownInputs.refs.join(', ') || 'refs unavailable'}): ${message}`,
+            );
+            throw new GrpcInternalException(`Cardano submission failed: ${message}`);
+          }
+
+          // Kupo can surface fresh change outputs slightly before Ogmios accepts them as
+          // spendable inputs. Retrying the exact same signed tx is safe once Ogmios catches up.
+          // Keep local-devnet retries short and flat so the tx does not expire while waiting
+          // for node/Kupo visibility to converge.
+          const waitMs = localDevnet
+            ? unknownInputRetryBaseDelayMs
+            : unknownInputRetryBaseDelayMs * (attempt + 1);
+          this.logger.warn(
+            `Tx rejected with transient unknown input references (${unknownInputs.refs.join(', ') || 'refs unavailable'}); waiting ${waitMs}ms and retrying (attempt ${attempt + 1}/${maxRetries})`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, waitMs));
+          continue;
         }
 
         const { currentSlot, invalidBefore, invalidAfter } = tooEarly;
@@ -349,6 +376,23 @@ export class SubmissionService {
     if (!match) return null;
     const value = Number(match[1]);
     return Number.isFinite(value) ? value : null;
+  }
+
+  private parseUnknownInputVisibilityError(error: unknown): { refs: string[] } | null {
+    const message = typeof (error as any)?.message === 'string' ? (error as any).message : String(error);
+    const isUnknownInputError =
+      message.includes('unknown UTxO references as inputs') ||
+      message.includes('"code":3117') ||
+      message.includes('"code\\":3117');
+    if (!isUnknownInputError) return null;
+
+    const refs: string[] = [];
+    const refPattern = /"transaction":\{"id":"([0-9a-f]+)"\},"index":([0-9]+)/gi;
+    for (const match of message.matchAll(refPattern)) {
+      refs.push(`${match[1]}#${match[2]}`);
+    }
+
+    return { refs };
   }
 
   /**

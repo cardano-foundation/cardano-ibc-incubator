@@ -26,13 +26,15 @@ describe('SubmissionService confirmation strictness regressions', () => {
   let denomTraceServiceMock: {
     setTxHashForTraces: jest.Mock;
   };
+  let submitTxMock: jest.Mock;
 
   beforeEach(() => {
+    submitTxMock = jest.fn().mockResolvedValue('tx-hash-abc');
     lucidServiceMock = {
       LucidImporter: {},
       lucid: {
         wallet: jest.fn().mockReturnValue({
-          submitTx: jest.fn().mockResolvedValue('tx-hash-abc'),
+          submitTx: submitTxMock,
         }),
         awaitTx: jest.fn().mockResolvedValue(false),
       },
@@ -121,5 +123,28 @@ describe('SubmissionService confirmation strictness regressions', () => {
       } as any),
     ).rejects.toThrow();
     expect(denomTraceServiceMock.setTxHashForTraces).not.toHaveBeenCalled();
+  });
+
+  it('retries transient unknown-input submission races before failing', async () => {
+    const retryDelays: number[] = [];
+    const timeoutSpy = jest.spyOn(global, 'setTimeout').mockImplementation(((callback: (...args: any[]) => void, delay?: number) => {
+      retryDelays.push(delay ?? 0);
+      callback();
+      return 0 as any;
+    }) as any);
+
+    submitTxMock
+      .mockRejectedValueOnce(
+        new Error(
+          '{"jsonrpc":"2.0","method":"submitTransaction","error":{"code":3117,"message":"The transaction contains unknown UTxO references as inputs.","data":{"unknownOutputReferences":[{"transaction":{"id":"deadbeef"},"index":2}]}},"id":null}',
+        ),
+      )
+      .mockResolvedValueOnce('tx-hash-after-retry');
+
+    await expect((service as any).submitToCardano('deadbeef')).resolves.toBe('tx-hash-after-retry');
+    expect(submitTxMock).toHaveBeenCalledTimes(2);
+    expect(retryDelays).toContain(500);
+
+    timeoutSpy.mockRestore();
   });
 });

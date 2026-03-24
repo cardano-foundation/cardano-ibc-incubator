@@ -79,6 +79,11 @@ import {
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, isTreeAligned } from '../shared/helpers/ibc-state-root';
 import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
+import {
+  applyGatewayTxValidity,
+  capGatewayRequiredUpperBoundMs,
+  isLocalCardanoDevnet,
+} from './helper/tx-validity';
 
 @Injectable()
 export class PacketService {
@@ -359,7 +364,8 @@ export class PacketService {
           validToTime = Number(maxValidToMs);
         }
       }
-      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
+      const enforcedValidToTime = capGatewayRequiredUpperBoundMs(this.configService, validToTime, nowMs);
+      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(enforcedValidToTime));
       const currentSlot = this.lucidService.lucid.currentSlot();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('recv packet failed: tx time invalid');
@@ -367,7 +373,7 @@ export class PacketService {
 
       if (
         recvPacketOperator.timeoutTimestamp > 0 &&
-        BigInt(validToTime) * 10n ** 6n >= recvPacketOperator.timeoutTimestamp
+        BigInt(enforcedValidToTime) * 10n ** 6n >= recvPacketOperator.timeoutTimestamp
       ) {
         throw new GrpcInternalException('recv packet failed: tx_valid_to * 1_000_000 >= packet.timeout_timestamp');
       }
@@ -375,7 +381,11 @@ export class PacketService {
         operationName: 'recvPacket',
         unsignedTx: unsignedRecvPacketTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validToMs: enforcedValidToTime,
+              requireUpperBound: true,
+            }),
         },
         wallet: {
           mode: 'custom_before_complete',
@@ -418,17 +428,22 @@ export class PacketService {
       const { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate, walletOverride } =
         await this.buildUnsignedSendPacketTx(sendPacketOperator);
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
-      const currentSlot = this.lucidService.lucid.currentSlot();
-      if (currentSlot > validToSlot) {
-        throw new GrpcInternalException('channel init failed: tx time invalid');
+      if (!isLocalCardanoDevnet(this.configService)) {
+        const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
+        const currentSlot = this.lucidService.lucid.currentSlot();
+        if (currentSlot > validToSlot) {
+          throw new GrpcInternalException('channel init failed: tx time invalid');
+        }
       }
 
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'sendPacket',
         unsignedTx: unsignedSendPacketTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validToMs: validToTime,
+            }),
         },
         wallet: {
           mode: 'custom_before_complete',
@@ -492,12 +507,21 @@ export class PacketService {
         timeoutPacketOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const nowMs = Date.now();
+      const validToTime = capGatewayRequiredUpperBoundMs(
+        this.configService,
+        nowMs + TRANSACTION_TIME_TO_LIVE,
+        nowMs,
+      );
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'timeoutPacket',
         unsignedTx: unsignedSendPacketTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validToMs: validToTime,
+              requireUpperBound: true,
+            }),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -559,18 +583,22 @@ export class PacketService {
         constructedAddress,
       );
       const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
+      if (!isLocalCardanoDevnet(this.configService)) {
+        const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
+        const currentSlot = this.lucidService.lucid.currentSlot();
 
-      const currentSlot = this.lucidService.lucid.currentSlot();
-
-      if (currentSlot > validToSlot) {
-        throw new GrpcInternalException('recv packet failed: tx time invalid');
+        if (currentSlot > validToSlot) {
+          throw new GrpcInternalException('recv packet failed: tx time invalid');
+        }
       }
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'timeoutRefresh',
         unsignedTx: unsignedTimeoutRefreshTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validToMs: validToTime,
+            }),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -622,12 +650,21 @@ export class PacketService {
         ackPacketOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const nowMs = Date.now();
+      const validToTime = capGatewayRequiredUpperBoundMs(
+        this.configService,
+        nowMs + TRANSACTION_TIME_TO_LIVE,
+        nowMs,
+      );
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'acknowledgementPacket',
         unsignedTx: unsignedAckPacketTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) =>
+            applyGatewayTxValidity(builder, this.configService, {
+              validToMs: validToTime,
+              requireUpperBound: true,
+            }),
         },
         wallet: {
           mode: 'custom_before_complete',
