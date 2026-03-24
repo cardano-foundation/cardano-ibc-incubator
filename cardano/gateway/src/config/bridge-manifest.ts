@@ -37,6 +37,9 @@ type DeploymentModule = {
   address: string;
 };
 
+// The rest of the Gateway still consumes the historic camelCase deployment shape
+// loaded from handler.json. We keep that internal model intact and translate it
+// to/from the public manifest shape at the config boundary.
 export type DeploymentConfig = {
   hostStateNFT: AuthToken;
   handlerAuthToken: AuthToken;
@@ -99,6 +102,9 @@ type BridgeManifestModule = {
   address: string;
 };
 
+// The manifest is the public, deployment-stable bootstrap document we expose to
+// external operators. It intentionally uses snake_case and only includes the
+// on-chain facts another Gateway/relayer stack needs to reconnect to this bridge.
 export type BridgeManifest = {
   schema_version: number;
   deployment_id: string;
@@ -136,7 +142,7 @@ export type LoadedBridgeConfig = {
   bridgeManifest: BridgeManifest;
 };
 
-export const DEFAULT_LEGACY_HANDLER_PATH = '../deployment/offchain/handler.json';
+export const DEFAULT_HANDLER_JSON_PATH = '../deployment/offchain/handler.json';
 
 export function deriveCardanoNetwork(networkMagic: number): string {
   if (networkMagic === 1) {
@@ -161,6 +167,8 @@ function assert(condition: unknown, message: string): asserts condition {
   }
 }
 
+// These helpers make startup failures point to the exact bad field in the
+// manifest/handler file instead of surfacing as later undefined-access errors.
 function requireObject(value: unknown, path: string): Record<string, unknown> {
   assert(value && typeof value === 'object', `Invalid bridge config: "${path}" must be an object`);
   return value as Record<string, unknown>;
@@ -448,13 +456,16 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
   };
 }
 
-export function normalizeLegacyDeploymentConfig(
+export function normalizeHandlerJsonDeploymentConfig(
   deployment: unknown,
   cardano: BridgeManifestCardanoIdentity,
 ): LoadedBridgeConfig {
   const normalizedDeployment = requireSttDeploymentConfig(deployment);
   const normalizedCardano = requireCardanoIdentity(cardano);
 
+  // handler.json is the current internal deploy output today. We normalize
+  // it once here so both startup sources feed the same public manifest and the
+  // same internal deployment object into the rest of the Gateway.
   return {
     deployment: normalizedDeployment,
     bridgeManifest: {
@@ -490,6 +501,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
   const validators = requireObject(manifestAny.validators, 'validators');
   const modules = requireObject(manifestAny.modules, 'modules');
 
+  // Manifest startup is the inverse path: validate the public document, then
+  // rebuild the internal deployment shape so downstream Gateway code stays
+  // unaware of whether startup came from handler.json or a manifest file.
   const bridgeManifest: BridgeManifest = {
     schema_version: requireNonNegativeInteger(manifestAny.schema_version, 'schema_version'),
     deployment_id: requireNonEmptyString(manifestAny.deployment_id, 'deployment_id'),
@@ -560,6 +574,8 @@ export function loadBridgeConfigFromEnv(
   const bridgeManifestPath = env.BRIDGE_MANIFEST_PATH;
   const explicitHandlerPath = env.HANDLER_JSON_PATH;
 
+  // Startup must have a single source of truth. If both are set, we stop early
+  // instead of guessing which deployment description should win.
   if (bridgeManifestPath && explicitHandlerPath) {
     throw new Error(
       'BRIDGE_MANIFEST_PATH and HANDLER_JSON_PATH are mutually exclusive; set only one startup source',
@@ -578,6 +594,8 @@ export function loadBridgeConfigFromEnv(
     return normalizeBridgeManifestConfig(manifestJson);
   }
 
-  const handlerJson = JSON.parse(fs.readFileSync(explicitHandlerPath || DEFAULT_LEGACY_HANDLER_PATH, 'utf8'));
-  return normalizeLegacyDeploymentConfig(handlerJson, cardano);
+  // handler.json remains the default so existing local/devnet flows keep
+  // working until manifest-based startup becomes the universal operator path.
+  const handlerJson = JSON.parse(fs.readFileSync(explicitHandlerPath || DEFAULT_HANDLER_JSON_PATH, 'utf8'));
+  return normalizeHandlerJsonDeploymentConfig(handlerJson, cardano);
 }

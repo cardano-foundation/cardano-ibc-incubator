@@ -5,17 +5,22 @@ services:
     user: "${UID:-1000}:${GID:-1000}"
     volumes:
       - ./${CARDANO_RUNTIME_DIR:-devnet}:/runtime
-      - ./run-cardano-node.sh:/run-cardano-node.sh:ro
     environment:
       - CARDANO_BLOCK_PRODUCER=${CARDANO_BLOCK_PRODUCER:-true}
-      - CARDANO_RUNTIME_CONFIG_FILE=${CARDANO_NODE_CONFIG_FILE:-cardano-node.json}
-      - CARDANO_RUNTIME_TOPOLOGY_FILE=${CARDANO_TOPOLOGY_FILE:-topology.json}
+      - CARDANO_CONFIG=/runtime/${CARDANO_NODE_CONFIG_FILE:-cardano-node.json}
+      - CARDANO_DATABASE_PATH=/runtime/db
+      - CARDANO_BIND_ADDR=0.0.0.0
+      - CARDANO_PORT=3001
+      - CARDANO_TOPOLOGY=/runtime/${CARDANO_TOPOLOGY_FILE:-topology.json}
       - CARDANO_SOCKET_PATH=/runtime/node.socket # used by cardano-node
       - CARDANO_NODE_SOCKET_PATH=/runtime/node.socket # used by cardano-cli
+      - CARDANO_SHELLEY_KES_KEY=/runtime/kes.skey
+      - CARDANO_SHELLEY_VRF_KEY=/runtime/vrf.skey
+      - CARDANO_SHELLEY_OPERATIONAL_CERTIFICATE=/runtime/opcert.cert
       - RESTORE_SNAPSHOT=false
     ports:
       - 3001:3001
-    entrypoint: ["/bin/sh", "/run-cardano-node.sh"]
+    command: ["run"]
 
   cardano-node-ogmios:
     image: cardanosolutions/ogmios:v6.10.0

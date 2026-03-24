@@ -33,16 +33,16 @@ Examples:
 caribic start
 caribic start --clean --with-mithril
 caribic start bridge
-caribic start entrypoint --clean
-caribic start --chain osmosis
-caribic start --chain injective --network local
-caribic start --chain injective --network testnet
+caribic start cosmos --clean
+caribic start osmosis
+caribic start injective --network local
+caribic start injective --network testnet
 ```
 
 Injective startup note:
-- `caribic start --chain injective --network local` starts a local single-node Injective devnet.
-- `caribic start --chain injective --network testnet` starts a local `injectived` process bootstrapped from a public Injective testnet snapshot.
-- `caribic start --chain injective --network mainnet` is intentionally not implemented yet.
+- `caribic start injective --network local` starts a local single-node Injective devnet.
+- `caribic start injective --network testnet` starts a local `injectived` process bootstrapped from a public Injective testnet snapshot.
+- `caribic start injective --network mainnet` is intentionally not implemented yet.
 - If `injectived` is missing, caribic prompts to install it from source (`InjectiveFoundation/injective-core`) and runs `make install`.
 
 Cosmos startup note:
@@ -54,28 +54,20 @@ Hermes config note:
 - If you change Hermes config manually, restart Hermes (`caribic stop relayer` then `caribic start relayer`).
 - `caribic` writes Hermes config during setup and, for `caribic demo token-swap`, augments it with the `localosmosis` chain block before Hermes is used for channel creation.
 
-Cardano runtime note:
-- `--network local` uses a managed local Cardano devnet.
-- that local devnet now uses `Yaci Store` for historical Cardano bridge reads.
-- `--network preprod` uses external Cardano services/APIs; `caribic` does not start a local Cardano node for it.
-- Mainnet should follow the same external-services model when supported.
-
 ### `caribic stop [target]`
 
 Stops services. With no target, it behaves like `all`.
 
-- **Targets**: `all`, `network`, `bridge`, `entrypoint`, `demo`, `gateway`, `relayer`, `mithril`
+- **Targets**: `all`, `network`, `bridge`, `cosmos`, `osmosis`, `injective`, `demo`, `gateway`, `relayer`, `mithril`
 
 Examples:
 
 ```bash
 caribic stop
 caribic stop bridge
-caribic stop demo
-caribic stop entrypoint
-caribic stop --chain osmosis
-caribic stop --chain injective --network local
-caribic stop --chain injective --network testnet
+caribic stop osmosis
+caribic stop injective --network local
+caribic stop injective --network testnet
 ```
 
 ### `caribic health-check [--service <name>]`
@@ -118,7 +110,7 @@ caribic create-channel --a-chain cardano-devnet --b-chain entrypoint --a-port tr
 ### `caribic demo <message-exchange|token-swap>`
 
 Starts a demo setup step on top of already running services.
-`caribic demo token-swap` expects `caribic start --with-mithril` and `caribic start --chain osmosis` to have already been run. It then validates required services, prepares Hermes channels, deploys the cross-chain swap contracts, and executes the swap flow end-to-end.
+`caribic demo token-swap` expects `caribic start --with-mithril` and `caribic start osmosis` to have already been run. It then validates required services, prepares Hermes channels, deploys the cross-chain swap contracts, and executes the swap flow end-to-end.
 `caribic demo message-exchange` now runs directly against the native `cosmos/entrypoint` chain and uses the built-in datasource at `cosmos/entrypoint/datasource` (no separate demo chain bootstrap required).
 
 Both demo flows wait for Mithril stake distributions + cardano-transactions artifacts before IBC setup.  

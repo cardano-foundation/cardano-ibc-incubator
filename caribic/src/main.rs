@@ -33,14 +33,6 @@ enum DemoChain {
     Injective,
 }
 
-#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-enum BridgeMode {
-    /// Deploy a new Cardano bridge instance before starting Gateway and relayer
-    Deploy,
-    /// Join an already deployed Cardano bridge instance using existing deployment artifacts
-    Join,
-}
-
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StartTarget {
     /// Starts everything (network + packet-forwarding chain + bridge)
@@ -51,6 +43,12 @@ enum StartTarget {
     Bridge,
     /// Starts the Entrypoint chain (packet-forwarding chain)
     Entrypoint,
+    /// Starts the Osmosis optional chain (network selected via --network)
+    Osmosis,
+    /// Starts the cheqd optional chain (network selected via --network)
+    Cheqd,
+    /// Starts the Injective optional chain (network selected via --network)
+    Injective,
     /// Starts only the Gateway service
     Gateway,
     /// Starts only the Hermes relayer
@@ -69,6 +67,12 @@ enum StopTarget {
     Bridge,
     /// Stops the Entrypoint chain
     Entrypoint,
+    /// Stops the Osmosis optional chain (network selected via --network)
+    Osmosis,
+    /// Stops the cheqd optional chain (network selected via --network)
+    Cheqd,
+    /// Stops the Injective optional chain (network selected via --network)
+    Injective,
     /// Stops the demo services
     Demo,
     /// Stops only the Gateway service
@@ -100,7 +104,7 @@ enum Commands {
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, entrypoint, gateway, relayer, mithril
+    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, entrypoint, osmosis, cheqd, injective, gateway, relayer, mithril
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
@@ -110,35 +114,31 @@ enum Commands {
         /// Start Mithril services for light client testing (adds 5-10 minute startup time)
         #[arg(long, default_value_t = false)]
         with_mithril: bool,
-        /// Optional chain adapter id (for example: osmosis, cheqd, injective)
-        #[arg(long)]
-        chain: Option<String>,
-        /// Optional Cardano network profile. Without --chain, selects the core Cardano mode (local managed devnet or external preprod).
+        /// Optional network profile for optional chain targets or the managed Cardano runtime (local, preprod)
         #[arg(long)]
         network: Option<String>,
-        /// Bridge startup mode. Defaults to deploy for local and join for preprod.
-        #[arg(long, value_enum)]
-        bridge_mode: Option<BridgeMode>,
-        /// Chain-specific KEY=VALUE flag (repeatable), only when --chain is set
+        /// Chain-specific KEY=VALUE flag (repeatable), only for optional chain targets
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
     },
-    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, entrypoint, demo, gateway, relayer, mithril
+    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, entrypoint, osmosis, cheqd, injective, demo, gateway, relayer, mithril
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
-        /// Optional chain adapter id (for example: osmosis, cheqd, injective)
-        #[arg(long)]
-        chain: Option<String>,
-        /// Optional Cardano network profile. Without --chain, selects the core Cardano mode (local managed devnet or external preprod).
+        /// Optional network profile for optional chain targets or the managed Cardano runtime (local, preprod)
         #[arg(long)]
         network: Option<String>,
-        /// Chain-specific KEY=VALUE flag (repeatable), only when --chain is set
+        /// Chain-specific KEY=VALUE flag (repeatable), only for optional chain targets
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
     },
     /// List supported chains and their available network profiles
     Chains,
+    /// Manage optional chains using chain adapters
+    Chain {
+        #[command(subcommand)]
+        command: ChainCommand,
+    },
     /// Manage Hermes keyring (add, list, delete keys)
     Keys {
         #[command(subcommand)]
@@ -158,14 +158,14 @@ enum Commands {
         #[arg(long = "chain", alias = "host-chain")]
         chain: String,
     },
-    /// Create an IBC client on the host chain that tracks the reference chain
+    /// Create an IBC client on chain A that tracks chain B
     CreateClient {
         /// Chain identifier where the client will be created
-        #[arg(long = "host-chain")]
-        host_chain: String,
+        #[arg(long = "a-chain", alias = "host-chain")]
+        a_chain: String,
         /// Chain identifier that the new client will track
-        #[arg(long = "reference-chain")]
-        reference_chain: String,
+        #[arg(long = "b-chain", alias = "reference-chain")]
+        b_chain: String,
     },
     /// Create IBC connection between two chains
     CreateConnection {
@@ -249,6 +249,43 @@ enum KeysCommand {
     },
 }
 
+#[derive(Subcommand)]
+enum ChainCommand {
+    /// Start an optional chain adapter
+    Start {
+        /// Chain identifier (for example: osmosis, cheqd, injective)
+        chain: String,
+        /// Optional network profile (for example: local, testnet)
+        #[arg(long)]
+        network: Option<String>,
+        /// Chain-specific KEY=VALUE flag (repeatable)
+        #[arg(long = "chain-flag")]
+        chain_flag: Vec<String>,
+    },
+    /// Stop an optional chain adapter
+    Stop {
+        /// Chain identifier (for example: osmosis, cheqd, injective)
+        chain: String,
+        /// Optional network profile (for example: local, testnet)
+        #[arg(long)]
+        network: Option<String>,
+        /// Chain-specific KEY=VALUE flag (repeatable)
+        #[arg(long = "chain-flag")]
+        chain_flag: Vec<String>,
+    },
+    /// Check health for an optional chain adapter
+    Health {
+        /// Chain identifier (for example: osmosis, cheqd, injective)
+        chain: String,
+        /// Optional network profile (for example: local, testnet)
+        #[arg(long)]
+        network: Option<String>,
+        /// Chain-specific KEY=VALUE flag (repeatable)
+        #[arg(long = "chain-flag")]
+        chain_flag: Vec<String>,
+    },
+}
+
 #[tokio::main]
 async fn main() {
     // Parse CLI arguments first so log/config setup can follow user-selected options.
@@ -278,6 +315,7 @@ async fn main() {
         Commands::Check => commands::run_check().await,
         Commands::Install => commands::run_install(project_root_path),
         Commands::Chains => commands::run_chains(),
+        Commands::Chain { command } => commands::run_chain(project_root_path, command).await,
         Commands::Demo {
             use_case,
             chain,
@@ -285,40 +323,25 @@ async fn main() {
         } => commands::run_demo(use_case, chain, network, project_root_path).await,
         Commands::Stop {
             target,
-            chain,
             network,
             chain_flag,
-        } => commands::run_stop(target, chain, network, chain_flag),
+        } => commands::run_stop(target, network, chain_flag),
         Commands::Start {
             target,
             clean,
             with_mithril,
-            chain,
             network,
-            bridge_mode,
             chain_flag,
-        } => {
-            commands::run_start(
-                target,
-                clean,
-                with_mithril,
-                chain,
-                network,
-                bridge_mode,
-                chain_flag,
-            )
-            .await
-        }
+        } => commands::run_start(target, clean, with_mithril, network, chain_flag).await,
         Commands::Keys { command } => commands::run_keys(project_root_path, command),
         Commands::HealthCheck { service } => {
             commands::run_health_check(project_root_path, service.as_deref())
         }
         Commands::Audit => commands::run_audit(project_root_path),
         Commands::ListClients { chain } => commands::run_list_clients(&chain),
-        Commands::CreateClient {
-            host_chain,
-            reference_chain,
-        } => commands::run_create_client(project_root_path, &host_chain, &reference_chain),
+        Commands::CreateClient { a_chain, b_chain } => {
+            commands::run_create_client(project_root_path, &a_chain, &b_chain)
+        }
         Commands::CreateConnection { a_chain, b_chain } => {
             commands::run_create_connection(project_root_path, &a_chain, &b_chain)
         }

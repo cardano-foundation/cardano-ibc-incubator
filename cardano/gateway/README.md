@@ -70,6 +70,39 @@ Related diagrams:
 - Denom trace lifecycle: `../../docs/denom-trace-mapping.md`
 - Mithril proof flow: `../../docs/mithril-light-client.md#mithril-proof-flow-for-relaying`
 
+## Bridge Discovery Manifest
+
+The Gateway can expose a public bridge manifest at `GET /api/bridge-manifest` and the Cardano gRPC `Query/BridgeManifest` method. That manifest is the operator-facing bootstrap document for reconnecting another Gateway/relayer stack to the same deployed Cardano bridge, including script hashes, reference UTxOs, modules, and auth tokens. At startup, the Gateway accepts either `HANDLER_JSON_PATH` or `BRIDGE_MANIFEST_PATH` and normalizes both sources into the same internal deployment config. If you already have a `handler.json`, you can export the equivalent public manifest with `npm run export:bridge-manifest -- <handler-json-path> <output-path>`.
+
+## Historical Backend
+
+The Gateway's historical Cardano reads now go through the Yaci-backed bridge history service.
+
+`HISTORY_DB_*` is the Gateway's database config surface for the historical backend.
+
+## Cardano Data Plane
+
+The Gateway now uses two Cardano data planes with different responsibilities:
+
+- Live data plane: `Ogmios + Kupo + Mithril`
+- Historical data plane: `Yaci Store + bridge-specific projection`
+
+The Yaci-backed projection is the Gateway's authoritative history backend. It stores the bridge-specific evidence the Gateway needs instead of querying a generic historical Cardano schema directly.
+
+Current bridge history tables include:
+
+- `bridge_tx_history`: light tx summary by block/slot
+- `bridge_tx_evidence`: tx CBOR, tx body CBOR, decoded redeemers, HostState evidence
+- `bridge_utxo_history`: historical bridge-relevant UTxOs by asset and block
+- `bridge_spo_event_history`: historical SPO register/unregister markers
+
+So the runtime split is:
+
+- use `Ogmios` for live chain progression and exact inclusion tracking
+- use `Kupo` for current live UTxO state
+- use `Mithril` for certified Cardano state roots / heights
+- use `Yaci` for historical bridge state and tx evidence
+
 ## Installation
 
 ```bash

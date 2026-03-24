@@ -339,6 +339,7 @@ export class PacketService {
     try {
       this.logger.log('RecvPacket data: ', data);
       const { constructedAddress, recvPacketOperator } = validateAndFormatRecvPacketParams(data);
+      await this.refreshWalletContext(constructedAddress, 'recvPacketBuilder');
       // Build and complete the unsigned transaction
       const { unsignedTx: unsignedRecvPacketTx, pendingTreeUpdate } = await this.buildUnsignedRecvPacketTx(
         recvPacketOperator,
@@ -412,6 +413,7 @@ export class PacketService {
     try {
       this.logger.log('Transfer is processing');
       const sendPacketOperator = validateAndFormatSendPacketParams(data);
+      await this.refreshWalletContext(sendPacketOperator.sender, 'sendPacketBuilder');
 
       const { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate, walletOverride } =
         await this.buildUnsignedSendPacketTx(sendPacketOperator);
@@ -485,6 +487,7 @@ export class PacketService {
     try {
       this.logger.log('timeoutPacket is processing');
       const { constructedAddress, timeoutPacketOperator } = validateAndFormatTimeoutPacketParams(data);
+      await this.refreshWalletContext(constructedAddress, 'timeoutPacketBuilder');
       const { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate } = await this.buildUnsignedTimeoutPacketTx(
         timeoutPacketOperator,
         constructedAddress,
@@ -549,6 +552,7 @@ export class PacketService {
         channelId: data.channel_id,
       };
 
+      await this.refreshWalletContext(constructedAddress, 'timeoutRefreshBuilder');
       // Build and complete the unsigned transaction
       const unsignedTimeoutRefreshTx: TxBuilder = await this.buildUnsignedTimeoutRefreshTx(
         timeoutRefreshOperator,
@@ -608,6 +612,7 @@ export class PacketService {
       this.logger.log('AcknowledgementPacket ackPacketOperator.packetSequence: ', ackPacketOperator.packetSequence);
       this.logger.log('AcknowledgementPacket ackPacketOperator: ', ackPacketOperator);
 
+      await this.refreshWalletContext(constructedAddress, 'acknowledgementPacketBuilder');
       // Build and complete the unsigned transaction
       const {
         unsignedTx: unsignedAckPacketTx,

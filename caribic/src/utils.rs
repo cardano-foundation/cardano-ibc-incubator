@@ -41,6 +41,13 @@ pub fn print_header() {
 }
 
 pub fn prompt_runtime_deployer_sk() -> Result<String, Box<dyn Error>> {
+    if let Ok(value) = std::env::var("DEPLOYER_SK") {
+        let trimmed = value.trim().to_string();
+        if !trimmed.is_empty() {
+            return Ok(trimmed);
+        }
+    }
+
     if io::stdin().is_terminal() && io::stderr().is_terminal() {
         let value = rpassword::prompt_password("Enter DEPLOYER_SK: ")?;
         let trimmed = value.trim().to_string();
@@ -50,14 +57,10 @@ pub fn prompt_runtime_deployer_sk() -> Result<String, Box<dyn Error>> {
         return Ok(trimmed);
     }
 
-    std::env::var("DEPLOYER_SK")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            "Interactive DEPLOYER_SK prompt is unavailable because stdin is not a terminal. Set DEPLOYER_SK in the environment for non-interactive runs."
-                .into()
-        })
+    Err(
+        "DEPLOYER_SK is required for this operation. Set DEPLOYER_SK in the environment for non-interactive runs."
+            .into(),
+    )
 }
 
 pub struct IndicatorMessage {
@@ -189,7 +192,7 @@ pub fn replace_text_in_file(path: &Path, pattern: &str, replacement: &str) -> io
 
 pub fn change_dir_permissions_read_only(
     dir: &Path,
-    exclude_files: &Vec<&str>,
+    exclude_files: &[&str],
 ) -> std::io::Result<()> {
     if dir.is_dir() {
         for entry in fs::read_dir(dir)? {
@@ -197,7 +200,7 @@ pub fn change_dir_permissions_read_only(
             let path = entry.path();
 
             if path.is_dir() {
-                change_dir_permissions_read_only(&path, &exclude_files)?;
+                change_dir_permissions_read_only(&path, exclude_files)?;
             } else if path.is_file()
                 && !exclude_files.contains(&path.file_name().unwrap().to_str().unwrap())
             {

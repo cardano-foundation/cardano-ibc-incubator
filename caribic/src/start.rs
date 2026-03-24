@@ -27,7 +27,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::u64;
 
 const ENTRYPOINT_CONTAINER_NAME: &str = "entrypoint-node-prod";
 const HERMES_PROGRESS_LOG_INTERVAL_SECS: u64 = 30;
@@ -229,7 +228,7 @@ pub fn start_relayer(
         .map_err(|e| format!("Failed to write entrypoint chain mnemonic: {}", e))?;
 
     let entrypoint_key_output = Command::new(&hermes_binary)
-        .args(&[
+        .args([
             "keys",
             "add",
             "--chain",
@@ -302,7 +301,7 @@ pub fn start_relayer(
         .map_err(|e| format!("Failed to write cardano key: {}", e))?;
 
     let cardano_key_output = Command::new(&hermes_binary)
-        .args(&[
+        .args([
             "keys",
             "add",
             "--chain",
@@ -446,14 +445,6 @@ pub async fn start_local_cardano_network(
     with_mithril: bool,
     network: config::CoreCardanoNetwork,
 ) -> Result<Option<tokio::task::JoinHandle<Result<(), String>>>, Box<dyn std::error::Error>> {
-    if !network.uses_managed_runtime() {
-        return Err(format!(
-            "Cardano network '{}' uses external infrastructure in this mode, so there is no managed local Cardano runtime to start.",
-            network.as_str()
-        )
-        .into());
-    }
-
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -466,9 +457,9 @@ pub async fn start_local_cardano_network(
                 .unwrap()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
-        progress_bar.set_prefix("Creating local Cardano network ...".to_owned());
+        progress_bar.set_prefix("Creating Cardano runtime ...".to_owned());
     } else {
-        log("Creating local Cardano network ...");
+        log("Creating Cardano runtime ...");
     }
 
     let cardano_dir = project_root_path.join("chains/cardano");
@@ -523,9 +514,13 @@ pub async fn start_local_cardano_network(
     );
 
     if matches!(network, config::CoreCardanoNetwork::Local) {
-        let ogmios_connected =
-            wait_for_health_check("http://localhost:1337", 20, 5000, None::<fn(&String) -> bool>)
-                .await;
+        let ogmios_connected = wait_for_health_check(
+            "http://localhost:1337",
+            20,
+            5000,
+            None::<fn(&String) -> bool>,
+        )
+        .await;
 
         if ogmios_connected.is_ok() {
             verbose("Cardano services started successfully");
@@ -548,7 +543,11 @@ pub async fn start_local_cardano_network(
         verbose("Cardano preprod relay and history services started successfully");
     }
 
-    if config::get_config().cardano.services.history_backend_enabled() {
+    if config::get_config()
+        .cardano
+        .services
+        .history_backend_enabled()
+    {
         let yaci_ready = wait_for_health_check(
             "http://localhost:8081/actuator/health",
             20,
@@ -722,7 +721,11 @@ pub async fn start_local_cardano_network(
         );
     }
 
-    if config::get_config().cardano.services.history_backend_enabled() {
+    if config::get_config()
+        .cardano
+        .services
+        .history_backend_enabled()
+    {
         prepare_db_sync_and_gateway(cardano_dir.as_path(), clean, network)?;
     }
 
@@ -775,45 +778,43 @@ pub async fn deploy_contracts(
             ),
             &optional_progress_bar,
         );
-    } else {
-        if !project_root_path
-            .join("cardano")
-            .join("plutus.json")
-            .as_path()
-            .exists()
-            || clean
-            || is_verbose
-        {
-            log_or_show_progress(
-                &format!(
-                    "{} Building Aiken validators",
-                    style("Step 1/2").bold().dim()
-                ),
-                &optional_progress_bar,
-            );
+    } else if !project_root_path
+        .join("cardano")
+        .join("plutus.json")
+        .as_path()
+        .exists()
+        || clean
+        || is_verbose
+    {
+        log_or_show_progress(
+            &format!(
+                "{} Building Aiken validators",
+                style("Step 1/2").bold().dim()
+            ),
+            &optional_progress_bar,
+        );
 
-            let build_args = if is_verbose {
-                vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
-            } else {
-                vec!["build"]
-            };
-
-            execute_script(
-                project_root_path.join("cardano").join("onchain").as_path(),
-                "aiken",
-                build_args,
-                None,
-            )?;
-            validators_rebuild = true;
+        let build_args = if is_verbose {
+            vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
         } else {
-            log_or_show_progress(
-                &format!(
-                    "{} Aiken validators already built",
-                    style("Step 1/2").bold().dim()
-                ),
-                &optional_progress_bar,
-            );
-        }
+            vec!["build"]
+        };
+
+        execute_script(
+            project_root_path.join("cardano").join("onchain").as_path(),
+            "aiken",
+            build_args,
+            None,
+        )?;
+        validators_rebuild = true;
+    } else {
+        log_or_show_progress(
+            &format!(
+                "{} Aiken validators already built",
+                style("Step 1/2").bold().dim()
+            ),
+            &optional_progress_bar,
+        );
     }
 
     if validators_rebuild {
@@ -1165,6 +1166,8 @@ pub async fn deploy_preprod_bridge(
     let (ogmios_url, kupo_url) =
         crate::setup::resolve_external_cardano_deploy_endpoints(cardano_dir.as_path())?;
 
+    // Preprod deployment targets live Cardano infra; the local managed runtime
+    // only supports history/indexing and gateway bootstrap around that network.
     wait_for_ogmios_protocol_parameters(ogmios_url.as_str(), &optional_progress_bar).await?;
 
     fs::create_dir_all(&deployment_dir).map_err(|error| {
@@ -1193,6 +1196,8 @@ pub async fn deploy_preprod_bridge(
         })?;
     }
 
+    // The offchain deploy still emits the generic handler.json used by local mode.
+    // Keep that behavior intact, then copy out a preprod-specific artifact beside it.
     let handler_backup = backup_handler_json(generic_handler_path.as_path())?;
 
     log_or_show_progress(
@@ -1595,16 +1600,12 @@ async fn start_mithril_with_progress(
         fs::remove_dir_all(&mithril_data_dir).map_err(|error| {
             format!(
                 "Failed to remove existing mithril data directory: {}",
-                error.to_string()
+                error
             )
         })?;
     }
-    fs::create_dir_all(&mithril_data_dir).map_err(|error| {
-        format!(
-            "Failed to create mithril data directory: {}",
-            error.to_string()
-        )
-    })?;
+    fs::create_dir_all(&mithril_data_dir)
+        .map_err(|error| format!("Failed to create mithril data directory: {}", error))?;
 
     if !mithril_project_dir.exists() {
         download_mithril(&mithril_project_dir)
@@ -1636,7 +1637,7 @@ async fn start_mithril_with_progress(
             "{} Configuring Mithril services",
             style("Step 1/2").bold().dim()
         ),
-        &optional_progress_bar,
+        optional_progress_bar,
     );
     let docker_env = get_docker_env_vars();
     let mut mithril_env = vec![
@@ -1685,7 +1686,7 @@ async fn start_mithril_with_progress(
             "{} Starting Mithril services",
             style("Step 2/2").bold().dim()
         ),
-        &optional_progress_bar,
+        optional_progress_bar,
     );
     execute_script(
         &mithril_script_dir,
@@ -2185,10 +2186,7 @@ fn wait_for_mithril_artifact_readiness(
     ))
 }
 
-pub fn start_gateway(
-    gateway_dir: &Path,
-    clean: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
     const SHARED_CARDANO_NETWORK: &str = "cardano_ibc_net";
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
@@ -2208,7 +2206,7 @@ pub fn start_gateway(
     }
 
     let network_exists = Command::new("docker")
-        .args(&["network", "inspect", SHARED_CARDANO_NETWORK])
+        .args(["network", "inspect", SHARED_CARDANO_NETWORK])
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false);
@@ -2234,13 +2232,13 @@ pub fn start_gateway(
     );
     if clean {
         execute_script(
-            &gateway_dir,
+            gateway_dir,
             "docker",
             Vec::from(["compose", "down", "--remove-orphans"]),
             None,
         )?;
     } else {
-        execute_script(&gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
+        execute_script(gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
     }
 
     let mut script_args = vec!["compose", "up", "-d"];
@@ -2254,7 +2252,7 @@ pub fn start_gateway(
         log_or_show_progress("Starting Gateway containers", &optional_progress_bar);
     }
 
-    execute_script(&gateway_dir, "docker", script_args, None)?;
+    execute_script(gateway_dir, "docker", script_args, None)?;
 
     // Wait for Gateway gRPC port to be accessible
     log_or_show_progress(
@@ -2287,7 +2285,7 @@ pub fn start_gateway(
     for i in 0..max_retries {
         // Check if gRPC port 5001 is accessible
         let port_check = Command::new("nc")
-            .args(&["-z", "localhost", "5001"])
+            .args(["-z", "localhost", "5001"])
             .output();
 
         if let Ok(output) = port_check {
@@ -2639,7 +2637,7 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
     // Validate config before starting
     log_or_show_progress("Validating Hermes configuration", &optional_progress_bar);
     let config_check = Command::new(&hermes_binary)
-        .args(&[
+        .args([
             "--config",
             hermes_config.to_str().ok_or("Invalid Hermes config path")?,
             "config",
@@ -3304,84 +3302,6 @@ fn run_core_health_check(
         };
     }
 
-    if !context.core_cardano_network.uses_managed_runtime() {
-        return match check_type {
-            CoreHealthCheckType::Gateway => check_container_with_optional_port(
-                "gateway-app",
-                5001,
-                "Container running, gRPC port 5001 accessible",
-                "Container running (gRPC not ready yet)",
-            ),
-            CoreHealthCheckType::CardanoNode => {
-                let url = external_gateway_env_value(context, "OGMIOS_ENDPOINT")
-                    .unwrap_or_else(|| "<unset>".to_string());
-                if url == "<unset>" {
-                    (
-                        false,
-                        "Missing OGMIOS_ENDPOINT in cardano/gateway/.env".to_string(),
-                    )
-                } else {
-                    check_external_url_port(url.as_str(), "Cardano/Ogmios")
-                }
-            }
-            CoreHealthCheckType::Postgres => {
-                let host = external_gateway_env_value(context, "HISTORY_DB_HOST")
-                    .unwrap_or_else(|| "<unset>".to_string());
-                let port = external_gateway_env_value(context, "HISTORY_DB_PORT")
-                    .unwrap_or_else(|| "<unset>".to_string());
-                if host == "<unset>" || port == "<unset>" {
-                    (
-                        false,
-                        "Missing HISTORY_DB_HOST/HISTORY_DB_PORT in cardano/gateway/.env".to_string(),
-                    )
-                } else {
-                    check_external_host_port(host.as_str(), port.as_str(), "history backend postgres")
-                }
-            }
-            CoreHealthCheckType::Yaci => {
-                let host = external_gateway_env_value(context, "HISTORY_DB_HOST")
-                    .unwrap_or_else(|| "<unset>".to_string());
-                if host == "<unset>" {
-                    (
-                        false,
-                        "Missing HISTORY_DB_HOST in cardano/gateway/.env".to_string(),
-                    )
-                } else {
-                    (
-                        true,
-                        format!("Managed externally via history backend at {}", host),
-                    )
-                }
-            }
-            CoreHealthCheckType::Kupo => external_gateway_env_value(context, "KUPO_ENDPOINT")
-                .map(|url| check_external_url_port(url.as_str(), "Kupo"))
-                .unwrap_or_else(|| {
-                    (
-                        false,
-                        "Missing KUPO_ENDPOINT in cardano/gateway/.env".to_string(),
-                    )
-                }),
-            CoreHealthCheckType::Ogmios => external_gateway_env_value(context, "OGMIOS_ENDPOINT")
-                .map(|url| check_external_url_port(url.as_str(), "Ogmios"))
-                .unwrap_or_else(|| {
-                    (
-                        false,
-                        "Missing OGMIOS_ENDPOINT in cardano/gateway/.env".to_string(),
-                    )
-                }),
-            CoreHealthCheckType::Mithril => check_mithril_service(
-                context.mithril_dir.as_path(),
-                context.core_cardano_network,
-                context.preprod_mithril_endpoint.as_str(),
-            ),
-            CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
-            CoreHealthCheckType::Cosmos => check_rpc_service(
-                config::get_config().health.cosmos_status_url.as_str(),
-                26657,
-            ),
-        };
-    }
-
     match check_type {
         CoreHealthCheckType::Gateway => check_container_with_optional_port(
             "gateway-app",
@@ -3652,7 +3572,7 @@ pub fn comprehensive_health_check(
 fn docker_running_container_name(name_filter: &str) -> Option<String> {
     let filter = format!("name={name_filter}");
     let output = Command::new("docker")
-        .args(&[
+        .args([
             "ps",
             "--filter",
             filter.as_str(),
@@ -3677,7 +3597,7 @@ fn docker_running_container_name(name_filter: &str) -> Option<String> {
 
 fn is_port_accessible(port: u16) -> bool {
     Command::new("nc")
-        .args(&["-z", "localhost", &port.to_string()])
+        .args(["-z", "localhost", &port.to_string()])
         .output()
         .ok()
         .is_some_and(|output| output.status.success())
@@ -3685,7 +3605,7 @@ fn is_port_accessible(port: u16) -> bool {
 
 fn endpoint_contains_result(url: &str) -> bool {
     Command::new("curl")
-        .args(&["-s", "--connect-timeout", "3", url])
+        .args(["-s", "--connect-timeout", "3", url])
         .output()
         .ok()
         .filter(|output| output.status.success())
@@ -3695,7 +3615,7 @@ fn endpoint_contains_result(url: &str) -> bool {
 
 fn endpoint_responds(url: &str) -> bool {
     Command::new("curl")
-        .args(&["-sfL", "--connect-timeout", "5", url])
+        .args(["-sfL", "--connect-timeout", "5", url])
         .output()
         .ok()
         .is_some_and(|output| output.status.success())
@@ -3732,7 +3652,7 @@ fn check_postgres_service() -> (bool, String) {
     };
 
     let ready = Command::new("docker")
-        .args(&[
+        .args([
             "exec",
             container_name.as_str(),
             "pg_isready",

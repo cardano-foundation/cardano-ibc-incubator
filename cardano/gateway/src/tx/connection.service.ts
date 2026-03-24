@@ -34,6 +34,7 @@ import {
   validateAndFormatConnectionOpenInitParams,
   validateAndFormatConnectionOpenTryParams,
 } from './helper/connection.validate';
+import { sumLovelaceFromUtxos } from './helper/helper';
 import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay } from '../shared/helpers/verify';
 import { connectionPath } from '../shared/helpers/connection';
@@ -71,6 +72,20 @@ export class ConnectionService {
     @Inject(LucidService) private lucidService: LucidService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
   ) {}
+
+  private async refreshWalletContext(address: string, context: string): Promise<void> {
+    const walletUtxos = await this.lucidService.tryFindUtxosAt(address, {
+      maxAttempts: 6,
+      retryDelayMs: 1000,
+    });
+    if (walletUtxos.length === 0) {
+      throw new GrpcInternalException(`${context} failed: no spendable UTxOs found for ${address}`);
+    }
+    this.lucidService.selectWalletFromAddress(address, walletUtxos);
+    this.logger.log(
+      `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(walletUtxos)}`,
+    );
+  }
 
   private toUtxoRef(utxo: UTxO | undefined): string {
     if (!utxo) return '<undefined>';
@@ -263,6 +278,7 @@ export class ConnectionService {
     try {
       this.logger.log('Connection Open Init is processing');
       const { constructedAddress, connectionOpenInitOperator } = validateAndFormatConnectionOpenInitParams(data);
+      await this.refreshWalletContext(constructedAddress, 'connectionOpenInitBuilder');
       // Build and complete the unsigned transaction
       const { unsignedTx: unsignedConnectionOpenInitTx, connectionId, pendingTreeUpdate } = await this.buildUnsignedConnectionOpenInitTx(
         connectionOpenInitOperator,
@@ -332,6 +348,7 @@ export class ConnectionService {
   async connectionOpenTry(data: MsgConnectionOpenTry): Promise<MsgConnectionOpenTryResponse> {
     try {
       const { constructedAddress, connectionOpenTryOperator } = validateAndFormatConnectionOpenTryParams(data);
+      await this.refreshWalletContext(constructedAddress, 'connectionOpenTryBuilder');
       // Build and complete the unsigned transaction
       const { unsignedTx: unsignedConnectionOpenTryTx, connectionId, pendingTreeUpdate } = await this.buildUnsignedConnectionOpenTryTx(
         connectionOpenTryOperator,
@@ -393,6 +410,7 @@ export class ConnectionService {
     this.logger.log('Connection Open Ack is processing', 'connectionOpenAck');
     try {
       const { constructedAddress, connectionOpenAckOperator } = validateAndFormatConnectionOpenAckParams(data);
+      await this.refreshWalletContext(constructedAddress, 'connectionOpenAckBuilder');
       // Build and complete the unsigned transaction
       const {
         unsignedTx: unsignedConnectionOpenAckTx,
@@ -548,6 +566,7 @@ export class ConnectionService {
     try {
       this.logger.log('Connection Open Confirm is processing');
       const { constructedAddress, connectionOpenConfirmOperator } = validateAndFormatConnectionOpenConfirmParams(data);
+      await this.refreshWalletContext(constructedAddress, 'connectionOpenConfirmBuilder');
       // Build and complete the unsigned transaction
       const {
         unsignedTx: unsignedConnectionOpenConfirmTx,

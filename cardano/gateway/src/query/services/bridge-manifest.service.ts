@@ -10,6 +10,8 @@ export class BridgeManifestService {
   constructor(private readonly configService: ConfigService) {}
 
   getBridgeManifest(): BridgeManifest {
+    // AppModule loads and validates the manifest during startup, so this getter
+    // is just the single runtime access point for REST and gRPC handlers.
     const bridgeManifest = this.configService.get<BridgeManifest>('bridgeManifest');
 
     if (!bridgeManifest) {
@@ -22,6 +24,8 @@ export class BridgeManifestService {
   getGrpcBridgeManifestResponse(): QueryBridgeManifestResponse {
     const manifest = this.getBridgeManifest();
 
+    // Protobuf uint64 fields are generated as bigint in TypeScript, so the JSON
+    // manifest needs a small shape conversion before it can be returned over gRPC.
     return {
       manifest: {
         ...manifest,

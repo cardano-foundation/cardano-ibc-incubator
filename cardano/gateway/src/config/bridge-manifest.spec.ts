@@ -1,9 +1,9 @@
 import {
-  DEFAULT_LEGACY_HANDLER_PATH,
+  DEFAULT_HANDLER_JSON_PATH,
   bridgeManifestsEqual,
   loadBridgeConfigFromEnv,
   normalizeBridgeManifestConfig,
-  normalizeLegacyDeploymentConfig,
+  normalizeHandlerJsonDeploymentConfig,
 } from './bridge-manifest';
 
 function buildValidator(name: string) {
@@ -19,7 +19,7 @@ function buildValidator(name: string) {
   };
 }
 
-function buildLegacyDeployment() {
+function buildHandlerJsonDeployment() {
   return {
     hostStateNFT: {
       policyId: 'host-policy',
@@ -72,8 +72,8 @@ function buildLegacyDeployment() {
 }
 
 describe('bridge manifest normalization', () => {
-  it('normalizes legacy handler config into public manifest and internal deployment config', () => {
-    const loaded = normalizeLegacyDeploymentConfig(buildLegacyDeployment(), {
+  it('normalizes handler.json into the public manifest and internal deployment config', () => {
+    const loaded = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -108,7 +108,7 @@ describe('bridge manifest normalization', () => {
   });
 
   it('normalizes a public manifest back into the internal deployment config', () => {
-    const legacy = normalizeLegacyDeploymentConfig(buildLegacyDeployment(), {
+    const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -139,7 +139,7 @@ describe('bridge manifest normalization', () => {
   });
 
   it('uses the manifest as the explicit alternative startup source', () => {
-    const legacy = normalizeLegacyDeploymentConfig(buildLegacyDeployment(), {
+    const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
       network: 'Custom',
@@ -159,15 +159,15 @@ describe('bridge manifest normalization', () => {
     expect(loaded.deployment).toEqual(legacy.deployment);
   });
 
-  it('falls back to the default legacy handler path when no explicit startup source is set', () => {
-    const legacyDeployment = buildLegacyDeployment();
+  it('falls back to the default handler.json path when no explicit startup source is set', () => {
+    const handlerJsonDeployment = buildHandlerJsonDeployment();
     const fs = {
-      readFileSync: jest.fn().mockReturnValue(JSON.stringify(legacyDeployment)),
+      readFileSync: jest.fn().mockReturnValue(JSON.stringify(handlerJsonDeployment)),
     };
 
     const loaded = loadBridgeConfigFromEnv({}, fs);
 
-    expect(fs.readFileSync).toHaveBeenCalledWith(DEFAULT_LEGACY_HANDLER_PATH, 'utf8');
-    expect(loaded.deployment.hostStateNFT).toEqual(legacyDeployment.hostStateNFT);
+    expect(fs.readFileSync).toHaveBeenCalledWith(DEFAULT_HANDLER_JSON_PATH, 'utf8');
+    expect(loaded.deployment.hostStateNFT).toEqual(handlerJsonDeployment.hostStateNFT);
   });
 });

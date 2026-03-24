@@ -43,10 +43,6 @@ impl CoreCardanoNetwork {
     pub fn uses_local_mithril(self) -> bool {
         matches!(self, Self::Local)
     }
-
-    pub fn uses_managed_runtime(self) -> bool {
-        matches!(self, Self::Local | Self::Preprod)
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -125,6 +121,7 @@ pub struct MessageExchangeDemo {
 pub struct Cardano {
     pub services: Services,
     pub bootstrap_addresses: Vec<BootstrapAddress>,
+    #[serde(default = "default_cardano_network_profiles")]
     pub networks: CardanoNetworkProfiles,
 }
 
@@ -164,6 +161,34 @@ pub struct Services {
 impl Services {
     pub fn history_backend_enabled(&self) -> bool {
         self.yaci || self.db_sync
+    }
+}
+
+fn default_cardano_network_profiles() -> CardanoNetworkProfiles {
+    CardanoNetworkProfiles {
+        local: CardanoNetworkProfile {
+            chain_id: "cardano-devnet".to_string(),
+            network_magic: 42,
+            mithril_aggregator_url: "http://mithril-aggregator:8080/aggregator".to_string(),
+            mithril_genesis_verification_key: "5b33322c3235332c3138362c3230312c3137372c31312c3131372c3133352c3138372c3136372c3138312c3138382c32322c35392c3230362c3130352c3233312c3135302c3231352c33302c37382c3231322c37362c31362c3235322c3138302c37322c3133342c3133372c3234372c3136312c36385d".to_string(),
+            handler_json_path: "../../cardano/offchain/deployments/handler.json".to_string(),
+            bridge_manifest_path: Some(
+                "../../cardano/offchain/deployments/bridge-manifest.json".to_string(),
+            ),
+        },
+        preprod: CardanoNetworkProfile {
+            chain_id: "cardano-preprod".to_string(),
+            network_magic: 1,
+            mithril_aggregator_url:
+                "https://aggregator.release-preprod.api.mithril.network/aggregator".to_string(),
+            mithril_genesis_verification_key:
+                "e2ea7ff3d783299ae9f12ea3c4e425ec70073c17613f1d7de4dd2ebf59c24ef4".to_string(),
+            handler_json_path: "../../cardano/offchain/deployments/preprod-handler.json"
+                .to_string(),
+            bridge_manifest_path: Some(
+                "../../cardano/offchain/deployments/preprod-bridge-manifest.json".to_string(),
+            ),
+        },
     }
 }
 
