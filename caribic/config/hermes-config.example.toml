@@ -77,8 +77,15 @@ key_store_type = 'Test'  # or 'Memory' for production
 # Account index for CIP-1852 key derivation (m/1852'/1815'/account'/2'/0')
 account = 0
 
-# Maximum time per block for this chain (in milliseconds)
+# Maximum time per block for this chain.
 max_block_time = '20000ms'
+
+# Additional timestamp tolerance used when other chains validate headers that
+# were produced from Cardano's Mithril-certified view.
+#
+# `caribic start` widens this local-only for `cardano-devnet`, because the
+# certified Cardano view can lag the live tip by minutes in the local stack.
+clock_drift = '5s'
 
 # When Hermes submits a Cardano transaction via the Gateway, the Gateway reports the
 # Cardano inclusion *block number*. For Cardano↔Cosmos IBC, the Cosmos-side light
