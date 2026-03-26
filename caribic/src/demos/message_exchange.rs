@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::{
     constants::ENTRYPOINT_CHAIN_ID,
     logger,
-    start::{self, run_hermes_command},
+    start::{self, run_hermes_command, CoreServiceId, HealthTarget},
     stop::stop_relayer,
     utils::{
         execute_script, get_cardano_tip_state, parse_tendermint_client_id,
@@ -29,6 +29,15 @@ const VESSEL_GRPC_ADDR: &str = "http://127.0.0.1:9090";
 const DEFAULT_VESSEL_IMO: &str = "9525338";
 const CARDANO_MIN_SYNC_PROGRESS_FOR_MESSAGE_EXCHANGE: f64 = 99.0;
 const CARDANO_MAX_SAFE_EPOCH_FOR_MESSAGE_EXCHANGE: u64 = 50;
+const MESSAGE_EXCHANGE_TARGETS: [HealthTarget; 7] = [
+    HealthTarget::Core(CoreServiceId::Gateway),
+    HealthTarget::Core(CoreServiceId::Cardano),
+    HealthTarget::Core(CoreServiceId::Postgres),
+    HealthTarget::Core(CoreServiceId::Kupo),
+    HealthTarget::Core(CoreServiceId::Ogmios),
+    HealthTarget::Core(CoreServiceId::Mithril),
+    HealthTarget::Core(CoreServiceId::Entrypoint),
+];
 
 #[derive(Debug, Clone)]
 struct MessageChannelPair {
@@ -135,22 +144,13 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
 }
 
 fn ensure_message_exchange_prerequisites(project_root_path: &Path) -> Result<(), String> {
-    let required_services = [
-        "gateway",
-        "cardano",
-        "postgres",
-        "kupo",
-        "ogmios",
-        "mithril",
-        "entrypoint",
-    ];
     let mut failures = Vec::new();
 
-    for service in required_services {
-        match start::check_service_health(project_root_path, service) {
+    for target in MESSAGE_EXCHANGE_TARGETS {
+        match start::check_health_target(project_root_path, target) {
             Ok((true, _)) => {}
-            Ok((false, status)) => failures.push(format!("{service}: {status}")),
-            Err(error) => failures.push(format!("{service}: {error}")),
+            Ok((false, status)) => failures.push(format!("{}: {}", target.name(), status)),
+            Err(error) => failures.push(format!("{}: {}", target.name(), error)),
         }
     }
 
