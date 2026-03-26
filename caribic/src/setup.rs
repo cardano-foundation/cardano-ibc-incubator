@@ -565,10 +565,6 @@ pub fn configure_local_cardano_devnet(
     std::fs::create_dir_all(ipc_dir)
         .map_err(|errpr| format!("Failed to create devnet/ipc directory: {}", errpr))?;
 
-    let db_dir = devnet_dir.join("db");
-    std::fs::create_dir_all(db_dir)
-        .map_err(|error| format!("Failed to create devnet/db directory: {}", error))?;
-
     write_yaci_local_genesis_files(cardano_dir, &devnet_dir)?;
 
     Ok(())
