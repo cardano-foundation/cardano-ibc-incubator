@@ -18,6 +18,8 @@ SETTLEMENT_NO_PROGRESS_MIN_CLEAR_PASSES="${SETTLEMENT_NO_PROGRESS_MIN_CLEAR_PASS
 TRANSFER_SUBMIT_TIMEOUT_SECS="${TRANSFER_SUBMIT_TIMEOUT_SECS:-300}"
 TRANSFER_SUBMIT_MAX_ATTEMPTS="${TRANSFER_SUBMIT_MAX_ATTEMPTS:-4}"
 TRANSFER_RETRY_BASE_DELAY_SECS="${TRANSFER_RETRY_BASE_DELAY_SECS:-3}"
+PFM_FORWARD_TIMEOUT="${PFM_FORWARD_TIMEOUT:-30m}"
+PFM_FORWARD_RETRIES="${PFM_FORWARD_RETRIES:-5}"
 
 check_string_empty() {
   if [ -z "$1" ]; then
@@ -25,6 +27,13 @@ check_string_empty() {
     exit 1
   fi
 }
+
+case "$PFM_FORWARD_RETRIES" in
+  ''|*[!0-9]*)
+    echo "PFM_FORWARD_RETRIES must be a non-negative integer."
+    exit 1
+    ;;
+esac
 
 extract_first_injective_address() {
   grep -Eo 'inj1[0-9a-z]{38}' | head -n 1
@@ -595,7 +604,9 @@ forward_to_injective_memo="$(
   jq -nc \
     --arg receiver "$INJECTIVE_RECEIVER" \
     --arg channel "$entrypoint_injective_channel_id" \
-    '{forward: {receiver: $receiver, port: "transfer", channel: $channel}}'
+    --arg timeout "$PFM_FORWARD_TIMEOUT" \
+    --argjson retries "$PFM_FORWARD_RETRIES" \
+    '{forward: {receiver: $receiver, port: "transfer", channel: $channel, timeout: $timeout, retries: $retries}}'
 )"
 
 echo "Submitting Cardano->Entrypoint->Injective transfer..."
@@ -621,7 +632,9 @@ forward_to_cardano_memo="$(
   jq -nc \
     --arg receiver "$CARDANO_RECEIVER" \
     --arg channel "$entrypoint_cardano_channel_id" \
-    '{forward: {receiver: $receiver, port: "transfer", channel: $channel}}'
+    --arg timeout "$PFM_FORWARD_TIMEOUT" \
+    --argjson retries "$PFM_FORWARD_RETRIES" \
+    '{forward: {receiver: $receiver, port: "transfer", channel: $channel, timeout: $timeout, retries: $retries}}'
 )"
 
 echo "Submitting Injective->Entrypoint->Cardano return leg..."

@@ -29,6 +29,8 @@ import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exceptio
 import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { HostStateDatum } from '../../shared/types/host-state-datum';
+import { HISTORY_SERVICE, HistoryService } from './history.service';
+import { resolveCertifiedProofHeightForCurrentRoot } from './proof-context';
 
 @Injectable()
 export class ConnectionService {
@@ -38,6 +40,7 @@ export class ConnectionService {
     @Inject(LucidService) private lucidService: LucidService,
     @Inject(KupoService) private kupoService: KupoService,
     @Inject(MithrilService) private mithrilService: MithrilService,
+    @Inject(HISTORY_SERVICE) private historyService: HistoryService,
   ) {}
 
   private async ensureTreeAligned(): Promise<void> {
@@ -58,12 +61,14 @@ export class ConnectionService {
 
   private async getQueryHeight(): Promise<bigint> {
     try {
-      const snapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
-      const latestSnapshot = snapshots?.[0];
-      if (latestSnapshot) {
-        const height = BigInt(latestSnapshot.block_number);
-        return height > 0n ? height : 1n;
-      }
+      const height = await resolveCertifiedProofHeightForCurrentRoot({
+        logger: this.logger,
+        lucidService: this.lucidService,
+        mithrilService: this.mithrilService,
+        historyService: this.historyService,
+        context: 'queryConnection',
+      });
+      return height > 0n ? height : 1n;
     } catch {
       // Ignore and fall through.
     }
@@ -199,12 +204,13 @@ export class ConnectionService {
         utxo.datum!,
         this.lucidService.LucidImporter,
       );
-      const latestSnapshotsForProof = await this.mithrilService.getCardanoTransactionsSetSnapshot();
-      const latestSnapshotForProof = latestSnapshotsForProof?.[0];
-      if (!latestSnapshotForProof) {
-        throw new GrpcInternalException('Mithril transaction snapshots unavailable for proof_height');
-      }
-      const proofHeight = BigInt(latestSnapshotForProof.block_number);
+      const proofHeight = await resolveCertifiedProofHeightForCurrentRoot({
+        logger: this.logger,
+        lucidService: this.lucidService,
+        mithrilService: this.mithrilService,
+        historyService: this.historyService,
+        context: 'queryConnection',
+      });
 
       await this.ensureTreeAligned();
 

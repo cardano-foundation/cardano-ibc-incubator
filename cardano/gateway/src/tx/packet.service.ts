@@ -16,7 +16,7 @@ import {
   ResponseResultType,
 } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 
-import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
+import { Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import { parseChannelSequence, parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
 import { ChannelDatum } from 'src/shared/types/channel/channel-datum';
 import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
@@ -79,6 +79,7 @@ import {
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, isTreeAligned } from '../shared/helpers/ibc-state-root';
 import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
+import { queryNetworkTipPoint } from '../shared/helpers/time';
 
 @Injectable()
 export class PacketService {
@@ -160,6 +161,28 @@ export class PacketService {
     }
 
     return order.map((k) => map.get(k)!).filter(Boolean);
+  }
+
+  private async computeTxValidityWindow(): Promise<{ currentSlot: number; validToSlot: number; validToTime: number }> {
+    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    const tip = await queryNetworkTipPoint(ogmiosEndpoint);
+    const currentSlot = tip === 'origin' ? 0 : tip.slot;
+    // Local devnet can lag far behind wallclock time, so deriving validity from `Date.now()` or
+    // Lucid's wallclock-based `currentSlot()` can push tx TTL beyond the node's forecast horizon.
+    // Anchor expiry to the live ledger tip instead.
+    const ttlSlots = Math.max(1, Math.ceil(TRANSACTION_TIME_TO_LIVE / 1000));
+    const validToSlot = currentSlot + ttlSlots;
+    const network = this.configService.get('cardanoNetwork') as Network;
+    const slotConfig = this.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[network];
+    if (!slotConfig || slotConfig.slotLength <= 0) {
+      throw new GrpcInternalException(`send packet failed: invalid slot configuration for network ${network}`);
+    }
+
+    // Lucid floors `unixTime -> slot`, so target the last millisecond of the slot window we want.
+    const validToTime =
+      slotConfig.zeroTime + (validToSlot + 1 - slotConfig.zeroSlot) * slotConfig.slotLength - 1;
+
+    return { currentSlot, validToSlot, validToTime };
   }
 
   private async refreshWalletContext(
@@ -346,22 +369,21 @@ export class PacketService {
         constructedAddress,
       );
 
-      const nowMs = Date.now();
-      let validToTime = nowMs + TRANSACTION_TIME_TO_LIVE;
+      const { currentSlot, validToSlot, validToTime: initialValidToTime } = await this.computeTxValidityWindow();
+      let validToTime = initialValidToTime;
       if (recvPacketOperator.timeoutTimestamp > 0n) {
         // On-chain requires tx_valid_to * 1_000_000 < packet.timeout_timestamp.
         // Clamp validTo under packet timeout so recv stays valid even near deadline.
         const maxValidToMs = recvPacketOperator.timeoutTimestamp / 10n ** 6n - 1n;
-        if (maxValidToMs <= BigInt(nowMs)) {
+        if (maxValidToMs <= BigInt(validToTime)) {
           throw new GrpcInternalException('recv packet failed: packet timeout too close or already expired');
         }
         if (BigInt(validToTime) > maxValidToMs) {
           validToTime = Number(maxValidToMs);
         }
       }
-      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
-      const currentSlot = this.lucidService.lucid.currentSlot();
-      if (currentSlot > validToSlot) {
+      const boundedValidToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
+      if (currentSlot > boundedValidToSlot) {
         throw new GrpcInternalException('recv packet failed: tx time invalid');
       }
 
@@ -417,9 +439,7 @@ export class PacketService {
 
       const { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate, walletOverride } =
         await this.buildUnsignedSendPacketTx(sendPacketOperator);
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
-      const currentSlot = this.lucidService.lucid.currentSlot();
+      const { currentSlot, validToSlot, validToTime } = await this.computeTxValidityWindow();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
@@ -492,7 +512,7 @@ export class PacketService {
         timeoutPacketOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const { validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'timeoutPacket',
         unsignedTx: unsignedSendPacketTx,
@@ -558,10 +578,7 @@ export class PacketService {
         timeoutRefreshOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
-
-      const currentSlot = this.lucidService.lucid.currentSlot();
+      const { currentSlot, validToSlot, validToTime } = await this.computeTxValidityWindow();
 
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('recv packet failed: tx time invalid');
@@ -622,7 +639,7 @@ export class PacketService {
         ackPacketOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const { validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'acknowledgementPacket',
         unsignedTx: unsignedAckPacketTx,
