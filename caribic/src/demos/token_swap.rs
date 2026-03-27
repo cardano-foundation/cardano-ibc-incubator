@@ -11,14 +11,16 @@ use crate::{
             configure_hermes_for_demo as configure_injective_hermes_for_demo,
             configure_hermes_for_testnet_demo as configure_injective_hermes_for_testnet_demo,
             local_chain_id as injective_local_chain_id, stop_local as stop_injective_local,
-            stop_testnet as stop_injective_testnet,
-            testnet_chain_id as injective_testnet_chain_id,
+            stop_testnet as stop_injective_testnet, testnet_chain_id as injective_testnet_chain_id,
             workspace_dir as injective_workspace_dir,
         },
         osmosis::{configure_hermes_for_demo, stop_local, workspace_dir},
     },
     config, logger,
-    start::{self, run_hermes_command},
+    start::{
+        self, run_hermes_command, CoreServiceId, HealthTarget, OptionalChainId,
+        OptionalChainNetwork,
+    },
     stop::stop_relayer,
     utils::{execute_script, parse_tendermint_client_id, parse_tendermint_connection_id},
     DemoChain,
@@ -33,6 +35,29 @@ const TOKEN_SWAP_SUPPORTED_TARGETS: [(&str, &str); 3] = [
 const INJECTIVE_TESTNET_MIN_FIRST_BLOCK_WAIT_MS: u64 = 30 * 60 * 1000;
 const INJECTIVE_TESTNET_RECOVERY_HINT: &str =
     "caribic start injective --network testnet --chain-flag stateful=false";
+fn token_swap_core_targets() -> Vec<HealthTarget> {
+    vec![
+        HealthTarget::Core(CoreServiceId::Gateway),
+        HealthTarget::Core(CoreServiceId::Cardano),
+        HealthTarget::Core(CoreServiceId::Postgres),
+        HealthTarget::Core(CoreServiceId::Kupo),
+        HealthTarget::Core(CoreServiceId::Ogmios),
+        HealthTarget::Core(CoreServiceId::Mithril),
+        HealthTarget::Core(CoreServiceId::Entrypoint),
+    ]
+}
+
+fn optional_chain_target(chain_id: &str, network: &str) -> Result<HealthTarget, String> {
+    let chain = OptionalChainId::from_adapter_id(chain_id)
+        .ok_or_else(|| format!("Unsupported optional chain '{}' in token-swap demo", chain_id))?;
+    let network = OptionalChainNetwork::from_name(network).ok_or_else(|| {
+        format!(
+            "Unsupported optional-chain network '{}' in token-swap demo",
+            network
+        )
+    })?;
+    Ok(HealthTarget::CosmosChain { chain, network })
+}
 
 fn cardano_chain_id() -> String {
     config::get_config().chains.cardano.chain_id
@@ -104,20 +129,13 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
     let osmosis_dir = workspace_dir(project_root_path);
     logger::verbose(&format!("{}", osmosis_dir.display()));
 
-    let required_services = [
-        "gateway",
-        "cardano",
-        "postgres",
-        "kupo",
-        "ogmios",
-        "mithril",
-        "entrypoint",
-        "osmosis",
-        "redis",
-    ];
-    if let Err(error) =
-        ensure_demo_services_ready(project_root_path, &required_services, "token-swap")
-    {
+    let mut required_targets = token_swap_core_targets();
+    required_targets.push(optional_chain_target("osmosis", "local")?);
+    if let Err(error) = ensure_demo_health_targets_ready(
+        project_root_path,
+        required_targets.as_slice(),
+        "token-swap",
+    ) {
         return fail_with_cleanup(osmosis_dir.as_path(), &error);
     }
 
@@ -131,7 +149,9 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
 
     let relayer_path = project_root_path.join("relayer");
     let mut restart_relayer_after_setup = false;
-    if let Ok((true, _)) = start::check_service_health(project_root_path, "hermes") {
+    if let Ok((true, _)) =
+        start::check_health_target(project_root_path, HealthTarget::Core(CoreServiceId::Hermes))
+    {
         logger::verbose(
             "Stopping Hermes daemon during token-swap setup to avoid account sequence contention",
         );
@@ -142,13 +162,13 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
     let cardano_entrypoint_channel_pair = match ensure_cardano_entrypoint_transfer_channel() {
         Ok(pair) => pair,
         Err(error) => {
-        return fail_with_cleanup(
-            osmosis_dir.as_path(),
-            &format!(
-                "ERROR: Failed to prepare Cardano↔Entrypoint transfer path: {}",
-                error
-            ),
-        )
+            return fail_with_cleanup(
+                osmosis_dir.as_path(),
+                &format!(
+                    "ERROR: Failed to prepare Cardano↔Entrypoint transfer path: {}",
+                    error
+                ),
+            )
         }
     };
 
@@ -304,17 +324,13 @@ async fn run_injective_token_swap_demo(
     let injective_dir = injective_workspace_dir(project_root_path);
     logger::verbose(&format!("{}", injective_dir.display()));
 
-    let required_services = [
-        "gateway", "cardano", "postgres", "kupo", "ogmios", "mithril", "cosmos",
-    ];
-    if let Err(error) =
-        ensure_demo_services_ready(project_root_path, &required_services, "token-swap")
-    {
-        return fail_with_injective_cleanup(injective_dir.as_path(), network, &error);
-    }
-
-    if let Err(error) = ensure_optional_chain_network_ready(project_root_path, "injective", network)
-    {
+    let mut required_targets = token_swap_core_targets();
+    required_targets.push(optional_chain_target("injective", network)?);
+    if let Err(error) = ensure_demo_health_targets_ready(
+        project_root_path,
+        required_targets.as_slice(),
+        "token-swap",
+    ) {
         return fail_with_injective_cleanup(injective_dir.as_path(), network, &error);
     }
 
@@ -328,8 +344,7 @@ async fn run_injective_token_swap_demo(
             ));
 
             if let Err(recovery_error) =
-                recover_injective_testnet_for_demo(project_root_path, injective_dir.as_path())
-                    .await
+                recover_injective_testnet_for_demo(project_root_path, injective_dir.as_path()).await
             {
                 return fail_with_injective_cleanup(
                     injective_dir.as_path(),
@@ -353,7 +368,9 @@ async fn run_injective_token_swap_demo(
 
     let relayer_path = project_root_path.join("relayer");
     let mut restart_relayer_after_setup = false;
-    if let Ok((true, _)) = start::check_service_health(project_root_path, "hermes") {
+    if let Ok((true, _)) =
+        start::check_health_target(project_root_path, HealthTarget::Core(CoreServiceId::Hermes))
+    {
         logger::verbose(
             "Stopping Hermes daemon during token-swap setup to avoid account sequence contention",
         );
@@ -364,14 +381,14 @@ async fn run_injective_token_swap_demo(
     let cardano_entrypoint_channel_pair = match ensure_cardano_entrypoint_transfer_channel() {
         Ok(pair) => pair,
         Err(error) => {
-        return fail_with_injective_cleanup(
-            injective_dir.as_path(),
-            network,
-            &format!(
-                "ERROR: Failed to prepare Cardano↔Entrypoint transfer path: {}",
-                error
-            ),
-        )
+            return fail_with_injective_cleanup(
+                injective_dir.as_path(),
+                network,
+                &format!(
+                    "ERROR: Failed to prepare Cardano↔Entrypoint transfer path: {}",
+                    error
+                ),
+            )
         }
     };
 
@@ -787,19 +804,19 @@ fn injective_testnet_log_tail(injective_dir: &Path) -> String {
     }
 }
 
-/// Ensures all services required by a demo flow are healthy before continuing.
-fn ensure_demo_services_ready(
+/// Ensures all health targets required by a demo flow are healthy before continuing.
+fn ensure_demo_health_targets_ready(
     project_root_path: &Path,
-    required_services: &[&str],
+    required_targets: &[HealthTarget],
     use_case_label: &str,
 ) -> Result<(), String> {
     let mut failures = Vec::new();
 
-    for service in required_services {
-        match start::check_service_health(project_root_path, service) {
+    for target in required_targets {
+        match start::check_health_target(project_root_path, *target) {
             Ok((true, _)) => {}
-            Ok((false, status)) => failures.push(format!("{service}: {status}")),
-            Err(error) => failures.push(format!("{service}: {error}")),
+            Ok((false, status)) => failures.push(format!("{}: {}", target.name(), status)),
+            Err(error) => failures.push(format!("{}: {}", target.name(), error)),
         }
     }
 
@@ -819,53 +836,13 @@ fn ensure_demo_services_ready(
     Err(message)
 }
 
-fn ensure_optional_chain_network_ready(
-    project_root_path: &Path,
-    chain_id: &str,
-    network: &str,
-) -> Result<(), String> {
-    let adapter = chains::get_chain_adapter(chain_id)
-        .ok_or_else(|| format!("Optional chain adapter '{}' is not registered", chain_id))?;
-    let flags = chains::ChainFlags::new();
-    let statuses = adapter
-        .health(project_root_path, network, &flags)
-        .map_err(|error| {
-            format!(
-                "Failed to check '{}' health for network '{}': {}",
-                chain_id, network, error
-            )
-        })?;
-
-    let unhealthy = statuses
-        .into_iter()
-        .filter(|status| !status.healthy)
-        .map(|status| format!("{}: {}", status.label, status.status))
-        .collect::<Vec<_>>();
-
-    if unhealthy.is_empty() {
-        return Ok(());
-    }
-
-    let mut message = format!(
-        "ERROR: '{}' chain network '{}' is not healthy for token-swap demo.\n",
-        chain_id, network
-    );
-    for failure in unhealthy {
-        message.push_str(&format!("  - {}\n", failure));
-    }
-    message.push_str(&format!(
-        "\nStart services first:\n  - caribic start {} --network {}",
-        chain_id, network
-    ));
-
-    Err(message)
-}
-
 fn ensure_hermes_daemon_for_token_swap(
     project_root_path: &Path,
     was_running_before_setup: bool,
 ) -> Result<(), String> {
-    if let Ok((true, _)) = start::check_service_health(project_root_path, "hermes") {
+    if let Ok((true, _)) =
+        start::check_health_target(project_root_path, HealthTarget::Core(CoreServiceId::Hermes))
+    {
         if was_running_before_setup {
             logger::log("PASS: Hermes daemon restarted for token relay");
         } else {
@@ -1183,7 +1160,8 @@ fn query_open_transfer_channel_pair(
     a_channel_ids.dedup();
 
     for a_channel_id in a_channel_ids {
-        let Some(a_end) = query_transfer_channel_end_status(a_chain_id, a_port_id, a_channel_id.as_str())?
+        let Some(a_end) =
+            query_transfer_channel_end_status(a_chain_id, a_port_id, a_channel_id.as_str())?
         else {
             continue;
         };

@@ -191,23 +191,36 @@ pub fn start_relayer(
     // Copy hermes-config.example.toml to ~/.hermes/config.toml
     let options = fs_extra::file::CopyOptions::new().overwrite(true);
     let caribic_dir = relayer_path.parent().unwrap().join("caribic");
+    let hermes_config_path = hermes_dir.join("config.toml");
     copy(
         caribic_dir.join("config/hermes-config.example.toml"),
-        hermes_dir.join("config.toml"),
+        &hermes_config_path,
         &options,
     )
     .map_err(|e| format!("Failed to copy Hermes config: {}", e))?;
     replace_text_in_file(
-        hermes_dir.join("config.toml").as_path(),
+        hermes_config_path.as_path(),
         r#"id = 'cardano-devnet'"#,
         format!("id = '{}'", cardano_chain_id).as_str(),
     )
     .map_err(|e| format!("Failed to update Hermes Cardano chain id: {}", e))?;
+    if cardano_chain_id == "cardano-devnet" {
+        // Local Cardano relaying uses Mithril-certified heights instead of the live tip.
+        // That certified view can lag the chain by minutes, so local Hermes clients need
+        // a much larger timestamp tolerance when validating EntryPoint headers against
+        // the latest Cardano header they can actually certify.
+        replace_text_in_file(
+            hermes_config_path.as_path(),
+            "clock_drift = '5s'",
+            "clock_drift = '15m'",
+        )
+        .map_err(|e| format!("Failed to relax Hermes Cardano clock_drift for local devnet: {}", e))?;
+    }
 
     log_or_show_progress(
         &format!(
             "Configuration copied to {}",
-            hermes_dir.join("config.toml").display()
+            hermes_config_path.display()
         ),
         &optional_progress_bar,
     );
@@ -3122,62 +3135,151 @@ enum CoreHealthCheckType {
     Ogmios,
     Mithril,
     HermesDaemon,
-    Cosmos,
+    Entrypoint,
 }
 
-#[derive(Copy, Clone)]
-struct CoreHealthService {
-    name: &'static str,
-    label: &'static str,
-    check_type: CoreHealthCheckType,
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CoreServiceId {
+    Gateway,
+    Cardano,
+    Postgres,
+    Yaci,
+    Kupo,
+    Ogmios,
+    Mithril,
+    Hermes,
+    Entrypoint,
 }
 
-const CORE_HEALTH_SERVICES: [CoreHealthService; 9] = [
-    CoreHealthService {
-        name: "gateway",
-        label: "Gateway (NestJS gRPC Server)",
-        check_type: CoreHealthCheckType::Gateway,
+impl CoreServiceId {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            CoreServiceId::Gateway => "gateway",
+            CoreServiceId::Cardano => "cardano",
+            CoreServiceId::Postgres => "postgres",
+            CoreServiceId::Yaci => "yaci",
+            CoreServiceId::Kupo => "kupo",
+            CoreServiceId::Ogmios => "ogmios",
+            CoreServiceId::Mithril => "mithril",
+            CoreServiceId::Hermes => "hermes",
+            CoreServiceId::Entrypoint => "entrypoint",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            CoreServiceId::Gateway => "Gateway (NestJS gRPC Server)",
+            CoreServiceId::Cardano => "Cardano chain access",
+            CoreServiceId::Postgres => "PostgreSQL (Gateway app db)",
+            CoreServiceId::Yaci => "Yaci Store",
+            CoreServiceId::Kupo => "Kupo (Chain Indexer)",
+            CoreServiceId::Ogmios => "Ogmios (JSON/RPC)",
+            CoreServiceId::Mithril => "Mithril (Aggregator + Signers)",
+            CoreServiceId::Hermes => "Hermes Relayer Daemon",
+            CoreServiceId::Entrypoint => "Entrypoint chain",
+        }
+    }
+
+    fn check_type(self) -> CoreHealthCheckType {
+        match self {
+            CoreServiceId::Gateway => CoreHealthCheckType::Gateway,
+            CoreServiceId::Cardano => CoreHealthCheckType::CardanoNode,
+            CoreServiceId::Postgres => CoreHealthCheckType::Postgres,
+            CoreServiceId::Yaci => CoreHealthCheckType::Yaci,
+            CoreServiceId::Kupo => CoreHealthCheckType::Kupo,
+            CoreServiceId::Ogmios => CoreHealthCheckType::Ogmios,
+            CoreServiceId::Mithril => CoreHealthCheckType::Mithril,
+            CoreServiceId::Hermes => CoreHealthCheckType::HermesDaemon,
+            CoreServiceId::Entrypoint => CoreHealthCheckType::Entrypoint,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum OptionalChainId {
+    Osmosis,
+    Cheqd,
+    Injective,
+}
+
+impl OptionalChainId {
+    pub(crate) fn adapter_id(self) -> &'static str {
+        match self {
+            OptionalChainId::Osmosis => "osmosis",
+            OptionalChainId::Cheqd => "cheqd",
+            OptionalChainId::Injective => "injective",
+        }
+    }
+
+    pub(crate) fn from_adapter_id(id: &str) -> Option<Self> {
+        match id {
+            "osmosis" => Some(OptionalChainId::Osmosis),
+            "cheqd" => Some(OptionalChainId::Cheqd),
+            "injective" => Some(OptionalChainId::Injective),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum OptionalChainNetwork {
+    Local,
+    Testnet,
+    Mainnet,
+}
+
+impl OptionalChainNetwork {
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            OptionalChainNetwork::Local => "local",
+            OptionalChainNetwork::Testnet => "testnet",
+            OptionalChainNetwork::Mainnet => "mainnet",
+        }
+    }
+
+    pub(crate) fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "local" => Some(OptionalChainNetwork::Local),
+            "testnet" => Some(OptionalChainNetwork::Testnet),
+            "mainnet" => Some(OptionalChainNetwork::Mainnet),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub(crate) enum HealthTarget {
+    Core(CoreServiceId),
+    // Entrypoint is technically a Cosmos chain, but it is still modeled as a core bridge
+    // service. `CosmosChain` is reserved for non-core Cosmos-family chains such as Osmosis,
+    // cheqd, and Injective that are managed through the optional chain adapters.
+    CosmosChain {
+        chain: OptionalChainId,
+        network: OptionalChainNetwork,
     },
-    CoreHealthService {
-        name: "cardano",
-        label: "Cardano chain access",
-        check_type: CoreHealthCheckType::CardanoNode,
-    },
-    CoreHealthService {
-        name: "postgres",
-        label: "PostgreSQL (Gateway app db)",
-        check_type: CoreHealthCheckType::Postgres,
-    },
-    CoreHealthService {
-        name: "yaci",
-        label: "Yaci Store",
-        check_type: CoreHealthCheckType::Yaci,
-    },
-    CoreHealthService {
-        name: "kupo",
-        label: "Kupo (Chain Indexer)",
-        check_type: CoreHealthCheckType::Kupo,
-    },
-    CoreHealthService {
-        name: "ogmios",
-        label: "Ogmios (JSON/RPC)",
-        check_type: CoreHealthCheckType::Ogmios,
-    },
-    CoreHealthService {
-        name: "mithril",
-        label: "Mithril (Aggregator + Signers)",
-        check_type: CoreHealthCheckType::Mithril,
-    },
-    CoreHealthService {
-        name: "hermes",
-        label: "Hermes Relayer Daemon",
-        check_type: CoreHealthCheckType::HermesDaemon,
-    },
-    CoreHealthService {
-        name: "entrypoint",
-        label: "Entrypoint chain",
-        check_type: CoreHealthCheckType::Cosmos,
-    },
+}
+
+impl HealthTarget {
+    pub(crate) fn name(self) -> String {
+        match self {
+            HealthTarget::Core(service) => service.name().to_string(),
+            HealthTarget::CosmosChain { chain, network } => {
+                format!("{} ({})", chain.adapter_id(), network.name())
+            }
+        }
+    }
+}
+
+const CORE_SERVICE_IDS: [CoreServiceId; 9] = [
+    CoreServiceId::Gateway,
+    CoreServiceId::Cardano,
+    CoreServiceId::Postgres,
+    CoreServiceId::Yaci,
+    CoreServiceId::Kupo,
+    CoreServiceId::Ogmios,
+    CoreServiceId::Mithril,
+    CoreServiceId::Hermes,
+    CoreServiceId::Entrypoint,
 ];
 
 #[derive(Clone)]
@@ -3246,13 +3348,6 @@ fn check_external_url_port(url: &str, label: &str) -> (bool, String) {
     check_external_host_port(host, port.as_str(), label)
 }
 
-fn find_core_health_service(service_name: &str) -> Option<CoreHealthService> {
-    CORE_HEALTH_SERVICES
-        .iter()
-        .copied()
-        .find(|service| service.name == service_name)
-}
-
 fn run_core_health_check(
     check_type: CoreHealthCheckType,
     context: &HealthContext,
@@ -3295,7 +3390,7 @@ fn run_core_health_check(
                 context.preprod_mithril_endpoint.as_str(),
             ),
             CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
-            CoreHealthCheckType::Cosmos => check_rpc_service(
+            CoreHealthCheckType::Entrypoint => check_rpc_service(
                 config::get_config().health.cosmos_status_url.as_str(),
                 26657,
             ),
@@ -3335,7 +3430,7 @@ fn run_core_health_check(
             context.preprod_mithril_endpoint.as_str(),
         ),
         CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
-        CoreHealthCheckType::Cosmos => check_rpc_service(
+        CoreHealthCheckType::Entrypoint => check_rpc_service(
             config::get_config().health.cosmos_status_url.as_str(),
             26657,
         ),
@@ -3346,13 +3441,13 @@ fn collect_health_statuses(
     project_root_path: &Path,
     context: &HealthContext,
 ) -> Vec<HealthServiceStatus> {
-    let mut statuses = CORE_HEALTH_SERVICES
+    let mut statuses = CORE_SERVICE_IDS
         .iter()
         .map(|service| {
-            let (healthy, status) = run_core_health_check(service.check_type, context);
+            let (healthy, status) = run_core_health_check(service.check_type(), context);
             HealthServiceStatus {
-                name: service.name.to_string(),
-                label: service.label.to_string(),
+                name: service.name().to_string(),
+                label: service.label().to_string(),
                 healthy,
                 status,
             }
@@ -3481,6 +3576,34 @@ fn collect_optional_chain_health_statuses(project_root_path: &Path) -> Vec<Healt
     optional_statuses
 }
 
+fn check_optional_chain_network_health(
+    project_root_path: &Path,
+    chain: OptionalChainId,
+    network: OptionalChainNetwork,
+) -> Result<(bool, String), String> {
+    let chain_id = chain.adapter_id();
+    let network_name = network.name();
+    let adapter = chains::get_chain_adapter(chain_id)
+        .ok_or_else(|| format!("Optional chain adapter '{}' is not registered", chain_id))?;
+    let flags = chains::ChainFlags::new();
+    let statuses = adapter
+        .health(project_root_path, network_name, &flags)
+        .map_err(|error| {
+            format!(
+                "Failed to check '{}' health for network '{}': {}",
+                chain_id, network_name, error
+            )
+        })?;
+
+    let summarized = statuses
+        .iter()
+        .map(|status| format!("{}: {}", status.label, status.status))
+        .collect::<Vec<_>>();
+
+    let all_healthy = statuses.iter().all(|status| status.healthy);
+    Ok((all_healthy, summarized.join("; ")))
+}
+
 fn available_health_service_names(project_root_path: &Path, context: &HealthContext) -> String {
     collect_health_statuses(project_root_path, context)
         .into_iter()
@@ -3489,28 +3612,24 @@ fn available_health_service_names(project_root_path: &Path, context: &HealthCont
         .join(", ")
 }
 
-pub fn check_service_health(
+pub(crate) fn check_core_service_health(
     project_root_path: &Path,
-    service_name: &str,
-) -> Result<(bool, String), Box<dyn std::error::Error>> {
+    service: CoreServiceId,
+) -> (bool, String) {
     let context = build_health_context(project_root_path);
-    if let Some(service) = find_core_health_service(service_name) {
-        return Ok(run_core_health_check(service.check_type, &context));
-    }
+    run_core_health_check(service.check_type(), &context)
+}
 
-    if let Some(optional_status) = collect_optional_chain_health_statuses(project_root_path)
-        .into_iter()
-        .find(|status| status.name == service_name)
-    {
-        return Ok((optional_status.healthy, optional_status.status));
+pub(crate) fn check_health_target(
+    project_root_path: &Path,
+    target: HealthTarget,
+) -> Result<(bool, String), String> {
+    match target {
+        HealthTarget::Core(service) => Ok(check_core_service_health(project_root_path, service)),
+        HealthTarget::CosmosChain { chain, network } => {
+            check_optional_chain_network_health(project_root_path, chain, network)
+        }
     }
-
-    Err(format!(
-        "Unknown service: {}. Supported services: {}",
-        service_name,
-        available_health_service_names(project_root_path, &context)
-    )
-    .into())
 }
 
 /// Comprehensive health check for all bridge services
