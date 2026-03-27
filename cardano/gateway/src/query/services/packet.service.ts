@@ -46,6 +46,8 @@ import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof, serializeNonExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { HostStateDatum } from '../../shared/types/host-state-datum';
+import { HISTORY_SERVICE, HistoryService } from './history.service';
+import { resolveCertifiedProofHeightForCurrentRoot } from './proof-context';
 
 @Injectable()
 export class PacketService {
@@ -54,6 +56,7 @@ export class PacketService {
     private configService: ConfigService,
     @Inject(LucidService) private lucidService: LucidService,
     @Inject(MithrilService) private mithrilService: MithrilService,
+    @Inject(HISTORY_SERVICE) private historyService: HistoryService,
   ) {}
 
   private async ensureTreeAligned(): Promise<void> {
@@ -72,18 +75,13 @@ export class PacketService {
   }
 
   private async getProofHeight(): Promise<bigint> {
-    // IBC queries that return proofs must also return the height of the commitment root those
-    // proofs were built against (`proof_height`).
-    //
-    // In this implementation we use the latest Mithril CardanoTransactions snapshot block number.
-    // This value is a Cardano block height (not a slot), and Hermes may wait until this height is
-    // certified before proceeding with handshake/packet flows.
-    const snapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
-    const latestSnapshot = snapshots?.[0];
-    if (!latestSnapshot) {
-      throw new GrpcInternalException('Mithril transaction snapshots unavailable for proof_height');
-    }
-    return BigInt(latestSnapshot.block_number);
+    return resolveCertifiedProofHeightForCurrentRoot({
+      logger: this.logger,
+      lucidService: this.lucidService,
+      mithrilService: this.mithrilService,
+      historyService: this.historyService,
+      context: 'queryPacketProof',
+    });
   }
 
   private async getQueryHeight(): Promise<bigint> {

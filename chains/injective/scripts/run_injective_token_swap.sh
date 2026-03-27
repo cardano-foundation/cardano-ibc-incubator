@@ -11,6 +11,7 @@ on_error() {
 trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
 SETTLEMENT_CLEAR_TIMEOUT_SECS="${SETTLEMENT_CLEAR_TIMEOUT_SECS:-120}"
+SETTLEMENT_TIMEOUT_SECS="${SETTLEMENT_TIMEOUT_SECS:-900}"
 SETTLEMENT_PROGRESS_EVERY_N_POLLS="${SETTLEMENT_PROGRESS_EVERY_N_POLLS:-2}"
 # Keep this watchdog conservative by default since Mithril certification can be slow.
 SETTLEMENT_NO_PROGRESS_TIMEOUT_SECS="${SETTLEMENT_NO_PROGRESS_TIMEOUT_SECS:-540}"
@@ -18,6 +19,8 @@ SETTLEMENT_NO_PROGRESS_MIN_CLEAR_PASSES="${SETTLEMENT_NO_PROGRESS_MIN_CLEAR_PASS
 TRANSFER_SUBMIT_TIMEOUT_SECS="${TRANSFER_SUBMIT_TIMEOUT_SECS:-300}"
 TRANSFER_SUBMIT_MAX_ATTEMPTS="${TRANSFER_SUBMIT_MAX_ATTEMPTS:-4}"
 TRANSFER_RETRY_BASE_DELAY_SECS="${TRANSFER_RETRY_BASE_DELAY_SECS:-3}"
+PFM_FORWARD_TIMEOUT="${PFM_FORWARD_TIMEOUT:-30m}"
+PFM_FORWARD_RETRIES="${PFM_FORWARD_RETRIES:-5}"
 
 check_string_empty() {
   if [ -z "$1" ]; then
@@ -25,6 +28,13 @@ check_string_empty() {
     exit 1
   fi
 }
+
+case "$PFM_FORWARD_RETRIES" in
+  ''|*[!0-9]*)
+    echo "PFM_FORWARD_RETRIES must be a non-negative integer."
+    exit 1
+    ;;
+esac
 
 extract_first_injective_address() {
   grep -Eo 'inj1[0-9a-z]{38}' | head -n 1
@@ -95,6 +105,15 @@ run_with_timeout() {
   wait "$watchdog_pid" >/dev/null 2>&1 || true
 
   if [ -s "$timeout_file" ]; then
+    if is_mithril_certification_wait_output "$output_file"; then
+      echo "Waiting for Mithril certification before ${description}."
+      if [ -s "$output_file" ]; then
+        echo "Last command output:"
+        tail -n 20 "$output_file"
+      fi
+      rm -f "$output_file" "$timeout_file"
+      return 125
+    fi
     echo "WARNING: ${description} timed out after ${timeout_seconds}s."
     if [ -s "$output_file" ]; then
       echo "Last command output:"
@@ -105,6 +124,15 @@ run_with_timeout() {
   fi
 
   if [ "$cmd_status" -ne 0 ]; then
+    if is_mithril_certification_wait_output "$output_file"; then
+      echo "Waiting for Mithril certification before ${description}."
+      if [ -s "$output_file" ]; then
+        echo "Last command output:"
+        tail -n 20 "$output_file"
+      fi
+      rm -f "$output_file" "$timeout_file"
+      return 125
+    fi
     echo "WARNING: ${description} failed with exit ${cmd_status}."
     if [ -s "$output_file" ]; then
       echo "Last command output:"
@@ -116,6 +144,15 @@ run_with_timeout() {
 
   rm -f "$output_file" "$timeout_file"
   return 0
+}
+
+is_mithril_certification_wait_output() {
+  local output_file="$1"
+  if [ ! -f "$output_file" ]; then
+    return 1
+  fi
+
+  grep -Eq 'Current HostState root is not yet Mithril-certified for proof generation|not yet Mithril-certified' "$output_file"
 }
 
 is_transient_transfer_error() {
@@ -391,8 +428,15 @@ clear_packets_since_baseline() {
     "Hermes clear packets on ${chain}/${channel} (${sequence_range})" \
     "$HERMES_BIN" clear packets --chain "$chain" --port transfer --channel "$channel" --packet-sequences "$sequence_range"; then
     echo "Packet clear finished on ${chain}/${channel}."
+    return 0
   else
+    local clear_status=$?
+    if [ "$clear_status" -eq 125 ]; then
+      echo "Deferring clear on ${chain}/${channel} until Mithril certifies the current Cardano proof state."
+      return 125
+    fi
     echo "Continuing settlement checks despite clear failure on ${chain}/${channel}."
+    return "$clear_status"
   fi
 }
 
@@ -448,29 +492,84 @@ wait_for_settlement() {
 
     if [ $((attempt % 3)) -eq 0 ]; then
       echo "Attempting packet-clear pass..."
+      local clear_retryable_wait=0
       if [ "$pending_cardano_entrypoint" -gt 0 ]; then
-        clear_packets_since_baseline "$CARDANO_CHAIN_ID" "$cardano_entrypoint_channel_id" "$baseline_cardano_entrypoint_seq"
+        local clear_status=0
+        if clear_packets_since_baseline "$CARDANO_CHAIN_ID" "$cardano_entrypoint_channel_id" "$baseline_cardano_entrypoint_seq"; then
+          clear_status=0
+        else
+          clear_status=$?
+        fi
+        [ "$clear_status" -eq 125 ] && clear_retryable_wait=1
       fi
       if [ "$pending_entrypoint_injective" -gt 0 ]; then
-        clear_packets_since_baseline "$ENTRYPOINT_CHAIN_ID" "$entrypoint_injective_channel_id" "$baseline_entrypoint_injective_seq"
+        local clear_status=0
+        if clear_packets_since_baseline "$ENTRYPOINT_CHAIN_ID" "$entrypoint_injective_channel_id" "$baseline_entrypoint_injective_seq"; then
+          clear_status=0
+        else
+          clear_status=$?
+        fi
+        [ "$clear_status" -eq 125 ] && clear_retryable_wait=1
       fi
       if [ "$pending_injective_entrypoint" -gt 0 ]; then
-        clear_packets_since_baseline "$INJECTIVE_CHAIN_ID" "$injective_entrypoint_channel_id" "$baseline_injective_entrypoint_seq"
+        local clear_status=0
+        if clear_packets_since_baseline "$INJECTIVE_CHAIN_ID" "$injective_entrypoint_channel_id" "$baseline_injective_entrypoint_seq"; then
+          clear_status=0
+        else
+          clear_status=$?
+        fi
+        [ "$clear_status" -eq 125 ] && clear_retryable_wait=1
       fi
       if [ "$pending_entrypoint_cardano" -gt 0 ]; then
-        clear_packets_since_baseline "$ENTRYPOINT_CHAIN_ID" "$entrypoint_cardano_channel_id" "$baseline_entrypoint_cardano_seq"
+        local clear_status=0
+        if clear_packets_since_baseline "$ENTRYPOINT_CHAIN_ID" "$entrypoint_cardano_channel_id" "$baseline_entrypoint_cardano_seq"; then
+          clear_status=0
+        else
+          clear_status=$?
+        fi
+        [ "$clear_status" -eq 125 ] && clear_retryable_wait=1
       fi
 
-      clear_passes_since_progress=$((clear_passes_since_progress + 1))
-      local now_epoch
-      now_epoch="$(date +%s)"
-      local no_progress_elapsed
-      no_progress_elapsed=$((now_epoch - last_progress_epoch))
-      if [ "$no_progress_elapsed" -ge "$SETTLEMENT_NO_PROGRESS_TIMEOUT_SECS" ] &&
-        [ "$clear_passes_since_progress" -ge "$SETTLEMENT_NO_PROGRESS_MIN_CLEAR_PASSES" ]; then
-        echo "Settlement appears stuck: no commitment-count change for ${no_progress_elapsed}s across ${clear_passes_since_progress} clear passes."
-        dump_settlement_diagnostics
-        return 1
+      local post_pending_cardano_entrypoint
+      local post_pending_entrypoint_injective
+      local post_pending_injective_entrypoint
+      local post_pending_entrypoint_cardano
+      post_pending_cardano_entrypoint="$(outstanding_commitment_count "$CARDANO_CHAIN_ID" "$cardano_entrypoint_channel_id" "$baseline_cardano_entrypoint_seq")"
+      post_pending_entrypoint_injective="$(outstanding_commitment_count "$ENTRYPOINT_CHAIN_ID" "$entrypoint_injective_channel_id" "$baseline_entrypoint_injective_seq")"
+      post_pending_injective_entrypoint="$(outstanding_commitment_count "$INJECTIVE_CHAIN_ID" "$injective_entrypoint_channel_id" "$baseline_injective_entrypoint_seq")"
+      post_pending_entrypoint_cardano="$(outstanding_commitment_count "$ENTRYPOINT_CHAIN_ID" "$entrypoint_cardano_channel_id" "$baseline_entrypoint_cardano_seq")"
+
+      local post_pending_total
+      post_pending_total=$((post_pending_cardano_entrypoint + post_pending_entrypoint_injective + post_pending_injective_entrypoint + post_pending_entrypoint_cardano))
+      local post_pending_signature="${post_pending_cardano_entrypoint}:${post_pending_entrypoint_injective}:${post_pending_injective_entrypoint}:${post_pending_entrypoint_cardano}"
+
+      if [ "$post_pending_total" -eq 0 ]; then
+        echo "All transfer packet commitments are cleared."
+        return 0
+      fi
+
+      if [ "$post_pending_signature" != "$pending_signature" ]; then
+        local now_epoch
+        now_epoch="$(date +%s)"
+        local since_last_progress
+        since_last_progress=$((now_epoch - last_progress_epoch))
+        echo "Settlement progress observed during clear pass after ${since_last_progress}s (signature ${pending_signature} -> ${post_pending_signature})."
+        last_pending_signature="$post_pending_signature"
+        last_progress_epoch="$now_epoch"
+        clear_passes_since_progress=0
+      else
+        clear_passes_since_progress=$((clear_passes_since_progress + 1))
+        local now_epoch
+        now_epoch="$(date +%s)"
+        local no_progress_elapsed
+        no_progress_elapsed=$((now_epoch - last_progress_epoch))
+        if [ "$no_progress_elapsed" -ge "$SETTLEMENT_NO_PROGRESS_TIMEOUT_SECS" ] &&
+          [ "$clear_passes_since_progress" -ge "$SETTLEMENT_NO_PROGRESS_MIN_CLEAR_PASSES" ] &&
+          [ "$clear_retryable_wait" -eq 0 ]; then
+          echo "Settlement appears stuck: no commitment-count change for ${no_progress_elapsed}s across ${clear_passes_since_progress} clear passes."
+          dump_settlement_diagnostics
+          return 1
+        fi
       fi
     fi
 
@@ -595,7 +694,9 @@ forward_to_injective_memo="$(
   jq -nc \
     --arg receiver "$INJECTIVE_RECEIVER" \
     --arg channel "$entrypoint_injective_channel_id" \
-    '{forward: {receiver: $receiver, port: "transfer", channel: $channel}}'
+    --arg timeout "$PFM_FORWARD_TIMEOUT" \
+    --argjson retries "$PFM_FORWARD_RETRIES" \
+    '{forward: {receiver: $receiver, port: "transfer", channel: $channel, timeout: $timeout, retries: $retries}}'
 )"
 
 echo "Submitting Cardano->Entrypoint->Injective transfer..."
@@ -621,7 +722,9 @@ forward_to_cardano_memo="$(
   jq -nc \
     --arg receiver "$CARDANO_RECEIVER" \
     --arg channel "$entrypoint_cardano_channel_id" \
-    '{forward: {receiver: $receiver, port: "transfer", channel: $channel}}'
+    --arg timeout "$PFM_FORWARD_TIMEOUT" \
+    --argjson retries "$PFM_FORWARD_RETRIES" \
+    '{forward: {receiver: $receiver, port: "transfer", channel: $channel, timeout: $timeout, retries: $retries}}'
 )"
 
 echo "Submitting Injective->Entrypoint->Cardano return leg..."
@@ -644,5 +747,5 @@ else
 fi
 
 echo "Waiting for transfer settlement..."
-wait_for_settlement 600 10
+wait_for_settlement "$SETTLEMENT_TIMEOUT_SECS" 10
 echo "Injective token swap flow done."

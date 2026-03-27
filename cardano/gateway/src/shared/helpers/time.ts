@@ -1,6 +1,7 @@
 import WebSocket from 'ws';
 
 type OgmiosPoint = { slot: number; id: string };
+type SlotConfig = { zeroTime: number; zeroSlot: number; slotLength: number };
 
 const ogmiosWsp = async (ogmiosUrl: string, methodname: string, args: unknown) => {
   const client = new WebSocket(ogmiosUrl);
@@ -79,6 +80,46 @@ const queryNetworkTipPoint = async (ogmiosUrl: string): Promise<OgmiosPoint | 'o
   return {
     slot: result.slot,
     id: result.id,
+  };
+};
+
+const computeLedgerAnchoredValidityWindow = async (
+  ogmiosUrl: string,
+  slotConfig: SlotConfig,
+  ttlMs: number,
+  options?: { backdateMs?: number },
+): Promise<{
+  currentSlot: number;
+  currentLedgerTime: number;
+  validFromTime: number;
+  validToSlot: number;
+  validToTime: number;
+}> => {
+  if (!Number.isFinite(slotConfig.zeroTime) || !Number.isFinite(slotConfig.slotLength) || slotConfig.slotLength <= 0) {
+    throw new Error('Invalid Cardano slot configuration');
+  }
+
+  const tip = await queryNetworkTipPoint(ogmiosUrl);
+  const currentSlot = tip === 'origin' ? 0 : tip.slot;
+
+  // Anchor the validity window to the live chain tip rather than host wallclock time. Local
+  // devnet regularly lags the host clock, and wallclock-derived validity can push tx bounds
+  // beyond Ogmios' era forecast horizon (`PastHorizon`).
+  const currentLedgerTime =
+    slotConfig.zeroTime + (currentSlot - slotConfig.zeroSlot) * slotConfig.slotLength;
+  const ttlSlots = Math.max(1, Math.ceil(ttlMs / slotConfig.slotLength));
+  const validToSlot = currentSlot + ttlSlots;
+  const validToTime =
+    slotConfig.zeroTime + (validToSlot + 1 - slotConfig.zeroSlot) * slotConfig.slotLength - 1;
+  const backdateMs = Math.max(0, options?.backdateMs ?? 0);
+  const validFromTime = Math.max(slotConfig.zeroTime, currentLedgerTime - backdateMs);
+
+  return {
+    currentSlot,
+    currentLedgerTime,
+    validFromTime,
+    validToSlot,
+    validToTime,
   };
 };
 
@@ -197,4 +238,11 @@ const getNanoseconds = (d) => {
   return parseInt(nanoSeconds);
 };
 
-export { querySystemStart, queryNetworkTipPoint, queryTransactionInclusionBlockHeight, sleep, getNanoseconds };
+export {
+  querySystemStart,
+  queryNetworkTipPoint,
+  queryTransactionInclusionBlockHeight,
+  computeLedgerAnchoredValidityWindow,
+  sleep,
+  getNanoseconds,
+};

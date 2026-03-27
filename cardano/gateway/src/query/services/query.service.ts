@@ -109,6 +109,7 @@ import { Denom, Hop } from '@plus/proto-types/build/ibc/applications/transfer/v1
 import { DenomTraceService } from './denom-trace.service';
 import { convertHex2String } from '@shared/helpers/hex';
 import { HISTORY_SERVICE, HistoryService } from './history.service';
+import { resolveCertifiedProofHeightForCurrentRoot } from './proof-context';
 
 type ParsedTxRedeemer = {
   type: string;
@@ -208,6 +209,16 @@ export class QueryService {
     const result = await alignTreeWithChain();
     
     this.logger.log(`Tree rebuilt successfully, new root: ${result.root.substring(0, 16)}...`);
+  }
+
+  private async getProofHeight(context: string): Promise<bigint> {
+    return resolveCertifiedProofHeightForCurrentRoot({
+      logger: this.logger,
+      lucidService: this.lucidService,
+      mithrilService: this.mithrilService,
+      historyService: this.historyService,
+      context,
+    });
   }
 
   private async getTransactionRedeemers(txHash: string): Promise<ParsedTxRedeemer[]> {
@@ -477,12 +488,7 @@ export class QueryService {
     // Therefore `proof_height` must correspond to the height of the root that those proofs
     // verify against (i.e., the Mithril-certified height the counterparty will update to),
     // not the height of the UTxO that happens to store this datum.
-    const latestSnapshotsForProof = await this.mithrilService.getCardanoTransactionsSetSnapshot();
-    const latestSnapshotForProof = latestSnapshotsForProof?.[0];
-    if (!latestSnapshotForProof) {
-      throw new GrpcInternalException('Mithril transaction snapshots unavailable for proof_height');
-    }
-    const proofHeight = BigInt(latestSnapshotForProof.block_number);
+    const proofHeight = await this.getProofHeight('queryClientState');
     const clientStateAny: Any = {
       type_url: '/ibc.lightclients.tendermint.v1.ClientState',
       value: ClientStateTendermint.encode(clientStateTendermint).finish(),
@@ -564,12 +570,7 @@ export class QueryService {
       type_url: '/ibc.lightclients.tendermint.v1.ConsensusState',
       value: ConsensusStateTendermint.encode(consensusStateTendermint).finish(),
     };
-    const latestSnapshotsForProof = await this.mithrilService.getCardanoTransactionsSetSnapshot();
-    const latestSnapshotForProof = latestSnapshotsForProof?.[0];
-    if (!latestSnapshotForProof) {
-      throw new GrpcInternalException('Mithril transaction snapshots unavailable for proof_height');
-    }
-    const proofHeight = BigInt(latestSnapshotForProof.block_number);
+    const proofHeight = await this.getProofHeight('queryConsensusState');
     
     // Generate ICS-23 proof from the IBC state tree.
     const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${heightReq}`;

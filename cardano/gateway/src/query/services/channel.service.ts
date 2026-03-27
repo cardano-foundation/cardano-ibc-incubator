@@ -33,6 +33,8 @@ import { HostStateDatum } from '../../shared/types/host-state-datum';
 import { AuthToken } from '../../shared/types/auth-token';
 import { CHANNEL_TOKEN_PREFIX } from '../../constant';
 import { getChannelIdByTokenName } from '../../shared/helpers/channel';
+import { HISTORY_SERVICE, HistoryService } from './history.service';
+import { resolveCertifiedProofHeightForCurrentRoot } from './proof-context';
 
 @Injectable()
 export class ChannelService {
@@ -42,6 +44,7 @@ export class ChannelService {
     @Inject(LucidService) private lucidService: LucidService,
     @Inject(KupoService) private kupoService: KupoService,
     @Inject(MithrilService) private mithrilService: MithrilService,
+    @Inject(HISTORY_SERVICE) private historyService: HistoryService,
   ) {}
 
   private async ensureTreeAligned(): Promise<void> {
@@ -60,12 +63,13 @@ export class ChannelService {
   }
 
   private async getProofHeight(): Promise<bigint> {
-    const snapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
-    const latestSnapshot = snapshots?.[0];
-    if (!latestSnapshot) {
-      throw new GrpcInternalException('Mithril transaction snapshots unavailable for proof_height');
-    }
-    return BigInt(latestSnapshot.block_number);
+    return resolveCertifiedProofHeightForCurrentRoot({
+      logger: this.logger,
+      lucidService: this.lucidService,
+      mithrilService: this.mithrilService,
+      historyService: this.historyService,
+      context: 'queryChannel',
+    });
   }
 
   private async getQueryHeight(): Promise<bigint> {
