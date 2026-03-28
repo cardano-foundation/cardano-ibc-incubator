@@ -362,7 +362,15 @@ SENT_AMOUNT="${SENT_AMOUNT_NUM}-${SENT_DENOM}"
 ENTRYPOINT_RECEIVER="pfm"
 OSMOSIS_NODE="${OSMOSIS_NODE:-http://localhost:26658}"
 OSMOSIS_CHAIN_ID="${OSMOSIS_CHAIN_ID:-localosmosis}"
-OSMOSIS_GAS_PRICES="${OSMOSIS_GAS_PRICES:-0.1uosmo}"
+if [ "${OSMOSIS_CHAIN_ID:-localosmosis}" = "localosmosis" ]; then
+  DEFAULT_OSMOSIS_GAS_PRICES="0.1uosmo"
+elif [ "${OSMOSIS_CHAIN_ID:-}" = "osmo-test-5" ]; then
+  # Keep public testnet fee burn low by default; callers can still override this.
+  DEFAULT_OSMOSIS_GAS_PRICES="0.0026uosmo"
+else
+  DEFAULT_OSMOSIS_GAS_PRICES="0.1uosmo"
+fi
+OSMOSIS_GAS_PRICES="${OSMOSIS_GAS_PRICES:-$DEFAULT_OSMOSIS_GAS_PRICES}"
 SWAPROUTER_WASM="$repo_root/chains/osmosis/osmosis/cosmwasm/wasm/swaprouter.wasm"
 CROSSCHAIN_SWAPS_WASM="$repo_root/chains/osmosis/osmosis/cosmwasm/wasm/crosschain_swaps.wasm"
 
@@ -412,6 +420,21 @@ echo "Sent IBC Denom: $denom"
 
 #==================================Create Osmosis swap pool=======================================
 
+if [ "${OSMOSIS_CHAIN_ID:-localosmosis}" = "localosmosis" ]; then
+  DEFAULT_POOL_BOOTSTRAP_DENOM_AMOUNT_NUM=1000000
+  DEFAULT_POOL_BOOTSTRAP_UOSMO_AMOUNT_NUM=1000000
+else
+  # Public testnet faucets are limited. Keep the bootstrap pool small by default,
+  # while still leaving enough voucher liquidity for the later demo swap amount.
+  DEFAULT_POOL_BOOTSTRAP_DENOM_AMOUNT_NUM=100000
+  DEFAULT_POOL_BOOTSTRAP_UOSMO_AMOUNT_NUM=10000
+fi
+
+POOL_BOOTSTRAP_DENOM_AMOUNT_NUM="${OSMOSIS_POOL_BOOTSTRAP_DENOM_AMOUNT:-$DEFAULT_POOL_BOOTSTRAP_DENOM_AMOUNT_NUM}"
+POOL_BOOTSTRAP_UOSMO_AMOUNT_NUM="${OSMOSIS_POOL_BOOTSTRAP_UOSMO_AMOUNT:-$DEFAULT_POOL_BOOTSTRAP_UOSMO_AMOUNT_NUM}"
+echo "Using gas prices: ${OSMOSIS_GAS_PRICES}"
+echo "Pool bootstrap amounts: ${POOL_BOOTSTRAP_DENOM_AMOUNT_NUM}${denom}, ${POOL_BOOTSTRAP_UOSMO_AMOUNT_NUM}uosmo"
+
 TX_FLAGS=(--node "$OSMOSIS_NODE" --keyring-backend test --from "$OSMOSIS_DEPLOYER_KEY_NAME" --chain-id "$OSMOSIS_CHAIN_ID" --gas-prices "$OSMOSIS_GAS_PRICES" --gas auto --gas-adjustment 1.3 --broadcast-mode sync --yes)
 sample_pool_file="$(mktemp)"
 cleanup_sample_pool_file() {
@@ -422,7 +445,7 @@ trap cleanup_sample_pool_file EXIT
 # Create the sample_pool.json file
 jq -n --arg denom "$denom" '{
   weights: "1\($denom),1uosmo",
-  "initial-deposit": "1000000\($denom),1000000uosmo",
+  "initial-deposit": "'"${POOL_BOOTSTRAP_DENOM_AMOUNT_NUM}"'\($denom),'"${POOL_BOOTSTRAP_UOSMO_AMOUNT_NUM}"'uosmo",
   "swap-fee": "0.01",
   "exit-fee": "0.01",
   "future-governor": "168h"
