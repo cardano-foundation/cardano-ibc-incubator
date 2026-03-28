@@ -93,6 +93,18 @@ pub async fn run_start(
             network: resolved_network.as_str(),
             flags: &parsed_flags,
         };
+        let resolved_network_meta = chain_adapter
+            .supported_networks()
+            .iter()
+            .find(|entry| entry.name == resolved_network)
+            .copied()
+            .ok_or_else(|| {
+                format!(
+                    "ERROR: Chain '{}' resolved to unknown network '{}'",
+                    chain_adapter.id(),
+                    resolved_network
+                )
+            })?;
 
         let optional_progress_bar = match logger::get_verbosity() {
             logger::Verbosity::Verbose => None,
@@ -108,15 +120,29 @@ pub async fn run_start(
                 .unwrap()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
             );
-            progress_bar
-                .set_prefix(format!("Starting {} ...", chain_adapter.display_name()).to_owned());
-            progress_bar.set_message(format!(
-                "network={} (this can take a while)",
-                resolved_network
-            ));
+            let action = if resolved_network_meta.managed_by_caribic {
+                "Starting"
+            } else {
+                "Configuring"
+            };
+            progress_bar.set_prefix(
+                format!("{} {} ...", action, chain_adapter.display_name()).to_owned(),
+            );
+            let progress_message = if resolved_network_meta.managed_by_caribic {
+                format!("network={} (this can take a while)", resolved_network)
+            } else {
+                format!("network={} (configuring external access)", resolved_network)
+            };
+            progress_bar.set_message(progress_message);
         } else {
+            let action = if resolved_network_meta.managed_by_caribic {
+                "Starting"
+            } else {
+                "Configuring"
+            };
             logger::log(&format!(
-                "Starting {} (network: {}) ...",
+                "{} {} (network: {}) ...",
+                action,
                 chain_adapter.display_name(),
                 resolved_network
             ));
@@ -139,9 +165,15 @@ pub async fn run_start(
 
         start_result?;
 
+        let completion_action = if resolved_network_meta.managed_by_caribic {
+            "started"
+        } else {
+            "configured"
+        };
         logger::log(&format!(
-            "PASS: {} started successfully (network: {})",
+            "PASS: {} {} successfully (network: {})",
             chain_adapter.display_name(),
+            completion_action,
             resolved_network,
         ));
         logger::log(&format!(

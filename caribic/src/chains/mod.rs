@@ -197,9 +197,14 @@ pub fn parse_chain_flags(raw_flags: &[String]) -> Result<ChainFlags, String> {
     Ok(parsed_flags)
 }
 
-pub fn check_port_health(id: &'static str, port: u16, label: &'static str) -> ChainHealthStatus {
+pub fn check_host_port_health(
+    id: &'static str,
+    host: &str,
+    port: u16,
+    label: &'static str,
+) -> ChainHealthStatus {
     let is_healthy = Command::new("nc")
-        .args(["-z", "localhost", &port.to_string()])
+        .args(["-z", host, &port.to_string()])
         .output()
         .ok()
         .is_some_and(|output| output.status.success());
@@ -209,16 +214,20 @@ pub fn check_port_health(id: &'static str, port: u16, label: &'static str) -> Ch
             id,
             label,
             healthy: true,
-            status: format!("Running on port {}", port),
+            status: format!("Running on {}:{}", host, port),
         }
     } else {
         ChainHealthStatus {
             id,
             label,
             healthy: false,
-            status: format!("Not running (port {} not accessible)", port),
+            status: format!("Not reachable ({}:{} not accessible)", host, port),
         }
     }
+}
+
+pub fn check_port_health(id: &'static str, port: u16, label: &'static str) -> ChainHealthStatus {
+    check_host_port_health(id, "localhost", port, label)
 }
 
 pub fn check_rpc_health(

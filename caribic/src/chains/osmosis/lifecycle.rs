@@ -1,19 +1,13 @@
 use std::fs;
-use std::io::{self, Write};
 use std::path::Path;
-use std::process::Command;
 
-use console::style;
 use fs_extra::{copy_items, file::copy};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
 
 use super::config;
-use crate::chains::cosmos_node::{
-    add_directory_to_process_path, locate_binary_in_path_or_go_bin, resolve_home_relative_path,
-    start_managed_node, stop_managed_node, CosmosNodeSpec,
-};
-use crate::logger::{self, log, log_or_show_progress, verbose, warn};
+use crate::chains::cosmos_node::resolve_home_relative_path;
+use crate::logger::{self, log, log_or_show_progress, verbose};
 use crate::setup::download_repository;
 use crate::utils::{execute_script, wait_for_health_check};
 
@@ -132,101 +126,6 @@ pub(super) fn stop_local(osmosis_path: &Path) {
     }
 }
 
-pub(super) async fn prepare_testnet(
-    project_root_path: &Path,
-    osmosis_dir: &Path,
-    spec: &CosmosNodeSpec,
-    stateful: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    ensure_osmosisd_available(osmosis_dir).await?;
-    sync_workspace_assets_from_repo(project_root_path, osmosis_dir)?;
-    copy_local_config_files(osmosis_dir)?;
-
-    let paths = spec.paths()?;
-    if !stateful && paths.home_dir.exists() {
-        fs::remove_dir_all(paths.home_dir.as_path())?;
-    }
-
-    initialize_testnet_home(spec, paths.home_dir.as_path())?;
-    Ok(())
-}
-
-pub(super) async fn start_testnet(
-    spec: &CosmosNodeSpec,
-    trust_rpc_url: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    start_managed_node(spec, Some(trust_rpc_url), 120, 3000, "Osmosis testnet node").await
-}
-
-pub(super) fn stop_testnet(spec: &CosmosNodeSpec) -> Result<(), Box<dyn std::error::Error>> {
-    stop_managed_node(spec, "Osmosis testnet node")
-}
-
-async fn ensure_osmosisd_available(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    ensure_osmosis_source_available(osmosis_dir).await?;
-
-    let mut binary = locate_binary_in_path_or_go_bin("osmosisd");
-    if binary.is_none() {
-        log("ERROR: osmosisd is not installed or not available in the PATH.");
-
-        let should_continue = prompt_and_install_osmosisd(osmosis_dir).await?;
-        if !should_continue {
-            return Err("osmosisd is required for local Osmosis startup".into());
-        }
-
-        binary = locate_binary_in_path_or_go_bin("osmosisd");
-    }
-
-    let (osmosisd_binary, path_visible) =
-        binary.ok_or("osmosisd is still not available after install step")?;
-
-    match Command::new(&osmosisd_binary).arg("version").output() {
-        Ok(output) if output.status.success() => {
-            let stdout_version = String::from_utf8_lossy(&output.stdout);
-            let stderr_version = String::from_utf8_lossy(&output.stderr);
-            let version_line = stdout_version
-                .lines()
-                .next()
-                .or_else(|| stderr_version.lines().next())
-                .unwrap_or("version unavailable");
-
-            verbose(&format!(
-                "PASS: osmosisd {} ({})",
-                version_line,
-                osmosisd_binary.display()
-            ));
-
-            if !path_visible {
-                if let Some(binary_dir) = osmosisd_binary.parent() {
-                    add_directory_to_process_path(binary_dir);
-                }
-                warn(&format!(
-                    "osmosisd is installed at {} but not visible in PATH. Add '$HOME/go/bin' to PATH for direct shell usage.",
-                    osmosisd_binary.display()
-                ));
-            }
-        }
-        Ok(output) => {
-            return Err(format!(
-                "osmosisd exists at {} but 'osmosisd version' failed (exit code {})",
-                osmosisd_binary.display(),
-                output.status.code().unwrap_or(-1)
-            )
-            .into());
-        }
-        Err(error) => {
-            return Err(format!(
-                "Failed to run osmosisd at {}: {}",
-                osmosisd_binary.display(),
-                error
-            )
-            .into());
-        }
-    }
-
-    Ok(())
-}
-
 async fn ensure_osmosis_source_available(
     osmosis_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -240,77 +139,6 @@ async fn ensure_osmosis_source_available(
 
 async fn download_osmosis_source(osmosis_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     download_repository(config::SOURCE_ZIP_URL, osmosis_path, "osmosis").await
-}
-
-async fn prompt_and_install_osmosisd(
-    osmosis_path: &Path,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let question = "Do you want to install osmosisd? (yes/no): ";
-    print!("{}", question);
-    io::stdout().flush()?;
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    let input = input.trim().to_lowercase();
-
-    if input == "yes" || input == "y" {
-        println!("{} Installing osmosisd...", style("Step 1/1").bold().dim());
-
-        let output = Command::new("make")
-            .current_dir(osmosis_path)
-            .arg("install")
-            .output()
-            .map_err(|error| format!("Failed to run make install for osmosisd: {}", error))?;
-
-        if !output.status.success() {
-            return Err(format!(
-                "Failed to install osmosisd:\n{}",
-                String::from_utf8_lossy(&output.stderr)
-            )
-            .into());
-        }
-
-        println!("PASS: osmosisd installed successfully");
-        Ok(true)
-    } else {
-        Ok(false)
-    }
-}
-
-fn initialize_testnet_home(
-    spec: &CosmosNodeSpec,
-    home_path: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let config_toml_path = home_path.join("config/config.toml");
-    let genesis_path = home_path.join("config/genesis.json");
-    if config_toml_path.exists() && genesis_path.exists() {
-        return Ok(());
-    }
-
-    fs::create_dir_all(home_path)?;
-
-    let output = Command::new(spec.binary)
-        .args([
-            "init",
-            spec.moniker,
-            "--chain-id",
-            spec.chain_id,
-            "--home",
-            home_path
-                .to_str()
-                .ok_or("Invalid testnet home directory path")?,
-        ])
-        .output()?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "Failed to initialize Osmosis testnet home: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )
-        .into());
-    }
-
-    Ok(())
 }
 
 fn copy_local_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::Error> {

@@ -4,6 +4,9 @@ use std::process::Command;
 
 use super::config;
 use crate::chains::hermes_support;
+use crate::chains::hermes_support::{
+    HermesAddressType, HermesCosmosChainProfile, HermesGasPrice, HermesTrustThreshold,
+};
 use crate::utils::execute_script;
 
 /// Best-effort sync of the local cheqd chain block and deterministic relayer key into Hermes.
@@ -30,15 +33,46 @@ fn ensure_local_chain_in_hermes_config(
     project_root_path: &Path,
     cheqd_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let source_config_path = project_root_path.join("chains/cheqd/configuration/hermes/config.toml");
-    hermes_support::ensure_chain_in_hermes_config(
-        source_config_path.as_path(),
-        config::LOCAL_CHAIN_ID,
+    let _ = project_root_path;
+    hermes_support::ensure_cosmos_chain_in_hermes_config(
+        &local_chain_profile(),
         "Local cheqd chain managed by caribic",
-        "cheqd Hermes config",
     )?;
     let _ = cheqd_dir;
     Ok(())
+}
+
+fn local_chain_profile() -> HermesCosmosChainProfile {
+    HermesCosmosChainProfile {
+        id: config::LOCAL_CHAIN_ID.to_string(),
+        rpc_addr: format!("http://127.0.0.1:{}", config::LOCAL_RPC_PORT),
+        grpc_addr: format!("http://127.0.0.1:{}", config::LOCAL_GRPC_PORT),
+        event_source_url: format!("ws://127.0.0.1:{}/websocket", config::LOCAL_RPC_PORT),
+        rpc_timeout: "10s",
+        trusted_node: Some(true),
+        account_prefix: "cheqd",
+        key_name: config::LOCAL_RELAYER_MNEMONIC_ACCOUNT.to_string(),
+        address_type: Some(HermesAddressType::Cosmos),
+        store_prefix: "ibc",
+        default_gas: 5_000_000,
+        max_gas: 15_000_000,
+        gas_price: HermesGasPrice {
+            price: "50",
+            denom: "ncheq",
+        },
+        gas_multiplier: "1.8",
+        max_msg_num: 20,
+        max_tx_size: 209_715,
+        clock_drift: "20s",
+        max_block_time: "10s",
+        trusting_period: "10days",
+        memo_prefix: Some("Caribic"),
+        trust_threshold: HermesTrustThreshold {
+            numerator: "1",
+            denominator: "3",
+        },
+        compat_mode: Some("0.38"),
+    }
 }
 
 fn ensure_local_key_in_hermes_keyring(

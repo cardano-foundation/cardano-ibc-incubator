@@ -327,17 +327,28 @@ get_mock_token_denom() {
 }
 
 #==================================Setup deployer key=======================================
-echo "quality vacuum heart guard buzz spike sight swarm shove special gym robust assume sudden deposit grid alcohol choice devote leader tilt noodle tide penalty" |
-  "$OSMOSISD_BIN" --keyring-backend test keys add deployer --recover || echo "Deployer key already existed"
+DEFAULT_LOCAL_OSMOSIS_DEPLOYER_MNEMONIC="quality vacuum heart guard buzz spike sight swarm shove special gym robust assume sudden deposit grid alcohol choice devote leader tilt noodle tide penalty"
+OSMOSIS_DEPLOYER_KEY_NAME="${OSMOSIS_DEPLOYER_KEY_NAME:-deployer}"
+OSMOSIS_DEPLOYER_MNEMONIC="${OSMOSIS_DEPLOYER_MNEMONIC:-}"
+if [ -z "$OSMOSIS_DEPLOYER_MNEMONIC" ] && [ "${OSMOSIS_CHAIN_ID:-localosmosis}" = "localosmosis" ]; then
+  OSMOSIS_DEPLOYER_MNEMONIC="$DEFAULT_LOCAL_OSMOSIS_DEPLOYER_MNEMONIC"
+fi
+[ -n "$OSMOSIS_DEPLOYER_MNEMONIC" ] || {
+  echo "OSMOSIS_DEPLOYER_MNEMONIC is required to provision Osmosis swap contracts on ${OSMOSIS_CHAIN_ID:-unknown}. Exiting..."
+  exit 1
+}
 
-deployer=$("$OSMOSISD_BIN" keys show deployer --address --keyring-backend test)
+printf '%s\n' "$OSMOSIS_DEPLOYER_MNEMONIC" |
+  "$OSMOSISD_BIN" --keyring-backend test keys add "$OSMOSIS_DEPLOYER_KEY_NAME" --recover || echo "Deployer key already existed"
+
+deployer=$("$OSMOSISD_BIN" keys show "$OSMOSIS_DEPLOYER_KEY_NAME" --address --keyring-backend test)
 check_string_empty "$deployer" "deployer address not found. Exiting..."
 echo "deployer address $deployer"
 
 #==================================Setup Hermes=======================================
 HERMES_CARDANO_NAME="cardano-devnet"
 HERMES_ENTRYPOINT_NAME="entrypoint"
-HERMES_OSMOSIS_NAME="localosmosis"
+HERMES_OSMOSIS_NAME="${HERMES_OSMOSIS_NAME:-localosmosis}"
 SENT_AMOUNT_NUM="${CARIBIC_TOKEN_SWAP_AMOUNT:-12345678}"
 HANDLER_JSON="$repo_root/cardano/offchain/deployments/handler.json"
 SENT_DENOM="$(get_mock_token_denom "$HANDLER_JSON")"
@@ -346,7 +357,9 @@ if [ -z "$SENT_DENOM" ]; then
 fi
 SENT_AMOUNT="${SENT_AMOUNT_NUM}-${SENT_DENOM}"
 ENTRYPOINT_RECEIVER="pfm"
-OSMOSIS_NODE="http://localhost:26658"
+OSMOSIS_NODE="${OSMOSIS_NODE:-http://localhost:26658}"
+OSMOSIS_CHAIN_ID="${OSMOSIS_CHAIN_ID:-localosmosis}"
+OSMOSIS_GAS_PRICES="${OSMOSIS_GAS_PRICES:-0.1uosmo}"
 SWAPROUTER_WASM="$repo_root/chains/osmosis/osmosis/cosmwasm/wasm/swaprouter.wasm"
 CROSSCHAIN_SWAPS_WASM="$repo_root/chains/osmosis/osmosis/cosmwasm/wasm/crosschain_swaps.wasm"
 
@@ -396,7 +409,7 @@ echo "Sent IBC Denom: $denom"
 
 #==================================Create Osmosis swap pool=======================================
 
-TX_FLAGS=(--node "$OSMOSIS_NODE" --keyring-backend test --from deployer --chain-id localosmosis --gas-prices 0.1uosmo --gas auto --gas-adjustment 1.3 --broadcast-mode sync --yes)
+TX_FLAGS=(--node "$OSMOSIS_NODE" --keyring-backend test --from "$OSMOSIS_DEPLOYER_KEY_NAME" --chain-id "$OSMOSIS_CHAIN_ID" --gas-prices "$OSMOSIS_GAS_PRICES" --gas auto --gas-adjustment 1.3 --broadcast-mode sync --yes)
 sample_pool_file="$(mktemp)"
 cleanup_sample_pool_file() {
   rm -f "$sample_pool_file"

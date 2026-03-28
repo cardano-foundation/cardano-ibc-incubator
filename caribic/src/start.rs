@@ -3252,7 +3252,7 @@ impl CoreServiceId {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(clap::ValueEnum, Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum OptionalChainId {
     Osmosis,
     Cheqd,
@@ -3265,15 +3265,6 @@ impl OptionalChainId {
             OptionalChainId::Osmosis => "osmosis",
             OptionalChainId::Cheqd => "cheqd",
             OptionalChainId::Injective => "injective",
-        }
-    }
-
-    pub(crate) fn from_adapter_id(id: &str) -> Option<Self> {
-        match id {
-            "osmosis" => Some(OptionalChainId::Osmosis),
-            "cheqd" => Some(OptionalChainId::Cheqd),
-            "injective" => Some(OptionalChainId::Injective),
-            _ => None,
         }
     }
 }

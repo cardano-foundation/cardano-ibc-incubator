@@ -5,13 +5,15 @@ use console::style;
 use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::chains::hermes_support;
+use crate::chains::hermes_support::{
+    HermesAddressType, HermesCosmosChainProfile, HermesGasPrice, HermesTrustThreshold,
+};
+use crate::chains::osmosis::config as osmosis_config;
 use crate::config;
 use crate::logger::{self, log, log_or_show_progress, verbose};
 use crate::utils::{
     execute_script, extract_tendermint_client_id, extract_tendermint_connection_id,
 };
-
-const OSMOSIS_TESTNET_CHAIN_ID: &str = "osmo-test-5";
 
 fn entrypoint_chain_id() -> String {
     config::get_config().chains.entrypoint.chain_id
@@ -19,6 +21,21 @@ fn entrypoint_chain_id() -> String {
 
 /// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Osmosis.
 pub(super) fn configure_hermes_for_demo(
+    osmosis_dir: &Path,
+    network: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match network {
+        "local" => configure_local_hermes_for_demo(osmosis_dir),
+        "testnet" => configure_testnet_hermes_for_demo(osmosis_dir),
+        other => Err(format!(
+            "Unsupported Osmosis network '{}' for Hermes demo configuration",
+            other
+        )
+        .into()),
+    }
+}
+
+fn configure_local_hermes_for_demo(
     osmosis_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
@@ -45,9 +62,8 @@ pub(super) fn configure_hermes_for_demo(
     );
 
     let script_dir = osmosis_dir.join("scripts");
-    ensure_chain_in_hermes_config(
-        script_dir.as_path(),
-        "localosmosis",
+    hermes_support::ensure_cosmos_chain_in_hermes_config(
+        &local_chain_profile(),
         "Local Osmosis chain used by token-swap demo",
     )?;
     let hermes_binary = resolve_local_hermes_binary(osmosis_dir)?;
@@ -85,7 +101,7 @@ pub(super) fn configure_hermes_for_demo(
             "add",
             "--overwrite",
             "--chain",
-            "localosmosis",
+            osmosis_config::LOCAL_CHAIN_ID,
             "--mnemonic-file",
             osmosis_dir.join("scripts/hermes/osmosis").to_str().unwrap(),
         ]),
@@ -108,7 +124,7 @@ pub(super) fn configure_hermes_for_demo(
                 "create",
                 "client",
                 "--host-chain",
-                "localosmosis",
+                osmosis_config::LOCAL_CHAIN_ID,
                 "--reference-chain",
                 entrypoint_chain_id().as_str(),
             ])
@@ -146,7 +162,7 @@ pub(super) fn configure_hermes_for_demo(
                 "--host-chain",
                 entrypoint_chain_id().as_str(),
                 "--reference-chain",
-                "localosmosis",
+                osmosis_config::LOCAL_CHAIN_ID,
                 "--trusting-period",
                 "86000s",
             ])
@@ -242,16 +258,130 @@ pub(super) fn configure_hermes_for_demo(
     Ok(())
 }
 
+fn configure_testnet_hermes_for_demo(
+    osmosis_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    ensure_testnet_chain_in_hermes_config(osmosis_dir)?;
+
+    let hermes_binary = resolve_local_hermes_binary(osmosis_dir)?;
+    if !chain_has_any_keys(
+        hermes_binary.as_path(),
+        osmosis_dir,
+        osmosis_config::TESTNET_CHAIN_ID,
+    )? {
+        return Err(format!(
+            "No Hermes key configured for chain '{}'. Add one first with:\n  caribic keys add --chain {} --mnemonic-file <path>",
+            osmosis_config::TESTNET_CHAIN_ID,
+            osmosis_config::TESTNET_CHAIN_ID,
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
 /// Ensures Hermes config contains an Osmosis testnet chain block (`osmo-test-5`).
 pub(super) fn ensure_testnet_chain_in_hermes_config(
     osmosis_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let script_dir = osmosis_dir.join("scripts");
-    ensure_chain_in_hermes_config(
-        script_dir.as_path(),
-        OSMOSIS_TESTNET_CHAIN_ID,
-        "Osmosis testnet chain used by local state-sync node",
+    let _ = osmosis_dir;
+    hermes_support::ensure_cosmos_chain_in_hermes_config(
+        &testnet_chain_profile(),
+        "Osmosis testnet chain using external public endpoints",
     )
+}
+
+fn local_chain_profile() -> HermesCosmosChainProfile {
+    HermesCosmosChainProfile {
+        id: osmosis_config::LOCAL_CHAIN_ID.to_string(),
+        rpc_addr: osmosis_config::LOCAL_RPC_URL.to_string(),
+        grpc_addr: "http://127.0.0.1:9094".to_string(),
+        event_source_url: "ws://127.0.0.1:26658/websocket".to_string(),
+        rpc_timeout: "10s",
+        trusted_node: None,
+        account_prefix: "osmo",
+        key_name: osmosis_config::LOCAL_CHAIN_ID.to_string(),
+        address_type: Some(HermesAddressType::Cosmos),
+        store_prefix: "ibc",
+        default_gas: 5_000_000,
+        max_gas: 15_000_000,
+        gas_price: HermesGasPrice {
+            price: "0.1",
+            denom: "uosmo",
+        },
+        gas_multiplier: "2.0",
+        max_msg_num: 20,
+        max_tx_size: 209_715,
+        clock_drift: "20s",
+        max_block_time: "10s",
+        trusting_period: "10days",
+        memo_prefix: Some("Osmosis Docs Rocks"),
+        trust_threshold: HermesTrustThreshold {
+            numerator: "1",
+            denominator: "3",
+        },
+        compat_mode: None,
+    }
+}
+
+fn testnet_chain_profile() -> HermesCosmosChainProfile {
+    HermesCosmosChainProfile {
+        id: osmosis_config::TESTNET_CHAIN_ID.to_string(),
+        rpc_addr: osmosis_config::TESTNET_RPC_URL.to_string(),
+        grpc_addr: osmosis_config::TESTNET_GRPC_URL.to_string(),
+        event_source_url: osmosis_config::TESTNET_EVENT_SOURCE_URL.to_string(),
+        rpc_timeout: "10s",
+        trusted_node: None,
+        account_prefix: "osmo",
+        key_name: osmosis_config::TESTNET_CHAIN_ID.to_string(),
+        address_type: Some(HermesAddressType::Cosmos),
+        store_prefix: "ibc",
+        default_gas: 5_000_000,
+        max_gas: 15_000_000,
+        gas_price: HermesGasPrice {
+            price: "0.1",
+            denom: "uosmo",
+        },
+        gas_multiplier: "2.0",
+        max_msg_num: 20,
+        max_tx_size: 209_715,
+        clock_drift: "20s",
+        max_block_time: "10s",
+        trusting_period: "10days",
+        memo_prefix: Some("Osmosis Docs Rocks"),
+        trust_threshold: HermesTrustThreshold {
+            numerator: "1",
+            denominator: "3",
+        },
+        compat_mode: None,
+    }
+}
+
+fn chain_has_any_keys(
+    hermes_binary: &Path,
+    working_dir: &Path,
+    chain_id: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let output = Command::new(hermes_binary)
+        .current_dir(working_dir)
+        .args(["keys", "list", "--chain", chain_id])
+        .output()?;
+    if !output.status.success() {
+        return Ok(false);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}\n{}", stdout, stderr);
+    let lower = combined.to_ascii_lowercase();
+    if lower.contains("no keys found") {
+        return Ok(false);
+    }
+
+    Ok(combined.contains("osmo1")
+        || combined.contains("cosmos1")
+        || combined.contains("inj1")
+        || !combined.trim().is_empty())
 }
 
 fn resolve_local_hermes_binary(osmosis_dir: &Path) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
@@ -264,27 +394,4 @@ fn resolve_local_hermes_binary(osmosis_dir: &Path) -> Result<std::path::PathBuf,
             )
             .into()
         })
-}
-
-fn ensure_chain_in_hermes_config(
-    script_dir: &Path,
-    chain_id: &str,
-    inserted_block_comment: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let source_config_path = resolve_template_config_path(script_dir);
-    hermes_support::ensure_chain_in_hermes_config(
-        source_config_path.as_path(),
-        chain_id,
-        inserted_block_comment,
-        "Osmosis Hermes config",
-    )
-}
-
-fn resolve_template_config_path(script_dir: &Path) -> std::path::PathBuf {
-    let canonical_source = script_dir.join("../../configuration/hermes/config.toml");
-    if canonical_source.exists() {
-        canonical_source
-    } else {
-        script_dir.join("hermes/config.toml")
-    }
 }

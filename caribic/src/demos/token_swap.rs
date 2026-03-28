@@ -14,7 +14,13 @@ use crate::{
             stop_testnet as stop_injective_testnet, testnet_chain_id as injective_testnet_chain_id,
             workspace_dir as injective_workspace_dir,
         },
-        osmosis::{configure_hermes_for_demo, stop_local, workspace_dir},
+        osmosis::{
+            configure_hermes_for_demo as configure_osmosis_hermes_for_demo,
+            demo_chain_id as osmosis_demo_chain_id,
+            demo_node_rpc_url as osmosis_demo_node_rpc_url,
+            stop_for_network as stop_osmosis_for_network,
+            workspace_dir,
+        },
     },
     config, logger,
     start::{
@@ -23,18 +29,13 @@ use crate::{
     },
     stop::stop_relayer,
     utils::{execute_script, parse_tendermint_client_id, parse_tendermint_connection_id},
-    DemoChain,
 };
 
-const TOKEN_SWAP_DEFAULT_CHAIN: DemoChain = DemoChain::Osmosis;
-const TOKEN_SWAP_SUPPORTED_TARGETS: [(&str, &str); 3] = [
-    ("osmosis", "local"),
-    ("injective", "local"),
-    ("injective", "testnet"),
-];
+const TOKEN_SWAP_DEFAULT_CHAIN: OptionalChainId = OptionalChainId::Osmosis;
 const INJECTIVE_TESTNET_MIN_FIRST_BLOCK_WAIT_MS: u64 = 30 * 60 * 1000;
 const INJECTIVE_TESTNET_RECOVERY_HINT: &str =
     "caribic start injective --network testnet --chain-flag stateful=false";
+
 fn token_swap_core_targets() -> Vec<HealthTarget> {
     vec![
         HealthTarget::Core(CoreServiceId::Gateway),
@@ -47,9 +48,7 @@ fn token_swap_core_targets() -> Vec<HealthTarget> {
     ]
 }
 
-fn optional_chain_target(chain_id: &str, network: &str) -> Result<HealthTarget, String> {
-    let chain = OptionalChainId::from_adapter_id(chain_id)
-        .ok_or_else(|| format!("Unsupported optional chain '{}' in token-swap demo", chain_id))?;
+fn optional_chain_target(chain: OptionalChainId, network: &str) -> Result<HealthTarget, String> {
     let network = OptionalChainNetwork::from_name(network).ok_or_else(|| {
         format!(
             "Unsupported optional-chain network '{}' in token-swap demo",
@@ -86,57 +85,53 @@ struct TransferChannelPair {
 /// Runs the full token swap demo and validates required services before execution.
 pub async fn run_token_swap_demo(
     project_root_path: &Path,
-    chain: Option<DemoChain>,
+    chain: Option<OptionalChainId>,
     network: Option<&str>,
 ) -> Result<(), String> {
-    let (chain_id, resolved_network) = resolve_token_swap_target(chain, network)?;
-    match (chain_id.as_str(), resolved_network.as_str()) {
-        ("osmosis", "local") => run_osmosis_local_token_swap_demo(project_root_path).await,
-        ("injective", "local") => run_injective_local_token_swap_demo(project_root_path).await,
-        ("injective", "testnet") => {
-            run_injective_testnet_token_swap_demo(project_root_path).await
+    let (resolved_chain, resolved_network) = resolve_token_swap_target(chain, network)?;
+    match resolved_chain {
+        OptionalChainId::Osmosis => {
+            run_osmosis_token_swap_demo(project_root_path, resolved_network.as_str()).await
         }
-        _ => Err(format!(
-            "Token-swap demo is not implemented for chain '{}' on network '{}'. Currently supported: {}",
-            chain_id,
-            resolved_network,
-            TOKEN_SWAP_SUPPORTED_TARGETS
-                .iter()
-                .map(|(chain, network)| format!("--chain {} --network {}", chain, network))
-                .collect::<Vec<String>>()
-                .join(", ")
-        )),
+        OptionalChainId::Injective => {
+            run_injective_token_swap_demo(project_root_path, resolved_network.as_str()).await
+        }
+        OptionalChainId::Cheqd => Err(
+            "ERROR: Token-swap demo is not implemented for chain 'cheqd'.".to_string(),
+        ),
     }
 }
 
 fn resolve_token_swap_target(
-    chain: Option<DemoChain>,
+    chain: Option<OptionalChainId>,
     network: Option<&str>,
-) -> Result<(String, String), String> {
+) -> Result<(OptionalChainId, String), String> {
     let resolved_chain = chain.unwrap_or(TOKEN_SWAP_DEFAULT_CHAIN);
-    let chain_id = match resolved_chain {
-        DemoChain::Osmosis => "osmosis",
-        DemoChain::Injective => "injective",
-    };
+    let chain_id = resolved_chain.adapter_id();
 
     let adapter = chains::get_chain_adapter(chain_id)
         .ok_or_else(|| format!("Optional chain adapter '{}' is not registered", chain_id))?;
     let resolved_network = adapter.resolve_network(network)?;
-    Ok((chain_id.to_string(), resolved_network))
+    Ok((resolved_chain, resolved_network))
 }
 
-async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(), String> {
+async fn run_osmosis_token_swap_demo(
+    project_root_path: &Path,
+    network: &str,
+) -> Result<(), String> {
     let osmosis_dir = workspace_dir(project_root_path);
     logger::verbose(&format!("{}", osmosis_dir.display()));
+    let osmosis_chain_id = osmosis_demo_chain_id(network)?;
+    let osmosis_node_rpc_url = osmosis_demo_node_rpc_url(network)?;
 
     let mut required_targets = token_swap_core_targets();
-    required_targets.push(optional_chain_target("osmosis", "local")?);
+    required_targets.push(optional_chain_target(OptionalChainId::Osmosis, network)?);
     if let Err(error) = ensure_demo_health_targets_ready(
         project_root_path,
         required_targets.as_slice(),
         "token-swap",
     ) {
-        return fail_with_cleanup(osmosis_dir.as_path(), &error);
+        return fail_with_osmosis_cleanup(osmosis_dir.as_path(), network, &error);
     }
 
     logger::log("PASS: Required token-swap services are running");
@@ -162,8 +157,9 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
     let cardano_entrypoint_channel_pair = match ensure_cardano_entrypoint_transfer_channel() {
         Ok(pair) => pair,
         Err(error) => {
-            return fail_with_cleanup(
+            return fail_with_osmosis_cleanup(
                 osmosis_dir.as_path(),
+                network,
                 &format!(
                     "ERROR: Failed to prepare Cardano↔Entrypoint transfer path: {}",
                     error
@@ -172,11 +168,12 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
         }
     };
 
-    match configure_hermes_for_demo(osmosis_dir.as_path()) {
-        Ok(_) => logger::log("PASS: Hermes configured successfully and channels built"),
+    match configure_osmosis_hermes_for_demo(osmosis_dir.as_path(), network) {
+        Ok(_) => logger::log("PASS: Hermes configured successfully for Osmosis demo routing"),
         Err(error) => {
-            return fail_with_cleanup(
+            return fail_with_osmosis_cleanup(
                 osmosis_dir.as_path(),
+                network,
                 &format!("ERROR: Failed to configure Hermes: {}", error),
             )
         }
@@ -185,19 +182,24 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
     let entrypoint_osmosis_channel_pair = match query_open_transfer_channel_pair(
         entrypoint_chain_id().as_str(),
         TRANSFER_PORT_ID,
-        "localosmosis",
+        osmosis_chain_id,
         TRANSFER_PORT_ID,
     ) {
         Ok(Some(pair)) => pair,
         Ok(None) => {
-            return fail_with_cleanup(
+            return fail_with_osmosis_cleanup(
                 osmosis_dir.as_path(),
-                "ERROR: No open Entrypoint↔Osmosis transfer channel pair is currently usable",
+                network,
+                &format!(
+                    "ERROR: No open Entrypoint↔Osmosis transfer channel pair is currently usable for chain '{}'",
+                    osmosis_chain_id
+                ),
             )
         }
         Err(error) => {
-            return fail_with_cleanup(
+            return fail_with_osmosis_cleanup(
                 osmosis_dir.as_path(),
+                network,
                 &format!(
                     "ERROR: Failed to resolve Entrypoint↔Osmosis transfer channel pair: {}",
                     error
@@ -209,77 +211,104 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
     if let Err(error) =
         ensure_hermes_daemon_for_token_swap(project_root_path, restart_relayer_after_setup)
     {
-        return fail_with_cleanup(osmosis_dir.as_path(), &error);
+        return fail_with_osmosis_cleanup(osmosis_dir.as_path(), network, &error);
     }
 
-    let setup_script_path = osmosis_dir
-        .join("scripts")
-        .join("setup_crosschain_swaps.sh");
-    let setup_script = setup_script_path
-        .to_str()
-        .ok_or_else(|| "ERROR: Invalid setup_crosschain_swaps.sh path".to_string())?;
+    let preconfigured_crosschain_swaps_address = env_var_non_empty("OSMOSIS_CROSSCHAIN_SWAPS_ADDRESS");
+    let preconfigured_swap_receiver = env_var_non_empty("OSMOSIS_SWAP_RECEIVER");
+    let (crosschain_swaps_address, osmosis_swap_receiver) =
+        if let Some(address) = preconfigured_crosschain_swaps_address {
+            let receiver = preconfigured_swap_receiver.ok_or_else(|| {
+                "ERROR: OSMOSIS_SWAP_RECEIVER is required when OSMOSIS_CROSSCHAIN_SWAPS_ADDRESS is preconfigured."
+                    .to_string()
+            })?;
+            logger::log(&format!(
+                "PASS: Using preconfigured crosschain_swaps address {} for Osmosis {}",
+                address, network
+            ));
+            (address, receiver)
+        } else {
+            let setup_script_path = osmosis_dir
+                .join("scripts")
+                .join("setup_crosschain_swaps.sh");
+            let setup_script = setup_script_path
+                .to_str()
+                .ok_or_else(|| "ERROR: Invalid setup_crosschain_swaps.sh path".to_string())?;
 
-    // First stage script wires Osmosis-side contracts and creates the incoming routing path
-    // for Cardano vouchers. We parse its stdout to recover the deployed contract address
-    // needed by the final swap trigger script.
-    let setup_output = match execute_script(
-        project_root_path,
-        setup_script,
-        Vec::new(),
-        Some(vec![
-            ("CARIBIC_CLEAR_SWAP_PACKETS", "true"),
-            (
-                "CARIBIC_PROJECT_ROOT",
-                project_root_path
-                    .to_str()
-                    .ok_or_else(|| "ERROR: Invalid project root path".to_string())?,
-            ),
-            (
-                "CARIBIC_OSMOSIS_DIR",
-                osmosis_dir
-                    .to_str()
-                    .ok_or_else(|| "ERROR: Invalid osmosis workspace path".to_string())?,
-            ),
-            (
-                "CARDANO_ENTRYPOINT_CHANNEL_ID",
-                cardano_entrypoint_channel_pair.a_channel_id.as_str(),
-            ),
-            (
-                "ENTRYPOINT_OSMOSIS_CHANNEL_ID",
-                entrypoint_osmosis_channel_pair.a_channel_id.as_str(),
-            ),
-            (
-                "OSMOSIS_ENTRYPOINT_CHANNEL_ID",
-                entrypoint_osmosis_channel_pair.b_channel_id.as_str(),
-            ),
-        ]),
-    ) {
-        Ok(output) => {
-            logger::log("\nPASS: Token swap demo setup script completed");
-            output
-        }
-        Err(error) => {
-            return fail_with_cleanup(
-                osmosis_dir.as_path(),
-                &format!("ERROR: Failed to run token swap setup script: {}", error),
-            );
-        }
-    };
+            // First stage script wires Osmosis-side contracts and creates the incoming routing path
+            // for Cardano vouchers. We parse its stdout to recover the deployed contract address
+            // and the Osmosis-side swap receiver needed by the final swap trigger script.
+            let setup_output = match execute_script(
+                project_root_path,
+                setup_script,
+                Vec::new(),
+                Some(vec![
+                    ("CARIBIC_CLEAR_SWAP_PACKETS", "true"),
+                    (
+                        "CARIBIC_PROJECT_ROOT",
+                        project_root_path
+                            .to_str()
+                            .ok_or_else(|| "ERROR: Invalid project root path".to_string())?,
+                    ),
+                    (
+                        "CARIBIC_OSMOSIS_DIR",
+                        osmosis_dir
+                            .to_str()
+                            .ok_or_else(|| "ERROR: Invalid osmosis workspace path".to_string())?,
+                    ),
+                    ("OSMOSIS_NETWORK", network),
+                    ("HERMES_OSMOSIS_NAME", osmosis_chain_id),
+                    ("OSMOSIS_CHAIN_ID", osmosis_chain_id),
+                    ("OSMOSIS_NODE", osmosis_node_rpc_url),
+                    (
+                        "CARDANO_ENTRYPOINT_CHANNEL_ID",
+                        cardano_entrypoint_channel_pair.a_channel_id.as_str(),
+                    ),
+                    (
+                        "ENTRYPOINT_OSMOSIS_CHANNEL_ID",
+                        entrypoint_osmosis_channel_pair.a_channel_id.as_str(),
+                    ),
+                    (
+                        "OSMOSIS_ENTRYPOINT_CHANNEL_ID",
+                        entrypoint_osmosis_channel_pair.b_channel_id.as_str(),
+                    ),
+                ]),
+            ) {
+                Ok(output) => {
+                    logger::log("\nPASS: Token swap demo setup script completed");
+                    output
+                }
+                Err(error) => {
+                    return fail_with_osmosis_cleanup(
+                        osmosis_dir.as_path(),
+                        network,
+                        &format!("ERROR: Failed to run token swap setup script: {}", error),
+                    );
+                }
+            };
 
-    let crosschain_swaps_address = match setup_output
-        .lines()
-        .filter_map(|line| line.trim().split_once("crosschain_swaps address:"))
-        .map(|(_, value)| value.trim().to_string())
-        .find(|value| !value.is_empty())
-    {
-        Some(address) => address,
-        None => {
-            return fail_with_cleanup(
-                osmosis_dir.as_path(),
-                "ERROR: Could not parse crosschain_swaps address from setup script output",
-            )
-        }
-    };
+            let crosschain_swaps_address =
+                parse_setup_output_value(setup_output.as_str(), "crosschain_swaps address:")
+                    .ok_or_else(|| {
+                        fail_with_osmosis_cleanup(
+                            osmosis_dir.as_path(),
+                            network,
+                            "ERROR: Could not parse crosschain_swaps address from setup script output",
+                        )
+                        .unwrap_err()
+                    })?;
+            let swap_receiver = parse_setup_output_value(setup_output.as_str(), "deployer address ")
+                .or(preconfigured_swap_receiver)
+                .ok_or_else(|| {
+                    fail_with_osmosis_cleanup(
+                        osmosis_dir.as_path(),
+                        network,
+                        "ERROR: Could not determine Osmosis swap receiver address. Set OSMOSIS_SWAP_RECEIVER or ensure setup script prints deployer address.",
+                    )
+                    .unwrap_err()
+                })?;
+            (crosschain_swaps_address, swap_receiver)
+        };
 
     logger::log(&format!(
         "PASS: Token swap setup produced crosschain_swaps address {}",
@@ -297,24 +326,20 @@ async fn run_osmosis_local_token_swap_demo(project_root_path: &Path) -> Result<(
         project_root_path,
         swap_script,
         Vec::new(),
-        Some(vec![(
-            "CROSSCHAIN_SWAPS_ADDRESS",
-            crosschain_swaps_address.as_str(),
-        )]),
+        Some(vec![
+            (
+                "CROSSCHAIN_SWAPS_ADDRESS",
+                crosschain_swaps_address.as_str(),
+            ),
+            ("HERMES_OSMOSIS_NAME", osmosis_chain_id),
+            ("OSMOSIS_SWAP_RECEIVER", osmosis_swap_receiver.as_str()),
+        ]),
     )
     .map_err(|error| format!("ERROR: Failed to run token swap transfer script: {}", error))?;
     logger::log("PASS: Cardano-to-Osmosis token swap completed");
     logger::log("\nPASS: Token swap demo flow completed successfully");
 
     Ok(())
-}
-
-async fn run_injective_local_token_swap_demo(project_root_path: &Path) -> Result<(), String> {
-    run_injective_token_swap_demo(project_root_path, "local").await
-}
-
-async fn run_injective_testnet_token_swap_demo(project_root_path: &Path) -> Result<(), String> {
-    run_injective_token_swap_demo(project_root_path, "testnet").await
 }
 
 async fn run_injective_token_swap_demo(
@@ -325,7 +350,7 @@ async fn run_injective_token_swap_demo(
     logger::verbose(&format!("{}", injective_dir.display()));
 
     let mut required_targets = token_swap_core_targets();
-    required_targets.push(optional_chain_target("injective", network)?);
+    required_targets.push(optional_chain_target(OptionalChainId::Injective, network)?);
     if let Err(error) = ensure_demo_health_targets_ready(
         project_root_path,
         required_targets.as_slice(),
@@ -1598,11 +1623,26 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<TransferChannelPair, S
     Ok(open_channel_pair)
 }
 
-/// Logs an error, stops Osmosis demo services, and returns the original error message.
-fn fail_with_cleanup(osmosis_dir: &Path, message: &str) -> Result<(), String> {
+fn env_var_non_empty(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn parse_setup_output_value(output: &str, prefix: &str) -> Option<String> {
+    output
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix(prefix))
+        .map(|value| value.trim().to_string())
+        .find(|value| !value.is_empty())
+}
+
+/// Logs an error, stops local Osmosis demo services when relevant, and returns the original error message.
+fn fail_with_osmosis_cleanup(osmosis_dir: &Path, network: &str, message: &str) -> Result<(), String> {
     logger::error(message);
     logger::log("Stopping services...");
-    stop_local(osmosis_dir);
+    let _ = stop_osmosis_for_network(osmosis_dir, network);
     Err(message.to_string())
 }
 

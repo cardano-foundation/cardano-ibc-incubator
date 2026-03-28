@@ -27,12 +27,6 @@ enum DemoType {
     TokenSwap,
 }
 
-#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-enum DemoChain {
-    Osmosis,
-    Injective,
-}
-
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StartTarget {
     /// Starts everything (network + packet-forwarding chain + bridge)
@@ -197,7 +191,7 @@ enum Commands {
         use_case: DemoType,
         /// Optional chain selector for demos that support multiple chains (currently token-swap)
         #[arg(long, value_enum)]
-        chain: Option<DemoChain>,
+        chain: Option<start::OptionalChainId>,
         /// Optional network profile for the selected demo chain (for example: local, testnet)
         #[arg(long)]
         network: Option<String>,
