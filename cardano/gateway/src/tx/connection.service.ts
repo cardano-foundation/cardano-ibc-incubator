@@ -1,5 +1,5 @@
 import { MsgUpdateClientResponse } from '@plus/proto-types/build/ibc/core/client/v1/tx';
-import { TxBuilder, UTxO, fromHex } from '@lucid-evolution/lucid';
+import { Network, TxBuilder, UTxO, fromHex } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { inspect } from 'util';
@@ -60,6 +60,7 @@ import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
+import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
 
 @Injectable()
 export class ConnectionService {
@@ -121,6 +122,23 @@ export class ConnectionService {
     const exp = Math.max(0, attempt - 1);
     const raw = ConnectionService.CONN_OPEN_ACK_COMPLETE_BASE_DELAY_MS * Math.pow(2, exp);
     return Math.round(raw);
+  }
+
+  private async computeTxValidityWindow(): Promise<{
+    currentSlot: number;
+    currentLedgerTime: number;
+    validFromTime: number;
+    validToSlot: number;
+    validToTime: number;
+  }> {
+    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    const network = this.configService.get('cardanoNetwork') as Network;
+    const slotConfig = this.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[network];
+    if (!slotConfig || slotConfig.slotLength <= 0) {
+      throw new GrpcInternalException(`connection tx failed: invalid slot configuration for network ${network}`);
+    }
+
+    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, TRANSACTION_TIME_TO_LIVE);
   }
 
   /**
@@ -284,7 +302,7 @@ export class ConnectionService {
         connectionOpenInitOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const { validToTime } = await this.computeTxValidityWindow();
 
       const { unsignedTxCbor, unsignedTxHash, unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'connectionOpenInit',
@@ -354,7 +372,7 @@ export class ConnectionService {
         connectionOpenTryOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const { validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'connectionOpenTry',
         unsignedTx: unsignedConnectionOpenTryTx,
@@ -425,7 +443,7 @@ export class ConnectionService {
         connectionOpenAckOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const { validToTime } = await this.computeTxValidityWindow();
       const unsignedConnectionOpenAckTxValidTo: TxBuilder = unsignedConnectionOpenAckTx.validTo(validToTime);
       
       // DEBUG: `.complete()` asks the node to evaluate scripts to pick fees/execution units.
@@ -578,7 +596,7 @@ export class ConnectionService {
         connectionOpenConfirmOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const { validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'connectionOpenConfirm',
         unsignedTx: unsignedConnectionOpenConfirmTx,
