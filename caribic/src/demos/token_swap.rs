@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
@@ -18,6 +18,7 @@ use crate::{
             configure_hermes_for_demo as configure_osmosis_hermes_for_demo,
             demo_chain_id as osmosis_demo_chain_id,
             demo_node_rpc_url as osmosis_demo_node_rpc_url,
+            sync_workspace_assets as sync_osmosis_workspace_assets,
             stop_for_network as stop_osmosis_for_network,
             workspace_dir,
         },
@@ -35,6 +36,7 @@ const TOKEN_SWAP_DEFAULT_CHAIN: OptionalChainId = OptionalChainId::Osmosis;
 const INJECTIVE_TESTNET_MIN_FIRST_BLOCK_WAIT_MS: u64 = 30 * 60 * 1000;
 const INJECTIVE_TESTNET_RECOVERY_HINT: &str =
     "caribic start injective --network testnet --chain-flag stateful=false";
+const OSMOSIS_TESTNET_DEPLOYER_MNEMONIC_FILENAME: &str = "testnet-deployer.mnemonic";
 
 fn token_swap_core_targets() -> Vec<HealthTarget> {
     vec![
@@ -121,8 +123,15 @@ async fn run_osmosis_token_swap_demo(
 ) -> Result<(), String> {
     let osmosis_dir = workspace_dir(project_root_path);
     logger::verbose(&format!("{}", osmosis_dir.display()));
+    sync_osmosis_workspace_assets(project_root_path, osmosis_dir.as_path()).map_err(|error| {
+        format!(
+            "ERROR: Failed to refresh Osmosis workspace assets before token-swap demo: {}",
+            error
+        )
+    })?;
     let osmosis_chain_id = osmosis_demo_chain_id(network)?;
     let osmosis_node_rpc_url = osmosis_demo_node_rpc_url(network)?;
+    validate_osmosis_demo_prerequisites(network)?;
 
     let mut required_targets = token_swap_core_targets();
     required_targets.push(optional_chain_target(OptionalChainId::Osmosis, network)?);
@@ -214,6 +223,7 @@ async fn run_osmosis_token_swap_demo(
         return fail_with_osmosis_cleanup(osmosis_dir.as_path(), network, &error);
     }
 
+    let deployer_mnemonic = osmosis_deployer_mnemonic();
     let preconfigured_crosschain_swaps_address = env_var_non_empty("OSMOSIS_CROSSCHAIN_SWAPS_ADDRESS");
     let preconfigured_swap_receiver = env_var_non_empty("OSMOSIS_SWAP_RECEIVER");
     let (crosschain_swaps_address, osmosis_swap_receiver) =
@@ -228,7 +238,9 @@ async fn run_osmosis_token_swap_demo(
             ));
             (address, receiver)
         } else {
-            let setup_script_path = osmosis_dir
+            let setup_script_path = project_root_path
+                .join("chains")
+                .join("osmosis")
                 .join("scripts")
                 .join("setup_crosschain_swaps.sh");
             let setup_script = setup_script_path
@@ -238,41 +250,46 @@ async fn run_osmosis_token_swap_demo(
             // First stage script wires Osmosis-side contracts and creates the incoming routing path
             // for Cardano vouchers. We parse its stdout to recover the deployed contract address
             // and the Osmosis-side swap receiver needed by the final swap trigger script.
+            let mut setup_env = vec![
+                ("CARIBIC_CLEAR_SWAP_PACKETS", "true"),
+                (
+                    "CARIBIC_PROJECT_ROOT",
+                    project_root_path
+                        .to_str()
+                        .ok_or_else(|| "ERROR: Invalid project root path".to_string())?,
+                ),
+                (
+                    "CARIBIC_OSMOSIS_DIR",
+                    osmosis_dir
+                        .to_str()
+                        .ok_or_else(|| "ERROR: Invalid osmosis workspace path".to_string())?,
+                ),
+                ("OSMOSIS_NETWORK", network),
+                ("HERMES_OSMOSIS_NAME", osmosis_chain_id),
+                ("OSMOSIS_CHAIN_ID", osmosis_chain_id),
+                ("OSMOSIS_NODE", osmosis_node_rpc_url),
+                (
+                    "CARDANO_ENTRYPOINT_CHANNEL_ID",
+                    cardano_entrypoint_channel_pair.a_channel_id.as_str(),
+                ),
+                (
+                    "ENTRYPOINT_OSMOSIS_CHANNEL_ID",
+                    entrypoint_osmosis_channel_pair.a_channel_id.as_str(),
+                ),
+                (
+                    "OSMOSIS_ENTRYPOINT_CHANNEL_ID",
+                    entrypoint_osmosis_channel_pair.b_channel_id.as_str(),
+                ),
+            ];
+            if let Some(ref mnemonic) = deployer_mnemonic {
+                setup_env.push(("OSMOSIS_DEPLOYER_MNEMONIC", mnemonic.as_str()));
+            }
+
             let setup_output = match execute_script(
                 project_root_path,
                 setup_script,
                 Vec::new(),
-                Some(vec![
-                    ("CARIBIC_CLEAR_SWAP_PACKETS", "true"),
-                    (
-                        "CARIBIC_PROJECT_ROOT",
-                        project_root_path
-                            .to_str()
-                            .ok_or_else(|| "ERROR: Invalid project root path".to_string())?,
-                    ),
-                    (
-                        "CARIBIC_OSMOSIS_DIR",
-                        osmosis_dir
-                            .to_str()
-                            .ok_or_else(|| "ERROR: Invalid osmosis workspace path".to_string())?,
-                    ),
-                    ("OSMOSIS_NETWORK", network),
-                    ("HERMES_OSMOSIS_NAME", osmosis_chain_id),
-                    ("OSMOSIS_CHAIN_ID", osmosis_chain_id),
-                    ("OSMOSIS_NODE", osmosis_node_rpc_url),
-                    (
-                        "CARDANO_ENTRYPOINT_CHANNEL_ID",
-                        cardano_entrypoint_channel_pair.a_channel_id.as_str(),
-                    ),
-                    (
-                        "ENTRYPOINT_OSMOSIS_CHANNEL_ID",
-                        entrypoint_osmosis_channel_pair.a_channel_id.as_str(),
-                    ),
-                    (
-                        "OSMOSIS_ENTRYPOINT_CHANNEL_ID",
-                        entrypoint_osmosis_channel_pair.b_channel_id.as_str(),
-                    ),
-                ]),
+                Some(setup_env),
             ) {
                 Ok(output) => {
                     logger::log("\nPASS: Token swap demo setup script completed");
@@ -1628,6 +1645,59 @@ fn env_var_non_empty(name: &str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn validate_osmosis_demo_prerequisites(network: &str) -> Result<(), String> {
+    if network == "local" {
+        return Ok(());
+    }
+
+    let preconfigured_crosschain_swaps_address =
+        env_var_non_empty("OSMOSIS_CROSSCHAIN_SWAPS_ADDRESS");
+    let preconfigured_swap_receiver = env_var_non_empty("OSMOSIS_SWAP_RECEIVER");
+    let deployer_mnemonic = osmosis_deployer_mnemonic();
+
+    if let Some(_address) = preconfigured_crosschain_swaps_address {
+        if preconfigured_swap_receiver.is_none() {
+            return Err(
+                "ERROR: OSMOSIS_SWAP_RECEIVER is required when OSMOSIS_CROSSCHAIN_SWAPS_ADDRESS is preconfigured."
+                    .to_string(),
+            );
+        }
+        return Ok(());
+    }
+
+    if deployer_mnemonic.is_some() {
+        return Ok(());
+    }
+
+    Err(format!(
+        "ERROR: Osmosis token-swap demo for network '{}' requires either: \
+OSMOSIS_DEPLOYER_MNEMONIC for contract provisioning, or both \
+OSMOSIS_CROSSCHAIN_SWAPS_ADDRESS and OSMOSIS_SWAP_RECEIVER to use a predeployed setup.",
+        network
+    ))
+}
+
+fn osmosis_deployer_mnemonic() -> Option<String> {
+    env_var_non_empty("OSMOSIS_DEPLOYER_MNEMONIC")
+        .or_else(read_osmosis_deployer_mnemonic_from_file)
+}
+
+fn read_osmosis_deployer_mnemonic_from_file() -> Option<String> {
+    let path = osmosis_testnet_deployer_mnemonic_path()?;
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn osmosis_testnet_deployer_mnemonic_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|home| {
+        home.join(".caribic")
+            .join("osmosis")
+            .join(OSMOSIS_TESTNET_DEPLOYER_MNEMONIC_FILENAME)
+    })
 }
 
 fn parse_setup_output_value(output: &str, prefix: &str) -> Option<String> {

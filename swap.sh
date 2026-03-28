@@ -27,7 +27,7 @@ get_mock_token_denom() {
 }
 
 script_dir=$(dirname "$(realpath "$0")")
-repo_root="$script_dir"
+repo_root="${CARIBIC_PROJECT_ROOT:-$script_dir}"
 HERMES_BIN="$repo_root/relayer/target/release/hermes"
 
 if [ ! -x "$HERMES_BIN" ]; then

@@ -90,6 +90,9 @@ impl ChainAdapter for OsmosisChainAdapter {
             }
             CosmosNetworkKind::Testnet => {
                 let osmosis_dir = workspace_dir(project_root_path);
+                lifecycle::sync_workspace_assets(project_root_path, osmosis_dir.as_path()).map_err(
+                    |error| format!("Failed to refresh Osmosis workspace assets: {}", error),
+                )?;
                 hermes::ensure_testnet_chain_in_hermes_config(osmosis_dir.as_path()).map_err(
                     |error| format!("Failed to update Hermes config for Osmosis testnet: {}", error),
                 )?;
@@ -179,6 +182,13 @@ pub fn workspace_dir(project_root: &Path) -> PathBuf {
         .join("osmosis")
         .join("workspace")
         .join("osmosis")
+}
+
+pub fn sync_workspace_assets(
+    project_root_path: &Path,
+    osmosis_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    lifecycle::sync_workspace_assets(project_root_path, osmosis_dir)
 }
 
 /// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Osmosis.

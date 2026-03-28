@@ -33,6 +33,13 @@ pub(super) async fn prepare_local(
     Ok(())
 }
 
+pub(super) fn sync_workspace_assets(
+    project_root_path: &Path,
+    osmosis_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    sync_workspace_assets_from_repo(project_root_path, osmosis_dir)
+}
+
 pub(super) async fn start_local(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,

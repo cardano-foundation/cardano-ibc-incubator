@@ -7,13 +7,16 @@ check_string_empty() {
 }
 
 script_dir=$(dirname "$(realpath "$0")")
-repo_root=$(
-  if git -C "$script_dir" rev-parse --show-toplevel >/dev/null 2>&1; then
-    git -C "$script_dir" rev-parse --show-toplevel
-  else
-    realpath "$script_dir/../../../.."
-  fi
-)
+repo_root="${CARIBIC_PROJECT_ROOT:-}"
+if [ -z "$repo_root" ]; then
+  repo_root=$(
+    if git -C "$script_dir" rev-parse --show-toplevel >/dev/null 2>&1; then
+      git -C "$script_dir" rev-parse --show-toplevel
+    else
+      realpath "$script_dir/../../../.."
+    fi
+  )
+fi
 HERMES_BIN="$repo_root/relayer/target/release/hermes"
 OSMOSISD_BIN="${OSMOSISD_BIN:-$(command -v osmosisd || true)}"
 if [ -z "$OSMOSISD_BIN" ] && [ -x "$HOME/go/bin/osmosisd" ]; then
