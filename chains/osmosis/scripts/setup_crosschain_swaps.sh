@@ -7,13 +7,16 @@ check_string_empty() {
 }
 
 script_dir=$(dirname "$(realpath "$0")")
-repo_root=$(
-  if git -C "$script_dir" rev-parse --show-toplevel >/dev/null 2>&1; then
-    git -C "$script_dir" rev-parse --show-toplevel
-  else
-    realpath "$script_dir/../../../.."
-  fi
-)
+repo_root="${CARIBIC_PROJECT_ROOT:-}"
+if [ -z "$repo_root" ]; then
+  repo_root=$(
+    if git -C "$script_dir" rev-parse --show-toplevel >/dev/null 2>&1; then
+      git -C "$script_dir" rev-parse --show-toplevel
+    else
+      realpath "$script_dir/../../../.."
+    fi
+  )
+fi
 HERMES_BIN="$repo_root/relayer/target/release/hermes"
 OSMOSISD_BIN="${OSMOSISD_BIN:-$(command -v osmosisd || true)}"
 if [ -z "$OSMOSISD_BIN" ] && [ -x "$HOME/go/bin/osmosisd" ]; then
@@ -327,17 +330,28 @@ get_mock_token_denom() {
 }
 
 #==================================Setup deployer key=======================================
-echo "quality vacuum heart guard buzz spike sight swarm shove special gym robust assume sudden deposit grid alcohol choice devote leader tilt noodle tide penalty" |
-  "$OSMOSISD_BIN" --keyring-backend test keys add deployer --recover || echo "Deployer key already existed"
+DEFAULT_LOCAL_OSMOSIS_DEPLOYER_MNEMONIC="quality vacuum heart guard buzz spike sight swarm shove special gym robust assume sudden deposit grid alcohol choice devote leader tilt noodle tide penalty"
+OSMOSIS_DEPLOYER_KEY_NAME="${OSMOSIS_DEPLOYER_KEY_NAME:-deployer}"
+OSMOSIS_DEPLOYER_MNEMONIC="${OSMOSIS_DEPLOYER_MNEMONIC:-}"
+if [ -z "$OSMOSIS_DEPLOYER_MNEMONIC" ] && [ "${OSMOSIS_CHAIN_ID:-localosmosis}" = "localosmosis" ]; then
+  OSMOSIS_DEPLOYER_MNEMONIC="$DEFAULT_LOCAL_OSMOSIS_DEPLOYER_MNEMONIC"
+fi
+[ -n "$OSMOSIS_DEPLOYER_MNEMONIC" ] || {
+  echo "OSMOSIS_DEPLOYER_MNEMONIC is required to provision Osmosis swap contracts on ${OSMOSIS_CHAIN_ID:-unknown}. Exiting..."
+  exit 1
+}
 
-deployer=$("$OSMOSISD_BIN" keys show deployer --address --keyring-backend test)
+printf '%s\n' "$OSMOSIS_DEPLOYER_MNEMONIC" |
+  "$OSMOSISD_BIN" --keyring-backend test keys add "$OSMOSIS_DEPLOYER_KEY_NAME" --recover || echo "Deployer key already existed"
+
+deployer=$("$OSMOSISD_BIN" keys show "$OSMOSIS_DEPLOYER_KEY_NAME" --address --keyring-backend test)
 check_string_empty "$deployer" "deployer address not found. Exiting..."
 echo "deployer address $deployer"
 
 #==================================Setup Hermes=======================================
 HERMES_CARDANO_NAME="cardano-devnet"
 HERMES_ENTRYPOINT_NAME="entrypoint"
-HERMES_OSMOSIS_NAME="localosmosis"
+HERMES_OSMOSIS_NAME="${HERMES_OSMOSIS_NAME:-localosmosis}"
 SENT_AMOUNT_NUM="${CARIBIC_TOKEN_SWAP_AMOUNT:-12345678}"
 HANDLER_JSON="$repo_root/cardano/offchain/deployments/handler.json"
 SENT_DENOM="$(get_mock_token_denom "$HANDLER_JSON")"
@@ -346,7 +360,17 @@ if [ -z "$SENT_DENOM" ]; then
 fi
 SENT_AMOUNT="${SENT_AMOUNT_NUM}-${SENT_DENOM}"
 ENTRYPOINT_RECEIVER="pfm"
-OSMOSIS_NODE="http://localhost:26658"
+OSMOSIS_NODE="${OSMOSIS_NODE:-http://localhost:26658}"
+OSMOSIS_CHAIN_ID="${OSMOSIS_CHAIN_ID:-localosmosis}"
+if [ "${OSMOSIS_CHAIN_ID:-localosmosis}" = "localosmosis" ]; then
+  DEFAULT_OSMOSIS_GAS_PRICES="0.1uosmo"
+elif [ "${OSMOSIS_CHAIN_ID:-}" = "osmo-test-5" ]; then
+  # Keep public testnet fee burn low by default; callers can still override this.
+  DEFAULT_OSMOSIS_GAS_PRICES="0.0026uosmo"
+else
+  DEFAULT_OSMOSIS_GAS_PRICES="0.1uosmo"
+fi
+OSMOSIS_GAS_PRICES="${OSMOSIS_GAS_PRICES:-$DEFAULT_OSMOSIS_GAS_PRICES}"
 SWAPROUTER_WASM="$repo_root/chains/osmosis/osmosis/cosmwasm/wasm/swaprouter.wasm"
 CROSSCHAIN_SWAPS_WASM="$repo_root/chains/osmosis/osmosis/cosmwasm/wasm/crosschain_swaps.wasm"
 
@@ -396,7 +420,22 @@ echo "Sent IBC Denom: $denom"
 
 #==================================Create Osmosis swap pool=======================================
 
-TX_FLAGS=(--node "$OSMOSIS_NODE" --keyring-backend test --from deployer --chain-id localosmosis --gas-prices 0.1uosmo --gas auto --gas-adjustment 1.3 --broadcast-mode sync --yes)
+if [ "${OSMOSIS_CHAIN_ID:-localosmosis}" = "localosmosis" ]; then
+  DEFAULT_POOL_BOOTSTRAP_DENOM_AMOUNT_NUM=1000000
+  DEFAULT_POOL_BOOTSTRAP_UOSMO_AMOUNT_NUM=1000000
+else
+  # Public testnet faucets are limited. Keep the bootstrap pool small by default,
+  # while still leaving enough voucher liquidity for the later demo swap amount.
+  DEFAULT_POOL_BOOTSTRAP_DENOM_AMOUNT_NUM=100000
+  DEFAULT_POOL_BOOTSTRAP_UOSMO_AMOUNT_NUM=10000
+fi
+
+POOL_BOOTSTRAP_DENOM_AMOUNT_NUM="${OSMOSIS_POOL_BOOTSTRAP_DENOM_AMOUNT:-$DEFAULT_POOL_BOOTSTRAP_DENOM_AMOUNT_NUM}"
+POOL_BOOTSTRAP_UOSMO_AMOUNT_NUM="${OSMOSIS_POOL_BOOTSTRAP_UOSMO_AMOUNT:-$DEFAULT_POOL_BOOTSTRAP_UOSMO_AMOUNT_NUM}"
+echo "Using gas prices: ${OSMOSIS_GAS_PRICES}"
+echo "Pool bootstrap amounts: ${POOL_BOOTSTRAP_DENOM_AMOUNT_NUM}${denom}, ${POOL_BOOTSTRAP_UOSMO_AMOUNT_NUM}uosmo"
+
+TX_FLAGS=(--node "$OSMOSIS_NODE" --keyring-backend test --from "$OSMOSIS_DEPLOYER_KEY_NAME" --chain-id "$OSMOSIS_CHAIN_ID" --gas-prices "$OSMOSIS_GAS_PRICES" --gas auto --gas-adjustment 1.3 --broadcast-mode sync --yes)
 sample_pool_file="$(mktemp)"
 cleanup_sample_pool_file() {
   rm -f "$sample_pool_file"
@@ -406,7 +445,7 @@ trap cleanup_sample_pool_file EXIT
 # Create the sample_pool.json file
 jq -n --arg denom "$denom" '{
   weights: "1\($denom),1uosmo",
-  "initial-deposit": "1000000\($denom),1000000uosmo",
+  "initial-deposit": "'"${POOL_BOOTSTRAP_DENOM_AMOUNT_NUM}"'\($denom),'"${POOL_BOOTSTRAP_UOSMO_AMOUNT_NUM}"'uosmo",
   "swap-fee": "0.01",
   "exit-fee": "0.01",
   "future-governor": "168h"

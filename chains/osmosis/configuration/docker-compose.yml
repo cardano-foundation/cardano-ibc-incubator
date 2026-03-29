@@ -2,19 +2,19 @@ services:
   osmosisd:
     image: local:osmosis
     build:
-      context: ../../
+      context: ../osmosis
       dockerfile: Dockerfile
       args:
         RUNNER_IMAGE: alpine:3.19
         GO_VERSION: "1.23"
     volumes:
-      - ./scripts/uosmoUionBalancerPool.json:/osmosis/uosmoUionBalancerPool.json
-      - ./scripts/uosmoUusdcBalancerPool.json:/osmosis/uosmoUusdcBalancerPool.json
-      - ./scripts/uusdcUionBalancerPool.json:/osmosis/uusdcUionBalancerPool.json
-      - ./scripts/uwethUusdcStablePool.json:/osmosis/uwethUusdcStablePool.json
-      - ./scripts/nativeDenomThreeAssetPool.json:/osmosis/nativeDenomThreeAssetPool.json
-      - ./scripts/setup.sh:/osmosis/setup.sh
-      - ../cl-genesis-positions:/osmosis/cl-genesis-positions
+      - ../osmosis/tests/localosmosis/scripts/uosmoUionBalancerPool.json:/osmosis/uosmoUionBalancerPool.json
+      - ../osmosis/tests/localosmosis/scripts/uosmoUusdcBalancerPool.json:/osmosis/uosmoUusdcBalancerPool.json
+      - ../osmosis/tests/localosmosis/scripts/uusdcUionBalancerPool.json:/osmosis/uusdcUionBalancerPool.json
+      - ../osmosis/tests/localosmosis/scripts/uwethUusdcStablePool.json:/osmosis/uwethUusdcStablePool.json
+      - ../osmosis/tests/localosmosis/scripts/nativeDenomThreeAssetPool.json:/osmosis/nativeDenomThreeAssetPool.json
+      - ../osmosis/tests/localosmosis/scripts/setup.sh:/osmosis/setup.sh
+      - ../osmosis/tests/cl-genesis-positions:/osmosis/cl-genesis-positions
       - $HOME/.osmosisd-local/:/osmosis/.osmosisd/
     entrypoint:
       - /osmosis/setup.sh

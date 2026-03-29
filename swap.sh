@@ -27,7 +27,7 @@ get_mock_token_denom() {
 }
 
 script_dir=$(dirname "$(realpath "$0")")
-repo_root="$script_dir"
+repo_root="${CARIBIC_PROJECT_ROOT:-$script_dir}"
 HERMES_BIN="$repo_root/relayer/target/release/hermes"
 
 if [ ! -x "$HERMES_BIN" ]; then
@@ -251,7 +251,9 @@ wait_for_swap_settlement() {
 
 HERMES_CARDANO_NAME="cardano-devnet"
 HERMES_ENTRYPOINT_NAME="entrypoint"
-HERMES_OSMOSIS_NAME="localosmosis"
+HERMES_OSMOSIS_NAME="${HERMES_OSMOSIS_NAME:-localosmosis}"
+OSMOSIS_SWAP_RECEIVER="${OSMOSIS_SWAP_RECEIVER:-cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6}"
+OSMOSIS_OUTPUT_DENOM="${OSMOSIS_OUTPUT_DENOM:-uosmo}"
 SENT_AMOUNT_NUM="${CARIBIC_TOKEN_SWAP_AMOUNT:-12345}"
 HANDLER_JSON="$repo_root/cardano/offchain/deployments/handler.json"
 SENT_DENOM="$(get_mock_token_denom "$HANDLER_JSON")"
@@ -282,6 +284,8 @@ memo=$(
     jq -nc \
         --arg receiver "$CROSSCHAIN_SWAPS_ADDRESS" \
         --arg so_channel "$entrypoint_osmosis_channel_id" \
+        --arg swap_receiver "$OSMOSIS_SWAP_RECEIVER" \
+        --arg output_denom "$OSMOSIS_OUTPUT_DENOM" \
         --arg cardano_receiver "$CARDANO_RECEIVER" \
         --arg sc_channel "$entrypoint_cardano_channel_id" \
         '{forward: {
@@ -293,11 +297,11 @@ memo=$(
                 contract: $receiver,
                 msg: {
                 osmosis_swap: {
-                    output_denom: "uosmo",
+                    output_denom: $output_denom,
                     slippage: {
                     min_output_amount: "1",
                     },
-                    receiver: "cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6",
+                    receiver: $swap_receiver,
                     on_failed_delivery: "do_nothing",
                     next_memo: {
                     forward: {

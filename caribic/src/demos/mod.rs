@@ -2,13 +2,13 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
-use crate::{DemoChain, DemoType};
+use crate::{DemoType, start::OptionalChainId};
 
 mod message_exchange;
 mod token_swap;
 
 struct DemoRunOptions<'a> {
-    chain: Option<DemoChain>,
+    chain: Option<OptionalChainId>,
     network: Option<&'a str>,
 }
 
@@ -71,7 +71,7 @@ fn registered_demo_drivers() -> Vec<&'static dyn DemoDriver> {
 /// Dispatches demo execution through registered demo drivers.
 pub async fn run_demo(
     use_case: DemoType,
-    chain: Option<DemoChain>,
+    chain: Option<OptionalChainId>,
     network: Option<&str>,
     project_root_path: &Path,
 ) -> Result<(), String> {

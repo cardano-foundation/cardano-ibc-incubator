@@ -1530,40 +1530,97 @@ pub fn start_local_cardano_services(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let configuration = config::get_config().cardano;
 
-    let mut services = vec![];
+    let mut all_services = vec![];
+    let mut base_services = vec![];
+    let mut follow_up_services = vec![];
+
     if configuration.services.cardano_node {
-        services.push("cardano-node");
+        all_services.push("cardano-node");
+        base_services.push("cardano-node");
     }
     if configuration.services.postgres {
-        services.push("postgres");
+        all_services.push("postgres");
+        base_services.push("postgres");
     }
     if configuration.services.history_backend_enabled() {
-        services.push("yaci-store-postgres");
-        services.push("yaci-store");
+        all_services.push("yaci-store-postgres");
+        all_services.push("yaci-store");
+        base_services.push("yaci-store-postgres");
+        follow_up_services.push("yaci-store");
     }
     if configuration.services.kupo && matches!(network, config::CoreCardanoNetwork::Local) {
-        services.push("kupo");
+        all_services.push("kupo");
+        follow_up_services.push("kupo");
     }
     if configuration.services.ogmios && matches!(network, config::CoreCardanoNetwork::Local) {
-        services.push("cardano-node-ogmios");
+        all_services.push("cardano-node-ogmios");
+        follow_up_services.push("cardano-node-ogmios");
     }
 
     let mut script_stop_args = vec!["compose", "stop"];
-    script_stop_args.append(&mut services.clone());
+    script_stop_args.append(&mut all_services.clone());
     execute_script(cardano_dir, "docker", script_stop_args, None)?;
 
     let docker_env = get_docker_env_vars();
     let docker_env_refs: Vec<(&str, &str)> =
         docker_env.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
-    let mut script_start_args = vec!["compose", "up", "-d"];
-    script_start_args.append(&mut services);
-    execute_script(
-        cardano_dir,
-        "docker",
-        script_start_args,
-        Some(docker_env_refs),
-    )?;
+    if matches!(network, config::CoreCardanoNetwork::Local) {
+        // Docker Desktop can race bind-mount creation for ./devnet/db on a clean restart if Ogmios
+        // starts at the same time as cardano-node. Precreate the runtime paths and bring the node
+        // up first so follow-up services see a stable database directory.
+        fs::create_dir_all(cardano_dir.join("devnet").join("db")).map_err(|error| {
+            format!(
+                "Failed to precreate Cardano local runtime database directory: {}",
+                error
+            )
+        })?;
+        fs::create_dir_all(cardano_dir.join("devnet").join("ipc")).map_err(|error| {
+            format!(
+                "Failed to precreate Cardano local runtime IPC directory: {}",
+                error
+            )
+        })?;
+    }
+
+    if !base_services.is_empty() {
+        let mut script_start_args = vec!["compose", "up", "-d"];
+        script_start_args.append(&mut base_services);
+        execute_script(
+            cardano_dir,
+            "docker",
+            script_start_args,
+            Some(docker_env_refs.clone()),
+        )?;
+    }
+
+    if matches!(network, config::CoreCardanoNetwork::Local) && configuration.services.cardano_node {
+        let db_dir = cardano_dir.join("devnet").join("db");
+        let mut attempts_remaining = 20;
+        while attempts_remaining > 0 && !db_dir.is_dir() {
+            thread::sleep(Duration::from_millis(250));
+            attempts_remaining -= 1;
+        }
+
+        if !db_dir.is_dir() {
+            return Err(format!(
+                "Cardano local runtime database directory did not become available at {}",
+                db_dir.display()
+            )
+            .into());
+        }
+    }
+
+    if !follow_up_services.is_empty() {
+        let mut script_start_args = vec!["compose", "up", "-d"];
+        script_start_args.append(&mut follow_up_services);
+        execute_script(
+            cardano_dir,
+            "docker",
+            script_start_args,
+            Some(docker_env_refs),
+        )?;
+    }
     Ok(())
 }
 
@@ -3195,7 +3252,7 @@ impl CoreServiceId {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(clap::ValueEnum, Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum OptionalChainId {
     Osmosis,
     Cheqd,
@@ -3208,15 +3265,6 @@ impl OptionalChainId {
             OptionalChainId::Osmosis => "osmosis",
             OptionalChainId::Cheqd => "cheqd",
             OptionalChainId::Injective => "injective",
-        }
-    }
-
-    pub(crate) fn from_adapter_id(id: &str) -> Option<Self> {
-        match id {
-            "osmosis" => Some(OptionalChainId::Osmosis),
-            "cheqd" => Some(OptionalChainId::Cheqd),
-            "injective" => Some(OptionalChainId::Injective),
-            _ => None,
         }
     }
 }
