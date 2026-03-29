@@ -56,6 +56,7 @@ import {
   UnsignedChannelOpenInitDto,
   UnsignedConnectionOpenAckDto,
   UnsignedRecvPacketDto,
+  UnsignedRecvPacketModuleDto,
   UnsignedRecvPacketMintDto,
   UnsignedRecvPacketUnescrowDto,
   UnsignedSendPacketBurnDto,
@@ -1427,6 +1428,76 @@ export class LucidService implements OnModuleInit {
         {
           [dto.channelTokenUnit]: 1n,
         },
+      )
+      .mintAssets(
+        {
+          [dto.recvPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
+      );
+
+    return tx;
+  }
+
+  public createUnsignedRecvPacketModuleTx(dto: UnsignedRecvPacketModuleDto): TxBuilder {
+    const deploymentConfig = this.configService.get('deployment');
+    const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
+    const hostStateUtxoWithRawDatum = {
+      ...dto.hostStateUtxo,
+      datum: dto.hostStateUtxo.datum,
+      datumHash: undefined,
+    };
+
+    if (!dto.mockModuleUtxo.datum) {
+      throw new GrpcInternalException('Mock module UTxO missing inline datum');
+    }
+
+    const tx: TxBuilder = this.newTxBuilder();
+
+    tx.readFrom([
+      this.referenceScripts.spendChannel,
+      this.referenceScripts.spendMockModule!,
+      this.referenceScripts.receivePacket,
+      this.referenceScripts.verifyProof,
+      this.referenceScripts.hostStateStt,
+    ])
+      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .pay.ToContract(
+        deploymentConfig.validators.hostStateStt.address,
+        {
+          kind: 'inline',
+          value: dto.encodedUpdatedHostStateDatum,
+        },
+        {
+          [hostStateNFT]: 1n,
+        },
+      )
+      .pay.ToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
+        },
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+      )
+      .pay.ToContract(
+        deploymentConfig.modules.mock.address,
+        {
+          kind: 'inline',
+          value: dto.mockModuleUtxo.datum,
+        },
+        dto.mockModuleUtxo.assets,
       )
       .mintAssets(
         {

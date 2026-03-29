@@ -27,6 +27,10 @@ export type WithTransferModuleUtxo = {
   transferModuleUtxo: UTxO;
 };
 
+export type WithMockModuleUtxo = {
+  mockModuleUtxo: UTxO;
+};
+
 export type WithLegacyTransferModuleUtxo = {
   transferModuleUTxO: UTxO;
 };
@@ -39,6 +43,10 @@ export type WithChannelSpend = {
 
 export type WithTransferModuleSpend = {
   encodedSpendTransferModuleRedeemer: string;
+};
+
+export type WithMockModuleSpend = {
+  encodedSpendMockModuleRedeemer: string;
 };
 
 export type WithMintVoucherRedeemer = {

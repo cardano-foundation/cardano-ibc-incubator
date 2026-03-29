@@ -23,6 +23,7 @@ import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
 import { Packet } from 'src/shared/types/channel/packet';
 import { SpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
 import { ACK_RESULT, CHANNEL_ID_PREFIX, LOVELACE, ORDER_MAPPING_CHANNEL } from 'src/constant';
+import { ASYNC_ICQ_HOST_PORT } from '@shared/types/apps/async-icq/async-icq';
 import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
 import {
   deleteKeySortMap,
@@ -68,6 +69,7 @@ import {
   UnsignedAckPacketSucceedDto,
   UnsignedAckPacketUnescrowDto,
   UnsignedRecvPacketDto,
+  UnsignedRecvPacketModuleDto,
   UnsignedRecvPacketMintDto,
   UnsignedRecvPacketUnescrowDto,
   UnsignedSendPacketBurnDto,
@@ -76,8 +78,10 @@ import {
   UnsignedTimeoutPacketUnescrowDto,
   UnsignedTimeoutRefreshDto,
 } from '~@/shared/modules/lucid/dtos';
+import { acknowledgementCommitmentFromResponse } from '../shared/helpers/acknowledgement';
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, isTreeAligned } from '../shared/helpers/ibc-state-root';
 import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
+import { AsyncIcqHostService } from './async-icq-host.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { queryNetworkTipPoint } from '../shared/helpers/time';
 
@@ -89,6 +93,7 @@ export class PacketService {
     @Inject(LucidService) private lucidService: LucidService,
     private denomTraceService: DenomTraceService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
+    private readonly asyncIcqHostService: AsyncIcqHostService,
   ) {}
   /**
    * @param data
@@ -852,6 +857,68 @@ export class PacketService {
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
     );
+
+    if (convertHex2String(channelDatum.port) === ASYNC_ICQ_HOST_PORT) {
+      const mockModuleIdentifier = this.getMockModuleIdentifier();
+      const mockModuleUtxo = await this.lucidService.findUtxoByUnit(mockModuleIdentifier);
+      const { acknowledgementResponse } = await this.asyncIcqHostService.executePacket(
+        Buffer.from(packet.data, 'hex'),
+      );
+      const encodedSpendMockModuleRedeemer: string = await this.lucidService.encode(
+        {
+          Callback: [
+            {
+              OnRecvPacket: {
+                channel_id: channelId,
+                acknowledgement: {
+                  response: acknowledgementResponse,
+                },
+                data: 'OtherModuleData',
+              },
+            },
+          ],
+        } as IBCModuleRedeemer,
+        'iBCModuleRedeemer',
+      );
+      const updatedChannelDatum: ChannelDatum = {
+        ...channelDatum,
+        state: {
+          ...channelDatum.state,
+          next_sequence_recv: nextSequenceRecv,
+          packet_receipt: packetReceipt,
+          packet_acknowledgement: insertSortMapWithNumberKey(
+            channelDatum.state.packet_acknowledgement,
+            packet.sequence,
+            acknowledgementCommitmentFromResponse(acknowledgementResponse),
+          ),
+        },
+      };
+      const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
+        updatedChannelDatum,
+        'channel',
+      );
+      const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
+        await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
+      const unsignedRecvPacketModuleParams: UnsignedRecvPacketModuleDto = {
+        hostStateUtxo,
+        channelUtxo,
+        connectionUtxo,
+        clientUtxo,
+        mockModuleUtxo,
+        encodedHostStateRedeemer,
+        encodedUpdatedHostStateDatum,
+        encodedSpendChannelRedeemer,
+        encodedSpendMockModuleRedeemer,
+        encodedUpdatedChannelDatum,
+        channelTokenUnit,
+        recvPacketPolicyId,
+        channelToken,
+        verifyProofPolicyId,
+        encodedVerifyProofRedeemer,
+      };
+      const unsignedTx = this.lucidService.createUnsignedRecvPacketModuleTx(unsignedRecvPacketModuleParams);
+      return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
+    }
 
     const stringData = convertHex2String(recvPacketOperator.packetData) || '';
 

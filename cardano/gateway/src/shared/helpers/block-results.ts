@@ -20,12 +20,12 @@ import { convertHex2String, toHex } from './hex';
 import { SpendChannelRedeemer } from '../types/channel/channel-redeemer';
 import { Packet } from '../types/channel/packet';
 import { IBCModuleCallback, IBCModuleRedeemer } from '../types/port/ibc_module_redeemer';
-import { Acknowledgement } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { AcknowledgementResponse } from '../types/channel/acknowledgement_response';
 import { SpendClientRedeemer } from '../types/client-redeemer';
 import { convertHeaderToTendermint } from '../types/header';
 import { Header } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
+import { acknowledgementHexFromResponse, acknowledgementJsonFromResponse } from './acknowledgement';
 
 function normalizeEventConnection(evtType: ConnectionState): string {
   switch (evtType) {
@@ -303,13 +303,8 @@ export function normalizeTxsResultFromModuleRedeemer(
   if (!moduleCallback.hasOwnProperty('OnRecvPacket')) return { code: 0, events: [] };
   const acknowledgementRes: AcknowledgementResponse = moduleCallback['OnRecvPacket']?.acknowledgement
     ?.response as unknown as AcknowledgementResponse;
-
-  const acknowledgement: Acknowledgement = {
-    result: Buffer.from(
-      acknowledgementRes['AcknowledgementResult'] && acknowledgementRes['AcknowledgementResult']['result'],
-    ),
-    error: acknowledgementRes['AcknowledgementError'] && acknowledgementRes['AcknowledgementError']['err'],
-  };
+  const packetAck = acknowledgementJsonFromResponse(acknowledgementRes);
+  const packetAckHex = acknowledgementHexFromResponse(acknowledgementRes);
 
   // TODO: handle packet ack
   const packetData: Packet = channelRedeemer['RecvPacket']?.packet as unknown as Packet;
@@ -325,8 +320,7 @@ export function normalizeTxsResultFromModuleRedeemer(
           },
           {
             key: ATTRIBUTE_KEY_PACKET.PACKET_ACK,
-            value: Buffer.from([123, 34, 114, 101, 115, 117, 108, 116, 34, 58, 34, 65, 81, 61, 61, 34, 125]),
-            // value: packetAckBytes,
+            value: packetAck,
           },
           {
             key: ATTRIBUTE_KEY_PACKET.PACKET_DATA_HEX,
@@ -334,8 +328,7 @@ export function normalizeTxsResultFromModuleRedeemer(
           },
           {
             key: ATTRIBUTE_KEY_PACKET.PACKET_ACK_HEX,
-            value: toHex(Buffer.from([123, 34, 114, 101, 115, 117, 108, 116, 34, 58, 34, 65, 81, 61, 61, 34, 125])),
-            // value: packetAckHex,
+            value: packetAckHex,
           },
           {
             key: ATTRIBUTE_KEY_PACKET.PACKET_TIMEOUT_HEIGHT,

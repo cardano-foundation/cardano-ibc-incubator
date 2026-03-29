@@ -5,6 +5,7 @@ import { ClientService } from './client.service';
 import { ChannelService } from './channel.service';
 import { ConnectionService } from './connection.service';
 import { PacketService } from './packet.service';
+import { AsyncIcqHostService } from './async-icq-host.service';
 import { SubmissionService } from './submission.service';
 import { QueryModule } from '../query/query.module';
 import { TxEventsService } from './tx-events.service';
@@ -22,6 +23,7 @@ import { WalletContextService } from './wallet-context.service';
     ConnectionService,
     ChannelService,
     PacketService,
+    AsyncIcqHostService,
     SubmissionService,
     TxEventsService,
     TxOperationRunnerService,
