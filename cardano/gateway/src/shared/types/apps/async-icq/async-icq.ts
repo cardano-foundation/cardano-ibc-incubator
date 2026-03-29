@@ -4,6 +4,8 @@ import { base64FromBytes, bytesFromBase64 } from '@plus/proto-types/build/helper
 export const ASYNC_ICQ_HOST_PORT = 'icqhost';
 export const ASYNC_ICQ_CHANNEL_VERSION = 'icq-1';
 
+// Keep the host surface intentionally narrow: these are the Cardano IBC queries
+// we can already answer through the existing gateway query services.
 export const ASYNC_ICQ_ALLOWED_QUERY_PATHS = [
   '/ibc.core.client.v1.Query/ClientState',
   '/ibc.core.client.v1.Query/ConsensusState',
@@ -81,6 +83,8 @@ function createBaseCosmosResponse(): CosmosResponse {
   return { responses: [] };
 }
 
+// Async-icq packet bytes and ack bytes are wrapped in JSON with a base64 "data"
+// field. We validate that outer shape here before decoding the inner protobuf.
 function decodeJsonWrapper(bytes: Uint8Array, label: string): { data: string } {
   let parsed: unknown;
 
@@ -217,6 +221,7 @@ export const TendermintResponseQueryCodec = {
 
 export const CosmosQueryCodec = {
   encode(message: CosmosQuery, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    // CosmosQuery is only a repeated RequestQuery container.
     for (const request of message.requests) {
       TendermintRequestQueryCodec.encode(request, writer.uint32(10).fork()).ldelim();
     }
@@ -246,6 +251,7 @@ export const CosmosQueryCodec = {
 
 export const CosmosResponseCodec = {
   encode(message: CosmosResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    // CosmosResponse mirrors CosmosQuery as a repeated ResponseQuery container.
     for (const response of message.responses) {
       TendermintResponseQueryCodec.encode(response, writer.uint32(10).fork()).ldelim();
     }
@@ -295,6 +301,8 @@ export function decodeInterchainQueryPacketDataJson(bytes: Uint8Array): Intercha
 }
 
 export function encodeInterchainQueryPacketDataJson(message: InterchainQueryPacketData): Uint8Array {
+  // Preserve the upstream async-icq wire shape exactly: JSON containing base64
+  // of the protobuf-encoded CosmosQuery payload.
   return textEncoder.encode(
     JSON.stringify({
       data: base64FromBytes(message.data),
@@ -308,6 +316,7 @@ export function decodeInterchainQueryPacketAckJson(bytes: Uint8Array): Interchai
 }
 
 export function encodeInterchainQueryPacketAckJson(message: InterchainQueryPacketAck): Uint8Array {
+  // Acknowledgements use the same JSON-plus-base64 wrapper as packet data.
   return textEncoder.encode(
     JSON.stringify({
       data: base64FromBytes(message.data),

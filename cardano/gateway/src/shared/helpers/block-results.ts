@@ -303,6 +303,8 @@ export function normalizeTxsResultFromModuleRedeemer(
   if (!moduleCallback.hasOwnProperty('OnRecvPacket')) return { code: 0, events: [] };
   const acknowledgementRes: AcknowledgementResponse = moduleCallback['OnRecvPacket']?.acknowledgement
     ?.response as unknown as AcknowledgementResponse;
+  // Emit the real ack payload derived from the module callback so downstream
+  // relayer/event consumers see the same acknowledgement bytes committed in state.
   const packetAck = acknowledgementJsonFromResponse(acknowledgementRes);
   const packetAckHex = acknowledgementHexFromResponse(acknowledgementRes);
 

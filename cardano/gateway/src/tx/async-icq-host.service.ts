@@ -49,6 +49,8 @@ export class AsyncIcqHostService {
     let executionHeight = BigInt(0);
 
     try {
+      // Capture the current host height once so every RequestQuery in the packet
+      // executes against the same Cardano IBC snapshot.
       executionHeight = await this.getExecutionHeight();
       const packet = decodeInterchainQueryPacketDataJson(packetData);
       const cosmosQuery = decodeCosmosQuery(packet.data);
@@ -63,6 +65,8 @@ export class AsyncIcqHostService {
         responses.push(await this.executeRequest(cosmosQuery.requests[index], executionHeight, index));
       }
 
+      // The inner async-icq ack bytes are then wrapped into the gateway's normal
+      // acknowledgement format, which stores the result payload as a hex string.
       const ackBytes = encodeInterchainQueryPacketAckJson({
         data: encodeCosmosResponse({ responses } satisfies CosmosResponse),
       });
@@ -95,6 +99,8 @@ export class AsyncIcqHostService {
   }
 
   private authenticateRequest(query: TendermintRequestQuery, executionHeight: bigint): void {
+    // Match the upstream async-icq host rules: allowlisted paths only, no
+    // arbitrary historical heights, and no proof-bearing requests.
     if (!ASYNC_ICQ_ALLOWED_QUERY_PATHS.includes(query.path as (typeof ASYNC_ICQ_ALLOWED_QUERY_PATHS)[number])) {
       throw new Error(`async-icq query path not allowed: ${query.path}`);
     }
@@ -117,6 +123,9 @@ export class AsyncIcqHostService {
 
     let value: Uint8Array;
 
+    // Translate the async-icq RequestQuery path into the gateway's native Cardano
+    // query service, then re-encode that response into the protobuf bytes expected
+    // inside Tendermint ResponseQuery.value.
     switch (query.path) {
       case '/ibc.core.client.v1.Query/ClientState': {
         const request = QueryClientStateRequest.decode(query.data);
@@ -164,6 +173,7 @@ export class AsyncIcqHostService {
         throw new Error(`async-icq query path not implemented: ${query.path}`);
     }
 
+    // Keep only the stable fields that async-icq needs in the ack payload.
     return {
       code: 0,
       log: '',

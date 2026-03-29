@@ -859,11 +859,15 @@ export class PacketService {
     );
 
     if (convertHex2String(channelDatum.port) === ASYNC_ICQ_HOST_PORT) {
+      // Async-icq rides the normal recv-packet path. The difference from ICS-20 is
+      // only how the packet data is interpreted and how the ack is produced.
       const mockModuleIdentifier = this.getMockModuleIdentifier();
       const mockModuleUtxo = await this.lucidService.findUtxoByUnit(mockModuleIdentifier);
       const { acknowledgementResponse } = await this.asyncIcqHostService.executePacket(
         Buffer.from(packet.data, 'hex'),
       );
+      // Reuse the existing module callback envelope so Cardano emits a regular
+      // write_acknowledgement event and persists the ack commitment in channel state.
       const encodedSpendMockModuleRedeemer: string = await this.lucidService.encode(
         {
           Callback: [
@@ -873,6 +877,7 @@ export class PacketService {
                 acknowledgement: {
                   response: acknowledgementResponse,
                 },
+                // Async-icq does not need transfer-specific callback payloads.
                 data: 'OtherModuleData',
               },
             },
@@ -886,6 +891,7 @@ export class PacketService {
           ...channelDatum.state,
           next_sequence_recv: nextSequenceRecv,
           packet_receipt: packetReceipt,
+          // Commit the exact ack bytes produced by the async-icq host executor.
           packet_acknowledgement: insertSortMapWithNumberKey(
             channelDatum.state.packet_acknowledgement,
             packet.sequence,
@@ -916,6 +922,8 @@ export class PacketService {
         verifyProofPolicyId,
         encodedVerifyProofRedeemer,
       };
+      // This keeps async-icq in the same host-state / channel-state update flow as
+      // any other successful recv path.
       const unsignedTx = this.lucidService.createUnsignedRecvPacketModuleTx(unsignedRecvPacketModuleParams);
       return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
     }

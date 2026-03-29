@@ -1,5 +1,0 @@
-Upstream repository: https://github.com/cosmos/ibc
-Upstream path: spec/app/ics-031-crosschain-queries/README.md
-Pinned upstream commit: 31f41387942ee71188b6a9799d1a55849e008c97
-Retrieved on: 2026-03-08
-Retrieval URL: https://raw.githubusercontent.com/cosmos/ibc/main/spec/app/ics-031-crosschain-queries/README.md

@@ -5,6 +5,8 @@ function extractAcknowledgementValue(response: AcknowledgementResponse): { key: 
   if ('AcknowledgementResult' in response) {
     return {
       key: 'result',
+      // Gateway acks store result bytes as hex strings, but the committed IBC ack
+      // JSON itself contains the plain UTF-8 payload.
       value: convertHex2String(response.AcknowledgementResult.result),
     };
   }
@@ -29,5 +31,7 @@ export function acknowledgementHexFromResponse(response: AcknowledgementResponse
 }
 
 export function acknowledgementCommitmentFromResponse(response: AcknowledgementResponse): string {
+  // Channel state commits the canonical JSON acknowledgement bytes, not the
+  // gateway's internal hex wrapper representation.
   return hashSHA256(convertString2Hex(acknowledgementJsonFromResponse(response)));
 }
