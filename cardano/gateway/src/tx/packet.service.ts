@@ -59,6 +59,7 @@ import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/
 import {
   AckPacketOperator,
   RecvPacketOperator,
+  SendModulePacketOperator,
   SendPacketOperator,
   TimeoutPacketOperator,
   TimeoutRefreshOperator,
@@ -72,6 +73,7 @@ import {
   UnsignedRecvPacketModuleDto,
   UnsignedRecvPacketMintDto,
   UnsignedRecvPacketUnescrowDto,
+  UnsignedSendPacketModuleDto,
   UnsignedSendPacketBurnDto,
   UnsignedSendPacketEscrowDto,
   UnsignedTimeoutPacketMintDto,
@@ -497,6 +499,51 @@ export class PacketService {
     } catch (error) {
       console.error(error);
       this.logger.error(`Transfer: ${error}`);
+      if (!(error instanceof RpcException)) {
+        throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
+      }
+
+      throw error;
+    }
+  }
+
+  async sendAsyncIcqPacket(data: SendModulePacketOperator): Promise<MsgTransferResponse> {
+    try {
+      await this.refreshWalletContext(data.signer, 'sendAsyncIcqPacketBuilder');
+
+      const { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate } = await this.buildUnsignedSendModulePacketTx(data);
+      const { currentSlot, validToSlot, validToTime } = await this.computeTxValidityWindow();
+      if (currentSlot > validToSlot) {
+        throw new GrpcInternalException('async-icq send failed: tx time invalid');
+      }
+
+      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
+        operationName: 'sendAsyncIcqPacket',
+        unsignedTx: unsignedSendPacketTx,
+        validity: {
+          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+        },
+        wallet: {
+          mode: 'refresh_from_address',
+          address: data.signer,
+          context: 'sendAsyncIcqPacket',
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
+        pendingTreeUpdate,
+      });
+
+      return {
+        result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
+        unsigned_tx: {
+          type_url: '',
+          value: cborHexBytes,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`sendAsyncIcqPacket: ${error}`);
       if (!(error instanceof RpcException)) {
         throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
       }
@@ -1705,6 +1752,117 @@ export class PacketService {
         address: senderAddress,
         utxos: walletUtxos,
       },
+    };
+  }
+
+  async buildUnsignedSendModulePacketTx(
+    sendPacketOperator: SendModulePacketOperator,
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
+    if (sendPacketOperator.sourcePort !== ASYNC_ICQ_HOST_PORT) {
+      throw new GrpcInvalidArgumentException(
+        `Invalid argument: "source_port" ${sendPacketOperator.sourcePort} not supported for async-icq send`,
+      );
+    }
+
+    const channelSequence: string = sendPacketOperator.sourceChannel.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
+    const channelTokenUnit: string = mintChannelPolicyId + channelTokenName;
+    const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+    const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+    const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
+      parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
+    );
+    const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
+    const connectionUtxo = await this.lucidService.findUtxoByUnit(connectionTokenUnit);
+    const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
+      connectionUtxo.datum!,
+      'connection',
+    );
+    const clientTokenUnit = this.lucidService.getClientTokenUnit(
+      parseClientSequence(convertHex2String(connectionDatum.state.client_id)),
+    );
+    const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    const moduleConfig = getGatewayModuleConfigForPortId(this.configService.get('deployment'), sendPacketOperator.sourcePort);
+    if (moduleConfig.key === 'transfer') {
+      throw new GrpcInvalidArgumentException('async-icq send must not use the transfer module');
+    }
+    const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);
+    const channelId = convertString2Hex(sendPacketOperator.sourceChannel);
+
+    const packet: Packet = {
+      sequence: channelDatum.state.next_sequence_send,
+      source_port: convertString2Hex(sendPacketOperator.sourcePort),
+      source_channel: channelId,
+      destination_port: channelDatum.state.channel.counterparty.port_id,
+      destination_channel: channelDatum.state.channel.counterparty.channel_id,
+      data: sendPacketOperator.packetData,
+      timeout_height: sendPacketOperator.timeoutHeight,
+      timeout_timestamp: sendPacketOperator.timeoutTimestamp,
+    };
+
+    const encodedSpendChannelRedeemer: string = await this.lucidService.encode(
+      {
+        SendPacket: {
+          packet,
+        },
+      } as SpendChannelRedeemer,
+      'spendChannelRedeemer',
+    );
+
+    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
+      {
+        Operator: ['OtherModuleOperator'],
+      } as IBCModuleRedeemer,
+      'iBCModuleRedeemer',
+    );
+
+    const updatedChannelDatum: ChannelDatum = {
+      ...channelDatum,
+      state: {
+        ...channelDatum.state,
+        next_sequence_send: channelDatum.state.next_sequence_send + 1n,
+        packet_commitment: insertSortMapWithNumberKey(
+          channelDatum.state.packet_commitment,
+          packet.sequence,
+          commitPacket(packet),
+        ),
+      },
+    };
+    const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
+      updatedChannelDatum,
+      'channel',
+    );
+
+    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
+      await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, sendPacketOperator.sourceChannel);
+    const deploymentConfig = this.configService.get('deployment');
+    const sendPacketPolicyId = deploymentConfig.validators.spendChannel.refValidator.send_packet.scriptHash;
+    const channelToken = {
+      policyId: mintChannelPolicyId,
+      name: channelTokenName,
+    };
+
+    const unsignedSendPacketModuleParams: UnsignedSendPacketModuleDto = {
+      hostStateUtxo,
+      connectionUtxo,
+      clientUtxo,
+      channelUtxo,
+      moduleKey: moduleConfig.key,
+      moduleUtxo,
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum,
+      encodedSpendChannelRedeemer,
+      encodedSpendModuleRedeemer,
+      encodedUpdatedChannelDatum,
+      channelTokenUnit,
+      sendPacketPolicyId,
+      channelToken,
+    };
+
+    const unsignedTx = this.lucidService.createUnsignedSendPacketModuleTx(unsignedSendPacketModuleParams);
+    return {
+      unsignedTx,
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
     };
   }
 

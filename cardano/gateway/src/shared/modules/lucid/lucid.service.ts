@@ -55,6 +55,7 @@ import {
   UnsignedRecvPacketModuleDto,
   UnsignedRecvPacketMintDto,
   UnsignedRecvPacketUnescrowDto,
+  UnsignedSendPacketModuleDto,
   UnsignedSendPacketBurnDto,
   UnsignedSendPacketEscrowDto,
   UnsignedTimeoutPacketMintDto,
@@ -1834,6 +1835,58 @@ export class LucidService implements OnModuleInit {
         },
         encodeAuthToken(dto.channelToken, this.LucidImporter),
       );
+
+    return tx;
+  }
+
+  public createUnsignedSendPacketModuleTx(dto: UnsignedSendPacketModuleDto): TxBuilder {
+    const deploymentConfig = this.configService.get('deployment');
+    const hostStateNFT = deploymentConfig.hostStateNFT.policyId + deploymentConfig.hostStateNFT.name;
+    const hostStateUtxoWithRawDatum = {
+      ...dto.hostStateUtxo,
+      datum: dto.hostStateUtxo.datum,
+      datumHash: undefined,
+    };
+
+    const tx: TxBuilder = this.newTxBuilder();
+    tx.readFrom([
+      this.referenceScripts.spendChannel,
+      this.getModuleReferenceScript(dto.moduleKey),
+      this.referenceScripts.sendPacket,
+      this.referenceScripts.hostStateStt,
+    ])
+      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .pay.ToContract(
+        deploymentConfig.validators.hostStateStt.address,
+        {
+          kind: 'inline',
+          value: dto.encodedUpdatedHostStateDatum,
+        },
+        {
+          [hostStateNFT]: 1n,
+        },
+      )
+      .pay.ToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          kind: 'inline',
+          value: dto.encodedUpdatedChannelDatum,
+        },
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+      )
+      .mintAssets(
+        {
+          [dto.sendPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      );
+
+    this.payModuleUtxo(tx, dto.moduleKey, dto.moduleUtxo);
 
     return tx;
   }
