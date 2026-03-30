@@ -53,6 +53,16 @@ export interface InterchainQueryPacketAck {
   data: Uint8Array;
 }
 
+export type DecodedAsyncIcqAcknowledgement =
+  | {
+      kind: 'result';
+      cosmosResponse: CosmosResponse;
+    }
+  | {
+      kind: 'error';
+      error: string;
+    };
+
 function createBaseTendermintRequestQuery(): TendermintRequestQuery {
   return {
     data: new Uint8Array(),
@@ -322,4 +332,47 @@ export function encodeInterchainQueryPacketAckJson(message: InterchainQueryPacke
       data: base64FromBytes(message.data),
     }),
   );
+}
+
+export function encodeAsyncIcqPacketDataFromRequests(requests: TendermintRequestQuery[]): Uint8Array {
+  return encodeInterchainQueryPacketDataJson({
+    data: encodeCosmosQuery({ requests }),
+  });
+}
+
+export function decodeAsyncIcqAcknowledgementBytes(bytes: Uint8Array): DecodedAsyncIcqAcknowledgement {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(textDecoder.decode(bytes));
+  } catch (error) {
+    throw new Error(`invalid async-icq acknowledgement JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('invalid async-icq acknowledgement payload');
+  }
+
+  const result = (parsed as { result?: unknown }).result;
+  if (typeof result === 'string' && result.length > 0) {
+    const interchainAck = decodeInterchainQueryPacketAckJson(bytesFromBase64(result));
+    return {
+      kind: 'result',
+      cosmosResponse: decodeCosmosResponse(interchainAck.data),
+    };
+  }
+
+  const error = (parsed as { error?: unknown }).error;
+  if (typeof error === 'string' && error.length > 0) {
+    return {
+      kind: 'error',
+      error,
+    };
+  }
+
+  throw new Error('invalid async-icq acknowledgement: expected result or error field');
+}
+
+export function decodeAsyncIcqAcknowledgementHex(ackHex: string): DecodedAsyncIcqAcknowledgement {
+  return decodeAsyncIcqAcknowledgementBytes(Buffer.from(ackHex, 'hex'));
 }

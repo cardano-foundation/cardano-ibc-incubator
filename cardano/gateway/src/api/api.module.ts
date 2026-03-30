@@ -6,6 +6,7 @@ import { HttpModule } from '@nestjs/axios';
 import { MithrilModule } from '../shared/modules/mithril/mithril.module';
 import { TxModule } from '~@/tx/tx.module';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
+import { CheqdIcqService } from './cheqd-icq.service';
 import { TransferPlannerService } from './transfer-planner.service';
 import { LocalOsmosisSwapClientService } from './local-osmosis-swap-client.service';
 import { TransferRouteResolverService } from './transfer-route-resolver.service';
@@ -15,6 +16,7 @@ import { TransferRouteResolverService } from './transfer-route-resolver.service'
   controllers: [ApiController],
   providers: [
     Logger,
+    CheqdIcqService,
     LocalOsmosisSwapPlannerService,
     LocalOsmosisSwapClientService,
     TransferRouteResolverService,

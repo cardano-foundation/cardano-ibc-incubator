@@ -1,5 +1,12 @@
 import { BadRequestException, Body, Controller, Get, HttpCode, Param, ParseBoolPipe, ParseIntPipe, Post, Query, UseFilters } from '@nestjs/common';
 import { EstimateLocalOsmosisSwapDto, MsgtransferDto, PlanTransferRouteDto } from './api.dto';
+import {
+  CheqdDidDocIcqRequestDto,
+  CheqdDidDocVersionIcqRequestDto,
+  CheqdIcqAcknowledgementDto,
+  CheqdLatestResourceVersionIcqRequestDto,
+  CheqdResourceIcqRequestDto,
+} from './cheqd-icq.dto';
 import { ChannelService } from '~@/query/services/channel.service';
 import { QueryChannelsRequest } from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { IdentifiedChannel } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
@@ -12,6 +19,7 @@ import { LOVELACE } from '../constant';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { TransferPlannerService } from './transfer-planner.service';
 import { BridgeManifestService } from '~@/query/services/bridge-manifest.service';
+import { CheqdIcqService } from './cheqd-icq.service';
 
 type ApiCardanoAssetDenomTrace = {
   asset_id: string;
@@ -45,6 +53,7 @@ export class ApiController {
     private readonly localOsmosisSwapPlannerService: LocalOsmosisSwapPlannerService,
     private readonly transferPlannerService: TransferPlannerService,
     private readonly bridgeManifestService: BridgeManifestService,
+    private readonly cheqdIcqService: CheqdIcqService,
   ) {}
 
   @Get('channels')
@@ -93,10 +102,151 @@ export class ApiController {
     const request = MsgTransfer.fromJSON(msgtransferDto);
     const response = await this.packetService.sendPacket(request);
 
+    return this.serializeUnsignedTxResponse(response);
+  }
+
+  @Post('icq/cheqd/did-doc')
+  @HttpCode(200)
+  async buildCheqdDidDocIcq(@Body() requestDto: CheqdDidDocIcqRequestDto) {
+    const response = await this.cheqdIcqService.buildDidDocQuery(requestDto);
+    return {
+      query_path: response.query_path,
+      source_port: response.source_port,
+      source_channel: response.source_channel,
+      packet_data_hex: response.packet_data_hex,
+      ...this.serializeUnsignedTxResponse(response.tx),
+    };
+  }
+
+  @Post('icq/cheqd/did-doc/decode')
+  @HttpCode(200)
+  async decodeCheqdDidDocIcq(@Body() dto: CheqdIcqAcknowledgementDto) {
+    return this.cheqdIcqService.decodeDidDocAcknowledgement(dto.acknowledgement_hex);
+  }
+
+  @Post('icq/cheqd/did-doc-version')
+  @HttpCode(200)
+  async buildCheqdDidDocVersionIcq(@Body() requestDto: CheqdDidDocVersionIcqRequestDto) {
+    const response = await this.cheqdIcqService.buildDidDocVersionQuery(requestDto);
+    return {
+      query_path: response.query_path,
+      source_port: response.source_port,
+      source_channel: response.source_channel,
+      packet_data_hex: response.packet_data_hex,
+      ...this.serializeUnsignedTxResponse(response.tx),
+    };
+  }
+
+  @Post('icq/cheqd/did-doc-version/decode')
+  @HttpCode(200)
+  async decodeCheqdDidDocVersionIcq(@Body() dto: CheqdIcqAcknowledgementDto) {
+    return this.cheqdIcqService.decodeDidDocVersionAcknowledgement(dto.acknowledgement_hex);
+  }
+
+  @Post('icq/cheqd/did-doc-versions-metadata')
+  @HttpCode(200)
+  async buildCheqdDidDocVersionsMetadataIcq(@Body() requestDto: CheqdDidDocIcqRequestDto) {
+    const response = await this.cheqdIcqService.buildAllDidDocVersionsMetadataQuery(requestDto);
+    return {
+      query_path: response.query_path,
+      source_port: response.source_port,
+      source_channel: response.source_channel,
+      packet_data_hex: response.packet_data_hex,
+      ...this.serializeUnsignedTxResponse(response.tx),
+    };
+  }
+
+  @Post('icq/cheqd/did-doc-versions-metadata/decode')
+  @HttpCode(200)
+  async decodeCheqdDidDocVersionsMetadataIcq(@Body() dto: CheqdIcqAcknowledgementDto) {
+    return this.cheqdIcqService.decodeAllDidDocVersionsMetadataAcknowledgement(dto.acknowledgement_hex);
+  }
+
+  @Post('icq/cheqd/resource')
+  @HttpCode(200)
+  async buildCheqdResourceIcq(@Body() requestDto: CheqdResourceIcqRequestDto) {
+    const response = await this.cheqdIcqService.buildResourceQuery(requestDto);
+    return {
+      query_path: response.query_path,
+      source_port: response.source_port,
+      source_channel: response.source_channel,
+      packet_data_hex: response.packet_data_hex,
+      ...this.serializeUnsignedTxResponse(response.tx),
+    };
+  }
+
+  @Post('icq/cheqd/resource/decode')
+  @HttpCode(200)
+  async decodeCheqdResourceIcq(@Body() dto: CheqdIcqAcknowledgementDto) {
+    return this.cheqdIcqService.decodeResourceAcknowledgement(dto.acknowledgement_hex);
+  }
+
+  @Post('icq/cheqd/resource-metadata')
+  @HttpCode(200)
+  async buildCheqdResourceMetadataIcq(@Body() requestDto: CheqdResourceIcqRequestDto) {
+    const response = await this.cheqdIcqService.buildResourceMetadataQuery(requestDto);
+    return {
+      query_path: response.query_path,
+      source_port: response.source_port,
+      source_channel: response.source_channel,
+      packet_data_hex: response.packet_data_hex,
+      ...this.serializeUnsignedTxResponse(response.tx),
+    };
+  }
+
+  @Post('icq/cheqd/resource-metadata/decode')
+  @HttpCode(200)
+  async decodeCheqdResourceMetadataIcq(@Body() dto: CheqdIcqAcknowledgementDto) {
+    return this.cheqdIcqService.decodeResourceMetadataAcknowledgement(dto.acknowledgement_hex);
+  }
+
+  @Post('icq/cheqd/latest-resource-version')
+  @HttpCode(200)
+  async buildCheqdLatestResourceVersionIcq(@Body() requestDto: CheqdLatestResourceVersionIcqRequestDto) {
+    const response = await this.cheqdIcqService.buildLatestResourceVersionQuery(requestDto);
+    return {
+      query_path: response.query_path,
+      source_port: response.source_port,
+      source_channel: response.source_channel,
+      packet_data_hex: response.packet_data_hex,
+      ...this.serializeUnsignedTxResponse(response.tx),
+    };
+  }
+
+  @Post('icq/cheqd/latest-resource-version/decode')
+  @HttpCode(200)
+  async decodeCheqdLatestResourceVersionIcq(@Body() dto: CheqdIcqAcknowledgementDto) {
+    return this.cheqdIcqService.decodeLatestResourceVersionAcknowledgement(dto.acknowledgement_hex);
+  }
+
+  @Post('icq/cheqd/latest-resource-version-metadata')
+  @HttpCode(200)
+  async buildCheqdLatestResourceVersionMetadataIcq(@Body() requestDto: CheqdLatestResourceVersionIcqRequestDto) {
+    const response = await this.cheqdIcqService.buildLatestResourceVersionMetadataQuery(requestDto);
+    return {
+      query_path: response.query_path,
+      source_port: response.source_port,
+      source_channel: response.source_channel,
+      packet_data_hex: response.packet_data_hex,
+      ...this.serializeUnsignedTxResponse(response.tx),
+    };
+  }
+
+  @Post('icq/cheqd/latest-resource-version-metadata/decode')
+  @HttpCode(200)
+  async decodeCheqdLatestResourceVersionMetadataIcq(@Body() dto: CheqdIcqAcknowledgementDto) {
+    return this.cheqdIcqService.decodeLatestResourceVersionMetadataAcknowledgement(dto.acknowledgement_hex);
+  }
+
+  private serializeUnsignedTxResponse(response: { result?: unknown; unsigned_tx?: { type_url?: string; value?: Uint8Array | string } }) {
+    if (!response.unsigned_tx?.value) {
+      throw new BadRequestException('Gateway response did not include an unsigned transaction');
+    }
+
     return {
       result: response.result,
       unsigned_tx: {
-        type_url: response.unsigned_tx.type_url,
+        type_url: response.unsigned_tx.type_url || '',
         value: Buffer.from(response.unsigned_tx.value).toString('base64'),
       },
     };
