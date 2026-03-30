@@ -1,5 +1,6 @@
 import { PolicyId, UTxO } from '@lucid-evolution/lucid';
 import { AuthToken } from '~@/shared/types/auth-token';
+import { GatewayModuleKey } from '@shared/helpers/module-port';
 
 export type UnsignedChannelOpenAckDto = {
   hostStateUtxo: UTxO;
@@ -8,9 +9,10 @@ export type UnsignedChannelOpenAckDto = {
   channelUtxo: UTxO;
   connectionUtxo: UTxO;
   clientUtxo: UTxO;
-  transferModuleUtxo: UTxO;
+  moduleKey: GatewayModuleKey;
+  moduleUtxo: UTxO;
   encodedSpendChannelRedeemer: string;
-  encodedSpendTransferModuleRedeemer: string;
+  encodedSpendModuleRedeemer: string;
   channelTokenUnit: string;
   encodedUpdatedChannelDatum: string;
   constructedAddress: string;

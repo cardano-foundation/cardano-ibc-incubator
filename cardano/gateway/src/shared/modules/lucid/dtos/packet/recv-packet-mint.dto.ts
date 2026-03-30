@@ -4,8 +4,8 @@ import {
   WithConstructedAddress,
   WithHostStateUpdate,
   WithMintVoucherRedeemer,
-  WithMockModuleSpend,
-  WithMockModuleUtxo,
+  WithModuleContext,
+  WithModuleSpend,
   WithPacketPolicyAndChannelToken,
   WithTransferAmount,
   WithTransferModuleSpend,
@@ -22,8 +22,8 @@ export type UnsignedRecvPacketDto = WithHostStateUpdate &
 
 export type UnsignedRecvPacketModuleDto = WithHostStateUpdate &
   WithChannelContext &
-  WithMockModuleUtxo &
-  WithMockModuleSpend &
+  WithModuleContext &
+  WithModuleSpend &
   WithChannelSpend &
   WithPacketPolicyAndChannelToken<'recvPacketPolicyId'> &
   WithVerifyProof;

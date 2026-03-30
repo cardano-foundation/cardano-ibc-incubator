@@ -84,6 +84,7 @@ import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
 import { AsyncIcqHostService } from './async-icq-host.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { queryNetworkTipPoint } from '../shared/helpers/time';
+import { getGatewayModuleConfigForPortId } from '@shared/helpers/module-port';
 
 @Injectable()
 export class PacketService {
@@ -861,14 +862,17 @@ export class PacketService {
     if (convertHex2String(channelDatum.port) === ASYNC_ICQ_HOST_PORT) {
       // Async-icq rides the normal recv-packet path. The difference from ICS-20 is
       // only how the packet data is interpreted and how the ack is produced.
-      const mockModuleIdentifier = this.getMockModuleIdentifier();
-      const mockModuleUtxo = await this.lucidService.findUtxoByUnit(mockModuleIdentifier);
+      const moduleConfig = getGatewayModuleConfigForPortId(
+        this.configService.get('deployment'),
+        ASYNC_ICQ_HOST_PORT,
+      );
+      const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);
       const { acknowledgementResponse } = await this.asyncIcqHostService.executePacket(
         Buffer.from(packet.data, 'hex'),
       );
       // Reuse the existing module callback envelope so Cardano emits a regular
       // write_acknowledgement event and persists the ack commitment in channel state.
-      const encodedSpendMockModuleRedeemer: string = await this.lucidService.encode(
+      const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
         {
           Callback: [
             {
@@ -910,11 +914,12 @@ export class PacketService {
         channelUtxo,
         connectionUtxo,
         clientUtxo,
-        mockModuleUtxo,
+        moduleKey: moduleConfig.key,
+        moduleUtxo,
         encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum,
         encodedSpendChannelRedeemer,
-        encodedSpendMockModuleRedeemer,
+        encodedSpendModuleRedeemer,
         encodedUpdatedChannelDatum,
         channelTokenUnit,
         recvPacketPolicyId,
@@ -2306,12 +2311,6 @@ export class PacketService {
   }
   private getTransferModuleIdentifier(): string {
     return this.configService.get('deployment').modules.transfer.identifier;
-  }
-  private getMockModuleAddress(): string {
-    return this.configService.get('deployment').modules.mock.address;
-  }
-  private getMockModuleIdentifier(): string {
-    return this.configService.get('deployment').modules.mock.identifier;
   }
   private async getTransferModuleDetails(): Promise<{
     transferModuleUtxo: UTxO;

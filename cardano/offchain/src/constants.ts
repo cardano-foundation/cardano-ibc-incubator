@@ -14,3 +14,6 @@ export const MOCK_MODULE_VERSION = "ics20-1"; // 69637332302d31
 
 export const TRANSFER_MODULE_PORT = 100n;
 export const TRANSFER_MODULE_VERSION = "ics20-1"; // 69637332302d31
+
+export const ICQ_MODULE_PORT = 101n;
+export const ICQ_MODULE_VERSION = "icq-1"; // 6963712d31

@@ -1,5 +1,6 @@
 import { PolicyId, UTxO } from '@lucid-evolution/lucid';
 import { AuthToken } from '@shared/types/auth-token';
+import { GatewayModuleKey } from '@shared/helpers/module-port';
 
 // Composable DTO fragments: packet DTOs are formed via intersection types (`&`)
 // so shared tx fields are defined once and reused consistently.
@@ -31,6 +32,11 @@ export type WithMockModuleUtxo = {
   mockModuleUtxo: UTxO;
 };
 
+export type WithModuleContext = {
+  moduleKey: GatewayModuleKey;
+  moduleUtxo: UTxO;
+};
+
 export type WithLegacyTransferModuleUtxo = {
   transferModuleUTxO: UTxO;
 };
@@ -47,6 +53,10 @@ export type WithTransferModuleSpend = {
 
 export type WithMockModuleSpend = {
   encodedSpendMockModuleRedeemer: string;
+};
+
+export type WithModuleSpend = {
+  encodedSpendModuleRedeemer: string;
 };
 
 export type WithMintVoucherRedeemer = {

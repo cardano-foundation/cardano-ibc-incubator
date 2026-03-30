@@ -48,3 +48,5 @@ export const KEY_PORT_PREFIX = 'ports';
 export const TRANSFER_MODULE_PORT = 100;
 
 export const MOCK_MODULE_PORT = 99;
+
+export const ICQ_MODULE_PORT = 101;

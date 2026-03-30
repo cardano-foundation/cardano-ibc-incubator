@@ -220,6 +220,7 @@ type Validator =
   | "spendClient"
   | "spendConnection"
   | "spendChannel"
+  | "spendMockModule"
   | "spendTransferModule"
   | "mintVoucher"
   | "verifyProof"
@@ -228,7 +229,7 @@ type Validator =
   | "mintConnectionStt"
   | "mintChannelStt";
 
-type Module = "handler" | "transfer";
+type Module = "handler" | "transfer" | "mock" | "icq";
 
 type Tokens = "mock";
 
