@@ -24,7 +24,9 @@ export const readValidator = <T extends unknown[] = Data[]>(
   params?: Exact<[...T]>,
   type?: T,
 ): [Script, ScriptHash, Address] => {
-  const rawValidator = blueprint.validators.find((v) => v.title === title);
+  const rawValidator = blueprint.validators.find(
+    (v: { title: string; compiledCode: string }) => v.title === title,
+  );
   if (!rawValidator) {
     throw new Error(`Unable to field validator with title ${title}`);
   }
@@ -220,6 +222,7 @@ type Validator =
   | "spendClient"
   | "spendConnection"
   | "spendChannel"
+  | "spendTraceRegistry"
   | "spendTransferModule"
   | "mintVoucher"
   | "verifyProof"
@@ -254,6 +257,15 @@ export type DeploymentTemplate = {
   hostStateNFT?: {
     policyId: string;
     name: string;
+  };
+  traceRegistry?: {
+    address: string;
+    shardPolicyId: string;
+    shards: Array<{
+      index: number;
+      policyId: string;
+      name: string;
+    }>;
   };
   modules: Record<
     Module,

@@ -23,9 +23,6 @@ describe('SubmissionService confirmation strictness regressions', () => {
   let ibcTreeCacheServiceMock: {
     save: jest.Mock;
   };
-  let denomTraceServiceMock: {
-    setTxHashForTraces: jest.Mock;
-  };
 
   beforeEach(() => {
     lucidServiceMock = {
@@ -69,17 +66,12 @@ describe('SubmissionService confirmation strictness regressions', () => {
       save: jest.fn().mockResolvedValue(undefined),
     };
 
-    denomTraceServiceMock = {
-      setTxHashForTraces: jest.fn().mockResolvedValue(1),
-    };
-
     service = new SubmissionService(
       lucidServiceMock as any,
       configServiceMock as any,
       txEventsServiceMock as any,
       ibcTreePendingUpdatesServiceMock as any,
       ibcTreeCacheServiceMock as any,
-      denomTraceServiceMock as any,
     );
   });
 
@@ -95,19 +87,16 @@ describe('SubmissionService confirmation strictness regressions', () => {
     ibcTreePendingUpdatesServiceMock.take.mockReturnValueOnce({
       expectedNewRoot: 'expected-root',
       commit: jest.fn(),
-      denomTraceHashes: ['voucher-hash'],
     });
     jest.spyOn(service as any, 'readConfirmedTxRoot').mockRejectedValueOnce(new Error('hoststate unavailable'));
 
     await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'tx-hash-abc')).rejects.toThrow();
-    expect(denomTraceServiceMock.setTxHashForTraces).not.toHaveBeenCalled();
   });
 
   it('does not return submit success when confirmation status is unknown', async () => {
     ibcTreePendingUpdatesServiceMock.take.mockReturnValueOnce({
       expectedNewRoot: 'expected-root',
       commit: jest.fn(),
-      denomTraceHashes: ['voucher-hash'],
     });
     jest.spyOn(service as any, 'capturePreSubmitPoint').mockResolvedValueOnce('origin');
     jest.spyOn(service as any, 'readConfirmedTxRoot').mockResolvedValueOnce('expected-root');
@@ -120,6 +109,5 @@ describe('SubmissionService confirmation strictness regressions', () => {
         signed_tx_cbor: 'deadbeef',
       } as any),
     ).rejects.toThrow();
-    expect(denomTraceServiceMock.setTxHashForTraces).not.toHaveBeenCalled();
   });
 });

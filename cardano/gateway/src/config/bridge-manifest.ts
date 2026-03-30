@@ -37,6 +37,18 @@ type DeploymentModule = {
   address: string;
 };
 
+type DeploymentTraceRegistryShard = {
+  index: number;
+  policyId: string;
+  name: string;
+};
+
+type DeploymentTraceRegistry = {
+  address: string;
+  shardPolicyId: string;
+  shards: DeploymentTraceRegistryShard[];
+};
+
 // The rest of the Gateway still consumes the historic camelCase deployment shape
 // loaded from handler.json. We keep that internal model intact and translate it
 // to/from the public manifest shape at the config boundary.
@@ -49,6 +61,7 @@ export type DeploymentConfig = {
     spendClient: DeploymentValidator;
     spendConnection: DeploymentValidator;
     spendChannel: DeploymentSpendChannelValidator;
+    spendTraceRegistry?: DeploymentValidator;
     spendTransferModule: DeploymentValidator;
     verifyProof: DeploymentValidator;
     mintClientStt: DeploymentValidator;
@@ -61,6 +74,7 @@ export type DeploymentConfig = {
     transfer: DeploymentModule;
     mock?: DeploymentModule;
   };
+  traceRegistry?: DeploymentTraceRegistry;
 };
 
 type BridgeManifestRefUtxo = {
@@ -102,6 +116,18 @@ type BridgeManifestModule = {
   address: string;
 };
 
+type BridgeManifestTraceRegistryShard = {
+  index: number;
+  policy_id: string;
+  token_name: string;
+};
+
+type BridgeManifestTraceRegistry = {
+  address: string;
+  shard_policy_id: string;
+  shards: BridgeManifestTraceRegistryShard[];
+};
+
 // The manifest is the public, deployment-stable bootstrap document we expose to
 // external operators. It intentionally uses snake_case and only includes the
 // on-chain facts another Gateway/relayer stack needs to reconnect to this bridge.
@@ -121,6 +147,7 @@ export type BridgeManifest = {
     spend_client: BridgeManifestValidator;
     spend_connection: BridgeManifestValidator;
     spend_channel: BridgeManifestSpendChannelValidator;
+    spend_trace_registry?: BridgeManifestValidator;
     spend_transfer_module: BridgeManifestValidator;
     verify_proof: BridgeManifestValidator;
     mint_client_stt: BridgeManifestValidator;
@@ -133,6 +160,7 @@ export type BridgeManifest = {
     transfer: BridgeManifestModule;
     mock?: BridgeManifestModule;
   };
+  trace_registry?: BridgeManifestTraceRegistry;
 };
 
 export type BridgeManifestCardanoIdentity = BridgeManifest['cardano'];
@@ -325,6 +353,44 @@ function requireManifestModule(value: unknown, path: string): BridgeManifestModu
   };
 }
 
+function requireDeploymentTraceRegistry(value: unknown, path: string): DeploymentTraceRegistry {
+  const traceRegistry = requireObject(value, path);
+  const shards = traceRegistry.shards;
+  assert(Array.isArray(shards), `Invalid bridge config: "${path}.shards" must be an array`);
+
+  return {
+    address: requireNonEmptyString(traceRegistry.address, `${path}.address`),
+    shardPolicyId: requireNonEmptyString(traceRegistry.shardPolicyId, `${path}.shardPolicyId`),
+    shards: shards.map((shard, index) => {
+      const shardObject = requireObject(shard, `${path}.shards[${index}]`);
+      return {
+        index: requireNonNegativeInteger(shardObject.index, `${path}.shards[${index}].index`),
+        policyId: requireNonEmptyString(shardObject.policyId, `${path}.shards[${index}].policyId`),
+        name: requireNonEmptyString(shardObject.name, `${path}.shards[${index}].name`),
+      };
+    }),
+  };
+}
+
+function requireManifestTraceRegistry(value: unknown, path: string): BridgeManifestTraceRegistry {
+  const traceRegistry = requireObject(value, path);
+  const shards = traceRegistry.shards;
+  assert(Array.isArray(shards), `Invalid bridge config: "${path}.shards" must be an array`);
+
+  return {
+    address: requireNonEmptyString(traceRegistry.address, `${path}.address`),
+    shard_policy_id: requireNonEmptyString(traceRegistry.shard_policy_id, `${path}.shard_policy_id`),
+    shards: shards.map((shard, index) => {
+      const shardObject = requireObject(shard, `${path}.shards[${index}]`);
+      return {
+        index: requireNonNegativeInteger(shardObject.index, `${path}.shards[${index}].index`),
+        policy_id: requireNonEmptyString(shardObject.policy_id, `${path}.shards[${index}].policy_id`),
+        token_name: requireNonEmptyString(shardObject.token_name, `${path}.shards[${index}].token_name`),
+      };
+    }),
+  };
+}
+
 function requireCardanoIdentity(value: BridgeManifestCardanoIdentity): BridgeManifestCardanoIdentity {
   return {
     chain_id: requireNonEmptyString(value.chain_id, 'cardano.chain_id'),
@@ -395,6 +461,30 @@ function manifestRefValidatorToDeployment(validator: BridgeManifestRefValidator)
   };
 }
 
+function deploymentTraceRegistryToManifest(traceRegistry: DeploymentTraceRegistry): BridgeManifestTraceRegistry {
+  return {
+    address: traceRegistry.address,
+    shard_policy_id: traceRegistry.shardPolicyId,
+    shards: traceRegistry.shards.map((shard) => ({
+      index: shard.index,
+      policy_id: shard.policyId,
+      token_name: shard.name,
+    })),
+  };
+}
+
+function manifestTraceRegistryToDeployment(traceRegistry: BridgeManifestTraceRegistry): DeploymentTraceRegistry {
+  return {
+    address: traceRegistry.address,
+    shardPolicyId: traceRegistry.shard_policy_id,
+    shards: traceRegistry.shards.map((shard) => ({
+      index: shard.index,
+      policyId: shard.policy_id,
+      name: shard.token_name,
+    })),
+  };
+}
+
 function deploymentSpendChannelToManifest(validator: DeploymentSpendChannelValidator): BridgeManifestSpendChannelValidator {
   return {
     ...deploymentValidatorToManifest(validator),
@@ -441,6 +531,9 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
       spendClient: requireDeploymentValidator(validators.spendClient, 'validators.spendClient'),
       spendConnection: requireDeploymentValidator(validators.spendConnection, 'validators.spendConnection'),
       spendChannel: requireDeploymentSpendChannelValidator(validators.spendChannel, 'validators.spendChannel'),
+      ...(validators.spendTraceRegistry
+        ? { spendTraceRegistry: requireDeploymentValidator(validators.spendTraceRegistry, 'validators.spendTraceRegistry') }
+        : {}),
       spendTransferModule: requireDeploymentValidator(validators.spendTransferModule, 'validators.spendTransferModule'),
       verifyProof: requireDeploymentValidator(validators.verifyProof, 'validators.verifyProof'),
       mintClientStt: requireDeploymentValidator(validators.mintClientStt, 'validators.mintClientStt'),
@@ -453,6 +546,9 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
       transfer: requireDeploymentModule(modules.transfer, 'modules.transfer'),
       ...(modules.mock ? { mock: requireDeploymentModule(modules.mock, 'modules.mock') } : {}),
     },
+    ...(deploymentAny.traceRegistry
+      ? { traceRegistry: requireDeploymentTraceRegistry(deploymentAny.traceRegistry, 'traceRegistry') }
+      : {}),
   };
 }
 
@@ -480,6 +576,11 @@ export function normalizeHandlerJsonDeploymentConfig(
         spend_client: deploymentValidatorToManifest(normalizedDeployment.validators.spendClient),
         spend_connection: deploymentValidatorToManifest(normalizedDeployment.validators.spendConnection),
         spend_channel: deploymentSpendChannelToManifest(normalizedDeployment.validators.spendChannel),
+        ...(normalizedDeployment.validators.spendTraceRegistry
+          ? {
+              spend_trace_registry: deploymentValidatorToManifest(normalizedDeployment.validators.spendTraceRegistry),
+            }
+          : {}),
         spend_transfer_module: deploymentValidatorToManifest(normalizedDeployment.validators.spendTransferModule),
         verify_proof: deploymentValidatorToManifest(normalizedDeployment.validators.verifyProof),
         mint_client_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintClientStt),
@@ -492,6 +593,9 @@ export function normalizeHandlerJsonDeploymentConfig(
         transfer: normalizedDeployment.modules.transfer,
         ...(normalizedDeployment.modules.mock ? { mock: normalizedDeployment.modules.mock } : {}),
       },
+      ...(normalizedDeployment.traceRegistry
+        ? { trace_registry: deploymentTraceRegistryToManifest(normalizedDeployment.traceRegistry) }
+        : {}),
     },
   };
 }
@@ -516,6 +620,14 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       spend_client: requireManifestValidator(validators.spend_client, 'validators.spend_client'),
       spend_connection: requireManifestValidator(validators.spend_connection, 'validators.spend_connection'),
       spend_channel: requireManifestSpendChannelValidator(validators.spend_channel, 'validators.spend_channel'),
+      ...(validators.spend_trace_registry
+        ? {
+            spend_trace_registry: requireManifestValidator(
+              validators.spend_trace_registry,
+              'validators.spend_trace_registry',
+            ),
+          }
+        : {}),
       spend_transfer_module: requireManifestValidator(validators.spend_transfer_module, 'validators.spend_transfer_module'),
       verify_proof: requireManifestValidator(validators.verify_proof, 'validators.verify_proof'),
       mint_client_stt: requireManifestValidator(validators.mint_client_stt, 'validators.mint_client_stt'),
@@ -528,6 +640,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       transfer: requireManifestModule(modules.transfer, 'modules.transfer'),
       ...(modules.mock ? { mock: requireManifestModule(modules.mock, 'modules.mock') } : {}),
     },
+    ...(manifestAny.trace_registry
+      ? { trace_registry: requireManifestTraceRegistry(manifestAny.trace_registry, 'trace_registry') }
+      : {}),
   };
 
   assert(bridgeManifest.schema_version === 1, 'Invalid bridge config: "schema_version" must be 1');
@@ -543,6 +658,11 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
         spendClient: manifestValidatorToDeployment(bridgeManifest.validators.spend_client),
         spendConnection: manifestValidatorToDeployment(bridgeManifest.validators.spend_connection),
         spendChannel: manifestSpendChannelToDeployment(bridgeManifest.validators.spend_channel),
+        ...(bridgeManifest.validators.spend_trace_registry
+          ? {
+              spendTraceRegistry: manifestValidatorToDeployment(bridgeManifest.validators.spend_trace_registry),
+            }
+          : {}),
         spendTransferModule: manifestValidatorToDeployment(bridgeManifest.validators.spend_transfer_module),
         verifyProof: manifestValidatorToDeployment(bridgeManifest.validators.verify_proof),
         mintClientStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_client_stt),
@@ -555,6 +675,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
         transfer: requireDeploymentModule(bridgeManifest.modules.transfer, 'modules.transfer'),
         ...(bridgeManifest.modules.mock ? { mock: requireDeploymentModule(bridgeManifest.modules.mock, 'modules.mock') } : {}),
       },
+      ...(bridgeManifest.trace_registry
+        ? { traceRegistry: manifestTraceRegistryToDeployment(bridgeManifest.trace_registry) }
+        : {}),
     },
   };
 }

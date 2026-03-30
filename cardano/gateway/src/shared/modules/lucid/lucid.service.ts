@@ -87,6 +87,7 @@ export type CodecType =
 type ReferenceScripts = {
   spendHandler: UTxO;
   spendChannel: UTxO;
+  spendTraceRegistry?: UTxO;
   mintChannel: UTxO;
   mintClient: UTxO;
   mintConnection: UTxO;
@@ -127,6 +128,7 @@ export class LucidService implements OnModuleInit {
       spendHandler: deploymentConfig.validators.spendHandler.refUtxo,
       spendConnection: deploymentConfig.validators.spendConnection.refUtxo,
       spendChannel: deploymentConfig.validators.spendChannel.refUtxo,
+      spendTraceRegistry: deploymentConfig.validators.spendTraceRegistry?.refUtxo,
       spendClient: deploymentConfig.validators.spendClient.refUtxo,
       spendMockModule: deploymentConfig.validators.spendMockModule?.refUtxo,
       spendTransferModule: deploymentConfig.validators.spendTransferModule.refUtxo,
@@ -1461,7 +1463,11 @@ export class LucidService implements OnModuleInit {
       this.referenceScripts.receivePacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
-    ])
+    ]);
+
+    this.applyTraceRegistryUpdate(tx, dto);
+
+    tx
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
@@ -1657,7 +1663,11 @@ export class LucidService implements OnModuleInit {
       this.referenceScripts.ackPacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
-    ])
+    ]);
+
+    this.applyTraceRegistryUpdate(tx, dto);
+
+    tx
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
@@ -1852,7 +1862,11 @@ export class LucidService implements OnModuleInit {
       this.referenceScripts.timeoutPacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
-    ])
+    ]);
+
+    this.applyTraceRegistryUpdate(tx, dto);
+
+    tx
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom([dto.transferModuleUtxo], dto.encodedSpendTransferModuleRedeemer)
@@ -1997,6 +2011,48 @@ export class LucidService implements OnModuleInit {
   }
   private getMintChannelScriptHash(): string {
     return this.configService.get('deployment').validators.mintChannelStt.scriptHash;
+  }
+
+  private applyTraceRegistryUpdate(
+    tx: TxBuilder,
+    dto: {
+      traceRegistryShardUtxo?: UTxO;
+      encodedTraceRegistryRedeemer?: string;
+      encodedUpdatedTraceRegistryShardDatum?: string;
+    },
+  ): void {
+    if (
+      !dto.traceRegistryShardUtxo ||
+      !dto.encodedTraceRegistryRedeemer ||
+      !dto.encodedUpdatedTraceRegistryShardDatum
+    ) {
+      return;
+    }
+
+    const deploymentConfig = this.configService.get('deployment');
+    const traceRegistryAddress = deploymentConfig.traceRegistry?.address;
+    if (!traceRegistryAddress) {
+      throw new GrpcInternalException('Trace registry address is missing from deployment config');
+    }
+    if (!this.referenceScripts.spendTraceRegistry) {
+      throw new GrpcInternalException('Trace registry reference script is missing from deployment config');
+    }
+
+    // Registry updates are optional per packet tx. They are present only for the
+    // first mint of a previously unseen voucher trace; repeated mints skip this
+    // shard spend entirely and reuse the existing on-chain mapping.
+    tx.readFrom([this.referenceScripts.spendTraceRegistry])
+      .collectFrom([dto.traceRegistryShardUtxo], dto.encodedTraceRegistryRedeemer)
+      .pay.ToContract(
+        traceRegistryAddress,
+        {
+          kind: 'inline',
+          value: dto.encodedUpdatedTraceRegistryShardDatum,
+        },
+        {
+          ...dto.traceRegistryShardUtxo.assets,
+        },
+      );
   }
 
   public generateTokenName = (baseToken: AuthToken, prefix: string, postfix: bigint): string => {

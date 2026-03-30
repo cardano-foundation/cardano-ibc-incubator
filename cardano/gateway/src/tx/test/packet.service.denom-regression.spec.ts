@@ -60,7 +60,7 @@ describe('PacketService denom regression coverage', () => {
 
     const denomTraceServiceMock = {
       findByIbcDenomHash: jest.fn(),
-      saveDenomTrace: jest.fn(),
+      prepareOnChainInsert: jest.fn().mockResolvedValue(null),
     };
 
     const service = new PacketService(
@@ -235,8 +235,8 @@ describe('PacketService denom regression coverage', () => {
     };
 
     const denomTraceServiceMock = {
-      saveDenomTrace: jest.fn().mockResolvedValue({}),
       findByIbcDenomHash: jest.fn(),
+      prepareOnChainInsert: jest.fn().mockResolvedValue(null),
     };
 
     const service = new PacketService(
@@ -347,12 +347,9 @@ describe('PacketService denom regression coverage', () => {
     expect(lucidServiceMock.createUnsignedAckPacketUnescrowTx).not.toHaveBeenCalled();
     expect(lucidServiceMock.createUnsignedAckPacketSucceedTx).not.toHaveBeenCalled();
 
-    expect(denomTraceServiceMock.saveDenomTrace).toHaveBeenCalledWith(
-      expect.objectContaining({
-        hash: expectedTokenName,
-        path: 'transfer/channel-7/transfer/channel-1',
-        base_denom: 'factory/osmo1abcd/mytoken',
-      }),
+    expect(denomTraceServiceMock.prepareOnChainInsert).toHaveBeenCalledWith(
+      expectedTokenName,
+      canonicalDenom,
     );
   });
 
@@ -407,8 +404,8 @@ describe('PacketService denom regression coverage', () => {
     };
 
     const denomTraceServiceMock = {
-      saveDenomTrace: jest.fn().mockResolvedValue({}),
       findByIbcDenomHash: jest.fn(),
+      prepareOnChainInsert: jest.fn().mockResolvedValue(null),
     };
 
     const service = new PacketService(
@@ -570,8 +567,8 @@ describe('PacketService denom regression coverage', () => {
     };
 
     const denomTraceServiceMock = {
-      saveDenomTrace: jest.fn().mockResolvedValue({}),
       findByIbcDenomHash: jest.fn(),
+      prepareOnChainInsert: jest.fn().mockResolvedValue(null),
     };
 
     const service = new PacketService(

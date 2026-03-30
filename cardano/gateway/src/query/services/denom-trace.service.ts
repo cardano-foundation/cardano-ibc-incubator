@@ -1,337 +1,333 @@
-import { Injectable, Logger, Inject, Optional, OnModuleInit } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { DenomTrace } from '../../shared/entities/denom-trace.entity';
+import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { UTxO } from '@lucid-evolution/lucid';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
 import { MetricsService } from '../../health/metrics.service';
 import { convertString2Hex, hashSHA256 } from '../../shared/helpers/hex';
+import { splitFullDenomTrace } from '../../shared/helpers/denom-trace';
+import { LucidService } from '../../shared/modules/lucid/lucid.service';
+import {
+  decodeTraceRegistryShardDatum,
+  encodeTraceRegistryRedeemer,
+  encodeTraceRegistryShardDatum,
+  TraceRegistryShardDatum,
+} from '../../shared/types/trace-registry';
 
+type TraceRegistryShardConfig = {
+  index: number;
+  policyId: string;
+  name: string;
+};
+
+type TraceRegistryConfig = {
+  address: string;
+  shardPolicyId: string;
+  shards: TraceRegistryShardConfig[];
+};
+
+export type TraceRegistryInsertContext = {
+  traceRegistryShardUtxo: UTxO;
+  encodedTraceRegistryRedeemer: string;
+  encodedUpdatedTraceRegistryShardDatum: string;
+};
+
+export type ResolvedDenomTrace = {
+  hash: string;
+  path: string;
+  base_denom: string;
+  voucher_policy_id: string;
+  ibc_denom_hash: string;
+};
+
+/**
+ * Canonical resolver for Cardano voucher reverse lookups.
+ *
+ * This service no longer treats the Gateway database as a source of truth. The
+ * only authoritative mapping is the on-chain trace-registry shard set, and every
+ * read path derives user-facing fields from those shard datums.
+ *
+ * Important consequences:
+ * - `voucher_hash -> full_denom` is the canonical stored mapping
+ * - `ibc/<hash>` is derived off-chain from `full_denom`, not stored separately
+ */
 @Injectable()
-export class DenomTraceService implements OnModuleInit {
-  private static readonly DEFAULT_BACKFILL_BATCH_SIZE = 500;
-
+export class DenomTraceService {
   constructor(
     private readonly logger: Logger,
-    @InjectRepository(DenomTrace, 'gateway')
-    private denomTraceRepository: Repository<DenomTrace>,
+    private readonly configService: ConfigService,
+    private readonly lucidService: LucidService,
     @Optional() @Inject(MetricsService) private metricsService?: MetricsService,
   ) {}
 
-  async onModuleInit(): Promise<void> {
-    // Make startup idempotent across fresh and existing DBs:
-    // 1) ensure schema/index exists, then
-    // 2) backfill missing derived hashes so indexed lookup is immediately usable.
-    await this.ensureSchema();
-    const updated = await this.backfillMissingIbcDenomHashes();
-    if (updated > 0) {
-      this.logger.log(`Backfilled ibc_denom_hash for ${updated} denom trace rows`);
+  async prepareOnChainInsert(
+    hash: string,
+    fullDenom: string,
+  ): Promise<TraceRegistryInsertContext | null> {
+    const normalizedHash = hash.toLowerCase();
+    const registry = this.getTraceRegistryConfig();
+    if (!registry) {
+      return null;
     }
-  }
 
-  private async ensureSchema(): Promise<void> {
-    // Keep migration logic embedded here because this service can run in
-    // environments where explicit DB migration steps may be skipped.
-    await this.denomTraceRepository.query(`
-      CREATE TABLE IF NOT EXISTS denom_traces (
-        hash TEXT PRIMARY KEY,
-        path TEXT NOT NULL,
-        base_denom TEXT NOT NULL,
-        voucher_policy_id TEXT NOT NULL,
-        ibc_denom_hash TEXT,
-        first_seen TIMESTAMP NOT NULL DEFAULT NOW(),
-        tx_hash TEXT
-      );
-    `);
-
-    await this.denomTraceRepository.query(`
-      ALTER TABLE denom_traces
-      ADD COLUMN IF NOT EXISTS ibc_denom_hash TEXT;
-    `);
-
-    await this.denomTraceRepository.query(`
-      CREATE INDEX IF NOT EXISTS idx_denom_traces_ibc_denom_hash
-      ON denom_traces (ibc_denom_hash);
-    `);
-  }
-
-  /**
-   * Save or update a denom trace mapping
-   * Uses upsert to avoid duplicate entries
-   */
-  async saveDenomTrace(trace: Partial<DenomTrace>): Promise<DenomTrace> {
-    const startTime = Date.now();
-    
-    try {
-      // Check if trace already exists
-      const existing = await this.denomTraceRepository.findOne({
-        where: { hash: trace.hash },
-      });
-
-      if (existing) {
-        // A hash must always map to one canonical trace tuple.
-        // If the incoming write disagrees with an existing row, fail hard.
-        const conflictingFields: string[] = [];
-        if (trace.path !== undefined && trace.path !== existing.path) {
-          conflictingFields.push(`path(existing=${existing.path}, incoming=${trace.path})`);
-        }
-        if (trace.base_denom !== undefined && trace.base_denom !== existing.base_denom) {
-          conflictingFields.push(`base_denom(existing=${existing.base_denom}, incoming=${trace.base_denom})`);
-        }
-        if (trace.voucher_policy_id !== undefined && trace.voucher_policy_id !== existing.voucher_policy_id) {
-          conflictingFields.push(
-            `voucher_policy_id(existing=${existing.voucher_policy_id}, incoming=${trace.voucher_policy_id})`,
-          );
-        }
-
-        if (conflictingFields.length > 0) {
-          throw new Error(
-            `Conflicting denom trace for hash ${trace.hash}: ${conflictingFields.join(', ')}`,
-          );
-        }
-
-        this.logger.log(`Denom trace already exists for hash: ${trace.hash}`);
-        this.metricsService?.denomTraceSavesTotal.inc({ status: 'duplicate' });
-        return existing;
+    // The on-chain registry is append-only. If the mapping already exists we do
+    // not touch any shard UTxO, but we still reject conflicting rewrites. That
+    // lets every voucher mint path ask for "insert if first-seen" without having
+    // to predict ahead of time whether the shard already contains the mapping.
+    const existing = await this.findOnChainEntryByHash(normalizedHash);
+    if (existing) {
+      if (existing.fullDenom !== fullDenom) {
+        throw new Error(
+          `Conflicting on-chain denom trace for hash ${normalizedHash}: existing=${existing.fullDenom}, incoming=${fullDenom}`,
+        );
       }
+      return null;
+    }
 
-      const traceWithIbcHash = this.withComputedIbcDenomHash(trace);
-      const newTrace = this.denomTraceRepository.create(traceWithIbcHash);
-      const saved = await this.denomTraceRepository.save(newTrace);
-      this.logger.log(`Saved new denom trace: ${trace.hash} -> ${trace.path}/${trace.base_denom}`);
-      
-      // Record successful save metric
-      this.metricsService?.denomTraceSavesTotal.inc({ status: 'success' });
-      
-      return saved;
-    } catch (error) {
-      this.logger.error(`Failed to save denom trace: ${error.message}`, error.stack);
-      
-      // Record error metrics
-      this.metricsService?.denomTraceSavesTotal.inc({ status: 'error' });
-      this.metricsService?.denomTraceSaveErrorsTotal.inc({ 
-        error_type: error.name || 'unknown' 
-      });
-      
-      throw error;
-    } finally {
-      // Record operation duration
-      const duration = (Date.now() - startTime) / 1000;
-      this.metricsService?.denomTraceQueryDuration.observe(
-        { operation: 'save' },
-        duration
+    const shardIndex = this.getShardIndexForHash(normalizedHash);
+    const shardConfig = registry.shards.find((shard) => shard.index === shardIndex);
+    if (!shardConfig) {
+      throw new Error(`Missing trace-registry shard config for index ${shardIndex}`);
+    }
+
+    // Build the update from the live shard datum so the spending input and the
+    // replacement datum are derived from the same on-chain state snapshot. We do
+    // not synthesize shard contents from cached/off-chain state.
+    const shardDatum = await this.loadShardDatum(shardConfig);
+    if (Number(shardDatum.shard_index) !== shardIndex) {
+      throw new Error(
+        `Trace-registry shard datum mismatch: expected ${shardIndex}, found ${shardDatum.shard_index.toString()}`,
       );
     }
+
+    const duplicate = shardDatum.entries.find((entry) => entry.voucher_hash.toLowerCase() === normalizedHash);
+    if (duplicate) {
+      if (duplicate.full_denom !== fullDenom) {
+        throw new Error(
+          `Conflicting trace-registry datum for hash ${normalizedHash}: existing=${duplicate.full_denom}, incoming=${fullDenom}`,
+        );
+      }
+      return null;
+    }
+
+    const shardUnit = shardConfig.policyId + shardConfig.name;
+    const shardUtxo = await this.lucidService.findUtxoByUnit(shardUnit);
+    if (!shardUtxo.datum) {
+      throw new Error(`Trace-registry shard ${shardIndex} is missing inline datum`);
+    }
+
+    const updatedDatum: TraceRegistryShardDatum = {
+      shard_index: shardDatum.shard_index,
+      entries: [
+        ...shardDatum.entries,
+        {
+          voucher_hash: normalizedHash,
+          full_denom: fullDenom,
+        },
+      ],
+    };
+
+    return {
+      traceRegistryShardUtxo: shardUtxo,
+      encodedTraceRegistryRedeemer: encodeTraceRegistryRedeemer(
+        {
+          InsertTrace: {
+            voucher_hash: normalizedHash,
+            full_denom: fullDenom,
+          },
+        },
+        this.lucidService.LucidImporter,
+      ),
+      encodedUpdatedTraceRegistryShardDatum: encodeTraceRegistryShardDatum(
+        updatedDatum,
+        this.lucidService.LucidImporter,
+      ),
+    };
   }
 
-  /**
-   * Find a denom trace by its hash (voucher token name)
-   */
-  async findByHash(hash: string): Promise<DenomTrace | null> {
+  async findByHash(hash: string): Promise<ResolvedDenomTrace | null> {
     const startTime = Date.now();
-    
+
     try {
-      const trace = await this.denomTraceRepository.findOne({
-        where: { hash },
-      });
-      return trace;
+      const normalizedHash = hash.toLowerCase();
+      const onChainEntry = await this.findOnChainEntryByHash(normalizedHash);
+      if (!onChainEntry) {
+        return null;
+      }
+      return this.materializeTrace(onChainEntry.hash, onChainEntry.fullDenom);
     } catch (error) {
       this.logger.error(`Failed to find denom trace by hash ${hash}: ${error.message}`);
       throw error;
     } finally {
-      const duration = (Date.now() - startTime) / 1000;
-      this.metricsService?.denomTraceQueryDuration.observe(
-        { operation: 'findByHash' },
-        duration
-      );
+      this.observeQueryDuration('findByHash', startTime);
     }
   }
 
-  /**
-   * Find all denom traces with optional pagination
-   */
-  async findAll(pagination?: PaginationKeyDto): Promise<DenomTrace[]> {
+  async findAll(pagination?: PaginationKeyDto): Promise<ResolvedDenomTrace[]> {
     const startTime = Date.now();
-    
+
     try {
-      const query = this.denomTraceRepository
-        .createQueryBuilder('denom_trace')
-        .orderBy('denom_trace.first_seen', 'DESC');
+      const traces = (await this.findAllOnChainEntries())
+        .map((entry) => this.materializeTrace(entry.hash, entry.fullDenom))
+        .sort((left, right) => {
+          const leftFullDenom = left.path ? `${left.path}/${left.base_denom}` : left.base_denom;
+          const rightFullDenom = right.path ? `${right.path}/${right.base_denom}` : right.base_denom;
+          return leftFullDenom.localeCompare(rightFullDenom) || left.hash.localeCompare(right.hash);
+        });
 
-      if (pagination?.offset) {
-        query.offset(pagination.offset);
-        query.limit(100); // Default limit
-      } else {
-        query.limit(100); // Default limit
-      }
-
-      const traces = await query.getMany();
-      this.logger.log(`Retrieved ${traces.length} denom traces`);
-      return traces;
+      const offset = pagination?.offset ?? 0;
+      return traces.slice(offset, offset + 100);
     } catch (error) {
       this.logger.error(`Failed to find all denom traces: ${error.message}`);
       throw error;
     } finally {
-      const duration = (Date.now() - startTime) / 1000;
-      this.metricsService?.denomTraceQueryDuration.observe(
-        { operation: 'findAll' },
-        duration
-      );
+      this.observeQueryDuration('findAll', startTime);
     }
   }
 
-  /**
-   * Find a trace by the sha256 hash used in `ibc/<hash>` denoms.
-   * Uses the persisted/indexed `ibc_denom_hash` for O(log N) lookup.
-   */
-  async findByIbcDenomHash(denomHash: string): Promise<DenomTrace | null> {
+  async findByIbcDenomHash(denomHash: string): Promise<ResolvedDenomTrace | null> {
     const startTime = Date.now();
 
     try {
-      return await this.denomTraceRepository.findOne({
-        where: { ibc_denom_hash: denomHash.toLowerCase() },
-        order: { first_seen: 'DESC' },
+      const normalizedHash = denomHash.toLowerCase();
+      // `ibc/<hash>` is a derived lookup. The canonical stored mapping remains
+      // voucher-hash -> full denom, and we derive the standard ICS-20 hash here
+      // to avoid maintaining two mutable indices for the same underlying trace.
+      const onChainEntries = await this.findAllOnChainEntries();
+      const match = onChainEntries.find((entry) => {
+        return this.computeIbcDenomHashFromFullDenom(entry.fullDenom) === normalizedHash;
       });
+      if (!match) {
+        return null;
+      }
+      return this.materializeTrace(match.hash, match.fullDenom);
     } catch (error) {
       this.logger.error(`Failed to find denom trace by ibc hash ${denomHash}: ${error.message}`);
       throw error;
     } finally {
-      const duration = (Date.now() - startTime) / 1000;
-      this.metricsService?.denomTraceQueryDuration.observe(
-        { operation: 'findByIbcDenomHash' },
-        duration
-      );
+      this.observeQueryDuration('findByIbcDenomHash', startTime);
     }
   }
 
-  /**
-   * Find denom traces by base denomination
-   */
-  async findByBaseDenom(baseDenom: string): Promise<DenomTrace[]> {
+  async findByBaseDenom(baseDenom: string): Promise<ResolvedDenomTrace[]> {
     const startTime = Date.now();
-    
+
     try {
-      const traces = await this.denomTraceRepository.find({
-        where: { base_denom: baseDenom },
-        order: { first_seen: 'DESC' },
-      });
-      this.logger.log(`Found ${traces.length} denom traces for base denom: ${baseDenom}`);
-      return traces;
+      const traces = await this.findAll();
+      return traces.filter((trace) => trace.base_denom === baseDenom);
     } catch (error) {
       this.logger.error(`Failed to find denom traces by base denom ${baseDenom}: ${error.message}`);
       throw error;
     } finally {
-      const duration = (Date.now() - startTime) / 1000;
-      this.metricsService?.denomTraceQueryDuration.observe(
-        { operation: 'findByBaseDenom' },
-        duration
-      );
+      this.observeQueryDuration('findByBaseDenom', startTime);
     }
   }
 
-  /**
-   * Get count of all denom traces
-   */
   async getCount(): Promise<number> {
     try {
-      return await this.denomTraceRepository.count();
+      return (await this.findAllOnChainEntries()).length;
     } catch (error) {
       this.logger.error(`Failed to get denom trace count: ${error.message}`);
       throw error;
     }
   }
 
-  /**
-   * Attach the confirmed Cardano tx hash to a set of denom traces.
-   */
-  async setTxHashForTraces(traceHashes: string[], txHash: string): Promise<number> {
-    if (!traceHashes.length) return 0;
-
-    // Normalize/dedupe before UPDATE so callers can pass repeated or mixed-case hashes safely.
-    const uniqueHashes = Array.from(new Set(traceHashes.map((hash) => hash.toLowerCase())));
-    const result = await this.denomTraceRepository
-      .createQueryBuilder()
-      .update(DenomTrace)
-      .set({ tx_hash: txHash })
-      .where('hash IN (:...traceHashes)', { traceHashes: uniqueHashes })
-      .execute();
-
-    return result.affected ?? 0;
+  private observeQueryDuration(operation: string, startTime: number): void {
+    const duration = (Date.now() - startTime) / 1000;
+    this.metricsService?.denomTraceQueryDuration.observe({ operation }, duration);
   }
 
-  async backfillMissingIbcDenomHashes(batchSize = DenomTraceService.DEFAULT_BACKFILL_BATCH_SIZE): Promise<number> {
-    let totalUpdated = 0;
-
-    while (true) {
-      const rows = await this.denomTraceRepository
-        .createQueryBuilder('denom_trace')
-        .select('denom_trace.hash', 'hash')
-        .addSelect('denom_trace.path', 'path')
-        .addSelect('denom_trace.base_denom', 'base_denom')
-        .where('denom_trace.ibc_denom_hash IS NULL')
-        .orderBy('denom_trace.first_seen', 'ASC')
-        .limit(batchSize)
-        .getRawMany<{ hash: string; path: string; base_denom: string }>();
-
-      if (rows.length === 0) {
-        return totalUpdated;
-      }
-
-      const params: string[] = [];
-      const valuesSql = rows
-        .map((row, index) => {
-          params.push(row.hash, this.computeIbcDenomHash(row));
-          const hashParam = `$${index * 2 + 1}`;
-          const ibcHashParam = `$${index * 2 + 2}`;
-          // Build a parameterized VALUES list so we can update many rows in one query.
-          return `(${hashParam}, ${ibcHashParam})`;
-        })
-        .join(', ');
-
-      await this.denomTraceRepository.query(
-        `
-          UPDATE denom_traces AS dt
-          SET ibc_denom_hash = data.ibc_denom_hash
-          FROM (VALUES ${valuesSql}) AS data(hash, ibc_denom_hash)
-          WHERE dt.hash = data.hash;
-        `,
-        params,
-      );
-
-      totalUpdated += rows.length;
-
-      if (rows.length < batchSize) {
-        return totalUpdated;
-      }
+  private getTraceRegistryConfig(): TraceRegistryConfig | null {
+    // Hard cutover invariant: there is no DB fallback for denom traces anymore.
+    // Missing deployment config is therefore a configuration error, not a signal
+    // to silently revive an older off-chain lookup path.
+    const deployment = this.configService.get('deployment') as { traceRegistry?: TraceRegistryConfig } | undefined;
+    if (!deployment?.traceRegistry?.address || !deployment.traceRegistry.shards?.length) {
+      return null;
     }
+    return deployment.traceRegistry;
   }
 
-  private withComputedIbcDenomHash(trace: Partial<DenomTrace>): Partial<DenomTrace> {
-    if (trace.path === undefined || trace.base_denom === undefined) {
-      return trace;
-    }
-    // Persist the canonical ibc hash derived from path/base_denom so reverse lookup
-    // does not depend on recomputing against every row.
-    const hashInput: Pick<DenomTrace, 'path' | 'base_denom'> = {
-      path: trace.path,
-      base_denom: trace.base_denom,
-    };
-    const computedIbcDenomHash = this.computeIbcDenomHash(hashInput);
-    const providedIbcDenomHash = trace.ibc_denom_hash?.toLowerCase();
+  private getVoucherPolicyId(): string {
+    return this.configService.get('deployment').validators.mintVoucher.scriptHash;
+  }
 
-    if (providedIbcDenomHash && providedIbcDenomHash !== computedIbcDenomHash) {
-      throw new Error(
-        `Conflicting ibc_denom_hash for hash ${trace.hash}: expected ${computedIbcDenomHash}, incoming ${providedIbcDenomHash}`,
-      );
+  private getShardIndexForHash(hash: string): number {
+    if (!/^[0-9a-f]{64}$/i.test(hash)) {
+      throw new Error(`Invalid voucher hash for trace-registry lookup: ${hash}`);
+    }
+    return parseInt(hash[0], 16);
+  }
+
+  private async findOnChainEntryByHash(
+    hash: string,
+  ): Promise<{ hash: string; fullDenom: string; shardIndex: number } | null> {
+    const registry = this.getTraceRegistryConfig();
+    if (!registry) {
+      return null;
+    }
+
+    const shardIndex = this.getShardIndexForHash(hash);
+    const shardConfig = registry.shards.find((shard) => shard.index === shardIndex);
+    if (!shardConfig) {
+      return null;
+    }
+
+    const shardDatum = await this.loadShardDatum(shardConfig);
+    const entry = shardDatum.entries.find((candidate) => candidate.voucher_hash.toLowerCase() === hash.toLowerCase());
+    if (!entry) {
+      return null;
     }
 
     return {
-      ...trace,
-      ibc_denom_hash: computedIbcDenomHash,
+      hash: entry.voucher_hash.toLowerCase(),
+      fullDenom: entry.full_denom,
+      shardIndex,
     };
   }
 
-  private computeIbcDenomHash(trace: Pick<DenomTrace, 'path' | 'base_denom'>): string {
-    const fullPath = trace.path ? `${trace.path}/${trace.base_denom}` : trace.base_denom;
-    return hashSHA256(convertString2Hex(fullPath)).toLowerCase();
+  private async findAllOnChainEntries(): Promise<Array<{ hash: string; fullDenom: string; shardIndex: number }>> {
+    const registry = this.getTraceRegistryConfig();
+    if (!registry) {
+      return [];
+    }
+
+    // Read every shard live because the registry is small, append-only, and the
+    // query layer must not guess which shard changed from off-chain events alone.
+    const shardEntries = await Promise.all(
+      registry.shards.map(async (shard) => {
+        const datum = await this.loadShardDatum(shard);
+        return datum.entries.map((entry) => ({
+          hash: entry.voucher_hash.toLowerCase(),
+          fullDenom: entry.full_denom,
+          shardIndex: shard.index,
+        }));
+      }),
+    );
+
+    return shardEntries.flat();
+  }
+
+  private async loadShardDatum(shard: TraceRegistryShardConfig): Promise<TraceRegistryShardDatum> {
+    const shardUnit = shard.policyId + shard.name;
+    const shardUtxo = await this.lucidService.findUtxoByUnit(shardUnit);
+    if (!shardUtxo.datum) {
+      throw new Error(`Trace-registry shard ${shard.index} is missing inline datum`);
+    }
+    return decodeTraceRegistryShardDatum(shardUtxo.datum, this.lucidService.LucidImporter);
+  }
+
+  private materializeTrace(hash: string, fullDenom: string): ResolvedDenomTrace {
+    const trace = splitFullDenomTrace(fullDenom);
+    return {
+      hash: hash.toLowerCase(),
+      path: trace.path,
+      base_denom: trace.baseDenom,
+      voucher_policy_id: this.getVoucherPolicyId(),
+      ibc_denom_hash: this.computeIbcDenomHashFromFullDenom(fullDenom),
+    };
+  }
+
+  private computeIbcDenomHashFromFullDenom(fullDenom: string): string {
+    return hashSHA256(convertString2Hex(fullDenom)).toLowerCase();
   }
 }

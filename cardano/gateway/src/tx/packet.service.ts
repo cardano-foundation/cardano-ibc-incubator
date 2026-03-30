@@ -77,7 +77,6 @@ import {
   UnsignedTimeoutRefreshDto,
 } from '~@/shared/modules/lucid/dtos';
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, isTreeAligned } from '../shared/helpers/ibc-state-root';
-import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { queryNetworkTipPoint } from '../shared/helpers/time';
 
@@ -996,17 +995,17 @@ export class PacketService {
             const voucherTokenUnit =
               this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
             
-            // Track denom trace mapping (required for later ibc/<hash> burn resolution).
             const fullDenomPath = destPrefix + fungibleTokenPacketData.denom;
-            const trace = this._splitDenomTraceForPersistence(fullDenomPath, 'recv_mint');
-
-            await this.denomTraceService.saveDenomTrace({
-              hash: voucherTokenName,
-              path: trace.path,
-              base_denom: trace.baseDenom,
-              voucher_policy_id: this.configService.get('deployment').validators.mintVoucher.scriptHash,
-              tx_hash: null, // Filled after confirmed submission.
-            });
+            // RecvPacket voucher mint path:
+            // - construct the canonical full denom visible on the destination side
+            // - hash it into the voucher token name
+            // - if this is the first time Cardano mints that voucher, append the
+            //   `voucher_hash -> full_denom` mapping to the owning registry shard
+            // - if it already exists, skip the shard write and mint normally
+            const traceRegistryContext = await this.denomTraceService.prepareOnChainInsert(
+              voucherTokenName,
+              fullDenomPath,
+            ) ?? null;
 
             const updatedChannelDatum: ChannelDatum = {
               ...channelDatum,
@@ -1056,6 +1055,7 @@ export class PacketService {
 
               verifyProofPolicyId,
               encodedVerifyProofRedeemer,
+              ...traceRegistryContext,
             };
 
             const unsignedTx = this.lucidService.createUnsignedRecvPacketMintTx(unsignedRecvPacketMintParams);
@@ -1064,7 +1064,6 @@ export class PacketService {
               pendingTreeUpdate: {
                 expectedNewRoot: newRoot,
                 commit,
-                denomTraceHashes: [voucherTokenName],
               },
             };
           }
@@ -1313,17 +1312,15 @@ export class PacketService {
     const voucherTokenName = hashSha3_256(prefixedDenom);
     const voucherTokenUnit = this.getMintVoucherScriptHash() + voucherTokenName;
 
-    // Track denom trace mapping for timeout refund voucher.
     const fullDenomPath = convertHex2String(prefixedDenom);
-    const trace = this._splitDenomTraceForPersistence(fullDenomPath, 'timeout_refund');
-
-    await this.denomTraceService.saveDenomTrace({
-      hash: voucherTokenName,
-      path: trace.path,
-      base_denom: trace.baseDenom,
-      voucher_policy_id: this.getMintVoucherScriptHash(),
-      tx_hash: null, // Filled after confirmed submission.
-    });
+    // Timeout refund mint path:
+    // the original outbound voucher may need to be re-minted on Cardano after a
+    // failed cross-chain send. That refund path uses the same registry insertion
+    // logic so timeout refunds cannot create an unregistered voucher asset.
+    const traceRegistryContext = await this.denomTraceService.prepareOnChainInsert(
+      voucherTokenName,
+      fullDenomPath,
+    ) ?? null;
 
     const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
       mintVoucherRedeemer,
@@ -1357,6 +1354,7 @@ export class PacketService {
 
       verifyProofPolicyId,
       encodedVerifyProofRedeemer,
+      ...traceRegistryContext,
     };
     const unsignedTx = this.lucidService.createUnsignedTimeoutPacketMintTx(unsignedTimeoutPacketMintDto);
     return {
@@ -1364,7 +1362,6 @@ export class PacketService {
       pendingTreeUpdate: {
         expectedNewRoot: newRoot,
         commit,
-        denomTraceHashes: [voucherTokenName],
       },
     };
   }
@@ -1947,17 +1944,15 @@ export class PacketService {
     const voucherTokenName = this._buildVoucherTokenName(denomToHash);
     const voucherTokenUnit = this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
 
-    // Track denom trace mapping for acknowledgement refund voucher.
     const fullDenomPath = denomToHash;
-    const trace = this._splitDenomTraceForPersistence(fullDenomPath, 'ack_refund');
-
-    await this.denomTraceService.saveDenomTrace({
-      hash: voucherTokenName,
-      path: trace.path,
-      base_denom: trace.baseDenom,
-      voucher_policy_id: this.configService.get('deployment').validators.mintVoucher.scriptHash,
-      tx_hash: null, // Filled after confirmed submission.
-    });
+    // Acknowledgement-error refund mint path:
+    // if the remote chain rejects the transfer and Cardano mints the voucher
+    // back, this path must also be able to register a first-seen trace. That
+    // prevents "orphan" voucher assets with no reversible full denom lookup.
+    const traceRegistryContext = await this.denomTraceService.prepareOnChainInsert(
+      voucherTokenName,
+      fullDenomPath,
+    ) ?? null;
 
     // build update channel datum
     const updatedChannelDatum: ChannelDatum = {
@@ -1999,6 +1994,7 @@ export class PacketService {
 
       verifyProofPolicyId,
       encodedVerifyProofRedeemer,
+      ...traceRegistryContext,
     };
 
     // handle recv packet mint
@@ -2008,7 +2004,6 @@ export class PacketService {
       pendingTreeUpdate: {
         expectedNewRoot: newRoot,
         commit,
-        denomTraceHashes: [voucherTokenName],
       },
       walletSelection: {
         context: 'acknowledgementPacket',
@@ -2030,25 +2025,6 @@ export class PacketService {
       throw new GrpcInvalidArgumentException('Voucher denom is missing base denom after transfer/channel prefix');
     }
     return baseDenom;
-  }
-  /**
-   * Convert a full denom trace string into `(path, baseDenom)` for persistence.
-   *
-   * We intentionally use a dedicated parser instead of `split('/') + last-segment`.
-   * Base denoms can contain `/` on Cosmos chains, so last-segment parsing silently corrupts
-   * stored trace rows and breaks semantic round-tripping for denom queries and reverse lookup.
-   */
-  private _splitDenomTraceForPersistence(
-    fullDenomPath: string,
-    context: 'recv_mint' | 'timeout_refund' | 'ack_refund',
-  ): { path: string; baseDenom: string } {
-    try {
-      return splitFullDenomTrace(fullDenomPath);
-    } catch (error) {
-      throw new GrpcInvalidArgumentException(
-        `Invalid denom trace for ${context}: ${fullDenomPath}. ${error instanceof Error ? error.message : error}`,
-      );
-    }
   }
   private _resolveAssetUnitFromUtxoAssets(assets: Record<string, bigint>, requestedDenomToken: string): string {
     const normalized = requestedDenomToken.trim();

@@ -4,6 +4,7 @@ import {
   WithConstructedAddress,
   WithHostStateUpdate,
   WithMintVoucherRedeemer,
+  WithOptionalTraceRegistryUpdate,
   WithPacketPolicyAndChannelToken,
   WithTransferAmount,
   WithTransferModuleSpend,
@@ -19,6 +20,7 @@ export type UnsignedAckPacketMintDto = WithHostStateUpdate &
   WithChannelSpend &
   WithTransferModuleSpend &
   WithMintVoucherRedeemer &
+  WithOptionalTraceRegistryUpdate &
   WithTransferAmount &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'ackPacketPolicyId'> &

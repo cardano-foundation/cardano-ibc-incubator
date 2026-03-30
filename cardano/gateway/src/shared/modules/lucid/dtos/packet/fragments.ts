@@ -45,6 +45,12 @@ export type WithMintVoucherRedeemer = {
   encodedMintVoucherRedeemer: string;
 };
 
+export type WithOptionalTraceRegistryUpdate = {
+  traceRegistryShardUtxo?: UTxO;
+  encodedTraceRegistryRedeemer?: string;
+  encodedUpdatedTraceRegistryShardDatum?: string;
+};
+
 export type WithVerifyProof = {
   verifyProofPolicyId: PolicyId;
   encodedVerifyProofRedeemer: string;

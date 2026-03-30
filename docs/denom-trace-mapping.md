@@ -1,6 +1,7 @@
 # Denom Trace Mapping
 
-This document shows a concrete example for how denom traces are created, finalized, and used for reverse lookup.
+This document shows a concrete example for how voucher traces are recorded and
+later used for reverse lookup under the on-chain registry design.
 
 ## Concrete Example
 
@@ -11,20 +12,17 @@ This document shows a concrete example for how denom traces are created, finaliz
 ```mermaid
 flowchart TB
   A["Input denom:<br/>transfer/channel-7/ada"] --> B["Normalize denom"]
-  B --> C["Compute ibc hash:<br/>295902A2...DCB42FB1"]
-  C --> D["Persist denom_trace row:<br/>hash=295902A2...DCB42FB1<br/>path=transfer/channel-7<br/>base_denom=ada"]
-  D --> E["Build voucher token name:<br/>a161cbad...6e79b892"]
-  E --> J["Register pending update<br/>with denom trace hash"]
-  J --> K["Submit signed tx"]
-  K --> L{"Confirmed and HostState<br/>root verified?"}
-  L -->|No| M["Fail and do not<br/>finalize trace"]
-  L -->|Yes| N["Attach tx_hash to trace row"]
-  N --> O["Later input:<br/>ibc/295902A2...DCB42FB1"]
-  O --> P["Reverse lookup in<br/>denom_trace:<br/>path/base_denom -><br/>transfer/channel-7/ada"]
-  P --> Q["Burn/query uses<br/>canonical denom"]
+  B --> C["Build voucher token name:<br/>sha3_256(full denom)<br/>a161cbad...6e79b892"]
+  C --> D["Select shard by first four bits<br/>of voucher hash"]
+  D --> E["Same tx mints voucher and,<br/>if first-seen, appends<br/>voucher_hash -> full_denom"]
+  E --> F["Later input:<br/>voucher asset id or ibc hash"]
+  F --> G["Read owning shard from chain state"]
+  G --> H["Recover full denom:<br/>transfer/channel-7/ada"]
+  H --> I["Derive path/base denom and<br/>ibc/<hash> off-chain"]
 ```
 
 ## Notes
 
-- The `denom_trace` row is the canonical source for reversing `ibc/<hash>` into `path/base_denom`.
-- Finalization should only happen after transaction confirmation and HostState root verification.
+- The on-chain shard entry is now the canonical source for reversing a voucher asset hash into the full denom trace.
+- `ibc/<hash>` is derived from the recovered full denom and is not stored as a second mutable index.
+- First-seen inserts happen in the same transaction as voucher mint, so there is no separate finalization step.

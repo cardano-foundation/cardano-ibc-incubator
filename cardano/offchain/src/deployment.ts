@@ -37,6 +37,7 @@ import {
   MintPortRedeemer,
   OutputReference,
   OutputReferenceSchema,
+  TraceRegistryShardDatum,
 } from "../types/index.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -342,6 +343,15 @@ export const createDeployment = async (
   );
   referredValidators.push(mintVoucher.validator, spendTransferModule.validator);
 
+  const traceRegistry = await deployTraceRegistry(
+    lucid,
+    mintIdentifierValidator,
+    mintVoucher.policyId,
+  );
+  // Bootstrap the registry with the bridge so voucher mints can rely on an
+  // on-chain reverse mapping from the first deployment onward.
+  referredValidators.push(traceRegistry.base.validator);
+
   // Only publish the runtime/bootstrap reference surface eagerly.
   // Deployment-only mint scripts still participate in bootstrap transactions,
   // but they do not need standalone public reference UTxOs once the bridge is live.
@@ -406,6 +416,13 @@ export const createDeployment = async (
         address: spendTransferModule.address,
         refUtxo: refUtxosInfo[spendTransferModule.scriptHash],
       },
+      spendTraceRegistry: {
+        title: "trace_registry.spend_trace_registry.spend",
+        script: traceRegistry.base.validator.script,
+        scriptHash: traceRegistry.base.scriptHash,
+        address: traceRegistry.base.address,
+        refUtxo: refUtxosInfo[traceRegistry.base.scriptHash],
+      },
       mintVoucher: {
         title: "minting_voucher.mint_voucher.mint",
         script: mintVoucher.validator.script,
@@ -456,6 +473,15 @@ export const createDeployment = async (
     hostStateNFT: {
       policyId: hostStateNFT.policy_id,
       name: hostStateNFT.name,
+    },
+    traceRegistry: {
+      address: traceRegistry.base.address,
+      shardPolicyId: traceRegistry.shardPolicyId,
+      shards: traceRegistry.shards.map((shard) => ({
+        index: Number(shard.index),
+        policyId: shard.token.policy_id,
+        name: shard.token.name,
+      })),
     },
     modules: {
       handler: {
@@ -987,6 +1013,107 @@ const deployTransferModule = async (
       scriptHash: spendTransferModuleScriptHash,
       address: spendTransferModuleAddress,
     },
+  };
+};
+
+const TRACE_REGISTRY_SHARD_COUNT = 16;
+
+const deployTraceRegistry = async (
+  lucid: LucidEvolution,
+  mintIdentifierValidator: MintingPolicy,
+  mintVoucherPolicyId: string,
+) => {
+  console.log("Create Trace Registry");
+
+  // Shards are keyed by the first four bits of the voucher hash. That keeps append
+  // contention bounded instead of forcing every new voucher trace through one UTxO.
+  // The registry is deployed alongside the bridge because there is no fallback DB
+  // path anymore: fresh deployments must have the canonical on-chain registry from
+  // the first voucher mint onward.
+  const shardPolicyId = validatorToScriptHash(mintIdentifierValidator);
+  const [validator, scriptHash, address] = await readValidator(
+    "trace_registry.spend_trace_registry.spend",
+    lucid,
+    [shardPolicyId, mintVoucherPolicyId],
+    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
+  );
+
+  const shards: Array<{ index: bigint; token: AuthToken }> = [];
+  for (let shardIndex = 0; shardIndex < TRACE_REGISTRY_SHARD_COUNT; shardIndex++) {
+    const token = await deployTraceRegistryShard(
+      lucid,
+      mintIdentifierValidator,
+      address,
+      BigInt(shardIndex),
+    );
+    shards.push({
+      index: BigInt(shardIndex),
+      token,
+    });
+  }
+
+  return {
+    shardPolicyId,
+    base: {
+      validator,
+      scriptHash,
+      address,
+    },
+    shards,
+  };
+};
+
+const deployTraceRegistryShard = async (
+  lucid: LucidEvolution,
+  mintIdentifierValidator: MintingPolicy,
+  traceRegistryAddress: string,
+  shardIndex: bigint,
+): Promise<AuthToken> => {
+  const [nonceUtxo, outputReference] = await getNonceOutRef(lucid);
+  const shardPolicyId = validatorToScriptHash(mintIdentifierValidator);
+  const shardTokenName = await generateIdentifierTokenName(outputReference);
+  const shardTokenUnit = shardPolicyId + shardTokenName;
+
+  const emptyShardDatum: TraceRegistryShardDatum = {
+    shard_index: shardIndex,
+    entries: [],
+  };
+
+  // Each shard starts as its own append-only thread UTxO with a unique shard NFT
+  // and an empty entry list. Later mint transactions spend exactly one shard when
+  // they need to record a first-seen voucher trace.
+  const shardTx = lucid
+    .newTx()
+    .collectFrom([nonceUtxo], Data.void())
+    .attach.MintingPolicy(mintIdentifierValidator)
+    .mintAssets(
+      {
+        [shardTokenUnit]: 1n,
+      },
+      Data.to(outputReference, OutputReference, { canonical: true }),
+    )
+    .pay.ToContract(
+      traceRegistryAddress,
+      {
+        kind: "inline",
+        value: Data.to(emptyShardDatum, TraceRegistryShardDatum, {
+          canonical: true,
+        }),
+      },
+      {
+        [shardTokenUnit]: 1n,
+      },
+    );
+
+  await submitTx(
+    shardTx,
+    lucid,
+    `Mint Trace Registry Shard ${shardIndex.toString()}`,
+  );
+
+  return {
+    policy_id: shardPolicyId,
+    name: shardTokenName,
   };
 };
 

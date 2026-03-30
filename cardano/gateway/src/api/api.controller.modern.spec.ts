@@ -214,8 +214,9 @@ describe('ApiController (modern)', () => {
       voucher_token_name: null,
       voucher_policy_id: null,
       ibc_denom_hash: null,
-      tx_hash: null,
-      first_seen: null,
+      display_name: 'ADA',
+      display_symbol: 'ADA',
+      display_description: 'Cardano native asset lovelace',
     });
   });
 
@@ -228,8 +229,6 @@ describe('ApiController (modern)', () => {
       base_denom: 'uatom',
       voucher_policy_id: voucherPolicyId.toUpperCase(),
       ibc_denom_hash: 'c'.repeat(64),
-      tx_hash: 'deadbeef',
-      first_seen: new Date('2026-03-07T12:00:00.000Z'),
     });
 
     const response = await controller.getCardanoAssetDenomTrace(`${voucherPolicyId}${voucherTokenName}`);
@@ -244,8 +243,9 @@ describe('ApiController (modern)', () => {
       voucher_token_name: voucherTokenName,
       voucher_policy_id: voucherPolicyId.toUpperCase(),
       ibc_denom_hash: 'c'.repeat(64),
-      tx_hash: 'deadbeef',
-      first_seen: '2026-03-07T12:00:00.000Z',
+      display_name: 'ATOM (IBC)',
+      display_symbol: 'ATOM',
+      display_description: 'IBC voucher for transfer/channel-7/uatom',
     });
   });
 
@@ -264,8 +264,9 @@ describe('ApiController (modern)', () => {
       voucher_token_name: null,
       voucher_policy_id: null,
       ibc_denom_hash: null,
-      tx_hash: null,
-      first_seen: null,
+      display_name: nativeAssetId,
+      display_symbol: nativeAssetId,
+      display_description: `Cardano native asset ${nativeAssetId}`,
     });
   });
 
@@ -282,8 +283,6 @@ describe('ApiController (modern)', () => {
         base_denom: 'gamm/pool/1',
         voucher_policy_id: 'f'.repeat(56),
         ibc_denom_hash: '1'.repeat(64),
-        tx_hash: null,
-        first_seen: new Date('2026-03-07T13:00:00.000Z'),
       },
     ]);
 
@@ -300,8 +299,9 @@ describe('ApiController (modern)', () => {
         voucher_token_name: 'e'.repeat(64),
         voucher_policy_id: 'f'.repeat(56),
         ibc_denom_hash: '1'.repeat(64),
-        tx_hash: null,
-        first_seen: '2026-03-07T13:00:00.000Z',
+        display_name: '1 (IBC)',
+        display_symbol: '1',
+        display_description: 'IBC voucher for transfer/channel-3/gamm/pool/1',
       },
     ]);
   });
