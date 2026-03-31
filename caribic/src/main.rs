@@ -99,9 +99,9 @@ enum BenchmarkCommand {
         /// Optional target bucket (0-15) for the denom-registry benchmark
         #[arg(long)]
         bucket: Option<u8>,
-        /// Number of synthetic inserts to simulate
-        #[arg(long, default_value_t = 256)]
-        simulated_inserts: usize,
+        /// Number of real first-seen voucher inserts to execute on local devnet
+        #[arg(long, default_value_t = 1)]
+        inserts: usize,
     },
 }
 
@@ -364,14 +364,9 @@ async fn main() {
             b_port,
         } => commands::run_create_channel(project_root_path, &a_chain, &b_chain, &a_port, &b_port),
         Commands::Benchmark { command } => match command {
-            BenchmarkCommand::DenomRegistry {
-                bucket,
-                simulated_inserts,
-            } => commands::run_denom_registry_benchmark(
-                project_root_path,
-                bucket,
-                simulated_inserts,
-            ),
+            BenchmarkCommand::DenomRegistry { bucket, inserts } => {
+                commands::run_denom_registry_benchmark(project_root_path, bucket, inserts)
+            }
         },
         Commands::Test { tests } => {
             let test_result = commands::run_tests(project_root_path, tests.as_deref()).await;

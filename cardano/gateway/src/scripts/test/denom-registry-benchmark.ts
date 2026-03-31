@@ -14,6 +14,8 @@ import { LucidModule } from '../../shared/modules/lucid/lucid.module';
 
 type BenchmarkArgs = {
   bucket?: number;
+  json: boolean;
+  summaryOnly: boolean;
   simulatedInserts: number;
 };
 
@@ -41,6 +43,8 @@ class DenomRegistryBenchmarkModule {}
 
 function parseArgs(argv: string[]): BenchmarkArgs {
   let bucket: number | undefined;
+  let json = false;
+  let summaryOnly = false;
   let simulatedInserts = 256;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -65,6 +69,16 @@ function parseArgs(argv: string[]): BenchmarkArgs {
       continue;
     }
 
+    if (arg === '--json') {
+      json = true;
+      continue;
+    }
+
+    if (arg === '--summary-only') {
+      summaryOnly = true;
+      continue;
+    }
+
     if (arg === '--help' || arg === '-h') {
       printUsage();
       process.exit(0);
@@ -80,11 +94,11 @@ function parseArgs(argv: string[]): BenchmarkArgs {
     throw new Error(`--simulated-inserts must be a non-negative integer, received ${String(simulatedInserts)}`);
   }
 
-  return { bucket, simulatedInserts };
+  return { bucket, json, summaryOnly, simulatedInserts };
 }
 
 function printUsage(): void {
-  console.log(`Usage: npm run benchmark:denom-registry -- [--bucket 0-15] [--simulated-inserts N]
+  console.log(`Usage: npm run benchmark:denom-registry -- [--bucket 0-15] [--simulated-inserts N] [--summary-only] [--json]
 
 Runs a live on-chain registry summary plus a size-only growth simulation for one bucket.
 This mode does not submit voucher-mint transactions; it projects growth using the exact
@@ -152,20 +166,35 @@ function printSimulation(simulation: TraceRegistryBucketGrowthSimulation): void 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const app = await NestFactory.createApplicationContext(DenomRegistryBenchmarkModule, {
-    logger: ['error', 'warn', 'log'],
+    logger: args.json ? false : ['error', 'warn', 'log'],
   });
 
   try {
     const denomTraceService = app.get(DenomTraceService);
     const summary = await denomTraceService.getSummary();
-    const targetBucket = selectTargetBucket(summary, args.bucket);
-    const simulation = await denomTraceService.simulateBucketGrowth(
-      targetBucket.bucketIndex,
-      args.simulatedInserts,
-    );
+    const targetBucket = args.summaryOnly ? undefined : selectTargetBucket(summary, args.bucket);
+    const simulation = args.summaryOnly
+      ? undefined
+      : await denomTraceService.simulateBucketGrowth(targetBucket!.bucketIndex, args.simulatedInserts);
+
+    if (args.json) {
+      console.log(
+        JSON.stringify(
+          {
+            summary,
+            simulation: simulation ?? null,
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
 
     printSummary(summary);
-    printSimulation(simulation);
+    if (simulation) {
+      printSimulation(simulation);
+    }
   } finally {
     await app.close();
   }
