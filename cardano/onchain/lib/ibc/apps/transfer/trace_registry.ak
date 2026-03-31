@@ -12,8 +12,26 @@ pub type TraceRegistryEntry {
 // purely a contention / datum-size control mechanism; it does not change the
 // logical meaning of the mapping.
 pub type TraceRegistryShardDatum {
-  shard_index: Int,
+  bucket_index: Int,
   entries: List<TraceRegistryEntry>,
+}
+
+// The directory is the source of truth for which shard is currently writable for
+// each bucket. Older shard token names remain discoverable through
+// `archived_shard_names`, so lookups do not lose history after a rollover.
+pub type TraceRegistryDirectoryBucket {
+  bucket_index: Int,
+  active_shard_name: ByteArray,
+  archived_shard_names: List<ByteArray>,
+}
+
+pub type TraceRegistryDirectoryDatum {
+  buckets: List<TraceRegistryDirectoryBucket>,
+}
+
+pub type TraceRegistryDatum {
+  Shard(TraceRegistryShardDatum)
+  Directory(TraceRegistryDirectoryDatum)
 }
 
 pub type TraceRegistryRedeemer {
@@ -21,11 +39,23 @@ pub type TraceRegistryRedeemer {
     voucher_hash: ByteArray,
     full_denom: ByteArray,
   }
+  RolloverInsertTrace {
+    voucher_hash: ByteArray,
+    full_denom: ByteArray,
+    new_active_shard_name: ByteArray,
+  }
+  AdvanceDirectory {
+    bucket_index: Int,
+    voucher_hash: ByteArray,
+    full_denom: ByteArray,
+    previous_active_shard_name: ByteArray,
+    new_active_shard_name: ByteArray,
+  }
 }
 
 // The first four bits of the voucher hash pick the owning shard, so any client can
 // derive the registry location from the Cardano asset id alone.
-pub fn shard_index_for_hash(voucher_hash: ByteArray) -> Int {
+pub fn bucket_index_for_hash(voucher_hash: ByteArray) -> Int {
   expect bytearray.length(voucher_hash) > 0
   bytearray.at(voucher_hash, 0) / 16
 }

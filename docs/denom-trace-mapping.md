@@ -13,16 +13,19 @@ later used for reverse lookup under the on-chain registry design.
 flowchart TB
   A["Input denom:<br/>transfer/channel-7/ada"] --> B["Normalize denom"]
   B --> C["Build voucher token name:<br/>sha3_256(full denom)<br/>a161cbad...6e79b892"]
-  C --> D["Select shard by first four bits<br/>of voucher hash"]
-  D --> E["Same tx mints voucher and,<br/>if first-seen, appends<br/>voucher_hash -> full_denom"]
-  E --> F["Later input:<br/>voucher asset id or ibc hash"]
-  F --> G["Read owning shard from chain state"]
-  G --> H["Recover full denom:<br/>transfer/channel-7/ada"]
-  H --> I["Derive path/base denom and<br/>ibc/<hash> off-chain"]
+  C --> D["Select bucket by first four bits<br/>of voucher hash"]
+  D --> E["Read directory to find active shard"]
+  E --> F["Same tx mints voucher and,<br/>if first-seen, appends or rolls over<br/>voucher_hash -> full_denom"]
+  F --> G["Later input:<br/>voucher asset id or ibc hash"]
+  G --> H["Read directory, then active/archived shards"]
+  H --> I["Recover full denom:<br/>transfer/channel-7/ada"]
+  I --> J["Derive path/base denom and<br/>ibc/<hash> off-chain"]
 ```
 
 ## Notes
 
 - The on-chain shard entry is now the canonical source for reversing a voucher asset hash into the full denom trace.
+- The directory is the canonical source for which shard is currently active for a given bucket.
 - `ibc/<hash>` is derived from the recovered full denom and is not stored as a second mutable index.
 - First-seen inserts happen in the same transaction as voucher mint, so there is no separate finalization step.
+- If the active shard is near the tx-size limit, the same tx can roll the bucket to a fresh active shard before inserting the new mapping.

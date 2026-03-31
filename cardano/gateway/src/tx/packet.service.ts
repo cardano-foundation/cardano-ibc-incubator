@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
-import { DenomTraceService } from 'src/query/services/denom-trace.service';
+import { DenomTraceService, TraceRegistryInsertContext } from 'src/query/services/denom-trace.service';
 import {
   MsgAcknowledgement,
   MsgAcknowledgementResponse,
@@ -131,6 +131,25 @@ export class PacketService {
     }
 
     return JSON.stringify(obj, replacer, indent);
+  }
+
+  private async resolveTraceRegistryUpdate(
+    voucherHash: string,
+    fullDenom: string,
+    buildCandidateTx: (traceRegistryUpdate: TraceRegistryInsertContext | null) => TxBuilder,
+  ): Promise<TraceRegistryInsertContext | null> {
+    const initialUpdate = (await this.denomTraceService.prepareOnChainInsert(voucherHash, fullDenom)) ?? null;
+    if (!initialUpdate || initialUpdate.kind !== 'append') {
+      return initialUpdate;
+    }
+
+    const candidateTx = buildCandidateTx(initialUpdate);
+    const shouldRollover = await this.denomTraceService.shouldRolloverForUnsignedTx(candidateTx);
+    if (!shouldRollover) {
+      return initialUpdate;
+    }
+
+    return (await this.denomTraceService.prepareOnChainInsert(voucherHash, fullDenom, { forceRollover: true })) ?? null;
   }
 
   /**
@@ -996,16 +1015,6 @@ export class PacketService {
               this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
             
             const fullDenomPath = destPrefix + fungibleTokenPacketData.denom;
-            // RecvPacket voucher mint path:
-            // - construct the canonical full denom visible on the destination side
-            // - hash it into the voucher token name
-            // - if this is the first time Cardano mints that voucher, append the
-            //   `voucher_hash -> full_denom` mapping to the owning registry shard
-            // - if it already exists, skip the shard write and mint normally
-            const traceRegistryContext = await this.denomTraceService.prepareOnChainInsert(
-              voucherTokenName,
-              fullDenomPath,
-            ) ?? null;
 
             const updatedChannelDatum: ChannelDatum = {
               ...channelDatum,
@@ -1030,7 +1039,9 @@ export class PacketService {
               await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
 
             const receiverAddress = this._resolveVoucherReceiverAddress(fungibleTokenPacketData.receiver);
-            const unsignedRecvPacketMintParams: UnsignedRecvPacketMintDto = {
+            const buildUnsignedRecvPacketMintParams = (
+              traceRegistryUpdate: TraceRegistryInsertContext | null,
+            ): UnsignedRecvPacketMintDto => ({
               hostStateUtxo,
               channelUtxo,
               connectionUtxo,
@@ -1055,10 +1066,24 @@ export class PacketService {
 
               verifyProofPolicyId,
               encodedVerifyProofRedeemer,
-              ...traceRegistryContext,
-            };
+              traceRegistryUpdate,
+            });
 
-            const unsignedTx = this.lucidService.createUnsignedRecvPacketMintTx(unsignedRecvPacketMintParams);
+            // RecvPacket voucher mint path:
+            // - construct the canonical full denom visible on the destination side
+            // - hash it into the voucher token name
+            // - append to the current active shard if the tx is comfortably sized
+            // - otherwise roll the bucket to a fresh active shard and insert there
+            const traceRegistryUpdate = await this.resolveTraceRegistryUpdate(
+              voucherTokenName,
+              fullDenomPath,
+              (candidateUpdate) =>
+                this.lucidService.createUnsignedRecvPacketMintTx(buildUnsignedRecvPacketMintParams(candidateUpdate)),
+            );
+
+            const unsignedTx = this.lucidService.createUnsignedRecvPacketMintTx(
+              buildUnsignedRecvPacketMintParams(traceRegistryUpdate),
+            );
             return {
               unsignedTx,
               pendingTreeUpdate: {
@@ -1313,20 +1338,14 @@ export class PacketService {
     const voucherTokenUnit = this.getMintVoucherScriptHash() + voucherTokenName;
 
     const fullDenomPath = convertHex2String(prefixedDenom);
-    // Timeout refund mint path:
-    // the original outbound voucher may need to be re-minted on Cardano after a
-    // failed cross-chain send. That refund path uses the same registry insertion
-    // logic so timeout refunds cannot create an unregistered voucher asset.
-    const traceRegistryContext = await this.denomTraceService.prepareOnChainInsert(
-      voucherTokenName,
-      fullDenomPath,
-    ) ?? null;
 
     const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
       mintVoucherRedeemer,
       'mintVoucherRedeemer',
     );
-    const unsignedTimeoutPacketMintDto: UnsignedTimeoutPacketMintDto = {
+    const buildUnsignedTimeoutPacketMintDto = (
+      traceRegistryUpdate: TraceRegistryInsertContext | null,
+    ): UnsignedTimeoutPacketMintDto => ({
       hostStateUtxo: hostStateUtxo,
       channelUtxo: channelUtxo,
       transferModuleUtxo: transferModuleUtxo,
@@ -1354,9 +1373,17 @@ export class PacketService {
 
       verifyProofPolicyId,
       encodedVerifyProofRedeemer,
-      ...traceRegistryContext,
-    };
-    const unsignedTx = this.lucidService.createUnsignedTimeoutPacketMintTx(unsignedTimeoutPacketMintDto);
+      traceRegistryUpdate,
+    });
+    const traceRegistryUpdate = await this.resolveTraceRegistryUpdate(
+      voucherTokenName,
+      fullDenomPath,
+      (candidateUpdate) =>
+        this.lucidService.createUnsignedTimeoutPacketMintTx(buildUnsignedTimeoutPacketMintDto(candidateUpdate)),
+    );
+    const unsignedTx = this.lucidService.createUnsignedTimeoutPacketMintTx(
+      buildUnsignedTimeoutPacketMintDto(traceRegistryUpdate),
+    );
     return {
       unsignedTx,
       pendingTreeUpdate: {
@@ -1945,14 +1972,6 @@ export class PacketService {
     const voucherTokenUnit = this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
 
     const fullDenomPath = denomToHash;
-    // Acknowledgement-error refund mint path:
-    // if the remote chain rejects the transfer and Cardano mints the voucher
-    // back, this path must also be able to register a first-seen trace. That
-    // prevents "orphan" voucher assets with no reversible full denom lookup.
-    const traceRegistryContext = await this.denomTraceService.prepareOnChainInsert(
-      voucherTokenName,
-      fullDenomPath,
-    ) ?? null;
 
     // build update channel datum
     const updatedChannelDatum: ChannelDatum = {
@@ -1968,7 +1987,9 @@ export class PacketService {
     );
     const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
       await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
-    const unsignedAckPacketMintParams: UnsignedAckPacketMintDto = {
+    const buildUnsignedAckPacketMintParams = (
+      traceRegistryUpdate: TraceRegistryInsertContext | null,
+    ): UnsignedAckPacketMintDto => ({
       hostStateUtxo,
       channelUtxo,
       connectionUtxo,
@@ -1994,11 +2015,19 @@ export class PacketService {
 
       verifyProofPolicyId,
       encodedVerifyProofRedeemer,
-      ...traceRegistryContext,
-    };
+      traceRegistryUpdate,
+    });
+    const traceRegistryUpdate = await this.resolveTraceRegistryUpdate(
+      voucherTokenName,
+      fullDenomPath,
+      (candidateUpdate) =>
+        this.lucidService.createUnsignedAckPacketMintTx(buildUnsignedAckPacketMintParams(candidateUpdate)),
+    );
 
     // handle recv packet mint
-    const unsignedTx = this.lucidService.createUnsignedAckPacketMintTx(unsignedAckPacketMintParams);
+    const unsignedTx = this.lucidService.createUnsignedAckPacketMintTx(
+      buildUnsignedAckPacketMintParams(traceRegistryUpdate),
+    );
     return {
       unsignedTx,
       pendingTreeUpdate: {

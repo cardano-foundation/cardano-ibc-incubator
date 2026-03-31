@@ -224,6 +224,7 @@ type Validator =
   | "spendChannel"
   | "spendTraceRegistry"
   | "spendTransferModule"
+  | "mintIdentifier"
   | "mintVoucher"
   | "verifyProof"
   | "hostStateStt"
@@ -261,11 +262,10 @@ export type DeploymentTemplate = {
   traceRegistry?: {
     address: string;
     shardPolicyId: string;
-    shards: Array<{
-      index: number;
+    directory: {
       policyId: string;
       name: string;
-    }>;
+    };
   };
   modules: Record<
     Module,

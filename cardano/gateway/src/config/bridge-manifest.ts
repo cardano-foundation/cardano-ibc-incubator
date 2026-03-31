@@ -38,7 +38,6 @@ type DeploymentModule = {
 };
 
 type DeploymentTraceRegistryShard = {
-  index: number;
   policyId: string;
   name: string;
 };
@@ -46,7 +45,7 @@ type DeploymentTraceRegistryShard = {
 type DeploymentTraceRegistry = {
   address: string;
   shardPolicyId: string;
-  shards: DeploymentTraceRegistryShard[];
+  directory: DeploymentTraceRegistryShard;
 };
 
 // The rest of the Gateway still consumes the historic camelCase deployment shape
@@ -63,6 +62,7 @@ export type DeploymentConfig = {
     spendChannel: DeploymentSpendChannelValidator;
     spendTraceRegistry?: DeploymentValidator;
     spendTransferModule: DeploymentValidator;
+    mintIdentifier: DeploymentValidator;
     verifyProof: DeploymentValidator;
     mintClientStt: DeploymentValidator;
     mintConnectionStt: DeploymentValidator;
@@ -117,7 +117,6 @@ type BridgeManifestModule = {
 };
 
 type BridgeManifestTraceRegistryShard = {
-  index: number;
   policy_id: string;
   token_name: string;
 };
@@ -125,7 +124,7 @@ type BridgeManifestTraceRegistryShard = {
 type BridgeManifestTraceRegistry = {
   address: string;
   shard_policy_id: string;
-  shards: BridgeManifestTraceRegistryShard[];
+  directory: BridgeManifestTraceRegistryShard;
 };
 
 // The manifest is the public, deployment-stable bootstrap document we expose to
@@ -149,6 +148,7 @@ export type BridgeManifest = {
     spend_channel: BridgeManifestSpendChannelValidator;
     spend_trace_registry?: BridgeManifestValidator;
     spend_transfer_module: BridgeManifestValidator;
+    mint_identifier: BridgeManifestValidator;
     verify_proof: BridgeManifestValidator;
     mint_client_stt: BridgeManifestValidator;
     mint_connection_stt: BridgeManifestValidator;
@@ -355,39 +355,29 @@ function requireManifestModule(value: unknown, path: string): BridgeManifestModu
 
 function requireDeploymentTraceRegistry(value: unknown, path: string): DeploymentTraceRegistry {
   const traceRegistry = requireObject(value, path);
-  const shards = traceRegistry.shards;
-  assert(Array.isArray(shards), `Invalid bridge config: "${path}.shards" must be an array`);
+  const directory = requireObject(traceRegistry.directory, `${path}.directory`);
 
   return {
     address: requireNonEmptyString(traceRegistry.address, `${path}.address`),
     shardPolicyId: requireNonEmptyString(traceRegistry.shardPolicyId, `${path}.shardPolicyId`),
-    shards: shards.map((shard, index) => {
-      const shardObject = requireObject(shard, `${path}.shards[${index}]`);
-      return {
-        index: requireNonNegativeInteger(shardObject.index, `${path}.shards[${index}].index`),
-        policyId: requireNonEmptyString(shardObject.policyId, `${path}.shards[${index}].policyId`),
-        name: requireNonEmptyString(shardObject.name, `${path}.shards[${index}].name`),
-      };
-    }),
+    directory: {
+      policyId: requireNonEmptyString(directory.policyId, `${path}.directory.policyId`),
+      name: requireNonEmptyString(directory.name, `${path}.directory.name`),
+    },
   };
 }
 
 function requireManifestTraceRegistry(value: unknown, path: string): BridgeManifestTraceRegistry {
   const traceRegistry = requireObject(value, path);
-  const shards = traceRegistry.shards;
-  assert(Array.isArray(shards), `Invalid bridge config: "${path}.shards" must be an array`);
+  const directory = requireObject(traceRegistry.directory, `${path}.directory`);
 
   return {
     address: requireNonEmptyString(traceRegistry.address, `${path}.address`),
     shard_policy_id: requireNonEmptyString(traceRegistry.shard_policy_id, `${path}.shard_policy_id`),
-    shards: shards.map((shard, index) => {
-      const shardObject = requireObject(shard, `${path}.shards[${index}]`);
-      return {
-        index: requireNonNegativeInteger(shardObject.index, `${path}.shards[${index}].index`),
-        policy_id: requireNonEmptyString(shardObject.policy_id, `${path}.shards[${index}].policy_id`),
-        token_name: requireNonEmptyString(shardObject.token_name, `${path}.shards[${index}].token_name`),
-      };
-    }),
+    directory: {
+      policy_id: requireNonEmptyString(directory.policy_id, `${path}.directory.policy_id`),
+      token_name: requireNonEmptyString(directory.token_name, `${path}.directory.token_name`),
+    },
   };
 }
 
@@ -465,11 +455,10 @@ function deploymentTraceRegistryToManifest(traceRegistry: DeploymentTraceRegistr
   return {
     address: traceRegistry.address,
     shard_policy_id: traceRegistry.shardPolicyId,
-    shards: traceRegistry.shards.map((shard) => ({
-      index: shard.index,
-      policy_id: shard.policyId,
-      token_name: shard.name,
-    })),
+    directory: {
+      policy_id: traceRegistry.directory.policyId,
+      token_name: traceRegistry.directory.name,
+    },
   };
 }
 
@@ -477,11 +466,10 @@ function manifestTraceRegistryToDeployment(traceRegistry: BridgeManifestTraceReg
   return {
     address: traceRegistry.address,
     shardPolicyId: traceRegistry.shard_policy_id,
-    shards: traceRegistry.shards.map((shard) => ({
-      index: shard.index,
-      policyId: shard.policy_id,
-      name: shard.token_name,
-    })),
+    directory: {
+      policyId: traceRegistry.directory.policy_id,
+      name: traceRegistry.directory.token_name,
+    },
   };
 }
 
@@ -535,6 +523,7 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
         ? { spendTraceRegistry: requireDeploymentValidator(validators.spendTraceRegistry, 'validators.spendTraceRegistry') }
         : {}),
       spendTransferModule: requireDeploymentValidator(validators.spendTransferModule, 'validators.spendTransferModule'),
+      mintIdentifier: requireDeploymentValidator(validators.mintIdentifier, 'validators.mintIdentifier'),
       verifyProof: requireDeploymentValidator(validators.verifyProof, 'validators.verifyProof'),
       mintClientStt: requireDeploymentValidator(validators.mintClientStt, 'validators.mintClientStt'),
       mintConnectionStt: requireDeploymentValidator(validators.mintConnectionStt, 'validators.mintConnectionStt'),
@@ -582,6 +571,7 @@ export function normalizeHandlerJsonDeploymentConfig(
             }
           : {}),
         spend_transfer_module: deploymentValidatorToManifest(normalizedDeployment.validators.spendTransferModule),
+        mint_identifier: deploymentValidatorToManifest(normalizedDeployment.validators.mintIdentifier),
         verify_proof: deploymentValidatorToManifest(normalizedDeployment.validators.verifyProof),
         mint_client_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintClientStt),
         mint_connection_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintConnectionStt),
@@ -629,6 +619,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
           }
         : {}),
       spend_transfer_module: requireManifestValidator(validators.spend_transfer_module, 'validators.spend_transfer_module'),
+      mint_identifier: requireManifestValidator(validators.mint_identifier, 'validators.mint_identifier'),
       verify_proof: requireManifestValidator(validators.verify_proof, 'validators.verify_proof'),
       mint_client_stt: requireManifestValidator(validators.mint_client_stt, 'validators.mint_client_stt'),
       mint_connection_stt: requireManifestValidator(validators.mint_connection_stt, 'validators.mint_connection_stt'),
@@ -664,6 +655,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
             }
           : {}),
         spendTransferModule: manifestValidatorToDeployment(bridgeManifest.validators.spend_transfer_module),
+        mintIdentifier: manifestValidatorToDeployment(bridgeManifest.validators.mint_identifier),
         verifyProof: manifestValidatorToDeployment(bridgeManifest.validators.verify_proof),
         mintClientStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_client_stt),
         mintConnectionStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_connection_stt),

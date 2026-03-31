@@ -1,13 +1,15 @@
 import { Logger } from '@nestjs/common';
 import * as Lucid from '@lucid-evolution/lucid';
 import { DenomTraceService } from '../services/denom-trace.service';
-import { encodeTraceRegistryShardDatum } from '../../shared/types/trace-registry';
+import { encodeTraceRegistryDatum } from '../../shared/types/trace-registry';
 import { convertString2Hex, hashSHA256 } from '../../shared/helpers/hex';
 
 describe('DenomTraceService', () => {
   let service: DenomTraceService;
   let lucidServiceMock: {
     findUtxoByUnit: jest.Mock;
+    lucid: { wallet: () => { getUtxos: jest.Mock } };
+    estimateUnsignedTxSizeBytes: jest.Mock;
     LucidImporter: typeof Lucid;
   };
   let configServiceMock: {
@@ -21,10 +23,26 @@ describe('DenomTraceService', () => {
     txHash: `trace-shard-${index}`,
     outputIndex: index,
     assets: {},
-    datum: encodeTraceRegistryShardDatum(
+    datum: encodeTraceRegistryDatum(
       {
-        shard_index: BigInt(index),
-        entries,
+        Shard: {
+          bucket_index: BigInt(index),
+          entries,
+        },
+      },
+      Lucid,
+    ),
+  });
+
+  const makeDirectoryUtxo = (buckets: Array<{ bucket_index: bigint; active_shard_name: string; archived_shard_names: string[] }>) => ({
+    txHash: 'trace-directory',
+    outputIndex: 0,
+    assets: {},
+    datum: encodeTraceRegistryDatum(
+      {
+        Directory: {
+          buckets,
+        },
       },
       Lucid,
     ),
@@ -54,17 +72,21 @@ describe('DenomTraceService', () => {
           traceRegistry: {
             address: 'addr_test1trace',
             shardPolicyId: 'trace-shard-policy',
-            shards: [
-              { index: 0, policyId: 'trace-shard-policy', name: '00' },
-              { index: 10, policyId: 'trace-shard-policy', name: '0a' },
-              { index: 15, policyId: 'trace-shard-policy', name: '0f' },
-            ],
+            directory: { policyId: 'trace-shard-policy', name: 'dir' },
           },
         };
       }),
     };
 
     const shardUtxos = new Map<string, ReturnType<typeof makeShardUtxo>>([
+      [
+        'trace-shard-policydir',
+        makeDirectoryUtxo([
+          { bucket_index: 0n, active_shard_name: '00', archived_shard_names: [] },
+          { bucket_index: 10n, active_shard_name: '0a', archived_shard_names: [] },
+          { bucket_index: 15n, active_shard_name: '0f', archived_shard_names: [] },
+        ]),
+      ],
       ['trace-shard-policy00', makeShardUtxo([], 0)],
       ['trace-shard-policy0a', makeShardUtxo([], 10)],
       ['trace-shard-policy0f', makeShardUtxo([], 15)],
@@ -78,6 +100,18 @@ describe('DenomTraceService', () => {
         }
         return utxo;
       }),
+      lucid: {
+        wallet: () => ({
+          getUtxos: jest.fn(async () => [
+            {
+              txHash: '11'.repeat(32),
+              outputIndex: 0,
+              assets: { lovelace: 10_000_000n },
+            },
+          ]),
+        }),
+      },
+      estimateUnsignedTxSizeBytes: jest.fn(async () => 1_000),
       LucidImporter: Lucid,
     };
 
@@ -96,9 +130,13 @@ describe('DenomTraceService', () => {
     const result = await service.prepareOnChainInsert(hash, fullDenom);
 
     expect(result).not.toBeNull();
-    expect(result?.traceRegistryShardUtxo.txHash).toBe('trace-shard-10');
-    expect(result?.encodedTraceRegistryRedeemer).toBeTruthy();
-    expect(result?.encodedUpdatedTraceRegistryShardDatum).toBeTruthy();
+    expect(result?.kind).toBe('append');
+    if (!result || result.kind !== 'append') {
+      throw new Error('expected append context');
+    }
+    expect(result.traceRegistryShardUtxo.txHash).toBe('trace-shard-10');
+    expect(result.encodedTraceRegistryRedeemer).toBeTruthy();
+    expect(result.encodedUpdatedTraceRegistryDatum).toBeTruthy();
   });
 
   it('skips an on-chain insert when the shard already contains the same mapping', async () => {
@@ -107,6 +145,11 @@ describe('DenomTraceService', () => {
     lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
       if (unit === 'trace-shard-policy0f') {
         return makeShardUtxo([{ voucher_hash: hash, full_denom: fullDenom }], 15);
+      }
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          { bucket_index: 15n, active_shard_name: '0f', archived_shard_names: [] },
+        ]);
       }
       throw new Error(`unexpected unit lookup: ${unit}`);
     });
@@ -119,6 +162,11 @@ describe('DenomTraceService', () => {
     lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
       if (unit === 'trace-shard-policy00') {
         return makeShardUtxo([{ voucher_hash: hash, full_denom: 'transfer/channel-9/uosmo' }], 0);
+      }
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          { bucket_index: 0n, active_shard_name: '00', archived_shard_names: [] },
+        ]);
       }
       throw new Error(`unexpected unit lookup: ${unit}`);
     });
@@ -142,6 +190,13 @@ describe('DenomTraceService', () => {
       }
       if (unit === 'trace-shard-policy0f') {
         return makeShardUtxo([{ voucher_hash: osmoHash, full_denom: osmoTrace }], 15);
+      }
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          { bucket_index: 0n, active_shard_name: '00', archived_shard_names: [] },
+          { bucket_index: 10n, active_shard_name: '0a', archived_shard_names: [] },
+          { bucket_index: 15n, active_shard_name: '0f', archived_shard_names: [] },
+        ]);
       }
       throw new Error(`unexpected unit lookup: ${unit}`);
     });
@@ -176,6 +231,13 @@ describe('DenomTraceService', () => {
       if (unit === 'trace-shard-policy0f') {
         return makeShardUtxo([{ voucher_hash: `f${'3'.repeat(63)}`, full_denom: 'factory/osmo1abcd/mytoken' }], 15);
       }
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          { bucket_index: 0n, active_shard_name: '00', archived_shard_names: [] },
+          { bucket_index: 10n, active_shard_name: '0a', archived_shard_names: [] },
+          { bucket_index: 15n, active_shard_name: '0f', archived_shard_names: [] },
+        ]);
+      }
       throw new Error(`unexpected unit lookup: ${unit}`);
     });
 
@@ -185,5 +247,21 @@ describe('DenomTraceService', () => {
     expect(traces[0].base_denom).toBe('uatom');
     expect(traces[1].base_denom).toBe('uosmo');
     await expect(service.getCount()).resolves.toBe(3);
+  });
+
+  it('prepares a rollover context when forced', async () => {
+    const hash = `a${'4'.repeat(63)}`;
+    const fullDenom = 'transfer/channel-77/uatom';
+
+    const result = await service.prepareOnChainInsert(hash, fullDenom, { forceRollover: true });
+
+    expect(result).not.toBeNull();
+    expect(result?.kind).toBe('rollover');
+    if (!result || result.kind !== 'rollover') {
+      throw new Error('expected rollover context');
+    }
+    expect(result.traceRegistryDirectoryUtxo.txHash).toBe('trace-directory');
+    expect(result.traceRegistryShardUtxo.txHash).toBe('trace-shard-10');
+    expect(result.newActiveTraceRegistryShardTokenUnit.startsWith('trace-shard-policy')).toBe(true);
   });
 });

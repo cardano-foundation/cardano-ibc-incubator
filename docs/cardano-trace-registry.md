@@ -61,17 +61,25 @@ Keeping the registry separate avoids:
 
 ## Sharding Model
 
-The registry uses 16 shards.
+The registry uses 16 buckets plus a directory UTxO.
 
-- the first four bits of `voucher_hash` choose the owning shard
+- the first four bits of `voucher_hash` choose the owning bucket
+- each bucket has one active shard and zero or more archived shards
+- a separate directory UTxO records the active shard token name for every bucket
 - each shard is its own UTxO protected by a unique shard NFT
 - each shard datum stores a list of `(voucher_hash, full_denom)` entries
 
-Why 16 shards:
+Why 16 buckets:
 
 - it is enough to bound contention in practice
-- it keeps datum growth per shard smaller than a single global registry UTxO
-- any client can locate the correct shard from the asset id alone
+- it keeps datum growth per writable shard smaller than a single global registry UTxO
+- any client can locate the correct bucket from the asset id alone
+
+Why the directory exists:
+
+- active shard identities can change over time without changing bucket semantics
+- rollover can freeze an old shard exactly as-is and move future writes to a new shard
+- readers can still discover archived shards for historical entries
 
 ## Security Invariants
 
@@ -80,10 +88,12 @@ The validator enforces these invariants:
 1. A mapping can only be inserted when the same transaction mints the matching
    voucher token under the voucher minting policy.
 2. The inserted `full_denom` must hash exactly to the inserted `voucher_hash`.
-3. The insert must go to the shard selected by the first four bits of the hash.
+3. The insert must go to the bucket selected by the first four bits of the hash.
 4. Existing mappings are immutable.
-5. A first-seen voucher trace appends one new entry; repeated mints reuse the
-   existing mapping and do not rewrite the shard.
+5. A first-seen voucher trace either appends to the active shard or atomically
+   rolls the bucket to a fresh active shard and inserts there.
+6. A rollover preserves the old shard contents exactly and advances the directory
+   pointer in the same transaction.
 
 These rules ensure the registry cannot be populated by arbitrary off-chain
 claims. Only real voucher mint flows can create first-seen entries, and the
@@ -97,7 +107,8 @@ There are three voucher mint paths that may insert into the registry:
 
 Cardano receives an ICS-20 packet whose denom does not correspond to a native
 Cardano asset on this hop, so Cardano mints a voucher. If the voucher trace is
-new, the same transaction appends the mapping to the correct shard.
+new, the same transaction either appends the mapping to the current active shard
+or rolls over to a fresh active shard and inserts there.
 
 ### 2. Timeout Refund Voucher Mint
 
@@ -114,14 +125,18 @@ that refund path also performs a first-seen registry insert when necessary.
 sequenceDiagram
   participant W as Voucher mint path
   participant G as Gateway tx builder
-  participant S as Trace-registry shard
+  participant D as Trace-registry directory
+  participant S as Active shard
   participant C as Cardano tx
 
   W->>G: full_denom
   G->>G: voucher_hash = sha3_256(full_denom)
-  G->>S: load shard from first four bits
-  alt mapping missing
+  G->>D: load active shard for bucket
+  G->>S: load active shard datum
+  alt append tx fits within safety budget
     G->>C: mint voucher and append registry entry
+  else append tx is too large
+    G->>C: mint voucher, mint fresh shard NFT, freeze old shard, advance directory
   else mapping exists
     G->>C: mint voucher only
   end
@@ -135,10 +150,11 @@ The lookup flow is:
 
 1. parse the Cardano asset id
 2. extract the voucher hash from the token name
-3. derive the shard from the first four bits
-4. read that shard datum from Cardano state
-5. locate the matching `voucher_hash -> full_denom` entry
-6. derive `path`, `base_denom`, and `ibc/<hash>` off-chain
+3. derive the bucket from the first four bits
+4. read the directory UTxO to find the active and archived shard token names for that bucket
+5. read the active shard first, then any archived shards if needed
+6. locate the matching `voucher_hash -> full_denom` entry
+7. derive `path`, `base_denom`, and `ibc/<hash>` off-chain
 
 ## Wallet And Dapp Presentation
 
@@ -167,6 +183,10 @@ The registry does not:
 
 - First-seen voucher mint transactions are slightly larger because they also
   spend and recreate one trace-registry shard.
+- Once an active shard gets close to the transaction-size budget, the next
+  first-seen insert rolls the bucket to a fresh active shard in the same tx.
+- Rollover is triggered off-chain by probing the actual unsigned tx size with a
+  fixed safety margin, not by a hard-coded entry count.
 - Repeated mints of an already-known voucher do not pay that extra shard cost.
 - A Cardano dapp no longer needs the Gateway database for denom trace lookup,
   but it still needs some Cardano chain-data source to read shard UTxOs.

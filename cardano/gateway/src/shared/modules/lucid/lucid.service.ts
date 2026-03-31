@@ -91,6 +91,7 @@ type ReferenceScripts = {
   mintChannel: UTxO;
   mintClient: UTxO;
   mintConnection: UTxO;
+  mintIdentifier: UTxO;
   spendConnection: UTxO;
   spendClient: UTxO;
   spendMockModule?: UTxO;
@@ -132,6 +133,7 @@ export class LucidService implements OnModuleInit {
       spendClient: deploymentConfig.validators.spendClient.refUtxo,
       spendMockModule: deploymentConfig.validators.spendMockModule?.refUtxo,
       spendTransferModule: deploymentConfig.validators.spendTransferModule.refUtxo,
+      mintIdentifier: deploymentConfig.validators.mintIdentifier.refUtxo,
       mintChannel: deploymentConfig.validators.mintChannelStt.refUtxo,
       mintClient: deploymentConfig.validators.mintClientStt.refUtxo,
       mintConnection: deploymentConfig.validators.mintConnectionStt.refUtxo,
@@ -2016,16 +2018,30 @@ export class LucidService implements OnModuleInit {
   private applyTraceRegistryUpdate(
     tx: TxBuilder,
     dto: {
-      traceRegistryShardUtxo?: UTxO;
-      encodedTraceRegistryRedeemer?: string;
-      encodedUpdatedTraceRegistryShardDatum?: string;
+      traceRegistryUpdate?:
+        | {
+            kind: 'append';
+            traceRegistryShardUtxo: UTxO;
+            encodedTraceRegistryRedeemer: string;
+            encodedUpdatedTraceRegistryDatum: string;
+          }
+        | {
+            kind: 'rollover';
+            traceRegistryDirectoryUtxo: UTxO;
+            traceRegistryShardUtxo: UTxO;
+            traceRegistryMintNonceUtxo: UTxO;
+            encodedTraceRegistryDirectoryRedeemer: string;
+            encodedUpdatedTraceRegistryDirectoryDatum: string;
+            encodedTraceRegistryRedeemer: string;
+            encodedArchivedTraceRegistryDatum: string;
+            encodedNewActiveTraceRegistryDatum: string;
+            newActiveTraceRegistryShardTokenUnit: string;
+            encodedMintIdentifierRedeemer: string;
+          }
+        | null;
     },
   ): void {
-    if (
-      !dto.traceRegistryShardUtxo ||
-      !dto.encodedTraceRegistryRedeemer ||
-      !dto.encodedUpdatedTraceRegistryShardDatum
-    ) {
+    if (!dto.traceRegistryUpdate) {
       return;
     }
 
@@ -2041,18 +2057,70 @@ export class LucidService implements OnModuleInit {
     // Registry updates are optional per packet tx. They are present only for the
     // first mint of a previously unseen voucher trace; repeated mints skip this
     // shard spend entirely and reuse the existing on-chain mapping.
-    tx.readFrom([this.referenceScripts.spendTraceRegistry])
-      .collectFrom([dto.traceRegistryShardUtxo], dto.encodedTraceRegistryRedeemer)
+    if (dto.traceRegistryUpdate.kind === 'append') {
+      tx.readFrom([this.referenceScripts.spendTraceRegistry])
+        .collectFrom([dto.traceRegistryUpdate.traceRegistryShardUtxo], dto.traceRegistryUpdate.encodedTraceRegistryRedeemer)
+        .pay.ToContract(
+          traceRegistryAddress,
+          {
+            kind: 'inline',
+            value: dto.traceRegistryUpdate.encodedUpdatedTraceRegistryDatum,
+          },
+          {
+            ...dto.traceRegistryUpdate.traceRegistryShardUtxo.assets,
+          },
+        );
+      return;
+    }
+
+    tx.readFrom([this.referenceScripts.spendTraceRegistry, this.referenceScripts.mintIdentifier])
+      .collectFrom(
+        [dto.traceRegistryUpdate.traceRegistryDirectoryUtxo],
+        dto.traceRegistryUpdate.encodedTraceRegistryDirectoryRedeemer,
+      )
+      .collectFrom([dto.traceRegistryUpdate.traceRegistryShardUtxo], dto.traceRegistryUpdate.encodedTraceRegistryRedeemer)
+      .collectFrom([dto.traceRegistryUpdate.traceRegistryMintNonceUtxo])
+      .mintAssets(
+        {
+          [dto.traceRegistryUpdate.newActiveTraceRegistryShardTokenUnit]: 1n,
+        },
+        dto.traceRegistryUpdate.encodedMintIdentifierRedeemer,
+      )
       .pay.ToContract(
         traceRegistryAddress,
         {
           kind: 'inline',
-          value: dto.encodedUpdatedTraceRegistryShardDatum,
+          value: dto.traceRegistryUpdate.encodedUpdatedTraceRegistryDirectoryDatum,
         },
         {
-          ...dto.traceRegistryShardUtxo.assets,
+          ...dto.traceRegistryUpdate.traceRegistryDirectoryUtxo.assets,
+        },
+      )
+      .pay.ToContract(
+        traceRegistryAddress,
+        {
+          kind: 'inline',
+          value: dto.traceRegistryUpdate.encodedArchivedTraceRegistryDatum,
+        },
+        {
+          ...dto.traceRegistryUpdate.traceRegistryShardUtxo.assets,
+        },
+      )
+      .pay.ToContract(
+        traceRegistryAddress,
+        {
+          kind: 'inline',
+          value: dto.traceRegistryUpdate.encodedNewActiveTraceRegistryDatum,
+        },
+        {
+          [dto.traceRegistryUpdate.newActiveTraceRegistryShardTokenUnit]: 1n,
         },
       );
+  }
+
+  public async estimateUnsignedTxSizeBytes(tx: TxBuilder): Promise<number> {
+    const completed = await tx.complete();
+    return completed.toCBOR().length / 2;
   }
 
   public generateTokenName = (baseToken: AuthToken, prefix: string, postfix: bigint): string => {

@@ -45,10 +45,29 @@ export type WithMintVoucherRedeemer = {
   encodedMintVoucherRedeemer: string;
 };
 
+export type TraceRegistryAppendUpdate = {
+  kind: 'append';
+  traceRegistryShardUtxo: UTxO;
+  encodedTraceRegistryRedeemer: string;
+  encodedUpdatedTraceRegistryDatum: string;
+};
+
+export type TraceRegistryRolloverUpdate = {
+  kind: 'rollover';
+  traceRegistryDirectoryUtxo: UTxO;
+  traceRegistryShardUtxo: UTxO;
+  traceRegistryMintNonceUtxo: UTxO;
+  encodedTraceRegistryDirectoryRedeemer: string;
+  encodedUpdatedTraceRegistryDirectoryDatum: string;
+  encodedTraceRegistryRedeemer: string;
+  encodedArchivedTraceRegistryDatum: string;
+  encodedNewActiveTraceRegistryDatum: string;
+  newActiveTraceRegistryShardTokenUnit: string;
+  encodedMintIdentifierRedeemer: string;
+};
+
 export type WithOptionalTraceRegistryUpdate = {
-  traceRegistryShardUtxo?: UTxO;
-  encodedTraceRegistryRedeemer?: string;
-  encodedUpdatedTraceRegistryShardDatum?: string;
+  traceRegistryUpdate?: TraceRegistryAppendUpdate | TraceRegistryRolloverUpdate | null;
 };
 
 export type WithVerifyProof = {

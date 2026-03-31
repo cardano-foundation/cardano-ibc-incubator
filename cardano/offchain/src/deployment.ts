@@ -37,6 +37,8 @@ import {
   MintPortRedeemer,
   OutputReference,
   OutputReferenceSchema,
+  TraceRegistryDatum,
+  TraceRegistryDirectoryDatum,
   TraceRegistryShardDatum,
 } from "../types/index.ts";
 
@@ -326,6 +328,7 @@ export const createDeployment = async (
     "minting_identifier.minting_identifier.mint",
     lucid,
   );
+  referredValidators.push(mintIdentifierValidator);
 
   const {
     identifierTokenUnit: transferModuleIdentifier,
@@ -416,6 +419,13 @@ export const createDeployment = async (
         address: spendTransferModule.address,
         refUtxo: refUtxosInfo[spendTransferModule.scriptHash],
       },
+      mintIdentifier: {
+        title: "minting_identifier.minting_identifier.mint",
+        script: mintIdentifierValidator.script,
+        scriptHash: validatorToScriptHash(mintIdentifierValidator),
+        address: "",
+        refUtxo: refUtxosInfo[validatorToScriptHash(mintIdentifierValidator)],
+      },
       spendTraceRegistry: {
         title: "trace_registry.spend_trace_registry.spend",
         script: traceRegistry.base.validator.script,
@@ -477,11 +487,10 @@ export const createDeployment = async (
     traceRegistry: {
       address: traceRegistry.base.address,
       shardPolicyId: traceRegistry.shardPolicyId,
-      shards: traceRegistry.shards.map((shard) => ({
-        index: Number(shard.index),
-        policyId: shard.token.policy_id,
-        name: shard.token.name,
-      })),
+      directory: {
+        policyId: traceRegistry.directory.policy_id,
+        name: traceRegistry.directory.name,
+      },
     },
     modules: {
       handler: {
@@ -1052,6 +1061,13 @@ const deployTraceRegistry = async (
     });
   }
 
+  const directory = await deployTraceRegistryDirectory(
+    lucid,
+    mintIdentifierValidator,
+    address,
+    shards,
+  );
+
   return {
     shardPolicyId,
     base: {
@@ -1060,6 +1076,7 @@ const deployTraceRegistry = async (
       address,
     },
     shards,
+    directory,
   };
 };
 
@@ -1075,9 +1092,16 @@ const deployTraceRegistryShard = async (
   const shardTokenUnit = shardPolicyId + shardTokenName;
 
   const emptyShardDatum: TraceRegistryShardDatum = {
-    shard_index: shardIndex,
+    bucket_index: shardIndex,
     entries: [],
   };
+  const encodedShardDatum = Data.to(
+    {
+      Shard: emptyShardDatum,
+    },
+    TraceRegistryDatum,
+    { canonical: true },
+  );
 
   // Each shard starts as its own append-only thread UTxO with a unique shard NFT
   // and an empty entry list. Later mint transactions spend exactly one shard when
@@ -1096,9 +1120,7 @@ const deployTraceRegistryShard = async (
       traceRegistryAddress,
       {
         kind: "inline",
-        value: Data.to(emptyShardDatum, TraceRegistryShardDatum, {
-          canonical: true,
-        }),
+        value: encodedShardDatum,
       },
       {
         [shardTokenUnit]: 1n,
@@ -1114,6 +1136,62 @@ const deployTraceRegistryShard = async (
   return {
     policy_id: shardPolicyId,
     name: shardTokenName,
+  };
+};
+
+const deployTraceRegistryDirectory = async (
+  lucid: LucidEvolution,
+  mintIdentifierValidator: MintingPolicy,
+  traceRegistryAddress: string,
+  shards: Array<{ index: bigint; token: AuthToken }>,
+): Promise<AuthToken> => {
+  const [nonceUtxo, outputReference] = await getNonceOutRef(lucid);
+  const shardPolicyId = validatorToScriptHash(mintIdentifierValidator);
+  const directoryTokenName = await generateIdentifierTokenName(outputReference);
+  const directoryTokenUnit = shardPolicyId + directoryTokenName;
+
+  const directoryDatum: TraceRegistryDirectoryDatum = {
+    buckets: shards.map((shard) => ({
+      bucket_index: shard.index,
+      active_shard_name: shard.token.name,
+      archived_shard_names: [],
+    })),
+  };
+
+  const encodedDirectoryDatum = Data.to(
+    {
+      Directory: directoryDatum,
+    },
+    TraceRegistryDatum,
+    { canonical: true },
+  );
+
+  const directoryTx = lucid
+    .newTx()
+    .collectFrom([nonceUtxo], Data.void())
+    .attach.MintingPolicy(mintIdentifierValidator)
+    .mintAssets(
+      {
+        [directoryTokenUnit]: 1n,
+      },
+      Data.to(outputReference, OutputReference, { canonical: true }),
+    )
+    .pay.ToContract(
+      traceRegistryAddress,
+      {
+        kind: "inline",
+        value: encodedDirectoryDatum,
+      },
+      {
+        [directoryTokenUnit]: 1n,
+      },
+    );
+
+  await submitTx(directoryTx, lucid, "Mint Trace Registry Directory");
+
+  return {
+    policy_id: shardPolicyId,
+    name: directoryTokenName,
   };
 };
 

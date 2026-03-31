@@ -49,6 +49,7 @@ function buildHandlerJsonDeployment() {
       },
       spendTraceRegistry: buildValidator('spendTraceRegistry'),
       spendTransferModule: buildValidator('spendTransferModule'),
+      mintIdentifier: buildValidator('mintIdentifier'),
       verifyProof: buildValidator('verifyProof'),
       mintClientStt: buildValidator('mintClientStt'),
       mintConnectionStt: buildValidator('mintConnectionStt'),
@@ -72,13 +73,10 @@ function buildHandlerJsonDeployment() {
     traceRegistry: {
       address: 'trace-registry-address',
       shardPolicyId: 'trace-shard-policy',
-      shards: [
-        {
-          index: 0,
-          policyId: 'trace-shard-policy',
-          name: 'trace-shard-0',
-        },
-      ],
+      directory: {
+        policyId: 'trace-shard-policy',
+        name: 'trace-directory',
+      },
     },
   };
 }
@@ -120,13 +118,10 @@ describe('bridge manifest normalization', () => {
     expect(loaded.bridgeManifest.trace_registry).toEqual({
       address: 'trace-registry-address',
       shard_policy_id: 'trace-shard-policy',
-      shards: [
-        {
-          index: 0,
-          policy_id: 'trace-shard-policy',
-          token_name: 'trace-shard-0',
-        },
-      ],
+      directory: {
+        policy_id: 'trace-shard-policy',
+        token_name: 'trace-directory',
+      },
     });
   });
 
