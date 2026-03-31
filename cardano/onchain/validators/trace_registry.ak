@@ -27,7 +27,7 @@ use aiken/collection/list
 use aiken/crypto
 use aiken/primitive/bytearray
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, add, from_asset, quantity_of}
+use cardano/assets.{PolicyId, add, from_asset, quantity_of, tokens}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction, placeholder,
 }
@@ -51,7 +51,8 @@ validator spend_trace_registry(
     spent_output_ref: OutputReference,
     transaction: Transaction,
   ) {
-    let Transaction { inputs, outputs, mint, .. } = transaction
+    let Transaction { inputs, reference_inputs, outputs, mint, .. } =
+      transaction
 
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     let spent_output = spent_input.output
@@ -66,6 +67,7 @@ validator spend_trace_registry(
               voucher_hash,
               full_denom,
               spent_output,
+              reference_inputs,
               outputs,
               mint,
               shard_nft_policy_id,
@@ -84,6 +86,7 @@ validator spend_trace_registry(
               full_denom,
               new_active_shard_name,
               spent_output,
+              inputs,
               outputs,
               mint,
               shard_nft_policy_id,
@@ -133,6 +136,7 @@ fn validate_insert_trace(
   voucher_hash: ByteArray,
   full_denom: ByteArray,
   spent_output: Output,
+  reference_inputs: List<Input>,
   outputs: List<Output>,
   mint,
   shard_nft_policy_id: PolicyId,
@@ -145,6 +149,13 @@ fn validate_insert_trace(
   let expected_entry = TraceRegistryEntry { voucher_hash, full_denom }
   let shard_token =
     expect_single_registry_token(spent_output, shard_nft_policy_id)
+  // Plain appends do not spend the directory. Instead they must carry the
+  // current directory as a reference input so the validator can authenticate
+  // that the spent shard token is still the bucket's active writable shard.
+  let directory_input =
+    find_unique_directory_input(reference_inputs, shard_nft_policy_id)
+  expect Directory(directory_datum): TraceRegistryDatum =
+    validator_utils.get_inline_datum(directory_input.output)
   let updated_output =
     find_unique_output(
       outputs,
@@ -161,6 +172,14 @@ fn validate_insert_trace(
   and {
     updated_datum.bucket_index == old_datum.bucket_index,
     old_datum.bucket_index == bucket_index_for_hash(voucher_hash),
+    // This is the canonicality check for non-rollover writes: an archived shard
+    // may still exist and be readable, but it can no longer accept inserts once
+    // the directory points the bucket at a newer active shard.
+    bucket_has_active_shard(
+      directory_datum,
+      old_datum.bucket_index,
+      shard_token.name,
+    ),
     crypto.sha3_256(full_denom) == voucher_hash,
     matching_voucher_mint_present(
       mint,
@@ -182,6 +201,7 @@ fn validate_rollover_insert_trace(
   full_denom: ByteArray,
   new_active_shard_name: ByteArray,
   spent_output: Output,
+  inputs: List<Input>,
   outputs: List<Output>,
   mint,
   shard_nft_policy_id: PolicyId,
@@ -195,6 +215,12 @@ fn validate_rollover_insert_trace(
   let expected_entry = TraceRegistryEntry { voucher_hash, full_denom }
   let current_active_token =
     expect_single_registry_token(spent_output, shard_nft_policy_id)
+  // Rollovers do spend the directory, so the old directory state is read from
+  // normal inputs rather than reference inputs. This lets the shard validator
+  // prove the consumed shard was the bucket's old active shard at rollover time.
+  let directory_input = find_unique_directory_input(inputs, shard_nft_policy_id)
+  expect Directory(old_directory): TraceRegistryDatum =
+    validator_utils.get_inline_datum(directory_input.output)
 
   let archived_output =
     find_unique_output(
@@ -236,6 +262,14 @@ fn validate_rollover_insert_trace(
 
   and {
     old_datum.bucket_index == bucket_index_for_hash(voucher_hash),
+    // Without this check, a rollover could be forged from an arbitrary archived
+    // shard by manufacturing matching outputs. The spent shard must be the one
+    // the directory currently recognizes as writable for this bucket.
+    bucket_has_active_shard(
+      old_directory,
+      old_datum.bucket_index,
+      current_active_token.name,
+    ),
     crypto.sha3_256(full_denom) == voucher_hash,
     matching_voucher_mint_present(
       mint,
@@ -405,6 +439,46 @@ fn has_directory_datum(output: Output) -> Bool {
   }
 }
 
+fn output_has_single_registry_token_under_policy(
+  output: Output,
+  policy_id: PolicyId,
+) -> Bool {
+  // The directory is authenticated by ownership of exactly one shard-policy
+  // token and its inline Directory datum, not by a hardcoded token name.
+  // Deployment chooses the directory token name, so the validator must accept
+  // any single-token auth output under the shard policy and then inspect datum.
+  when output.value |> tokens(policy_id) |> dict.keys() is {
+    [token_name] ->
+      auth.contains_only_auth_tokens(
+        output,
+        [AuthToken { policy_id, name: token_name }],
+      )
+
+    _ -> False
+  }
+}
+
+fn find_unique_directory_input(
+  inputs: List<Input>,
+  policy_id: PolicyId,
+) -> Input {
+  // We require exactly one authenticated directory witness. This prevents
+  // ambiguous transactions from presenting multiple directory candidates and
+  // lets shard writes bind themselves to one authoritative bucket view.
+  expect [input] =
+    list.filter(
+      inputs,
+      fn(input) {
+        has_directory_datum(input.output) && output_has_single_registry_token_under_policy(
+          input.output,
+          policy_id,
+        )
+      },
+    )
+
+  input
+}
+
 fn find_unique_output(
   outputs: List<Output>,
   predicate: fn(Output) -> Bool,
@@ -418,6 +492,17 @@ fn find_bucket(
   bucket_index: Int,
 ) -> Option<TraceRegistryDirectoryBucket> {
   list.find(buckets, fn(bucket) { bucket.bucket_index == bucket_index })
+}
+
+fn bucket_has_active_shard(
+  directory: TraceRegistryDirectoryDatum,
+  bucket_index: Int,
+  shard_name: ByteArray,
+) -> Bool {
+  when find_bucket(directory.buckets, bucket_index) is {
+    Some(bucket) -> bucket.active_shard_name == shard_name
+    None -> False
+  }
 }
 
 fn directory_matches_rollover(
@@ -522,6 +607,26 @@ fn test_directory_output(buckets: List<TraceRegistryDirectoryBucket>) -> Output 
   }
 }
 
+fn test_directory_input(
+  output_index: Int,
+  bucket_index: Int,
+  active_shard_name: ByteArray,
+  archived_shard_names: List<ByteArray>,
+) -> Input {
+  Input {
+    output_reference: test_output_ref(output_index),
+    output: test_directory_output(
+      [
+        TraceRegistryDirectoryBucket {
+          bucket_index,
+          active_shard_name,
+          archived_shard_names,
+        },
+      ],
+    ),
+  }
+}
+
 fn test_expected_entry(full_denom: ByteArray) -> TraceRegistryEntry {
   TraceRegistryEntry { voucher_hash: crypto.sha3_256(full_denom), full_denom }
 }
@@ -542,11 +647,13 @@ test trace_registry_insert_trace_succeeds_with_matching_voucher_mint() {
       shard_name,
       [test_expected_entry(full_denom)],
     )
+  let directory_input = test_directory_input(1, bucket_index, shard_name, [])
 
   let transaction =
     Transaction {
       ..placeholder,
       inputs: [spent_input],
+      reference_inputs: [directory_input],
       outputs: [updated_output],
       mint: from_asset(test_voucher_policy_id(), voucher_hash, 1),
     }
@@ -578,11 +685,13 @@ test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint()
       shard_name,
       [test_expected_entry(full_denom)],
     )
+  let directory_input = test_directory_input(1, bucket_index, shard_name, [])
 
   let transaction =
     Transaction {
       ..placeholder,
       inputs: [spent_input],
+      reference_inputs: [directory_input],
       outputs: [updated_output],
       mint: from_asset(test_benchmark_voucher_policy_id(), voucher_hash, 1),
     }
@@ -614,11 +723,13 @@ test trace_registry_insert_trace_fails_without_matching_voucher_mint() fail {
       shard_name,
       [test_expected_entry(full_denom)],
     )
+  let directory_input = test_directory_input(1, bucket_index, shard_name, [])
 
   let transaction =
     Transaction {
       ..placeholder,
       inputs: [spent_input],
+      reference_inputs: [directory_input],
       outputs: [updated_output],
       mint: from_asset(test_voucher_policy_id(), "some-other-voucher", 1),
     }
@@ -651,11 +762,14 @@ test trace_registry_insert_trace_fails_when_bucket_does_not_match_hash() fail {
       shard_name,
       [test_expected_entry(full_denom)],
     )
+  let directory_input =
+    test_directory_input(1, wrong_bucket_index, shard_name, [])
 
   let transaction =
     Transaction {
       ..placeholder,
       inputs: [spent_input],
+      reference_inputs: [directory_input],
       outputs: [updated_output],
       mint: from_asset(test_voucher_policy_id(), voucher_hash, 1),
     }
@@ -695,11 +809,13 @@ test trace_registry_insert_trace_fails_when_hash_already_exists() fail {
       shard_name,
       [existing_entry, test_expected_entry(full_denom)],
     )
+  let directory_input = test_directory_input(1, bucket_index, shard_name, [])
 
   let transaction =
     Transaction {
       ..placeholder,
       inputs: [spent_input],
+      reference_inputs: [directory_input],
       outputs: [updated_output],
       mint: from_asset(test_voucher_policy_id(), voucher_hash, 1),
     }
@@ -711,6 +827,45 @@ test trace_registry_insert_trace_fails_when_hash_already_exists() fail {
     Some(
       Shard(TraceRegistryShardDatum { bucket_index, entries: [existing_entry] }),
     ),
+    InsertTrace { voucher_hash, full_denom },
+    test_output_ref(0),
+    transaction,
+  )
+}
+
+test trace_registry_insert_trace_fails_when_spent_shard_is_not_directory_active() fail {
+  let full_denom = "transfer/channel-7/uatom"
+  let voucher_hash = crypto.sha3_256(full_denom)
+  let bucket_index = bucket_index_for_hash(voucher_hash)
+  let shard_name = "archived-0a"
+  let spent_input =
+    Input {
+      output_reference: test_output_ref(0),
+      output: test_shard_output(bucket_index, shard_name, []),
+    }
+  let directory_input =
+    test_directory_input(1, bucket_index, "active-0a", [shard_name])
+  let updated_output =
+    test_shard_output(
+      bucket_index,
+      shard_name,
+      [test_expected_entry(full_denom)],
+    )
+
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [spent_input],
+      reference_inputs: [directory_input],
+      outputs: [updated_output],
+      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1),
+    }
+
+  spend_trace_registry.spend(
+    test_shard_policy_id(),
+    test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
+    Some(Shard(TraceRegistryShardDatum { bucket_index, entries: [] })),
     InsertTrace { voucher_hash, full_denom },
     test_output_ref(0),
     transaction,
@@ -738,6 +893,8 @@ test trace_registry_rollover_insert_succeeds_and_preserves_old_shard() {
         old_shard.entries,
       ),
     }
+  let directory_input =
+    test_directory_input(1, bucket_index, previous_active_shard_name, [])
   let archived_output =
     test_shard_output(
       bucket_index,
@@ -764,7 +921,7 @@ test trace_registry_rollover_insert_succeeds_and_preserves_old_shard() {
   let transaction =
     Transaction {
       ..placeholder,
-      inputs: [spent_input],
+      inputs: [spent_input, directory_input],
       outputs: [archived_output, new_active_output, updated_directory_output],
       mint: from_asset(test_voucher_policy_id(), voucher_hash, 1)
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
@@ -793,6 +950,8 @@ test trace_registry_rollover_insert_fails_when_directory_does_not_advance() fail
       output_reference: test_output_ref(0),
       output: test_shard_output(bucket_index, previous_active_shard_name, []),
     }
+  let directory_input =
+    test_directory_input(1, bucket_index, previous_active_shard_name, [])
   let archived_output =
     test_shard_output(bucket_index, previous_active_shard_name, [])
   let new_active_output =
@@ -815,8 +974,76 @@ test trace_registry_rollover_insert_fails_when_directory_does_not_advance() fail
   let transaction =
     Transaction {
       ..placeholder,
-      inputs: [spent_input],
+      inputs: [spent_input, directory_input],
       outputs: [archived_output, new_active_output, stale_directory_output],
+      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1)
+        |> add(test_shard_policy_id(), new_active_shard_name, 1),
+    }
+
+  spend_trace_registry.spend(
+    test_shard_policy_id(),
+    test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
+    Some(Shard(old_shard)),
+    RolloverInsertTrace { voucher_hash, full_denom, new_active_shard_name },
+    test_output_ref(0),
+    transaction,
+  )
+}
+
+test trace_registry_rollover_insert_fails_when_spent_shard_is_not_old_active() fail {
+  let full_denom = "transfer/channel-88/uatom"
+  let voucher_hash = crypto.sha3_256(full_denom)
+  let bucket_index = bucket_index_for_hash(voucher_hash)
+  let spent_shard_name = "archived-0a"
+  let directory_active_shard_name = "active-0a"
+  let new_active_shard_name = "active-0a-v2"
+  let old_entry =
+    TraceRegistryEntry {
+      voucher_hash: crypto.sha3_256("transfer/channel-7/uosmo"),
+      full_denom: "transfer/channel-7/uosmo",
+    }
+  let old_shard = TraceRegistryShardDatum { bucket_index, entries: [old_entry] }
+  let spent_input =
+    Input {
+      output_reference: test_output_ref(0),
+      output: test_shard_output(
+        bucket_index,
+        spent_shard_name,
+        old_shard.entries,
+      ),
+    }
+  let directory_input =
+    test_directory_input(
+      1,
+      bucket_index,
+      directory_active_shard_name,
+      [spent_shard_name],
+    )
+  let archived_output =
+    test_shard_output(bucket_index, spent_shard_name, old_shard.entries)
+  let new_active_output =
+    test_shard_output(
+      bucket_index,
+      new_active_shard_name,
+      [test_expected_entry(full_denom)],
+    )
+  let updated_directory_output =
+    test_directory_output(
+      [
+        TraceRegistryDirectoryBucket {
+          bucket_index,
+          active_shard_name: new_active_shard_name,
+          archived_shard_names: [directory_active_shard_name, spent_shard_name],
+        },
+      ],
+    )
+
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [spent_input, directory_input],
+      outputs: [archived_output, new_active_output, updated_directory_output],
       mint: from_asset(test_voucher_policy_id(), voucher_hash, 1)
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }

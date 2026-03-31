@@ -1,5 +1,5 @@
-import { PolicyId, UTxO } from '@lucid-evolution/lucid';
-import { AuthToken } from '@shared/types/auth-token';
+import { PolicyId, UTxO } from "@lucid-evolution/lucid";
+import { AuthToken } from "@shared/types/auth-token";
 
 // Composable DTO fragments: packet DTOs are formed via intersection types (`&`)
 // so shared tx fields are defined once and reused consistently.
@@ -46,14 +46,15 @@ export type WithMintVoucherRedeemer = {
 };
 
 export type TraceRegistryAppendUpdate = {
-  kind: 'append';
+  kind: "append";
+  traceRegistryDirectoryUtxo: UTxO;
   traceRegistryShardUtxo: UTxO;
   encodedTraceRegistryRedeemer: string;
   encodedUpdatedTraceRegistryDatum: string;
 };
 
 export type TraceRegistryRolloverUpdate = {
-  kind: 'rollover';
+  kind: "rollover";
   traceRegistryDirectoryUtxo: UTxO;
   traceRegistryShardUtxo: UTxO;
   traceRegistryMintNonceUtxo: UTxO;
@@ -67,7 +68,10 @@ export type TraceRegistryRolloverUpdate = {
 };
 
 export type WithOptionalTraceRegistryUpdate = {
-  traceRegistryUpdate?: TraceRegistryAppendUpdate | TraceRegistryRolloverUpdate | null;
+  traceRegistryUpdate?:
+    | TraceRegistryAppendUpdate
+    | TraceRegistryRolloverUpdate
+    | null;
 };
 
 export type WithVerifyProof = {
@@ -93,4 +97,6 @@ export type WithPolicyId<K extends string> = {
   [P in K]: PolicyId;
 };
 
-export type WithPacketPolicyAndChannelToken<K extends string> = WithPolicyId<K> & WithChannelToken;
+export type WithPacketPolicyAndChannelToken<K extends string> =
+  & WithPolicyId<K>
+  & WithChannelToken;

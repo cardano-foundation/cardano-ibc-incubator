@@ -1,20 +1,24 @@
-import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
-import { PaginationKeyDto } from '../dtos/pagination.dto';
-import { MetricsService } from '../../health/metrics.service';
-import { convertString2Hex, hashSHA256, hashSha3_256 } from '../../shared/helpers/hex';
-import { splitFullDenomTrace } from '../../shared/helpers/denom-trace';
-import { LucidService } from '../../shared/modules/lucid/lucid.service';
+import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { TxBuilder, UTxO } from "@lucid-evolution/lucid";
+import { PaginationKeyDto } from "../dtos/pagination.dto";
+import { MetricsService } from "../../health/metrics.service";
+import {
+  convertString2Hex,
+  hashSHA256,
+  hashSha3_256,
+} from "../../shared/helpers/hex";
+import { splitFullDenomTrace } from "../../shared/helpers/denom-trace";
+import { LucidService } from "../../shared/modules/lucid/lucid.service";
 import {
   decodeTraceRegistryDatum,
   encodeTraceRegistryDatum,
   encodeTraceRegistryRedeemer,
+  TraceRegistryDatum,
   TraceRegistryDirectoryBucket,
   TraceRegistryDirectoryDatum,
-  TraceRegistryDatum,
   TraceRegistryShardDatum,
-} from '../../shared/types/trace-registry';
+} from "../../shared/types/trace-registry";
 
 type TraceRegistryTokenConfig = {
   policyId: string;
@@ -34,14 +38,15 @@ type OnChainTraceEntry = {
 };
 
 type TraceRegistryAppendInsertContext = {
-  kind: 'append';
+  kind: "append";
+  traceRegistryDirectoryUtxo: UTxO;
   traceRegistryShardUtxo: UTxO;
   encodedTraceRegistryRedeemer: string;
   encodedUpdatedTraceRegistryDatum: string;
 };
 
 type TraceRegistryRolloverInsertContext = {
-  kind: 'rollover';
+  kind: "rollover";
   traceRegistryDirectoryUtxo: UTxO;
   traceRegistryShardUtxo: UTxO;
   traceRegistryMintNonceUtxo: UTxO;
@@ -104,7 +109,7 @@ export type TraceRegistrySimulationSample = {
 };
 
 export type TraceRegistryBucketGrowthSimulation = {
-  sizeModel: 'datum-only-upper-bound';
+  sizeModel: "datum-only-upper-bound";
   bucketIndex: number;
   simulatedInserts: number;
   projectedRollovers: number;
@@ -165,13 +170,22 @@ export class DenomTraceService {
     }
 
     const bucketIndex = this.getBucketIndexForHash(normalizedHash);
-    const directoryDatum = await this.loadDirectoryDatum(registry);
+    const { utxo: directoryUtxo, datum: directoryDatum } = await this
+      .loadDirectoryState(registry);
     const bucket = this.getDirectoryBucket(directoryDatum, bucketIndex);
     const activeShardUnit = registry.shardPolicyId + bucket.active_shard_name;
-    const activeShardUtxo = await this.lucidService.findUtxoByUnit(activeShardUnit);
-    const activeShardDatum = this.loadShardDatumFromUtxo(activeShardUtxo, bucketIndex, activeShardUnit);
+    const activeShardUtxo = await this.lucidService.findUtxoByUnit(
+      activeShardUnit,
+    );
+    const activeShardDatum = this.loadShardDatumFromUtxo(
+      activeShardUtxo,
+      bucketIndex,
+      activeShardUnit,
+    );
 
-    const duplicate = activeShardDatum.entries.find((entry) => entry.voucher_hash.toLowerCase() === normalizedHash);
+    const duplicate = activeShardDatum.entries.find((entry) =>
+      entry.voucher_hash.toLowerCase() === normalizedHash
+    );
     if (duplicate) {
       if (duplicate.full_denom !== fullDenom) {
         throw new Error(
@@ -183,7 +197,8 @@ export class DenomTraceService {
 
     if (!opts?.forceRollover) {
       return {
-        kind: 'append',
+        kind: "append",
+        traceRegistryDirectoryUtxo: directoryUtxo,
         traceRegistryShardUtxo: activeShardUtxo,
         encodedTraceRegistryRedeemer: encodeTraceRegistryRedeemer(
           {
@@ -212,28 +227,25 @@ export class DenomTraceService {
       };
     }
 
-    const directoryUnit = registry.directory.policyId + registry.directory.name;
-    const directoryUtxo = await this.lucidService.findUtxoByUnit(directoryUnit);
-    if (!directoryUtxo.datum) {
-      throw new Error('Trace-registry directory is missing inline datum');
-    }
-
     const nonceUtxo = await this.selectUniqueIdentifierNonce(bucket);
     const newActiveShardName = this.generateIdentifierTokenName(nonceUtxo);
     const updatedDirectory: TraceRegistryDirectoryDatum = {
       buckets: directoryDatum.buckets.map((candidate) =>
         Number(candidate.bucket_index) === bucketIndex
           ? {
-              bucket_index: candidate.bucket_index,
-              active_shard_name: newActiveShardName,
-              archived_shard_names: [...candidate.archived_shard_names, candidate.active_shard_name],
-            }
-          : candidate,
+            bucket_index: candidate.bucket_index,
+            active_shard_name: newActiveShardName,
+            archived_shard_names: [
+              ...candidate.archived_shard_names,
+              candidate.active_shard_name,
+            ],
+          }
+          : candidate
       ),
     };
 
     return {
-      kind: 'rollover',
+      kind: "rollover",
       traceRegistryDirectoryUtxo: directoryUtxo,
       traceRegistryShardUtxo: activeShardUtxo,
       traceRegistryMintNonceUtxo: nonceUtxo,
@@ -285,16 +297,22 @@ export class DenomTraceService {
         },
         this.lucidService.LucidImporter,
       ),
-      newActiveTraceRegistryShardTokenUnit: registry.shardPolicyId + newActiveShardName,
-      encodedMintIdentifierRedeemer: this.encodeIdentifierMintRedeemer(nonceUtxo),
+      newActiveTraceRegistryShardTokenUnit: registry.shardPolicyId +
+        newActiveShardName,
+      encodedMintIdentifierRedeemer: this.encodeIdentifierMintRedeemer(
+        nonceUtxo,
+      ),
     };
   }
 
   async shouldRolloverForUnsignedTx(unsignedTx: TxBuilder): Promise<boolean> {
-    const maxTxSize = this.lucidService.lucid.config().protocolParameters?.maxTxSize ?? 16_384;
+    const maxTxSize =
+      this.lucidService.lucid.config().protocolParameters?.maxTxSize ?? 16_384;
 
     try {
-      const unsignedSize = await this.lucidService.estimateUnsignedTxSizeBytes(unsignedTx);
+      const unsignedSize = await this.lucidService.estimateUnsignedTxSizeBytes(
+        unsignedTx,
+      );
       return unsignedSize >= maxTxSize - TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES;
     } catch (error) {
       if (this.isLikelyTxSizeError(error)) {
@@ -315,10 +333,12 @@ export class DenomTraceService {
       }
       return this.materializeTrace(onChainEntry.hash, onChainEntry.fullDenom);
     } catch (error) {
-      this.logger.error(`Failed to find denom trace by hash ${hash}: ${error.message}`);
+      this.logger.error(
+        `Failed to find denom trace by hash ${hash}: ${error.message}`,
+      );
       throw error;
     } finally {
-      this.observeQueryDuration('findByHash', startTime);
+      this.observeQueryDuration("findByHash", startTime);
     }
   }
 
@@ -329,9 +349,14 @@ export class DenomTraceService {
       const traces = (await this.findAllOnChainEntries())
         .map((entry) => this.materializeTrace(entry.hash, entry.fullDenom))
         .sort((left, right) => {
-          const leftFullDenom = left.path ? `${left.path}/${left.base_denom}` : left.base_denom;
-          const rightFullDenom = right.path ? `${right.path}/${right.base_denom}` : right.base_denom;
-          return leftFullDenom.localeCompare(rightFullDenom) || left.hash.localeCompare(right.hash);
+          const leftFullDenom = left.path
+            ? `${left.path}/${left.base_denom}`
+            : left.base_denom;
+          const rightFullDenom = right.path
+            ? `${right.path}/${right.base_denom}`
+            : right.base_denom;
+          return leftFullDenom.localeCompare(rightFullDenom) ||
+            left.hash.localeCompare(right.hash);
         });
 
       const offset = pagination?.offset ?? 0;
@@ -340,28 +365,33 @@ export class DenomTraceService {
       this.logger.error(`Failed to find all denom traces: ${error.message}`);
       throw error;
     } finally {
-      this.observeQueryDuration('findAll', startTime);
+      this.observeQueryDuration("findAll", startTime);
     }
   }
 
-  async findByIbcDenomHash(denomHash: string): Promise<ResolvedDenomTrace | null> {
+  async findByIbcDenomHash(
+    denomHash: string,
+  ): Promise<ResolvedDenomTrace | null> {
     const startTime = Date.now();
 
     try {
       const normalizedHash = denomHash.toLowerCase();
       const onChainEntries = await this.findAllOnChainEntries();
       const match = onChainEntries.find((entry) => {
-        return this.computeIbcDenomHashFromFullDenom(entry.fullDenom) === normalizedHash;
+        return this.computeIbcDenomHashFromFullDenom(entry.fullDenom) ===
+          normalizedHash;
       });
       if (!match) {
         return null;
       }
       return this.materializeTrace(match.hash, match.fullDenom);
     } catch (error) {
-      this.logger.error(`Failed to find denom trace by ibc hash ${denomHash}: ${error.message}`);
+      this.logger.error(
+        `Failed to find denom trace by ibc hash ${denomHash}: ${error.message}`,
+      );
       throw error;
     } finally {
-      this.observeQueryDuration('findByIbcDenomHash', startTime);
+      this.observeQueryDuration("findByIbcDenomHash", startTime);
     }
   }
 
@@ -372,10 +402,12 @@ export class DenomTraceService {
       const traces = await this.findAll();
       return traces.filter((trace) => trace.base_denom === baseDenom);
     } catch (error) {
-      this.logger.error(`Failed to find denom traces by base denom ${baseDenom}: ${error.message}`);
+      this.logger.error(
+        `Failed to find denom traces by base denom ${baseDenom}: ${error.message}`,
+      );
       throw error;
     } finally {
-      this.observeQueryDuration('findByBaseDenom', startTime);
+      this.observeQueryDuration("findByBaseDenom", startTime);
     }
   }
 
@@ -391,20 +423,28 @@ export class DenomTraceService {
   async getSummary(): Promise<TraceRegistrySummary> {
     const registry = this.getTraceRegistryConfig();
     if (!registry) {
-      throw new Error('Trace registry is not configured in deployment config');
+      throw new Error("Trace registry is not configured in deployment config");
     }
 
     const directory = await this.loadDirectoryDatum(registry);
     const buckets = await Promise.all(
-      directory.buckets.map((bucket) => this.buildBucketStats(registry, bucket)),
+      directory.buckets.map((bucket) =>
+        this.buildBucketStats(registry, bucket)
+      ),
     );
 
     return {
       maxTxSize: this.getMaxTxSize(),
       txHeadroomBytes: TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES,
-      projectedMaxShardDatumBytesUpperBound: this.getProjectedMaxShardDatumBytesUpperBound(),
-      totalEntries: buckets.reduce((sum, bucket) => sum + bucket.totalEntries, 0),
-      buckets: buckets.sort((left, right) => left.bucketIndex - right.bucketIndex),
+      projectedMaxShardDatumBytesUpperBound: this
+        .getProjectedMaxShardDatumBytesUpperBound(),
+      totalEntries: buckets.reduce(
+        (sum, bucket) => sum + bucket.totalEntries,
+        0,
+      ),
+      buckets: buckets.sort((left, right) =>
+        left.bucketIndex - right.bucketIndex
+      ),
     };
   }
 
@@ -413,19 +453,25 @@ export class DenomTraceService {
     simulatedInserts: number,
   ): Promise<TraceRegistryBucketGrowthSimulation> {
     if (!Number.isInteger(bucketIndex) || bucketIndex < 0 || bucketIndex > 15) {
-      throw new Error(`Trace-registry bucket index must be between 0 and 15, received ${bucketIndex}`);
+      throw new Error(
+        `Trace-registry bucket index must be between 0 and 15, received ${bucketIndex}`,
+      );
     }
     if (!Number.isInteger(simulatedInserts) || simulatedInserts < 0) {
-      throw new Error(`simulatedInserts must be a non-negative integer, received ${simulatedInserts}`);
+      throw new Error(
+        `simulatedInserts must be a non-negative integer, received ${simulatedInserts}`,
+      );
     }
 
     const registry = this.getTraceRegistryConfig();
     if (!registry) {
-      throw new Error('Trace registry is not configured in deployment config');
+      throw new Error("Trace registry is not configured in deployment config");
     }
 
     const summary = await this.getSummary();
-    const initialBucket = summary.buckets.find((candidate) => candidate.bucketIndex === bucketIndex);
+    const initialBucket = summary.buckets.find((candidate) =>
+      candidate.bucketIndex === bucketIndex
+    );
     if (!initialBucket) {
       throw new Error(`Missing trace-registry bucket ${bucketIndex}`);
     }
@@ -438,15 +484,22 @@ export class DenomTraceService {
     );
     const allEntries = await this.loadBucketEntries(registry, bucket);
 
-    const projectedMaxShardDatumBytesUpperBound = this.getProjectedMaxShardDatumBytesUpperBound();
-    const seenHashes = new Set(allEntries.map((entry) => entry.voucher_hash.toLowerCase()));
+    const projectedMaxShardDatumBytesUpperBound = this
+      .getProjectedMaxShardDatumBytesUpperBound();
+    const seenHashes = new Set(
+      allEntries.map((entry) => entry.voucher_hash.toLowerCase()),
+    );
     let projectedRollovers = 0;
     let activeShardSequence = 0;
     let activeEntries = [...activeShard.entries];
     const sampleInserts: TraceRegistrySimulationSample[] = [];
 
     for (let step = 1; step <= simulatedInserts; step += 1) {
-      const synthetic = this.buildSyntheticTraceForBucket(bucketIndex, step, seenHashes);
+      const synthetic = this.buildSyntheticTraceForBucket(
+        bucketIndex,
+        step,
+        seenHashes,
+      );
       const appendedEntries = [
         ...activeEntries,
         {
@@ -496,7 +549,7 @@ export class DenomTraceService {
     }
 
     return {
-      sizeModel: 'datum-only-upper-bound',
+      sizeModel: "datum-only-upper-bound",
       bucketIndex,
       simulatedInserts,
       projectedRollovers,
@@ -521,37 +574,53 @@ export class DenomTraceService {
 
   private observeQueryDuration(operation: string, startTime: number): void {
     const duration = (Date.now() - startTime) / 1000;
-    this.metricsService?.denomTraceQueryDuration.observe({ operation }, duration);
+    this.metricsService?.denomTraceQueryDuration.observe(
+      { operation },
+      duration,
+    );
   }
 
   private getTraceRegistryConfig(): TraceRegistryConfig | null {
-    const deployment = this.configService.get('deployment') as { traceRegistry?: TraceRegistryConfig } | undefined;
-    if (!deployment?.traceRegistry?.address || !deployment.traceRegistry.directory) {
+    const deployment = this.configService.get("deployment") as {
+      traceRegistry?: TraceRegistryConfig;
+    } | undefined;
+    if (
+      !deployment?.traceRegistry?.address || !deployment.traceRegistry.directory
+    ) {
       return null;
     }
     return deployment.traceRegistry;
   }
 
   private getVoucherPolicyId(): string {
-    return this.configService.get('deployment').validators.mintVoucher.scriptHash;
+    return this.configService.get("deployment").validators.mintVoucher
+      .scriptHash;
   }
 
   private getBucketIndexForHash(hash: string): number {
     if (!/^[0-9a-f]{64}$/i.test(hash)) {
-      throw new Error(`Invalid voucher hash for trace-registry lookup: ${hash}`);
+      throw new Error(
+        `Invalid voucher hash for trace-registry lookup: ${hash}`,
+      );
     }
     return parseInt(hash[0], 16);
   }
 
   private getMaxTxSize(): number {
-    return this.lucidService.lucid.config().protocolParameters?.maxTxSize ?? 16_384;
+    return this.lucidService.lucid.config().protocolParameters?.maxTxSize ??
+      16_384;
   }
 
   private getProjectedMaxShardDatumBytesUpperBound(): number {
-    return Math.max(this.getMaxTxSize() - TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES, 0);
+    return Math.max(
+      this.getMaxTxSize() - TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES,
+      0,
+    );
   }
 
-  private async findOnChainEntryByHash(hash: string): Promise<OnChainTraceEntry | null> {
+  private async findOnChainEntryByHash(
+    hash: string,
+  ): Promise<OnChainTraceEntry | null> {
     const registry = this.getTraceRegistryConfig();
     if (!registry) {
       return null;
@@ -560,11 +629,19 @@ export class DenomTraceService {
     const directoryDatum = await this.loadDirectoryDatum(registry);
     const bucketIndex = this.getBucketIndexForHash(hash);
     const bucket = this.getDirectoryBucket(directoryDatum, bucketIndex);
-    const tokenNames = [bucket.active_shard_name, ...bucket.archived_shard_names];
+    const tokenNames = [
+      bucket.active_shard_name,
+      ...bucket.archived_shard_names,
+    ];
 
     for (const tokenName of tokenNames) {
-      const shardDatum = await this.loadShardDatumByUnit(registry.shardPolicyId + tokenName, bucketIndex);
-      const entry = shardDatum.entries.find((candidate) => candidate.voucher_hash.toLowerCase() === hash.toLowerCase());
+      const shardDatum = await this.loadShardDatumByUnit(
+        registry.shardPolicyId + tokenName,
+        bucketIndex,
+      );
+      const entry = shardDatum.entries.find((candidate) =>
+        candidate.voucher_hash.toLowerCase() === hash.toLowerCase()
+      );
       if (entry) {
         return {
           hash: entry.voucher_hash.toLowerCase(),
@@ -586,11 +663,17 @@ export class DenomTraceService {
     const directory = await this.loadDirectoryDatum(registry);
     const shardEntries = await Promise.all(
       directory.buckets.map(async (bucket) => {
-        const tokenNames = [bucket.active_shard_name, ...bucket.archived_shard_names];
+        const tokenNames = [
+          bucket.active_shard_name,
+          ...bucket.archived_shard_names,
+        ];
         const uniqueTokenNames = [...new Set(tokenNames)];
         const shards = await Promise.all(
           uniqueTokenNames.map((tokenName) =>
-            this.loadShardDatumByUnit(registry.shardPolicyId + tokenName, Number(bucket.bucket_index)),
+            this.loadShardDatumByUnit(
+              registry.shardPolicyId + tokenName,
+              Number(bucket.bucket_index),
+            )
           ),
         );
 
@@ -599,7 +682,7 @@ export class DenomTraceService {
             hash: entry.voucher_hash.toLowerCase(),
             fullDenom: entry.full_denom,
             bucketIndex: Number(bucket.bucket_index),
-          })),
+          }))
         );
       }),
     );
@@ -611,7 +694,10 @@ export class DenomTraceService {
     registry: TraceRegistryConfig,
     bucket: TraceRegistryDirectoryBucket,
   ): Promise<TraceRegistryBucketStats> {
-    const tokenNames = [bucket.active_shard_name, ...bucket.archived_shard_names];
+    const tokenNames = [
+      bucket.active_shard_name,
+      ...bucket.archived_shard_names,
+    ];
     const uniqueTokenNames = [...new Set(tokenNames)];
     const shards = await Promise.all(
       uniqueTokenNames.map(async (tokenName) => {
@@ -630,7 +716,9 @@ export class DenomTraceService {
     );
     const activeShard = shards.find((candidate) => candidate.isActive);
     if (!activeShard) {
-      throw new Error(`Missing active trace-registry shard for bucket ${bucket.bucket_index.toString()}`);
+      throw new Error(
+        `Missing active trace-registry shard for bucket ${bucket.bucket_index.toString()}`,
+      );
     }
 
     return {
@@ -648,11 +736,16 @@ export class DenomTraceService {
   private async loadBucketEntries(
     registry: TraceRegistryConfig,
     bucket: TraceRegistryDirectoryBucket,
-  ): Promise<TraceRegistryShardDatum['entries']> {
-    const tokenNames = [...new Set([bucket.active_shard_name, ...bucket.archived_shard_names])];
+  ): Promise<TraceRegistryShardDatum["entries"]> {
+    const tokenNames = [
+      ...new Set([bucket.active_shard_name, ...bucket.archived_shard_names]),
+    ];
     const shards = await Promise.all(
       tokenNames.map((tokenName) =>
-        this.loadShardDatumByUnit(registry.shardPolicyId + tokenName, Number(bucket.bucket_index)),
+        this.loadShardDatumByUnit(
+          registry.shardPolicyId + tokenName,
+          Number(bucket.bucket_index),
+        )
       ),
     );
 
@@ -666,51 +759,88 @@ export class DenomTraceService {
   ): { voucherHash: string; fullDenom: string } {
     let attempt = 0;
     while (true) {
-      const fullDenom = `transfer/channel-${bucketIndex}/denom-registry-benchmark-${step}-${attempt}`;
+      const fullDenom =
+        `transfer/channel-${bucketIndex}/denom-registry-benchmark-${step}-${attempt}`;
       const voucherHash = this.computeVoucherHashFromFullDenom(fullDenom);
-      if (this.getBucketIndexForHash(voucherHash) === bucketIndex && !seenHashes.has(voucherHash)) {
+      if (
+        this.getBucketIndexForHash(voucherHash) === bucketIndex &&
+        !seenHashes.has(voucherHash)
+      ) {
         return { voucherHash, fullDenom };
       }
       attempt += 1;
     }
   }
 
-  private async loadDirectoryDatum(registry: TraceRegistryConfig): Promise<TraceRegistryDirectoryDatum> {
+  private async loadDirectoryState(
+    registry: TraceRegistryConfig,
+  ): Promise<{ utxo: UTxO; datum: TraceRegistryDirectoryDatum }> {
     const directoryUnit = registry.directory.policyId + registry.directory.name;
     const directoryUtxo = await this.lucidService.findUtxoByUnit(directoryUnit);
     if (!directoryUtxo.datum) {
-      throw new Error('Trace-registry directory is missing inline datum');
+      throw new Error("Trace-registry directory is missing inline datum");
     }
 
-    const decoded = decodeTraceRegistryDatum(directoryUtxo.datum, this.lucidService.LucidImporter);
-    if (!('Directory' in decoded)) {
-      throw new Error('Trace-registry directory UTxO does not carry a directory datum');
+    const decoded = decodeTraceRegistryDatum(
+      directoryUtxo.datum,
+      this.lucidService.LucidImporter,
+    );
+    if (!("Directory" in decoded)) {
+      throw new Error(
+        "Trace-registry directory UTxO does not carry a directory datum",
+      );
     }
 
-    return decoded.Directory;
+    return {
+      utxo: directoryUtxo,
+      datum: decoded.Directory,
+    };
   }
 
-  private getDirectoryBucket(directory: TraceRegistryDirectoryDatum, bucketIndex: number): TraceRegistryDirectoryBucket {
-    const bucket = directory.buckets.find((candidate) => Number(candidate.bucket_index) === bucketIndex);
+  private async loadDirectoryDatum(
+    registry: TraceRegistryConfig,
+  ): Promise<TraceRegistryDirectoryDatum> {
+    return (await this.loadDirectoryState(registry)).datum;
+  }
+
+  private getDirectoryBucket(
+    directory: TraceRegistryDirectoryDatum,
+    bucketIndex: number,
+  ): TraceRegistryDirectoryBucket {
+    const bucket = directory.buckets.find((candidate) =>
+      Number(candidate.bucket_index) === bucketIndex
+    );
     if (!bucket) {
       throw new Error(`Missing trace-registry directory bucket ${bucketIndex}`);
     }
     return bucket;
   }
 
-  private async loadShardDatumByUnit(unit: string, expectedBucketIndex: number) {
+  private async loadShardDatumByUnit(
+    unit: string,
+    expectedBucketIndex: number,
+  ) {
     const shardUtxo = await this.lucidService.findUtxoByUnit(unit);
     return this.loadShardDatumFromUtxo(shardUtxo, expectedBucketIndex, unit);
   }
 
-  private loadShardDatumFromUtxo(shardUtxo: UTxO, expectedBucketIndex: number, unit: string) {
+  private loadShardDatumFromUtxo(
+    shardUtxo: UTxO,
+    expectedBucketIndex: number,
+    unit: string,
+  ) {
     if (!shardUtxo.datum) {
       throw new Error(`Trace-registry shard ${unit} is missing inline datum`);
     }
 
-    const decoded = decodeTraceRegistryDatum(shardUtxo.datum, this.lucidService.LucidImporter);
-    if (!('Shard' in decoded)) {
-      throw new Error(`Trace-registry shard ${unit} does not carry a shard datum`);
+    const decoded = decodeTraceRegistryDatum(
+      shardUtxo.datum,
+      this.lucidService.LucidImporter,
+    );
+    if (!("Shard" in decoded)) {
+      throw new Error(
+        `Trace-registry shard ${unit} does not carry a shard datum`,
+      );
     }
     if (Number(decoded.Shard.bucket_index) !== expectedBucketIndex) {
       throw new Error(
@@ -720,7 +850,10 @@ export class DenomTraceService {
     return decoded.Shard;
   }
 
-  private materializeTrace(hash: string, fullDenom: string): ResolvedDenomTrace {
+  private materializeTrace(
+    hash: string,
+    fullDenom: string,
+  ): ResolvedDenomTrace {
     const trace = splitFullDenomTrace(fullDenom);
     return {
       hash: hash.toLowerCase(),
@@ -750,16 +883,28 @@ export class DenomTraceService {
     );
   }
 
-  private async selectUniqueIdentifierNonce(bucket: TraceRegistryDirectoryBucket): Promise<UTxO> {
+  private async selectUniqueIdentifierNonce(
+    bucket: TraceRegistryDirectoryBucket,
+  ): Promise<UTxO> {
     const walletUtxos = await this.lucidService.lucid.wallet().getUtxos();
     if (walletUtxos.length === 0) {
-      throw new Error('Trace-registry rollover requires a selected wallet with at least one spendable UTxO');
+      throw new Error(
+        "Trace-registry rollover requires a selected wallet with at least one spendable UTxO",
+      );
     }
 
-    const reserved = new Set([bucket.active_shard_name, ...bucket.archived_shard_names].map((name) => name.toLowerCase()));
-    const candidate = walletUtxos.find((utxo) => !reserved.has(this.generateIdentifierTokenName(utxo).toLowerCase()));
+    const reserved = new Set(
+      [bucket.active_shard_name, ...bucket.archived_shard_names].map((name) =>
+        name.toLowerCase()
+      ),
+    );
+    const candidate = walletUtxos.find((utxo) =>
+      !reserved.has(this.generateIdentifierTokenName(utxo).toLowerCase())
+    );
     if (!candidate) {
-      throw new Error('Unable to derive a fresh trace-registry shard identifier from the selected wallet UTxOs');
+      throw new Error(
+        "Unable to derive a fresh trace-registry shard identifier from the selected wallet UTxOs",
+      );
     }
     return candidate;
   }
@@ -811,12 +956,12 @@ export class DenomTraceService {
     const normalized = message.toLowerCase();
 
     return [
-      'max transaction size',
-      'maximum transaction size',
-      'transaction too large',
-      'max tx size',
-      'tx too large',
-      'maximum transaction size exceeded',
+      "max transaction size",
+      "maximum transaction size",
+      "transaction too large",
+      "max tx size",
+      "tx too large",
+      "maximum transaction size exceeded",
     ].some((pattern) => normalized.includes(pattern));
   }
 }

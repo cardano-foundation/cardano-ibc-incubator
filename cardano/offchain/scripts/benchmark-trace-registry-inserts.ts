@@ -90,6 +90,7 @@ type TraceRegistryConfig = NonNullable<DeploymentInfo["traceRegistry"]>;
 
 type TraceRegistryAppendInsertContext = {
   kind: "append";
+  directoryUtxo: UTxO;
   shardUtxo: UTxO;
   encodedTraceRegistryRedeemer: string;
   encodedUpdatedTraceRegistryDatum: string;
@@ -694,6 +695,7 @@ async function prepareInsertContexts(
 
   const append: TraceRegistryAppendInsertContext = {
     kind: "append",
+    directoryUtxo,
     shardUtxo: activeShardUtxo,
     encodedTraceRegistryRedeemer: encodeTraceRegistryRedeemer({
       InsertTrace: {
@@ -798,6 +800,7 @@ function buildAppendTx(
     .readFrom([
       references.spendTraceRegistry,
       references.mintTraceRegistryBenchmarkVoucher,
+      update.directoryUtxo,
     ])
     .collectFrom([update.shardUtxo], update.encodedTraceRegistryRedeemer)
     .mintAssets(
