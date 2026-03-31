@@ -93,6 +93,19 @@ struct Args {
 }
 
 #[derive(Subcommand)]
+enum BenchmarkCommand {
+    /// Run the on-chain denom-registry benchmark
+    DenomRegistry {
+        /// Optional target bucket (0-15) for the denom-registry benchmark
+        #[arg(long)]
+        bucket: Option<u8>,
+        /// Number of synthetic inserts to simulate
+        #[arg(long, default_value_t = 256)]
+        simulated_inserts: usize,
+    },
+}
+
+#[derive(Subcommand)]
 enum Commands {
     /// Verifies that all the prerequisites are installed and ensures that the configuration is correctly set up
     Check,
@@ -196,22 +209,18 @@ enum Commands {
         #[arg(long)]
         network: Option<String>,
     },
+    /// Run benchmark tooling for load, capacity, and stress analysis
+    Benchmark {
+        #[command(subcommand)]
+        command: BenchmarkCommand,
+    },
     /// Run end-to-end integration tests to verify IBC functionality
     ///
     /// Prerequisites: All services must be running. Use 'caribic start' first.
     Test {
         /// Optional test selector (examples: "9-12", "6", "5,9-12")
-        #[arg(long, conflicts_with = "denom_registry")]
+        #[arg(long)]
         tests: Option<String>,
-        /// Run the on-chain denom-registry benchmark instead of the default integration suite
-        #[arg(long, default_value_t = false)]
-        denom_registry: bool,
-        /// Optional target bucket (0-15) for the denom-registry benchmark
-        #[arg(long, requires = "denom_registry")]
-        bucket: Option<u8>,
-        /// Number of synthetic inserts to simulate in denom-registry benchmark mode
-        #[arg(long, requires = "denom_registry", default_value_t = 256)]
-        simulated_inserts: usize,
     },
 }
 
@@ -354,20 +363,18 @@ async fn main() {
             a_port,
             b_port,
         } => commands::run_create_channel(project_root_path, &a_chain, &b_chain, &a_port, &b_port),
-        Commands::Test {
-            tests,
-            denom_registry,
-            bucket,
-            simulated_inserts,
-        } => {
-            let test_result = commands::run_tests(
-                project_root_path,
-                tests.as_deref(),
-                denom_registry,
+        Commands::Benchmark { command } => match command {
+            BenchmarkCommand::DenomRegistry {
                 bucket,
                 simulated_inserts,
-            )
-            .await;
+            } => commands::run_denom_registry_benchmark(
+                project_root_path,
+                bucket,
+                simulated_inserts,
+            ),
+        },
+        Commands::Test { tests } => {
+            let test_result = commands::run_tests(project_root_path, tests.as_deref()).await;
             match test_result {
                 Ok(_) => Ok(()),
                 Err(error) => {
