@@ -1036,9 +1036,8 @@ const deployTraceRegistry = async (
 
   // Shards are keyed by the first four bits of the voucher hash. That keeps append
   // contention bounded instead of forcing every new voucher trace through one UTxO.
-  // The registry is deployed alongside the bridge because there is no fallback DB
-  // path anymore: fresh deployments must have the canonical on-chain registry from
-  // the first voucher mint onward.
+  // The registry is deployed alongside the bridge so voucher mint paths have the
+  // canonical on-chain reverse-lookup state available immediately.
   const shardPolicyId = validatorToScriptHash(mintIdentifierValidator);
   const [validator, scriptHash, address] = await readValidator(
     "trace_registry.spend_trace_registry.spend",
