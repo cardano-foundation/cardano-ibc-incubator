@@ -254,7 +254,13 @@ fn validate_rollover_insert_trace(
     find_unique_output(
       outputs,
       fn(output) {
-        output.address == spent_output.address && has_directory_datum(output)
+        // The shard-side rollover path must bind itself to the real updated
+        // directory UTxO, not merely to "some" Directory datum. We therefore
+        // require the exact same auth-token set as the spent directory input.
+        output.address == spent_output.address && output_has_same_registry_token_set(
+          output,
+          directory_input.output,
+        ) && has_directory_datum(output)
       },
     )
   expect Directory(updated_directory): TraceRegistryDatum =
@@ -287,7 +293,11 @@ fn validate_rollover_insert_trace(
       bucket_index: old_datum.bucket_index,
       entries: [expected_entry],
     },
-    directory_matches_rollover(
+    // The shard validator independently rechecks the directory transition so a
+    // malformed sibling directory output cannot sneak through even if the
+    // directory spend validator is not the only script being inspected.
+    directory_rollover_matches(
+      old_directory,
       updated_directory,
       old_datum.bucket_index,
       current_active_token.name,
@@ -319,6 +329,10 @@ fn validate_advance_directory(
     find_unique_output(
       outputs,
       fn(output) {
+        // The canonical directory transition must happen on the same NFT-bearing
+        // directory UTxO that was spent. This prevents a transaction from
+        // keeping the real directory unchanged while introducing a forged
+        // auxiliary Directory datum somewhere else in the outputs.
         output.address == spent_output.address && output_has_same_registry_token_set(
           output,
           spent_output,
@@ -505,20 +519,26 @@ fn bucket_has_active_shard(
   }
 }
 
-fn directory_matches_rollover(
-  directory: TraceRegistryDirectoryDatum,
-  bucket_index: Int,
-  previous_active_shard_name: ByteArray,
-  new_active_shard_name: ByteArray,
+fn bucket_indices_are_unique(
+  buckets: List<TraceRegistryDirectoryBucket>,
 ) -> Bool {
-  when find_bucket(directory.buckets, bucket_index) is {
-    Some(bucket) ->
-      bucket.active_shard_name == new_active_shard_name && list.has(
-        bucket.archived_shard_names,
-        previous_active_shard_name,
-      )
+  // Each directory bucket is keyed by deterministic bucket_index. Duplicate
+  // indices would let the updated directory carry ambiguous state for one hash
+  // partition, so uniqueness is enforced before any rollover comparison.
+  do_bucket_indices_are_unique(buckets, [])
+}
 
-    None -> False
+fn do_bucket_indices_are_unique(
+  remaining: List<TraceRegistryDirectoryBucket>,
+  seen: List<Int>,
+) -> Bool {
+  when remaining is {
+    [] -> True
+    [bucket, ..rest] ->
+      !list.has(seen, bucket.bucket_index) && do_bucket_indices_are_unique(
+        rest,
+        [bucket.bucket_index, ..seen],
+      )
   }
 }
 
@@ -530,15 +550,21 @@ fn directory_rollover_matches(
   new_active_shard_name: ByteArray,
 ) -> Bool {
   and {
+    // The bucket set itself must be stable across rollover: no duplicates, no
+    // dropped buckets, and no extra buckets may appear in the updated directory.
+    bucket_indices_are_unique(old_directory.buckets),
+    bucket_indices_are_unique(updated_directory.buckets),
     list.length(old_directory.buckets) == list.length(updated_directory.buckets),
+    // Forward check: every old bucket must still exist after rollover. Only the
+    // targeted bucket is allowed to change, and its change is fully specified.
     list.all(
-      updated_directory.buckets,
-      fn(updated_bucket) {
+      old_directory.buckets,
+      fn(old_bucket) {
         when
-          find_bucket(old_directory.buckets, updated_bucket.bucket_index)
+          find_bucket(updated_directory.buckets, old_bucket.bucket_index)
         is {
-          Some(old_bucket) ->
-            if updated_bucket.bucket_index == bucket_index {
+          Some(updated_bucket) ->
+            if old_bucket.bucket_index == bucket_index {
               and {
                 old_bucket.active_shard_name == previous_active_shard_name,
                 updated_bucket.active_shard_name == new_active_shard_name,
@@ -551,6 +577,20 @@ fn directory_rollover_matches(
               updated_bucket == old_bucket
             }
 
+          None -> False
+        }
+      },
+    ),
+    // Reverse check: every updated bucket must also have existed before. Paired
+    // with the forward check and uniqueness, this gives a bijection between the
+    // old and new bucket sets rather than a loose subset/superset relation.
+    list.all(
+      updated_directory.buckets,
+      fn(updated_bucket) {
+        when
+          find_bucket(old_directory.buckets, updated_bucket.bucket_index)
+        is {
+          Some(_) -> True
           None -> False
         }
       },
@@ -599,9 +639,16 @@ fn test_shard_output(
 }
 
 fn test_directory_output(buckets: List<TraceRegistryDirectoryBucket>) -> Output {
+  test_directory_output_with_token_name("dir", buckets)
+}
+
+fn test_directory_output_with_token_name(
+  token_name: ByteArray,
+  buckets: List<TraceRegistryDirectoryBucket>,
+) -> Output {
   Output {
     address: test_registry_address(),
-    value: from_asset(test_shard_policy_id(), "dir", 1),
+    value: from_asset(test_shard_policy_id(), token_name, 1),
     datum: InlineDatum(Directory(TraceRegistryDirectoryDatum { buckets })),
     reference_script: None,
   }
@@ -1059,6 +1106,60 @@ test trace_registry_rollover_insert_fails_when_spent_shard_is_not_old_active() f
   )
 }
 
+test trace_registry_rollover_insert_fails_when_updated_directory_output_uses_wrong_auth_token() fail {
+  let full_denom = "transfer/channel-66/uatom"
+  let voucher_hash = crypto.sha3_256(full_denom)
+  let bucket_index = bucket_index_for_hash(voucher_hash)
+  let previous_active_shard_name = "active-0a"
+  let new_active_shard_name = "active-0a-v2"
+  let old_shard = TraceRegistryShardDatum { bucket_index, entries: [] }
+  let spent_input =
+    Input {
+      output_reference: test_output_ref(0),
+      output: test_shard_output(bucket_index, previous_active_shard_name, []),
+    }
+  let directory_input =
+    test_directory_input(1, bucket_index, previous_active_shard_name, [])
+  let archived_output =
+    test_shard_output(bucket_index, previous_active_shard_name, [])
+  let new_active_output =
+    test_shard_output(
+      bucket_index,
+      new_active_shard_name,
+      [test_expected_entry(full_denom)],
+    )
+  let forged_directory_output =
+    test_directory_output_with_token_name(
+      "forged-dir",
+      [
+        TraceRegistryDirectoryBucket {
+          bucket_index,
+          active_shard_name: new_active_shard_name,
+          archived_shard_names: [previous_active_shard_name],
+        },
+      ],
+    )
+
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [spent_input, directory_input],
+      outputs: [archived_output, new_active_output, forged_directory_output],
+      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1)
+        |> add(test_shard_policy_id(), new_active_shard_name, 1),
+    }
+
+  spend_trace_registry.spend(
+    test_shard_policy_id(),
+    test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
+    Some(Shard(old_shard)),
+    RolloverInsertTrace { voucher_hash, full_denom, new_active_shard_name },
+    test_output_ref(0),
+    transaction,
+  )
+}
+
 test trace_registry_advance_directory_succeeds_for_valid_rollover() {
   let full_denom = "transfer/channel-99/uatom"
   let voucher_hash = crypto.sha3_256(full_denom)
@@ -1152,6 +1253,83 @@ test trace_registry_advance_directory_fails_when_previous_shard_is_not_archived(
         TraceRegistryDirectoryBucket {
           bucket_index,
           active_shard_name: new_active_shard_name,
+          archived_shard_names: [],
+        },
+      ],
+    )
+  let archived_output =
+    test_shard_output(bucket_index, previous_active_shard_name, [])
+  let new_active_output =
+    test_shard_output(
+      bucket_index,
+      new_active_shard_name,
+      [test_expected_entry(full_denom)],
+    )
+
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [spent_input],
+      outputs: [invalid_directory_output, archived_output, new_active_output],
+      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1)
+        |> add(test_shard_policy_id(), new_active_shard_name, 1),
+    }
+
+  spend_trace_registry.spend(
+    test_shard_policy_id(),
+    test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
+    Some(Directory(old_directory)),
+    AdvanceDirectory {
+      bucket_index,
+      voucher_hash,
+      full_denom,
+      previous_active_shard_name,
+      new_active_shard_name,
+    },
+    test_output_ref(0),
+    transaction,
+  )
+}
+
+test trace_registry_advance_directory_fails_when_bucket_set_is_not_bijective() fail {
+  let full_denom = "transfer/channel-101/uatom"
+  let voucher_hash = crypto.sha3_256(full_denom)
+  let bucket_index = bucket_index_for_hash(voucher_hash)
+  let other_bucket_index = bucket_index + 1
+  let previous_active_shard_name = "active-0a"
+  let new_active_shard_name = "active-0a-v2"
+  let old_directory =
+    TraceRegistryDirectoryDatum {
+      buckets: [
+        TraceRegistryDirectoryBucket {
+          bucket_index,
+          active_shard_name: previous_active_shard_name,
+          archived_shard_names: [],
+        },
+        TraceRegistryDirectoryBucket {
+          bucket_index: other_bucket_index,
+          active_shard_name: "other-active",
+          archived_shard_names: [],
+        },
+      ],
+    }
+  let spent_input =
+    Input {
+      output_reference: test_output_ref(0),
+      output: test_directory_output(old_directory.buckets),
+    }
+  let invalid_directory_output =
+    test_directory_output(
+      [
+        TraceRegistryDirectoryBucket {
+          bucket_index,
+          active_shard_name: new_active_shard_name,
+          archived_shard_names: [previous_active_shard_name],
+        },
+        TraceRegistryDirectoryBucket {
+          bucket_index,
+          active_shard_name: "duplicate-bucket",
           archived_shard_names: [],
         },
       ],
