@@ -201,8 +201,17 @@ enum Commands {
     /// Prerequisites: All services must be running. Use 'caribic start' first.
     Test {
         /// Optional test selector (examples: "9-12", "6", "5,9-12")
-        #[arg(long)]
+        #[arg(long, conflicts_with = "denom_registry")]
         tests: Option<String>,
+        /// Run the on-chain denom-registry benchmark instead of the default integration suite
+        #[arg(long, default_value_t = false)]
+        denom_registry: bool,
+        /// Optional target bucket (0-15) for the denom-registry benchmark
+        #[arg(long, requires = "denom_registry")]
+        bucket: Option<u8>,
+        /// Number of synthetic inserts to simulate in denom-registry benchmark mode
+        #[arg(long, requires = "denom_registry", default_value_t = 256)]
+        simulated_inserts: usize,
     },
 }
 
@@ -345,8 +354,20 @@ async fn main() {
             a_port,
             b_port,
         } => commands::run_create_channel(project_root_path, &a_chain, &b_chain, &a_port, &b_port),
-        Commands::Test { tests } => {
-            let test_result = commands::run_tests(project_root_path, tests.as_deref()).await;
+        Commands::Test {
+            tests,
+            denom_registry,
+            bucket,
+            simulated_inserts,
+        } => {
+            let test_result = commands::run_tests(
+                project_root_path,
+                tests.as_deref(),
+                denom_registry,
+                bucket,
+                simulated_inserts,
+            )
+            .await;
             match test_result {
                 Ok(_) => Ok(()),
                 Err(error) => {

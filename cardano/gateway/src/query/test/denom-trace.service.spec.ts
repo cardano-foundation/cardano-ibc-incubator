@@ -8,7 +8,10 @@ describe('DenomTraceService', () => {
   let service: DenomTraceService;
   let lucidServiceMock: {
     findUtxoByUnit: jest.Mock;
-    lucid: { wallet: () => { getUtxos: jest.Mock } };
+    lucid: {
+      config: jest.Mock;
+      wallet: () => { getUtxos: jest.Mock };
+    };
     estimateUnsignedTxSizeBytes: jest.Mock;
     LucidImporter: typeof Lucid;
   };
@@ -101,6 +104,11 @@ describe('DenomTraceService', () => {
         return utxo;
       }),
       lucid: {
+        config: jest.fn(() => ({
+          protocolParameters: {
+            maxTxSize: 16_384,
+          },
+        })),
         wallet: () => ({
           getUtxos: jest.fn(async () => [
             {
@@ -263,5 +271,84 @@ describe('DenomTraceService', () => {
     expect(result.traceRegistryDirectoryUtxo.txHash).toBe('trace-directory');
     expect(result.traceRegistryShardUtxo.txHash).toBe('trace-shard-10');
     expect(result.newActiveTraceRegistryShardTokenUnit.startsWith('trace-shard-policy')).toBe(true);
+  });
+
+  it('summarizes bucket and shard counts from the on-chain directory', async () => {
+    lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
+      if (unit === 'trace-shard-policy00') {
+        return makeShardUtxo([{ voucher_hash: `0${'1'.repeat(63)}`, full_denom: 'transfer/channel-9/uosmo' }], 0);
+      }
+      if (unit === 'trace-shard-policy0a') {
+        return makeShardUtxo([{ voucher_hash: `a${'2'.repeat(63)}`, full_denom: 'transfer/channel-7/uatom' }], 10);
+      }
+      if (unit === 'trace-shard-policy1a') {
+        return makeShardUtxo([{ voucher_hash: `a${'3'.repeat(63)}`, full_denom: 'transfer/channel-8/uatom' }], 10);
+      }
+      if (unit === 'trace-shard-policy0f') {
+        return makeShardUtxo([], 15);
+      }
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          { bucket_index: 0n, active_shard_name: '00', archived_shard_names: [] },
+          { bucket_index: 10n, active_shard_name: '0a', archived_shard_names: ['1a'] },
+          { bucket_index: 15n, active_shard_name: '0f', archived_shard_names: [] },
+        ]);
+      }
+      throw new Error(`unexpected unit lookup: ${unit}`);
+    });
+
+    const summary = await service.getSummary();
+
+    expect(summary.maxTxSize).toBe(16_384);
+    expect(summary.txHeadroomBytes).toBe(1_024);
+    expect(summary.projectedMaxShardDatumBytesUpperBound).toBe(15_360);
+    expect(summary.totalEntries).toBe(3);
+    expect(summary.buckets).toHaveLength(3);
+    expect(summary.buckets[1]).toMatchObject({
+      bucketIndex: 10,
+      shardCount: 2,
+      rolloverCount: 1,
+      totalEntries: 2,
+      activeShardEntryCount: 1,
+    });
+    expect(summary.buckets[1].shards).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ tokenName: '0a', isActive: true, entryCount: 1 }),
+        expect.objectContaining({ tokenName: '1a', isActive: false, entryCount: 1 }),
+      ]),
+    );
+  });
+
+  it('simulates bucket growth and projects rollovers with a size-only upper bound', async () => {
+    lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
+      if (unit === 'trace-shard-policy0a') {
+        return makeShardUtxo([], 10);
+      }
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([{ bucket_index: 10n, active_shard_name: '0a', archived_shard_names: [] }]);
+      }
+      throw new Error(`unexpected unit lookup: ${unit}`);
+    });
+
+    const summary = await service.getSummary();
+    const simulation = await service.simulateBucketGrowth(10, 6);
+
+    expect(summary.buckets[0]).toMatchObject({
+      bucketIndex: 10,
+      shardCount: 1,
+      rolloverCount: 0,
+      totalEntries: 0,
+    });
+    expect(simulation.sizeModel).toBe('datum-only-upper-bound');
+    expect(simulation.bucketIndex).toBe(10);
+    expect(simulation.simulatedInserts).toBe(6);
+    expect(simulation.initialBucket.totalEntries).toBe(0);
+    expect(simulation.projectedBucket.totalEntries).toBe(6);
+    expect(simulation.projectedBucket.shardCount).toBeGreaterThanOrEqual(1);
+    expect(simulation.sampleInserts.length).toBeGreaterThan(0);
+    expect(simulation.sampleInserts[0]).toMatchObject({
+      step: 1,
+      rolledOver: false,
+    });
   });
 });
