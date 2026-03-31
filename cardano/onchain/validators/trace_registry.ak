@@ -8,7 +8,8 @@
 //
 // Security model:
 // - a new mapping is accepted only when the same transaction mints the matching
-//   voucher token under the voucher minting policy
+//   voucher token under the production voucher minting policy or, on local
+//   benchmark deployments only, under the dedicated benchmark voucher policy
 // - the inserted full denom must hash exactly to the voucher token name
 // - existing mappings are immutable once written
 // - rollover must preserve old shard contents exactly while moving future writes
@@ -42,6 +43,7 @@ use ibc/utils/validator_utils
 validator spend_trace_registry(
   shard_nft_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
+  benchmark_voucher_minting_policy_id: PolicyId,
 ) {
   spend(
     datum: Option<TraceRegistryDatum>,
@@ -68,6 +70,7 @@ validator spend_trace_registry(
               mint,
               shard_nft_policy_id,
               voucher_minting_policy_id,
+              benchmark_voucher_minting_policy_id,
             )
 
           RolloverInsertTrace {
@@ -85,6 +88,7 @@ validator spend_trace_registry(
               mint,
               shard_nft_policy_id,
               voucher_minting_policy_id,
+              benchmark_voucher_minting_policy_id,
             )
 
           _ -> fail
@@ -111,6 +115,7 @@ validator spend_trace_registry(
               mint,
               shard_nft_policy_id,
               voucher_minting_policy_id,
+              benchmark_voucher_minting_policy_id,
             )
 
           _ -> fail
@@ -132,6 +137,7 @@ fn validate_insert_trace(
   mint,
   shard_nft_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
+  benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
   expect bytearray.length(voucher_hash) == 32
   expect bytearray.length(full_denom) > 0
@@ -156,7 +162,12 @@ fn validate_insert_trace(
     updated_datum.bucket_index == old_datum.bucket_index,
     old_datum.bucket_index == bucket_index_for_hash(voucher_hash),
     crypto.sha3_256(full_denom) == voucher_hash,
-    quantity_of(mint, voucher_minting_policy_id, voucher_hash) > 0,
+    matching_voucher_mint_present(
+      mint,
+      voucher_hash,
+      voucher_minting_policy_id,
+      benchmark_voucher_minting_policy_id,
+    ),
     list.find(
       old_datum.entries,
       fn(entry) { entry.voucher_hash == voucher_hash },
@@ -175,6 +186,7 @@ fn validate_rollover_insert_trace(
   mint,
   shard_nft_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
+  benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
   expect bytearray.length(voucher_hash) == 32
   expect bytearray.length(full_denom) > 0
@@ -225,7 +237,12 @@ fn validate_rollover_insert_trace(
   and {
     old_datum.bucket_index == bucket_index_for_hash(voucher_hash),
     crypto.sha3_256(full_denom) == voucher_hash,
-    quantity_of(mint, voucher_minting_policy_id, voucher_hash) > 0,
+    matching_voucher_mint_present(
+      mint,
+      voucher_hash,
+      voucher_minting_policy_id,
+      benchmark_voucher_minting_policy_id,
+    ),
     quantity_of(mint, shard_nft_policy_id, new_active_shard_name) == 1,
     list.find(
       old_datum.entries,
@@ -257,6 +274,7 @@ fn validate_advance_directory(
   mint,
   shard_nft_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
+  benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
   expect bytearray.length(voucher_hash) == 32
   expect bytearray.length(full_denom) > 0
@@ -314,7 +332,12 @@ fn validate_advance_directory(
   and {
     bucket_index == bucket_index_for_hash(voucher_hash),
     crypto.sha3_256(full_denom) == voucher_hash,
-    quantity_of(mint, voucher_minting_policy_id, voucher_hash) > 0,
+    matching_voucher_mint_present(
+      mint,
+      voucher_hash,
+      voucher_minting_policy_id,
+      benchmark_voucher_minting_policy_id,
+    ),
     quantity_of(mint, shard_nft_policy_id, new_active_shard_name) == 1,
     directory_rollover_matches(
       old_directory,
@@ -333,6 +356,24 @@ fn validate_advance_directory(
       entries: [expected_entry],
     },
   }
+}
+
+fn matching_voucher_mint_present(
+  mint,
+  voucher_hash: ByteArray,
+  voucher_minting_policy_id: PolicyId,
+  benchmark_voucher_minting_policy_id: PolicyId,
+) -> Bool {
+  let has_production_voucher_mint =
+    quantity_of(mint, voucher_minting_policy_id, voucher_hash) > 0
+  let has_benchmark_voucher_mint =
+    bytearray.length(benchmark_voucher_minting_policy_id) > 0 && quantity_of(
+      mint,
+      benchmark_voucher_minting_policy_id,
+      voucher_hash,
+    ) > 0
+
+  has_production_voucher_mint || has_benchmark_voucher_mint
 }
 
 fn expect_single_registry_token(
@@ -440,6 +481,14 @@ fn test_voucher_policy_id() -> PolicyId {
   "voucher mint policy"
 }
 
+fn test_benchmark_voucher_policy_id() -> PolicyId {
+  "benchmark voucher mint policy"
+}
+
+fn test_disabled_benchmark_voucher_policy_id() -> PolicyId {
+  ""
+}
+
 fn test_registry_address() {
   from_script("trace registry script hash")
 }
@@ -505,6 +554,43 @@ test trace_registry_insert_trace_succeeds_with_matching_voucher_mint() {
   spend_trace_registry.spend(
     test_shard_policy_id(),
     test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
+    Some(Shard(TraceRegistryShardDatum { bucket_index, entries: [] })),
+    InsertTrace { voucher_hash, full_denom },
+    test_output_ref(0),
+    transaction,
+  )
+}
+
+test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint() {
+  let full_denom = "transfer/channel-7/benchmark-uatom"
+  let voucher_hash = crypto.sha3_256(full_denom)
+  let bucket_index = bucket_index_for_hash(voucher_hash)
+  let shard_name = "active-bench"
+  let spent_input =
+    Input {
+      output_reference: test_output_ref(0),
+      output: test_shard_output(bucket_index, shard_name, []),
+    }
+  let updated_output =
+    test_shard_output(
+      bucket_index,
+      shard_name,
+      [test_expected_entry(full_denom)],
+    )
+
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [spent_input],
+      outputs: [updated_output],
+      mint: from_asset(test_benchmark_voucher_policy_id(), voucher_hash, 1),
+    }
+
+  spend_trace_registry.spend(
+    test_shard_policy_id(),
+    test_voucher_policy_id(),
+    test_benchmark_voucher_policy_id(),
     Some(Shard(TraceRegistryShardDatum { bucket_index, entries: [] })),
     InsertTrace { voucher_hash, full_denom },
     test_output_ref(0),
@@ -540,6 +626,7 @@ test trace_registry_insert_trace_fails_without_matching_voucher_mint() fail {
   spend_trace_registry.spend(
     test_shard_policy_id(),
     test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
     Some(Shard(TraceRegistryShardDatum { bucket_index, entries: [] })),
     InsertTrace { voucher_hash, full_denom },
     test_output_ref(0),
@@ -576,6 +663,7 @@ test trace_registry_insert_trace_fails_when_bucket_does_not_match_hash() fail {
   spend_trace_registry.spend(
     test_shard_policy_id(),
     test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
     Some(
       Shard(
         TraceRegistryShardDatum {
@@ -619,6 +707,7 @@ test trace_registry_insert_trace_fails_when_hash_already_exists() fail {
   spend_trace_registry.spend(
     test_shard_policy_id(),
     test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
     Some(
       Shard(TraceRegistryShardDatum { bucket_index, entries: [existing_entry] }),
     ),
@@ -684,6 +773,7 @@ test trace_registry_rollover_insert_succeeds_and_preserves_old_shard() {
   spend_trace_registry.spend(
     test_shard_policy_id(),
     test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
     Some(Shard(old_shard)),
     RolloverInsertTrace { voucher_hash, full_denom, new_active_shard_name },
     test_output_ref(0),
@@ -734,6 +824,7 @@ test trace_registry_rollover_insert_fails_when_directory_does_not_advance() fail
   spend_trace_registry.spend(
     test_shard_policy_id(),
     test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
     Some(Shard(old_shard)),
     RolloverInsertTrace { voucher_hash, full_denom, new_active_shard_name },
     test_output_ref(0),
@@ -793,6 +884,7 @@ test trace_registry_advance_directory_succeeds_for_valid_rollover() {
   spend_trace_registry.spend(
     test_shard_policy_id(),
     test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
     Some(Directory(old_directory)),
     AdvanceDirectory {
       bucket_index,
@@ -858,6 +950,7 @@ test trace_registry_advance_directory_fails_when_previous_shard_is_not_archived(
   spend_trace_registry.spend(
     test_shard_policy_id(),
     test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
     Some(Directory(old_directory)),
     AdvanceDirectory {
       bucket_index,

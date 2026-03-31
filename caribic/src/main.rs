@@ -99,7 +99,7 @@ enum BenchmarkCommand {
         /// Optional target bucket (0-15) for the denom-registry benchmark
         #[arg(long)]
         bucket: Option<u8>,
-        /// Number of real first-seen voucher inserts to execute on local devnet
+        /// Number of real on-chain benchmark inserts to execute on the local devnet
         #[arg(long, default_value_t = 1)]
         inserts: usize,
     },

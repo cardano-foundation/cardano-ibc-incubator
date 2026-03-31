@@ -217,29 +217,34 @@ export const getNonceOutRef = async (
   return [NONCE_UTXO, outputReference];
 };
 
-type Validator =
-  | "spendHandler"
-  | "spendClient"
-  | "spendConnection"
-  | "spendChannel"
-  | "spendTraceRegistry"
-  | "spendTransferModule"
-  | "mintIdentifier"
-  | "mintVoucher"
-  | "verifyProof"
-  | "hostStateStt"
-  | "mintClientStt"
-  | "mintConnectionStt"
-  | "mintChannelStt";
-
 type Module = "handler" | "transfer";
 
 type Tokens = "mock";
 
 export type DeploymentTemplate = {
-  validators: Record<
-    Validator,
-    {
+  validators: {
+    spendHandler: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    spendClient: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    spendConnection: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    spendChannel: {
       title: string;
       script: string;
       scriptHash: string;
@@ -249,8 +254,78 @@ export type DeploymentTemplate = {
         string,
         { script: string; scriptHash: string; refUtxo: UTxO }
       >;
-    }
-  >;
+    };
+    spendTransferModule: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintIdentifier: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    spendTraceRegistry: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintVoucher: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintTraceRegistryBenchmarkVoucher?: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    verifyProof: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    hostStateStt: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintClientStt: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintConnectionStt: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintChannelStt: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+  };
   handlerAuthToken: {
     policyId: string;
     name: string;

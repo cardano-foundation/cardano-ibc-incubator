@@ -345,11 +345,18 @@ export const createDeployment = async (
     hostStateNFT,
   );
   referredValidators.push(mintVoucher.validator, spendTransferModule.validator);
+  const traceRegistryBenchmarkVoucher = await loadTraceRegistryBenchmarkVoucher(
+    lucid,
+  );
+  if (traceRegistryBenchmarkVoucher) {
+    referredValidators.push(traceRegistryBenchmarkVoucher.validator);
+  }
 
   const traceRegistry = await deployTraceRegistry(
     lucid,
     mintIdentifierValidator,
     mintVoucher.policyId,
+    traceRegistryBenchmarkVoucher?.policyId ?? "",
   );
   // Bootstrap the registry with the bridge so voucher mints can rely on an
   // on-chain reverse mapping from the first deployment onward.
@@ -440,6 +447,18 @@ export const createDeployment = async (
         address: "",
         refUtxo: refUtxosInfo[mintVoucher.policyId],
       },
+      ...(traceRegistryBenchmarkVoucher
+        ? {
+          mintTraceRegistryBenchmarkVoucher: {
+            title:
+              "minting_trace_registry_benchmark_voucher.mint_trace_registry_benchmark_voucher.mint",
+            script: traceRegistryBenchmarkVoucher.validator.script,
+            scriptHash: traceRegistryBenchmarkVoucher.policyId,
+            address: "",
+            refUtxo: refUtxosInfo[traceRegistryBenchmarkVoucher.policyId],
+          },
+        }
+        : {}),
       verifyProof: {
         title: "verifying_proof.verify_proof.mint",
         script: verifyProofValidator.script,
@@ -1031,6 +1050,7 @@ const deployTraceRegistry = async (
   lucid: LucidEvolution,
   mintIdentifierValidator: MintingPolicy,
   mintVoucherPolicyId: string,
+  benchmarkVoucherPolicyId: string,
 ) => {
   console.log("Create Trace Registry");
 
@@ -1042,12 +1062,20 @@ const deployTraceRegistry = async (
   const [validator, scriptHash, address] = await readValidator(
     "trace_registry.spend_trace_registry.spend",
     lucid,
-    [shardPolicyId, mintVoucherPolicyId],
-    Data.Tuple([Data.Bytes(), Data.Bytes()]) as unknown as [string, string],
+    [shardPolicyId, mintVoucherPolicyId, benchmarkVoucherPolicyId],
+    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
+      string,
+      string,
+      string,
+    ],
   );
 
   const shards: Array<{ index: bigint; token: AuthToken }> = [];
-  for (let shardIndex = 0; shardIndex < TRACE_REGISTRY_SHARD_COUNT; shardIndex++) {
+  for (
+    let shardIndex = 0;
+    shardIndex < TRACE_REGISTRY_SHARD_COUNT;
+    shardIndex++
+  ) {
     const token = await deployTraceRegistryShard(
       lucid,
       mintIdentifierValidator,
@@ -1076,6 +1104,29 @@ const deployTraceRegistry = async (
     },
     shards,
     directory,
+  };
+};
+
+const loadTraceRegistryBenchmarkVoucher = async (
+  lucid: LucidEvolution,
+): Promise<{ validator: Script; policyId: string } | null> => {
+  const cardanoNetworkMagic = Deno.env.get("CARDANO_NETWORK_MAGIC");
+
+  // The fast denom-registry benchmark is intentionally local-only. We keep the
+  // production registry semantics unchanged on non-local networks by disabling
+  // the benchmark mint policy parameter there.
+  if (cardanoNetworkMagic !== "42") {
+    return null;
+  }
+
+  const [benchmarkVoucherValidator, benchmarkVoucherPolicyId] =
+    await readValidator(
+      "minting_trace_registry_benchmark_voucher.mint_trace_registry_benchmark_voucher.mint",
+      lucid,
+    );
+  return {
+    validator: benchmarkVoucherValidator,
+    policyId: benchmarkVoucherPolicyId,
   };
 };
 
