@@ -368,7 +368,10 @@ export const createDeployment = async (
 
   console.log("Deployment info created!");
 
+  const deployedAt = new Date().toISOString();
+
   const deploymentInfo: DeploymentTemplate = {
+    deployedAt,
     validators: {
       spendHandler: {
         title: "spending_handler.spend_handler.spend",
@@ -479,7 +482,7 @@ export const createDeployment = async (
     await ensureDir(folder);
 
     const filePath = folder + "/handler_" +
-      formatTimestamp(new Date().getTime()) + ".json";
+      formatTimestamp(Date.parse(deployedAt)) + ".json";
 
     await Deno.writeTextFile(filePath, jsonConfig);
     await Deno.writeTextFile(folder + "/handler.json", jsonConfig);

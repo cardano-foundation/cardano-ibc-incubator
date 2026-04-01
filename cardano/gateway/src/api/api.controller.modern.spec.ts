@@ -173,12 +173,12 @@ describe('ApiController (modern)', () => {
 
   it('returns the public bridge manifest', async () => {
     bridgeManifestServiceMock.getBridgeManifest.mockReturnValue({
-      schema_version: 1,
+      schema_version: 2,
       deployment_id: 'cardano-devnet:policy.token',
     });
 
     await expect(controller.getBridgeManifest()).resolves.toEqual({
-      schema_version: 1,
+      schema_version: 2,
       deployment_id: 'cardano-devnet:policy.token',
     });
     expect(bridgeManifestServiceMock.getBridgeManifest).toHaveBeenCalledWith();
