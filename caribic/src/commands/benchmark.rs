@@ -275,62 +275,26 @@ fn normalize_future_path(path: impl AsRef<Path>) -> Result<String, String> {
 }
 
 fn ensure_bridge_manifest_exists(
-    gateway_dir: &Path,
+    _gateway_dir: &Path,
     handler_json_path: &str,
     bridge_manifest_path: &str,
-    profile: &config::CardanoNetworkProfile,
+    _profile: &config::CardanoNetworkProfile,
 ) -> Result<(), String> {
     if Path::new(bridge_manifest_path).exists() {
         return Ok(());
     }
 
-    logger::log(&format!(
-        "Bridge manifest not found at {}. Generating it from handler.json first...",
-        bridge_manifest_path
-    ));
-
-    let status = Command::new("npm")
-        .arg("run")
-        .arg("export:bridge-manifest")
-        .arg("--")
-        .arg(handler_json_path)
-        .arg(bridge_manifest_path)
-        .current_dir(gateway_dir)
-        .env("CARDANO_CHAIN_ID", &profile.chain_id)
-        .env(
-            "CARDANO_CHAIN_NETWORK_MAGIC",
-            profile.network_magic.to_string(),
-        )
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .map_err(|error| {
-            format!(
-                "Failed to start bridge-manifest export from {}: {}",
-                gateway_dir.display(),
-                error
-            )
-        })?;
-
-    if !status.success() {
-        let handler_path = PathBuf::from(handler_json_path);
-        let stale_handler = fs::read_to_string(&handler_path)
-            .ok()
-            .map(|contents| !contents.contains("\"mintIdentifier\""))
-            .unwrap_or(false);
-
-        if stale_handler {
-            return Err(format!(
-                "Failed to export bridge manifest for denom-registry benchmark because {} is from the pre-directory trace-registry model. Re-run `caribic start bridge --network local` on this branch to regenerate deployment artifacts, then retry.",
-                handler_path.display()
-            ));
-        }
-
+    let handler_path = PathBuf::from(handler_json_path);
+    if !handler_path.exists() {
         return Err(format!(
-            "Failed to export bridge manifest for denom-registry benchmark (status {})",
-            status
+            "Bridge manifest is missing at {} and handler.json is also missing at {}. Re-run the local bridge deployment on feat/cardano-onchain-trace-registry to recreate both artifacts, then retry.",
+            bridge_manifest_path,
+            handler_path.display()
         ));
     }
 
-    Ok(())
+    Err(format!(
+        "Bridge manifest is missing at {}. Local devnet deployments are ephemeral, so the benchmark will not synthesize a new manifest from an existing handler.json. Re-run the local bridge deployment on feat/cardano-onchain-trace-registry so startup regenerates both artifacts, then retry.",
+        bridge_manifest_path
+    ))
 }
