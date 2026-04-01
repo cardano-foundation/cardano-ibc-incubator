@@ -222,6 +222,7 @@ type Module = "handler" | "transfer";
 type Tokens = "mock";
 
 export type DeploymentTemplate = {
+  deployedAt: string;
   validators: {
     spendHandler: {
       title: string;
