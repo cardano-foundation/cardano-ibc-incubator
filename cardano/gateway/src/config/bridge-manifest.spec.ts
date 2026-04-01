@@ -21,6 +21,7 @@ function buildValidator(name: string) {
 
 function buildHandlerJsonDeployment() {
   return {
+    deployedAt: '2026-04-01T12:34:56.000Z',
     hostStateNFT: {
       policyId: 'host-policy',
       name: 'host-token',
@@ -82,6 +83,7 @@ describe('bridge manifest normalization', () => {
     expect(loaded.bridgeManifest).toMatchObject({
       schema_version: 1,
       deployment_id: 'cardano-devnet:host-policy.host-token',
+      deployed_at: '2026-04-01T12:34:56.000Z',
       cardano: {
         chain_id: 'cardano-devnet',
         network_magic: 42,
@@ -118,6 +120,34 @@ describe('bridge manifest normalization', () => {
 
     expect(manifestLoaded.deployment).toEqual(legacy.deployment);
     expect(bridgeManifestsEqual(manifestLoaded.bridgeManifest, legacy.bridgeManifest)).toBe(true);
+  });
+
+  it('accepts older handler.json files without a deployment timestamp', () => {
+    const { deployedAt: _deployedAt, ...legacyHandlerJson } = buildHandlerJsonDeployment();
+
+    const loaded = normalizeHandlerJsonDeploymentConfig(legacyHandlerJson, {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+
+    expect(loaded.deployment.deployedAt).toBe('');
+    expect(loaded.bridgeManifest.deployed_at).toBe('');
+  });
+
+  it('accepts older bridge manifests without deployed_at', () => {
+    const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+
+    const { deployed_at: _deployedAt, ...legacyManifest } = legacy.bridgeManifest;
+
+    const loaded = normalizeBridgeManifestConfig(legacyManifest);
+
+    expect(loaded.deployment.deployedAt).toBe('');
+    expect(loaded.bridgeManifest.deployed_at).toBe('');
   });
 
   it('fails startup resolution if both manifest and handler paths are set', () => {

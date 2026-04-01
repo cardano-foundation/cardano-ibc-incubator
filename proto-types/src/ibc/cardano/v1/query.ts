@@ -29,6 +29,7 @@ export interface QueryBridgeManifestResponse {
 export interface BridgeManifest {
   schema_version: number;
   deployment_id: string;
+  deployed_at: string;
   cardano?: BridgeManifestCardanoInfo;
   host_state_nft?: BridgeManifestAuthToken;
   handler_auth_token?: BridgeManifestAuthToken;
@@ -359,6 +360,7 @@ function createBaseBridgeManifest(): BridgeManifest {
   return {
     schema_version: 0,
     deployment_id: "",
+    deployed_at: "",
     cardano: undefined,
     host_state_nft: undefined,
     handler_auth_token: undefined,
@@ -374,6 +376,9 @@ export const BridgeManifest = {
     }
     if (message.deployment_id !== "") {
       writer.uint32(18).string(message.deployment_id);
+    }
+    if (message.deployed_at !== "") {
+      writer.uint32(66).string(message.deployed_at);
     }
     if (message.cardano !== undefined) {
       BridgeManifestCardanoInfo.encode(message.cardano, writer.uint32(26).fork()).ldelim();
@@ -405,6 +410,9 @@ export const BridgeManifest = {
         case 2:
           message.deployment_id = reader.string();
           break;
+        case 8:
+          message.deployed_at = reader.string();
+          break;
         case 3:
           message.cardano = BridgeManifestCardanoInfo.decode(reader, reader.uint32());
           break;
@@ -431,6 +439,7 @@ export const BridgeManifest = {
     const obj = createBaseBridgeManifest();
     if (isSet(object.schema_version)) obj.schema_version = Number(object.schema_version);
     if (isSet(object.deployment_id)) obj.deployment_id = String(object.deployment_id);
+    if (isSet(object.deployed_at)) obj.deployed_at = String(object.deployed_at);
     if (isSet(object.cardano)) obj.cardano = BridgeManifestCardanoInfo.fromJSON(object.cardano);
     if (isSet(object.host_state_nft))
       obj.host_state_nft = BridgeManifestAuthToken.fromJSON(object.host_state_nft);
@@ -444,6 +453,7 @@ export const BridgeManifest = {
     const obj: any = {};
     message.schema_version !== undefined && (obj.schema_version = Math.round(message.schema_version));
     message.deployment_id !== undefined && (obj.deployment_id = message.deployment_id);
+    message.deployed_at !== undefined && (obj.deployed_at = message.deployed_at);
     message.cardano !== undefined &&
       (obj.cardano = message.cardano ? BridgeManifestCardanoInfo.toJSON(message.cardano) : undefined);
     message.host_state_nft !== undefined &&
@@ -464,6 +474,7 @@ export const BridgeManifest = {
     const message = createBaseBridgeManifest();
     message.schema_version = object.schema_version ?? 0;
     message.deployment_id = object.deployment_id ?? "";
+    message.deployed_at = object.deployed_at ?? "";
     if (object.cardano !== undefined && object.cardano !== null) {
       message.cardano = BridgeManifestCardanoInfo.fromPartial(object.cardano);
     }
