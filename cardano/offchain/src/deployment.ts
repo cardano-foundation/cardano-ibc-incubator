@@ -610,6 +610,14 @@ const isLikelyReferenceBatchTooLarge = (error: unknown) => {
   ].some((pattern) => normalizedMessage.includes(pattern));
 };
 
+const sortPortNumbers = (ports: bigint[]) =>
+  [...ports].sort((left, right) => {
+    if (left === right) {
+      return 0;
+    }
+    return left < right ? -1 : 1;
+  });
+
 async function mintMockToken(lucid: LucidEvolution) {
   // load mint mock token validator
   const [mintMockTokenValidator, mintMockTokenPolicyId] = await readValidator(
@@ -962,10 +970,14 @@ const deployTransferModule = async (
     ...currentHandlerDatum,
     state: {
       ...currentHandlerDatum.state,
-      bound_port: [
+      // On-chain validation sorts bound ports numerically. Using JS default
+      // `toSorted()` here is wrong for bigint values because it sorts
+      // lexicographically as strings, which breaks after binding port 100 and
+      // then trying to bind 99 or 101.
+      bound_port: sortPortNumbers([
         ...currentHandlerDatum.state.bound_port,
         portNumber,
-      ].toSorted(),
+      ]),
     },
   };
   const spendHandlerRedeemer: HandlerOperator = "HandlerBindPort";
@@ -1088,10 +1100,10 @@ const deployGenericModule = async (
     ...currentHandlerDatum,
     state: {
       ...currentHandlerDatum.state,
-      bound_port: [
+      bound_port: sortPortNumbers([
         ...currentHandlerDatum.state.bound_port,
         portNumber,
-      ].toSorted(),
+      ]),
     },
   };
   const spendHandlerRedeemer: HandlerOperator = "HandlerBindPort";

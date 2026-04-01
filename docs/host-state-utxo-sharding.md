@@ -4,8 +4,6 @@ Author: Julius Tranquilli,https://github.com/floor-licker
 
 Date: February 5, 2026 
 
-**TO-DO: We should stay up to date with the hydra heads/tails implementations to see if they may help us with any scaling issues**
-
 The intention of this document is to describe the current state of the Cardano on-chain host state which is able to satisfy IBC trustlessness and and Tendermint monotonicity invariants, but which also serializes IBC operations on Cardano. 
 
 A core question to keep in mind before we dig into the challenge of sharding (or batching) is: 
