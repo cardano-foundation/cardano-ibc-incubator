@@ -225,6 +225,9 @@ const CHEQD_QUERY_DEFINITIONS = {
 let cheqdProtoRoot: protobuf.Root | null = null;
 
 type CheqdQueryKey = keyof typeof CHEQD_QUERY_DEFINITIONS;
+const CHEQD_QUERY_KEY_BY_PATH = Object.fromEntries(
+  Object.entries(CHEQD_QUERY_DEFINITIONS).map(([queryKey, definition]) => [definition.queryPath, queryKey]),
+) as Record<string, CheqdQueryKey>;
 
 export type DecodedCheqdIcqAcknowledgement =
   | {
@@ -377,6 +380,22 @@ function decodeSingleResponse(queryKey: CheqdQueryKey, ackHex: string): DecodedC
     response: decodeCheqdProtoMessage(definition.responseType, responseQuery.value),
     response_query: responseMetadata,
   };
+}
+
+export function isSupportedCheqdQueryPath(queryPath: string): boolean {
+  return Boolean(CHEQD_QUERY_KEY_BY_PATH[queryPath]);
+}
+
+export function decodeCheqdAcknowledgementByQueryPath(
+  queryPath: string,
+  ackHex: string,
+): DecodedCheqdIcqAcknowledgement {
+  const queryKey = CHEQD_QUERY_KEY_BY_PATH[queryPath];
+  if (!queryKey) {
+    throw new Error(`unsupported cheqd query_path: ${queryPath}`);
+  }
+
+  return decodeSingleResponse(queryKey, ackHex);
 }
 
 export function buildCheqdDidDocPacketData(payload: { id: string }): { packetData: Uint8Array; queryPath: string } {

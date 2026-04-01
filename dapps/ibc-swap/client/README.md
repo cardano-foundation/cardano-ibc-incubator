@@ -22,6 +22,12 @@ Create `.env` files with the following variables:
 
 Legacy compatibility: `NEXT_PUBLIC_SIDECHAIN_RPC_ENDPOINT`, `NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT`, `NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT`, and `NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT` are still accepted as fallbacks.
 
+TODO: This demo client should not depend on the gateway long term. The current
+gateway dependency is temporary while we work on fully decoupling dapps from the
+relayer/gateway layer. The next prerequisite is moving the denom trace registry
+on-chain, which is still in progress. Once that is done, we can continue the
+decoupling so the gateway is only used by the relayer.
+
 ## Running
 After set up the `.env`, run:
 ```bash

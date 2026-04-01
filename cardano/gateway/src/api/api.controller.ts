@@ -4,6 +4,7 @@ import {
   CheqdDidDocIcqRequestDto,
   CheqdDidDocVersionIcqRequestDto,
   CheqdIcqAcknowledgementDto,
+  CheqdIcqResultRequestDto,
   CheqdLatestResourceVersionIcqRequestDto,
   CheqdResourceIcqRequestDto,
 } from './cheqd-icq.dto';
@@ -236,6 +237,12 @@ export class ApiController {
   @HttpCode(200)
   async decodeCheqdLatestResourceVersionMetadataIcq(@Body() dto: CheqdIcqAcknowledgementDto) {
     return this.cheqdIcqService.decodeLatestResourceVersionMetadataAcknowledgement(dto.acknowledgement_hex);
+  }
+
+  @Post('icq/cheqd/result')
+  @HttpCode(200)
+  async getCheqdIcqResult(@Body() dto: CheqdIcqResultRequestDto) {
+    return this.cheqdIcqService.findResult(dto);
   }
 
   private serializeUnsignedTxResponse(response: { result?: unknown; unsigned_tx?: { type_url?: string; value?: Uint8Array | string } }) {

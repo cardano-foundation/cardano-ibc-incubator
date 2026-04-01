@@ -86,3 +86,41 @@ export class CheqdIcqAcknowledgementDto {
   })
   acknowledgement_hex: string;
 }
+
+export class CheqdIcqResultRequestDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  query_path: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^[0-9a-fA-F]+$/, {
+    message: 'packet_data_hex must be hex encoded',
+  })
+  packet_data_hex: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Matches(/^[0-9a-fA-F]+$/, {
+    message: 'tx_hash must be hex encoded',
+  })
+  tx_hash?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Matches(/^\d+$/, {
+    message: 'since_height must be a non-negative integer string',
+  })
+  since_height?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Matches(/^channel/, {
+    message: 'source_channel should start with channel',
+  })
+  source_channel?: string;
+}

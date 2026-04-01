@@ -28,6 +28,7 @@ describe('ApiController (modern)', () => {
   let cheqdIcqServiceMock: {
     buildDidDocQuery: jest.Mock;
     decodeDidDocAcknowledgement: jest.Mock;
+    findResult: jest.Mock;
   };
   let transferPlannerServiceMock: {
     planTransferRoute: jest.Mock;
@@ -56,6 +57,7 @@ describe('ApiController (modern)', () => {
     cheqdIcqServiceMock = {
       buildDidDocQuery: jest.fn(),
       decodeDidDocAcknowledgement: jest.fn(),
+      findResult: jest.fn(),
     };
     transferPlannerServiceMock = {
       planTransferRoute: jest.fn(),
@@ -188,6 +190,46 @@ describe('ApiController (modern)', () => {
     ).resolves.toEqual({
       status: 'success',
       response: { value: { did_doc: { id: 'did:cheqd:testnet:abc123' } } },
+    });
+  });
+
+  it('delegates cheqd ICQ result polling to CheqdIcqService', async () => {
+    cheqdIcqServiceMock.findResult.mockResolvedValue({
+      status: 'completed',
+      tx_hash: 'deadbeef',
+      query_path: '/cheqd.did.v2.Query/DidDoc',
+      packet_data_hex: 'c0ffee',
+      current_height: '120',
+      next_search_from_height: '118',
+      completed_height: '118',
+      packet_sequence: '7',
+      acknowledgement_hex: 'bead',
+      acknowledgement: {
+        status: 'success',
+        response: { value: { did_doc: { id: 'did:cheqd:testnet:abc123' } } },
+      },
+    });
+
+    await expect(
+      controller.getCheqdIcqResult({
+        tx_hash: 'deadbeef',
+        query_path: '/cheqd.did.v2.Query/DidDoc',
+        packet_data_hex: 'c0ffee',
+      } as any),
+    ).resolves.toEqual({
+      status: 'completed',
+      tx_hash: 'deadbeef',
+      query_path: '/cheqd.did.v2.Query/DidDoc',
+      packet_data_hex: 'c0ffee',
+      current_height: '120',
+      next_search_from_height: '118',
+      completed_height: '118',
+      packet_sequence: '7',
+      acknowledgement_hex: 'bead',
+      acknowledgement: {
+        status: 'success',
+        response: { value: { did_doc: { id: 'did:cheqd:testnet:abc123' } } },
+      },
     });
   });
 

@@ -1,5 +1,6 @@
 import { CheqdIcqService } from './cheqd-icq.service';
 import { PacketService } from '~@/tx/packet.service';
+import { QueryService } from '~@/query/services/query.service';
 import {
   decodeCheqdProtoMessage,
   encodeCheqdProtoMessage,
@@ -10,11 +11,18 @@ import {
   encodeCosmosResponse,
   encodeInterchainQueryPacketAckJson,
 } from '@shared/types/apps/async-icq/async-icq';
+import { EVENT_TYPE_PACKET, ATTRIBUTE_KEY_PACKET } from '~@/constant/packet';
+import { GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 
 describe('CheqdIcqService', () => {
   let service: CheqdIcqService;
   let packetServiceMock: {
     sendAsyncIcqPacket: jest.Mock;
+  };
+  let queryServiceMock: {
+    latestHeight: jest.Mock;
+    queryEvents: jest.Mock;
+    queryTransactionByHash: jest.Mock;
   };
 
   beforeEach(() => {
@@ -27,8 +35,16 @@ describe('CheqdIcqService', () => {
         },
       }),
     };
+    queryServiceMock = {
+      latestHeight: jest.fn().mockResolvedValue({ height: 120n }),
+      queryEvents: jest.fn().mockResolvedValue({ current_height: 120n, events: [] }),
+      queryTransactionByHash: jest.fn().mockResolvedValue({ hash: 'deadbeef', height: 100n }),
+    };
 
-    service = new CheqdIcqService(packetServiceMock as unknown as PacketService);
+    service = new CheqdIcqService(
+      packetServiceMock as unknown as PacketService,
+      queryServiceMock as unknown as QueryService,
+    );
   });
 
   it('builds a cheqd DidDoc async-icq packet on the icqhost port', async () => {
@@ -135,6 +151,125 @@ describe('CheqdIcqService', () => {
       query_path: '/cheqd.did.v2.Query/DidDoc',
       source_port: 'icqhost',
       error: 'query path not allowed',
+    });
+  });
+
+  it('returns a pending result when the source tx is not indexed yet', async () => {
+    queryServiceMock.queryTransactionByHash.mockRejectedValue(new GrpcNotFoundException('not found'));
+
+    await expect(
+      service.findResult({
+        tx_hash: 'deadbeef',
+        query_path: '/cheqd.did.v2.Query/DidDoc',
+        packet_data_hex: 'c0ffee',
+      } as any),
+    ).resolves.toEqual({
+      status: 'pending',
+      reason: 'source_tx_not_indexed',
+      tx_hash: 'deadbeef',
+      query_path: '/cheqd.did.v2.Query/DidDoc',
+      packet_data_hex: 'c0ffee',
+      current_height: '120',
+      next_search_from_height: '120',
+    });
+  });
+
+  it('finds and decodes a matching acknowledge_packet event', async () => {
+    const responseValue = encodeCheqdProtoMessage('cheqd.did.v2.QueryDidDocResponse', {
+      value: {
+        did_doc: {
+          id: 'did:cheqd:testnet:abc123',
+        },
+      },
+    });
+    const ackBytes = encodeInterchainQueryPacketAckJson({
+      data: encodeCosmosResponse({
+        responses: [
+          {
+            code: 0,
+            log: '',
+            info: '',
+            index: BigInt(0),
+            key: new Uint8Array(),
+            value: responseValue,
+            height: BigInt(42),
+            codespace: '',
+          },
+        ],
+      }),
+    });
+    const acknowledgementHex = Buffer.from(
+      JSON.stringify({
+        result: Buffer.from(ackBytes).toString('base64'),
+      }),
+      'utf8',
+    ).toString('hex');
+
+    queryServiceMock.queryEvents.mockResolvedValue({
+      current_height: 125n,
+      events: [
+        {
+          height: 118n,
+          events: [
+            {
+              code: 0,
+              events: [
+                {
+                  type: EVENT_TYPE_PACKET.ACKNOWLEDGE_PACKET,
+                  event_attribute: [
+                    {
+                      key: ATTRIBUTE_KEY_PACKET.PACKET_DATA_HEX,
+                      value: 'c0ffee',
+                    },
+                    {
+                      key: ATTRIBUTE_KEY_PACKET.PACKET_ACK_HEX,
+                      value: acknowledgementHex,
+                    },
+                    {
+                      key: ATTRIBUTE_KEY_PACKET.PACKET_SEQUENCE,
+                      value: '7',
+                    },
+                    {
+                      key: ATTRIBUTE_KEY_PACKET.PACKET_SRC_CHANNEL,
+                      value: 'channel-3',
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    await expect(
+      service.findResult({
+        tx_hash: 'deadbeef',
+        query_path: '/cheqd.did.v2.Query/DidDoc',
+        packet_data_hex: 'c0ffee',
+        source_channel: 'channel-3',
+      } as any),
+    ).resolves.toEqual({
+      status: 'completed',
+      tx_hash: 'deadbeef',
+      query_path: '/cheqd.did.v2.Query/DidDoc',
+      packet_data_hex: 'c0ffee',
+      current_height: '125',
+      next_search_from_height: '118',
+      completed_height: '118',
+      packet_sequence: '7',
+      acknowledgement_hex: acknowledgementHex,
+      acknowledgement: expect.objectContaining({
+        status: 'success',
+        query_path: '/cheqd.did.v2.Query/DidDoc',
+        response: expect.objectContaining({
+          value: expect.objectContaining({
+            did_doc: expect.objectContaining({
+              id: 'did:cheqd:testnet:abc123',
+            }),
+          }),
+        }),
+      }),
     });
   });
 });
