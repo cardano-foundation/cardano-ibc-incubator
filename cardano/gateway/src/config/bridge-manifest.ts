@@ -195,13 +195,6 @@ function requireIsoTimestamp(value: unknown, path: string): string {
   return timestamp;
 }
 
-function requireOptionalIsoTimestamp(value: unknown, path: string): string {
-  if (value === undefined || value === null || value === '') {
-    return '';
-  }
-  return requireIsoTimestamp(value, path);
-}
-
 function requireRefUtxo(value: unknown, path: string): RefUtxo {
   const refUtxo = requireObject(value, path);
   return {
@@ -448,7 +441,7 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
   const modules = requireObject(deploymentAny.modules, 'modules');
 
   return {
-    deployedAt: requireOptionalIsoTimestamp(deploymentAny.deployedAt, 'deployedAt'),
+    deployedAt: requireIsoTimestamp(deploymentAny.deployedAt, 'deployedAt'),
     hostStateNFT: requireAuthToken(deploymentAny.hostStateNFT, 'hostStateNFT'),
     handlerAuthToken: requireAuthToken(deploymentAny.handlerAuthToken, 'handlerAuthToken'),
     validators: {
@@ -485,7 +478,7 @@ export function normalizeHandlerJsonDeploymentConfig(
   return {
     deployment: normalizedDeployment,
     bridgeManifest: {
-      schema_version: 1,
+      schema_version: 2,
       deployment_id: buildDeploymentId(normalizedCardano, normalizedDeployment.hostStateNFT),
       deployed_at: normalizedDeployment.deployedAt,
       cardano: normalizedCardano,
@@ -524,7 +517,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
   const bridgeManifest: BridgeManifest = {
     schema_version: requireNonNegativeInteger(manifestAny.schema_version, 'schema_version'),
     deployment_id: requireNonEmptyString(manifestAny.deployment_id, 'deployment_id'),
-    deployed_at: requireOptionalIsoTimestamp(manifestAny.deployed_at, 'deployed_at'),
+    deployed_at: requireIsoTimestamp(manifestAny.deployed_at, 'deployed_at'),
     cardano: requireCardanoIdentity(requireObject(manifestAny.cardano, 'cardano') as unknown as BridgeManifestCardanoIdentity),
     host_state_nft: requireManifestAuthToken(manifestAny.host_state_nft, 'host_state_nft'),
     handler_auth_token: requireManifestAuthToken(manifestAny.handler_auth_token, 'handler_auth_token'),
@@ -548,7 +541,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
     },
   };
 
-  assert(bridgeManifest.schema_version === 1, 'Invalid bridge config: "schema_version" must be 1');
+  assert(bridgeManifest.schema_version === 2, 'Invalid bridge config: "schema_version" must be 2');
 
   return {
     bridgeManifest,

@@ -81,7 +81,7 @@ describe('bridge manifest normalization', () => {
     });
 
     expect(loaded.bridgeManifest).toMatchObject({
-      schema_version: 1,
+      schema_version: 2,
       deployment_id: 'cardano-devnet:host-policy.host-token',
       deployed_at: '2026-04-01T12:34:56.000Z',
       cardano: {
@@ -122,20 +122,19 @@ describe('bridge manifest normalization', () => {
     expect(bridgeManifestsEqual(manifestLoaded.bridgeManifest, legacy.bridgeManifest)).toBe(true);
   });
 
-  it('accepts older handler.json files without a deployment timestamp', () => {
+  it('rejects handler.json files without a deployment timestamp', () => {
     const { deployedAt: _deployedAt, ...legacyHandlerJson } = buildHandlerJsonDeployment();
 
-    const loaded = normalizeHandlerJsonDeploymentConfig(legacyHandlerJson, {
-      chain_id: 'cardano-devnet',
-      network_magic: 42,
-      network: 'Custom',
-    });
-
-    expect(loaded.deployment.deployedAt).toBe('');
-    expect(loaded.bridgeManifest.deployed_at).toBe('');
+    expect(() =>
+      normalizeHandlerJsonDeploymentConfig(legacyHandlerJson, {
+        chain_id: 'cardano-devnet',
+        network_magic: 42,
+        network: 'Custom',
+      })
+    ).toThrow('Invalid bridge config: "deployedAt" must be a non-empty string');
   });
 
-  it('accepts older bridge manifests without deployed_at', () => {
+  it('rejects bridge manifests without deployed_at', () => {
     const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
@@ -144,10 +143,24 @@ describe('bridge manifest normalization', () => {
 
     const { deployed_at: _deployedAt, ...legacyManifest } = legacy.bridgeManifest;
 
-    const loaded = normalizeBridgeManifestConfig(legacyManifest);
+    expect(() => normalizeBridgeManifestConfig(legacyManifest)).toThrow(
+      'Invalid bridge config: "deployed_at" must be a non-empty string',
+    );
+  });
 
-    expect(loaded.deployment.deployedAt).toBe('');
-    expect(loaded.bridgeManifest.deployed_at).toBe('');
+  it('rejects bridge manifests with the old schema version', () => {
+    const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+
+    expect(() =>
+      normalizeBridgeManifestConfig({
+        ...legacy.bridgeManifest,
+        schema_version: 1,
+      }),
+    ).toThrow('Invalid bridge config: "schema_version" must be 2');
   });
 
   it('fails startup resolution if both manifest and handler paths are set', () => {
