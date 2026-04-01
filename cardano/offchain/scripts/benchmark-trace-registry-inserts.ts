@@ -66,6 +66,13 @@ type DeploymentInfo = {
   };
 };
 
+type PlutusBlueprint = {
+  validators?: Array<{
+    title?: string;
+    hash?: string;
+  }>;
+};
+
 type RuntimeTraceRegistryEntry = {
   voucherHash: string;
   fullDenom: string;
@@ -240,6 +247,63 @@ function loadDeploymentInfo(): DeploymentInfo {
   const handlerJsonPath = Deno.env.get("HANDLER_JSON_PATH") ??
     "./deployments/handler.json";
   return JSON.parse(Deno.readTextFileSync(handlerJsonPath)) as DeploymentInfo;
+}
+
+function loadCurrentValidatorHashes(): Record<string, string> {
+  const plutusJsonUrl = new URL("../../onchain/plutus.json", import.meta.url);
+  const blueprint = JSON.parse(
+    Deno.readTextFileSync(plutusJsonUrl),
+  ) as PlutusBlueprint;
+
+  return Object.fromEntries(
+    (blueprint.validators ?? [])
+      .filter((validator) => validator.title && validator.hash)
+      .map((validator) => [validator.title!, validator.hash!.toLowerCase()]),
+  );
+}
+
+function assertBenchmarkDeploymentMatchesCurrentValidators(
+  deployment: DeploymentInfo,
+) {
+  const currentValidatorHashes = loadCurrentValidatorHashes();
+  const expectedSpendTraceRegistryHash = currentValidatorHashes[
+    "trace_registry.spend_trace_registry.spend"
+  ];
+  const expectedBenchmarkVoucherHash = currentValidatorHashes[
+    "minting_trace_registry_benchmark_voucher.mint_trace_registry_benchmark_voucher.mint"
+  ];
+
+  const deployedSpendTraceRegistryHash = deployment.validators
+    .spendTraceRegistry.scriptHash.toLowerCase();
+  const deployedBenchmarkVoucherHash = deployment.validators
+    .mintTraceRegistryBenchmarkVoucher?.scriptHash?.toLowerCase();
+
+  if (
+    expectedSpendTraceRegistryHash &&
+    deployedSpendTraceRegistryHash !== expectedSpendTraceRegistryHash
+  ) {
+    throw new Error(
+      "Local handler.json is stale for spendTraceRegistry: deployed hash " +
+        `${deployedSpendTraceRegistryHash} does not match current branch hash ` +
+        `${expectedSpendTraceRegistryHash}. Delete cardano/offchain/deployments ` +
+        "and redeploy the local bridge on feat/cardano-onchain-trace-registry.",
+    );
+  }
+
+  if (
+    expectedBenchmarkVoucherHash &&
+    deployedBenchmarkVoucherHash !== expectedBenchmarkVoucherHash
+  ) {
+    throw new Error(
+      "Local handler.json is stale for mintTraceRegistryBenchmarkVoucher: " +
+        `deployed hash ${
+          String(deployedBenchmarkVoucherHash)
+        } does not match ` +
+        `current branch hash ${expectedBenchmarkVoucherHash}. Delete ` +
+        "cardano/offchain/deployments and redeploy the local bridge on " +
+        "feat/cardano-onchain-trace-registry.",
+    );
+  }
 }
 
 function getTraceRegistryConfig(
@@ -966,6 +1030,7 @@ async function main() {
 
   const lucid = await buildLucid();
   const deployment = loadDeploymentInfo();
+  assertBenchmarkDeploymentMatchesCurrentValidators(deployment);
   const registry = getTraceRegistryConfig(deployment);
   const benchmarkPolicyId = benchmarkVoucherPolicyId(deployment);
   const references = await loadBenchmarkReferenceScripts(lucid, deployment);
