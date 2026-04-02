@@ -1,4 +1,6 @@
 import {
+  applyParamsToScript,
+  Constr,
   credentialToAddress,
   Data,
   fromHex,
@@ -10,6 +12,7 @@ import {
   SLOT_CONFIG_NETWORK,
   type TxBuilder,
   type UTxO,
+  validatorToScriptHash,
 } from "@lucid-evolution/lucid";
 import {
   generateIdentifierTokenName,
@@ -17,11 +20,7 @@ import {
   querySystemStart,
   submitTx,
 } from "../src/utils.ts";
-import {
-  OutputReference,
-  TraceRegistryDatum,
-  TraceRegistryRedeemer,
-} from "../types/index.ts";
+import { OutputReference } from "../types/index.ts";
 
 const TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES = 1024;
 const BENCHMARK_VOUCHER_AMOUNT = 1n;
@@ -45,13 +44,17 @@ type DeploymentInfo = {
       scriptHash: string;
     };
     spendTraceRegistry: {
+      script: string;
+      scriptHash: string;
       refUtxo: RefUtxo;
     };
     mintIdentifier: {
+      script: string;
       scriptHash: string;
       refUtxo: RefUtxo;
     };
     mintTraceRegistryBenchmarkVoucher?: {
+      script: string;
       scriptHash: string;
       refUtxo: RefUtxo;
     };
@@ -70,6 +73,7 @@ type PlutusBlueprint = {
   validators?: Array<{
     title?: string;
     hash?: string;
+    compiledCode?: string;
   }>;
 };
 
@@ -92,6 +96,34 @@ type RuntimeTraceRegistryDirectoryBucket = {
 type RuntimeTraceRegistryDirectoryDatum = {
   buckets: RuntimeTraceRegistryDirectoryBucket[];
 };
+
+type TraceRegistryDatum =
+  | { Shard: RuntimeTraceRegistryShardDatum }
+  | { Directory: RuntimeTraceRegistryDirectoryDatum };
+
+type TraceRegistryRedeemer =
+  | {
+    InsertTrace: {
+      voucher_hash: string;
+      full_denom: string;
+    };
+  }
+  | {
+    RolloverInsertTrace: {
+      voucher_hash: string;
+      full_denom: string;
+      new_active_shard_name: string;
+    };
+  }
+  | {
+    AdvanceDirectory: {
+      bucket_index: bigint;
+      voucher_hash: string;
+      full_denom: string;
+      previous_active_shard_name: string;
+      new_active_shard_name: string;
+    };
+  };
 
 type TraceRegistryConfig = NonNullable<DeploymentInfo["traceRegistry"]>;
 
@@ -123,9 +155,12 @@ type PreparedInsertContexts = {
 };
 
 type BenchmarkReferenceScripts = {
-  spendTraceRegistry: UTxO;
-  mintIdentifier: UTxO;
-  mintTraceRegistryBenchmarkVoucher: UTxO;
+  spendTraceRegistryValidator: { type: "PlutusV3"; script: string };
+  mintIdentifierPolicy: { type: "PlutusV3"; script: string };
+  mintTraceRegistryBenchmarkVoucherPolicy: {
+    type: "PlutusV3";
+    script: string;
+  };
 };
 
 type BenchmarkInsertResult = {
@@ -228,6 +263,48 @@ async function buildLucid(): Promise<LucidEvolution> {
   }
 
   const provider = new Kupmios(kupoUrl, ogmiosUrl);
+  const originalEvaluateTx = (provider as any).evaluateTx?.bind(provider);
+  if (typeof originalEvaluateTx === "function") {
+    (provider as any).evaluateTx = async (tx: string, additionalUTxOs?: any[]) => {
+      try {
+        return await originalEvaluateTx(tx, additionalUTxOs);
+      } catch (error) {
+        const dumpId = Date.now();
+        const dumpTxPath = `/tmp/trace-registry-benchmark-evaluateTx-${dumpId}.tx`;
+        const dumpContextPath =
+          `/tmp/trace-registry-benchmark-evaluateTx-${dumpId}.context.json`;
+
+        try {
+          Deno.writeTextFileSync(dumpTxPath, tx);
+          Deno.writeTextFileSync(
+            dumpContextPath,
+            JSON.stringify(
+              {
+                additionalUTxOs: additionalUTxOs ?? [],
+              },
+              (_key, value) =>
+                typeof value === "bigint" ? value.toString() : value,
+              2,
+            ),
+          );
+          console.error(
+            `[DEBUG] benchmark evaluateTx dumped failing tx to ${dumpTxPath}`,
+          );
+          console.error(
+            `[DEBUG] benchmark evaluateTx dumped failure context to ${dumpContextPath}`,
+          );
+        } catch (dumpError) {
+          console.error(
+            "[DEBUG] benchmark evaluateTx failed to dump tx/context:",
+            dumpError,
+          );
+        }
+
+        console.error("[DEBUG] benchmark evaluateTx failed:", error);
+        throw error;
+      }
+    };
+  }
   const chainZeroTime = await querySystemStart(ogmiosUrl);
   SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
   const protocolParameters = await provider.getProtocolParameters();
@@ -249,7 +326,10 @@ function loadDeploymentInfo(): DeploymentInfo {
   return JSON.parse(Deno.readTextFileSync(handlerJsonPath)) as DeploymentInfo;
 }
 
-function loadCurrentValidatorHashes(): Record<string, string> {
+function loadCurrentBlueprintValidators(): Record<
+  string,
+  { hash?: string; compiledCode?: string }
+> {
   const plutusJsonUrl = new URL("../../onchain/plutus.json", import.meta.url);
   const blueprint = JSON.parse(
     Deno.readTextFileSync(plutusJsonUrl),
@@ -257,21 +337,57 @@ function loadCurrentValidatorHashes(): Record<string, string> {
 
   return Object.fromEntries(
     (blueprint.validators ?? [])
-      .filter((validator) => validator.title && validator.hash)
-      .map((validator) => [validator.title!, validator.hash!.toLowerCase()]),
+      .filter((validator) => validator.title)
+      .map((validator) => [
+        validator.title!,
+        {
+          hash: validator.hash?.toLowerCase(),
+          compiledCode: validator.compiledCode,
+        },
+      ]),
   );
 }
 
 function assertBenchmarkDeploymentMatchesCurrentValidators(
   deployment: DeploymentInfo,
 ) {
-  const currentValidatorHashes = loadCurrentValidatorHashes();
-  const expectedSpendTraceRegistryHash = currentValidatorHashes[
+  const currentBlueprintValidators = loadCurrentBlueprintValidators();
+  const traceRegistryBlueprint = currentBlueprintValidators[
     "trace_registry.spend_trace_registry.spend"
   ];
-  const expectedBenchmarkVoucherHash = currentValidatorHashes[
+  const benchmarkVoucherBlueprint = currentBlueprintValidators[
     "minting_trace_registry_benchmark_voucher.mint_trace_registry_benchmark_voucher.mint"
   ];
+  const expectedBenchmarkVoucherHash = benchmarkVoucherBlueprint?.hash;
+
+  let expectedSpendTraceRegistryHash: string | undefined = undefined;
+  if (traceRegistryBlueprint?.compiledCode) {
+    // spendTraceRegistry is parameterized at deployment time, so comparing against the
+    // raw blueprint hash produces a false "stale handler" result even after a fresh
+    // local redeploy. Recompute the current-branch script hash with the same runtime
+    // parameters the deployer uses for this local deployment.
+    const benchmarkVoucherPolicyId = deployment.validators
+      .mintTraceRegistryBenchmarkVoucher?.scriptHash ?? "";
+    const parameterizedTraceRegistryScript = {
+      type: "PlutusV3" as const,
+      script: applyParamsToScript(
+        traceRegistryBlueprint.compiledCode,
+        [
+          deployment.validators.mintIdentifier.scriptHash,
+          deployment.validators.mintVoucher.scriptHash,
+          benchmarkVoucherPolicyId,
+        ],
+        Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
+          string,
+          string,
+          string,
+        ],
+      ),
+    };
+    expectedSpendTraceRegistryHash = validatorToScriptHash(
+      parameterizedTraceRegistryScript,
+    ).toLowerCase();
+  }
 
   const deployedSpendTraceRegistryHash = deployment.validators
     .spendTraceRegistry.scriptHash.toLowerCase();
@@ -333,6 +449,119 @@ function decodeHexToText(hex: string): string {
   return new TextDecoder().decode(fromHex(hex));
 }
 
+function expectConstr(
+  value: unknown,
+  expectedIndex?: number,
+): { index: number; fields: unknown[] } {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("index" in value) ||
+    !("fields" in value)
+  ) {
+    throw new Error("Expected trace-registry constructor data");
+  }
+
+  const constr = value as { index: number; fields: unknown[] };
+  if (expectedIndex !== undefined && constr.index !== expectedIndex) {
+    throw new Error(
+      `Unexpected trace-registry constructor index ${constr.index}, expected ${expectedIndex}`,
+    );
+  }
+
+  return constr;
+}
+
+function encodeEntry(entry: RuntimeTraceRegistryEntry) {
+  return new Constr(0, [entry.voucherHash, fromText(entry.fullDenom)]);
+}
+
+function decodeEntry(value: unknown): RuntimeTraceRegistryEntry {
+  const constr = expectConstr(value, 0);
+  const [voucherHash, fullDenom] = constr.fields;
+  if (typeof voucherHash !== "string" || typeof fullDenom !== "string") {
+    throw new Error("Invalid trace-registry entry fields");
+  }
+
+  return {
+    voucherHash: voucherHash.toLowerCase(),
+    fullDenom: decodeHexToText(fullDenom),
+  };
+}
+
+function encodeShardDatum(datum: RuntimeTraceRegistryShardDatum) {
+  return new Constr(0, [
+    datum.bucketIndex,
+    datum.entries.map((entry) => encodeEntry(entry)),
+  ]);
+}
+
+function decodeShardDatum(value: unknown): RuntimeTraceRegistryShardDatum {
+  const constr = expectConstr(value, 0);
+  const [bucketIndex, entries] = constr.fields;
+  if (typeof bucketIndex !== "bigint" || !Array.isArray(entries)) {
+    throw new Error("Invalid trace-registry shard datum fields");
+  }
+
+  return {
+    bucketIndex,
+    entries: entries.map((entry) => decodeEntry(entry)),
+  };
+}
+
+function encodeDirectoryBucket(
+  bucket: RuntimeTraceRegistryDirectoryBucket,
+) {
+  return new Constr(0, [
+    bucket.bucketIndex,
+    bucket.activeShardName,
+    bucket.archivedShardNames,
+  ]);
+}
+
+function decodeDirectoryBucket(
+  value: unknown,
+): RuntimeTraceRegistryDirectoryBucket {
+  const constr = expectConstr(value, 0);
+  const [bucketIndex, activeShardName, archivedShardNames] = constr.fields;
+  if (
+    typeof bucketIndex !== "bigint" ||
+    typeof activeShardName !== "string" ||
+    !Array.isArray(archivedShardNames) ||
+    !archivedShardNames.every((name) => typeof name === "string")
+  ) {
+    throw new Error("Invalid trace-registry directory bucket fields");
+  }
+
+  return {
+    bucketIndex,
+    activeShardName,
+    archivedShardNames,
+  };
+}
+
+function encodeDirectoryDatum(
+  datum: RuntimeTraceRegistryDirectoryDatum,
+) {
+  return new Constr(0, [
+    datum.buckets.map((bucket) => encodeDirectoryBucket(bucket)),
+  ]);
+}
+
+function decodeDirectoryDatum(
+  value: unknown,
+): RuntimeTraceRegistryDirectoryDatum {
+  const constr = expectConstr(value, 0);
+  const [buckets] = constr.fields;
+  if (!Array.isArray(buckets)) {
+    throw new Error("Invalid trace-registry directory datum buckets");
+  }
+
+  return {
+    buckets: buckets.map((bucket) => decodeDirectoryBucket(bucket)),
+  };
+}
+
 function encodeTraceRegistryDatum(
   datum: RuntimeTraceRegistryShardDatum | RuntimeTraceRegistryDirectoryDatum,
   kind: "Shard" | "Directory",
@@ -340,32 +569,16 @@ function encodeTraceRegistryDatum(
   if (kind === "Shard") {
     const shard = datum as RuntimeTraceRegistryShardDatum;
     return Data.to(
-      {
-        Shard: {
-          bucket_index: shard.bucketIndex,
-          entries: shard.entries.map((entry) => ({
-            voucher_hash: entry.voucherHash,
-            full_denom: fromText(entry.fullDenom),
-          })),
-        },
-      },
-      TraceRegistryDatum,
+      new Constr(0, [encodeShardDatum(shard)]) as any,
+      undefined,
       { canonical: true },
     );
   }
 
   const directory = datum as RuntimeTraceRegistryDirectoryDatum;
   return Data.to(
-    {
-      Directory: {
-        buckets: directory.buckets.map((bucket) => ({
-          bucket_index: bucket.bucketIndex,
-          active_shard_name: bucket.activeShardName,
-          archived_shard_names: bucket.archivedShardNames,
-        })),
-      },
-    },
-    TraceRegistryDatum,
+    new Constr(1, [encodeDirectoryDatum(directory)]) as any,
+    undefined,
     { canonical: true },
   );
 }
@@ -373,86 +586,69 @@ function encodeTraceRegistryDatum(
 function decodeTraceRegistryDirectoryDatum(
   encodedDatum: string,
 ): RuntimeTraceRegistryDirectoryDatum {
-  const decoded = Data.from(encodedDatum, TraceRegistryDatum) as any;
-  if (!("Directory" in decoded)) {
+  const decoded = Data.from(encodedDatum);
+  const outer = expectConstr(decoded);
+  if (outer.index !== 1) {
     throw new Error(
       "Trace-registry directory UTxO does not contain a directory datum",
     );
   }
 
-  return {
-    buckets: decoded.Directory.buckets.map((bucket: any) => ({
-      bucketIndex: bucket.bucket_index,
-      activeShardName: bucket.active_shard_name,
-      archivedShardNames: bucket.archived_shard_names,
-    })),
-  };
+  return decodeDirectoryDatum(outer.fields[0]);
 }
 
 function decodeTraceRegistryShardDatum(
   encodedDatum: string,
   expectedBucketIndex: number,
 ): RuntimeTraceRegistryShardDatum {
-  const decoded = Data.from(encodedDatum, TraceRegistryDatum) as any;
-  if (!("Shard" in decoded)) {
+  const decoded = Data.from(encodedDatum);
+  const outer = expectConstr(decoded);
+  if (outer.index !== 0) {
     throw new Error("Trace-registry shard UTxO does not contain a shard datum");
   }
-  if (Number(decoded.Shard.bucket_index) !== expectedBucketIndex) {
+  const shard = decodeShardDatum(outer.fields[0]);
+  if (Number(shard.bucketIndex) !== expectedBucketIndex) {
     throw new Error(
-      `Trace-registry shard datum mismatch: expected bucket ${expectedBucketIndex}, found ${decoded.Shard.bucket_index.toString()}`,
+      `Trace-registry shard datum mismatch: expected bucket ${expectedBucketIndex}, found ${shard.bucketIndex.toString()}`,
     );
   }
 
-  return {
-    bucketIndex: decoded.Shard.bucket_index,
-    entries: decoded.Shard.entries.map((entry: any) => ({
-      voucherHash: entry.voucher_hash.toLowerCase(),
-      fullDenom: decodeHexToText(entry.full_denom),
-    })),
-  };
+  return shard;
 }
 
 function encodeTraceRegistryRedeemer(redeemer: TraceRegistryRedeemer): string {
   if ("InsertTrace" in redeemer) {
     return Data.to(
-      {
-        InsertTrace: {
-          voucher_hash: redeemer.InsertTrace.voucher_hash,
-          full_denom: fromText(redeemer.InsertTrace.full_denom),
-        },
-      },
-      TraceRegistryRedeemer,
+      new Constr(0, [
+        redeemer.InsertTrace.voucher_hash,
+        fromText(redeemer.InsertTrace.full_denom),
+      ]) as any,
+      undefined,
       { canonical: true },
     );
   }
 
   if ("RolloverInsertTrace" in redeemer) {
     return Data.to(
-      {
-        RolloverInsertTrace: {
-          voucher_hash: redeemer.RolloverInsertTrace.voucher_hash,
-          full_denom: fromText(redeemer.RolloverInsertTrace.full_denom),
-          new_active_shard_name:
-            redeemer.RolloverInsertTrace.new_active_shard_name,
-        },
-      },
-      TraceRegistryRedeemer,
+      new Constr(1, [
+        redeemer.RolloverInsertTrace.voucher_hash,
+        fromText(redeemer.RolloverInsertTrace.full_denom),
+        redeemer.RolloverInsertTrace.new_active_shard_name,
+      ]) as any,
+      undefined,
       { canonical: true },
     );
   }
 
   return Data.to(
-    {
-      AdvanceDirectory: {
-        bucket_index: redeemer.AdvanceDirectory.bucket_index,
-        voucher_hash: redeemer.AdvanceDirectory.voucher_hash,
-        full_denom: fromText(redeemer.AdvanceDirectory.full_denom),
-        previous_active_shard_name:
-          redeemer.AdvanceDirectory.previous_active_shard_name,
-        new_active_shard_name: redeemer.AdvanceDirectory.new_active_shard_name,
-      },
-    },
-    TraceRegistryRedeemer,
+    new Constr(2, [
+      redeemer.AdvanceDirectory.bucket_index,
+      redeemer.AdvanceDirectory.voucher_hash,
+      fromText(redeemer.AdvanceDirectory.full_denom),
+      redeemer.AdvanceDirectory.previous_active_shard_name,
+      redeemer.AdvanceDirectory.new_active_shard_name,
+    ]) as any,
+    undefined,
     { canonical: true },
   );
 }
@@ -536,27 +732,36 @@ async function loadBenchmarkReferenceScripts(
   lucid: LucidEvolution,
   deployment: DeploymentInfo,
 ): Promise<BenchmarkReferenceScripts> {
-  const benchmarkRefUtxo = deployment.validators
-    .mintTraceRegistryBenchmarkVoucher?.refUtxo;
-  if (!benchmarkRefUtxo) {
+  const benchmarkPolicy = deployment.validators.mintTraceRegistryBenchmarkVoucher;
+  if (!benchmarkPolicy?.script) {
     throw new Error(
-      "Local benchmark voucher reference script is missing from handler.json. Re-run the bridge deployment on feat/cardano-onchain-trace-registry first.",
+      "Local benchmark voucher policy script is missing from handler.json. Re-run the bridge deployment on feat/cardano-onchain-trace-registry first.",
+    );
+  }
+  if (!deployment.validators.spendTraceRegistry.script) {
+    throw new Error(
+      "Trace-registry spending validator script is missing from handler.json",
+    );
+  }
+  if (!deployment.validators.mintIdentifier.script) {
+    throw new Error(
+      "Identifier minting policy script is missing from handler.json",
     );
   }
 
   return {
-    spendTraceRegistry: await resolveOutRefUtxo(
-      lucid,
-      deployment.validators.spendTraceRegistry.refUtxo,
-    ),
-    mintIdentifier: await resolveOutRefUtxo(
-      lucid,
-      deployment.validators.mintIdentifier.refUtxo,
-    ),
-    mintTraceRegistryBenchmarkVoucher: await resolveOutRefUtxo(
-      lucid,
-      benchmarkRefUtxo,
-    ),
+    spendTraceRegistryValidator: {
+      type: "PlutusV3",
+      script: deployment.validators.spendTraceRegistry.script,
+    },
+    mintIdentifierPolicy: {
+      type: "PlutusV3",
+      script: deployment.validators.mintIdentifier.script,
+    },
+    mintTraceRegistryBenchmarkVoucherPolicy: {
+      type: "PlutusV3",
+      script: benchmarkPolicy.script,
+    },
   };
 }
 
@@ -689,11 +894,6 @@ async function selectUniqueIdentifierNonce(
   );
 }
 
-async function estimateUnsignedTxSizeBytes(tx: TxBuilder): Promise<number> {
-  const completed = await tx.complete();
-  return completed.toCBOR().length / 2;
-}
-
 function isLikelyTxSizeError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toLowerCase();
@@ -708,21 +908,39 @@ function isLikelyTxSizeError(error: unknown): boolean {
   ].some((pattern) => normalized.includes(pattern));
 }
 
-async function shouldRolloverForUnsignedTx(
-  lucid: LucidEvolution,
+async function completeUnsignedTx(
   tx: TxBuilder,
-): Promise<boolean> {
-  const maxTxSize = lucid.config().protocolParameters?.maxTxSize ?? 16_384;
+) {
+  return await tx.complete({ localUPLCEval: false });
+}
 
-  try {
-    const unsignedSize = await estimateUnsignedTxSizeBytes(tx);
-    return unsignedSize >= maxTxSize - TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES;
-  } catch (error) {
-    if (isLikelyTxSizeError(error)) {
-      return true;
-    }
-    throw error;
-  }
+async function submitCompletedTx(
+  lucid: LucidEvolution,
+  completedTx: Awaited<ReturnType<TxBuilder["complete"]>>,
+  txName: string,
+) {
+  console.log("Submitting tx [", txName, "]");
+  console.log(
+    "Submitting tx [",
+    txName,
+    "]: size in bytes",
+    completedTx.toCBOR().length / 2,
+  );
+  console.log("Submitting tx [", txName, "]: signing ...");
+  const signedTx = await completedTx.sign.withWallet().complete();
+  console.log(
+    "Submitting tx [",
+    txName,
+    "]: signed tx size in bytes",
+    signedTx.toCBOR().length / 2,
+  );
+  console.log("Submitting tx [", txName, "]: submitting ...");
+  const txHash = await signedTx.submit();
+  console.log("Submitting tx [", txName, "]: tx hash is", txHash);
+  console.log("Submitting tx [", txName, "]: waiting for adoption ...");
+  await lucid.awaitTx(txHash, 1000);
+  console.log("Submitting tx [", txName, "]: done");
+  return txHash;
 }
 
 async function prepareInsertContexts(
@@ -861,11 +1079,9 @@ function buildAppendTx(
 ): TxBuilder {
   return lucid
     .newTx()
-    .readFrom([
-      references.spendTraceRegistry,
-      references.mintTraceRegistryBenchmarkVoucher,
-      update.directoryUtxo,
-    ])
+    .readFrom([update.directoryUtxo])
+    .attach.SpendingValidator(references.spendTraceRegistryValidator)
+    .attach.MintingPolicy(references.mintTraceRegistryBenchmarkVoucherPolicy)
     .collectFrom([update.shardUtxo], update.encodedTraceRegistryRedeemer)
     .mintAssets(
       {
@@ -899,11 +1115,9 @@ function buildRolloverTx(
 ): TxBuilder {
   return lucid
     .newTx()
-    .readFrom([
-      references.spendTraceRegistry,
-      references.mintIdentifier,
-      references.mintTraceRegistryBenchmarkVoucher,
-    ])
+    .attach.SpendingValidator(references.spendTraceRegistryValidator)
+    .attach.MintingPolicy(references.mintIdentifierPolicy)
+    .attach.MintingPolicy(references.mintTraceRegistryBenchmarkVoucherPolicy)
     .collectFrom(
       [update.directoryUtxo],
       update.encodedTraceRegistryDirectoryRedeemer,
@@ -984,19 +1198,29 @@ async function submitBenchmarkInsert(
     append,
   );
 
-  if (!(await shouldRolloverForUnsignedTx(lucid, appendTx))) {
-    try {
-      const txHash = await submitTx(
-        appendTx,
+  const maxTxSize = lucid.config().protocolParameters?.maxTxSize ?? 16_384;
+
+  try {
+    // Complete the append path exactly once. Re-completing the same builder can
+    // mutate coin-selection/witness state and makes the benchmark harder to
+    // reason about when diagnosing live validator failures.
+    const completedAppendTx = await completeUnsignedTx(appendTx);
+    const unsignedSize = completedAppendTx.toCBOR().length / 2;
+
+    if (
+      unsignedSize <
+        maxTxSize - TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES
+    ) {
+      const txHash = await submitCompletedTx(
         lucid,
+        completedAppendTx,
         `BenchmarkTraceInsert ${voucherHash.slice(0, 8)}`,
-        false,
       );
       return { txHash, rollover: false };
-    } catch (error) {
-      if (!isLikelyTxSizeError(error)) {
-        throw error;
-      }
+    }
+  } catch (error) {
+    if (!isLikelyTxSizeError(error)) {
+      throw error;
     }
   }
 
@@ -1008,11 +1232,11 @@ async function submitBenchmarkInsert(
     benchmarkTokenUnit,
     rollover,
   );
-  const txHash = await submitTx(
-    rolloverTx,
+  const completedRolloverTx = await completeUnsignedTx(rolloverTx);
+  const txHash = await submitCompletedTx(
     lucid,
+    completedRolloverTx,
     `BenchmarkTraceRollover ${voucherHash.slice(0, 8)}`,
-    false,
   );
   return { txHash, rollover: true };
 }

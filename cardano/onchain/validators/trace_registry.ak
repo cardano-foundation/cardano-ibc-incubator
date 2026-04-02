@@ -30,7 +30,7 @@ use aiken/primitive/bytearray
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, Value, add, from_asset, quantity_of, tokens}
 use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Transaction, placeholder,
+  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, placeholder,
 }
 use ibc/apps/transfer/trace_registry.{
   AdvanceDirectory, Directory, InsertTrace, RolloverInsertTrace, Shard,
@@ -1230,6 +1230,57 @@ test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint_a
     transaction,
   )
 }
+
+test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint_and_benchmark_sink_output() {
+  let full_denom = "transfer/channel-0/benchmark-uatom"
+  let voucher_hash = crypto.sha3_256(full_denom)
+  let bucket_index = bucket_index_for_hash(voucher_hash)
+  let shard_name = "active-bench"
+  let benchmark_policy_id = test_benchmark_voucher_policy_id()
+  let spent_input =
+    Input {
+      output_reference: test_output_ref(0),
+      output: test_shard_output(bucket_index, shard_name, []),
+    }
+  let updated_output =
+    test_shard_output(
+      bucket_index,
+      shard_name,
+      [test_expected_entry(full_denom)],
+    )
+  let directory_input = test_directory_input(1, bucket_index, shard_name, [])
+  let helper_ref_1 = test_non_registry_reference_input(2)
+  let helper_ref_2 = test_non_registry_reference_input(3)
+  let benchmark_sink_output =
+    Output {
+      address: test_registry_address(),
+      value:
+        assets.from_lovelace(2_000_000)
+          |> add(benchmark_policy_id, voucher_hash, 1),
+      datum: NoDatum,
+      reference_script: None,
+    }
+
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [spent_input],
+      reference_inputs: [helper_ref_1, helper_ref_2, directory_input],
+      outputs: [updated_output, benchmark_sink_output],
+      mint: from_asset(benchmark_policy_id, voucher_hash, 1),
+    }
+
+  spend_trace_registry.spend(
+    test_shard_policy_id(),
+    test_voucher_policy_id(),
+    benchmark_policy_id,
+    Some(Shard(TraceRegistryShardDatum { bucket_index, entries: [] })),
+    InsertTrace { voucher_hash, full_denom },
+    test_output_ref(0),
+    transaction,
+  )
+}
+
 
 test trace_registry_insert_trace_fails_without_matching_voucher_mint() fail {
   let full_denom = "transfer/channel-7/uatom"
