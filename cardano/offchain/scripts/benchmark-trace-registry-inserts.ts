@@ -174,8 +174,27 @@ type BenchmarkInsertResult = {
   rollover: boolean;
 };
 
+type SubmittedTraceRegistryUpdate =
+  | {
+    kind: "append";
+    activeShardUnit: string;
+  }
+  | {
+    kind: "rollover";
+    activeShardUnit: string;
+  };
+
 function usage(): string {
   return ("Usage: deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-ffi scripts/benchmark-trace-registry-inserts.ts --bucket <0-15> [--inserts <count>] [--json]");
+}
+
+function repoRootPath(): string {
+  return new URL("../../..", import.meta.url).pathname;
+}
+
+function cardanoComposePath(): string {
+  return new URL("../../../chains/cardano/docker-compose.yaml", import.meta.url)
+    .pathname;
 }
 
 function parseArgs(argv: string[]): ScriptArgs {
@@ -254,6 +273,109 @@ function parseNetwork(networkMagic: string): Network {
   }
 }
 
+async function nodeHasLiveUtxo(
+  txHash: string,
+  outputIndex: number,
+): Promise<boolean> {
+  const command = new Deno.Command("docker", {
+    args: [
+      "compose",
+      "-f",
+      cardanoComposePath(),
+      "exec",
+      "-T",
+      "cardano-node",
+      "cardano-cli",
+      "query",
+      "utxo",
+      "--testnet-magic",
+      "42",
+      "--tx-in",
+      `${txHash}#${outputIndex}`,
+      "--output-json",
+    ],
+    cwd: repoRootPath(),
+    stdin: "null",
+    stdout: "piped",
+    stderr: "piped",
+  });
+
+  const output = await command.output();
+  if (!output.success) {
+    const stderr = new TextDecoder().decode(output.stderr).trim();
+    throw new Error(
+      `Failed to query node-backed UTxO liveness for ${txHash}#${outputIndex}: ${stderr}`,
+    );
+  }
+
+  const stdout = new TextDecoder().decode(output.stdout).trim();
+  if (!stdout) {
+    return false;
+  }
+
+  const parsed = JSON.parse(stdout) as Record<string, unknown>;
+  return Object.keys(parsed).length > 0;
+}
+
+async function filterNodeLiveUtxos(utxos: UTxO[]): Promise<UTxO[]> {
+  const live: UTxO[] = [];
+  for (const utxo of utxos) {
+    if (await nodeHasLiveUtxo(utxo.txHash, utxo.outputIndex)) {
+      live.push(utxo);
+    }
+  }
+  return live;
+}
+
+async function refreshWalletFromNodeLiveUtxos(
+  lucid: LucidEvolution,
+): Promise<void> {
+  const walletAddress = await lucid.wallet().address();
+  const walletUtxos = await lucid.wallet().getUtxos();
+  const liveWalletUtxos = await filterNodeLiveUtxos(walletUtxos);
+
+  if (liveWalletUtxos.length === 0) {
+    throw new Error(
+      `Unable to find any node-live wallet UTxOs at ${walletAddress} for the benchmark wallet`,
+    );
+  }
+
+  // Keep the private-key wallet selected so signing still works, but constrain
+  // coin selection to UTxOs the node itself agrees are currently spendable.
+  lucid.wallet().overrideUTxOs(liveWalletUtxos);
+}
+
+async function waitForBenchmarkStateToBeSpendable(
+  lucid: LucidEvolution,
+  registryUnit: string,
+): Promise<void> {
+  const maxAttempts = 20;
+  const retryDelayMs = 1000;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const registryUtxo = await lucid.utxoByUnit(registryUnit);
+      if (
+        registryUtxo &&
+        await nodeHasLiveUtxo(registryUtxo.txHash, registryUtxo.outputIndex)
+      ) {
+        await refreshWalletFromNodeLiveUtxos(lucid);
+        return;
+      }
+    } catch {
+      // Retry until both indexer and node converge on the new writable shard.
+    }
+
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    }
+  }
+
+  throw new Error(
+    `Timed out waiting for benchmark state to become node-spendable for unit ${registryUnit}`,
+  );
+}
+
 async function buildLucid(): Promise<LucidEvolution> {
   const deployerSk = Deno.env.get("DEPLOYER_SK");
   const kupoUrl = Deno.env.get("KUPO_URL");
@@ -319,6 +441,7 @@ async function buildLucid(): Promise<LucidEvolution> {
   );
 
   lucid.selectWallet.fromPrivateKey(deployerSk);
+  await refreshWalletFromNodeLiveUtxos(lucid);
   return lucid;
 }
 
@@ -727,14 +850,8 @@ async function findUtxoByUnit(
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const utxo = await lucid.utxoByUnit(unit);
     if (utxo) {
-      const live = await lucid.utxosByOutRef([
-        {
-          txHash: utxo.txHash,
-          outputIndex: utxo.outputIndex,
-        },
-      ]);
-      if (live.length > 0) {
-        return live[0];
+      if (await nodeHasLiveUtxo(utxo.txHash, utxo.outputIndex)) {
+        return utxo;
       }
     }
 
@@ -1218,6 +1335,7 @@ async function submitBenchmarkInsert(
   voucherHash: string,
   fullDenom: string,
 ): Promise<{ txHash: string; rollover: boolean }> {
+  await refreshWalletFromNodeLiveUtxos(lucid);
   const benchmarkTokenUnit = benchmarkPolicyId + voucherHash;
   const sinkAddress = benchmarkSinkAddress(lucid);
   const { append, rollover } = await prepareInsertContexts(
@@ -1254,6 +1372,13 @@ async function submitBenchmarkInsert(
         completedAppendTx,
         `BenchmarkTraceInsert ${voucherHash.slice(0, 8)}`,
       );
+      await waitForBenchmarkStateToBeSpendable(
+        lucid,
+        registry.shardPolicyId + getDirectoryBucket(
+          (await loadDirectoryDatum(lucid, registry)).datum,
+          bucketIndexForHash(voucherHash),
+        ).activeShardName,
+      );
       return { txHash, rollover: false };
     }
   } catch (error) {
@@ -1275,6 +1400,10 @@ async function submitBenchmarkInsert(
     lucid,
     completedRolloverTx,
     `BenchmarkTraceRollover ${voucherHash.slice(0, 8)}`,
+  );
+  await waitForBenchmarkStateToBeSpendable(
+    lucid,
+    rollover.newActiveTraceRegistryShardTokenUnit,
   );
   return { txHash, rollover: true };
 }

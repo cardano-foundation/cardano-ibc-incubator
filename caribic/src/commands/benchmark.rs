@@ -204,6 +204,7 @@ fn run_fast_benchmark_inserts(
         .arg("--allow-env")
         .arg("--allow-read")
         .arg("--allow-ffi")
+        .arg("--allow-run")
         .arg("scripts/benchmark-trace-registry-inserts.ts")
         .arg("--bucket")
         .arg(bucket.to_string())
