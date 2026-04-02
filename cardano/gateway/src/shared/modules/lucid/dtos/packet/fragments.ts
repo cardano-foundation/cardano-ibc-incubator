@@ -53,6 +53,12 @@ export type TraceRegistryAppendUpdate = {
   encodedUpdatedTraceRegistryDatum: string;
 };
 
+export type TraceRegistryExistingProof = {
+  kind: "existing";
+  traceRegistryDirectoryUtxo: UTxO;
+  traceRegistryShardUtxo: UTxO;
+};
+
 export type TraceRegistryRolloverUpdate = {
   kind: "rollover";
   traceRegistryDirectoryUtxo: UTxO;
@@ -69,6 +75,7 @@ export type TraceRegistryRolloverUpdate = {
 
 export type WithOptionalTraceRegistryUpdate = {
   traceRegistryUpdate?:
+    | TraceRegistryExistingProof
     | TraceRegistryAppendUpdate
     | TraceRegistryRolloverUpdate
     | null;

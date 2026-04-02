@@ -136,10 +136,13 @@ export class PacketService {
   private async resolveTraceRegistryUpdate(
     voucherHash: string,
     fullDenom: string,
-    buildCandidateTx: (traceRegistryUpdate: TraceRegistryInsertContext | null) => TxBuilder,
-  ): Promise<TraceRegistryInsertContext | null> {
-    const initialUpdate = (await this.denomTraceService.prepareOnChainInsert(voucherHash, fullDenom)) ?? null;
-    if (!initialUpdate || initialUpdate.kind !== 'append') {
+    buildCandidateTx: (traceRegistryUpdate: TraceRegistryInsertContext) => TxBuilder,
+  ): Promise<TraceRegistryInsertContext> {
+    const initialUpdate = await this.denomTraceService.prepareOnChainInsert(
+      voucherHash,
+      fullDenom,
+    );
+    if (initialUpdate.kind !== 'append') {
       return initialUpdate;
     }
 
@@ -149,7 +152,11 @@ export class PacketService {
       return initialUpdate;
     }
 
-    return (await this.denomTraceService.prepareOnChainInsert(voucherHash, fullDenom, { forceRollover: true })) ?? null;
+    return await this.denomTraceService.prepareOnChainInsert(
+      voucherHash,
+      fullDenom,
+      { forceRollover: true },
+    );
   }
 
   /**

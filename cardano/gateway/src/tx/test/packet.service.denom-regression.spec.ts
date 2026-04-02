@@ -10,6 +10,20 @@ jest.mock('../../shared/types/connection/verify-proof-redeemer', () => ({
 }));
 
 describe('PacketService denom regression coverage', () => {
+  const existingTraceRegistryProof = {
+    kind: 'existing' as const,
+    traceRegistryDirectoryUtxo: {
+      txHash: 'trace-directory',
+      outputIndex: 0,
+      assets: { tracedir: 1n },
+    },
+    traceRegistryShardUtxo: {
+      txHash: 'trace-shard',
+      outputIndex: 1,
+      assets: { traceshard: 1n },
+    },
+  };
+
   it('resolves ibc/<hash> to canonical denom and uses burn path packet/module denoms', async () => {
     const loggerMock = {
       log: jest.fn(),
@@ -60,7 +74,7 @@ describe('PacketService denom regression coverage', () => {
 
     const denomTraceServiceMock = {
       findByIbcDenomHash: jest.fn(),
-      prepareOnChainInsert: jest.fn().mockResolvedValue(null),
+      prepareOnChainInsert: jest.fn().mockResolvedValue(existingTraceRegistryProof),
     };
 
     const service = new PacketService(
@@ -236,7 +250,7 @@ describe('PacketService denom regression coverage', () => {
 
     const denomTraceServiceMock = {
       findByIbcDenomHash: jest.fn(),
-      prepareOnChainInsert: jest.fn().mockResolvedValue(null),
+      prepareOnChainInsert: jest.fn().mockResolvedValue(existingTraceRegistryProof),
     };
 
     const service = new PacketService(
@@ -405,7 +419,7 @@ describe('PacketService denom regression coverage', () => {
 
     const denomTraceServiceMock = {
       findByIbcDenomHash: jest.fn(),
-      prepareOnChainInsert: jest.fn().mockResolvedValue(null),
+      prepareOnChainInsert: jest.fn().mockResolvedValue(existingTraceRegistryProof),
     };
 
     const service = new PacketService(
@@ -568,7 +582,7 @@ describe('PacketService denom regression coverage', () => {
 
     const denomTraceServiceMock = {
       findByIbcDenomHash: jest.fn(),
-      prepareOnChainInsert: jest.fn().mockResolvedValue(null),
+      prepareOnChainInsert: jest.fn().mockResolvedValue(existingTraceRegistryProof),
     };
 
     const service = new PacketService(

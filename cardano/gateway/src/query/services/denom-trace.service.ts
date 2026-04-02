@@ -35,6 +35,14 @@ type OnChainTraceEntry = {
   hash: string;
   fullDenom: string;
   bucketIndex: number;
+  shardUtxo?: UTxO;
+  shardTokenName?: string;
+};
+
+type TraceRegistryExistingProofContext = {
+  kind: "existing";
+  traceRegistryDirectoryUtxo: UTxO;
+  traceRegistryShardUtxo: UTxO;
 };
 
 type TraceRegistryAppendInsertContext = {
@@ -60,6 +68,7 @@ type TraceRegistryRolloverInsertContext = {
 };
 
 export type TraceRegistryInsertContext =
+  | TraceRegistryExistingProofContext
   | TraceRegistryAppendInsertContext
   | TraceRegistryRolloverInsertContext;
 
@@ -150,28 +159,39 @@ export class DenomTraceService {
     hash: string,
     fullDenom: string,
     opts?: { forceRollover?: boolean },
-  ): Promise<TraceRegistryInsertContext | null> {
+  ): Promise<TraceRegistryInsertContext> {
     const normalizedHash = hash.toLowerCase();
-    const registry = this.getTraceRegistryConfig();
-    if (!registry) {
-      return null;
-    }
+    const registry = this.getRequiredTraceRegistryConfig();
+    const { utxo: directoryUtxo, datum: directoryDatum } = await this
+      .loadDirectoryState(registry);
 
-    // The registry is append-only. If the mapping already exists we do not touch
-    // any shard, but we still reject conflicting rewrites immediately.
-    const existing = await this.findOnChainEntryByHash(normalizedHash);
+    // Every positive voucher mint must prove registry completeness. For a
+    // previously seen hash, that means carrying the canonical directory plus the
+    // shard that already holds the exact mapping.
+    const existing = await this.findOnChainEntryByHash(
+      normalizedHash,
+      registry,
+      directoryDatum,
+    );
     if (existing) {
       if (existing.fullDenom !== fullDenom) {
         throw new Error(
           `Conflicting on-chain denom trace for hash ${normalizedHash}: existing=${existing.fullDenom}, incoming=${fullDenom}`,
         );
       }
-      return null;
+      if (!existing.shardUtxo) {
+        throw new Error(
+          `Trace-registry proof for hash ${normalizedHash} is missing its shard witness`,
+        );
+      }
+      return {
+        kind: "existing",
+        traceRegistryDirectoryUtxo: directoryUtxo,
+        traceRegistryShardUtxo: existing.shardUtxo,
+      };
     }
 
     const bucketIndex = this.getBucketIndexForHash(normalizedHash);
-    const { utxo: directoryUtxo, datum: directoryDatum } = await this
-      .loadDirectoryState(registry);
     const bucket = this.getDirectoryBucket(directoryDatum, bucketIndex);
     const activeShardUnit = registry.shardPolicyId + bucket.active_shard_name;
     const activeShardUtxo = await this.lucidService.findUtxoByUnit(
@@ -192,7 +212,11 @@ export class DenomTraceService {
           `Conflicting trace-registry datum for hash ${normalizedHash}: existing=${duplicate.full_denom}, incoming=${fullDenom}`,
         );
       }
-      return null;
+      return {
+        kind: "existing",
+        traceRegistryDirectoryUtxo: directoryUtxo,
+        traceRegistryShardUtxo: activeShardUtxo,
+      };
     }
 
     if (!opts?.forceRollover) {
@@ -592,6 +616,16 @@ export class DenomTraceService {
     return deployment.traceRegistry;
   }
 
+  private getRequiredTraceRegistryConfig(): TraceRegistryConfig {
+    const registry = this.getTraceRegistryConfig();
+    if (!registry) {
+      throw new Error(
+        "Trace registry deployment config is missing for voucher minting",
+      );
+    }
+    return registry;
+  }
+
   private getVoucherPolicyId(): string {
     return this.configService.get("deployment").validators.mintVoucher
       .scriptHash;
@@ -620,13 +654,15 @@ export class DenomTraceService {
 
   private async findOnChainEntryByHash(
     hash: string,
+    registryArg?: TraceRegistryConfig,
+    directoryArg?: TraceRegistryDirectoryDatum,
   ): Promise<OnChainTraceEntry | null> {
-    const registry = this.getTraceRegistryConfig();
+    const registry = registryArg ?? this.getTraceRegistryConfig();
     if (!registry) {
       return null;
     }
 
-    const directoryDatum = await this.loadDirectoryDatum(registry);
+    const directoryDatum = directoryArg ?? await this.loadDirectoryDatum(registry);
     const bucketIndex = this.getBucketIndexForHash(hash);
     const bucket = this.getDirectoryBucket(directoryDatum, bucketIndex);
     const tokenNames = [
@@ -635,9 +671,12 @@ export class DenomTraceService {
     ];
 
     for (const tokenName of tokenNames) {
-      const shardDatum = await this.loadShardDatumByUnit(
-        registry.shardPolicyId + tokenName,
+      const shardUnit = registry.shardPolicyId + tokenName;
+      const shardUtxo = await this.lucidService.findUtxoByUnit(shardUnit);
+      const shardDatum = this.loadShardDatumFromUtxo(
+        shardUtxo,
         bucketIndex,
+        shardUnit,
       );
       const entry = shardDatum.entries.find((candidate) =>
         candidate.voucher_hash.toLowerCase() === hash.toLowerCase()
@@ -647,6 +686,8 @@ export class DenomTraceService {
           hash: entry.voucher_hash.toLowerCase(),
           fullDenom: entry.full_denom,
           bucketIndex,
+          shardUtxo,
+          shardTokenName: tokenName,
         };
       }
     }

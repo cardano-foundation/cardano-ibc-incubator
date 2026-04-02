@@ -326,6 +326,17 @@ export const createDeployment = async (
     lucid,
   );
   referredValidators.push(mintIdentifierValidator);
+  const traceRegistryDirectoryNonce =
+    traceRegistryNonceUtxos[TRACE_REGISTRY_SHARD_COUNT];
+  if (!traceRegistryDirectoryNonce) {
+    throw new Error("Missing reserved nonce UTxO for trace registry directory.");
+  }
+  const traceRegistryDirectoryAuthToken: AuthToken = {
+    policy_id: validatorToScriptHash(mintIdentifierValidator),
+    name: await generateIdentifierTokenName(
+      buildOutputReference(traceRegistryDirectoryNonce),
+    ),
+  };
 
   const {
     identifierTokenUnit: transferModuleIdentifier,
@@ -340,6 +351,7 @@ export const createDeployment = async (
     mintChannelSttPolicyId,
     TRANSFER_MODULE_PORT,
     hostStateNFT,
+    traceRegistryDirectoryAuthToken,
     transferModuleNonceUtxo,
   );
   referredValidators.push(mintVoucher.validator, spendTransferModule.validator);
@@ -353,6 +365,7 @@ export const createDeployment = async (
   const traceRegistry = await deployTraceRegistry(
     lucid,
     mintIdentifierValidator,
+    traceRegistryDirectoryAuthToken,
     mintVoucher.policyId,
     traceRegistryBenchmarkVoucher?.policyId ?? "",
     traceRegistryNonceUtxos,
@@ -893,6 +906,7 @@ const deployTransferModule = async (
   mintChannelPolicyId: string,
   portNumber: bigint,
   hostStateNFT: AuthToken,
+  traceRegistryDirectoryAuthToken: AuthToken,
   nonceUtxo: UTxO,
 ) => {
   console.log("Create Transfer Module");
@@ -911,8 +925,11 @@ const deployTransferModule = async (
   const [mintVoucherValidator, mintVoucherPolicyId] = await readValidator(
     "minting_voucher.mint_voucher.mint",
     lucid,
-    [identifierToken],
-    Data.Tuple([AuthTokenSchema]) as unknown as [AuthToken],
+    [identifierToken, traceRegistryDirectoryAuthToken],
+    Data.Tuple([AuthTokenSchema, AuthTokenSchema]) as unknown as [
+      AuthToken,
+      AuthToken,
+    ],
   );
 
   // NOTE: IBC port identifiers are part of on-chain commitment paths and are exchanged
@@ -1070,6 +1087,7 @@ const encodeRawDatum = (value: unknown): string =>
 const deployTraceRegistry = async (
   lucid: LucidEvolution,
   mintIdentifierValidator: MintingPolicy,
+  directoryAuthToken: AuthToken,
   mintVoucherPolicyId: string,
   benchmarkVoucherPolicyId: string,
   nonceUtxos: UTxO[],
@@ -1081,17 +1099,17 @@ const deployTraceRegistry = async (
   // The registry is deployed alongside the bridge so voucher mint paths have the
   // canonical on-chain reverse-lookup state available immediately.
   const shardPolicyId = validatorToScriptHash(mintIdentifierValidator);
+  if (directoryAuthToken.policy_id !== shardPolicyId) {
+    throw new Error(
+      "Trace registry directory auth token policy does not match the shard policy.",
+    );
+  }
   const directoryNonce = nonceUtxos[TRACE_REGISTRY_SHARD_COUNT];
   if (!directoryNonce) {
     throw new Error(
       "Missing reserved nonce UTxO for trace registry directory.",
     );
   }
-  const directoryOutputReference = buildOutputReference(directoryNonce);
-  const directoryAuthToken: AuthToken = {
-    policy_id: shardPolicyId,
-    name: await generateIdentifierTokenName(directoryOutputReference),
-  };
   const [validator, scriptHash, address] = await readValidator(
     "trace_registry.spend_trace_registry.spend",
     lucid,

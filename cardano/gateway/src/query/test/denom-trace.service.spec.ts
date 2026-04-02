@@ -162,7 +162,14 @@ describe('DenomTraceService', () => {
       throw new Error(`unexpected unit lookup: ${unit}`);
     });
 
-    await expect(service.prepareOnChainInsert(hash, fullDenom)).resolves.toBeNull();
+    const result = await service.prepareOnChainInsert(hash, fullDenom);
+
+    expect(result.kind).toBe('existing');
+    if (result.kind !== 'existing') {
+      throw new Error('expected existing proof context');
+    }
+    expect(result.traceRegistryDirectoryUtxo.txHash).toBe('trace-directory');
+    expect(result.traceRegistryShardUtxo.txHash).toBe('trace-shard-15');
   });
 
   it('fails hard when the same voucher hash resolves to a conflicting full denom', async () => {
@@ -182,6 +189,20 @@ describe('DenomTraceService', () => {
     await expect(service.prepareOnChainInsert(hash, 'transfer/channel-7/uatom')).rejects.toThrow(
       'Conflicting on-chain denom trace',
     );
+  });
+
+  it('fails closed when trace registry deployment config is missing', async () => {
+    configServiceMock.get.mockImplementation(() => ({
+      validators: {
+        mintVoucher: {
+          scriptHash: 'mint-voucher-policy-id',
+        },
+      },
+    }));
+
+    await expect(
+      service.prepareOnChainInsert(`a${'4'.repeat(63)}`, 'transfer/channel-7/uatom'),
+    ).rejects.toThrow('Trace registry deployment config is missing for voucher minting');
   });
 
   it('materializes traces from shard data and resolves by ibc denom hash', async () => {

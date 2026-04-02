@@ -2431,6 +2431,11 @@ export class LucidService implements OnModuleInit {
     dto: {
       traceRegistryUpdate?:
         | {
+          kind: "existing";
+          traceRegistryDirectoryUtxo: UTxO;
+          traceRegistryShardUtxo: UTxO;
+        }
+        | {
           kind: "append";
           traceRegistryDirectoryUtxo: UTxO;
           traceRegistryShardUtxo: UTxO;
@@ -2457,6 +2462,14 @@ export class LucidService implements OnModuleInit {
       return;
     }
 
+    if (dto.traceRegistryUpdate.kind === "existing") {
+      tx.readFrom([
+        dto.traceRegistryUpdate.traceRegistryDirectoryUtxo,
+        dto.traceRegistryUpdate.traceRegistryShardUtxo,
+      ]);
+      return;
+    }
+
     const deploymentConfig = this.configService.get("deployment");
     const traceRegistryAddress = deploymentConfig.traceRegistry?.address;
     if (!traceRegistryAddress) {
@@ -2470,9 +2483,9 @@ export class LucidService implements OnModuleInit {
       );
     }
 
-    // Registry updates are optional per packet tx. They are present only for the
-    // first mint of a previously unseen voucher trace; repeated mints skip this
-    // shard spend entirely and reuse the existing on-chain mapping.
+    // Every positive voucher mint now carries a registry witness:
+    // - first-seen traces append or roll over the registry in the same tx
+    // - repeated mints carry a reference proof of the existing canonical mapping
     if (dto.traceRegistryUpdate.kind === "append") {
       tx.readFrom([
         this.referenceScripts.spendTraceRegistry,
