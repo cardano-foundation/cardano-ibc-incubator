@@ -25,9 +25,10 @@
 use aiken/collection/dict
 use aiken/collection/list
 use aiken/crypto
+use aiken/fuzz
 use aiken/primitive/bytearray
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, add, from_asset, quantity_of, tokens}
+use cardano/assets.{PolicyId, Value, add, from_asset, quantity_of, tokens}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction, placeholder,
 }
@@ -177,8 +178,7 @@ fn validate_insert_trace(
       old_datum.bucket_index,
       shard_token.name,
     )
-  let voucher_hash_matches =
-    crypto.sha3_256(full_denom) == voucher_hash
+  let voucher_hash_matches = crypto.sha3_256(full_denom) == voucher_hash
   let matching_voucher_mint =
     matching_voucher_mint_present(
       mint,
@@ -272,7 +272,10 @@ fn validate_rollover_insert_trace(
         // require the exact same auth-token set as the spent directory input.
         if output.address != spent_output.address {
           False
-        } else if !output_has_same_registry_token_set(output, directory_input.output) {
+        } else if !output_has_same_registry_token_set(
+          output,
+          directory_input.output,
+        ) {
           False
         } else {
           has_directory_datum(output)
@@ -505,7 +508,10 @@ fn find_unique_directory_input(
         // Reference-script UTxOs also appear in `reference_inputs`, but they do
         // not carry a trace-registry directory datum. Branch explicitly before
         // decoding so non-directory helper UTxOs cannot crash this filter.
-        if output_has_single_registry_token_under_policy(input.output, policy_id) {
+        if output_has_single_registry_token_under_policy(
+          input.output,
+          policy_id,
+        ) {
           has_directory_datum(input.output)
         } else {
           False
@@ -711,6 +717,402 @@ fn test_non_registry_reference_input(output_index: Int) -> Input {
 
 fn test_expected_entry(full_denom: ByteArray) -> TraceRegistryEntry {
   TraceRegistryEntry { voucher_hash: crypto.sha3_256(full_denom), full_denom }
+}
+
+type TestRolloverFixture {
+  full_denom: ByteArray,
+  voucher_hash: ByteArray,
+  bucket_index: Int,
+  previous_active_shard_name: ByteArray,
+  new_active_shard_name: ByteArray,
+  old_entry: TraceRegistryEntry,
+  old_shard: TraceRegistryShardDatum,
+  old_directory: TraceRegistryDirectoryDatum,
+  updated_directory: TraceRegistryDirectoryDatum,
+  spent_shard_input: Input,
+  spent_directory_input: Input,
+  archived_output: Output,
+  new_active_output: Output,
+  updated_directory_output: Output,
+  mint: Value,
+}
+
+fn normalize_non_target_offset(seed: Int) -> Int {
+  1 + if seed < 0 {
+    ( 0 - seed ) % 15
+  } else {
+    seed % 15
+  }
+}
+
+fn test_noise_bucket(bucket_index: Int) -> TraceRegistryDirectoryBucket {
+  TraceRegistryDirectoryBucket {
+    bucket_index,
+    active_shard_name: "noise-active",
+    archived_shard_names: ["noise-archived"],
+  }
+}
+
+// Build the smallest valid rollover shape we care about fuzzing:
+// one target bucket changes active shard, and one non-target bucket remains
+// byte-for-byte unchanged so mutations can prove the validator rejects drift.
+fn test_rollover_fixture(extra_bucket_seed: Int) -> TestRolloverFixture {
+  let full_denom = "transfer/channel-77/uatom"
+  let voucher_hash = crypto.sha3_256(full_denom)
+  let bucket_index = bucket_index_for_hash(voucher_hash)
+  let previous_active_shard_name = "active-0a"
+  let new_active_shard_name = "active-0a-v2"
+  let old_entry =
+    TraceRegistryEntry {
+      voucher_hash: crypto.sha3_256("transfer/channel-7/uosmo"),
+      full_denom: "transfer/channel-7/uosmo",
+    }
+  let old_shard = TraceRegistryShardDatum { bucket_index, entries: [old_entry] }
+  let non_target_bucket_index =
+    ( bucket_index + normalize_non_target_offset(extra_bucket_seed) ) % 16
+  let old_directory =
+    TraceRegistryDirectoryDatum {
+      buckets: [
+        TraceRegistryDirectoryBucket {
+          bucket_index,
+          active_shard_name: previous_active_shard_name,
+          archived_shard_names: [],
+        },
+        test_noise_bucket(non_target_bucket_index),
+      ],
+    }
+  let updated_directory =
+    TraceRegistryDirectoryDatum {
+      buckets: [
+        TraceRegistryDirectoryBucket {
+          bucket_index,
+          active_shard_name: new_active_shard_name,
+          archived_shard_names: [previous_active_shard_name],
+        },
+        test_noise_bucket(non_target_bucket_index),
+      ],
+    }
+  let spent_shard_input =
+    Input {
+      output_reference: test_output_ref(0),
+      output: test_shard_output(
+        bucket_index,
+        previous_active_shard_name,
+        old_shard.entries,
+      ),
+    }
+  let spent_directory_input =
+    Input {
+      output_reference: test_output_ref(1),
+      output: test_directory_output(old_directory.buckets),
+    }
+  let archived_output =
+    test_shard_output(
+      bucket_index,
+      previous_active_shard_name,
+      old_shard.entries,
+    )
+  let new_active_output =
+    test_shard_output(
+      bucket_index,
+      new_active_shard_name,
+      [test_expected_entry(full_denom)],
+    )
+  let updated_directory_output =
+    test_directory_output(updated_directory.buckets)
+  let mint =
+    from_asset(test_voucher_policy_id(), voucher_hash, 1)
+      |> add(test_shard_policy_id(), new_active_shard_name, 1)
+
+  TestRolloverFixture {
+    full_denom,
+    voucher_hash,
+    bucket_index,
+    previous_active_shard_name,
+    new_active_shard_name,
+    old_entry,
+    old_shard,
+    old_directory,
+    updated_directory,
+    spent_shard_input,
+    spent_directory_input,
+    archived_output,
+    new_active_output,
+    updated_directory_output,
+    mint,
+  }
+}
+
+// The shard-side validator sees both the spent shard and the spent directory,
+// so the rollover fixture includes both inputs in the same transaction.
+fn test_rollover_shard_transaction(
+  fixture: TestRolloverFixture,
+  archived_output: Output,
+  new_active_output: Output,
+  updated_directory_output: Output,
+  mint: Value,
+) -> Transaction {
+  let TestRolloverFixture { spent_shard_input, spent_directory_input, .. } =
+    fixture
+
+  Transaction {
+    ..placeholder,
+    inputs: [spent_shard_input, spent_directory_input],
+    outputs: [archived_output, new_active_output, updated_directory_output],
+    mint,
+  }
+}
+
+// The directory-side validator only spends the directory input, but it still
+// inspects the archived and new-active shard outputs that the rollover creates.
+fn test_rollover_directory_transaction(
+  fixture: TestRolloverFixture,
+  archived_output: Output,
+  new_active_output: Output,
+  updated_directory_output: Output,
+  mint: Value,
+) -> Transaction {
+  let TestRolloverFixture { spent_directory_input, .. } = fixture
+
+  Transaction {
+    ..placeholder,
+    inputs: [spent_directory_input],
+    outputs: [updated_directory_output, archived_output, new_active_output],
+    mint,
+  }
+}
+
+// Positive property: a rollover is accepted only when one bucket moves from
+// old active -> new active, the old shard is preserved/archived, the new shard
+// contains exactly the inserted entry, and the matching voucher mint is present.
+test prop_trace_registry_rollover_accepts_exactly_one_bucket_transition(
+  extra_bucket_seed via fuzz.int(),
+) {
+  let fixture = test_rollover_fixture(extra_bucket_seed)
+  let TestRolloverFixture {
+    old_shard,
+    old_directory,
+    voucher_hash,
+    full_denom,
+    new_active_shard_name,
+    previous_active_shard_name,
+    archived_output,
+    new_active_output,
+    updated_directory_output,
+    mint,
+    ..
+  } = fixture
+
+  and {
+    spend_trace_registry.spend(
+      test_shard_policy_id(),
+      test_voucher_policy_id(),
+      test_disabled_benchmark_voucher_policy_id(),
+      Some(Shard(old_shard)),
+      RolloverInsertTrace { voucher_hash, full_denom, new_active_shard_name },
+      test_output_ref(0),
+      test_rollover_shard_transaction(
+        fixture,
+        archived_output,
+        new_active_output,
+        updated_directory_output,
+        mint,
+      ),
+    ),
+    spend_trace_registry.spend(
+      test_shard_policy_id(),
+      test_voucher_policy_id(),
+      test_disabled_benchmark_voucher_policy_id(),
+      Some(Directory(old_directory)),
+      AdvanceDirectory {
+        bucket_index: old_shard.bucket_index,
+        voucher_hash,
+        full_denom,
+        previous_active_shard_name,
+        new_active_shard_name,
+      },
+      test_output_ref(1),
+      test_rollover_directory_transaction(
+        fixture,
+        archived_output,
+        new_active_output,
+        updated_directory_output,
+        mint,
+      ),
+    ),
+  }
+}
+
+// Mutate only the untouched "noise" bucket. The directory transition should be
+// rejected because rollover is allowed to change exactly one bucket.
+test prop_trace_registry_rollover_rejects_when_non_target_bucket_changes(
+  extra_bucket_seed via fuzz.int(),
+) fail {
+  let fixture = test_rollover_fixture(extra_bucket_seed)
+  let TestRolloverFixture {
+    old_directory,
+    voucher_hash,
+    full_denom,
+    previous_active_shard_name,
+    new_active_shard_name,
+    bucket_index,
+    archived_output,
+    new_active_output,
+    updated_directory,
+    mint,
+    ..
+  } = fixture
+  let mutated_directory =
+    TraceRegistryDirectoryDatum {
+      buckets: list.map(
+        updated_directory.buckets,
+        fn(bucket) {
+          if bucket.bucket_index == bucket_index {
+            bucket
+          } else {
+            TraceRegistryDirectoryBucket { ..bucket, archived_shard_names: [] }
+          }
+        },
+      ),
+    }
+
+  spend_trace_registry.spend(
+    test_shard_policy_id(),
+    test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
+    Some(Directory(old_directory)),
+    AdvanceDirectory {
+      bucket_index,
+      voucher_hash,
+      full_denom,
+      previous_active_shard_name,
+      new_active_shard_name,
+    },
+    test_output_ref(1),
+    test_rollover_directory_transaction(
+      fixture,
+      archived_output,
+      new_active_output,
+      test_directory_output(mutated_directory.buckets),
+      mint,
+    ),
+  )
+}
+
+// Mutate the archived copy of the old shard. Rollover must preserve the old
+// shard contents exactly before it can be archived.
+test prop_trace_registry_rollover_rejects_when_old_shard_is_not_preserved(
+  extra_bucket_seed via fuzz.int(),
+) fail {
+  let fixture = test_rollover_fixture(extra_bucket_seed)
+  let TestRolloverFixture {
+    old_shard,
+    voucher_hash,
+    full_denom,
+    new_active_shard_name,
+    updated_directory,
+    new_active_output,
+    mint,
+    ..
+  } = fixture
+  let mutated_archived_output =
+    test_shard_output(
+      old_shard.bucket_index,
+      "active-0a",
+      [test_expected_entry("transfer/channel-88/uatia")],
+    )
+
+  spend_trace_registry.spend(
+    test_shard_policy_id(),
+    test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
+    Some(Shard(old_shard)),
+    RolloverInsertTrace { voucher_hash, full_denom, new_active_shard_name },
+    test_output_ref(0),
+    test_rollover_shard_transaction(
+      fixture,
+      mutated_archived_output,
+      new_active_output,
+      test_directory_output(updated_directory.buckets),
+      mint,
+    ),
+  )
+}
+
+// Mutate the new active shard so it contains more than the single inserted
+// entry. Rollover must create a fresh shard with exactly the new mapping.
+test prop_trace_registry_rollover_rejects_when_new_shard_is_not_exact_new_entry(
+  extra_bucket_seed via fuzz.int(),
+) fail {
+  let fixture = test_rollover_fixture(extra_bucket_seed)
+  let TestRolloverFixture {
+    old_shard,
+    old_entry,
+    voucher_hash,
+    full_denom,
+    new_active_shard_name,
+    updated_directory,
+    archived_output,
+    mint,
+    ..
+  } = fixture
+  let mutated_new_active_output =
+    test_shard_output(
+      old_shard.bucket_index,
+      new_active_shard_name,
+      [test_expected_entry(full_denom), old_entry],
+    )
+
+  spend_trace_registry.spend(
+    test_shard_policy_id(),
+    test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
+    Some(Shard(old_shard)),
+    RolloverInsertTrace { voucher_hash, full_denom, new_active_shard_name },
+    test_output_ref(0),
+    test_rollover_shard_transaction(
+      fixture,
+      archived_output,
+      mutated_new_active_output,
+      test_directory_output(updated_directory.buckets),
+      mint,
+    ),
+  )
+}
+
+// Remove the voucher mint and leave only the new shard NFT mint. Rollover must
+// stay coupled to a matching voucher mint so the registry cannot be written
+// arbitrarily.
+test prop_trace_registry_rollover_rejects_without_matching_voucher_mint(
+  extra_bucket_seed via fuzz.int(),
+) fail {
+  let fixture = test_rollover_fixture(extra_bucket_seed)
+  let TestRolloverFixture {
+    old_shard,
+    voucher_hash,
+    full_denom,
+    new_active_shard_name,
+    updated_directory,
+    archived_output,
+    new_active_output,
+    ..
+  } = fixture
+
+  spend_trace_registry.spend(
+    test_shard_policy_id(),
+    test_voucher_policy_id(),
+    test_disabled_benchmark_voucher_policy_id(),
+    Some(Shard(old_shard)),
+    RolloverInsertTrace { voucher_hash, full_denom, new_active_shard_name },
+    test_output_ref(0),
+    test_rollover_shard_transaction(
+      fixture,
+      archived_output,
+      new_active_output,
+      test_directory_output(updated_directory.buckets),
+      from_asset(test_shard_policy_id(), new_active_shard_name, 1),
+    ),
+  )
 }
 
 test trace_registry_insert_trace_succeeds_with_matching_voucher_mint() {
