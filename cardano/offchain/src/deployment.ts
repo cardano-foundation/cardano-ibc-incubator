@@ -1,5 +1,6 @@
 import { ensureDir } from "@std/fs";
 import {
+  Constr,
   credentialToAddress,
   Data,
   fromText,
@@ -18,7 +19,6 @@ import {
   formatTimestamp,
   generateIdentifierTokenName,
   generateTokenName,
-  getNonceOutRef,
   readValidator,
   submitTx,
 } from "./utils.ts";
@@ -37,9 +37,8 @@ import {
   MintPortRedeemer,
   OutputReference,
   OutputReferenceSchema,
-  TraceRegistryDatum,
-  TraceRegistryDirectoryDatum,
-  TraceRegistryShardDatum,
+  type TraceRegistryDirectoryDatum,
+  type TraceRegistryShardDatum,
 } from "../types/index.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -75,19 +74,18 @@ export const createDeployment = async (
   let signerUtxos = await lucid.wallet().getUtxos();
   if (signerUtxos.length < 1) throw new Error("No UTXO found.");
 
-  // Ensure we have at least 2 UTxOs to use as distinct nonces.
-  //
-  // On fresh devnets we may start with a single large UTxO. We split it into two
-  // explicit outputs so later deployment transactions don't "accidentally" pull in
-  // the other nonce as an extra input to fund fees/min-ADA.
-  if (signerUtxos.length < 2) {
+  // Reserve enough wallet UTxOs up front for every deployment-only mint that
+  // needs a unique OutputReference nonce. Re-querying "the first wallet UTxO"
+  // between sequential mints is fragile on local devnets because the indexer can
+  // momentarily lag behind the just-submitted transaction set.
+  if (signerUtxos.length < RESERVED_DEPLOYMENT_NONCE_COUNT) {
     const address = await lucid.wallet().address();
-    const splitAmount = 50_000_000n; // 50 ADA, comfortably above any min-ADA + fees for these setup txs.
-    const splitTx = lucid
-      .newTx()
-      .collectFrom([signerUtxos[0]])
-      .pay.ToAddress(address, { lovelace: splitAmount })
-      .pay.ToAddress(address, { lovelace: splitAmount });
+    const splitTx = lucid.newTx().collectFrom(signerUtxos);
+    for (let index = 0; index < RESERVED_DEPLOYMENT_NONCE_COUNT; index++) {
+      splitTx.pay.ToAddress(address, {
+        lovelace: DEPLOYMENT_NONCE_SPLIT_AMOUNT,
+      });
+    }
     await submitTx(splitTx, lucid, "SplitNonceUtxos", false);
     signerUtxos = await lucid.wallet().getUtxos();
   }
@@ -101,22 +99,21 @@ export const createDeployment = async (
     return aLovelace < bLovelace ? 1 : -1;
   });
 
-  const handlerNonceUtxo = sortedUtxos[0];
-  const hostStateNonceUtxo = sortedUtxos.find(
-    (u) =>
-      u.txHash !== handlerNonceUtxo.txHash ||
-      u.outputIndex !== handlerNonceUtxo.outputIndex,
+  const reservedNonceUtxos = sortedUtxos.slice(
+    0,
+    RESERVED_DEPLOYMENT_NONCE_COUNT,
   );
-  if (!handlerNonceUtxo) {
+  if (reservedNonceUtxos.length < RESERVED_DEPLOYMENT_NONCE_COUNT) {
     throw new Error(
-      "Not enough distinct wallet UTxOs to deploy (need at least 2).",
+      `Not enough distinct wallet UTxOs to deploy (need at least ${RESERVED_DEPLOYMENT_NONCE_COUNT.toString()}).`,
     );
   }
-  if (!hostStateNonceUtxo) {
-    throw new Error(
-      "Not enough distinct wallet UTxOs to deploy (need at least 2).",
-    );
-  }
+  const [
+    handlerNonceUtxo,
+    hostStateNonceUtxo,
+    transferModuleNonceUtxo,
+    ...traceRegistryNonceUtxos
+  ] = reservedNonceUtxos;
 
   const hostStateOutputReference: OutputReference = {
     transaction_id: hostStateNonceUtxo.txHash,
@@ -343,6 +340,7 @@ export const createDeployment = async (
     mintChannelSttPolicyId,
     TRANSFER_MODULE_PORT,
     hostStateNFT,
+    transferModuleNonceUtxo,
   );
   referredValidators.push(mintVoucher.validator, spendTransferModule.validator);
   const traceRegistryBenchmarkVoucher = await loadTraceRegistryBenchmarkVoucher(
@@ -357,6 +355,7 @@ export const createDeployment = async (
     mintIdentifierValidator,
     mintVoucher.policyId,
     traceRegistryBenchmarkVoucher?.policyId ?? "",
+    traceRegistryNonceUtxos,
   );
   // Bootstrap the registry with the bridge so voucher mints can rely on an
   // on-chain reverse mapping from the first deployment onward.
@@ -894,11 +893,12 @@ const deployTransferModule = async (
   mintChannelPolicyId: string,
   portNumber: bigint,
   hostStateNFT: AuthToken,
+  nonceUtxo: UTxO,
 ) => {
   console.log("Create Transfer Module");
 
   // generate identifier token
-  const [nonceUtxo, outputReference] = await getNonceOutRef(lucid);
+  const outputReference = buildOutputReference(nonceUtxo);
   const mintIdentifierPolicyId = validatorToScriptHash(mintIdentifierValidator);
   const identifierTokenName = await generateIdentifierTokenName(
     outputReference,
@@ -1048,12 +1048,31 @@ const deployTransferModule = async (
 };
 
 const TRACE_REGISTRY_SHARD_COUNT = 16;
+const TRACE_REGISTRY_DIRECTORY_NONCE_COUNT = 1;
+const TRANSFER_MODULE_NONCE_COUNT = 1;
+const RESERVED_DEPLOYMENT_NONCE_COUNT = 2 +
+  TRANSFER_MODULE_NONCE_COUNT +
+  TRACE_REGISTRY_SHARD_COUNT +
+  TRACE_REGISTRY_DIRECTORY_NONCE_COUNT;
+const DEPLOYMENT_NONCE_SPLIT_AMOUNT = 20_000_000n;
+
+const buildOutputReference = (utxo: UTxO): OutputReference => ({
+  transaction_id: utxo.txHash,
+  output_index: BigInt(utxo.outputIndex),
+});
+
+const encodeRawDatum = (value: unknown): string =>
+  // Lucid's generic `Data.to` typings are schema-oriented, so manually
+  // constructed nested `Constr` values need a small cast even though the
+  // runtime encoding is correct and validated by the on-chain tests.
+  Data.to(value as never, undefined as never, { canonical: true });
 
 const deployTraceRegistry = async (
   lucid: LucidEvolution,
   mintIdentifierValidator: MintingPolicy,
   mintVoucherPolicyId: string,
   benchmarkVoucherPolicyId: string,
+  nonceUtxos: UTxO[],
 ) => {
   console.log("Create Trace Registry");
 
@@ -1079,11 +1098,18 @@ const deployTraceRegistry = async (
     shardIndex < TRACE_REGISTRY_SHARD_COUNT;
     shardIndex++
   ) {
+    const shardNonce = nonceUtxos[shardIndex];
+    if (!shardNonce) {
+      throw new Error(
+        `Missing reserved nonce UTxO for trace registry shard ${shardIndex.toString()}.`,
+      );
+    }
     const token = await deployTraceRegistryShard(
       lucid,
       mintIdentifierValidator,
       address,
       BigInt(shardIndex),
+      shardNonce,
     );
     shards.push({
       index: BigInt(shardIndex),
@@ -1091,11 +1117,18 @@ const deployTraceRegistry = async (
     });
   }
 
+  const directoryNonce = nonceUtxos[TRACE_REGISTRY_SHARD_COUNT];
+  if (!directoryNonce) {
+    throw new Error(
+      "Missing reserved nonce UTxO for trace registry directory.",
+    );
+  }
   const directory = await deployTraceRegistryDirectory(
     lucid,
     mintIdentifierValidator,
     address,
     shards,
+    directoryNonce,
   );
 
   return {
@@ -1138,8 +1171,9 @@ const deployTraceRegistryShard = async (
   mintIdentifierValidator: MintingPolicy,
   traceRegistryAddress: string,
   shardIndex: bigint,
+  nonceUtxo: UTxO,
 ): Promise<AuthToken> => {
-  const [nonceUtxo, outputReference] = await getNonceOutRef(lucid);
+  const outputReference = buildOutputReference(nonceUtxo);
   const shardPolicyId = validatorToScriptHash(mintIdentifierValidator);
   const shardTokenName = await generateIdentifierTokenName(outputReference);
   const shardTokenUnit = shardPolicyId + shardTokenName;
@@ -1148,12 +1182,13 @@ const deployTraceRegistryShard = async (
     bucket_index: shardIndex,
     entries: [],
   };
-  const encodedShardDatum = Data.to(
-    {
-      Shard: emptyShardDatum,
-    },
-    TraceRegistryDatum,
-    { canonical: true },
+  const encodedShardDatum = encodeRawDatum(
+    new Constr(0, [
+      new Constr(0, [
+        emptyShardDatum.bucket_index,
+        [],
+      ]),
+    ]),
   );
 
   // Each shard starts as its own append-only thread UTxO with a unique shard NFT
@@ -1197,8 +1232,9 @@ const deployTraceRegistryDirectory = async (
   mintIdentifierValidator: MintingPolicy,
   traceRegistryAddress: string,
   shards: Array<{ index: bigint; token: AuthToken }>,
+  nonceUtxo: UTxO,
 ): Promise<AuthToken> => {
-  const [nonceUtxo, outputReference] = await getNonceOutRef(lucid);
+  const outputReference = buildOutputReference(nonceUtxo);
   const shardPolicyId = validatorToScriptHash(mintIdentifierValidator);
   const directoryTokenName = await generateIdentifierTokenName(outputReference);
   const directoryTokenUnit = shardPolicyId + directoryTokenName;
@@ -1211,12 +1247,18 @@ const deployTraceRegistryDirectory = async (
     })),
   };
 
-  const encodedDirectoryDatum = Data.to(
-    {
-      Directory: directoryDatum,
-    },
-    TraceRegistryDatum,
-    { canonical: true },
+  const encodedDirectoryDatum = encodeRawDatum(
+    new Constr(1, [
+      new Constr(0, [
+        directoryDatum.buckets.map((bucket) =>
+          new Constr(0, [
+            bucket.bucket_index,
+            bucket.active_shard_name,
+            bucket.archived_shard_names,
+          ])
+        ),
+      ]),
+    ]),
   );
 
   const directoryTx = lucid

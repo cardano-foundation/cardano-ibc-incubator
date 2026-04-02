@@ -169,29 +169,42 @@ fn validate_insert_trace(
   expect Shard(updated_datum): TraceRegistryDatum =
     validator_utils.get_inline_datum(updated_output)
 
-  and {
-    updated_datum.bucket_index == old_datum.bucket_index,
-    old_datum.bucket_index == bucket_index_for_hash(voucher_hash),
-    // This is the canonicality check for non-rollover writes: an archived shard
-    // may still exist and be readable, but it can no longer accept inserts once
-    // the directory points the bucket at a newer active shard.
+  let bucket_index_matches_hash =
+    old_datum.bucket_index == bucket_index_for_hash(voucher_hash)
+  let active_shard_matches_directory =
     bucket_has_active_shard(
       directory_datum,
       old_datum.bucket_index,
       shard_token.name,
-    ),
-    crypto.sha3_256(full_denom) == voucher_hash,
+    )
+  let voucher_hash_matches =
+    crypto.sha3_256(full_denom) == voucher_hash
+  let matching_voucher_mint =
     matching_voucher_mint_present(
       mint,
       voucher_hash,
       voucher_minting_policy_id,
       benchmark_voucher_minting_policy_id,
-    ),
+    )
+  let voucher_hash_is_new =
     list.find(
       old_datum.entries,
       fn(entry) { entry.voucher_hash == voucher_hash },
-    ) == None,
-    updated_datum.entries == list.concat(old_datum.entries, [expected_entry]),
+    ) == None
+  let appended_output_matches =
+    updated_datum.entries == list.concat(old_datum.entries, [expected_entry])
+
+  and {
+    updated_datum.bucket_index == old_datum.bucket_index,
+    bucket_index_matches_hash,
+    // This is the canonicality check for non-rollover writes: an archived shard
+    // may still exist and be readable, but it can no longer accept inserts once
+    // the directory points the bucket at a newer active shard.
+    active_shard_matches_directory,
+    voucher_hash_matches,
+    matching_voucher_mint,
+    voucher_hash_is_new,
+    appended_output_matches,
   }
 }
 
@@ -257,10 +270,13 @@ fn validate_rollover_insert_trace(
         // The shard-side rollover path must bind itself to the real updated
         // directory UTxO, not merely to "some" Directory datum. We therefore
         // require the exact same auth-token set as the spent directory input.
-        output.address == spent_output.address && output_has_same_registry_token_set(
-          output,
-          directory_input.output,
-        ) && has_directory_datum(output)
+        if output.address != spent_output.address {
+          False
+        } else if !output_has_same_registry_token_set(output, directory_input.output) {
+          False
+        } else {
+          has_directory_datum(output)
+        }
       },
     )
   expect Directory(updated_directory): TraceRegistryDatum =
@@ -333,10 +349,13 @@ fn validate_advance_directory(
         // directory UTxO that was spent. This prevents a transaction from
         // keeping the real directory unchanged while introducing a forged
         // auxiliary Directory datum somewhere else in the outputs.
-        output.address == spent_output.address && output_has_same_registry_token_set(
-          output,
-          spent_output,
-        ) && has_directory_datum(output)
+        if output.address != spent_output.address {
+          False
+        } else if !output_has_same_registry_token_set(output, spent_output) {
+          False
+        } else {
+          has_directory_datum(output)
+        }
       },
     )
   expect Directory(updated_directory): TraceRegistryDatum =
@@ -483,10 +502,14 @@ fn find_unique_directory_input(
     list.filter(
       inputs,
       fn(input) {
-        has_directory_datum(input.output) && output_has_single_registry_token_under_policy(
-          input.output,
-          policy_id,
-        )
+        // Reference-script UTxOs also appear in `reference_inputs`, but they do
+        // not carry a trace-registry directory datum. Branch explicitly before
+        // decoding so non-directory helper UTxOs cannot crash this filter.
+        if output_has_single_registry_token_under_policy(input.output, policy_id) {
+          has_directory_datum(input.output)
+        } else {
+          False
+        }
       },
     )
 
@@ -674,6 +697,18 @@ fn test_directory_input(
   }
 }
 
+fn test_non_registry_reference_input(output_index: Int) -> Input {
+  Input {
+    output_reference: test_output_ref(output_index),
+    output: Output {
+      address: test_registry_address(),
+      value: assets.from_lovelace(2_000_000),
+      datum: InlineDatum(Void),
+      reference_script: None,
+    },
+  }
+}
+
 fn test_expected_entry(full_denom: ByteArray) -> TraceRegistryEntry {
   TraceRegistryEntry { voucher_hash: crypto.sha3_256(full_denom), full_denom }
 }
@@ -739,6 +774,46 @@ test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint()
       ..placeholder,
       inputs: [spent_input],
       reference_inputs: [directory_input],
+      outputs: [updated_output],
+      mint: from_asset(test_benchmark_voucher_policy_id(), voucher_hash, 1),
+    }
+
+  spend_trace_registry.spend(
+    test_shard_policy_id(),
+    test_voucher_policy_id(),
+    test_benchmark_voucher_policy_id(),
+    Some(Shard(TraceRegistryShardDatum { bucket_index, entries: [] })),
+    InsertTrace { voucher_hash, full_denom },
+    test_output_ref(0),
+    transaction,
+  )
+}
+
+test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint_and_extra_reference_inputs() {
+  let full_denom = "transfer/channel-7/benchmark-uatom"
+  let voucher_hash = crypto.sha3_256(full_denom)
+  let bucket_index = bucket_index_for_hash(voucher_hash)
+  let shard_name = "active-bench"
+  let spent_input =
+    Input {
+      output_reference: test_output_ref(0),
+      output: test_shard_output(bucket_index, shard_name, []),
+    }
+  let updated_output =
+    test_shard_output(
+      bucket_index,
+      shard_name,
+      [test_expected_entry(full_denom)],
+    )
+  let directory_input = test_directory_input(1, bucket_index, shard_name, [])
+  let helper_ref_1 = test_non_registry_reference_input(2)
+  let helper_ref_2 = test_non_registry_reference_input(3)
+
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [spent_input],
+      reference_inputs: [helper_ref_1, helper_ref_2, directory_input],
       outputs: [updated_output],
       mint: from_asset(test_benchmark_voucher_policy_id(), voucher_hash, 1),
     }
