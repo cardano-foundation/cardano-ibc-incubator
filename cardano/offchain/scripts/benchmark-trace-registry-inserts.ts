@@ -131,6 +131,7 @@ type TraceRegistryAppendInsertContext = {
   kind: "append";
   directoryUtxo: UTxO;
   shardUtxo: UTxO;
+  archivedShardWitnessUtxos: UTxO[];
   encodedTraceRegistryRedeemer: string;
   encodedUpdatedTraceRegistryDatum: string;
 };
@@ -139,6 +140,7 @@ type TraceRegistryRolloverInsertContext = {
   kind: "rollover";
   directoryUtxo: UTxO;
   shardUtxo: UTxO;
+  archivedShardWitnessUtxos: UTxO[];
   nonceUtxo: UTxO;
   encodedTraceRegistryDirectoryRedeemer: string;
   encodedUpdatedTraceRegistryDirectoryDatum: string;
@@ -976,18 +978,35 @@ async function prepareInsertContexts(
       activeShardUnit,
       bucketIndex,
     );
-
-  const duplicate = activeShardDatum.entries.find((entry) =>
-    entry.voucherHash === voucherHash
+  const archivedShards = await Promise.all(
+    bucket.archivedShardNames.map(async (name) =>
+      await loadShardDatumByUnit(
+        lucid,
+        registry.shardPolicyId + name,
+        bucketIndex,
+      )
+    ),
   );
-  if (duplicate) {
-    if (duplicate.fullDenom !== fullDenom) {
+  const archivedShardWitnessUtxos = archivedShards.map((shard) => shard.utxo);
+
+  const bucketMatches = activeShardDatum.entries
+    .filter((entry) => entry.voucherHash === voucherHash);
+  for (const archivedShard of archivedShards) {
+    bucketMatches.push(
+      ...archivedShard.datum.entries.filter((entry) =>
+        entry.voucherHash === voucherHash
+      ),
+    );
+  }
+  if (bucketMatches.length > 0) {
+    const conflicting = bucketMatches.find((entry) => entry.fullDenom !== fullDenom);
+    if (conflicting) {
       throw new Error(
-        `Conflicting active trace-registry mapping for hash ${voucherHash}: existing=${duplicate.fullDenom}, incoming=${fullDenom}`,
+        `Conflicting bucket trace-registry mapping for hash ${voucherHash}: existing=${conflicting.fullDenom}, incoming=${fullDenom}`,
       );
     }
     throw new Error(
-      `Benchmark trace ${voucherHash} already exists in the active shard`,
+      `Benchmark trace ${voucherHash} already exists somewhere in the bucket`,
     );
   }
 
@@ -995,6 +1014,7 @@ async function prepareInsertContexts(
     kind: "append",
     directoryUtxo,
     shardUtxo: activeShardUtxo,
+    archivedShardWitnessUtxos,
     encodedTraceRegistryRedeemer: encodeTraceRegistryRedeemer({
       InsertTrace: {
         voucher_hash: voucherHash,
@@ -1040,6 +1060,7 @@ async function prepareInsertContexts(
     kind: "rollover",
     directoryUtxo,
     shardUtxo: activeShardUtxo,
+    archivedShardWitnessUtxos,
     nonceUtxo,
     encodedTraceRegistryDirectoryRedeemer: encodeTraceRegistryRedeemer({
       AdvanceDirectory: {
@@ -1095,7 +1116,7 @@ function buildAppendTx(
 ): TxBuilder {
   return lucid
     .newTx()
-    .readFrom([update.directoryUtxo])
+    .readFrom([update.directoryUtxo, ...update.archivedShardWitnessUtxos])
     .attach.SpendingValidator(references.spendTraceRegistryValidator)
     .attach.MintingPolicy(references.mintTraceRegistryBenchmarkVoucherPolicy)
     .collectFrom([update.shardUtxo], update.encodedTraceRegistryRedeemer)
@@ -1131,6 +1152,7 @@ function buildRolloverTx(
 ): TxBuilder {
   return lucid
     .newTx()
+    .readFrom(update.archivedShardWitnessUtxos)
     .attach.SpendingValidator(references.spendTraceRegistryValidator)
     .attach.MintingPolicy(references.mintIdentifierPolicy)
     .attach.MintingPolicy(references.mintTraceRegistryBenchmarkVoucherPolicy)

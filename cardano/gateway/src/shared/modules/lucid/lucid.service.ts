@@ -2433,12 +2433,13 @@ export class LucidService implements OnModuleInit {
         | {
           kind: "existing";
           traceRegistryDirectoryUtxo: UTxO;
-          traceRegistryShardUtxo: UTxO;
+          traceRegistryShardWitnessUtxos: UTxO[];
         }
         | {
           kind: "append";
           traceRegistryDirectoryUtxo: UTxO;
           traceRegistryShardUtxo: UTxO;
+          traceRegistryArchivedShardWitnessUtxos: UTxO[];
           encodedTraceRegistryRedeemer: string;
           encodedUpdatedTraceRegistryDatum: string;
         }
@@ -2446,6 +2447,7 @@ export class LucidService implements OnModuleInit {
           kind: "rollover";
           traceRegistryDirectoryUtxo: UTxO;
           traceRegistryShardUtxo: UTxO;
+          traceRegistryArchivedShardWitnessUtxos: UTxO[];
           traceRegistryMintNonceUtxo: UTxO;
           encodedTraceRegistryDirectoryRedeemer: string;
           encodedUpdatedTraceRegistryDirectoryDatum: string;
@@ -2465,7 +2467,7 @@ export class LucidService implements OnModuleInit {
     if (dto.traceRegistryUpdate.kind === "existing") {
       tx.readFrom([
         dto.traceRegistryUpdate.traceRegistryDirectoryUtxo,
-        dto.traceRegistryUpdate.traceRegistryShardUtxo,
+        ...dto.traceRegistryUpdate.traceRegistryShardWitnessUtxos,
       ]);
       return;
     }
@@ -2490,6 +2492,7 @@ export class LucidService implements OnModuleInit {
       tx.readFrom([
         this.referenceScripts.spendTraceRegistry,
         dto.traceRegistryUpdate.traceRegistryDirectoryUtxo,
+        ...dto.traceRegistryUpdate.traceRegistryArchivedShardWitnessUtxos,
       ])
         .collectFrom(
           [dto.traceRegistryUpdate.traceRegistryShardUtxo],
@@ -2511,6 +2514,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendTraceRegistry,
       this.referenceScripts.mintIdentifier,
+      ...dto.traceRegistryUpdate.traceRegistryArchivedShardWitnessUtxos,
     ])
       .collectFrom(
         [dto.traceRegistryUpdate.traceRegistryDirectoryUtxo],

@@ -17,11 +17,13 @@ describe('PacketService denom regression coverage', () => {
       outputIndex: 0,
       assets: { tracedir: 1n },
     },
-    traceRegistryShardUtxo: {
-      txHash: 'trace-shard',
-      outputIndex: 1,
-      assets: { traceshard: 1n },
-    },
+    traceRegistryShardWitnessUtxos: [
+      {
+        txHash: 'trace-shard',
+        outputIndex: 1,
+        assets: { traceshard: 1n },
+      },
+    ],
   };
 
   it('resolves ibc/<hash> to canonical denom and uses burn path packet/module denoms', async () => {

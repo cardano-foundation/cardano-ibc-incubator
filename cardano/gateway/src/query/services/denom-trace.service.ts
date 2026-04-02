@@ -37,18 +37,27 @@ type OnChainTraceEntry = {
   bucketIndex: number;
   shardUtxo?: UTxO;
   shardTokenName?: string;
+  bucketShardUtxos?: UTxO[];
+};
+
+type LoadedBucketShard = {
+  tokenName: string;
+  tokenUnit: string;
+  utxo: UTxO;
+  datum: TraceRegistryShardDatum;
 };
 
 type TraceRegistryExistingProofContext = {
   kind: "existing";
   traceRegistryDirectoryUtxo: UTxO;
-  traceRegistryShardUtxo: UTxO;
+  traceRegistryShardWitnessUtxos: UTxO[];
 };
 
 type TraceRegistryAppendInsertContext = {
   kind: "append";
   traceRegistryDirectoryUtxo: UTxO;
   traceRegistryShardUtxo: UTxO;
+  traceRegistryArchivedShardWitnessUtxos: UTxO[];
   encodedTraceRegistryRedeemer: string;
   encodedUpdatedTraceRegistryDatum: string;
 };
@@ -57,6 +66,7 @@ type TraceRegistryRolloverInsertContext = {
   kind: "rollover";
   traceRegistryDirectoryUtxo: UTxO;
   traceRegistryShardUtxo: UTxO;
+  traceRegistryArchivedShardWitnessUtxos: UTxO[];
   traceRegistryMintNonceUtxo: UTxO;
   encodedTraceRegistryDirectoryRedeemer: string;
   encodedUpdatedTraceRegistryDirectoryDatum: string;
@@ -187,43 +197,36 @@ export class DenomTraceService {
       return {
         kind: "existing",
         traceRegistryDirectoryUtxo: directoryUtxo,
-        traceRegistryShardUtxo: existing.shardUtxo,
+        traceRegistryShardWitnessUtxos: existing.bucketShardUtxos ??
+          [existing.shardUtxo],
       };
     }
 
     const bucketIndex = this.getBucketIndexForHash(normalizedHash);
     const bucket = this.getDirectoryBucket(directoryDatum, bucketIndex);
-    const activeShardUnit = registry.shardPolicyId + bucket.active_shard_name;
-    const activeShardUtxo = await this.lucidService.findUtxoByUnit(
-      activeShardUnit,
-    );
-    const activeShardDatum = this.loadShardDatumFromUtxo(
-      activeShardUtxo,
+    const bucketShards = await this.loadBucketShardStates(
+      registry,
       bucketIndex,
-      activeShardUnit,
+      bucket,
     );
-
-    const duplicate = activeShardDatum.entries.find((entry) =>
-      entry.voucher_hash.toLowerCase() === normalizedHash
+    const activeShard = bucketShards.find((candidate) =>
+      candidate.tokenName === bucket.active_shard_name
     );
-    if (duplicate) {
-      if (duplicate.full_denom !== fullDenom) {
-        throw new Error(
-          `Conflicting trace-registry datum for hash ${normalizedHash}: existing=${duplicate.full_denom}, incoming=${fullDenom}`,
-        );
-      }
-      return {
-        kind: "existing",
-        traceRegistryDirectoryUtxo: directoryUtxo,
-        traceRegistryShardUtxo: activeShardUtxo,
-      };
+    if (!activeShard) {
+      throw new Error(
+        `Active trace-registry shard ${bucket.active_shard_name} is missing for bucket ${bucketIndex}`,
+      );
     }
+    const archivedShardWitnessUtxos = bucketShards
+      .filter((candidate) => candidate.tokenName !== bucket.active_shard_name)
+      .map((candidate) => candidate.utxo);
 
     if (!opts?.forceRollover) {
       return {
         kind: "append",
         traceRegistryDirectoryUtxo: directoryUtxo,
-        traceRegistryShardUtxo: activeShardUtxo,
+        traceRegistryShardUtxo: activeShard.utxo,
+        traceRegistryArchivedShardWitnessUtxos: archivedShardWitnessUtxos,
         encodedTraceRegistryRedeemer: encodeTraceRegistryRedeemer(
           {
             InsertTrace: {
@@ -236,9 +239,9 @@ export class DenomTraceService {
         encodedUpdatedTraceRegistryDatum: encodeTraceRegistryDatum(
           {
             Shard: {
-              bucket_index: activeShardDatum.bucket_index,
+              bucket_index: activeShard.datum.bucket_index,
               entries: [
-                ...activeShardDatum.entries,
+                ...activeShard.datum.entries,
                 {
                   voucher_hash: normalizedHash,
                   full_denom: fullDenom,
@@ -271,7 +274,8 @@ export class DenomTraceService {
     return {
       kind: "rollover",
       traceRegistryDirectoryUtxo: directoryUtxo,
-      traceRegistryShardUtxo: activeShardUtxo,
+      traceRegistryShardUtxo: activeShard.utxo,
+      traceRegistryArchivedShardWitnessUtxos: archivedShardWitnessUtxos,
       traceRegistryMintNonceUtxo: nonceUtxo,
       encodedTraceRegistryDirectoryRedeemer: encodeTraceRegistryRedeemer(
         {
@@ -303,7 +307,7 @@ export class DenomTraceService {
       ),
       encodedArchivedTraceRegistryDatum: encodeTraceRegistryDatum(
         {
-          Shard: activeShardDatum,
+          Shard: activeShard.datum,
         },
         this.lucidService.LucidImporter,
       ),
@@ -665,31 +669,37 @@ export class DenomTraceService {
     const directoryDatum = directoryArg ?? await this.loadDirectoryDatum(registry);
     const bucketIndex = this.getBucketIndexForHash(hash);
     const bucket = this.getDirectoryBucket(directoryDatum, bucketIndex);
-    const tokenNames = [
-      bucket.active_shard_name,
-      ...bucket.archived_shard_names,
-    ];
+    const bucketShards = await this.loadBucketShardStates(
+      registry,
+      bucketIndex,
+      bucket,
+    );
+    const matches = bucketShards.flatMap((shard) =>
+      shard.datum.entries
+        .filter((candidate) =>
+          candidate.voucher_hash.toLowerCase() === hash.toLowerCase()
+        )
+        .map((entry) => ({
+          entry,
+          shard,
+        }))
+    );
 
-    for (const tokenName of tokenNames) {
-      const shardUnit = registry.shardPolicyId + tokenName;
-      const shardUtxo = await this.lucidService.findUtxoByUnit(shardUnit);
-      const shardDatum = this.loadShardDatumFromUtxo(
-        shardUtxo,
+    if (matches.length > 1) {
+      throw new Error(
+        `Duplicate trace-registry entries detected for hash ${hash.toLowerCase()} in bucket ${bucketIndex}`,
+      );
+    }
+    if (matches.length === 1) {
+      const [{ entry, shard }] = matches;
+      return {
+        hash: entry.voucher_hash.toLowerCase(),
+        fullDenom: entry.full_denom,
         bucketIndex,
-        shardUnit,
-      );
-      const entry = shardDatum.entries.find((candidate) =>
-        candidate.voucher_hash.toLowerCase() === hash.toLowerCase()
-      );
-      if (entry) {
-        return {
-          hash: entry.voucher_hash.toLowerCase(),
-          fullDenom: entry.full_denom,
-          bucketIndex,
-          shardUtxo,
-          shardTokenName: tokenName,
-        };
-      }
+        shardUtxo: shard.utxo,
+        shardTokenName: shard.tokenName,
+        bucketShardUtxos: bucketShards.map((candidate) => candidate.utxo),
+      };
     }
 
     return null;
@@ -704,22 +714,14 @@ export class DenomTraceService {
     const directory = await this.loadDirectoryDatum(registry);
     const shardEntries = await Promise.all(
       directory.buckets.map(async (bucket) => {
-        const tokenNames = [
-          bucket.active_shard_name,
-          ...bucket.archived_shard_names,
-        ];
-        const uniqueTokenNames = [...new Set(tokenNames)];
-        const shards = await Promise.all(
-          uniqueTokenNames.map((tokenName) =>
-            this.loadShardDatumByUnit(
-              registry.shardPolicyId + tokenName,
-              Number(bucket.bucket_index),
-            )
-          ),
+        const shards = await this.loadBucketShardStates(
+          registry,
+          Number(bucket.bucket_index),
+          bucket,
         );
 
         return shards.flatMap((shard) =>
-          shard.entries.map((entry) => ({
+          shard.datum.entries.map((entry) => ({
             hash: entry.voucher_hash.toLowerCase(),
             fullDenom: entry.full_denom,
             bucketIndex: Number(bucket.bucket_index),
@@ -727,34 +729,77 @@ export class DenomTraceService {
         );
       }),
     );
+    const entries = shardEntries.flat();
+    const seen = new Set<string>();
+    for (const entry of entries) {
+      if (seen.has(entry.hash)) {
+        throw new Error(
+          `Duplicate trace-registry entries detected for hash ${entry.hash}`,
+        );
+      }
+      seen.add(entry.hash);
+    }
 
-    return shardEntries.flat();
+    return entries;
+  }
+
+  private async loadBucketShardStates(
+    registry: TraceRegistryConfig,
+    bucketIndex: number,
+    bucket: TraceRegistryDirectoryBucket,
+  ): Promise<LoadedBucketShard[]> {
+    const tokenNames = [
+      bucket.active_shard_name,
+      ...bucket.archived_shard_names,
+    ];
+    const uniqueTokenNames = [...new Set(tokenNames)];
+
+    return await Promise.all(
+      uniqueTokenNames.map(async (tokenName) => {
+        const tokenUnit = registry.shardPolicyId + tokenName;
+        const utxo = await this.lucidService.findUtxoByUnit(tokenUnit);
+        return {
+          tokenName,
+          tokenUnit,
+          utxo,
+          datum: this.loadShardDatumFromUtxo(
+            utxo,
+            bucketIndex,
+            tokenUnit,
+          ),
+        };
+      }),
+    );
   }
 
   private async buildBucketStats(
     registry: TraceRegistryConfig,
     bucket: TraceRegistryDirectoryBucket,
   ): Promise<TraceRegistryBucketStats> {
-    const tokenNames = [
-      bucket.active_shard_name,
-      ...bucket.archived_shard_names,
-    ];
-    const uniqueTokenNames = [...new Set(tokenNames)];
-    const shards = await Promise.all(
-      uniqueTokenNames.map(async (tokenName) => {
-        const shardDatum = await this.loadShardDatumByUnit(
-          registry.shardPolicyId + tokenName,
-          Number(bucket.bucket_index),
-        );
-        return {
-          tokenName,
-          tokenUnit: registry.shardPolicyId + tokenName,
-          entryCount: shardDatum.entries.length,
-          datumBytes: this.measureShardDatumBytes(shardDatum),
-          isActive: tokenName === bucket.active_shard_name,
-        };
-      }),
+    const loadedShards = await this.loadBucketShardStates(
+      registry,
+      Number(bucket.bucket_index),
+      bucket,
     );
+    const seen = new Set<string>();
+    for (const shard of loadedShards) {
+      for (const entry of shard.datum.entries) {
+        const normalizedHash = entry.voucher_hash.toLowerCase();
+        if (seen.has(normalizedHash)) {
+          throw new Error(
+            `Duplicate trace-registry entries detected for hash ${normalizedHash} in bucket ${Number(bucket.bucket_index)}`,
+          );
+        }
+        seen.add(normalizedHash);
+      }
+    }
+    const shards = loadedShards.map((shard) => ({
+      tokenName: shard.tokenName,
+      tokenUnit: shard.tokenUnit,
+      entryCount: shard.datum.entries.length,
+      datumBytes: this.measureShardDatumBytes(shard.datum),
+      isActive: shard.tokenName === bucket.active_shard_name,
+    }));
     const activeShard = shards.find((candidate) => candidate.isActive);
     if (!activeShard) {
       throw new Error(
@@ -765,7 +810,7 @@ export class DenomTraceService {
     return {
       bucketIndex: Number(bucket.bucket_index),
       activeShardName: bucket.active_shard_name,
-      shardCount: uniqueTokenNames.length,
+      shardCount: loadedShards.length,
       rolloverCount: bucket.archived_shard_names.length,
       totalEntries: shards.reduce((sum, shard) => sum + shard.entryCount, 0),
       activeShardEntryCount: activeShard.entryCount,

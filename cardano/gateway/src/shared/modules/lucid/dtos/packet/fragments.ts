@@ -49,6 +49,7 @@ export type TraceRegistryAppendUpdate = {
   kind: "append";
   traceRegistryDirectoryUtxo: UTxO;
   traceRegistryShardUtxo: UTxO;
+  traceRegistryArchivedShardWitnessUtxos: UTxO[];
   encodedTraceRegistryRedeemer: string;
   encodedUpdatedTraceRegistryDatum: string;
 };
@@ -56,13 +57,14 @@ export type TraceRegistryAppendUpdate = {
 export type TraceRegistryExistingProof = {
   kind: "existing";
   traceRegistryDirectoryUtxo: UTxO;
-  traceRegistryShardUtxo: UTxO;
+  traceRegistryShardWitnessUtxos: UTxO[];
 };
 
 export type TraceRegistryRolloverUpdate = {
   kind: "rollover";
   traceRegistryDirectoryUtxo: UTxO;
   traceRegistryShardUtxo: UTxO;
+  traceRegistryArchivedShardWitnessUtxos: UTxO[];
   traceRegistryMintNonceUtxo: UTxO;
   encodedTraceRegistryDirectoryRedeemer: string;
   encodedUpdatedTraceRegistryDirectoryDatum: string;

@@ -143,6 +143,7 @@ describe('DenomTraceService', () => {
       throw new Error('expected append context');
     }
     expect(result.traceRegistryShardUtxo.txHash).toBe('trace-shard-10');
+    expect(result.traceRegistryArchivedShardWitnessUtxos).toEqual([]);
     expect(result.encodedTraceRegistryRedeemer).toBeTruthy();
     expect(result.encodedUpdatedTraceRegistryDatum).toBeTruthy();
   });
@@ -169,7 +170,7 @@ describe('DenomTraceService', () => {
       throw new Error('expected existing proof context');
     }
     expect(result.traceRegistryDirectoryUtxo.txHash).toBe('trace-directory');
-    expect(result.traceRegistryShardUtxo.txHash).toBe('trace-shard-15');
+    expect(result.traceRegistryShardWitnessUtxos.map((utxo) => utxo.txHash)).toEqual(['trace-shard-15']);
   });
 
   it('fails hard when the same voucher hash resolves to a conflicting full denom', async () => {
@@ -188,6 +189,32 @@ describe('DenomTraceService', () => {
 
     await expect(service.prepareOnChainInsert(hash, 'transfer/channel-7/uatom')).rejects.toThrow(
       'Conflicting on-chain denom trace',
+    );
+  });
+
+  it('fails hard when the same voucher hash appears in multiple bucket shards', async () => {
+    const hash = `a${'9'.repeat(63)}`;
+    const fullDenom = 'transfer/channel-7/uatom';
+    lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
+      if (unit === 'trace-shard-policy0a') {
+        return makeShardUtxo([{ voucher_hash: hash, full_denom: fullDenom }], 10);
+      }
+      if (unit === 'trace-shard-policy1a') {
+        return makeShardUtxo([{ voucher_hash: hash, full_denom: fullDenom }], 10);
+      }
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          { bucket_index: 10n, active_shard_name: '0a', archived_shard_names: ['1a'] },
+        ]);
+      }
+      throw new Error(`unexpected unit lookup: ${unit}`);
+    });
+
+    await expect(service.prepareOnChainInsert(hash, fullDenom)).rejects.toThrow(
+      'Duplicate trace-registry entries detected',
+    );
+    await expect(service.findByHash(hash)).rejects.toThrow(
+      'Duplicate trace-registry entries detected',
     );
   });
 
@@ -291,6 +318,7 @@ describe('DenomTraceService', () => {
     }
     expect(result.traceRegistryDirectoryUtxo.txHash).toBe('trace-directory');
     expect(result.traceRegistryShardUtxo.txHash).toBe('trace-shard-10');
+    expect(result.traceRegistryArchivedShardWitnessUtxos).toEqual([]);
     expect(result.newActiveTraceRegistryShardTokenUnit.startsWith('trace-shard-policy')).toBe(true);
   });
 

@@ -66,6 +66,20 @@ fn make_directory_input(
   bucket_index: Int,
   active_shard_name: ByteArray,
 ) -> Input {
+  make_directory_input_with_archived(
+    directory_auth_token,
+    bucket_index,
+    active_shard_name,
+    [],
+  )
+}
+
+fn make_directory_input_with_archived(
+  directory_auth_token: AuthToken,
+  bucket_index: Int,
+  active_shard_name: ByteArray,
+  archived_shard_names: List<ByteArray>,
+) -> Input {
   Input {
     output_reference: OutputReference {
       transaction_id: #"17b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
@@ -87,7 +101,7 @@ fn make_directory_input(
                 TraceRegistryDirectoryBucket {
                   bucket_index,
                   active_shard_name,
-                  archived_shard_names: [],
+                  archived_shard_names,
                 },
               ],
             },
@@ -105,10 +119,28 @@ fn make_shard_reference_input(
   voucher_hash: ByteArray,
   full_denom: ByteArray,
 ) -> Input {
+  make_shard_reference_input_with_output_index(
+    shard_policy_id,
+    shard_name,
+    bucket_index,
+    voucher_hash,
+    full_denom,
+    1,
+  )
+}
+
+fn make_shard_reference_input_with_output_index(
+  shard_policy_id: PolicyId,
+  shard_name: ByteArray,
+  bucket_index: Int,
+  voucher_hash: ByteArray,
+  full_denom: ByteArray,
+  output_index: Int,
+) -> Input {
   Input {
     output_reference: OutputReference {
       transaction_id: #"27b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
-      output_index: 1,
+      output_index,
     },
     output: Output {
       address: from_script("trace registry script hash"),
@@ -477,6 +509,114 @@ test test_refund_voucher() {
       ..transaction.placeholder,
       inputs: [mock_data.module_input],
       reference_inputs: [directory_input, shard_reference_input],
+      outputs: [
+        Output {
+          address: from_verification_key(sender_public_key_hash),
+          value: mint,
+          datum: NoDatum,
+          reference_script: None,
+        },
+      ],
+      redeemers: [
+        Pair(
+          Mint(mock_data.voucher_minting_policy_id),
+          mint_voucher_redeemer_in_data,
+        ),
+        Pair(
+          Spend(mock_data.module_input.output_reference),
+          spend_module_redeemer_in_data,
+        ),
+      ],
+      mint,
+    }
+
+  minting_voucher.mint_voucher.mint(
+    mock_data.module_token,
+    mock_data.directory_auth_token,
+    mint_voucher_redeemer,
+    mock_data.voucher_minting_policy_id,
+    transaction,
+  )
+}
+
+test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail {
+  let mock_data = prepare_mock_data()
+
+  let packet_source_port = "port-99"
+  let packet_source_channel = "channel-99"
+  let transfer_amount = 100
+
+  let source_prefix =
+    transfer_coin.get_denom_prefix(packet_source_port, packet_source_channel)
+  let prefixed_denom = bytearray.concat(source_prefix, "ibc/usdt")
+
+  let sender =
+    #"3532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232"
+
+  let ftpd =
+    FungibleTokenPacketData {
+      denom: prefixed_denom,
+      amount: string.from_int(transfer_amount) |> string.to_bytearray(),
+      sender,
+      receiver: "cosmos address",
+      memo: "",
+    }
+
+  let token_name = crypto.sha3_256(ftpd.denom)
+  let bucket_index = bucket_index_for_hash(token_name)
+  let active_shard_name = "active-shard-0f"
+  let archived_shard_name = "archived-shard-0f"
+  let directory_input =
+    make_directory_input_with_archived(
+      mock_data.directory_auth_token,
+      bucket_index,
+      active_shard_name,
+      [archived_shard_name],
+    )
+  let active_shard_reference_input =
+    make_shard_reference_input_with_output_index(
+      mock_data.directory_auth_token.policy_id,
+      active_shard_name,
+      bucket_index,
+      token_name,
+      ftpd.denom,
+      1,
+    )
+  let archived_duplicate_reference_input =
+    make_shard_reference_input_with_output_index(
+      mock_data.directory_auth_token.policy_id,
+      archived_shard_name,
+      bucket_index,
+      token_name,
+      ftpd.denom,
+      2,
+    )
+
+  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+
+  let mint =
+    from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
+  let mint_voucher_redeemer =
+    RefundVoucher { packet_source_port, packet_source_channel }
+  let spend_module_redeemer =
+    Callback(
+      OnTimeoutPacket {
+        channel_id: packet_source_channel,
+        data: TransferModuleData(ftpd),
+      },
+    )
+  let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
+  let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
+
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock_data.module_input],
+      reference_inputs: [
+        directory_input,
+        active_shard_reference_input,
+        archived_duplicate_reference_input,
+      ],
       outputs: [
         Output {
           address: from_verification_key(sender_public_key_hash),
