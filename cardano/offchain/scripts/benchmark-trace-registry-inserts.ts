@@ -20,7 +20,7 @@ import {
   querySystemStart,
   submitTx,
 } from "../src/utils.ts";
-import { OutputReference } from "../types/index.ts";
+import { AuthTokenSchema, OutputReference } from "../types/index.ts";
 
 const TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES = 1024;
 const BENCHMARK_VOUCHER_AMOUNT = 1n;
@@ -368,17 +368,33 @@ function assertBenchmarkDeploymentMatchesCurrentValidators(
     // parameters the deployer uses for this local deployment.
     const benchmarkVoucherPolicyId = deployment.validators
       .mintTraceRegistryBenchmarkVoucher?.scriptHash ?? "";
+    const directoryAuthToken = deployment.traceRegistry
+      ? {
+        policy_id: deployment.traceRegistry.directory.policyId,
+        name: deployment.traceRegistry.directory.name,
+      }
+      : {
+        policy_id: "",
+        name: "",
+      };
     const parameterizedTraceRegistryScript = {
       type: "PlutusV3" as const,
       script: applyParamsToScript(
         traceRegistryBlueprint.compiledCode,
         [
           deployment.validators.mintIdentifier.scriptHash,
+          directoryAuthToken,
           deployment.validators.mintVoucher.scriptHash,
           benchmarkVoucherPolicyId,
         ],
-        Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
+        Data.Tuple([
+          Data.Bytes(),
+          AuthTokenSchema,
+          Data.Bytes(),
+          Data.Bytes(),
+        ]) as unknown as [
           string,
+          { policy_id: string; name: string },
           string,
           string,
         ],

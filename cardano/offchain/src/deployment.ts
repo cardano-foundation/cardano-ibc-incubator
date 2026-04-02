@@ -1081,12 +1081,34 @@ const deployTraceRegistry = async (
   // The registry is deployed alongside the bridge so voucher mint paths have the
   // canonical on-chain reverse-lookup state available immediately.
   const shardPolicyId = validatorToScriptHash(mintIdentifierValidator);
+  const directoryNonce = nonceUtxos[TRACE_REGISTRY_SHARD_COUNT];
+  if (!directoryNonce) {
+    throw new Error(
+      "Missing reserved nonce UTxO for trace registry directory.",
+    );
+  }
+  const directoryOutputReference = buildOutputReference(directoryNonce);
+  const directoryAuthToken: AuthToken = {
+    policy_id: shardPolicyId,
+    name: await generateIdentifierTokenName(directoryOutputReference),
+  };
   const [validator, scriptHash, address] = await readValidator(
     "trace_registry.spend_trace_registry.spend",
     lucid,
-    [shardPolicyId, mintVoucherPolicyId, benchmarkVoucherPolicyId],
-    Data.Tuple([Data.Bytes(), Data.Bytes(), Data.Bytes()]) as unknown as [
+    [
+      shardPolicyId,
+      directoryAuthToken,
+      mintVoucherPolicyId,
+      benchmarkVoucherPolicyId,
+    ],
+    Data.Tuple([
+      Data.Bytes(),
+      AuthTokenSchema,
+      Data.Bytes(),
+      Data.Bytes(),
+    ]) as unknown as [
       string,
+      AuthToken,
       string,
       string,
     ],
@@ -1116,19 +1138,13 @@ const deployTraceRegistry = async (
       token,
     });
   }
-
-  const directoryNonce = nonceUtxos[TRACE_REGISTRY_SHARD_COUNT];
-  if (!directoryNonce) {
-    throw new Error(
-      "Missing reserved nonce UTxO for trace registry directory.",
-    );
-  }
   const directory = await deployTraceRegistryDirectory(
     lucid,
     mintIdentifierValidator,
     address,
     shards,
     directoryNonce,
+    directoryAuthToken,
   );
 
   return {
@@ -1233,11 +1249,19 @@ const deployTraceRegistryDirectory = async (
   traceRegistryAddress: string,
   shards: Array<{ index: bigint; token: AuthToken }>,
   nonceUtxo: UTxO,
+  directoryAuthToken: AuthToken,
 ): Promise<AuthToken> => {
   const outputReference = buildOutputReference(nonceUtxo);
   const shardPolicyId = validatorToScriptHash(mintIdentifierValidator);
-  const directoryTokenName = await generateIdentifierTokenName(outputReference);
-  const directoryTokenUnit = shardPolicyId + directoryTokenName;
+  const expectedDirectoryTokenName = await generateIdentifierTokenName(
+    outputReference,
+  );
+  if (expectedDirectoryTokenName !== directoryAuthToken.name) {
+    throw new Error(
+      "Trace registry directory auth token does not match the reserved nonce UTxO.",
+    );
+  }
+  const directoryTokenUnit = shardPolicyId + directoryAuthToken.name;
 
   const directoryDatum: TraceRegistryDirectoryDatum = {
     buckets: shards.map((shard) => ({
@@ -1286,7 +1310,7 @@ const deployTraceRegistryDirectory = async (
 
   return {
     policy_id: shardPolicyId,
-    name: directoryTokenName,
+    name: directoryAuthToken.name,
   };
 };
 
