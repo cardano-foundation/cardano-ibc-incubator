@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
-import { DenomTraceService } from 'src/query/services/denom-trace.service';
+import { DenomTraceService, TraceRegistryInsertContext } from 'src/query/services/denom-trace.service';
 import {
   MsgAcknowledgement,
   MsgAcknowledgementResponse,
@@ -77,7 +77,6 @@ import {
   UnsignedTimeoutRefreshDto,
 } from '~@/shared/modules/lucid/dtos';
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, isTreeAligned } from '../shared/helpers/ibc-state-root';
-import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { queryNetworkTipPoint } from '../shared/helpers/time';
 
@@ -132,6 +131,32 @@ export class PacketService {
     }
 
     return JSON.stringify(obj, replacer, indent);
+  }
+
+  private async resolveTraceRegistryUpdate(
+    voucherHash: string,
+    fullDenom: string,
+    buildCandidateTx: (traceRegistryUpdate: TraceRegistryInsertContext) => TxBuilder,
+  ): Promise<TraceRegistryInsertContext> {
+    const initialUpdate = await this.denomTraceService.prepareOnChainInsert(
+      voucherHash,
+      fullDenom,
+    );
+    if (initialUpdate.kind !== 'append') {
+      return initialUpdate;
+    }
+
+    const candidateTx = buildCandidateTx(initialUpdate);
+    const shouldRollover = await this.denomTraceService.shouldRolloverForUnsignedTx(candidateTx);
+    if (!shouldRollover) {
+      return initialUpdate;
+    }
+
+    return await this.denomTraceService.prepareOnChainInsert(
+      voucherHash,
+      fullDenom,
+      { forceRollover: true },
+    );
   }
 
   /**
@@ -996,17 +1021,7 @@ export class PacketService {
             const voucherTokenUnit =
               this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
             
-            // Track denom trace mapping (required for later ibc/<hash> burn resolution).
             const fullDenomPath = destPrefix + fungibleTokenPacketData.denom;
-            const trace = this._splitDenomTraceForPersistence(fullDenomPath, 'recv_mint');
-
-            await this.denomTraceService.saveDenomTrace({
-              hash: voucherTokenName,
-              path: trace.path,
-              base_denom: trace.baseDenom,
-              voucher_policy_id: this.configService.get('deployment').validators.mintVoucher.scriptHash,
-              tx_hash: null, // Filled after confirmed submission.
-            });
 
             const updatedChannelDatum: ChannelDatum = {
               ...channelDatum,
@@ -1031,7 +1046,9 @@ export class PacketService {
               await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
 
             const receiverAddress = this._resolveVoucherReceiverAddress(fungibleTokenPacketData.receiver);
-            const unsignedRecvPacketMintParams: UnsignedRecvPacketMintDto = {
+            const buildUnsignedRecvPacketMintParams = (
+              traceRegistryUpdate: TraceRegistryInsertContext | null,
+            ): UnsignedRecvPacketMintDto => ({
               hostStateUtxo,
               channelUtxo,
               connectionUtxo,
@@ -1056,15 +1073,29 @@ export class PacketService {
 
               verifyProofPolicyId,
               encodedVerifyProofRedeemer,
-            };
+              traceRegistryUpdate,
+            });
 
-            const unsignedTx = this.lucidService.createUnsignedRecvPacketMintTx(unsignedRecvPacketMintParams);
+            // RecvPacket voucher mint path:
+            // - construct the canonical full denom visible on the destination side
+            // - hash it into the voucher token name
+            // - append to the current active shard if the tx is comfortably sized
+            // - otherwise roll the bucket to a fresh active shard and insert there
+            const traceRegistryUpdate = await this.resolveTraceRegistryUpdate(
+              voucherTokenName,
+              fullDenomPath,
+              (candidateUpdate) =>
+                this.lucidService.createUnsignedRecvPacketMintTx(buildUnsignedRecvPacketMintParams(candidateUpdate)),
+            );
+
+            const unsignedTx = this.lucidService.createUnsignedRecvPacketMintTx(
+              buildUnsignedRecvPacketMintParams(traceRegistryUpdate),
+            );
             return {
               unsignedTx,
               pendingTreeUpdate: {
                 expectedNewRoot: newRoot,
                 commit,
-                denomTraceHashes: [voucherTokenName],
               },
             };
           }
@@ -1313,23 +1344,15 @@ export class PacketService {
     const voucherTokenName = hashSha3_256(prefixedDenom);
     const voucherTokenUnit = this.getMintVoucherScriptHash() + voucherTokenName;
 
-    // Track denom trace mapping for timeout refund voucher.
     const fullDenomPath = convertHex2String(prefixedDenom);
-    const trace = this._splitDenomTraceForPersistence(fullDenomPath, 'timeout_refund');
-
-    await this.denomTraceService.saveDenomTrace({
-      hash: voucherTokenName,
-      path: trace.path,
-      base_denom: trace.baseDenom,
-      voucher_policy_id: this.getMintVoucherScriptHash(),
-      tx_hash: null, // Filled after confirmed submission.
-    });
 
     const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
       mintVoucherRedeemer,
       'mintVoucherRedeemer',
     );
-    const unsignedTimeoutPacketMintDto: UnsignedTimeoutPacketMintDto = {
+    const buildUnsignedTimeoutPacketMintDto = (
+      traceRegistryUpdate: TraceRegistryInsertContext | null,
+    ): UnsignedTimeoutPacketMintDto => ({
       hostStateUtxo: hostStateUtxo,
       channelUtxo: channelUtxo,
       transferModuleUtxo: transferModuleUtxo,
@@ -1357,14 +1380,22 @@ export class PacketService {
 
       verifyProofPolicyId,
       encodedVerifyProofRedeemer,
-    };
-    const unsignedTx = this.lucidService.createUnsignedTimeoutPacketMintTx(unsignedTimeoutPacketMintDto);
+      traceRegistryUpdate,
+    });
+    const traceRegistryUpdate = await this.resolveTraceRegistryUpdate(
+      voucherTokenName,
+      fullDenomPath,
+      (candidateUpdate) =>
+        this.lucidService.createUnsignedTimeoutPacketMintTx(buildUnsignedTimeoutPacketMintDto(candidateUpdate)),
+    );
+    const unsignedTx = this.lucidService.createUnsignedTimeoutPacketMintTx(
+      buildUnsignedTimeoutPacketMintDto(traceRegistryUpdate),
+    );
     return {
       unsignedTx,
       pendingTreeUpdate: {
         expectedNewRoot: newRoot,
         commit,
-        denomTraceHashes: [voucherTokenName],
       },
     };
   }
@@ -1947,17 +1978,7 @@ export class PacketService {
     const voucherTokenName = this._buildVoucherTokenName(denomToHash);
     const voucherTokenUnit = this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
 
-    // Track denom trace mapping for acknowledgement refund voucher.
     const fullDenomPath = denomToHash;
-    const trace = this._splitDenomTraceForPersistence(fullDenomPath, 'ack_refund');
-
-    await this.denomTraceService.saveDenomTrace({
-      hash: voucherTokenName,
-      path: trace.path,
-      base_denom: trace.baseDenom,
-      voucher_policy_id: this.configService.get('deployment').validators.mintVoucher.scriptHash,
-      tx_hash: null, // Filled after confirmed submission.
-    });
 
     // build update channel datum
     const updatedChannelDatum: ChannelDatum = {
@@ -1973,7 +1994,9 @@ export class PacketService {
     );
     const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
       await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
-    const unsignedAckPacketMintParams: UnsignedAckPacketMintDto = {
+    const buildUnsignedAckPacketMintParams = (
+      traceRegistryUpdate: TraceRegistryInsertContext | null,
+    ): UnsignedAckPacketMintDto => ({
       hostStateUtxo,
       channelUtxo,
       connectionUtxo,
@@ -1999,16 +2022,24 @@ export class PacketService {
 
       verifyProofPolicyId,
       encodedVerifyProofRedeemer,
-    };
+      traceRegistryUpdate,
+    });
+    const traceRegistryUpdate = await this.resolveTraceRegistryUpdate(
+      voucherTokenName,
+      fullDenomPath,
+      (candidateUpdate) =>
+        this.lucidService.createUnsignedAckPacketMintTx(buildUnsignedAckPacketMintParams(candidateUpdate)),
+    );
 
     // handle recv packet mint
-    const unsignedTx = this.lucidService.createUnsignedAckPacketMintTx(unsignedAckPacketMintParams);
+    const unsignedTx = this.lucidService.createUnsignedAckPacketMintTx(
+      buildUnsignedAckPacketMintParams(traceRegistryUpdate),
+    );
     return {
       unsignedTx,
       pendingTreeUpdate: {
         expectedNewRoot: newRoot,
         commit,
-        denomTraceHashes: [voucherTokenName],
       },
       walletSelection: {
         context: 'acknowledgementPacket',
@@ -2030,25 +2061,6 @@ export class PacketService {
       throw new GrpcInvalidArgumentException('Voucher denom is missing base denom after transfer/channel prefix');
     }
     return baseDenom;
-  }
-  /**
-   * Convert a full denom trace string into `(path, baseDenom)` for persistence.
-   *
-   * We intentionally use a dedicated parser instead of `split('/') + last-segment`.
-   * Base denoms can contain `/` on Cosmos chains, so last-segment parsing silently corrupts
-   * stored trace rows and breaks semantic round-tripping for denom queries and reverse lookup.
-   */
-  private _splitDenomTraceForPersistence(
-    fullDenomPath: string,
-    context: 'recv_mint' | 'timeout_refund' | 'ack_refund',
-  ): { path: string; baseDenom: string } {
-    try {
-      return splitFullDenomTrace(fullDenomPath);
-    } catch (error) {
-      throw new GrpcInvalidArgumentException(
-        `Invalid denom trace for ${context}: ${fullDenomPath}. ${error instanceof Error ? error.message : error}`,
-      );
-    }
   }
   private _resolveAssetUnitFromUtxoAssets(assets: Record<string, bigint>, requestedDenomToken: string): string {
     const normalized = requestedDenomToken.trim();

@@ -38,8 +38,9 @@ export interface CardanoAssetDenomTrace {
   voucherTokenName: string | null;
   voucherPolicyId: string | null;
   ibcDenomHash: string | null;
-  txHash: string | null;
-  firstSeen: string | null;
+  displayName: string;
+  displaySymbol: string;
+  displayDescription: string;
 }
 
 export interface SwapOptionToken {

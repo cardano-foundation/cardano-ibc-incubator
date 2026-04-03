@@ -12,6 +12,10 @@ use cardano/transaction.{
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
 }
+use ibc/apps/transfer/trace_registry.{
+  Directory, InsertTrace, RolloverInsertTrace, Shard, TraceRegistryDatum,
+  TraceRegistryDirectoryBucket, TraceRegistryRedeemer, bucket_index_for_hash,
+}
 use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
@@ -22,14 +26,19 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
   OnTimeoutPacket, Operator, TransferModuleData, TransferModuleOperator,
 }
 use ibc/utils/string as string_utils
+use ibc/utils/validator_utils
 
-validator mint_voucher(module_token: AuthToken) {
+validator mint_voucher(
+  module_token: AuthToken,
+  directory_auth_token: AuthToken,
+) {
   mint(
     redeemer: MintVoucherRedeemer,
     voucher_minting_policy_id: PolicyId,
     transaction: Transaction,
   ) {
-    let Transaction { inputs, outputs, mint, redeemers, .. } = transaction
+    let Transaction { inputs, reference_inputs, outputs, mint, redeemers, .. } =
+      transaction
 
     when redeemer is {
       MintVoucher {
@@ -58,6 +67,15 @@ validator mint_voucher(module_token: AuthToken) {
           transfer_coin.get_denom_prefix(packet_dest_port, packet_dest_channel)
         let prefixed_denom = bytearray.concat(source_prefix, data.denom)
         let token_name = crypto.sha3_256(prefixed_denom)
+        let registry_completeness_satisfied =
+          trace_registry_completeness_satisfied(
+            inputs,
+            reference_inputs,
+            redeemers,
+            directory_auth_token,
+            token_name,
+            prefixed_denom,
+          )
 
         expect Some(transfer_amount) = int.from_utf8(data.amount)
 
@@ -93,6 +111,7 @@ validator mint_voucher(module_token: AuthToken) {
         and {
           valid_receiver?,
           valid_minted_tokens?,
+          registry_completeness_satisfied,
           valid_voucher_output(
             payout_output,
             voucher_minting_policy_id,
@@ -161,6 +180,15 @@ validator mint_voucher(module_token: AuthToken) {
         expect Some(transfer_amount) = int.from_utf8(data.amount)
 
         let token_name = crypto.sha3_256(data.denom)
+        let registry_completeness_satisfied =
+          trace_registry_completeness_satisfied(
+            inputs,
+            reference_inputs,
+            redeemers,
+            directory_auth_token,
+            token_name,
+            data.denom,
+          )
 
         let minted_tokens = tokens(mint, voucher_minting_policy_id)
         let valid_minted_tokens =
@@ -219,6 +247,7 @@ validator mint_voucher(module_token: AuthToken) {
           outputs_token - inputs_token == transfer_amount,
           valid_minted_tokens,
           valid_sender,
+          registry_completeness_satisfied,
         }
       }
     }
@@ -247,6 +276,263 @@ fn extract_module_redeemer(
   expect spend_module_redeemer: IBCModuleRedeemer = spend_module_redeemer
 
   spend_module_redeemer
+}
+
+// Every positive voucher mint must prove registry completeness in the same tx.
+// The tx may either:
+// - spend the active shard with a matching trace-registry write redeemer, or
+// - carry reference inputs proving the exact mapping already exists on-chain.
+fn trace_registry_completeness_satisfied(
+  inputs: List<Input>,
+  reference_inputs: List<Input>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  directory_auth_token: AuthToken,
+  voucher_hash: ByteArray,
+  full_denom: ByteArray,
+) -> Bool {
+  let directory_bucket =
+    find_directory_bucket_witness(
+      inputs,
+      reference_inputs,
+      directory_auth_token,
+      bucket_index_for_hash(voucher_hash),
+    )
+
+  matching_registry_update_present(
+    inputs,
+    reference_inputs,
+    redeemers,
+    directory_auth_token,
+    directory_bucket,
+    voucher_hash,
+    full_denom,
+  ) || existing_registry_mapping_present(
+    reference_inputs,
+    directory_bucket,
+    directory_auth_token,
+    voucher_hash,
+    full_denom,
+  )
+}
+
+fn find_directory_bucket_witness(
+  inputs: List<Input>,
+  reference_inputs: List<Input>,
+  directory_auth_token: AuthToken,
+  bucket_index: Int,
+) -> TraceRegistryDirectoryBucket {
+  expect [directory_input] =
+    list.filter(
+      list.concat(inputs, reference_inputs),
+      fn(input) { input.output |> auth.contain_auth_token(directory_auth_token) },
+    )
+
+  expect Directory(directory): TraceRegistryDatum =
+    validator_utils.get_inline_datum(directory_input.output)
+  expect Some(bucket) =
+    list.find(directory.buckets, fn(candidate) {
+      candidate.bucket_index == bucket_index
+    })
+
+  bucket
+}
+
+fn matching_registry_update_present(
+  inputs: List<Input>,
+  reference_inputs: List<Input>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  directory_auth_token: AuthToken,
+  directory_bucket: TraceRegistryDirectoryBucket,
+  voucher_hash: ByteArray,
+  full_denom: ByteArray,
+) -> Bool {
+  let active_shard_token =
+    AuthToken {
+      policy_id: directory_auth_token.policy_id,
+      name: directory_bucket.active_shard_name,
+    }
+
+  when list.find(inputs, fn(input) {
+    input.output |> auth.contain_auth_token(active_shard_token)
+  }) is {
+    Some(active_shard_input) -> {
+      expect Shard(_): TraceRegistryDatum =
+        validator_utils.get_inline_datum(active_shard_input.output)
+
+      if !bucket_shard_reference_inputs_are_complete(
+        reference_inputs,
+        directory_bucket.archived_shard_names,
+        directory_auth_token,
+      ) {
+        False
+      } else if bucket_hash_match_count(
+        reference_inputs,
+        directory_bucket.archived_shard_names,
+        directory_auth_token,
+        voucher_hash,
+      ) != 0 {
+        False
+      } else {
+        when
+          pairs.get_first(redeemers, Spend(active_shard_input.output_reference))
+        is {
+          Some(trace_registry_redeemer) -> {
+            expect trace_registry_redeemer: TraceRegistryRedeemer =
+              trace_registry_redeemer
+
+            when trace_registry_redeemer is {
+              InsertTrace {
+                voucher_hash: redeemer_hash,
+                full_denom: redeemer_full_denom,
+              } ->
+                redeemer_hash == voucher_hash &&
+                  redeemer_full_denom == full_denom
+
+              RolloverInsertTrace {
+                voucher_hash: redeemer_hash,
+                full_denom: redeemer_full_denom,
+                ..
+              } ->
+                redeemer_hash == voucher_hash &&
+                  redeemer_full_denom == full_denom
+
+              _ -> False
+            }
+          }
+
+          None -> False
+        }
+      }
+    }
+
+    None -> False
+  }
+}
+
+fn existing_registry_mapping_present(
+  reference_inputs: List<Input>,
+  directory_bucket: TraceRegistryDirectoryBucket,
+  directory_auth_token: AuthToken,
+  voucher_hash: ByteArray,
+  full_denom: ByteArray,
+) -> Bool {
+  let shard_names =
+    list.concat(
+      [directory_bucket.active_shard_name],
+      directory_bucket.archived_shard_names,
+    )
+
+  if !bucket_shard_reference_inputs_are_complete(
+    reference_inputs,
+    shard_names,
+    directory_auth_token,
+  ) {
+    False
+  } else {
+    bucket_hash_match_count(
+      reference_inputs,
+      shard_names,
+      directory_auth_token,
+      voucher_hash,
+    ) == 1 &&
+      bucket_exact_entry_match_count(
+        reference_inputs,
+        shard_names,
+        directory_auth_token,
+        voucher_hash,
+        full_denom,
+      ) == 1
+  }
+}
+
+fn bucket_shard_reference_inputs_are_complete(
+  reference_inputs: List<Input>,
+  shard_names: List<ByteArray>,
+  directory_auth_token: AuthToken,
+) -> Bool {
+  list.all(
+    shard_names,
+    fn(shard_name) {
+      let shard_token =
+        AuthToken {
+          policy_id: directory_auth_token.policy_id,
+          name: shard_name,
+        }
+
+      list.length(
+        list.filter(reference_inputs, fn(input) {
+          input.output |> auth.contain_auth_token(shard_token)
+        }),
+      ) == 1
+    },
+  )
+}
+
+fn bucket_hash_match_count(
+  reference_inputs: List<Input>,
+  shard_names: List<ByteArray>,
+  directory_auth_token: AuthToken,
+  voucher_hash: ByteArray,
+) -> Int {
+  list.reduce(
+    shard_names,
+    0,
+    fn(acc, shard_name) {
+      let shard_token =
+        AuthToken {
+          policy_id: directory_auth_token.policy_id,
+          name: shard_name,
+        }
+      expect Some(shard_input) =
+        list.find(reference_inputs, fn(input) {
+          input.output |> auth.contain_auth_token(shard_token)
+        })
+      expect Shard(shard): TraceRegistryDatum =
+        validator_utils.get_inline_datum(shard_input.output)
+
+      acc + list.length(
+        list.filter(
+          shard.entries,
+          fn(entry) { entry.voucher_hash == voucher_hash },
+        ),
+      )
+    },
+  )
+}
+
+fn bucket_exact_entry_match_count(
+  reference_inputs: List<Input>,
+  shard_names: List<ByteArray>,
+  directory_auth_token: AuthToken,
+  voucher_hash: ByteArray,
+  full_denom: ByteArray,
+) -> Int {
+  list.reduce(
+    shard_names,
+    0,
+    fn(acc, shard_name) {
+      let shard_token =
+        AuthToken {
+          policy_id: directory_auth_token.policy_id,
+          name: shard_name,
+        }
+      expect Some(shard_input) =
+        list.find(reference_inputs, fn(input) {
+          input.output |> auth.contain_auth_token(shard_token)
+        })
+      expect Shard(shard): TraceRegistryDatum =
+        validator_utils.get_inline_datum(shard_input.output)
+
+      acc + list.length(
+        list.filter(
+          shard.entries,
+          fn(entry) {
+            entry.voucher_hash == voucher_hash && entry.full_denom == full_denom
+          },
+        ),
+      )
+    },
+  )
 }
 
 // Checks transfer amount is valid gte than the expected one

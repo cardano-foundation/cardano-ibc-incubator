@@ -48,7 +48,9 @@ function buildHandlerJsonDeployment() {
           timeout_packet: { scriptHash: 'timeout-hash', refUtxo: { txHash: 'timeout-tx', outputIndex: 9 } },
         },
       },
+      spendTraceRegistry: buildValidator('spendTraceRegistry'),
       spendTransferModule: buildValidator('spendTransferModule'),
+      mintIdentifier: buildValidator('mintIdentifier'),
       verifyProof: buildValidator('verifyProof'),
       mintClientStt: buildValidator('mintClientStt'),
       mintConnectionStt: buildValidator('mintConnectionStt'),
@@ -67,6 +69,14 @@ function buildHandlerJsonDeployment() {
       mock: {
         identifier: 'mock-id',
         address: 'mock-address',
+      },
+    },
+    traceRegistry: {
+      address: 'trace-registry-address',
+      shardPolicyId: 'trace-shard-policy',
+      directory: {
+        policyId: 'trace-shard-policy',
+        name: 'trace-directory',
       },
     },
   };
@@ -105,6 +115,14 @@ describe('bridge manifest normalization', () => {
       ref_utxo: {
         tx_hash: 'open-ack-tx',
         output_index: 5,
+      },
+    });
+    expect(loaded.bridgeManifest.trace_registry).toEqual({
+      address: 'trace-registry-address',
+      shard_policy_id: 'trace-shard-policy',
+      directory: {
+        policy_id: 'trace-shard-policy',
+        token_name: 'trace-directory',
       },
     });
   });

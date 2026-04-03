@@ -4,7 +4,7 @@
  * Test helper: Query all denoms from Gateway gRPC endpoint
  * 
  * This script queries the Gateway's Query.Denoms gRPC endpoint to retrieve
- * all denom information stored in the database.
+ * all denom information resolved from the on-chain trace registry.
  * 
  * Usage:
  *   node query-all-denom-traces.js [limit] [offset]

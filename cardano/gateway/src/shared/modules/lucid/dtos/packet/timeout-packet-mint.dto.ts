@@ -4,6 +4,7 @@ import {
   WithConstructedAddress,
   WithHostStateUpdate,
   WithMintVoucherRedeemer,
+  WithOptionalTraceRegistryUpdate,
   WithPacketPolicyAndChannelToken,
   WithTransferAmount,
   WithTransferModuleSpend,
@@ -17,6 +18,7 @@ export type UnsignedTimeoutPacketMintDto = WithHostStateUpdate &
   WithChannelSpend &
   WithTransferModuleSpend &
   WithMintVoucherRedeemer &
+  WithOptionalTraceRegistryUpdate &
   WithTransferAmount &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'timeoutPacketPolicyId'> &

@@ -1,12 +1,38 @@
 # FAQ
 
-## Why can denom trace mapping rely on an indexer, but IBC verification cannot?
+## Why is voucher denom trace mapping on-chain, but still outside HostState?
 
-Because the verifier and the security goal are different.
+Because the security roles are different.
 
-For denom trace backfill, we use a node or indexer to learn data for an off-chain convenience mapping from denom trace hashes to human-readable traces. That mapping is not consensus-critical, and it is not what makes vouchers safe. The voucher’s token name already commits to the trace via the hash. An indexer can help reconstruct the full trace by scanning minting transactions and packet data, but if the indexer is wrong or malicious it does not let an attacker forge vouchers or corrupt on-chain state. At worst it produces a wrong reverse lookup table, which can be detected and repaired by recomputing hashes and reindexing from on-chain data.
+Voucher trace lookup now lives on-chain because Cardano apps need a canonical
+way to reverse a voucher asset hash into the original full denom trace without
+depending on a Gateway database. However, that lookup data is still not part of
+the IBC proof root exposed to counterparties.
 
-For IBC verification, the counterparty chain is making state machine decisions (advance clients, connections, channels, packet commitments) and it must do so without trusting the relayer, the Gateway, or any specific node or indexer. Simply querying a node or indexer tells you what that external party claims is the current Cardano state, but it does not provide a cryptographic basis for the counterparty chain to reject stale data, fork data, or fabricated data. In this design, Mithril exists to turn “someone says this transaction/output is on Cardano” into a stake-certified checkpoint plus an inclusion proof that the counterparty chain can verify independently, after which it can safely extract the HostState datum bytes and use standard ICS-23 proofs against the committed `ibc_state_root`.
+`HostState` remains reserved for consensus-relevant IBC state: clients,
+connections, channels, packet commitments, and the commitment root proven with
+Mithril and ICS-23. Voucher trace mappings are Cardano-local lookup metadata.
+Keeping them in a separate registry avoids bloating the IBC proof root and avoids
+making counterparties care about local voucher reverse-lookup state.
+
+The trace registry is still protected on-chain:
+
+- only real voucher mint transactions can create first-seen entries
+- the full denom must hash to the voucher token name exactly
+- mappings are append-only and immutable once recorded
+
+So the registry is canonical for Cardano-side correctness, while `HostState`
+remains canonical for cross-chain verification.
+
+## Why don't all wallets automatically show a friendly voucher name?
+
+The registry solves correctness and reversibility, not universal presentation.
+
+A generic Cardano wallet usually sees only the asset unit: policy id plus hashed
+token name. To display a friendly name, the wallet needs to resolve the on-chain
+registry or consume metadata derived from it. Our dapps and SDKs can do that, but
+third-party wallets will only show better names if they choose to integrate that
+resolution path.
 
 ## Why is Mithril slow? What determines its speed?
 
