@@ -90,63 +90,6 @@ export type ResolvedDenomTrace = {
   ibc_denom_hash: string;
 };
 
-export type TraceRegistryShardStats = {
-  tokenName: string;
-  tokenUnit: string;
-  entryCount: number;
-  datumBytes: number;
-  isActive: boolean;
-};
-
-export type TraceRegistryBucketStats = {
-  bucketIndex: number;
-  activeShardName: string;
-  shardCount: number;
-  rolloverCount: number;
-  totalEntries: number;
-  activeShardEntryCount: number;
-  activeShardDatumBytes: number;
-  shards: TraceRegistryShardStats[];
-};
-
-export type TraceRegistrySummary = {
-  maxTxSize: number;
-  txHeadroomBytes: number;
-  projectedMaxShardDatumBytesUpperBound: number;
-  totalEntries: number;
-  buckets: TraceRegistryBucketStats[];
-};
-
-export type TraceRegistrySimulationSample = {
-  step: number;
-  voucherHash: string;
-  fullDenom: string;
-  rolledOver: boolean;
-  activeShardSequence: number;
-  activeShardEntryCount: number;
-  activeShardDatumBytes: number;
-};
-
-export type TraceRegistryBucketGrowthSimulation = {
-  sizeModel: "datum-only-upper-bound";
-  bucketIndex: number;
-  simulatedInserts: number;
-  projectedRollovers: number;
-  initialBucket: TraceRegistryBucketStats;
-  projectedBucket: {
-    totalEntries: number;
-    shardCount: number;
-    rolloverCount: number;
-    activeShardSequence: number;
-    activeShardEntryCount: number;
-    activeShardDatumBytes: number;
-  };
-  sampleInserts: TraceRegistrySimulationSample[];
-  maxTxSize: number;
-  txHeadroomBytes: number;
-  projectedMaxShardDatumBytesUpperBound: number;
-};
-
 const TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES = 1024;
 
 /**
@@ -448,158 +391,6 @@ export class DenomTraceService {
     }
   }
 
-  async getSummary(): Promise<TraceRegistrySummary> {
-    const registry = this.getTraceRegistryConfig();
-    if (!registry) {
-      throw new Error("Trace registry is not configured in deployment config");
-    }
-
-    const directory = await this.loadDirectoryDatum(registry);
-    const buckets = await Promise.all(
-      directory.buckets.map((bucket) =>
-        this.buildBucketStats(registry, bucket)
-      ),
-    );
-
-    return {
-      maxTxSize: this.getMaxTxSize(),
-      txHeadroomBytes: TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES,
-      projectedMaxShardDatumBytesUpperBound: this
-        .getProjectedMaxShardDatumBytesUpperBound(),
-      totalEntries: buckets.reduce(
-        (sum, bucket) => sum + bucket.totalEntries,
-        0,
-      ),
-      buckets: buckets.sort((left, right) =>
-        left.bucketIndex - right.bucketIndex
-      ),
-    };
-  }
-
-  async simulateBucketGrowth(
-    bucketIndex: number,
-    simulatedInserts: number,
-  ): Promise<TraceRegistryBucketGrowthSimulation> {
-    if (!Number.isInteger(bucketIndex) || bucketIndex < 0 || bucketIndex > 15) {
-      throw new Error(
-        `Trace-registry bucket index must be between 0 and 15, received ${bucketIndex}`,
-      );
-    }
-    if (!Number.isInteger(simulatedInserts) || simulatedInserts < 0) {
-      throw new Error(
-        `simulatedInserts must be a non-negative integer, received ${simulatedInserts}`,
-      );
-    }
-
-    const registry = this.getTraceRegistryConfig();
-    if (!registry) {
-      throw new Error("Trace registry is not configured in deployment config");
-    }
-
-    const summary = await this.getSummary();
-    const initialBucket = summary.buckets.find((candidate) =>
-      candidate.bucketIndex === bucketIndex
-    );
-    if (!initialBucket) {
-      throw new Error(`Missing trace-registry bucket ${bucketIndex}`);
-    }
-
-    const directory = await this.loadDirectoryDatum(registry);
-    const bucket = this.getDirectoryBucket(directory, bucketIndex);
-    const activeShard = await this.loadShardDatumByUnit(
-      registry.shardPolicyId + bucket.active_shard_name,
-      bucketIndex,
-    );
-    const allEntries = await this.loadBucketEntries(registry, bucket);
-
-    const projectedMaxShardDatumBytesUpperBound = this
-      .getProjectedMaxShardDatumBytesUpperBound();
-    const seenHashes = new Set(
-      allEntries.map((entry) => entry.voucher_hash.toLowerCase()),
-    );
-    let projectedRollovers = 0;
-    let activeShardSequence = 0;
-    let activeEntries = [...activeShard.entries];
-    const sampleInserts: TraceRegistrySimulationSample[] = [];
-
-    for (let step = 1; step <= simulatedInserts; step += 1) {
-      const synthetic = this.buildSyntheticTraceForBucket(
-        bucketIndex,
-        step,
-        seenHashes,
-      );
-      const appendedEntries = [
-        ...activeEntries,
-        {
-          voucher_hash: synthetic.voucherHash,
-          full_denom: synthetic.fullDenom,
-        },
-      ];
-      let activeShardDatumBytes = this.measureShardDatumBytes({
-        bucket_index: BigInt(bucketIndex),
-        entries: appendedEntries,
-      });
-      let rolledOver = false;
-
-      // This is intentionally a size-only projection. We use the exact datum
-      // encoding and a conservative tx-size headroom, but we do not submit or
-      // evaluate a full voucher-mint transaction here.
-      if (activeShardDatumBytes > projectedMaxShardDatumBytesUpperBound) {
-        rolledOver = true;
-        projectedRollovers += 1;
-        activeShardSequence += 1;
-        activeEntries = [
-          {
-            voucher_hash: synthetic.voucherHash,
-            full_denom: synthetic.fullDenom,
-          },
-        ];
-        activeShardDatumBytes = this.measureShardDatumBytes({
-          bucket_index: BigInt(bucketIndex),
-          entries: activeEntries,
-        });
-      } else {
-        activeEntries = appendedEntries;
-      }
-
-      seenHashes.add(synthetic.voucherHash);
-      if (sampleInserts.length < 5 || rolledOver || step == simulatedInserts) {
-        sampleInserts.push({
-          step,
-          voucherHash: synthetic.voucherHash,
-          fullDenom: synthetic.fullDenom,
-          rolledOver,
-          activeShardSequence,
-          activeShardEntryCount: activeEntries.length,
-          activeShardDatumBytes,
-        });
-      }
-    }
-
-    return {
-      sizeModel: "datum-only-upper-bound",
-      bucketIndex,
-      simulatedInserts,
-      projectedRollovers,
-      initialBucket,
-      projectedBucket: {
-        totalEntries: initialBucket.totalEntries + simulatedInserts,
-        shardCount: initialBucket.shardCount + projectedRollovers,
-        rolloverCount: initialBucket.rolloverCount + projectedRollovers,
-        activeShardSequence,
-        activeShardEntryCount: activeEntries.length,
-        activeShardDatumBytes: this.measureShardDatumBytes({
-          bucket_index: BigInt(bucketIndex),
-          entries: activeEntries,
-        }),
-      },
-      sampleInserts,
-      maxTxSize: summary.maxTxSize,
-      txHeadroomBytes: summary.txHeadroomBytes,
-      projectedMaxShardDatumBytesUpperBound,
-    };
-  }
-
   private observeQueryDuration(operation: string, startTime: number): void {
     const duration = (Date.now() - startTime) / 1000;
     this.metricsService?.denomTraceQueryDuration.observe(
@@ -647,13 +438,6 @@ export class DenomTraceService {
   private getMaxTxSize(): number {
     return this.lucidService.lucid.config().protocolParameters?.maxTxSize ??
       16_384;
-  }
-
-  private getProjectedMaxShardDatumBytesUpperBound(): number {
-    return Math.max(
-      this.getMaxTxSize() - TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES,
-      0,
-    );
   }
 
   private async findOnChainEntryByHash(
@@ -766,92 +550,6 @@ export class DenomTraceService {
     );
   }
 
-  private async buildBucketStats(
-    registry: TraceRegistryConfig,
-    bucket: TraceRegistryDirectoryBucket,
-  ): Promise<TraceRegistryBucketStats> {
-    const loadedShards = await this.loadBucketShardStates(
-      registry,
-      Number(bucket.bucket_index),
-      bucket,
-    );
-    const seen = new Set<string>();
-    for (const shard of loadedShards) {
-      for (const entry of shard.datum.entries) {
-        const normalizedHash = entry.voucher_hash.toLowerCase();
-        if (seen.has(normalizedHash)) {
-          throw new Error(
-            `Duplicate trace-registry entries detected for hash ${normalizedHash} in bucket ${Number(bucket.bucket_index)}`,
-          );
-        }
-        seen.add(normalizedHash);
-      }
-    }
-    const shards = loadedShards.map((shard) => ({
-      tokenName: shard.tokenName,
-      tokenUnit: shard.tokenUnit,
-      entryCount: shard.datum.entries.length,
-      datumBytes: this.measureShardDatumBytes(shard.datum),
-      isActive: shard.tokenName === bucket.active_shard_name,
-    }));
-    const activeShard = shards.find((candidate) => candidate.isActive);
-    if (!activeShard) {
-      throw new Error(
-        `Missing active trace-registry shard for bucket ${bucket.bucket_index.toString()}`,
-      );
-    }
-
-    return {
-      bucketIndex: Number(bucket.bucket_index),
-      activeShardName: bucket.active_shard_name,
-      shardCount: loadedShards.length,
-      rolloverCount: bucket.archived_shard_names.length,
-      totalEntries: shards.reduce((sum, shard) => sum + shard.entryCount, 0),
-      activeShardEntryCount: activeShard.entryCount,
-      activeShardDatumBytes: activeShard.datumBytes,
-      shards,
-    };
-  }
-
-  private async loadBucketEntries(
-    registry: TraceRegistryConfig,
-    bucket: TraceRegistryDirectoryBucket,
-  ): Promise<TraceRegistryShardDatum["entries"]> {
-    const tokenNames = [
-      ...new Set([bucket.active_shard_name, ...bucket.archived_shard_names]),
-    ];
-    const shards = await Promise.all(
-      tokenNames.map((tokenName) =>
-        this.loadShardDatumByUnit(
-          registry.shardPolicyId + tokenName,
-          Number(bucket.bucket_index),
-        )
-      ),
-    );
-
-    return shards.flatMap((shard) => shard.entries);
-  }
-
-  private buildSyntheticTraceForBucket(
-    bucketIndex: number,
-    step: number,
-    seenHashes: Set<string>,
-  ): { voucherHash: string; fullDenom: string } {
-    let attempt = 0;
-    while (true) {
-      const fullDenom =
-        `transfer/channel-${bucketIndex}/denom-registry-benchmark-${step}-${attempt}`;
-      const voucherHash = this.computeVoucherHashFromFullDenom(fullDenom);
-      if (
-        this.getBucketIndexForHash(voucherHash) === bucketIndex &&
-        !seenHashes.has(voucherHash)
-      ) {
-        return { voucherHash, fullDenom };
-      }
-      attempt += 1;
-    }
-  }
-
   private async loadDirectoryState(
     registry: TraceRegistryConfig,
   ): Promise<{ utxo: UTxO; datum: TraceRegistryDirectoryDatum }> {
@@ -950,17 +648,6 @@ export class DenomTraceService {
 
   private computeVoucherHashFromFullDenom(fullDenom: string): string {
     return hashSha3_256(convertString2Hex(fullDenom)).toLowerCase();
-  }
-
-  private measureShardDatumBytes(shardDatum: TraceRegistryShardDatum): number {
-    return (
-      encodeTraceRegistryDatum(
-        {
-          Shard: shardDatum,
-        },
-        this.lucidService.LucidImporter,
-      ).length / 2
-    );
   }
 
   private async selectUniqueIdentifierNonce(

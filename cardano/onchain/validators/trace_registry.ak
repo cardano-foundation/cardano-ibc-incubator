@@ -8,8 +8,7 @@
 //
 // Security model:
 // - a new mapping is accepted only when the same transaction mints the matching
-//   voucher token under the production voucher minting policy or, on local
-//   benchmark deployments only, under the dedicated benchmark voucher policy
+//   voucher token under the production voucher minting policy
 // - the inserted full denom must hash exactly to the voucher token name
 // - directory witnesses must carry the exact deployed directory auth token and
 //   sit at the same trace-registry script address as the shard they govern
@@ -32,7 +31,7 @@ use aiken/primitive/bytearray
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, Value, add, from_asset, quantity_of}
 use cardano/transaction.{
-  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, placeholder,
+  InlineDatum, Input, Output, OutputReference, Transaction, placeholder,
 }
 use ibc/apps/transfer/trace_registry.{
   AdvanceDirectory, Directory, InsertTrace, RolloverInsertTrace, Shard,
@@ -47,7 +46,6 @@ validator spend_trace_registry(
   shard_nft_policy_id: PolicyId,
   directory_auth_token: AuthToken,
   voucher_minting_policy_id: PolicyId,
-  benchmark_voucher_minting_policy_id: PolicyId,
 ) {
   spend(
     datum: Option<TraceRegistryDatum>,
@@ -77,7 +75,6 @@ validator spend_trace_registry(
               shard_nft_policy_id,
               directory_auth_token,
               voucher_minting_policy_id,
-              benchmark_voucher_minting_policy_id,
             )
 
           RolloverInsertTrace {
@@ -98,7 +95,6 @@ validator spend_trace_registry(
               shard_nft_policy_id,
               directory_auth_token,
               voucher_minting_policy_id,
-              benchmark_voucher_minting_policy_id,
             )
 
           _ -> fail
@@ -127,7 +123,6 @@ validator spend_trace_registry(
               shard_nft_policy_id,
               directory_auth_token,
               voucher_minting_policy_id,
-              benchmark_voucher_minting_policy_id,
             )
 
           _ -> fail
@@ -151,7 +146,6 @@ fn validate_insert_trace(
   shard_nft_policy_id: PolicyId,
   directory_auth_token: AuthToken,
   voucher_minting_policy_id: PolicyId,
-  benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
   expect bytearray.length(voucher_hash) == 32
   expect bytearray.length(full_denom) > 0
@@ -199,7 +193,6 @@ fn validate_insert_trace(
       mint,
       voucher_hash,
       voucher_minting_policy_id,
-      benchmark_voucher_minting_policy_id,
     )
   let voucher_hash_is_new =
     list.find(
@@ -249,7 +242,6 @@ fn validate_rollover_insert_trace(
   shard_nft_policy_id: PolicyId,
   directory_auth_token: AuthToken,
   voucher_minting_policy_id: PolicyId,
-  benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
   expect bytearray.length(voucher_hash) == 32
   expect bytearray.length(full_denom) > 0
@@ -334,7 +326,6 @@ fn validate_rollover_insert_trace(
       mint,
       voucher_hash,
       voucher_minting_policy_id,
-      benchmark_voucher_minting_policy_id,
     ),
     quantity_of(mint, shard_nft_policy_id, new_active_shard_name) == 1,
     list.find(
@@ -384,7 +375,6 @@ fn validate_advance_directory(
   shard_nft_policy_id: PolicyId,
   directory_auth_token: AuthToken,
   voucher_minting_policy_id: PolicyId,
-  benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
   expect bytearray.length(voucher_hash) == 32
   expect bytearray.length(full_denom) > 0
@@ -457,7 +447,6 @@ fn validate_advance_directory(
       mint,
       voucher_hash,
       voucher_minting_policy_id,
-      benchmark_voucher_minting_policy_id,
     ),
     quantity_of(mint, shard_nft_policy_id, new_active_shard_name) == 1,
     directory_rollover_matches(
@@ -493,18 +482,8 @@ fn matching_voucher_mint_present(
   mint,
   voucher_hash: ByteArray,
   voucher_minting_policy_id: PolicyId,
-  benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
-  let has_production_voucher_mint =
-    quantity_of(mint, voucher_minting_policy_id, voucher_hash) > 0
-  let has_benchmark_voucher_mint =
-    bytearray.length(benchmark_voucher_minting_policy_id) > 0 && quantity_of(
-      mint,
-      benchmark_voucher_minting_policy_id,
-      voucher_hash,
-    ) > 0
-
-  has_production_voucher_mint || has_benchmark_voucher_mint
+  quantity_of(mint, voucher_minting_policy_id, voucher_hash) > 0
 }
 
 fn expect_single_registry_token(
@@ -749,14 +728,6 @@ fn test_voucher_policy_id() -> PolicyId {
   "voucher mint policy"
 }
 
-fn test_benchmark_voucher_policy_id() -> PolicyId {
-  "benchmark voucher mint policy"
-}
-
-fn test_disabled_benchmark_voucher_policy_id() -> PolicyId {
-  ""
-}
-
 fn test_registry_address() {
   from_script("trace registry script hash")
 }
@@ -833,18 +804,6 @@ fn test_directory_input(
   }
 }
 
-fn test_non_registry_reference_input(output_index: Int) -> Input {
-  Input {
-    output_reference: test_output_ref(output_index),
-    output: Output {
-      address: test_registry_address(),
-      value: assets.from_lovelace(2_000_000),
-      datum: InlineDatum(Void),
-      reference_script: None,
-    },
-  }
-}
-
 fn test_expected_entry(full_denom: ByteArray) -> TraceRegistryEntry {
   TraceRegistryEntry { voucher_hash: crypto.sha3_256(full_denom), full_denom }
 }
@@ -859,26 +818,6 @@ fn run_trace_registry_spend(
     test_shard_policy_id(),
     test_directory_auth_token(),
     test_voucher_policy_id(),
-    test_disabled_benchmark_voucher_policy_id(),
-    Some(datum),
-    redeemer,
-    spent_output_ref,
-    transaction,
-  )
-}
-
-fn run_trace_registry_spend_with_benchmark(
-  datum: TraceRegistryDatum,
-  redeemer: TraceRegistryRedeemer,
-  spent_output_ref: OutputReference,
-  transaction: Transaction,
-  benchmark_policy_id: PolicyId,
-) -> Bool {
-  spend_trace_registry.spend(
-    test_shard_policy_id(),
-    test_directory_auth_token(),
-    test_voucher_policy_id(),
-    benchmark_policy_id,
     Some(datum),
     redeemer,
     spent_output_ref,
@@ -1298,129 +1237,6 @@ test trace_registry_insert_trace_succeeds_with_matching_voucher_mint() {
     transaction,
   )
 }
-
-test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint() {
-  let full_denom = "transfer/channel-7/benchmark-uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
-  let bucket_index = bucket_index_for_hash(voucher_hash)
-  let shard_name = "active-bench"
-  let spent_input =
-    Input {
-      output_reference: test_output_ref(0),
-      output: test_shard_output(bucket_index, shard_name, []),
-    }
-  let updated_output =
-    test_shard_output(
-      bucket_index,
-      shard_name,
-      [test_expected_entry(full_denom)],
-    )
-  let directory_input = test_directory_input(1, bucket_index, shard_name, [])
-
-  let transaction =
-    Transaction {
-      ..placeholder,
-      inputs: [spent_input],
-      reference_inputs: [directory_input],
-      outputs: [updated_output],
-      mint: from_asset(test_benchmark_voucher_policy_id(), voucher_hash, 1),
-    }
-
-  run_trace_registry_spend_with_benchmark(
-    Shard(TraceRegistryShardDatum { bucket_index, entries: [] }),
-    InsertTrace { voucher_hash, full_denom },
-    test_output_ref(0),
-    transaction,
-    test_benchmark_voucher_policy_id(),
-  )
-}
-
-test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint_and_extra_reference_inputs() {
-  let full_denom = "transfer/channel-7/benchmark-uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
-  let bucket_index = bucket_index_for_hash(voucher_hash)
-  let shard_name = "active-bench"
-  let spent_input =
-    Input {
-      output_reference: test_output_ref(0),
-      output: test_shard_output(bucket_index, shard_name, []),
-    }
-  let updated_output =
-    test_shard_output(
-      bucket_index,
-      shard_name,
-      [test_expected_entry(full_denom)],
-    )
-  let directory_input = test_directory_input(1, bucket_index, shard_name, [])
-  let helper_ref_1 = test_non_registry_reference_input(2)
-  let helper_ref_2 = test_non_registry_reference_input(3)
-
-  let transaction =
-    Transaction {
-      ..placeholder,
-      inputs: [spent_input],
-      reference_inputs: [helper_ref_1, helper_ref_2, directory_input],
-      outputs: [updated_output],
-      mint: from_asset(test_benchmark_voucher_policy_id(), voucher_hash, 1),
-    }
-
-  run_trace_registry_spend_with_benchmark(
-    Shard(TraceRegistryShardDatum { bucket_index, entries: [] }),
-    InsertTrace { voucher_hash, full_denom },
-    test_output_ref(0),
-    transaction,
-    test_benchmark_voucher_policy_id(),
-  )
-}
-
-test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint_and_benchmark_sink_output() {
-  let full_denom = "transfer/channel-0/benchmark-uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
-  let bucket_index = bucket_index_for_hash(voucher_hash)
-  let shard_name = "active-bench"
-  let benchmark_policy_id = test_benchmark_voucher_policy_id()
-  let spent_input =
-    Input {
-      output_reference: test_output_ref(0),
-      output: test_shard_output(bucket_index, shard_name, []),
-    }
-  let updated_output =
-    test_shard_output(
-      bucket_index,
-      shard_name,
-      [test_expected_entry(full_denom)],
-    )
-  let directory_input = test_directory_input(1, bucket_index, shard_name, [])
-  let helper_ref_1 = test_non_registry_reference_input(2)
-  let helper_ref_2 = test_non_registry_reference_input(3)
-  let benchmark_sink_output =
-    Output {
-      address: test_registry_address(),
-      value:
-        assets.from_lovelace(2_000_000)
-          |> add(benchmark_policy_id, voucher_hash, 1),
-      datum: NoDatum,
-      reference_script: None,
-    }
-
-  let transaction =
-    Transaction {
-      ..placeholder,
-      inputs: [spent_input],
-      reference_inputs: [helper_ref_1, helper_ref_2, directory_input],
-      outputs: [updated_output, benchmark_sink_output],
-      mint: from_asset(benchmark_policy_id, voucher_hash, 1),
-    }
-
-  run_trace_registry_spend_with_benchmark(
-    Shard(TraceRegistryShardDatum { bucket_index, entries: [] }),
-    InsertTrace { voucher_hash, full_denom },
-    test_output_ref(0),
-    transaction,
-    benchmark_policy_id,
-  )
-}
-
 
 test trace_registry_insert_trace_fails_without_matching_voucher_mint() fail {
   let full_denom = "transfer/channel-7/uatom"

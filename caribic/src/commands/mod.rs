@@ -1,5 +1,4 @@
 pub mod audit;
-pub mod benchmark;
 pub mod chain;
 pub mod chains;
 pub mod check;
@@ -14,7 +13,6 @@ pub mod stop;
 pub mod test;
 
 pub use audit::run_audit;
-pub use benchmark::run_denom_registry_benchmark;
 pub use chain::run_chain;
 pub use chains::run_chains;
 pub use check::run_check;
