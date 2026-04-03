@@ -229,7 +229,33 @@ describe('DenomTraceService', () => {
 
     await expect(
       service.prepareOnChainInsert(`a${'4'.repeat(63)}`, 'transfer/channel-7/uatom'),
-    ).rejects.toThrow('Trace registry deployment config is missing for voucher minting');
+    ).rejects.toThrow('Trace registry deployment config is missing');
+  });
+
+  it('fails closed for read paths when trace registry deployment config is missing', async () => {
+    configServiceMock.get.mockImplementation(() => ({
+      validators: {
+        mintVoucher: {
+          scriptHash: 'mint-voucher-policy-id',
+        },
+      },
+    }));
+
+    await expect(service.findByHash(`a${'4'.repeat(63)}`)).rejects.toThrow(
+      'Trace registry deployment config is missing',
+    );
+    await expect(service.findAll()).rejects.toThrow(
+      'Trace registry deployment config is missing',
+    );
+    await expect(
+      service.findByIbcDenomHash(hashSHA256(convertString2Hex('transfer/channel-7/uatom')).toLowerCase()),
+    ).rejects.toThrow('Trace registry deployment config is missing');
+    await expect(service.findByBaseDenom('uatom')).rejects.toThrow(
+      'Trace registry deployment config is missing',
+    );
+    await expect(service.getCount()).rejects.toThrow(
+      'Trace registry deployment config is missing',
+    );
   });
 
   it('materializes traces from shard data and resolves by ibc denom hash', async () => {

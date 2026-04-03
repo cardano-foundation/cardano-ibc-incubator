@@ -624,7 +624,7 @@ export class DenomTraceService {
     const registry = this.getTraceRegistryConfig();
     if (!registry) {
       throw new Error(
-        "Trace registry deployment config is missing for voucher minting",
+        "Trace registry deployment config is missing",
       );
     }
     return registry;
@@ -661,10 +661,7 @@ export class DenomTraceService {
     registryArg?: TraceRegistryConfig,
     directoryArg?: TraceRegistryDirectoryDatum,
   ): Promise<OnChainTraceEntry | null> {
-    const registry = registryArg ?? this.getTraceRegistryConfig();
-    if (!registry) {
-      return null;
-    }
+    const registry = registryArg ?? this.getRequiredTraceRegistryConfig();
 
     const directoryDatum = directoryArg ?? await this.loadDirectoryDatum(registry);
     const bucketIndex = this.getBucketIndexForHash(hash);
@@ -706,10 +703,7 @@ export class DenomTraceService {
   }
 
   private async findAllOnChainEntries(): Promise<OnChainTraceEntry[]> {
-    const registry = this.getTraceRegistryConfig();
-    if (!registry) {
-      return [];
-    }
+    const registry = this.getRequiredTraceRegistryConfig();
 
     const directory = await this.loadDirectoryDatum(registry);
     const shardEntries = await Promise.all(
