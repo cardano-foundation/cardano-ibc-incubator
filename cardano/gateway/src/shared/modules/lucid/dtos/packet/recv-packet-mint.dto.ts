@@ -6,6 +6,7 @@ import {
   WithMintVoucherRedeemer,
   WithModuleContext,
   WithModuleSpend,
+  WithOptionalTraceRegistryUpdate,
   WithPacketPolicyAndChannelToken,
   WithTransferAmount,
   WithTransferModuleSpend,
@@ -34,6 +35,7 @@ export type UnsignedRecvPacketMintDto = WithHostStateUpdate &
   WithChannelSpend &
   WithTransferModuleSpend &
   WithMintVoucherRedeemer &
+  WithOptionalTraceRegistryUpdate &
   WithTransferAmount &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'recvPacketPolicyId'> &

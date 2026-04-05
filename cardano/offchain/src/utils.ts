@@ -24,7 +24,9 @@ export const readValidator = <T extends unknown[] = Data[]>(
   params?: Exact<[...T]>,
   type?: T,
 ): [Script, ScriptHash, Address] => {
-  const rawValidator = blueprint.validators.find((v) => v.title === title);
+  const rawValidator = blueprint.validators.find(
+    (v: { title: string; compiledCode: string }) => v.title === title,
+  );
   if (!rawValidator) {
     throw new Error(`Unable to field validator with title ${title}`);
   }
@@ -221,7 +223,9 @@ type Validator =
   | "spendConnection"
   | "spendChannel"
   | "spendMockModule"
+  | "spendTraceRegistry"
   | "spendTransferModule"
+  | "mintIdentifier"
   | "mintVoucher"
   | "verifyProof"
   | "hostStateStt"
@@ -234,9 +238,30 @@ type Module = "handler" | "transfer" | "mock" | "icq";
 type Tokens = "mock";
 
 export type DeploymentTemplate = {
-  validators: Record<
-    Validator,
-    {
+  deployedAt: string;
+  validators: {
+    spendHandler: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    spendClient: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    spendConnection: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    spendChannel: {
       title: string;
       script: string;
       scriptHash: string;
@@ -246,8 +271,78 @@ export type DeploymentTemplate = {
         string,
         { script: string; scriptHash: string; refUtxo: UTxO }
       >;
-    }
-  >;
+    };
+    spendTransferModule: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    spendMockModule?: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintIdentifier: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    spendTraceRegistry: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintVoucher: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    verifyProof: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    hostStateStt: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintClientStt: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintConnectionStt: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintChannelStt: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+  };
   handlerAuthToken: {
     policyId: string;
     name: string;
@@ -255,6 +350,14 @@ export type DeploymentTemplate = {
   hostStateNFT?: {
     policyId: string;
     name: string;
+  };
+  traceRegistry?: {
+    address: string;
+    shardPolicyId: string;
+    directory: {
+      policyId: string;
+      name: string;
+    };
   };
   modules: Record<
     Module,

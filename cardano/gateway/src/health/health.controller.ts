@@ -54,26 +54,11 @@ export class HealthController {
       const gatewayConnected = this.gatewayDataSource.isInitialized;
       const historyConnected = this.historyDataSource.isInitialized;
 
-      // Get denom trace count
-      let denomTraceCount = 0;
-      try {
-        const result = await this.gatewayDataSource.query(
-          'SELECT COUNT(*) as count FROM denom_traces',
-        );
-        denomTraceCount = parseInt(result[0]?.count || '0', 10);
-        
-        // Update Prometheus gauge
-        this.metricsService.denomTraceCount.set(denomTraceCount);
-      } catch (error) {
-        this.logger.error(`Failed to get denom trace count: ${error.message}`);
-      }
-
       return {
         timestamp: new Date().toISOString(),
         gateway_db: {
           status: gatewayConnected ? 'healthy' : 'unhealthy',
           connection: gatewayConnected,
-          denom_traces_count: denomTraceCount,
         },
         history_backend: {
           status: historyConnected ? 'healthy' : 'unhealthy',

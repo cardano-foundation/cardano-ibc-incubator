@@ -13,18 +13,11 @@ describe('SubmissionService pending update strictness', () => {
     take: jest.Mock;
     takeByExpectedRoot: jest.Mock;
   };
-  let denomTraceServiceMock: {
-    setTxHashForTraces: jest.Mock;
-  };
 
   beforeEach(() => {
     ibcTreePendingUpdatesServiceMock = {
       take: jest.fn().mockReturnValue(undefined),
       takeByExpectedRoot: jest.fn().mockReturnValue(undefined),
-    };
-
-    denomTraceServiceMock = {
-      setTxHashForTraces: jest.fn(),
     };
 
     lucidServiceMock = {
@@ -54,7 +47,6 @@ describe('SubmissionService pending update strictness', () => {
       txEventsServiceMock as any,
       ibcTreePendingUpdatesServiceMock as any,
       ibcTreeCacheServiceMock as any,
-      denomTraceServiceMock as any,
     );
   });
 
@@ -65,7 +57,6 @@ describe('SubmissionService pending update strictness', () => {
 
     expect(ibcTreePendingUpdatesServiceMock.take).toHaveBeenCalledWith('abc123');
     expect(ibcTreePendingUpdatesServiceMock.takeByExpectedRoot).toHaveBeenCalledWith('root-at-tx');
-    expect(denomTraceServiceMock.setTxHashForTraces).not.toHaveBeenCalled();
   });
 
   it('fails hard on confirmed tx root lookup error instead of falling back to current HostState', async () => {
@@ -73,7 +64,6 @@ describe('SubmissionService pending update strictness', () => {
     ibcTreePendingUpdatesServiceMock.take.mockReturnValueOnce({
       expectedNewRoot: 'fallback-root',
       commit: jest.fn(),
-      denomTraceHashes: [],
     });
     jest.spyOn(service as any, 'readConfirmedTxRoot').mockRejectedValueOnce(new Error('tx root decode error'));
 

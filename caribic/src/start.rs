@@ -214,14 +214,16 @@ pub fn start_relayer(
             "clock_drift = '5s'",
             "clock_drift = '15m'",
         )
-        .map_err(|e| format!("Failed to relax Hermes Cardano clock_drift for local devnet: {}", e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to relax Hermes Cardano clock_drift for local devnet: {}",
+                e
+            )
+        })?;
     }
 
     log_or_show_progress(
-        &format!(
-            "Configuration copied to {}",
-            hermes_config_path.display()
-        ),
+        &format!("Configuration copied to {}", hermes_config_path.display()),
         &optional_progress_bar,
     );
 
@@ -763,6 +765,16 @@ pub async fn deploy_contracts(
     clean: bool,
     validators_already_built: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let profile = config::cardano_network_profile(config::CoreCardanoNetwork::Local);
+    let handler_json_path = PathBuf::from(profile.handler_json_path.clone());
+    let bridge_manifest_path = profile
+        .bridge_manifest_path
+        .clone()
+        .map(PathBuf::from)
+        .ok_or("Local bridge manifest path is not configured")?;
+    let gateway_dir = project_root_path.join("cardano").join("gateway");
+    let offchain_dir = project_root_path.join("cardano").join("offchain");
+    let network_magic = profile.network_magic.to_string();
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -781,13 +793,12 @@ pub async fn deploy_contracts(
     }
 
     let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
-    let mut validators_rebuild = false;
 
     if validators_already_built {
         log_or_show_progress(
             &format!(
                 "{} Aiken validators already built",
-                style("Step 1/2").bold().dim()
+                style("Step 1/3").bold().dim()
             ),
             &optional_progress_bar,
         );
@@ -802,7 +813,7 @@ pub async fn deploy_contracts(
         log_or_show_progress(
             &format!(
                 "{} Building Aiken validators",
-                style("Step 1/2").bold().dim()
+                style("Step 1/3").bold().dim()
             ),
             &optional_progress_bar,
         );
@@ -819,91 +830,136 @@ pub async fn deploy_contracts(
             build_args,
             None,
         )?;
-        validators_rebuild = true;
     } else {
         log_or_show_progress(
             &format!(
                 "{} Aiken validators already built",
-                style("Step 1/2").bold().dim()
+                style("Step 1/3").bold().dim()
             ),
             &optional_progress_bar,
         );
     }
 
-    if validators_rebuild {
-        let _ = execute_script(
-            project_root_path.join("cardano").join("offchain").as_path(),
-            "deno",
-            Vec::from(["task", "clean"]),
-            None,
-        );
-    }
+    log_or_show_progress(
+        &format!(
+            "{} Cleaning local deployment artifacts",
+            style("Step 2/3").bold().dim()
+        ),
+        &optional_progress_bar,
+    );
+    // Local devnet deployments are ephemeral. A restarted or re-created local
+    // chain must not reuse the previous handler.json / bridge-manifest.json,
+    // because those artifacts point at UTxOs from an older chain instance.
+    execute_script(
+        offchain_dir.as_path(),
+        "deno",
+        Vec::from(["task", "clean"]),
+        None,
+    )?;
 
-    let handler_json_path = project_root_path.join("cardano/offchain/deployments/handler.json");
+    log_or_show_progress(
+        &format!(
+            "{} Running offchain deployment for the local Cardano runtime",
+            style("Step 2/3").bold().dim()
+        ),
+        &optional_progress_bar,
+    );
+
+    wait_for_local_offchain_wallet_utxos(project_root_path, &optional_progress_bar)?;
+
+    let deployment_result = execute_script(
+        offchain_dir.as_path(),
+        "deno",
+        Vec::from([
+            "run",
+            "--frozen",
+            "--env-file=.env.default",
+            "--allow-net",
+            "--allow-env",
+            "--allow-read",
+            "--allow-ffi",
+            "--allow-write",
+            "index.ts",
+        ]),
+        Some(vec![
+            ("KUPO_URL", "http://localhost:1442"),
+            ("OGMIOS_URL", "http://localhost:1337"),
+            ("CARDANO_NETWORK_MAGIC", network_magic.as_str()),
+        ]),
+    );
+
+    if let Err(error) = deployment_result {
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.finish_and_clear();
+        }
+        return Err(format!(
+            "ERROR: Offchain deployment failed while generating local deployment artifacts: {}",
+            error
+        )
+        .into());
+    }
 
     if !handler_json_path.exists() {
-        log_or_show_progress(
-            &format!(
-                "{} Generating handler.json via offchain deployment",
-                style("Step 2/2").bold().dim()
-            ),
-            &optional_progress_bar,
-        );
-
-        wait_for_local_offchain_wallet_utxos(project_root_path, &optional_progress_bar)?;
-
-        let deployment_result = execute_script(
-            project_root_path.join("cardano").join("offchain").as_path(),
-            "deno",
-            Vec::from([
-                "run",
-                "--frozen",
-                "--env-file=.env.default",
-                "--allow-net",
-                "--allow-env",
-                "--allow-read",
-                "--allow-ffi",
-                "--allow-write",
-                "index.ts",
-            ]),
-            Some(vec![
-                ("KUPO_URL", "http://localhost:1442"),
-                ("OGMIOS_URL", "http://localhost:1337"),
-                ("CARDANO_NETWORK_MAGIC", "42"),
-            ]),
-        );
-
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
         }
-
-        if let Err(error) = deployment_result {
-            return Err(format!(
-                "ERROR: Offchain deployment failed while generating handler.json: {}",
-                error
-            )
-            .into());
-        }
-
-        if handler_json_path.exists() {
-            Ok(())
-        } else {
-            Err(format!(
-                "ERROR: Offchain deployment finished but handler.json was not created at {}",
-                handler_json_path.display()
-            )
-            .into())
-        }
-    } else {
-        log_or_show_progress(
-            "PASS: The handler.json file already exists. Skipping the deployment.",
-            &optional_progress_bar,
-        );
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.finish_and_clear();
-        }
-        Ok(())
+        return Err(format!(
+            "ERROR: Offchain deployment finished but handler.json was not created at {}",
+            handler_json_path.display()
+        )
+        .into());
     }
+
+    log_or_show_progress(
+        &format!(
+            "{} Exporting public bridge manifest",
+            style("Step 3/3").bold().dim()
+        ),
+        &optional_progress_bar,
+    );
+
+    let export_result = execute_script(
+        gateway_dir.as_path(),
+        "npm",
+        vec![
+            "run",
+            "export:bridge-manifest",
+            "--",
+            handler_json_path
+                .to_str()
+                .ok_or("Failed to stringify local handler path")?,
+            bridge_manifest_path
+                .to_str()
+                .ok_or("Failed to stringify local bridge manifest path")?,
+        ],
+        Some(vec![
+            ("CARDANO_CHAIN_ID", profile.chain_id.as_str()),
+            ("CARDANO_CHAIN_NETWORK_MAGIC", network_magic.as_str()),
+            ("CARDANO_NETWORK", "local"),
+        ]),
+    );
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.finish_and_clear();
+    }
+
+    if let Err(error) = export_result {
+        return Err(format!(
+            "ERROR: Failed to export local bridge manifest after deployment: {}",
+            error
+        )
+        .into());
+    }
+
+    if !bridge_manifest_path.exists() {
+        return Err(format!(
+            "ERROR: Bridge manifest export finished but bridge-manifest.json was not created at {}",
+            bridge_manifest_path.display()
+        )
+        .into());
+    }
+
+    Ok(())
 }
 
 fn backup_handler_json(

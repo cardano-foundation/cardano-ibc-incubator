@@ -30,16 +30,15 @@ Default local endpoints target the host-published bridge services:
 - Entrypoint REST: `http://localhost:1317`
 - Osmosis RPC: `http://localhost:26658`
 - Osmosis REST: `http://localhost:1318`
-- Gateway: `http://localhost:8000` for swap UI tx building and Cardano asset lookup
+- Gateway: `http://localhost:8000` for swap UI tx building
 - GraphQL/SubQuery: `http://localhost:3001/v1/graphql` for explorer only
 - Kupo/Ogmios: `http://localhost:1442,http://localhost:1337`
 
 TODO: The demo dapps should not rely on the gateway long term. Today the swap UI
-still uses it for tx building and Cardano asset / denom-trace lookup, but the
-target architecture is for the gateway to be only a relayer-facing component.
-The next dependency for that decoupling is getting the denom trace registry
-on-chain, which is still a work in progress. Once that lands, the remaining dapp
-dependency on the gateway can be removed.
+still uses it for tx building, but Cardano asset / denom-trace lookup now reads
+the on-chain trace registry directly via the bridge manifest plus Kupo/Ogmios.
+The remaining major decoupling step is moving Cardano tx building and route
+planning out of the Gateway so the dapps can operate without it entirely.
 
 Override any value by exporting the corresponding compose variable before
 starting the service, for example:

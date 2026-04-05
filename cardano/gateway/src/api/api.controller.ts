@@ -14,13 +14,13 @@ import { IdentifiedChannel } from '@plus/proto-types/build/ibc/core/channel/v1/c
 import { PacketService } from '~@/tx/packet.service';
 import { MsgTransfer } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import { GrpcExceptionFilter } from '~@/exception/exception.filter';
-import { DenomTraceService } from '~@/query/services/denom-trace.service';
-import { DenomTrace } from '../shared/entities/denom-trace.entity';
+import { DenomTraceService, ResolvedDenomTrace } from '~@/query/services/denom-trace.service';
 import { LOVELACE } from '../constant';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { TransferPlannerService } from './transfer-planner.service';
 import { BridgeManifestService } from '~@/query/services/bridge-manifest.service';
 import { CheqdIcqService } from './cheqd-icq.service';
+import { deriveVoucherPresentation } from '../shared/helpers/voucher-presentation';
 
 type ApiCardanoAssetDenomTrace = {
   asset_id: string;
@@ -31,8 +31,9 @@ type ApiCardanoAssetDenomTrace = {
   voucher_token_name: string | null;
   voucher_policy_id: string | null;
   ibc_denom_hash: string | null;
-  tx_hash: string | null;
-  first_seen: string | null;
+  display_name: string;
+  display_symbol: string;
+  display_description: string;
 };
 
 type ParsedCardanoAssetId = {
@@ -342,6 +343,7 @@ export class ApiController {
     baseDenom: string,
     fullDenom: string,
   ): ApiCardanoAssetDenomTrace {
+    const displayName = fullDenom === LOVELACE ? 'ADA' : baseDenom;
     return {
       asset_id: assetId,
       kind: 'native',
@@ -351,23 +353,27 @@ export class ApiController {
       voucher_token_name: null,
       voucher_policy_id: null,
       ibc_denom_hash: null,
-      tx_hash: null,
-      first_seen: null,
+      display_name: displayName,
+      display_symbol: displayName,
+      display_description: `Cardano native asset ${fullDenom}`,
     };
   }
 
-  private mapVoucherTrace(assetId: string, trace: DenomTrace): ApiCardanoAssetDenomTrace {
+  private mapVoucherTrace(assetId: string, trace: ResolvedDenomTrace): ApiCardanoAssetDenomTrace {
+    const fullDenom = trace.path ? `${trace.path}/${trace.base_denom}` : trace.base_denom;
+    const presentation = deriveVoucherPresentation(fullDenom, trace.base_denom);
     return {
       asset_id: assetId,
       kind: 'ibc_voucher',
       path: trace.path,
       base_denom: trace.base_denom,
-      full_denom: trace.path ? `${trace.path}/${trace.base_denom}` : trace.base_denom,
+      full_denom: fullDenom,
       voucher_token_name: trace.hash,
       voucher_policy_id: trace.voucher_policy_id,
       ibc_denom_hash: trace.ibc_denom_hash ?? null,
-      tx_hash: trace.tx_hash ?? null,
-      first_seen: trace.first_seen ? trace.first_seen.toISOString() : null,
+      display_name: presentation.displayName,
+      display_symbol: presentation.displaySymbol,
+      display_description: presentation.displayDescription,
     };
   }
 }

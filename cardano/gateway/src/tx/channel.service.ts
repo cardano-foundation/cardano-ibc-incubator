@@ -1,4 +1,4 @@
-import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
+import { Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
@@ -51,7 +51,7 @@ import {
   orderFromJSON,
 } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { ORDER_MAPPING_CHANNEL } from '~@/constant/channel';
-import { sleep } from '../shared/helpers/time';
+import { computeLedgerAnchoredValidityWindow, sleep } from '../shared/helpers/time';
 import {
   ChannelCloseConfirmOperator,
   ChannelCloseInitOperator,
@@ -152,6 +152,23 @@ export class ChannelService {
     );
   }
 
+  private async computeTxValidityWindow(): Promise<{
+    currentSlot: number;
+    currentLedgerTime: number;
+    validFromTime: number;
+    validToSlot: number;
+    validToTime: number;
+  }> {
+    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    const network = this.configService.get('cardanoNetwork') as Network;
+    const slotConfig = this.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[network];
+    if (!slotConfig || slotConfig.slotLength <= 0) {
+      throw new GrpcInternalException(`channel tx failed: invalid slot configuration for network ${network}`);
+    }
+
+    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, TRANSACTION_TIME_TO_LIVE);
+  }
+
   /**
    * Compute the new IBC state root for UpdateChannel (handshake continuation),
    * and also return the per-key witness.
@@ -200,9 +217,7 @@ export class ChannelService {
         channelId,
         pendingTreeUpdate,
       } = await this.buildUnsignedChannelOpenInitTx(channelOpenInitOperator, constructedAddress);
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
-      const currentSlot = this.lucidService.lucid.currentSlot();
+      const { currentSlot, validToSlot, validToTime } = await this.computeTxValidityWindow();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
@@ -268,7 +283,7 @@ export class ChannelService {
         channelOpenTryOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const { validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'channelOpenTry',
         unsignedTx: unsignedChannelOpenTryTx,
@@ -315,9 +330,7 @@ export class ChannelService {
         event: channelOpenAckEvent,
         pendingTreeUpdate,
       } = await this.buildUnsignedChannelOpenAckTx(channelOpenAckOperator, constructedAddress);
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
-      const validToSlot = this.lucidService.lucid.unixTimeToSlot(Number(validToTime));
-      const currentSlot = this.lucidService.lucid.currentSlot();
+      const { currentSlot, validToSlot, validToTime } = await this.computeTxValidityWindow();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
@@ -378,7 +391,7 @@ export class ChannelService {
       // Build and complete the unsigned transaction
       const { unsignedTx: unsignedChannelConfirmInitTx, pendingTreeUpdate } =
         await this.buildUnsignedChannelOpenConfirmTx(channelOpenConfirmOperator, constructedAddress);
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const { validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'channelOpenConfirm',
         unsignedTx: unsignedChannelConfirmInitTx,
@@ -425,7 +438,7 @@ export class ChannelService {
         channelCloseInitOperator,
         constructedAddress,
       );
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const { validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'channelCloseInit',
         unsignedTx: unsignedChannelCloseInitTx,
@@ -468,7 +481,7 @@ export class ChannelService {
       const { constructedAddress, channelCloseConfirmOperator } = validateAndFormatChannelCloseConfirmParams(data);
       const { unsignedTx: unsignedChannelCloseConfirmTx, pendingTreeUpdate } =
         await this.buildUnsignedChannelCloseConfirmTx(channelCloseConfirmOperator, constructedAddress);
-      const validToTime = Date.now() + TRANSACTION_TIME_TO_LIVE;
+      const { validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'channelCloseConfirm',
         unsignedTx: unsignedChannelCloseConfirmTx,

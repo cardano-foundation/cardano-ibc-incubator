@@ -63,6 +63,44 @@ export type WithMintVoucherRedeemer = {
   encodedMintVoucherRedeemer: string;
 };
 
+export type TraceRegistryAppendUpdate = {
+  kind: "append";
+  traceRegistryDirectoryUtxo: UTxO;
+  traceRegistryShardUtxo: UTxO;
+  traceRegistryArchivedShardWitnessUtxos: UTxO[];
+  encodedTraceRegistryRedeemer: string;
+  encodedUpdatedTraceRegistryDatum: string;
+};
+
+export type TraceRegistryExistingProof = {
+  kind: "existing";
+  traceRegistryDirectoryUtxo: UTxO;
+  traceRegistryShardWitnessUtxos: UTxO[];
+};
+
+export type TraceRegistryRolloverUpdate = {
+  kind: "rollover";
+  traceRegistryDirectoryUtxo: UTxO;
+  traceRegistryShardUtxo: UTxO;
+  traceRegistryArchivedShardWitnessUtxos: UTxO[];
+  traceRegistryMintNonceUtxo: UTxO;
+  encodedTraceRegistryDirectoryRedeemer: string;
+  encodedUpdatedTraceRegistryDirectoryDatum: string;
+  encodedTraceRegistryRedeemer: string;
+  encodedArchivedTraceRegistryDatum: string;
+  encodedNewActiveTraceRegistryDatum: string;
+  newActiveTraceRegistryShardTokenUnit: string;
+  encodedMintIdentifierRedeemer: string;
+};
+
+export type WithOptionalTraceRegistryUpdate = {
+  traceRegistryUpdate?:
+    | TraceRegistryExistingProof
+    | TraceRegistryAppendUpdate
+    | TraceRegistryRolloverUpdate
+    | null;
+};
+
 export type WithVerifyProof = {
   verifyProofPolicyId: PolicyId;
   encodedVerifyProofRedeemer: string;
@@ -86,4 +124,6 @@ export type WithPolicyId<K extends string> = {
   [P in K]: PolicyId;
 };
 
-export type WithPacketPolicyAndChannelToken<K extends string> = WithPolicyId<K> & WithChannelToken;
+export type WithPacketPolicyAndChannelToken<K extends string> =
+  & WithPolicyId<K>
+  & WithChannelToken;

@@ -10,6 +10,22 @@ jest.mock('../../shared/types/connection/verify-proof-redeemer', () => ({
 }));
 
 describe('PacketService denom regression coverage', () => {
+  const existingTraceRegistryProof = {
+    kind: 'existing' as const,
+    traceRegistryDirectoryUtxo: {
+      txHash: 'trace-directory',
+      outputIndex: 0,
+      assets: { tracedir: 1n },
+    },
+    traceRegistryShardWitnessUtxos: [
+      {
+        txHash: 'trace-shard',
+        outputIndex: 1,
+        assets: { traceshard: 1n },
+      },
+    ],
+  };
+
   it('resolves ibc/<hash> to canonical denom and uses burn path packet/module denoms', async () => {
     const loggerMock = {
       log: jest.fn(),
@@ -60,7 +76,7 @@ describe('PacketService denom regression coverage', () => {
 
     const denomTraceServiceMock = {
       findByIbcDenomHash: jest.fn(),
-      saveDenomTrace: jest.fn(),
+      prepareOnChainInsert: jest.fn().mockResolvedValue(existingTraceRegistryProof),
     };
 
     const service = new PacketService(
@@ -236,8 +252,8 @@ describe('PacketService denom regression coverage', () => {
     };
 
     const denomTraceServiceMock = {
-      saveDenomTrace: jest.fn().mockResolvedValue({}),
       findByIbcDenomHash: jest.fn(),
+      prepareOnChainInsert: jest.fn().mockResolvedValue(existingTraceRegistryProof),
     };
 
     const service = new PacketService(
@@ -349,12 +365,9 @@ describe('PacketService denom regression coverage', () => {
     expect(lucidServiceMock.createUnsignedAckPacketUnescrowTx).not.toHaveBeenCalled();
     expect(lucidServiceMock.createUnsignedAckPacketSucceedTx).not.toHaveBeenCalled();
 
-    expect(denomTraceServiceMock.saveDenomTrace).toHaveBeenCalledWith(
-      expect.objectContaining({
-        hash: expectedTokenName,
-        path: 'transfer/channel-7/transfer/channel-1',
-        base_denom: 'factory/osmo1abcd/mytoken',
-      }),
+    expect(denomTraceServiceMock.prepareOnChainInsert).toHaveBeenCalledWith(
+      expectedTokenName,
+      canonicalDenom,
     );
   });
 
@@ -409,8 +422,8 @@ describe('PacketService denom regression coverage', () => {
     };
 
     const denomTraceServiceMock = {
-      saveDenomTrace: jest.fn().mockResolvedValue({}),
       findByIbcDenomHash: jest.fn(),
+      prepareOnChainInsert: jest.fn().mockResolvedValue(existingTraceRegistryProof),
     };
 
     const service = new PacketService(
@@ -573,8 +586,8 @@ describe('PacketService denom regression coverage', () => {
     };
 
     const denomTraceServiceMock = {
-      saveDenomTrace: jest.fn().mockResolvedValue({}),
       findByIbcDenomHash: jest.fn(),
+      prepareOnChainInsert: jest.fn().mockResolvedValue(existingTraceRegistryProof),
     };
 
     const service = new PacketService(

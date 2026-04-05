@@ -1,57 +1,57 @@
 import { Logger } from '@nestjs/common';
+import * as Lucid from '@lucid-evolution/lucid';
 import { DenomTraceService } from '../services/denom-trace.service';
+import { encodeTraceRegistryDatum } from '../../shared/types/trace-registry';
 import { convertString2Hex, hashSHA256 } from '../../shared/helpers/hex';
 
 describe('DenomTraceService', () => {
   let service: DenomTraceService;
-  let repositoryMock: {
-    findOne: jest.Mock;
-    create: jest.Mock;
-    save: jest.Mock;
-    count: jest.Mock;
-    find: jest.Mock;
-    query: jest.Mock;
-    createQueryBuilder: jest.Mock;
+  let lucidServiceMock: {
+    findUtxoByUnit: jest.Mock;
+    lucid: {
+      config: jest.Mock;
+      wallet: () => { getUtxos: jest.Mock };
+    };
+    estimateUnsignedTxSizeBytes: jest.Mock;
+    LucidImporter: typeof Lucid;
   };
-  let queryBuilderMock: {
-    select: jest.Mock;
-    addSelect: jest.Mock;
-    orderBy: jest.Mock;
-    offset: jest.Mock;
-    limit: jest.Mock;
-    update: jest.Mock;
-    set: jest.Mock;
-    where: jest.Mock;
-    getMany: jest.Mock;
-    getRawMany: jest.Mock;
-    execute: jest.Mock;
+  let configServiceMock: {
+    get: jest.Mock;
   };
+  let metricsMock: {
+    denomTraceQueryDuration: { observe: jest.Mock };
+  };
+
+  const makeShardUtxo = (entries: Array<{ voucher_hash: string; full_denom: string }>, index: number) => ({
+    txHash: `trace-shard-${index}`,
+    outputIndex: index,
+    assets: {},
+    datum: encodeTraceRegistryDatum(
+      {
+        Shard: {
+          bucket_index: BigInt(index),
+          entries,
+        },
+      },
+      Lucid,
+    ),
+  });
+
+  const makeDirectoryUtxo = (buckets: Array<{ bucket_index: bigint; active_shard_name: string; archived_shard_names: string[] }>) => ({
+    txHash: 'trace-directory',
+    outputIndex: 0,
+    assets: {},
+    datum: encodeTraceRegistryDatum(
+      {
+        Directory: {
+          buckets,
+        },
+      },
+      Lucid,
+    ),
+  });
 
   beforeEach(() => {
-    queryBuilderMock = {
-      select: jest.fn().mockReturnThis(),
-      addSelect: jest.fn().mockReturnThis(),
-      orderBy: jest.fn().mockReturnThis(),
-      offset: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockReturnThis(),
-      update: jest.fn().mockReturnThis(),
-      set: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnThis(),
-      getMany: jest.fn(),
-      getRawMany: jest.fn(),
-      execute: jest.fn(),
-    };
-
-    repositoryMock = {
-      findOne: jest.fn(),
-      create: jest.fn(),
-      save: jest.fn(),
-      count: jest.fn(),
-      find: jest.fn(),
-      query: jest.fn(),
-      createQueryBuilder: jest.fn().mockReturnValue(queryBuilderMock),
-    };
-
     const loggerMock = {
       log: jest.fn(),
       warn: jest.fn(),
@@ -59,160 +59,293 @@ describe('DenomTraceService', () => {
       debug: jest.fn(),
     } as unknown as Logger;
 
-    const metricsMock = {
-      denomTraceSavesTotal: { inc: jest.fn() },
-      denomTraceSaveErrorsTotal: { inc: jest.fn() },
+    metricsMock = {
       denomTraceQueryDuration: { observe: jest.fn() },
     };
 
-    service = new DenomTraceService(loggerMock, repositoryMock as any, metricsMock as any);
-  });
-
-  it('saves a new trace when hash does not already exist', async () => {
-    repositoryMock.findOne.mockResolvedValue(null);
-    repositoryMock.create.mockImplementation((value: unknown) => value);
-    repositoryMock.save.mockImplementation(async (value: unknown) => value);
-
-    const trace = {
-      hash: 'h1',
-      path: 'transfer/channel-0',
-      base_denom: 'stake',
-      voucher_policy_id: 'policy',
-      tx_hash: 'tx1',
-    };
-    const saved = await service.saveDenomTrace(trace);
-    const ibcDenomHash = hashSHA256(convertString2Hex('transfer/channel-0/stake'));
-
-    expect(repositoryMock.findOne).toHaveBeenCalledWith({ where: { hash: 'h1' } });
-    expect(repositoryMock.save).toHaveBeenCalled();
-    expect(saved).toEqual({
-      ...trace,
-      ibc_denom_hash: ibcDenomHash,
-    });
-  });
-
-  it('returns existing trace for duplicate hash and does not save again', async () => {
-    const existing = {
-      hash: 'h1',
-      path: 'transfer/channel-0',
-      base_denom: 'stake',
-      voucher_policy_id: 'policy',
-    };
-    repositoryMock.findOne.mockResolvedValue(existing);
-
-    const result = await service.saveDenomTrace({ hash: 'h1' });
-
-    expect(result).toBe(existing);
-    expect(repositoryMock.save).not.toHaveBeenCalled();
-  });
-
-  it('fails hard when duplicate hash maps to conflicting canonical denom trace data', async () => {
-    const existing = {
-      hash: 'h1',
-      path: 'transfer/channel-0',
-      base_denom: 'stake',
-      voucher_policy_id: 'policy-a',
-    };
-    repositoryMock.findOne.mockResolvedValue(existing);
-
-    await expect(
-      service.saveDenomTrace({
-        hash: 'h1',
-        path: 'transfer/channel-9',
-        base_denom: 'uatom',
-        voucher_policy_id: 'policy-b',
+    configServiceMock = {
+      get: jest.fn().mockImplementation((key: string) => {
+        if (key !== 'deployment') return undefined;
+        return {
+          validators: {
+            mintVoucher: {
+              scriptHash: 'mint-voucher-policy-id',
+            },
+          },
+          traceRegistry: {
+            address: 'addr_test1trace',
+            shardPolicyId: 'trace-shard-policy',
+            directory: { policyId: 'trace-shard-policy', name: 'dir' },
+          },
+        };
       }),
-    ).rejects.toThrow('Conflicting denom trace for hash');
+    };
 
-    expect(repositoryMock.save).not.toHaveBeenCalled();
+    const shardUtxos = new Map<string, ReturnType<typeof makeShardUtxo>>([
+      [
+        'trace-shard-policydir',
+        makeDirectoryUtxo([
+          { bucket_index: 0n, active_shard_name: '00', archived_shard_names: [] },
+          { bucket_index: 10n, active_shard_name: '0a', archived_shard_names: [] },
+          { bucket_index: 15n, active_shard_name: '0f', archived_shard_names: [] },
+        ]),
+      ],
+      ['trace-shard-policy00', makeShardUtxo([], 0)],
+      ['trace-shard-policy0a', makeShardUtxo([], 10)],
+      ['trace-shard-policy0f', makeShardUtxo([], 15)],
+    ]);
+
+    lucidServiceMock = {
+      findUtxoByUnit: jest.fn(async (unit: string) => {
+        const utxo = shardUtxos.get(unit);
+        if (!utxo) {
+          throw new Error(`unexpected unit lookup: ${unit}`);
+        }
+        return utxo;
+      }),
+      lucid: {
+        config: jest.fn(() => ({
+          protocolParameters: {
+            maxTxSize: 16_384,
+          },
+        })),
+        wallet: () => ({
+          getUtxos: jest.fn(async () => [
+            {
+              txHash: '11'.repeat(32),
+              outputIndex: 0,
+              assets: { lovelace: 10_000_000n },
+            },
+          ]),
+        }),
+      },
+      estimateUnsignedTxSizeBytes: jest.fn(async () => 1_000),
+      LucidImporter: Lucid,
+    };
+
+    service = new DenomTraceService(
+      loggerMock,
+      configServiceMock as any,
+      lucidServiceMock as any,
+      metricsMock as any,
+    );
   });
 
-  it('fails hard when caller-supplied ibc_denom_hash conflicts with canonical path/base_denom', async () => {
-    repositoryMock.findOne.mockResolvedValue(null);
+  it('builds an on-chain insert context for a first-seen voucher hash', async () => {
+    const hash = `a${'1'.repeat(63)}`;
+    const fullDenom = 'transfer/channel-7/uatom';
+
+    const result = await service.prepareOnChainInsert(hash, fullDenom);
+
+    expect(result).not.toBeNull();
+    expect(result?.kind).toBe('append');
+    if (!result || result.kind !== 'append') {
+      throw new Error('expected append context');
+    }
+    expect(result.traceRegistryShardUtxo.txHash).toBe('trace-shard-10');
+    expect(result.traceRegistryArchivedShardWitnessUtxos).toEqual([]);
+    expect(result.encodedTraceRegistryRedeemer).toBeTruthy();
+    expect(result.encodedUpdatedTraceRegistryDatum).toBeTruthy();
+  });
+
+  it('skips an on-chain insert when the shard already contains the same mapping', async () => {
+    const hash = `f${'2'.repeat(63)}`;
+    const fullDenom = 'transfer/channel-44/factory/osmo1abcd/mytoken';
+    lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
+      if (unit === 'trace-shard-policy0f') {
+        return makeShardUtxo([{ voucher_hash: hash, full_denom: fullDenom }], 15);
+      }
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          { bucket_index: 15n, active_shard_name: '0f', archived_shard_names: [] },
+        ]);
+      }
+      throw new Error(`unexpected unit lookup: ${unit}`);
+    });
+
+    const result = await service.prepareOnChainInsert(hash, fullDenom);
+
+    expect(result.kind).toBe('existing');
+    if (result.kind !== 'existing') {
+      throw new Error('expected existing proof context');
+    }
+    expect(result.traceRegistryDirectoryUtxo.txHash).toBe('trace-directory');
+    expect(result.traceRegistryShardWitnessUtxos.map((utxo) => utxo.txHash)).toEqual(['trace-shard-15']);
+  });
+
+  it('fails hard when the same voucher hash resolves to a conflicting full denom', async () => {
+    const hash = `0${'3'.repeat(63)}`;
+    lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
+      if (unit === 'trace-shard-policy00') {
+        return makeShardUtxo([{ voucher_hash: hash, full_denom: 'transfer/channel-9/uosmo' }], 0);
+      }
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          { bucket_index: 0n, active_shard_name: '00', archived_shard_names: [] },
+        ]);
+      }
+      throw new Error(`unexpected unit lookup: ${unit}`);
+    });
+
+    await expect(service.prepareOnChainInsert(hash, 'transfer/channel-7/uatom')).rejects.toThrow(
+      'Conflicting on-chain denom trace',
+    );
+  });
+
+  it('fails hard when the same voucher hash appears in multiple bucket shards', async () => {
+    const hash = `a${'9'.repeat(63)}`;
+    const fullDenom = 'transfer/channel-7/uatom';
+    lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
+      if (unit === 'trace-shard-policy0a') {
+        return makeShardUtxo([{ voucher_hash: hash, full_denom: fullDenom }], 10);
+      }
+      if (unit === 'trace-shard-policy1a') {
+        return makeShardUtxo([{ voucher_hash: hash, full_denom: fullDenom }], 10);
+      }
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          { bucket_index: 10n, active_shard_name: '0a', archived_shard_names: ['1a'] },
+        ]);
+      }
+      throw new Error(`unexpected unit lookup: ${unit}`);
+    });
+
+    await expect(service.prepareOnChainInsert(hash, fullDenom)).rejects.toThrow(
+      'Duplicate trace-registry entries detected',
+    );
+    await expect(service.findByHash(hash)).rejects.toThrow(
+      'Duplicate trace-registry entries detected',
+    );
+  });
+
+  it('fails closed when trace registry deployment config is missing', async () => {
+    configServiceMock.get.mockImplementation(() => ({
+      validators: {
+        mintVoucher: {
+          scriptHash: 'mint-voucher-policy-id',
+        },
+      },
+    }));
 
     await expect(
-      service.saveDenomTrace({
-        hash: 'h2',
-        path: 'transfer/channel-0',
-        base_denom: 'stake',
-        voucher_policy_id: 'policy',
-        ibc_denom_hash: 'deadbeef',
-      } as any),
-    ).rejects.toThrow('Conflicting ibc_denom_hash');
-
-    expect(repositoryMock.create).not.toHaveBeenCalled();
-    expect(repositoryMock.save).not.toHaveBeenCalled();
-  });
-  it('applies pagination offset in findAll', async () => {
-    queryBuilderMock.getMany.mockResolvedValue([{ hash: 'h1' }]);
-
-    const result = await service.findAll({ offset: 10 } as any);
-
-    expect(repositoryMock.createQueryBuilder).toHaveBeenCalledWith('denom_trace');
-    expect(queryBuilderMock.orderBy).toHaveBeenCalledWith('denom_trace.first_seen', 'DESC');
-    expect(queryBuilderMock.offset).toHaveBeenCalledWith(10);
-    expect(queryBuilderMock.limit).toHaveBeenCalledWith(100);
-    expect(result).toEqual([{ hash: 'h1' }]);
+      service.prepareOnChainInsert(`a${'4'.repeat(63)}`, 'transfer/channel-7/uatom'),
+    ).rejects.toThrow('Trace registry deployment config is missing');
   });
 
-  it('returns count from repository', async () => {
-    repositoryMock.count.mockResolvedValue(7);
+  it('fails closed for read paths when trace registry deployment config is missing', async () => {
+    configServiceMock.get.mockImplementation(() => ({
+      validators: {
+        mintVoucher: {
+          scriptHash: 'mint-voucher-policy-id',
+        },
+      },
+    }));
 
-    await expect(service.getCount()).resolves.toBe(7);
+    await expect(service.findByHash(`a${'4'.repeat(63)}`)).rejects.toThrow(
+      'Trace registry deployment config is missing',
+    );
+    await expect(service.findAll()).rejects.toThrow(
+      'Trace registry deployment config is missing',
+    );
+    await expect(
+      service.findByIbcDenomHash(hashSHA256(convertString2Hex('transfer/channel-7/uatom')).toLowerCase()),
+    ).rejects.toThrow('Trace registry deployment config is missing');
+    await expect(service.findByBaseDenom('uatom')).rejects.toThrow(
+      'Trace registry deployment config is missing',
+    );
+    await expect(service.getCount()).rejects.toThrow(
+      'Trace registry deployment config is missing',
+    );
   });
 
-  it('resolves traces by indexed ibc denom hash', async () => {
-    const target = { path: 'transfer/channel-7', base_denom: 'uatom' };
-    const denomHash = hashSHA256(convertString2Hex('transfer/channel-7/uatom'));
+  it('materializes traces from shard data and resolves by ibc denom hash', async () => {
+    const atomTrace = 'transfer/channel-7/uatom';
+    const osmoTrace = 'transfer/channel-44/factory/osmo1abcd/mytoken';
+    const atomHash = `0${'a'.repeat(63)}`;
+    const osmoHash = `f${'b'.repeat(63)}`;
+    lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
+      if (unit === 'trace-shard-policy00') {
+        return makeShardUtxo([{ voucher_hash: atomHash, full_denom: atomTrace }], 0);
+      }
+      if (unit === 'trace-shard-policy0a') {
+        return makeShardUtxo([], 10);
+      }
+      if (unit === 'trace-shard-policy0f') {
+        return makeShardUtxo([{ voucher_hash: osmoHash, full_denom: osmoTrace }], 15);
+      }
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          { bucket_index: 0n, active_shard_name: '00', archived_shard_names: [] },
+          { bucket_index: 10n, active_shard_name: '0a', archived_shard_names: [] },
+          { bucket_index: 15n, active_shard_name: '0f', archived_shard_names: [] },
+        ]);
+      }
+      throw new Error(`unexpected unit lookup: ${unit}`);
+    });
 
-    repositoryMock.findOne.mockResolvedValue(target);
+    await expect(service.findByHash(atomHash)).resolves.toEqual({
+      hash: atomHash,
+      path: 'transfer/channel-7',
+      base_denom: 'uatom',
+      voucher_policy_id: 'mint-voucher-policy-id',
+      ibc_denom_hash: hashSHA256(convertString2Hex(atomTrace)).toLowerCase(),
+    });
 
-    const result = await service.findByIbcDenomHash(denomHash.toUpperCase());
-
-    expect(result).toEqual(target);
-    expect(repositoryMock.findOne).toHaveBeenCalledWith({
-      where: { ibc_denom_hash: denomHash.toLowerCase() },
-      order: { first_seen: 'DESC' },
+    await expect(
+      service.findByIbcDenomHash(hashSHA256(convertString2Hex(osmoTrace)).toUpperCase()),
+    ).resolves.toEqual({
+      hash: osmoHash,
+      path: 'transfer/channel-44',
+      base_denom: 'factory/osmo1abcd/mytoken',
+      voucher_policy_id: 'mint-voucher-policy-id',
+      ibc_denom_hash: hashSHA256(convertString2Hex(osmoTrace)).toLowerCase(),
     });
   });
 
-  it('backfills missing ibc denom hashes in batches', async () => {
-    const row = { hash: 'trace-hash', path: 'transfer/channel-9', base_denom: 'uosmo' };
-    const expectedIbcHash = hashSHA256(convertString2Hex('transfer/channel-9/uosmo'));
+  it('lists all traces in sorted order and honors pagination offset', async () => {
+    lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
+      if (unit === 'trace-shard-policy00') {
+        return makeShardUtxo([{ voucher_hash: `0${'1'.repeat(63)}`, full_denom: 'transfer/channel-9/uosmo' }], 0);
+      }
+      if (unit === 'trace-shard-policy0a') {
+        return makeShardUtxo([{ voucher_hash: `a${'2'.repeat(63)}`, full_denom: 'transfer/channel-7/uatom' }], 10);
+      }
+      if (unit === 'trace-shard-policy0f') {
+        return makeShardUtxo([{ voucher_hash: `f${'3'.repeat(63)}`, full_denom: 'factory/osmo1abcd/mytoken' }], 15);
+      }
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          { bucket_index: 0n, active_shard_name: '00', archived_shard_names: [] },
+          { bucket_index: 10n, active_shard_name: '0a', archived_shard_names: [] },
+          { bucket_index: 15n, active_shard_name: '0f', archived_shard_names: [] },
+        ]);
+      }
+      throw new Error(`unexpected unit lookup: ${unit}`);
+    });
 
-    queryBuilderMock.getRawMany
-      .mockResolvedValueOnce([row])
-      .mockResolvedValueOnce([]);
-    repositoryMock.query.mockResolvedValue(undefined);
+    const traces = await service.findAll({ offset: 1 } as any);
 
-    const updated = await service.backfillMissingIbcDenomHashes(1);
-
-    expect(updated).toBe(1);
-    expect(repositoryMock.query).toHaveBeenCalledTimes(1);
-    expect(repositoryMock.query.mock.calls[0][0]).toContain('UPDATE denom_traces AS dt');
-    expect(repositoryMock.query.mock.calls[0][1]).toEqual([row.hash, expectedIbcHash]);
+    expect(traces).toHaveLength(2);
+    expect(traces[0].base_denom).toBe('uatom');
+    expect(traces[1].base_denom).toBe('uosmo');
+    await expect(service.getCount()).resolves.toBe(3);
   });
 
-  it('updates tx_hash for traces after confirmation', async () => {
-    queryBuilderMock.execute.mockResolvedValue({ affected: 2 });
+  it('prepares a rollover context when forced', async () => {
+    const hash = `a${'4'.repeat(63)}`;
+    const fullDenom = 'transfer/channel-77/uatom';
 
-    const updated = await service.setTxHashForTraces(['aa', 'bb'], 'tx123');
+    const result = await service.prepareOnChainInsert(hash, fullDenom, { forceRollover: true });
 
-    expect(queryBuilderMock.update).toHaveBeenCalled();
-    expect(queryBuilderMock.set).toHaveBeenCalledWith({ tx_hash: 'tx123' });
-    expect(queryBuilderMock.where).toHaveBeenCalled();
-    expect(updated).toBe(2);
+    expect(result).not.toBeNull();
+    expect(result?.kind).toBe('rollover');
+    if (!result || result.kind !== 'rollover') {
+      throw new Error('expected rollover context');
+    }
+    expect(result.traceRegistryDirectoryUtxo.txHash).toBe('trace-directory');
+    expect(result.traceRegistryShardUtxo.txHash).toBe('trace-shard-10');
+    expect(result.traceRegistryArchivedShardWitnessUtxos).toEqual([]);
+    expect(result.newActiveTraceRegistryShardTokenUnit.startsWith('trace-shard-policy')).toBe(true);
   });
 
-  it('ensures schema and runs backfill on module init', async () => {
-    queryBuilderMock.getRawMany.mockResolvedValue([]);
-    repositoryMock.query.mockResolvedValue(undefined);
-
-    await service.onModuleInit();
-
-    expect(repositoryMock.query).toHaveBeenCalledTimes(3);
-    expect(repositoryMock.query.mock.calls[0][0]).toContain('CREATE TABLE IF NOT EXISTS denom_traces');
-    expect(repositoryMock.query.mock.calls[1][0]).toContain('ADD COLUMN IF NOT EXISTS ibc_denom_hash');
-    expect(repositoryMock.query.mock.calls[2][0]).toContain('CREATE INDEX IF NOT EXISTS idx_denom_traces_ibc_denom_hash');
-  });
 });

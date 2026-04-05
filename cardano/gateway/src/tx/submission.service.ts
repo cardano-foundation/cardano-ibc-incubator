@@ -8,7 +8,6 @@ import { HostStateDatum } from '../shared/types/host-state-datum';
 import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
 import { IbcTreeCacheService } from '../shared/services/ibc-tree-cache.service';
 import { getCurrentTree } from '../shared/helpers/ibc-state-root';
-import { DenomTraceService } from '../query/services/denom-trace.service';
 import { queryNetworkTipPoint, queryTransactionInclusionBlockHeight } from '../shared/helpers/time';
 
 @Injectable()
@@ -21,7 +20,6 @@ export class SubmissionService {
     private readonly txEventsService: TxEventsService,
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
     private readonly ibcTreeCacheService: IbcTreeCacheService,
-    private readonly denomTraceService: DenomTraceService,
   ) {}
 
   /**
@@ -114,12 +112,10 @@ export class SubmissionService {
 
     if (!pending) {
       throw new GrpcInternalException(
-        `Missing pending IBC update for confirmed tx ${txHash}; refusing to skip denom trace/tree finalization`,
+        `Missing pending IBC update for confirmed tx ${txHash}; refusing to skip state-tree finalization`,
       );
     }
 
-    // Attach tx_hash to traces before commit so mapping rows remain connected to the
-    // submitted transaction even when later steps fail or process restarts occur.
     // Resolve HostState from the exact confirmed transaction.
     // We intentionally do not accept "latest HostState" here because that can
     // mask runtime failures and attach traces to the wrong tx context.
@@ -133,10 +129,6 @@ export class SubmissionService {
         `Confirmed tx root mismatch for tx ${txHash}: expected ${pending.expectedNewRoot.substring(0, 16)}..., got ${confirmedRoot.substring(0, 16)}...`,
       );
     }
-
-    // Only attach tx_hash after root verification so denom trace rows are never
-    // finalized against a transaction that resolved to a different HostState root.
-    await this.finalizePendingDenomTraces(pending.denomTraceHashes, txHash);
 
     pending.commit();
 
@@ -193,28 +185,6 @@ export class SubmissionService {
     }
 
     throw new Error(`Confirmed tx ${txHash} does not contain a HostState output`);
-  }
-
-  private async finalizePendingDenomTraces(traceHashes: string[] | undefined, txHash: string): Promise<void> {
-    // We treat "missing some expected rows" as an integrity error because partial
-    // trace finalization makes ibc/<hash> reverse lookup/debugging ambiguous.
-    const hashes = Array.from(new Set((traceHashes ?? []).map((hash) => hash.toLowerCase())));
-    if (hashes.length === 0) return;
-
-    let updated = 0;
-    try {
-      updated = await this.denomTraceService.setTxHashForTraces(hashes, txHash);
-    } catch (error) {
-      throw new GrpcInternalException(
-        `Failed to finalize denom trace mappings for tx ${txHash}: ${error?.message ?? error}`,
-      );
-    }
-
-    if (updated !== hashes.length) {
-      throw new GrpcInternalException(
-        `Failed to finalize denom trace mappings for tx ${txHash}: expected ${hashes.length} traces, updated ${updated}`,
-      );
-    }
   }
 
   private computeTxBodyHashHex(txCborHex: string): string | null {

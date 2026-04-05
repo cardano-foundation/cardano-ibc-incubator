@@ -4,7 +4,7 @@ import {
   MsgUpdateClient,
   MsgUpdateClientResponse,
 } from '@plus/proto-types/build/ibc/core/client/v1/tx';
-import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
+import { Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConsensusState } from '../shared/types/consensus-state';
@@ -43,6 +43,7 @@ import {
 } from '../shared/helpers/ibc-state-root';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
+import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
 
 @Injectable()
 export class ClientService {
@@ -104,6 +105,25 @@ export class ClientService {
       await alignTreeWithChain();
     }
   }
+
+  private async computeTxValidityWindow(backdateMs = 0): Promise<{
+    currentSlot: number;
+    currentLedgerTime: number;
+    validFromTime: number;
+    validToSlot: number;
+    validToTime: number;
+  }> {
+    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    const network = this.configService.get('cardanoNetwork') as Network;
+    const slotConfig = this.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[network];
+    if (!slotConfig || slotConfig.slotLength <= 0) {
+      throw new GrpcInternalException(`client tx failed: invalid slot configuration for network ${network}`);
+    }
+
+    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, TRANSACTION_TIME_TO_LIVE, {
+      backdateMs,
+    });
+  }
   /**
    * Processes the creation of a client tx.
    * @param data The message containing client creation data.
@@ -121,14 +141,8 @@ export class ClientService {
         constructedAddress,
       );
 
-      // Use absolute POSIX timestamps (milliseconds since Unix epoch)
-      // Lucid will convert these to slots relative to the devnet's systemStart
-      const now = Date.now(); // Current time in milliseconds
-
-      const validFromTimestamp = now - 60000; // 1 minute ago (for clock skew tolerance)
-      // Keep validity bounds within Cardano's "safe zone" for devnet era summaries
-      // (otherwise Ogmios evaluateTransaction may fail with PastHorizon).
-      const validToTimestamp = now + TRANSACTION_TIME_TO_LIVE;
+      const { validFromTime: validFromTimestamp, validToTime: validToTimestamp } =
+        await this.computeTxValidityWindow(60_000);
 
       this.logger.log(`[DEBUG] Setting validity: validFrom=${new Date(validFromTimestamp).toISOString()}, validTo=${new Date(validToTimestamp).toISOString()}`);
 
@@ -225,7 +239,6 @@ export class ClientService {
 
         const { unsignedTx: unsignedUpdateClientTx, pendingTreeUpdate } =
           await this.buildUnsignedUpdateOnMisbehaviour(updateOnMisbehaviourOperator);
-        const nowMs = Date.now();
         const maxClockDriftMs = currentClientDatum.state.clientState.maxClockDrift / 1_000_000n;
         const maxBackdateMarginMs = 1_000n;
         const maxBackdateCapMs = 60_000n;
@@ -234,8 +247,7 @@ export class ClientService {
         const safeBackdateMs = Number(
           maxAllowedBackdateMs < maxBackdateCapMs ? maxAllowedBackdateMs : maxBackdateCapMs,
         );
-        const validFromTimeMs = nowMs - safeBackdateMs;
-        const validToTime = nowMs + TRANSACTION_TIME_TO_LIVE;
+        const { validFromTime: validFromTimeMs, validToTime } = await this.computeTxValidityWindow(safeBackdateMs);
         const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
           operationName: 'updateClientOnMisbehaviour',
           unsignedTx: unsignedUpdateClientTx,
@@ -267,7 +279,6 @@ export class ClientService {
       }
       const headerMsg = decodeHeader(data.client_message.value);
       const header = initializeHeader(headerMsg);
-      const nowMs = Date.now();
       // NOTE: UpdateClient header verification uses the transaction validity lower bound
       // (`valid_from`) as a proxy for "current time" in the Tendermint light client.
       //
@@ -291,8 +302,8 @@ export class ClientService {
       const safeBackdateMs = Number(
         maxAllowedBackdateMs < maxBackdateCapMs ? maxAllowedBackdateMs : maxBackdateCapMs,
       );
-      const validFromTimeMs = nowMs - safeBackdateMs;
-      const validToTimeMs = nowMs + TRANSACTION_TIME_TO_LIVE;
+      const { validFromTime: validFromTimeMs, validToTime: validToTimeMs } =
+        await this.computeTxValidityWindow(safeBackdateMs);
       const txValidFromNs = BigInt(validFromTimeMs) * 1_000_000n;
       const updateClientHeaderOperator: UpdateClientOperatorDto = {
         clientId,

@@ -21,6 +21,7 @@ function buildValidator(name: string) {
 
 function buildHandlerJsonDeployment() {
   return {
+    deployedAt: '2026-04-01T12:34:56.000Z',
     hostStateNFT: {
       policyId: 'host-policy',
       name: 'host-token',
@@ -47,7 +48,9 @@ function buildHandlerJsonDeployment() {
           timeout_packet: { scriptHash: 'timeout-hash', refUtxo: { txHash: 'timeout-tx', outputIndex: 9 } },
         },
       },
+      spendTraceRegistry: buildValidator('spendTraceRegistry'),
       spendTransferModule: buildValidator('spendTransferModule'),
+      mintIdentifier: buildValidator('mintIdentifier'),
       verifyProof: buildValidator('verifyProof'),
       mintClientStt: buildValidator('mintClientStt'),
       mintConnectionStt: buildValidator('mintConnectionStt'),
@@ -68,6 +71,14 @@ function buildHandlerJsonDeployment() {
         address: 'mock-address',
       },
     },
+    traceRegistry: {
+      address: 'trace-registry-address',
+      shardPolicyId: 'trace-shard-policy',
+      directory: {
+        policyId: 'trace-shard-policy',
+        name: 'trace-directory',
+      },
+    },
   };
 }
 
@@ -80,8 +91,9 @@ describe('bridge manifest normalization', () => {
     });
 
     expect(loaded.bridgeManifest).toMatchObject({
-      schema_version: 1,
+      schema_version: 2,
       deployment_id: 'cardano-devnet:host-policy.host-token',
+      deployed_at: '2026-04-01T12:34:56.000Z',
       cardano: {
         chain_id: 'cardano-devnet',
         network_magic: 42,
@@ -105,6 +117,14 @@ describe('bridge manifest normalization', () => {
         output_index: 5,
       },
     });
+    expect(loaded.bridgeManifest.trace_registry).toEqual({
+      address: 'trace-registry-address',
+      shard_policy_id: 'trace-shard-policy',
+      directory: {
+        policy_id: 'trace-shard-policy',
+        token_name: 'trace-directory',
+      },
+    });
   });
 
   it('normalizes a public manifest back into the internal deployment config', () => {
@@ -118,6 +138,47 @@ describe('bridge manifest normalization', () => {
 
     expect(manifestLoaded.deployment).toEqual(legacy.deployment);
     expect(bridgeManifestsEqual(manifestLoaded.bridgeManifest, legacy.bridgeManifest)).toBe(true);
+  });
+
+  it('rejects handler.json files without a deployment timestamp', () => {
+    const { deployedAt: _deployedAt, ...legacyHandlerJson } = buildHandlerJsonDeployment();
+
+    expect(() =>
+      normalizeHandlerJsonDeploymentConfig(legacyHandlerJson, {
+        chain_id: 'cardano-devnet',
+        network_magic: 42,
+        network: 'Custom',
+      })
+    ).toThrow('Invalid bridge config: "deployedAt" must be a non-empty string');
+  });
+
+  it('rejects bridge manifests without deployed_at', () => {
+    const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+
+    const { deployed_at: _deployedAt, ...legacyManifest } = legacy.bridgeManifest;
+
+    expect(() => normalizeBridgeManifestConfig(legacyManifest)).toThrow(
+      'Invalid bridge config: "deployed_at" must be a non-empty string',
+    );
+  });
+
+  it('rejects bridge manifests with the old schema version', () => {
+    const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+
+    expect(() =>
+      normalizeBridgeManifestConfig({
+        ...legacy.bridgeManifest,
+        schema_version: 1,
+      }),
+    ).toThrow('Invalid bridge config: "schema_version" must be 2');
   });
 
   it('fails startup resolution if both manifest and handler paths are set', () => {

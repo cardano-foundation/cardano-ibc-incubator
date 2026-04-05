@@ -57,6 +57,8 @@ message QueryBridgeManifestResponse {
 message BridgeManifest {
   uint32 schema_version = 1;
   string deployment_id = 2;
+  // RFC 3339 / ISO-8601 timestamp for when the bridge deployment completed.
+  string deployed_at = 8;
   BridgeManifestCardanoInfo cardano = 3;
   BridgeManifestAuthToken host_state_nft = 4;
   BridgeManifestAuthToken handler_auth_token = 5;
