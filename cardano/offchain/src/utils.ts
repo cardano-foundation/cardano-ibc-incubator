@@ -284,6 +284,13 @@ export type DeploymentTemplate = {
       address: string;
       refUtxo: UTxO;
     };
+    mintTraceRegistryBenchmarkVoucher?: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
     verifyProof: {
       title: string;
       script: string;
