@@ -9,7 +9,7 @@ const basePath = process?.env?.BASE_PATH || '';
 const nextConfig = {
   reactStrictMode: true,
   basePath,
-  transpilePackages: ['@cardano-ibc/trace-registry'],
+  transpilePackages: ['@cardano-ibc/planner', '@cardano-ibc/trace-registry'],
   webpack: function (config, options) {
     config.experiments = {
       asyncWebAssembly: true,

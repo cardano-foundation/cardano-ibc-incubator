@@ -6,6 +6,7 @@ import {
   listCardanoIbcAssetsFromRegistry,
   lookupCardanoAssetDenomTraceFromRegistry,
 } from '@/services/cardanoTraceRegistry';
+import { cardanoPlannerClient } from '@/services/cardanoPlanner';
 
 interface TransferParams {
   sourcePort: string;
@@ -177,11 +178,18 @@ export async function listCardanoIbcAssets(): Promise<CardanoAssetDenomTrace[]> 
 
 export async function getLocalOsmosisSwapOptions(): Promise<SwapOptions | null> {
   try {
-    const response = await API({
-      method: 'GET',
-      url: '/api/local-osmosis/swap/options',
-    });
-    return response.data as SwapOptions;
+    const response = await cardanoPlannerClient.getLocalOsmosisSwapOptions();
+    return {
+      fromChainId: response.from_chain_id,
+      fromChainName: response.from_chain_name,
+      toChainId: response.to_chain_id,
+      toChainName: response.to_chain_name,
+      toTokens: response.to_tokens.map((token) => ({
+        tokenId: token.token_id,
+        tokenName: token.token_name,
+        tokenLogo: token.token_logo,
+      })),
+    };
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);
     toast.error(errorMessage, { theme: 'colored' });
@@ -197,18 +205,13 @@ export async function estimateLocalOsmosisSwap(params: {
   tokenOutDenom: string;
 }): Promise<SwapEstimateResponse | null> {
   try {
-    const response = await API({
-      method: 'POST',
-      url: '/api/local-osmosis/swap/estimate',
-      data: {
-        from_chain_id: params.fromChainId,
-        token_in_denom: params.tokenInDenom,
-        token_in_amount: params.tokenInAmount,
-        to_chain_id: params.toChainId,
-        token_out_denom: params.tokenOutDenom,
-      },
+    return await cardanoPlannerClient.estimateLocalOsmosisSwap({
+      fromChainId: params.fromChainId,
+      tokenInDenom: params.tokenInDenom,
+      tokenInAmount: params.tokenInAmount,
+      toChainId: params.toChainId,
+      tokenOutDenom: params.tokenOutDenom,
     });
-    return response.data as SwapEstimateResponse;
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);
     toast.error(errorMessage, { theme: 'colored' });
@@ -222,16 +225,11 @@ export async function planTransferRoute(params: {
   tokenDenom: string;
 }): Promise<TransferPlanResponse | null> {
   try {
-    const response = await API({
-      method: 'POST',
-      url: '/api/transfer/plan',
-      data: {
-        from_chain_id: params.fromChainId,
-        to_chain_id: params.toChainId,
-        token_denom: params.tokenDenom,
-      },
+    return await cardanoPlannerClient.planTransferRoute({
+      fromChainId: params.fromChainId,
+      toChainId: params.toChainId,
+      tokenDenom: params.tokenDenom,
     });
-    return response.data as TransferPlanResponse;
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);
     toast.error(errorMessage, { theme: 'colored' });
