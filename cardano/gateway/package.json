@@ -22,6 +22,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@cardano-ibc/tx-builder": "file:../../packages/cardano-ibc-tx-builder",
     "@cardano-ogmios/client": "6.13.0",
     "@cardano-ogmios/schema": "6.13.0",
     "@cuonglv0297/mithril-client-wasm": "^0.3.1",
