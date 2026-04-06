@@ -131,9 +131,9 @@ export async function transfer({
   signer,
 }: TransferParams): Promise<TransferResponseData> {
   try {
-    const response = await API({
+    const response = await axios({
       method: 'POST',
-      url: '/api/transfer',
+      url: '/api/cardano/transfer',
       data: {
         source_port: sourcePort,
         source_channel: sourceChannel,
