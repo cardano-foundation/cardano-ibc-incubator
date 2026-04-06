@@ -1,6 +1,11 @@
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import API from './api';
+import type { CardanoAssetDenomTrace } from '@/types/cardanoTrace';
+import {
+  listCardanoIbcAssetsFromRegistry,
+  lookupCardanoAssetDenomTraceFromRegistry,
+} from '@/services/cardanoTraceRegistry';
 
 interface TransferParams {
   sourcePort: string;
@@ -29,19 +34,7 @@ interface TransferResponseData {
   unsignedTx?: UnsignedTx;
 }
 
-export interface CardanoAssetDenomTrace {
-  assetId: string;
-  kind: 'native' | 'ibc_voucher';
-  path: string;
-  baseDenom: string;
-  fullDenom: string;
-  voucherTokenName: string | null;
-  voucherPolicyId: string | null;
-  ibcDenomHash: string | null;
-  displayName: string;
-  displaySymbol: string;
-  displayDescription: string;
-}
+export type { CardanoAssetDenomTrace } from '@/types/cardanoTrace';
 
 export interface SwapOptionToken {
   tokenId: string;
@@ -164,11 +157,7 @@ export async function lookupCardanoAssetDenomTrace(
   assetId: string,
 ): Promise<CardanoAssetDenomTrace | null> {
   try {
-    const response = await API({
-      method: 'GET',
-      url: `/api/cardano/assets/${encodeURIComponent(assetId)}/denom-trace`,
-    });
-    return response.data as CardanoAssetDenomTrace;
+    return await lookupCardanoAssetDenomTraceFromRegistry(assetId);
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);
     toast.error(errorMessage, { theme: 'colored' });
@@ -178,11 +167,7 @@ export async function lookupCardanoAssetDenomTrace(
 
 export async function listCardanoIbcAssets(): Promise<CardanoAssetDenomTrace[]> {
   try {
-    const response = await API({
-      method: 'GET',
-      url: '/api/cardano/ibc-assets',
-    });
-    return (response.data || []) as CardanoAssetDenomTrace[];
+    return await listCardanoIbcAssetsFromRegistry();
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);
     toast.error(errorMessage, { theme: 'colored' });
