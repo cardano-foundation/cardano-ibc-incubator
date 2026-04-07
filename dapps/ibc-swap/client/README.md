@@ -14,7 +14,7 @@ Create `.env` files with the following variables:
 | NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT    | Rest end-point of Entrypoint chain                                                                                                      | Default: http://localhost:1317                                           |
 | NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT    | RPC end-point of local Osmosis                                                                                                          | Default: http://localhost:26658                                          |
 | NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT   | Rest end-point of local Osmosis                                                                                                         | Default: http://localhost:1318                                           |
-| NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT | Rest end-point of gateway                                                                                                               | Default: http://localhost:8000. This is still used for tx building. |
+| NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT | Rest end-point of gateway                                                                                                               | Default: http://localhost:8000. This is only used as the default bridge-manifest host when `NEXT_PUBLIC_CARDANO_BRIDGE_MANIFEST_URL` is unset. |
 | NEXT_PUBLIC_CARDANO_BRIDGE_MANIFEST_URL | URL of the public Cardano bridge manifest                                                                                               | Default: `${NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT}/api/bridge-manifest` |
 | NEXT_PUBLIC_KUPMIOS_URL                 | Url of Kupo and Ogmios instances, should not be use when using NEXT_PUBLIC_BLOCKFROST_PROJECT_ID                                        | Default: "http://localhost:1442,http://localhost:1337"                   |
 | NEXT_PUBLIC_BLOCKFROST_PROJECT_ID       | Blockfrost Project ID, currently only support network preview, should not be use when using NEXT_PUBLIC_KUPMIOS_URL                     | Default: "previewVi2O..."                                                |
@@ -23,12 +23,11 @@ Create `.env` files with the following variables:
 
 Legacy compatibility: `NEXT_PUBLIC_SIDECHAIN_RPC_ENDPOINT`, `NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT`, `NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT`, and `NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT` are still accepted as fallbacks.
 
-TODO: This demo client should not depend on the gateway long term. The current
-gateway dependency is temporary while we work on fully decoupling dapps from the
-relayer/gateway layer. Denom-trace lookup now reads the on-chain trace registry
-directly; the remaining big dependency is Gateway-driven tx building. Once that
-is extracted into a shared Cardano SDK/builder, we can continue the
-decoupling so the gateway is only used by the relayer.
+TODO: This demo client should not depend on the gateway long term. Today
+denom-trace lookup, route planning, and unsigned Cardano transfer tx building
+all run through shared local packages, but bridge-manifest bootstrap still
+defaults to the gateway unless `NEXT_PUBLIC_CARDANO_BRIDGE_MANIFEST_URL` is
+set explicitly.
 
 ## Running
 After set up the `.env`, run:
