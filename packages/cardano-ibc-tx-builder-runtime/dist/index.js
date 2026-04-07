@@ -8,7 +8,7 @@ const crypto_1 = __importDefault(require("crypto"));
 const tx_builder_1 = require("@cardano-ibc/tx-builder");
 const trace_registry_1 = require("@cardano-ibc/trace-registry");
 const ws_1 = __importDefault(require("ws"));
-const ibc_state_root_1 = require("../../../cardano/gateway/dist/shared/helpers/ibc-state-root");
+const ibcStateRoot_1 = require("./ibcStateRoot");
 const lucid_service_1 = require("../../../cardano/gateway/dist/shared/modules/lucid/lucid.service");
 const LOOKUP_RETRY_OPTIONS = {
     maxAttempts: 6,
@@ -474,9 +474,9 @@ function dedupeUtxos(utxos) {
     return orderedKeys.map((key) => seen.get(key)).filter(Boolean);
 }
 async function ensureTreeAlignedForRoot(context, onChainRoot) {
-    if (!(0, ibc_state_root_1.isTreeAligned)(onChainRoot)) {
+    if (!(0, ibcStateRoot_1.isTreeAligned)(onChainRoot)) {
         context.logger.warn(`IBC tree root mismatch for local tx builder runtime, aligning to ${onChainRoot.slice(0, 16)}...`);
-        await (0, ibc_state_root_1.alignTreeWithChain)();
+        await (0, ibcStateRoot_1.alignTreeWithChain)();
     }
 }
 async function buildHostStateUpdateForHandlePacket(context, inputChannelDatum, outputChannelDatum, channelIdForRoot) {
@@ -487,7 +487,7 @@ async function buildHostStateUpdateForHandlePacket(context, inputChannelDatum, o
     const hostStateDatum = await context.lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
     await ensureTreeAlignedForRoot(context, hostStateDatum.state.ibc_state_root);
     const portId = convertHex2String(inputChannelDatum.port);
-    const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings, packetCommitmentSiblings, packetReceiptSiblings, packetAcknowledgementSiblings, commit, } = await (0, ibc_state_root_1.computeRootWithHandlePacketUpdate)(hostStateDatum.state.ibc_state_root, portId, channelIdForRoot, inputChannelDatum, outputChannelDatum, context.lucidService.LucidImporter);
+    const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings, packetCommitmentSiblings, packetReceiptSiblings, packetAcknowledgementSiblings, commit, } = await (0, ibcStateRoot_1.computeRootWithHandlePacketUpdate)(hostStateDatum.state.ibc_state_root, portId, channelIdForRoot, inputChannelDatum, outputChannelDatum, context.lucidService.LucidImporter);
     const updatedHostStateDatum = {
         ...hostStateDatum,
         state: {
@@ -564,8 +564,8 @@ function createTxBuilderRuntime(config) {
         const lucidService = new lucid_service_1.LucidService(lucidImporter, lucid, configService);
         await lucidService.onModuleInit();
         const kupoService = new RuntimeKupoService(lucidService, deployment);
-        (0, ibc_state_root_1.initTreeServices)(kupoService, lucidService);
-        await (0, ibc_state_root_1.rebuildTreeFromChain)(kupoService, lucidService);
+        (0, ibcStateRoot_1.initTreeServices)(kupoService, lucidService);
+        await (0, ibcStateRoot_1.rebuildTreeFromChain)(kupoService, lucidService);
         logger.log('Initialized shared Cardano tx-builder runtime context');
         return {
             configService,

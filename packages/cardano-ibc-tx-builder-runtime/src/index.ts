@@ -9,7 +9,7 @@ import {
   initTreeServices,
   isTreeAligned,
   rebuildTreeFromChain,
-} from '../../../cardano/gateway/dist/shared/helpers/ibc-state-root';
+} from './ibcStateRoot';
 import { LucidService } from '../../../cardano/gateway/dist/shared/modules/lucid/lucid.service';
 
 const LOOKUP_RETRY_OPTIONS = {

@@ -15,6 +15,7 @@
     "@cardano-ibc/trace-registry": "file:../cardano-ibc-trace-registry",
     "@cardano-ibc/tx-builder": "file:../cardano-ibc-tx-builder",
     "@lucid-evolution/lucid": "^0.4.29",
+    "js-sha256": "^0.11.0",
     "ws": "^8.18.2"
   },
   "devDependencies": {
@@ -26,6 +27,7 @@
     "@cardano-ibc/trace-registry": "0.1.0",
     "@cardano-ibc/tx-builder": "0.1.0",
     "@lucid-evolution/lucid": "^0.4.29",
+    "js-sha256": "^0.11.0",
     "ws": "^8.18.2"
   }
 }
