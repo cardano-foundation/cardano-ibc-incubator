@@ -1,8 +1,8 @@
 services:
   ibc-swap-client:
     build:
-      context: ..
-      dockerfile: dapps/ibc-swap/client/Dockerfile
+      context: ./ibc-swap/client
+      dockerfile: Dockerfile
     init: true
     restart: unless-stopped
     ports:

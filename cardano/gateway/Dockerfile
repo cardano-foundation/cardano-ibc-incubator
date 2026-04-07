@@ -1,24 +1,30 @@
+# Image proto type
+FROM node:20@sha256:bd3086f61c05f8925ed2026bee608a40ad9f8a5d28b6e593342237469ee5b621 AS protos
+
+WORKDIR /usr/src/proto-types
+
+COPY ./proto-types .
+
+RUN npm ci
+
+RUN npm run build
+
+# Base image
 FROM node:20@sha256:bd3086f61c05f8925ed2026bee608a40ad9f8a5d28b6e593342237469ee5b621
 
+ARG MAIN_CONTEXT=cardano/gateway
+# Create app directory
 WORKDIR /usr/src/app
 
-COPY package.json package-lock.json ./
-COPY proto-types/package.json ./proto-types/package.json
-COPY packages/cardano-ibc-planner/package.json ./packages/cardano-ibc-planner/package.json
-COPY packages/cardano-ibc-trace-registry/package.json ./packages/cardano-ibc-trace-registry/package.json
-COPY packages/cardano-ibc-tx-builder/package.json ./packages/cardano-ibc-tx-builder/package.json
-COPY packages/cardano-ibc-tx-builder-runtime/package.json ./packages/cardano-ibc-tx-builder-runtime/package.json
-COPY cardano/gateway/package.json ./cardano/gateway/package.json
-COPY dapps/ibc-swap/client/package.json ./dapps/ibc-swap/client/package.json
+# Bundle app source
+COPY ${MAIN_CONTEXT} .
+COPY ./packages /usr/packages
+COPY --from=protos /usr/src/proto-types /usr/proto-types
 
-RUN npm ci --ignore-scripts --legacy-peer-deps
+# Install app dependencies
+RUN npm ci --legacy-peer-deps
 
-COPY proto-types ./proto-types
-COPY packages ./packages
-COPY cardano/gateway ./cardano/gateway
-
-RUN npm run build:gateway
-
-WORKDIR /usr/src/app/cardano/gateway
+# Creates a "dist" folder with the production build
+RUN npm run build
 
 CMD ["node", "dist/main.js"]

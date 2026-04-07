@@ -14,8 +14,6 @@
 !.vscode/launch.json
 !.vscode/extensions.json
 
-node_modules/
-
 .env
 
 # Rust
@@ -65,8 +63,3 @@ run_token_swap.sh
 # Internal package build artifacts
 packages/*/dist/
 packages/*/package-lock.json
-
-# Root workspace owns lockfiles for these JS workspaces
-cardano/gateway/package-lock.json
-dapps/ibc-swap/client/package-lock.json
-proto-types/package-lock.json

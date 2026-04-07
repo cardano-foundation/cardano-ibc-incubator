@@ -14,10 +14,10 @@
     "@sidan-lab/sidan-csl-rs-browser": "0.6.13"
   },
   "dependencies": {
-    "@cardano-ibc/tx-builder-runtime": "0.1.0",
-    "@cardano-ibc/tx-builder": "0.1.0",
-    "@cardano-ibc/planner": "0.1.0",
-    "@cardano-ibc/trace-registry": "0.1.0",
+    "@cardano-ibc/tx-builder-runtime": "file:../../../packages/cardano-ibc-tx-builder-runtime",
+    "@cardano-ibc/tx-builder": "file:../../../packages/cardano-ibc-tx-builder",
+    "@cardano-ibc/planner": "file:../../../packages/cardano-ibc-planner",
+    "@cardano-ibc/trace-registry": "file:../../../packages/cardano-ibc-trace-registry",
     "@chain-registry/assets": "^1.21.0",
     "@chain-registry/osmosis": "^1.21.0",
     "@chain-registry/types": "^0.16.0",
