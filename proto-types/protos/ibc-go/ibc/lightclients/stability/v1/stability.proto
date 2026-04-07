@@ -1,0 +1,97 @@
+syntax = "proto3";
+package ibc.lightclients.stability.v1;
+
+import "gogoproto/gogo.proto";
+import "google/protobuf/duration.proto";
+
+option go_package = "entrypoint/x/clients/stability";
+
+message Height {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 revision_number = 1;
+  uint64 revision_height = 2;
+}
+
+message HeuristicParams {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 min_depth = 1;
+  uint64 min_unique_pools = 2;
+  uint64 min_unique_stake_bps = 3;
+  uint64 target_depth = 4;
+  uint64 target_unique_pools = 5;
+  uint64 target_unique_stake_bps = 6;
+  uint64 depth_weight_bps = 7;
+  uint64 pools_weight_bps = 8;
+  uint64 stake_weight_bps = 9;
+}
+
+message StakeDistributionEntry {
+  option (gogoproto.goproto_getters) = false;
+
+  string pool_id = 1;
+  uint64 stake = 2;
+}
+
+message ClientState {
+  option (gogoproto.goproto_getters) = false;
+
+  string chain_id = 1;
+  Height latest_height = 2;
+  Height frozen_height = 3;
+  uint64 current_epoch = 4;
+  google.protobuf.Duration trusting_period = 5 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
+  HeuristicParams heuristic_params = 6;
+  repeated string upgrade_path = 7;
+  bytes host_state_nft_policy_id = 8;
+  bytes host_state_nft_token_name = 9;
+  repeated StakeDistributionEntry epoch_stake_distribution = 10;
+}
+
+message ConsensusState {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 timestamp = 1;
+  bytes ibc_state_root = 2;
+  string accepted_block_hash = 3;
+  uint64 accepted_epoch = 4;
+  uint64 unique_pools_count = 5;
+  uint64 unique_stake_bps = 6;
+  uint64 security_score_bps = 7;
+}
+
+message Misbehaviour {
+  option (gogoproto.goproto_getters) = false;
+
+  string client_id = 1 [deprecated = true];
+  StabilityHeader stability_header_1 = 2 [(gogoproto.customname) = "StabilityHeader1"];
+  StabilityHeader stability_header_2 = 3 [(gogoproto.customname) = "StabilityHeader2"];
+}
+
+message StabilityBlock {
+  option (gogoproto.goproto_getters) = false;
+
+  Height height = 1;
+  uint64 slot = 2;
+  string hash = 3;
+  string prev_hash = 4;
+  uint64 epoch = 5;
+  uint64 timestamp = 6;
+  string slot_leader = 7;
+  uint64 stake_bps = 8;
+}
+
+message StabilityHeader {
+  option (gogoproto.goproto_getters) = false;
+
+  Height trusted_height = 1;
+  StabilityBlock anchor_block = 2;
+  repeated StabilityBlock descendant_blocks = 3;
+  string host_state_tx_hash = 4;
+  bytes host_state_tx_body_cbor = 5;
+  uint32 host_state_tx_output_index = 6;
+  uint64 unique_pools_count = 7;
+  uint64 unique_stake_bps = 8;
+  uint64 security_score_bps = 9;
+}

@@ -47,7 +47,7 @@ import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/
 import { serializeExistenceProof, serializeNonExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { HostStateDatum } from '../../shared/types/host-state-datum';
 import { HISTORY_SERVICE, HistoryService } from './history.service';
-import { resolveCertifiedProofHeightForCurrentRoot } from './proof-context';
+import { resolveProofHeightForCurrentRoot } from './proof-context';
 
 @Injectable()
 export class PacketService {
@@ -75,12 +75,13 @@ export class PacketService {
   }
 
   private async getProofHeight(): Promise<bigint> {
-    return resolveCertifiedProofHeightForCurrentRoot({
+    return resolveProofHeightForCurrentRoot({
       logger: this.logger,
       lucidService: this.lucidService,
       mithrilService: this.mithrilService,
       historyService: this.historyService,
       context: 'queryPacketProof',
+      lightClientMode: this.configService.get<'mithril' | 'stability'>('cardanoLightClientMode') || 'mithril',
     });
   }
 

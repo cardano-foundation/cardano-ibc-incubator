@@ -24,7 +24,7 @@ describe('QueryController (modern)', () => {
       queryConsensusState: jest.fn(),
       queryBlockData: jest.fn(),
       latestHeight: jest.fn(),
-      queryNewMithrilClient: jest.fn(),
+      queryNewClient: jest.fn(),
       queryBlockResults: jest.fn(),
       queryBlockSearch: jest.fn(),
       queryTransactionByHash: jest.fn(),
@@ -122,17 +122,17 @@ describe('QueryController (modern)', () => {
       client_state: { type_url: '/ibc.lightclients.mithril.v1.ClientState', value: Buffer.from('01', 'hex') },
       consensus_state: { type_url: '/ibc.lightclients.mithril.v1.ConsensusState', value: Buffer.from('02', 'hex') },
     } as any;
-    queryServiceMock.queryNewMithrilClient.mockResolvedValue(expected);
+    queryServiceMock.queryNewClient.mockResolvedValue(expected);
 
     const response = await controller.NewClient(request);
 
-    expect(queryServiceMock.queryNewMithrilClient).toHaveBeenCalledWith(request);
+    expect(queryServiceMock.queryNewClient).toHaveBeenCalledWith(request);
     expect(response).toBe(expected);
   });
 
   it('propagates NewClient errors from QueryService', async () => {
     const request = { height: 999n } as any;
-    queryServiceMock.queryNewMithrilClient.mockRejectedValue(new Error('Not found: "height" 999 not found'));
+    queryServiceMock.queryNewClient.mockRejectedValue(new Error('Not found: "height" 999 not found'));
 
     await expect(controller.NewClient(request)).rejects.toThrow('Not found: "height" 999 not found');
   });

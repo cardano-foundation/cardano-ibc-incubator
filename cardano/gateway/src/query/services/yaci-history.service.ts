@@ -23,7 +23,13 @@ import { decodeHostStateDatum } from '../../shared/types/host-state-datum';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { UtxoDto } from '../dtos/utxo.dto';
 import { TxDto } from '../dtos/tx.dto';
-import { HistoryService, HistoryTxEvidence, HistoryTxRedeemer } from './history.service';
+import {
+  HistoryBlock,
+  HistoryService,
+  HistoryStakeDistributionEntry,
+  HistoryTxEvidence,
+  HistoryTxRedeemer,
+} from './history.service';
 
 type BridgeUtxoHistoryRow = {
   address: string;
@@ -64,6 +70,21 @@ type BridgeTxEvidenceRow = {
   host_state_root?: string | null;
   gas_fee?: string | number | null;
   tx_size?: string | number | null;
+};
+
+type HistoryBlockRow = {
+  number: string | number;
+  hash: string;
+  prev_hash: string;
+  slot: string | number;
+  epoch: string | number;
+  block_time: string | Date;
+  slot_leader?: string | null;
+};
+
+type EpochStakeRow = {
+  pool_id: string | null;
+  active_stake: string | number;
 };
 
 @Injectable()
@@ -154,6 +175,100 @@ export class YaciHistoryService implements HistoryService {
     }
 
     return this.mapUtxoRow(rows[0]);
+  }
+
+  async findLatestBlock(): Promise<HistoryBlock | null> {
+    const query = `
+      SELECT
+        number,
+        hash,
+        prev_hash,
+        slot,
+        epoch,
+        block_time,
+        slot_leader
+      FROM block
+      ORDER BY number DESC
+      LIMIT 1
+    `;
+    const rows = await this.entityManager.query(query);
+    return rows[0] ? this.mapHistoryBlockRow(rows[0]) : null;
+  }
+
+  async findBlockByHeight(height: bigint): Promise<HistoryBlock | null> {
+    const query = `
+      SELECT
+        number,
+        hash,
+        prev_hash,
+        slot,
+        epoch,
+        block_time,
+        slot_leader
+      FROM block
+      WHERE number = $1
+      LIMIT 1
+    `;
+    const rows = await this.entityManager.query(query, [height.toString()]);
+    return rows[0] ? this.mapHistoryBlockRow(rows[0]) : null;
+  }
+
+  async findDescendantBlocks(anchorHeight: bigint, limit: number): Promise<HistoryBlock[]> {
+    const query = `
+      SELECT
+        number,
+        hash,
+        prev_hash,
+        slot,
+        epoch,
+        block_time,
+        slot_leader
+      FROM block
+      WHERE number > $1
+      ORDER BY number ASC
+      LIMIT $2
+    `;
+    const rows = await this.entityManager.query(query, [anchorHeight.toString(), limit]);
+    return rows.map((row: HistoryBlockRow) => this.mapHistoryBlockRow(row));
+  }
+
+  async findEpochStakeDistribution(epoch: number): Promise<HistoryStakeDistributionEntry[]> {
+    const queries = [
+      `
+        SELECT
+          pool_id,
+          SUM(amount) AS active_stake
+        FROM epoch_stake_default
+        WHERE active_epoch = $1
+          AND pool_id IS NOT NULL
+        GROUP BY pool_id
+        ORDER BY SUM(amount) DESC
+      `,
+      `
+        SELECT
+          pool_id,
+          SUM(amount) AS active_stake
+        FROM epoch_stake_default
+        WHERE epoch = $1
+          AND pool_id IS NOT NULL
+        GROUP BY pool_id
+        ORDER BY SUM(amount) DESC
+      `,
+    ];
+
+    for (const query of queries) {
+      const rows = await this.entityManager.query(query, [epoch]);
+      if (rows.length > 0) {
+        return rows
+          .filter((row: EpochStakeRow) => !!row.pool_id)
+          .map((row: EpochStakeRow) => ({
+            poolId: row.pool_id!,
+            stake: BigInt(row.active_stake),
+          }));
+      }
+    }
+
+    return [];
   }
 
   async findUtxoClientOrAuthHandler(height: number): Promise<UtxoDto[]> {
@@ -604,6 +719,19 @@ export class YaciHistoryService implements HistoryService {
       hostStateRoot: row.host_state_root ?? null,
       gasFee: row.gas_fee === undefined || row.gas_fee === null ? null : Number(row.gas_fee),
       txSize: row.tx_size === undefined || row.tx_size === null ? null : Number(row.tx_size),
+    };
+  }
+
+  private mapHistoryBlockRow(row: HistoryBlockRow): HistoryBlock {
+    const blockTime = row.block_time instanceof Date ? row.block_time : new Date(row.block_time);
+    return {
+      height: Number(row.number),
+      hash: row.hash,
+      prevHash: row.prev_hash,
+      slotNo: BigInt(row.slot),
+      epochNo: Number(row.epoch),
+      timestampUnixNs: BigInt(blockTime.valueOf()) * 1_000_000n,
+      slotLeader: row.slot_leader ?? '',
     };
   }
 }

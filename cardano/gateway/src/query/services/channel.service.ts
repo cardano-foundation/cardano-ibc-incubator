@@ -34,7 +34,7 @@ import { AuthToken } from '../../shared/types/auth-token';
 import { CHANNEL_TOKEN_PREFIX } from '../../constant';
 import { getChannelIdByTokenName } from '../../shared/helpers/channel';
 import { HISTORY_SERVICE, HistoryService } from './history.service';
-import { resolveCertifiedProofHeightForCurrentRoot } from './proof-context';
+import { resolveProofHeightForCurrentRoot } from './proof-context';
 
 @Injectable()
 export class ChannelService {
@@ -63,12 +63,13 @@ export class ChannelService {
   }
 
   private async getProofHeight(): Promise<bigint> {
-    return resolveCertifiedProofHeightForCurrentRoot({
+    return resolveProofHeightForCurrentRoot({
       logger: this.logger,
       lucidService: this.lucidService,
       mithrilService: this.mithrilService,
       historyService: this.historyService,
       context: 'queryChannel',
+      lightClientMode: this.configService.get<'mithril' | 'stability'>('cardanoLightClientMode') || 'mithril',
     });
   }
 

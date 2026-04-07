@@ -26,10 +26,29 @@ export type HistoryTxEvidence = {
   txSize?: number | null;
 };
 
+export type HistoryBlock = {
+  height: number;
+  hash: string;
+  prevHash: string;
+  slotNo: bigint;
+  epochNo: number;
+  timestampUnixNs: bigint;
+  slotLeader: string;
+};
+
+export type HistoryStakeDistributionEntry = {
+  poolId: string;
+  stake: bigint;
+};
+
 export type HistoryService = {
   findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]>;
   findUtxosByBlockNo(height: number): Promise<UtxoDto[]>;
   findHostStateUtxoAtOrBeforeBlockNo(height: bigint): Promise<UtxoDto>;
+  findLatestBlock(): Promise<HistoryBlock | null>;
+  findBlockByHeight(height: bigint): Promise<HistoryBlock | null>;
+  findDescendantBlocks(anchorHeight: bigint, limit: number): Promise<HistoryBlock[]>;
+  findEpochStakeDistribution(epoch: number): Promise<HistoryStakeDistributionEntry[]>;
   findUtxoClientOrAuthHandler(height: number): Promise<UtxoDto[]>;
   checkExistPoolUpdateByBlockNo(height: number): Promise<boolean>;
   checkExistPoolRetireByBlockNo(height: number): Promise<boolean>;
