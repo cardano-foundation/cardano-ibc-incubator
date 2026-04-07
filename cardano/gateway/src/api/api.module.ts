@@ -8,8 +8,7 @@ import { TxModule } from '~@/tx/tx.module';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { CheqdIcqService } from './cheqd-icq.service';
 import { TransferPlannerService } from './transfer-planner.service';
-import { LocalOsmosisSwapClientService } from './local-osmosis-swap-client.service';
-import { TransferRouteResolverService } from './transfer-route-resolver.service';
+import { PlannerClientService } from './planner-client.service';
 
 @Module({
   imports: [QueryModule, TxModule, LucidModule, HttpModule, MithrilModule],
@@ -17,9 +16,8 @@ import { TransferRouteResolverService } from './transfer-route-resolver.service'
   providers: [
     Logger,
     CheqdIcqService,
+    PlannerClientService,
     LocalOsmosisSwapPlannerService,
-    LocalOsmosisSwapClientService,
-    TransferRouteResolverService,
     TransferPlannerService,
   ],
 })

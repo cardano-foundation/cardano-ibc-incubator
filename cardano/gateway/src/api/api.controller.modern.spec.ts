@@ -1,3 +1,7 @@
+jest.mock('~@/tx/packet.service', () => ({
+  PacketService: class PacketService {},
+}));
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { ApiController } from './api.controller';
 import { ChannelService } from '~@/query/services/channel.service';

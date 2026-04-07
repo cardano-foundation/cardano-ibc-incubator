@@ -7,6 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "benchmark:denom-registry": "ts-node -r tsconfig-paths/register src/scripts/test/denom-registry-benchmark.ts",
     "export:bridge-manifest": "ts-node -r tsconfig-paths/register src/scripts/export-bridge-manifest.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
@@ -21,6 +22,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@cardano-ibc/planner": "file:../../packages/cardano-ibc-planner",
+    "@cardano-ibc/tx-builder": "file:../../packages/cardano-ibc-tx-builder",
     "@cardano-ogmios/client": "6.13.0",
     "@cardano-ogmios/schema": "6.13.0",
     "@cuonglv0297/mithril-client-wasm": "^0.3.1",
@@ -46,8 +49,8 @@
     "@nestjs/swagger": "^11.2.0",
     "@nestjs/terminus": "^10.2.3",
     "@nestjs/typeorm": "^11.0.0",
+    "@nestjs/websockets": "^11.1.18",
     "@plus/proto-types": "file:../../proto-types",
-    "prom-client": "^15.1.0",
     "axios": "^1.10.0",
     "camelcase-keys": "^9.1.3",
     "cbor": "10.0.3",
@@ -59,6 +62,7 @@
     "js-sha256": "^0.11.1",
     "js-sha3": "^0.9.3",
     "pg": "^8.16.0",
+    "prom-client": "^15.1.0",
     "protobufjs": "^7.5.3",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",

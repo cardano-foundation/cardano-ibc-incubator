@@ -9,6 +9,14 @@ const basePath = process?.env?.BASE_PATH || '';
 const nextConfig = {
   reactStrictMode: true,
   basePath,
+  experimental: {
+    externalDir: true,
+  },
+  transpilePackages: [
+    '@cardano-ibc/tx-builder-runtime',
+    '@cardano-ibc/planner',
+    '@cardano-ibc/trace-registry',
+  ],
   webpack: function (config, options) {
     config.experiments = {
       asyncWebAssembly: true,
@@ -23,6 +31,11 @@ const nextConfig = {
     config.resolve.alias = {
       ...config.resolve.alias,
       '@': path.resolve(__dirname, './'),
+      '@cardano-ibc/tx-builder': path.resolve(
+        __dirname,
+        '../../../packages/cardano-ibc-tx-builder/dist/index.js',
+      ),
+      'js-sha3': require.resolve('js-sha3'),
     };
     config.output.environment = {
       ...config.output.environment,

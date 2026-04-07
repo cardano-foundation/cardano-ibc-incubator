@@ -18,6 +18,7 @@ WORKDIR /usr/src/app
 
 # Bundle app source
 COPY ${MAIN_CONTEXT} .
+COPY ./packages /usr/packages
 COPY --from=protos /usr/src/proto-types /usr/proto-types
 
 # Install app dependencies
