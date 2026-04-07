@@ -22,6 +22,9 @@ export type TraceRegistryClient = {
   lookupCardanoAssetDenomTrace: (
     assetId: string,
   ) => Promise<CardanoAssetDenomTrace>;
+  lookupIbcDenomTrace: (
+    ibcDenomHash: string,
+  ) => Promise<CardanoAssetDenomTrace | null>;
   listCardanoIbcAssets: () => Promise<CardanoAssetDenomTrace[]>;
 };
 
@@ -264,7 +267,7 @@ function splitFullDenomTrace(fullDenomPath: string): {
 function deriveVoucherPresentation(fullDenom: string, baseDenom: string) {
   const trimmedBaseDenom = baseDenom.trim();
   const baseLabel = trimmedBaseDenom.includes('/')
-    ? trimmedBaseDenom.split('/').filter(Boolean).at(-1) ?? trimmedBaseDenom
+    ? trimmedBaseDenom.split('/').filter(Boolean).slice(-1)[0] ?? trimmedBaseDenom
     : trimmedBaseDenom;
 
   const normalizedSymbol =
@@ -628,6 +631,37 @@ export function createTraceRegistryClient(
     );
   }
 
+  async function lookupIbcDenomTrace(
+    ibcDenomHash: string,
+  ): Promise<CardanoAssetDenomTrace | null> {
+    const normalizedHash = ibcDenomHash.trim().toLowerCase();
+    if (!normalizedHash) {
+      throw new Error('IBC denom hash cannot be empty');
+    }
+
+    const manifest = await getBridgeManifest();
+    const voucherPolicyId = getVoucherPolicyId(manifest);
+    const entries = await findAllVoucherEntries();
+    let match: TraceRegistryEntry | null = null;
+    for (const entry of entries) {
+      if ((await computeIbcDenomHash(entry.full_denom)) === normalizedHash) {
+        match = entry;
+        break;
+      }
+    }
+
+    if (!match) {
+      return null;
+    }
+
+    return mapVoucherTrace(
+      `${voucherPolicyId}${match.voucher_hash}`.toLowerCase(),
+      match.voucher_hash,
+      match.full_denom,
+      voucherPolicyId,
+    );
+  }
+
   async function listCardanoIbcAssets(): Promise<CardanoAssetDenomTrace[]> {
     const manifest = await getBridgeManifest();
     const voucherPolicyId = getVoucherPolicyId(manifest);
@@ -653,6 +687,7 @@ export function createTraceRegistryClient(
 
   return {
     lookupCardanoAssetDenomTrace,
+    lookupIbcDenomTrace,
     listCardanoIbcAssets,
   };
 }

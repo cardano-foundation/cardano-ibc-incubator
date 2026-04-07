@@ -1,0 +1,31 @@
+{
+  "name": "@cardano-ibc/tx-builder-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cardano-ibc/trace-registry": "file:../cardano-ibc-trace-registry",
+    "@cardano-ibc/tx-builder": "file:../cardano-ibc-tx-builder",
+    "@lucid-evolution/lucid": "^0.4.29",
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.3",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.8.3"
+  },
+  "peerDependencies": {
+    "@cardano-ibc/trace-registry": "0.1.0",
+    "@cardano-ibc/tx-builder": "0.1.0",
+    "@lucid-evolution/lucid": "^0.4.29",
+    "ws": "^8.18.2"
+  }
+}

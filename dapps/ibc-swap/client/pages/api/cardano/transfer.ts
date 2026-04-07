@@ -1,8 +1,15 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import {
-  buildLocalUnsignedTransfer,
-  type LocalUnsignedTransferResponse,
-} from '@/server/cardanoTransferBuilder';
+import { createTxBuilderRuntime } from '@cardano-ibc/tx-builder-runtime';
+import { CARDANO_BRIDGE_MANIFEST_URL, KUPMIOS_URL } from '@/configs/runtime';
+
+const transferBuilderRuntime = createTxBuilderRuntime({
+  bridgeManifestUrl: CARDANO_BRIDGE_MANIFEST_URL,
+  kupmiosUrl: KUPMIOS_URL,
+});
+
+type LocalUnsignedTransferResponse = Awaited<
+  ReturnType<typeof transferBuilderRuntime.buildUnsignedTransfer>
+>;
 
 type ErrorResponse = {
   message: string;
@@ -18,7 +25,9 @@ export default async function handler(
   }
 
   try {
-    const response = await buildLocalUnsignedTransfer(req.body);
+    const response = await transferBuilderRuntime.buildUnsignedTransfer(
+      req.body,
+    );
     return res.status(200).json(response);
   } catch (error) {
     const message =

@@ -13,6 +13,7 @@ const nextConfig = {
     externalDir: true,
   },
   transpilePackages: [
+    '@cardano-ibc/tx-builder-runtime',
     '@cardano-ibc/planner',
     '@cardano-ibc/trace-registry',
   ],
