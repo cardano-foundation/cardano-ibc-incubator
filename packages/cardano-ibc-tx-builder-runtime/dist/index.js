@@ -9,7 +9,7 @@ const tx_builder_1 = require("@cardano-ibc/tx-builder");
 const trace_registry_1 = require("@cardano-ibc/trace-registry");
 const ws_1 = __importDefault(require("ws"));
 const ibcStateRoot_1 = require("./ibcStateRoot");
-const lucid_service_1 = require("../../../cardano/gateway/dist/shared/modules/lucid/lucid.service");
+const lucidIbcAdapter_1 = require("./lucidIbcAdapter");
 const LOOKUP_RETRY_OPTIONS = {
     maxAttempts: 6,
     retryDelayMs: 1000,
@@ -39,13 +39,6 @@ function defaultLogger(scope) {
         log: (...args) => console.log(`[${scope}]`, ...args),
         warn: (...args) => console.warn(`[${scope}]`, ...args),
         error: (...args) => console.error(`[${scope}]`, ...args),
-    };
-}
-function createConfigService(values) {
-    return {
-        get(key) {
-            return values[key];
-        },
     };
 }
 function mapRefUtxo(refUtxo) {
@@ -553,22 +546,15 @@ function createTxBuilderRuntime(config) {
         const { deployment, bridgeManifest } = normalizeBridgeManifest(manifest);
         const { kupoEndpoint, ogmiosEndpoint } = splitKupmiosUrl(config.kupmiosUrl);
         const cardanoNetwork = bridgeManifest.cardano.network;
-        const configService = createConfigService({
-            deployment,
-            bridgeManifest,
-            kupoEndpoint,
-            ogmiosEndpoint,
-            cardanoNetwork,
-        });
         const { lucidImporter, lucid } = await createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork);
-        const lucidService = new lucid_service_1.LucidService(lucidImporter, lucid, configService);
+        const lucidService = new lucidIbcAdapter_1.LucidIbcAdapter(lucidImporter, lucid, deployment);
         await lucidService.onModuleInit();
         const kupoService = new RuntimeKupoService(lucidService, deployment);
         (0, ibcStateRoot_1.initTreeServices)(kupoService, lucidService);
         await (0, ibcStateRoot_1.rebuildTreeFromChain)(kupoService, lucidService);
         logger.log('Initialized shared Cardano tx-builder runtime context');
         return {
-            configService,
+            deployment,
             lucidService,
             logger,
             cardanoNetwork,
@@ -606,9 +592,13 @@ function createTxBuilderRuntime(config) {
                 const connectionDatum = await context.lucidService.decodeDatum(connectionUtxo.datum, 'connection');
                 const clientTokenUnit = context.lucidService.getClientTokenUnit(parseClientSequence(convertHex2String(connectionDatum.state.client_id)).toString());
                 const clientUtxo = await context.lucidService.findUtxoByUnit(clientTokenUnit);
-                const transferModuleIdentifier = context.configService.get('deployment').modules.transfer.identifier;
+                const transferModuleIdentifier = context.deployment.modules.transfer.identifier;
                 const transferModuleUtxo = await context.lucidService.findUtxoByUnit(transferModuleIdentifier);
-                const deployment = context.configService.get('deployment');
+                const deployment = context.deployment;
+                const spendChannelAddress = deployment.validators.spendChannel.address;
+                if (!spendChannelAddress) {
+                    throw new Error('Spend channel script address is missing from deployment config');
+                }
                 return {
                     channelUtxo,
                     channelDatum,
@@ -624,7 +614,7 @@ function createTxBuilderRuntime(config) {
                     deployment: {
                         sendPacketPolicyId: deployment.validators.spendChannel.refValidator.send_packet.scriptHash,
                         mintVoucherScriptHash: deployment.validators.mintVoucher.scriptHash,
-                        spendChannelAddress: deployment.validators.spendChannel.address,
+                        spendChannelAddress,
                         transferModuleAddress: deployment.modules.transfer.address,
                     },
                 };

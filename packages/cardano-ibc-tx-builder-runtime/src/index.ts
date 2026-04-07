@@ -10,7 +10,7 @@ import {
   isTreeAligned,
   rebuildTreeFromChain,
 } from './ibcStateRoot';
-import { LucidService } from '../../../cardano/gateway/dist/shared/modules/lucid/lucid.service';
+import { LucidIbcAdapter } from './lucidIbcAdapter';
 
 const LOOKUP_RETRY_OPTIONS = {
   maxAttempts: 6,
@@ -281,10 +281,8 @@ type BuilderRuntimeConfig = {
 };
 
 type BuilderContext = {
-  configService: {
-    get<T = unknown>(key: string): T;
-  };
-  lucidService: LucidService;
+  deployment: DeploymentConfig;
+  lucidService: LucidIbcAdapter;
   logger: RuntimeLogger;
   cardanoNetwork: Network;
   ogmiosEndpoint: string;
@@ -306,14 +304,6 @@ function defaultLogger(scope: string): RuntimeLogger {
     log: (...args: unknown[]) => console.log(`[${scope}]`, ...args),
     warn: (...args: unknown[]) => console.warn(`[${scope}]`, ...args),
     error: (...args: unknown[]) => console.error(`[${scope}]`, ...args),
-  };
-}
-
-function createConfigService(values: Record<string, unknown>) {
-  return {
-    get<T = unknown>(key: string): T {
-      return values[key] as T;
-    },
   };
 }
 
@@ -761,7 +751,7 @@ class RuntimeKupoService implements KupoLikeService {
   private readonly channelAddress: string;
 
   constructor(
-    private readonly lucidService: LucidService,
+    private readonly lucidService: LucidIbcAdapter,
     deployment: DeploymentConfig,
   ) {
     this.clientTokenPrefix = deployment.validators.mintClientStt.scriptHash;
@@ -951,24 +941,13 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
     const { deployment, bridgeManifest } = normalizeBridgeManifest(manifest);
     const { kupoEndpoint, ogmiosEndpoint } = splitKupmiosUrl(config.kupmiosUrl);
     const cardanoNetwork = bridgeManifest.cardano.network as Network;
-    const configService = createConfigService({
-      deployment,
-      bridgeManifest,
-      kupoEndpoint,
-      ogmiosEndpoint,
-      cardanoNetwork,
-    });
 
     const { lucidImporter, lucid } = await createLucidRuntime(
       kupoEndpoint,
       ogmiosEndpoint,
       cardanoNetwork,
     );
-    const lucidService = new LucidService(
-      lucidImporter as never,
-      lucid as never,
-      configService as never,
-    );
+    const lucidService = new LucidIbcAdapter(lucidImporter, lucid, deployment);
     await lucidService.onModuleInit();
 
     const kupoService = new RuntimeKupoService(lucidService, deployment);
@@ -978,7 +957,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
     logger.log('Initialized shared Cardano tx-builder runtime context');
 
     return {
-      configService,
+      deployment,
       lucidService,
       logger,
       cardanoNetwork,
@@ -1049,11 +1028,15 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
             parseClientSequence(convertHex2String(connectionDatum.state.client_id)).toString(),
           );
           const clientUtxo = await context.lucidService.findUtxoByUnit(clientTokenUnit);
-          const transferModuleIdentifier = context.configService.get<any>('deployment').modules.transfer.identifier;
+          const transferModuleIdentifier = context.deployment.modules.transfer.identifier;
           const transferModuleUtxo = await context.lucidService.findUtxoByUnit(
             transferModuleIdentifier,
           );
-          const deployment = context.configService.get<any>('deployment');
+          const deployment = context.deployment;
+          const spendChannelAddress = deployment.validators.spendChannel.address;
+          if (!spendChannelAddress) {
+            throw new Error('Spend channel script address is missing from deployment config');
+          }
 
           return {
             channelUtxo,
@@ -1071,7 +1054,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
               sendPacketPolicyId:
                 deployment.validators.spendChannel.refValidator.send_packet.scriptHash,
               mintVoucherScriptHash: deployment.validators.mintVoucher.scriptHash,
-              spendChannelAddress: deployment.validators.spendChannel.address,
+              spendChannelAddress,
               transferModuleAddress: deployment.modules.transfer.address,
             },
           };
