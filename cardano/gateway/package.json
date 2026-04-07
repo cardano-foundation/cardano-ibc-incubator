@@ -22,6 +22,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@cardano-ibc/planner": "file:../../packages/cardano-ibc-planner",
     "@cardano-ibc/tx-builder": "file:../../packages/cardano-ibc-tx-builder",
     "@cardano-ogmios/client": "6.13.0",
     "@cardano-ogmios/schema": "6.13.0",

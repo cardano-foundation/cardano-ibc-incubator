@@ -1,8 +1,8 @@
 import { ConfigService } from '@nestjs/config';
-import { Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { TransferPlannerService } from './transfer-planner.service';
 import { DenomTraceService } from '~@/query/services/denom-trace.service';
+import { PlannerClientService } from './planner-client.service';
 
 type FetchJsonResponse = {
   ok: boolean;
@@ -59,11 +59,11 @@ describe('TransferPlannerService', () => {
       }),
     } as unknown as ConfigService;
 
-    service = new TransferPlannerService(
+    const plannerClientService = new PlannerClientService(
       configService,
       denomTraceServiceMock as unknown as DenomTraceService,
-      new Logger(),
     );
+    service = new TransferPlannerService(plannerClientService);
 
     fetchMock = jest.fn();
     global.fetch = fetchMock;

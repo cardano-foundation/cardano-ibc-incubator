@@ -11,10 +11,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
+  "dependencies": {
+    "js-sha3": "^0.9.3"
+  },
   "devDependencies": {
     "@lucid-evolution/lucid": "^0.4.29",
     "@types/node": "^24.0.3",
-    "js-sha3": "^0.9.3",
     "typescript": "^5.8.3"
   },
   "peerDependencies": {

@@ -1,40 +1,27 @@
-import { ConfigService } from '@nestjs/config';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
-import { LocalOsmosisSwapClientService } from './local-osmosis-swap-client.service';
-import { TransferRouteResolverService } from './transfer-route-resolver.service';
-import { SwapMetadata } from './local-osmosis-swap.types';
+import { PlannerClientService } from './planner-client.service';
 
 describe('LocalOsmosisSwapPlannerService', () => {
   let service: LocalOsmosisSwapPlannerService;
-  let swapClientMock: {
-    buildMetadata: jest.Mock;
-    estimateSwapViaRest: jest.Mock;
+  let plannerClientServiceMock: {
+    getClient: jest.Mock;
   };
-  let routeResolverMock: {
-    resolveSwapCandidates: jest.Mock;
+  let plannerClientMock: {
+    getLocalOsmosisSwapOptions: jest.Mock;
+    estimateLocalOsmosisSwap: jest.Mock;
   };
 
   beforeEach(() => {
-    swapClientMock = {
-      buildMetadata: jest.fn(),
-      estimateSwapViaRest: jest.fn(),
+    plannerClientMock = {
+      getLocalOsmosisSwapOptions: jest.fn(),
+      estimateLocalOsmosisSwap: jest.fn(),
     };
-    routeResolverMock = {
-      resolveSwapCandidates: jest.fn(),
+    plannerClientServiceMock = {
+      getClient: jest.fn(() => plannerClientMock),
     };
-
-    const configService = {
-      get: jest.fn((key: string) => {
-        if (key === 'cardanoChainId') return 'cardano-devnet';
-        if (key === 'swapRouterAddress') return 'osmo1router';
-        return undefined;
-      }),
-    } as unknown as ConfigService;
 
     service = new LocalOsmosisSwapPlannerService(
-      configService,
-      swapClientMock as unknown as LocalOsmosisSwapClientService,
-      routeResolverMock as unknown as TransferRouteResolverService,
+      plannerClientServiceMock as unknown as PlannerClientService,
     );
   });
 
@@ -42,30 +29,20 @@ describe('LocalOsmosisSwapPlannerService', () => {
     jest.resetAllMocks();
   });
 
-  it('builds swap options from unique pool output denoms', async () => {
-    swapClientMock.buildMetadata.mockResolvedValue({
-      allChannelMappings: {},
-      availableChannelsMap: {},
-      pfmFees: {},
-      osmosisDenomTraces: {
-        'ibc/ABC': {
-          path: 'transfer/channel-1',
-          baseDenom: 'uosmo',
-        },
-      },
-      routeMap: [
+  it('delegates swap option loading to the shared planner client', async () => {
+    plannerClientMock.getLocalOsmosisSwapOptions.mockResolvedValue({
+      from_chain_id: 'cardano-devnet',
+      from_chain_name: 'Cardano',
+      to_chain_id: 'localosmosis',
+      to_chain_name: 'Local Osmosis',
+      to_tokens: [
         {
-          route: [{ pool_id: '1', token_out_denom: 'ibc/ABC' }],
-          inToken: 'assetA',
-          outToken: 'ibc/ABC',
-        },
-        {
-          route: [{ pool_id: '2', token_out_denom: 'ibc/ABC' }],
-          inToken: 'assetB',
-          outToken: 'ibc/ABC',
+          token_id: 'ibc/ABC',
+          token_name: 'uosmo',
+          token_logo: null,
         },
       ],
-    } satisfies SwapMetadata);
+    });
 
     await expect(service.getSwapOptions()).resolves.toEqual({
       from_chain_id: 'cardano-devnet',
@@ -80,56 +57,12 @@ describe('LocalOsmosisSwapPlannerService', () => {
         },
       ],
     });
+    expect(plannerClientServiceMock.getClient).toHaveBeenCalledTimes(1);
+    expect(plannerClientMock.getLocalOsmosisSwapOptions).toHaveBeenCalledWith();
   });
 
-  it('orchestrates route resolution and swap estimation, returning the best candidate', async () => {
-    swapClientMock.buildMetadata.mockResolvedValue({
-      allChannelMappings: {},
-      availableChannelsMap: {},
-      pfmFees: {
-        entrypoint: 100000000000000000n,
-        localosmosis: 100000000000000000n,
-      },
-      osmosisDenomTraces: {},
-      routeMap: [],
-    } satisfies SwapMetadata);
-    routeResolverMock.resolveSwapCandidates.mockResolvedValue([
-      {
-        route: [{ pool_id: '1', token_out_denom: 'uosmo' }],
-        outToken: 'uosmo',
-        transferRoutes: ['transfer/channel-9', 'transfer/channel-1'],
-        transferBackRoutes: ['transfer/channel-1', 'transfer/channel-9'],
-        transferChains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
-      },
-      {
-        route: [{ pool_id: '2', token_out_denom: 'uion' }],
-        outToken: 'uion',
-        transferRoutes: ['transfer/channel-9', 'transfer/channel-1'],
-        transferBackRoutes: ['transfer/channel-1', 'transfer/channel-9'],
-        transferChains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
-      },
-    ]);
-    swapClientMock.estimateSwapViaRest
-      .mockResolvedValueOnce({
-        message: '',
-        tokenOutAmount: 50n,
-        tokenSwapAmount: 90n,
-      })
-      .mockResolvedValueOnce({
-        message: '',
-        tokenOutAmount: 80n,
-        tokenSwapAmount: 90n,
-      });
-
-    await expect(
-      service.estimateSwap({
-        fromChainId: 'cardano-devnet',
-        tokenInDenom: 'lovelace',
-        tokenInAmount: '100',
-        toChainId: 'localosmosis',
-        tokenOutDenom: 'uosmo',
-      }),
-    ).resolves.toEqual({
+  it('delegates swap estimation to the shared planner client', async () => {
+    plannerClientMock.estimateLocalOsmosisSwap.mockResolvedValue({
       message: '',
       tokenOutAmount: '80',
       tokenOutTransferBackAmount: '72',
@@ -139,5 +72,28 @@ describe('LocalOsmosisSwapPlannerService', () => {
       transferBackRoutes: ['transfer/channel-1', 'transfer/channel-9'],
       transferChains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
     });
+
+    const request = {
+      fromChainId: 'cardano-devnet',
+      tokenInDenom: 'lovelace',
+      tokenInAmount: '100',
+      toChainId: 'localosmosis',
+      tokenOutDenom: 'uosmo',
+    };
+
+    await expect(service.estimateSwap(request)).resolves.toEqual({
+      message: '',
+      tokenOutAmount: '80',
+      tokenOutTransferBackAmount: '72',
+      tokenSwapAmount: '90',
+      outToken: 'uion',
+      transferRoutes: ['transfer/channel-9', 'transfer/channel-1'],
+      transferBackRoutes: ['transfer/channel-1', 'transfer/channel-9'],
+      transferChains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
+    });
+    expect(plannerClientServiceMock.getClient).toHaveBeenCalledTimes(1);
+    expect(plannerClientMock.estimateLocalOsmosisSwap).toHaveBeenCalledWith(
+      request,
+    );
   });
 });
