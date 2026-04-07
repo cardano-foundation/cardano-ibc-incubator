@@ -30,9 +30,15 @@ Default local endpoints target the host-published bridge services:
 - Entrypoint REST: `http://localhost:1317`
 - Osmosis RPC: `http://localhost:26658`
 - Osmosis REST: `http://localhost:1318`
-- Gateway: `http://localhost:8000` for swap UI tx building and Cardano asset lookup
+- Gateway: `http://localhost:8000` as the default bridge-manifest host for the swap UI
 - GraphQL/SubQuery: `http://localhost:3001/v1/graphql` for explorer only
 - Kupo/Ogmios: `http://localhost:1442,http://localhost:1337`
+
+TODO: The demo dapps should not rely on the gateway long term. On this branch,
+the swap UI already uses shared local packages for Cardano denom-trace lookup,
+route planning, and unsigned transfer tx building; the remaining default
+Gateway dependency is bridge-manifest bootstrap unless a separate manifest URL
+is configured.
 
 Override any value by exporting the corresponding compose variable before
 starting the service, for example:

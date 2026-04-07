@@ -7,17 +7,15 @@ import { MithrilModule } from '../shared/modules/mithril/mithril.module';
 import { TxModule } from '~@/tx/tx.module';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { TransferPlannerService } from './transfer-planner.service';
-import { LocalOsmosisSwapClientService } from './local-osmosis-swap-client.service';
-import { TransferRouteResolverService } from './transfer-route-resolver.service';
+import { PlannerClientService } from './planner-client.service';
 
 @Module({
   imports: [QueryModule, TxModule, LucidModule, HttpModule, MithrilModule],
   controllers: [ApiController],
   providers: [
     Logger,
+    PlannerClientService,
     LocalOsmosisSwapPlannerService,
-    LocalOsmosisSwapClientService,
-    TransferRouteResolverService,
     TransferPlannerService,
   ],
 })

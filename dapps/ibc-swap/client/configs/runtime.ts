@@ -43,6 +43,10 @@ export const GATEWAY_TX_BUILDER_ENDPOINT =
   firstNonEmpty(process.env.NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT) ||
   'http://localhost:8000';
 
+export const CARDANO_BRIDGE_MANIFEST_URL =
+  firstNonEmpty(process.env.NEXT_PUBLIC_CARDANO_BRIDGE_MANIFEST_URL) ||
+  `${GATEWAY_TX_BUILDER_ENDPOINT}/api/bridge-manifest`;
+
 export const KUPMIOS_URL =
   firstNonEmpty(process.env.NEXT_PUBLIC_KUPMIOS_URL) ||
   'http://localhost:1442,http://localhost:1337';
