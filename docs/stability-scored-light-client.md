@@ -145,6 +145,8 @@ The `StabilityHeader` carries:
 
 The important thing to notice is that the header does **not** try to prove arbitrary Cardano ledger state. Just like the Mithril path, it is still centered around the Cardano `HostState` transaction/output that contains the `ibc_state_root`. The new part is that `trusted_height` is now real: `bridge_blocks` must connect the already-trusted consensus block hash at `trusted_height` to the new `anchor_block`, and only the post-anchor `descendant_blocks` are used for the stability score.
 
+Each relayed `StabilityBlock` now also carries raw `block_cbor`. The verifier decodes that raw Cardano block witness and cross-checks the claimed block hash, previous hash, height, slot, and issuer pool identity before it accepts the bridge or descendant window as the basis for scoring.
+
 ### Latest Height
 
 In stability mode, `latestHeight` is no longer latest Mithril transaction snapshot height. Instead it means the latest Cardano block height at which the currently live `HostState` root is considered stability-accepted under the configured heuristic.
@@ -170,6 +172,8 @@ The Gateway:
 6. decoding the HostState datum and extracting `ibc_state_root`
 7. serializing the stability client state and consensus state
 
+For now, client creation and updates are intentionally constrained to a single epoch. Gateway rejects windows that cross an epoch boundary because the current client state carries one trusted epoch stake snapshot and does not yet implement native epoch-to-epoch stake rotation.
+
 ### IBC Header
 
 `QueryIBCHeader` in stability mode returns a `StabilityHeader` rather than a Mithril header. The request now includes both `trusted_height` and `height`, and the returned header includes:
@@ -177,6 +181,7 @@ The Gateway:
 - `bridge_blocks` from `trusted_height + 1` up to `anchor_block.height - 1`
 - the `anchor_block` whose HostState transaction/output will define the new consensus state
 - the `descendant_blocks` used to justify accepting that anchor under the configured thresholds
+- the raw `block_cbor` witness for every bridge, anchor, and descendant block
 - the HostState transaction body evidence needed to extract `ibc_state_root`
 
 ### Proof Height Gating
@@ -214,6 +219,8 @@ The high-level update flow is:
 10. write a new consensus state for the accepted anchor height
 
 The extracted `ibc_state_root` is then used for ordinary IBC membership and non-membership verification.
+
+This is stronger than the earlier version of the stability client because the verifier no longer treats normalized history rows as ground truth. It authenticates the relayed raw block witness bytes first, and only then uses those authenticated blocks as the basis for continuity and stability scoring.
 
 ## HostState Root Authentication
 
@@ -269,10 +276,14 @@ Today these are chosen off-chain by the Gateway environment before `QueryNewClie
 
 The current implementation stores one epoch stake distribution in client state and uses that as the weight basis. A full protocol for rotating or proving the next epoch’s stake distribution across updates is still an open design problem.
 
-### 2. If Gateway cannot load epoch stake distribution, it falls back to equal weights
+### 2. Updates are currently within-epoch only
 
-On the Gateway side, if no epoch stake distribution is available, the current implementation logs a warning and falls back to equal per-pool weights across the observed descendant pools. This is useful for experimentation and local environments, but it is clearly weaker than having a canonical active-stake basis.
+The current implementation stores one epoch stake distribution in client state and rejects bridge/anchor/descendant windows that cross into a different epoch. That avoids reintroducing an off-chain epoch-stake oracle into the update path, but it also means epoch rollover currently requires operational handling rather than seamless in-client evolution.
 
-### 3. The trust anchor is weaker than Mithril
+### 3. This is still not full native Ouroboros verification
 
-Mithril gives a portable cryptographic artifact that explicitly certifies a Cardano snapshot. The stability client does not. Instead it relies on relayed raw Cardano history plus a deterministic acceptance rule evaluated on-chain.
+The current implementation authenticates raw Cardano block witnesses well enough to stop trusting normalized history rows as ground truth, but it still does not verify the full Ouroboros rule set on-chain. In particular, epoch stake rotation, leader-eligibility verification across epochs, and other native consensus details remain future work.
+
+### 4. The trust anchor is still weaker than Mithril
+
+Mithril gives a portable cryptographic artifact that explicitly certifies a Cardano snapshot. The stability client does not. Instead it relies on authenticated raw Cardano block witnesses plus a deterministic acceptance rule evaluated on-chain.

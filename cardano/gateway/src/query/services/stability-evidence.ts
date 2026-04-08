@@ -43,6 +43,19 @@ export type StakeWeightedStabilityHeaderEvidence = StakeWeightedStabilityEvidenc
   bridgeBlocks: HistoryBlock[];
 };
 
+function assertBlocksRemainInEpoch(
+  blocks: HistoryBlock[],
+  expectedEpoch: number,
+  context: string,
+): void {
+  const mismatchedBlock = blocks.find((block) => block.epochNo !== expectedEpoch);
+  if (mismatchedBlock) {
+    throw new GrpcInternalException(
+      `${context} crosses epoch boundary at height ${mismatchedBlock.height}: expected epoch ${expectedEpoch}, got ${mismatchedBlock.epochNo}`,
+    );
+  }
+}
+
 type LoadStakeWeightedStabilityEvidenceByHeightParams = {
   historyService: HistoryService;
   height: bigint;
@@ -87,6 +100,11 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
   );
   const epochStakeDistribution = await historyService.findEpochStakeDistribution(anchorBlock.epochNo);
   const scoredDescendantBlocks = scoreDescendantBlocks(descendantBlocks, epochStakeDistribution, logger);
+  assertBlocksRemainInEpoch(
+    scoredDescendantBlocks,
+    anchorBlock.epochNo,
+    `Stake-weighted stability descendant window for anchor height ${anchorBlock.height}`,
+  );
   const metrics = computeStabilityMetrics(scoredDescendantBlocks, epochStakeDistribution, heuristicParams);
 
   if (requireThresholds) {
@@ -178,6 +196,11 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
       );
     }
   }
+  assertBlocksRemainInEpoch(
+    bridgeBlocks,
+    evidence.anchorEpoch,
+    `Stake-weighted stability bridge segment for anchor height ${height.toString()}`,
+  );
 
   return {
     ...evidence,

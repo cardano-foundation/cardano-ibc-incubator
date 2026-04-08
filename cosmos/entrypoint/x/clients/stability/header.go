@@ -62,6 +62,9 @@ func (h StabilityHeader) ValidateBasic() error {
 	if h.AnchorBlock.Hash == "" {
 		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "anchor block hash cannot be empty")
 	}
+	if len(h.AnchorBlock.BlockCbor) == 0 {
+		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "anchor block_cbor cannot be empty")
+	}
 	if h.TrustedHeight.RevisionHeight >= h.AnchorBlock.Height.RevisionHeight {
 		return errorsmod.Wrapf(
 			ErrInvalidHeaderHeight,
@@ -72,6 +75,22 @@ func (h StabilityHeader) ValidateBasic() error {
 	}
 	if len(h.HostStateTxBodyCbor) == 0 {
 		return errorsmod.Wrap(ErrInvalidHostStateCommitment, "host_state_tx_body_cbor cannot be empty")
+	}
+	for _, block := range h.BridgeBlocks {
+		if block == nil {
+			return errorsmod.Wrap(ErrInvalidAcceptedBlock, "bridge block cannot be nil")
+		}
+		if len(block.BlockCbor) == 0 {
+			return errorsmod.Wrap(ErrInvalidAcceptedBlock, "bridge block_cbor cannot be empty")
+		}
+	}
+	for _, block := range h.DescendantBlocks {
+		if block == nil {
+			return errorsmod.Wrap(ErrInvalidAcceptedBlock, "descendant block cannot be nil")
+		}
+		if len(block.BlockCbor) == 0 {
+			return errorsmod.Wrap(ErrInvalidAcceptedBlock, "descendant block_cbor cannot be empty")
+		}
 	}
 	return nil
 }

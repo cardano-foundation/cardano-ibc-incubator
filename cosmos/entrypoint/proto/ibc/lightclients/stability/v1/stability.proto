@@ -78,6 +78,7 @@ message StabilityBlock {
   uint64 timestamp = 6;
   string slot_leader = 7;
   uint64 stake_bps = 8;
+  bytes block_cbor = 9;
 }
 
 message StabilityHeader {

@@ -143,4 +143,23 @@ describe('stability-evidence', () => {
     expect(evidence.trustedHeight).toBe(97n);
     expect(evidence.bridgeBlocks).toEqual(bridgeBlocks);
   });
+
+  it('rejects descendant windows that cross an epoch boundary', async () => {
+    historyServiceMock.findDescendantBlocks = jest.fn().mockResolvedValue([
+      ...descendantBlocks.slice(0, 2),
+      {
+        ...descendantBlocks[2],
+        epochNo: 8,
+      },
+    ]);
+
+    await expect(
+      loadStakeWeightedStabilityEvidenceByHeight({
+        historyService: historyServiceMock as HistoryService,
+        height: 100n,
+        logger: { warn: jest.fn() } as unknown as Logger,
+        heuristicParams,
+      }),
+    ).rejects.toThrow('crosses epoch boundary');
+  });
 });

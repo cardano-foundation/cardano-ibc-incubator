@@ -1511,18 +1511,39 @@ export class QueryService {
       throw new GrpcInternalException(`Historical tx evidence unavailable for tx ${hostStateUtxo.txHash}`);
     }
     const hostStateTxBodyCbor = Buffer.from(hostStateTxEvidence.txBodyCborHex, 'hex');
+    const requestedBlocks = [
+      ...stabilityEvidence.bridgeBlocks,
+      stabilityEvidence.anchorBlock,
+      ...stabilityEvidence.descendantBlocks,
+    ];
+    const blockWitnesses = await this.miniProtocalsService.fetchBlocksCbor(requestedBlocks);
+    const blockWitnessByHeight = new Map<number, Buffer>(
+      requestedBlocks.map((block, index) => [block.height, blockWitnesses[index]]),
+    );
 
     const stabilityHeader: StabilityHeader = {
       trusted_height: {
         revision_number: 0n,
         revision_height: stabilityEvidence.trustedHeight,
       },
-      anchor_block: this.toStabilityBlock(stabilityEvidence.anchorBlock, stabilityEvidence.metrics.poolStakeBpsByPool),
+      anchor_block: this.toStabilityBlock(
+        stabilityEvidence.anchorBlock,
+        stabilityEvidence.metrics.poolStakeBpsByPool,
+        blockWitnessByHeight.get(stabilityEvidence.anchorBlock.height),
+      ),
       bridge_blocks: stabilityEvidence.bridgeBlocks.map((block) =>
-        this.toStabilityBlock(block, stabilityEvidence.metrics.poolStakeBpsByPool),
+        this.toStabilityBlock(
+          block,
+          stabilityEvidence.metrics.poolStakeBpsByPool,
+          blockWitnessByHeight.get(block.height),
+        ),
       ),
       descendant_blocks: stabilityEvidence.descendantBlocks.map((block) =>
-        this.toStabilityBlock(block, stabilityEvidence.metrics.poolStakeBpsByPool),
+        this.toStabilityBlock(
+          block,
+          stabilityEvidence.metrics.poolStakeBpsByPool,
+          blockWitnessByHeight.get(block.height),
+        ),
       ),
       host_state_tx_hash: hostStateUtxo.txHash,
       host_state_tx_body_cbor: hostStateTxBodyCbor,
@@ -1581,7 +1602,11 @@ export class QueryService {
     );
   }
 
-  private toStabilityBlock(block: HistoryBlock, poolStakeBpsByPool: Record<string, bigint>): StabilityBlock {
+  private toStabilityBlock(
+    block: HistoryBlock,
+    poolStakeBpsByPool: Record<string, bigint>,
+    blockCbor?: Buffer,
+  ): StabilityBlock {
     return {
       height: {
         revision_number: 0n,
@@ -1594,6 +1619,7 @@ export class QueryService {
       timestamp: block.timestampUnixNs,
       slot_leader: block.slotLeader,
       stake_bps: poolStakeBpsByPool[block.slotLeader] ?? 0n,
+      block_cbor: blockCbor,
     };
   }
 

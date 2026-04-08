@@ -56,6 +56,9 @@ func (cs *ClientState) verifyHeader(
 	if err := verifyBridgeContinuity(header, trustedConsensus); err != nil {
 		return err
 	}
+	if err := cs.authenticateHeaderBlocks(header); err != nil {
+		return err
+	}
 
 	depth := uint64(len(header.DescendantBlocks))
 	if depth < cs.HeuristicParams.ThresholdDepth {

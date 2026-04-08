@@ -55,6 +55,7 @@ export interface StabilityBlock {
   timestamp: bigint;
   slot_leader: string;
   stake_bps: bigint;
+  block_cbor: Uint8Array;
 }
 export interface StabilityHeader {
   trusted_height?: Height;
@@ -696,6 +697,7 @@ function createBaseStabilityBlock(): StabilityBlock {
     timestamp: BigInt(0),
     slot_leader: "",
     stake_bps: BigInt(0),
+    block_cbor: new Uint8Array(),
   };
 }
 export const StabilityBlock = {
@@ -724,6 +726,9 @@ export const StabilityBlock = {
     }
     if (message.stake_bps !== BigInt(0)) {
       writer.uint32(64).uint64(message.stake_bps);
+    }
+    if (message.block_cbor.length !== 0) {
+      writer.uint32(74).bytes(message.block_cbor);
     }
     return writer;
   },
@@ -758,6 +763,9 @@ export const StabilityBlock = {
         case 8:
           message.stake_bps = reader.uint64();
           break;
+        case 9:
+          message.block_cbor = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -775,6 +783,7 @@ export const StabilityBlock = {
     if (isSet(object.timestamp)) obj.timestamp = BigInt(object.timestamp.toString());
     if (isSet(object.slot_leader)) obj.slot_leader = String(object.slot_leader);
     if (isSet(object.stake_bps)) obj.stake_bps = BigInt(object.stake_bps.toString());
+    if (isSet(object.block_cbor)) obj.block_cbor = bytesFromBase64(object.block_cbor);
     return obj;
   },
   toJSON(message: StabilityBlock): unknown {
@@ -787,6 +796,10 @@ export const StabilityBlock = {
     message.timestamp !== undefined && (obj.timestamp = (message.timestamp || BigInt(0)).toString());
     message.slot_leader !== undefined && (obj.slot_leader = message.slot_leader);
     message.stake_bps !== undefined && (obj.stake_bps = (message.stake_bps || BigInt(0)).toString());
+    message.block_cbor !== undefined &&
+      (obj.block_cbor = base64FromBytes(
+        message.block_cbor !== undefined ? message.block_cbor : new Uint8Array(),
+      ));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<StabilityBlock>, I>>(object: I): StabilityBlock {
@@ -809,6 +822,7 @@ export const StabilityBlock = {
     if (object.stake_bps !== undefined && object.stake_bps !== null) {
       message.stake_bps = BigInt(object.stake_bps.toString());
     }
+    message.block_cbor = object.block_cbor ?? new Uint8Array();
     return message;
   },
 };
