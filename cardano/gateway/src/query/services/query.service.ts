@@ -119,6 +119,7 @@ import { HISTORY_SERVICE, HistoryBlock, HistoryService } from './history.service
 import { resolveProofHeightForCurrentRoot } from './proof-context';
 import {
   loadStakeWeightedStabilityEvidenceByHeight,
+  loadStakeWeightedStabilityHeaderEvidence,
   loadStakeWeightedStabilityEvidenceForTxHash,
 } from './stability-evidence';
 
@@ -1489,26 +1490,37 @@ export class QueryService {
   }
 
   async queryStabilityIBCHeader(request: QueryIBCHeaderRequest): Promise<QueryIBCHeaderResponse> {
-    const { height } = request;
+    const { height, trusted_height: trustedHeight } = request;
     if (!height) {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
+    if (!trustedHeight) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "trusted_height" must be provided');
+    }
 
-    const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
+    const stabilityEvidence = await loadStakeWeightedStabilityHeaderEvidence({
       historyService: this.historyService,
       height: BigInt(height),
+      trustedHeight: BigInt(trustedHeight),
       logger: this.logger,
     });
 
     const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(height));
-    const hostStateTxBodyCbor = await this.miniProtocalsService.fetchTransactionBodyCbor(hostStateUtxo.txHash);
+    const hostStateTxEvidence = await this.historyService.findTransactionEvidenceByHash(hostStateUtxo.txHash);
+    if (!hostStateTxEvidence) {
+      throw new GrpcInternalException(`Historical tx evidence unavailable for tx ${hostStateUtxo.txHash}`);
+    }
+    const hostStateTxBodyCbor = Buffer.from(hostStateTxEvidence.txBodyCborHex, 'hex');
 
     const stabilityHeader: StabilityHeader = {
       trusted_height: {
         revision_number: 0n,
-        revision_height: BigInt(Math.max(0, stabilityEvidence.anchorBlock.height - 1)),
+        revision_height: stabilityEvidence.trustedHeight,
       },
       anchor_block: this.toStabilityBlock(stabilityEvidence.anchorBlock, stabilityEvidence.metrics.poolStakeBpsByPool),
+      bridge_blocks: stabilityEvidence.bridgeBlocks.map((block) =>
+        this.toStabilityBlock(block, stabilityEvidence.metrics.poolStakeBpsByPool),
+      ),
       descendant_blocks: stabilityEvidence.descendantBlocks.map((block) =>
         this.toStabilityBlock(block, stabilityEvidence.metrics.poolStakeBpsByPool),
       ),

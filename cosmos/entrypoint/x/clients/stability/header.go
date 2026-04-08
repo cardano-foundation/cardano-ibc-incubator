@@ -47,6 +47,12 @@ func (h StabilityHeader) GetTime() time.Time {
 }
 
 func (h StabilityHeader) ValidateBasic() error {
+	if h.TrustedHeight == nil {
+		return errorsmod.Wrap(ErrInvalidHeader, "trusted height must be present")
+	}
+	if h.TrustedHeight.RevisionHeight == 0 {
+		return errorsmod.Wrap(ErrInvalidHeaderHeight, "trusted height cannot be zero")
+	}
 	if h.AnchorBlock == nil || h.AnchorBlock.Height == nil {
 		return errorsmod.Wrap(ErrInvalidHeader, "anchor block must be present")
 	}
@@ -55,6 +61,14 @@ func (h StabilityHeader) ValidateBasic() error {
 	}
 	if h.AnchorBlock.Hash == "" {
 		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "anchor block hash cannot be empty")
+	}
+	if h.TrustedHeight.RevisionHeight >= h.AnchorBlock.Height.RevisionHeight {
+		return errorsmod.Wrapf(
+			ErrInvalidHeaderHeight,
+			"trusted height %d must be less than anchor height %d",
+			h.TrustedHeight.RevisionHeight,
+			h.AnchorBlock.Height.RevisionHeight,
+		)
 	}
 	if len(h.HostStateTxBodyCbor) == 0 {
 		return errorsmod.Wrap(ErrInvalidHostStateCommitment, "host_state_tx_body_cbor cannot be empty")

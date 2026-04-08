@@ -133,6 +133,7 @@ This follows the normal IBC intuition: consensus state is the per-height authent
 The `StabilityHeader` carries:
 
 - `trusted_height`
+- `bridge_blocks`
 - `anchor_block`
 - `descendant_blocks`
 - `host_state_tx_hash`
@@ -142,7 +143,7 @@ The `StabilityHeader` carries:
 - `unique_stake_bps`
 - `security_score_bps`
 
-The important thing to notice is that the header does **not** try to prove arbitrary Cardano ledger state. Just like the Mithril path, it is still centered around the Cardano `HostState` transaction/output that contains the `ibc_state_root`.
+The important thing to notice is that the header does **not** try to prove arbitrary Cardano ledger state. Just like the Mithril path, it is still centered around the Cardano `HostState` transaction/output that contains the `ibc_state_root`. The new part is that `trusted_height` is now real: `bridge_blocks` must connect the already-trusted consensus block hash at `trusted_height` to the new `anchor_block`, and only the post-anchor `descendant_blocks` are used for the stability score.
 
 ### Latest Height
 
@@ -171,7 +172,12 @@ The Gateway:
 
 ### IBC Header
 
-`QueryIBCHeader` in stability mode returns a `StabilityHeader` rather than a Mithril header. That header includes the anchor block, descendant window, and HostState transaction body evidence needed for the Cosmos-side client to recompute the score and extract the root.
+`QueryIBCHeader` in stability mode returns a `StabilityHeader` rather than a Mithril header. The request now includes both `trusted_height` and `height`, and the returned header includes:
+
+- `bridge_blocks` from `trusted_height + 1` up to `anchor_block.height - 1`
+- the `anchor_block` whose HostState transaction/output will define the new consensus state
+- the `descendant_blocks` used to justify accepting that anchor under the configured thresholds
+- the HostState transaction body evidence needed to extract `ibc_state_root`
 
 ### Proof Height Gating
 
@@ -189,17 +195,23 @@ The high-level update flow is:
 
 1. verify the header shape (`anchor_block`, `host_state_tx_body_cbor`, etc.)
 2. require the new header to be strictly newer than the current client height
-3. verify the descendant chain is contiguous:
+3. load the stored consensus state at `trusted_height`
+4. verify continuity from previously trusted state:
+   - if `bridge_blocks` is empty, `anchor_block.prev_hash` must equal the trusted consensus `accepted_block_hash`
+   - otherwise the first `bridge_block.prev_hash` must equal the trusted consensus `accepted_block_hash`
+   - each bridge block must increment height by exactly one and chain by hash
+   - `anchor_block.prev_hash` must equal the last bridge block hash
+5. verify the descendant chain is contiguous:
    - each descendant’s `prev_hash` must match the prior block’s hash
    - each descendant height must increment by exactly one
-4. recompute:
+6. recompute:
    - distinct pools
    - unique stake basis points
    - security score
-5. verify those recomputed values match the values carried in the header
-6. enforce the configured thresholds from `ClientState.HeuristicParams`
-7. validate the HostState transaction body, locate the HostState output by NFT, and extract `ibc_state_root`
-8. write a new consensus state for the accepted anchor height
+7. verify those recomputed values match the values carried in the header
+8. enforce the configured thresholds from `ClientState.HeuristicParams`
+9. validate the HostState transaction body, locate the HostState output by NFT, and extract `ibc_state_root`
+10. write a new consensus state for the accepted anchor height
 
 The extracted `ibc_state_root` is then used for ordinary IBC membership and non-membership verification.
 

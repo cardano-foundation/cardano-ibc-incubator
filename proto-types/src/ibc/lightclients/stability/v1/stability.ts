@@ -66,6 +66,7 @@ export interface StabilityHeader {
   unique_pools_count: bigint;
   unique_stake_bps: bigint;
   security_score_bps: bigint;
+  bridge_blocks: StabilityBlock[];
 }
 function createBaseHeight(): Height {
   return {
@@ -822,6 +823,7 @@ function createBaseStabilityHeader(): StabilityHeader {
     unique_pools_count: BigInt(0),
     unique_stake_bps: BigInt(0),
     security_score_bps: BigInt(0),
+    bridge_blocks: [],
   };
 }
 export const StabilityHeader = {
@@ -853,6 +855,9 @@ export const StabilityHeader = {
     }
     if (message.security_score_bps !== BigInt(0)) {
       writer.uint32(72).uint64(message.security_score_bps);
+    }
+    for (const v of message.bridge_blocks) {
+      StabilityBlock.encode(v!, writer.uint32(82).fork()).ldelim();
     }
     return writer;
   },
@@ -890,6 +895,9 @@ export const StabilityHeader = {
         case 9:
           message.security_score_bps = reader.uint64();
           break;
+        case 10:
+          message.bridge_blocks.push(StabilityBlock.decode(reader, reader.uint32()));
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -913,6 +921,8 @@ export const StabilityHeader = {
     if (isSet(object.unique_stake_bps)) obj.unique_stake_bps = BigInt(object.unique_stake_bps.toString());
     if (isSet(object.security_score_bps))
       obj.security_score_bps = BigInt(object.security_score_bps.toString());
+    if (Array.isArray(object?.bridge_blocks))
+      obj.bridge_blocks = object.bridge_blocks.map((e: any) => StabilityBlock.fromJSON(e));
     return obj;
   },
   toJSON(message: StabilityHeader): unknown {
@@ -941,6 +951,11 @@ export const StabilityHeader = {
       (obj.unique_stake_bps = (message.unique_stake_bps || BigInt(0)).toString());
     message.security_score_bps !== undefined &&
       (obj.security_score_bps = (message.security_score_bps || BigInt(0)).toString());
+    if (message.bridge_blocks) {
+      obj.bridge_blocks = message.bridge_blocks.map((e) => (e ? StabilityBlock.toJSON(e) : undefined));
+    } else {
+      obj.bridge_blocks = [];
+    }
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<StabilityHeader>, I>>(object: I): StabilityHeader {
@@ -964,6 +979,7 @@ export const StabilityHeader = {
     if (object.security_score_bps !== undefined && object.security_score_bps !== null) {
       message.security_score_bps = BigInt(object.security_score_bps.toString());
     }
+    message.bridge_blocks = object.bridge_blocks?.map((e) => StabilityBlock.fromPartial(e)) || [];
     return message;
   },
 };

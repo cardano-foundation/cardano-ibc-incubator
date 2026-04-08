@@ -27,7 +27,7 @@ func (cs *ClientState) VerifyClientMessage(
 }
 
 func (cs *ClientState) verifyHeader(
-	_ sdk.Context, clientStore storetypes.KVStore, _ codec.BinaryCodec,
+	_ sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec,
 	header *StabilityHeader,
 ) error {
 	if err := header.ValidateBasic(); err != nil {
@@ -41,6 +41,20 @@ func (cs *ClientState) verifyHeader(
 	anchor := header.AnchorBlock
 	if anchor == nil || anchor.Height == nil {
 		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "anchor block missing")
+	}
+
+	trustedHeight := NewHeight(header.TrustedHeight.RevisionNumber, header.TrustedHeight.RevisionHeight)
+	trustedConsensus, found := GetConsensusState(clientStore, cdc, trustedHeight)
+	if !found {
+		return errorsmod.Wrapf(
+			clienttypes.ErrConsensusStateNotFound,
+			"trusted consensus state not found at height %s",
+			trustedHeight.String(),
+		)
+	}
+
+	if err := verifyBridgeContinuity(header, trustedConsensus); err != nil {
+		return err
 	}
 
 	depth := uint64(len(header.DescendantBlocks))
@@ -72,6 +86,58 @@ func (cs *ClientState) verifyHeader(
 
 	if _, err := cs.ExtractIbcStateRootFromHostStateTx(header); err != nil {
 		return errorsmod.Wrapf(ErrInvalidHostStateCommitment, "invalid host state tx body: %v", err)
+	}
+
+	return nil
+}
+
+func verifyBridgeContinuity(header *StabilityHeader, trustedConsensus *ConsensusState) error {
+	if trustedConsensus == nil {
+		return errorsmod.Wrap(clienttypes.ErrConsensusStateNotFound, "trusted consensus state missing")
+	}
+
+	expectedPrevHash := trustedConsensus.AcceptedBlockHash
+	expectedHeight := header.TrustedHeight.RevisionHeight + 1
+
+	for _, block := range header.BridgeBlocks {
+		if block == nil || block.Height == nil {
+			return errorsmod.Wrap(ErrInvalidAcceptedBlock, "bridge block missing height")
+		}
+		if block.PrevHash != expectedPrevHash {
+			return errorsmod.Wrapf(
+				ErrInvalidAcceptedBlock,
+				"bridge block %s does not connect to trusted chain",
+				block.Hash,
+			)
+		}
+		if block.Height.RevisionHeight != expectedHeight {
+			return errorsmod.Wrapf(
+				ErrInvalidAcceptedBlock,
+				"bridge height gap at block %s: got %d expected %d",
+				block.Hash,
+				block.Height.RevisionHeight,
+				expectedHeight,
+			)
+		}
+
+		expectedPrevHash = block.Hash
+		expectedHeight++
+	}
+
+	if header.AnchorBlock.PrevHash != expectedPrevHash {
+		return errorsmod.Wrapf(
+			ErrInvalidAcceptedBlock,
+			"anchor block %s does not connect to trusted chain",
+			header.AnchorBlock.Hash,
+		)
+	}
+	if header.AnchorBlock.Height.RevisionHeight != expectedHeight {
+		return errorsmod.Wrapf(
+			ErrInvalidAcceptedBlock,
+			"anchor height mismatch: got %d expected %d",
+			header.AnchorBlock.Height.RevisionHeight,
+			expectedHeight,
+		)
 	}
 
 	return nil

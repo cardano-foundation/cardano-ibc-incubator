@@ -195,6 +195,25 @@ export class YaciHistoryService implements HistoryService {
     return rows[0] ? this.mapHistoryBlockRow(rows[0]) : null;
   }
 
+  async findBridgeBlocks(trustedHeight: bigint, anchorHeight: bigint): Promise<HistoryBlock[]> {
+    const query = `
+      SELECT
+        number,
+        hash,
+        prev_hash,
+        slot,
+        epoch,
+        block_time,
+        slot_leader
+      FROM block
+      WHERE number > $1
+        AND number < $2
+      ORDER BY number ASC
+    `;
+    const rows = await this.entityManager.query(query, [trustedHeight.toString(), anchorHeight.toString()]);
+    return rows.map((row: HistoryBlockRow) => this.mapHistoryBlockRow(row));
+  }
+
   async findDescendantBlocks(anchorHeight: bigint, limit: number): Promise<HistoryBlock[]> {
     const query = `
       SELECT

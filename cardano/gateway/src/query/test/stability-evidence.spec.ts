@@ -3,6 +3,7 @@ import { HistoryService } from '../services/history.service';
 import {
   loadStakeWeightedStabilityEvidenceByHeight,
   loadStakeWeightedStabilityEvidenceForTxHash,
+  loadStakeWeightedStabilityHeaderEvidence,
 } from '../services/stability-evidence';
 import { getStabilityHeuristicParams } from '../services/stability-scoring';
 
@@ -53,6 +54,27 @@ describe('stability-evidence', () => {
     },
   ];
 
+  const bridgeBlocks = [
+    {
+      height: 98,
+      hash: 'hash-98',
+      prevHash: 'hash-97',
+      slotNo: 980n,
+      epochNo: 7,
+      timestampUnixNs: 980_000_000n,
+      slotLeader: 'pool-x',
+    },
+    {
+      height: 99,
+      hash: 'hash-99',
+      prevHash: 'hash-98',
+      slotNo: 990n,
+      epochNo: 7,
+      timestampUnixNs: 990_000_000n,
+      slotLeader: 'pool-y',
+    },
+  ];
+
   const epochStakeDistribution = [
     { poolId: 'pool-a', stake: 500n },
     { poolId: 'pool-b', stake: 300n },
@@ -61,6 +83,7 @@ describe('stability-evidence', () => {
 
   const historyServiceMock = {
     findBlockByHeight: jest.fn().mockResolvedValue(anchorBlock),
+    findBridgeBlocks: jest.fn().mockResolvedValue(bridgeBlocks),
     findDescendantBlocks: jest.fn().mockResolvedValue(descendantBlocks),
     findEpochStakeDistribution: jest.fn().mockResolvedValue(epochStakeDistribution),
     findTransactionEvidenceByHash: jest.fn().mockResolvedValue({
@@ -105,5 +128,19 @@ describe('stability-evidence', () => {
     expect(evidence.hostStateTxEvidence.txHash).toBe('deadbeef');
     expect(evidence.anchorHeight).toBe(100n);
     expect(evidence.metrics.uniquePoolsCount).toBe(3);
+  });
+
+  it('loads bridge blocks for a stability header from trusted height to anchor', async () => {
+    const evidence = await loadStakeWeightedStabilityHeaderEvidence({
+      historyService: historyServiceMock as HistoryService,
+      trustedHeight: 97n,
+      height: 100n,
+      logger: { warn: jest.fn() } as unknown as Logger,
+      heuristicParams,
+    });
+
+    expect(historyServiceMock.findBridgeBlocks).toHaveBeenCalledWith(97n, 100n);
+    expect(evidence.trustedHeight).toBe(97n);
+    expect(evidence.bridgeBlocks).toEqual(bridgeBlocks);
   });
 });

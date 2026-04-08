@@ -47,6 +47,7 @@ export type HistoryService = {
   findHostStateUtxoAtOrBeforeBlockNo(height: bigint): Promise<UtxoDto>;
   findLatestBlock(): Promise<HistoryBlock | null>;
   findBlockByHeight(height: bigint): Promise<HistoryBlock | null>;
+  findBridgeBlocks(trustedHeight: bigint, anchorHeight: bigint): Promise<HistoryBlock[]>;
   findDescendantBlocks(anchorHeight: bigint, limit: number): Promise<HistoryBlock[]>;
   findEpochStakeDistribution(epoch: number): Promise<HistoryStakeDistributionEntry[]>;
   findUtxoClientOrAuthHandler(height: number): Promise<UtxoDto[]>;

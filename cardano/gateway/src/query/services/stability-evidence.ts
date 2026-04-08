@@ -38,6 +38,11 @@ export type StakeWeightedStabilityTxEvidence = StakeWeightedStabilityEvidence & 
   hostStateTxEvidence: HistoryTxEvidence;
 };
 
+export type StakeWeightedStabilityHeaderEvidence = StakeWeightedStabilityEvidence & {
+  trustedHeight: CardanoHeight;
+  bridgeBlocks: HistoryBlock[];
+};
+
 type LoadStakeWeightedStabilityEvidenceByHeightParams = {
   historyService: HistoryService;
   height: bigint;
@@ -55,6 +60,10 @@ type LoadStakeWeightedStabilityEvidenceForTxHashParams = {
   requireThresholds?: boolean;
   missingTxEvidenceMessage?: string;
   missingAnchorBlockMessage?: string;
+};
+
+type LoadStakeWeightedStabilityHeaderEvidenceParams = LoadStakeWeightedStabilityEvidenceByHeightParams & {
+  trustedHeight: bigint;
 };
 
 export async function loadStakeWeightedStabilityEvidenceByHeight({
@@ -123,5 +132,56 @@ export async function loadStakeWeightedStabilityEvidenceForTxHash({
   return {
     ...evidence,
     hostStateTxEvidence,
+  };
+}
+
+export async function loadStakeWeightedStabilityHeaderEvidence({
+  historyService,
+  height,
+  trustedHeight,
+  logger,
+  heuristicParams = getStabilityHeuristicParams(),
+  requireThresholds = true,
+  missingAnchorBlockMessage,
+}: LoadStakeWeightedStabilityHeaderEvidenceParams): Promise<StakeWeightedStabilityHeaderEvidence> {
+  if (trustedHeight <= 0n) {
+    throw new GrpcInternalException(`Invalid trusted height ${trustedHeight.toString()} for stability header`);
+  }
+  if (trustedHeight >= height) {
+    throw new GrpcInternalException(
+      `Invalid stability header request: trusted height ${trustedHeight.toString()} must be less than anchor height ${height.toString()}`,
+    );
+  }
+
+  const evidence = await loadStakeWeightedStabilityEvidenceByHeight({
+    historyService,
+    height,
+    logger,
+    heuristicParams,
+    requireThresholds,
+    missingAnchorBlockMessage,
+  });
+
+  const bridgeBlocks = await historyService.findBridgeBlocks(trustedHeight, height);
+  const expectedBridgeCount = Number(height - trustedHeight - 1n);
+  if (bridgeBlocks.length !== expectedBridgeCount) {
+    throw new GrpcInternalException(
+      `Incomplete stability bridge segment between trusted height ${trustedHeight.toString()} and anchor height ${height.toString()}`,
+    );
+  }
+
+  for (let index = 0; index < bridgeBlocks.length; index++) {
+    const expectedHeight = Number(trustedHeight) + index + 1;
+    if (bridgeBlocks[index].height !== expectedHeight) {
+      throw new GrpcInternalException(
+        `Non-contiguous stability bridge segment at height ${bridgeBlocks[index].height}; expected ${expectedHeight}`,
+      );
+    }
+  }
+
+  return {
+    ...evidence,
+    trustedHeight: trustedHeight as CardanoHeight,
+    bridgeBlocks,
   };
 }

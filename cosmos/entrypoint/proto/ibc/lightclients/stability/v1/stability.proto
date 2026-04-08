@@ -92,4 +92,5 @@ message StabilityHeader {
   uint64 unique_pools_count = 7;
   uint64 unique_stake_bps = 8;
   uint64 security_score_bps = 9;
+  repeated StabilityBlock bridge_blocks = 10;
 }
