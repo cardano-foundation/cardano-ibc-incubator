@@ -8,12 +8,9 @@ import { getStabilityHeuristicParams } from '../services/stability-scoring';
 
 describe('stability-evidence', () => {
   const heuristicParams = getStabilityHeuristicParams({
-    CARDANO_STABILITY_MIN_DEPTH: '3',
-    CARDANO_STABILITY_MIN_UNIQUE_POOLS: '2',
-    CARDANO_STABILITY_MIN_UNIQUE_STAKE_BPS: '6000',
-    CARDANO_STABILITY_TARGET_DEPTH: '3',
-    CARDANO_STABILITY_TARGET_UNIQUE_POOLS: '3',
-    CARDANO_STABILITY_TARGET_UNIQUE_STAKE_BPS: '7000',
+    CARDANO_STABILITY_THRESHOLD_DEPTH: '3',
+    CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS: '3',
+    CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: '7000',
   } as NodeJS.ProcessEnv);
 
   const anchorBlock = {

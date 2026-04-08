@@ -74,7 +74,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
 
   const descendantBlocks = await historyService.findDescendantBlocks(
     BigInt(anchorBlock.height),
-    Number(heuristicParams.target_depth || heuristicParams.min_depth || 24n),
+    Number(heuristicParams.threshold_depth || 24n),
   );
   const epochStakeDistribution = await historyService.findEpochStakeDistribution(anchorBlock.epochNo);
   const scoredDescendantBlocks = scoreDescendantBlocks(descendantBlocks, epochStakeDistribution, logger);

@@ -44,8 +44,8 @@ func (cs *ClientState) verifyHeader(
 	}
 
 	depth := uint64(len(header.DescendantBlocks))
-	if depth < cs.HeuristicParams.MinDepth {
-		return errorsmod.Wrapf(ErrInvalidStabilityScore, "insufficient descendant depth: got %d, need %d", depth, cs.HeuristicParams.MinDepth)
+	if depth < cs.HeuristicParams.ThresholdDepth {
+		return errorsmod.Wrapf(ErrInvalidStabilityScore, "insufficient descendant depth: got %d, need %d", depth, cs.HeuristicParams.ThresholdDepth)
 	}
 
 	uniquePools, uniqueStakeBps, securityScoreBps, err := cs.computeHeaderSecurityMetrics(header)
@@ -63,11 +63,11 @@ func (cs *ClientState) verifyHeader(
 		return errorsmod.Wrapf(ErrInvalidStabilityScore, "header security score mismatch: got %d, expected %d", header.SecurityScoreBps, securityScoreBps)
 	}
 
-	if uniquePools < cs.HeuristicParams.MinUniquePools {
-		return errorsmod.Wrapf(ErrInvalidUniquePools, "insufficient unique pools: got %d, need %d", uniquePools, cs.HeuristicParams.MinUniquePools)
+	if uniquePools < cs.HeuristicParams.ThresholdUniquePools {
+		return errorsmod.Wrapf(ErrInvalidUniquePools, "insufficient unique pools: got %d, need %d", uniquePools, cs.HeuristicParams.ThresholdUniquePools)
 	}
-	if uniqueStakeBps < cs.HeuristicParams.MinUniqueStakeBps {
-		return errorsmod.Wrapf(ErrInvalidUniqueStake, "insufficient unique stake bps: got %d, need %d", uniqueStakeBps, cs.HeuristicParams.MinUniqueStakeBps)
+	if uniqueStakeBps < cs.HeuristicParams.ThresholdUniqueStakeBps {
+		return errorsmod.Wrapf(ErrInvalidUniqueStake, "insufficient unique stake bps: got %d, need %d", uniqueStakeBps, cs.HeuristicParams.ThresholdUniqueStakeBps)
 	}
 
 	if _, err := cs.ExtractIbcStateRootFromHostStateTx(header); err != nil {
@@ -131,9 +131,9 @@ func (cs *ClientState) computeHeaderSecurityMetrics(header *StabilityHeader) (ui
 
 func (cs *ClientState) computeSecurityScore(depth, uniquePools, uniqueStakeBps uint64) uint64 {
 	params := cs.HeuristicParams
-	depthScore := minBps(depth, params.TargetDepth)
-	poolsScore := minBps(uniquePools, params.TargetUniquePools)
-	stakeScore := minBps(uniqueStakeBps, params.TargetUniqueStakeBps)
+	depthScore := minBps(depth, params.ThresholdDepth)
+	poolsScore := minBps(uniquePools, params.ThresholdUniquePools)
+	stakeScore := minBps(uniqueStakeBps, params.ThresholdUniqueStakeBps)
 	return min(
 		(params.DepthWeightBps*depthScore+
 			params.PoolsWeightBps*poolsScore+

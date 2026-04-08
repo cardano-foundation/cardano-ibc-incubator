@@ -17,12 +17,9 @@ export function getStabilityHeuristicParams(env: NodeJS.ProcessEnv = process.env
   };
 
   return {
-    min_depth: getBigInt('CARDANO_STABILITY_MIN_DEPTH', 24n),
-    min_unique_pools: getBigInt('CARDANO_STABILITY_MIN_UNIQUE_POOLS', 3n),
-    min_unique_stake_bps: getBigInt('CARDANO_STABILITY_MIN_UNIQUE_STAKE_BPS', 6000n),
-    target_depth: getBigInt('CARDANO_STABILITY_TARGET_DEPTH', 24n),
-    target_unique_pools: getBigInt('CARDANO_STABILITY_TARGET_UNIQUE_POOLS', 5n),
-    target_unique_stake_bps: getBigInt('CARDANO_STABILITY_TARGET_UNIQUE_STAKE_BPS', 8000n),
+    threshold_depth: getBigInt('CARDANO_STABILITY_THRESHOLD_DEPTH', 24n),
+    threshold_unique_pools: getBigInt('CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS', 5n),
+    threshold_unique_stake_bps: getBigInt('CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS', 8000n),
     depth_weight_bps: getBigInt('CARDANO_STABILITY_DEPTH_WEIGHT_BPS', 2000n),
     pools_weight_bps: getBigInt('CARDANO_STABILITY_POOLS_WEIGHT_BPS', 2000n),
     stake_weight_bps: getBigInt('CARDANO_STABILITY_STAKE_WEIGHT_BPS', 6000n),
@@ -80,9 +77,9 @@ export function computeStabilityMetrics(
     uniqueStakeBps = 10_000n;
   }
 
-  const depthScore = minBps(BigInt(descendants.length), heuristicParams.target_depth);
-  const poolsScore = minBps(BigInt(uniquePools.size), heuristicParams.target_unique_pools);
-  const stakeScore = minBps(uniqueStakeBps, heuristicParams.target_unique_stake_bps);
+  const depthScore = minBps(BigInt(descendants.length), heuristicParams.threshold_depth);
+  const poolsScore = minBps(BigInt(uniquePools.size), heuristicParams.threshold_unique_pools);
+  const stakeScore = minBps(uniqueStakeBps, heuristicParams.threshold_unique_stake_bps);
   const rawScore =
     (heuristicParams.depth_weight_bps * depthScore +
       heuristicParams.pools_weight_bps * poolsScore +
@@ -115,14 +112,14 @@ export function getStabilityThresholdFailure(
   height: string,
   descendantDepth: number,
 ): string | null {
-  if (BigInt(descendantDepth) < heuristicParams.min_depth) {
-    return `Not found: stability thresholds not met at height ${height} (depth ${descendantDepth} < ${heuristicParams.min_depth})`;
+  if (BigInt(descendantDepth) < heuristicParams.threshold_depth) {
+    return `Not found: stability thresholds not met at height ${height} (depth ${descendantDepth} < ${heuristicParams.threshold_depth})`;
   }
-  if (BigInt(metrics.uniquePoolsCount) < heuristicParams.min_unique_pools) {
-    return `Not found: stability thresholds not met at height ${height} (unique pools ${metrics.uniquePoolsCount} < ${heuristicParams.min_unique_pools})`;
+  if (BigInt(metrics.uniquePoolsCount) < heuristicParams.threshold_unique_pools) {
+    return `Not found: stability thresholds not met at height ${height} (unique pools ${metrics.uniquePoolsCount} < ${heuristicParams.threshold_unique_pools})`;
   }
-  if (BigInt(metrics.uniqueStakeBps) < heuristicParams.min_unique_stake_bps) {
-    return `Not found: stability thresholds not met at height ${height} (unique stake ${metrics.uniqueStakeBps} < ${heuristicParams.min_unique_stake_bps})`;
+  if (BigInt(metrics.uniqueStakeBps) < heuristicParams.threshold_unique_stake_bps) {
+    return `Not found: stability thresholds not met at height ${height} (unique stake ${metrics.uniqueStakeBps} < ${heuristicParams.threshold_unique_stake_bps})`;
   }
 
   return null;

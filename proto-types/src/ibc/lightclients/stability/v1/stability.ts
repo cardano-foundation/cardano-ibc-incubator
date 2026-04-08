@@ -8,12 +8,9 @@ export interface Height {
   revision_height: bigint;
 }
 export interface HeuristicParams {
-  min_depth: bigint;
-  min_unique_pools: bigint;
-  min_unique_stake_bps: bigint;
-  target_depth: bigint;
-  target_unique_pools: bigint;
-  target_unique_stake_bps: bigint;
+  threshold_depth: bigint;
+  threshold_unique_pools: bigint;
+  threshold_unique_stake_bps: bigint;
   depth_weight_bps: bigint;
   pools_weight_bps: bigint;
   stake_weight_bps: bigint;
@@ -134,12 +131,9 @@ export const Height = {
 };
 function createBaseHeuristicParams(): HeuristicParams {
   return {
-    min_depth: BigInt(0),
-    min_unique_pools: BigInt(0),
-    min_unique_stake_bps: BigInt(0),
-    target_depth: BigInt(0),
-    target_unique_pools: BigInt(0),
-    target_unique_stake_bps: BigInt(0),
+    threshold_depth: BigInt(0),
+    threshold_unique_pools: BigInt(0),
+    threshold_unique_stake_bps: BigInt(0),
     depth_weight_bps: BigInt(0),
     pools_weight_bps: BigInt(0),
     stake_weight_bps: BigInt(0),
@@ -148,23 +142,14 @@ function createBaseHeuristicParams(): HeuristicParams {
 export const HeuristicParams = {
   typeUrl: "/ibc.lightclients.stability.v1.HeuristicParams",
   encode(message: HeuristicParams, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
-    if (message.min_depth !== BigInt(0)) {
-      writer.uint32(8).uint64(message.min_depth);
+    if (message.threshold_depth !== BigInt(0)) {
+      writer.uint32(32).uint64(message.threshold_depth);
     }
-    if (message.min_unique_pools !== BigInt(0)) {
-      writer.uint32(16).uint64(message.min_unique_pools);
+    if (message.threshold_unique_pools !== BigInt(0)) {
+      writer.uint32(40).uint64(message.threshold_unique_pools);
     }
-    if (message.min_unique_stake_bps !== BigInt(0)) {
-      writer.uint32(24).uint64(message.min_unique_stake_bps);
-    }
-    if (message.target_depth !== BigInt(0)) {
-      writer.uint32(32).uint64(message.target_depth);
-    }
-    if (message.target_unique_pools !== BigInt(0)) {
-      writer.uint32(40).uint64(message.target_unique_pools);
-    }
-    if (message.target_unique_stake_bps !== BigInt(0)) {
-      writer.uint32(48).uint64(message.target_unique_stake_bps);
+    if (message.threshold_unique_stake_bps !== BigInt(0)) {
+      writer.uint32(48).uint64(message.threshold_unique_stake_bps);
     }
     if (message.depth_weight_bps !== BigInt(0)) {
       writer.uint32(56).uint64(message.depth_weight_bps);
@@ -184,23 +169,14 @@ export const HeuristicParams = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
-        case 1:
-          message.min_depth = reader.uint64();
-          break;
-        case 2:
-          message.min_unique_pools = reader.uint64();
-          break;
-        case 3:
-          message.min_unique_stake_bps = reader.uint64();
-          break;
         case 4:
-          message.target_depth = reader.uint64();
+          message.threshold_depth = reader.uint64();
           break;
         case 5:
-          message.target_unique_pools = reader.uint64();
+          message.threshold_unique_pools = reader.uint64();
           break;
         case 6:
-          message.target_unique_stake_bps = reader.uint64();
+          message.threshold_unique_stake_bps = reader.uint64();
           break;
         case 7:
           message.depth_weight_bps = reader.uint64();
@@ -220,15 +196,11 @@ export const HeuristicParams = {
   },
   fromJSON(object: any): HeuristicParams {
     const obj = createBaseHeuristicParams();
-    if (isSet(object.min_depth)) obj.min_depth = BigInt(object.min_depth.toString());
-    if (isSet(object.min_unique_pools)) obj.min_unique_pools = BigInt(object.min_unique_pools.toString());
-    if (isSet(object.min_unique_stake_bps))
-      obj.min_unique_stake_bps = BigInt(object.min_unique_stake_bps.toString());
-    if (isSet(object.target_depth)) obj.target_depth = BigInt(object.target_depth.toString());
-    if (isSet(object.target_unique_pools))
-      obj.target_unique_pools = BigInt(object.target_unique_pools.toString());
-    if (isSet(object.target_unique_stake_bps))
-      obj.target_unique_stake_bps = BigInt(object.target_unique_stake_bps.toString());
+    if (isSet(object.threshold_depth)) obj.threshold_depth = BigInt(object.threshold_depth.toString());
+    if (isSet(object.threshold_unique_pools))
+      obj.threshold_unique_pools = BigInt(object.threshold_unique_pools.toString());
+    if (isSet(object.threshold_unique_stake_bps))
+      obj.threshold_unique_stake_bps = BigInt(object.threshold_unique_stake_bps.toString());
     if (isSet(object.depth_weight_bps)) obj.depth_weight_bps = BigInt(object.depth_weight_bps.toString());
     if (isSet(object.pools_weight_bps)) obj.pools_weight_bps = BigInt(object.pools_weight_bps.toString());
     if (isSet(object.stake_weight_bps)) obj.stake_weight_bps = BigInt(object.stake_weight_bps.toString());
@@ -236,16 +208,12 @@ export const HeuristicParams = {
   },
   toJSON(message: HeuristicParams): unknown {
     const obj: any = {};
-    message.min_depth !== undefined && (obj.min_depth = (message.min_depth || BigInt(0)).toString());
-    message.min_unique_pools !== undefined &&
-      (obj.min_unique_pools = (message.min_unique_pools || BigInt(0)).toString());
-    message.min_unique_stake_bps !== undefined &&
-      (obj.min_unique_stake_bps = (message.min_unique_stake_bps || BigInt(0)).toString());
-    message.target_depth !== undefined && (obj.target_depth = (message.target_depth || BigInt(0)).toString());
-    message.target_unique_pools !== undefined &&
-      (obj.target_unique_pools = (message.target_unique_pools || BigInt(0)).toString());
-    message.target_unique_stake_bps !== undefined &&
-      (obj.target_unique_stake_bps = (message.target_unique_stake_bps || BigInt(0)).toString());
+    message.threshold_depth !== undefined &&
+      (obj.threshold_depth = (message.threshold_depth || BigInt(0)).toString());
+    message.threshold_unique_pools !== undefined &&
+      (obj.threshold_unique_pools = (message.threshold_unique_pools || BigInt(0)).toString());
+    message.threshold_unique_stake_bps !== undefined &&
+      (obj.threshold_unique_stake_bps = (message.threshold_unique_stake_bps || BigInt(0)).toString());
     message.depth_weight_bps !== undefined &&
       (obj.depth_weight_bps = (message.depth_weight_bps || BigInt(0)).toString());
     message.pools_weight_bps !== undefined &&
@@ -256,23 +224,14 @@ export const HeuristicParams = {
   },
   fromPartial<I extends Exact<DeepPartial<HeuristicParams>, I>>(object: I): HeuristicParams {
     const message = createBaseHeuristicParams();
-    if (object.min_depth !== undefined && object.min_depth !== null) {
-      message.min_depth = BigInt(object.min_depth.toString());
+    if (object.threshold_depth !== undefined && object.threshold_depth !== null) {
+      message.threshold_depth = BigInt(object.threshold_depth.toString());
     }
-    if (object.min_unique_pools !== undefined && object.min_unique_pools !== null) {
-      message.min_unique_pools = BigInt(object.min_unique_pools.toString());
+    if (object.threshold_unique_pools !== undefined && object.threshold_unique_pools !== null) {
+      message.threshold_unique_pools = BigInt(object.threshold_unique_pools.toString());
     }
-    if (object.min_unique_stake_bps !== undefined && object.min_unique_stake_bps !== null) {
-      message.min_unique_stake_bps = BigInt(object.min_unique_stake_bps.toString());
-    }
-    if (object.target_depth !== undefined && object.target_depth !== null) {
-      message.target_depth = BigInt(object.target_depth.toString());
-    }
-    if (object.target_unique_pools !== undefined && object.target_unique_pools !== null) {
-      message.target_unique_pools = BigInt(object.target_unique_pools.toString());
-    }
-    if (object.target_unique_stake_bps !== undefined && object.target_unique_stake_bps !== null) {
-      message.target_unique_stake_bps = BigInt(object.target_unique_stake_bps.toString());
+    if (object.threshold_unique_stake_bps !== undefined && object.threshold_unique_stake_bps !== null) {
+      message.threshold_unique_stake_bps = BigInt(object.threshold_unique_stake_bps.toString());
     }
     if (object.depth_weight_bps !== undefined && object.depth_weight_bps !== null) {
       message.depth_weight_bps = BigInt(object.depth_weight_bps.toString());

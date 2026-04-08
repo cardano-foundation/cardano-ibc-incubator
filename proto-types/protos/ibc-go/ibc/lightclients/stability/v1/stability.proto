@@ -16,12 +16,10 @@ message Height {
 message HeuristicParams {
   option (gogoproto.goproto_getters) = false;
 
-  uint64 min_depth = 1;
-  uint64 min_unique_pools = 2;
-  uint64 min_unique_stake_bps = 3;
-  uint64 target_depth = 4;
-  uint64 target_unique_pools = 5;
-  uint64 target_unique_stake_bps = 6;
+  reserved 1 to 3;
+  uint64 threshold_depth = 4;
+  uint64 threshold_unique_pools = 5;
+  uint64 threshold_unique_stake_bps = 6;
   uint64 depth_weight_bps = 7;
   uint64 pools_weight_bps = 8;
   uint64 stake_weight_bps = 9;

@@ -18,12 +18,9 @@ describe('stability-scoring', () => {
 
   it('computes unique pool stake and score from epoch stake distribution', () => {
     const heuristicParams = getStabilityHeuristicParams({
-      CARDANO_STABILITY_MIN_DEPTH: '3',
-      CARDANO_STABILITY_MIN_UNIQUE_POOLS: '3',
-      CARDANO_STABILITY_MIN_UNIQUE_STAKE_BPS: '6000',
-      CARDANO_STABILITY_TARGET_DEPTH: '3',
-      CARDANO_STABILITY_TARGET_UNIQUE_POOLS: '3',
-      CARDANO_STABILITY_TARGET_UNIQUE_STAKE_BPS: '6000',
+      CARDANO_STABILITY_THRESHOLD_DEPTH: '3',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS: '3',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: '6000',
       CARDANO_STABILITY_DEPTH_WEIGHT_BPS: '2000',
       CARDANO_STABILITY_POOLS_WEIGHT_BPS: '2000',
       CARDANO_STABILITY_STAKE_WEIGHT_BPS: '6000',
@@ -55,12 +52,9 @@ describe('stability-scoring', () => {
 
   it('fails threshold checks when depth and unique stake are too low', () => {
     const heuristicParams = getStabilityHeuristicParams({
-      CARDANO_STABILITY_MIN_DEPTH: '4',
-      CARDANO_STABILITY_MIN_UNIQUE_POOLS: '2',
-      CARDANO_STABILITY_MIN_UNIQUE_STAKE_BPS: '7000',
-      CARDANO_STABILITY_TARGET_DEPTH: '4',
-      CARDANO_STABILITY_TARGET_UNIQUE_POOLS: '2',
-      CARDANO_STABILITY_TARGET_UNIQUE_STAKE_BPS: '7000',
+      CARDANO_STABILITY_THRESHOLD_DEPTH: '4',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS: '2',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: '7000',
     } as NodeJS.ProcessEnv);
 
     const descendants = [

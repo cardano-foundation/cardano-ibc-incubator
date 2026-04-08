@@ -4,13 +4,25 @@ Author: Julius Tranquilli, https://github.com/floor-licker
 
 Date: April 7, 2026
 
-This document describes a new Cardano "stability-weighted" light client. It is implemented in this repo as client type `08-cardano-stability`. It exists as an alternative to the Mithril light client. This model is not positioned as a fast finality model or anything of that nature, rather it tries to heuristically attain faster IBC proofs by making certain risk tradeoffs via a heuristic notion of Cardano settlement. This is because the Mithril light client was effectively non-viable from a UX perspective. For example, Mithril certificates lagged the chain tip by over 100 blocks, so basic IBC operations would end up taking 200+ Cardano blocks.
+This document introduces a Cardano "stability-weighted" light client. It is implemented as client type `08-cardano-stability`. This is as an alternative to the Mithril light client. This model is not a fast finality model or anything of that nature, rather it tries to heuristically attain faster IBC proofs by making certain risk tradeoffs via a heuristic notion of Cardano settlement. 
+
+This is because the Mithril light client was effectively non-viable from a UX perspective. For example, Mithril certificates lagged the chain tip by over 100 blocks, so basic IBC operations would end up taking 200+ Cardano blocks.
+
+I think it is worth clarifying as well that in some ways this model is not even necessarily less secure than the Mithril-based light client. For example, a large factor in the security of the Mithril model is Mithril network participation, which I believe at the time of writing is even less than 20% of the network. So we can imagine comparing two assertions like the following:
+
+A) A randomly selected subset selected out of a pool of a fixed + hard, proportion of the network agree on the ledger view at a height H, so we consider it "final"
+
+Note: by fixed + hard, I don't mean it can't increase, I mean it is not a tunable parameter, we can't control network participation.
+
+or
+
+B) A block that is `x` blocks deep, has been built on top of by at least `y` different stakepools representing at least `z`% of the overall network stake is considered "final".
 
 This model is configurable, so the safety of trusting it is entirely dependent on the tuned parameters. Instead of waiting for a Mithril certificate chain, this client:
 
 **treats a Cardano block as acceptable once a certain number of later Cardano blocks have been built on top of it, by a sufficiently diverse, and sufficiently large set of stake pools.**
 
-The resulting decision is represented as a deterministic score plus hard acceptance thresholds, and that accepted block is then used as the height at which the Cardano `HostState` commitment root is authenticated for IBC.
+The resulting decision is represented as a score plus hard acceptance thresholds, and that accepted block is then used as the height at which the Cardano `HostState` commitment root is authenticated for IBC.
 
 This client is NOT equivalent to BFT finality, and it is NOT equivalent to a Tendermint-style light client. But it is certainly a superior solution in terms of UX, while attaining comparable levels of security. 
 
@@ -54,31 +66,28 @@ For those descendants, the client computes:
 - number of distinct slot leaders / stake pools that produced descendants
 - total unique stake weight of those pools, using a trusted epoch stake snapshot
 
-The block at `H` is accepted only if all configured minimum thresholds are met:
+The block at `H` is accepted only if all configured thresholds are met:
 
-- minimum depth
-- minimum unique pools
-- minimum unique stake basis points
+- threshold depth
+- threshold unique pools
+- threshold unique stake basis points
 
 Separately, the client computes a score in basis points for observability and policy:
 
 ```text
 score =
-  depth_weight_bps * min(1, depth / target_depth) +
-  pools_weight_bps * min(1, unique_pools / target_unique_pools) +
-  stake_weight_bps * min(1, unique_stake_bps / target_unique_stake_bps)
+  depth_weight_bps * min(1, depth / threshold_depth) +
+  pools_weight_bps * min(1, unique_pools / threshold_unique_pools) +
+  stake_weight_bps * min(1, unique_stake_bps / threshold_unique_stake_bps)
 ```
 
 with the weighted result normalized back into a `0..10000` basis-point range.
 
-In the current implementation, the default targets are:
+In the current implementation, the default thresholds are:
 
-- `min_depth = 24`
-- `min_unique_pools = 3`
-- `min_unique_stake_bps = 6000`
-- `target_depth = 24`
-- `target_unique_pools = 5`
-- `target_unique_stake_bps = 8000`
+- `threshold_depth = 24`
+- `threshold_unique_pools = 5`
+- `threshold_unique_stake_bps = 8000`
 - weights:
   - `depth_weight_bps = 2000`
   - `pools_weight_bps = 2000`
@@ -188,7 +197,7 @@ The high-level update flow is:
    - unique stake basis points
    - security score
 5. verify those recomputed values match the values carried in the header
-6. enforce the minimum thresholds from `ClientState.HeuristicParams`
+6. enforce the configured thresholds from `ClientState.HeuristicParams`
 7. validate the HostState transaction body, locate the HostState output by NFT, and extract `ibc_state_root`
 8. write a new consensus state for the accepted anchor height
 
@@ -233,12 +242,9 @@ This means the Cardano endpoint no longer hardcodes Mithril-only header and cons
 
 The current tuning inputs are:
 
-- `CARDANO_STABILITY_MIN_DEPTH`
-- `CARDANO_STABILITY_MIN_UNIQUE_POOLS`
-- `CARDANO_STABILITY_MIN_UNIQUE_STAKE_BPS`
-- `CARDANO_STABILITY_TARGET_DEPTH`
-- `CARDANO_STABILITY_TARGET_UNIQUE_POOLS`
-- `CARDANO_STABILITY_TARGET_UNIQUE_STAKE_BPS`
+- `CARDANO_STABILITY_THRESHOLD_DEPTH`
+- `CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS`
+- `CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS`
 - `CARDANO_STABILITY_DEPTH_WEIGHT_BPS`
 - `CARDANO_STABILITY_POOLS_WEIGHT_BPS`
 - `CARDANO_STABILITY_STAKE_WEIGHT_BPS`
