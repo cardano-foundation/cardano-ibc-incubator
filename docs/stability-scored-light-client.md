@@ -4,15 +4,17 @@ Author: Julius Tranquilli, https://github.com/floor-licker
 
 Date: April 7, 2026
 
-This document describes the experimental Cardano **stability-scored** light client implemented in this repo as client type `08-cardano-stability`. It exists as a parallel alternative to the Mithril-based client, not a replacement for it, and its purpose is to explore a much lower-latency but explicitly more heuristic notion of Cardano settlement.
+This document describes the experimental Cardano "stability-weighted" light client. It is implemented in this repo as client type `08-cardano-stability`. It exists as an alternative to the Mithril light client. This model is not positioned as a fast finality model or anything of that nature, rather it tries to heuristically attain faster IBC proofs by making certain risk tradeoffs via a heuristic notion of Cardano settlement. This is because the Mithril light client was effectively non-viable from a UX perspective. For example, Mithril certificates lagged the chain tip by over 100 blocks, so basic IBC operations would end up taking 200+ Cardano blocks.
 
-The short version is: instead of waiting for a Mithril certificate chain, this client treats a Cardano block as acceptable once a configurable number of later Cardano blocks have been built on top of it by a sufficiently diverse and sufficiently large set of stake pools. The resulting decision is represented as a deterministic score plus hard acceptance thresholds, and that accepted block is then used as the height at which the Cardano `HostState` commitment root is authenticated for IBC.
+This model is configurable, so the safety of trusting it is entirely dependent on the tuned parameters. Instead of waiting for a Mithril certificate chain, this client:
 
-## Important Warning
+**treats a Cardano block as acceptable once a certain number of later Cardano blocks have been built on top of it, by a sufficiently diverse, and sufficiently large set of stake pools.**
 
-This client is **not** equivalent to BFT finality, and it is **not** equivalent to a Tendermint-style light client.
+The resulting decision is represented as a deterministic score plus hard acceptance thresholds, and that accepted block is then used as the height at which the Cardano `HostState` commitment root is authenticated for IBC.
 
-It does implement a full IBC 02-client shape in the ibc-go v10 sense:
+This client is NOT equivalent to BFT finality, and it is NOT equivalent to a Tendermint-style light client. But it is certainly a superior solution in terms of UX, while attaining comparable levels of security. 
+
+It implements an IBC 02-client shape in the `ibc-go` v10 sense, meaning:
 
 - custom `ClientState`
 - custom `ConsensusState`
@@ -22,11 +24,13 @@ It does implement a full IBC 02-client shape in the ibc-go v10 sense:
 - Hermes-side type plumbing
 - Gateway support for latest height / new client / header queries
 
-But its security model is still probabilistic. If the heuristic accepts a Cardano fork that is later rolled back, standard IBC gives no clean way to rewind the counterparty state that already acted on that proof. So this should be understood as an experimental fast-settlement client, not as “true Cardano finality”.
+But the security model is still probabilistic and not based around finality. If the heuristic accepts a Cardano fork that is later rolled back, standard IBC gives no clean way to rewind the counterparty state that already acted on that proof, and to be clear that is not something Mithril solved either. So at the time of writing, this should be understood as an experimental fast-settlement client, which could at some point be tuned further closer to finality, but not as “true Cardano finality”. When Cardano finality times do reach <5 minutes, this style of light client should be well positioned to benefit from that.
 
-## Motivation
+## Move from Mithril
 
-The Mithril client is currently the canonical Cardano IBC client in this repo because Mithril provides a portable cryptographic artifact that the counterparty chain can verify on-chain. The practical downside is latency: Mithril certification lags the Cardano tip and is produced at a cadence that is acceptable for checkpointing and fast bootstrap, but often poor for IBC UX.
+The Mithril client is currently the main Cardano IBC client in this repo because Mithril provides a portable cryptographic artifact that the counterparty chain can verify on-chain. 
+
+The practical downside is latency: Mithril certification lags the Cardano tip and is produced at a cadence that is acceptable for checkpointing and fast bootstrap, but bad for IBC UX.
 
 The stability-scored client explores a different tradeoff:
 
@@ -34,10 +38,11 @@ The stability-scored client explores a different tradeoff:
 - no dependence on Mithril services
 - acceptance based on raw Cardano chain history plus a stake-weighted heuristic
 
-That tradeoff comes with weaker semantics:
+That tradeoff comes with some weaker semantics:
 
-- no cryptographic finality certificate
-- no clean rollback recovery if the heuristic is wrong
+- no cryptographic "finality" certificate (a mithril certificate is not finality)
+- no clean rollback recovery in standard IBC if accepted Cardano history is later rolled back
+- a weaker trust anchor than Mithril, because acceptance is based on a heuristic over block history and stake observations rather than a Mithril certificate chain
 - more operational dependence on the quality of the block-history and epoch-stake data source
 
 ## High-Level Model
