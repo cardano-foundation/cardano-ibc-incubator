@@ -25,7 +25,6 @@ import {
 import {
   ClientState as ClientStateStability,
   ConsensusState as ConsensusStateStability,
-  HeuristicParams,
   StabilityBlock,
   StabilityHeader,
   StakeDistributionEntry,
@@ -116,14 +115,12 @@ import {
 import { Denom, Hop } from '@plus/proto-types/build/ibc/applications/transfer/v1/token';
 import { DenomTraceService } from './denom-trace.service';
 import { convertHex2String } from '@shared/helpers/hex';
-import { HISTORY_SERVICE, HistoryBlock, HistoryService, HistoryStakeDistributionEntry } from './history.service';
+import { HISTORY_SERVICE, HistoryBlock, HistoryService } from './history.service';
 import { resolveProofHeightForCurrentRoot } from './proof-context';
 import {
-  assertStabilityThresholds,
-  computeStabilityMetrics,
-  getStabilityHeuristicParams,
-  scoreDescendantBlocks,
-} from './stability-scoring';
+  loadStakeWeightedStabilityEvidenceByHeight,
+  loadStakeWeightedStabilityEvidenceForTxHash,
+} from './stability-evidence';
 
 type ParsedTxRedeemer = {
   type: string;
@@ -402,20 +399,11 @@ export class QueryService {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
 
-    const anchorBlock = await this.historyService.findBlockByHeight(BigInt(height));
-    if (!anchorBlock) {
-      throw new GrpcNotFoundException(`Not found: "height" ${height} not found`);
-    }
-
-    const heuristicParams = getStabilityHeuristicParams();
-    const descendants = await this.historyService.findDescendantBlocks(
-      BigInt(height),
-      Number(heuristicParams.target_depth || heuristicParams.min_depth || 24n),
-    );
-    const epochStakeDistribution = await this.historyService.findEpochStakeDistribution(anchorBlock.epochNo);
-    const scoredDescendants = scoreDescendantBlocks(descendants, epochStakeDistribution, this.logger);
-    const metrics = computeStabilityMetrics(scoredDescendants, epochStakeDistribution, heuristicParams);
-    assertStabilityThresholds(metrics, heuristicParams, height.toString(), scoredDescendants.length);
+    const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
+      historyService: this.historyService,
+      height: BigInt(height),
+      logger: this.logger,
+    });
 
     const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(height));
     if (!hostStateUtxo?.datum) {
@@ -429,22 +417,22 @@ export class QueryService {
       chain_id: this.configService.get('cardanoChainId'),
       latest_height: {
         revision_number: 0n,
-        revision_height: BigInt(anchorBlock.height),
+        revision_height: stabilityEvidence.anchorHeight,
       },
       frozen_height: {
         revision_number: 0n,
         revision_height: 0n,
       },
-      current_epoch: BigInt(anchorBlock.epochNo),
+      current_epoch: BigInt(stabilityEvidence.anchorEpoch),
       trusting_period: {
         seconds: 86_400n,
         nanos: 0,
       },
-      heuristic_params: heuristicParams,
+      heuristic_params: stabilityEvidence.heuristicParams,
       upgrade_path: [],
       host_state_nft_policy_id: Buffer.from(this.configService.get('deployment').hostStateNFT.policyId, 'hex'),
       host_state_nft_token_name: Buffer.from(this.configService.get('deployment').hostStateNFT.name, 'hex'),
-      epoch_stake_distribution: epochStakeDistribution.map(
+      epoch_stake_distribution: stabilityEvidence.epochStakeDistribution.map(
         (entry): StakeDistributionEntry => ({
           pool_id: entry.poolId,
           stake: entry.stake,
@@ -453,13 +441,13 @@ export class QueryService {
     };
 
     const consensusStateStability: ConsensusStateStability = {
-      timestamp: anchorBlock.timestampUnixNs,
+      timestamp: stabilityEvidence.anchorBlock.timestampUnixNs,
       ibc_state_root: hostStateRootBytes,
-      accepted_block_hash: anchorBlock.hash,
-      accepted_epoch: BigInt(anchorBlock.epochNo),
-      unique_pools_count: BigInt(metrics.uniquePoolsCount),
-      unique_stake_bps: BigInt(metrics.uniqueStakeBps),
-      security_score_bps: BigInt(metrics.securityScoreBps),
+      accepted_block_hash: stabilityEvidence.anchorBlock.hash,
+      accepted_epoch: BigInt(stabilityEvidence.anchorEpoch),
+      unique_pools_count: BigInt(stabilityEvidence.metrics.uniquePoolsCount),
+      unique_stake_bps: BigInt(stabilityEvidence.metrics.uniqueStakeBps),
+      security_score_bps: BigInt(stabilityEvidence.metrics.securityScoreBps),
     };
 
     return {
@@ -493,27 +481,15 @@ export class QueryService {
 
   async latestStabilityHeight(): Promise<QueryLatestHeightResponse> {
     const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
-    const txEvidence = await this.historyService.findTransactionEvidenceByHash(hostStateUtxo.txHash);
-    if (!txEvidence) {
-      throw new GrpcInternalException('HostState transaction evidence unavailable for stability latest height');
-    }
+    const stabilityEvidence = await loadStakeWeightedStabilityEvidenceForTxHash({
+      historyService: this.historyService,
+      txHash: hostStateUtxo.txHash,
+      logger: this.logger,
+      missingTxEvidenceMessage: 'HostState transaction evidence unavailable for stability latest height',
+      missingAnchorBlockMessage: `Cardano history block for HostState tx ${hostStateUtxo.txHash} unavailable for stability latest height`,
+    });
 
-    const anchorBlock = await this.historyService.findBlockByHeight(BigInt(txEvidence.blockNo));
-    if (!anchorBlock) {
-      throw new GrpcInternalException(`Cardano history block ${txEvidence.blockNo} unavailable for stability latest height`);
-    }
-
-    const heuristicParams = getStabilityHeuristicParams();
-    const descendants = await this.historyService.findDescendantBlocks(
-      BigInt(anchorBlock.height),
-      Number(heuristicParams.target_depth || heuristicParams.min_depth || 24n),
-    );
-    const epochStakeDistribution = await this.historyService.findEpochStakeDistribution(anchorBlock.epochNo);
-    const scoredDescendants = scoreDescendantBlocks(descendants, epochStakeDistribution, this.logger);
-    const metrics = computeStabilityMetrics(scoredDescendants, epochStakeDistribution, heuristicParams);
-    assertStabilityThresholds(metrics, heuristicParams, anchorBlock.height.toString(), scoredDescendants.length);
-
-    return { height: BigInt(anchorBlock.height) } as QueryLatestHeightResponse;
+    return { height: stabilityEvidence.anchorHeight } as QueryLatestHeightResponse;
   }
 
   private async getHandlerDatum(): Promise<HandlerDatum> {
@@ -1518,20 +1494,11 @@ export class QueryService {
       throw new GrpcInvalidArgumentException('Invalid argument: "height" must be provided');
     }
 
-    const anchorBlock = await this.historyService.findBlockByHeight(BigInt(height));
-    if (!anchorBlock) {
-      throw new GrpcNotFoundException(`Not found: "height" ${height} not found`);
-    }
-
-    const heuristicParams = getStabilityHeuristicParams();
-    const descendants = await this.historyService.findDescendantBlocks(
-      BigInt(height),
-      Number(heuristicParams.target_depth || heuristicParams.min_depth || 24n),
-    );
-    const epochStakeDistribution = await this.historyService.findEpochStakeDistribution(anchorBlock.epochNo);
-    const scoredDescendants = scoreDescendantBlocks(descendants, epochStakeDistribution, this.logger);
-    const metrics = computeStabilityMetrics(scoredDescendants, epochStakeDistribution, heuristicParams);
-    assertStabilityThresholds(metrics, heuristicParams, height.toString(), scoredDescendants.length);
+    const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
+      historyService: this.historyService,
+      height: BigInt(height),
+      logger: this.logger,
+    });
 
     const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(height));
     const hostStateTxBodyCbor = await this.miniProtocalsService.fetchTransactionBodyCbor(hostStateUtxo.txHash);
@@ -1539,16 +1506,18 @@ export class QueryService {
     const stabilityHeader: StabilityHeader = {
       trusted_height: {
         revision_number: 0n,
-        revision_height: BigInt(Math.max(0, anchorBlock.height - 1)),
+        revision_height: BigInt(Math.max(0, stabilityEvidence.anchorBlock.height - 1)),
       },
-      anchor_block: this.toStabilityBlock(anchorBlock, metrics.poolStakeBpsByPool),
-      descendant_blocks: scoredDescendants.map((block) => this.toStabilityBlock(block, metrics.poolStakeBpsByPool)),
+      anchor_block: this.toStabilityBlock(stabilityEvidence.anchorBlock, stabilityEvidence.metrics.poolStakeBpsByPool),
+      descendant_blocks: stabilityEvidence.descendantBlocks.map((block) =>
+        this.toStabilityBlock(block, stabilityEvidence.metrics.poolStakeBpsByPool),
+      ),
       host_state_tx_hash: hostStateUtxo.txHash,
       host_state_tx_body_cbor: hostStateTxBodyCbor,
       host_state_tx_output_index: hostStateUtxo.outputIndex,
-      unique_pools_count: BigInt(metrics.uniquePoolsCount),
-      unique_stake_bps: BigInt(metrics.uniqueStakeBps),
-      security_score_bps: BigInt(metrics.securityScoreBps),
+      unique_pools_count: BigInt(stabilityEvidence.metrics.uniquePoolsCount),
+      unique_stake_bps: BigInt(stabilityEvidence.metrics.uniqueStakeBps),
+      security_score_bps: BigInt(stabilityEvidence.metrics.securityScoreBps),
     };
 
     return {

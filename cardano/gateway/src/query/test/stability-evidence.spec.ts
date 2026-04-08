@@ -1,0 +1,112 @@
+import { Logger } from '@nestjs/common';
+import { HistoryService } from '../services/history.service';
+import {
+  loadStakeWeightedStabilityEvidenceByHeight,
+  loadStakeWeightedStabilityEvidenceForTxHash,
+} from '../services/stability-evidence';
+import { getStabilityHeuristicParams } from '../services/stability-scoring';
+
+describe('stability-evidence', () => {
+  const heuristicParams = getStabilityHeuristicParams({
+    CARDANO_STABILITY_MIN_DEPTH: '3',
+    CARDANO_STABILITY_MIN_UNIQUE_POOLS: '2',
+    CARDANO_STABILITY_MIN_UNIQUE_STAKE_BPS: '6000',
+    CARDANO_STABILITY_TARGET_DEPTH: '3',
+    CARDANO_STABILITY_TARGET_UNIQUE_POOLS: '3',
+    CARDANO_STABILITY_TARGET_UNIQUE_STAKE_BPS: '7000',
+  } as NodeJS.ProcessEnv);
+
+  const anchorBlock = {
+    height: 100,
+    hash: 'anchor-hash',
+    prevHash: 'anchor-prev',
+    slotNo: 1000n,
+    epochNo: 7,
+    timestampUnixNs: 1_000_000_000n,
+    slotLeader: 'pool-a',
+  };
+
+  const descendantBlocks = [
+    {
+      height: 101,
+      hash: 'hash-101',
+      prevHash: 'anchor-hash',
+      slotNo: 1010n,
+      epochNo: 7,
+      timestampUnixNs: 1_100_000_000n,
+      slotLeader: 'pool-a',
+    },
+    {
+      height: 102,
+      hash: 'hash-102',
+      prevHash: 'hash-101',
+      slotNo: 1020n,
+      epochNo: 7,
+      timestampUnixNs: 1_200_000_000n,
+      slotLeader: 'pool-b',
+    },
+    {
+      height: 103,
+      hash: 'hash-103',
+      prevHash: 'hash-102',
+      slotNo: 1030n,
+      epochNo: 7,
+      timestampUnixNs: 1_300_000_000n,
+      slotLeader: 'pool-c',
+    },
+  ];
+
+  const epochStakeDistribution = [
+    { poolId: 'pool-a', stake: 500n },
+    { poolId: 'pool-b', stake: 300n },
+    { poolId: 'pool-c', stake: 200n },
+  ];
+
+  const historyServiceMock = {
+    findBlockByHeight: jest.fn().mockResolvedValue(anchorBlock),
+    findDescendantBlocks: jest.fn().mockResolvedValue(descendantBlocks),
+    findEpochStakeDistribution: jest.fn().mockResolvedValue(epochStakeDistribution),
+    findTransactionEvidenceByHash: jest.fn().mockResolvedValue({
+      txHash: 'deadbeef',
+      blockNo: 100,
+      txIndex: 0,
+      txCborHex: '01',
+      txBodyCborHex: '02',
+      redeemers: [],
+    }),
+  } as Partial<HistoryService>;
+
+  it('loads a canonical stability evidence object from a height', async () => {
+    const evidence = await loadStakeWeightedStabilityEvidenceByHeight({
+      historyService: historyServiceMock as HistoryService,
+      height: 100n,
+      logger: { warn: jest.fn() } as unknown as Logger,
+      heuristicParams,
+    });
+
+    expect(historyServiceMock.findBlockByHeight).toHaveBeenCalledWith(100n);
+    expect(historyServiceMock.findDescendantBlocks).toHaveBeenCalledWith(100n, 3);
+    expect(historyServiceMock.findEpochStakeDistribution).toHaveBeenCalledWith(7);
+    expect(evidence.anchorHeight).toBe(100n);
+    expect(evidence.anchorEpoch).toBe(7);
+    expect(evidence.anchorBlock).toEqual(anchorBlock);
+    expect(evidence.descendantBlocks).toEqual(descendantBlocks);
+    expect(evidence.metrics.uniquePoolsCount).toBe(3);
+    expect(evidence.metrics.uniqueStakeBps).toBe(10000);
+    expect(evidence.metrics.securityScoreBps).toBe(10000);
+  });
+
+  it('loads the same canonical evidence shape from a host-state tx hash', async () => {
+    const evidence = await loadStakeWeightedStabilityEvidenceForTxHash({
+      historyService: historyServiceMock as HistoryService,
+      txHash: 'deadbeef',
+      logger: { warn: jest.fn() } as unknown as Logger,
+      heuristicParams,
+    });
+
+    expect(historyServiceMock.findTransactionEvidenceByHash).toHaveBeenCalledWith('deadbeef');
+    expect(evidence.hostStateTxEvidence.txHash).toBe('deadbeef');
+    expect(evidence.anchorHeight).toBe(100n);
+    expect(evidence.metrics.uniquePoolsCount).toBe(3);
+  });
+});

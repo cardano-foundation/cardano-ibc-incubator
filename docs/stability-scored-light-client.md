@@ -4,7 +4,7 @@ Author: Julius Tranquilli, https://github.com/floor-licker
 
 Date: April 7, 2026
 
-This document describes the experimental Cardano "stability-weighted" light client. It is implemented in this repo as client type `08-cardano-stability`. It exists as an alternative to the Mithril light client. This model is not positioned as a fast finality model or anything of that nature, rather it tries to heuristically attain faster IBC proofs by making certain risk tradeoffs via a heuristic notion of Cardano settlement. This is because the Mithril light client was effectively non-viable from a UX perspective. For example, Mithril certificates lagged the chain tip by over 100 blocks, so basic IBC operations would end up taking 200+ Cardano blocks.
+This document describes a new Cardano "stability-weighted" light client. It is implemented in this repo as client type `08-cardano-stability`. It exists as an alternative to the Mithril light client. This model is not positioned as a fast finality model or anything of that nature, rather it tries to heuristically attain faster IBC proofs by making certain risk tradeoffs via a heuristic notion of Cardano settlement. This is because the Mithril light client was effectively non-viable from a UX perspective. For example, Mithril certificates lagged the chain tip by over 100 blocks, so basic IBC operations would end up taking 200+ Cardano blocks.
 
 This model is configurable, so the safety of trusting it is entirely dependent on the tuned parameters. Instead of waiting for a Mithril certificate chain, this client:
 
@@ -28,14 +28,13 @@ But the security model is still probabilistic and not based around finality. If 
 
 ## Move from Mithril
 
-The Mithril client is currently the main Cardano IBC client in this repo because Mithril provides a portable cryptographic artifact that the counterparty chain can verify on-chain. 
+The Mithril client is currently the main Cardano IBC client in this repo because Mithril provides a portable cryptographic artifact that the counterparty chain can verify on-chain, and it's also an inherently quorum attested mechanism which is useful for our purposes.
 
-The practical downside is latency: Mithril certification lags the Cardano tip and is produced at a cadence that is acceptable for checkpointing and fast bootstrap, but bad for IBC UX.
+The downside is latency, Mithril certification lags the Cardano tip and is produced at a cadence that is acceptable for checkpointing and fast bootstrap, but bad for IBC UX.
 
 The stability-scored client explores a different tradeoff:
 
 - lower latency
-- no dependence on Mithril services
 - acceptance based on raw Cardano chain history plus a stake-weighted heuristic
 
 That tradeoff comes with some weaker semantics:
@@ -47,7 +46,7 @@ That tradeoff comes with some weaker semantics:
 
 ## High-Level Model
 
-The model starts with an **anchor block** at height `H`. The client then looks at a contiguous descendant window of later Cardano blocks at heights `H+1`, `H+2`, ..., `H+k`.
+The model starts with an anchor block at height `H`. The client then looks at a contiguous descendant window of later Cardano blocks at heights `H+1`, `H+2`, ..., `H+k`.
 
 For those descendants, the client computes:
 
@@ -85,7 +84,7 @@ In the current implementation, the default targets are:
   - `pools_weight_bps = 2000`
   - `stake_weight_bps = 6000`
 
-These defaults are not special from a consensus perspective; they are just the initial policy the Gateway uses when constructing a new client.
+These defaults are not special from a consensus perspective, they are just the initial policy the Gateway uses when constructing a new client.
 
 ## State Model
 
@@ -136,34 +135,9 @@ The `StabilityHeader` carries:
 
 The important thing to notice is that the header does **not** try to prove arbitrary Cardano ledger state. Just like the Mithril path, it is still centered around the Cardano `HostState` transaction/output that contains the `ibc_state_root`.
 
-## What The Gateway Does
-
-Gateway now supports two Cardano light-client modes:
-
-- `mithril`
-- `stability`
-
-The mode is chosen by:
-
-- `CARDANO_LIGHT_CLIENT_MODE`
-
-Use:
-
-- `CARDANO_LIGHT_CLIENT_MODE=mithril`
-- `CARDANO_LIGHT_CLIENT_MODE=stake-weighted-stability`
-
-When set to `stability`, the Gateway changes the semantics of:
-
-- `QueryLatestHeight`
-- `QueryNewClient`
-- `QueryIBCHeader`
-- proof-height resolution for ICS-23 proof-serving endpoints
-
 ### Latest Height
 
-In stability mode, `latestHeight` is no longer “latest Mithril transaction snapshot height”. Instead it means:
-
-> the latest Cardano block height at which the currently live `HostState` root is considered stability-accepted under the configured heuristic.
+In stability mode, `latestHeight` is no longer latest Mithril transaction snapshot height. Instead it means the latest Cardano block height at which the currently live `HostState` root is considered stability-accepted under the configured heuristic.
 
 The Gateway:
 
@@ -273,35 +247,14 @@ Today these are chosen off-chain by the Gateway environment before `QueryNewClie
 
 ## Current Limitations And Open Questions
 
-This branch is intentionally experimental, and there are several limitations that should be called out explicitly.
-
-### 1. This still does not provide true finality
-
-The score is a deterministic heuristic, not a finality certificate. It can be a strong heuristic, but if it is wrong and Cardano later reorganizes, standard IBC has no clean rollback path for the counterparty chain.
-
-### 2. Epoch stake rotation is not fully solved yet
+### 1. Epoch stake rotation is not fully solved yet
 
 The current implementation stores one epoch stake distribution in client state and uses that as the weight basis. A full protocol for rotating or proving the next epoch’s stake distribution across updates is still an open design problem.
 
-### 3. If Gateway cannot load epoch stake distribution, it falls back to equal weights
+### 2. If Gateway cannot load epoch stake distribution, it falls back to equal weights
 
 On the Gateway side, if no epoch stake distribution is available, the current implementation logs a warning and falls back to equal per-pool weights across the observed descendant pools. This is useful for experimentation and local environments, but it is clearly weaker than having a canonical active-stake basis.
 
-### 4. The trust anchor is weaker than Mithril
+### 3. The trust anchor is weaker than Mithril
 
 Mithril gives a portable cryptographic artifact that explicitly certifies a Cardano snapshot. The stability client does not. Instead it relies on relayed raw Cardano history plus a deterministic acceptance rule evaluated on-chain.
-
-### 5. This is not a production recommendation yet
-
-The point of this branch is to make the model concrete enough to evaluate. It is not yet a statement that the bridge should prefer this mode over Mithril in production.
-
-## Practical Interpretation
-
-The stability-scored client should be thought of as:
-
-- a full IBC light client implementation structurally
-- a probabilistic settlement model semantically
-- a lower-latency alternative to Mithril for experimentation
-- a mechanism for measuring what a “fast but dangerous” Cardano IBC path would actually look like in code
-
-It is useful precisely because it makes the tradeoff explicit. Instead of vaguely saying “maybe we could just wait a few blocks”, this client turns that idea into a concrete protocol object with defined parameters, verification logic, and observable score outputs.
