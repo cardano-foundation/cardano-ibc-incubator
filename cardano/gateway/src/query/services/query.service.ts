@@ -232,7 +232,8 @@ export class QueryService {
       mithrilService: this.mithrilService,
       historyService: this.historyService,
       context,
-      lightClientMode: this.configService.get<'mithril' | 'stability'>('cardanoLightClientMode') || 'mithril',
+      lightClientMode:
+        this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril',
     });
   }
 
@@ -389,7 +390,7 @@ export class QueryService {
   }
 
   async queryNewClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse> {
-    if (this.getLightClientMode() === 'stability') {
+    if (this.getLightClientMode() === 'stake-weighted-stability') {
       return this.queryNewStabilityClient(request);
     }
     return this.queryNewMithrilClient(request);
@@ -474,7 +475,7 @@ export class QueryService {
   }
 
   async latestHeight(request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
-    if (this.getLightClientMode() === 'stability') {
+    if (this.getLightClientMode() === 'stake-weighted-stability') {
       return this.latestStabilityHeight();
     }
 
@@ -1287,7 +1288,7 @@ export class QueryService {
   async queryIBCHeader(request: QueryIBCHeaderRequest): Promise<QueryIBCHeaderResponse> {
     this.logger.log(`height = ${request.height}`, 'queryIBCHeader');
 
-    if (this.getLightClientMode() === 'stability') {
+    if (this.getLightClientMode() === 'stake-weighted-stability') {
       return this.queryStabilityIBCHeader(request);
     }
 
@@ -1593,8 +1594,10 @@ export class QueryService {
     }
   }
 
-  private getLightClientMode(): 'mithril' | 'stability' {
-    return this.configService.get<'mithril' | 'stability'>('cardanoLightClientMode') || 'mithril';
+  private getLightClientMode(): 'mithril' | 'stake-weighted-stability' {
+    return (
+      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril'
+    );
   }
 
   private toStabilityBlock(block: HistoryBlock, poolStakeBpsByPool: Record<string, bigint>): StabilityBlock {

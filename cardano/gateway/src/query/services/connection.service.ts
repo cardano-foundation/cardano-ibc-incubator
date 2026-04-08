@@ -67,7 +67,8 @@ export class ConnectionService {
         mithrilService: this.mithrilService,
         historyService: this.historyService,
         context: 'queryConnection',
-        lightClientMode: this.configService.get<'mithril' | 'stability'>('cardanoLightClientMode') || 'mithril',
+        lightClientMode:
+          this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril',
       });
       return height > 0n ? height : 1n;
     } catch {
@@ -211,7 +212,8 @@ export class ConnectionService {
         mithrilService: this.mithrilService,
         historyService: this.historyService,
         context: 'queryConnection',
-        lightClientMode: this.configService.get<'mithril' | 'stability'>('cardanoLightClientMode') || 'mithril',
+        lightClientMode:
+          this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril',
       });
 
       await this.ensureTreeAligned();

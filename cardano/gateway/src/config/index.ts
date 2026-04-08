@@ -77,7 +77,7 @@ interface Config {
   // Logical identifier for the Cardano chain used by Hermes (e.g., "cardano-devnet").
   // Cardano itself does not have a Cosmos-style chain-id; we use this as the IBC identifier.
   cardanoChainId: string;
-  cardanoLightClientMode: 'mithril' | 'stability';
+  cardanoLightClientMode: 'mithril' | 'stake-weighted-stability';
   cardanoNetwork: Network;
   cardanoEpochNonceGenesis: string;
 
@@ -107,7 +107,9 @@ export default (): Partial<Config> => {
     cardanoChainNetworkMagic: Number(process.env.CARDANO_CHAIN_NETWORK_MAGIC || 42),
     cardanoChainId: process.env.CARDANO_CHAIN_ID || 'cardano-devnet',
     cardanoLightClientMode:
-      process.env.CARDANO_LIGHT_CLIENT_MODE === 'stability' ? 'stability' : 'mithril',
+      process.env.CARDANO_LIGHT_CLIENT_MODE === 'stake-weighted-stability'
+        ? 'stake-weighted-stability'
+        : 'mithril',
     cardanoNetwork: cardanoNetwork,
     cardanoEpochNonceGenesis: process.env.CARDANO_EPOCH_NONCE_GENESIS,
 

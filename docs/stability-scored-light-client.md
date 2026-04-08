@@ -142,6 +142,11 @@ The mode is chosen by:
 
 - `CARDANO_LIGHT_CLIENT_MODE`
 
+Use:
+
+- `CARDANO_LIGHT_CLIENT_MODE=mithril`
+- `CARDANO_LIGHT_CLIENT_MODE=stake-weighted-stability`
+
 When set to `stability`, the Gateway changes the semantics of:
 
 - `QueryLatestHeight`

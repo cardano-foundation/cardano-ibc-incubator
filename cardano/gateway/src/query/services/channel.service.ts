@@ -69,7 +69,8 @@ export class ChannelService {
       mithrilService: this.mithrilService,
       historyService: this.historyService,
       context: 'queryChannel',
-      lightClientMode: this.configService.get<'mithril' | 'stability'>('cardanoLightClientMode') || 'mithril',
+      lightClientMode:
+        this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril',
     });
   }
 

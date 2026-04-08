@@ -17,7 +17,7 @@ type ProofContextDeps = {
   mithrilService: MithrilService;
   historyService: HistoryService;
   context: string;
-  lightClientMode?: 'mithril' | 'stability';
+  lightClientMode?: 'mithril' | 'stake-weighted-stability';
   maxAttempts?: number;
   delayMs?: number;
 };
@@ -36,7 +36,7 @@ export async function resolveProofHeightForCurrentRoot({
   maxAttempts = 10,
   delayMs = 1500,
 }: ProofContextDeps): Promise<bigint> {
-  if (lightClientMode === 'stability') {
+  if (lightClientMode === 'stake-weighted-stability') {
     return resolveStabilityAcceptedProofHeightForCurrentRoot({
       logger,
       lucidService,

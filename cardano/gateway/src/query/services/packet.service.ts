@@ -81,7 +81,8 @@ export class PacketService {
       mithrilService: this.mithrilService,
       historyService: this.historyService,
       context: 'queryPacketProof',
-      lightClientMode: this.configService.get<'mithril' | 'stability'>('cardanoLightClientMode') || 'mithril',
+      lightClientMode:
+        this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril',
     });
   }
 
