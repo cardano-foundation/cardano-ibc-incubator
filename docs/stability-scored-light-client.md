@@ -280,10 +280,14 @@ The current implementation stores one epoch stake distribution in client state a
 
 The current implementation stores one epoch stake distribution in client state and rejects bridge/anchor/descendant windows that cross into a different epoch. That avoids reintroducing an off-chain epoch-stake oracle into the update path, but it also means epoch rollover currently requires operational handling rather than seamless in-client evolution.
 
-### 3. This is still not full native Ouroboros verification
+### 3. Missing epoch stake data now fails closed
+
+The current implementation no longer falls back to equal weights or relayed `stake_bps` values when epoch stake data is missing. Gateway refuses to construct stability evidence without a non-empty epoch stake snapshot, and the Cosmos-side verifier rejects any client or update whose `epoch_stake_distribution` is empty or has zero total stake.
+
+### 4. This is still not full native Ouroboros verification
 
 The current implementation authenticates raw Cardano block witnesses well enough to stop trusting normalized history rows as ground truth, but it still does not verify the full Ouroboros rule set on-chain. In particular, epoch stake rotation, leader-eligibility verification across epochs, and other native consensus details remain future work.
 
-### 4. The trust anchor is still weaker than Mithril
+### 5. The trust anchor is still weaker than Mithril
 
 Mithril gives a portable cryptographic artifact that explicitly certifies a Cardano snapshot. The stability client does not. Instead it relies on authenticated raw Cardano block witnesses plus a deterministic acceptance rule evaluated on-chain.

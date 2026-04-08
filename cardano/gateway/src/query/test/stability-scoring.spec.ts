@@ -76,4 +76,22 @@ describe('stability-scoring', () => {
       assertStabilityThresholds(metrics, heuristicParams, '200', descendants.length),
     ).toThrow('stability thresholds not met');
   });
+
+  it('fails closed when epoch stake distribution is missing', () => {
+    const heuristicParams = getStabilityHeuristicParams({
+      CARDANO_STABILITY_THRESHOLD_DEPTH: '3',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS: '2',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: '6000',
+    } as NodeJS.ProcessEnv);
+
+    const descendants = [
+      makeBlock(301, 'anchor', 'pool-a'),
+      makeBlock(302, 'hash-301', 'pool-b'),
+      makeBlock(303, 'hash-302', 'pool-c'),
+    ];
+
+    expect(() => computeStabilityMetrics(descendants, [], heuristicParams)).toThrow(
+      'epoch stake distribution unavailable',
+    );
+  });
 });

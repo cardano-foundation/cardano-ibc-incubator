@@ -31,13 +31,13 @@ func NewClientState(
 ) *ClientState {
 	zeroHeight := ZeroHeight()
 	return &ClientState{
-		ChainId:          chainID,
-		LatestHeight:     latestHeight,
-		FrozenHeight:     &zeroHeight,
-		CurrentEpoch:     currentEpoch,
-		TrustingPeriod:   trustingPeriod,
-		HeuristicParams:  heuristicParams,
-		UpgradePath:      upgradePath,
+		ChainId:         chainID,
+		LatestHeight:    latestHeight,
+		FrozenHeight:    &zeroHeight,
+		CurrentEpoch:    currentEpoch,
+		TrustingPeriod:  trustingPeriod,
+		HeuristicParams: heuristicParams,
+		UpgradePath:     upgradePath,
 	}
 }
 
@@ -107,17 +107,27 @@ func (cs ClientState) Validate() error {
 	if cs.HeuristicParams.DepthWeightBps+cs.HeuristicParams.PoolsWeightBps+cs.HeuristicParams.StakeWeightBps != 10_000 {
 		return errorsmod.Wrapf(ErrInvalidHeuristicParams, "heuristic weights must sum to 10000 bps")
 	}
+	if len(cs.EpochStakeDistribution) == 0 {
+		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch stake distribution must not be empty")
+	}
+	totalStake := uint64(0)
+	for _, entry := range cs.EpochStakeDistribution {
+		totalStake += entry.Stake
+	}
+	if totalStake == 0 {
+		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch stake distribution must have positive total stake")
+	}
 	return nil
 }
 
 func (cs ClientState) ZeroCustomFields() exported.ClientState {
 	return &ClientState{
-		ChainId:               cs.ChainId,
-		LatestHeight:          cs.LatestHeight,
-		UpgradePath:           cs.UpgradePath,
-		HostStateNftPolicyId:  cs.HostStateNftPolicyId,
-		HostStateNftTokenName: cs.HostStateNftTokenName,
-		HeuristicParams:       cs.HeuristicParams,
+		ChainId:                cs.ChainId,
+		LatestHeight:           cs.LatestHeight,
+		UpgradePath:            cs.UpgradePath,
+		HostStateNftPolicyId:   cs.HostStateNftPolicyId,
+		HostStateNftTokenName:  cs.HostStateNftTokenName,
+		HeuristicParams:        cs.HeuristicParams,
 		EpochStakeDistribution: cs.EpochStakeDistribution,
 	}
 }

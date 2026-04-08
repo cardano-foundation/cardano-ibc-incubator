@@ -10,6 +10,24 @@ export type StabilityMetrics = {
   poolStakeBpsByPool: Record<string, bigint>;
 };
 
+export function assertEpochStakeDistributionAvailable(
+  epochStakeDistribution: HistoryStakeDistributionEntry[],
+  context: string,
+): void {
+  if (epochStakeDistribution.length === 0) {
+    throw new GrpcNotFoundException(
+      `Not found: epoch stake distribution unavailable for ${context}`,
+    );
+  }
+
+  const totalStake = epochStakeDistribution.reduce((sum, entry) => sum + entry.stake, 0n);
+  if (totalStake <= 0n) {
+    throw new GrpcNotFoundException(
+      `Not found: epoch stake distribution has zero total stake for ${context}`,
+    );
+  }
+}
+
 export function getStabilityHeuristicParams(env: NodeJS.ProcessEnv = process.env): HeuristicParams {
   const getBigInt = (name: string, fallback: bigint) => {
     const value = env[name];
@@ -31,12 +49,8 @@ export function scoreDescendantBlocks(
   epochStakeDistribution: HistoryStakeDistributionEntry[],
   logger?: Logger,
 ): HistoryBlock[] {
-  if (epochStakeDistribution.length === 0 && descendants.some((block) => block.slotLeader)) {
-    const distinctPools = [...new Set(descendants.map((block) => block.slotLeader).filter(Boolean))];
-    logger?.warn(
-      `No epoch stake distribution available for stability scoring; falling back to equal weights across ${distinctPools.length} observed pools`,
-    );
-  }
+  void logger;
+  assertEpochStakeDistributionAvailable(epochStakeDistribution, 'stake-weighted stability scoring');
 
   return descendants;
 }
@@ -46,12 +60,11 @@ export function computeStabilityMetrics(
   epochStakeDistribution: HistoryStakeDistributionEntry[],
   heuristicParams: HeuristicParams,
 ): StabilityMetrics {
+  assertEpochStakeDistributionAvailable(epochStakeDistribution, 'stake-weighted stability scoring');
+
   const uniquePools = new Set<string>();
   const stakeByPool = new Map(epochStakeDistribution.map((entry) => [entry.poolId, entry.stake]));
   const totalStake = epochStakeDistribution.reduce((sum, entry) => sum + entry.stake, 0n);
-  const distinctPools = [...new Set(descendants.map((block) => block.slotLeader).filter(Boolean))];
-  const fallbackStakeBpsPerPool =
-    epochStakeDistribution.length === 0 && distinctPools.length > 0 ? 10_000n / BigInt(distinctPools.length) : 0n;
 
   const poolStakeBpsByPool: Record<string, bigint> = {};
   let uniqueStakeBps = 0n;
@@ -62,12 +75,7 @@ export function computeStabilityMetrics(
     }
 
     uniquePools.add(descendant.slotLeader);
-    let stakeBps = 0n;
-    if (totalStake > 0n) {
-      stakeBps = ((stakeByPool.get(descendant.slotLeader) || 0n) * 10_000n) / totalStake;
-    } else {
-      stakeBps = fallbackStakeBpsPerPool;
-    }
+    const stakeBps = ((stakeByPool.get(descendant.slotLeader) || 0n) * 10_000n) / totalStake;
 
     poolStakeBpsByPool[descendant.slotLeader] = stakeBps;
     uniqueStakeBps += stakeBps;

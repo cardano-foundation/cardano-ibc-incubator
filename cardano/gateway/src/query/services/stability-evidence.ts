@@ -11,6 +11,7 @@ import {
   HistoryTxEvidence,
 } from './history.service';
 import {
+  assertEpochStakeDistributionAvailable,
   assertStabilityThresholds,
   computeStabilityMetrics,
   getStabilityHeuristicParams,
@@ -99,6 +100,10 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
     Number(heuristicParams.threshold_depth || 24n),
   );
   const epochStakeDistribution = await historyService.findEpochStakeDistribution(anchorBlock.epochNo);
+  assertEpochStakeDistributionAvailable(
+    epochStakeDistribution,
+    `anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
+  );
   const scoredDescendantBlocks = scoreDescendantBlocks(descendantBlocks, epochStakeDistribution, logger);
   assertBlocksRemainInEpoch(
     scoredDescendantBlocks,

@@ -162,4 +162,18 @@ describe('stability-evidence', () => {
       }),
     ).rejects.toThrow('crosses epoch boundary');
   });
+
+  it('fails closed when epoch stake distribution is unavailable', async () => {
+    historyServiceMock.findDescendantBlocks = jest.fn().mockResolvedValue(descendantBlocks);
+    historyServiceMock.findEpochStakeDistribution = jest.fn().mockResolvedValue([]);
+
+    await expect(
+      loadStakeWeightedStabilityEvidenceByHeight({
+        historyService: historyServiceMock as HistoryService,
+        height: 100n,
+        logger: { warn: jest.fn() } as unknown as Logger,
+        heuristicParams,
+      }),
+    ).rejects.toThrow('epoch stake distribution unavailable');
+  });
 });

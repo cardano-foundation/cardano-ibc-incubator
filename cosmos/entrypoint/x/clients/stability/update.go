@@ -153,9 +153,16 @@ func (cs *ClientState) computeHeaderSecurityMetrics(header *StabilityHeader) (ui
 	totalStake := uint64(0)
 	stakeByPool := make(map[string]uint64)
 
+	if len(cs.EpochStakeDistribution) == 0 {
+		return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "epoch stake distribution must not be empty")
+	}
+
 	for _, entry := range cs.EpochStakeDistribution {
 		stakeByPool[entry.PoolId] = entry.Stake
 		totalStake += entry.Stake
+	}
+	if totalStake == 0 {
+		return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "epoch stake distribution must have positive total stake")
 	}
 
 	prevHash := header.AnchorBlock.Hash
@@ -175,11 +182,7 @@ func (cs *ClientState) computeHeaderSecurityMetrics(header *StabilityHeader) (ui
 			if _, exists := seenPools[block.SlotLeader]; !exists {
 				seenPools[block.SlotLeader] = struct{}{}
 				uniquePools++
-				if totalStake > 0 {
-					uniqueStake += stakeByPool[block.SlotLeader]
-				} else {
-					uniqueStake += min(block.StakeBps, 10_000)
-				}
+				uniqueStake += stakeByPool[block.SlotLeader]
 			}
 		}
 
@@ -188,11 +191,7 @@ func (cs *ClientState) computeHeaderSecurityMetrics(header *StabilityHeader) (ui
 	}
 
 	uniqueStakeBps := uint64(0)
-	if totalStake > 0 {
-		uniqueStakeBps = min((uniqueStake*10_000)/totalStake, 10_000)
-	} else {
-		uniqueStakeBps = min(uniqueStake, 10_000)
-	}
+	uniqueStakeBps = min((uniqueStake*10_000)/totalStake, 10_000)
 
 	score := cs.computeSecurityScore(uint64(len(header.DescendantBlocks)), uniquePools, uniqueStakeBps)
 	return uniquePools, uniqueStakeBps, score, nil
