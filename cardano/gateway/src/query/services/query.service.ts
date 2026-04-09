@@ -1559,9 +1559,6 @@ export class QueryService {
       host_state_tx_hash: hostStateUtxo.txHash,
       host_state_tx_body_cbor: hostStateTxBodyCbor,
       host_state_tx_output_index: hostStateUtxo.outputIndex,
-      unique_pools_count: BigInt(stabilityEvidence.metrics.uniquePoolsCount),
-      unique_stake_bps: BigInt(stabilityEvidence.metrics.uniqueStakeBps),
-      security_score_bps: BigInt(stabilityEvidence.metrics.securityScoreBps),
     };
 
     return {
@@ -1647,10 +1644,8 @@ export class QueryService {
       },
       slot: block.slotNo,
       hash: block.hash,
-      prev_hash: block.prevHash,
       epoch: BigInt(block.epochNo),
       timestamp: this.deriveStabilityTimestampNs(block.slotNo),
-      slot_leader: block.slotLeader,
       block_cbor: blockCbor,
     };
   }

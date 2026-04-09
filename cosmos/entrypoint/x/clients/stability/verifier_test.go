@@ -22,28 +22,27 @@ import (
 )
 
 func TestVerifyBridgeContinuityRejectsBadPrevHash(t *testing.T) {
-	header := &StabilityHeader{
-		TrustedHeight: &Height{RevisionHeight: 10},
-		BridgeBlocks: []*StabilityBlock{
-			{
-				Height:   &Height{RevisionHeight: 11},
-				Hash:     "bridge-11",
-				PrevHash: "wrong-prev",
-			},
-		},
-		AnchorBlock: &StabilityBlock{
-			Height:   &Height{RevisionHeight: 12},
-			Hash:     "anchor-12",
-			PrevHash: "bridge-11",
-		},
-	}
 	trustedConsensus := &ConsensusState{
 		Timestamp:         uint64(time.Now().UnixNano()),
 		IbcStateRoot:      bytes.Repeat([]byte{0x01}, 32),
 		AcceptedBlockHash: "trusted-hash",
 	}
+	authenticatedHeader := &authenticatedStabilityHeader{
+		bridgeBlocks: []*authenticatedStabilityBlock{
+			{
+				height:   11,
+				hash:     "bridge-11",
+				prevHash: "wrong-prev",
+			},
+		},
+		anchorBlock: &authenticatedStabilityBlock{
+			height:   12,
+			hash:     "anchor-12",
+			prevHash: "bridge-11",
+		},
+	}
 
-	err := verifyBridgeContinuity(header, trustedConsensus)
+	err := verifyBridgeContinuity(&Height{RevisionHeight: 10}, authenticatedHeader, trustedConsensus)
 	require.ErrorContains(t, err, "does not connect to trusted chain")
 }
 
@@ -61,13 +60,6 @@ func TestAuthenticateStabilityBlockRejectsMismatchedClaims(t *testing.T) {
 				block.Hash = "deadbeef"
 			},
 			want: "block hash mismatch",
-		},
-		{
-			name: "prev hash mismatch",
-			mutate: func(block *StabilityBlock) {
-				block.PrevHash = "deadbeef"
-			},
-			want: "block prev_hash mismatch",
 		},
 		{
 			name: "height mismatch",
@@ -97,10 +89,21 @@ func TestAuthenticateStabilityBlockRejectsMismatchedClaims(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			block := cloneTestStabilityBlock(valid)
 			tc.mutate(block)
-			err := cs.authenticateStabilityBlock(block, "anchor")
+			_, err := cs.authenticateStabilityBlock(block, "anchor")
 			require.ErrorContains(t, err, tc.want)
 		})
 	}
+}
+
+func TestAuthenticateStabilityBlockDoesNotMutateInput(t *testing.T) {
+	cs := newStabilityTestClientState()
+	block := makeTestStabilityBlock(t, 21, 210, hex.EncodeToString(bytes.Repeat([]byte{0x22}, 32)))
+	block.Hash = "deadbeef"
+	clone := cloneTestStabilityBlock(block)
+
+	_, err := cs.authenticateStabilityBlock(block, "anchor")
+	require.Error(t, err)
+	require.Equal(t, clone, block)
 }
 
 func TestVerifyHostStateTxIncludedInAnchorBlockRejectsMissingTx(t *testing.T) {
@@ -130,11 +133,11 @@ func TestVerifyHeaderRejectsCrossEpochBlock(t *testing.T) {
 	cs := newStabilityTestClientState()
 
 	header := newVerifiedTestHeader(t)
-	setConsensusState(clientStore, cdc, newStabilityTestConsensusState(header.BridgeBlocks[0].PrevHash), NewHeight(0, 10))
-	header.AnchorBlock.Epoch = cs.CurrentEpoch + 1
+	setConsensusState(clientStore, cdc, newStabilityTestConsensusState(mustTestBlockPrevHash(t, header.BridgeBlocks[0])), NewHeight(0, 10))
+	header.AnchorBlock = makeTestStabilityBlock(t, 12, cs.CurrentEpochEndSlotExclusive, header.BridgeBlocks[0].Hash)
 
 	err := cs.verifyHeader(sdk.Context{}, clientStore, cdc, header)
-	require.ErrorContains(t, err, "epoch mismatch")
+	require.ErrorContains(t, err, "outside trusted epoch slot bounds")
 }
 
 func TestVerifyHeaderRejectsTrustedHeightOlderThanLatestHeight(t *testing.T) {
@@ -144,7 +147,7 @@ func TestVerifyHeaderRejectsTrustedHeightOlderThanLatestHeight(t *testing.T) {
 	cs.LatestHeight = NewHeight(0, 11)
 
 	header := newVerifiedTestHeader(t)
-	setConsensusState(clientStore, cdc, newStabilityTestConsensusState(header.BridgeBlocks[0].PrevHash), NewHeight(0, 10))
+	setConsensusState(clientStore, cdc, newStabilityTestConsensusState(mustTestBlockPrevHash(t, header.BridgeBlocks[0])), NewHeight(0, 10))
 	setConsensusState(clientStore, cdc, newStabilityTestConsensusState(header.BridgeBlocks[0].Hash), NewHeight(0, 11))
 
 	err := cs.verifyHeader(sdk.Context{}, clientStore, cdc, header)
@@ -156,7 +159,14 @@ func TestComputeHeaderSecurityMetricsRejectsEmptyEpochStakeDistribution(t *testi
 	cs := newStabilityTestClientState()
 	cs.EpochStakeDistribution = nil
 
-	_, _, _, err := cs.computeHeaderSecurityMetrics(newVerifiedTestHeader(t))
+	authenticatedHeader := &authenticatedStabilityHeader{
+		anchorBlock: &authenticatedStabilityBlock{
+			height: 12,
+			hash:   "anchor-12",
+		},
+	}
+
+	_, _, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader)
 	require.ErrorContains(t, err, "epoch stake distribution must not be empty")
 }
 
@@ -204,14 +214,14 @@ func TestVerifyMisbehaviourDoesNotRequireStoredTargetHeights(t *testing.T) {
 
 	cs := newStabilityTestClientState()
 	header := newVerifiedTestHeader(t)
-	header.AnchorBlock.Epoch = cs.CurrentEpoch + 1
-	setConsensusState(clientStore, cdc, newStabilityTestConsensusState(header.BridgeBlocks[0].PrevHash), NewHeight(0, 10))
+	header.AnchorBlock = makeTestStabilityBlock(t, 12, cs.CurrentEpochEndSlotExclusive, header.BridgeBlocks[0].Hash)
+	setConsensusState(clientStore, cdc, newStabilityTestConsensusState(mustTestBlockPrevHash(t, header.BridgeBlocks[0])), NewHeight(0, 10))
 
 	msg := NewMisbehaviour("08-cardano-stability-0", header, header)
 	err := cs.verifyMisbehaviour(ctx, clientStore, cdc, msg)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "could not get consensus state from clientStore")
-	require.Contains(t, err.Error(), "epoch mismatch")
+	require.Contains(t, err.Error(), "outside trusted epoch slot bounds")
 }
 
 func TestVerifyMisbehaviourDoesNotRejectStoredHeadersAsStale(t *testing.T) {
@@ -220,15 +230,15 @@ func TestVerifyMisbehaviourDoesNotRejectStoredHeadersAsStale(t *testing.T) {
 
 	cs := newStabilityTestClientState()
 	header := newVerifiedTestHeader(t)
-	header.AnchorBlock.Epoch = cs.CurrentEpoch + 1
-	setConsensusState(clientStore, cdc, newStabilityTestConsensusState(header.BridgeBlocks[0].PrevHash), NewHeight(0, 10))
+	header.AnchorBlock = makeTestStabilityBlock(t, 12, cs.CurrentEpochEndSlotExclusive, header.BridgeBlocks[0].Hash)
+	setConsensusState(clientStore, cdc, newStabilityTestConsensusState(mustTestBlockPrevHash(t, header.BridgeBlocks[0])), NewHeight(0, 10))
 	setConsensusState(clientStore, cdc, newStabilityTestConsensusState(header.AnchorBlock.Hash), header.GetHeight())
 
 	msg := NewMisbehaviour("08-cardano-stability-0", header, header)
 	err := cs.verifyMisbehaviour(ctx, clientStore, cdc, msg)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "expected newer header height")
-	require.Contains(t, err.Error(), "epoch mismatch")
+	require.Contains(t, err.Error(), "outside trusted epoch slot bounds")
 }
 
 func TestHeadersConflictRejectsNonConflictingHeaders(t *testing.T) {
@@ -244,11 +254,7 @@ func TestHeadersConflictRejectsNonConflictingHeaders(t *testing.T) {
 func TestHeadersConflictDetectsDifferentHeightOverlapMismatch(t *testing.T) {
 	header1 := newVerifiedTestHeader(t)
 	header2 := newVerifiedTestHeader(t)
-	header2.AnchorBlock = &StabilityBlock{
-		Height:   &Height{RevisionHeight: 14},
-		Hash:     "anchor-14",
-		PrevHash: header1.DescendantBlocks[0].Hash,
-	}
+	header2.AnchorBlock = makeTestStabilityBlock(t, 14, 140, header1.DescendantBlocks[0].Hash)
 	header2.BridgeBlocks = []*StabilityBlock{
 		cloneTestStabilityBlock(header1.BridgeBlocks[0]),
 		cloneTestStabilityBlock(header1.AnchorBlock),
@@ -405,7 +411,6 @@ func newVerifiedTestHeader(t *testing.T) *StabilityHeader {
 	bridge := makeTestStabilityBlock(t, 11, 110, hex.EncodeToString(trustedHash))
 	anchor := makeTestStabilityBlock(t, 12, 120, bridge.Hash)
 	descendant := makeTestStabilityBlock(t, 13, 130, anchor.Hash)
-	descendant.SlotLeader = "pool-a"
 
 	return &StabilityHeader{
 		TrustedHeight:          &Height{RevisionHeight: 10},
@@ -415,9 +420,6 @@ func newVerifiedTestHeader(t *testing.T) *StabilityHeader {
 		HostStateTxHash:        "deadbeef",
 		HostStateTxBodyCbor:    []byte{0x01},
 		HostStateTxOutputIndex: 0,
-		UniquePoolsCount:       1,
-		UniqueStakeBps:         10_000,
-		SecurityScoreBps:       10_000,
 	}
 }
 
@@ -441,15 +443,25 @@ func makeTestStabilityBlock(t *testing.T, blockNumber, slot uint64, prevHashHex 
 	require.NoError(t, err)
 
 	return &StabilityBlock{
-		Height:     &Height{RevisionHeight: block.BlockNumber()},
-		Hash:       block.Hash(),
-		PrevHash:   block.Header.Body.PrevHash.String(),
-		Slot:       block.SlotNumber(),
-		Epoch:      7,
-		Timestamp:  1_700_000_000_000_000_000 + block.SlotNumber()*1_000_000_000,
-		SlotLeader: block.IssuerVkey().PoolId(),
-		BlockCbor:  blockCbor,
+		Height:    &Height{RevisionHeight: block.BlockNumber()},
+		Hash:      block.Hash(),
+		Slot:      block.SlotNumber(),
+		Epoch:     7,
+		Timestamp: 1_700_000_000_000_000_000 + block.SlotNumber()*1_000_000_000,
+		BlockCbor: blockCbor,
 	}
+}
+
+func mustTestBlockPrevHash(t *testing.T, block *StabilityBlock) string {
+	t.Helper()
+
+	decodedBlock, err := decodeLedgerBlock(block.BlockCbor)
+	require.NoError(t, err)
+
+	prevHash, err := blockPrevHash(decodedBlock)
+	require.NoError(t, err)
+
+	return prevHash
 }
 
 func cloneTestStabilityBlock(block *StabilityBlock) *StabilityBlock {

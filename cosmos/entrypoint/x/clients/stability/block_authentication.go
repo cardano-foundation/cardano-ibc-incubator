@@ -11,48 +11,76 @@ import (
 	"golang.org/x/crypto/blake2b"
 )
 
-func (cs *ClientState) authenticateHeaderBlocks(header *StabilityHeader) error {
-	if err := cs.authenticateStabilityBlock(header.AnchorBlock, "anchor"); err != nil {
-		return err
+type authenticatedStabilityBlock struct {
+	height     uint64
+	slot       uint64
+	hash       string
+	prevHash   string
+	epoch      uint64
+	timestamp  uint64
+	slotLeader string
+}
+
+type authenticatedStabilityHeader struct {
+	anchorBlock      *authenticatedStabilityBlock
+	bridgeBlocks     []*authenticatedStabilityBlock
+	descendantBlocks []*authenticatedStabilityBlock
+}
+
+func (cs *ClientState) authenticateHeaderBlocks(header *StabilityHeader) (*authenticatedStabilityHeader, error) {
+	if header == nil {
+		return nil, errorsmod.Wrap(ErrInvalidHeader, "stability header missing")
 	}
 
+	anchorBlock, err := cs.authenticateStabilityBlock(header.AnchorBlock, "anchor")
+	if err != nil {
+		return nil, err
+	}
+
+	bridgeBlocks := make([]*authenticatedStabilityBlock, 0, len(header.BridgeBlocks))
 	for _, block := range header.BridgeBlocks {
-		if err := cs.authenticateStabilityBlock(block, "bridge"); err != nil {
-			return err
+		authenticatedBlock, authErr := cs.authenticateStabilityBlock(block, "bridge")
+		if authErr != nil {
+			return nil, authErr
 		}
+		bridgeBlocks = append(bridgeBlocks, authenticatedBlock)
 	}
 
+	descendantBlocks := make([]*authenticatedStabilityBlock, 0, len(header.DescendantBlocks))
 	for _, block := range header.DescendantBlocks {
-		if err := cs.authenticateStabilityBlock(block, "descendant"); err != nil {
-			return err
+		authenticatedBlock, authErr := cs.authenticateStabilityBlock(block, "descendant")
+		if authErr != nil {
+			return nil, authErr
 		}
+		descendantBlocks = append(descendantBlocks, authenticatedBlock)
 	}
 
 	if err := verifyHostStateTxIncludedInAnchorBlock(header); err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return &authenticatedStabilityHeader{
+		anchorBlock:      anchorBlock,
+		bridgeBlocks:     bridgeBlocks,
+		descendantBlocks: descendantBlocks,
+	}, nil
 }
 
-func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label string) error {
+func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label string) (*authenticatedStabilityBlock, error) {
 	if block == nil || block.Height == nil {
-		return errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block missing height", label)
+		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block missing height", label)
 	}
 	if len(block.BlockCbor) == 0 {
-		return errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block missing block_cbor", label)
-	}
-	if err := cs.verifyCurrentEpoch(block, label); err != nil {
-		return err
+		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block missing block_cbor", label)
 	}
 
 	decodedBlock, err := decodeLedgerBlock(block.BlockCbor)
 	if err != nil {
-		return errorsmod.Wrapf(ErrInvalidAcceptedBlock, "failed to decode %s block: %v", label, err)
+		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "failed to decode %s block: %v", label, err)
 	}
 
 	if !strings.EqualFold(decodedBlock.Hash(), block.Hash) {
-		return errorsmod.Wrapf(
+		return nil, errorsmod.Wrapf(
 			ErrInvalidAcceptedBlock,
 			"%s block hash mismatch: got %s expected %s",
 			label,
@@ -62,19 +90,10 @@ func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label s
 	}
 	decodedPrevHash, err := blockPrevHash(decodedBlock)
 	if err != nil {
-		return err
-	}
-	if !strings.EqualFold(decodedPrevHash, block.PrevHash) {
-		return errorsmod.Wrapf(
-			ErrInvalidAcceptedBlock,
-			"%s block prev_hash mismatch: got %s expected %s",
-			label,
-			block.PrevHash,
-			decodedPrevHash,
-		)
+		return nil, err
 	}
 	if decodedBlock.BlockNumber() != block.Height.RevisionHeight {
-		return errorsmod.Wrapf(
+		return nil, errorsmod.Wrapf(
 			ErrInvalidAcceptedBlock,
 			"%s block height mismatch: got %d expected %d",
 			label,
@@ -83,7 +102,7 @@ func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label s
 		)
 	}
 	if decodedBlock.SlotNumber() != block.Slot {
-		return errorsmod.Wrapf(
+		return nil, errorsmod.Wrapf(
 			ErrInvalidAcceptedBlock,
 			"%s block slot mismatch: got %d expected %d",
 			label,
@@ -93,10 +112,10 @@ func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label s
 	}
 	expectedTimestamp, err := cs.DeriveTimestampFromSlot(block.Slot)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if block.Timestamp != expectedTimestamp {
-		return errorsmod.Wrapf(
+		return nil, errorsmod.Wrapf(
 			ErrInvalidTimestamp,
 			"%s block timestamp mismatch: got %d expected %d",
 			label,
@@ -104,28 +123,21 @@ func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label s
 			expectedTimestamp,
 		)
 	}
+	if err := cs.verifyCurrentEpoch(decodedBlock.SlotNumber(), label); err != nil {
+		return nil, err
+	}
 
 	decodedPoolID, decodedVrfKeyHash, err := cs.verifyNativeStabilityBlock(decodedBlock, label)
 	if err != nil {
-		return err
-	}
-
-	if block.SlotLeader != "" && decodedPoolID != "" && !strings.EqualFold(block.SlotLeader, decodedPoolID) {
-		return errorsmod.Wrapf(
-			ErrInvalidAcceptedBlock,
-			"%s block slot leader mismatch: got %s expected %s",
-			label,
-			block.SlotLeader,
-			decodedPoolID,
-		)
+		return nil, err
 	}
 
 	stakeEntry, err := cs.findStakeDistributionEntry(decodedPoolID)
 	if err != nil {
-		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "%s block issuer %s is not trusted for current epoch", label, decodedPoolID)
+		return nil, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "%s block issuer %s is not trusted for current epoch", label, decodedPoolID)
 	}
 	if !bytes.Equal(stakeEntry.VrfKeyHash, decodedVrfKeyHash) {
-		return errorsmod.Wrapf(
+		return nil, errorsmod.Wrapf(
 			ErrInvalidAcceptedBlock,
 			"%s block VRF key hash mismatch for pool %s",
 			label,
@@ -133,15 +145,27 @@ func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label s
 		)
 	}
 
-	block.SlotLeader = decodedPoolID
-
-	return nil
+	return &authenticatedStabilityBlock{
+		height:     decodedBlock.BlockNumber(),
+		slot:       decodedBlock.SlotNumber(),
+		hash:       decodedBlock.Hash(),
+		prevHash:   decodedPrevHash,
+		epoch:      cs.CurrentEpoch,
+		timestamp:  expectedTimestamp,
+		slotLeader: decodedPoolID,
+	}, nil
 }
 
 func (cs *ClientState) verifyNativeStabilityBlock(
 	decodedBlock ledger.Block,
 	label string,
-) (string, []byte, error) {
+) (poolID string, vrfKeyHash []byte, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = errorsmod.Wrapf(ErrInvalidAcceptedBlock, "native verification panicked for %s block: %v", label, recovered)
+		}
+	}()
+
 	headerCborHex, bodyCborHex, vrfKeyBytes, err := buildBlockVerificationArtifacts(decodedBlock)
 	if err != nil {
 		return "", nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "failed to build %s native verification payload: %v", label, err)
@@ -160,8 +184,8 @@ func (cs *ClientState) verifyNativeStabilityBlock(
 		return "", nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block failed native Cardano verification", label)
 	}
 
-	vrfKeyHash := blake2b.Sum256(vrfKeyBytes)
-	return decodedBlock.IssuerVkey().PoolId(), vrfKeyHash[:], nil
+	vrfKeyHashBytes := blake2b.Sum256(vrfKeyBytes)
+	return decodedBlock.IssuerVkey().PoolId(), vrfKeyHashBytes[:], nil
 }
 
 func buildBlockVerificationArtifacts(decodedBlock ledger.Block) (string, string, []byte, error) {
@@ -236,25 +260,13 @@ func (cs *ClientState) findStakeDistributionEntry(poolID string) (*StakeDistribu
 	return nil, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "pool %s not present in epoch stake distribution", poolID)
 }
 
-func (cs *ClientState) verifyCurrentEpoch(block *StabilityBlock, label string) error {
-	if block == nil {
-		return errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block missing", label)
-	}
-	if block.Epoch != cs.CurrentEpoch {
-		return errorsmod.Wrapf(
-			ErrInvalidCurrentEpoch,
-			"%s block epoch mismatch: got %d expected %d",
-			label,
-			block.Epoch,
-			cs.CurrentEpoch,
-		)
-	}
-	if block.Slot < cs.CurrentEpochStartSlot || block.Slot >= cs.CurrentEpochEndSlotExclusive {
+func (cs *ClientState) verifyCurrentEpoch(slot uint64, label string) error {
+	if slot < cs.CurrentEpochStartSlot || slot >= cs.CurrentEpochEndSlotExclusive {
 		return errorsmod.Wrapf(
 			ErrInvalidCurrentEpoch,
 			"%s block slot %d outside trusted epoch slot bounds [%d,%d)",
 			label,
-			block.Slot,
+			slot,
 			cs.CurrentEpochStartSlot,
 			cs.CurrentEpochEndSlotExclusive,
 		)

@@ -92,28 +92,23 @@ func (cs *ClientState) verifyHeaderWithMode(
 		)
 	}
 
-	if err := verifyBridgeContinuity(header, trustedConsensus); err != nil {
-		return err
-	}
-	if err := cs.authenticateHeaderBlocks(header); err != nil {
-		return err
-	}
-
-	depth := uint64(len(header.DescendantBlocks))
-	if depth < cs.HeuristicParams.ThresholdDepth {
-		return errorsmod.Wrapf(ErrInvalidStabilityScore, "insufficient descendant depth: got %d, need %d", depth, cs.HeuristicParams.ThresholdDepth)
-	}
-
-	uniquePools, uniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(header)
+	authenticatedHeader, err := cs.authenticateHeaderBlocks(header)
 	if err != nil {
 		return err
 	}
 
-	if header.UniquePoolsCount != uniquePools {
-		return errorsmod.Wrapf(ErrInvalidUniquePools, "header unique pool count mismatch: got %d, expected %d", header.UniquePoolsCount, uniquePools)
+	if err := verifyBridgeContinuity(header.TrustedHeight, authenticatedHeader, trustedConsensus); err != nil {
+		return err
 	}
-	if header.UniqueStakeBps != uniqueStakeBps {
-		return errorsmod.Wrapf(ErrInvalidUniqueStake, "header unique stake bps mismatch: got %d, expected %d", header.UniqueStakeBps, uniqueStakeBps)
+
+	depth := uint64(len(authenticatedHeader.descendantBlocks))
+	if depth < cs.HeuristicParams.ThresholdDepth {
+		return errorsmod.Wrapf(ErrInvalidStabilityScore, "insufficient descendant depth: got %d, need %d", depth, cs.HeuristicParams.ThresholdDepth)
+	}
+
+	uniquePools, uniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader)
+	if err != nil {
+		return err
 	}
 
 	if uniquePools < cs.HeuristicParams.ThresholdUniquePools {
@@ -130,51 +125,61 @@ func (cs *ClientState) verifyHeaderWithMode(
 	return nil
 }
 
-func verifyBridgeContinuity(header *StabilityHeader, trustedConsensus *ConsensusState) error {
+func verifyBridgeContinuity(
+	trustedHeight *Height,
+	authenticatedHeader *authenticatedStabilityHeader,
+	trustedConsensus *ConsensusState,
+) error {
 	if trustedConsensus == nil {
 		return errorsmod.Wrap(clienttypes.ErrConsensusStateNotFound, "trusted consensus state missing")
 	}
+	if trustedHeight == nil {
+		return errorsmod.Wrap(ErrInvalidHeaderHeight, "trusted height missing")
+	}
+	if authenticatedHeader == nil || authenticatedHeader.anchorBlock == nil {
+		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated anchor block missing")
+	}
 
 	expectedPrevHash := trustedConsensus.AcceptedBlockHash
-	expectedHeight := header.TrustedHeight.RevisionHeight + 1
+	expectedHeight := trustedHeight.RevisionHeight + 1
 
-	for _, block := range header.BridgeBlocks {
-		if block == nil || block.Height == nil {
-			return errorsmod.Wrap(ErrInvalidAcceptedBlock, "bridge block missing height")
+	for _, block := range authenticatedHeader.bridgeBlocks {
+		if block == nil {
+			return errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated bridge block missing")
 		}
-		if block.PrevHash != expectedPrevHash {
+		if block.prevHash != expectedPrevHash {
 			return errorsmod.Wrapf(
 				ErrInvalidAcceptedBlock,
 				"bridge block %s does not connect to trusted chain",
-				block.Hash,
+				block.hash,
 			)
 		}
-		if block.Height.RevisionHeight != expectedHeight {
+		if block.height != expectedHeight {
 			return errorsmod.Wrapf(
 				ErrInvalidAcceptedBlock,
 				"bridge height gap at block %s: got %d expected %d",
-				block.Hash,
-				block.Height.RevisionHeight,
+				block.hash,
+				block.height,
 				expectedHeight,
 			)
 		}
 
-		expectedPrevHash = block.Hash
+		expectedPrevHash = block.hash
 		expectedHeight++
 	}
 
-	if header.AnchorBlock.PrevHash != expectedPrevHash {
+	if authenticatedHeader.anchorBlock.prevHash != expectedPrevHash {
 		return errorsmod.Wrapf(
 			ErrInvalidAcceptedBlock,
 			"anchor block %s does not connect to trusted chain",
-			header.AnchorBlock.Hash,
+			authenticatedHeader.anchorBlock.hash,
 		)
 	}
-	if header.AnchorBlock.Height.RevisionHeight != expectedHeight {
+	if authenticatedHeader.anchorBlock.height != expectedHeight {
 		return errorsmod.Wrapf(
 			ErrInvalidAcceptedBlock,
 			"anchor height mismatch: got %d expected %d",
-			header.AnchorBlock.Height.RevisionHeight,
+			authenticatedHeader.anchorBlock.height,
 			expectedHeight,
 		)
 	}
@@ -182,7 +187,7 @@ func verifyBridgeContinuity(header *StabilityHeader, trustedConsensus *Consensus
 	return nil
 }
 
-func (cs *ClientState) computeHeaderSecurityMetrics(header *StabilityHeader) (uint64, uint64, uint64, error) {
+func (cs *ClientState) computeHeaderSecurityMetrics(header *authenticatedStabilityHeader) (uint64, uint64, uint64, error) {
 	seenPools := make(map[string]struct{})
 	uniquePools := uint64(0)
 	uniqueStake := uint64(0)
@@ -204,20 +209,24 @@ func (cs *ClientState) computeHeaderSecurityMetrics(header *StabilityHeader) (ui
 		return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "epoch stake distribution must have positive total stake")
 	}
 
-	prevHash := header.AnchorBlock.Hash
-	prevHeight := header.AnchorBlock.Height.RevisionHeight
-	for _, block := range header.DescendantBlocks {
-		if block == nil || block.Height == nil {
-			return 0, 0, 0, errorsmod.Wrap(ErrInvalidAcceptedBlock, "descendant block missing height")
+	if header == nil || header.anchorBlock == nil {
+		return 0, 0, 0, errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated anchor block missing")
+	}
+
+	prevHash := header.anchorBlock.hash
+	prevHeight := header.anchorBlock.height
+	for _, block := range header.descendantBlocks {
+		if block == nil {
+			return 0, 0, 0, errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated descendant block missing")
 		}
-		if block.PrevHash != prevHash {
-			return 0, 0, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "descendant chain is not contiguous at block %s", block.Hash)
+		if block.prevHash != prevHash {
+			return 0, 0, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "descendant chain is not contiguous at block %s", block.hash)
 		}
-		if block.Height.RevisionHeight != prevHeight+1 {
-			return 0, 0, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "descendant height gap at block %s", block.Hash)
+		if block.height != prevHeight+1 {
+			return 0, 0, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "descendant height gap at block %s", block.hash)
 		}
 
-		poolID := strings.ToLower(block.SlotLeader)
+		poolID := strings.ToLower(block.slotLeader)
 		if poolID != "" {
 			if _, exists := seenPools[poolID]; !exists {
 				seenPools[poolID] = struct{}{}
@@ -226,14 +235,14 @@ func (cs *ClientState) computeHeaderSecurityMetrics(header *StabilityHeader) (ui
 			}
 		}
 
-		prevHash = block.Hash
-		prevHeight = block.Height.RevisionHeight
+		prevHash = block.hash
+		prevHeight = block.height
 	}
 
 	uniqueStakeBps := uint64(0)
 	uniqueStakeBps = min((uniqueStake*10_000)/totalStake, 10_000)
 
-	score := cs.computeSecurityScore(uint64(len(header.DescendantBlocks)), uniquePools, uniqueStakeBps)
+	score := cs.computeSecurityScore(uint64(len(header.descendantBlocks)), uniquePools, uniqueStakeBps)
 	return uniquePools, uniqueStakeBps, score, nil
 }
 
@@ -277,30 +286,31 @@ func (cs *ClientState) UpdateState(
 	if !ok {
 		panic(fmt.Errorf("expected type %T, got %T", &StabilityHeader{}, clientMsg))
 	}
+	authenticatedHeader, err := cs.authenticateHeaderBlocks(header)
+	if err != nil {
+		panic(fmt.Errorf("failed to authenticate verified StabilityHeader blocks: %w", err))
+	}
 
 	cs.pruneOldestConsensusState(ctx, cdc, clientStore)
 	height := NewHeight(0, header.AnchorBlock.Height.RevisionHeight)
 	cs.LatestHeight = height
-	cs.CurrentEpoch = header.AnchorBlock.Epoch
+	cs.CurrentEpoch = authenticatedHeader.anchorBlock.epoch
 
 	ibcStateRoot, err := cs.ExtractIbcStateRootFromHostStateTx(header)
 	if err != nil {
 		panic(fmt.Errorf("failed to extract ibc_state_root from verified StabilityHeader: %w", err))
 	}
-	uniquePools, uniqueStakeBps, securityScoreBps, err := cs.computeHeaderSecurityMetrics(header)
+	uniquePools, uniqueStakeBps, securityScoreBps, err := cs.computeHeaderSecurityMetrics(authenticatedHeader)
 	if err != nil {
 		panic(fmt.Errorf("failed to recompute stability metrics from verified StabilityHeader: %w", err))
 	}
-	consensusTimestamp, err := cs.DeriveTimestampFromSlot(header.AnchorBlock.Slot)
-	if err != nil {
-		panic(fmt.Errorf("failed to derive stability consensus timestamp: %w", err))
-	}
+	consensusTimestamp := authenticatedHeader.anchorBlock.timestamp
 
 	newConsensusState := &ConsensusState{
 		Timestamp:         consensusTimestamp,
 		IbcStateRoot:      ibcStateRoot,
-		AcceptedBlockHash: header.AnchorBlock.Hash,
-		AcceptedEpoch:     header.AnchorBlock.Epoch,
+		AcceptedBlockHash: authenticatedHeader.anchorBlock.hash,
+		AcceptedEpoch:     authenticatedHeader.anchorBlock.epoch,
 		UniquePoolsCount:  uniquePools,
 		UniqueStakeBps:    uniqueStakeBps,
 		SecurityScoreBps:  securityScoreBps,
@@ -312,7 +322,7 @@ func (cs *ClientState) UpdateState(
 	clientStore.Set(StabilityScoreKey(height.RevisionHeight), sdk.Uint64ToBigEndian(securityScoreBps))
 	clientStore.Set(UniquePoolsKey(height.RevisionHeight), sdk.Uint64ToBigEndian(uniquePools))
 	clientStore.Set(UniqueStakeKey(height.RevisionHeight), sdk.Uint64ToBigEndian(uniqueStakeBps))
-	clientStore.Set(AcceptedBlockHashKey(height.RevisionHeight), []byte(header.AnchorBlock.Hash))
+	clientStore.Set(AcceptedBlockHashKey(height.RevisionHeight), []byte(authenticatedHeader.anchorBlock.hash))
 	return []exported.Height{height}
 }
 

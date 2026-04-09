@@ -80,10 +80,10 @@ message StabilityBlock {
   Height height = 1;
   uint64 slot = 2;
   string hash = 3;
-  string prev_hash = 4;
+  reserved 4;
   uint64 epoch = 5;
   uint64 timestamp = 6;
-  string slot_leader = 7;
+  reserved 7;
   reserved 8;
   bytes block_cbor = 9;
 }
@@ -97,8 +97,6 @@ message StabilityHeader {
   string host_state_tx_hash = 4;
   bytes host_state_tx_body_cbor = 5;
   uint32 host_state_tx_output_index = 6;
-  uint64 unique_pools_count = 7;
-  uint64 unique_stake_bps = 8;
-  uint64 security_score_bps = 9;
+  reserved 7 to 9;
   repeated StabilityBlock bridge_blocks = 10;
 }

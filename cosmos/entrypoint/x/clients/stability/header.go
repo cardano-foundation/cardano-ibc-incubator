@@ -16,9 +16,9 @@ func (h StabilityHeader) ConsensusState() *ConsensusState {
 		IbcStateRoot:      make([]byte, 32),
 		AcceptedBlockHash: h.AnchorBlock.Hash,
 		AcceptedEpoch:     h.AnchorBlock.Epoch,
-		UniquePoolsCount:  h.UniquePoolsCount,
-		UniqueStakeBps:    h.UniqueStakeBps,
-		SecurityScoreBps:  h.SecurityScoreBps,
+		UniquePoolsCount:  0,
+		UniqueStakeBps:    0,
+		SecurityScoreBps:  0,
 	}
 
 	if len(h.HostStateTxBodyCbor) > 0 {

@@ -57,10 +57,8 @@ export interface StabilityBlock {
   height?: Height;
   slot: bigint;
   hash: string;
-  prev_hash: string;
   epoch: bigint;
   timestamp: bigint;
-  slot_leader: string;
   block_cbor: Uint8Array;
 }
 export interface StabilityHeader {
@@ -70,9 +68,6 @@ export interface StabilityHeader {
   host_state_tx_hash: string;
   host_state_tx_body_cbor: Uint8Array;
   host_state_tx_output_index: number;
-  unique_pools_count: bigint;
-  unique_stake_bps: bigint;
-  security_score_bps: bigint;
   bridge_blocks: StabilityBlock[];
 }
 function createBaseHeight(): Height {
@@ -798,10 +793,8 @@ function createBaseStabilityBlock(): StabilityBlock {
     height: undefined,
     slot: BigInt(0),
     hash: "",
-    prev_hash: "",
     epoch: BigInt(0),
     timestamp: BigInt(0),
-    slot_leader: "",
     block_cbor: new Uint8Array(),
   };
 }
@@ -817,17 +810,11 @@ export const StabilityBlock = {
     if (message.hash !== "") {
       writer.uint32(26).string(message.hash);
     }
-    if (message.prev_hash !== "") {
-      writer.uint32(34).string(message.prev_hash);
-    }
     if (message.epoch !== BigInt(0)) {
       writer.uint32(40).uint64(message.epoch);
     }
     if (message.timestamp !== BigInt(0)) {
       writer.uint32(48).uint64(message.timestamp);
-    }
-    if (message.slot_leader !== "") {
-      writer.uint32(58).string(message.slot_leader);
     }
     if (message.block_cbor.length !== 0) {
       writer.uint32(74).bytes(message.block_cbor);
@@ -850,17 +837,11 @@ export const StabilityBlock = {
         case 3:
           message.hash = reader.string();
           break;
-        case 4:
-          message.prev_hash = reader.string();
-          break;
         case 5:
           message.epoch = reader.uint64();
           break;
         case 6:
           message.timestamp = reader.uint64();
-          break;
-        case 7:
-          message.slot_leader = reader.string();
           break;
         case 9:
           message.block_cbor = reader.bytes();
@@ -877,10 +858,8 @@ export const StabilityBlock = {
     if (isSet(object.height)) obj.height = Height.fromJSON(object.height);
     if (isSet(object.slot)) obj.slot = BigInt(object.slot.toString());
     if (isSet(object.hash)) obj.hash = String(object.hash);
-    if (isSet(object.prev_hash)) obj.prev_hash = String(object.prev_hash);
     if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
     if (isSet(object.timestamp)) obj.timestamp = BigInt(object.timestamp.toString());
-    if (isSet(object.slot_leader)) obj.slot_leader = String(object.slot_leader);
     if (isSet(object.block_cbor)) obj.block_cbor = bytesFromBase64(object.block_cbor);
     return obj;
   },
@@ -889,10 +868,8 @@ export const StabilityBlock = {
     message.height !== undefined && (obj.height = message.height ? Height.toJSON(message.height) : undefined);
     message.slot !== undefined && (obj.slot = (message.slot || BigInt(0)).toString());
     message.hash !== undefined && (obj.hash = message.hash);
-    message.prev_hash !== undefined && (obj.prev_hash = message.prev_hash);
     message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
     message.timestamp !== undefined && (obj.timestamp = (message.timestamp || BigInt(0)).toString());
-    message.slot_leader !== undefined && (obj.slot_leader = message.slot_leader);
     message.block_cbor !== undefined &&
       (obj.block_cbor = base64FromBytes(
         message.block_cbor !== undefined ? message.block_cbor : new Uint8Array(),
@@ -908,14 +885,12 @@ export const StabilityBlock = {
       message.slot = BigInt(object.slot.toString());
     }
     message.hash = object.hash ?? "";
-    message.prev_hash = object.prev_hash ?? "";
     if (object.epoch !== undefined && object.epoch !== null) {
       message.epoch = BigInt(object.epoch.toString());
     }
     if (object.timestamp !== undefined && object.timestamp !== null) {
       message.timestamp = BigInt(object.timestamp.toString());
     }
-    message.slot_leader = object.slot_leader ?? "";
     message.block_cbor = object.block_cbor ?? new Uint8Array();
     return message;
   },
@@ -928,9 +903,6 @@ function createBaseStabilityHeader(): StabilityHeader {
     host_state_tx_hash: "",
     host_state_tx_body_cbor: new Uint8Array(),
     host_state_tx_output_index: 0,
-    unique_pools_count: BigInt(0),
-    unique_stake_bps: BigInt(0),
-    security_score_bps: BigInt(0),
     bridge_blocks: [],
   };
 }
@@ -954,15 +926,6 @@ export const StabilityHeader = {
     }
     if (message.host_state_tx_output_index !== 0) {
       writer.uint32(48).uint32(message.host_state_tx_output_index);
-    }
-    if (message.unique_pools_count !== BigInt(0)) {
-      writer.uint32(56).uint64(message.unique_pools_count);
-    }
-    if (message.unique_stake_bps !== BigInt(0)) {
-      writer.uint32(64).uint64(message.unique_stake_bps);
-    }
-    if (message.security_score_bps !== BigInt(0)) {
-      writer.uint32(72).uint64(message.security_score_bps);
     }
     for (const v of message.bridge_blocks) {
       StabilityBlock.encode(v!, writer.uint32(82).fork()).ldelim();
@@ -994,15 +957,6 @@ export const StabilityHeader = {
         case 6:
           message.host_state_tx_output_index = reader.uint32();
           break;
-        case 7:
-          message.unique_pools_count = reader.uint64();
-          break;
-        case 8:
-          message.unique_stake_bps = reader.uint64();
-          break;
-        case 9:
-          message.security_score_bps = reader.uint64();
-          break;
         case 10:
           message.bridge_blocks.push(StabilityBlock.decode(reader, reader.uint32()));
           break;
@@ -1024,11 +978,6 @@ export const StabilityHeader = {
       obj.host_state_tx_body_cbor = bytesFromBase64(object.host_state_tx_body_cbor);
     if (isSet(object.host_state_tx_output_index))
       obj.host_state_tx_output_index = Number(object.host_state_tx_output_index);
-    if (isSet(object.unique_pools_count))
-      obj.unique_pools_count = BigInt(object.unique_pools_count.toString());
-    if (isSet(object.unique_stake_bps)) obj.unique_stake_bps = BigInt(object.unique_stake_bps.toString());
-    if (isSet(object.security_score_bps))
-      obj.security_score_bps = BigInt(object.security_score_bps.toString());
     if (Array.isArray(object?.bridge_blocks))
       obj.bridge_blocks = object.bridge_blocks.map((e: any) => StabilityBlock.fromJSON(e));
     return obj;
@@ -1053,12 +1002,6 @@ export const StabilityHeader = {
       ));
     message.host_state_tx_output_index !== undefined &&
       (obj.host_state_tx_output_index = Math.round(message.host_state_tx_output_index));
-    message.unique_pools_count !== undefined &&
-      (obj.unique_pools_count = (message.unique_pools_count || BigInt(0)).toString());
-    message.unique_stake_bps !== undefined &&
-      (obj.unique_stake_bps = (message.unique_stake_bps || BigInt(0)).toString());
-    message.security_score_bps !== undefined &&
-      (obj.security_score_bps = (message.security_score_bps || BigInt(0)).toString());
     if (message.bridge_blocks) {
       obj.bridge_blocks = message.bridge_blocks.map((e) => (e ? StabilityBlock.toJSON(e) : undefined));
     } else {
@@ -1078,15 +1021,6 @@ export const StabilityHeader = {
     message.host_state_tx_hash = object.host_state_tx_hash ?? "";
     message.host_state_tx_body_cbor = object.host_state_tx_body_cbor ?? new Uint8Array();
     message.host_state_tx_output_index = object.host_state_tx_output_index ?? 0;
-    if (object.unique_pools_count !== undefined && object.unique_pools_count !== null) {
-      message.unique_pools_count = BigInt(object.unique_pools_count.toString());
-    }
-    if (object.unique_stake_bps !== undefined && object.unique_stake_bps !== null) {
-      message.unique_stake_bps = BigInt(object.unique_stake_bps.toString());
-    }
-    if (object.security_score_bps !== undefined && object.security_score_bps !== null) {
-      message.security_score_bps = BigInt(object.security_score_bps.toString());
-    }
     message.bridge_blocks = object.bridge_blocks?.map((e) => StabilityBlock.fromPartial(e)) || [];
     return message;
   },
