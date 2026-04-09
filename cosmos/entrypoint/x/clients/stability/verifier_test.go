@@ -130,6 +130,21 @@ func TestVerifyHeaderRejectsCrossEpochBlock(t *testing.T) {
 	require.ErrorContains(t, err, "epoch mismatch")
 }
 
+func TestVerifyHeaderRejectsTrustedHeightOlderThanLatestHeight(t *testing.T) {
+	cdc := newStabilityTestCodec()
+	_, clientStore := newStabilityTestClientStore(t, "stability-stale-trusted")
+	cs := newStabilityTestClientState()
+	cs.LatestHeight = NewHeight(0, 11)
+
+	header := newVerifiedTestHeader(t)
+	setConsensusState(clientStore, cdc, newStabilityTestConsensusState(header.BridgeBlocks[0].PrevHash), NewHeight(0, 10))
+	setConsensusState(clientStore, cdc, newStabilityTestConsensusState(header.BridgeBlocks[0].Hash), NewHeight(0, 11))
+
+	err := cs.verifyHeader(sdk.Context{}, clientStore, cdc, header)
+	require.ErrorContains(t, err, "trusted height")
+	require.ErrorContains(t, err, "must equal latest height")
+}
+
 func TestComputeHeaderSecurityMetricsRejectsEmptyEpochStakeDistribution(t *testing.T) {
 	cs := newStabilityTestClientState()
 	cs.EpochStakeDistribution = nil

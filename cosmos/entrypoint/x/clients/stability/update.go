@@ -43,6 +43,17 @@ func (cs *ClientState) verifyHeader(
 	if anchor == nil || anchor.Height == nil {
 		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "anchor block missing")
 	}
+	if cs.LatestHeight == nil || cs.LatestHeight.IsZero() {
+		return errorsmod.Wrap(ErrInvalidHeaderHeight, "latest height must be present for stability header verification")
+	}
+	if !header.TrustedHeight.EQ(cs.LatestHeight) {
+		return errorsmod.Wrapf(
+			ErrInvalidHeaderHeight,
+			"trusted height %s must equal latest height %s",
+			header.TrustedHeight.String(),
+			cs.LatestHeight.String(),
+		)
+	}
 
 	trustedHeight := NewHeight(header.TrustedHeight.RevisionNumber, header.TrustedHeight.RevisionHeight)
 	trustedConsensus, found := GetConsensusState(clientStore, cdc, trustedHeight)
