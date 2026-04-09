@@ -95,7 +95,7 @@ message StabilityHeader {
   StabilityBlock anchor_block = 2;
   repeated StabilityBlock descendant_blocks = 3;
   string host_state_tx_hash = 4;
-  bytes host_state_tx_body_cbor = 5;
+  reserved 5;
   uint32 host_state_tx_output_index = 6;
   reserved 7 to 9;
   repeated StabilityBlock bridge_blocks = 10;

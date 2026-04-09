@@ -9,8 +9,12 @@ import (
 )
 
 func (cs ClientState) ExtractIbcStateRootFromHostStateTx(header *StabilityHeader) ([]byte, error) {
+	txBodyCbor, err := extractHostStateTxBodyCborFromAnchorBlock(header)
+	if err != nil {
+		return nil, err
+	}
 	return extractIbcStateRootFromTransactionBody(
-		header.HostStateTxBodyCbor,
+		txBodyCbor,
 		header.HostStateTxHash,
 		header.HostStateTxOutputIndex,
 		cs.HostStateNftPolicyId,

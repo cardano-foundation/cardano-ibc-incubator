@@ -275,29 +275,27 @@ func (cs *ClientState) verifyCurrentEpoch(slot uint64, label string) error {
 }
 
 func verifyHostStateTxIncludedInAnchorBlock(header *StabilityHeader) error {
+	_, err := extractHostStateTxBodyCborFromAnchorBlock(header)
+	return err
+}
+
+func extractHostStateTxBodyCborFromAnchorBlock(header *StabilityHeader) ([]byte, error) {
 	decodedBlock, err := decodeLedgerBlock(header.AnchorBlock.BlockCbor)
 	if err != nil {
-		return errorsmod.Wrapf(ErrInvalidAcceptedBlock, "failed to decode anchor block: %v", err)
+		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "failed to decode anchor block: %v", err)
 	}
 
 	for _, tx := range decodedBlock.Transactions() {
 		if strings.EqualFold(tx.Hash(), header.HostStateTxHash) {
 			txBodyCbor, bodyErr := extractTransactionBodyCbor(tx)
 			if bodyErr != nil {
-				return errorsmod.Wrapf(ErrInvalidHostStateCommitment, "failed to decode host state tx body: %v", bodyErr)
+				return nil, errorsmod.Wrapf(ErrInvalidHostStateCommitment, "failed to decode host state tx body: %v", bodyErr)
 			}
-			if !bytes.Equal(txBodyCbor, header.HostStateTxBodyCbor) {
-				return errorsmod.Wrapf(
-					ErrInvalidHostStateCommitment,
-					"host state tx body does not match authenticated anchor block tx %s",
-					header.HostStateTxHash,
-				)
-			}
-			return nil
+			return txBodyCbor, nil
 		}
 	}
 
-	return errorsmod.Wrapf(
+	return nil, errorsmod.Wrapf(
 		ErrInvalidHostStateCommitment,
 		"host state tx %s not found in authenticated anchor block %s",
 		header.HostStateTxHash,

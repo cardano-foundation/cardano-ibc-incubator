@@ -151,15 +151,11 @@ The `StabilityHeader` carries:
 - `anchor_block`
 - `descendant_blocks`
 - `host_state_tx_hash`
-- `host_state_tx_body_cbor`
 - `host_state_tx_output_index`
-- `unique_pools_count`
-- `unique_stake_bps`
-- `security_score_bps`
 
 The important thing to notice is that the header does **not** try to prove arbitrary Cardano ledger state. Just like the Mithril path, it is still centered around the Cardano `HostState` transaction/output that contains the `ibc_state_root`. The new part is that `trusted_height` is now real: `bridge_blocks` must connect the already-trusted consensus block hash at `trusted_height` to the new `anchor_block`, and only the post-anchor `descendant_blocks` are used for the stability score.
 
-`security_score_bps` in the header is treated as metadata. The verifier recomputes the score locally for storage and telemetry, but header validity is determined by the threshold checks and the recomputed unique-pool / unique-stake metrics.
+The header no longer carries relayed score metrics or a relayed HostState transaction body. The verifier recomputes the stability metrics locally for storage/telemetry, and it recovers the HostState transaction body directly from the authenticated anchor block witness before extracting `ibc_state_root`.
 
 Each relayed `StabilityBlock` now also carries raw `block_cbor`. The verifier decodes that raw Cardano block witness and cross-checks the claimed block hash, previous hash, height, slot, and issuer pool identity before it accepts the bridge or descendant window as the basis for scoring.
 
@@ -198,7 +194,7 @@ For now, client creation and updates are intentionally constrained to a single e
 - the `anchor_block` whose HostState transaction/output will define the new consensus state
 - the `descendant_blocks` used to justify accepting that anchor under the configured thresholds
 - the raw `block_cbor` witness for every bridge, anchor, and descendant block
-- the HostState transaction body evidence needed to extract `ibc_state_root`
+- the HostState transaction hash and output index needed to recover `ibc_state_root` from the authenticated anchor block
 
 ### Proof Height Gating
 
@@ -214,7 +210,7 @@ The Cosmos-side client is implemented under:
 
 The high-level update flow is:
 
-1. verify the header shape (`anchor_block`, `host_state_tx_body_cbor`, etc.)
+1. verify the header shape (`anchor_block`, `host_state_tx_hash`, etc.)
 2. require the new header to be strictly newer than the current client height
 3. load the stored consensus state at `trusted_height`
 4. verify continuity from previously trusted state:
@@ -229,10 +225,9 @@ The high-level update flow is:
    - distinct pools
    - unique stake basis points
    - security score
-7. verify those recomputed values match the values carried in the header
-8. enforce the configured thresholds from `ClientState.HeuristicParams`
-9. validate the HostState transaction body, locate the HostState output by NFT, and extract `ibc_state_root`
-10. write a new consensus state for the accepted anchor height
+7. enforce the configured thresholds from `ClientState.HeuristicParams`
+8. locate the HostState transaction inside the authenticated anchor block, locate the HostState output by NFT, and extract `ibc_state_root`
+9. write a new consensus state for the accepted anchor height
 
 The extracted `ibc_state_root` is then used for ordinary IBC membership and non-membership verification.
 
@@ -244,8 +239,8 @@ Just like the Mithril path, this client is **not** verifying arbitrary Cardano s
 
 The client:
 
-1. takes the relayed `host_state_tx_body_cbor`
-2. recomputes the transaction hash and checks it equals `host_state_tx_hash`
+1. authenticates the relayed anchor block witness
+2. finds the transaction inside that block whose body hash equals `host_state_tx_hash`
 3. loads the output at `host_state_tx_output_index`
 4. verifies that output contains the expected HostState NFT
 5. requires an inline datum on that output

@@ -21,10 +21,8 @@ func (h StabilityHeader) ConsensusState() *ConsensusState {
 		SecurityScoreBps:  0,
 	}
 
-	if len(h.HostStateTxBodyCbor) > 0 {
-		if root, err := extractIbcStateRootFromTransactionBody(h.HostStateTxBodyCbor, h.HostStateTxHash, h.HostStateTxOutputIndex, nil, nil); err == nil {
-			consState.IbcStateRoot = root
-		}
+	if root, err := (ClientState{}).ExtractIbcStateRootFromHostStateTx(&h); err == nil {
+		consState.IbcStateRoot = root
 	}
 
 	return consState
@@ -72,9 +70,6 @@ func (h StabilityHeader) ValidateBasic() error {
 			h.TrustedHeight.RevisionHeight,
 			h.AnchorBlock.Height.RevisionHeight,
 		)
-	}
-	if len(h.HostStateTxBodyCbor) == 0 {
-		return errorsmod.Wrap(ErrInvalidHostStateCommitment, "host_state_tx_body_cbor cannot be empty")
 	}
 	for _, block := range h.BridgeBlocks {
 		if block == nil {

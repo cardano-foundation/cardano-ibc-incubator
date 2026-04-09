@@ -66,7 +66,6 @@ export interface StabilityHeader {
   anchor_block?: StabilityBlock;
   descendant_blocks: StabilityBlock[];
   host_state_tx_hash: string;
-  host_state_tx_body_cbor: Uint8Array;
   host_state_tx_output_index: number;
   bridge_blocks: StabilityBlock[];
 }
@@ -901,7 +900,6 @@ function createBaseStabilityHeader(): StabilityHeader {
     anchor_block: undefined,
     descendant_blocks: [],
     host_state_tx_hash: "",
-    host_state_tx_body_cbor: new Uint8Array(),
     host_state_tx_output_index: 0,
     bridge_blocks: [],
   };
@@ -920,9 +918,6 @@ export const StabilityHeader = {
     }
     if (message.host_state_tx_hash !== "") {
       writer.uint32(34).string(message.host_state_tx_hash);
-    }
-    if (message.host_state_tx_body_cbor.length !== 0) {
-      writer.uint32(42).bytes(message.host_state_tx_body_cbor);
     }
     if (message.host_state_tx_output_index !== 0) {
       writer.uint32(48).uint32(message.host_state_tx_output_index);
@@ -951,9 +946,6 @@ export const StabilityHeader = {
         case 4:
           message.host_state_tx_hash = reader.string();
           break;
-        case 5:
-          message.host_state_tx_body_cbor = reader.bytes();
-          break;
         case 6:
           message.host_state_tx_output_index = reader.uint32();
           break;
@@ -974,8 +966,6 @@ export const StabilityHeader = {
     if (Array.isArray(object?.descendant_blocks))
       obj.descendant_blocks = object.descendant_blocks.map((e: any) => StabilityBlock.fromJSON(e));
     if (isSet(object.host_state_tx_hash)) obj.host_state_tx_hash = String(object.host_state_tx_hash);
-    if (isSet(object.host_state_tx_body_cbor))
-      obj.host_state_tx_body_cbor = bytesFromBase64(object.host_state_tx_body_cbor);
     if (isSet(object.host_state_tx_output_index))
       obj.host_state_tx_output_index = Number(object.host_state_tx_output_index);
     if (Array.isArray(object?.bridge_blocks))
@@ -996,10 +986,6 @@ export const StabilityHeader = {
       obj.descendant_blocks = [];
     }
     message.host_state_tx_hash !== undefined && (obj.host_state_tx_hash = message.host_state_tx_hash);
-    message.host_state_tx_body_cbor !== undefined &&
-      (obj.host_state_tx_body_cbor = base64FromBytes(
-        message.host_state_tx_body_cbor !== undefined ? message.host_state_tx_body_cbor : new Uint8Array(),
-      ));
     message.host_state_tx_output_index !== undefined &&
       (obj.host_state_tx_output_index = Math.round(message.host_state_tx_output_index));
     if (message.bridge_blocks) {
@@ -1019,7 +1005,6 @@ export const StabilityHeader = {
     }
     message.descendant_blocks = object.descendant_blocks?.map((e) => StabilityBlock.fromPartial(e)) || [];
     message.host_state_tx_hash = object.host_state_tx_hash ?? "";
-    message.host_state_tx_body_cbor = object.host_state_tx_body_cbor ?? new Uint8Array();
     message.host_state_tx_output_index = object.host_state_tx_output_index ?? 0;
     message.bridge_blocks = object.bridge_blocks?.map((e) => StabilityBlock.fromPartial(e)) || [];
     return message;

@@ -108,9 +108,8 @@ func TestAuthenticateStabilityBlockDoesNotMutateInput(t *testing.T) {
 
 func TestVerifyHostStateTxIncludedInAnchorBlockRejectsMissingTx(t *testing.T) {
 	header := &StabilityHeader{
-		AnchorBlock:         makeTestStabilityBlock(t, 30, 300, hex.EncodeToString(bytes.Repeat([]byte{0x33}, 32))),
-		HostStateTxHash:     "deadbeef",
-		HostStateTxBodyCbor: []byte{0x01},
+		AnchorBlock:     makeTestStabilityBlock(t, 30, 300, hex.EncodeToString(bytes.Repeat([]byte{0x33}, 32))),
+		HostStateTxHash: "deadbeef",
 	}
 
 	err := verifyHostStateTxIncludedInAnchorBlock(header)
@@ -418,7 +417,6 @@ func newVerifiedTestHeader(t *testing.T) *StabilityHeader {
 		AnchorBlock:            anchor,
 		DescendantBlocks:       []*StabilityBlock{descendant},
 		HostStateTxHash:        "deadbeef",
-		HostStateTxBodyCbor:    []byte{0x01},
 		HostStateTxOutputIndex: 0,
 	}
 }

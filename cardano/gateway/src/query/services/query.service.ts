@@ -1521,16 +1521,6 @@ export class QueryService {
       stabilityEvidence.anchorHeight,
       'header generation',
     );
-    const hostStateTxEvidence = await this.historyService.findTransactionEvidenceByHash(hostStateUtxo.txHash);
-    if (!hostStateTxEvidence) {
-      throw new GrpcInternalException(`Historical tx evidence unavailable for tx ${hostStateUtxo.txHash}`);
-    }
-    if (BigInt(hostStateTxEvidence.blockNo) !== stabilityEvidence.anchorHeight) {
-      throw new GrpcInternalException(
-        `Historical tx evidence for HostState tx ${hostStateUtxo.txHash} does not match stability anchor height ${stabilityEvidence.anchorHeight.toString()}`,
-      );
-    }
-    const hostStateTxBodyCbor = Buffer.from(hostStateTxEvidence.txBodyCborHex, 'hex');
     const requestedBlocks = [
       ...stabilityEvidence.bridgeBlocks,
       stabilityEvidence.anchorBlock,
@@ -1557,7 +1547,6 @@ export class QueryService {
         this.toStabilityBlock(block, blockWitnessByHeight.get(block.height)),
       ),
       host_state_tx_hash: hostStateUtxo.txHash,
-      host_state_tx_body_cbor: hostStateTxBodyCbor,
       host_state_tx_output_index: hostStateUtxo.outputIndex,
     };
 
