@@ -140,7 +140,7 @@ The stability `ConsensusState` stores:
 - `unique_stake_bps`
 - `security_score_bps`
 
-This follows the normal IBC intuition: consensus state is the per-height authenticated view that later membership and non-membership proofs verify against.
+This follows the normal IBC intuition: consensus state is the per-height authenticated view that later membership and non-membership proofs verify against. The score is still stored for observability, but acceptance is governed by the hard thresholds for depth, unique pools, and unique stake, not by a relayed score match.
 
 ### Header
 
@@ -158,6 +158,8 @@ The `StabilityHeader` carries:
 - `security_score_bps`
 
 The important thing to notice is that the header does **not** try to prove arbitrary Cardano ledger state. Just like the Mithril path, it is still centered around the Cardano `HostState` transaction/output that contains the `ibc_state_root`. The new part is that `trusted_height` is now real: `bridge_blocks` must connect the already-trusted consensus block hash at `trusted_height` to the new `anchor_block`, and only the post-anchor `descendant_blocks` are used for the stability score.
+
+`security_score_bps` in the header is treated as metadata. The verifier recomputes the score locally for storage and telemetry, but header validity is determined by the threshold checks and the recomputed unique-pool / unique-stake metrics.
 
 Each relayed `StabilityBlock` now also carries raw `block_cbor`. The verifier decodes that raw Cardano block witness and cross-checks the claimed block hash, previous hash, height, slot, and issuer pool identity before it accepts the bridge or descendant window as the basis for scoring.
 

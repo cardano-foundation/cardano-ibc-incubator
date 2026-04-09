@@ -104,7 +104,7 @@ func (cs *ClientState) verifyHeaderWithMode(
 		return errorsmod.Wrapf(ErrInvalidStabilityScore, "insufficient descendant depth: got %d, need %d", depth, cs.HeuristicParams.ThresholdDepth)
 	}
 
-	uniquePools, uniqueStakeBps, securityScoreBps, err := cs.computeHeaderSecurityMetrics(header)
+	uniquePools, uniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(header)
 	if err != nil {
 		return err
 	}
@@ -114,9 +114,6 @@ func (cs *ClientState) verifyHeaderWithMode(
 	}
 	if header.UniqueStakeBps != uniqueStakeBps {
 		return errorsmod.Wrapf(ErrInvalidUniqueStake, "header unique stake bps mismatch: got %d, expected %d", header.UniqueStakeBps, uniqueStakeBps)
-	}
-	if header.SecurityScoreBps != securityScoreBps {
-		return errorsmod.Wrapf(ErrInvalidStabilityScore, "header security score mismatch: got %d, expected %d", header.SecurityScoreBps, securityScoreBps)
 	}
 
 	if uniquePools < cs.HeuristicParams.ThresholdUniquePools {
@@ -290,6 +287,10 @@ func (cs *ClientState) UpdateState(
 	if err != nil {
 		panic(fmt.Errorf("failed to extract ibc_state_root from verified StabilityHeader: %w", err))
 	}
+	uniquePools, uniqueStakeBps, securityScoreBps, err := cs.computeHeaderSecurityMetrics(header)
+	if err != nil {
+		panic(fmt.Errorf("failed to recompute stability metrics from verified StabilityHeader: %w", err))
+	}
 	consensusTimestamp, err := cs.DeriveTimestampFromSlot(header.AnchorBlock.Slot)
 	if err != nil {
 		panic(fmt.Errorf("failed to derive stability consensus timestamp: %w", err))
@@ -300,17 +301,17 @@ func (cs *ClientState) UpdateState(
 		IbcStateRoot:      ibcStateRoot,
 		AcceptedBlockHash: header.AnchorBlock.Hash,
 		AcceptedEpoch:     header.AnchorBlock.Epoch,
-		UniquePoolsCount:  header.UniquePoolsCount,
-		UniqueStakeBps:    header.UniqueStakeBps,
-		SecurityScoreBps:  header.SecurityScoreBps,
+		UniquePoolsCount:  uniquePools,
+		UniqueStakeBps:    uniqueStakeBps,
+		SecurityScoreBps:  securityScoreBps,
 	}
 
 	setClientState(clientStore, cdc, cs)
 	setConsensusState(clientStore, cdc, newConsensusState, header.GetHeight())
 	setConsensusMetadata(ctx, clientStore, header.GetHeight())
-	clientStore.Set(StabilityScoreKey(height.RevisionHeight), sdk.Uint64ToBigEndian(header.SecurityScoreBps))
-	clientStore.Set(UniquePoolsKey(height.RevisionHeight), sdk.Uint64ToBigEndian(header.UniquePoolsCount))
-	clientStore.Set(UniqueStakeKey(height.RevisionHeight), sdk.Uint64ToBigEndian(header.UniqueStakeBps))
+	clientStore.Set(StabilityScoreKey(height.RevisionHeight), sdk.Uint64ToBigEndian(securityScoreBps))
+	clientStore.Set(UniquePoolsKey(height.RevisionHeight), sdk.Uint64ToBigEndian(uniquePools))
+	clientStore.Set(UniqueStakeKey(height.RevisionHeight), sdk.Uint64ToBigEndian(uniqueStakeBps))
 	clientStore.Set(AcceptedBlockHashKey(height.RevisionHeight), []byte(header.AnchorBlock.Hash))
 	return []exported.Height{height}
 }
