@@ -13,9 +13,11 @@ import {
 } from './history.service';
 import {
   assertEpochStakeDistributionAvailable,
+  getStabilityThresholdFailure,
   assertStabilityThresholds,
   computeStabilityMetrics,
   getStabilityHeuristicParams,
+  getStabilityLookaheadDepth,
   scoreDescendantBlocks,
   StabilityMetrics,
 } from './stability-scoring';
@@ -74,6 +76,36 @@ function assertBlocksRemainWithinEpochSlotBounds(
       `${context} crosses trusted epoch slot bounds at height ${violatingBlock.height}: slot ${violatingBlock.slotNo.toString()} not in [${epochVerificationContext.currentEpochStartSlot.toString()}, ${epochVerificationContext.currentEpochEndSlotExclusive.toString()})`,
     );
   }
+}
+
+function findFirstEpochBoundaryViolation(
+  blocks: HistoryBlock[],
+  expectedEpoch: number,
+  epochVerificationContext: HistoryEpochVerificationContext,
+): number {
+  return blocks.findIndex(
+    (block) =>
+      block.epochNo !== expectedEpoch ||
+      block.slotNo < epochVerificationContext.currentEpochStartSlot ||
+      block.slotNo >= epochVerificationContext.currentEpochEndSlotExclusive,
+  );
+}
+
+function throwDescendantBoundaryViolation(
+  violatingBlock: HistoryBlock,
+  expectedEpoch: number,
+  epochVerificationContext: HistoryEpochVerificationContext,
+  anchorHeight: number,
+): never {
+  if (violatingBlock.epochNo !== expectedEpoch) {
+    throw new GrpcInternalException(
+      `Stake-weighted stability descendant window for anchor height ${anchorHeight} crosses epoch boundary at height ${violatingBlock.height}: expected epoch ${expectedEpoch}, got ${violatingBlock.epochNo}`,
+    );
+  }
+
+  throw new GrpcInternalException(
+    `Stake-weighted stability descendant window for anchor height ${anchorHeight} crosses trusted epoch slot bounds at height ${violatingBlock.height}: slot ${violatingBlock.slotNo.toString()} not in [${epochVerificationContext.currentEpochStartSlot.toString()}, ${epochVerificationContext.currentEpochEndSlotExclusive.toString()})`,
+  );
 }
 
 function assertEpochVerificationContextAvailable(
@@ -159,7 +191,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
 
   const descendantBlocks = await historyService.findDescendantBlocks(
     BigInt(anchorBlock.height),
-    Number(heuristicParams.threshold_depth || 24n),
+    getStabilityLookaheadDepth(heuristicParams),
   );
   const epochStakeDistribution = await historyService.findEpochStakeDistribution(anchorBlock.epochNo);
   const epochVerificationContext = await historyService.findEpochVerificationContext(anchorBlock.epochNo);
@@ -183,27 +215,79 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
     `Stake-weighted stability anchor block for height ${anchorBlock.height}`,
   );
   const scoredDescendantBlocks = scoreDescendantBlocks(descendantBlocks, epochStakeDistribution, logger);
-  assertBlocksRemainInEpoch(
+  const firstInvalidDescendantIndex = findFirstEpochBoundaryViolation(
     scoredDescendantBlocks,
     anchorBlock.epochNo,
-    `Stake-weighted stability descendant window for anchor height ${anchorBlock.height}`,
-  );
-  assertBlocksRemainWithinEpochSlotBounds(
-    scoredDescendantBlocks,
     epochVerificationContext,
-    `Stake-weighted stability descendant window for anchor height ${anchorBlock.height}`,
   );
-  const metrics = computeStabilityMetrics(scoredDescendantBlocks, epochStakeDistribution, heuristicParams);
+  const eligibleDescendantBlocks =
+    firstInvalidDescendantIndex >= 0
+      ? scoredDescendantBlocks.slice(0, firstInvalidDescendantIndex)
+      : scoredDescendantBlocks;
+
+  let acceptedDescendantBlocks = eligibleDescendantBlocks;
+  let metrics = computeStabilityMetrics(eligibleDescendantBlocks, epochStakeDistribution, heuristicParams);
+
+  const thresholdDepth = Number(heuristicParams.threshold_depth || 0n);
+  if (requireThresholds) {
+    for (
+      let prefixLength = Math.max(thresholdDepth, 1);
+      prefixLength <= eligibleDescendantBlocks.length;
+      prefixLength += 1
+    ) {
+      const candidateDescendantBlocks = eligibleDescendantBlocks.slice(0, prefixLength);
+      const candidateMetrics = computeStabilityMetrics(
+        candidateDescendantBlocks,
+        epochStakeDistribution,
+        heuristicParams,
+      );
+
+      if (
+        !getStabilityThresholdFailure(
+          candidateMetrics,
+          heuristicParams,
+          anchorBlock.height.toString(),
+          candidateDescendantBlocks.length,
+        )
+      ) {
+        acceptedDescendantBlocks = candidateDescendantBlocks;
+        metrics = candidateMetrics;
+        break;
+      }
+    }
+  }
 
   if (requireThresholds) {
-    assertStabilityThresholds(metrics, heuristicParams, anchorBlock.height.toString(), scoredDescendantBlocks.length);
+    const thresholdFailure = getStabilityThresholdFailure(
+      metrics,
+      heuristicParams,
+      anchorBlock.height.toString(),
+      acceptedDescendantBlocks.length,
+    );
+    if (thresholdFailure) {
+      if (firstInvalidDescendantIndex >= 0) {
+        throwDescendantBoundaryViolation(
+          scoredDescendantBlocks[firstInvalidDescendantIndex],
+          anchorBlock.epochNo,
+          epochVerificationContext,
+          anchorBlock.height,
+        );
+      }
+
+      assertStabilityThresholds(
+        metrics,
+        heuristicParams,
+        anchorBlock.height.toString(),
+        acceptedDescendantBlocks.length,
+      );
+    }
   }
 
   return {
     anchorHeight: BigInt(anchorBlock.height) as CardanoHeight,
     anchorEpoch: anchorBlock.epochNo as EpochNumber,
     anchorBlock,
-    descendantBlocks: scoredDescendantBlocks,
+    descendantBlocks: acceptedDescendantBlocks,
     epochStakeDistribution,
     epochVerificationContext,
     heuristicParams,

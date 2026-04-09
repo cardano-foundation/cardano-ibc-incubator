@@ -113,7 +113,7 @@ describe('stability-evidence', () => {
     });
 
     expect(historyServiceMock.findBlockByHeight).toHaveBeenCalledWith(100n);
-    expect(historyServiceMock.findDescendantBlocks).toHaveBeenCalledWith(100n, 3);
+    expect(historyServiceMock.findDescendantBlocks).toHaveBeenCalledWith(100n, 12);
     expect(historyServiceMock.findEpochStakeDistribution).toHaveBeenCalledWith(7);
     expect(historyServiceMock.findEpochVerificationContext).toHaveBeenCalledWith(7);
     expect(evidence.anchorHeight).toBe(100n);
@@ -152,6 +152,56 @@ describe('stability-evidence', () => {
     expect(historyServiceMock.findBridgeBlocks).toHaveBeenCalledWith(97n, 100n);
     expect(evidence.trustedHeight).toBe(97n);
     expect(evidence.bridgeBlocks).toEqual(bridgeBlocks);
+  });
+
+  it('accepts the first descendant prefix that meets thresholds within the lookahead window', async () => {
+    const progressiveHeuristicParams = getStabilityHeuristicParams({
+      CARDANO_STABILITY_THRESHOLD_DEPTH: '3',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS: '4',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: '9000',
+    } as NodeJS.ProcessEnv);
+
+    historyServiceMock.findDescendantBlocks = jest.fn().mockResolvedValue([
+      ...descendantBlocks,
+      {
+        height: 104,
+        hash: 'hash-104',
+        prevHash: 'hash-103',
+        slotNo: 1040n,
+        epochNo: 7,
+        timestampUnixNs: 1_400_000_000n,
+        slotLeader: 'pool-d',
+      },
+      {
+        height: 105,
+        hash: 'hash-105',
+        prevHash: 'hash-104',
+        slotNo: 1200n,
+        epochNo: 8,
+        timestampUnixNs: 1_500_000_000n,
+        slotLeader: 'pool-e',
+      },
+    ]);
+    historyServiceMock.findEpochStakeDistribution = jest.fn().mockResolvedValue([
+      { poolId: 'pool-a', stake: 250n, vrfKeyHash: 'aa'.repeat(32) },
+      { poolId: 'pool-b', stake: 250n, vrfKeyHash: 'bb'.repeat(32) },
+      { poolId: 'pool-c', stake: 250n, vrfKeyHash: 'cc'.repeat(32) },
+      { poolId: 'pool-d', stake: 250n, vrfKeyHash: 'dd'.repeat(32) },
+    ]);
+    historyServiceMock.findEpochVerificationContext = jest.fn().mockResolvedValue(epochVerificationContext);
+
+    const evidence = await loadStakeWeightedStabilityEvidenceByHeight({
+      historyService: historyServiceMock as HistoryService,
+      height: 100n,
+      logger: { warn: jest.fn() } as unknown as Logger,
+      heuristicParams: progressiveHeuristicParams,
+    });
+
+    expect(historyServiceMock.findDescendantBlocks).toHaveBeenCalledWith(100n, 12);
+    expect(evidence.descendantBlocks).toHaveLength(4);
+    expect(evidence.descendantBlocks.map((block) => block.height)).toEqual([101, 102, 103, 104]);
+    expect(evidence.metrics.uniquePoolsCount).toBe(4);
+    expect(evidence.metrics.uniqueStakeBps).toBe(10000);
   });
 
   it('rejects descendant windows that cross an epoch boundary', async () => {

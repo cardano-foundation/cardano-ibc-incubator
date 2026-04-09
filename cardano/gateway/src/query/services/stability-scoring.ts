@@ -44,6 +44,23 @@ export function getStabilityHeuristicParams(env: NodeJS.ProcessEnv = process.env
   };
 }
 
+export function getStabilityLookaheadDepth(
+  heuristicParams: HeuristicParams,
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const configured = env.CARDANO_STABILITY_MAX_LOOKAHEAD_DEPTH;
+  const fallback = heuristicParams.threshold_depth > 0n ? heuristicParams.threshold_depth * 4n : 96n;
+  const lookahead = configured ? BigInt(configured) : fallback;
+  const minimum = heuristicParams.threshold_depth > 0n ? heuristicParams.threshold_depth : 1n;
+  const normalized = lookahead >= minimum ? lookahead : minimum;
+
+  if (normalized > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`CARDANO_STABILITY_MAX_LOOKAHEAD_DEPTH is too large: ${normalized.toString()}`);
+  }
+
+  return Number(normalized);
+}
+
 export function scoreDescendantBlocks(
   descendants: HistoryBlock[],
   epochStakeDistribution: HistoryStakeDistributionEntry[],
