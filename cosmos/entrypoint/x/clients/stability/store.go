@@ -44,13 +44,13 @@ func getClientState(store storetypes.KVStore, cdc codec.BinaryCodec) (*ClientSta
 }
 
 func setConsensusState(clientStore storetypes.KVStore, cdc codec.BinaryCodec, consensusState *ConsensusState, height exported.Height) {
-	key := host.ConsensusStateKey(height)
+	key := consensusStateKey(height)
 	val := clienttypes.MustMarshalConsensusState(cdc, consensusState)
 	clientStore.Set(key, val)
 }
 
 func GetConsensusState(store storetypes.KVStore, cdc codec.BinaryCodec, height exported.Height) (*ConsensusState, bool) {
-	bz := store.Get(host.ConsensusStateKey(height))
+	bz := store.Get(consensusStateKey(height))
 	if len(bz) == 0 {
 		return nil, false
 	}
@@ -59,11 +59,11 @@ func GetConsensusState(store storetypes.KVStore, cdc codec.BinaryCodec, height e
 }
 
 func deleteConsensusState(clientStore storetypes.KVStore, height exported.Height) {
-	clientStore.Delete(host.ConsensusStateKey(height))
+	clientStore.Delete(consensusStateKey(height))
 }
 
 func ProcessedTimeKey(height exported.Height) []byte {
-	return append(host.ConsensusStateKey(height), KeyProcessedTime...)
+	return append(consensusStateKey(height), KeyProcessedTime...)
 }
 
 func SetProcessedTime(clientStore storetypes.KVStore, height exported.Height, timeNs uint64) {
@@ -83,7 +83,7 @@ func deleteProcessedTime(clientStore storetypes.KVStore, height exported.Height)
 }
 
 func ProcessedHeightKey(height exported.Height) []byte {
-	return append(host.ConsensusStateKey(height), KeyProcessedHeight...)
+	return append(consensusStateKey(height), KeyProcessedHeight...)
 }
 
 func SetProcessedHeight(clientStore storetypes.KVStore, consHeight, processedHeight exported.Height) {
@@ -112,7 +112,7 @@ func IterationKey(height exported.Height) []byte {
 }
 
 func SetIterationKey(clientStore storetypes.KVStore, height exported.Height) {
-	clientStore.Set(IterationKey(height), host.ConsensusStateKey(height))
+	clientStore.Set(IterationKey(height), consensusStateKey(height))
 }
 
 func deleteIterationKey(clientStore storetypes.KVStore, height exported.Height) {
@@ -146,7 +146,7 @@ func GetNextConsensusState(clientStore storetypes.KVStore, cdc codec.BinaryCodec
 	if !iterator.Valid() {
 		return nil, false
 	}
-	if bytes.Equal(iterator.Value(), host.ConsensusStateKey(height)) {
+	if bytes.Equal(iterator.Value(), consensusStateKey(height)) {
 		iterator.Next()
 		if !iterator.Valid() {
 			return nil, false
@@ -186,6 +186,10 @@ func bigEndianHeightBytes(height exported.Height) []byte {
 	binary.BigEndian.PutUint64(heightBytes[:8], height.GetRevisionNumber())
 	binary.BigEndian.PutUint64(heightBytes[8:], height.GetRevisionHeight())
 	return heightBytes
+}
+
+func consensusStateKey(height exported.Height) []byte {
+	return fmt.Appendf(nil, "%s/%d-%d", host.KeyConsensusStatePrefix, height.GetRevisionNumber(), height.GetRevisionHeight())
 }
 
 func setConsensusMetadata(ctx sdk.Context, clientStore storetypes.KVStore, height exported.Height) {

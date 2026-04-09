@@ -275,6 +275,58 @@ func TestHeaderValidateBasicRejectsTrustedHeightEdgeCases(t *testing.T) {
 	require.ErrorContains(t, err, "trusted height")
 }
 
+func TestPruneOldestConsensusStateRemovesLowestExpiredHeight(t *testing.T) {
+	cdc := newStabilityTestCodec()
+	ctx, clientStore := newStabilityTestClientStore(t, "stability-prune-oldest")
+
+	cs := newStabilityTestClientState()
+	cs.TrustingPeriod = time.Second
+
+	expiredAt := uint64(ctx.BlockTime().Add(-2 * time.Second).UnixNano())
+	freshAt := uint64(ctx.BlockTime().UnixNano())
+
+	setConsensusState(clientStore, cdc, &ConsensusState{
+		Timestamp:         expiredAt,
+		IbcStateRoot:      bytes.Repeat([]byte{0x01}, 32),
+		AcceptedBlockHash: "hash-10",
+		AcceptedEpoch:     7,
+	}, NewHeight(0, 10))
+	setConsensusMetadataWithValues(clientStore, NewHeight(0, 10), NewHeight(0, 10), expiredAt)
+
+	setConsensusState(clientStore, cdc, &ConsensusState{
+		Timestamp:         expiredAt,
+		IbcStateRoot:      bytes.Repeat([]byte{0x02}, 32),
+		AcceptedBlockHash: "hash-11",
+		AcceptedEpoch:     7,
+	}, NewHeight(0, 11))
+	setConsensusMetadataWithValues(clientStore, NewHeight(0, 11), NewHeight(0, 11), expiredAt)
+
+	setConsensusState(clientStore, cdc, &ConsensusState{
+		Timestamp:         freshAt,
+		IbcStateRoot:      bytes.Repeat([]byte{0x03}, 32),
+		AcceptedBlockHash: "hash-12",
+		AcceptedEpoch:     7,
+	}, NewHeight(0, 12))
+	setConsensusMetadataWithValues(clientStore, NewHeight(0, 12), NewHeight(0, 12), freshAt)
+
+	_, found10Before := GetConsensusState(clientStore, cdc, NewHeight(0, 10))
+	_, found11Before := GetConsensusState(clientStore, cdc, NewHeight(0, 11))
+	_, found12Before := GetConsensusState(clientStore, cdc, NewHeight(0, 12))
+	require.True(t, found10Before)
+	require.True(t, found11Before)
+	require.True(t, found12Before)
+
+	cs.pruneOldestConsensusState(ctx, cdc, clientStore)
+
+	_, found10 := GetConsensusState(clientStore, cdc, NewHeight(0, 10))
+	_, found11 := GetConsensusState(clientStore, cdc, NewHeight(0, 11))
+	_, found12 := GetConsensusState(clientStore, cdc, NewHeight(0, 12))
+
+	require.False(t, found10)
+	require.True(t, found11)
+	require.True(t, found12)
+}
+
 func newStabilityTestCodec() codec.BinaryCodec {
 	registry := codectypes.NewInterfaceRegistry()
 	RegisterInterfaces(registry)
