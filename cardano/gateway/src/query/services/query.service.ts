@@ -406,7 +406,10 @@ export class QueryService {
       logger: this.logger,
     });
 
-    const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(height));
+    const hostStateUtxo = await this.findExactStabilityAnchorHostStateUtxo(
+      stabilityEvidence.anchorHeight,
+      'new client creation',
+    );
     if (!hostStateUtxo?.datum) {
       throw new GrpcInternalException('IBC infrastructure error: HostState UTxO missing datum');
     }
@@ -1514,10 +1517,18 @@ export class QueryService {
       logger: this.logger,
     });
 
-    const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(BigInt(height));
+    const hostStateUtxo = await this.findExactStabilityAnchorHostStateUtxo(
+      stabilityEvidence.anchorHeight,
+      'header generation',
+    );
     const hostStateTxEvidence = await this.historyService.findTransactionEvidenceByHash(hostStateUtxo.txHash);
     if (!hostStateTxEvidence) {
       throw new GrpcInternalException(`Historical tx evidence unavailable for tx ${hostStateUtxo.txHash}`);
+    }
+    if (BigInt(hostStateTxEvidence.blockNo) !== stabilityEvidence.anchorHeight) {
+      throw new GrpcInternalException(
+        `Historical tx evidence for HostState tx ${hostStateUtxo.txHash} does not match stability anchor height ${stabilityEvidence.anchorHeight.toString()}`,
+      );
     }
     const hostStateTxBodyCbor = Buffer.from(hostStateTxEvidence.txBodyCborHex, 'hex');
     const requestedBlocks = [
@@ -1642,6 +1653,19 @@ export class QueryService {
       slot_leader: block.slotLeader,
       block_cbor: blockCbor,
     };
+  }
+
+  private async findExactStabilityAnchorHostStateUtxo(
+    anchorHeight: bigint,
+    context: string,
+  ): Promise<UtxoDto> {
+    const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(anchorHeight);
+    if (BigInt(hostStateUtxo.blockNo) !== anchorHeight) {
+      throw new GrpcNotFoundException(
+        `Not found: requested stability anchor height ${anchorHeight.toString()} is not a HostState tx block height for ${context}`,
+      );
+    }
+    return hostStateUtxo;
   }
 
   private normalizeIbcDenomHashInput(input: string | undefined): string {
