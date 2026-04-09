@@ -1537,22 +1537,13 @@ export class QueryService {
       },
       anchor_block: this.toStabilityBlock(
         stabilityEvidence.anchorBlock,
-        stabilityEvidence.metrics.poolStakeBpsByPool,
         blockWitnessByHeight.get(stabilityEvidence.anchorBlock.height),
       ),
       bridge_blocks: stabilityEvidence.bridgeBlocks.map((block) =>
-        this.toStabilityBlock(
-          block,
-          stabilityEvidence.metrics.poolStakeBpsByPool,
-          blockWitnessByHeight.get(block.height),
-        ),
+        this.toStabilityBlock(block, blockWitnessByHeight.get(block.height)),
       ),
       descendant_blocks: stabilityEvidence.descendantBlocks.map((block) =>
-        this.toStabilityBlock(
-          block,
-          stabilityEvidence.metrics.poolStakeBpsByPool,
-          blockWitnessByHeight.get(block.height),
-        ),
+        this.toStabilityBlock(block, blockWitnessByHeight.get(block.height)),
       ),
       host_state_tx_hash: hostStateUtxo.txHash,
       host_state_tx_body_cbor: hostStateTxBodyCbor,
@@ -1637,11 +1628,7 @@ export class QueryService {
     return timing.systemStartUnixNs + slot * timing.slotLengthNs;
   }
 
-  private toStabilityBlock(
-    block: HistoryBlock,
-    poolStakeBpsByPool: Record<string, bigint>,
-    blockCbor?: Buffer,
-  ): StabilityBlock {
+  private toStabilityBlock(block: HistoryBlock, blockCbor?: Buffer): StabilityBlock {
     return {
       height: {
         revision_number: 0n,
@@ -1653,7 +1640,6 @@ export class QueryService {
       epoch: BigInt(block.epochNo),
       timestamp: this.deriveStabilityTimestampNs(block.slotNo),
       slot_leader: block.slotLeader,
-      stake_bps: poolStakeBpsByPool[block.slotLeader] ?? 0n,
       block_cbor: blockCbor,
     };
   }

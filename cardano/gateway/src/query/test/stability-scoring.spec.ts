@@ -42,9 +42,6 @@ describe('stability-scoring', () => {
     expect(metrics.uniquePoolsCount).toBe(3);
     expect(metrics.uniqueStakeBps).toBe(10000);
     expect(metrics.securityScoreBps).toBe(10000);
-    expect(metrics.poolStakeBpsByPool['pool-a']).toBe(5000n);
-    expect(metrics.poolStakeBpsByPool['pool-b']).toBe(3000n);
-    expect(metrics.poolStakeBpsByPool['pool-c']).toBe(2000n);
     expect(() =>
       assertStabilityThresholds(metrics, heuristicParams, '100', descendants.length),
     ).not.toThrow();
@@ -101,9 +98,6 @@ describe('stability-scoring', () => {
     const metrics = computeStabilityMetrics(descendants, epochStakeDistribution, heuristicParams);
 
     expect(metrics.uniquePoolsCount).toBe(3);
-    expect(metrics.poolStakeBpsByPool['pool-a']).toBe(3333n);
-    expect(metrics.poolStakeBpsByPool['pool-b']).toBe(3333n);
-    expect(metrics.poolStakeBpsByPool['pool-c']).toBe(3333n);
     expect(metrics.uniqueStakeBps).toBe(10000);
     expect(metrics.securityScoreBps).toBe(10000);
   });

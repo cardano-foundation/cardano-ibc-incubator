@@ -7,7 +7,6 @@ export type StabilityMetrics = {
   uniquePoolsCount: number;
   uniqueStakeBps: number;
   securityScoreBps: number;
-  poolStakeBpsByPool: Record<string, bigint>;
 };
 
 export function assertEpochStakeDistributionAvailable(
@@ -83,7 +82,6 @@ export function computeStabilityMetrics(
   const stakeByPool = new Map(epochStakeDistribution.map((entry) => [entry.poolId, entry.stake]));
   const totalStake = epochStakeDistribution.reduce((sum, entry) => sum + entry.stake, 0n);
 
-  const poolStakeBpsByPool: Record<string, bigint> = {};
   let uniqueStake = 0n;
 
   for (const descendant of descendants) {
@@ -93,9 +91,6 @@ export function computeStabilityMetrics(
 
     uniquePools.add(descendant.slotLeader);
     const stake = stakeByPool.get(descendant.slotLeader) || 0n;
-    const stakeBps = (stake * 10_000n) / totalStake;
-
-    poolStakeBpsByPool[descendant.slotLeader] = stakeBps;
     uniqueStake += stake;
   }
 
@@ -114,7 +109,6 @@ export function computeStabilityMetrics(
     uniquePoolsCount: uniquePools.size,
     uniqueStakeBps: Number(uniqueStakeBps),
     securityScoreBps: Number(rawScore > 10_000n ? 10_000n : rawScore),
-    poolStakeBpsByPool,
   };
 }
 

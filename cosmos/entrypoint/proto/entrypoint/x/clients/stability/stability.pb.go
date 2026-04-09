@@ -286,7 +286,6 @@ type StabilityBlock struct {
 	Epoch      uint64  `protobuf:"varint,5,opt,name=epoch,proto3" json:"epoch,omitempty"`
 	Timestamp  uint64  `protobuf:"varint,6,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	SlotLeader string  `protobuf:"bytes,7,opt,name=slot_leader,json=slotLeader,proto3" json:"slot_leader,omitempty"`
-	StakeBps   uint64  `protobuf:"varint,8,opt,name=stake_bps,json=stakeBps,proto3" json:"stake_bps,omitempty"`
 	BlockCbor  []byte  `protobuf:"bytes,9,opt,name=block_cbor,json=blockCbor,proto3" json:"block_cbor,omitempty"`
 }
 
@@ -879,11 +878,6 @@ func (m *StabilityBlock) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x4a
 	}
-	if m.StakeBps != 0 {
-		i = encodeVarintStability(dAtA, i, uint64(m.StakeBps))
-		i--
-		dAtA[i] = 0x40
-	}
 	if len(m.SlotLeader) > 0 {
 		i -= len(m.SlotLeader)
 		copy(dAtA[i:], m.SlotLeader)
@@ -1263,9 +1257,6 @@ func (m *StabilityBlock) Size() (n int) {
 	l = len(m.SlotLeader)
 	if l > 0 {
 		n += 1 + l + sovStability(uint64(l))
-	}
-	if m.StakeBps != 0 {
-		n += 1 + sovStability(uint64(m.StakeBps))
 	}
 	l = len(m.BlockCbor)
 	if l > 0 {
@@ -2766,25 +2757,6 @@ func (m *StabilityBlock) Unmarshal(dAtA []byte) error {
 			}
 			m.SlotLeader = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
-		case 8:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field StakeBps", wireType)
-			}
-			m.StakeBps = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowStability
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.StakeBps |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
 		case 9:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field BlockCbor", wireType)
