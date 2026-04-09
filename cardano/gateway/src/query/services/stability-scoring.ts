@@ -67,7 +67,7 @@ export function computeStabilityMetrics(
   const totalStake = epochStakeDistribution.reduce((sum, entry) => sum + entry.stake, 0n);
 
   const poolStakeBpsByPool: Record<string, bigint> = {};
-  let uniqueStakeBps = 0n;
+  let uniqueStake = 0n;
 
   for (const descendant of descendants) {
     if (!descendant.slotLeader || uniquePools.has(descendant.slotLeader)) {
@@ -75,15 +75,14 @@ export function computeStabilityMetrics(
     }
 
     uniquePools.add(descendant.slotLeader);
-    const stakeBps = ((stakeByPool.get(descendant.slotLeader) || 0n) * 10_000n) / totalStake;
+    const stake = stakeByPool.get(descendant.slotLeader) || 0n;
+    const stakeBps = (stake * 10_000n) / totalStake;
 
     poolStakeBpsByPool[descendant.slotLeader] = stakeBps;
-    uniqueStakeBps += stakeBps;
+    uniqueStake += stake;
   }
 
-  if (uniqueStakeBps > 10_000n) {
-    uniqueStakeBps = 10_000n;
-  }
+  const uniqueStakeBps = uniqueStake >= totalStake ? 10_000n : (uniqueStake * 10_000n) / totalStake;
 
   const depthScore = minBps(BigInt(descendants.length), heuristicParams.threshold_depth);
   const poolsScore = minBps(BigInt(uniquePools.size), heuristicParams.threshold_unique_pools);

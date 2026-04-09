@@ -77,6 +77,37 @@ describe('stability-scoring', () => {
     ).toThrow('stability thresholds not met');
   });
 
+  it('computes unique stake bps from summed raw stake instead of summing rounded per-pool bps', () => {
+    const heuristicParams = getStabilityHeuristicParams({
+      CARDANO_STABILITY_THRESHOLD_DEPTH: '3',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS: '3',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: '10000',
+      CARDANO_STABILITY_DEPTH_WEIGHT_BPS: '2000',
+      CARDANO_STABILITY_POOLS_WEIGHT_BPS: '2000',
+      CARDANO_STABILITY_STAKE_WEIGHT_BPS: '6000',
+    } as NodeJS.ProcessEnv);
+
+    const descendants = [
+      makeBlock(401, 'anchor', 'pool-a'),
+      makeBlock(402, 'hash-401', 'pool-b'),
+      makeBlock(403, 'hash-402', 'pool-c'),
+    ];
+    const epochStakeDistribution: HistoryStakeDistributionEntry[] = [
+      { poolId: 'pool-a', stake: 2n, vrfKeyHash: 'aa'.repeat(32) },
+      { poolId: 'pool-b', stake: 2n, vrfKeyHash: 'bb'.repeat(32) },
+      { poolId: 'pool-c', stake: 2n, vrfKeyHash: 'cc'.repeat(32) },
+    ];
+
+    const metrics = computeStabilityMetrics(descendants, epochStakeDistribution, heuristicParams);
+
+    expect(metrics.uniquePoolsCount).toBe(3);
+    expect(metrics.poolStakeBpsByPool['pool-a']).toBe(3333n);
+    expect(metrics.poolStakeBpsByPool['pool-b']).toBe(3333n);
+    expect(metrics.poolStakeBpsByPool['pool-c']).toBe(3333n);
+    expect(metrics.uniqueStakeBps).toBe(10000);
+    expect(metrics.securityScoreBps).toBe(10000);
+  });
+
   it('fails closed when epoch stake distribution is missing', () => {
     const heuristicParams = getStabilityHeuristicParams({
       CARDANO_STABILITY_THRESHOLD_DEPTH: '3',
