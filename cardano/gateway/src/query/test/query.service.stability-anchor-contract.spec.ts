@@ -11,6 +11,7 @@ import { HistoryService } from '../services/history.service';
 describe('QueryService stability anchor contract', () => {
   let service: QueryService;
   let historyServiceMock: {
+    findLatestBlock: jest.Mock;
     findBlockByHeight: jest.Mock;
     findDescendantBlocks: jest.Mock;
     findEpochStakeDistribution: jest.Mock;
@@ -50,6 +51,15 @@ describe('QueryService stability anchor contract', () => {
     } as unknown as ConfigService;
 
     historyServiceMock = {
+      findLatestBlock: jest.fn().mockResolvedValue({
+        height: 105,
+        hash: 'latest-hash',
+        prevHash: 'hash-104',
+        slotNo: 1050n,
+        epochNo: 7,
+        timestampUnixNs: 1_500_000_000n,
+        slotLeader: 'pool-e',
+      }),
       findBlockByHeight: jest.fn().mockResolvedValue({
         height: 100,
         hash: 'anchor-hash',

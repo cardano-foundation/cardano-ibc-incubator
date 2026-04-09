@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { HeuristicParams } from '@plus/proto-types/build/ibc/lightclients/stability/v1/stability';
 import {
   GrpcInternalException,
+  GrpcInvalidArgumentException,
   GrpcNotFoundException,
 } from '~@/exception/grpc_exceptions';
 import {
@@ -74,6 +75,22 @@ function assertBlocksRemainWithinEpochSlotBounds(
   if (violatingBlock) {
     throw new GrpcInternalException(
       `${context} crosses trusted epoch slot bounds at height ${violatingBlock.height}: slot ${violatingBlock.slotNo.toString()} not in [${epochVerificationContext.currentEpochStartSlot.toString()}, ${epochVerificationContext.currentEpochEndSlotExclusive.toString()})`,
+    );
+  }
+}
+
+async function assertAnchorUsesCurrentEpoch(
+  historyService: HistoryService,
+  anchorBlock: HistoryBlock,
+): Promise<void> {
+  const latestBlock = await historyService.findLatestBlock();
+  if (!latestBlock) {
+    throw new GrpcInternalException('Cardano history latest block unavailable for stake-weighted stability');
+  }
+
+  if (anchorBlock.epochNo !== latestBlock.epochNo) {
+    throw new GrpcInvalidArgumentException(
+      `Invalid argument: stake-weighted stability currently supports only current-epoch anchors; requested height ${anchorBlock.height} is in epoch ${anchorBlock.epochNo}, current epoch is ${latestBlock.epochNo}`,
     );
   }
 }
@@ -188,6 +205,8 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
       missingAnchorBlockMessage ?? `Not found: "height" ${height.toString()} not found`,
     );
   }
+
+  await assertAnchorUsesCurrentEpoch(historyService, anchorBlock);
 
   const descendantBlocks = await historyService.findDescendantBlocks(
     BigInt(anchorBlock.height),
