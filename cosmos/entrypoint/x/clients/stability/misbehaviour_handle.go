@@ -15,32 +15,26 @@ import (
 func (ClientState) CheckForMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, msg exported.ClientMessage) bool {
 	switch msg := msg.(type) {
 	case *StabilityHeader:
-		if existingConsState, found := GetConsensusState(clientStore, cdc, msg.GetHeight()); found {
-			return !strings.EqualFold(existingConsState.AcceptedBlockHash, msg.AnchorBlock.Hash)
-		}
+		return headerConflictsWithStoredConsensus(clientStore, cdc, msg)
 	case *Misbehaviour:
-		return headersConflict(msg.StabilityHeader1, msg.StabilityHeader2)
+		return headersConflict(msg.StabilityHeader1, msg.StabilityHeader2) ||
+			headerConflictsWithStoredConsensus(clientStore, cdc, msg.StabilityHeader1) ||
+			headerConflictsWithStoredConsensus(clientStore, cdc, msg.StabilityHeader2)
 	}
 
 	return false
 }
 
 func (cs *ClientState) verifyMisbehaviour(_ sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec, misbehaviour *Misbehaviour) error {
-	_, found := GetConsensusState(clientStore, cdc, misbehaviour.StabilityHeader1.GetHeight())
-	if !found {
-		return errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "could not get consensus state from clientStore for StabilityHeader1 in Misbehaviour at Height: %s", misbehaviour.StabilityHeader1.GetHeight())
-	}
-	_, found = GetConsensusState(clientStore, cdc, misbehaviour.StabilityHeader2.GetHeight())
-	if !found {
-		return errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "could not get consensus state from clientStore for StabilityHeader2 in Misbehaviour at Height: %s", misbehaviour.StabilityHeader2.GetHeight())
-	}
 	if err := cs.verifyHeaderAgainstTrustedState(clientStore, cdc, misbehaviour.StabilityHeader1); err != nil {
 		return errorsmod.Wrap(err, "verifying StabilityHeader1 in Misbehaviour failed")
 	}
 	if err := cs.verifyHeaderAgainstTrustedState(clientStore, cdc, misbehaviour.StabilityHeader2); err != nil {
 		return errorsmod.Wrap(err, "verifying StabilityHeader2 in Misbehaviour failed")
 	}
-	if !headersConflict(misbehaviour.StabilityHeader1, misbehaviour.StabilityHeader2) {
+	if !headersConflict(misbehaviour.StabilityHeader1, misbehaviour.StabilityHeader2) &&
+		!headerConflictsWithStoredConsensus(clientStore, cdc, misbehaviour.StabilityHeader1) &&
+		!headerConflictsWithStoredConsensus(clientStore, cdc, misbehaviour.StabilityHeader2) {
 		return errorsmod.Wrap(clienttypes.ErrInvalidMisbehaviour, "stability headers do not conflict")
 	}
 	return nil
@@ -89,4 +83,23 @@ func collectHeaderBlocksByHeight(header *StabilityHeader) map[uint64]string {
 	}
 
 	return blocksByHeight
+}
+
+func headerConflictsWithStoredConsensus(
+	clientStore storetypes.KVStore,
+	cdc codec.BinaryCodec,
+	header *StabilityHeader,
+) bool {
+	if header == nil {
+		return false
+	}
+
+	for height, hash := range collectHeaderBlocksByHeight(header) {
+		consensusState, found := GetConsensusState(clientStore, cdc, NewHeight(0, height))
+		if found && !strings.EqualFold(consensusState.AcceptedBlockHash, hash) {
+			return true
+		}
+	}
+
+	return false
 }

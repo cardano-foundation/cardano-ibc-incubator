@@ -174,6 +174,20 @@ func TestCheckForMisbehaviourDetectsConflictingHeaderAtSameHeight(t *testing.T) 
 	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
 }
 
+func TestCheckForMisbehaviourDetectsConflictingWindowAgainstStoredConsensus(t *testing.T) {
+	cdc := newStabilityTestCodec()
+	ctx, clientStore := newStabilityTestClientStore(t, "stability-misbehaviour-window")
+
+	cs := newStabilityTestClientState()
+	setConsensusState(clientStore, cdc, newStabilityTestConsensusState("trusted-hash"), NewHeight(0, 10))
+	setConsensusState(clientStore, cdc, newStabilityTestConsensusState("accepted-bridge-11"), NewHeight(0, 11))
+
+	header := newVerifiedTestHeader(t)
+	header.BridgeBlocks[0].Hash = "conflicting-bridge-11"
+
+	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
+}
+
 func TestCheckForMisbehaviourDetectsConflictingMisbehaviourMessage(t *testing.T) {
 	cs := newStabilityTestClientState()
 	header1 := newVerifiedTestHeader(t)
@@ -182,6 +196,22 @@ func TestCheckForMisbehaviourDetectsConflictingMisbehaviourMessage(t *testing.T)
 
 	msg := NewMisbehaviour("08-cardano-stability-0", header1, header2)
 	require.True(t, cs.CheckForMisbehaviour(sdk.Context{}, nil, nil, msg))
+}
+
+func TestVerifyMisbehaviourDoesNotRequireStoredTargetHeights(t *testing.T) {
+	cdc := newStabilityTestCodec()
+	ctx, clientStore := newStabilityTestClientStore(t, "stability-misbehaviour-unstored-heights")
+
+	cs := newStabilityTestClientState()
+	header := newVerifiedTestHeader(t)
+	header.AnchorBlock.Epoch = cs.CurrentEpoch + 1
+	setConsensusState(clientStore, cdc, newStabilityTestConsensusState(header.BridgeBlocks[0].PrevHash), NewHeight(0, 10))
+
+	msg := NewMisbehaviour("08-cardano-stability-0", header, header)
+	err := cs.verifyMisbehaviour(ctx, clientStore, cdc, msg)
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "could not get consensus state from clientStore")
+	require.Contains(t, err.Error(), "epoch mismatch")
 }
 
 func TestVerifyMisbehaviourDoesNotRejectStoredHeadersAsStale(t *testing.T) {
