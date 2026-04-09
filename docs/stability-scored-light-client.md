@@ -4,11 +4,25 @@ Author: Julius Tranquilli, https://github.com/floor-licker
 
 Date: April 7, 2026
 
+Personally I am framing "the Cardano light client problem" in 2026 as:
+
+You can have at most two of these three:
+
+1. fast acceptance
+2. no external trust
+3. no native consensus verification
+
+i.e, If you insist on fast acceptance and do not want to implement native Cardano verification on Cosmos, then you are left with some form of external trust. So that means your options are: 
+
+1. trust Mithril,
+2. trust your own small committee / pinned operators,
+3. or trust a single Gateway / operator.
+
 This document introduces a Cardano "stability-weighted" light client. It is implemented as client type `08-cardano-stability`. This is as an alternative to the Mithril light client. This model is not a fast finality model or anything of that nature, rather it tries to heuristically attain faster IBC proofs by making certain risk tradeoffs via a heuristic notion of Cardano settlement. 
 
 This is because the Mithril light client was effectively non-viable from a UX perspective. For example, Mithril certificates lagged the chain tip by over 100 blocks, so basic IBC operations would end up taking 200+ Cardano blocks.
 
-I think it is worth clarifying as well that in some ways this model is not even necessarily less secure than the Mithril-based light client. For example, a large factor in the security of the Mithril model is Mithril network participation, which I believe at the time of writing is even less than 20% of the network. So we can imagine comparing two assertions like the following:
+I think it is worth clarifying as well that comparing this model to the Mithril-based light client is not just a question of "faster means weaker." For example, a large factor in the security of the Mithril model is Mithril network participation, which I believe at the time of writing is even less than 20% of the network. So we can imagine comparing two assertions like the following:
 
 A) A randomly selected subset selected out of a pool of a fixed + hard, proportion of the network agree on the ledger view at a height H, so we consider it "final"
 
@@ -24,7 +38,7 @@ This model is configurable, so the safety of trusting it is entirely dependent o
 
 The resulting decision is represented as a score plus hard acceptance thresholds, and that accepted block is then used as the height at which the Cardano `HostState` commitment root is authenticated for IBC.
 
-This client is NOT equivalent to BFT finality, and it is NOT equivalent to a Tendermint-style light client. But it is certainly a superior solution in terms of UX, while attaining comparable levels of security. 
+This client is NOT equivalent to BFT finality, and it is NOT equivalent to a Tendermint-style light client. It is certainly a superior solution in terms of UX, but it does not currently offer a trust story comparable to a portable certification path like Mithril. Today it should be understood as a deterministic settlement heuristic over node-sourced Cardano block witnesses, with stronger checks than raw history summaries, but still a weaker trust anchor than a portable quorum-attested artifact.
 
 It implements an IBC 02-client shape in the `ibc-go` v10 sense, meaning:
 
