@@ -1,6 +1,7 @@
 package stability
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"time"
@@ -110,8 +111,33 @@ func (cs ClientState) Validate() error {
 	if len(cs.EpochStakeDistribution) == 0 {
 		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch stake distribution must not be empty")
 	}
+	if len(cs.EpochNonce) != 32 {
+		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch nonce must be 32 bytes")
+	}
+	if cs.SlotsPerKesPeriod == 0 {
+		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "slots per KES period must be greater than zero")
+	}
+	if cs.CurrentEpochEndSlotExclusive <= cs.CurrentEpochStartSlot {
+		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "current epoch slot bounds must be increasing")
+	}
 	totalStake := uint64(0)
+	seenPools := make(map[string]struct{}, len(cs.EpochStakeDistribution))
 	for _, entry := range cs.EpochStakeDistribution {
+		if strings.TrimSpace(entry.PoolId) == "" {
+			return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch stake distribution pool id must not be empty")
+		}
+		if len(entry.VrfKeyHash) != 32 {
+			return errorsmod.Wrapf(
+				ErrInvalidCurrentEpoch,
+				"epoch stake distribution vrf_key_hash for pool %s must be 32 bytes",
+				entry.PoolId,
+			)
+		}
+		poolKey := strings.ToLower(entry.PoolId)
+		if _, exists := seenPools[poolKey]; exists {
+			return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "duplicate epoch stake distribution pool id %s", entry.PoolId)
+		}
+		seenPools[poolKey] = struct{}{}
 		totalStake += entry.Stake
 	}
 	if totalStake == 0 {
@@ -122,13 +148,17 @@ func (cs ClientState) Validate() error {
 
 func (cs ClientState) ZeroCustomFields() exported.ClientState {
 	return &ClientState{
-		ChainId:                cs.ChainId,
-		LatestHeight:           cs.LatestHeight,
-		UpgradePath:            cs.UpgradePath,
-		HostStateNftPolicyId:   cs.HostStateNftPolicyId,
-		HostStateNftTokenName:  cs.HostStateNftTokenName,
-		HeuristicParams:        cs.HeuristicParams,
-		EpochStakeDistribution: cs.EpochStakeDistribution,
+		ChainId:                      cs.ChainId,
+		LatestHeight:                 cs.LatestHeight,
+		UpgradePath:                  cs.UpgradePath,
+		HostStateNftPolicyId:         cs.HostStateNftPolicyId,
+		HostStateNftTokenName:        cs.HostStateNftTokenName,
+		HeuristicParams:              cs.HeuristicParams,
+		EpochStakeDistribution:       cs.EpochStakeDistribution,
+		EpochNonce:                   bytes.Clone(cs.EpochNonce),
+		SlotsPerKesPeriod:            cs.SlotsPerKesPeriod,
+		CurrentEpochStartSlot:        cs.CurrentEpochStartSlot,
+		CurrentEpochEndSlotExclusive: cs.CurrentEpochEndSlotExclusive,
 	}
 }
 

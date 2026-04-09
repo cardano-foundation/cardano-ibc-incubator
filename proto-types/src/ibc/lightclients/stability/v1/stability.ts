@@ -18,6 +18,7 @@ export interface HeuristicParams {
 export interface StakeDistributionEntry {
   pool_id: string;
   stake: bigint;
+  vrf_key_hash: Uint8Array;
 }
 export interface ClientState {
   chain_id: string;
@@ -30,6 +31,10 @@ export interface ClientState {
   host_state_nft_policy_id: Uint8Array;
   host_state_nft_token_name: Uint8Array;
   epoch_stake_distribution: StakeDistributionEntry[];
+  epoch_nonce: Uint8Array;
+  slots_per_kes_period: bigint;
+  current_epoch_start_slot: bigint;
+  current_epoch_end_slot_exclusive: bigint;
 }
 export interface ConsensusState {
   timestamp: bigint;
@@ -251,6 +256,7 @@ function createBaseStakeDistributionEntry(): StakeDistributionEntry {
   return {
     pool_id: "",
     stake: BigInt(0),
+    vrf_key_hash: new Uint8Array(),
   };
 }
 export const StakeDistributionEntry = {
@@ -261,6 +267,9 @@ export const StakeDistributionEntry = {
     }
     if (message.stake !== BigInt(0)) {
       writer.uint32(16).uint64(message.stake);
+    }
+    if (message.vrf_key_hash.length !== 0) {
+      writer.uint32(26).bytes(message.vrf_key_hash);
     }
     return writer;
   },
@@ -277,6 +286,9 @@ export const StakeDistributionEntry = {
         case 2:
           message.stake = reader.uint64();
           break;
+        case 3:
+          message.vrf_key_hash = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -288,12 +300,17 @@ export const StakeDistributionEntry = {
     const obj = createBaseStakeDistributionEntry();
     if (isSet(object.pool_id)) obj.pool_id = String(object.pool_id);
     if (isSet(object.stake)) obj.stake = BigInt(object.stake.toString());
+    if (isSet(object.vrf_key_hash)) obj.vrf_key_hash = bytesFromBase64(object.vrf_key_hash);
     return obj;
   },
   toJSON(message: StakeDistributionEntry): unknown {
     const obj: any = {};
     message.pool_id !== undefined && (obj.pool_id = message.pool_id);
     message.stake !== undefined && (obj.stake = (message.stake || BigInt(0)).toString());
+    message.vrf_key_hash !== undefined &&
+      (obj.vrf_key_hash = base64FromBytes(
+        message.vrf_key_hash !== undefined ? message.vrf_key_hash : new Uint8Array(),
+      ));
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<StakeDistributionEntry>, I>>(object: I): StakeDistributionEntry {
@@ -302,6 +319,7 @@ export const StakeDistributionEntry = {
     if (object.stake !== undefined && object.stake !== null) {
       message.stake = BigInt(object.stake.toString());
     }
+    message.vrf_key_hash = object.vrf_key_hash ?? new Uint8Array();
     return message;
   },
 };
@@ -317,6 +335,10 @@ function createBaseClientState(): ClientState {
     host_state_nft_policy_id: new Uint8Array(),
     host_state_nft_token_name: new Uint8Array(),
     epoch_stake_distribution: [],
+    epoch_nonce: new Uint8Array(),
+    slots_per_kes_period: BigInt(0),
+    current_epoch_start_slot: BigInt(0),
+    current_epoch_end_slot_exclusive: BigInt(0),
   };
 }
 export const ClientState = {
@@ -351,6 +373,18 @@ export const ClientState = {
     }
     for (const v of message.epoch_stake_distribution) {
       StakeDistributionEntry.encode(v!, writer.uint32(82).fork()).ldelim();
+    }
+    if (message.epoch_nonce.length !== 0) {
+      writer.uint32(90).bytes(message.epoch_nonce);
+    }
+    if (message.slots_per_kes_period !== BigInt(0)) {
+      writer.uint32(96).uint64(message.slots_per_kes_period);
+    }
+    if (message.current_epoch_start_slot !== BigInt(0)) {
+      writer.uint32(104).uint64(message.current_epoch_start_slot);
+    }
+    if (message.current_epoch_end_slot_exclusive !== BigInt(0)) {
+      writer.uint32(112).uint64(message.current_epoch_end_slot_exclusive);
     }
     return writer;
   },
@@ -391,6 +425,18 @@ export const ClientState = {
         case 10:
           message.epoch_stake_distribution.push(StakeDistributionEntry.decode(reader, reader.uint32()));
           break;
+        case 11:
+          message.epoch_nonce = reader.bytes();
+          break;
+        case 12:
+          message.slots_per_kes_period = reader.uint64();
+          break;
+        case 13:
+          message.current_epoch_start_slot = reader.uint64();
+          break;
+        case 14:
+          message.current_epoch_end_slot_exclusive = reader.uint64();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -417,6 +463,13 @@ export const ClientState = {
       obj.epoch_stake_distribution = object.epoch_stake_distribution.map((e: any) =>
         StakeDistributionEntry.fromJSON(e),
       );
+    if (isSet(object.epoch_nonce)) obj.epoch_nonce = bytesFromBase64(object.epoch_nonce);
+    if (isSet(object.slots_per_kes_period))
+      obj.slots_per_kes_period = BigInt(object.slots_per_kes_period.toString());
+    if (isSet(object.current_epoch_start_slot))
+      obj.current_epoch_start_slot = BigInt(object.current_epoch_start_slot.toString());
+    if (isSet(object.current_epoch_end_slot_exclusive))
+      obj.current_epoch_end_slot_exclusive = BigInt(object.current_epoch_end_slot_exclusive.toString());
     return obj;
   },
   toJSON(message: ClientState): unknown {
@@ -456,6 +509,18 @@ export const ClientState = {
     } else {
       obj.epoch_stake_distribution = [];
     }
+    message.epoch_nonce !== undefined &&
+      (obj.epoch_nonce = base64FromBytes(
+        message.epoch_nonce !== undefined ? message.epoch_nonce : new Uint8Array(),
+      ));
+    message.slots_per_kes_period !== undefined &&
+      (obj.slots_per_kes_period = (message.slots_per_kes_period || BigInt(0)).toString());
+    message.current_epoch_start_slot !== undefined &&
+      (obj.current_epoch_start_slot = (message.current_epoch_start_slot || BigInt(0)).toString());
+    message.current_epoch_end_slot_exclusive !== undefined &&
+      (obj.current_epoch_end_slot_exclusive = (
+        message.current_epoch_end_slot_exclusive || BigInt(0)
+      ).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -481,6 +546,19 @@ export const ClientState = {
     message.host_state_nft_token_name = object.host_state_nft_token_name ?? new Uint8Array();
     message.epoch_stake_distribution =
       object.epoch_stake_distribution?.map((e) => StakeDistributionEntry.fromPartial(e)) || [];
+    message.epoch_nonce = object.epoch_nonce ?? new Uint8Array();
+    if (object.slots_per_kes_period !== undefined && object.slots_per_kes_period !== null) {
+      message.slots_per_kes_period = BigInt(object.slots_per_kes_period.toString());
+    }
+    if (object.current_epoch_start_slot !== undefined && object.current_epoch_start_slot !== null) {
+      message.current_epoch_start_slot = BigInt(object.current_epoch_start_slot.toString());
+    }
+    if (
+      object.current_epoch_end_slot_exclusive !== undefined &&
+      object.current_epoch_end_slot_exclusive !== null
+    ) {
+      message.current_epoch_end_slot_exclusive = BigInt(object.current_epoch_end_slot_exclusive.toString());
+    }
     return message;
   },
 };

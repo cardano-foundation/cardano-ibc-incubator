@@ -39,6 +39,14 @@ export type HistoryBlock = {
 export type HistoryStakeDistributionEntry = {
   poolId: string;
   stake: bigint;
+  vrfKeyHash: string;
+};
+
+export type HistoryEpochVerificationContext = {
+  epochNonce: string;
+  slotsPerKesPeriod: number;
+  currentEpochStartSlot: bigint;
+  currentEpochEndSlotExclusive: bigint;
 };
 
 export type HistoryService = {
@@ -50,6 +58,7 @@ export type HistoryService = {
   findBridgeBlocks(trustedHeight: bigint, anchorHeight: bigint): Promise<HistoryBlock[]>;
   findDescendantBlocks(anchorHeight: bigint, limit: number): Promise<HistoryBlock[]>;
   findEpochStakeDistribution(epoch: number): Promise<HistoryStakeDistributionEntry[]>;
+  findEpochVerificationContext(epoch: number): Promise<HistoryEpochVerificationContext | null>;
   findUtxoClientOrAuthHandler(height: number): Promise<UtxoDto[]>;
   checkExistPoolUpdateByBlockNo(height: number): Promise<boolean>;
   checkExistPoolRetireByBlockNo(height: number): Promise<boolean>;

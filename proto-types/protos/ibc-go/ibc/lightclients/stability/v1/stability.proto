@@ -30,6 +30,7 @@ message StakeDistributionEntry {
 
   string pool_id = 1;
   uint64 stake = 2;
+  bytes vrf_key_hash = 3;
 }
 
 message ClientState {
@@ -45,6 +46,10 @@ message ClientState {
   bytes host_state_nft_policy_id = 8;
   bytes host_state_nft_token_name = 9;
   repeated StakeDistributionEntry epoch_stake_distribution = 10;
+  bytes epoch_nonce = 11;
+  uint64 slots_per_kes_period = 12;
+  uint64 current_epoch_start_slot = 13;
+  uint64 current_epoch_end_slot_exclusive = 14;
 }
 
 message ConsensusState {

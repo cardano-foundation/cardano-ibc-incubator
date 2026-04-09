@@ -437,8 +437,14 @@ export class QueryService {
         (entry): StakeDistributionEntry => ({
           pool_id: entry.poolId,
           stake: entry.stake,
+          vrf_key_hash: Buffer.from(entry.vrfKeyHash, 'hex'),
         }),
       ),
+      epoch_nonce: Buffer.from(stabilityEvidence.epochVerificationContext.epochNonce, 'hex'),
+      slots_per_kes_period: BigInt(stabilityEvidence.epochVerificationContext.slotsPerKesPeriod),
+      current_epoch_start_slot: stabilityEvidence.epochVerificationContext.currentEpochStartSlot,
+      current_epoch_end_slot_exclusive:
+        stabilityEvidence.epochVerificationContext.currentEpochEndSlotExclusive,
     };
 
     const consensusStateStability: ConsensusStateStability = {

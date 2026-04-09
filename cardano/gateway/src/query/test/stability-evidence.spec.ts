@@ -76,16 +76,24 @@ describe('stability-evidence', () => {
   ];
 
   const epochStakeDistribution = [
-    { poolId: 'pool-a', stake: 500n },
-    { poolId: 'pool-b', stake: 300n },
-    { poolId: 'pool-c', stake: 200n },
+    { poolId: 'pool-a', stake: 500n, vrfKeyHash: 'aa'.repeat(32) },
+    { poolId: 'pool-b', stake: 300n, vrfKeyHash: 'bb'.repeat(32) },
+    { poolId: 'pool-c', stake: 200n, vrfKeyHash: 'cc'.repeat(32) },
   ];
+
+  const epochVerificationContext = {
+    epochNonce: '11'.repeat(32),
+    slotsPerKesPeriod: 129600,
+    currentEpochStartSlot: 900n,
+    currentEpochEndSlotExclusive: 1200n,
+  };
 
   const historyServiceMock = {
     findBlockByHeight: jest.fn().mockResolvedValue(anchorBlock),
     findBridgeBlocks: jest.fn().mockResolvedValue(bridgeBlocks),
     findDescendantBlocks: jest.fn().mockResolvedValue(descendantBlocks),
     findEpochStakeDistribution: jest.fn().mockResolvedValue(epochStakeDistribution),
+    findEpochVerificationContext: jest.fn().mockResolvedValue(epochVerificationContext),
     findTransactionEvidenceByHash: jest.fn().mockResolvedValue({
       txHash: 'deadbeef',
       blockNo: 100,
@@ -107,10 +115,12 @@ describe('stability-evidence', () => {
     expect(historyServiceMock.findBlockByHeight).toHaveBeenCalledWith(100n);
     expect(historyServiceMock.findDescendantBlocks).toHaveBeenCalledWith(100n, 3);
     expect(historyServiceMock.findEpochStakeDistribution).toHaveBeenCalledWith(7);
+    expect(historyServiceMock.findEpochVerificationContext).toHaveBeenCalledWith(7);
     expect(evidence.anchorHeight).toBe(100n);
     expect(evidence.anchorEpoch).toBe(7);
     expect(evidence.anchorBlock).toEqual(anchorBlock);
     expect(evidence.descendantBlocks).toEqual(descendantBlocks);
+    expect(evidence.epochVerificationContext).toEqual(epochVerificationContext);
     expect(evidence.metrics.uniquePoolsCount).toBe(3);
     expect(evidence.metrics.uniqueStakeBps).toBe(10000);
     expect(evidence.metrics.securityScoreBps).toBe(10000);
@@ -175,5 +185,20 @@ describe('stability-evidence', () => {
         heuristicParams,
       }),
     ).rejects.toThrow('epoch stake distribution unavailable');
+  });
+
+  it('fails closed when epoch verification context is unavailable', async () => {
+    historyServiceMock.findDescendantBlocks = jest.fn().mockResolvedValue(descendantBlocks);
+    historyServiceMock.findEpochStakeDistribution = jest.fn().mockResolvedValue(epochStakeDistribution);
+    historyServiceMock.findEpochVerificationContext = jest.fn().mockResolvedValue(null);
+
+    await expect(
+      loadStakeWeightedStabilityEvidenceByHeight({
+        historyService: historyServiceMock as HistoryService,
+        height: 100n,
+        logger: { warn: jest.fn() } as unknown as Logger,
+        heuristicParams,
+      }),
+    ).rejects.toThrow('Epoch verification context unavailable');
   });
 });

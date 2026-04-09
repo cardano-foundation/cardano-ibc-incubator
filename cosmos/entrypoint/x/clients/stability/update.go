@@ -2,6 +2,7 @@ package stability
 
 import (
 	"fmt"
+	"strings"
 
 	errorsmod "cosmossdk.io/errors"
 	storetypes "cosmossdk.io/store/types"
@@ -158,7 +159,10 @@ func (cs *ClientState) computeHeaderSecurityMetrics(header *StabilityHeader) (ui
 	}
 
 	for _, entry := range cs.EpochStakeDistribution {
-		stakeByPool[entry.PoolId] = entry.Stake
+		if entry == nil {
+			continue
+		}
+		stakeByPool[strings.ToLower(entry.PoolId)] = entry.Stake
 		totalStake += entry.Stake
 	}
 	if totalStake == 0 {
@@ -178,11 +182,12 @@ func (cs *ClientState) computeHeaderSecurityMetrics(header *StabilityHeader) (ui
 			return 0, 0, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "descendant height gap at block %s", block.Hash)
 		}
 
-		if block.SlotLeader != "" {
-			if _, exists := seenPools[block.SlotLeader]; !exists {
-				seenPools[block.SlotLeader] = struct{}{}
+		poolID := strings.ToLower(block.SlotLeader)
+		if poolID != "" {
+			if _, exists := seenPools[poolID]; !exists {
+				seenPools[poolID] = struct{}{}
 				uniquePools++
-				uniqueStake += stakeByPool[block.SlotLeader]
+				uniqueStake += stakeByPool[poolID]
 			}
 		}
 

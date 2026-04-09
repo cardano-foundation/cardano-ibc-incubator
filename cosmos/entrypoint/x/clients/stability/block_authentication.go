@@ -1,17 +1,18 @@
 package stability
 
 import (
+	"bytes"
+	"encoding/hex"
 	"strings"
 
 	errorsmod "cosmossdk.io/errors"
+	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
+	"golang.org/x/crypto/blake2b"
 )
 
 func (cs *ClientState) authenticateHeaderBlocks(header *StabilityHeader) error {
 	if err := cs.authenticateStabilityBlock(header.AnchorBlock, "anchor"); err != nil {
-		return err
-	}
-	if err := cs.verifyCurrentEpoch(header.AnchorBlock, "anchor"); err != nil {
 		return err
 	}
 
@@ -19,16 +20,10 @@ func (cs *ClientState) authenticateHeaderBlocks(header *StabilityHeader) error {
 		if err := cs.authenticateStabilityBlock(block, "bridge"); err != nil {
 			return err
 		}
-		if err := cs.verifyCurrentEpoch(block, "bridge"); err != nil {
-			return err
-		}
 	}
 
 	for _, block := range header.DescendantBlocks {
 		if err := cs.authenticateStabilityBlock(block, "descendant"); err != nil {
-			return err
-		}
-		if err := cs.verifyCurrentEpoch(block, "descendant"); err != nil {
 			return err
 		}
 	}
@@ -62,13 +57,17 @@ func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label s
 			decodedBlock.Hash(),
 		)
 	}
-	if !strings.EqualFold(decodedBlock.PrevHash(), block.PrevHash) {
+	decodedPrevHash, err := blockPrevHash(decodedBlock)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(decodedPrevHash, block.PrevHash) {
 		return errorsmod.Wrapf(
 			ErrInvalidAcceptedBlock,
 			"%s block prev_hash mismatch: got %s expected %s",
 			label,
 			block.PrevHash,
-			decodedBlock.PrevHash(),
+			decodedPrevHash,
 		)
 	}
 	if decodedBlock.BlockNumber() != block.Height.RevisionHeight {
@@ -90,7 +89,11 @@ func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label s
 		)
 	}
 
-	decodedPoolID := decodedBlock.IssuerVkey().PoolId()
+	decodedPoolID, decodedVrfKeyHash, err := cs.verifyNativeStabilityBlock(decodedBlock, label)
+	if err != nil {
+		return err
+	}
+
 	if block.SlotLeader != "" && decodedPoolID != "" && !strings.EqualFold(block.SlotLeader, decodedPoolID) {
 		return errorsmod.Wrapf(
 			ErrInvalidAcceptedBlock,
@@ -101,7 +104,120 @@ func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label s
 		)
 	}
 
-	return nil
+	stakeEntry, err := cs.findStakeDistributionEntry(decodedPoolID)
+	if err != nil {
+		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "%s block issuer %s is not trusted for current epoch", label, decodedPoolID)
+	}
+	if !bytes.Equal(stakeEntry.VrfKeyHash, decodedVrfKeyHash) {
+		return errorsmod.Wrapf(
+			ErrInvalidAcceptedBlock,
+			"%s block VRF key hash mismatch for pool %s",
+			label,
+			decodedPoolID,
+		)
+	}
+
+	block.SlotLeader = decodedPoolID
+
+	return cs.verifyCurrentEpoch(block, label)
+}
+
+func (cs *ClientState) verifyNativeStabilityBlock(
+	decodedBlock ledger.Block,
+	label string,
+) (string, []byte, error) {
+	headerCborHex, bodyCborHex, vrfKeyBytes, err := buildBlockVerificationArtifacts(decodedBlock)
+	if err != nil {
+		return "", nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "failed to build %s native verification payload: %v", label, err)
+	}
+
+	verifyErr, isValid, _, _, _ := ledger.VerifyBlock(ledger.BlockHexCbor{
+		HeaderCbor:    headerCborHex,
+		Eta0:          hex.EncodeToString(cs.EpochNonce),
+		Spk:           int(cs.SlotsPerKesPeriod),
+		BlockBodyCbor: bodyCborHex,
+	})
+	if verifyErr != nil {
+		return "", nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "native verification failed for %s block: %v", label, verifyErr)
+	}
+	if !isValid {
+		return "", nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block failed native Cardano verification", label)
+	}
+
+	vrfKeyHash := blake2b.Sum256(vrfKeyBytes)
+	return decodedBlock.IssuerVkey().PoolId(), vrfKeyHash[:], nil
+}
+
+func buildBlockVerificationArtifacts(decodedBlock ledger.Block) (string, string, []byte, error) {
+	switch block := decodedBlock.(type) {
+	case *ledger.BabbageBlock:
+		bodyHex, err := encodeBabbageLikeBlockBodyHex(block.TransactionBodies, block.TransactionWitnessSets, block.TransactionMetadataSet)
+		if err != nil {
+			return "", "", nil, err
+		}
+		return hex.EncodeToString(block.Header.Cbor()), bodyHex, bytes.Clone(block.Header.Body.VrfKey), nil
+	case *ledger.ConwayBlock:
+		bodyHex, err := encodeBabbageLikeBlockBodyHex(block.TransactionBodies, block.TransactionWitnessSets, block.TransactionMetadataSet)
+		if err != nil {
+			return "", "", nil, err
+		}
+		return hex.EncodeToString(block.Header.Cbor()), bodyHex, bytes.Clone(block.Header.Body.VrfKey), nil
+	default:
+		return "", "", nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "unsupported block era %T", decodedBlock)
+	}
+}
+
+func blockPrevHash(decodedBlock ledger.Block) (string, error) {
+	switch block := decodedBlock.(type) {
+	case *ledger.BabbageBlock:
+		return block.Header.Body.PrevHash.String(), nil
+	case *ledger.ConwayBlock:
+		return block.Header.Body.PrevHash.String(), nil
+	default:
+		return "", errorsmod.Wrapf(ErrInvalidAcceptedBlock, "unsupported block era %T", decodedBlock)
+	}
+}
+
+func encodeBabbageLikeBlockBodyHex[Body any, Witness any](
+	transactionBodies []Body,
+	transactionWitnessSets []Witness,
+	transactionMetadataSet map[uint]*cbor.LazyValue,
+) (string, error) {
+	txsRaw := make([][]string, 0, len(transactionBodies))
+	for idx := range transactionBodies {
+		bodyCbor, err := cbor.Encode(transactionBodies[idx])
+		if err != nil {
+			return "", err
+		}
+		witnessCbor, err := cbor.Encode(transactionWitnessSets[idx])
+		if err != nil {
+			return "", err
+		}
+		auxHex := ""
+		if transactionMetadataSet != nil && transactionMetadataSet[uint(idx)] != nil {
+			auxHex = hex.EncodeToString(transactionMetadataSet[uint(idx)].Cbor())
+		}
+		txsRaw = append(txsRaw, []string{
+			hex.EncodeToString(bodyCbor),
+			hex.EncodeToString(witnessCbor),
+			auxHex,
+		})
+	}
+
+	bodyCbor, err := cbor.Encode(txsRaw)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bodyCbor), nil
+}
+
+func (cs *ClientState) findStakeDistributionEntry(poolID string) (*StakeDistributionEntry, error) {
+	for _, entry := range cs.EpochStakeDistribution {
+		if entry != nil && strings.EqualFold(entry.PoolId, poolID) {
+			return entry, nil
+		}
+	}
+	return nil, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "pool %s not present in epoch stake distribution", poolID)
 }
 
 func (cs *ClientState) verifyCurrentEpoch(block *StabilityBlock, label string) error {
@@ -117,6 +233,16 @@ func (cs *ClientState) verifyCurrentEpoch(block *StabilityBlock, label string) e
 			cs.CurrentEpoch,
 		)
 	}
+	if block.Slot < cs.CurrentEpochStartSlot || block.Slot >= cs.CurrentEpochEndSlotExclusive {
+		return errorsmod.Wrapf(
+			ErrInvalidCurrentEpoch,
+			"%s block slot %d outside trusted epoch slot bounds [%d,%d)",
+			label,
+			block.Slot,
+			cs.CurrentEpochStartSlot,
+			cs.CurrentEpochEndSlotExclusive,
+		)
+	}
 	return nil
 }
 
@@ -128,6 +254,17 @@ func verifyHostStateTxIncludedInAnchorBlock(header *StabilityHeader) error {
 
 	for _, tx := range decodedBlock.Transactions() {
 		if strings.EqualFold(tx.Hash(), header.HostStateTxHash) {
+			txBodyCbor, bodyErr := extractTransactionBodyCbor(tx)
+			if bodyErr != nil {
+				return errorsmod.Wrapf(ErrInvalidHostStateCommitment, "failed to decode host state tx body: %v", bodyErr)
+			}
+			if !bytes.Equal(txBodyCbor, header.HostStateTxBodyCbor) {
+				return errorsmod.Wrapf(
+					ErrInvalidHostStateCommitment,
+					"host state tx body does not match authenticated anchor block tx %s",
+					header.HostStateTxHash,
+				)
+			}
 			return nil
 		}
 	}
@@ -138,6 +275,17 @@ func verifyHostStateTxIncludedInAnchorBlock(header *StabilityHeader) error {
 		header.HostStateTxHash,
 		header.AnchorBlock.Hash,
 	)
+}
+
+func extractTransactionBodyCbor(tx ledger.Transaction) ([]byte, error) {
+	switch typedTx := tx.(type) {
+	case *ledger.BabbageTransaction:
+		return typedTx.Body.Cbor(), nil
+	case *ledger.ConwayTransaction:
+		return typedTx.Body.Cbor(), nil
+	default:
+		return nil, errorsmod.Wrapf(ErrInvalidHostStateCommitment, "unsupported anchor transaction type %T", tx)
+	}
 }
 
 func decodeLedgerBlock(blockCbor []byte) (ledger.Block, error) {

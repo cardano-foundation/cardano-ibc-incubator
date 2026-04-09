@@ -6,6 +6,7 @@ import {
 } from '~@/exception/grpc_exceptions';
 import {
   HistoryBlock,
+  HistoryEpochVerificationContext,
   HistoryService,
   HistoryStakeDistributionEntry,
   HistoryTxEvidence,
@@ -31,6 +32,7 @@ export type StakeWeightedStabilityEvidence = {
   anchorBlock: HistoryBlock;
   descendantBlocks: HistoryBlock[];
   epochStakeDistribution: HistoryStakeDistributionEntry[];
+  epochVerificationContext: HistoryEpochVerificationContext;
   heuristicParams: HeuristicParams;
   metrics: StabilityMetrics;
 };
@@ -53,6 +55,66 @@ function assertBlocksRemainInEpoch(
   if (mismatchedBlock) {
     throw new GrpcInternalException(
       `${context} crosses epoch boundary at height ${mismatchedBlock.height}: expected epoch ${expectedEpoch}, got ${mismatchedBlock.epochNo}`,
+    );
+  }
+}
+
+function assertBlocksRemainWithinEpochSlotBounds(
+  blocks: HistoryBlock[],
+  epochVerificationContext: HistoryEpochVerificationContext,
+  context: string,
+): void {
+  const violatingBlock = blocks.find(
+    (block) =>
+      block.slotNo < epochVerificationContext.currentEpochStartSlot ||
+      block.slotNo >= epochVerificationContext.currentEpochEndSlotExclusive,
+  );
+  if (violatingBlock) {
+    throw new GrpcInternalException(
+      `${context} crosses trusted epoch slot bounds at height ${violatingBlock.height}: slot ${violatingBlock.slotNo.toString()} not in [${epochVerificationContext.currentEpochStartSlot.toString()}, ${epochVerificationContext.currentEpochEndSlotExclusive.toString()})`,
+    );
+  }
+}
+
+function assertEpochVerificationContextAvailable(
+  epochVerificationContext: HistoryEpochVerificationContext | null,
+  epoch: number,
+  context: string,
+): asserts epochVerificationContext is HistoryEpochVerificationContext {
+  if (!epochVerificationContext) {
+    throw new GrpcInternalException(
+      `Epoch verification context unavailable for ${context} in epoch ${epoch}`,
+    );
+  }
+  if (!epochVerificationContext.epochNonce) {
+    throw new GrpcInternalException(
+      `Epoch nonce unavailable for ${context} in epoch ${epoch}`,
+    );
+  }
+  if (epochVerificationContext.slotsPerKesPeriod <= 0) {
+    throw new GrpcInternalException(
+      `Slots-per-KES-period unavailable for ${context} in epoch ${epoch}`,
+    );
+  }
+  if (
+    epochVerificationContext.currentEpochEndSlotExclusive <=
+    epochVerificationContext.currentEpochStartSlot
+  ) {
+    throw new GrpcInternalException(
+      `Invalid epoch slot bounds for ${context} in epoch ${epoch}`,
+    );
+  }
+}
+
+function assertStakeVerificationContextAvailable(
+  epochStakeDistribution: HistoryStakeDistributionEntry[],
+  epoch: number,
+  context: string,
+): void {
+  const missingVrfKey = epochStakeDistribution.find((entry) => !entry.vrfKeyHash);
+  if (missingVrfKey) {
+    throw new GrpcInternalException(
+      `VRF key hash unavailable for pool ${missingVrfKey.poolId} in ${context} for epoch ${epoch}`,
     );
   }
 }
@@ -100,14 +162,35 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
     Number(heuristicParams.threshold_depth || 24n),
   );
   const epochStakeDistribution = await historyService.findEpochStakeDistribution(anchorBlock.epochNo);
+  const epochVerificationContext = await historyService.findEpochVerificationContext(anchorBlock.epochNo);
   assertEpochStakeDistributionAvailable(
     epochStakeDistribution,
     `anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
+  );
+  assertStakeVerificationContextAvailable(
+    epochStakeDistribution,
+    anchorBlock.epochNo,
+    `anchor height ${anchorBlock.height}`,
+  );
+  assertEpochVerificationContextAvailable(
+    epochVerificationContext,
+    anchorBlock.epochNo,
+    `anchor height ${anchorBlock.height}`,
+  );
+  assertBlocksRemainWithinEpochSlotBounds(
+    [anchorBlock],
+    epochVerificationContext,
+    `Stake-weighted stability anchor block for height ${anchorBlock.height}`,
   );
   const scoredDescendantBlocks = scoreDescendantBlocks(descendantBlocks, epochStakeDistribution, logger);
   assertBlocksRemainInEpoch(
     scoredDescendantBlocks,
     anchorBlock.epochNo,
+    `Stake-weighted stability descendant window for anchor height ${anchorBlock.height}`,
+  );
+  assertBlocksRemainWithinEpochSlotBounds(
+    scoredDescendantBlocks,
+    epochVerificationContext,
     `Stake-weighted stability descendant window for anchor height ${anchorBlock.height}`,
   );
   const metrics = computeStabilityMetrics(scoredDescendantBlocks, epochStakeDistribution, heuristicParams);
@@ -122,6 +205,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
     anchorBlock,
     descendantBlocks: scoredDescendantBlocks,
     epochStakeDistribution,
+    epochVerificationContext,
     heuristicParams,
     metrics,
   };
@@ -204,6 +288,11 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
   assertBlocksRemainInEpoch(
     bridgeBlocks,
     evidence.anchorEpoch,
+    `Stake-weighted stability bridge segment for anchor height ${height.toString()}`,
+  );
+  assertBlocksRemainWithinEpochSlotBounds(
+    bridgeBlocks,
+    evidence.epochVerificationContext,
     `Stake-weighted stability bridge segment for anchor height ${height.toString()}`,
   );
 

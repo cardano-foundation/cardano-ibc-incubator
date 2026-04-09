@@ -229,12 +229,17 @@ func newStabilityTestClientState() *ClientState {
 		},
 		HostStateNftPolicyId:  bytes.Repeat([]byte{0x01}, 28),
 		HostStateNftTokenName: []byte("host-state"),
-		EpochStakeDistribution: []*EpochStake{
+		EpochStakeDistribution: []*StakeDistributionEntry{
 			{
-				PoolId: "pool-a",
-				Stake:  10_000,
+				PoolId:     "pool-a",
+				Stake:      10_000,
+				VrfKeyHash: bytes.Repeat([]byte{0x02}, 32),
 			},
 		},
+		EpochNonce:                   bytes.Repeat([]byte{0x03}, 32),
+		SlotsPerKesPeriod:            129600,
+		CurrentEpochStartSlot:        0,
+		CurrentEpochEndSlotExclusive: 1_000_000,
 	}
 }
 

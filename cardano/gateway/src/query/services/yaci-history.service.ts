@@ -2,6 +2,7 @@ import { InjectEntityManager } from '@nestjs/typeorm';
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EntityManager } from 'typeorm';
+import { bech32 } from 'bech32';
 import { GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 import { CLIENT_PREFIX } from '../../constant';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
@@ -9,6 +10,7 @@ import { UtxoDto } from '../dtos/utxo.dto';
 import { TxDto } from '../dtos/tx.dto';
 import {
   HistoryBlock,
+  HistoryEpochVerificationContext,
   HistoryService,
   HistoryStakeDistributionEntry,
   HistoryTxEvidence,
@@ -69,6 +71,11 @@ type HistoryBlockRow = {
 type EpochStakeRow = {
   pool_id: string | null;
   active_stake: string | number;
+  vrf_key_hash?: string | null;
+};
+
+type EpochStartSlotRow = {
+  start_slot: string | number | null;
 };
 
 @Injectable()
@@ -237,23 +244,41 @@ export class YaciHistoryService implements HistoryService {
     const queries = [
       `
         SELECT
-          pool_id,
-          SUM(amount) AS active_stake
-        FROM epoch_stake_default
-        WHERE active_epoch = $1
-          AND pool_id IS NOT NULL
-        GROUP BY pool_id
-        ORDER BY SUM(amount) DESC
+          esd.pool_id,
+          SUM(esd.amount) AS active_stake,
+          pr.vrf_key AS vrf_key_hash
+        FROM epoch_stake_default esd
+        LEFT JOIN LATERAL (
+          SELECT vrf_key
+          FROM pool_registration
+          WHERE pool_id = esd.pool_id
+            AND epoch <= $1
+          ORDER BY epoch DESC, slot DESC
+          LIMIT 1
+        ) pr ON true
+        WHERE esd.active_epoch = $1
+          AND esd.pool_id IS NOT NULL
+        GROUP BY esd.pool_id, pr.vrf_key
+        ORDER BY SUM(esd.amount) DESC
       `,
       `
         SELECT
-          pool_id,
-          SUM(amount) AS active_stake
-        FROM epoch_stake_default
-        WHERE epoch = $1
-          AND pool_id IS NOT NULL
-        GROUP BY pool_id
-        ORDER BY SUM(amount) DESC
+          esd.pool_id,
+          SUM(esd.amount) AS active_stake,
+          pr.vrf_key AS vrf_key_hash
+        FROM epoch_stake_default esd
+        LEFT JOIN LATERAL (
+          SELECT vrf_key
+          FROM pool_registration
+          WHERE pool_id = esd.pool_id
+            AND epoch <= $1
+          ORDER BY epoch DESC, slot DESC
+          LIMIT 1
+        ) pr ON true
+        WHERE esd.epoch = $1
+          AND esd.pool_id IS NOT NULL
+        GROUP BY esd.pool_id, pr.vrf_key
+        ORDER BY SUM(esd.amount) DESC
       `,
     ];
 
@@ -263,13 +288,54 @@ export class YaciHistoryService implements HistoryService {
         return rows
           .filter((row: EpochStakeRow) => !!row.pool_id)
           .map((row: EpochStakeRow) => ({
-            poolId: row.pool_id!,
+            poolId: normalizePoolId(row.pool_id!),
             stake: BigInt(row.active_stake),
+            vrfKeyHash: normalizeHex(row.vrf_key_hash),
           }));
       }
     }
 
     return [];
+  }
+
+  async findEpochVerificationContext(epoch: number): Promise<HistoryEpochVerificationContext | null> {
+    const startSlotQuery = `
+      SELECT MIN(slot) AS start_slot
+      FROM block
+      WHERE epoch = $1
+    `;
+    const nextEpochStartSlotQuery = `
+      SELECT MIN(slot) AS start_slot
+      FROM block
+      WHERE epoch = $1
+    `;
+
+    const [startSlotRow] = await this.entityManager.query(startSlotQuery, [epoch]);
+    const startSlot = this.parseSlot(startSlotRow);
+    if (startSlot === null) {
+      return null;
+    }
+
+    const [nextEpochStartSlotRow] = await this.entityManager.query(nextEpochStartSlotQuery, [epoch + 1]);
+    const nextEpochStartSlot = this.parseSlot(nextEpochStartSlotRow);
+    const configuredEpochLength = BigInt(this.configService.get<number>('cardanoEpochLength') || 0);
+    const currentEpochEndSlotExclusive =
+      nextEpochStartSlot ??
+      (configuredEpochLength > 0n ? startSlot + configuredEpochLength : null);
+
+    const epochNonceHex = normalizeHex(this.configService.get<string>('cardanoCurrentEpochNonce'));
+    const slotsPerKesPeriod = Number(this.configService.get<number>('cardanoSlotsPerKesPeriod') || 0);
+
+    if (!epochNonceHex || currentEpochEndSlotExclusive === null || slotsPerKesPeriod <= 0) {
+      return null;
+    }
+
+    return {
+      epochNonce: epochNonceHex,
+      slotsPerKesPeriod,
+      currentEpochStartSlot: startSlot,
+      currentEpochEndSlotExclusive,
+    };
   }
 
   async findUtxoClientOrAuthHandler(height: number): Promise<UtxoDto[]> {
@@ -434,7 +500,34 @@ export class YaciHistoryService implements HistoryService {
       slotNo: BigInt(row.slot),
       epochNo: Number(row.epoch),
       timestampUnixNs: BigInt(blockTime.valueOf()) * 1_000_000n,
-      slotLeader: row.slot_leader ?? '',
+      slotLeader: normalizePoolId(row.slot_leader ?? ''),
     };
   }
+
+  private parseSlot(row?: EpochStartSlotRow | null): bigint | null {
+    const slot = row?.start_slot;
+    if (slot === undefined || slot === null) {
+      return null;
+    }
+    return BigInt(slot);
+  }
+}
+
+function normalizeHex(value?: string | null): string {
+  const trimmed = value?.trim().toLowerCase() || '';
+  return trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed;
+}
+
+function normalizePoolId(value?: string | null): string {
+  const trimmed = value?.trim().toLowerCase() || '';
+  if (!trimmed) {
+    return '';
+  }
+  if (trimmed.startsWith('pool1')) {
+    return trimmed;
+  }
+  if (/^[0-9a-f]{56}$/.test(trimmed)) {
+    return bech32.encode('pool', bech32.toWords(Buffer.from(trimmed, 'hex')));
+  }
+  return trimmed;
 }

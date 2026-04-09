@@ -80,6 +80,9 @@ interface Config {
   cardanoLightClientMode: 'mithril' | 'stake-weighted-stability';
   cardanoNetwork: Network;
   cardanoEpochNonceGenesis: string;
+  cardanoCurrentEpochNonce: string;
+  cardanoSlotsPerKesPeriod: number;
+  cardanoEpochLength: number;
 
   mithrilEndpoint: string;
   mtithrilGenesisVerificationKey: string;
@@ -112,6 +115,10 @@ export default (): Partial<Config> => {
         : 'mithril',
     cardanoNetwork: cardanoNetwork,
     cardanoEpochNonceGenesis: process.env.CARDANO_EPOCH_NONCE_GENESIS,
+    cardanoCurrentEpochNonce:
+      process.env.CARDANO_CURRENT_EPOCH_NONCE || process.env.CARDANO_EPOCH_NONCE_GENESIS,
+    cardanoSlotsPerKesPeriod: Number(process.env.CARDANO_SLOTS_PER_KES_PERIOD || 129600),
+    cardanoEpochLength: Number(process.env.CARDANO_EPOCH_LENGTH || 432000),
 
     mithrilEndpoint: process.env.MITHRIL_ENDPOINT,
     mtithrilGenesisVerificationKey: process.env.MITHRIL_GENESIS_VERIFICATION_KEY,

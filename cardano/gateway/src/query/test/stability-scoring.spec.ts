@@ -32,9 +32,9 @@ describe('stability-scoring', () => {
       makeBlock(103, 'hash-102', 'pool-c'),
     ];
     const epochStakeDistribution: HistoryStakeDistributionEntry[] = [
-      { poolId: 'pool-a', stake: 500n },
-      { poolId: 'pool-b', stake: 300n },
-      { poolId: 'pool-c', stake: 200n },
+      { poolId: 'pool-a', stake: 500n, vrfKeyHash: 'aa'.repeat(32) },
+      { poolId: 'pool-b', stake: 300n, vrfKeyHash: 'bb'.repeat(32) },
+      { poolId: 'pool-c', stake: 200n, vrfKeyHash: 'cc'.repeat(32) },
     ];
 
     const metrics = computeStabilityMetrics(descendants, epochStakeDistribution, heuristicParams);
@@ -63,9 +63,9 @@ describe('stability-scoring', () => {
       makeBlock(203, 'hash-202', 'pool-b'),
     ];
     const epochStakeDistribution: HistoryStakeDistributionEntry[] = [
-      { poolId: 'pool-a', stake: 400n },
-      { poolId: 'pool-b', stake: 200n },
-      { poolId: 'pool-c', stake: 400n },
+      { poolId: 'pool-a', stake: 400n, vrfKeyHash: 'aa'.repeat(32) },
+      { poolId: 'pool-b', stake: 200n, vrfKeyHash: 'bb'.repeat(32) },
+      { poolId: 'pool-c', stake: 400n, vrfKeyHash: 'cc'.repeat(32) },
     ];
 
     const metrics = computeStabilityMetrics(descendants, epochStakeDistribution, heuristicParams);
