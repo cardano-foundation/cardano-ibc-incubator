@@ -27,15 +27,40 @@ func (cs *ClientState) VerifyClientMessage(
 	}
 }
 
+type headerVerificationMode struct {
+	enforceForwardUpdate bool
+}
+
 func (cs *ClientState) verifyHeader(
 	_ sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec,
 	header *StabilityHeader,
+) error {
+	return cs.verifyHeaderWithMode(clientStore, cdc, header, headerVerificationMode{
+		enforceForwardUpdate: true,
+	})
+}
+
+func (cs *ClientState) verifyHeaderAgainstTrustedState(
+	clientStore storetypes.KVStore,
+	cdc codec.BinaryCodec,
+	header *StabilityHeader,
+) error {
+	return cs.verifyHeaderWithMode(clientStore, cdc, header, headerVerificationMode{
+		enforceForwardUpdate: false,
+	})
+}
+
+func (cs *ClientState) verifyHeaderWithMode(
+	clientStore storetypes.KVStore,
+	cdc codec.BinaryCodec,
+	header *StabilityHeader,
+	mode headerVerificationMode,
 ) error {
 	if err := header.ValidateBasic(); err != nil {
 		return err
 	}
 
-	if cs.LatestHeight != nil && header.GetHeight().LTE(cs.LatestHeight) {
+	if mode.enforceForwardUpdate && cs.LatestHeight != nil && header.GetHeight().LTE(cs.LatestHeight) {
 		return errorsmod.Wrapf(ErrInvalidHeaderHeight, "expected newer header height than %s, got %s", cs.LatestHeight.String(), header.GetHeight().String())
 	}
 
@@ -43,16 +68,18 @@ func (cs *ClientState) verifyHeader(
 	if anchor == nil || anchor.Height == nil {
 		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "anchor block missing")
 	}
-	if cs.LatestHeight == nil || cs.LatestHeight.IsZero() {
-		return errorsmod.Wrap(ErrInvalidHeaderHeight, "latest height must be present for stability header verification")
-	}
-	if !header.TrustedHeight.EQ(cs.LatestHeight) {
-		return errorsmod.Wrapf(
-			ErrInvalidHeaderHeight,
-			"trusted height %s must equal latest height %s",
-			header.TrustedHeight.String(),
-			cs.LatestHeight.String(),
-		)
+	if mode.enforceForwardUpdate {
+		if cs.LatestHeight == nil || cs.LatestHeight.IsZero() {
+			return errorsmod.Wrap(ErrInvalidHeaderHeight, "latest height must be present for stability header verification")
+		}
+		if !header.TrustedHeight.EQ(cs.LatestHeight) {
+			return errorsmod.Wrapf(
+				ErrInvalidHeaderHeight,
+				"trusted height %s must equal latest height %s",
+				header.TrustedHeight.String(),
+				cs.LatestHeight.String(),
+			)
+		}
 	}
 
 	trustedHeight := NewHeight(header.TrustedHeight.RevisionNumber, header.TrustedHeight.RevisionHeight)

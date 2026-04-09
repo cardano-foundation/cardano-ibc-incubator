@@ -184,6 +184,23 @@ func TestCheckForMisbehaviourDetectsConflictingMisbehaviourMessage(t *testing.T)
 	require.True(t, cs.CheckForMisbehaviour(sdk.Context{}, nil, nil, msg))
 }
 
+func TestVerifyMisbehaviourDoesNotRejectStoredHeadersAsStale(t *testing.T) {
+	cdc := newStabilityTestCodec()
+	ctx, clientStore := newStabilityTestClientStore(t, "stability-misbehaviour-stale")
+
+	cs := newStabilityTestClientState()
+	header := newVerifiedTestHeader(t)
+	header.AnchorBlock.Epoch = cs.CurrentEpoch + 1
+	setConsensusState(clientStore, cdc, newStabilityTestConsensusState(header.BridgeBlocks[0].PrevHash), NewHeight(0, 10))
+	setConsensusState(clientStore, cdc, newStabilityTestConsensusState(header.AnchorBlock.Hash), header.GetHeight())
+
+	msg := NewMisbehaviour("08-cardano-stability-0", header, header)
+	err := cs.verifyMisbehaviour(ctx, clientStore, cdc, msg)
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "expected newer header height")
+	require.Contains(t, err.Error(), "epoch mismatch")
+}
+
 func TestHeadersConflictRejectsNonConflictingHeaders(t *testing.T) {
 	header1 := newVerifiedTestHeader(t)
 	header2 := newVerifiedTestHeader(t)

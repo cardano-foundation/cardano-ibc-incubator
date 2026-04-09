@@ -25,7 +25,7 @@ func (ClientState) CheckForMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, 
 	return false
 }
 
-func (cs *ClientState) verifyMisbehaviour(ctx sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec, misbehaviour *Misbehaviour) error {
+func (cs *ClientState) verifyMisbehaviour(_ sdk.Context, clientStore storetypes.KVStore, cdc codec.BinaryCodec, misbehaviour *Misbehaviour) error {
 	_, found := GetConsensusState(clientStore, cdc, misbehaviour.StabilityHeader1.GetHeight())
 	if !found {
 		return errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "could not get consensus state from clientStore for StabilityHeader1 in Misbehaviour at Height: %s", misbehaviour.StabilityHeader1.GetHeight())
@@ -34,10 +34,10 @@ func (cs *ClientState) verifyMisbehaviour(ctx sdk.Context, clientStore storetype
 	if !found {
 		return errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "could not get consensus state from clientStore for StabilityHeader2 in Misbehaviour at Height: %s", misbehaviour.StabilityHeader2.GetHeight())
 	}
-	if err := cs.verifyHeader(ctx, clientStore, cdc, misbehaviour.StabilityHeader1); err != nil {
+	if err := cs.verifyHeaderAgainstTrustedState(clientStore, cdc, misbehaviour.StabilityHeader1); err != nil {
 		return errorsmod.Wrap(err, "verifying StabilityHeader1 in Misbehaviour failed")
 	}
-	if err := cs.verifyHeader(ctx, clientStore, cdc, misbehaviour.StabilityHeader2); err != nil {
+	if err := cs.verifyHeaderAgainstTrustedState(clientStore, cdc, misbehaviour.StabilityHeader2); err != nil {
 		return errorsmod.Wrap(err, "verifying StabilityHeader2 in Misbehaviour failed")
 	}
 	if !headersConflict(misbehaviour.StabilityHeader1, misbehaviour.StabilityHeader2) {
