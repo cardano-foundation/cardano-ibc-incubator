@@ -48,7 +48,7 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	}
 	if cs.Status(ctx, subjectClientStore, cdc) == exported.Frozen || cs.FrozenHeight == nil {
 		zeroHeight := ZeroHeight()
-		cs.FrozenHeight = &zeroHeight
+		cs.FrozenHeight = zeroHeight
 	}
 	setConsensusState(subjectClientStore, cdc, consensusState, height)
 	setConsensusMetadataWithValues(subjectClientStore, height, processedHeight, processedTime)
@@ -63,13 +63,13 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 func IsMatchingClientState(subject, substitute ClientState) bool {
 	zeroHeightSubject := ZeroHeight()
 	zeroHeightSubstitute := ZeroHeight()
-	subject.LatestHeight = &zeroHeightSubject
-	subject.FrozenHeight = &zeroHeightSubject
+	subject.LatestHeight = zeroHeightSubject
+	subject.FrozenHeight = zeroHeightSubject
 	subject.CurrentEpoch = 0
 	subject.TrustingPeriod = 0
 	subject.ChainId = ""
-	substitute.LatestHeight = &zeroHeightSubstitute
-	substitute.FrozenHeight = &zeroHeightSubstitute
+	substitute.LatestHeight = zeroHeightSubstitute
+	substitute.FrozenHeight = zeroHeightSubstitute
 	substitute.CurrentEpoch = 0
 	substitute.TrustingPeriod = 0
 	substitute.ChainId = ""

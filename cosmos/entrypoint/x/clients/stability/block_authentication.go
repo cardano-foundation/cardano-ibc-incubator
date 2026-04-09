@@ -42,6 +42,9 @@ func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label s
 	if len(block.BlockCbor) == 0 {
 		return errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block missing block_cbor", label)
 	}
+	if err := cs.verifyCurrentEpoch(block, label); err != nil {
+		return err
+	}
 
 	decodedBlock, err := decodeLedgerBlock(block.BlockCbor)
 	if err != nil {
@@ -119,7 +122,7 @@ func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label s
 
 	block.SlotLeader = decodedPoolID
 
-	return cs.verifyCurrentEpoch(block, label)
+	return nil
 }
 
 func (cs *ClientState) verifyNativeStabilityBlock(

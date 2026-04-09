@@ -13,12 +13,12 @@ import (
 
 var _ exported.Height = (*Height)(nil)
 
-func ZeroHeight() Height {
-	return Height{}
+func ZeroHeight() *Height {
+	return &Height{}
 }
 
-func NewHeight(revisionNumber uint64, revisionHeight uint64) Height {
-	return Height{
+func NewHeight(revisionNumber uint64, revisionHeight uint64) *Height {
+	return &Height{
 		RevisionNumber: revisionNumber,
 		RevisionHeight: revisionHeight,
 	}
@@ -39,15 +39,15 @@ func (h Height) Compare(other exported.Height) int64 {
 	return int64(a.Cmp(&b))
 }
 
-func (h Height) LT(other exported.Height) bool { return h.Compare(other) == -1 }
+func (h Height) LT(other exported.Height) bool  { return h.Compare(other) == -1 }
 func (h Height) LTE(other exported.Height) bool { return h.Compare(other) <= 0 }
-func (h Height) GT(other exported.Height) bool { return h.Compare(other) == 1 }
+func (h Height) GT(other exported.Height) bool  { return h.Compare(other) == 1 }
 func (h Height) GTE(other exported.Height) bool { return h.Compare(other) >= 0 }
-func (h Height) EQ(other exported.Height) bool { return h.Compare(other) == 0 }
+func (h Height) EQ(other exported.Height) bool  { return h.Compare(other) == 0 }
 
 func (h Height) Decrement() (exported.Height, bool) {
 	if h.RevisionHeight == 0 {
-		return Height{}, false
+		return nil, false
 	}
 	return NewHeight(0, h.RevisionHeight-1), true
 }
@@ -60,7 +60,7 @@ func (h Height) IsZero() bool {
 	return h.RevisionHeight == 0
 }
 
-func MustParseHeight(heightStr string) Height {
+func MustParseHeight(heightStr string) *Height {
 	height, err := ParseHeight(heightStr)
 	if err != nil {
 		panic(err)
@@ -68,14 +68,14 @@ func MustParseHeight(heightStr string) Height {
 	return height
 }
 
-func ParseHeight(heightStr string) (Height, error) {
+func ParseHeight(heightStr string) (*Height, error) {
 	revisionHeight, err := strconv.ParseUint(heightStr, 10, 64)
 	if err != nil {
-		return Height{}, errorsmod.Wrapf(ibcerrors.ErrInvalidHeight, "invalid stability height. parse err: %s", err)
+		return nil, errorsmod.Wrapf(ibcerrors.ErrInvalidHeight, "invalid stability height. parse err: %s", err)
 	}
 	return NewHeight(0, revisionHeight), nil
 }
 
-func GetSelfHeight(ctx sdk.Context) Height {
+func GetSelfHeight(ctx sdk.Context) *Height {
 	return NewHeight(0, uint64(ctx.BlockHeight()))
 }

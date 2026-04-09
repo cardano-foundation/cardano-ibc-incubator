@@ -65,7 +65,7 @@ func (l LightClientModule) UpdateStateOnMisbehaviour(ctx sdk.Context, clientID s
 		panic(errorsmod.Wrap(clienttypes.ErrClientNotFound, clientID))
 	}
 	frozenHeight := FrozenHeight
-	clientState.FrozenHeight = &frozenHeight
+	clientState.FrozenHeight = frozenHeight
 	setClientState(clientStore, l.cdc, clientState)
 }
 

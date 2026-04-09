@@ -245,7 +245,7 @@ func (cs *ClientState) UpdateState(
 
 	cs.pruneOldestConsensusState(ctx, cdc, clientStore)
 	height := NewHeight(0, header.AnchorBlock.Height.RevisionHeight)
-	cs.LatestHeight = &height
+	cs.LatestHeight = height
 	cs.CurrentEpoch = header.AnchorBlock.Epoch
 
 	ibcStateRoot, err := cs.ExtractIbcStateRootFromHostStateTx(header)

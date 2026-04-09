@@ -15,7 +15,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	"github.com/stretchr/testify/require"
 
 	"github.com/blinklabs-io/gouroboros/cbor"
@@ -86,7 +85,7 @@ func TestAuthenticateStabilityBlockRejectsMismatchedClaims(t *testing.T) {
 		},
 	}
 
-	cs := &ClientState{}
+	cs := newStabilityTestClientState()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			block := cloneTestStabilityBlock(valid)
@@ -216,7 +215,7 @@ func newStabilityTestClientState() *ClientState {
 	return &ClientState{
 		ChainId:        "cardano-test",
 		LatestHeight:   &Height{RevisionHeight: 10},
-		FrozenHeight:   &zeroHeight,
+		FrozenHeight:   zeroHeight,
 		CurrentEpoch:   7,
 		TrustingPeriod: 24 * time.Hour,
 		HeuristicParams: &HeuristicParams{
@@ -282,14 +281,14 @@ func makeTestStabilityBlock(t *testing.T, blockNumber, slot uint64, prevHashHex 
 	t.Helper()
 
 	block := ledger.BabbageBlock{
-		BlockHeader: &ledger.BabbageBlockHeader{},
+		Header: &ledger.BabbageBlockHeader{},
 	}
-	block.BlockHeader.Body.BlockNumber = blockNumber
-	block.BlockHeader.Body.Slot = slot
+	block.Header.Body.BlockNumber = blockNumber
+	block.Header.Body.Slot = slot
 	if prevHashHex != "" {
 		prevHashBytes, err := hex.DecodeString(prevHashHex)
 		require.NoError(t, err)
-		block.BlockHeader.Body.PrevHash = ledger.NewBlake2b256(prevHashBytes)
+		block.Header.Body.PrevHash = ledger.NewBlake2b256(prevHashBytes)
 	}
 
 	blockCbor, err := cbor.Encode(block)
@@ -300,7 +299,7 @@ func makeTestStabilityBlock(t *testing.T, blockNumber, slot uint64, prevHashHex 
 	return &StabilityBlock{
 		Height:     &Height{RevisionHeight: block.BlockNumber()},
 		Hash:       block.Hash(),
-		PrevHash:   block.PrevHash(),
+		PrevHash:   block.Header.Body.PrevHash.String(),
 		Slot:       block.SlotNumber(),
 		Epoch:      7,
 		Timestamp:  1_700_000_000_000_000_000,

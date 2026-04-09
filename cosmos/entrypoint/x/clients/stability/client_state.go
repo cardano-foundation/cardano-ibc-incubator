@@ -34,7 +34,7 @@ func NewClientState(
 	return &ClientState{
 		ChainId:         chainID,
 		LatestHeight:    latestHeight,
-		FrozenHeight:    &zeroHeight,
+		FrozenHeight:    zeroHeight,
 		CurrentEpoch:    currentEpoch,
 		TrustingPeriod:  trustingPeriod,
 		HeuristicParams: heuristicParams,
