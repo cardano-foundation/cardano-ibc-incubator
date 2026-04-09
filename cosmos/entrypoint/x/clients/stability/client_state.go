@@ -3,6 +3,7 @@ package stability
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -120,6 +121,12 @@ func (cs ClientState) Validate() error {
 	if cs.CurrentEpochEndSlotExclusive <= cs.CurrentEpochStartSlot {
 		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "current epoch slot bounds must be increasing")
 	}
+	if cs.SystemStartUnixNs == 0 {
+		return errorsmod.Wrapf(ErrInvalidTimestamp, "system_start_unix_ns must be greater than zero")
+	}
+	if cs.SlotLengthNs == 0 {
+		return errorsmod.Wrapf(ErrInvalidTimestamp, "slot_length_ns must be greater than zero")
+	}
 	totalStake := uint64(0)
 	seenPools := make(map[string]struct{}, len(cs.EpochStakeDistribution))
 	for _, entry := range cs.EpochStakeDistribution {
@@ -159,7 +166,22 @@ func (cs ClientState) ZeroCustomFields() exported.ClientState {
 		SlotsPerKesPeriod:            cs.SlotsPerKesPeriod,
 		CurrentEpochStartSlot:        cs.CurrentEpochStartSlot,
 		CurrentEpochEndSlotExclusive: cs.CurrentEpochEndSlotExclusive,
+		SystemStartUnixNs:            cs.SystemStartUnixNs,
+		SlotLengthNs:                 cs.SlotLengthNs,
 	}
+}
+
+func (cs ClientState) DeriveTimestampFromSlot(slot uint64) (uint64, error) {
+	if cs.SystemStartUnixNs == 0 {
+		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "system_start_unix_ns must be greater than zero")
+	}
+	if cs.SlotLengthNs == 0 {
+		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "slot_length_ns must be greater than zero")
+	}
+	if slot > (math.MaxUint64-cs.SystemStartUnixNs)/cs.SlotLengthNs {
+		return 0, errorsmod.Wrapf(ErrInvalidTimestamp, "slot-derived timestamp overflows uint64 for slot %d", slot)
+	}
+	return cs.SystemStartUnixNs + slot*cs.SlotLengthNs, nil
 }
 
 func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, consState exported.ConsensusState) error {

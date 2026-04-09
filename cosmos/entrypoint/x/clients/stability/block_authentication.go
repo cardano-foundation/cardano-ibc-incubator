@@ -91,6 +91,19 @@ func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label s
 			decodedBlock.SlotNumber(),
 		)
 	}
+	expectedTimestamp, err := cs.DeriveTimestampFromSlot(block.Slot)
+	if err != nil {
+		return err
+	}
+	if block.Timestamp != expectedTimestamp {
+		return errorsmod.Wrapf(
+			ErrInvalidTimestamp,
+			"%s block timestamp mismatch: got %d expected %d",
+			label,
+			block.Timestamp,
+			expectedTimestamp,
+		)
+	}
 
 	decodedPoolID, decodedVrfKeyHash, err := cs.verifyNativeStabilityBlock(decodedBlock, label)
 	if err != nil {

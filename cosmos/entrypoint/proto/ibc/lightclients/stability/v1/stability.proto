@@ -50,6 +50,8 @@ message ClientState {
   uint64 slots_per_kes_period = 12;
   uint64 current_epoch_start_slot = 13;
   uint64 current_epoch_end_slot_exclusive = 14;
+  uint64 system_start_unix_ns = 15;
+  uint64 slot_length_ns = 16;
 }
 
 message ConsensusState {

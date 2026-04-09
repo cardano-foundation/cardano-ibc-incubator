@@ -413,6 +413,7 @@ export class QueryService {
 
     const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
     const hostStateRootBytes = Buffer.from(hostStateDatum.state.ibc_state_root, 'hex');
+    const stabilitySlotTiming = this.getStabilitySlotTiming();
 
     const clientStateStability: ClientStateStability = {
       chain_id: this.configService.get('cardanoChainId'),
@@ -445,10 +446,12 @@ export class QueryService {
       current_epoch_start_slot: stabilityEvidence.epochVerificationContext.currentEpochStartSlot,
       current_epoch_end_slot_exclusive:
         stabilityEvidence.epochVerificationContext.currentEpochEndSlotExclusive,
+      system_start_unix_ns: stabilitySlotTiming.systemStartUnixNs,
+      slot_length_ns: stabilitySlotTiming.slotLengthNs,
     };
 
     const consensusStateStability: ConsensusStateStability = {
-      timestamp: stabilityEvidence.anchorBlock.timestampUnixNs,
+      timestamp: this.deriveStabilityTimestampNs(stabilityEvidence.anchorBlock.slotNo),
       ibc_state_root: hostStateRootBytes,
       accepted_block_hash: stabilityEvidence.anchorBlock.hash,
       accepted_epoch: BigInt(stabilityEvidence.anchorEpoch),
@@ -1608,6 +1611,32 @@ export class QueryService {
     );
   }
 
+  private getStabilitySlotTiming(): { systemStartUnixNs: bigint; slotLengthNs: bigint } {
+    const network = this.configService.get('cardanoNetwork');
+    const slotConfig = this.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[network];
+    if (
+      !slotConfig ||
+      !Number.isFinite(slotConfig.zeroTime) ||
+      slotConfig.zeroTime <= 0 ||
+      !Number.isFinite(slotConfig.slotLength) ||
+      slotConfig.slotLength <= 0
+    ) {
+      throw new GrpcInternalException(
+        `Invalid Cardano slot timing configuration for network ${network ?? 'unknown'}`,
+      );
+    }
+
+    return {
+      systemStartUnixNs: BigInt(Math.trunc(slotConfig.zeroTime)) * 1_000_000n,
+      slotLengthNs: BigInt(Math.trunc(slotConfig.slotLength)) * 1_000_000n,
+    };
+  }
+
+  private deriveStabilityTimestampNs(slot: bigint): bigint {
+    const timing = this.getStabilitySlotTiming();
+    return timing.systemStartUnixNs + slot * timing.slotLengthNs;
+  }
+
   private toStabilityBlock(
     block: HistoryBlock,
     poolStakeBpsByPool: Record<string, bigint>,
@@ -1622,7 +1651,7 @@ export class QueryService {
       hash: block.hash,
       prev_hash: block.prevHash,
       epoch: BigInt(block.epochNo),
-      timestamp: block.timestampUnixNs,
+      timestamp: this.deriveStabilityTimestampNs(block.slotNo),
       slot_leader: block.slotLeader,
       stake_bps: poolStakeBpsByPool[block.slotLeader] ?? 0n,
       block_cbor: blockCbor,

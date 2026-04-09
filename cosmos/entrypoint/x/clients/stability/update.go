@@ -263,9 +263,13 @@ func (cs *ClientState) UpdateState(
 	if err != nil {
 		panic(fmt.Errorf("failed to extract ibc_state_root from verified StabilityHeader: %w", err))
 	}
+	consensusTimestamp, err := cs.DeriveTimestampFromSlot(header.AnchorBlock.Slot)
+	if err != nil {
+		panic(fmt.Errorf("failed to derive stability consensus timestamp: %w", err))
+	}
 
 	newConsensusState := &ConsensusState{
-		Timestamp:         header.GetTimestamp(),
+		Timestamp:         consensusTimestamp,
 		IbcStateRoot:      ibcStateRoot,
 		AcceptedBlockHash: header.AnchorBlock.Hash,
 		AcceptedEpoch:     header.AnchorBlock.Epoch,

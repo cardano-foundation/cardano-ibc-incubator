@@ -161,6 +161,8 @@ type ClientState struct {
 	SlotsPerKesPeriod            uint64                    `protobuf:"varint,12,opt,name=slots_per_kes_period,json=slotsPerKesPeriod,proto3" json:"slots_per_kes_period,omitempty"`
 	CurrentEpochStartSlot        uint64                    `protobuf:"varint,13,opt,name=current_epoch_start_slot,json=currentEpochStartSlot,proto3" json:"current_epoch_start_slot,omitempty"`
 	CurrentEpochEndSlotExclusive uint64                    `protobuf:"varint,14,opt,name=current_epoch_end_slot_exclusive,json=currentEpochEndSlotExclusive,proto3" json:"current_epoch_end_slot_exclusive,omitempty"`
+	SystemStartUnixNs            uint64                    `protobuf:"varint,15,opt,name=system_start_unix_ns,json=systemStartUnixNs,proto3" json:"system_start_unix_ns,omitempty"`
+	SlotLengthNs                 uint64                    `protobuf:"varint,16,opt,name=slot_length_ns,json=slotLengthNs,proto3" json:"slot_length_ns,omitempty"`
 }
 
 func (m *ClientState) Reset()         { *m = ClientState{} }
@@ -622,6 +624,17 @@ func (m *ClientState) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i = encodeVarintStability(dAtA, i, uint64(m.CurrentEpochEndSlotExclusive))
 		i--
 		dAtA[i] = 0x70
+	}
+	if m.SystemStartUnixNs != 0 {
+		i = encodeVarintStability(dAtA, i, uint64(m.SystemStartUnixNs))
+		i--
+		dAtA[i] = 0x78
+	}
+	if m.SlotLengthNs != 0 {
+		i = encodeVarintStability(dAtA, i, uint64(m.SlotLengthNs))
+		i -= 2
+		dAtA[i] = 0x80
+		dAtA[i+1] = 0x1
 	}
 	if m.CurrentEpochStartSlot != 0 {
 		i = encodeVarintStability(dAtA, i, uint64(m.CurrentEpochStartSlot))
@@ -1176,6 +1189,12 @@ func (m *ClientState) Size() (n int) {
 	}
 	if m.CurrentEpochEndSlotExclusive != 0 {
 		n += 1 + sovStability(uint64(m.CurrentEpochEndSlotExclusive))
+	}
+	if m.SystemStartUnixNs != 0 {
+		n += 1 + sovStability(uint64(m.SystemStartUnixNs))
+	}
+	if m.SlotLengthNs != 0 {
+		n += 2 + sovStability(uint64(m.SlotLengthNs))
 	}
 	return n
 }
@@ -2158,6 +2177,44 @@ func (m *ClientState) Unmarshal(dAtA []byte) error {
 				b := dAtA[iNdEx]
 				iNdEx++
 				m.CurrentEpochEndSlotExclusive |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 15:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SystemStartUnixNs", wireType)
+			}
+			m.SystemStartUnixNs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStability
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SystemStartUnixNs |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 16:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SlotLengthNs", wireType)
+			}
+			m.SlotLengthNs = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowStability
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SlotLengthNs |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}

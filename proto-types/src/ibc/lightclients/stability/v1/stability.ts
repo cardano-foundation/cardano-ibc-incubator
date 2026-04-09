@@ -35,6 +35,8 @@ export interface ClientState {
   slots_per_kes_period: bigint;
   current_epoch_start_slot: bigint;
   current_epoch_end_slot_exclusive: bigint;
+  system_start_unix_ns: bigint;
+  slot_length_ns: bigint;
 }
 export interface ConsensusState {
   timestamp: bigint;
@@ -339,6 +341,8 @@ function createBaseClientState(): ClientState {
     slots_per_kes_period: BigInt(0),
     current_epoch_start_slot: BigInt(0),
     current_epoch_end_slot_exclusive: BigInt(0),
+    system_start_unix_ns: BigInt(0),
+    slot_length_ns: BigInt(0),
   };
 }
 export const ClientState = {
@@ -385,6 +389,12 @@ export const ClientState = {
     }
     if (message.current_epoch_end_slot_exclusive !== BigInt(0)) {
       writer.uint32(112).uint64(message.current_epoch_end_slot_exclusive);
+    }
+    if (message.system_start_unix_ns !== BigInt(0)) {
+      writer.uint32(120).uint64(message.system_start_unix_ns);
+    }
+    if (message.slot_length_ns !== BigInt(0)) {
+      writer.uint32(128).uint64(message.slot_length_ns);
     }
     return writer;
   },
@@ -437,6 +447,12 @@ export const ClientState = {
         case 14:
           message.current_epoch_end_slot_exclusive = reader.uint64();
           break;
+        case 15:
+          message.system_start_unix_ns = reader.uint64();
+          break;
+        case 16:
+          message.slot_length_ns = reader.uint64();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -470,6 +486,9 @@ export const ClientState = {
       obj.current_epoch_start_slot = BigInt(object.current_epoch_start_slot.toString());
     if (isSet(object.current_epoch_end_slot_exclusive))
       obj.current_epoch_end_slot_exclusive = BigInt(object.current_epoch_end_slot_exclusive.toString());
+    if (isSet(object.system_start_unix_ns))
+      obj.system_start_unix_ns = BigInt(object.system_start_unix_ns.toString());
+    if (isSet(object.slot_length_ns)) obj.slot_length_ns = BigInt(object.slot_length_ns.toString());
     return obj;
   },
   toJSON(message: ClientState): unknown {
@@ -521,6 +540,10 @@ export const ClientState = {
       (obj.current_epoch_end_slot_exclusive = (
         message.current_epoch_end_slot_exclusive || BigInt(0)
       ).toString());
+    message.system_start_unix_ns !== undefined &&
+      (obj.system_start_unix_ns = (message.system_start_unix_ns || BigInt(0)).toString());
+    message.slot_length_ns !== undefined &&
+      (obj.slot_length_ns = (message.slot_length_ns || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -558,6 +581,12 @@ export const ClientState = {
       object.current_epoch_end_slot_exclusive !== null
     ) {
       message.current_epoch_end_slot_exclusive = BigInt(object.current_epoch_end_slot_exclusive.toString());
+    }
+    if (object.system_start_unix_ns !== undefined && object.system_start_unix_ns !== null) {
+      message.system_start_unix_ns = BigInt(object.system_start_unix_ns.toString());
+    }
+    if (object.slot_length_ns !== undefined && object.slot_length_ns !== null) {
+      message.slot_length_ns = BigInt(object.slot_length_ns.toString());
     }
     return message;
   },

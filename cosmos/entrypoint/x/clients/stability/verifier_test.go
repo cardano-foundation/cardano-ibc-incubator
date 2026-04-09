@@ -83,6 +83,13 @@ func TestAuthenticateStabilityBlockRejectsMismatchedClaims(t *testing.T) {
 			},
 			want: "block slot mismatch",
 		},
+		{
+			name: "timestamp mismatch",
+			mutate: func(block *StabilityBlock) {
+				block.Timestamp++
+			},
+			want: "block timestamp mismatch",
+		},
 	}
 
 	cs := newStabilityTestClientState()
@@ -187,6 +194,27 @@ func TestHeadersConflictRejectsNonConflictingHeaders(t *testing.T) {
 	require.True(t, headersConflict(header1, header2))
 }
 
+func TestHeadersConflictDetectsDifferentHeightOverlapMismatch(t *testing.T) {
+	header1 := newVerifiedTestHeader(t)
+	header2 := newVerifiedTestHeader(t)
+	header2.AnchorBlock = &StabilityBlock{
+		Height:   &Height{RevisionHeight: 14},
+		Hash:     "anchor-14",
+		PrevHash: header1.DescendantBlocks[0].Hash,
+	}
+	header2.BridgeBlocks = []*StabilityBlock{
+		cloneTestStabilityBlock(header1.BridgeBlocks[0]),
+		cloneTestStabilityBlock(header1.AnchorBlock),
+		cloneTestStabilityBlock(header1.DescendantBlocks[0]),
+	}
+	header2.DescendantBlocks = nil
+
+	require.False(t, headersConflict(header1, header2))
+
+	header2.BridgeBlocks[0].Hash = "conflicting-bridge-11"
+	require.True(t, headersConflict(header1, header2))
+}
+
 func TestHeaderValidateBasicRejectsTrustedHeightEdgeCases(t *testing.T) {
 	header := newVerifiedTestHeader(t)
 
@@ -254,6 +282,8 @@ func newStabilityTestClientState() *ClientState {
 		SlotsPerKesPeriod:            129600,
 		CurrentEpochStartSlot:        0,
 		CurrentEpochEndSlotExclusive: 1_000_000,
+		SystemStartUnixNs:            1_700_000_000_000_000_000,
+		SlotLengthNs:                 1_000_000_000,
 	}
 }
 
@@ -317,7 +347,7 @@ func makeTestStabilityBlock(t *testing.T, blockNumber, slot uint64, prevHashHex 
 		PrevHash:   block.Header.Body.PrevHash.String(),
 		Slot:       block.SlotNumber(),
 		Epoch:      7,
-		Timestamp:  1_700_000_000_000_000_000,
+		Timestamp:  1_700_000_000_000_000_000 + block.SlotNumber()*1_000_000_000,
 		SlotLeader: block.IssuerVkey().PoolId(),
 		BlockCbor:  blockCbor,
 	}
