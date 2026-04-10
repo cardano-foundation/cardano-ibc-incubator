@@ -46,7 +46,13 @@ func (l LightClientModule) VerifyClientMessage(ctx sdk.Context, clientID string,
 	if !found {
 		return errorsmod.Wrap(clienttypes.ErrClientNotFound, clientID)
 	}
-	return clientState.VerifyClientMessage(ctx, l.cdc, clientStore, clientMsg)
+	err := clientState.VerifyClientMessage(ctx, l.cdc, clientStore, clientMsg)
+	if err != nil {
+		if header, ok := clientMsg.(*StabilityHeader); ok {
+			emitStabilityHeaderRejectedEvent(ctx, clientID, header, err)
+		}
+	}
+	return err
 }
 
 func (l LightClientModule) CheckForMisbehaviour(ctx sdk.Context, clientID string, clientMsg exported.ClientMessage) bool {
@@ -67,6 +73,7 @@ func (l LightClientModule) UpdateStateOnMisbehaviour(ctx sdk.Context, clientID s
 	frozenHeight := FrozenHeight
 	clientState.FrozenHeight = frozenHeight
 	setClientState(clientStore, l.cdc, clientState)
+	emitStabilityClientFrozenEvent(ctx, clientID, frozenHeight)
 }
 
 func (l LightClientModule) UpdateState(ctx sdk.Context, clientID string, clientMsg exported.ClientMessage) []exported.Height {
@@ -75,7 +82,20 @@ func (l LightClientModule) UpdateState(ctx sdk.Context, clientID string, clientM
 	if !found {
 		panic(errorsmod.Wrap(clienttypes.ErrClientNotFound, clientID))
 	}
-	return clientState.UpdateState(ctx, l.cdc, clientStore, clientMsg)
+	updatedHeights := clientState.UpdateState(ctx, l.cdc, clientStore, clientMsg)
+
+	header, ok := clientMsg.(*StabilityHeader)
+	if !ok || len(updatedHeights) == 0 {
+		return updatedHeights
+	}
+
+	consensusState, found := GetConsensusState(clientStore, l.cdc, updatedHeights[0])
+	if !found {
+		panic(errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "height (%s)", updatedHeights[0]))
+	}
+
+	emitStabilityHeaderAcceptedEvent(ctx, clientID, header, clientState, consensusState)
+	return updatedHeights
 }
 
 func (l LightClientModule) VerifyMembership(ctx sdk.Context, clientID string, height exported.Height, delayTimePeriod uint64, delayBlockPeriod uint64, proof []byte, path exported.Path, value []byte) error {
