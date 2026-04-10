@@ -5,6 +5,7 @@ import { EntityManager } from 'typeorm';
 import { bech32 } from 'bech32';
 import { GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 import { CLIENT_PREFIX } from '../../constant';
+import { queryCurrentEpochVerificationData } from '../../shared/helpers/ogmios';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { UtxoDto } from '../dtos/utxo.dto';
 import { TxDto } from '../dtos/tx.dto';
@@ -322,16 +323,23 @@ export class YaciHistoryService implements HistoryService {
     const currentEpochEndSlotExclusive =
       nextEpochStartSlot ??
       (configuredEpochLength > 0n ? startSlot + configuredEpochLength : null);
+    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    if (!ogmiosEndpoint) {
+      return null;
+    }
 
-    const epochNonceHex = normalizeHex(this.configService.get<string>('cardanoCurrentEpochNonce'));
-    const slotsPerKesPeriod = Number(this.configService.get<number>('cardanoSlotsPerKesPeriod') || 0);
+    const { currentEpoch, epochNonce, slotsPerKesPeriod } =
+      await queryCurrentEpochVerificationData(ogmiosEndpoint);
+    if (epoch !== currentEpoch) {
+      return null;
+    }
 
-    if (!epochNonceHex || currentEpochEndSlotExclusive === null || slotsPerKesPeriod <= 0) {
+    if (!epochNonce || currentEpochEndSlotExclusive === null || slotsPerKesPeriod <= 0) {
       return null;
     }
 
     return {
-      epochNonce: epochNonceHex,
+      epochNonce,
       slotsPerKesPeriod,
       currentEpochStartSlot: startSlot,
       currentEpochEndSlotExclusive,

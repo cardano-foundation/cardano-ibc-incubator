@@ -289,7 +289,7 @@ The current implementation stores one epoch stake distribution in client state a
 
 ### 2. Updates are currently within-epoch only
 
-The current implementation stores one epoch stake distribution in client state and rejects bridge/anchor/descendant windows that cross into a different epoch. That avoids reintroducing an off-chain epoch-stake oracle into the update path, but it also means epoch rollover currently requires operational handling rather than seamless in-client evolution.
+The current implementation stores one epoch stake distribution in client state and rejects bridge/anchor/descendant windows that cross into a different epoch. Gateway now sources the current epoch nonce and `slotsPerKesPeriod` from node local-state via Ogmios, but the model is still intentionally current-epoch-only. That avoids reintroducing an off-chain epoch-stake oracle into the update path, but it also means epoch rollover currently requires operational handling rather than seamless in-client evolution.
 
 ### 3. Missing epoch stake data now fails closed
 
@@ -299,6 +299,10 @@ The current implementation no longer falls back to equal weights or relayed `sta
 
 The current implementation authenticates raw Cardano block witnesses well enough to stop trusting normalized history rows as ground truth, but it still does not verify the full Ouroboros rule set on-chain. In particular, epoch stake rotation, leader-eligibility verification across epochs, and other native consensus details remain future work.
 
-### 5. The trust anchor is still weaker than Mithril
+### 5. Epoch verification context is now node-sourced, but still current-epoch scoped
+
+The stability client no longer reads the epoch nonce or `slotsPerKesPeriod` from Gateway config. Instead, Gateway queries those values from node local-state through Ogmios and only serves stability evidence for the current epoch. That is a stronger trust boundary than operator-provided config, but it is still not a full historical epoch-context protocol: creating or updating a stability client for an older epoch is intentionally rejected today.
+
+### 6. The trust anchor is still weaker than Mithril
 
 Mithril gives a portable cryptographic artifact that explicitly certifies a Cardano snapshot. The stability client does not. Instead it relies on authenticated raw Cardano block witnesses plus a deterministic acceptance rule evaluated on-chain.
