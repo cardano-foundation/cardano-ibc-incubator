@@ -68,7 +68,8 @@ export class ConnectionService {
         historyService: this.historyService,
         context: 'queryConnection',
         lightClientMode:
-          this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril',
+          this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
+          'stake-weighted-stability',
       });
       return height > 0n ? height : 1n;
     } catch {

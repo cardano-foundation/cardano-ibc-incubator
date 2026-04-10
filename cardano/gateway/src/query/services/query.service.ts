@@ -1595,7 +1595,8 @@ export class QueryService {
 
   private getLightClientMode(): 'mithril' | 'stake-weighted-stability' {
     return (
-      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril'
+      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
+      'stake-weighted-stability'
     );
   }
 

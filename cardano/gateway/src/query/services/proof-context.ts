@@ -27,7 +27,7 @@ export async function resolveProofHeightForCurrentRoot({
   mithrilService,
   historyService,
   context,
-  lightClientMode = 'mithril',
+  lightClientMode = 'stake-weighted-stability',
   maxAttempts = 10,
   delayMs = 1500,
 }: ProofContextDeps): Promise<bigint> {

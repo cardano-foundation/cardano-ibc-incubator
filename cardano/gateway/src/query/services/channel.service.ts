@@ -70,7 +70,8 @@ export class ChannelService {
       historyService: this.historyService,
       context: 'queryChannel',
       lightClientMode:
-        this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril',
+        this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
+        'stake-weighted-stability',
     });
   }
 

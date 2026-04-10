@@ -107,9 +107,9 @@ export default (): Partial<Config> => {
     cardanoChainNetworkMagic: Number(process.env.CARDANO_CHAIN_NETWORK_MAGIC || 42),
     cardanoChainId: process.env.CARDANO_CHAIN_ID || 'cardano-devnet',
     cardanoLightClientMode:
-      process.env.CARDANO_LIGHT_CLIENT_MODE === 'stake-weighted-stability'
-        ? 'stake-weighted-stability'
-        : 'mithril',
+      process.env.CARDANO_LIGHT_CLIENT_MODE === 'mithril'
+        ? 'mithril'
+        : 'stake-weighted-stability',
     cardanoNetwork: cardanoNetwork,
     cardanoEpochLength: Number(process.env.CARDANO_EPOCH_LENGTH || 432000),
 

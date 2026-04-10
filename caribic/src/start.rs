@@ -741,7 +741,16 @@ pub async fn start_local_cardano_network(
         .services
         .history_backend_enabled()
     {
-        prepare_db_sync_and_gateway(cardano_dir.as_path(), clean, network)?;
+        prepare_db_sync_and_gateway(
+            cardano_dir.as_path(),
+            clean,
+            network,
+            if with_mithril {
+                "mithril"
+            } else {
+                "stake-weighted-stability"
+            },
+        )?;
     }
 
     log_or_show_progress(

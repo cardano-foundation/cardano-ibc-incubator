@@ -1044,6 +1044,7 @@ fn write_gateway_env_for_network(
     cardano_dir: &Path,
     clean: bool,
     network: config::CoreCardanoNetwork,
+    light_client_mode: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let profile = config::cardano_network_profile(network);
     let network_magic = profile.network_magic.to_string();
@@ -1060,6 +1061,7 @@ fn write_gateway_env_for_network(
         ("CARDANO_CHAIN_ID", profile.chain_id.as_str()),
         ("CARDANO_CHAIN_NETWORK_MAGIC", network_magic.as_str()),
         ("CARDANO_NETWORK_MAGIC", network_magic.as_str()),
+        ("CARDANO_LIGHT_CLIENT_MODE", light_client_mode),
         ("MITHRIL_ENDPOINT", profile.mithril_aggregator_url.as_str()),
         (
             "MITHRIL_GENESIS_VERIFICATION_KEY",
@@ -1311,6 +1313,7 @@ pub fn prepare_db_sync_and_gateway(
     cardano_dir: &Path,
     clean: bool,
     network: config::CoreCardanoNetwork,
+    light_client_mode: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if matches!(network, config::CoreCardanoNetwork::Local) {
         let devnet_dir = cardano_dir.join("devnet");
@@ -1380,7 +1383,7 @@ pub fn prepare_db_sync_and_gateway(
             .map_err(|error| format!("Failed to write info.json file: {}", error))?;
     }
 
-    write_gateway_env_for_network(cardano_dir, clean, network)?;
+    write_gateway_env_for_network(cardano_dir, clean, network, light_client_mode)?;
     match network {
         config::CoreCardanoNetwork::Local => ensure_gateway_databases(cardano_dir)?,
         config::CoreCardanoNetwork::Preprod => {
