@@ -38,7 +38,7 @@ This model is configurable, so the safety of trusting it is entirely dependent o
 
 The resulting decision is represented as a score plus hard acceptance thresholds, and that accepted block is then used as the height at which the Cardano `HostState` commitment root is authenticated for IBC.
 
-This client is NOT equivalent to BFT finality, and it is NOT equivalent to a Tendermint-style light client. It is certainly a superior solution in terms of UX, but it does not currently offer a trust story comparable to a portable certification path like Mithril. Today it should be understood as a deterministic settlement heuristic over node-sourced Cardano block witnesses, with stronger checks than raw history summaries, but still a weaker trust anchor than a portable quorum-attested artifact.
+This client is NOT equivalent to BFT finality, and it is NOT equivalent to a Tendermint-style light client. It is certainly a superior solution in terms of UX, but it does not currently offer a trust story comparable to a portable certification path like Mithril. Today it should be understood as a deterministic settlement heuristic over node-sourced Cardano block witnesses: the verifier now rejects malformed or internally inconsistent block witnesses and performs meaningful native-ish checks, but canonical history still comes from one configured node/Ogmios observer view.
 
 It implements an IBC 02-client shape in the `ibc-go` v10 sense, meaning:
 
@@ -305,4 +305,4 @@ The stability client no longer reads the epoch nonce or `slotsPerKesPeriod` from
 
 ### 6. The trust anchor is still weaker than Mithril
 
-Mithril gives a portable cryptographic artifact that explicitly certifies a Cardano snapshot. The stability client does not. Instead it relies on authenticated raw Cardano block witnesses plus a deterministic acceptance rule evaluated on-chain.
+Mithril gives a portable cryptographic artifact that explicitly certifies a Cardano snapshot. The stability client does not. Instead it relies on `ledger.VerifyBlock(...)` plus authenticated raw Cardano block witnesses streamed from one configured node/Ogmios observer, and then applies a deterministic acceptance rule on-chain. That is materially stronger than trusting normalized history rows or relayed metadata, but it is still not a fully solved portable chain-authenticity story inside the client itself.
