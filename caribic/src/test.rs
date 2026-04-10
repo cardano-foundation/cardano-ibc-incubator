@@ -1,6 +1,7 @@
 use crate::logger::{self, verbose};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::BTreeMap;
+use std::fs;
 use std::io::{BufRead, BufReader, IsTerminal};
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
@@ -13,6 +14,27 @@ fn entrypoint_chain_id() -> &'static str {
     ENTRYPOINT_CHAIN_ID
         .get_or_init(|| crate::config::get_config().chains.entrypoint.chain_id)
         .as_str()
+}
+
+fn gateway_light_client_mode(project_root: &Path) -> &'static str {
+    let gateway_env_path = project_root.join("cardano/gateway/.env");
+    let env_contents = fs::read_to_string(&gateway_env_path).unwrap_or_default();
+
+    for line in env_contents.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        if let Some(value) = trimmed.strip_prefix("CARDANO_LIGHT_CLIENT_MODE=") {
+            let mode = value.trim().trim_matches('"').trim_matches('\'');
+            if mode == "mithril" {
+                return "mithril";
+            }
+        }
+    }
+
+    "stake-weighted-stability"
 }
 
 /// Run a command while streaming its stdout/stderr to the user (for long-running steps),
@@ -2116,82 +2138,66 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
         verbose("   Packet-forwarding chain is running");
     }
 
-    // Check Mithril (required for bidirectional IBC tests)
-    // Mithril is required for Cosmos-side Cardano client creation (the Mithril light client),
-    // which is exercised by connection/channel tests.
-    //
-    // Mithril aggregator does not expose a dedicated `/health` endpoint in our setup; the
-    // `/aggregator` endpoint is stable and returns 2xx when the service is up.
-    let mithril_aggregator_base_url = crate::config::get_config()
-        .mithril
-        .aggregator_url
-        .trim_end_matches('/')
-        .to_string();
-    let mithril_aggregator_url = format!("{}/aggregator", mithril_aggregator_base_url);
-    let stake_distributions_url = format!(
-        "{}/aggregator/artifact/mithril-stake-distributions",
-        mithril_aggregator_base_url
-    );
-    let cardano_transactions_url = format!(
-        "{}/aggregator/artifact/cardano-transactions",
-        mithril_aggregator_base_url
-    );
+    let light_client_mode = gateway_light_client_mode(project_root);
+    if light_client_mode == "mithril" {
+        verbose("   Gateway light client mode: mithril");
 
-    let mithril_running = check_service_health(&http_client, mithril_aggregator_url.as_str()).await;
-    if !mithril_running {
-        missing_services.push("Mithril aggregator on :8080");
-    } else {
-        verbose("   Mithril is running");
+        // Check Mithril only when the active Gateway mode actually depends on it.
+        //
+        // Mithril aggregator does not expose a dedicated `/health` endpoint in our setup; the
+        // `/aggregator` endpoint is stable and returns 2xx when the service is up.
+        let mithril_aggregator_base_url = crate::config::get_config()
+            .mithril
+            .aggregator_url
+            .trim_end_matches('/')
+            .to_string();
+        let mithril_aggregator_url = format!("{}/aggregator", mithril_aggregator_base_url);
+        let stake_distributions_url = format!(
+            "{}/aggregator/artifact/mithril-stake-distributions",
+            mithril_aggregator_base_url
+        );
+        let cardano_transactions_url = format!(
+            "{}/aggregator/artifact/cardano-transactions",
+            mithril_aggregator_base_url
+        );
 
-        // Mithril "up" is not the same as "ready".
-        //
-        // The aggregator can return 2xx for `/aggregator` while it still has no certificate chain.
-        // In that state, all artifact endpoints keep returning an empty JSON array (`[]`) and the
-        // Cosmos-side Cardano client cannot be created, which will later stall or fail connection/
-        // channel handshakes.
-        //
-        // Common symptoms when Mithril is not ready:
-        // - `GET /aggregator/certificates` returns `[]`
-        // - aggregator logs contain "No certificate found", "certificate chain is invalid", or
-        //   aggregate verification key (AVK) mismatch errors.
-        //
-        // Local devnet recovery (one-time bootstrap):
-        // - run the `mithril-aggregator-genesis` job (docker compose profile `mithril-genesis`)
-        //   with the genesis keys from `~/.caribic/config.json`
-        // - restart Mithril aggregator + signers so they pick up the seeded certificate chain
-
-        // Gateway's proof-based queries require both Mithril artifact families:
-        // - stake distributions
-        // - cardano transaction snapshots
-        //
-        // Treat this as a hard readiness gate in Test 1 to avoid flaky downstream
-        // failures in Test 5/6 when snapshots are still empty.
-        let stake_distributions_ready =
-            check_json_array_non_empty(&http_client, stake_distributions_url.as_str()).await;
-        let tx_snapshots_ready =
-            check_json_array_non_empty(&http_client, cardano_transactions_url.as_str()).await;
-
-        if stake_distributions_ready && tx_snapshots_ready {
-            verbose("   Mithril stake distributions available");
-            verbose("   Mithril Cardano transaction snapshots available");
+        let mithril_running =
+            check_service_health(&http_client, mithril_aggregator_url.as_str()).await;
+        if !mithril_running {
+            missing_services.push("Mithril aggregator on :8080");
         } else {
-            logger::warn(
-                "Mithril artifacts are not ready yet; waiting up to 180s for stake distributions and cardano-transaction snapshots.",
-            );
+            verbose("   Mithril is running");
 
-            let artifacts_ready =
-                wait_for_mithril_artifacts_ready_for_cardano_client(36, Duration::from_secs(5))
-                    .await?;
+            let stake_distributions_ready =
+                check_json_array_non_empty(&http_client, stake_distributions_url.as_str()).await;
+            let tx_snapshots_ready =
+                check_json_array_non_empty(&http_client, cardano_transactions_url.as_str()).await;
 
-            if artifacts_ready {
+            if stake_distributions_ready && tx_snapshots_ready {
                 verbose("   Mithril stake distributions available");
                 verbose("   Mithril Cardano transaction snapshots available");
             } else {
-                missing_services.push(
-                    "Mithril artifacts (stake distributions + cardano-transactions) on :8080",
+                logger::warn(
+                    "Mithril artifacts are not ready yet; waiting up to 180s for stake distributions and cardano-transaction snapshots.",
                 );
+
+                let artifacts_ready =
+                    wait_for_mithril_artifacts_ready_for_cardano_client(36, Duration::from_secs(5))
+                        .await?;
+
+                if artifacts_ready {
+                    verbose("   Mithril stake distributions available");
+                    verbose("   Mithril Cardano transaction snapshots available");
+                } else {
+                    missing_services.push(
+                        "Mithril artifacts (stake distributions + cardano-transactions) on :8080",
+                    );
+                }
             }
         }
+    } else {
+        verbose("   Gateway light client mode: stake-weighted-stability");
+        verbose("   Mithril checks skipped for active Gateway mode");
     }
 
     if !missing_services.is_empty() {
