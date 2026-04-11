@@ -12,10 +12,6 @@ use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   BatchVerifyMembership, VerifyMembershipParams, VerifyProofRedeemer,
 }
-use ibc/client/mithril_client/client_state as mithril_client_state
-use ibc/client/mithril_client/protos/mithril_pb.{
-  AnyMithrilClientState, MithrilClientState,
-}
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/connection_redeemer.{
@@ -200,16 +196,13 @@ validator mint_connection(
 fn validate_conn_open_try_proof(
   client_datum_state: ClientDatumState,
   connection: ConnectionEnd,
-  counterparty_client_state: MithrilClientState,
+  counterparty_client_state: ByteArray,
   proof_init: MerkleProof,
   proof_client: MerkleProof,
   proof_height: Height,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
-  let valid_client =
-    mithril_client_state.validate_self_client(counterparty_client_state)
-
   let expected_counterparty =
     counterparty.new_counterparty(
       connection.client_id,
@@ -253,14 +246,6 @@ fn validate_conn_open_try_proof(
       connection_end.convert_to_connection_end_proto(expected_connection),
     )
 
-  let counterparty_client_state_bz =
-    mithril_pb.marshal_for_any_client_state(
-      AnyMithrilClientState {
-        type_url: "/ibc.lightclients.mithril.v1.ClientState",
-        value: counterparty_client_state,
-      },
-    ).2nd
-
   expect Some(verify_proof_redeemer) =
     pairs.get_first(redeemers, Mint(verify_proof_policy_id))
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
@@ -286,13 +271,10 @@ fn validate_conn_open_try_proof(
           delay_block_period: block_delay,
           proof: proof_client,
           path: client_merkle_path,
-          value: counterparty_client_state_bz,
+          value: counterparty_client_state,
         },
       ],
     )
 
-  and {
-    valid_client,
-    valid_proof_redeemer,
-  }
+  valid_proof_redeemer
 }

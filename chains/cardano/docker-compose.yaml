@@ -116,7 +116,6 @@ services:
 
   yaci-store-postgres:
     image: postgres:15
-    user: "${UID:-1000}:${GID:-1000}"
     environment:
       - POSTGRES_DB=yaci_store
       - POSTGRES_USER=yaci
@@ -139,7 +138,6 @@ services:
 
   yaci-store:
     image: bloxbean/yaci-store:2.0.0
-    user: "${UID:-1000}:${GID:-1000}"
     ports:
       - ${YACI_STORE_PORT:-8081}:8080
     depends_on:

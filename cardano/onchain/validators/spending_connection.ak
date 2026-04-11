@@ -15,10 +15,6 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   BatchVerifyMembership, VerifyMembership, VerifyMembershipParams,
   VerifyProofRedeemer,
 }
-use ibc/client/mithril_client/client_state as mithril_client_state
-use ibc/client/mithril_client/protos/mithril_pb.{
-  AnyMithrilClientState, MithrilClientState,
-}
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/connection_redeemer.{
@@ -192,16 +188,13 @@ fn validate_conn_open_ack_proof(
   client_datum_state: ClientDatumState,
   connection_id: ByteArray,
   connection: ConnectionEnd,
-  counterparty_client_state: MithrilClientState,
+  counterparty_client_state: ByteArray,
   proof_try: MerkleProof,
   proof_client: MerkleProof,
   proof_height: Height,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
-  let valid_client_state =
-    mithril_client_state.validate_self_client(counterparty_client_state)
-
   let expected_counterparty =
     counterparty.new_counterparty(
       connection.client_id,
@@ -245,14 +238,6 @@ fn validate_conn_open_ack_proof(
       connection_end.convert_to_connection_end_proto(expected_connection),
     )
 
-  let counterparty_client_state_bz =
-    mithril_pb.marshal_for_any_client_state(
-      AnyMithrilClientState {
-        type_url: "/ibc.lightclients.mithril.v1.ClientState",
-        value: counterparty_client_state,
-      },
-    ).2nd
-
   expect Some(verify_proof_redeemer) =
     pairs.get_first(redeemers, Mint(verify_proof_policy_id))
   expect verify_proof_redeemer: VerifyProofRedeemer = verify_proof_redeemer
@@ -290,16 +275,13 @@ fn validate_conn_open_ack_proof(
           item1.delay_block_period == block_delay,
           item1.proof == proof_client,
           ok1_path,
-          item1.value == counterparty_client_state_bz,
+          item1.value == counterparty_client_state,
         }
       }
       _ -> False
     }
 
-  and {
-    valid_client_state?,
-    valid_proof_redeemer?,
-  }
+  valid_proof_redeemer?
 }
 
 fn validate_conn_open_confirm_proof(

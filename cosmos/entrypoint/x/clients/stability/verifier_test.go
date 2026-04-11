@@ -15,6 +15,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	"github.com/stretchr/testify/require"
 
 	"github.com/blinklabs-io/gouroboros/cbor"
@@ -330,6 +331,17 @@ func TestPruneOldestConsensusStateRemovesLowestExpiredHeight(t *testing.T) {
 	require.False(t, found10)
 	require.True(t, found11)
 	require.True(t, found12)
+}
+
+func TestSetConsensusMetadataStoresParseableProcessedHeight(t *testing.T) {
+	ctx, clientStore := newStabilityTestClientStore(t, "stability-processed-height")
+	consensusHeight := NewHeight(0, 42)
+
+	setConsensusMetadata(ctx, clientStore, consensusHeight)
+
+	processedHeight, found := GetProcessedHeight(clientStore, consensusHeight)
+	require.True(t, found)
+	require.Equal(t, clienttypes.GetSelfHeight(ctx), processedHeight)
 }
 
 func newStabilityTestCodec() codec.BinaryCodec {

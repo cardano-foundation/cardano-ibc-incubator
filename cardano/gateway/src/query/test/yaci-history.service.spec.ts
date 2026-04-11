@@ -18,6 +18,9 @@ describe('YaciHistoryService', () => {
         if (key === 'ogmiosEndpoint') {
           return 'ws://ogmios.local';
         }
+        if (key === 'cardanoEpochNonceGenesis') {
+          return 'aa'.repeat(32);
+        }
         if (key === 'cardanoEpochLength') {
           return 432000;
         }
@@ -55,10 +58,10 @@ describe('YaciHistoryService', () => {
       currentEpochEndSlotExclusive: 1200n,
     });
 
-    expect(queryCurrentEpochVerificationData).toHaveBeenCalledWith('ws://ogmios.local');
+    expect(queryCurrentEpochVerificationData).toHaveBeenCalledWith('ws://ogmios.local', 'aa'.repeat(32));
   });
 
-  it('fails closed for non-current epochs according to node local state', async () => {
+  it('returns historical slot bounds without nonce/KES data for non-current epochs', async () => {
     entityManagerMock.query.mockResolvedValueOnce([{ start_slot: '1000' }]).mockResolvedValueOnce([{ start_slot: '1200' }]);
     (queryCurrentEpochVerificationData as jest.Mock).mockResolvedValue({
       currentEpoch: 8,
@@ -66,6 +69,27 @@ describe('YaciHistoryService', () => {
       slotsPerKesPeriod: 129600,
     });
 
-    await expect(service.findEpochVerificationContext(7)).resolves.toBeNull();
+    await expect(service.findEpochVerificationContext(7)).resolves.toEqual({
+      epochNonce: '',
+      slotsPerKesPeriod: 0,
+      currentEpochStartSlot: 1000n,
+      currentEpochEndSlotExclusive: 1200n,
+    });
+  });
+
+  it('ignores negative sentinel slots when deriving epoch bounds', async () => {
+    entityManagerMock.query.mockResolvedValueOnce([{ start_slot: '0' }]).mockResolvedValueOnce([{ start_slot: null }]);
+    (queryCurrentEpochVerificationData as jest.Mock).mockResolvedValue({
+      currentEpoch: 0,
+      epochNonce: '33'.repeat(32),
+      slotsPerKesPeriod: 129600,
+    });
+
+    await expect(service.findEpochVerificationContext(0)).resolves.toEqual({
+      epochNonce: '33'.repeat(32),
+      slotsPerKesPeriod: 129600,
+      currentEpochStartSlot: 0n,
+      currentEpochEndSlotExclusive: 432000n,
+    });
   });
 });

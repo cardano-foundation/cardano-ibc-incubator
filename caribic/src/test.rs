@@ -37,6 +37,167 @@ fn gateway_light_client_mode(project_root: &Path) -> &'static str {
     "stake-weighted-stability"
 }
 
+fn normalize_env_value(value: &str) -> String {
+    value.trim().trim_matches('"').trim_matches('\'').to_string()
+}
+
+fn set_or_append_gateway_env_var(
+    gateway_env_path: &Path,
+    key: &str,
+    value: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let existing = fs::read_to_string(gateway_env_path).unwrap_or_default();
+    let mut found = false;
+    let mut changed = false;
+    let desired_line = format!("{key}={value}");
+    let mut updated_lines = Vec::new();
+
+    for line in existing.lines() {
+        let trimmed = line.trim_start();
+        if let Some((existing_key, _)) = trimmed.split_once('=') {
+            if existing_key == key {
+                found = true;
+                if trimmed != desired_line {
+                    changed = true;
+                    updated_lines.push(desired_line.clone());
+                } else {
+                    updated_lines.push(line.to_string());
+                }
+                continue;
+            }
+        }
+
+        updated_lines.push(line.to_string());
+    }
+
+    if !found {
+        changed = true;
+        updated_lines.push(desired_line);
+    }
+
+    if changed {
+        let mut updated = updated_lines.join("\n");
+        if !updated.ends_with('\n') {
+            updated.push('\n');
+        }
+        fs::write(gateway_env_path, updated)?;
+    }
+
+    Ok(changed)
+}
+
+fn query_current_cardano_epoch_nonce(
+    project_root: &Path,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let cardano_dir = project_root.join("chains/cardano");
+    let output = Command::new("docker")
+        .arg("compose")
+        .arg("exec")
+        .arg("-T")
+        .arg("cardano-node")
+        .arg("cardano-cli")
+        .arg("query")
+        .arg("protocol-state")
+        .arg("--cardano-mode")
+        .arg("--testnet-magic")
+        .arg("42")
+        .current_dir(&cardano_dir)
+        .output()?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to query Cardano protocol-state for epoch nonce (exit code {:?}):\nstdout: {}\nstderr: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        )
+        .into());
+    }
+
+    let protocol_state: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    let epoch_nonce = protocol_state["epochNonce"]
+        .as_str()
+        .ok_or("Failed to extract epochNonce from Cardano protocol-state")?;
+
+    Ok(epoch_nonce.trim().to_string())
+}
+
+async fn refresh_gateway_epoch_nonce_for_stability(
+    project_root: &Path,
+    http_client: &reqwest::Client,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if gateway_light_client_mode(project_root) != "stake-weighted-stability" {
+        return Ok(());
+    }
+
+    let current_epoch_nonce = query_current_cardano_epoch_nonce(project_root)?;
+    let gateway_env_path = project_root.join("cardano/gateway/.env");
+    let configured_epoch_nonce = crate::setup::read_gateway_env_value(
+        &gateway_env_path,
+        "CARDANO_EPOCH_NONCE_GENESIS",
+    )?
+    .map(|value| normalize_env_value(&value))
+    .unwrap_or_default();
+
+    if configured_epoch_nonce == current_epoch_nonce {
+        verbose("   Gateway epoch nonce already matches current Cardano epoch");
+        return Ok(());
+    }
+
+    verbose(&format!(
+        "   Refreshing Gateway epoch nonce for stability mode: {} -> {}",
+        if configured_epoch_nonce.is_empty() {
+            "<empty>"
+        } else {
+            configured_epoch_nonce.as_str()
+        },
+        current_epoch_nonce.as_str()
+    ));
+
+    set_or_append_gateway_env_var(
+        &gateway_env_path,
+        "CARDANO_EPOCH_NONCE_GENESIS",
+        format!("\"{}\"", current_epoch_nonce).as_str(),
+    )?;
+
+    let gateway_dir = project_root.join("cardano/gateway");
+    let recreate_output = Command::new("docker")
+        .arg("compose")
+        .arg("up")
+        .arg("-d")
+        .arg("--force-recreate")
+        .arg("app")
+        .current_dir(&gateway_dir)
+        .output()?;
+
+    if !recreate_output.status.success() {
+        return Err(format!(
+            "Failed to recreate Gateway after epoch nonce refresh (exit code {:?}):\nstdout: {}\nstderr: {}",
+            recreate_output.status.code(),
+            String::from_utf8_lossy(&recreate_output.stdout),
+            String::from_utf8_lossy(&recreate_output.stderr),
+        )
+        .into());
+    }
+
+    let gateway_healthy = wait_for_service_health(
+        http_client,
+        "http://127.0.0.1:8000/health",
+        30,
+        Duration::from_secs(2),
+    )
+    .await;
+
+    if !gateway_healthy {
+        return Err(
+            "Gateway did not become healthy after epoch nonce refresh/recreate".into(),
+        );
+    }
+
+    verbose("   Gateway refreshed with current Cardano epoch nonce");
+    Ok(())
+}
+
 /// Run a command while streaming its stdout/stderr to the user (for long-running steps),
 /// while also capturing the full output for later parsing.
 fn run_command_streaming(
@@ -2139,6 +2300,9 @@ async fn verify_services_running(project_root: &Path) -> Result<(), Box<dyn std:
     }
 
     let light_client_mode = gateway_light_client_mode(project_root);
+    if light_client_mode == "stake-weighted-stability" && cardano_running && gateway_running {
+        refresh_gateway_epoch_nonce_for_stability(project_root, &http_client).await?;
+    }
     if light_client_mode == "mithril" {
         verbose("   Gateway light client mode: mithril");
 

@@ -1,5 +1,5 @@
 {
-  "epochLength": 150,
+  "epochLength": 5000,
   "activeSlotsCoeff": 0.25,
   "slotLength": 1,
   "securityParam": 18,

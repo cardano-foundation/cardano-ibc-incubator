@@ -1085,8 +1085,11 @@ fn write_gateway_env_for_network(
                 ("GATEWAY_DB_PORT", "5432"),
                 ("KUPO_ENDPOINT", "http://kupo:1442"),
                 ("OGMIOS_ENDPOINT", "http://cardano-node-ogmios:1337"),
+                ("YACI_STORE_ENDPOINT", "http://yaci-store:8080"),
                 ("CARDANO_CHAIN_HOST", "cardano-node"),
                 ("CARDANO_CHAIN_PORT", "3001"),
+                ("CARDANO_STABILITY_THRESHOLD_DEPTH", "1"),
+                ("CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS", "1"),
             ];
             for (key, value) in local_gateway_defaults {
                 set_or_append_env_var(&gateway_env, key, value)?;

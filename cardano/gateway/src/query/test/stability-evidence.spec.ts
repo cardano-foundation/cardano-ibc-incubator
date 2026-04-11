@@ -282,4 +282,33 @@ describe('stability-evidence', () => {
       }),
     ).rejects.toThrow('currently supports only current-epoch anchors');
   });
+
+  it('allows historical anchors for stability header evidence when slot bounds are available', async () => {
+    historyServiceMock.findLatestBlock = jest.fn().mockResolvedValue({
+      height: 200,
+      hash: 'latest-hash',
+      prevHash: 'hash-199',
+      slotNo: 2000n,
+      epochNo: 8,
+      timestampUnixNs: 2_000_000_000n,
+      slotLeader: 'pool-z',
+    });
+    historyServiceMock.findEpochVerificationContext = jest.fn().mockResolvedValue({
+      epochNonce: '',
+      slotsPerKesPeriod: 0,
+      currentEpochStartSlot: 900n,
+      currentEpochEndSlotExclusive: 1200n,
+    });
+
+    const evidence = await loadStakeWeightedStabilityHeaderEvidence({
+      historyService: historyServiceMock as HistoryService,
+      trustedHeight: 97n,
+      height: 100n,
+      logger: { warn: jest.fn() } as unknown as Logger,
+      heuristicParams,
+    });
+
+    expect(evidence.anchorHeight).toBe(100n);
+    expect(evidence.bridgeBlocks).toEqual(bridgeBlocks);
+  });
 });

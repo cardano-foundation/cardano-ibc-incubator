@@ -6,10 +6,7 @@ import {
   fromHex,
   fromText,
   Kupmios,
-  Lucid,
   LucidEvolution,
-  Network,
-  SLOT_CONFIG_NETWORK,
   type TxBuilder,
   type UTxO,
   validatorToScriptHash,
@@ -17,9 +14,11 @@ import {
 import {
   generateIdentifierTokenName,
   hashSha3_256,
-  querySystemStart,
   submitTx,
 } from "../src/utils.ts";
+import {
+  buildLucidWithCompatibleProtocolParameters,
+} from "../src/protocol_parameters.ts";
 import { AuthTokenSchema, OutputReference } from "../types/index.ts";
 
 const TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES = 1024;
@@ -260,19 +259,6 @@ function parseArgs(argv: string[]): ScriptArgs {
   };
 }
 
-function parseNetwork(networkMagic: string): Network {
-  switch (networkMagic) {
-    case "1":
-      return "Preprod";
-    case "2":
-      return "Preview";
-    case "764824073":
-      return "Mainnet";
-    default:
-      return "Custom";
-  }
-}
-
 async function nodeHasLiveUtxo(
   txHash: string,
   outputIndex: number,
@@ -429,15 +415,10 @@ async function buildLucid(): Promise<LucidEvolution> {
       }
     };
   }
-  const chainZeroTime = await querySystemStart(ogmiosUrl);
-  SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
-  const protocolParameters = await provider.getProtocolParameters();
-  const lucid = await Lucid(
+  const lucid = await buildLucidWithCompatibleProtocolParameters(
     provider,
-    parseNetwork(cardanoNetworkMagic),
-    {
-      presetProtocolParameters: protocolParameters,
-    } as any,
+    ogmiosUrl,
+    cardanoNetworkMagic,
   );
 
   lucid.selectWallet.fromPrivateKey(deployerSk);

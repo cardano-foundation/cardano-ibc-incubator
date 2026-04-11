@@ -3,6 +3,7 @@ import { Network, TxBuilder, UTxO, fromHex } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { inspect } from 'util';
+import { appendFileSync } from 'fs';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
 import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import {
@@ -47,8 +48,6 @@ import {
 import { ConnectionEnd, State as ConnectionState } from '@plus/proto-types/build/ibc/core/connection/v1/connection';
 import { clientStatePath } from '~@/shared/helpers/client-state';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
-import { getMithrilClientStateForVerifyProofRedeemer } from '../shared/helpers/mithril-client';
-import { ClientState as MithrilClientState } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 import {
   ConnectionOpenAckOperator,
   ConnectionOpenConfirmOperator,
@@ -66,6 +65,7 @@ import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
 export class ConnectionService {
   private static readonly CONN_OPEN_ACK_COMPLETE_MAX_ATTEMPTS = 5;
   private static readonly CONN_OPEN_ACK_COMPLETE_BASE_DELAY_MS = 1000;
+  private static readonly CONN_OPEN_ACK_DEBUG_LOG = '/tmp/connection-open-ack-debug.log';
 
   constructor(
     private readonly logger: Logger,
@@ -162,7 +162,33 @@ export class ConnectionService {
           `Spend[${index}] ${this.toUtxoRef(entry.utxo)} (${entry.label}:${entry.validator})`,
       )
       .join(', ');
-    this.logger.log(`[DEBUG] ${context} predicted_spend_inputs_sorted: ${rendered}`);
+    this.logConnOpenAckDebug(`[DEBUG] ${context} predicted_spend_inputs_sorted: ${rendered}`);
+  }
+
+  private appendConnOpenAckDebug(line: string): void {
+    try {
+      appendFileSync(
+        ConnectionService.CONN_OPEN_ACK_DEBUG_LOG,
+        `${new Date().toISOString()} ${line}\n`,
+      );
+    } catch {
+      // Best-effort debugging only.
+    }
+  }
+
+  private logConnOpenAckDebug(line: string): void {
+    this.logger.log(line);
+    this.appendConnOpenAckDebug(line);
+  }
+
+  private logConnOpenAckWarn(line: string): void {
+    this.logger.warn(line);
+    this.appendConnOpenAckDebug(`[WARN] ${line}`);
+  }
+
+  private logConnOpenAckError(line: string): void {
+    this.logger.error(line);
+    this.appendConnOpenAckDebug(`[ERROR] ${line}`);
   }
 
   /**
@@ -183,13 +209,13 @@ export class ConnectionService {
       const unsignedTxCborHex = completedUnsignedTx.toCBOR();
       const unsignedTxHash = completedUnsignedTx.toHash();
 
-      this.logger.log(
+      this.logConnOpenAckDebug(
         `[DEBUG] ${context} unsigned_tx hash=${unsignedTxHash} cbor_len=${unsignedTxCborHex.length} cbor_head=${unsignedTxCborHex.substring(0, 120)}`,
       );
 
       const { CML } = this.lucidService.LucidImporter;
       if (!CML?.Transaction?.from_cbor_hex) {
-        this.logger.warn(`[DEBUG] ${context} cannot decode tx: LucidImporter.CML.Transaction unavailable`);
+        this.logConnOpenAckWarn(`[DEBUG] ${context} cannot decode tx: LucidImporter.CML.Transaction unavailable`);
         return;
       }
 
@@ -429,6 +455,17 @@ export class ConnectionService {
     try {
       const { constructedAddress, connectionOpenAckOperator } = validateAndFormatConnectionOpenAckParams(data);
       await this.refreshWalletContext(constructedAddress, 'connectionOpenAckBuilder');
+      const buildConnectionOpenAckAttempt = async () => {
+        const built = await this.buildUnsignedConnectionOpenAckTx(
+          connectionOpenAckOperator,
+          constructedAddress,
+        );
+        const { validToTime } = await this.computeTxValidityWindow();
+        return {
+          ...built,
+          unsignedTx: built.unsignedTx.validTo(validToTime),
+        };
+      };
       // Build and complete the unsigned transaction
       const {
         unsignedTx: unsignedConnectionOpenAckTx,
@@ -438,13 +475,9 @@ export class ConnectionService {
         connectionUtxo,
         clientUtxo,
         pendingTreeUpdate,
-      } =
-        await this.buildUnsignedConnectionOpenAckTx(
-        connectionOpenAckOperator,
-        constructedAddress,
-      );
-      const { validToTime } = await this.computeTxValidityWindow();
-      const unsignedConnectionOpenAckTxValidTo: TxBuilder = unsignedConnectionOpenAckTx.validTo(validToTime);
+      } = await buildConnectionOpenAckAttempt();
+
+      this.appendConnOpenAckDebug('===== connectionOpenAck attempt start =====');
       
       // DEBUG: `.complete()` asks the node to evaluate scripts to pick fees/execution units.
       // When it fails, we *won't* have a transaction body to decode, so we must log as
@@ -455,7 +488,7 @@ export class ConnectionService {
       // empty arrays even if `.collectFrom()` was already called.
       try {
         const deploymentConfig = this.configService.get('deployment');
-        const raw = unsignedConnectionOpenAckTxValidTo.rawConfig();
+        const raw = unsignedConnectionOpenAckTx.rawConfig();
         const knownByRef = new Map<string, string>([
           [this.toUtxoRef(hostStateUtxo), 'hostStateUtxo'],
           [this.toUtxoRef(connectionUtxo), 'connectionUtxo'],
@@ -480,10 +513,10 @@ export class ConnectionService {
           const label = knownByRef.get(ref);
           return label ? `#${i} ${ref} (${label})` : `#${i} ${ref}`;
         });
-        this.logger.log(`[DEBUG] connectionOpenAck raw.collectedInputs(${collected.length}): ${collected.join(', ')}`);
-        this.logger.log(`[DEBUG] connectionOpenAck raw.readInputs(${reads.length}): ${reads.join(', ')}`);
+        this.logConnOpenAckDebug(`[DEBUG] connectionOpenAck raw.collectedInputs(${collected.length}): ${collected.join(', ')}`);
+        this.logConnOpenAckDebug(`[DEBUG] connectionOpenAck raw.readInputs(${reads.length}): ${reads.join(', ')}`);
       } catch (e) {
-        this.logger.warn(`[DEBUG] connectionOpenAck failed to read rawConfig: ${e}`);
+        this.logConnOpenAckWarn(`[DEBUG] connectionOpenAck failed to read rawConfig: ${e}`);
       }
 
       const {
@@ -491,7 +524,8 @@ export class ConnectionService {
         completedUnsignedTx,
       } = await this.txOperationRunnerService.run({
         operationName: 'connectionOpenAck',
-        unsignedTx: unsignedConnectionOpenAckTxValidTo,
+        unsignedTx: unsignedConnectionOpenAckTx,
+        rebuildUnsignedTx: async () => (await buildConnectionOpenAckAttempt()).unsignedTx,
         validity: {
           apply: (builder: TxBuilder) => builder,
         },
@@ -549,6 +583,8 @@ export class ConnectionService {
       return response;
     } catch (error) {
       console.error(error);
+      this.appendConnOpenAckDebug('===== connectionOpenAck attempt failed =====');
+      this.appendConnOpenAckDebug(inspect(error, { depth: 15 }));
 
       // DEBUG: Ogmios evaluation errors are often deeply nested and hard to scan in logs.
       // Print a compact summary if possible, before dumping the full object below.
@@ -558,15 +594,15 @@ export class ConnectionService {
           const summary = failures
             .map((f: any) => `${f?.validator?.purpose ?? 'unknown'}[${f?.validator?.index ?? '?'}]`)
             .join(', ');
-          this.logger.error(`[DEBUG] connectionOpenAck script_failures: ${summary}`);
+          this.logConnOpenAckError(`[DEBUG] connectionOpenAck script_failures: ${summary}`);
         }
       } catch {
         // Best-effort debug logging only.
       }
 
-      this.logger.error(error, 'connectionOpenAck');
-      this.logger.error(`connectionOpenAck: ${error.stack}`);
-      this.logger.error(`[DEBUG] connectionOpenAck error detail: ${inspect(error, { depth: 15 })}`);
+      this.logConnOpenAckError(`connectionOpenAck error: ${String(error)}`);
+      this.logConnOpenAckError(`connectionOpenAck: ${error.stack}`);
+      this.logConnOpenAckError(`[DEBUG] connectionOpenAck error detail: ${inspect(error, { depth: 15 })}`);
       if (!(error instanceof RpcException)) {
         throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
       } else {
@@ -946,7 +982,7 @@ export class ConnectionService {
 
     const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
     const hostStateHasNft = (hostStateUtxo.assets?.[hostStateNftUnit] ?? 0n) > 0n;
-    this.logger.log(
+    this.logConnOpenAckDebug(
       `[DEBUG] ConnOpenAck hostStateUtxo=${this.toUtxoRef(hostStateUtxo)} addr_ok=${hostStateUtxo.address === expectedHostStateAddress} nft_ok=${hostStateHasNft}`,
     );
     const hostStateDatum: HostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
@@ -955,12 +991,12 @@ export class ConnectionService {
     );
 
 	    // Ensure the in-memory Merkle tree is aligned with on-chain state before computing a witness.
-	    this.logger.log(
+	    this.logConnOpenAckDebug(
 	      `[DEBUG] ConnOpenAck on_chain_ibc_state_root=${hostStateDatum.state.ibc_state_root.substring(0, 32)}...`,
 	    );
 	    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
 	    const treeRootAfterAlign = getCurrentTree().getRoot();
-	    this.logger.log(
+	    this.logConnOpenAckDebug(
 	      `[DEBUG] ConnOpenAck tree_root_after_align=${treeRootAfterAlign.substring(0, 32)}... matches_on_chain=${treeRootAfterAlign === hostStateDatum.state.ibc_state_root}`,
 	    );
 
@@ -971,7 +1007,7 @@ export class ConnectionService {
     const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
     // Find the UTXO for the client token
     const connectionUtxo = await this.lucidService.findUtxoByUnit(connectionTokenUnit);
-    this.logger.log(
+    this.logConnOpenAckDebug(
       `[DEBUG] ConnOpenAck connectionUtxo=${this.toUtxoRef(connectionUtxo)} addr_ok=${connectionUtxo.address === expectedConnectionAddress} unit=${connectionTokenUnit}`,
     );
     this.debugLogPredictedSpendIndex('ConnOpenAck', [
@@ -991,7 +1027,7 @@ export class ConnectionService {
       connectionUtxo.datum!,
       'connection',
     );
-    this.logger.log(
+    this.logConnOpenAckDebug(
       `[DEBUG] ConnOpenAck connection input state=${connectionDatum.state.state} token_policy=${connectionDatum.token.policyId} token_name=${connectionDatum.token.name}`,
     );
     const clientId = convertHex2String(connectionDatum.state.client_id);
@@ -1021,23 +1057,23 @@ export class ConnectionService {
 	      await encodeConnectionEndValue(connectionDatum.state, this.lucidService.LucidImporter),
 	      'hex',
 	    );
-	    this.logger.log(
+	    this.logConnOpenAckDebug(
 	      `[DEBUG] ConnOpenAck root_witness key=${connectionKey} tree_old_value_len=${treeOldConnectionValue?.length ?? 0} input_old_value_len=${oldConnectionEndValue.length} tree_old_equals_input_old=${treeOldConnectionValue ? treeOldConnectionValue.equals(oldConnectionEndValue) : false}`,
 	    );
-	    this.logger.log(
+	    this.logConnOpenAckDebug(
 	      `[DEBUG] ConnOpenAck root_witness old_value_from_tree=${treeOldConnectionValue?.toString('hex') ?? '<missing>'}`,
 	    );
-	    this.logger.log(
+	    this.logConnOpenAckDebug(
 	      `[DEBUG] ConnOpenAck root_witness old_value_from_input_datum=${oldConnectionEndValue.toString('hex')}`,
 	    );
 	    const updatedConnectionEndValue = Buffer.from(
 	      await encodeConnectionEndValue(updatedConnectionDatum.state, this.lucidService.LucidImporter),
 	      'hex',
 	    );
-	    this.logger.log(
+	    this.logConnOpenAckDebug(
 	      `[DEBUG] ConnOpenAck root_witness new_value=${updatedConnectionEndValue.toString('hex')}`,
 	    );
-	    this.logger.log(
+	    this.logConnOpenAckDebug(
 	      `[DEBUG] ConnOpenAck connection_end_value_len=${updatedConnectionEndValue.length} connection_id=${connectionId}`,
 	    );
 	    const { newRoot, connectionSiblings, commit } = this.computeRootWithCreateConnectionUpdate(
@@ -1045,13 +1081,13 @@ export class ConnectionService {
 	      connectionId,
 	      updatedConnectionEndValue,
 	    );
-	    this.logger.log(
+	    this.logConnOpenAckDebug(
 	      `[DEBUG] ConnOpenAck computed_new_root=${newRoot.substring(0, 32)}... siblings_len=${connectionSiblings.length}`,
 	    );
-	    this.logger.log(
+	    this.logConnOpenAckDebug(
 	      `[DEBUG] ConnOpenAck root_witness old_root=${hostStateDatum.state.ibc_state_root} new_root=${newRoot}`,
 	    );
-	    this.logger.log(
+	    this.logConnOpenAckDebug(
 	      `[DEBUG] ConnOpenAck root_witness siblings=${connectionSiblings.join(',')}`,
 	    );
 
@@ -1073,7 +1109,7 @@ export class ConnectionService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(clientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    this.logger.log(`[DEBUG] ConnOpenAck clientUtxo(ref only)=${this.toUtxoRef(clientUtxo)} unit=${clientTokenUnit}`);
+    this.logConnOpenAckDebug(`[DEBUG] ConnOpenAck clientUtxo(ref only)=${this.toUtxoRef(clientUtxo)} unit=${clientTokenUnit}`);
     const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
     // Get the keys (heights) of the map and convert them into an array
     const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
@@ -1093,21 +1129,21 @@ export class ConnectionService {
     );
     const encodedHostStateRedeemer = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
-    this.logger.log(
+    this.logConnOpenAckDebug(
       `[DEBUG] ConnOpenAck encoded_host_state_redeemer head=${encodedHostStateRedeemer.substring(0, 16)} len=${encodedHostStateRedeemer.length}`,
     );
-    this.logger.log(
+    this.logConnOpenAckDebug(
       `[DEBUG] ConnOpenAck encoded_spend_connection_redeemer head=${encodedSpendConnectionRedeemer.substring(0, 16)} len=${encodedSpendConnectionRedeemer.length}`,
     );
-    this.logger.log(
+    this.logConnOpenAckDebug(
       `[DEBUG] ConnOpenAck encoded_updated_host_state_datum head=${encodedUpdatedHostStateDatum.substring(0, 16)} len=${encodedUpdatedHostStateDatum.length}`,
     );
-    this.logger.log(
+    this.logConnOpenAckDebug(
       `[DEBUG] ConnOpenAck encoded_updated_connection_datum head=${encodedUpdatedConnectionDatum.substring(0, 16)} len=${encodedUpdatedConnectionDatum.length}`,
     );
 
     const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
-    this.logger.log(`[DEBUG] ConnOpenAck verifyProofPolicyId=${verifyProofPolicyId}`);
+    this.logConnOpenAckDebug(`[DEBUG] ConnOpenAck verifyProofPolicyId=${verifyProofPolicyId}`);
     const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
       ([key]) =>
         key.revisionNumber === connectionOpenAckOperator.proofHeight.revisionNumber &&
@@ -1171,14 +1207,7 @@ export class ConnectionService {
       );
     }
 
-    const mithrilClientState: MithrilClientState = getMithrilClientStateForVerifyProofRedeemer(
-      connectionOpenAckOperator.counterpartyClientState,
-    );
-    const mithrilClientStateAny: Any = {
-      type_url: proofClientStateTypeUrl,
-      value: MithrilClientState.encode(mithrilClientState).finish(),
-    };
-    const expectedClientValueBytes = Any.encode(mithrilClientStateAny).finish();
+    const expectedClientValueBytes = Buffer.from(connectionOpenAckOperator.counterpartyClientState, 'hex');
 
     // Debugging aid: verify that the Tendermint proofs Hermes provided are actually proving
     // the key/value pair we expect for ConnOpenAck (connection state + counterparty client state).
@@ -1198,10 +1227,10 @@ export class ConnectionService {
         const keyUtf8 = Buffer.from(tryExist.key, 'hex').toString('utf8');
         const valueBytes = Buffer.from(tryExist.value, 'hex');
         const decoded = ConnectionEnd.decode(valueBytes);
-        this.logger.log(
+        this.logConnOpenAckDebug(
           `[DEBUG] ConnOpenAck proof_try: key='${keyUtf8}', expected='${expectedConnKeyUtf8}', value_len=${valueBytes.length}, expected_len=${expectedConnValue.length}, decoded_state=${decoded.state}`,
         );
-        this.logger.log(
+        this.logConnOpenAckDebug(
           `[DEBUG] ConnOpenAck proof_try_value_matches_expected=${valueBytes.equals(expectedConnValueBuf)}`,
         );
       }
@@ -1211,24 +1240,24 @@ export class ConnectionService {
         const keyUtf8 = Buffer.from(clientExist.key, 'hex').toString('utf8');
         const valueBytes = Buffer.from(clientExist.value, 'hex');
         const decodedAny = Any.decode(valueBytes);
-        this.logger.log(
+        this.logConnOpenAckDebug(
           `[DEBUG] ConnOpenAck proof_client: key='${keyUtf8}', expected='${expectedClientKeyUtf8}', value_len=${valueBytes.length}, expected_len=${expectedClientValue.length}, any_type_url=${decodedAny.type_url}`,
         );
-        this.logger.log(
+        this.logConnOpenAckDebug(
           `[DEBUG] ConnOpenAck proof_client_value_matches_expected=${valueBytes.equals(expectedClientValueBuf)}`,
         );
       }
     } catch (e) {
-      this.logger.warn(`[DEBUG] ConnOpenAck proof debug failed: ${e}`);
+      this.logConnOpenAckWarn(`[DEBUG] ConnOpenAck proof debug failed: ${e}`);
     }
 
     const delayBlockPeriod = getBlockDelay(updatedConnectionDatum.state.delay_period);
-    this.logger.log(
+    this.logConnOpenAckDebug(
       `[DEBUG] ConnOpenAck delay_period(ns)=${updatedConnectionDatum.state.delay_period} delay_block_period=${delayBlockPeriod} proof_height=${connectionOpenAckOperator.proofHeight.revisionNumber}/${connectionOpenAckOperator.proofHeight.revisionHeight}`,
     );
 
     const clientMembershipValueHex = proofClientValueHex;
-    this.logger.log(
+    this.logConnOpenAckDebug(
       `[DEBUG] ConnOpenAck verify_proof client value source=proof hex_len=${clientMembershipValueHex.length}`,
     );
 
@@ -1277,7 +1306,7 @@ export class ConnectionService {
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
     );
-    this.logger.log(
+    this.logConnOpenAckDebug(
       `[DEBUG] ConnOpenAck encoded_verify_proof_redeemer head=${encodedVerifyProofRedeemer.substring(0, 16)} len=${encodedVerifyProofRedeemer.length}`,
     );
 

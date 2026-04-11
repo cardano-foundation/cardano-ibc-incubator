@@ -19,6 +19,31 @@ type ProofContextDeps = {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+export function isCurrentEpochOnlyStabilityLimitation(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('stake-weighted stability currently supports only current-epoch anchors');
+}
+
+export async function resolveCurrentLiveHostStateTxHeight({
+  lucidService,
+  historyService,
+}: Pick<ProofContextDeps, 'lucidService' | 'historyService'>): Promise<bigint> {
+  const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
+  const txEvidence = await historyService.findTransactionEvidenceByHash(liveHostStateUtxo.txHash);
+  if (txEvidence) {
+    return BigInt(txEvidence.blockNo);
+  }
+
+  const tx = await historyService.findTxByHash(liveHostStateUtxo.txHash);
+  if (tx?.height !== undefined && tx?.height !== null) {
+    return BigInt(tx.height);
+  }
+
+  throw new GrpcInternalException(
+    `Historical tx evidence unavailable for current live HostState tx ${liveHostStateUtxo.txHash}`,
+  );
+}
+
 // Proof-serving endpoints build ICS-23 proofs from the latest live IBC tree, so they can only
 // advertise a proof height once Mithril has certified the same HostState UTxO/root.
 export async function resolveProofHeightForCurrentRoot({
@@ -118,6 +143,10 @@ async function resolveStabilityAcceptedProofHeightForCurrentRoot({
   delayMs = 1500,
 }: Omit<ProofContextDeps, 'mithrilService' | 'lightClientMode'>): Promise<bigint> {
   const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
+  const liveHostStateTxHeight = await resolveCurrentLiveHostStateTxHeight({
+    lucidService,
+    historyService,
+  });
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
@@ -130,6 +159,13 @@ async function resolveStabilityAcceptedProofHeightForCurrentRoot({
       });
       return stabilityEvidence.anchorHeight;
     } catch (error) {
+      if (isCurrentEpochOnlyStabilityLimitation(error)) {
+        logger.warn(
+          `[${context}] Current live HostState root was created in a prior epoch; reusing its tx height ${liveHostStateTxHeight.toString()} for proof serving until a new HostState root is created`,
+        );
+        return liveHostStateTxHeight;
+      }
+
       if (attempt + 1 < maxAttempts) {
         logger.warn(
           `[${context}] ${error.message}; waiting for more stability before serving proofs`,

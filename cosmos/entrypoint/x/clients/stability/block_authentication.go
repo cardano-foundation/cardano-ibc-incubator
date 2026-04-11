@@ -191,13 +191,31 @@ func (cs *ClientState) verifyNativeStabilityBlock(
 func buildBlockVerificationArtifacts(decodedBlock ledger.Block) (string, string, []byte, error) {
 	switch block := decodedBlock.(type) {
 	case *ledger.BabbageBlock:
-		bodyHex, err := encodeBabbageLikeBlockBodyHex(block.TransactionBodies, block.TransactionWitnessSets, block.TransactionMetadataSet)
+		bodyHex, err := encodeNativeVerifiedBlockBodyHex(
+			len(block.TransactionBodies),
+			func(idx int) []byte {
+				return block.TransactionBodies[idx].Cbor()
+			},
+			func(idx int) []byte {
+				return block.TransactionWitnessSets[idx].Cbor()
+			},
+			block.TransactionMetadataSet,
+		)
 		if err != nil {
 			return "", "", nil, err
 		}
 		return hex.EncodeToString(block.Header.Cbor()), bodyHex, bytes.Clone(block.Header.Body.VrfKey), nil
 	case *ledger.ConwayBlock:
-		bodyHex, err := encodeBabbageLikeBlockBodyHex(block.TransactionBodies, block.TransactionWitnessSets, block.TransactionMetadataSet)
+		bodyHex, err := encodeNativeVerifiedBlockBodyHex(
+			len(block.TransactionBodies),
+			func(idx int) []byte {
+				return block.TransactionBodies[idx].Cbor()
+			},
+			func(idx int) []byte {
+				return block.TransactionWitnessSets[idx].Cbor()
+			},
+			block.TransactionMetadataSet,
+		)
 		if err != nil {
 			return "", "", nil, err
 		}
@@ -218,28 +236,21 @@ func blockPrevHash(decodedBlock ledger.Block) (string, error) {
 	}
 }
 
-func encodeBabbageLikeBlockBodyHex[Body any, Witness any](
-	transactionBodies []Body,
-	transactionWitnessSets []Witness,
+func encodeNativeVerifiedBlockBodyHex(
+	txCount int,
+	bodyCborAt func(int) []byte,
+	witnessCborAt func(int) []byte,
 	transactionMetadataSet map[uint]*cbor.LazyValue,
 ) (string, error) {
-	txsRaw := make([][]string, 0, len(transactionBodies))
-	for idx := range transactionBodies {
-		bodyCbor, err := cbor.Encode(transactionBodies[idx])
-		if err != nil {
-			return "", err
-		}
-		witnessCbor, err := cbor.Encode(transactionWitnessSets[idx])
-		if err != nil {
-			return "", err
-		}
+	txsRaw := make([][]string, 0, txCount)
+	for idx := 0; idx < txCount; idx++ {
 		auxHex := ""
 		if transactionMetadataSet != nil && transactionMetadataSet[uint(idx)] != nil {
 			auxHex = hex.EncodeToString(transactionMetadataSet[uint(idx)].Cbor())
 		}
 		txsRaw = append(txsRaw, []string{
-			hex.EncodeToString(bodyCbor),
-			hex.EncodeToString(witnessCbor),
+			hex.EncodeToString(bodyCborAt(idx)),
+			hex.EncodeToString(witnessCborAt(idx)),
 			auxHex,
 		})
 	}

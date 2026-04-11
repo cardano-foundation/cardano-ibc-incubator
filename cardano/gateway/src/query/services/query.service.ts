@@ -118,6 +118,10 @@ import { convertHex2String } from '@shared/helpers/hex';
 import { HISTORY_SERVICE, HistoryBlock, HistoryService } from './history.service';
 import { resolveProofHeightForCurrentRoot } from './proof-context';
 import {
+  isCurrentEpochOnlyStabilityLimitation,
+  resolveCurrentLiveHostStateTxHeight,
+} from './proof-context';
+import {
   loadStakeWeightedStabilityEvidenceByHeight,
   loadStakeWeightedStabilityHeaderEvidence,
   loadStakeWeightedStabilityEvidenceForTxHash,
@@ -224,14 +228,18 @@ export class QueryService {
   }
 
   private async getProofHeight(context: string): Promise<bigint> {
+    const lightClientMode =
+      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril';
+
     return resolveProofHeightForCurrentRoot({
       logger: this.logger,
       lucidService: this.lucidService,
       mithrilService: this.mithrilService,
       historyService: this.historyService,
       context,
-      lightClientMode:
-        this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril',
+      lightClientMode,
+      maxAttempts: lightClientMode === 'stake-weighted-stability' ? 40 : 10,
+      delayMs: lightClientMode === 'stake-weighted-stability' ? 2_000 : 1_500,
     });
   }
 
@@ -493,14 +501,31 @@ export class QueryService {
   }
 
   async latestStabilityHeight(): Promise<QueryLatestHeightResponse> {
-    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
-    const stabilityEvidence = await loadStakeWeightedStabilityEvidenceForTxHash({
+    const liveHostStateTxHeight = await resolveCurrentLiveHostStateTxHeight({
+      lucidService: this.lucidService,
       historyService: this.historyService,
-      txHash: hostStateUtxo.txHash,
-      logger: this.logger,
-      missingTxEvidenceMessage: 'HostState transaction evidence unavailable for stability latest height',
-      missingAnchorBlockMessage: `Cardano history block for HostState tx ${hostStateUtxo.txHash} unavailable for stability latest height`,
     });
+
+    const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(liveHostStateTxHeight);
+    const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
+      historyService: this.historyService,
+      height: BigInt(hostStateUtxo.blockNo),
+      logger: this.logger,
+      missingAnchorBlockMessage: `Cardano history block for HostState tx ${hostStateUtxo.txHash} unavailable for stability latest height`,
+    }).catch((error) => {
+      if (isCurrentEpochOnlyStabilityLimitation(error)) {
+        this.logger.warn(
+          `[latestStabilityHeight] Current live HostState root was created in a prior epoch; reusing its tx height ${liveHostStateTxHeight.toString()} as latest stability height until a new HostState root is created`,
+        );
+        return null;
+      }
+
+      throw error;
+    });
+
+    if (!stabilityEvidence) {
+      return { height: liveHostStateTxHeight } as QueryLatestHeightResponse;
+    }
 
     return { height: stabilityEvidence.anchorHeight } as QueryLatestHeightResponse;
   }
@@ -802,9 +827,20 @@ export class QueryService {
     }
 
     try {
-      // Get current height
-      const latestHeight = await this.latestHeight({});
-      const currentHeight = Number(latestHeight.height);
+      // Event polling is an observer/query path, not a light-client verification path.
+      // In stability mode we must not gate it on accepted-anchor thresholds, otherwise
+      // freshly submitted Cardano txs cannot be observed until a descendant block lands.
+      let currentHeight: number;
+      if (this.getLightClientMode() === 'stake-weighted-stability') {
+        const latestBlock = await this.historyService.findLatestBlock();
+        if (!latestBlock) {
+          throw new GrpcInternalException('Cardano history latest block unavailable for event queries');
+        }
+        currentHeight = Number(latestBlock.height);
+      } else {
+        const latestHeight = await this.latestHeight({});
+        currentHeight = Number(latestHeight.height);
+      }
 
       // If since_height >= current, return empty
       if (Number(since_height) >= currentHeight) {

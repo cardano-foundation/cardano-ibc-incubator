@@ -44,7 +44,11 @@ export type StakeWeightedStabilityTxEvidence = StakeWeightedStabilityEvidence & 
   hostStateTxEvidence: HistoryTxEvidence;
 };
 
-export type StakeWeightedStabilityHeaderEvidence = StakeWeightedStabilityEvidence & {
+export type StakeWeightedStabilityHeaderEvidence = {
+  anchorHeight: CardanoHeight;
+  anchorEpoch: EpochNumber;
+  anchorBlock: HistoryBlock;
+  descendantBlocks: HistoryBlock[];
   trustedHeight: CardanoHeight;
   bridgeBlocks: HistoryBlock[];
 };
@@ -174,6 +178,8 @@ type LoadStakeWeightedStabilityEvidenceByHeightParams = {
   logger?: Logger;
   heuristicParams?: HeuristicParams;
   requireThresholds?: boolean;
+  allowHistoricalAnchors?: boolean;
+  requireFullEpochVerificationContext?: boolean;
   missingAnchorBlockMessage?: string;
 };
 
@@ -197,6 +203,8 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
   logger,
   heuristicParams = getStabilityHeuristicParams(),
   requireThresholds = true,
+  allowHistoricalAnchors = false,
+  requireFullEpochVerificationContext = true,
   missingAnchorBlockMessage,
 }: LoadStakeWeightedStabilityEvidenceByHeightParams): Promise<StakeWeightedStabilityEvidence> {
   const anchorBlock = await historyService.findBlockByHeight(height);
@@ -206,7 +214,9 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
     );
   }
 
-  await assertAnchorUsesCurrentEpoch(historyService, anchorBlock);
+  if (!allowHistoricalAnchors) {
+    await assertAnchorUsesCurrentEpoch(historyService, anchorBlock);
+  }
 
   const descendantBlocks = await historyService.findDescendantBlocks(
     BigInt(anchorBlock.height),
@@ -223,11 +233,18 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
     anchorBlock.epochNo,
     `anchor height ${anchorBlock.height}`,
   );
-  assertEpochVerificationContextAvailable(
-    epochVerificationContext,
-    anchorBlock.epochNo,
-    `anchor height ${anchorBlock.height}`,
-  );
+  if (!epochVerificationContext) {
+    throw new GrpcInternalException(
+      `Epoch verification context unavailable for anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
+    );
+  }
+  if (requireFullEpochVerificationContext) {
+    assertEpochVerificationContextAvailable(
+      epochVerificationContext,
+      anchorBlock.epochNo,
+      `anchor height ${anchorBlock.height}`,
+    );
+  }
   assertBlocksRemainWithinEpochSlotBounds(
     [anchorBlock],
     epochVerificationContext,
@@ -323,7 +340,22 @@ export async function loadStakeWeightedStabilityEvidenceForTxHash({
   missingTxEvidenceMessage,
   missingAnchorBlockMessage,
 }: LoadStakeWeightedStabilityEvidenceForTxHashParams): Promise<StakeWeightedStabilityTxEvidence> {
-  const hostStateTxEvidence = await historyService.findTransactionEvidenceByHash(txHash);
+  const hostStateTxEvidence =
+    (await historyService.findTransactionEvidenceByHash(txHash)) ??
+    (await (async () => {
+      const tx = await historyService.findTxByHash(txHash);
+      if (!tx) {
+        return null;
+      }
+      return {
+        txHash: tx.hash,
+        blockNo: tx.height,
+        txIndex: 0,
+        txCborHex: '',
+        txBodyCborHex: '',
+        redeemers: [],
+      };
+    })());
   if (!hostStateTxEvidence) {
     throw new GrpcInternalException(
       missingTxEvidenceMessage ?? `Historical tx evidence unavailable for tx ${txHash}`,
@@ -351,7 +383,6 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
   trustedHeight,
   logger,
   heuristicParams = getStabilityHeuristicParams(),
-  requireThresholds = true,
   missingAnchorBlockMessage,
 }: LoadStakeWeightedStabilityHeaderEvidenceParams): Promise<StakeWeightedStabilityHeaderEvidence> {
   if (trustedHeight <= 0n) {
@@ -363,14 +394,24 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     );
   }
 
-  const evidence = await loadStakeWeightedStabilityEvidenceByHeight({
-    historyService,
-    height,
-    logger,
-    heuristicParams,
-    requireThresholds,
-    missingAnchorBlockMessage,
-  });
+  const anchorBlock = await historyService.findBlockByHeight(height);
+  if (!anchorBlock) {
+    throw new GrpcNotFoundException(
+      missingAnchorBlockMessage ?? `Not found: "height" ${height.toString()} not found`,
+    );
+  }
+
+  const epochVerificationContext = await historyService.findEpochVerificationContext(anchorBlock.epochNo);
+  if (!epochVerificationContext) {
+    throw new GrpcInternalException(
+      `Epoch verification context unavailable for anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
+    );
+  }
+  assertBlocksRemainWithinEpochSlotBounds(
+    [anchorBlock],
+    epochVerificationContext,
+    `Stake-weighted stability anchor block for height ${anchorBlock.height}`,
+  );
 
   const bridgeBlocks = await historyService.findBridgeBlocks(trustedHeight, height);
   const expectedBridgeCount = Number(height - trustedHeight - 1n);
@@ -390,17 +431,34 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
   }
   assertBlocksRemainInEpoch(
     bridgeBlocks,
-    evidence.anchorEpoch,
+    anchorBlock.epochNo,
     `Stake-weighted stability bridge segment for anchor height ${height.toString()}`,
   );
   assertBlocksRemainWithinEpochSlotBounds(
     bridgeBlocks,
-    evidence.epochVerificationContext,
+    epochVerificationContext,
     `Stake-weighted stability bridge segment for anchor height ${height.toString()}`,
   );
 
+  const descendantBlocks = await historyService.findDescendantBlocks(
+    BigInt(anchorBlock.height),
+    getStabilityLookaheadDepth(heuristicParams),
+  );
+  const firstInvalidDescendantIndex = findFirstEpochBoundaryViolation(
+    descendantBlocks,
+    anchorBlock.epochNo,
+    epochVerificationContext,
+  );
+  const eligibleDescendantBlocks =
+    firstInvalidDescendantIndex >= 0
+      ? descendantBlocks.slice(0, firstInvalidDescendantIndex)
+      : descendantBlocks;
+
   return {
-    ...evidence,
+    anchorHeight: BigInt(anchorBlock.height) as CardanoHeight,
+    anchorEpoch: anchorBlock.epochNo as EpochNumber,
+    anchorBlock,
+    descendantBlocks: eligibleDescendantBlocks,
     trustedHeight: trustedHeight as CardanoHeight,
     bridgeBlocks,
   };

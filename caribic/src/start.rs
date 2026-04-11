@@ -6,8 +6,8 @@ use crate::setup::{
     write_cardano_runtime_selection,
 };
 use crate::utils::{
-    diagnose_container_failure, execute_script, execute_script_with_progress, get_cardano_state,
-    get_user_ids, replace_text_in_file, wait_for_health_check, CardanoQuery,
+    diagnose_container_failure, execute_script, execute_script_with_progress, get_cardano_era,
+    get_cardano_state, get_user_ids, replace_text_in_file, wait_for_health_check, CardanoQuery,
 };
 use crate::{
     chains, config,
@@ -34,6 +34,8 @@ const HERMES_PROGRESS_POLL_INTERVAL_MILLIS: u64 = 500;
 const HERMES_PID_FILE_NAME: &str = "hermes.pid";
 const HERMES_STARTUP_CHECK_ATTEMPTS: u32 = 5;
 const HERMES_STARTUP_CHECK_INTERVAL_MILLIS: u64 = 1000;
+const YACI_HEALTH_CHECK_ATTEMPTS: u32 = 36;
+const YACI_HEALTH_CHECK_INTERVAL_MILLIS: u64 = 5000;
 
 pub(crate) fn hermes_pid_file_path() -> Option<PathBuf> {
     home_dir().map(|home| home.join(".hermes").join(HERMES_PID_FILE_NAME))
@@ -565,8 +567,8 @@ pub async fn start_local_cardano_network(
     {
         let yaci_ready = wait_for_health_check(
             "http://localhost:8081/actuator/health",
-            20,
-            5000,
+            YACI_HEALTH_CHECK_ATTEMPTS,
+            YACI_HEALTH_CHECK_INTERVAL_MILLIS,
             Some(|body: &String| {
                 body.contains("\"status\":\"UP\"") || body.contains("\"status\": \"UP\"")
             }),
@@ -577,7 +579,8 @@ pub async fn start_local_cardano_network(
             let container_names = ["cardano-yaci-store-postgres-1", "cardano-yaci-store-1"];
             let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
             return Err(format!(
-                "Failed to start Yaci services - health check failed after 100 seconds{}",
+                "Failed to start Yaci services - health check failed after {} seconds{}",
+                (YACI_HEALTH_CHECK_ATTEMPTS as u64 * YACI_HEALTH_CHECK_INTERVAL_MILLIS) / 1000,
                 diagnostics
             )
             .into());
@@ -678,12 +681,11 @@ pub async fn start_local_cardano_network(
     }
 
     if matches!(network, config::CoreCardanoNetwork::Local) {
-        let mut current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
-        let target_epoch: u64 = 1;
-        let target_slot: u64 =
-            target_epoch * get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?;
+        let mut current_era = get_cardano_era(project_root_path)?;
+        let target_era = "Conway";
+        let target_slot = get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?;
 
-        if current_epoch < target_epoch {
+        if current_era != target_era {
             if let Some(progress_bar) = &optional_progress_bar {
                 progress_bar.enable_steady_tick(Duration::from_millis(100));
                 progress_bar.set_style(
@@ -693,31 +695,30 @@ pub async fn start_local_cardano_network(
                         .progress_chars("#>-"),
                 );
                 progress_bar.set_prefix(
-                    "Seeding the network needs to wait until network forked into Conway which it does with Epoch 1 .."
+                    "Seeding the network needs to wait until the local network enters Conway .."
                         .to_owned(),
                 );
                 progress_bar.set_length(target_slot);
                 progress_bar
-                    .set_position(get_cardano_state(project_root_path, CardanoQuery::Slot)?);
+                    .set_position(get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?);
             } else {
-                log(
-                    "Seeding the network needs to wait until network forked into Conway which it does with Epoch 1 ..",
-                );
+                log("Seeding the network needs to wait until the local network enters Conway ..");
             }
         }
 
-        while current_epoch < target_epoch {
-            current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
+        while current_era != target_era {
+            current_era = get_cardano_era(project_root_path)?;
 
             if let Some(progress_bar) = &optional_progress_bar {
                 progress_bar.set_position(min(
-                    get_cardano_state(project_root_path, CardanoQuery::Slot)?,
+                    get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?,
                     target_slot,
                 ));
             } else {
                 verbose(&format!(
-                    "Current slot: {}, Slots left: {}",
-                    get_cardano_state(project_root_path, CardanoQuery::Slot)?,
+                    "Current era: {}, slot in epoch: {}, slots left in epoch: {}",
+                    current_era,
+                    get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?,
                     get_cardano_state(project_root_path, CardanoQuery::SlotsToEpochEnd)?
                 ));
             }

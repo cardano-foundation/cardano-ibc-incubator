@@ -72,6 +72,7 @@ genesis:
         "params":
           "allowed_clients":
             - "08-cardano"
+            - "08-cardano-stability"
             - "07-tendermint"
             - "06-solomachine"
         create_localhost: false

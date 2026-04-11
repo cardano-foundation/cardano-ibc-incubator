@@ -193,7 +193,7 @@ func consensusStateKey(height exported.Height) []byte {
 }
 
 func setConsensusMetadata(ctx sdk.Context, clientStore storetypes.KVStore, height exported.Height) {
-	setConsensusMetadataWithValues(clientStore, height, GetSelfHeight(ctx), uint64(ctx.BlockTime().UnixNano()))
+	setConsensusMetadataWithValues(clientStore, height, clienttypes.GetSelfHeight(ctx), uint64(ctx.BlockTime().UnixNano()))
 }
 
 func setConsensusMetadataWithValues(clientStore storetypes.KVStore, height, processedHeight exported.Height, processedTime uint64) {
