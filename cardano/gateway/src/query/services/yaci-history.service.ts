@@ -245,6 +245,7 @@ export class YaciHistoryService implements HistoryService {
   }
 
   async findEpochStakeDistribution(epoch: number): Promise<HistoryStakeDistributionEntry[]> {
+    let historyEntries: HistoryStakeDistributionEntry[] = [];
     const queries = [
       `
         SELECT
@@ -289,19 +290,26 @@ export class YaciHistoryService implements HistoryService {
     for (const query of queries) {
       const rows = await this.entityManager.query(query, [epoch]);
       if (rows.length > 0) {
-        return rows
+        historyEntries = rows
           .filter((row: EpochStakeRow) => !!row.pool_id)
           .map((row: EpochStakeRow) => ({
             poolId: normalizePoolId(row.pool_id!),
             stake: BigInt(row.active_stake),
             vrfKeyHash: normalizeHex(row.vrf_key_hash),
           }));
+        if (
+          historyEntries.length > 0 &&
+          historyEntries.every((entry) => /^[0-9a-f]{64}$/.test(entry.vrfKeyHash))
+        ) {
+          return historyEntries;
+        }
+        break;
       }
     }
 
     const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
     if (!ogmiosEndpoint) {
-      return [];
+      return historyEntries;
     }
 
     const { currentEpoch } = await queryCurrentEpochVerificationData(
@@ -309,10 +317,11 @@ export class YaciHistoryService implements HistoryService {
       this.configService.get<string>('cardanoEpochNonceGenesis'),
     );
     if (epoch !== currentEpoch) {
-      return [];
+      return historyEntries;
     }
 
-    return queryCurrentEpochStakeDistribution(ogmiosEndpoint);
+    const ogmiosEntries = await queryCurrentEpochStakeDistribution(ogmiosEndpoint);
+    return ogmiosEntries.length > 0 ? ogmiosEntries : historyEntries;
   }
 
   async findEpochVerificationContext(epoch: number): Promise<HistoryEpochVerificationContext | null> {

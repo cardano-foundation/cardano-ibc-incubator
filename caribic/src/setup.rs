@@ -8,7 +8,7 @@ use chrono::{SecondsFormat, Utc};
 use console::style;
 use fs_extra::{copy_items, file::copy};
 use indicatif::ProgressBar;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::process::Output;
 use std::thread;
@@ -16,8 +16,22 @@ use std::time::Duration;
 use std::{fs, path::Path, process::Command};
 
 const CARDANO_RUNTIME_NETWORK_MARKER: &str = ".caribic-network";
+const LOCAL_CARDANO_NODE_IMAGE: &str = "ghcr.io/blinklabs-io/cardano-node:10.1.4-3";
+const LOCAL_STABILITY_SPO_COUNT: usize = 3;
+const LOCAL_STABILITY_TARGET_POOL_STAKE_LOVELACE: u64 = 900_000_000_000;
+const LOCAL_STABILITY_THRESHOLD_DEPTH: &str = "3";
+const LOCAL_STABILITY_THRESHOLD_UNIQUE_POOLS: &str = "2";
+const LOCAL_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: &str = "6000";
 const PREPROD_ENVIRONMENT_BASE_URL: &str =
     "https://book.world.dev.cardano.org/environments/preprod";
+
+pub fn local_cardano_spo_count(with_mithril: bool, network: config::CoreCardanoNetwork) -> usize {
+    if matches!(network, config::CoreCardanoNetwork::Local) && !with_mithril {
+        LOCAL_STABILITY_SPO_COUNT
+    } else {
+        1
+    }
+}
 
 pub async fn download_repository(
     url: &str,
@@ -88,15 +102,14 @@ pub fn copy_cardano_env_file(cardano_dir: &Path) -> Result<(), Box<dyn std::erro
 pub fn write_cardano_runtime_selection(
     cardano_dir: &Path,
     network: config::CoreCardanoNetwork,
+    local_spo_count: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let runtime_dir = network.runtime_dir();
     let network_magic = config::cardano_network_profile(network).network_magic;
     let (config_file, block_producer, node_image) = match network {
-        config::CoreCardanoNetwork::Local => (
-            "cardano-node.json",
-            "true",
-            "ghcr.io/blinklabs-io/cardano-node:10.1.4-3",
-        ),
+        config::CoreCardanoNetwork::Local => {
+            ("cardano-node.json", "true", LOCAL_CARDANO_NODE_IMAGE)
+        }
         config::CoreCardanoNetwork::Preprod => (
             "config.json",
             "false",
@@ -105,7 +118,7 @@ pub fn write_cardano_runtime_selection(
     };
 
     let env_contents = format!(
-        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\n",
+        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\nCARDANO_LOCAL_SPO_COUNT={local_spo_count}\n",
         network = network.as_str(),
     );
 
@@ -418,8 +431,319 @@ fn remove_local_yaci_postgres_volume() -> Result<(), Box<dyn std::error::Error>>
     .into())
 }
 
+fn local_spo_ipv4(index: usize) -> &'static str {
+    match index {
+        1 => "172.29.0.11",
+        2 => "172.29.0.12",
+        3 => "172.29.0.13",
+        _ => "172.29.0.254",
+    }
+}
+
+fn local_spo_port(index: usize) -> u16 {
+    let _ = index;
+    3001
+}
+
+fn local_spo_topology_filename(index: usize) -> String {
+    if index == 1 {
+        "topology.json".to_string()
+    } else {
+        format!("topology-spo{}.json", index)
+    }
+}
+
+fn build_local_spo_topology(index: usize, total_spo_count: usize) -> Value {
+    let producers: Vec<Value> = (1..=total_spo_count)
+        .filter(|candidate| *candidate != index)
+        .map(|candidate| {
+            json!({
+                "addr": local_spo_ipv4(candidate),
+                "port": local_spo_port(candidate),
+                "valency": 1,
+            })
+        })
+        .collect();
+
+    json!({
+        "Producers": producers
+    })
+}
+
+fn write_local_multi_spo_topology_files(
+    devnet_dir: &Path,
+    total_spo_count: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for index in 1..=total_spo_count {
+        let topology_path = devnet_dir.join(local_spo_topology_filename(index));
+        fs::write(
+            &topology_path,
+            serde_json::to_string_pretty(&build_local_spo_topology(index, total_spo_count))
+                .map_err(|error| format!("Failed to serialize local SPO topology: {}", error))?,
+        )
+        .map_err(|error| {
+            format!(
+                "Failed to write local SPO topology file {}: {}",
+                topology_path.display(),
+                error
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+fn generate_additional_local_spo_data(
+    workspace_dir: &Path,
+    additional_spo_count: usize,
+) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    let temp_dir = workspace_dir.join(format!(
+        "caribic-local-spo-{}-{}",
+        std::process::id(),
+        Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    ));
+    fs::create_dir_all(&temp_dir).map_err(|error| {
+        format!(
+            "Failed to create temporary local SPO generation directory {}: {}",
+            temp_dir.display(),
+            error
+        )
+    })?;
+
+    let delegated_supply = LOCAL_STABILITY_TARGET_POOL_STAKE_LOVELACE
+        .checked_mul(additional_spo_count as u64)
+        .ok_or("Failed to compute delegated supply for local SPO generation")?;
+    let mount_arg = format!("{}:/out", temp_dir.display());
+    let pools_arg = additional_spo_count.to_string();
+    let delegated_supply_arg = delegated_supply.to_string();
+
+    let output = Command::new("docker")
+        .args(["run", "--rm", "-v"])
+        .arg(mount_arg)
+        .arg(LOCAL_CARDANO_NODE_IMAGE)
+        .args([
+            "cli",
+            "latest",
+            "genesis",
+            "create-testnet-data",
+            "--out-dir",
+            "/out",
+            "--pools",
+        ])
+        .arg(pools_arg.as_str())
+        .args(["--stake-delegators"])
+        .arg(pools_arg.as_str())
+        .args(["--testnet-magic", "42", "--total-supply"])
+        .arg(delegated_supply_arg.as_str())
+        .args(["--delegated-supply"])
+        .arg(delegated_supply_arg.as_str())
+        .output()
+        .map_err(|error| format!("Failed to generate additional local SPO data: {}", error))?;
+
+    if !output.status.success() {
+        let _ = fs::remove_dir_all(&temp_dir);
+        return Err(format!(
+            "Failed to generate additional local SPO data:\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+
+    Ok(temp_dir)
+}
+
+fn merge_generated_local_spo_genesis(
+    genesis_shelley_path: &Path,
+    generated_shelley_genesis_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut existing_genesis: Value =
+        serde_json::from_str(&fs::read_to_string(genesis_shelley_path).map_err(|error| {
+            format!(
+                "Failed to read local Shelley genesis file {}: {}",
+                genesis_shelley_path.display(),
+                error
+            )
+        })?)
+        .map_err(|error| {
+            format!(
+                "Failed to parse local Shelley genesis file {}: {}",
+                genesis_shelley_path.display(),
+                error
+            )
+        })?;
+
+    let generated_genesis: Value = serde_json::from_str(
+        &fs::read_to_string(generated_shelley_genesis_path).map_err(|error| {
+            format!(
+                "Failed to read generated Shelley genesis file {}: {}",
+                generated_shelley_genesis_path.display(),
+                error
+            )
+        })?,
+    )
+    .map_err(|error| {
+        format!(
+            "Failed to parse generated Shelley genesis file {}: {}",
+            generated_shelley_genesis_path.display(),
+            error
+        )
+    })?;
+
+    let existing_staking = existing_genesis
+        .get_mut("staking")
+        .and_then(|value| value.as_object_mut())
+        .ok_or("Local Shelley genesis is missing a staking section")?;
+    let generated_staking = generated_genesis
+        .get("staking")
+        .and_then(|value| value.as_object())
+        .ok_or("Generated Shelley genesis is missing a staking section")?;
+
+    let existing_pools = existing_staking
+        .get_mut("pools")
+        .and_then(|value| value.as_object_mut())
+        .ok_or("Local Shelley genesis is missing staking.pools")?;
+    for (pool_id, pool_params) in generated_staking
+        .get("pools")
+        .and_then(|value| value.as_object())
+        .ok_or("Generated Shelley genesis is missing staking.pools")?
+    {
+        existing_pools.insert(pool_id.clone(), pool_params.clone());
+    }
+
+    let existing_stake = existing_staking
+        .get_mut("stake")
+        .and_then(|value| value.as_object_mut())
+        .ok_or("Local Shelley genesis is missing staking.stake")?;
+    for (stake_credential, pool_id) in generated_staking
+        .get("stake")
+        .and_then(|value| value.as_object())
+        .ok_or("Generated Shelley genesis is missing staking.stake")?
+    {
+        existing_stake.insert(stake_credential.clone(), pool_id.clone());
+    }
+
+    let existing_initial_funds = existing_genesis
+        .get_mut("initialFunds")
+        .and_then(|value| value.as_object_mut())
+        .ok_or("Local Shelley genesis is missing initialFunds")?;
+    for (address, amount) in generated_genesis
+        .get("initialFunds")
+        .and_then(|value| value.as_object())
+        .ok_or("Generated Shelley genesis is missing initialFunds")?
+    {
+        existing_initial_funds.insert(address.clone(), amount.clone());
+    }
+
+    fs::write(
+        genesis_shelley_path,
+        serde_json::to_string_pretty(&existing_genesis).map_err(|error| {
+            format!(
+                "Failed to serialize local Shelley genesis file {}: {}",
+                genesis_shelley_path.display(),
+                error
+            )
+        })?,
+    )
+    .map_err(|error| {
+        format!(
+            "Failed to write merged Shelley genesis file {}: {}",
+            genesis_shelley_path.display(),
+            error
+        )
+    })?;
+
+    Ok(())
+}
+
+fn install_generated_local_spo_assets(
+    devnet_dir: &Path,
+    generated_dir: &Path,
+    additional_spo_count: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for offset in 0..additional_spo_count {
+        let source_dir = generated_dir
+            .join("pools-keys")
+            .join(format!("pool{}", offset + 1));
+        let destination_dir = devnet_dir.join(format!("spo{}", offset + 2));
+
+        fs::create_dir_all(&destination_dir).map_err(|error| {
+            format!(
+                "Failed to create local SPO runtime directory {}: {}",
+                destination_dir.display(),
+                error
+            )
+        })?;
+
+        for entry in fs::read_dir(&source_dir).map_err(|error| {
+            format!(
+                "Failed to read generated local SPO directory {}: {}",
+                source_dir.display(),
+                error
+            )
+        })? {
+            let entry = entry.map_err(|error| {
+                format!(
+                    "Failed to access generated local SPO file in {}: {}",
+                    source_dir.display(),
+                    error
+                )
+            })?;
+            let source_path = entry.path();
+            if !source_path.is_file() {
+                continue;
+            }
+            let destination_path = destination_dir.join(entry.file_name());
+            fs::copy(&source_path, &destination_path).map_err(|error| {
+                format!(
+                    "Failed to copy generated local SPO file {} -> {}: {}",
+                    source_path.display(),
+                    destination_path.display(),
+                    error
+                )
+            })?;
+        }
+
+        fs::create_dir_all(destination_dir.join("db")).map_err(|error| {
+            format!(
+                "Failed to create local SPO database directory {}: {}",
+                destination_dir.join("db").display(),
+                error
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+fn extend_local_devnet_with_generated_spo_data(
+    devnet_dir: &Path,
+    total_spo_count: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if total_spo_count <= 1 {
+        return Ok(());
+    }
+
+    let workspace_dir = devnet_dir
+        .parent()
+        .ok_or("Failed to resolve Cardano workspace for local SPO generation")?;
+    let generated_dir = generate_additional_local_spo_data(workspace_dir, total_spo_count - 1)?;
+    let merge_result = (|| {
+        merge_generated_local_spo_genesis(
+            &devnet_dir.join("genesis-shelley.json"),
+            &generated_dir.join("shelley-genesis.json"),
+        )?;
+        install_generated_local_spo_assets(devnet_dir, &generated_dir, total_spo_count - 1)?;
+        write_local_multi_spo_topology_files(devnet_dir, total_spo_count)?;
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })();
+    let _ = fs::remove_dir_all(&generated_dir);
+    merge_result
+}
+
 pub fn configure_local_cardano_devnet(
     cardano_dir: &Path,
+    local_spo_count: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cardano_config_dir = cardano_dir.join("config");
     let service_folders = vec![
@@ -509,6 +833,16 @@ pub fn configure_local_cardano_devnet(
         ),
     )?;
 
+    if local_spo_count > 1 {
+        replace_text_in_file(
+            &devnet_dir.join("cardano-node.json"),
+            r#""EnableP2P": true"#,
+            r#""EnableP2P": false"#,
+        )?;
+    }
+
+    extend_local_devnet_with_generated_spo_data(&devnet_dir, local_spo_count)?;
+
     let yaci_genesis_dir = cardano_dir.join("yaci").join("genesis");
     fs::create_dir_all(&yaci_genesis_dir)
         .map_err(|error| format!("Failed to create Yaci genesis directory: {}", error))?;
@@ -568,6 +902,17 @@ pub fn configure_local_cardano_devnet(
     let db_dir = devnet_dir.join("db");
     std::fs::create_dir_all(db_dir)
         .map_err(|error| format!("Failed to create devnet/db directory: {}", error))?;
+
+    for index in 2..=local_spo_count {
+        std::fs::create_dir_all(devnet_dir.join(format!("spo{}", index)).join("db")).map_err(
+            |error| {
+                format!(
+                    "Failed to create devnet/spo{}/db directory: {}",
+                    index, error
+                )
+            },
+        )?;
+    }
 
     write_yaci_local_genesis_files(cardano_dir, &devnet_dir)?;
 
@@ -757,21 +1102,6 @@ pub fn seed_cardano_devnet(
                         "--testnet-magic",
                         "42",
                     ];
-                    let submit_tx_output = Command::new("docker")
-                        .current_dir(cardano_dir)
-                        .args(&cardano_cli_args)
-                        .args(submit_tx_args)
-                        .output()
-                        .map_err(|error| format!("Failed to submit seed transaction: {}", error))?;
-                    if !submit_tx_output.status.success() {
-                        return Err(format!(
-                            "Failed to submit seed transaction for {}: {}",
-                            wallet_address,
-                            String::from_utf8_lossy(&submit_tx_output.stderr)
-                        )
-                        .into());
-                    }
-
                     let query_utxo_args = vec![
                         "query",
                         "utxo",
@@ -789,41 +1119,95 @@ pub fn seed_cardano_devnet(
                         optional_progress_bar,
                     );
 
-                    let mut is_not_on_chain = true;
-                    while is_not_on_chain {
-                        let utxo_output = Command::new("docker")
+                    // With multiple active SPOs, a just-submitted seed transaction can land in a
+                    // block that later loses a same-slot fork race. Keep resubmitting until the
+                    // output is visible on the canonical chain.
+                    let mut is_on_chain = false;
+                    let mut last_submit_error: Option<String> = None;
+                    for submit_attempt in 1..=6 {
+                        let submit_tx_output = Command::new("docker")
                             .current_dir(cardano_dir)
                             .args(&cardano_cli_args)
-                            .args(&query_utxo_args)
+                            .args(&submit_tx_args)
                             .output()
                             .map_err(|error| {
-                                format!("Failed to query settlement UTxO: {}", error)
+                                format!("Failed to submit seed transaction: {}", error)
                             })?;
 
-                        if utxo_output.status.success() {
-                            let utxo_str =
-                                String::from_utf8(utxo_output.stdout).map_err(|error| {
-                                    format!("Failed to decode settlement UTxO response: {}", error)
-                                })?;
-                            let parsed_utxo: Value =
-                                serde_json::from_str(&utxo_str).map_err(|error| {
-                                    format!("Failed to parse settlement UTxO response: {}", error)
-                                })?;
+                        if !submit_tx_output.status.success() {
+                            let stderr = String::from_utf8_lossy(&submit_tx_output.stderr)
+                                .trim()
+                                .to_string();
                             verbose(&format!(
-                                "Successfully see transaction on-chain:\n{}",
-                                utxo_str
+                                "Seed transaction submit attempt {}/6 for {} returned: {}",
+                                submit_attempt, wallet_address, stderr
                             ));
+                            last_submit_error = Some(stderr);
+                        } else {
+                            last_submit_error = None;
+                        }
 
-                            if parsed_utxo.get(tx_in).is_some_and(|value| value != "null") {
-                                is_not_on_chain = false;
-                            } else {
+                        for poll_attempt in 1..=4 {
+                            let utxo_output = Command::new("docker")
+                                .current_dir(cardano_dir)
+                                .args(&cardano_cli_args)
+                                .args(&query_utxo_args)
+                                .output()
+                                .map_err(|error| {
+                                    format!("Failed to query settlement UTxO: {}", error)
+                                })?;
+
+                            if utxo_output.status.success() {
+                                let utxo_str =
+                                    String::from_utf8(utxo_output.stdout).map_err(|error| {
+                                        format!(
+                                            "Failed to decode settlement UTxO response: {}",
+                                            error
+                                        )
+                                    })?;
+                                let parsed_utxo: Value =
+                                    serde_json::from_str(&utxo_str).map_err(|error| {
+                                        format!(
+                                            "Failed to parse settlement UTxO response: {}",
+                                            error
+                                        )
+                                    })?;
+
+                                if parsed_utxo.get(tx_in).is_some_and(|value| value != "null") {
+                                    verbose(&format!(
+                                        "Seed transaction settled on canonical chain:\n{}",
+                                        utxo_str
+                                    ));
+                                    is_on_chain = true;
+                                    break;
+                                }
+                            }
+
+                            if poll_attempt < 4 {
                                 verbose("... still waiting for confirmation ...");
                                 thread::sleep(Duration::from_secs(5));
                             }
-                        } else {
-                            verbose("... still waiting for confirmation ...");
-                            thread::sleep(Duration::from_secs(5));
                         }
+
+                        if is_on_chain {
+                            break;
+                        }
+
+                        verbose(&format!(
+                            "Seed transaction {} was not visible on the canonical chain after submit attempt {}/6; retrying",
+                            tx_in, submit_attempt
+                        ));
+                    }
+
+                    if !is_on_chain {
+                        let submit_error = last_submit_error
+                            .map(|error| format!(" Last submit error: {}", error))
+                            .unwrap_or_default();
+                        return Err(format!(
+                            "Seed transaction {} for {} did not settle on the canonical chain after multiple attempts.{}",
+                            tx_in, wallet_address, submit_error
+                        )
+                        .into());
                     }
                 }
             }
@@ -1088,8 +1472,18 @@ fn write_gateway_env_for_network(
                 ("YACI_STORE_ENDPOINT", "http://yaci-store:8080"),
                 ("CARDANO_CHAIN_HOST", "cardano-node"),
                 ("CARDANO_CHAIN_PORT", "3001"),
-                ("CARDANO_STABILITY_THRESHOLD_DEPTH", "1"),
-                ("CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS", "1"),
+                (
+                    "CARDANO_STABILITY_THRESHOLD_DEPTH",
+                    LOCAL_STABILITY_THRESHOLD_DEPTH,
+                ),
+                (
+                    "CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS",
+                    LOCAL_STABILITY_THRESHOLD_UNIQUE_POOLS,
+                ),
+                (
+                    "CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS",
+                    LOCAL_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS,
+                ),
             ];
             for (key, value) in local_gateway_defaults {
                 set_or_append_env_var(&gateway_env, key, value)?;

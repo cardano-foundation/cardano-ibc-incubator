@@ -1,10 +1,14 @@
 import { ConfigService } from '@nestjs/config';
 import { EntityManager } from 'typeorm';
-import { queryCurrentEpochVerificationData } from '../../shared/helpers/ogmios';
+import {
+  queryCurrentEpochStakeDistribution,
+  queryCurrentEpochVerificationData,
+} from '../../shared/helpers/ogmios';
 import { YaciHistoryService } from '../services/yaci-history.service';
 
 jest.mock('../../shared/helpers/ogmios', () => ({
   queryCurrentEpochVerificationData: jest.fn(),
+  queryCurrentEpochStakeDistribution: jest.fn(),
 }));
 
 describe('YaciHistoryService', () => {
@@ -91,5 +95,33 @@ describe('YaciHistoryService', () => {
       currentEpochStartSlot: 0n,
       currentEpochEndSlotExclusive: 432000n,
     });
+  });
+
+  it('falls back to Ogmios stake distribution when history rows miss VRF hashes', async () => {
+    entityManagerMock.query.mockResolvedValueOnce([
+      { pool_id: 'pool1historypool', active_stake: '900', vrf_key_hash: null },
+    ]);
+    (queryCurrentEpochVerificationData as jest.Mock).mockResolvedValue({
+      currentEpoch: 7,
+      epochNonce: '44'.repeat(32),
+      slotsPerKesPeriod: 129600,
+    });
+    (queryCurrentEpochStakeDistribution as jest.Mock).mockResolvedValue([
+      {
+        poolId: 'pool1ogmiospool',
+        stake: 900n,
+        vrfKeyHash: 'aa'.repeat(32),
+      },
+    ]);
+
+    await expect(service.findEpochStakeDistribution(7)).resolves.toEqual([
+      {
+        poolId: 'pool1ogmiospool',
+        stake: 900n,
+        vrfKeyHash: 'aa'.repeat(32),
+      },
+    ]);
+
+    expect(queryCurrentEpochStakeDistribution).toHaveBeenCalledWith('ws://ogmios.local');
   });
 });

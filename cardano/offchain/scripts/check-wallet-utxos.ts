@@ -1,4 +1,5 @@
 import { Kupmios } from "@lucid-evolution/lucid";
+import { getLiveWalletUtxos } from "../src/utils.ts";
 import { buildLucidWithCompatibleProtocolParameters } from "../src/protocol_parameters.ts";
 
 const deployerSk = Deno.env.get("DEPLOYER_SK");
@@ -21,14 +22,14 @@ const lucid = await buildLucidWithCompatibleProtocolParameters(
 lucid.selectWallet.fromPrivateKey(deployerSk);
 
 const walletAddress = await lucid.wallet().address();
-const utxos = await lucid.wallet().getUtxos();
+const utxos = await getLiveWalletUtxos(lucid);
 
 if (utxos.length === 0) {
   throw new Error(
-    `No wallet UTxOs are visible yet for ${walletAddress} via ${kupoUrl}`,
+    `No live wallet UTxOs are visible yet for ${walletAddress} via ${kupoUrl}`,
   );
 }
 
 console.log(
-  `Wallet UTxOs visible for ${walletAddress}: ${utxos.length} via ${kupoUrl}`,
+  `Live wallet UTxOs visible for ${walletAddress}: ${utxos.length} via ${kupoUrl}`,
 );

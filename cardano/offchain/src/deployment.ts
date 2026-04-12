@@ -16,6 +16,7 @@ import {
 } from "@lucid-evolution/lucid";
 import {
   DeploymentTemplate,
+  getLiveWalletUtxos,
   formatTimestamp,
   generateIdentifierTokenName,
   generateTokenName,
@@ -23,9 +24,12 @@ import {
   submitTx,
 } from "./utils.ts";
 import {
+  DEPLOYMENT_NONCE_SPLIT_AMOUNT,
   EMULATOR_ENV,
   HANDLER_TOKEN_NAME,
   PORT_PREFIX,
+  RESERVED_DEPLOYMENT_NONCE_COUNT,
+  TRACE_REGISTRY_SHARD_COUNT,
   TRANSFER_MODULE_PORT,
 } from "./constants.ts";
 import {
@@ -71,7 +75,7 @@ export const createDeployment = async (
   // If we accidentally reuse the same nonce UTxO for both mints, the first mint
   // will spend it and the second mint will fail with "unknown UTxO references".
   // ---------------------------------------------------------------------------
-  let signerUtxos = await lucid.wallet().getUtxos();
+  let signerUtxos = await getLiveWalletUtxos(lucid);
   if (signerUtxos.length < 1) throw new Error("No UTXO found.");
 
   // Reserve enough wallet UTxOs up front for every deployment-only mint that
@@ -87,7 +91,10 @@ export const createDeployment = async (
       });
     }
     await submitTx(splitTx, lucid, "SplitNonceUtxos", false);
-    signerUtxos = await lucid.wallet().getUtxos();
+    signerUtxos = await getLiveWalletUtxos(
+      lucid,
+      RESERVED_DEPLOYMENT_NONCE_COUNT,
+    );
   }
 
   // Prefer large UTxOs for these nonce inputs so Lucid doesn't need to auto-select
@@ -1063,15 +1070,6 @@ const deployTransferModule = async (
     },
   };
 };
-
-const TRACE_REGISTRY_SHARD_COUNT = 16;
-const TRACE_REGISTRY_DIRECTORY_NONCE_COUNT = 1;
-const TRANSFER_MODULE_NONCE_COUNT = 1;
-const RESERVED_DEPLOYMENT_NONCE_COUNT = 2 +
-  TRANSFER_MODULE_NONCE_COUNT +
-  TRACE_REGISTRY_SHARD_COUNT +
-  TRACE_REGISTRY_DIRECTORY_NONCE_COUNT;
-const DEPLOYMENT_NONCE_SPLIT_AMOUNT = 20_000_000n;
 
 const buildOutputReference = (utxo: UTxO): OutputReference => ({
   transaction_id: utxo.txHash,

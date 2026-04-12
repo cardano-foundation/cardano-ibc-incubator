@@ -1,0 +1,16 @@
+**
+
+!.dockerignore
+!cardano/
+!cardano/gateway/
+!cardano/gateway/**
+!packages/
+!packages/**
+!proto-types/
+!proto-types/**
+
+cardano/gateway/node_modules
+cardano/gateway/dist
+packages/**/node_modules
+proto-types/node_modules
+proto-types/dist

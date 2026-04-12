@@ -206,7 +206,7 @@ export const generateIdentifierTokenName = (outRef: OutputReference) => {
 export const getNonceOutRef = async (
   lucid: LucidEvolution,
 ): Promise<[UTxO, OutputReference]> => {
-  const signerUtxos = await lucid.wallet().getUtxos();
+  const signerUtxos = await getLiveWalletUtxos(lucid);
   if (signerUtxos.length < 1) throw new Error("No UTXO founded");
   const NONCE_UTXO = signerUtxos[0];
   const outputReference: OutputReference = {
@@ -215,6 +215,59 @@ export const getNonceOutRef = async (
   };
 
   return [NONCE_UTXO, outputReference];
+};
+
+export const filterLiveUtxos = async (
+  lucid: LucidEvolution,
+  utxos: UTxO[],
+): Promise<UTxO[]> => {
+  if (utxos.length === 0) {
+    return [];
+  }
+
+  const liveUtxos = await lucid.utxosByOutRef(
+    utxos.map((utxo) => ({
+      txHash: utxo.txHash,
+      outputIndex: utxo.outputIndex,
+    })),
+  );
+  if (liveUtxos.length === 0) {
+    return [];
+  }
+
+  const liveRefs = new Set(
+    liveUtxos.map((utxo) => `${utxo.txHash}#${utxo.outputIndex}`),
+  );
+  return utxos.filter((utxo) =>
+    liveRefs.has(`${utxo.txHash}#${utxo.outputIndex}`)
+  );
+};
+
+export const getLiveWalletUtxos = async (
+  lucid: LucidEvolution,
+  minCount = 1,
+  maxAttempts = 12,
+  retryDelayMs = 2000,
+): Promise<UTxO[]> => {
+  let lastLiveUtxos: UTxO[] = [];
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const walletUtxos = await lucid.wallet().getUtxos();
+    const liveUtxos = await filterLiveUtxos(lucid, walletUtxos);
+    if (liveUtxos.length >= minCount) {
+      return liveUtxos;
+    }
+    lastLiveUtxos = liveUtxos;
+
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    }
+  }
+
+  const walletAddress = await lucid.wallet().address();
+  throw new Error(
+    `Wallet ${walletAddress} only has ${lastLiveUtxos.length} live UTxO(s); need ${minCount}.`,
+  );
 };
 
 type Module = "handler" | "transfer";
