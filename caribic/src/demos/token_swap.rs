@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -47,6 +48,31 @@ fn token_swap_core_targets() -> Vec<HealthTarget> {
         HealthTarget::Core(CoreServiceId::Mithril),
         HealthTarget::Core(CoreServiceId::Entrypoint),
     ]
+}
+
+fn gateway_light_client_mode(project_root: &Path) -> &'static str {
+    let gateway_env_path = project_root.join("cardano/gateway/.env");
+    let env_contents = fs::read_to_string(&gateway_env_path).unwrap_or_default();
+
+    for line in env_contents.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        if let Some(value) = trimmed.strip_prefix("CARDANO_LIGHT_CLIENT_MODE=") {
+            let mode = value.trim().trim_matches('"').trim_matches('\'');
+            if mode == "mithril" {
+                return "mithril";
+            }
+        }
+    }
+
+    "stake-weighted-stability"
+}
+
+fn gateway_uses_mithril(project_root: &Path) -> bool {
+    gateway_light_client_mode(project_root) == "mithril"
 }
 
 fn optional_chain_target(chain: OptionalChainId, network: &str) -> Result<HealthTarget, String> {
@@ -144,11 +170,16 @@ async fn run_osmosis_token_swap_demo(
 
     logger::log("PASS: Required token-swap services are running");
 
-    logger::verbose("Checking Mithril artifact readiness before setting up transfer paths");
-    // Hermes client creation against Cardano depends on Mithril artifact availability.
-    // Running this check up front gives a deterministic failure reason instead of
-    // failing later deep inside channel setup.
-    wait_for_mithril_artifacts_for_demo().await?;
+    if gateway_uses_mithril(project_root_path) {
+        logger::verbose("Checking Mithril artifact readiness before setting up transfer paths");
+        // Hermes client creation against Cardano depends on Mithril artifact availability only
+        // when the active Gateway mode is Mithril-based.
+        wait_for_mithril_artifacts_for_demo().await?;
+    } else {
+        logger::verbose(
+            "Skipping Mithril artifact readiness check for active Gateway mode: stake-weighted-stability",
+        );
+    }
 
     let relayer_path = project_root_path.join("relayer");
     let mut restart_relayer_after_setup = false;
@@ -404,8 +435,14 @@ async fn run_injective_token_swap_demo(
 
     logger::log("PASS: Required token-swap services are running");
 
-    logger::verbose("Checking Mithril artifact readiness before setting up transfer paths");
-    wait_for_mithril_artifacts_for_demo().await?;
+    if gateway_uses_mithril(project_root_path) {
+        logger::verbose("Checking Mithril artifact readiness before setting up transfer paths");
+        wait_for_mithril_artifacts_for_demo().await?;
+    } else {
+        logger::verbose(
+            "Skipping Mithril artifact readiness check for active Gateway mode: stake-weighted-stability",
+        );
+    }
 
     let relayer_path = project_root_path.join("relayer");
     let mut restart_relayer_after_setup = false;
@@ -854,6 +891,12 @@ fn ensure_demo_health_targets_ready(
     let mut failures = Vec::new();
 
     for target in required_targets {
+        if matches!(target, HealthTarget::Core(CoreServiceId::Mithril))
+            && !gateway_uses_mithril(project_root_path)
+        {
+            continue;
+        }
+
         match start::check_health_target(project_root_path, *target) {
             Ok((true, _)) => {}
             Ok((false, status)) => failures.push(format!("{}: {}", target.name(), status)),
@@ -870,9 +913,15 @@ fn ensure_demo_health_targets_ready(
     for failure in failures {
         message.push_str(&format!("  - {failure}\n"));
     }
-    message.push_str(
-        "\nStart services first:\n  - caribic start --clean --with-mithril\n  - caribic start <chain> --network <network>",
-    );
+    if gateway_uses_mithril(project_root_path) {
+        message.push_str(
+            "\nStart services first:\n  - caribic start --clean --with-mithril\n  - caribic start <chain> --network <network>",
+        );
+    } else {
+        message.push_str(
+            "\nStart services first:\n  - caribic start --clean\n  - caribic start <chain> --network <network>",
+        );
+    }
 
     Err(message)
 }
