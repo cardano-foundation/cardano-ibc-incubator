@@ -1,6 +1,7 @@
 package stability
 
 import (
+	"bytes"
 	"reflect"
 
 	errorsmod "cosmossdk.io/errors"
@@ -12,6 +13,15 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	"github.com/cosmos/ibc-go/v10/modules/core/exported"
 )
+
+type recoveryInvariantClientState struct {
+	UpgradePath           []string
+	HostStateNftPolicyId  []byte
+	HostStateNftTokenName []byte
+	HeuristicParams       *HeuristicParams
+	SystemStartUnixNs     uint64
+	SlotLengthNs          uint64
+}
 
 func (cs ClientState) CheckSubstituteAndUpdateState(
 	ctx sdk.Context, cdc codec.BinaryCodec, subjectClientStore,
@@ -67,17 +77,28 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 }
 
 func IsMatchingClientState(subject, substitute ClientState) bool {
-	zeroHeightSubject := ZeroHeight()
-	zeroHeightSubstitute := ZeroHeight()
-	subject.LatestHeight = zeroHeightSubject
-	subject.FrozenHeight = zeroHeightSubject
-	subject.CurrentEpoch = 0
-	subject.TrustingPeriod = 0
-	subject.ChainId = ""
-	substitute.LatestHeight = zeroHeightSubstitute
-	substitute.FrozenHeight = zeroHeightSubstitute
-	substitute.CurrentEpoch = 0
-	substitute.TrustingPeriod = 0
-	substitute.ChainId = ""
-	return reflect.DeepEqual(subject, substitute)
+	return reflect.DeepEqual(
+		recoveryInvariantProjection(subject),
+		recoveryInvariantProjection(substitute),
+	)
+}
+
+func recoveryInvariantProjection(cs ClientState) recoveryInvariantClientState {
+	return recoveryInvariantClientState{
+		UpgradePath:           append([]string(nil), cs.UpgradePath...),
+		HostStateNftPolicyId:  bytes.Clone(cs.HostStateNftPolicyId),
+		HostStateNftTokenName: bytes.Clone(cs.HostStateNftTokenName),
+		HeuristicParams:       cloneHeuristicParams(cs.HeuristicParams),
+		SystemStartUnixNs:     cs.SystemStartUnixNs,
+		SlotLengthNs:          cs.SlotLengthNs,
+	}
+}
+
+func cloneHeuristicParams(params *HeuristicParams) *HeuristicParams {
+	if params == nil {
+		return nil
+	}
+
+	cloned := *params
+	return &cloned
 }
