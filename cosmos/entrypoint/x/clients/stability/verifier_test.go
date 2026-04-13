@@ -361,6 +361,34 @@ func TestPruneOldestConsensusStateRemovesLowestExpiredHeight(t *testing.T) {
 	require.True(t, found12)
 }
 
+func TestCollectReferencedConsensusEpochsCollectsAllStoredEpochs(t *testing.T) {
+	cdc := newStabilityTestCodec()
+	_, clientStore := newStabilityTestClientStore(t, "stability-collect-epochs")
+
+	consensus7 := newStabilityTestConsensusState("hash-10")
+	consensus7.AcceptedEpoch = 7
+	setConsensusState(clientStore, cdc, consensus7, NewHeight(0, 10))
+	setConsensusMetadataWithValues(clientStore, NewHeight(0, 10), NewHeight(0, 10), consensus7.Timestamp)
+
+	consensus8 := newStabilityTestConsensusState("hash-11")
+	consensus8.AcceptedEpoch = 8
+	setConsensusState(clientStore, cdc, consensus8, NewHeight(0, 11))
+	setConsensusMetadataWithValues(clientStore, NewHeight(0, 11), NewHeight(0, 11), consensus8.Timestamp)
+
+	consensus9 := newStabilityTestConsensusState("hash-12")
+	consensus9.AcceptedEpoch = 9
+	setConsensusState(clientStore, cdc, consensus9, NewHeight(0, 12))
+	setConsensusMetadataWithValues(clientStore, NewHeight(0, 12), NewHeight(0, 12), consensus9.Timestamp)
+
+	referencedEpochs := collectReferencedConsensusEpochs(clientStore, cdc)
+
+	require.Equal(t, map[uint64]struct{}{
+		7: {},
+		8: {},
+		9: {},
+	}, referencedEpochs)
+}
+
 func TestSetConsensusMetadataStoresParseableProcessedHeight(t *testing.T) {
 	ctx, clientStore := newStabilityTestClientStore(t, "stability-processed-height")
 	consensusHeight := NewHeight(0, 42)

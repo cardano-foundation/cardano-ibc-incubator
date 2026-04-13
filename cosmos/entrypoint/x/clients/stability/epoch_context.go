@@ -205,13 +205,13 @@ func collectReferencedConsensusEpochs(clientStore storetypes.KVStore, cdc codec.
 	referencedEpochs := make(map[uint64]struct{})
 	IterateConsensusStateAscending(clientStore, func(height exported.Height) bool {
 		if height == nil {
-			return true
+			return false
 		}
 		consensusState, found := GetConsensusState(clientStore, cdc, height)
 		if found {
 			referencedEpochs[consensusState.AcceptedEpoch] = struct{}{}
 		}
-		return true
+		return false
 	})
 	return referencedEpochs
 }
