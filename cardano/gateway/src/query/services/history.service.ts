@@ -49,6 +49,12 @@ export type HistoryEpochVerificationContext = {
   currentEpochEndSlotExclusive: bigint;
 };
 
+export type HistoryEpochContextAtBlock = {
+  epoch: number;
+  stakeDistribution: HistoryStakeDistributionEntry[];
+  verificationContext: HistoryEpochVerificationContext;
+};
+
 export type HistoryService = {
   findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]>;
   findUtxosByBlockNo(height: number): Promise<UtxoDto[]>;
@@ -59,6 +65,7 @@ export type HistoryService = {
   findDescendantBlocks(anchorHeight: bigint, limit: number): Promise<HistoryBlock[]>;
   findEpochStakeDistribution(epoch: number): Promise<HistoryStakeDistributionEntry[]>;
   findEpochVerificationContext(epoch: number): Promise<HistoryEpochVerificationContext | null>;
+  findEpochContextAtBlock(block: HistoryBlock): Promise<HistoryEpochContextAtBlock | null>;
   findUtxoClientOrAuthHandler(height: number): Promise<UtxoDto[]>;
   checkExistPoolUpdateByBlockNo(height: number): Promise<boolean>;
   checkExistPoolRetireByBlockNo(height: number): Promise<boolean>;

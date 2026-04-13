@@ -20,6 +20,14 @@ export interface StakeDistributionEntry {
   stake: bigint;
   vrf_key_hash: Uint8Array;
 }
+export interface EpochContext {
+  epoch: bigint;
+  stake_distribution: StakeDistributionEntry[];
+  epoch_nonce: Uint8Array;
+  slots_per_kes_period: bigint;
+  epoch_start_slot: bigint;
+  epoch_end_slot_exclusive: bigint;
+}
 export interface ClientState {
   chain_id: string;
   latest_height?: Height;
@@ -37,6 +45,7 @@ export interface ClientState {
   current_epoch_end_slot_exclusive: bigint;
   system_start_unix_ns: bigint;
   slot_length_ns: bigint;
+  epoch_contexts: EpochContext[];
 }
 export interface ConsensusState {
   timestamp: bigint;
@@ -68,6 +77,7 @@ export interface StabilityHeader {
   host_state_tx_hash: string;
   host_state_tx_output_index: number;
   bridge_blocks: StabilityBlock[];
+  new_epoch_context?: EpochContext;
 }
 function createBaseHeight(): Height {
   return {
@@ -318,6 +328,126 @@ export const StakeDistributionEntry = {
     return message;
   },
 };
+function createBaseEpochContext(): EpochContext {
+  return {
+    epoch: BigInt(0),
+    stake_distribution: [],
+    epoch_nonce: new Uint8Array(),
+    slots_per_kes_period: BigInt(0),
+    epoch_start_slot: BigInt(0),
+    epoch_end_slot_exclusive: BigInt(0),
+  };
+}
+export const EpochContext = {
+  typeUrl: "/ibc.lightclients.stability.v1.EpochContext",
+  encode(message: EpochContext, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.epoch !== BigInt(0)) {
+      writer.uint32(8).uint64(message.epoch);
+    }
+    for (const v of message.stake_distribution) {
+      StakeDistributionEntry.encode(v!, writer.uint32(18).fork()).ldelim();
+    }
+    if (message.epoch_nonce.length !== 0) {
+      writer.uint32(26).bytes(message.epoch_nonce);
+    }
+    if (message.slots_per_kes_period !== BigInt(0)) {
+      writer.uint32(32).uint64(message.slots_per_kes_period);
+    }
+    if (message.epoch_start_slot !== BigInt(0)) {
+      writer.uint32(40).uint64(message.epoch_start_slot);
+    }
+    if (message.epoch_end_slot_exclusive !== BigInt(0)) {
+      writer.uint32(48).uint64(message.epoch_end_slot_exclusive);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): EpochContext {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseEpochContext();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.epoch = reader.uint64();
+          break;
+        case 2:
+          message.stake_distribution.push(StakeDistributionEntry.decode(reader, reader.uint32()));
+          break;
+        case 3:
+          message.epoch_nonce = reader.bytes();
+          break;
+        case 4:
+          message.slots_per_kes_period = reader.uint64();
+          break;
+        case 5:
+          message.epoch_start_slot = reader.uint64();
+          break;
+        case 6:
+          message.epoch_end_slot_exclusive = reader.uint64();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): EpochContext {
+    const obj = createBaseEpochContext();
+    if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
+    if (Array.isArray(object?.stake_distribution))
+      obj.stake_distribution = object.stake_distribution.map((e: any) => StakeDistributionEntry.fromJSON(e));
+    if (isSet(object.epoch_nonce)) obj.epoch_nonce = bytesFromBase64(object.epoch_nonce);
+    if (isSet(object.slots_per_kes_period))
+      obj.slots_per_kes_period = BigInt(object.slots_per_kes_period.toString());
+    if (isSet(object.epoch_start_slot)) obj.epoch_start_slot = BigInt(object.epoch_start_slot.toString());
+    if (isSet(object.epoch_end_slot_exclusive))
+      obj.epoch_end_slot_exclusive = BigInt(object.epoch_end_slot_exclusive.toString());
+    return obj;
+  },
+  toJSON(message: EpochContext): unknown {
+    const obj: any = {};
+    message.epoch !== undefined && (obj.epoch = (message.epoch || BigInt(0)).toString());
+    if (message.stake_distribution) {
+      obj.stake_distribution = message.stake_distribution.map((e) =>
+        e ? StakeDistributionEntry.toJSON(e) : undefined,
+      );
+    } else {
+      obj.stake_distribution = [];
+    }
+    message.epoch_nonce !== undefined &&
+      (obj.epoch_nonce = base64FromBytes(
+        message.epoch_nonce !== undefined ? message.epoch_nonce : new Uint8Array(),
+      ));
+    message.slots_per_kes_period !== undefined &&
+      (obj.slots_per_kes_period = (message.slots_per_kes_period || BigInt(0)).toString());
+    message.epoch_start_slot !== undefined &&
+      (obj.epoch_start_slot = (message.epoch_start_slot || BigInt(0)).toString());
+    message.epoch_end_slot_exclusive !== undefined &&
+      (obj.epoch_end_slot_exclusive = (message.epoch_end_slot_exclusive || BigInt(0)).toString());
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<EpochContext>, I>>(object: I): EpochContext {
+    const message = createBaseEpochContext();
+    if (object.epoch !== undefined && object.epoch !== null) {
+      message.epoch = BigInt(object.epoch.toString());
+    }
+    message.stake_distribution =
+      object.stake_distribution?.map((e) => StakeDistributionEntry.fromPartial(e)) || [];
+    message.epoch_nonce = object.epoch_nonce ?? new Uint8Array();
+    if (object.slots_per_kes_period !== undefined && object.slots_per_kes_period !== null) {
+      message.slots_per_kes_period = BigInt(object.slots_per_kes_period.toString());
+    }
+    if (object.epoch_start_slot !== undefined && object.epoch_start_slot !== null) {
+      message.epoch_start_slot = BigInt(object.epoch_start_slot.toString());
+    }
+    if (object.epoch_end_slot_exclusive !== undefined && object.epoch_end_slot_exclusive !== null) {
+      message.epoch_end_slot_exclusive = BigInt(object.epoch_end_slot_exclusive.toString());
+    }
+    return message;
+  },
+};
 function createBaseClientState(): ClientState {
   return {
     chain_id: "",
@@ -336,6 +466,7 @@ function createBaseClientState(): ClientState {
     current_epoch_end_slot_exclusive: BigInt(0),
     system_start_unix_ns: BigInt(0),
     slot_length_ns: BigInt(0),
+    epoch_contexts: [],
   };
 }
 export const ClientState = {
@@ -388,6 +519,9 @@ export const ClientState = {
     }
     if (message.slot_length_ns !== BigInt(0)) {
       writer.uint32(128).uint64(message.slot_length_ns);
+    }
+    for (const v of message.epoch_contexts) {
+      EpochContext.encode(v!, writer.uint32(138).fork()).ldelim();
     }
     return writer;
   },
@@ -446,6 +580,9 @@ export const ClientState = {
         case 16:
           message.slot_length_ns = reader.uint64();
           break;
+        case 17:
+          message.epoch_contexts.push(EpochContext.decode(reader, reader.uint32()));
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -482,6 +619,8 @@ export const ClientState = {
     if (isSet(object.system_start_unix_ns))
       obj.system_start_unix_ns = BigInt(object.system_start_unix_ns.toString());
     if (isSet(object.slot_length_ns)) obj.slot_length_ns = BigInt(object.slot_length_ns.toString());
+    if (Array.isArray(object?.epoch_contexts))
+      obj.epoch_contexts = object.epoch_contexts.map((e: any) => EpochContext.fromJSON(e));
     return obj;
   },
   toJSON(message: ClientState): unknown {
@@ -537,6 +676,11 @@ export const ClientState = {
       (obj.system_start_unix_ns = (message.system_start_unix_ns || BigInt(0)).toString());
     message.slot_length_ns !== undefined &&
       (obj.slot_length_ns = (message.slot_length_ns || BigInt(0)).toString());
+    if (message.epoch_contexts) {
+      obj.epoch_contexts = message.epoch_contexts.map((e) => (e ? EpochContext.toJSON(e) : undefined));
+    } else {
+      obj.epoch_contexts = [];
+    }
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -581,6 +725,7 @@ export const ClientState = {
     if (object.slot_length_ns !== undefined && object.slot_length_ns !== null) {
       message.slot_length_ns = BigInt(object.slot_length_ns.toString());
     }
+    message.epoch_contexts = object.epoch_contexts?.map((e) => EpochContext.fromPartial(e)) || [];
     return message;
   },
 };
@@ -902,6 +1047,7 @@ function createBaseStabilityHeader(): StabilityHeader {
     host_state_tx_hash: "",
     host_state_tx_output_index: 0,
     bridge_blocks: [],
+    new_epoch_context: undefined,
   };
 }
 export const StabilityHeader = {
@@ -924,6 +1070,9 @@ export const StabilityHeader = {
     }
     for (const v of message.bridge_blocks) {
       StabilityBlock.encode(v!, writer.uint32(82).fork()).ldelim();
+    }
+    if (message.new_epoch_context !== undefined) {
+      EpochContext.encode(message.new_epoch_context, writer.uint32(90).fork()).ldelim();
     }
     return writer;
   },
@@ -952,6 +1101,9 @@ export const StabilityHeader = {
         case 10:
           message.bridge_blocks.push(StabilityBlock.decode(reader, reader.uint32()));
           break;
+        case 11:
+          message.new_epoch_context = EpochContext.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -970,6 +1122,8 @@ export const StabilityHeader = {
       obj.host_state_tx_output_index = Number(object.host_state_tx_output_index);
     if (Array.isArray(object?.bridge_blocks))
       obj.bridge_blocks = object.bridge_blocks.map((e: any) => StabilityBlock.fromJSON(e));
+    if (isSet(object.new_epoch_context))
+      obj.new_epoch_context = EpochContext.fromJSON(object.new_epoch_context);
     return obj;
   },
   toJSON(message: StabilityHeader): unknown {
@@ -993,6 +1147,10 @@ export const StabilityHeader = {
     } else {
       obj.bridge_blocks = [];
     }
+    message.new_epoch_context !== undefined &&
+      (obj.new_epoch_context = message.new_epoch_context
+        ? EpochContext.toJSON(message.new_epoch_context)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<StabilityHeader>, I>>(object: I): StabilityHeader {
@@ -1007,6 +1165,9 @@ export const StabilityHeader = {
     message.host_state_tx_hash = object.host_state_tx_hash ?? "";
     message.host_state_tx_output_index = object.host_state_tx_output_index ?? 0;
     message.bridge_blocks = object.bridge_blocks?.map((e) => StabilityBlock.fromPartial(e)) || [];
+    if (object.new_epoch_context !== undefined && object.new_epoch_context !== null) {
+      message.new_epoch_context = EpochContext.fromPartial(object.new_epoch_context);
+    }
     return message;
   },
 };

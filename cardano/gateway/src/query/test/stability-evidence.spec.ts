@@ -88,6 +88,12 @@ describe('stability-evidence', () => {
     currentEpochEndSlotExclusive: 1200n,
   };
 
+  const anchorEpochContext = {
+    epoch: 7,
+    stakeDistribution: epochStakeDistribution,
+    verificationContext: epochVerificationContext,
+  };
+
   const historyServiceMock = {
     findLatestBlock: jest.fn().mockResolvedValue({
       height: 105,
@@ -98,9 +104,23 @@ describe('stability-evidence', () => {
       timestampUnixNs: 1_500_000_000n,
       slotLeader: 'pool-e',
     }),
-    findBlockByHeight: jest.fn().mockResolvedValue(anchorBlock),
+    findBlockByHeight: jest.fn().mockImplementation(async (height: bigint) => {
+      if (height === 97n) {
+        return {
+          height: 97,
+          hash: 'hash-97',
+          prevHash: 'hash-96',
+          slotNo: 970n,
+          epochNo: 7,
+          timestampUnixNs: 970_000_000n,
+          slotLeader: 'pool-z',
+        };
+      }
+      return anchorBlock;
+    }),
     findBridgeBlocks: jest.fn().mockResolvedValue(bridgeBlocks),
     findDescendantBlocks: jest.fn().mockResolvedValue(descendantBlocks),
+    findEpochContextAtBlock: jest.fn().mockResolvedValue(anchorEpochContext),
     findEpochStakeDistribution: jest.fn().mockResolvedValue(epochStakeDistribution),
     findEpochVerificationContext: jest.fn().mockResolvedValue(epochVerificationContext),
     findTransactionEvidenceByHash: jest.fn().mockResolvedValue({
@@ -122,10 +142,8 @@ describe('stability-evidence', () => {
     });
 
     expect(historyServiceMock.findBlockByHeight).toHaveBeenCalledWith(100n);
-    expect(historyServiceMock.findLatestBlock).toHaveBeenCalled();
     expect(historyServiceMock.findDescendantBlocks).toHaveBeenCalledWith(100n, 12);
-    expect(historyServiceMock.findEpochStakeDistribution).toHaveBeenCalledWith(7);
-    expect(historyServiceMock.findEpochVerificationContext).toHaveBeenCalledWith(7);
+    expect(historyServiceMock.findEpochContextAtBlock).toHaveBeenCalledWith(anchorBlock);
     expect(evidence.anchorHeight).toBe(100n);
     expect(evidence.anchorEpoch).toBe(7);
     expect(evidence.anchorBlock).toEqual(anchorBlock);
@@ -192,13 +210,16 @@ describe('stability-evidence', () => {
         slotLeader: 'pool-e',
       },
     ]);
-    historyServiceMock.findEpochStakeDistribution = jest.fn().mockResolvedValue([
-      { poolId: 'pool-a', stake: 250n, vrfKeyHash: 'aa'.repeat(32) },
-      { poolId: 'pool-b', stake: 250n, vrfKeyHash: 'bb'.repeat(32) },
-      { poolId: 'pool-c', stake: 250n, vrfKeyHash: 'cc'.repeat(32) },
-      { poolId: 'pool-d', stake: 250n, vrfKeyHash: 'dd'.repeat(32) },
-    ]);
-    historyServiceMock.findEpochVerificationContext = jest.fn().mockResolvedValue(epochVerificationContext);
+    historyServiceMock.findEpochContextAtBlock = jest.fn().mockResolvedValue({
+      epoch: 7,
+      stakeDistribution: [
+        { poolId: 'pool-a', stake: 250n, vrfKeyHash: 'aa'.repeat(32) },
+        { poolId: 'pool-b', stake: 250n, vrfKeyHash: 'bb'.repeat(32) },
+        { poolId: 'pool-c', stake: 250n, vrfKeyHash: 'cc'.repeat(32) },
+        { poolId: 'pool-d', stake: 250n, vrfKeyHash: 'dd'.repeat(32) },
+      ],
+      verificationContext: epochVerificationContext,
+    });
 
     const evidence = await loadStakeWeightedStabilityEvidenceByHeight({
       historyService: historyServiceMock as HistoryService,
@@ -235,7 +256,11 @@ describe('stability-evidence', () => {
 
   it('fails closed when epoch stake distribution is unavailable', async () => {
     historyServiceMock.findDescendantBlocks = jest.fn().mockResolvedValue(descendantBlocks);
-    historyServiceMock.findEpochStakeDistribution = jest.fn().mockResolvedValue([]);
+    historyServiceMock.findEpochContextAtBlock = jest.fn().mockResolvedValue({
+      epoch: 7,
+      stakeDistribution: [],
+      verificationContext: epochVerificationContext,
+    });
 
     await expect(
       loadStakeWeightedStabilityEvidenceByHeight({
@@ -249,8 +274,11 @@ describe('stability-evidence', () => {
 
   it('fails closed when epoch verification context is unavailable', async () => {
     historyServiceMock.findDescendantBlocks = jest.fn().mockResolvedValue(descendantBlocks);
-    historyServiceMock.findEpochStakeDistribution = jest.fn().mockResolvedValue(epochStakeDistribution);
-    historyServiceMock.findEpochVerificationContext = jest.fn().mockResolvedValue(null);
+    historyServiceMock.findEpochContextAtBlock = jest.fn().mockResolvedValue({
+      epoch: 7,
+      stakeDistribution: epochStakeDistribution,
+      verificationContext: null,
+    });
 
     await expect(
       loadStakeWeightedStabilityEvidenceByHeight({
@@ -262,43 +290,50 @@ describe('stability-evidence', () => {
     ).rejects.toThrow('Epoch verification context unavailable');
   });
 
-  it('rejects non-current epoch anchors when epoch context is only operator-provisioned for the current epoch', async () => {
-    historyServiceMock.findLatestBlock = jest.fn().mockResolvedValue({
-      height: 200,
-      hash: 'latest-hash',
-      prevHash: 'hash-199',
-      slotNo: 2000n,
-      epochNo: 8,
-      timestampUnixNs: 2_000_000_000n,
-      slotLeader: 'pool-z',
+  it('rejects stability headers that skip more than one epoch', async () => {
+    historyServiceMock.findBlockByHeight = jest.fn().mockImplementation(async (height: bigint) => {
+      if (height === 97n) {
+        return {
+          ...anchorBlock,
+          height: 97,
+          hash: 'trusted-hash',
+          prevHash: 'hash-96',
+          slotNo: 970n,
+          epochNo: 5,
+          timestampUnixNs: 970_000_000n,
+          slotLeader: 'pool-z',
+        };
+      }
+      return anchorBlock;
     });
 
     await expect(
-      loadStakeWeightedStabilityEvidenceByHeight({
+      loadStakeWeightedStabilityHeaderEvidence({
         historyService: historyServiceMock as HistoryService,
+        trustedHeight: 97n,
         height: 100n,
         logger: { warn: jest.fn() } as unknown as Logger,
         heuristicParams,
       }),
-    ).rejects.toThrow('currently supports only current-epoch anchors');
+    ).rejects.toThrow('supports only adjacent epoch transitions');
   });
 
-  it('allows historical anchors for stability header evidence when slot bounds are available', async () => {
-    historyServiceMock.findLatestBlock = jest.fn().mockResolvedValue({
-      height: 200,
-      hash: 'latest-hash',
-      prevHash: 'hash-199',
-      slotNo: 2000n,
-      epochNo: 8,
-      timestampUnixNs: 2_000_000_000n,
-      slotLeader: 'pool-z',
+  it('allows same-epoch historical anchors when acquired epoch context is available', async () => {
+    historyServiceMock.findBlockByHeight = jest.fn().mockImplementation(async (height: bigint) => {
+      if (height === 97n) {
+        return {
+          height: 97,
+          hash: 'hash-97',
+          prevHash: 'hash-96',
+          slotNo: 970n,
+          epochNo: 7,
+          timestampUnixNs: 970_000_000n,
+          slotLeader: 'pool-z',
+        };
+      }
+      return anchorBlock;
     });
-    historyServiceMock.findEpochVerificationContext = jest.fn().mockResolvedValue({
-      epochNonce: '',
-      slotsPerKesPeriod: 0,
-      currentEpochStartSlot: 900n,
-      currentEpochEndSlotExclusive: 1200n,
-    });
+    historyServiceMock.findEpochContextAtBlock = jest.fn().mockResolvedValue(anchorEpochContext);
 
     const evidence = await loadStakeWeightedStabilityHeaderEvidence({
       historyService: historyServiceMock as HistoryService,

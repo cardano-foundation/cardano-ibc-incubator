@@ -28,18 +28,30 @@ type authenticatedStabilityHeader struct {
 }
 
 func (cs *ClientState) authenticateHeaderBlocks(header *StabilityHeader) (*authenticatedStabilityHeader, error) {
+	baseEpochContexts, err := cs.normalizedEpochContexts()
+	if err != nil {
+		return nil, err
+	}
+	epochContexts, err := mergeEpochContexts(baseEpochContexts, header.NewEpochContext)
+	if err != nil {
+		return nil, err
+	}
+	return cs.authenticateHeaderBlocksWithContexts(header, epochContexts)
+}
+
+func (cs *ClientState) authenticateHeaderBlocksWithContexts(header *StabilityHeader, epochContexts []*EpochContext) (*authenticatedStabilityHeader, error) {
 	if header == nil {
 		return nil, errorsmod.Wrap(ErrInvalidHeader, "stability header missing")
 	}
 
-	anchorBlock, err := cs.authenticateStabilityBlock(header.AnchorBlock, "anchor")
+	anchorBlock, err := cs.authenticateStabilityBlock(header.AnchorBlock, "anchor", epochContexts)
 	if err != nil {
 		return nil, err
 	}
 
 	bridgeBlocks := make([]*authenticatedStabilityBlock, 0, len(header.BridgeBlocks))
 	for _, block := range header.BridgeBlocks {
-		authenticatedBlock, authErr := cs.authenticateStabilityBlock(block, "bridge")
+		authenticatedBlock, authErr := cs.authenticateStabilityBlock(block, "bridge", epochContexts)
 		if authErr != nil {
 			return nil, authErr
 		}
@@ -48,7 +60,7 @@ func (cs *ClientState) authenticateHeaderBlocks(header *StabilityHeader) (*authe
 
 	descendantBlocks := make([]*authenticatedStabilityBlock, 0, len(header.DescendantBlocks))
 	for _, block := range header.DescendantBlocks {
-		authenticatedBlock, authErr := cs.authenticateStabilityBlock(block, "descendant")
+		authenticatedBlock, authErr := cs.authenticateStabilityBlock(block, "descendant", epochContexts)
 		if authErr != nil {
 			return nil, authErr
 		}
@@ -66,7 +78,7 @@ func (cs *ClientState) authenticateHeaderBlocks(header *StabilityHeader) (*authe
 	}, nil
 }
 
-func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label string) (*authenticatedStabilityBlock, error) {
+func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label string, epochContexts []*EpochContext) (*authenticatedStabilityBlock, error) {
 	if block == nil || block.Height == nil {
 		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block missing height", label)
 	}
@@ -123,18 +135,36 @@ func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label s
 			expectedTimestamp,
 		)
 	}
-	if err := cs.verifyCurrentEpoch(decodedBlock.SlotNumber(), label); err != nil {
+	epochContext := epochContextForSlot(epochContexts, decodedBlock.SlotNumber())
+	if epochContext == nil {
+		return nil, errorsmod.Wrapf(
+			ErrInvalidCurrentEpoch,
+			"%s block slot %d outside available epoch context bounds",
+			label,
+			decodedBlock.SlotNumber(),
+		)
+	}
+	if block.Epoch != epochContext.Epoch {
+		return nil, errorsmod.Wrapf(
+			ErrInvalidCurrentEpoch,
+			"%s block epoch mismatch: got %d expected %d",
+			label,
+			block.Epoch,
+			epochContext.Epoch,
+		)
+	}
+	if err := verifySlotWithinEpochContext(decodedBlock.SlotNumber(), epochContext, label); err != nil {
 		return nil, err
 	}
 
-	decodedPoolID, decodedVrfKeyHash, err := cs.verifyNativeStabilityBlock(decodedBlock, label)
+	decodedPoolID, decodedVrfKeyHash, err := cs.verifyNativeStabilityBlock(decodedBlock, label, epochContext)
 	if err != nil {
 		return nil, err
 	}
 
-	stakeEntry, err := cs.findStakeDistributionEntry(decodedPoolID)
+	stakeEntry, err := findStakeDistributionEntryInContext(epochContext, decodedPoolID)
 	if err != nil {
-		return nil, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "%s block issuer %s is not trusted for current epoch", label, decodedPoolID)
+		return nil, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "%s block issuer %s is not trusted for epoch %d", label, decodedPoolID, epochContext.Epoch)
 	}
 	if !bytes.Equal(stakeEntry.VrfKeyHash, decodedVrfKeyHash) {
 		return nil, errorsmod.Wrapf(
@@ -150,7 +180,7 @@ func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label s
 		slot:       decodedBlock.SlotNumber(),
 		hash:       decodedBlock.Hash(),
 		prevHash:   decodedPrevHash,
-		epoch:      cs.CurrentEpoch,
+		epoch:      epochContext.Epoch,
 		timestamp:  expectedTimestamp,
 		slotLeader: decodedPoolID,
 	}, nil
@@ -159,6 +189,7 @@ func (cs *ClientState) authenticateStabilityBlock(block *StabilityBlock, label s
 func (cs *ClientState) verifyNativeStabilityBlock(
 	decodedBlock ledger.Block,
 	label string,
+	epochContext *EpochContext,
 ) (poolID string, vrfKeyHash []byte, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -173,8 +204,8 @@ func (cs *ClientState) verifyNativeStabilityBlock(
 
 	verifyErr, isValid, _, _, _ := ledger.VerifyBlock(ledger.BlockHexCbor{
 		HeaderCbor:    headerCborHex,
-		Eta0:          hex.EncodeToString(cs.EpochNonce),
-		Spk:           int(cs.SlotsPerKesPeriod),
+		Eta0:          hex.EncodeToString(epochContext.EpochNonce),
+		Spk:           int(epochContext.SlotsPerKesPeriod),
 		BlockBodyCbor: bodyCborHex,
 	})
 	if verifyErr != nil {
@@ -262,27 +293,50 @@ func encodeNativeVerifiedBlockBodyHex(
 	return hex.EncodeToString(bodyCbor), nil
 }
 
-func (cs *ClientState) findStakeDistributionEntry(poolID string) (*StakeDistributionEntry, error) {
-	for _, entry := range cs.EpochStakeDistribution {
+func findStakeDistributionEntryInContext(epochContext *EpochContext, poolID string) (*StakeDistributionEntry, error) {
+	if epochContext == nil {
+		return nil, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch context missing while resolving pool %s", poolID)
+	}
+	for _, entry := range epochContext.StakeDistribution {
 		if entry != nil && strings.EqualFold(entry.PoolId, poolID) {
 			return entry, nil
 		}
 	}
-	return nil, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "pool %s not present in epoch stake distribution", poolID)
+	return nil, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "pool %s not present in epoch %d stake distribution", poolID, epochContext.Epoch)
 }
 
-func (cs *ClientState) verifyCurrentEpoch(slot uint64, label string) error {
-	if slot < cs.CurrentEpochStartSlot || slot >= cs.CurrentEpochEndSlotExclusive {
+func (cs *ClientState) findStakeDistributionEntry(poolID string) (*StakeDistributionEntry, error) {
+	epochContexts, err := cs.normalizedEpochContexts()
+	if err != nil {
+		return nil, err
+	}
+	return findStakeDistributionEntryInContext(epochContextByEpoch(epochContexts, cs.CurrentEpoch), poolID)
+}
+
+func verifySlotWithinEpochContext(slot uint64, epochContext *EpochContext, label string) error {
+	if epochContext == nil {
+		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "%s block missing epoch context", label)
+	}
+	if slot < epochContext.EpochStartSlot || slot >= epochContext.EpochEndSlotExclusive {
 		return errorsmod.Wrapf(
 			ErrInvalidCurrentEpoch,
-			"%s block slot %d outside trusted epoch slot bounds [%d,%d)",
+			"%s block slot %d outside trusted epoch %d slot bounds [%d,%d)",
 			label,
 			slot,
-			cs.CurrentEpochStartSlot,
-			cs.CurrentEpochEndSlotExclusive,
+			epochContext.Epoch,
+			epochContext.EpochStartSlot,
+			epochContext.EpochEndSlotExclusive,
 		)
 	}
 	return nil
+}
+
+func (cs *ClientState) verifyCurrentEpoch(slot uint64, label string) error {
+	epochContexts, err := cs.normalizedEpochContexts()
+	if err != nil {
+		return err
+	}
+	return verifySlotWithinEpochContext(slot, epochContextByEpoch(epochContexts, cs.CurrentEpoch), label)
 }
 
 func verifyHostStateTxIncludedInAnchorBlock(header *StabilityHeader) error {

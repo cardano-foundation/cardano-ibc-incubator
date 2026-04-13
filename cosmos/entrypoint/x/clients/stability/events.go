@@ -18,6 +18,8 @@ const (
 	AttributeKeyAcceptedHeight          = "accepted_height"
 	AttributeKeyAcceptedBlockHash       = "accepted_block_hash"
 	AttributeKeyAcceptedEpoch           = "accepted_epoch"
+	AttributeKeyPreviousEpoch           = "previous_epoch"
+	AttributeKeyRollover                = "rollover"
 	AttributeKeyDescendantDepth         = "descendant_depth"
 	AttributeKeyUniquePoolsCount        = "unique_pools_count"
 	AttributeKeyUniqueStakeBps          = "unique_stake_bps"
@@ -34,6 +36,7 @@ func emitStabilityHeaderAcceptedEvent(
 	header *StabilityHeader,
 	clientState *ClientState,
 	consensusState *ConsensusState,
+	previousEpoch uint64,
 ) {
 	if header == nil || header.AnchorBlock == nil || clientState == nil || consensusState == nil {
 		return
@@ -47,6 +50,8 @@ func emitStabilityHeaderAcceptedEvent(
 			sdk.NewAttribute(AttributeKeyAcceptedHeight, heightString(header.GetHeight())),
 			sdk.NewAttribute(AttributeKeyAcceptedBlockHash, consensusState.AcceptedBlockHash),
 			sdk.NewAttribute(AttributeKeyAcceptedEpoch, strconv.FormatUint(consensusState.AcceptedEpoch, 10)),
+			sdk.NewAttribute(AttributeKeyPreviousEpoch, strconv.FormatUint(previousEpoch, 10)),
+			sdk.NewAttribute(AttributeKeyRollover, strconv.FormatBool(consensusState.AcceptedEpoch != previousEpoch)),
 			sdk.NewAttribute(AttributeKeyDescendantDepth, strconv.Itoa(len(header.DescendantBlocks))),
 			sdk.NewAttribute(AttributeKeyUniquePoolsCount, strconv.FormatUint(consensusState.UniquePoolsCount, 10)),
 			sdk.NewAttribute(AttributeKeyUniqueStakeBps, strconv.FormatUint(consensusState.UniqueStakeBps, 10)),

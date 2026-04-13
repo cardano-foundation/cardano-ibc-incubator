@@ -12,13 +12,13 @@ You can have at most two of these three:
 2. no external trust
 3. no native consensus verification
 
-i.e, If you insist on fast acceptance and do not want to implement native Cardano verification on Cosmos, then you are left with some form of external trust. So that means your options are: 
+i.e, If you insist on fast acceptance and do not want to implement native Cardano verification on Cosmos, then you are left with some form of external trust. So that means your options are:
 
 1. trust Mithril,
 2. trust your own small committee / pinned operators,
 3. or trust a single Gateway / operator.
 
-This document introduces a Cardano "stability-weighted" light client. It is implemented as client type `08-cardano-stability`. This is as an alternative to the Mithril light client. This model is not a fast finality model or anything of that nature, rather it tries to heuristically attain faster IBC proofs by making certain risk tradeoffs via a heuristic notion of Cardano settlement. 
+This document introduces a Cardano "stability-weighted" light client. It is implemented as client type `08-cardano-stability`. This is as an alternative to the Mithril light client. This model is not a fast finality model or anything of that nature, rather it tries to heuristically attain faster IBC proofs by making certain risk tradeoffs via a heuristic notion of Cardano settlement.
 
 This is because the Mithril light client was effectively non-viable from a UX perspective. For example, Mithril certificates lagged the chain tip by over 100 blocks, so basic IBC operations would end up taking 200+ Cardano blocks.
 
@@ -124,9 +124,18 @@ The stability `ClientState` stores:
 - `upgrade_path`
 - `host_state_nft_policy_id`
 - `host_state_nft_token_name`
-- `epoch_stake_distribution`
+- `epoch_contexts`
 
-The most important design difference from the Mithril client is that the heuristic parameters and the epoch stake snapshot are stored directly in client state. That means the Cosmos-side verifier is not supposed to trust a relayer to tell it the scoring rule on every update; the rule is part of the client configuration itself.
+Each `EpochContext` carries:
+
+- `epoch`
+- `stake_distribution`
+- `epoch_nonce`
+- `slots_per_kes_period`
+- `epoch_start_slot`
+- `epoch_end_slot_exclusive`
+
+For compatibility, the current epoch context is still mirrored into the legacy single-epoch fields, but the authoritative verification source is now the stored `epoch_contexts` set. That means the Cosmos-side verifier is not supposed to trust a relayer to tell it the scoring rule or the active epoch verification material on every update; the rule is in client state, and adjacent epoch rollover appends the next epoch context as part of a normal header update.
 
 ### ConsensusState
 
@@ -152,10 +161,11 @@ The `StabilityHeader` carries:
 - `descendant_blocks`
 - `host_state_tx_hash`
 - `host_state_tx_output_index`
+- `new_epoch_context` when the anchor rolls into `epoch N+1`
 
 The important thing to notice is that the header does **not** try to prove arbitrary Cardano ledger state. Just like the Mithril path, it is still centered around the Cardano `HostState` transaction/output that contains the `ibc_state_root`. The new part is that `trusted_height` is now real: `bridge_blocks` must connect the already-trusted consensus block hash at `trusted_height` to the new `anchor_block`, and only the post-anchor `descendant_blocks` are used for the stability score.
 
-The header no longer carries relayed score metrics or a relayed HostState transaction body. The verifier recomputes the stability metrics locally for storage/telemetry, and it recovers the HostState transaction body directly from the authenticated anchor block witness before extracting `ibc_state_root`.
+The header no longer carries relayed score metrics or a relayed HostState transaction body. The verifier recomputes the stability metrics locally for storage/telemetry, and it recovers the HostState transaction body directly from the authenticated anchor block witness before extracting `ibc_state_root`. On an adjacent epoch rollover update, the header also carries the authenticated epoch context for the new anchor epoch so the client can continue on the same client ID without operational redeployment.
 
 Each relayed `StabilityBlock` now also carries raw `block_cbor`. The verifier decodes that raw Cardano block witness and cross-checks the claimed block hash, previous hash, height, slot, and issuer pool identity before it accepts the bridge or descendant window as the basis for scoring.
 
@@ -184,7 +194,7 @@ The Gateway:
 6. decoding the HostState datum and extracting `ibc_state_root`
 7. serializing the stability client state and consensus state
 
-For now, client creation and updates are intentionally constrained to a single epoch. Gateway rejects windows that cross an epoch boundary because the current client state carries one trusted epoch stake snapshot and does not yet implement native epoch-to-epoch stake rotation.
+Client creation still starts from one epoch context, but updates are no longer single-epoch-only. Gateway now supports ordinary `epoch N -> epoch N+1` rollover updates on the same client ID by attaching `new_epoch_context` to the header when the anchor moves into the next epoch. The scored descendant window still remains single-epoch: bridge continuity may span the boundary, but the anchor and scored descendants must all live in the same anchor epoch.
 
 ### IBC Header
 
@@ -195,12 +205,13 @@ For now, client creation and updates are intentionally constrained to a single e
 - the `descendant_blocks` used to justify accepting that anchor under the configured thresholds
 - the raw `block_cbor` witness for every bridge, anchor, and descendant block
 - the HostState transaction hash and output index needed to recover `ibc_state_root` from the authenticated anchor block
+- `new_epoch_context` if and only if the anchor is in `trusted_epoch + 1`
 
 ### Proof Height Gating
 
 The proof-serving endpoints that return ICS-23 proofs still build proofs from the live in-memory IBC tree, so they must only advertise a proof height once the live root is acceptable for the selected Cardano client mode.
 
-In stability mode, the proof-height resolver now uses the same threshold logic as `QueryNewClient` and `QueryIBCHeader`; it no longer uses the earlier placeholder rule of “the HostState block has at least one descendant”.
+In stability mode, the proof-height resolver now uses the same threshold logic as `QueryNewClient` and `QueryIBCHeader`; it no longer uses the earlier placeholder rule of “the HostState block has at least one descendant”, and it no longer rejects a still-live prior-epoch HostState root merely because the chain has rolled into the next epoch.
 
 ## Cosmos-Side Verification Flow
 
@@ -283,25 +294,25 @@ Today these are chosen off-chain by the Gateway environment before `QueryNewClie
 
 ## Current Limitations And Open Questions
 
-### 1. Epoch stake rotation is not fully solved yet
+### 1. Epoch stake rotation is only partially solved
 
-The current implementation stores one epoch stake distribution in client state and uses that as the weight basis. A full protocol for rotating or proving the next epoch’s stake distribution across updates is still an open design problem.
+The client now supports in-place adjacent rollover by storing multiple `epoch_contexts` in client state and accepting an authenticated `new_epoch_context` on an `epoch N -> epoch N+1` update. That is enough to avoid per-epoch client redeployment, but it is still not a full arbitrary historical epoch-context protocol.
 
-### 2. Updates are currently within-epoch only
+### 2. Updates are no longer within-epoch only, but they are still adjacent-epoch only
 
-The current implementation stores one epoch stake distribution in client state and rejects bridge/anchor/descendant windows that cross into a different epoch. Gateway now sources the current epoch nonce and `slotsPerKesPeriod` from node local-state via Ogmios, but the model is still intentionally current-epoch-only. That avoids reintroducing an off-chain epoch-stake oracle into the update path, but it also means epoch rollover currently requires operational handling rather than seamless in-client evolution.
+The current implementation allows bridge continuity across one epoch boundary, but it still fails closed if the client misses more than one epoch without an update. In other words, `N -> N+1` works, while `N -> N+2` and beyond is intentionally unsupported for now.
 
 ### 3. Missing epoch stake data now fails closed
 
-The current implementation no longer falls back to equal weights or relayed `stake_bps` values when epoch stake data is missing. Gateway refuses to construct stability evidence without a non-empty epoch stake snapshot, and the Cosmos-side verifier rejects any client or update whose `epoch_stake_distribution` is empty or has zero total stake.
+The current implementation no longer falls back to equal weights or relayed `stake_bps` values when epoch stake data is missing. Gateway refuses to construct stability evidence without a non-empty epoch stake snapshot, and the Cosmos-side verifier rejects any client or update whose active `epoch_context` has an empty or zero-weight stake distribution.
 
 ### 4. This is still not full native Ouroboros verification
 
 The current implementation authenticates raw Cardano block witnesses well enough to stop trusting normalized history rows as ground truth, but it still does not verify the full Ouroboros rule set on-chain. In particular, epoch stake rotation, leader-eligibility verification across epochs, and other native consensus details remain future work.
 
-### 5. Epoch verification context is now node-sourced, but still current-epoch scoped
+### 5. Epoch verification context is now node-sourced and point-acquired, but still limited
 
-The stability client no longer reads the epoch nonce or `slotsPerKesPeriod` from Gateway config. Instead, Gateway queries those values from node local-state through Ogmios and only serves stability evidence for the current epoch. That is a stronger trust boundary than operator-provided config, but it is still not a full historical epoch-context protocol: creating or updating a stability client for an older epoch is intentionally rejected today.
+The stability client no longer reads the epoch nonce or `slotsPerKesPeriod` from Gateway config. Instead, Gateway acquires Cardano local-state at a concrete block point through Ogmios and derives the epoch context from that acquired view. That is a stronger trust boundary than operator-provided config, but it is still not a full historical catch-up protocol because the client only accepts adjacent rollover updates.
 
 ### 6. The trust anchor is still weaker than Mithril
 

@@ -8,12 +8,14 @@ import { CLIENT_PREFIX } from '../../constant';
 import {
   queryCurrentEpochStakeDistribution,
   queryCurrentEpochVerificationData,
+  queryEpochContextAtPoint,
 } from '../../shared/helpers/ogmios';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { UtxoDto } from '../dtos/utxo.dto';
 import { TxDto } from '../dtos/tx.dto';
 import {
   HistoryBlock,
+  HistoryEpochContextAtBlock,
   HistoryEpochVerificationContext,
   HistoryService,
   HistoryStakeDistributionEntry,
@@ -156,15 +158,9 @@ export class YaciHistoryService implements HistoryService {
 
     const deploymentConfig = this.configService.get('deployment');
     const hostStateNFT = deploymentConfig.hostStateNFT;
-    const rows = await this.entityManager.query(query, [
-      height.toString(),
-      hostStateNFT.policyId,
-      hostStateNFT.name,
-    ]);
+    const rows = await this.entityManager.query(query, [height.toString(), hostStateNFT.policyId, hostStateNFT.name]);
     if (rows.length <= 0) {
-      throw new GrpcNotFoundException(
-        `Not found: HostState UTxO not found at or before height ${height.toString()}`,
-      );
+      throw new GrpcNotFoundException(`Not found: HostState UTxO not found at or before height ${height.toString()}`);
     }
 
     return this.mapUtxoRow(rows[0]);
@@ -297,10 +293,7 @@ export class YaciHistoryService implements HistoryService {
             stake: BigInt(row.active_stake),
             vrfKeyHash: normalizeHex(row.vrf_key_hash),
           }));
-        if (
-          historyEntries.length > 0 &&
-          historyEntries.every((entry) => /^[0-9a-f]{64}$/.test(entry.vrfKeyHash))
-        ) {
+        if (historyEntries.length > 0 && historyEntries.every((entry) => /^[0-9a-f]{64}$/.test(entry.vrfKeyHash))) {
           return historyEntries;
         }
         break;
@@ -325,50 +318,25 @@ export class YaciHistoryService implements HistoryService {
   }
 
   async findEpochVerificationContext(epoch: number): Promise<HistoryEpochVerificationContext | null> {
-    const startSlotQuery = `
-      SELECT MIN(slot) AS start_slot
-      FROM block
-      WHERE epoch = $1
-        AND slot >= 0
-    `;
-    const nextEpochStartSlotQuery = `
-      SELECT MIN(slot) AS start_slot
-      FROM block
-      WHERE epoch = $1
-        AND slot >= 0
-    `;
-
-    const [startSlotRow] = await this.entityManager.query(startSlotQuery, [epoch]);
-    const startSlot = this.parseSlot(startSlotRow);
-    if (startSlot === null) {
+    const slotBounds = await this.findEpochSlotBounds(epoch);
+    if (!slotBounds) {
       return null;
     }
-
-    const [nextEpochStartSlotRow] = await this.entityManager.query(nextEpochStartSlotQuery, [epoch + 1]);
-    const nextEpochStartSlot = this.parseSlot(nextEpochStartSlotRow);
-    const configuredEpochLength = BigInt(this.configService.get<number>('cardanoEpochLength') || 0);
-    const currentEpochEndSlotExclusive =
-      nextEpochStartSlot ??
-      (configuredEpochLength > 0n ? startSlot + configuredEpochLength : null);
     const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
     if (!ogmiosEndpoint) {
       return null;
     }
-    const { currentEpoch, epochNonce, slotsPerKesPeriod } =
-      await queryCurrentEpochVerificationData(
-        ogmiosEndpoint,
-        this.configService.get<string>('cardanoEpochNonceGenesis'),
-      );
-    if (currentEpochEndSlotExclusive === null) {
-      return null;
-    }
+    const { currentEpoch, epochNonce, slotsPerKesPeriod } = await queryCurrentEpochVerificationData(
+      ogmiosEndpoint,
+      this.configService.get<string>('cardanoEpochNonceGenesis'),
+    );
 
     if (epoch !== currentEpoch) {
       return {
         epochNonce: '',
         slotsPerKesPeriod: 0,
-        currentEpochStartSlot: startSlot,
-        currentEpochEndSlotExclusive,
+        currentEpochStartSlot: slotBounds.currentEpochStartSlot,
+        currentEpochEndSlotExclusive: slotBounds.currentEpochEndSlotExclusive,
       };
     }
 
@@ -379,8 +347,50 @@ export class YaciHistoryService implements HistoryService {
     return {
       epochNonce,
       slotsPerKesPeriod,
-      currentEpochStartSlot: startSlot,
-      currentEpochEndSlotExclusive,
+      currentEpochStartSlot: slotBounds.currentEpochStartSlot,
+      currentEpochEndSlotExclusive: slotBounds.currentEpochEndSlotExclusive,
+    };
+  }
+
+  async findEpochContextAtBlock(block: HistoryBlock): Promise<HistoryEpochContextAtBlock | null> {
+    const slotBounds = await this.findEpochSlotBounds(block.epochNo);
+    if (!slotBounds) {
+      return null;
+    }
+
+    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    if (!ogmiosEndpoint) {
+      return null;
+    }
+
+    const epochContext = await queryEpochContextAtPoint(
+      ogmiosEndpoint,
+      {
+        slot: block.slotNo,
+        hash: block.hash,
+      },
+      this.configService.get<string>('cardanoEpochNonceGenesis'),
+    );
+
+    if (epochContext.currentEpoch !== block.epochNo) {
+      throw new Error(
+        `Ogmios acquired epoch ${epochContext.currentEpoch} at block ${block.height}, expected epoch ${block.epochNo}`,
+      );
+    }
+
+    return {
+      epoch: epochContext.currentEpoch,
+      stakeDistribution: epochContext.stakeDistribution.map((entry) => ({
+        poolId: normalizePoolId(entry.poolId),
+        stake: entry.stake,
+        vrfKeyHash: normalizeHex(entry.vrfKeyHash),
+      })),
+      verificationContext: {
+        epochNonce: epochContext.epochNonce,
+        slotsPerKesPeriod: epochContext.slotsPerKesPeriod,
+        currentEpochStartSlot: slotBounds.currentEpochStartSlot,
+        currentEpochEndSlotExclusive: slotBounds.currentEpochEndSlotExclusive,
+      },
     };
   }
 
@@ -538,10 +548,7 @@ export class YaciHistoryService implements HistoryService {
   }
 
   private mapHistoryBlockRow(row: HistoryBlockRow): HistoryBlock {
-    const blockTimeMs =
-      row.block_time instanceof Date
-        ? row.block_time.valueOf()
-        : Number(row.block_time) * 1_000;
+    const blockTimeMs = row.block_time instanceof Date ? row.block_time.valueOf() : Number(row.block_time) * 1_000;
     return {
       height: Number(row.number),
       hash: row.hash,
@@ -550,6 +557,43 @@ export class YaciHistoryService implements HistoryService {
       epochNo: Number(row.epoch),
       timestampUnixNs: BigInt(blockTimeMs) * 1_000_000n,
       slotLeader: normalizePoolId(row.slot_leader ?? ''),
+    };
+  }
+
+  private async findEpochSlotBounds(epoch: number): Promise<HistoryEpochVerificationContext | null> {
+    const startSlotQuery = `
+      SELECT MIN(slot) AS start_slot
+      FROM block
+      WHERE epoch = $1
+        AND slot >= 0
+    `;
+    const nextEpochStartSlotQuery = `
+      SELECT MIN(slot) AS start_slot
+      FROM block
+      WHERE epoch = $1
+        AND slot >= 0
+    `;
+
+    const [startSlotRow] = await this.entityManager.query(startSlotQuery, [epoch]);
+    const startSlot = this.parseSlot(startSlotRow);
+    if (startSlot === null) {
+      return null;
+    }
+
+    const [nextEpochStartSlotRow] = await this.entityManager.query(nextEpochStartSlotQuery, [epoch + 1]);
+    const nextEpochStartSlot = this.parseSlot(nextEpochStartSlotRow);
+    const configuredEpochLength = BigInt(this.configService.get<number>('cardanoEpochLength') || 0);
+    const currentEpochEndSlotExclusive =
+      nextEpochStartSlot ?? (configuredEpochLength > 0n ? startSlot + configuredEpochLength : null);
+    if (currentEpochEndSlotExclusive === null) {
+      return null;
+    }
+
+    return {
+      epochNonce: '',
+      slotsPerKesPeriod: 0,
+      currentEpochStartSlot: startSlot,
+      currentEpochEndSlotExclusive,
     };
   }
 

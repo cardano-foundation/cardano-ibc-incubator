@@ -82,6 +82,7 @@ func (l LightClientModule) UpdateState(ctx sdk.Context, clientID string, clientM
 	if !found {
 		panic(errorsmod.Wrap(clienttypes.ErrClientNotFound, clientID))
 	}
+	previousEpoch := clientState.CurrentEpoch
 	updatedHeights := clientState.UpdateState(ctx, l.cdc, clientStore, clientMsg)
 
 	header, ok := clientMsg.(*StabilityHeader)
@@ -94,7 +95,7 @@ func (l LightClientModule) UpdateState(ctx sdk.Context, clientID string, clientM
 		panic(errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "height (%s)", updatedHeights[0]))
 	}
 
-	emitStabilityHeaderAcceptedEvent(ctx, clientID, header, clientState, consensusState)
+	emitStabilityHeaderAcceptedEvent(ctx, clientID, header, clientState, consensusState, previousEpoch)
 	return updatedHeights
 }
 

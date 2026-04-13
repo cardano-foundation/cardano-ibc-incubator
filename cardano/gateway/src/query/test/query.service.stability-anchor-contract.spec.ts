@@ -14,6 +14,7 @@ describe('QueryService stability anchor contract', () => {
     findLatestBlock: jest.Mock;
     findBlockByHeight: jest.Mock;
     findDescendantBlocks: jest.Mock;
+    findEpochContextAtBlock: jest.Mock;
     findEpochStakeDistribution: jest.Mock;
     findEpochVerificationContext: jest.Mock;
     findBridgeBlocks: jest.Mock;
@@ -60,14 +61,27 @@ describe('QueryService stability anchor contract', () => {
         timestampUnixNs: 1_500_000_000n,
         slotLeader: 'pool-e',
       }),
-      findBlockByHeight: jest.fn().mockResolvedValue({
-        height: 100,
-        hash: 'anchor-hash',
-        prevHash: 'prev-hash',
-        slotNo: 1000n,
-        epochNo: 7,
-        timestampUnixNs: 1_000_000_000n,
-        slotLeader: 'pool-a',
+      findBlockByHeight: jest.fn().mockImplementation(async (height: bigint) => {
+        if (height === 98n) {
+          return {
+            height: 98,
+            hash: 'hash-98',
+            prevHash: 'hash-97',
+            slotNo: 980n,
+            epochNo: 7,
+            timestampUnixNs: 980_000_000n,
+            slotLeader: 'pool-z',
+          };
+        }
+        return {
+          height: 100,
+          hash: 'anchor-hash',
+          prevHash: 'prev-hash',
+          slotNo: 1000n,
+          epochNo: 7,
+          timestampUnixNs: 1_000_000_000n,
+          slotLeader: 'pool-a',
+        };
       }),
       findDescendantBlocks: jest.fn().mockResolvedValue([
         {
@@ -116,6 +130,22 @@ describe('QueryService stability anchor contract', () => {
           slotLeader: 'pool-e',
         },
       ]),
+      findEpochContextAtBlock: jest.fn().mockResolvedValue({
+        epoch: 7,
+        stakeDistribution: [
+          { poolId: 'pool-a', stake: 200n, vrfKeyHash: 'aa'.repeat(32) },
+          { poolId: 'pool-b', stake: 200n, vrfKeyHash: 'bb'.repeat(32) },
+          { poolId: 'pool-c', stake: 200n, vrfKeyHash: 'cc'.repeat(32) },
+          { poolId: 'pool-d', stake: 200n, vrfKeyHash: 'dd'.repeat(32) },
+          { poolId: 'pool-e', stake: 200n, vrfKeyHash: 'ee'.repeat(32) },
+        ],
+        verificationContext: {
+          epochNonce: '11'.repeat(32),
+          slotsPerKesPeriod: 129600,
+          currentEpochStartSlot: 900n,
+          currentEpochEndSlotExclusive: 2000n,
+        },
+      }),
       findEpochStakeDistribution: jest.fn().mockResolvedValue([
         { poolId: 'pool-a', stake: 200n, vrfKeyHash: 'aa'.repeat(32) },
         { poolId: 'pool-b', stake: 200n, vrfKeyHash: 'bb'.repeat(32) },

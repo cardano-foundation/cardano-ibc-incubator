@@ -90,7 +90,7 @@ func TestAuthenticateStabilityBlockRejectsMismatchedClaims(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			block := cloneTestStabilityBlock(valid)
 			tc.mutate(block)
-			_, err := cs.authenticateStabilityBlock(block, "anchor")
+			_, err := cs.authenticateStabilityBlock(block, "anchor", mustTestEpochContexts(t, cs))
 			require.ErrorContains(t, err, tc.want)
 		})
 	}
@@ -102,7 +102,7 @@ func TestAuthenticateStabilityBlockDoesNotMutateInput(t *testing.T) {
 	block.Hash = "deadbeef"
 	clone := cloneTestStabilityBlock(block)
 
-	_, err := cs.authenticateStabilityBlock(block, "anchor")
+	_, err := cs.authenticateStabilityBlock(block, "anchor", mustTestEpochContexts(t, cs))
 	require.Error(t, err)
 	require.Equal(t, clone, block)
 }
@@ -137,7 +137,7 @@ func TestVerifyHeaderRejectsCrossEpochBlock(t *testing.T) {
 	header.AnchorBlock = makeTestStabilityBlock(t, 12, cs.CurrentEpochEndSlotExclusive, header.BridgeBlocks[0].Hash)
 
 	err := cs.verifyHeader(sdk.Context{}, clientStore, cdc, header)
-	require.ErrorContains(t, err, "outside trusted epoch slot bounds")
+	require.ErrorContains(t, err, "outside available epoch context bounds")
 }
 
 func TestVerifyHeaderRejectsTrustedHeightOlderThanLatestHeight(t *testing.T) {
@@ -157,7 +157,13 @@ func TestVerifyHeaderRejectsTrustedHeightOlderThanLatestHeight(t *testing.T) {
 
 func TestComputeHeaderSecurityMetricsRejectsEmptyEpochStakeDistribution(t *testing.T) {
 	cs := newStabilityTestClientState()
-	cs.EpochStakeDistribution = nil
+	epochContext := &EpochContext{
+		Epoch:                 cs.CurrentEpoch,
+		EpochNonce:            bytes.Repeat([]byte{0x03}, 32),
+		SlotsPerKesPeriod:     cs.SlotsPerKesPeriod,
+		EpochStartSlot:        cs.CurrentEpochStartSlot,
+		EpochEndSlotExclusive: cs.CurrentEpochEndSlotExclusive,
+	}
 
 	authenticatedHeader := &authenticatedStabilityHeader{
 		anchorBlock: &authenticatedStabilityBlock{
@@ -166,8 +172,30 @@ func TestComputeHeaderSecurityMetricsRejectsEmptyEpochStakeDistribution(t *testi
 		},
 	}
 
-	_, _, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader)
-	require.ErrorContains(t, err, "epoch stake distribution must not be empty")
+	_, _, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
+	require.ErrorContains(t, err, "stake distribution must not be empty")
+}
+
+func TestVerifyHeaderEpochTransitionAcceptsAdjacentEpochRollover(t *testing.T) {
+	header := &StabilityHeader{
+		NewEpochContext: &EpochContext{Epoch: 8},
+	}
+	trustedConsensus := &ConsensusState{AcceptedEpoch: 7}
+	authenticatedHeader := &authenticatedStabilityHeader{
+		anchorBlock: &authenticatedStabilityBlock{
+			epoch: 8,
+		},
+		bridgeBlocks: []*authenticatedStabilityBlock{
+			{epoch: 7},
+			{epoch: 8},
+		},
+		descendantBlocks: []*authenticatedStabilityBlock{
+			{epoch: 8},
+		},
+	}
+
+	err := verifyHeaderEpochTransition(header, trustedConsensus, authenticatedHeader)
+	require.NoError(t, err)
 }
 
 func TestCheckForMisbehaviourDetectsConflictingHeaderAtSameHeight(t *testing.T) {
@@ -221,7 +249,7 @@ func TestVerifyMisbehaviourDoesNotRequireStoredTargetHeights(t *testing.T) {
 	err := cs.verifyMisbehaviour(ctx, clientStore, cdc, msg)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "could not get consensus state from clientStore")
-	require.Contains(t, err.Error(), "outside trusted epoch slot bounds")
+	require.Contains(t, err.Error(), "outside available epoch context bounds")
 }
 
 func TestVerifyMisbehaviourDoesNotRejectStoredHeadersAsStale(t *testing.T) {
@@ -238,7 +266,7 @@ func TestVerifyMisbehaviourDoesNotRejectStoredHeadersAsStale(t *testing.T) {
 	err := cs.verifyMisbehaviour(ctx, clientStore, cdc, msg)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "expected newer header height")
-	require.Contains(t, err.Error(), "outside trusted epoch slot bounds")
+	require.Contains(t, err.Error(), "outside available epoch context bounds")
 }
 
 func TestHeadersConflictRejectsNonConflictingHeaders(t *testing.T) {
@@ -487,4 +515,12 @@ func cloneTestStabilityBlock(block *StabilityBlock) *StabilityBlock {
 		clone.BlockCbor = append([]byte(nil), block.BlockCbor...)
 	}
 	return &clone
+}
+
+func mustTestEpochContexts(t *testing.T, cs *ClientState) []*EpochContext {
+	t.Helper()
+
+	contexts, err := cs.normalizedEpochContexts()
+	require.NoError(t, err)
+	return contexts
 }

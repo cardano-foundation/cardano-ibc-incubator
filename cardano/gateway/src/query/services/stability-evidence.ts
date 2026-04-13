@@ -49,15 +49,14 @@ export type StakeWeightedStabilityHeaderEvidence = {
   anchorEpoch: EpochNumber;
   anchorBlock: HistoryBlock;
   descendantBlocks: HistoryBlock[];
+  epochStakeDistribution: HistoryStakeDistributionEntry[];
+  epochVerificationContext: HistoryEpochVerificationContext;
   trustedHeight: CardanoHeight;
+  trustedEpoch: EpochNumber;
   bridgeBlocks: HistoryBlock[];
 };
 
-function assertBlocksRemainInEpoch(
-  blocks: HistoryBlock[],
-  expectedEpoch: number,
-  context: string,
-): void {
+function assertBlocksRemainInEpoch(blocks: HistoryBlock[], expectedEpoch: number, context: string): void {
   const mismatchedBlock = blocks.find((block) => block.epochNo !== expectedEpoch);
   if (mismatchedBlock) {
     throw new GrpcInternalException(
@@ -83,10 +82,7 @@ function assertBlocksRemainWithinEpochSlotBounds(
   }
 }
 
-async function assertAnchorUsesCurrentEpoch(
-  historyService: HistoryService,
-  anchorBlock: HistoryBlock,
-): Promise<void> {
+async function assertAnchorUsesCurrentEpoch(historyService: HistoryService, anchorBlock: HistoryBlock): Promise<void> {
   const latestBlock = await historyService.findLatestBlock();
   if (!latestBlock) {
     throw new GrpcInternalException('Cardano history latest block unavailable for stake-weighted stability');
@@ -135,27 +131,16 @@ function assertEpochVerificationContextAvailable(
   context: string,
 ): asserts epochVerificationContext is HistoryEpochVerificationContext {
   if (!epochVerificationContext) {
-    throw new GrpcInternalException(
-      `Epoch verification context unavailable for ${context} in epoch ${epoch}`,
-    );
+    throw new GrpcInternalException(`Epoch verification context unavailable for ${context} in epoch ${epoch}`);
   }
   if (!epochVerificationContext.epochNonce) {
-    throw new GrpcInternalException(
-      `Epoch nonce unavailable for ${context} in epoch ${epoch}`,
-    );
+    throw new GrpcInternalException(`Epoch nonce unavailable for ${context} in epoch ${epoch}`);
   }
   if (epochVerificationContext.slotsPerKesPeriod <= 0) {
-    throw new GrpcInternalException(
-      `Slots-per-KES-period unavailable for ${context} in epoch ${epoch}`,
-    );
+    throw new GrpcInternalException(`Slots-per-KES-period unavailable for ${context} in epoch ${epoch}`);
   }
-  if (
-    epochVerificationContext.currentEpochEndSlotExclusive <=
-    epochVerificationContext.currentEpochStartSlot
-  ) {
-    throw new GrpcInternalException(
-      `Invalid epoch slot bounds for ${context} in epoch ${epoch}`,
-    );
+  if (epochVerificationContext.currentEpochEndSlotExclusive <= epochVerificationContext.currentEpochStartSlot) {
+    throw new GrpcInternalException(`Invalid epoch slot bounds for ${context} in epoch ${epoch}`);
   }
 }
 
@@ -178,7 +163,6 @@ type LoadStakeWeightedStabilityEvidenceByHeightParams = {
   logger?: Logger;
   heuristicParams?: HeuristicParams;
   requireThresholds?: boolean;
-  allowHistoricalAnchors?: boolean;
   requireFullEpochVerificationContext?: boolean;
   missingAnchorBlockMessage?: string;
 };
@@ -203,27 +187,26 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
   logger,
   heuristicParams = getStabilityHeuristicParams(),
   requireThresholds = true,
-  allowHistoricalAnchors = false,
   requireFullEpochVerificationContext = true,
   missingAnchorBlockMessage,
 }: LoadStakeWeightedStabilityEvidenceByHeightParams): Promise<StakeWeightedStabilityEvidence> {
   const anchorBlock = await historyService.findBlockByHeight(height);
   if (!anchorBlock) {
-    throw new GrpcNotFoundException(
-      missingAnchorBlockMessage ?? `Not found: "height" ${height.toString()} not found`,
-    );
-  }
-
-  if (!allowHistoricalAnchors) {
-    await assertAnchorUsesCurrentEpoch(historyService, anchorBlock);
+    throw new GrpcNotFoundException(missingAnchorBlockMessage ?? `Not found: "height" ${height.toString()} not found`);
   }
 
   const descendantBlocks = await historyService.findDescendantBlocks(
     BigInt(anchorBlock.height),
     getStabilityLookaheadDepth(heuristicParams),
   );
-  const epochStakeDistribution = await historyService.findEpochStakeDistribution(anchorBlock.epochNo);
-  const epochVerificationContext = await historyService.findEpochVerificationContext(anchorBlock.epochNo);
+  const anchorEpochContext = await historyService.findEpochContextAtBlock(anchorBlock);
+  if (!anchorEpochContext) {
+    throw new GrpcInternalException(
+      `Epoch context unavailable for anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
+    );
+  }
+  const { stakeDistribution: epochStakeDistribution, verificationContext: epochVerificationContext } =
+    anchorEpochContext;
   assertEpochStakeDistributionAvailable(
     epochStakeDistribution,
     `anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
@@ -357,9 +340,7 @@ export async function loadStakeWeightedStabilityEvidenceForTxHash({
       };
     })());
   if (!hostStateTxEvidence) {
-    throw new GrpcInternalException(
-      missingTxEvidenceMessage ?? `Historical tx evidence unavailable for tx ${txHash}`,
-    );
+    throw new GrpcInternalException(missingTxEvidenceMessage ?? `Historical tx evidence unavailable for tx ${txHash}`);
   }
 
   const evidence = await loadStakeWeightedStabilityEvidenceByHeight({
@@ -394,24 +375,49 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     );
   }
 
+  const trustedBlock = await historyService.findBlockByHeight(trustedHeight);
+  if (!trustedBlock) {
+    throw new GrpcNotFoundException(`Not found: trusted height ${trustedHeight.toString()} not found`);
+  }
+
   const anchorBlock = await historyService.findBlockByHeight(height);
   if (!anchorBlock) {
-    throw new GrpcNotFoundException(
-      missingAnchorBlockMessage ?? `Not found: "height" ${height.toString()} not found`,
+    throw new GrpcNotFoundException(missingAnchorBlockMessage ?? `Not found: "height" ${height.toString()} not found`);
+  }
+
+  if (anchorBlock.epochNo < trustedBlock.epochNo) {
+    throw new GrpcInternalException(
+      `Invalid stability header request: trusted epoch ${trustedBlock.epochNo} must not be greater than anchor epoch ${anchorBlock.epochNo}`,
+    );
+  }
+  if (anchorBlock.epochNo > trustedBlock.epochNo + 1) {
+    throw new GrpcInternalException(
+      `Stability rollover currently supports only adjacent epoch transitions; trusted epoch ${trustedBlock.epochNo}, anchor epoch ${anchorBlock.epochNo}`,
     );
   }
 
-  const epochVerificationContext = await historyService.findEpochVerificationContext(anchorBlock.epochNo);
-  if (!epochVerificationContext) {
+  const anchorEpochContext = await historyService.findEpochContextAtBlock(anchorBlock);
+  if (!anchorEpochContext) {
     throw new GrpcInternalException(
-      `Epoch verification context unavailable for anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
+      `Epoch context unavailable for anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
     );
   }
+  const epochVerificationContext = anchorEpochContext.verificationContext;
   assertBlocksRemainWithinEpochSlotBounds(
     [anchorBlock],
     epochVerificationContext,
     `Stake-weighted stability anchor block for height ${anchorBlock.height}`,
   );
+
+  const trustedEpochContext =
+    trustedBlock.epochNo === anchorBlock.epochNo
+      ? anchorEpochContext
+      : await historyService.findEpochContextAtBlock(trustedBlock);
+  if (!trustedEpochContext) {
+    throw new GrpcInternalException(
+      `Epoch context unavailable for trusted height ${trustedBlock.height} in epoch ${trustedBlock.epochNo}`,
+    );
+  }
 
   const bridgeBlocks = await historyService.findBridgeBlocks(trustedHeight, height);
   const expectedBridgeCount = Number(height - trustedHeight - 1n);
@@ -429,16 +435,29 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
       );
     }
   }
-  assertBlocksRemainInEpoch(
-    bridgeBlocks,
-    anchorBlock.epochNo,
-    `Stake-weighted stability bridge segment for anchor height ${height.toString()}`,
-  );
-  assertBlocksRemainWithinEpochSlotBounds(
-    bridgeBlocks,
-    epochVerificationContext,
-    `Stake-weighted stability bridge segment for anchor height ${height.toString()}`,
-  );
+  for (const block of bridgeBlocks) {
+    if (block.epochNo === trustedBlock.epochNo) {
+      assertBlocksRemainWithinEpochSlotBounds(
+        [block],
+        trustedEpochContext.verificationContext,
+        `Stake-weighted stability bridge segment for anchor height ${height.toString()}`,
+      );
+      continue;
+    }
+
+    if (block.epochNo === anchorBlock.epochNo) {
+      assertBlocksRemainWithinEpochSlotBounds(
+        [block],
+        anchorEpochContext.verificationContext,
+        `Stake-weighted stability bridge segment for anchor height ${height.toString()}`,
+      );
+      continue;
+    }
+
+    throw new GrpcInternalException(
+      `Stake-weighted stability bridge segment for anchor height ${height.toString()} crosses unsupported epoch ${block.epochNo}`,
+    );
+  }
 
   const descendantBlocks = await historyService.findDescendantBlocks(
     BigInt(anchorBlock.height),
@@ -450,16 +469,17 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     epochVerificationContext,
   );
   const eligibleDescendantBlocks =
-    firstInvalidDescendantIndex >= 0
-      ? descendantBlocks.slice(0, firstInvalidDescendantIndex)
-      : descendantBlocks;
+    firstInvalidDescendantIndex >= 0 ? descendantBlocks.slice(0, firstInvalidDescendantIndex) : descendantBlocks;
 
   return {
     anchorHeight: BigInt(anchorBlock.height) as CardanoHeight,
     anchorEpoch: anchorBlock.epochNo as EpochNumber,
     anchorBlock,
     descendantBlocks: eligibleDescendantBlocks,
+    epochStakeDistribution: anchorEpochContext.stakeDistribution,
+    epochVerificationContext: anchorEpochContext.verificationContext,
     trustedHeight: trustedHeight as CardanoHeight,
+    trustedEpoch: trustedBlock.epochNo as EpochNumber,
     bridgeBlocks,
   };
 }

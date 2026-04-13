@@ -92,8 +92,21 @@ func (cs *ClientState) verifyHeaderWithMode(
 		)
 	}
 
-	authenticatedHeader, err := cs.authenticateHeaderBlocks(header)
+	currentEpochContexts, err := cs.normalizedEpochContexts()
 	if err != nil {
+		return err
+	}
+	epochContexts, err := mergeEpochContexts(currentEpochContexts, header.NewEpochContext)
+	if err != nil {
+		return err
+	}
+
+	authenticatedHeader, err := cs.authenticateHeaderBlocksWithContexts(header, epochContexts)
+	if err != nil {
+		return err
+	}
+
+	if err := verifyHeaderEpochTransition(header, trustedConsensus, authenticatedHeader); err != nil {
 		return err
 	}
 
@@ -101,12 +114,21 @@ func (cs *ClientState) verifyHeaderWithMode(
 		return err
 	}
 
+	anchorEpochContext := epochContextByEpoch(epochContexts, authenticatedHeader.anchorBlock.epoch)
+	if anchorEpochContext == nil {
+		return errorsmod.Wrapf(
+			ErrInvalidCurrentEpoch,
+			"missing epoch context for accepted epoch %d",
+			authenticatedHeader.anchorBlock.epoch,
+		)
+	}
+
 	depth := uint64(len(authenticatedHeader.descendantBlocks))
 	if depth < cs.HeuristicParams.ThresholdDepth {
 		return errorsmod.Wrapf(ErrInvalidStabilityScore, "insufficient descendant depth: got %d, need %d", depth, cs.HeuristicParams.ThresholdDepth)
 	}
 
-	uniquePools, uniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader)
+	uniquePools, uniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, anchorEpochContext)
 	if err != nil {
 		return err
 	}
@@ -120,6 +142,97 @@ func (cs *ClientState) verifyHeaderWithMode(
 
 	if _, err := cs.ExtractIbcStateRootFromHostStateTx(header); err != nil {
 		return errorsmod.Wrapf(ErrInvalidHostStateCommitment, "invalid host state tx body: %v", err)
+	}
+
+	return nil
+}
+
+func verifyHeaderEpochTransition(
+	header *StabilityHeader,
+	trustedConsensus *ConsensusState,
+	authenticatedHeader *authenticatedStabilityHeader,
+) error {
+	if header == nil {
+		return errorsmod.Wrap(ErrInvalidHeader, "stability header missing")
+	}
+	if trustedConsensus == nil {
+		return errorsmod.Wrap(clienttypes.ErrConsensusStateNotFound, "trusted consensus state missing")
+	}
+	if authenticatedHeader == nil || authenticatedHeader.anchorBlock == nil {
+		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated anchor block missing")
+	}
+
+	trustedEpoch := trustedConsensus.AcceptedEpoch
+	anchorEpoch := authenticatedHeader.anchorBlock.epoch
+
+	switch {
+	case anchorEpoch < trustedEpoch:
+		return errorsmod.Wrapf(
+			ErrInvalidCurrentEpoch,
+			"accepted epoch %d must not be older than trusted epoch %d",
+			anchorEpoch,
+			trustedEpoch,
+		)
+	case anchorEpoch == trustedEpoch:
+		if header.NewEpochContext != nil {
+			return errorsmod.Wrap(
+				ErrInvalidCurrentEpoch,
+				"new_epoch_context must be absent for same-epoch stability updates",
+			)
+		}
+	case anchorEpoch == trustedEpoch+1:
+		if header.NewEpochContext == nil {
+			return errorsmod.Wrap(
+				ErrInvalidCurrentEpoch,
+				"new_epoch_context must be present for adjacent epoch rollover",
+			)
+		}
+		if header.NewEpochContext.Epoch != anchorEpoch {
+			return errorsmod.Wrapf(
+				ErrInvalidCurrentEpoch,
+				"new_epoch_context epoch %d must match accepted epoch %d",
+				header.NewEpochContext.Epoch,
+				anchorEpoch,
+			)
+		}
+	default:
+		return errorsmod.Wrapf(
+			ErrInvalidCurrentEpoch,
+			"stability rollover currently supports only adjacent epoch transitions; trusted epoch %d, accepted epoch %d",
+			trustedEpoch,
+			anchorEpoch,
+		)
+	}
+
+	for _, block := range authenticatedHeader.bridgeBlocks {
+		if block == nil {
+			return errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated bridge block missing")
+		}
+		if block.epoch != trustedEpoch && block.epoch != anchorEpoch {
+			return errorsmod.Wrapf(
+				ErrInvalidCurrentEpoch,
+				"bridge block %d crosses unsupported epoch %d for transition %d -> %d",
+				block.height,
+				block.epoch,
+				trustedEpoch,
+				anchorEpoch,
+			)
+		}
+	}
+
+	for _, block := range authenticatedHeader.descendantBlocks {
+		if block == nil {
+			return errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated descendant block missing")
+		}
+		if block.epoch != anchorEpoch {
+			return errorsmod.Wrapf(
+				ErrInvalidCurrentEpoch,
+				"descendant block %d must remain in accepted epoch %d, got epoch %d",
+				block.height,
+				anchorEpoch,
+				block.epoch,
+			)
+		}
 	}
 
 	return nil
@@ -187,18 +300,25 @@ func verifyBridgeContinuity(
 	return nil
 }
 
-func (cs *ClientState) computeHeaderSecurityMetrics(header *authenticatedStabilityHeader) (uint64, uint64, uint64, error) {
+func (cs *ClientState) computeHeaderSecurityMetrics(
+	header *authenticatedStabilityHeader,
+	epochContext *EpochContext,
+) (uint64, uint64, uint64, error) {
 	seenPools := make(map[string]struct{})
 	uniquePools := uint64(0)
 	uniqueStake := uint64(0)
 	totalStake := uint64(0)
 	stakeByPool := make(map[string]uint64)
 
-	if len(cs.EpochStakeDistribution) == 0 {
-		return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "epoch stake distribution must not be empty")
+	if epochContext == nil {
+		return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "anchor epoch context must be present")
 	}
 
-	for _, entry := range cs.EpochStakeDistribution {
+	if len(epochContext.StakeDistribution) == 0 {
+		return 0, 0, 0, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d stake distribution must not be empty", epochContext.Epoch)
+	}
+
+	for _, entry := range epochContext.StakeDistribution {
 		if entry == nil {
 			continue
 		}
@@ -206,13 +326,14 @@ func (cs *ClientState) computeHeaderSecurityMetrics(header *authenticatedStabili
 		totalStake += entry.Stake
 	}
 	if totalStake == 0 {
-		return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "epoch stake distribution must have positive total stake")
+		return 0, 0, 0, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d stake distribution must have positive total stake", epochContext.Epoch)
 	}
 
 	if header == nil || header.anchorBlock == nil {
 		return 0, 0, 0, errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated anchor block missing")
 	}
 
+	anchorEpoch := header.anchorBlock.epoch
 	prevHash := header.anchorBlock.hash
 	prevHeight := header.anchorBlock.height
 	for _, block := range header.descendantBlocks {
@@ -224,6 +345,15 @@ func (cs *ClientState) computeHeaderSecurityMetrics(header *authenticatedStabili
 		}
 		if block.height != prevHeight+1 {
 			return 0, 0, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "descendant height gap at block %s", block.hash)
+		}
+		if block.epoch != anchorEpoch {
+			return 0, 0, 0, errorsmod.Wrapf(
+				ErrInvalidCurrentEpoch,
+				"descendant block %d must remain in accepted epoch %d, got %d",
+				block.height,
+				anchorEpoch,
+				block.epoch,
+			)
 		}
 
 		poolID := strings.ToLower(block.slotLeader)
@@ -286,21 +416,40 @@ func (cs *ClientState) UpdateState(
 	if !ok {
 		panic(fmt.Errorf("expected type %T, got %T", &StabilityHeader{}, clientMsg))
 	}
-	authenticatedHeader, err := cs.authenticateHeaderBlocks(header)
+	currentEpochContexts, err := cs.normalizedEpochContexts()
+	if err != nil {
+		panic(fmt.Errorf("failed to normalize epoch contexts for verified StabilityHeader: %w", err))
+	}
+	epochContexts, err := mergeEpochContexts(currentEpochContexts, header.NewEpochContext)
+	if err != nil {
+		panic(fmt.Errorf("failed to merge epoch contexts for verified StabilityHeader: %w", err))
+	}
+	authenticatedHeader, err := cs.authenticateHeaderBlocksWithContexts(header, epochContexts)
 	if err != nil {
 		panic(fmt.Errorf("failed to authenticate verified StabilityHeader blocks: %w", err))
 	}
 
+	trustedConsensus, found := GetConsensusState(clientStore, cdc, header.TrustedHeight)
+	if !found {
+		panic(fmt.Errorf("trusted consensus state missing for verified StabilityHeader at height %s", header.TrustedHeight.String()))
+	}
+	if err := verifyHeaderEpochTransition(header, trustedConsensus, authenticatedHeader); err != nil {
+		panic(fmt.Errorf("verified StabilityHeader violated epoch transition rules: %w", err))
+	}
+
+	anchorEpochContext := epochContextByEpoch(epochContexts, authenticatedHeader.anchorBlock.epoch)
+	if anchorEpochContext == nil {
+		panic(fmt.Errorf("missing anchor epoch context for verified StabilityHeader epoch %d", authenticatedHeader.anchorBlock.epoch))
+	}
+
 	cs.pruneOldestConsensusState(ctx, cdc, clientStore)
 	height := NewHeight(0, header.AnchorBlock.Height.RevisionHeight)
-	cs.LatestHeight = height
-	cs.CurrentEpoch = authenticatedHeader.anchorBlock.epoch
 
 	ibcStateRoot, err := cs.ExtractIbcStateRootFromHostStateTx(header)
 	if err != nil {
 		panic(fmt.Errorf("failed to extract ibc_state_root from verified StabilityHeader: %w", err))
 	}
-	uniquePools, uniqueStakeBps, securityScoreBps, err := cs.computeHeaderSecurityMetrics(authenticatedHeader)
+	uniquePools, uniqueStakeBps, securityScoreBps, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, anchorEpochContext)
 	if err != nil {
 		panic(fmt.Errorf("failed to recompute stability metrics from verified StabilityHeader: %w", err))
 	}
@@ -316,13 +465,21 @@ func (cs *ClientState) UpdateState(
 		SecurityScoreBps:  securityScoreBps,
 	}
 
-	setClientState(clientStore, cdc, cs)
 	setConsensusState(clientStore, cdc, newConsensusState, header.GetHeight())
 	setConsensusMetadata(ctx, clientStore, header.GetHeight())
 	clientStore.Set(StabilityScoreKey(height.RevisionHeight), sdk.Uint64ToBigEndian(securityScoreBps))
 	clientStore.Set(UniquePoolsKey(height.RevisionHeight), sdk.Uint64ToBigEndian(uniquePools))
 	clientStore.Set(UniqueStakeKey(height.RevisionHeight), sdk.Uint64ToBigEndian(uniqueStakeBps))
 	clientStore.Set(AcceptedBlockHashKey(height.RevisionHeight), []byte(authenticatedHeader.anchorBlock.hash))
+
+	keepEpochs := collectReferencedConsensusEpochs(clientStore, cdc)
+	keepEpochs[authenticatedHeader.anchorBlock.epoch] = struct{}{}
+	retainedEpochContexts := retainEpochContexts(epochContexts, keepEpochs)
+	if err := syncLegacyEpochContextFields(cs, retainedEpochContexts, authenticatedHeader.anchorBlock.epoch); err != nil {
+		panic(fmt.Errorf("failed to persist rollover epoch contexts after verified StabilityHeader: %w", err))
+	}
+	cs.LatestHeight = height
+	setClientState(clientStore, cdc, cs)
 	return []exported.Height{height}
 }
 

@@ -33,6 +33,17 @@ message StakeDistributionEntry {
   bytes vrf_key_hash = 3;
 }
 
+message EpochContext {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 epoch = 1;
+  repeated StakeDistributionEntry stake_distribution = 2;
+  bytes epoch_nonce = 3;
+  uint64 slots_per_kes_period = 4;
+  uint64 epoch_start_slot = 5;
+  uint64 epoch_end_slot_exclusive = 6;
+}
+
 message ClientState {
   option (gogoproto.goproto_getters) = false;
 
@@ -52,6 +63,7 @@ message ClientState {
   uint64 current_epoch_end_slot_exclusive = 14;
   uint64 system_start_unix_ns = 15;
   uint64 slot_length_ns = 16;
+  repeated EpochContext epoch_contexts = 17;
 }
 
 message ConsensusState {
@@ -99,4 +111,5 @@ message StabilityHeader {
   uint32 host_state_tx_output_index = 6;
   reserved 7 to 9;
   repeated StabilityBlock bridge_blocks = 10;
+  EpochContext new_epoch_context = 11;
 }

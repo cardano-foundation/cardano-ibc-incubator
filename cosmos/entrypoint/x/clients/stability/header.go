@@ -71,6 +71,11 @@ func (h StabilityHeader) ValidateBasic() error {
 			h.AnchorBlock.Height.RevisionHeight,
 		)
 	}
+	if h.NewEpochContext != nil {
+		if err := validateEpochContext(h.NewEpochContext); err != nil {
+			return err
+		}
+	}
 	for _, block := range h.BridgeBlocks {
 		if block == nil {
 			return errorsmod.Wrap(ErrInvalidAcceptedBlock, "bridge block cannot be nil")

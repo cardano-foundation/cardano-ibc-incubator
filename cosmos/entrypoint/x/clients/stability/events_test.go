@@ -23,13 +23,15 @@ func TestEmitStabilityHeaderAcceptedEvent(t *testing.T) {
 	clientState := newStabilityTestClientState()
 	consensusState := newStabilityTestConsensusState(header.AnchorBlock.Hash)
 
-	emitStabilityHeaderAcceptedEvent(ctx, clientID, header, clientState, consensusState)
+	emitStabilityHeaderAcceptedEvent(ctx, clientID, header, clientState, consensusState, clientState.CurrentEpoch)
 
 	event := findEventByType(t, ctx.EventManager().Events(), EventTypeStabilityHeaderAccepted)
 	require.Equal(t, clientID, eventAttributeValue(t, event, AttributeKeyClientID))
 	require.Equal(t, header.TrustedHeight.String(), eventAttributeValue(t, event, AttributeKeyTrustedHeight))
 	require.Equal(t, header.GetHeight().String(), eventAttributeValue(t, event, AttributeKeyAcceptedHeight))
 	require.Equal(t, header.AnchorBlock.Hash, eventAttributeValue(t, event, AttributeKeyAcceptedBlockHash))
+	require.Equal(t, "7", eventAttributeValue(t, event, AttributeKeyPreviousEpoch))
+	require.Equal(t, "false", eventAttributeValue(t, event, AttributeKeyRollover))
 	require.Equal(t, "1", eventAttributeValue(t, event, AttributeKeyDescendantDepth))
 	require.Equal(t, "1", eventAttributeValue(t, event, AttributeKeyUniquePoolsCount))
 	require.Equal(t, "10000", eventAttributeValue(t, event, AttributeKeyUniqueStakeBps))

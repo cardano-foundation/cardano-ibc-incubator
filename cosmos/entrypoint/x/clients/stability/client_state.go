@@ -109,46 +109,22 @@ func (cs ClientState) Validate() error {
 	if cs.HeuristicParams.DepthWeightBps+cs.HeuristicParams.PoolsWeightBps+cs.HeuristicParams.StakeWeightBps != 10_000 {
 		return errorsmod.Wrapf(ErrInvalidHeuristicParams, "heuristic weights must sum to 10000 bps")
 	}
-	if len(cs.EpochStakeDistribution) == 0 {
-		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch stake distribution must not be empty")
-	}
-	if len(cs.EpochNonce) != 32 {
-		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch nonce must be 32 bytes")
-	}
-	if cs.SlotsPerKesPeriod == 0 {
-		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "slots per KES period must be greater than zero")
-	}
-	if cs.CurrentEpochEndSlotExclusive <= cs.CurrentEpochStartSlot {
-		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "current epoch slot bounds must be increasing")
-	}
 	if cs.SystemStartUnixNs == 0 {
 		return errorsmod.Wrapf(ErrInvalidTimestamp, "system_start_unix_ns must be greater than zero")
 	}
 	if cs.SlotLengthNs == 0 {
 		return errorsmod.Wrapf(ErrInvalidTimestamp, "slot_length_ns must be greater than zero")
 	}
-	totalStake := uint64(0)
-	seenPools := make(map[string]struct{}, len(cs.EpochStakeDistribution))
-	for _, entry := range cs.EpochStakeDistribution {
-		if strings.TrimSpace(entry.PoolId) == "" {
-			return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch stake distribution pool id must not be empty")
-		}
-		if len(entry.VrfKeyHash) != 32 {
-			return errorsmod.Wrapf(
-				ErrInvalidCurrentEpoch,
-				"epoch stake distribution vrf_key_hash for pool %s must be 32 bytes",
-				entry.PoolId,
-			)
-		}
-		poolKey := strings.ToLower(entry.PoolId)
-		if _, exists := seenPools[poolKey]; exists {
-			return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "duplicate epoch stake distribution pool id %s", entry.PoolId)
-		}
-		seenPools[poolKey] = struct{}{}
-		totalStake += entry.Stake
+
+	contexts, err := cs.normalizedEpochContexts()
+	if err != nil {
+		return err
 	}
-	if totalStake == 0 {
-		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch stake distribution must have positive total stake")
+	if len(contexts) == 0 {
+		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "at least one epoch context must be present")
+	}
+	if epochContextByEpoch(contexts, cs.CurrentEpoch) == nil {
+		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "missing epoch context for current epoch %d", cs.CurrentEpoch)
 	}
 	return nil
 }
@@ -161,6 +137,7 @@ func (cs ClientState) ZeroCustomFields() exported.ClientState {
 		HostStateNftPolicyId:         cs.HostStateNftPolicyId,
 		HostStateNftTokenName:        cs.HostStateNftTokenName,
 		HeuristicParams:              cs.HeuristicParams,
+		EpochContexts:                cloneEpochContexts(cs.EpochContexts),
 		EpochStakeDistribution:       cs.EpochStakeDistribution,
 		EpochNonce:                   bytes.Clone(cs.EpochNonce),
 		SlotsPerKesPeriod:            cs.SlotsPerKesPeriod,

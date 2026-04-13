@@ -50,12 +50,18 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 		zeroHeight := ZeroHeight()
 		cs.FrozenHeight = zeroHeight
 	}
+	contexts, err := substituteClientState.normalizedEpochContexts()
+	if err != nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
+	}
 	setConsensusState(subjectClientStore, cdc, consensusState, height)
 	setConsensusMetadataWithValues(subjectClientStore, height, processedHeight, processedTime)
 	cs.LatestHeight = substituteClientState.LatestHeight
-	cs.CurrentEpoch = substituteClientState.CurrentEpoch
 	cs.ChainId = substituteClientState.ChainId
 	cs.TrustingPeriod = substituteClientState.TrustingPeriod
+	if err := syncLegacyEpochContextFields(&cs, contexts, substituteClientState.CurrentEpoch); err != nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
+	}
 	setClientState(subjectClientStore, cdc, &cs)
 	return nil
 }

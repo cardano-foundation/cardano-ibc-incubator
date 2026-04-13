@@ -19,11 +19,6 @@ type ProofContextDeps = {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export function isCurrentEpochOnlyStabilityLimitation(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.includes('stake-weighted stability currently supports only current-epoch anchors');
-}
-
 function isMissingCurrentLiveHostStateEvidence(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes('Historical tx evidence unavailable for current live HostState tx');
@@ -160,40 +155,14 @@ async function resolveStabilityAcceptedProofHeightForCurrentRoot({
       });
       return stabilityEvidence.anchorHeight;
     } catch (error) {
-      if (isCurrentEpochOnlyStabilityLimitation(error)) {
-        try {
-          const liveHostStateTxHeight = await resolveCurrentLiveHostStateTxHeight({
-            lucidService,
-            historyService,
-          });
-          logger.warn(
-            `[${context}] Current live HostState root was created in a prior epoch; reusing its tx height ${liveHostStateTxHeight.toString()} for proof serving until a new HostState root is created`,
-          );
-          return liveHostStateTxHeight;
-        } catch (heightError) {
-          if (attempt + 1 < maxAttempts && isMissingCurrentLiveHostStateEvidence(heightError)) {
-            logger.warn(
-              `[${context}] ${heightError.message}; waiting for Yaci history to catch up before serving proofs`,
-            );
-            await sleep(delayMs);
-            continue;
-          }
-          throw heightError;
-        }
-      }
-
       if (attempt + 1 < maxAttempts && isMissingCurrentLiveHostStateEvidence(error)) {
-        logger.warn(
-          `[${context}] ${error.message}; waiting for Yaci history to catch up before serving proofs`,
-        );
+        logger.warn(`[${context}] ${error.message}; waiting for Yaci history to catch up before serving proofs`);
         await sleep(delayMs);
         continue;
       }
 
       if (attempt + 1 < maxAttempts) {
-        logger.warn(
-          `[${context}] ${error.message}; waiting for more stability before serving proofs`,
-        );
+        logger.warn(`[${context}] ${error.message}; waiting for more stability before serving proofs`);
         await sleep(delayMs);
         continue;
       }
