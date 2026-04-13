@@ -1,0 +1,27 @@
+# Hermes chain block for local Stellar devnet.
+#
+# This block is inserted into ~/.hermes/config.toml by `caribic start stellar`.
+# Full relay capability requires Hermes fork branch `feat/stellar-integration`
+# to be built and linked as relayer/target/release/hermes.
+#
+# Network passphrase:
+#   Standalone devnet (stellar/quickstart --local): "Standalone Network ; February 2017"
+#   Testnet (Soroban testnet):                      "Test SDF Network ; September 2015"
+#
+# The ibc_contract_id must be filled in after the IBC Soroban contract is deployed.
+
+[[chains]]
+type = 'Stellar'
+id = 'stellar-local'
+rpc_url = 'http://127.0.0.1:8000/soroban/rpc'
+network_passphrase = 'Standalone Network ; February 2017'
+ibc_contract_id = 'C000000000000000000000000000000000000000000000000000000000000000'
+key_name = 'stellar-relayer'
+key_store_type = 'Test'
+max_block_time = '10s'
+clock_drift = '5s'
+event_poll_interval = '3s'
+
+[chains.packet_filter]
+policy = 'allow'
+list = [['transfer', '*']]

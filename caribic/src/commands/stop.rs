@@ -43,6 +43,7 @@ pub fn run_stop(
             stop_all_managed_optional_chain_networks(project_root_path, "osmosis")?;
             stop_all_managed_optional_chain_networks(project_root_path, "cheqd")?;
             stop_all_managed_optional_chain_networks(project_root_path, "injective")?;
+            stop_all_managed_optional_chain_networks(project_root_path, "stellar")?;
             bridge_down(project_root_path);
             network_down(project_root_path);
             logger::log("\nAll services stopped successfully");
@@ -70,6 +71,7 @@ pub fn run_stop(
             stop_all_managed_optional_chain_networks(project_root_path, "osmosis")?;
             stop_all_managed_optional_chain_networks(project_root_path, "cheqd")?;
             stop_all_managed_optional_chain_networks(project_root_path, "injective")?;
+            stop_all_managed_optional_chain_networks(project_root_path, "stellar")?;
             logger::log("\nDemo services stopped successfully");
         }
         Some(StopTarget::Gateway) => {
@@ -92,7 +94,10 @@ pub fn run_stop(
                 );
             }
         }
-        Some(StopTarget::Osmosis) | Some(StopTarget::Cheqd) | Some(StopTarget::Injective) => {
+        Some(StopTarget::Osmosis)
+        | Some(StopTarget::Cheqd)
+        | Some(StopTarget::Injective)
+        | Some(StopTarget::Stellar) => {
             unreachable!("optional chain aliases return earlier");
         }
     }
@@ -154,6 +159,7 @@ fn resolve_optional_chain_alias(target: Option<&StopTarget>) -> Option<&'static 
         Some(StopTarget::Osmosis) => Some("osmosis"),
         Some(StopTarget::Cheqd) => Some("cheqd"),
         Some(StopTarget::Injective) => Some("injective"),
+        Some(StopTarget::Stellar) => Some("stellar"),
         _ => None,
     }
 }

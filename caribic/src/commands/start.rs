@@ -759,6 +759,7 @@ fn resolve_optional_chain_alias(target: Option<&StartTarget>) -> Option<&'static
         Some(StartTarget::Osmosis) => Some("osmosis"),
         Some(StartTarget::Cheqd) => Some("cheqd"),
         Some(StartTarget::Injective) => Some("injective"),
+        Some(StartTarget::Stellar) => Some("stellar"),
         _ => None,
     }
 }

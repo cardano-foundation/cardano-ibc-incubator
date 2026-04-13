@@ -9,10 +9,12 @@ pub(crate) mod cosmos_node;
 pub(crate) mod hermes_support;
 pub mod injective;
 pub mod osmosis;
+pub mod stellar;
 
 pub use cheqd::CHEQD_CHAIN_ADAPTER;
 pub use injective::INJECTIVE_CHAIN_ADAPTER;
 pub use osmosis::OSMOSIS_CHAIN_ADAPTER;
+pub use stellar::STELLAR_CHAIN_ADAPTER;
 
 pub type ChainFlags = HashMap<String, String>;
 
@@ -148,6 +150,7 @@ pub fn registered_chain_adapters() -> Vec<&'static dyn ChainAdapter> {
         &OSMOSIS_CHAIN_ADAPTER,
         &CHEQD_CHAIN_ADAPTER,
         &INJECTIVE_CHAIN_ADAPTER,
+        &STELLAR_CHAIN_ADAPTER,
     ]
 }
 

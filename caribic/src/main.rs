@@ -43,6 +43,8 @@ enum StartTarget {
     Cheqd,
     /// Starts the Injective optional chain (network selected via --network)
     Injective,
+    /// Starts the Stellar optional chain (local Soroban devnet via Docker quickstart)
+    Stellar,
     /// Starts only the Gateway service
     Gateway,
     /// Starts only the Hermes relayer
@@ -67,6 +69,8 @@ enum StopTarget {
     Cheqd,
     /// Stops the Injective optional chain (network selected via --network)
     Injective,
+    /// Stops the Stellar optional chain
+    Stellar,
     /// Stops the demo services
     Demo,
     /// Stops only the Gateway service
@@ -111,7 +115,7 @@ enum Commands {
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, entrypoint, osmosis, cheqd, injective, gateway, relayer, mithril
+    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, entrypoint, osmosis, cheqd, injective, stellar, gateway, relayer, mithril
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
@@ -128,7 +132,7 @@ enum Commands {
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
     },
-    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, entrypoint, osmosis, cheqd, injective, demo, gateway, relayer, mithril
+    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, entrypoint, osmosis, cheqd, injective, stellar, demo, gateway, relayer, mithril
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
