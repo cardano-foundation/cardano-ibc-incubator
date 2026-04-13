@@ -278,8 +278,9 @@ async fn run_osmosis_token_swap_demo(
                 .ok_or_else(|| "ERROR: Invalid setup_crosschain_swaps.sh path".to_string())?;
 
             // First stage script wires Osmosis-side contracts and creates the incoming routing path
-            // for Cardano vouchers. We parse its stdout to recover the deployed contract address
-            // and the Osmosis-side swap receiver needed by the final swap trigger script.
+            // for Cardano vouchers. We parse its stdout to recover the deployed contract address.
+            // The second-stage swap receiver is derived locally from the Entrypoint Hermes key and
+            // the known Osmosis->Entrypoint channel so it always matches the deployed registry.
             let mut setup_env = vec![
                 ("CARIBIC_CLEAR_SWAP_PACKETS", "true"),
                 (
@@ -344,16 +345,17 @@ async fn run_osmosis_token_swap_demo(
                         )
                         .unwrap_err()
                     })?;
-            let swap_receiver = parse_setup_output_value(setup_output.as_str(), "deployer address ")
-                .or(preconfigured_swap_receiver)
-                .ok_or_else(|| {
-                    fail_with_osmosis_cleanup(
-                        osmosis_dir.as_path(),
-                        network,
-                        "ERROR: Could not determine Osmosis swap receiver address. Set OSMOSIS_SWAP_RECEIVER or ensure setup script prints deployer address.",
-                    )
-                    .unwrap_err()
-                })?;
+            let swap_receiver = match preconfigured_swap_receiver {
+                Some(receiver) => receiver,
+                None => resolve_entrypoint_swap_receiver(
+                    project_root_path,
+                    entrypoint_osmosis_channel_pair.b_channel_id.as_str(),
+                )
+                .map_err(|error| {
+                    fail_with_osmosis_cleanup(osmosis_dir.as_path(), network, error.as_str())
+                        .unwrap_err()
+                })?,
+            };
             (crosschain_swaps_address, swap_receiver)
         };
 
@@ -1754,6 +1756,42 @@ fn parse_setup_output_value(output: &str, prefix: &str) -> Option<String> {
         .filter_map(|line| line.trim().strip_prefix(prefix))
         .map(|value| value.trim().to_string())
         .find(|value| !value.is_empty())
+}
+
+fn resolve_entrypoint_swap_receiver(
+    project_root: &Path,
+    osmosis_entrypoint_channel_id: &str,
+) -> Result<String, String> {
+    let hermes_binary = project_root.join("relayer/target/release/hermes");
+    let output = Command::new(&hermes_binary)
+        .args(["keys", "list", "--chain", entrypoint_chain_id().as_str()])
+        .output()
+        .map_err(|error| format!("ERROR: Failed to query Hermes entrypoint keys: {}", error))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "ERROR: Hermes keys list failed for entrypoint:\n{}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for token in stdout.split_whitespace() {
+        let cleaned =
+            token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-');
+
+        if cleaned.starts_with("cosmos1") {
+            return Ok(format!(
+                "ibc:{}/{}",
+                osmosis_entrypoint_channel_id, cleaned
+            ));
+        }
+    }
+
+    Err(format!(
+        "ERROR: Could not parse Entrypoint receiver from Hermes keys list output:\n{}",
+        stdout.trim()
+    ))
 }
 
 /// Logs an error, stops local Osmosis demo services when relevant, and returns the original error message.

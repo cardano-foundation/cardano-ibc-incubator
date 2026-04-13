@@ -24,6 +24,11 @@ export function isCurrentEpochOnlyStabilityLimitation(error: unknown): boolean {
   return message.includes('stake-weighted stability currently supports only current-epoch anchors');
 }
 
+function isMissingCurrentLiveHostStateEvidence(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('Historical tx evidence unavailable for current live HostState tx');
+}
+
 export async function resolveCurrentLiveHostStateTxHeight({
   lucidService,
   historyService,
@@ -143,10 +148,6 @@ async function resolveStabilityAcceptedProofHeightForCurrentRoot({
   delayMs = 1500,
 }: Omit<ProofContextDeps, 'mithrilService' | 'lightClientMode'>): Promise<bigint> {
   const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
-  const liveHostStateTxHeight = await resolveCurrentLiveHostStateTxHeight({
-    lucidService,
-    historyService,
-  });
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
@@ -160,10 +161,33 @@ async function resolveStabilityAcceptedProofHeightForCurrentRoot({
       return stabilityEvidence.anchorHeight;
     } catch (error) {
       if (isCurrentEpochOnlyStabilityLimitation(error)) {
+        try {
+          const liveHostStateTxHeight = await resolveCurrentLiveHostStateTxHeight({
+            lucidService,
+            historyService,
+          });
+          logger.warn(
+            `[${context}] Current live HostState root was created in a prior epoch; reusing its tx height ${liveHostStateTxHeight.toString()} for proof serving until a new HostState root is created`,
+          );
+          return liveHostStateTxHeight;
+        } catch (heightError) {
+          if (attempt + 1 < maxAttempts && isMissingCurrentLiveHostStateEvidence(heightError)) {
+            logger.warn(
+              `[${context}] ${heightError.message}; waiting for Yaci history to catch up before serving proofs`,
+            );
+            await sleep(delayMs);
+            continue;
+          }
+          throw heightError;
+        }
+      }
+
+      if (attempt + 1 < maxAttempts && isMissingCurrentLiveHostStateEvidence(error)) {
         logger.warn(
-          `[${context}] Current live HostState root was created in a prior epoch; reusing its tx height ${liveHostStateTxHeight.toString()} for proof serving until a new HostState root is created`,
+          `[${context}] ${error.message}; waiting for Yaci history to catch up before serving proofs`,
         );
-        return liveHostStateTxHeight;
+        await sleep(delayMs);
+        continue;
       }
 
       if (attempt + 1 < maxAttempts) {
