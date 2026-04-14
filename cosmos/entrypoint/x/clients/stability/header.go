@@ -11,7 +11,10 @@ import (
 var _ exported.ClientMessage = (*StabilityHeader)(nil)
 
 func (h StabilityHeader) ConsensusState() *ConsensusState {
-	consState := &ConsensusState{
+	// This is only an interface placeholder. The verified consensus state for
+	// stability updates is derived inside the authenticated update path, not from
+	// these untrusted relayed header fields.
+	return &ConsensusState{
 		Timestamp:         h.GetTimestamp(),
 		IbcStateRoot:      make([]byte, 32),
 		AcceptedBlockHash: h.AnchorBlock.Hash,
@@ -20,12 +23,6 @@ func (h StabilityHeader) ConsensusState() *ConsensusState {
 		UniqueStakeBps:    0,
 		SecurityScoreBps:  0,
 	}
-
-	if root, err := (ClientState{}).ExtractIbcStateRootFromHostStateTx(&h); err == nil {
-		consState.IbcStateRoot = root
-	}
-
-	return consState
 }
 
 func (StabilityHeader) ClientType() string {

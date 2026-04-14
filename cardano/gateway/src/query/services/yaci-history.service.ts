@@ -5,11 +5,7 @@ import { EntityManager } from 'typeorm';
 import { bech32 } from 'bech32';
 import { GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 import { CLIENT_PREFIX } from '../../constant';
-import {
-  queryCurrentEpochStakeDistribution,
-  queryCurrentEpochVerificationData,
-  queryEpochContextAtPoint,
-} from '../../shared/helpers/ogmios';
+import { queryEpochContextAtPoint } from '../../shared/helpers/ogmios';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { UtxoDto } from '../dtos/utxo.dto';
 import { TxDto } from '../dtos/tx.dto';
@@ -18,7 +14,6 @@ import {
   HistoryEpochContextAtBlock,
   HistoryEpochVerificationContext,
   HistoryService,
-  HistoryStakeDistributionEntry,
   HistoryTxEvidence,
   HistoryTxRedeemer,
 } from './history.service';
@@ -72,12 +67,6 @@ type HistoryBlockRow = {
   epoch: string | number;
   block_time: string | Date;
   slot_leader?: string | null;
-};
-
-type EpochStakeRow = {
-  pool_id: string | null;
-  active_stake: string | number;
-  vrf_key_hash?: string | null;
 };
 
 type EpochStartSlotRow = {
@@ -238,118 +227,6 @@ export class YaciHistoryService implements HistoryService {
     `;
     const rows = await this.entityManager.query(query, [anchorHeight.toString(), limit]);
     return rows.map((row: HistoryBlockRow) => this.mapHistoryBlockRow(row));
-  }
-
-  async findEpochStakeDistribution(epoch: number): Promise<HistoryStakeDistributionEntry[]> {
-    let historyEntries: HistoryStakeDistributionEntry[] = [];
-    const queries = [
-      `
-        SELECT
-          esd.pool_id,
-          SUM(esd.amount) AS active_stake,
-          pr.vrf_key AS vrf_key_hash
-        FROM epoch_stake_default esd
-        LEFT JOIN LATERAL (
-          SELECT vrf_key
-          FROM pool_registration
-          WHERE pool_id = esd.pool_id
-            AND epoch <= $1
-          ORDER BY epoch DESC, slot DESC
-          LIMIT 1
-        ) pr ON true
-        WHERE esd.active_epoch = $1
-          AND esd.pool_id IS NOT NULL
-        GROUP BY esd.pool_id, pr.vrf_key
-        ORDER BY SUM(esd.amount) DESC
-      `,
-      `
-        SELECT
-          esd.pool_id,
-          SUM(esd.amount) AS active_stake,
-          pr.vrf_key AS vrf_key_hash
-        FROM epoch_stake_default esd
-        LEFT JOIN LATERAL (
-          SELECT vrf_key
-          FROM pool_registration
-          WHERE pool_id = esd.pool_id
-            AND epoch <= $1
-          ORDER BY epoch DESC, slot DESC
-          LIMIT 1
-        ) pr ON true
-        WHERE esd.epoch = $1
-          AND esd.pool_id IS NOT NULL
-        GROUP BY esd.pool_id, pr.vrf_key
-        ORDER BY SUM(esd.amount) DESC
-      `,
-    ];
-
-    for (const query of queries) {
-      const rows = await this.entityManager.query(query, [epoch]);
-      if (rows.length > 0) {
-        historyEntries = rows
-          .filter((row: EpochStakeRow) => !!row.pool_id)
-          .map((row: EpochStakeRow) => ({
-            poolId: normalizePoolId(row.pool_id!),
-            stake: BigInt(row.active_stake),
-            vrfKeyHash: normalizeHex(row.vrf_key_hash),
-          }));
-        if (historyEntries.length > 0 && historyEntries.every((entry) => /^[0-9a-f]{64}$/.test(entry.vrfKeyHash))) {
-          return historyEntries;
-        }
-        break;
-      }
-    }
-
-    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
-    if (!ogmiosEndpoint) {
-      return historyEntries;
-    }
-
-    const { currentEpoch } = await queryCurrentEpochVerificationData(
-      ogmiosEndpoint,
-      this.configService.get<string>('cardanoEpochNonceGenesis'),
-    );
-    if (epoch !== currentEpoch) {
-      return historyEntries;
-    }
-
-    const ogmiosEntries = await queryCurrentEpochStakeDistribution(ogmiosEndpoint);
-    return ogmiosEntries.length > 0 ? ogmiosEntries : historyEntries;
-  }
-
-  async findEpochVerificationContext(epoch: number): Promise<HistoryEpochVerificationContext | null> {
-    const slotBounds = await this.findEpochSlotBounds(epoch);
-    if (!slotBounds) {
-      return null;
-    }
-    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
-    if (!ogmiosEndpoint) {
-      return null;
-    }
-    const { currentEpoch, epochNonce, slotsPerKesPeriod } = await queryCurrentEpochVerificationData(
-      ogmiosEndpoint,
-      this.configService.get<string>('cardanoEpochNonceGenesis'),
-    );
-
-    if (epoch !== currentEpoch) {
-      return {
-        epochNonce: '',
-        slotsPerKesPeriod: 0,
-        currentEpochStartSlot: slotBounds.currentEpochStartSlot,
-        currentEpochEndSlotExclusive: slotBounds.currentEpochEndSlotExclusive,
-      };
-    }
-
-    if (!epochNonce || slotsPerKesPeriod <= 0) {
-      return null;
-    }
-
-    return {
-      epochNonce,
-      slotsPerKesPeriod,
-      currentEpochStartSlot: slotBounds.currentEpochStartSlot,
-      currentEpochEndSlotExclusive: slotBounds.currentEpochEndSlotExclusive,
-    };
   }
 
   async findEpochContextAtBlock(block: HistoryBlock): Promise<HistoryEpochContextAtBlock | null> {

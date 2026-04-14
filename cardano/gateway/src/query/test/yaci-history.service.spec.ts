@@ -1,20 +1,26 @@
 import { ConfigService } from '@nestjs/config';
 import { EntityManager } from 'typeorm';
-import {
-  queryCurrentEpochStakeDistribution,
-  queryCurrentEpochVerificationData,
-} from '../../shared/helpers/ogmios';
+import { queryEpochContextAtPoint } from '../../shared/helpers/ogmios';
 import { YaciHistoryService } from '../services/yaci-history.service';
 
 jest.mock('../../shared/helpers/ogmios', () => ({
-  queryCurrentEpochVerificationData: jest.fn(),
-  queryCurrentEpochStakeDistribution: jest.fn(),
+  queryEpochContextAtPoint: jest.fn(),
 }));
 
 describe('YaciHistoryService', () => {
   let service: YaciHistoryService;
   let configServiceMock: { get: jest.Mock };
   let entityManagerMock: { query: jest.Mock };
+
+  const block = {
+    height: 100,
+    hash: 'ab'.repeat(32),
+    prevHash: 'cd'.repeat(32),
+    slotNo: 1100n,
+    epochNo: 7,
+    timestampUnixNs: 1_000_000_000n,
+    slotLeader: 'pool1anchorpool',
+  };
 
   beforeEach(() => {
     configServiceMock = {
@@ -47,81 +53,92 @@ describe('YaciHistoryService', () => {
     jest.resetAllMocks();
   });
 
-  it('sources epoch nonce and slots-per-kes-period from Ogmios local state', async () => {
+  it('sources a full epoch context from Ogmios local state at the block point', async () => {
     entityManagerMock.query.mockResolvedValueOnce([{ start_slot: '1000' }]).mockResolvedValueOnce([{ start_slot: '1200' }]);
-    (queryCurrentEpochVerificationData as jest.Mock).mockResolvedValue({
+    (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
       currentEpoch: 7,
       epochNonce: '11'.repeat(32),
       slotsPerKesPeriod: 129600,
+      stakeDistribution: [
+        {
+          poolId: 'pool1ogmiospool',
+          stake: 900n,
+          vrfKeyHash: '0x' + 'AA'.repeat(32),
+        },
+      ],
     });
 
-    await expect(service.findEpochVerificationContext(7)).resolves.toEqual({
-      epochNonce: '11'.repeat(32),
-      slotsPerKesPeriod: 129600,
-      currentEpochStartSlot: 1000n,
-      currentEpochEndSlotExclusive: 1200n,
+    await expect(service.findEpochContextAtBlock(block)).resolves.toEqual({
+      epoch: 7,
+      stakeDistribution: [
+        {
+          poolId: 'pool1ogmiospool',
+          stake: 900n,
+          vrfKeyHash: 'aa'.repeat(32),
+        },
+      ],
+      verificationContext: {
+        epochNonce: '11'.repeat(32),
+        slotsPerKesPeriod: 129600,
+        currentEpochStartSlot: 1000n,
+        currentEpochEndSlotExclusive: 1200n,
+      },
     });
 
-    expect(queryCurrentEpochVerificationData).toHaveBeenCalledWith('ws://ogmios.local', 'aa'.repeat(32));
+    expect(queryEpochContextAtPoint).toHaveBeenCalledWith(
+      'ws://ogmios.local',
+      {
+        slot: 1100n,
+        hash: 'ab'.repeat(32),
+      },
+      'aa'.repeat(32),
+    );
   });
 
-  it('returns historical slot bounds without nonce/KES data for non-current epochs', async () => {
+  it('rejects acquired epoch context when Ogmios resolves a different epoch than the block history', async () => {
     entityManagerMock.query.mockResolvedValueOnce([{ start_slot: '1000' }]).mockResolvedValueOnce([{ start_slot: '1200' }]);
-    (queryCurrentEpochVerificationData as jest.Mock).mockResolvedValue({
+    (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
       currentEpoch: 8,
       epochNonce: '22'.repeat(32),
       slotsPerKesPeriod: 129600,
+      stakeDistribution: [],
     });
 
-    await expect(service.findEpochVerificationContext(7)).resolves.toEqual({
-      epochNonce: '',
-      slotsPerKesPeriod: 0,
-      currentEpochStartSlot: 1000n,
-      currentEpochEndSlotExclusive: 1200n,
-    });
+    await expect(service.findEpochContextAtBlock(block)).rejects.toThrow(
+      'Ogmios acquired epoch 8 at block 100, expected epoch 7',
+    );
   });
 
-  it('ignores negative sentinel slots when deriving epoch bounds', async () => {
+  it('falls back to configured epoch length when the next epoch start slot is unavailable', async () => {
     entityManagerMock.query.mockResolvedValueOnce([{ start_slot: '0' }]).mockResolvedValueOnce([{ start_slot: null }]);
-    (queryCurrentEpochVerificationData as jest.Mock).mockResolvedValue({
-      currentEpoch: 0,
-      epochNonce: '33'.repeat(32),
-      slotsPerKesPeriod: 129600,
-    });
-
-    await expect(service.findEpochVerificationContext(0)).resolves.toEqual({
-      epochNonce: '33'.repeat(32),
-      slotsPerKesPeriod: 129600,
-      currentEpochStartSlot: 0n,
-      currentEpochEndSlotExclusive: 432000n,
-    });
-  });
-
-  it('falls back to Ogmios stake distribution when history rows miss VRF hashes', async () => {
-    entityManagerMock.query.mockResolvedValueOnce([
-      { pool_id: 'pool1historypool', active_stake: '900', vrf_key_hash: null },
-    ]);
-    (queryCurrentEpochVerificationData as jest.Mock).mockResolvedValue({
+    (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
       currentEpoch: 7,
-      epochNonce: '44'.repeat(32),
+      epochNonce: '33'.repeat(32),
       slotsPerKesPeriod: 129600,
+      stakeDistribution: [
+        {
+          poolId: 'pool1fallbackpool',
+          stake: 1000n,
+          vrfKeyHash: 'bb'.repeat(32),
+        },
+      ],
     });
-    (queryCurrentEpochStakeDistribution as jest.Mock).mockResolvedValue([
-      {
-        poolId: 'pool1ogmiospool',
-        stake: 900n,
-        vrfKeyHash: 'aa'.repeat(32),
-      },
-    ]);
 
-    await expect(service.findEpochStakeDistribution(7)).resolves.toEqual([
-      {
-        poolId: 'pool1ogmiospool',
-        stake: 900n,
-        vrfKeyHash: 'aa'.repeat(32),
+    await expect(service.findEpochContextAtBlock({ ...block, slotNo: 1n })).resolves.toEqual({
+      epoch: 7,
+      stakeDistribution: [
+        {
+          poolId: 'pool1fallbackpool',
+          stake: 1000n,
+          vrfKeyHash: 'bb'.repeat(32),
+        },
+      ],
+      verificationContext: {
+        epochNonce: '33'.repeat(32),
+        slotsPerKesPeriod: 129600,
+        currentEpochStartSlot: 0n,
+        currentEpochEndSlotExclusive: 432000n,
       },
-    ]);
-
-    expect(queryCurrentEpochStakeDistribution).toHaveBeenCalledWith('ws://ogmios.local');
+    });
   });
 });

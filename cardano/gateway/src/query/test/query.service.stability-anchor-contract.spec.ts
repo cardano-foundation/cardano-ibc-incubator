@@ -15,8 +15,6 @@ describe('QueryService stability anchor contract', () => {
     findBlockByHeight: jest.Mock;
     findDescendantBlocks: jest.Mock;
     findEpochContextAtBlock: jest.Mock;
-    findEpochStakeDistribution: jest.Mock;
-    findEpochVerificationContext: jest.Mock;
     findBridgeBlocks: jest.Mock;
     findHostStateUtxoAtOrBeforeBlockNo: jest.Mock;
     findTransactionEvidenceByHash: jest.Mock;
@@ -145,19 +143,6 @@ describe('QueryService stability anchor contract', () => {
           currentEpochStartSlot: 900n,
           currentEpochEndSlotExclusive: 2000n,
         },
-      }),
-      findEpochStakeDistribution: jest.fn().mockResolvedValue([
-        { poolId: 'pool-a', stake: 200n, vrfKeyHash: 'aa'.repeat(32) },
-        { poolId: 'pool-b', stake: 200n, vrfKeyHash: 'bb'.repeat(32) },
-        { poolId: 'pool-c', stake: 200n, vrfKeyHash: 'cc'.repeat(32) },
-        { poolId: 'pool-d', stake: 200n, vrfKeyHash: 'dd'.repeat(32) },
-        { poolId: 'pool-e', stake: 200n, vrfKeyHash: 'ee'.repeat(32) },
-      ]),
-      findEpochVerificationContext: jest.fn().mockResolvedValue({
-        epochNonce: '11'.repeat(32),
-        slotsPerKesPeriod: 129600,
-        currentEpochStartSlot: 900n,
-        currentEpochEndSlotExclusive: 2000n,
       }),
       findBridgeBlocks: jest.fn().mockResolvedValue([
         {

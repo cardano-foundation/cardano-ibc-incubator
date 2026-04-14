@@ -1,7 +1,6 @@
 package stability
 
 import (
-	"bytes"
 	"fmt"
 	"math"
 	"strings"
@@ -131,20 +130,14 @@ func (cs ClientState) Validate() error {
 
 func (cs ClientState) ZeroCustomFields() exported.ClientState {
 	return &ClientState{
-		ChainId:                      cs.ChainId,
-		LatestHeight:                 cs.LatestHeight,
-		UpgradePath:                  cs.UpgradePath,
-		HostStateNftPolicyId:         cs.HostStateNftPolicyId,
-		HostStateNftTokenName:        cs.HostStateNftTokenName,
-		HeuristicParams:              cs.HeuristicParams,
-		EpochContexts:                cloneEpochContexts(cs.EpochContexts),
-		EpochStakeDistribution:       cs.EpochStakeDistribution,
-		EpochNonce:                   bytes.Clone(cs.EpochNonce),
-		SlotsPerKesPeriod:            cs.SlotsPerKesPeriod,
-		CurrentEpochStartSlot:        cs.CurrentEpochStartSlot,
-		CurrentEpochEndSlotExclusive: cs.CurrentEpochEndSlotExclusive,
-		SystemStartUnixNs:            cs.SystemStartUnixNs,
-		SlotLengthNs:                 cs.SlotLengthNs,
+		ChainId:               cs.ChainId,
+		LatestHeight:          cs.LatestHeight,
+		UpgradePath:           append([]string(nil), cs.UpgradePath...),
+		HostStateNftPolicyId:  append([]byte(nil), cs.HostStateNftPolicyId...),
+		HostStateNftTokenName: append([]byte(nil), cs.HostStateNftTokenName...),
+		HeuristicParams:       cloneHeuristicParams(cs.HeuristicParams),
+		SystemStartUnixNs:     cs.SystemStartUnixNs,
+		SlotLengthNs:          cs.SlotLengthNs,
 	}
 }
 

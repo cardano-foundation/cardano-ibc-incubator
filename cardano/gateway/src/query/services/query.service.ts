@@ -443,17 +443,13 @@ export class QueryService {
       upgrade_path: [],
       host_state_nft_policy_id: Buffer.from(this.configService.get('deployment').hostStateNFT.policyId, 'hex'),
       host_state_nft_token_name: Buffer.from(this.configService.get('deployment').hostStateNFT.name, 'hex'),
-      epoch_stake_distribution: stabilityEvidence.epochStakeDistribution.map(
-        (entry): StakeDistributionEntry => ({
-          pool_id: entry.poolId,
-          stake: entry.stake,
-          vrf_key_hash: Buffer.from(entry.vrfKeyHash, 'hex'),
-        }),
-      ),
-      epoch_nonce: Buffer.from(stabilityEvidence.epochVerificationContext.epochNonce, 'hex'),
-      slots_per_kes_period: BigInt(stabilityEvidence.epochVerificationContext.slotsPerKesPeriod),
-      current_epoch_start_slot: stabilityEvidence.epochVerificationContext.currentEpochStartSlot,
-      current_epoch_end_slot_exclusive: stabilityEvidence.epochVerificationContext.currentEpochEndSlotExclusive,
+      // epoch_contexts is the canonical source of epoch verification data. Keep the
+      // legacy single-epoch mirrors empty in newly created client payloads.
+      epoch_stake_distribution: [],
+      epoch_nonce: new Uint8Array(),
+      slots_per_kes_period: 0n,
+      current_epoch_start_slot: 0n,
+      current_epoch_end_slot_exclusive: 0n,
       system_start_unix_ns: stabilitySlotTiming.systemStartUnixNs,
       slot_length_ns: stabilitySlotTiming.slotLengthNs,
       epoch_contexts: [
@@ -1559,6 +1555,15 @@ export class QueryService {
       requestedBlocks.map((block, index) => [block.height, blockWitnesses[index]]),
     );
 
+    const newEpochContext =
+      stabilityEvidence.anchorEpoch !== stabilityEvidence.trustedEpoch
+        ? this.toStabilityEpochContext(
+            Number(stabilityEvidence.anchorEpoch),
+            stabilityEvidence.epochStakeDistribution,
+            stabilityEvidence.epochVerificationContext,
+          )
+        : undefined;
+
     const stabilityHeader: StabilityHeader = {
       trusted_height: {
         revision_number: 0n,
@@ -1576,15 +1581,16 @@ export class QueryService {
       ),
       host_state_tx_hash: hostStateUtxo.txHash,
       host_state_tx_output_index: hostStateUtxo.outputIndex,
-      new_epoch_context:
-        stabilityEvidence.anchorEpoch !== stabilityEvidence.trustedEpoch
-          ? this.toStabilityEpochContext(
-              Number(stabilityEvidence.anchorEpoch),
-              stabilityEvidence.epochStakeDistribution,
-              stabilityEvidence.epochVerificationContext,
-            )
-          : undefined,
+      new_epoch_context: newEpochContext,
     };
+
+    if (newEpochContext) {
+      const newEpochContextBytes = StabilityEpochContext.encode(newEpochContext).finish().length;
+      const encodedHeaderBytes = StabilityHeader.encode(stabilityHeader).finish().length;
+      this.logger.debug(
+        `Stability rollover header includes new_epoch_context: trusted_epoch=${stabilityEvidence.trustedEpoch} accepted_epoch=${stabilityEvidence.anchorEpoch} pools=${newEpochContext.stake_distribution.length} new_epoch_context_bytes=${newEpochContextBytes} header_bytes=${encodedHeaderBytes}`,
+      );
+    }
 
     return {
       header: {

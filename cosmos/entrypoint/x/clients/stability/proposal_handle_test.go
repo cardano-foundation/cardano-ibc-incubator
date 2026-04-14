@@ -53,6 +53,27 @@ func TestIsMatchingClientStateRejectsStaticParameterMismatch(t *testing.T) {
 	require.False(t, IsMatchingClientState(*subject, *substitute))
 }
 
+func TestZeroCustomFieldsDropsEpochVerificationState(t *testing.T) {
+	clientState := newStabilityTestClientState()
+	clientState.EpochContexts = []*EpochContext{
+		makeRecoveryEpochContext(7, 0, 100, 0x07),
+		makeRecoveryEpochContext(8, 100, 200, 0x08),
+	}
+	require.NoError(t, syncLegacyEpochContextFields(clientState, clientState.EpochContexts, 8))
+
+	zeroed, ok := clientState.ZeroCustomFields().(*ClientState)
+	require.True(t, ok)
+	require.Nil(t, zeroed.EpochContexts)
+	require.Empty(t, zeroed.EpochStakeDistribution)
+	require.Empty(t, zeroed.EpochNonce)
+	require.Zero(t, zeroed.SlotsPerKesPeriod)
+	require.Zero(t, zeroed.CurrentEpochStartSlot)
+	require.Zero(t, zeroed.CurrentEpochEndSlotExclusive)
+	require.NotNil(t, zeroed.HeuristicParams)
+	require.Equal(t, clientState.SystemStartUnixNs, zeroed.SystemStartUnixNs)
+	require.Equal(t, clientState.SlotLengthNs, zeroed.SlotLengthNs)
+}
+
 func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T) {
 	cdc := newStabilityTestCodec()
 	ctx, subjectStore := newStabilityTestClientStore(t, "stability-subject")

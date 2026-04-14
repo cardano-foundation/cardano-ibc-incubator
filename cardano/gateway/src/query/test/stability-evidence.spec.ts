@@ -121,8 +121,6 @@ describe('stability-evidence', () => {
     findBridgeBlocks: jest.fn().mockResolvedValue(bridgeBlocks),
     findDescendantBlocks: jest.fn().mockResolvedValue(descendantBlocks),
     findEpochContextAtBlock: jest.fn().mockResolvedValue(anchorEpochContext),
-    findEpochStakeDistribution: jest.fn().mockResolvedValue(epochStakeDistribution),
-    findEpochVerificationContext: jest.fn().mockResolvedValue(epochVerificationContext),
     findTransactionEvidenceByHash: jest.fn().mockResolvedValue({
       txHash: 'deadbeef',
       blockNo: 100,
