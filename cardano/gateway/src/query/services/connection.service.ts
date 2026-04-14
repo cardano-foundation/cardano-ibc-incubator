@@ -30,7 +30,7 @@ import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { HostStateDatum } from '../../shared/types/host-state-datum';
 import { HISTORY_SERVICE, HistoryService } from './history.service';
-import { resolveCertifiedProofHeightForCurrentRoot } from './proof-context';
+import { resolveProofHeightForCurrentRoot } from './proof-context';
 
 @Injectable()
 export class ConnectionService {
@@ -61,12 +61,15 @@ export class ConnectionService {
 
   private async getQueryHeight(): Promise<bigint> {
     try {
-      const height = await resolveCertifiedProofHeightForCurrentRoot({
+      const height = await resolveProofHeightForCurrentRoot({
         logger: this.logger,
         lucidService: this.lucidService,
         mithrilService: this.mithrilService,
         historyService: this.historyService,
         context: 'queryConnection',
+        lightClientMode:
+          this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
+          'stake-weighted-stability',
       });
       return height > 0n ? height : 1n;
     } catch {
@@ -204,12 +207,14 @@ export class ConnectionService {
         utxo.datum!,
         this.lucidService.LucidImporter,
       );
-      const proofHeight = await resolveCertifiedProofHeightForCurrentRoot({
+      const proofHeight = await resolveProofHeightForCurrentRoot({
         logger: this.logger,
         lucidService: this.lucidService,
         mithrilService: this.mithrilService,
         historyService: this.historyService,
         context: 'queryConnection',
+        lightClientMode:
+          this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril',
       });
 
       await this.ensureTreeAligned();

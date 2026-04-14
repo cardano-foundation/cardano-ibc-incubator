@@ -227,46 +227,56 @@ function redeemerTagToType(CML: any, tag: number): string {
 
 function decodeTransactionEvidence(txCborHex: string): { txBodyCborHex: string; redeemers: ParsedTxRedeemer[] } {
   const normalizedTxCborHex = txCborHex.toLowerCase();
-  const transaction = CML.Transaction.from_cbor_hex(normalizedTxCborHex);
-  const txBodyCborHex = transaction.body().to_cbor_hex().toLowerCase();
-  const redeemers = transaction.witness_set().redeemers();
-  if (!redeemers) {
-    return { txBodyCborHex, redeemers: [] };
-  }
+  try {
+    const transaction = CML.Transaction.from_cbor_hex(normalizedTxCborHex);
+    const txBodyCborHex = transaction.body().to_cbor_hex().toLowerCase();
+    const redeemers = transaction.witness_set().redeemers();
+    if (!redeemers) {
+      return { txBodyCborHex, redeemers: [] };
+    }
 
-  const parsedRedeemers: ParsedTxRedeemer[] = [];
-  const redeemerMap = redeemers.as_map_redeemer_key_to_redeemer_val();
-  const keys = redeemerMap?.keys();
-  if (redeemerMap && keys) {
-    for (let index = 0; index < keys.len(); index += 1) {
-      const key = keys.get(index);
-      const value = redeemerMap.get(key);
-      if (!value) continue;
+    const parsedRedeemers: ParsedTxRedeemer[] = [];
+    const redeemerMap = redeemers.as_map_redeemer_key_to_redeemer_val();
+    const keys = redeemerMap?.keys();
+    if (redeemerMap && keys) {
+      for (let index = 0; index < keys.len(); index += 1) {
+        const key = keys.get(index);
+        const value = redeemerMap.get(key);
+        if (!value) continue;
+        parsedRedeemers.push({
+          type: redeemerTagToType(CML, key.tag()),
+          index: Number(key.index()),
+          data: value.data().to_cbor_hex().toLowerCase(),
+        });
+      }
+
+      return { txBodyCborHex, redeemers: parsedRedeemers };
+    }
+
+    const legacyRedeemers = redeemers.as_arr_legacy_redeemer();
+    if (!legacyRedeemers) {
+      return { txBodyCborHex, redeemers: [] };
+    }
+
+    for (let index = 0; index < legacyRedeemers.len(); index += 1) {
+      const redeemer = legacyRedeemers.get(index);
       parsedRedeemers.push({
-        type: redeemerTagToType(CML, key.tag()),
-        index: Number(key.index()),
-        data: value.data().to_cbor_hex().toLowerCase(),
+        type: redeemerTagToType(CML, redeemer.tag()),
+        index: Number(redeemer.index()),
+        data: redeemer.data().to_cbor_hex().toLowerCase(),
       });
     }
 
     return { txBodyCborHex, redeemers: parsedRedeemers };
+  } catch {
+    // Newer Yaci modes can expose transaction-body CBOR directly in transaction_cbor.
+    // Accept that shape so bridge history indexing can still progress; redeemers are unavailable.
+    const txBody = CML.TransactionBody.from_cbor_hex(normalizedTxCborHex);
+    return {
+      txBodyCborHex: txBody.to_cbor_hex().toLowerCase(),
+      redeemers: [],
+    };
   }
-
-  const legacyRedeemers = redeemers.as_arr_legacy_redeemer();
-  if (!legacyRedeemers) {
-    return { txBodyCborHex, redeemers: [] };
-  }
-
-  for (let index = 0; index < legacyRedeemers.len(); index += 1) {
-    const redeemer = legacyRedeemers.get(index);
-    parsedRedeemers.push({
-      type: redeemerTagToType(CML, redeemer.tag()),
-      index: Number(redeemer.index()),
-      data: redeemer.data().to_cbor_hex().toLowerCase(),
-    });
-  }
-
-  return { txBodyCborHex, redeemers: parsedRedeemers };
 }
 
 function buildBridgeUtxoRows(

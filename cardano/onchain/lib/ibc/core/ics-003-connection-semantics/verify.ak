@@ -5,9 +5,6 @@ use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/cometbft/protos/channel_pb
 use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
 use ibc/client/ics_007_tendermint_client/height.{Height}
-use ibc/client/mithril_client/protos/mithril_pb.{
-  AnyMithrilClientState, MithrilClientState,
-}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/params
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
@@ -53,7 +50,7 @@ pub fn verify_connection_state(
 pub fn verify_client_state(
   client_datum_state: ClientDatumState,
   connection: ConnectionEnd,
-  counterparty_client_state: MithrilClientState,
+  counterparty_client_state: ByteArray,
   proof: MerkleProof,
   proof_height: Height,
 ) -> Bool {
@@ -76,12 +73,7 @@ pub fn verify_client_state(
     0,
     proof,
     merkle_path,
-    mithril_pb.marshal_for_any_client_state(
-      AnyMithrilClientState {
-        type_url: "/ibc.lightclients.mithril.v1.ClientState",
-        value: counterparty_client_state,
-      },
-    ).2nd,
+    counterparty_client_state,
   )
 }
 

@@ -68,6 +68,7 @@ message QueryTransactionByHashResponse {
 }
 
 message QueryIBCHeaderRequest {
+  uint64 trusted_height = 1;
   uint64 height = 2;
 }
 

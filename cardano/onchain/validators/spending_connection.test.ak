@@ -346,9 +346,17 @@ test conn_open_ack_succeed() {
 
   let proof_client = MerkleProof { proofs: [] }
 
+  let counterparty_client_state_bz =
+    mithril_pb.marshal_for_any_client_state(
+      AnyMithrilClientState {
+        type_url: "/ibc.lightclients.mithril.v1.ClientState",
+        value: counterparty_client_state,
+      },
+    ).2nd
+
   let connection_redeemer: Redeemer =
     ConnOpenAck {
-      counterparty_client_state,
+      counterparty_client_state: counterparty_client_state_bz,
       proof_try,
       proof_client,
       proof_height,
@@ -399,14 +407,6 @@ test conn_open_ack_succeed() {
     connection_pb.marshal_for_connection_end(
       connection_end.convert_to_connection_end_proto(expected_connection),
     )
-
-  let counterparty_client_state_bz =
-    mithril_pb.marshal_for_any_client_state(
-      AnyMithrilClientState {
-        type_url: "/ibc.lightclients.mithril.v1.ClientState",
-        value: counterparty_client_state,
-      },
-    ).2nd
 
   expect Some(consensus_state) =
     pairs.get_first(client_datum_state.consensus_states, proof_height)
@@ -551,9 +551,17 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
   let proof_try = MerkleProof { proofs: [] }
   let proof_client = MerkleProof { proofs: [] }
 
+  let counterparty_client_state_bz =
+    mithril_pb.marshal_for_any_client_state(
+      AnyMithrilClientState {
+        type_url: "/ibc.lightclients.mithril.v1.ClientState",
+        value: counterparty_client_state,
+      },
+    ).2nd
+
   let connection_redeemer: Redeemer =
     ConnOpenAck {
-      counterparty_client_state,
+      counterparty_client_state: counterparty_client_state_bz,
       proof_try,
       proof_client,
       proof_height,
@@ -604,14 +612,6 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
     connection_pb.marshal_for_connection_end(
       connection_end.convert_to_connection_end_proto(expected_connection),
     )
-
-  let counterparty_client_state_bz =
-    mithril_pb.marshal_for_any_client_state(
-      AnyMithrilClientState {
-        type_url: "/ibc.lightclients.mithril.v1.ClientState",
-        value: counterparty_client_state,
-      },
-    ).2nd
 
   expect Some(consensus_state) =
     pairs.get_first(client_datum_state.consensus_states, proof_height)

@@ -58,6 +58,27 @@ export const submitTx = async (
   logSize = true,
   localUPLCEval = false, // Default to false to use Ogmios for script evaluation
 ) => {
+  const ADOPTION_ATTEMPTS = 6;
+  const ADOPTION_TIMEOUT_MS = 30000;
+  const ADOPTION_RETRY_DELAY_MS = 5000;
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const awaitTxWithTimeout = async (hash: string) => {
+    await Promise.race([
+      lucid.awaitTx(hash, 1000),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                `Timed out waiting ${ADOPTION_TIMEOUT_MS}ms for tx adoption`,
+              ),
+            ),
+          ADOPTION_TIMEOUT_MS,
+        )
+      ),
+    ]);
+  };
+
   console.log("Submitting tx [", txName, "]");
   const completedTx = await tx.complete({ localUPLCEval });
   if (logSize) {
@@ -76,13 +97,60 @@ export const submitTx = async (
     "]: signed tx size in bytes",
     signedTx.toCBOR().length / 2,
   );
-  console.log("Submitting tx [", txName, "]: submitting ...");
-  const txHash = await signedTx.submit();
-  console.log("Submitting tx [", txName, "]: tx hash is", txHash);
-  console.log("Submitting tx [", txName, "]: waiting for adoption ...");
-  await lucid.awaitTx(txHash, 1000);
-  console.log("Submitting tx [", txName, "]: done");
-  return txHash;
+  let txHash: string | null = null;
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= ADOPTION_ATTEMPTS; attempt++) {
+    try {
+      console.log(
+        "Submitting tx [",
+        txName,
+        `]: submitting (attempt ${attempt}/${ADOPTION_ATTEMPTS}) ...`,
+      );
+      const submittedHash = await signedTx.submit();
+      if (!txHash) {
+        txHash = submittedHash;
+        console.log("Submitting tx [", txName, "]: tx hash is", txHash);
+      }
+    } catch (error) {
+      lastError = error;
+      console.warn(
+        `Submitting tx [ ${txName} ]: submit attempt ${attempt}/${ADOPTION_ATTEMPTS} returned:`,
+        error,
+      );
+    }
+
+    if (!txHash) {
+      if (attempt === ADOPTION_ATTEMPTS) {
+        throw lastError ?? new Error(`Failed to submit tx '${txName}'`);
+      }
+      await sleep(ADOPTION_RETRY_DELAY_MS);
+      continue;
+    }
+
+    try {
+      console.log(
+        "Submitting tx [",
+        txName,
+        `]: waiting for adoption (attempt ${attempt}/${ADOPTION_ATTEMPTS}) ...`,
+      );
+      await awaitTxWithTimeout(txHash);
+      console.log("Submitting tx [", txName, "]: done");
+      return txHash;
+    } catch (error) {
+      lastError = error;
+      console.warn(
+        `Submitting tx [ ${txName} ]: tx ${txHash} was not visible on the canonical chain after attempt ${attempt}/${ADOPTION_ATTEMPTS}:`,
+        error,
+      );
+      if (attempt === ADOPTION_ATTEMPTS) {
+        throw error;
+      }
+      await sleep(ADOPTION_RETRY_DELAY_MS);
+    }
+  }
+
+  throw lastError ?? new Error(`Failed to confirm tx '${txName}'`);
 };
 
 export const formatTimestamp = (timestampInMilliseconds: number): string => {
@@ -206,7 +274,7 @@ export const generateIdentifierTokenName = (outRef: OutputReference) => {
 export const getNonceOutRef = async (
   lucid: LucidEvolution,
 ): Promise<[UTxO, OutputReference]> => {
-  const signerUtxos = await lucid.wallet().getUtxos();
+  const signerUtxos = await getLiveWalletUtxos(lucid);
   if (signerUtxos.length < 1) throw new Error("No UTXO founded");
   const NONCE_UTXO = signerUtxos[0];
   const outputReference: OutputReference = {
@@ -215,6 +283,59 @@ export const getNonceOutRef = async (
   };
 
   return [NONCE_UTXO, outputReference];
+};
+
+export const filterLiveUtxos = async (
+  lucid: LucidEvolution,
+  utxos: UTxO[],
+): Promise<UTxO[]> => {
+  if (utxos.length === 0) {
+    return [];
+  }
+
+  const liveUtxos = await lucid.utxosByOutRef(
+    utxos.map((utxo) => ({
+      txHash: utxo.txHash,
+      outputIndex: utxo.outputIndex,
+    })),
+  );
+  if (liveUtxos.length === 0) {
+    return [];
+  }
+
+  const liveRefs = new Set(
+    liveUtxos.map((utxo) => `${utxo.txHash}#${utxo.outputIndex}`),
+  );
+  return utxos.filter((utxo) =>
+    liveRefs.has(`${utxo.txHash}#${utxo.outputIndex}`)
+  );
+};
+
+export const getLiveWalletUtxos = async (
+  lucid: LucidEvolution,
+  minCount = 1,
+  maxAttempts = 12,
+  retryDelayMs = 2000,
+): Promise<UTxO[]> => {
+  let lastLiveUtxos: UTxO[] = [];
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const walletUtxos = await lucid.wallet().getUtxos();
+    const liveUtxos = await filterLiveUtxos(lucid, walletUtxos);
+    if (liveUtxos.length >= minCount) {
+      return liveUtxos;
+    }
+    lastLiveUtxos = liveUtxos;
+
+    if (attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    }
+  }
+
+  const walletAddress = await lucid.wallet().address();
+  throw new Error(
+    `Wallet ${walletAddress} only has ${lastLiveUtxos.length} live UTxO(s); need ${minCount}.`,
+  );
 };
 
 type Module = "handler" | "transfer";

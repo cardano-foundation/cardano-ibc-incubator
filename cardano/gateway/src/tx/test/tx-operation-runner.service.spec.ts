@@ -216,4 +216,50 @@ describe('TxOperationRunnerService', () => {
       }),
     ).rejects.toBe(expectedError);
   });
+
+  it('rebuilds a fresh unsigned tx for retry attempts when configured', async () => {
+    const { service, lucidService } = makeService();
+
+    const transientError = new Error('kupmios transport error');
+    const completedTx = {
+      toCBOR: jest.fn().mockReturnValue('84a30081825820deadbeef'),
+      toHash: jest.fn().mockReturnValue('txhash-connection-open-ack'),
+    };
+
+    const txBuilderFirst = {
+      complete: jest.fn().mockRejectedValue(transientError),
+    } as any;
+    const txBuilderSecond = {
+      complete: jest.fn().mockResolvedValue(completedTx),
+    } as any;
+    const rebuildUnsignedTx = jest.fn().mockResolvedValue(txBuilderSecond);
+    const validityApply = jest.fn().mockImplementation((builder) => builder);
+
+    const result = await service.run({
+      operationName: 'connectionOpenAck',
+      unsignedTx: txBuilderFirst,
+      rebuildUnsignedTx,
+      validity: {
+        apply: validityApply,
+      },
+      wallet: {
+        mode: 'custom_before_complete',
+        run: async () => {
+          lucidService.selectWalletFromAddress();
+        },
+      },
+      completeRetry: {
+        maxAttempts: 2,
+        isRetryable: (error) => error === transientError,
+        getDelayMs: () => 0,
+      },
+    });
+
+    expect(txBuilderFirst.complete).toHaveBeenCalledTimes(1);
+    expect(txBuilderSecond.complete).toHaveBeenCalledTimes(1);
+    expect(rebuildUnsignedTx).toHaveBeenCalledTimes(1);
+    expect(validityApply).toHaveBeenNthCalledWith(1, txBuilderFirst);
+    expect(validityApply).toHaveBeenNthCalledWith(2, txBuilderSecond);
+    expect(result.unsignedTxHash).toBe('txhash-connection-open-ack');
+  });
 });

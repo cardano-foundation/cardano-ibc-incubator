@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -47,6 +48,31 @@ fn token_swap_core_targets() -> Vec<HealthTarget> {
         HealthTarget::Core(CoreServiceId::Mithril),
         HealthTarget::Core(CoreServiceId::Entrypoint),
     ]
+}
+
+fn gateway_light_client_mode(project_root: &Path) -> &'static str {
+    let gateway_env_path = project_root.join("cardano/gateway/.env");
+    let env_contents = fs::read_to_string(&gateway_env_path).unwrap_or_default();
+
+    for line in env_contents.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        if let Some(value) = trimmed.strip_prefix("CARDANO_LIGHT_CLIENT_MODE=") {
+            let mode = value.trim().trim_matches('"').trim_matches('\'');
+            if mode == "mithril" {
+                return "mithril";
+            }
+        }
+    }
+
+    "stake-weighted-stability"
+}
+
+fn gateway_uses_mithril(project_root: &Path) -> bool {
+    gateway_light_client_mode(project_root) == "mithril"
 }
 
 fn optional_chain_target(chain: OptionalChainId, network: &str) -> Result<HealthTarget, String> {
@@ -144,11 +170,16 @@ async fn run_osmosis_token_swap_demo(
 
     logger::log("PASS: Required token-swap services are running");
 
-    logger::verbose("Checking Mithril artifact readiness before setting up transfer paths");
-    // Hermes client creation against Cardano depends on Mithril artifact availability.
-    // Running this check up front gives a deterministic failure reason instead of
-    // failing later deep inside channel setup.
-    wait_for_mithril_artifacts_for_demo().await?;
+    if gateway_uses_mithril(project_root_path) {
+        logger::verbose("Checking Mithril artifact readiness before setting up transfer paths");
+        // Hermes client creation against Cardano depends on Mithril artifact availability only
+        // when the active Gateway mode is Mithril-based.
+        wait_for_mithril_artifacts_for_demo().await?;
+    } else {
+        logger::verbose(
+            "Skipping Mithril artifact readiness check for active Gateway mode: stake-weighted-stability",
+        );
+    }
 
     let relayer_path = project_root_path.join("relayer");
     let mut restart_relayer_after_setup = false;
@@ -247,8 +278,9 @@ async fn run_osmosis_token_swap_demo(
                 .ok_or_else(|| "ERROR: Invalid setup_crosschain_swaps.sh path".to_string())?;
 
             // First stage script wires Osmosis-side contracts and creates the incoming routing path
-            // for Cardano vouchers. We parse its stdout to recover the deployed contract address
-            // and the Osmosis-side swap receiver needed by the final swap trigger script.
+            // for Cardano vouchers. We parse its stdout to recover the deployed contract address.
+            // The second-stage swap receiver is derived locally from the Entrypoint Hermes key and
+            // the known Osmosis->Entrypoint channel so it always matches the deployed registry.
             let mut setup_env = vec![
                 ("CARIBIC_CLEAR_SWAP_PACKETS", "true"),
                 (
@@ -313,16 +345,17 @@ async fn run_osmosis_token_swap_demo(
                         )
                         .unwrap_err()
                     })?;
-            let swap_receiver = parse_setup_output_value(setup_output.as_str(), "deployer address ")
-                .or(preconfigured_swap_receiver)
-                .ok_or_else(|| {
-                    fail_with_osmosis_cleanup(
-                        osmosis_dir.as_path(),
-                        network,
-                        "ERROR: Could not determine Osmosis swap receiver address. Set OSMOSIS_SWAP_RECEIVER or ensure setup script prints deployer address.",
-                    )
-                    .unwrap_err()
-                })?;
+            let swap_receiver = match preconfigured_swap_receiver {
+                Some(receiver) => receiver,
+                None => resolve_entrypoint_swap_receiver(
+                    project_root_path,
+                    entrypoint_osmosis_channel_pair.b_channel_id.as_str(),
+                )
+                .map_err(|error| {
+                    fail_with_osmosis_cleanup(osmosis_dir.as_path(), network, error.as_str())
+                        .unwrap_err()
+                })?,
+            };
             (crosschain_swaps_address, swap_receiver)
         };
 
@@ -404,8 +437,14 @@ async fn run_injective_token_swap_demo(
 
     logger::log("PASS: Required token-swap services are running");
 
-    logger::verbose("Checking Mithril artifact readiness before setting up transfer paths");
-    wait_for_mithril_artifacts_for_demo().await?;
+    if gateway_uses_mithril(project_root_path) {
+        logger::verbose("Checking Mithril artifact readiness before setting up transfer paths");
+        wait_for_mithril_artifacts_for_demo().await?;
+    } else {
+        logger::verbose(
+            "Skipping Mithril artifact readiness check for active Gateway mode: stake-weighted-stability",
+        );
+    }
 
     let relayer_path = project_root_path.join("relayer");
     let mut restart_relayer_after_setup = false;
@@ -854,6 +893,12 @@ fn ensure_demo_health_targets_ready(
     let mut failures = Vec::new();
 
     for target in required_targets {
+        if matches!(target, HealthTarget::Core(CoreServiceId::Mithril))
+            && !gateway_uses_mithril(project_root_path)
+        {
+            continue;
+        }
+
         match start::check_health_target(project_root_path, *target) {
             Ok((true, _)) => {}
             Ok((false, status)) => failures.push(format!("{}: {}", target.name(), status)),
@@ -870,9 +915,15 @@ fn ensure_demo_health_targets_ready(
     for failure in failures {
         message.push_str(&format!("  - {failure}\n"));
     }
-    message.push_str(
-        "\nStart services first:\n  - caribic start --clean --with-mithril\n  - caribic start <chain> --network <network>",
-    );
+    if gateway_uses_mithril(project_root_path) {
+        message.push_str(
+            "\nStart services first:\n  - caribic start --clean --with-mithril\n  - caribic start <chain> --network <network>",
+        );
+    } else {
+        message.push_str(
+            "\nStart services first:\n  - caribic start --clean\n  - caribic start <chain> --network <network>",
+        );
+    }
 
     Err(message)
 }
@@ -1705,6 +1756,42 @@ fn parse_setup_output_value(output: &str, prefix: &str) -> Option<String> {
         .filter_map(|line| line.trim().strip_prefix(prefix))
         .map(|value| value.trim().to_string())
         .find(|value| !value.is_empty())
+}
+
+fn resolve_entrypoint_swap_receiver(
+    project_root: &Path,
+    osmosis_entrypoint_channel_id: &str,
+) -> Result<String, String> {
+    let hermes_binary = project_root.join("relayer/target/release/hermes");
+    let output = Command::new(&hermes_binary)
+        .args(["keys", "list", "--chain", entrypoint_chain_id().as_str()])
+        .output()
+        .map_err(|error| format!("ERROR: Failed to query Hermes entrypoint keys: {}", error))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "ERROR: Hermes keys list failed for entrypoint:\n{}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for token in stdout.split_whitespace() {
+        let cleaned =
+            token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-');
+
+        if cleaned.starts_with("cosmos1") {
+            return Ok(format!(
+                "ibc:{}/{}",
+                osmosis_entrypoint_channel_id, cleaned
+            ));
+        }
+    }
+
+    Err(format!(
+        "ERROR: Could not parse Entrypoint receiver from Hermes keys list output:\n{}",
+        stdout.trim()
+    ))
 }
 
 /// Logs an error, stops local Osmosis demo services when relevant, and returns the original error message.

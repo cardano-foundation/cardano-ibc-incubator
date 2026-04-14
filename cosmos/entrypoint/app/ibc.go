@@ -2,6 +2,7 @@ package app
 
 import (
 	ibcmithril "entrypoint/x/clients/mithril"
+	ibcstability "entrypoint/x/clients/stability"
 	vesseloraclemodule "entrypoint/x/vesseloracle/module"
 	vesseloracletypes "entrypoint/x/vesseloracle/types"
 
@@ -169,10 +170,12 @@ func (app *App) registerIBCModules() {
 	tmLightClientModule := ibctm.NewLightClientModule(app.appCodec, storeProvider)
 	smLightClientModule := solomachine.NewLightClientModule(app.appCodec, storeProvider)
 	mithrilLightClientModule := ibcmithril.NewLightClientModule(app.appCodec, storeProvider)
+	stabilityLightClientModule := ibcstability.NewLightClientModule(app.appCodec, storeProvider)
 
 	clientKeeper.AddRoute(ibctm.ModuleName, &tmLightClientModule)
 	clientKeeper.AddRoute(solomachine.ModuleName, &smLightClientModule)
 	clientKeeper.AddRoute(ibcmithril.ModuleName, &mithrilLightClientModule)
+	clientKeeper.AddRoute(ibcstability.ModuleName, &stabilityLightClientModule)
 
 	// register IBC modules
 	if err := app.RegisterModules(
@@ -182,6 +185,7 @@ func (app *App) registerIBCModules() {
 		icamodule.NewAppModule(&app.ICAControllerKeeper, &app.ICAHostKeeper),
 		ibctm.NewAppModule(tmLightClientModule),
 		ibcmithril.NewAppModule(mithrilLightClientModule),
+		ibcstability.NewAppModule(stabilityLightClientModule),
 		solomachine.NewAppModule(smLightClientModule),
 	); err != nil {
 		panic(err)
@@ -199,6 +203,7 @@ func RegisterIBC(registry cdctypes.InterfaceRegistry) map[string]appmodule.AppMo
 		icatypes.ModuleName:         icamodule.AppModule{},
 		ibctm.ModuleName:            ibctm.NewAppModule(ibctm.LightClientModule{}),
 		ibcmithril.ModuleName:       ibcmithril.NewAppModule(ibcmithril.LightClientModule{}),
+		ibcstability.ModuleName:     ibcstability.NewAppModule(ibcstability.LightClientModule{}),
 		solomachine.ModuleName:      solomachine.NewAppModule(solomachine.LightClientModule{}),
 	}
 

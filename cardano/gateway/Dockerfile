@@ -15,6 +15,7 @@ FROM node:20@sha256:bd3086f61c05f8925ed2026bee608a40ad9f8a5d28b6e593342237469ee5
 ARG MAIN_CONTEXT=cardano/gateway
 # Create app directory
 WORKDIR /usr/src/app
+ENV NODE_PATH=/usr/src/app/node_modules
 
 # Bundle app source
 COPY ${MAIN_CONTEXT} .

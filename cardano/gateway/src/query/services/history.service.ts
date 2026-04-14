@@ -26,10 +26,44 @@ export type HistoryTxEvidence = {
   txSize?: number | null;
 };
 
+export type HistoryBlock = {
+  height: number;
+  hash: string;
+  prevHash: string;
+  slotNo: bigint;
+  epochNo: number;
+  timestampUnixNs: bigint;
+  slotLeader: string;
+};
+
+export type HistoryStakeDistributionEntry = {
+  poolId: string;
+  stake: bigint;
+  vrfKeyHash: string;
+};
+
+export type HistoryEpochVerificationContext = {
+  epochNonce: string;
+  slotsPerKesPeriod: number;
+  currentEpochStartSlot: bigint;
+  currentEpochEndSlotExclusive: bigint;
+};
+
+export type HistoryEpochContextAtBlock = {
+  epoch: number;
+  stakeDistribution: HistoryStakeDistributionEntry[];
+  verificationContext: HistoryEpochVerificationContext;
+};
+
 export type HistoryService = {
   findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]>;
   findUtxosByBlockNo(height: number): Promise<UtxoDto[]>;
   findHostStateUtxoAtOrBeforeBlockNo(height: bigint): Promise<UtxoDto>;
+  findLatestBlock(): Promise<HistoryBlock | null>;
+  findBlockByHeight(height: bigint): Promise<HistoryBlock | null>;
+  findBridgeBlocks(trustedHeight: bigint, anchorHeight: bigint): Promise<HistoryBlock[]>;
+  findDescendantBlocks(anchorHeight: bigint, limit: number): Promise<HistoryBlock[]>;
+  findEpochContextAtBlock(block: HistoryBlock): Promise<HistoryEpochContextAtBlock | null>;
   findUtxoClientOrAuthHandler(height: number): Promise<UtxoDto[]>;
   checkExistPoolUpdateByBlockNo(height: number): Promise<boolean>;
   checkExistPoolRetireByBlockNo(height: number): Promise<boolean>;

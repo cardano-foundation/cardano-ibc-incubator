@@ -226,37 +226,45 @@ export const LucidClient = {
     // identify which validator/UTxO is failing (HostState vs connection vs wallet input).
     const originalEvaluateTx = provider.evaluateTx?.bind(provider);
     if (typeof originalEvaluateTx === 'function') {
-      let wroteFailureDump = false;
       provider.evaluateTx = async (tx: string, additionalUTxOs?: any[]) => {
         try {
           return await originalEvaluateTx(tx, additionalUTxOs);
         } catch (error) {
           try {
-            if (!wroteFailureDump) {
-              wroteFailureDump = true;
-              const dumpId = Date.now();
-              const dumpTxPath = `/tmp/gateway-evaluateTx-failure-${dumpId}.tx`;
-              const dumpContextPath = `/tmp/gateway-evaluateTx-failure-${dumpId}.context.json`;
+            const dumpId = Date.now();
+            const dumpTxPath = `/tmp/gateway-evaluateTx-failure-${dumpId}.tx`;
+            const dumpContextPath = `/tmp/gateway-evaluateTx-failure-${dumpId}.context.json`;
+            const latestTxPath = '/tmp/gateway-evaluateTx-last-failure.tx';
+            const latestContextPath = '/tmp/gateway-evaluateTx-last-failure.context.json';
 
-              writeFileSync(dumpTxPath, Buffer.from(tx, 'hex'));
-              console.error(`[DEBUG] Kupmios.evaluateTx dumped failing tx to ${dumpTxPath}`);
+            writeFileSync(dumpTxPath, Buffer.from(tx, 'hex'));
+            writeFileSync(latestTxPath, Buffer.from(tx, 'hex'));
+            console.error(`[DEBUG] Kupmios.evaluateTx dumped failing tx to ${dumpTxPath}`);
+            console.error(`[DEBUG] Kupmios.evaluateTx updated latest failing tx at ${latestTxPath}`);
 
-              try {
-                const dumpContext = {
-                  additionalUTxOs: additionalUTxOs ?? [],
-                };
-                writeFileSync(
-                  dumpContextPath,
-                  JSON.stringify(
-                    dumpContext,
-                    (_key, value) => (typeof value === 'bigint' ? value.toString() : value),
-                    2,
-                  ),
-                );
-                console.error(`[DEBUG] Kupmios.evaluateTx dumped failure context to ${dumpContextPath}`);
-              } catch (contextError) {
-                console.error(`[DEBUG] Kupmios.evaluateTx failed to dump additionalUTxOs:`, contextError);
-              }
+            try {
+              const dumpContext = {
+                error:
+                  error instanceof Error
+                    ? {
+                        name: error.name,
+                        message: error.message,
+                        stack: error.stack,
+                      }
+                    : String(error),
+                additionalUTxOs: additionalUTxOs ?? [],
+              };
+              const dumpContextJson = JSON.stringify(
+                dumpContext,
+                (_key, value) => (typeof value === 'bigint' ? value.toString() : value),
+                2,
+              );
+              writeFileSync(dumpContextPath, dumpContextJson);
+              writeFileSync(latestContextPath, dumpContextJson);
+              console.error(`[DEBUG] Kupmios.evaluateTx dumped failure context to ${dumpContextPath}`);
+              console.error(`[DEBUG] Kupmios.evaluateTx updated latest failure context at ${latestContextPath}`);
+            } catch (contextError) {
+              console.error(`[DEBUG] Kupmios.evaluateTx failed to dump additionalUTxOs:`, contextError);
             }
 
             const CML = (Lucid as any)?.CML;
