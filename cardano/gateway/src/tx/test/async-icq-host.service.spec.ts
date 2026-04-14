@@ -121,4 +121,27 @@ describe('AsyncIcqHostService', () => {
       },
     });
   });
+
+  it('returns an error acknowledgement for multi-request packets until snapshot pinning exists', async () => {
+    const request = {
+      path: '/ibc.core.client.v1.Query/ClientState',
+      data: QueryClientStateRequest.encode({ client_id: '07-tendermint-0' }).finish(),
+      height: BigInt(0),
+      prove: false,
+    };
+
+    const packet = encodePacket([request, request]);
+
+    const { acknowledgementResponse } = await service.executePacket(packet);
+
+    expect(acknowledgementResponse).toEqual({
+      AcknowledgementError: {
+        err: Buffer.from(
+          'async-icq packets currently support exactly one request; multi-request execution is not snapshot-pinned',
+          'utf8',
+        ).toString('hex'),
+      },
+    });
+    expect(queryServiceMock.queryClientState).not.toHaveBeenCalled();
+  });
 });

@@ -37,7 +37,7 @@ describe('CheqdIcqService', () => {
     };
     queryServiceMock = {
       latestHeight: jest.fn().mockResolvedValue({ height: 120n }),
-      queryEvents: jest.fn().mockResolvedValue({ current_height: 120n, events: [] }),
+      queryEvents: jest.fn().mockResolvedValue({ current_height: 120n, scanned_to_height: 120n, events: [] }),
       queryTransactionByHash: jest.fn().mockResolvedValue({ hash: 'deadbeef', height: 100n }),
     };
 
@@ -174,6 +174,30 @@ describe('CheqdIcqService', () => {
     });
   });
 
+  it('advances the polling cursor only to the scanned query-events window when no acknowledgement is found', async () => {
+    queryServiceMock.queryEvents.mockResolvedValue({
+      current_height: 500n,
+      scanned_to_height: 200n,
+      events: [],
+    });
+
+    await expect(
+      service.findResult({
+        tx_hash: 'deadbeef',
+        query_path: '/cheqd.did.v2.Query/DidDoc',
+        packet_data_hex: 'c0ffee',
+      } as any),
+    ).resolves.toEqual({
+      status: 'pending',
+      reason: 'pending_acknowledgement',
+      tx_hash: 'deadbeef',
+      query_path: '/cheqd.did.v2.Query/DidDoc',
+      packet_data_hex: 'c0ffee',
+      current_height: '500',
+      next_search_from_height: '200',
+    });
+  });
+
   it('finds and decodes a matching acknowledge_packet event', async () => {
     const responseValue = encodeCheqdProtoMessage('cheqd.did.v2.QueryDidDocResponse', {
       value: {
@@ -207,6 +231,7 @@ describe('CheqdIcqService', () => {
 
     queryServiceMock.queryEvents.mockResolvedValue({
       current_height: 125n,
+      scanned_to_height: 125n,
       events: [
         {
           height: 118n,

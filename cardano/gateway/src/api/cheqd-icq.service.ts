@@ -190,6 +190,7 @@ export class CheqdIcqService {
     const searchFromHeight = searchStart.height;
     const eventsResult = await this.queryService.queryEvents({ since_height: searchFromHeight });
     const currentHeight = eventsResult.current_height.toString();
+    const scannedToHeight = eventsResult.scanned_to_height.toString();
     const eventMatch = this.findAcknowledgementEvent(eventsResult.events, dto);
 
     if (!eventMatch) {
@@ -200,7 +201,7 @@ export class CheqdIcqService {
         query_path: dto.query_path,
         packet_data_hex: dto.packet_data_hex.toLowerCase(),
         current_height: currentHeight,
-        next_search_from_height: currentHeight,
+        next_search_from_height: scannedToHeight,
       };
     }
 

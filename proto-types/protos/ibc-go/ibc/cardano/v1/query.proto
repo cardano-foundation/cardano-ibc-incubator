@@ -32,6 +32,9 @@ message QueryEventsRequest {
 message QueryEventsResponse {
   // Current chain height at the time of the query
   uint64 current_height = 1;
+
+  // Highest block height actually scanned for this response page
+  uint64 scanned_to_height = 3;
   
   // Events grouped by block height
   repeated BlockEvents events = 2;

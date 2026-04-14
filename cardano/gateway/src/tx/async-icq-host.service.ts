@@ -49,14 +49,20 @@ export class AsyncIcqHostService {
     let executionHeight = BigInt(0);
 
     try {
-      // Capture the current host height once so every RequestQuery in the packet
-      // executes against the same Cardano IBC snapshot.
+      // Capture the declared host height once for the ResponseQuery.height field.
+      // The underlying gateway query services are still latest-state readers, so
+      // this is not a real multi-request snapshot boundary yet.
       executionHeight = await this.getExecutionHeight();
       const packet = decodeInterchainQueryPacketDataJson(packetData);
       const cosmosQuery = decodeCosmosQuery(packet.data);
 
       if (cosmosQuery.requests.length === 0) {
         throw new Error('async-icq packet must contain at least one request');
+      }
+      if (cosmosQuery.requests.length > 1) {
+        throw new Error(
+          'async-icq packets currently support exactly one request; multi-request execution is not snapshot-pinned',
+        );
       }
 
       const responses: TendermintResponseQuery[] = [];
