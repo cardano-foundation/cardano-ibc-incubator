@@ -13,6 +13,11 @@ import {
 } from '@shared/types/apps/async-icq/async-icq';
 import { EVENT_TYPE_PACKET, ATTRIBUTE_KEY_PACKET } from '~@/constant/packet';
 import { GrpcNotFoundException } from '~@/exception/grpc_exceptions';
+import { decodeSpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
+
+jest.mock('@shared/types/channel/channel-redeemer', () => ({
+  decodeSpendChannelRedeemer: jest.fn(),
+}));
 
 describe('CheqdIcqService', () => {
   let service: CheqdIcqService;
@@ -24,6 +29,13 @@ describe('CheqdIcqService', () => {
     queryEvents: jest.Mock;
     queryTransactionByHash: jest.Mock;
   };
+  let historyServiceMock: {
+    findTransactionEvidenceByHash: jest.Mock;
+  };
+  let lucidServiceMock: {
+    LucidImporter: Record<string, never>;
+  };
+  const decodeSpendChannelRedeemerMock = jest.mocked(decodeSpendChannelRedeemer);
 
   beforeEach(() => {
     packetServiceMock = {
@@ -40,10 +52,40 @@ describe('CheqdIcqService', () => {
       queryEvents: jest.fn().mockResolvedValue({ current_height: 120n, scanned_to_height: 120n, events: [] }),
       queryTransactionByHash: jest.fn().mockResolvedValue({ hash: 'deadbeef', height: 100n }),
     };
+    historyServiceMock = {
+      findTransactionEvidenceByHash: jest.fn().mockResolvedValue({
+        txHash: 'deadbeef',
+        blockNo: 100,
+        txIndex: 0,
+        txCborHex: '',
+        txBodyCborHex: '',
+        redeemers: [
+          {
+            type: 'spend',
+            data: '1234567890ab',
+            index: 0,
+          },
+        ],
+      }),
+    };
+    lucidServiceMock = {
+      LucidImporter: {},
+    };
+    decodeSpendChannelRedeemerMock.mockReturnValue({
+      SendPacket: {
+        packet: {
+          sequence: 7n,
+          source_channel: Buffer.from('channel-3', 'utf8').toString('hex'),
+          data: 'c0ffee',
+        },
+      },
+    } as any);
 
     service = new CheqdIcqService(
       packetServiceMock as unknown as PacketService,
       queryServiceMock as unknown as QueryService,
+      historyServiceMock as any,
+      lucidServiceMock as any,
     );
   });
 
@@ -155,7 +197,28 @@ describe('CheqdIcqService', () => {
   });
 
   it('returns a pending result when the source tx is not indexed yet', async () => {
+    historyServiceMock.findTransactionEvidenceByHash.mockResolvedValue(null);
     queryServiceMock.queryTransactionByHash.mockRejectedValue(new GrpcNotFoundException('not found'));
+
+    await expect(
+      service.findResult({
+        tx_hash: 'deadbeef',
+        query_path: '/cheqd.did.v2.Query/DidDoc',
+        packet_data_hex: 'c0ffee',
+      } as any),
+    ).resolves.toEqual({
+      status: 'pending',
+      reason: 'source_tx_not_indexed',
+      tx_hash: 'deadbeef',
+      query_path: '/cheqd.did.v2.Query/DidDoc',
+      packet_data_hex: 'c0ffee',
+      current_height: '120',
+      next_search_from_height: '120',
+    });
+  });
+
+  it('returns a pending result when the source tx exists but tx evidence is not indexed yet', async () => {
+    historyServiceMock.findTransactionEvidenceByHash.mockResolvedValue(null);
 
     await expect(
       service.findResult({
@@ -198,7 +261,7 @@ describe('CheqdIcqService', () => {
     });
   });
 
-  it('finds and decodes a matching acknowledge_packet event', async () => {
+  it('matches acknowledge_packet events by source channel and packet sequence', async () => {
     const responseValue = encodeCheqdProtoMessage('cheqd.did.v2.QueryDidDocResponse', {
       value: {
         did_doc: {
@@ -233,6 +296,37 @@ describe('CheqdIcqService', () => {
       current_height: 125n,
       scanned_to_height: 125n,
       events: [
+        {
+          height: 117n,
+          events: [
+            {
+              code: 0,
+              events: [
+                {
+                  type: EVENT_TYPE_PACKET.ACKNOWLEDGE_PACKET,
+                  event_attribute: [
+                    {
+                      key: ATTRIBUTE_KEY_PACKET.PACKET_DATA_HEX,
+                      value: 'c0ffee',
+                    },
+                    {
+                      key: ATTRIBUTE_KEY_PACKET.PACKET_ACK_HEX,
+                      value: 'wrong-ack',
+                    },
+                    {
+                      key: ATTRIBUTE_KEY_PACKET.PACKET_SEQUENCE,
+                      value: '8',
+                    },
+                    {
+                      key: ATTRIBUTE_KEY_PACKET.PACKET_SRC_CHANNEL,
+                      value: 'channel-3',
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
         {
           height: 118n,
           events: [

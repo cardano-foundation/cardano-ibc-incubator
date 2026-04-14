@@ -33,6 +33,11 @@ import {
 } from '@shared/types/apps/async-icq/async-icq';
 import { convertString2Hex } from '@shared/helpers/hex';
 
+type ProofBearingResponse = {
+  proof: Uint8Array;
+  proof_height?: unknown;
+};
+
 @Injectable()
 export class AsyncIcqHostService {
   constructor(
@@ -120,6 +125,18 @@ export class AsyncIcqHostService {
     }
   }
 
+  private stripProof<T extends ProofBearingResponse>(response: T): T {
+    // Async ICQ currently rejects prove=true, so the encoded acknowledgement
+    // payload should not carry proof material borrowed from the normal query APIs.
+    const sanitized = {
+      ...response,
+      proof: new Uint8Array(),
+    } as T & { proof_height?: unknown };
+
+    delete sanitized.proof_height;
+    return sanitized as T;
+  }
+
   private async executeRequest(
     query: TendermintRequestQuery,
     executionHeight: bigint,
@@ -135,43 +152,43 @@ export class AsyncIcqHostService {
     switch (query.path) {
       case '/ibc.core.client.v1.Query/ClientState': {
         const request = QueryClientStateRequest.decode(query.data);
-        const response = await this.queryService.queryClientState(request);
+        const response = this.stripProof(await this.queryService.queryClientState(request));
         value = QueryClientStateResponse.encode(response).finish();
         break;
       }
       case '/ibc.core.client.v1.Query/ConsensusState': {
         const request = QueryConsensusStateRequest.decode(query.data);
-        const response = await this.queryService.queryConsensusState(request);
+        const response = this.stripProof(await this.queryService.queryConsensusState(request));
         value = QueryConsensusStateResponse.encode(response).finish();
         break;
       }
       case '/ibc.core.connection.v1.Query/Connection': {
         const request = QueryConnectionRequest.decode(query.data);
-        const response = await this.connectionService.queryConnection(request);
+        const response = this.stripProof(await this.connectionService.queryConnection(request));
         value = QueryConnectionResponse.encode(response).finish();
         break;
       }
       case '/ibc.core.channel.v1.Query/Channel': {
         const request = QueryChannelRequest.decode(query.data);
-        const response = await this.channelService.queryChannel(request);
+        const response = this.stripProof(await this.channelService.queryChannel(request));
         value = QueryChannelResponse.encode(response).finish();
         break;
       }
       case '/ibc.core.channel.v1.Query/PacketCommitment': {
         const request = QueryPacketCommitmentRequest.decode(query.data);
-        const response = await this.queryPacketService.queryPacketCommitment(request);
+        const response = this.stripProof(await this.queryPacketService.queryPacketCommitment(request));
         value = QueryPacketCommitmentResponse.encode(response).finish();
         break;
       }
       case '/ibc.core.channel.v1.Query/PacketReceipt': {
         const request = QueryPacketReceiptRequest.decode(query.data);
-        const response = await this.queryPacketService.queryPacketReceipt(request);
+        const response = this.stripProof(await this.queryPacketService.queryPacketReceipt(request));
         value = QueryPacketReceiptResponse.encode(response).finish();
         break;
       }
       case '/ibc.core.channel.v1.Query/NextSequenceReceive': {
         const request = QueryNextSequenceReceiveRequest.decode(query.data);
-        const response = await this.queryPacketService.queryNextSequenceReceive(request);
+        const response = this.stripProof(await this.queryPacketService.queryNextSequenceReceive(request));
         value = QueryNextSequenceReceiveResponse.encode(response).finish();
         break;
       }

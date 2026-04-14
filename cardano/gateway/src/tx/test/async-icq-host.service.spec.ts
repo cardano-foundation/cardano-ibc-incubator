@@ -100,6 +100,9 @@ describe('AsyncIcqHostService', () => {
 
     const response = QueryClientStateResponse.decode(cosmosResponse.responses[0].value);
     expect(response.client_state?.type_url).toBe('/ibc.lightclients.tendermint.v1.ClientState');
+    expect(response.proof).toEqual(new Uint8Array());
+    expect(response.proof_height?.revision_number).toBe(BigInt(0));
+    expect(response.proof_height?.revision_height).toBe(BigInt(0));
     expect(queryServiceMock.queryClientState).toHaveBeenCalledWith({ client_id: '07-tendermint-0' });
   });
 

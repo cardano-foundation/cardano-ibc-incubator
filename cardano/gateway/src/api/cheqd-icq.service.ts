@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ResponseDeliverTx } from '@plus/proto-types/build/ibc/core/types/v1/block';
 import { QueryService } from '~@/query/services/query.service';
 import { MsgTransferResponse } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
@@ -7,6 +7,7 @@ import { GrpcInvalidArgumentException, GrpcNotFoundException } from '~@/exceptio
 import { PacketService } from '~@/tx/packet.service';
 import { Height } from '~@/shared/types/height';
 import { ASYNC_ICQ_HOST_PORT } from '@shared/types/apps/async-icq/async-icq';
+import { REDEEMER_EMPTY_DATA, REDEEMER_TYPE } from '~@/constant';
 import {
   buildCheqdAllDidDocVersionsMetadataPacketData,
   buildCheqdDidDocPacketData,
@@ -34,6 +35,11 @@ import {
   CheqdLatestResourceVersionIcqRequestDto,
   CheqdResourceIcqRequestDto,
 } from './cheqd-icq.dto';
+import { HISTORY_SERVICE, HistoryService, HistoryTxEvidence } from '~@/query/services/history.service';
+import { LucidService } from '@shared/modules/lucid/lucid.service';
+import { decodeSpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
+import { convertHex2String } from '@shared/helpers/hex';
+import { Packet } from '@shared/types/channel/packet';
 
 type BuiltCheqdIcqTransaction = {
   source_port: typeof ASYNC_ICQ_HOST_PORT;
@@ -82,11 +88,18 @@ type SearchStartResult =
       response: Extract<CheqdIcqLookupResult, { status: 'pending' }>;
     };
 
+type ExpectedPacketMatch = {
+  packetSequence: string;
+  sourceChannel: string;
+};
+
 @Injectable()
 export class CheqdIcqService {
   constructor(
     private readonly packetService: PacketService,
     private readonly queryService: QueryService,
+    @Inject(HISTORY_SERVICE) private readonly historyService: HistoryService,
+    private readonly lucidService: LucidService,
   ) {}
 
   async buildDidDocQuery(dto: CheqdDidDocIcqRequestDto): Promise<BuiltCheqdIcqTransaction> {
@@ -177,6 +190,12 @@ export class CheqdIcqService {
     if (!dto.tx_hash && !dto.since_height) {
       throw new GrpcInvalidArgumentException('Either "tx_hash" or "since_height" must be provided');
     }
+    if (!dto.tx_hash && !dto.packet_sequence) {
+      throw new GrpcInvalidArgumentException('Either "tx_hash" or "packet_sequence" must be provided');
+    }
+    if (dto.packet_sequence && !dto.source_channel && !dto.tx_hash) {
+      throw new GrpcInvalidArgumentException('"source_channel" must be provided when "packet_sequence" is provided');
+    }
 
     if (!isSupportedCheqdQueryPath(dto.query_path)) {
       throw new GrpcInvalidArgumentException(`Unsupported cheqd query_path: ${dto.query_path}`);
@@ -187,11 +206,25 @@ export class CheqdIcqService {
       return searchStart.response;
     }
 
+    const expectedPacketMatch = await this.resolveExpectedPacketMatch(dto);
+    if (!expectedPacketMatch) {
+      const latestHeight = await this.queryService.latestHeight({});
+      return {
+        status: 'pending',
+        reason: 'source_tx_not_indexed',
+        tx_hash: dto.tx_hash,
+        query_path: dto.query_path,
+        packet_data_hex: dto.packet_data_hex.toLowerCase(),
+        current_height: latestHeight.height.toString(),
+        next_search_from_height: latestHeight.height.toString(),
+      };
+    }
+
     const searchFromHeight = searchStart.height;
     const eventsResult = await this.queryService.queryEvents({ since_height: searchFromHeight });
     const currentHeight = eventsResult.current_height.toString();
     const scannedToHeight = eventsResult.scanned_to_height.toString();
-    const eventMatch = this.findAcknowledgementEvent(eventsResult.events, dto);
+    const eventMatch = this.findAcknowledgementEvent(eventsResult.events, dto, expectedPacketMatch);
 
     if (!eventMatch) {
       return {
@@ -292,12 +325,45 @@ export class CheqdIcqService {
     }
   }
 
+  private async resolveExpectedPacketMatch(dto: CheqdIcqResultRequestDto): Promise<ExpectedPacketMatch | null> {
+    if (dto.packet_sequence && dto.source_channel) {
+      return {
+        packetSequence: dto.packet_sequence,
+        sourceChannel: dto.source_channel!.toLowerCase(),
+      };
+    }
+
+    const txEvidence = await this.historyService.findTransactionEvidenceByHash(dto.tx_hash!);
+    if (!txEvidence) {
+      return null;
+    }
+
+    const matchingPackets = this.findMatchingSendPacketsInTxEvidence(txEvidence, dto);
+    if (matchingPackets.length === 0) {
+      throw new GrpcInvalidArgumentException(
+        `No matching send_packet found in source tx ${dto.tx_hash} for query_path ${dto.query_path}`,
+      );
+    }
+    if (matchingPackets.length > 1) {
+      throw new GrpcInvalidArgumentException(
+        `Ambiguous source tx ${dto.tx_hash}: multiple matching send_packet entries found; provide packet_sequence explicitly`,
+      );
+    }
+
+    return {
+      packetSequence: matchingPackets[0].packetSequence,
+      sourceChannel: matchingPackets[0].sourceChannel,
+    };
+  }
+
   private findAcknowledgementEvent(
     blocks: Array<{ height: bigint; events: ResponseDeliverTx[] }>,
     dto: Pick<CheqdIcqResultRequestDto, 'packet_data_hex' | 'source_channel'>,
+    expectedPacketMatch: ExpectedPacketMatch,
   ): PacketAcknowledgementMatch | null {
     const expectedPacketDataHex = dto.packet_data_hex.toLowerCase();
-    const expectedSourceChannel = dto.source_channel?.toLowerCase();
+    const expectedSourceChannel = expectedPacketMatch.sourceChannel.toLowerCase();
+    const expectedPacketSequence = expectedPacketMatch.packetSequence;
 
     for (const block of blocks) {
       for (const txResult of block.events) {
@@ -316,7 +382,12 @@ export class CheqdIcqService {
           }
 
           const sourceChannel = attributes[ATTRIBUTE_KEY_PACKET.PACKET_SRC_CHANNEL]?.toLowerCase();
-          if (expectedSourceChannel && sourceChannel !== expectedSourceChannel) {
+          if (sourceChannel !== expectedSourceChannel) {
+            continue;
+          }
+
+          const packetSequence = attributes[ATTRIBUTE_KEY_PACKET.PACKET_SEQUENCE] || null;
+          if (packetSequence !== expectedPacketSequence) {
             continue;
           }
 
@@ -327,7 +398,7 @@ export class CheqdIcqService {
 
           return {
             height: block.height,
-            packetSequence: attributes[ATTRIBUTE_KEY_PACKET.PACKET_SEQUENCE] || null,
+            packetSequence,
             acknowledgementHex,
           };
         }
@@ -335,5 +406,57 @@ export class CheqdIcqService {
     }
 
     return null;
+  }
+
+  private findMatchingSendPacketsInTxEvidence(
+    txEvidence: HistoryTxEvidence,
+    dto: Pick<CheqdIcqResultRequestDto, 'packet_data_hex' | 'source_channel' | 'packet_sequence'>,
+  ): Array<{ packetSequence: string; sourceChannel: string }> {
+    const expectedPacketDataHex = dto.packet_data_hex.toLowerCase();
+    const expectedSourceChannel = dto.source_channel?.toLowerCase();
+    const expectedPacketSequence = dto.packet_sequence ?? null;
+    const matches: Array<{ packetSequence: string; sourceChannel: string }> = [];
+
+    for (const redeemer of txEvidence.redeemers) {
+      if (redeemer.type !== REDEEMER_TYPE.SPEND) {
+        continue;
+      }
+      if (redeemer.data === REDEEMER_EMPTY_DATA || redeemer.data.length <= 10) {
+        continue;
+      }
+
+      let spendRedeemer: { SendPacket?: { packet: Packet } };
+      try {
+        spendRedeemer = decodeSpendChannelRedeemer(redeemer.data, this.lucidService.LucidImporter) as {
+          SendPacket?: { packet: Packet };
+        };
+      } catch {
+        continue;
+      }
+
+      const packet = spendRedeemer.SendPacket?.packet;
+      if (!packet) {
+        continue;
+      }
+
+      const sourceChannel = convertHex2String(packet.source_channel).toLowerCase();
+      const packetSequence = packet.sequence.toString();
+      if (packet.data.toLowerCase() !== expectedPacketDataHex) {
+        continue;
+      }
+      if (expectedSourceChannel && sourceChannel !== expectedSourceChannel) {
+        continue;
+      }
+      if (expectedPacketSequence && packetSequence !== expectedPacketSequence) {
+        continue;
+      }
+
+      matches.push({
+        packetSequence,
+        sourceChannel,
+      });
+    }
+
+    return matches;
   }
 }

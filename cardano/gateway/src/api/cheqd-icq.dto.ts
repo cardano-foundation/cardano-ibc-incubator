@@ -123,4 +123,11 @@ export class CheqdIcqResultRequestDto {
     message: 'source_channel should start with channel',
   })
   source_channel?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Matches(/^\d+$/, {
+    message: 'packet_sequence must be a non-negative integer string',
+  })
+  packet_sequence?: string;
 }
