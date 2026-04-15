@@ -30,11 +30,10 @@ import {
 import {
   CheqdDidDocIcqRequestDto,
   CheqdDidDocVersionIcqRequestDto,
-  CheqdIcqBaseRequestDto,
-  CheqdIcqResultRequestDto,
   CheqdLatestResourceVersionIcqRequestDto,
   CheqdResourceIcqRequestDto,
 } from './cheqd-icq.dto';
+import { AsyncIcqBaseRequestDto, AsyncIcqResultRequestDto } from './async-icq.dto';
 import { HISTORY_SERVICE, HistoryService, HistoryTxEvidence } from '~@/query/services/history.service';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
 import { decodeSpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
@@ -186,7 +185,7 @@ export class CheqdIcqService {
     return decodeCheqdLatestResourceVersionMetadataAcknowledgement(ackHex);
   }
 
-  async findResult(dto: CheqdIcqResultRequestDto): Promise<CheqdIcqLookupResult> {
+  async findResult(dto: AsyncIcqResultRequestDto): Promise<CheqdIcqLookupResult> {
     if (!dto.tx_hash && !dto.since_height) {
       throw new GrpcInvalidArgumentException('Either "tx_hash" or "since_height" must be provided');
     }
@@ -253,7 +252,7 @@ export class CheqdIcqService {
   }
 
   private async buildQueryTransaction(
-    dto: CheqdIcqBaseRequestDto,
+    dto: AsyncIcqBaseRequestDto,
     queryPath: string,
     packetData: Uint8Array,
   ): Promise<BuiltCheqdIcqTransaction> {
@@ -290,7 +289,7 @@ export class CheqdIcqService {
     return BigInt(value);
   }
 
-  private async resolveSearchStartHeight(dto: CheqdIcqResultRequestDto): Promise<SearchStartResult> {
+  private async resolveSearchStartHeight(dto: AsyncIcqResultRequestDto): Promise<SearchStartResult> {
     if (dto.since_height) {
       return {
         kind: 'height',
@@ -325,7 +324,7 @@ export class CheqdIcqService {
     }
   }
 
-  private async resolveExpectedPacketMatch(dto: CheqdIcqResultRequestDto): Promise<ExpectedPacketMatch | null> {
+  private async resolveExpectedPacketMatch(dto: AsyncIcqResultRequestDto): Promise<ExpectedPacketMatch | null> {
     if (dto.packet_sequence && dto.source_channel) {
       return {
         packetSequence: dto.packet_sequence,
@@ -358,7 +357,7 @@ export class CheqdIcqService {
 
   private findAcknowledgementEvent(
     blocks: Array<{ height: bigint; events: ResponseDeliverTx[] }>,
-    dto: Pick<CheqdIcqResultRequestDto, 'packet_data_hex' | 'source_channel'>,
+    dto: Pick<AsyncIcqResultRequestDto, 'packet_data_hex' | 'source_channel'>,
     expectedPacketMatch: ExpectedPacketMatch,
   ): PacketAcknowledgementMatch | null {
     const expectedPacketDataHex = dto.packet_data_hex.toLowerCase();
@@ -410,7 +409,7 @@ export class CheqdIcqService {
 
   private findMatchingSendPacketsInTxEvidence(
     txEvidence: HistoryTxEvidence,
-    dto: Pick<CheqdIcqResultRequestDto, 'packet_data_hex' | 'source_channel' | 'packet_sequence'>,
+    dto: Pick<AsyncIcqResultRequestDto, 'packet_data_hex' | 'source_channel' | 'packet_sequence'>,
   ): Array<{ packetSequence: string; sourceChannel: string }> {
     const expectedPacketDataHex = dto.packet_data_hex.toLowerCase();
     const expectedSourceChannel = dto.source_channel?.toLowerCase();

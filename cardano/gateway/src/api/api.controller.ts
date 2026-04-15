@@ -3,11 +3,11 @@ import { EstimateLocalOsmosisSwapDto, MsgtransferDto, PlanTransferRouteDto } fro
 import {
   CheqdDidDocIcqRequestDto,
   CheqdDidDocVersionIcqRequestDto,
-  CheqdIcqAcknowledgementDto,
-  CheqdIcqResultRequestDto,
   CheqdLatestResourceVersionIcqRequestDto,
   CheqdResourceIcqRequestDto,
 } from './cheqd-icq.dto';
+import { AsyncIcqAcknowledgementDto, AsyncIcqResultRequestDto } from './async-icq.dto';
+import { VesseloracleConsolidatedDataReportIcqRequestDto } from './vesseloracle-icq.dto';
 import { ChannelService } from '~@/query/services/channel.service';
 import { QueryChannelsRequest } from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { IdentifiedChannel } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
@@ -20,6 +20,7 @@ import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { TransferPlannerService } from './transfer-planner.service';
 import { BridgeManifestService } from '~@/query/services/bridge-manifest.service';
 import { CheqdIcqService } from './cheqd-icq.service';
+import { VesseloracleIcqService } from './vesseloracle-icq.service';
 import { deriveVoucherPresentation } from '../shared/helpers/voucher-presentation';
 
 type ApiCardanoAssetDenomTrace = {
@@ -56,6 +57,7 @@ export class ApiController {
     private readonly transferPlannerService: TransferPlannerService,
     private readonly bridgeManifestService: BridgeManifestService,
     private readonly cheqdIcqService: CheqdIcqService,
+    private readonly vesseloracleIcqService: VesseloracleIcqService,
   ) {}
 
   @Get('channels')
@@ -122,7 +124,7 @@ export class ApiController {
 
   @Post('icq/cheqd/did-doc/decode')
   @HttpCode(200)
-  async decodeCheqdDidDocIcq(@Body() dto: CheqdIcqAcknowledgementDto) {
+  async decodeCheqdDidDocIcq(@Body() dto: AsyncIcqAcknowledgementDto) {
     return this.cheqdIcqService.decodeDidDocAcknowledgement(dto.acknowledgement_hex);
   }
 
@@ -141,7 +143,7 @@ export class ApiController {
 
   @Post('icq/cheqd/did-doc-version/decode')
   @HttpCode(200)
-  async decodeCheqdDidDocVersionIcq(@Body() dto: CheqdIcqAcknowledgementDto) {
+  async decodeCheqdDidDocVersionIcq(@Body() dto: AsyncIcqAcknowledgementDto) {
     return this.cheqdIcqService.decodeDidDocVersionAcknowledgement(dto.acknowledgement_hex);
   }
 
@@ -160,7 +162,7 @@ export class ApiController {
 
   @Post('icq/cheqd/did-doc-versions-metadata/decode')
   @HttpCode(200)
-  async decodeCheqdDidDocVersionsMetadataIcq(@Body() dto: CheqdIcqAcknowledgementDto) {
+  async decodeCheqdDidDocVersionsMetadataIcq(@Body() dto: AsyncIcqAcknowledgementDto) {
     return this.cheqdIcqService.decodeAllDidDocVersionsMetadataAcknowledgement(dto.acknowledgement_hex);
   }
 
@@ -179,7 +181,7 @@ export class ApiController {
 
   @Post('icq/cheqd/resource/decode')
   @HttpCode(200)
-  async decodeCheqdResourceIcq(@Body() dto: CheqdIcqAcknowledgementDto) {
+  async decodeCheqdResourceIcq(@Body() dto: AsyncIcqAcknowledgementDto) {
     return this.cheqdIcqService.decodeResourceAcknowledgement(dto.acknowledgement_hex);
   }
 
@@ -198,7 +200,7 @@ export class ApiController {
 
   @Post('icq/cheqd/resource-metadata/decode')
   @HttpCode(200)
-  async decodeCheqdResourceMetadataIcq(@Body() dto: CheqdIcqAcknowledgementDto) {
+  async decodeCheqdResourceMetadataIcq(@Body() dto: AsyncIcqAcknowledgementDto) {
     return this.cheqdIcqService.decodeResourceMetadataAcknowledgement(dto.acknowledgement_hex);
   }
 
@@ -217,7 +219,7 @@ export class ApiController {
 
   @Post('icq/cheqd/latest-resource-version/decode')
   @HttpCode(200)
-  async decodeCheqdLatestResourceVersionIcq(@Body() dto: CheqdIcqAcknowledgementDto) {
+  async decodeCheqdLatestResourceVersionIcq(@Body() dto: AsyncIcqAcknowledgementDto) {
     return this.cheqdIcqService.decodeLatestResourceVersionAcknowledgement(dto.acknowledgement_hex);
   }
 
@@ -236,14 +238,33 @@ export class ApiController {
 
   @Post('icq/cheqd/latest-resource-version-metadata/decode')
   @HttpCode(200)
-  async decodeCheqdLatestResourceVersionMetadataIcq(@Body() dto: CheqdIcqAcknowledgementDto) {
-    return this.cheqdIcqService.decodeLatestResourceVersionMetadataAcknowledgement(dto.acknowledgement_hex);
+  async decodeCheqdLatestResourceVersionMetadataIcq(@Body() dto: AsyncIcqAcknowledgementDto) {
+  return this.cheqdIcqService.decodeLatestResourceVersionMetadataAcknowledgement(dto.acknowledgement_hex);
   }
 
   @Post('icq/cheqd/result')
   @HttpCode(200)
-  async getCheqdIcqResult(@Body() dto: CheqdIcqResultRequestDto) {
+  async getCheqdIcqResult(@Body() dto: AsyncIcqResultRequestDto) {
     return this.cheqdIcqService.findResult(dto);
+  }
+
+  @Post('icq/vesseloracle/consolidated-data-report')
+  @HttpCode(200)
+  async buildVesseloracleConsolidatedDataReportIcq(@Body() requestDto: VesseloracleConsolidatedDataReportIcqRequestDto) {
+    const response = await this.vesseloracleIcqService.buildConsolidatedDataReportQuery(requestDto);
+    return {
+      query_path: response.query_path,
+      source_port: response.source_port,
+      source_channel: response.source_channel,
+      packet_data_hex: response.packet_data_hex,
+      ...this.serializeUnsignedTxResponse(response.tx),
+    };
+  }
+
+  @Post('icq/vesseloracle/consolidated-data-report/decode')
+  @HttpCode(200)
+  async decodeVesseloracleConsolidatedDataReportIcq(@Body() dto: AsyncIcqAcknowledgementDto) {
+    return this.vesseloracleIcqService.decodeConsolidatedDataReportAcknowledgement(dto.acknowledgement_hex);
   }
 
   private serializeUnsignedTxResponse(response: { result?: unknown; unsigned_tx?: { type_url?: string; value?: Uint8Array | string } }) {

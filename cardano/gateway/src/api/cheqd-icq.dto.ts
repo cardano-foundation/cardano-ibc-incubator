@@ -1,40 +1,8 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsNotEmpty, IsString } from 'class-validator';
+import { AsyncIcqBaseRequestDto } from './async-icq.dto';
 
-class IcqHeightDto {
-  @ApiPropertyOptional()
-  @IsOptional()
-  revision_number?: string | number;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  revision_height?: string | number;
-}
-
-export class CheqdIcqBaseRequestDto {
-  @ApiProperty()
-  @IsNotEmpty()
-  @Matches(/^channel/, {
-    message: 'source_channel should start with channel',
-  })
-  source_channel: string;
-
-  @ApiProperty()
-  @IsNotEmpty()
-  signer: string;
-
-  @ApiPropertyOptional({
-    type: IcqHeightDto,
-  })
-  @IsOptional()
-  timeout_height?: IcqHeightDto;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  timeout_timestamp?: string | number;
-}
-
-export class CheqdDidDocIcqRequestDto extends CheqdIcqBaseRequestDto {
+export class CheqdDidDocIcqRequestDto extends AsyncIcqBaseRequestDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -48,7 +16,7 @@ export class CheqdDidDocVersionIcqRequestDto extends CheqdDidDocIcqRequestDto {
   version: string;
 }
 
-export class CheqdResourceIcqRequestDto extends CheqdIcqBaseRequestDto {
+export class CheqdResourceIcqRequestDto extends AsyncIcqBaseRequestDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -60,7 +28,7 @@ export class CheqdResourceIcqRequestDto extends CheqdIcqBaseRequestDto {
   id: string;
 }
 
-export class CheqdLatestResourceVersionIcqRequestDto extends CheqdIcqBaseRequestDto {
+export class CheqdLatestResourceVersionIcqRequestDto extends AsyncIcqBaseRequestDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -75,59 +43,4 @@ export class CheqdLatestResourceVersionIcqRequestDto extends CheqdIcqBaseRequest
   @IsString()
   @IsNotEmpty()
   resource_type: string;
-}
-
-export class CheqdIcqAcknowledgementDto {
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  @Matches(/^[0-9a-fA-F]+$/, {
-    message: 'acknowledgement_hex must be hex encoded',
-  })
-  acknowledgement_hex: string;
-}
-
-export class CheqdIcqResultRequestDto {
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  query_path: string;
-
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  @Matches(/^[0-9a-fA-F]+$/, {
-    message: 'packet_data_hex must be hex encoded',
-  })
-  packet_data_hex: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @Matches(/^[0-9a-fA-F]+$/, {
-    message: 'tx_hash must be hex encoded',
-  })
-  tx_hash?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Matches(/^\d+$/, {
-    message: 'since_height must be a non-negative integer string',
-  })
-  since_height?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  @Matches(/^channel/, {
-    message: 'source_channel should start with channel',
-  })
-  source_channel?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @Matches(/^\d+$/, {
-    message: 'packet_sequence must be a non-negative integer string',
-  })
-  packet_sequence?: string;
 }

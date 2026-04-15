@@ -9,6 +9,7 @@ import { PacketService } from '~@/tx/packet.service';
 import { MsgTransfer } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import { DenomTraceService } from '~@/query/services/denom-trace.service';
 import { CheqdIcqService } from './cheqd-icq.service';
+import { VesseloracleIcqService } from './vesseloracle-icq.service';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { TransferPlannerService } from './transfer-planner.service';
 import { BridgeManifestService } from '~@/query/services/bridge-manifest.service';
@@ -33,6 +34,10 @@ describe('ApiController (modern)', () => {
     buildDidDocQuery: jest.Mock;
     decodeDidDocAcknowledgement: jest.Mock;
     findResult: jest.Mock;
+  };
+  let vesseloracleIcqServiceMock: {
+    buildConsolidatedDataReportQuery: jest.Mock;
+    decodeConsolidatedDataReportAcknowledgement: jest.Mock;
   };
   let transferPlannerServiceMock: {
     planTransferRoute: jest.Mock;
@@ -63,6 +68,10 @@ describe('ApiController (modern)', () => {
       decodeDidDocAcknowledgement: jest.fn(),
       findResult: jest.fn(),
     };
+    vesseloracleIcqServiceMock = {
+      buildConsolidatedDataReportQuery: jest.fn(),
+      decodeConsolidatedDataReportAcknowledgement: jest.fn(),
+    };
     transferPlannerServiceMock = {
       planTransferRoute: jest.fn(),
     };
@@ -78,6 +87,7 @@ describe('ApiController (modern)', () => {
         { provide: DenomTraceService, useValue: denomTraceServiceMock },
         { provide: LocalOsmosisSwapPlannerService, useValue: swapPlannerServiceMock },
         { provide: CheqdIcqService, useValue: cheqdIcqServiceMock },
+        { provide: VesseloracleIcqService, useValue: vesseloracleIcqServiceMock },
         { provide: TransferPlannerService, useValue: transferPlannerServiceMock },
         { provide: BridgeManifestService, useValue: bridgeManifestServiceMock },
       ],
@@ -194,6 +204,41 @@ describe('ApiController (modern)', () => {
     ).resolves.toEqual({
       status: 'success',
       response: { value: { did_doc: { id: 'did:cheqd:testnet:abc123' } } },
+    });
+  });
+
+  it('delegates vesseloracle consolidated-data-report ICQ tx building to VesseloracleIcqService', async () => {
+    vesseloracleIcqServiceMock.buildConsolidatedDataReportQuery.mockResolvedValue({
+      query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
+      source_port: 'icqhost',
+      source_channel: 'channel-4',
+      packet_data_hex: 'beadfeed',
+      tx: {
+        result: 1,
+        unsigned_tx: {
+          type_url: '/ibc.core.channel.v1.MsgTransfer',
+          value: Buffer.from([4, 5, 6]),
+        },
+      },
+    });
+
+    await expect(
+      controller.buildVesseloracleConsolidatedDataReportIcq({
+        source_channel: 'channel-4',
+        signer: 'addr_test1q...',
+        imo: '9525338',
+        ts: '1713110400',
+      } as any),
+    ).resolves.toEqual({
+      query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
+      source_port: 'icqhost',
+      source_channel: 'channel-4',
+      packet_data_hex: 'beadfeed',
+      result: 1,
+      unsigned_tx: {
+        type_url: '/ibc.core.channel.v1.MsgTransfer',
+        value: Buffer.from([4, 5, 6]).toString('base64'),
+      },
     });
   });
 
