@@ -262,6 +262,11 @@ pub async fn run_start(
                 project_root_path.join("chains/cardano").as_path(),
                 clean,
                 core_cardano_network,
+                if with_mithril {
+                    "mithril"
+                } else {
+                    "stake-weighted-stability"
+                },
             )
             .map_err(|error| format!("ERROR: Failed to prepare gateway runtime: {}", error))?;
         }
@@ -467,6 +472,11 @@ pub async fn run_start(
                 project_root_path.join("chains/cardano").as_path(),
                 clean,
                 core_cardano_network,
+                if with_mithril {
+                    "mithril"
+                } else {
+                    "stake-weighted-stability"
+                },
             )
             .map_err(|error| {
                 format!(

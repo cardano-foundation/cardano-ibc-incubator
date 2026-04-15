@@ -1,64 +1,8 @@
 import WebSocket from 'ws';
+import { ogmiosRequest } from './ogmios';
 
 type OgmiosPoint = { slot: number; id: string };
 type SlotConfig = { zeroTime: number; zeroSlot: number; slotLength: number };
-
-const ogmiosWsp = async (ogmiosUrl: string, methodname: string, args: unknown) => {
-  const client = new WebSocket(ogmiosUrl);
-  await new Promise((res) => {
-    client.addEventListener('open', () => res(1), {
-      once: true,
-    });
-  });
-  client.send(
-    JSON.stringify({
-      jsonrpc: '2.0',
-      method: methodname,
-      params: args,
-    }),
-  );
-  return client;
-};
-
-const ogmiosRequest = async <T>(ogmiosUrl: string, methodname: string, args: unknown): Promise<T> => {
-  const client = await ogmiosWsp(ogmiosUrl, methodname, args);
-  try {
-    return await new Promise<T>((res, rej) => {
-      client.addEventListener(
-        'message',
-        (msg: MessageEvent<string>) => {
-          try {
-            const payload = JSON.parse(msg.data);
-            if (payload?.error) {
-              rej(new Error(payload.error.message ?? JSON.stringify(payload.error)));
-              return;
-            }
-            res(payload.result as T);
-          } catch (e) {
-            rej(e);
-          } finally {
-            client.close();
-          }
-        },
-        {
-          once: true,
-        },
-      );
-      client.addEventListener(
-        'error',
-        (event: ErrorEvent) => {
-          client.close();
-          rej(event.error ?? new Error('Ogmios websocket request failed'));
-        },
-        { once: true },
-      );
-    });
-  } finally {
-    if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) {
-      client.close();
-    }
-  }
-};
 
 const querySystemStart = async (ogmiosUrl: string) => {
   const systemStart = await ogmiosRequest<string>(ogmiosUrl, 'queryNetwork/startTime', {});

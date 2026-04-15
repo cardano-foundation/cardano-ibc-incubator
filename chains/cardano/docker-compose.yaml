@@ -21,6 +21,61 @@ services:
     ports:
       - 3001:3001
     command: ["run"]
+    networks:
+      default:
+        ipv4_address: 172.29.0.11
+
+  cardano-node-spo2:
+    image: ${CARDANO_NODE_IMAGE:-ghcr.io/blinklabs-io/cardano-node:10.1.4-3}
+    container_name: cardano-node-spo2
+    user: "${UID:-1000}:${GID:-1000}"
+    depends_on:
+      - cardano-node
+    volumes:
+      - ./${CARDANO_RUNTIME_DIR:-devnet}:/runtime
+    environment:
+      - CARDANO_BLOCK_PRODUCER=${CARDANO_BLOCK_PRODUCER:-true}
+      - CARDANO_CONFIG=/runtime/${CARDANO_NODE_CONFIG_FILE:-cardano-node.json}
+      - CARDANO_DATABASE_PATH=/runtime/spo2/db
+      - CARDANO_BIND_ADDR=0.0.0.0
+      - CARDANO_PORT=3001
+      - CARDANO_TOPOLOGY=/runtime/topology-spo2.json
+      - CARDANO_SOCKET_PATH=/runtime/spo2/node.socket
+      - CARDANO_NODE_SOCKET_PATH=/runtime/spo2/node.socket
+      - CARDANO_SHELLEY_KES_KEY=/runtime/spo2/kes.skey
+      - CARDANO_SHELLEY_VRF_KEY=/runtime/spo2/vrf.skey
+      - CARDANO_SHELLEY_OPERATIONAL_CERTIFICATE=/runtime/spo2/opcert.cert
+      - RESTORE_SNAPSHOT=false
+    command: ["run"]
+    networks:
+      default:
+        ipv4_address: 172.29.0.12
+
+  cardano-node-spo3:
+    image: ${CARDANO_NODE_IMAGE:-ghcr.io/blinklabs-io/cardano-node:10.1.4-3}
+    container_name: cardano-node-spo3
+    user: "${UID:-1000}:${GID:-1000}"
+    depends_on:
+      - cardano-node
+    volumes:
+      - ./${CARDANO_RUNTIME_DIR:-devnet}:/runtime
+    environment:
+      - CARDANO_BLOCK_PRODUCER=${CARDANO_BLOCK_PRODUCER:-true}
+      - CARDANO_CONFIG=/runtime/${CARDANO_NODE_CONFIG_FILE:-cardano-node.json}
+      - CARDANO_DATABASE_PATH=/runtime/spo3/db
+      - CARDANO_BIND_ADDR=0.0.0.0
+      - CARDANO_PORT=3001
+      - CARDANO_TOPOLOGY=/runtime/topology-spo3.json
+      - CARDANO_SOCKET_PATH=/runtime/spo3/node.socket
+      - CARDANO_NODE_SOCKET_PATH=/runtime/spo3/node.socket
+      - CARDANO_SHELLEY_KES_KEY=/runtime/spo3/kes.skey
+      - CARDANO_SHELLEY_VRF_KEY=/runtime/spo3/vrf.skey
+      - CARDANO_SHELLEY_OPERATIONAL_CERTIFICATE=/runtime/spo3/opcert.cert
+      - RESTORE_SNAPSHOT=false
+    command: ["run"]
+    networks:
+      default:
+        ipv4_address: 172.29.0.13
 
   cardano-node-ogmios:
     image: cardanosolutions/ogmios:v6.10.0
@@ -116,7 +171,6 @@ services:
 
   yaci-store-postgres:
     image: postgres:15
-    user: "${UID:-1000}:${GID:-1000}"
     environment:
       - POSTGRES_DB=yaci_store
       - POSTGRES_USER=yaci
@@ -139,7 +193,6 @@ services:
 
   yaci-store:
     image: bloxbean/yaci-store:2.0.0
-    user: "${UID:-1000}:${GID:-1000}"
     ports:
       - ${YACI_STORE_PORT:-8081}:8080
     depends_on:
@@ -208,6 +261,9 @@ services:
 networks:
   default:
     name: cardano_ibc_net
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24
 
 secrets:
   postgres_db:

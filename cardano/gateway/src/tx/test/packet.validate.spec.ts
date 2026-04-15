@@ -29,6 +29,13 @@ describe('Send packet denom validation', () => {
     expect(operator.token.denom).toBe('lovelace');
   });
 
+  it('normalizes token.amount to bigint before tx assembly', () => {
+    const request = buildMsgTransfer('lovelace');
+    const operator = validateAndFormatSendPacketParams(request);
+
+    expect(operator.token.amount).toBe(1n);
+  });
+
   it('does not allow empty denom normalization in core helpers', () => {
     expect(() => normalizeDenomTokenTransfer('')).toThrow(GrpcInvalidArgumentException);
   });

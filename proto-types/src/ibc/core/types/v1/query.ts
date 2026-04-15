@@ -41,6 +41,7 @@ export interface QueryTransactionByHashResponse {
   events: Event[];
 }
 export interface QueryIBCHeaderRequest {
+  trusted_height: bigint;
   height: bigint;
 }
 export interface QueryIBCHeaderResponse {
@@ -455,12 +456,16 @@ export const QueryTransactionByHashResponse = {
 };
 function createBaseQueryIBCHeaderRequest(): QueryIBCHeaderRequest {
   return {
+    trusted_height: BigInt(0),
     height: BigInt(0),
   };
 }
 export const QueryIBCHeaderRequest = {
   typeUrl: "/ibc.core.types.v1.QueryIBCHeaderRequest",
   encode(message: QueryIBCHeaderRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.trusted_height !== BigInt(0)) {
+      writer.uint32(8).uint64(message.trusted_height);
+    }
     if (message.height !== BigInt(0)) {
       writer.uint32(16).uint64(message.height);
     }
@@ -473,6 +478,9 @@ export const QueryIBCHeaderRequest = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 1:
+          message.trusted_height = reader.uint64();
+          break;
         case 2:
           message.height = reader.uint64();
           break;
@@ -485,16 +493,22 @@ export const QueryIBCHeaderRequest = {
   },
   fromJSON(object: any): QueryIBCHeaderRequest {
     const obj = createBaseQueryIBCHeaderRequest();
+    if (isSet(object.trusted_height)) obj.trusted_height = BigInt(object.trusted_height.toString());
     if (isSet(object.height)) obj.height = BigInt(object.height.toString());
     return obj;
   },
   toJSON(message: QueryIBCHeaderRequest): unknown {
     const obj: any = {};
+    message.trusted_height !== undefined &&
+      (obj.trusted_height = (message.trusted_height || BigInt(0)).toString());
     message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<QueryIBCHeaderRequest>, I>>(object: I): QueryIBCHeaderRequest {
     const message = createBaseQueryIBCHeaderRequest();
+    if (object.trusted_height !== undefined && object.trusted_height !== null) {
+      message.trusted_height = BigInt(object.trusted_height.toString());
+    }
     if (object.height !== undefined && object.height !== null) {
       message.height = BigInt(object.height.toString());
     }

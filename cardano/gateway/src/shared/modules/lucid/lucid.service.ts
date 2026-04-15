@@ -15,6 +15,10 @@ import {
   CONNECTION_TOKEN_PREFIX,
 } from "../../../constant";
 import {
+  TRANSACTION_SET_COLLATERAL,
+  TRANSACTION_TIME_TO_LIVE,
+} from "../../../config/constant.config";
+import {
   decodeHandlerDatum,
   encodeHandlerDatum,
   HandlerDatum,
@@ -103,6 +107,7 @@ import {
   UnsignedTimeoutRefreshDto,
 } from "./dtos";
 import { GatewayModuleKey } from "@shared/helpers/module-port";
+import { computeLedgerAnchoredValidityWindow } from "../../helpers/time";
 
 export type CodecType =
   | "client"
@@ -2683,7 +2688,34 @@ export class LucidService implements OnModuleInit {
   }
 
   public async estimateUnsignedTxSizeBytes(tx: TxBuilder): Promise<number> {
-    const completed = await tx.complete();
+    // The trace-registry sizing probe completes a candidate tx before the outer
+    // packet handlers attach their final validity window. Several on-chain IBC
+    // validators expect a finite upper bound, so give the probe the same
+    // ledger-anchored validity style the production tx runner uses.
+    const ogmiosEndpoint = this.configService.get<string>("ogmiosEndpoint");
+    const cardanoNetwork = this.configService.get<string>("cardanoNetwork");
+    const slotConfig = cardanoNetwork
+      ? this.LucidImporter.SLOT_CONFIG_NETWORK?.[cardanoNetwork]
+      : undefined;
+
+    if (ogmiosEndpoint && slotConfig?.slotLength > 0) {
+      const { validToTime } = await computeLedgerAnchoredValidityWindow(
+        ogmiosEndpoint,
+        slotConfig,
+        TRANSACTION_TIME_TO_LIVE,
+      );
+      tx.validTo(validToTime);
+    } else {
+      tx.validTo(Date.now() + TRANSACTION_TIME_TO_LIVE);
+    }
+
+    // Keep the rollover sizing probe aligned with the real tx runner. Using
+    // Lucid's default local evaluator here can fail on candidate append txs
+    // even though the production completion path uses Ogmios evaluation.
+    const completed = await tx.complete({
+      localUPLCEval: false,
+      setCollateral: TRANSACTION_SET_COLLATERAL,
+    });
     return completed.toCBOR().length / 2;
   }
 

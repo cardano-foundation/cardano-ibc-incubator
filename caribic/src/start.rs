@@ -2,12 +2,12 @@ use crate::constants::ENTRYPOINT_CHAIN_ID;
 use crate::logger::{log_or_print_progress, log_or_show_progress, verbose};
 use crate::setup::{
     configure_cardano_preprod_runtime, configure_local_cardano_devnet, copy_cardano_env_file,
-    download_mithril, prepare_db_sync_and_gateway, seed_cardano_devnet,
+    download_mithril, local_cardano_spo_count, prepare_db_sync_and_gateway, seed_cardano_devnet,
     write_cardano_runtime_selection,
 };
 use crate::utils::{
-    diagnose_container_failure, execute_script, execute_script_with_progress, get_cardano_state,
-    get_user_ids, replace_text_in_file, wait_for_health_check, CardanoQuery,
+    diagnose_container_failure, execute_script, execute_script_with_progress, get_cardano_era,
+    get_cardano_state, get_user_ids, replace_text_in_file, wait_for_health_check, CardanoQuery,
 };
 use crate::{
     chains, config,
@@ -34,6 +34,8 @@ const HERMES_PROGRESS_POLL_INTERVAL_MILLIS: u64 = 500;
 const HERMES_PID_FILE_NAME: &str = "hermes.pid";
 const HERMES_STARTUP_CHECK_ATTEMPTS: u32 = 5;
 const HERMES_STARTUP_CHECK_INTERVAL_MILLIS: u64 = 1000;
+const YACI_HEALTH_CHECK_ATTEMPTS: u32 = 36;
+const YACI_HEALTH_CHECK_INTERVAL_MILLIS: u64 = 5000;
 
 pub(crate) fn hermes_pid_file_path() -> Option<PathBuf> {
     home_dir().map(|home| home.join(".hermes").join(HERMES_PID_FILE_NAME))
@@ -478,6 +480,7 @@ pub async fn start_local_cardano_network(
     }
 
     let cardano_dir = project_root_path.join("chains/cardano");
+    let local_spo_count = local_cardano_spo_count(with_mithril, network);
     let active_network = config::active_core_cardano_network(project_root_path);
     let reset_runtime_state = clean || active_network != network;
     if managed_cardano_network_running(cardano_dir.as_path()) && active_network != network {
@@ -489,7 +492,7 @@ pub async fn start_local_cardano_network(
         .into());
     }
 
-    write_cardano_runtime_selection(cardano_dir.as_path(), network)?;
+    write_cardano_runtime_selection(cardano_dir.as_path(), network, local_spo_count)?;
     if clean {
         execute_script(
             cardano_dir.as_path(),
@@ -508,7 +511,7 @@ pub async fn start_local_cardano_network(
     );
     match network {
         config::CoreCardanoNetwork::Local => {
-            configure_local_cardano_devnet(cardano_dir.as_path())?;
+            configure_local_cardano_devnet(cardano_dir.as_path(), local_spo_count)?;
         }
         config::CoreCardanoNetwork::Preprod => {
             configure_cardano_preprod_runtime(cardano_dir.as_path(), reset_runtime_state).await?;
@@ -521,7 +524,7 @@ pub async fn start_local_cardano_network(
         ),
         &optional_progress_bar,
     );
-    start_local_cardano_services(cardano_dir.as_path(), network)?;
+    start_local_cardano_services(cardano_dir.as_path(), network, local_spo_count)?;
 
     log_or_show_progress(
         "Waiting for the Cardano services to start ...",
@@ -538,15 +541,28 @@ pub async fn start_local_cardano_network(
         .await;
 
         if ogmios_connected.is_ok() {
+            ensure_local_spo_services_running(cardano_dir.as_path(), local_spo_count)?;
             verbose("Cardano services started successfully");
         } else {
-            let container_names = [
-                "cardano-node",
-                "cardano-cardano-node-ogmios-1",
-                "cardano-postgres-1",
-                "cardano-yaci-store-postgres-1",
-                "cardano-yaci-store-1",
-            ];
+            let container_names = if local_spo_count > 1 {
+                vec![
+                    "cardano-node",
+                    "cardano-node-spo2",
+                    "cardano-node-spo3",
+                    "cardano-cardano-node-ogmios-1",
+                    "cardano-postgres-1",
+                    "cardano-yaci-store-postgres-1",
+                    "cardano-yaci-store-1",
+                ]
+            } else {
+                vec![
+                    "cardano-node",
+                    "cardano-cardano-node-ogmios-1",
+                    "cardano-postgres-1",
+                    "cardano-yaci-store-postgres-1",
+                    "cardano-yaci-store-1",
+                ]
+            };
             let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
             return Err(format!(
                 "Failed to start Cardano services - Ogmios health check failed after 100 seconds{}",
@@ -565,8 +581,8 @@ pub async fn start_local_cardano_network(
     {
         let yaci_ready = wait_for_health_check(
             "http://localhost:8081/actuator/health",
-            20,
-            5000,
+            YACI_HEALTH_CHECK_ATTEMPTS,
+            YACI_HEALTH_CHECK_INTERVAL_MILLIS,
             Some(|body: &String| {
                 body.contains("\"status\":\"UP\"") || body.contains("\"status\": \"UP\"")
             }),
@@ -577,7 +593,8 @@ pub async fn start_local_cardano_network(
             let container_names = ["cardano-yaci-store-postgres-1", "cardano-yaci-store-1"];
             let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
             return Err(format!(
-                "Failed to start Yaci services - health check failed after 100 seconds{}",
+                "Failed to start Yaci services - health check failed after {} seconds{}",
+                (YACI_HEALTH_CHECK_ATTEMPTS as u64 * YACI_HEALTH_CHECK_INTERVAL_MILLIS) / 1000,
                 diagnostics
             )
             .into());
@@ -678,12 +695,11 @@ pub async fn start_local_cardano_network(
     }
 
     if matches!(network, config::CoreCardanoNetwork::Local) {
-        let mut current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
-        let target_epoch: u64 = 1;
-        let target_slot: u64 =
-            target_epoch * get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?;
+        let mut current_era = get_cardano_era(project_root_path)?;
+        let target_era = "Conway";
+        let target_slot = get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?;
 
-        if current_epoch < target_epoch {
+        if current_era != target_era {
             if let Some(progress_bar) = &optional_progress_bar {
                 progress_bar.enable_steady_tick(Duration::from_millis(100));
                 progress_bar.set_style(
@@ -693,31 +709,32 @@ pub async fn start_local_cardano_network(
                         .progress_chars("#>-"),
                 );
                 progress_bar.set_prefix(
-                    "Seeding the network needs to wait until network forked into Conway which it does with Epoch 1 .."
+                    "Seeding the network needs to wait until the local network enters Conway .."
                         .to_owned(),
                 );
                 progress_bar.set_length(target_slot);
-                progress_bar
-                    .set_position(get_cardano_state(project_root_path, CardanoQuery::Slot)?);
+                progress_bar.set_position(get_cardano_state(
+                    project_root_path,
+                    CardanoQuery::SlotInEpoch,
+                )?);
             } else {
-                log(
-                    "Seeding the network needs to wait until network forked into Conway which it does with Epoch 1 ..",
-                );
+                log("Seeding the network needs to wait until the local network enters Conway ..");
             }
         }
 
-        while current_epoch < target_epoch {
-            current_epoch = get_cardano_state(project_root_path, CardanoQuery::Epoch)?;
+        while current_era != target_era {
+            current_era = get_cardano_era(project_root_path)?;
 
             if let Some(progress_bar) = &optional_progress_bar {
                 progress_bar.set_position(min(
-                    get_cardano_state(project_root_path, CardanoQuery::Slot)?,
+                    get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?,
                     target_slot,
                 ));
             } else {
                 verbose(&format!(
-                    "Current slot: {}, Slots left: {}",
-                    get_cardano_state(project_root_path, CardanoQuery::Slot)?,
+                    "Current era: {}, slot in epoch: {}, slots left in epoch: {}",
+                    current_era,
+                    get_cardano_state(project_root_path, CardanoQuery::SlotInEpoch)?,
                     get_cardano_state(project_root_path, CardanoQuery::SlotsToEpochEnd)?
                 ));
             }
@@ -741,7 +758,16 @@ pub async fn start_local_cardano_network(
         .services
         .history_backend_enabled()
     {
-        prepare_db_sync_and_gateway(cardano_dir.as_path(), clean, network)?;
+        prepare_db_sync_and_gateway(
+            cardano_dir.as_path(),
+            clean,
+            network,
+            if with_mithril {
+                "mithril"
+            } else {
+                "stake-weighted-stability"
+            },
+        )?;
     }
 
     log_or_show_progress(
@@ -1580,41 +1606,105 @@ pub async fn start_cosmos_entrypoint_chain(
     wait_for_cosmos_entrypoint_chain_ready().await
 }
 
+fn ensure_local_spo_services_running(
+    cardano_dir: &Path,
+    local_spo_count: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if local_spo_count <= 1 {
+        return Ok(());
+    }
+
+    let output = Command::new("docker")
+        .current_dir(cardano_dir)
+        .args(["compose", "ps", "--services", "--status", "running"])
+        .output()
+        .map_err(|error| format!("Failed to inspect local SPO service status: {}", error))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to inspect local SPO service status: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+
+    let running_services: std::collections::HashSet<String> =
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|line| line.trim().to_string())
+            .filter(|line| !line.is_empty())
+            .collect();
+    let expected_services: Vec<String> = (2..=local_spo_count)
+        .map(|index| format!("cardano-node-spo{}", index))
+        .collect();
+    let missing_services: Vec<&String> = expected_services
+        .iter()
+        .filter(|service| !running_services.contains(*service))
+        .collect();
+
+    if missing_services.is_empty() {
+        return Ok(());
+    }
+
+    let missing_names: Vec<&str> = missing_services
+        .iter()
+        .map(|service| service.as_str())
+        .collect();
+    let (diagnostics, _should_fail_fast) = diagnose_container_failure(&missing_names);
+    Err(format!(
+        "Local stability runtime is missing SPO services: {}{}",
+        missing_names.join(", "),
+        diagnostics
+    )
+    .into())
+}
+
 pub fn start_local_cardano_services(
     cardano_dir: &Path,
     network: config::CoreCardanoNetwork,
+    local_spo_count: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let configuration = config::get_config().cardano;
 
-    let mut all_services = vec![];
-    let mut base_services = vec![];
-    let mut follow_up_services = vec![];
+    let mut all_services: Vec<String> = vec![];
+    let mut base_services: Vec<String> = vec![];
+    let mut follow_up_services: Vec<String> = vec![];
 
     if configuration.services.cardano_node {
-        all_services.push("cardano-node");
-        base_services.push("cardano-node");
+        all_services.push("cardano-node".to_string());
+        base_services.push("cardano-node".to_string());
+        if matches!(network, config::CoreCardanoNetwork::Local) {
+            for index in 2..=local_spo_count {
+                let service_name = format!("cardano-node-spo{}", index);
+                all_services.push(service_name.clone());
+                base_services.push(service_name);
+            }
+        }
     }
     if configuration.services.postgres {
-        all_services.push("postgres");
-        base_services.push("postgres");
+        all_services.push("postgres".to_string());
+        base_services.push("postgres".to_string());
     }
     if configuration.services.history_backend_enabled() {
-        all_services.push("yaci-store-postgres");
-        all_services.push("yaci-store");
-        base_services.push("yaci-store-postgres");
-        follow_up_services.push("yaci-store");
+        all_services.push("yaci-store-postgres".to_string());
+        all_services.push("yaci-store".to_string());
+        base_services.push("yaci-store-postgres".to_string());
+        follow_up_services.push("yaci-store".to_string());
     }
     if configuration.services.kupo && matches!(network, config::CoreCardanoNetwork::Local) {
-        all_services.push("kupo");
-        follow_up_services.push("kupo");
+        all_services.push("kupo".to_string());
+        follow_up_services.push("kupo".to_string());
     }
     if configuration.services.ogmios && matches!(network, config::CoreCardanoNetwork::Local) {
-        all_services.push("cardano-node-ogmios");
-        follow_up_services.push("cardano-node-ogmios");
+        all_services.push("cardano-node-ogmios".to_string());
+        follow_up_services.push("cardano-node-ogmios".to_string());
     }
 
     let mut script_stop_args = vec!["compose", "stop"];
-    script_stop_args.append(&mut all_services.clone());
+    let mut all_service_args: Vec<&str> = all_services
+        .iter()
+        .map(|service| service.as_str())
+        .collect();
+    script_stop_args.append(&mut all_service_args);
     execute_script(cardano_dir, "docker", script_stop_args, None)?;
 
     let docker_env = get_docker_env_vars();
@@ -1637,11 +1727,29 @@ pub fn start_local_cardano_services(
                 error
             )
         })?;
+        for index in 2..=local_spo_count {
+            fs::create_dir_all(
+                cardano_dir
+                    .join("devnet")
+                    .join(format!("spo{}", index))
+                    .join("db"),
+            )
+            .map_err(|error| {
+                format!(
+                    "Failed to precreate Cardano local SPO database directory: {}",
+                    error
+                )
+            })?;
+        }
     }
 
     if !base_services.is_empty() {
         let mut script_start_args = vec!["compose", "up", "-d"];
-        script_start_args.append(&mut base_services);
+        let mut base_service_args: Vec<&str> = base_services
+            .iter()
+            .map(|service| service.as_str())
+            .collect();
+        script_start_args.append(&mut base_service_args);
         execute_script(
             cardano_dir,
             "docker",
@@ -1669,7 +1777,11 @@ pub fn start_local_cardano_services(
 
     if !follow_up_services.is_empty() {
         let mut script_start_args = vec!["compose", "up", "-d"];
-        script_start_args.append(&mut follow_up_services);
+        let mut follow_up_service_args: Vec<&str> = follow_up_services
+            .iter()
+            .map(|service| service.as_str())
+            .collect();
+        script_start_args.append(&mut follow_up_service_args);
         execute_script(
             cardano_dir,
             "docker",
@@ -2380,7 +2492,9 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
 
     execute_script(gateway_dir, "docker", script_args, None)?;
 
-    // Wait for Gateway gRPC port to be accessible
+    // Wait for Gateway to stay up long enough to answer both gRPC and HTTP
+    // checks. A transient open gRPC port is not sufficient if the app exits
+    // immediately after binding.
     log_or_show_progress(
         "Waiting for Gateway gRPC server to be ready",
         &optional_progress_bar,
@@ -2409,16 +2523,25 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     ));
 
     for i in 0..max_retries {
-        // Check if gRPC port 5001 is accessible
-        let port_check = Command::new("nc")
+        let grpc_ready = Command::new("nc")
             .args(["-z", "localhost", "5001"])
-            .output();
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false);
+        let http_ready = Command::new("curl")
+            .args(["-fsS", "http://localhost:8000/health"])
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false);
+        let container_running = Command::new("docker")
+            .args(["ps", "--filter", "name=gateway-app", "--format", "{{.Names}}"])
+            .output()
+            .map(|output| !String::from_utf8_lossy(&output.stdout).trim().is_empty())
+            .unwrap_or(false);
 
-        if let Ok(output) = port_check {
-            if output.status.success() {
-                gateway_ready = true;
-                break;
-            }
+        if grpc_ready && http_ready && container_running {
+            gateway_ready = true;
+            break;
         }
 
         if i < max_retries - 1 {
@@ -2435,10 +2558,16 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
         }
-        return Err("Gateway gRPC server (port 5001) did not become ready in time".into());
+        return Err(
+            "Gateway readiness checks (container, gRPC, HTTP health) did not become ready in time"
+                .into(),
+        );
     }
 
-    log_or_show_progress("Gateway gRPC server is ready", &optional_progress_bar);
+    log_or_show_progress(
+        "Gateway gRPC and HTTP health endpoints are ready",
+        &optional_progress_bar,
+    );
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.finish_and_clear();

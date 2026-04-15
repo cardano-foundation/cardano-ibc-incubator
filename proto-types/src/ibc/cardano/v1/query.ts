@@ -31,6 +31,7 @@ export interface QueryBridgeManifestResponse {
 export interface BridgeManifest {
   schema_version: number;
   deployment_id: string;
+  /** RFC 3339 / ISO-8601 timestamp for when the bridge deployment completed. */
   deployed_at: string;
   cardano?: BridgeManifestCardanoInfo;
   host_state_nft?: BridgeManifestAuthToken;

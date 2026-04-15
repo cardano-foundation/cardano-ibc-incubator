@@ -44,6 +44,7 @@ export type TxCompleteRetryPolicy = {
 export type TxOperationPlan<TExtraResponseFields = Record<string, never>> = {
   operationName: string;
   unsignedTx: TxBuilder;
+  rebuildUnsignedTx?: () => Promise<TxBuilder> | TxBuilder;
   validity: TxValidityPolicy;
   wallet: TxWalletInstruction;
   completeOptions?: TxCompleteOptions;
@@ -75,9 +76,8 @@ export class TxOperationRunnerService {
   async run<TExtraResponseFields = Record<string, never>>(
     plan: TxOperationPlan<TExtraResponseFields>,
   ): Promise<TxOperationRunnerResult<TExtraResponseFields>> {
-    const txWithValidity = plan.validity.apply(plan.unsignedTx);
     const completedUnsignedTx = await this.withCompletionLock(() =>
-      this.completeWithExplicitWalletSelection(txWithValidity, plan),
+      this.completeWithExplicitWalletSelection(plan),
     );
 
     const unsignedTxCbor = completedUnsignedTx.toCBOR();
@@ -117,13 +117,17 @@ export class TxOperationRunnerService {
   }
 
   private async completeWithExplicitWalletSelection<TExtraResponseFields>(
-    txWithValidity: TxBuilder,
     plan: TxOperationPlan<TExtraResponseFields>,
   ): Promise<CompletedUnsignedTx> {
     const maxAttempts = Math.max(1, plan.completeRetry?.maxAttempts ?? 1);
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const txBuilder =
+        attempt === 1 || !plan.rebuildUnsignedTx
+          ? plan.unsignedTx
+          : await plan.rebuildUnsignedTx();
+      const txWithValidity = plan.validity.apply(txBuilder);
       const walletScopeId = this.lucidService.beginWalletSelectionScope();
       try {
         await this.applyWalletInstruction(plan.wallet);

@@ -1,4 +1,6 @@
-import { Kupmios, Lucid, Network } from "@lucid-evolution/lucid";
+import { Kupmios } from "@lucid-evolution/lucid";
+import { getLiveWalletUtxos } from "../src/utils.ts";
+import { buildLucidWithCompatibleProtocolParameters } from "../src/protocol_parameters.ts";
 
 const deployerSk = Deno.env.get("DEPLOYER_SK");
 const kupoUrl = Deno.env.get("KUPO_URL");
@@ -11,28 +13,23 @@ if (!deployerSk || !kupoUrl || !ogmiosUrl || !cardanoNetworkMagic) {
   );
 }
 
-let cardanoNetwork: Network = "Custom";
-if (cardanoNetworkMagic === "1") {
-  cardanoNetwork = "Preprod";
-} else if (cardanoNetworkMagic === "2") {
-  cardanoNetwork = "Preview";
-} else if (cardanoNetworkMagic === "764824073") {
-  cardanoNetwork = "Mainnet";
-}
-
 const provider = new Kupmios(kupoUrl, ogmiosUrl);
-const lucid = await Lucid(provider, cardanoNetwork);
+const lucid = await buildLucidWithCompatibleProtocolParameters(
+  provider,
+  ogmiosUrl,
+  cardanoNetworkMagic,
+);
 lucid.selectWallet.fromPrivateKey(deployerSk);
 
 const walletAddress = await lucid.wallet().address();
-const utxos = await lucid.wallet().getUtxos();
+const utxos = await getLiveWalletUtxos(lucid);
 
 if (utxos.length === 0) {
   throw new Error(
-    `No wallet UTxOs are visible yet for ${walletAddress} via ${kupoUrl}`,
+    `No live wallet UTxOs are visible yet for ${walletAddress} via ${kupoUrl}`,
   );
 }
 
 console.log(
-  `Wallet UTxOs visible for ${walletAddress}: ${utxos.length} via ${kupoUrl}`,
+  `Live wallet UTxOs visible for ${walletAddress}: ${utxos.length} via ${kupoUrl}`,
 );

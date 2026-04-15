@@ -14,15 +14,13 @@ import {
   MsgConnectionOpenTry,
 } from '@plus/proto-types/build/ibc/core/connection/v1/tx';
 import { ConnectionOpenInitOperator } from '../dto/connection/connection-open-init-operator.dto';
-import { ClientState as ClientStateMithrilMsg } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
+import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { convertString2Hex, toHex } from '@shared/helpers/hex';
 import { ConnectionOpenTryOperator } from '../dto/connection/connection-open-try-operator.dto';
 import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
 import { ConnectionOpenAckOperator } from '../dto/connection/connection-open-ack-operator.dto';
-import { decodeClientStateMithril, decodeMerkleProof } from './helper';
+import { decodeMerkleProof } from './helper';
 import { ConnectionOpenConfirmOperator } from '../dto/connection/connection-open-confirm-operator.dto';
-import { MithrilClientState } from '../../shared/types/mithril';
-import { initializeMithrilClientState } from '../../shared/helpers/mithril-client';
 
 export function validateAndFormatConnectionOpenInitParams(data: MsgConnectionOpenInit): {
   constructedAddress: string;
@@ -71,8 +69,7 @@ export function validateAndFormatConnectionOpenTryParams(data: MsgConnectionOpen
   const clientSequence: string = data.client_id.replaceAll(`${CLIENT_ID_PREFIX}-`, '');
   const decodedProofInitMsg: MerkleProofMsg = MerkleProofMsg.decode(data.proof_init);
   const decodedProofClientMsg: MerkleProofMsg = MerkleProofMsg.decode(data.proof_client);
-  const decodedCardanoClientStateMsg: ClientStateMithrilMsg = ClientStateMithrilMsg.decode(data.client_state.value);
-  const clientState: MithrilClientState = initializeMithrilClientState(decodedCardanoClientStateMsg);
+  const clientStateAnyHex = Buffer.from(Any.encode(data.client_state).finish()).toString('hex');
   // Prepare the connection open try operator object
   const connectionOpenTryOperator: ConnectionOpenTryOperator = {
     clientId: clientSequence,
@@ -89,7 +86,7 @@ export function validateAndFormatConnectionOpenTryParams(data: MsgConnectionOpen
         features: [DEFAULT_FEATURES_VERSION_ORDER_ORDERED, DEFAULT_FEATURES_VERSION_ORDER_UNORDERED],
       },
     ],
-    counterpartyClientState: clientState,
+    counterpartyClientState: clientStateAnyHex,
     proofInit: initializeMerkleProof(decodedProofInitMsg),
     proofClient: initializeMerkleProof(decodedProofClientMsg),
     proofHeight: {
@@ -125,21 +122,15 @@ export function validateAndFormatConnectionOpenAckParams(data: MsgConnectionOpen
   const value = any?.value;
   const valueLen = value?.length ?? 0;
   const valueHex = value ? Buffer.from(value).toString('hex') : '';
+  const clientStateAnyHex = Buffer.from(Any.encode(data.client_state).finish()).toString('hex');
   console.log(
     `[DEBUG] ConnOpenAck received client_state Any: type_url=${typeUrl}, value_len=${valueLen}, value_hex=${valueHex}`,
   );
 
-  const decodedMithrilClientStateMsg: ClientStateMithrilMsg = decodeClientStateMithril(data.client_state.value);
-  // eslint-disable-next-line no-console
-  console.log(
-    `[DEBUG] ConnOpenAck decoded mithril ClientState: chain_id=${decodedMithrilClientStateMsg.chain_id}, has_latest_height=${!!decodedMithrilClientStateMsg.latest_height}, has_frozen_height=${!!decodedMithrilClientStateMsg.frozen_height}`,
-  );
-  let clientState: MithrilClientState = initializeMithrilClientState(decodedMithrilClientStateMsg);
-
   // Prepare the connection open ack operator object
   const connectionOpenAckOperator: ConnectionOpenAckOperator = {
     connectionSequence: connectionSequence,
-    counterpartyClientState: clientState,
+    counterpartyClientState: clientStateAnyHex,
     counterpartyClientStateTypeUrl,
     counterpartyConnectionID: convertString2Hex(data.counterparty_connection_id),
     proofTry: initializeMerkleProof(decodedProofTryMsg),

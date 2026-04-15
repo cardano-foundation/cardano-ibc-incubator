@@ -1,4 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { appendFileSync } from 'fs';
+import { inspect } from 'util';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
 import { DenomTraceService, TraceRegistryInsertContext } from 'src/query/services/denom-trace.service';
@@ -94,6 +96,8 @@ import {
 
 @Injectable()
 export class PacketService {
+  private static readonly RECV_PACKET_DEBUG_LOG = '/tmp/recv-packet-debug.log';
+
   constructor(
     private readonly logger: Logger,
     private configService: ConfigService,
@@ -150,11 +154,13 @@ export class PacketService {
     voucherHash: string,
     fullDenom: string,
     buildCandidateTx: (traceRegistryUpdate: TraceRegistryInsertContext) => TxBuilder,
+    onInitialUpdate?: (traceRegistryUpdate: TraceRegistryInsertContext) => void,
   ): Promise<TraceRegistryInsertContext> {
     const initialUpdate = await this.denomTraceService.prepareOnChainInsert(
       voucherHash,
       fullDenom,
     );
+    onInitialUpdate?.(initialUpdate);
     if (initialUpdate.kind !== 'append') {
       return initialUpdate;
     }
@@ -170,6 +176,541 @@ export class PacketService {
       fullDenom,
       { forceRollover: true },
     );
+  }
+
+  private appendRecvPacketDebug(line: string): void {
+    try {
+      appendFileSync(PacketService.RECV_PACKET_DEBUG_LOG, `${new Date().toISOString()} ${line}\n`);
+    } catch {
+      // Best-effort debugging only.
+    }
+  }
+
+  private logRecvPacketDebug(line: string): void {
+    this.logger.log(line);
+    this.appendRecvPacketDebug(line);
+  }
+
+  private compareUtxoRef(a: UTxO, b: UTxO): number {
+    const txHashCompare = a.txHash.localeCompare(b.txHash);
+    if (txHashCompare !== 0) return txHashCompare;
+    return a.outputIndex - b.outputIndex;
+  }
+
+  private toUtxoRef(utxo: UTxO): string {
+    return `${utxo.txHash}#${utxo.outputIndex}`;
+  }
+
+  private debugLogRecvPacketPlan(
+    context: string,
+    params: {
+      spendInputs: Array<{ label: string; utxo: UTxO }>;
+      channelOutputAddress: string;
+      hostStateOutputAddress: string;
+      transferModuleInputAddress?: string;
+      transferModuleOutputAddress?: string;
+      updatedChannelDatumHex: string;
+      recvPacketPolicyId: string;
+      verifyProofPolicyId: string;
+      channelTokenUnit: string;
+      proofHeight: string;
+      packetSequence: string;
+      packetDataUtf8?: string;
+      packetDataHex?: string;
+      reencodedPacketDataUtf8?: string;
+      reencodedPacketDataHex?: string;
+      packetDataMatches?: boolean;
+      receiverAddress?: string;
+      voucherTokenUnit?: string;
+      denomToken?: string;
+      traceRegistryKind?: string;
+    },
+  ): void {
+    const sortedSpendInputs = [...params.spendInputs].sort((a, b) => this.compareUtxoRef(a.utxo, b.utxo));
+    const renderedSpendInputs = sortedSpendInputs
+      .map((entry, index) => `Spend[${index}] ${this.toUtxoRef(entry.utxo)} (${entry.label})`)
+      .join(', ');
+
+    this.logRecvPacketDebug(`[DEBUG recvPacket] ${context} spend_inputs_sorted=${renderedSpendInputs}`);
+    this.logRecvPacketDebug(
+      `[DEBUG recvPacket] ${context} policy_ids recv_packet=${params.recvPacketPolicyId} verify_proof=${params.verifyProofPolicyId} channel_token_unit=${params.channelTokenUnit}`,
+    );
+    this.logRecvPacketDebug(
+      `[DEBUG recvPacket] ${context} packet sequence=${params.packetSequence} proof_height=${params.proofHeight}`,
+    );
+    this.logRecvPacketDebug(
+      `[DEBUG recvPacket] ${context} output_addresses channel=${params.channelOutputAddress} host_state=${params.hostStateOutputAddress}${params.receiverAddress ? ` receiver=${params.receiverAddress}` : ''}`,
+    );
+    if (params.transferModuleInputAddress || params.transferModuleOutputAddress) {
+      this.logRecvPacketDebug(
+        `[DEBUG recvPacket] ${context} transfer_module_addresses input=${params.transferModuleInputAddress ?? 'n/a'} output=${params.transferModuleOutputAddress ?? 'n/a'}`,
+      );
+    }
+    if (params.voucherTokenUnit) {
+      this.logRecvPacketDebug(`[DEBUG recvPacket] ${context} voucher_token_unit=${params.voucherTokenUnit}`);
+    }
+    if (params.denomToken) {
+      this.logRecvPacketDebug(`[DEBUG recvPacket] ${context} denom_token=${params.denomToken}`);
+    }
+    if (params.packetDataUtf8 !== undefined) {
+      this.logRecvPacketDebug(
+        `[DEBUG recvPacket] ${context} packet_data match=${params.packetDataMatches ?? false} utf8=${params.packetDataUtf8}`,
+      );
+    }
+    if (params.reencodedPacketDataUtf8 !== undefined) {
+      this.logRecvPacketDebug(
+        `[DEBUG recvPacket] ${context} packet_data_reencoded utf8=${params.reencodedPacketDataUtf8}`,
+      );
+    }
+    if (params.packetDataHex !== undefined || params.reencodedPacketDataHex !== undefined) {
+      this.logRecvPacketDebug(
+        `[DEBUG recvPacket] ${context} packet_data_hex incoming=${params.packetDataHex ?? 'n/a'} reencoded=${params.reencodedPacketDataHex ?? 'n/a'}`,
+      );
+    }
+    if (params.traceRegistryKind) {
+      this.logRecvPacketDebug(`[DEBUG recvPacket] ${context} trace_registry_kind=${params.traceRegistryKind}`);
+    }
+    this.logRecvPacketDebug(
+      `[DEBUG recvPacket] ${context} updated_channel_datum len=${params.updatedChannelDatumHex.length} head=${params.updatedChannelDatumHex.substring(0, 160)}`,
+    );
+  }
+
+  private logRecvPacketRawConfig(
+    context: string,
+    tx: TxBuilder,
+    knownRefs: Array<[string, UTxO | undefined]>,
+  ): void {
+    try {
+      const raw = tx.rawConfig();
+      const knownByRef = new Map<string, string>();
+      for (const [label, utxo] of knownRefs) {
+        if (!utxo) continue;
+        knownByRef.set(this.toUtxoRef(utxo), label);
+      }
+
+      const renderRef = (utxo: UTxO, index: number) => {
+        const ref = this.toUtxoRef(utxo);
+        const label = knownByRef.get(ref);
+        return label ? `#${index} ${ref} (${label})` : `#${index} ${ref}`;
+      };
+
+      const collected = raw.collectedInputs.map(renderRef);
+      const reads = raw.readInputs.map(renderRef);
+      const payToOutputs = raw.payToOutputs.map((output, index) => {
+        return `#${index} ${inspect(output, { depth: 5, breakLength: 120 })}`;
+      });
+
+      this.logger.log(
+        `[DEBUG recvPacket] ${context} raw.collectedInputs(${collected.length})=${collected.join(', ')}`,
+      );
+      this.logger.log(
+        `[DEBUG recvPacket] ${context} raw.readInputs(${reads.length})=${reads.join(', ')}`,
+      );
+      this.logger.log(
+        `[DEBUG recvPacket] ${context} raw.payToOutputs(${payToOutputs.length})=${payToOutputs.join(' || ')}`,
+      );
+      this.logRecvPacketDebug(
+        `[DEBUG recvPacket] ${context} raw.collectedInputs(${collected.length})=${collected.join(', ')}`,
+      );
+      this.logRecvPacketDebug(
+        `[DEBUG recvPacket] ${context} raw.readInputs(${reads.length})=${reads.join(', ')}`,
+      );
+      this.logRecvPacketDebug(
+        `[DEBUG recvPacket] ${context} raw.payToOutputs(${payToOutputs.length})=${payToOutputs.join(' || ')}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `[DEBUG recvPacket] ${context} rawConfig_error=${inspect(error, { depth: 5, breakLength: 120 })}`,
+      );
+      this.logRecvPacketDebug(
+        `[DEBUG recvPacket] ${context} rawConfig_error=${inspect(error, { depth: 5 })}`,
+      );
+    }
+  }
+
+  private debugLogVerifyMembershipInputs(
+    context: string,
+    params: {
+      clientState: {
+        latestHeight: { revisionNumber: bigint; revisionHeight: bigint };
+        proofSpecs?: Array<{
+          leaf_spec?: { prefix?: string; hash?: bigint; prehash_key?: bigint; prehash_value?: bigint; length?: bigint };
+          inner_spec?: { child_size?: bigint; min_prefix_length?: bigint; max_prefix_length?: bigint; hash?: bigint };
+        }>;
+      };
+      clientLatestHeight: { revisionNumber: bigint; revisionHeight: bigint };
+      proofHeight: { revisionNumber: bigint; revisionHeight: bigint };
+      consensusRoot: string;
+      pathKeyPath: string[];
+      expectedValue: string;
+      proof: any;
+    },
+  ): void {
+    const proofs = Array.isArray(params.proof?.proofs) ? params.proof.proofs : [];
+    const firstProof = params.proof?.proofs?.[0]?.proof;
+    const existenceProof =
+      firstProof && typeof firstProof === 'object' && 'CommitmentProof_Exist' in firstProof
+        ? firstProof.CommitmentProof_Exist.exist
+        : null;
+    const nonExistenceProof =
+      firstProof && typeof firstProof === 'object' && 'CommitmentProof_Nonexist' in firstProof
+        ? firstProof.CommitmentProof_Nonexist.non_exist
+        : null;
+
+    this.logRecvPacketDebug(
+      `[DEBUG recvPacket] ${context} verify_membership client_latest_height=${params.clientLatestHeight.revisionNumber}/${params.clientLatestHeight.revisionHeight} proof_height=${params.proofHeight.revisionNumber}/${params.proofHeight.revisionHeight} consensus_root=${params.consensusRoot}`,
+    );
+    this.logRecvPacketDebug(
+      `[DEBUG recvPacket] ${context} verify_membership proof_specs=${params.clientState.proofSpecs?.length ?? 0} proofs=${proofs.length}`,
+    );
+    params.clientState.proofSpecs?.forEach((spec, index) => {
+      const canonicalSpec = this.getCanonicalProofSpecs()[index];
+      const isIavlSpec = index === 0 && this.proofSpecEquals(spec, canonicalSpec);
+      this.logRecvPacketDebug(
+        `[DEBUG recvPacket] ${context} verify_membership spec[${index}] leaf_prefix=${spec.leaf_spec?.prefix ?? 'n/a'} leaf_hash=${spec.leaf_spec?.hash ?? 'n/a'} prehash_key=${spec.leaf_spec?.prehash_key ?? 'n/a'} prehash_value=${spec.leaf_spec?.prehash_value ?? 'n/a'} length=${spec.leaf_spec?.length ?? 'n/a'} child_size=${spec.inner_spec?.child_size ?? 'n/a'} min_prefix=${spec.inner_spec?.min_prefix_length ?? 'n/a'} max_prefix=${spec.inner_spec?.max_prefix_length ?? 'n/a'} inner_hash=${spec.inner_spec?.hash ?? 'n/a'}`,
+      );
+      this.logRecvPacketDebug(
+        `[DEBUG recvPacket] ${context} verify_membership spec[${index}] canonical_match=${this.proofSpecEquals(spec, canonicalSpec)} iavl_mode=${isIavlSpec}`,
+      );
+    });
+    this.logRecvPacketDebug(
+      `[DEBUG recvPacket] ${context} verify_membership merkle_path=${params.pathKeyPath.join(' | ')}`,
+    );
+    const computedRoots: Array<string | null> = [];
+    proofs.forEach((proofItem: any, index: number) => {
+      const proofKind = proofItem?.proof;
+      const exist =
+        proofKind && typeof proofKind === 'object' && 'CommitmentProof_Exist' in proofKind
+          ? proofKind.CommitmentProof_Exist.exist
+          : null;
+      const nonexist =
+        proofKind && typeof proofKind === 'object' && 'CommitmentProof_Nonexist' in proofKind
+          ? proofKind.CommitmentProof_Nonexist.non_exist
+          : null;
+
+      if (exist) {
+        const computedRoot = this.computeExistenceProofRoot(exist);
+        computedRoots[index] = computedRoot;
+        const spec = params.clientState.proofSpecs?.[index];
+        const canonicalSpec = this.getCanonicalProofSpecs()[index];
+        const isIavlSpec = index === 0 && this.proofSpecEquals(spec, canonicalSpec);
+        const leafCheck = this.checkAgainstSpecLeafOp(exist.leaf, spec, isIavlSpec);
+        const innerChecks = Array.isArray(exist.path)
+          ? exist.path.map((innerOp: any) => this.checkAgainstSpecInnerOp(innerOp, spec, isIavlSpec))
+          : [];
+        this.logRecvPacketDebug(
+          `[DEBUG recvPacket] ${context} verify_membership proof[${index}] exist key=${exist.key} value=${exist.value} leaf_prefix=${exist.leaf?.prefix ?? 'n/a'} leaf_hash=${exist.leaf?.hash ?? 'n/a'} prehash_key=${exist.leaf?.prehash_key ?? 'n/a'} prehash_value=${exist.leaf?.prehash_value ?? 'n/a'} length=${exist.leaf?.length ?? 'n/a'} inner_ops=${exist.path?.length ?? 0} computed_root=${computedRoot ?? 'n/a'}`,
+        );
+        this.logRecvPacketDebug(
+          `[DEBUG recvPacket] ${context} verify_membership proof[${index}] spec_checks leaf=${leafCheck} inner=${innerChecks.every(Boolean)} inner_detail=${innerChecks.join(',')}`,
+        );
+        return;
+      }
+
+      if (nonexist) {
+        computedRoots[index] = null;
+        this.logRecvPacketDebug(
+          `[DEBUG recvPacket] ${context} verify_membership proof[${index}] nonexist key=${nonexist.key} left_key=${nonexist.left?.key ?? 'n/a'} right_key=${nonexist.right?.key ?? 'n/a'}`,
+        );
+        return;
+      }
+
+      computedRoots[index] = null;
+      this.logRecvPacketDebug(
+        `[DEBUG recvPacket] ${context} verify_membership proof[${index}] kind=${String(proofKind)}`,
+      );
+    });
+    if (computedRoots.length >= 2 && computedRoots[0]) {
+      const secondProofValue =
+        proofs[1]?.proof &&
+        typeof proofs[1].proof === 'object' &&
+        'CommitmentProof_Exist' in proofs[1].proof
+          ? proofs[1].proof.CommitmentProof_Exist.exist?.value
+          : null;
+      this.logRecvPacketDebug(
+        `[DEBUG recvPacket] ${context} verify_membership proof_chain_match=${computedRoots[0] === secondProofValue} proof0_root=${computedRoots[0]} proof1_value=${secondProofValue ?? 'n/a'}`,
+      );
+    }
+    const finalComputedRoot = computedRoots[computedRoots.length - 1];
+    if (finalComputedRoot) {
+      this.logRecvPacketDebug(
+        `[DEBUG recvPacket] ${context} verify_membership consensus_root_match=${finalComputedRoot === params.consensusRoot} final_proof_root=${finalComputedRoot}`,
+      );
+    }
+
+    if (existenceProof) {
+      this.logRecvPacketDebug(
+        `[DEBUG recvPacket] ${context} verify_membership existence key=${existenceProof.key} value=${existenceProof.value} expected_value=${params.expectedValue} value_match=${existenceProof.value === params.expectedValue} inner_ops=${existenceProof.path.length}`,
+      );
+      return;
+    }
+
+    if (nonExistenceProof) {
+      this.logRecvPacketDebug(
+        `[DEBUG recvPacket] ${context} verify_membership nonexist key=${nonExistenceProof.key} left_key=${nonExistenceProof.left?.key ?? 'n/a'} right_key=${nonExistenceProof.right?.key ?? 'n/a'}`,
+      );
+      return;
+    }
+
+    this.logRecvPacketDebug(
+      `[DEBUG recvPacket] ${context} verify_membership first_proof_kind=${String(firstProof)}`,
+    );
+  }
+
+  private computeExistenceProofRoot(existenceProof: any): string | null {
+    if (!existenceProof?.leaf) return null;
+
+    const applyHash = (hashOp: unknown, payload: Buffer): Buffer => {
+      const op = Number(hashOp ?? 0);
+      if (op === 0) return payload;
+      if (op === 1) return Buffer.from(hashSHA256(payload.toString('hex')), 'hex');
+      return Buffer.alloc(0);
+    };
+
+    const encodeVarint = (value: number): Buffer => {
+      const bytes: number[] = [];
+      let remaining = value >>> 0;
+      while (remaining >= 0x80) {
+        bytes.push((remaining & 0x7f) | 0x80);
+        remaining >>>= 7;
+      }
+      bytes.push(remaining);
+      return Buffer.from(bytes);
+    };
+
+    const applyLength = (lengthOp: unknown, payload: Buffer): Buffer => {
+      const op = Number(lengthOp ?? 0);
+      if (op === 0) return payload;
+      if (op === 1) return Buffer.concat([encodeVarint(payload.length), payload]);
+      if (op === 7 || op === 8) return payload;
+      return Buffer.alloc(0);
+    };
+
+    const prepareLeafData = (hashOp: unknown, lengthOp: unknown, hexValue: string): Buffer => {
+      const raw = Buffer.from(hexValue ?? '', 'hex');
+      return applyLength(lengthOp, applyHash(hashOp, raw));
+    };
+
+    let current = applyHash(
+      existenceProof.leaf.hash,
+      Buffer.concat([
+        Buffer.from(existenceProof.leaf.prefix ?? '', 'hex'),
+        prepareLeafData(existenceProof.leaf.prehash_key, existenceProof.leaf.length, existenceProof.key ?? ''),
+        prepareLeafData(existenceProof.leaf.prehash_value, existenceProof.leaf.length, existenceProof.value ?? ''),
+      ]),
+    );
+
+    for (const innerOp of existenceProof.path ?? []) {
+      current = applyHash(
+        innerOp.hash,
+        Buffer.concat([
+          Buffer.from(innerOp.prefix ?? '', 'hex'),
+          current,
+          Buffer.from(innerOp.suffix ?? '', 'hex'),
+        ]),
+      );
+    }
+
+    return current.toString('hex');
+  }
+
+  private decodeHexBytes(hex: string | undefined | null): Buffer {
+    return Buffer.from((hex ?? '').trim(), 'hex');
+  }
+
+  private readVarintFromBuffer(buffer: Buffer, offset: number): { value: number; nextOffset: number } {
+    let result = 0;
+    let shift = 0;
+    let index = offset;
+
+    while (index < buffer.length) {
+      const byte = buffer[index];
+      result |= (byte & 0x7f) << shift;
+      index += 1;
+      if ((byte & 0x80) === 0) {
+        return { value: result, nextOffset: index };
+      }
+      shift += 7;
+    }
+
+    throw new Error('invalid varint encoding');
+  }
+
+  private hasHexPrefix(valueHex: string | undefined | null, prefixHex: string | undefined | null): boolean {
+    const value = this.decodeHexBytes(valueHex);
+    const prefix = this.decodeHexBytes(prefixHex);
+    return value.subarray(0, prefix.length).equals(prefix);
+  }
+
+  private validateIavlLeafOp(prefixHex: string | undefined | null, b: number): boolean {
+    try {
+      const prefix = this.decodeHexBytes(prefixHex);
+      let cursor = 0;
+      const first = this.readVarintFromBuffer(prefix, cursor);
+      cursor = first.nextOffset;
+      const second = this.readVarintFromBuffer(prefix, cursor);
+      cursor = second.nextOffset;
+      const third = this.readVarintFromBuffer(prefix, cursor);
+      cursor = third.nextOffset;
+      const remainingLength = prefix.length - cursor;
+
+      if (first.value < b || second.value < 0 || third.value < 0) {
+        return false;
+      }
+
+      return b === 0 ? remainingLength === 0 : remainingLength === 1 || remainingLength === 34;
+    } catch {
+      return false;
+    }
+  }
+
+  private validateIavlInnerOp(prefixHex: string | undefined | null, hashOp: unknown, b: number): boolean {
+    try {
+      const prefix = this.decodeHexBytes(prefixHex);
+      let cursor = 0;
+      const first = this.readVarintFromBuffer(prefix, cursor);
+      cursor = first.nextOffset;
+      const second = this.readVarintFromBuffer(prefix, cursor);
+      cursor = second.nextOffset;
+      const third = this.readVarintFromBuffer(prefix, cursor);
+      cursor = third.nextOffset;
+      const remainingLength = prefix.length - cursor;
+
+      if (first.value < b || second.value < 0 || third.value < 0) {
+        return false;
+      }
+
+      return (b === 0 ? remainingLength === 0 : remainingLength === 1 || remainingLength === 34) &&
+        Number(hashOp ?? 0) === 1;
+    } catch {
+      return false;
+    }
+  }
+
+  private proofSpecEquals(left: any, right: any): boolean {
+    const normalize = (value: any): any => {
+      if (Array.isArray(value)) {
+        return value.map(normalize);
+      }
+      if (typeof value === 'bigint') {
+        return value.toString();
+      }
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(
+          Object.entries(value)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, entryValue]) => [key, normalize(entryValue)]),
+        );
+      }
+      return value;
+    };
+
+    return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
+  }
+
+  private getCanonicalProofSpecs(): Array<any> {
+    return [
+      {
+        leaf_spec: {
+          hash: 1n,
+          prehash_key: 0n,
+          prehash_value: 1n,
+          length: 1n,
+          prefix: '00',
+        },
+        inner_spec: {
+          child_order: [0n, 1n],
+          child_size: 33n,
+          min_prefix_length: 4n,
+          max_prefix_length: 12n,
+          empty_child: '',
+          hash: 1n,
+        },
+        max_depth: 0n,
+        min_depth: 0n,
+        prehash_key_before_comparison: false,
+      },
+      {
+        leaf_spec: {
+          hash: 1n,
+          prehash_key: 0n,
+          prehash_value: 1n,
+          length: 1n,
+          prefix: '00',
+        },
+        inner_spec: {
+          child_order: [0n, 1n],
+          child_size: 32n,
+          min_prefix_length: 1n,
+          max_prefix_length: 1n,
+          empty_child: '',
+          hash: 1n,
+        },
+        max_depth: 0n,
+        min_depth: 0n,
+        prehash_key_before_comparison: false,
+      },
+    ];
+  }
+
+  private checkAgainstSpecLeafOp(op: any, spec: any, isIavlSpec: boolean): boolean {
+    const leafSpec = spec?.leaf_spec;
+    if (!leafSpec) {
+      return false;
+    }
+
+    return (
+      Number(op?.hash ?? -1) === Number(leafSpec.hash ?? -2) &&
+      Number(op?.prehash_key ?? -1) === Number(leafSpec.prehash_key ?? -2) &&
+      Number(op?.prehash_value ?? -1) === Number(leafSpec.prehash_value ?? -2) &&
+      Number(op?.length ?? -1) === Number(leafSpec.length ?? -2) &&
+      this.hasHexPrefix(op?.prefix, leafSpec.prefix) &&
+      (!isIavlSpec || this.validateIavlLeafOp(op?.prefix, 0))
+    );
+  }
+
+  private checkAgainstSpecInnerOp(op: any, spec: any, isIavlSpec: boolean): boolean {
+    const innerSpec = spec?.inner_spec;
+    const leafSpec = spec?.leaf_spec;
+    if (!innerSpec || !leafSpec) {
+      return false;
+    }
+
+    const prefixLength = this.decodeHexBytes(op?.prefix).length;
+    const suffixLength = this.decodeHexBytes(op?.suffix).length;
+    const maxOpPrefixLength =
+      (Array.isArray(innerSpec.child_order) ? innerSpec.child_order.length - 1 : 0) *
+        Number(innerSpec.child_size ?? 0) +
+      Number(innerSpec.max_prefix_length ?? 0);
+
+    return (
+      Number(op?.hash ?? -1) === Number(innerSpec.hash ?? -2) &&
+      !this.hasHexPrefix(op?.prefix, leafSpec.prefix) &&
+      prefixLength >= Number(innerSpec.min_prefix_length ?? 0) &&
+      prefixLength <= maxOpPrefixLength &&
+      suffixLength % Number(innerSpec.child_size ?? 1) === 0 &&
+      (!isIavlSpec || this.validateIavlInnerOp(op?.prefix, op?.hash, 1))
+    );
+  }
+
+  private getTraceRegistrySpendInputs(
+    traceRegistryUpdate: TraceRegistryInsertContext | null,
+  ): Array<{ label: string; utxo: UTxO }> {
+    if (!traceRegistryUpdate || traceRegistryUpdate.kind === 'existing') {
+      return [];
+    }
+
+    if (traceRegistryUpdate.kind === 'append') {
+      return [
+        { label: 'trace_registry_shard', utxo: traceRegistryUpdate.traceRegistryShardUtxo },
+      ];
+    }
+
+    return [
+      { label: 'trace_registry_directory', utxo: traceRegistryUpdate.traceRegistryDirectoryUtxo },
+      { label: 'trace_registry_shard', utxo: traceRegistryUpdate.traceRegistryShardUtxo },
+      { label: 'trace_registry_mint_nonce', utxo: traceRegistryUpdate.traceRegistryMintNonceUtxo },
+    ];
   }
 
   /**
@@ -407,6 +948,14 @@ export class PacketService {
         constructedAddress,
       );
 
+      const deploymentConfig = this.configService.get('deployment');
+      this.logRecvPacketRawConfig('pre_complete', unsignedRecvPacketTx, [
+        ['traceRegistryDirectory', await this.safeFindTraceRegistryDirectoryUtxo()],
+        ['recvPacketRefScript', deploymentConfig.validators.spendChannel.refValidator.recv_packet?.refUtxo],
+        ['verifyProofRefScript', deploymentConfig.validators.verifyProof?.refUtxo],
+        ['spendTraceRegistryRefScript', deploymentConfig.validators.spendTraceRegistry?.refUtxo],
+      ]);
+
       const { currentSlot, validToSlot, validToTime: initialValidToTime } = await this.computeTxValidityWindow();
       let validToTime = initialValidToTime;
       if (recvPacketOperator.timeoutTimestamp > 0n) {
@@ -461,11 +1010,29 @@ export class PacketService {
       return response;
     } catch (error) {
       this.logger.error(`recvPacket: ${error}`);
+      this.logger.error(`[DEBUG recvPacket] error.inspect=${inspect(error, { depth: 8, breakLength: 120 })}`);
+      const cause = (error as { cause?: unknown })?.cause;
+      if (cause) {
+        this.logger.error(`[DEBUG recvPacket] error.cause=${inspect(cause, { depth: 8, breakLength: 120 })}`);
+      }
       if (!(error instanceof RpcException)) {
         throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
       } else {
         throw error;
       }
+    }
+  }
+
+  private async safeFindTraceRegistryDirectoryUtxo(): Promise<UTxO | undefined> {
+    try {
+      const deploymentConfig = this.configService.get('deployment');
+      const traceRegistry = deploymentConfig.traceRegistry;
+      if (!traceRegistry?.directory) return undefined;
+      return await this.lucidService.findUtxoByUnit(
+        traceRegistry.directory.policyId + traceRegistry.directory.name,
+      );
+    } catch {
+      return undefined;
     }
   }
   async sendPacket(data: MsgTransfer): Promise<MsgTransferResponse> {
@@ -931,6 +1498,16 @@ export class PacketService {
       },
     };
 
+    this.debugLogVerifyMembershipInputs('recv_packet', {
+      clientState: clientDatum.state.clientState,
+      clientLatestHeight: clientDatum.state.clientState.latestHeight,
+      proofHeight: recvPacketOperator.proofHeight,
+      consensusRoot: consensusState.root.hash,
+      pathKeyPath: verifyProofRedeemer.VerifyMembership.path.key_path,
+      expectedValue: verifyProofRedeemer.VerifyMembership.value,
+      proof: verifyProofRedeemer.VerifyMembership.proof,
+    });
+
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
@@ -1024,6 +1601,15 @@ export class PacketService {
       if (typeof jsonData === 'object' && jsonData !== null && 'denom' in jsonData && jsonData.denom !== undefined) {
           // Packet data seems to be ICS-20 related. Build transfer module redeemer.
           const fungibleTokenPacketData: FungibleTokenPacketDatum = jsonData as FungibleTokenPacketDatum;
+          const reencodedPacketDataUtf8 = stringifyIcs20PacketData({
+            denom: fungibleTokenPacketData.denom,
+            amount: fungibleTokenPacketData.amount,
+            sender: fungibleTokenPacketData.sender,
+            receiver: fungibleTokenPacketData.receiver,
+            memo: fungibleTokenPacketData.memo,
+          });
+          const reencodedPacketDataHex = convertString2Hex(reencodedPacketDataUtf8);
+          const packetDataMatches = recvPacketOperator.packetData === reencodedPacketDataHex;
           const fTokenPacketData: FungibleTokenPacketDatum = {
             denom: convertString2Hex(fungibleTokenPacketData.denom),
             amount: convertString2Hex(fungibleTokenPacketData.amount),
@@ -1124,6 +1710,30 @@ export class PacketService {
               verifyProofPolicyId,
               encodedVerifyProofRedeemer,
             };
+            this.debugLogRecvPacketPlan('unescrow', {
+              spendInputs: [
+                { label: 'host_state', utxo: hostStateUtxo },
+                { label: 'channel', utxo: channelUtxo },
+                { label: 'transfer_module', utxo: transferModuleUtxo },
+              ],
+              channelOutputAddress: deploymentConfig.validators.spendChannel.address,
+              hostStateOutputAddress: deploymentConfig.validators.hostStateStt.address,
+              transferModuleInputAddress: transferModuleUtxo.address,
+              transferModuleOutputAddress: deploymentConfig.modules.transfer.address,
+              updatedChannelDatumHex: encodedUpdatedChannelDatum,
+              recvPacketPolicyId,
+              verifyProofPolicyId,
+              channelTokenUnit,
+              proofHeight: `${recvPacketOperator.proofHeight.revisionNumber}/${recvPacketOperator.proofHeight.revisionHeight}`,
+              packetSequence: packet.sequence.toString(),
+              packetDataUtf8: stringData,
+              packetDataHex: recvPacketOperator.packetData,
+              reencodedPacketDataUtf8,
+              reencodedPacketDataHex,
+              packetDataMatches,
+              receiverAddress: this.lucidService.credentialToAddress(fungibleTokenPacketData.receiver),
+              denomToken,
+            });
             const unsignedTx = this.lucidService.createUnsignedRecvPacketUnescrowTx(unsignedRecvPacketUnescrowParams);
             return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
           } else {
@@ -1218,8 +1828,61 @@ export class PacketService {
               fullDenomPath,
               (candidateUpdate) =>
                 this.lucidService.createUnsignedRecvPacketMintTx(buildUnsignedRecvPacketMintParams(candidateUpdate)),
+              (initialUpdate) =>
+                this.debugLogRecvPacketPlan('mint_voucher_candidate', {
+                  spendInputs: [
+                    ...this.getTraceRegistrySpendInputs(initialUpdate),
+                    { label: 'host_state', utxo: hostStateUtxo },
+                    { label: 'channel', utxo: channelUtxo },
+                    { label: 'transfer_module', utxo: transferModuleUtxo },
+                  ],
+                  channelOutputAddress: deploymentConfig.validators.spendChannel.address,
+                  hostStateOutputAddress: deploymentConfig.validators.hostStateStt.address,
+                  transferModuleInputAddress: transferModuleUtxo.address,
+                  transferModuleOutputAddress: deploymentConfig.modules.transfer.address,
+                  updatedChannelDatumHex: encodedUpdatedChannelDatum,
+                  recvPacketPolicyId,
+                  verifyProofPolicyId,
+                  channelTokenUnit,
+                  proofHeight: `${recvPacketOperator.proofHeight.revisionNumber}/${recvPacketOperator.proofHeight.revisionHeight}`,
+                  packetSequence: packet.sequence.toString(),
+                  packetDataUtf8: stringData,
+                  packetDataHex: recvPacketOperator.packetData,
+                  reencodedPacketDataUtf8,
+                  reencodedPacketDataHex,
+                  packetDataMatches,
+                  receiverAddress,
+                  voucherTokenUnit,
+                  traceRegistryKind: initialUpdate.kind,
+                }),
             );
 
+            this.debugLogRecvPacketPlan('mint_voucher', {
+              spendInputs: [
+                ...this.getTraceRegistrySpendInputs(traceRegistryUpdate),
+                { label: 'host_state', utxo: hostStateUtxo },
+                { label: 'channel', utxo: channelUtxo },
+                { label: 'transfer_module', utxo: transferModuleUtxo },
+              ],
+              channelOutputAddress: deploymentConfig.validators.spendChannel.address,
+              hostStateOutputAddress: deploymentConfig.validators.hostStateStt.address,
+              transferModuleInputAddress: transferModuleUtxo.address,
+              transferModuleOutputAddress: deploymentConfig.modules.transfer.address,
+              updatedChannelDatumHex: encodedUpdatedChannelDatum,
+              recvPacketPolicyId,
+              verifyProofPolicyId,
+              channelTokenUnit,
+              proofHeight: `${recvPacketOperator.proofHeight.revisionNumber}/${recvPacketOperator.proofHeight.revisionHeight}`,
+              packetSequence: packet.sequence.toString(),
+              packetDataUtf8: stringData,
+              packetDataHex: recvPacketOperator.packetData,
+              reencodedPacketDataUtf8,
+              reencodedPacketDataHex,
+              packetDataMatches,
+              receiverAddress,
+              voucherTokenUnit,
+              traceRegistryKind: traceRegistryUpdate?.kind ?? 'none',
+            });
             const unsignedTx = this.lucidService.createUnsignedRecvPacketMintTx(
               buildUnsignedRecvPacketMintParams(traceRegistryUpdate),
             );
@@ -1277,6 +1940,20 @@ export class PacketService {
       encodedVerifyProofRedeemer,
     };
 
+    this.debugLogRecvPacketPlan('generic', {
+      spendInputs: [
+        { label: 'host_state', utxo: hostStateUtxo },
+        { label: 'channel', utxo: channelUtxo },
+      ],
+      channelOutputAddress: deploymentConfig.validators.spendChannel.address,
+      hostStateOutputAddress: deploymentConfig.validators.hostStateStt.address,
+      updatedChannelDatumHex: encodedUpdatedChannelDatum,
+      recvPacketPolicyId,
+      verifyProofPolicyId,
+      channelTokenUnit,
+      proofHeight: `${recvPacketOperator.proofHeight.revisionNumber}/${recvPacketOperator.proofHeight.revisionHeight}`,
+      packetSequence: packet.sequence.toString(),
+    });
     // handle recv packet mint
     const unsignedTx = this.lucidService.createUnsignedRecvPacketTx(unsignedRecvPacketMintParams);
     return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };

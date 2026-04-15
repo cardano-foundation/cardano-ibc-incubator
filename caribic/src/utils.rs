@@ -180,6 +180,22 @@ pub fn get_cardano_state(
     }
 }
 
+pub fn get_cardano_era(project_root_dir: &Path) -> Result<String, Box<dyn std::error::Error>> {
+    let cardano_tip_state = get_cardano_tip_state(project_root_dir)?;
+    let cardano_tip_json: Value = serde_json::from_str(&cardano_tip_state)?;
+    let era_json = cardano_tip_json.get("era");
+
+    if let Some(era) = era_json.and_then(Value::as_str) {
+        Ok(era.to_string())
+    } else {
+        Err(format!(
+            "Failed to extract era from cardano-node: {}",
+            cardano_tip_state
+        )
+        .into())
+    }
+}
+
 pub fn replace_text_in_file(path: &Path, pattern: &str, replacement: &str) -> io::Result<()> {
     let content = fs::read_to_string(path)?;
     let re = Regex::new(pattern).unwrap();

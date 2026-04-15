@@ -1,0 +1,115 @@
+syntax = "proto3";
+package ibc.lightclients.stability.v1;
+
+import "gogoproto/gogo.proto";
+import "google/protobuf/duration.proto";
+
+option go_package = "entrypoint/x/clients/stability";
+
+message Height {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 revision_number = 1;
+  uint64 revision_height = 2;
+}
+
+message HeuristicParams {
+  option (gogoproto.goproto_getters) = false;
+
+  reserved 1 to 3;
+  uint64 threshold_depth = 4;
+  uint64 threshold_unique_pools = 5;
+  uint64 threshold_unique_stake_bps = 6;
+  uint64 depth_weight_bps = 7;
+  uint64 pools_weight_bps = 8;
+  uint64 stake_weight_bps = 9;
+}
+
+message StakeDistributionEntry {
+  option (gogoproto.goproto_getters) = false;
+
+  string pool_id = 1;
+  uint64 stake = 2;
+  bytes vrf_key_hash = 3;
+}
+
+message EpochContext {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 epoch = 1;
+  repeated StakeDistributionEntry stake_distribution = 2;
+  bytes epoch_nonce = 3;
+  uint64 slots_per_kes_period = 4;
+  uint64 epoch_start_slot = 5;
+  uint64 epoch_end_slot_exclusive = 6;
+}
+
+message ClientState {
+  option (gogoproto.goproto_getters) = false;
+
+  string chain_id = 1;
+  Height latest_height = 2;
+  Height frozen_height = 3;
+  uint64 current_epoch = 4;
+  google.protobuf.Duration trusting_period = 5 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
+  HeuristicParams heuristic_params = 6;
+  repeated string upgrade_path = 7;
+  bytes host_state_nft_policy_id = 8;
+  bytes host_state_nft_token_name = 9;
+  repeated StakeDistributionEntry epoch_stake_distribution = 10;
+  bytes epoch_nonce = 11;
+  uint64 slots_per_kes_period = 12;
+  uint64 current_epoch_start_slot = 13;
+  uint64 current_epoch_end_slot_exclusive = 14;
+  uint64 system_start_unix_ns = 15;
+  uint64 slot_length_ns = 16;
+  repeated EpochContext epoch_contexts = 17;
+}
+
+message ConsensusState {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 timestamp = 1;
+  bytes ibc_state_root = 2;
+  string accepted_block_hash = 3;
+  uint64 accepted_epoch = 4;
+  uint64 unique_pools_count = 5;
+  uint64 unique_stake_bps = 6;
+  uint64 security_score_bps = 7;
+}
+
+message Misbehaviour {
+  option (gogoproto.goproto_getters) = false;
+
+  string client_id = 1 [deprecated = true];
+  StabilityHeader stability_header_1 = 2 [(gogoproto.customname) = "StabilityHeader1"];
+  StabilityHeader stability_header_2 = 3 [(gogoproto.customname) = "StabilityHeader2"];
+}
+
+message StabilityBlock {
+  option (gogoproto.goproto_getters) = false;
+
+  Height height = 1;
+  uint64 slot = 2;
+  string hash = 3;
+  reserved 4;
+  uint64 epoch = 5;
+  uint64 timestamp = 6;
+  reserved 7;
+  reserved 8;
+  bytes block_cbor = 9;
+}
+
+message StabilityHeader {
+  option (gogoproto.goproto_getters) = false;
+
+  Height trusted_height = 1;
+  StabilityBlock anchor_block = 2;
+  repeated StabilityBlock descendant_blocks = 3;
+  string host_state_tx_hash = 4;
+  reserved 5;
+  uint32 host_state_tx_output_index = 6;
+  reserved 7 to 9;
+  repeated StabilityBlock bridge_blocks = 10;
+  EpochContext new_epoch_context = 11;
+}

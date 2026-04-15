@@ -9,6 +9,7 @@ buf generate --template buf.gen.gogo.yaml $file
 
 # move proto files to the right places
 cp -r entrypoint/x/clients/mithril/*.pb.go ../x/clients/mithril
+cp -r entrypoint/x/clients/stability/*.pb.go ../x/clients/stability
 rm -rf entrypoint
 
 cd ..

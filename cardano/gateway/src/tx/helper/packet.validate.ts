@@ -77,6 +77,16 @@ export function validateAndFormatSendPacketParams(data: MsgTransfer): SendPacket
   if (!tokenDenom) {
     throw new GrpcInvalidArgumentException('Invalid argument: "token.denom" is required');
   }
+  if (typeof data.token?.amount === 'undefined') {
+    throw new GrpcInvalidArgumentException('Invalid argument: "token.amount" is required');
+  }
+
+  let tokenAmount: bigint;
+  try {
+    tokenAmount = BigInt(data.token.amount);
+  } catch {
+    throw new GrpcInvalidArgumentException('Invalid argument: "token.amount" must be an integer string');
+  }
 
   // Prepare the Recv packet operator object
   const sendPacketOperator: SendPacketOperator = {
@@ -84,7 +94,7 @@ export function validateAndFormatSendPacketParams(data: MsgTransfer): SendPacket
     sourceChannel: data.source_channel,
     token: {
       denom: tokenDenom,
-      amount: data.token.amount,
+      amount: tokenAmount,
     },
     sender: data.sender,
     receiver: data.receiver,

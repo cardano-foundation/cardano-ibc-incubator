@@ -66,6 +66,7 @@ interface Config {
   deployment: DeploymentConfig;
   ogmiosEndpoint: string;
   kupoEndpoint: string;
+  yaciStoreEndpoint: string;
   entrypointRestEndpoint: string;
   localOsmosisRestEndpoint: string;
   swapRouterAddress: string;
@@ -77,7 +78,9 @@ interface Config {
   // Logical identifier for the Cardano chain used by Hermes (e.g., "cardano-devnet").
   // Cardano itself does not have a Cosmos-style chain-id; we use this as the IBC identifier.
   cardanoChainId: string;
+  cardanoLightClientMode: 'mithril' | 'stake-weighted-stability';
   cardanoNetwork: Network;
+  cardanoEpochLength: number;
   cardanoEpochNonceGenesis: string;
 
   mithrilEndpoint: string;
@@ -97,6 +100,7 @@ export default (): Partial<Config> => {
   return {
     ogmiosEndpoint: process.env.OGMIOS_ENDPOINT,
     kupoEndpoint: process.env.KUPO_ENDPOINT,
+    yaciStoreEndpoint: process.env.YACI_STORE_ENDPOINT,
     entrypointRestEndpoint: process.env.ENTRYPOINT_REST_ENDPOINT,
     localOsmosisRestEndpoint: process.env.LOCAL_OSMOSIS_REST_ENDPOINT,
     swapRouterAddress: process.env.SWAP_ROUTER_ADDRESS || '',
@@ -105,8 +109,13 @@ export default (): Partial<Config> => {
     cardanoChainPort: Number(process.env.CARDANO_CHAIN_PORT || 3001),
     cardanoChainNetworkMagic: Number(process.env.CARDANO_CHAIN_NETWORK_MAGIC || 42),
     cardanoChainId: process.env.CARDANO_CHAIN_ID || 'cardano-devnet',
+    cardanoLightClientMode:
+      process.env.CARDANO_LIGHT_CLIENT_MODE === 'mithril'
+        ? 'mithril'
+        : 'stake-weighted-stability',
     cardanoNetwork: cardanoNetwork,
-    cardanoEpochNonceGenesis: process.env.CARDANO_EPOCH_NONCE_GENESIS,
+    cardanoEpochLength: Number(process.env.CARDANO_EPOCH_LENGTH || 432000),
+    cardanoEpochNonceGenesis: process.env.CARDANO_EPOCH_NONCE_GENESIS || '',
 
     mithrilEndpoint: process.env.MITHRIL_ENDPOINT,
     mtithrilGenesisVerificationKey: process.env.MITHRIL_GENESIS_VERIFICATION_KEY,
