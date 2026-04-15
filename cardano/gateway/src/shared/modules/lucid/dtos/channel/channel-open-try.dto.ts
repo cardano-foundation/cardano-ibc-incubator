@@ -1,18 +1,19 @@
 import { UTxO } from '@lucid-evolution/lucid';
+import { GatewayModuleKey } from '@shared/helpers/module-port';
 
 export type UnsignedChannelOpenTryDto = {
+  moduleKey: GatewayModuleKey;
   handlerUtxo: UTxO;
   connectionUtxo: UTxO;
   clientUtxo: UTxO;
-  transferModuleUtxo: UTxO;
-  spendHandlerRefUtxo: UTxO;
-  mintChannelRefUtxo: UTxO;
-  spendMockModuleRefUtxo: UTxO;
-  encodedSpendMockModuleRedeemer: string;
+  moduleUtxo: UTxO;
+  encodedSpendModuleRedeemer: string;
   encodedSpendHandlerRedeemer: string;
   encodedMintChannelRedeemer: string;
   channelTokenUnit: string;
   encodedUpdatedHandlerDatum: string;
+  encodedUpdatedHostStateDatum: string;
+  encodedHostStateRedeemer: string;
   encodedChannelDatum: string;
-  constructedAddress: string;
+  hostStateUtxo: UTxO;
 };

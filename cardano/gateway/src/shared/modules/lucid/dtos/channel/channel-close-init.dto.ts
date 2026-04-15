@@ -1,5 +1,6 @@
 import { UTxO } from '@lucid-evolution/lucid';
 import { AuthToken } from '~@/shared/types/auth-token';
+import { GatewayModuleKey } from '@shared/helpers/module-port';
 
 export type UnsignedChannelCloseInitDto = {
   hostStateUtxo: UTxO;
@@ -9,11 +10,12 @@ export type UnsignedChannelCloseInitDto = {
   channelUtxo: UTxO;
   connectionUtxo: UTxO;
   clientUtxo: UTxO;
-  mockModuleUtxo: UTxO;
+  moduleKey: GatewayModuleKey;
+  moduleUtxo: UTxO;
 
   channelCloseInitPolicyId: string;
   encodedSpendChannelRedeemer: string;
-  encodedSpendMockModuleRedeemer: string;
+  encodedSpendModuleRedeemer: string;
   channelTokenUnit: string;
   channelToken: AuthToken;
   encodedUpdatedChannelDatum: string;

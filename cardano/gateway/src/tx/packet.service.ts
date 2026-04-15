@@ -25,6 +25,7 @@ import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
 import { Packet } from 'src/shared/types/channel/packet';
 import { SpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
 import { ACK_RESULT, CHANNEL_ID_PREFIX, LOVELACE, ORDER_MAPPING_CHANNEL } from 'src/constant';
+import { ASYNC_ICQ_HOST_PORT } from '@shared/types/apps/async-icq/async-icq';
 import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
 import {
   deleteKeySortMap,
@@ -60,6 +61,7 @@ import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/
 import {
   AckPacketOperator,
   RecvPacketOperator,
+  SendModulePacketOperator,
   SendPacketOperator,
   TimeoutPacketOperator,
   TimeoutRefreshOperator,
@@ -70,17 +72,23 @@ import {
   UnsignedAckPacketSucceedDto,
   UnsignedAckPacketUnescrowDto,
   UnsignedRecvPacketDto,
+  UnsignedRecvPacketModuleDto,
   UnsignedRecvPacketMintDto,
   UnsignedRecvPacketUnescrowDto,
+  UnsignedSendPacketModuleDto,
   UnsignedSendPacketBurnDto,
   UnsignedSendPacketEscrowDto,
   UnsignedTimeoutPacketMintDto,
   UnsignedTimeoutPacketUnescrowDto,
   UnsignedTimeoutRefreshDto,
 } from '~@/shared/modules/lucid/dtos';
+import { acknowledgementCommitmentFromResponse } from '../shared/helpers/acknowledgement';
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, isTreeAligned } from '../shared/helpers/ibc-state-root';
+import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
+import { AsyncIcqHostService } from './async-icq-host.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { queryNetworkTipPoint } from '../shared/helpers/time';
+import { getGatewayModuleConfigForPortId } from '@shared/helpers/module-port';
 import {
   buildUnsignedSendPacketTx as buildUnsignedSendPacketTxWithPackage,
   type SendPacketOperator as SharedSendPacketOperator,
@@ -96,6 +104,7 @@ export class PacketService {
     @Inject(LucidService) private lucidService: LucidService,
     private denomTraceService: DenomTraceService,
     private readonly txOperationRunnerService: TxOperationRunnerService,
+    private readonly asyncIcqHostService: AsyncIcqHostService,
   ) {}
   /**
    * @param data
@@ -1094,6 +1103,51 @@ export class PacketService {
       throw error;
     }
   }
+
+  async sendAsyncIcqPacket(data: SendModulePacketOperator): Promise<MsgTransferResponse> {
+    try {
+      await this.refreshWalletContext(data.signer, 'sendAsyncIcqPacketBuilder');
+
+      const { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate } = await this.buildUnsignedSendModulePacketTx(data);
+      const { currentSlot, validToSlot, validToTime } = await this.computeTxValidityWindow();
+      if (currentSlot > validToSlot) {
+        throw new GrpcInternalException('async-icq send failed: tx time invalid');
+      }
+
+      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
+        operationName: 'sendAsyncIcqPacket',
+        unsignedTx: unsignedSendPacketTx,
+        validity: {
+          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+        },
+        wallet: {
+          mode: 'refresh_from_address',
+          address: data.signer,
+          context: 'sendAsyncIcqPacket',
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
+        pendingTreeUpdate,
+      });
+
+      return {
+        result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
+        unsigned_tx: {
+          type_url: '',
+          value: cborHexBytes,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`sendAsyncIcqPacket: ${error}`);
+      if (!(error instanceof RpcException)) {
+        throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
+      }
+
+      throw error;
+    }
+  }
   /**
    * Handles an IBC packet timeout by building and signing a timeout transaction.
    * This function prepares the timeout packet data from the MsgTimeout request,
@@ -1458,6 +1512,80 @@ export class PacketService {
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
     );
+
+    if (convertHex2String(channelDatum.port) === ASYNC_ICQ_HOST_PORT) {
+      // Async-icq rides the normal recv-packet path. The difference from ICS-20 is
+      // only how the packet data is interpreted and how the ack is produced.
+      const moduleConfig = getGatewayModuleConfigForPortId(
+        this.configService.get('deployment'),
+        ASYNC_ICQ_HOST_PORT,
+      );
+      const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);
+      const { acknowledgementResponse } = await this.asyncIcqHostService.executePacket(
+        Buffer.from(packet.data, 'hex'),
+      );
+      // Reuse the existing module callback envelope so Cardano emits a regular
+      // write_acknowledgement event and persists the ack commitment in channel state.
+      const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
+        {
+          Callback: [
+            {
+              OnRecvPacket: {
+                channel_id: channelId,
+                acknowledgement: {
+                  response: acknowledgementResponse,
+                },
+                // Async-icq does not need transfer-specific callback payloads.
+                data: 'OtherModuleData',
+              },
+            },
+          ],
+        } as IBCModuleRedeemer,
+        'iBCModuleRedeemer',
+      );
+      const updatedChannelDatum: ChannelDatum = {
+        ...channelDatum,
+        state: {
+          ...channelDatum.state,
+          next_sequence_recv: nextSequenceRecv,
+          packet_receipt: packetReceipt,
+          // Commit the exact ack bytes produced by the async-icq host executor.
+          packet_acknowledgement: insertSortMapWithNumberKey(
+            channelDatum.state.packet_acknowledgement,
+            packet.sequence,
+            acknowledgementCommitmentFromResponse(acknowledgementResponse),
+          ),
+        },
+      };
+      const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
+        updatedChannelDatum,
+        'channel',
+      );
+      const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
+        await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
+      const unsignedRecvPacketModuleParams: UnsignedRecvPacketModuleDto = {
+        hostStateUtxo,
+        channelUtxo,
+        connectionUtxo,
+        clientUtxo,
+        moduleKey: moduleConfig.key,
+        moduleUtxo,
+        encodedHostStateRedeemer,
+        encodedUpdatedHostStateDatum,
+        encodedSpendChannelRedeemer,
+        encodedSpendModuleRedeemer,
+        encodedUpdatedChannelDatum,
+        channelTokenUnit,
+        recvPacketPolicyId,
+        channelToken,
+        verifyProofPolicyId,
+        encodedVerifyProofRedeemer,
+      };
+      // This keeps async-icq in the same host-state / channel-state update flow as
+      // any other successful recv path.
+      const unsignedTx = this.lucidService.createUnsignedRecvPacketModuleTx(unsignedRecvPacketModuleParams);
+      return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
+    }
 
     const stringData = convertHex2String(recvPacketOperator.packetData) || '';
 
@@ -2206,6 +2334,117 @@ export class PacketService {
     );
   }
 
+  async buildUnsignedSendModulePacketTx(
+    sendPacketOperator: SendModulePacketOperator,
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
+    if (sendPacketOperator.sourcePort !== ASYNC_ICQ_HOST_PORT) {
+      throw new GrpcInvalidArgumentException(
+        `Invalid argument: "source_port" ${sendPacketOperator.sourcePort} not supported for async-icq send`,
+      );
+    }
+
+    const channelSequence: string = sendPacketOperator.sourceChannel.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
+    const channelTokenUnit: string = mintChannelPolicyId + channelTokenName;
+    const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+    const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+    const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
+      parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
+    );
+    const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
+    const connectionUtxo = await this.lucidService.findUtxoByUnit(connectionTokenUnit);
+    const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
+      connectionUtxo.datum!,
+      'connection',
+    );
+    const clientTokenUnit = this.lucidService.getClientTokenUnit(
+      parseClientSequence(convertHex2String(connectionDatum.state.client_id)),
+    );
+    const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    const moduleConfig = getGatewayModuleConfigForPortId(this.configService.get('deployment'), sendPacketOperator.sourcePort);
+    if (moduleConfig.key === 'transfer') {
+      throw new GrpcInvalidArgumentException('async-icq send must not use the transfer module');
+    }
+    const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);
+    const channelId = convertString2Hex(sendPacketOperator.sourceChannel);
+
+    const packet: Packet = {
+      sequence: channelDatum.state.next_sequence_send,
+      source_port: convertString2Hex(sendPacketOperator.sourcePort),
+      source_channel: channelId,
+      destination_port: channelDatum.state.channel.counterparty.port_id,
+      destination_channel: channelDatum.state.channel.counterparty.channel_id,
+      data: sendPacketOperator.packetData,
+      timeout_height: sendPacketOperator.timeoutHeight,
+      timeout_timestamp: sendPacketOperator.timeoutTimestamp,
+    };
+
+    const encodedSpendChannelRedeemer: string = await this.lucidService.encode(
+      {
+        SendPacket: {
+          packet,
+        },
+      } as SpendChannelRedeemer,
+      'spendChannelRedeemer',
+    );
+
+    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
+      {
+        Operator: ['OtherModuleOperator'],
+      } as IBCModuleRedeemer,
+      'iBCModuleRedeemer',
+    );
+
+    const updatedChannelDatum: ChannelDatum = {
+      ...channelDatum,
+      state: {
+        ...channelDatum.state,
+        next_sequence_send: channelDatum.state.next_sequence_send + 1n,
+        packet_commitment: insertSortMapWithNumberKey(
+          channelDatum.state.packet_commitment,
+          packet.sequence,
+          commitPacket(packet),
+        ),
+      },
+    };
+    const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
+      updatedChannelDatum,
+      'channel',
+    );
+
+    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
+      await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, sendPacketOperator.sourceChannel);
+    const deploymentConfig = this.configService.get('deployment');
+    const sendPacketPolicyId = deploymentConfig.validators.spendChannel.refValidator.send_packet.scriptHash;
+    const channelToken = {
+      policyId: mintChannelPolicyId,
+      name: channelTokenName,
+    };
+
+    const unsignedSendPacketModuleParams: UnsignedSendPacketModuleDto = {
+      hostStateUtxo,
+      connectionUtxo,
+      clientUtxo,
+      channelUtxo,
+      moduleKey: moduleConfig.key,
+      moduleUtxo,
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum,
+      encodedSpendChannelRedeemer,
+      encodedSpendModuleRedeemer,
+      encodedUpdatedChannelDatum,
+      channelTokenUnit,
+      sendPacketPolicyId,
+      channelToken,
+    };
+
+    const unsignedTx = this.lucidService.createUnsignedSendPacketModuleTx(unsignedSendPacketModuleParams);
+    return {
+      unsignedTx,
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+    };
+  }
+
   async buildUnsignedAcknowlegementPacketTx(
     ackPacketOperator: AckPacketOperator,
     constructedAddress: string,
@@ -2790,12 +3029,6 @@ export class PacketService {
   }
   private getTransferModuleIdentifier(): string {
     return this.configService.get('deployment').modules.transfer.identifier;
-  }
-  private getMockModuleAddress(): string {
-    return this.configService.get('deployment').modules.mock.address;
-  }
-  private getMockModuleIdentifier(): string {
-    return this.configService.get('deployment').modules.mock.identifier;
   }
   private async getTransferModuleDetails(): Promise<{
     transferModuleUtxo: UTxO;

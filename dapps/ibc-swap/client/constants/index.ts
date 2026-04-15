@@ -15,6 +15,10 @@ export const FROM_TO = {
 
 export const routes = [
   {
+    name: 'Queries',
+    path: '/queries',
+  },
+  {
     name: 'Swap',
     path: '/swap',
   },

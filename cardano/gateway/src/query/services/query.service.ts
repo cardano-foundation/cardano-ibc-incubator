@@ -807,6 +807,7 @@ export class QueryService {
 
   async queryEvents(request: { since_height: bigint }): Promise<{
     current_height: bigint;
+    scanned_to_height: bigint;
     events: Array<{ height: bigint; events: ResponseDeliverTx[] }>;
   }> {
     const { since_height } = request;
@@ -835,6 +836,7 @@ export class QueryService {
       if (Number(since_height) >= currentHeight) {
         return {
           current_height: BigInt(currentHeight),
+          scanned_to_height: BigInt(currentHeight),
           events: [],
         };
       }
@@ -865,6 +867,7 @@ export class QueryService {
 
       return {
         current_height: BigInt(currentHeight),
+        scanned_to_height: BigInt(endHeight),
         events: blockEvents,
       };
     } catch (err) {

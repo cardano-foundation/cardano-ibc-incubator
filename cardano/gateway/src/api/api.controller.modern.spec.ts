@@ -8,6 +8,8 @@ import { ChannelService } from '~@/query/services/channel.service';
 import { PacketService } from '~@/tx/packet.service';
 import { MsgTransfer } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
 import { DenomTraceService } from '~@/query/services/denom-trace.service';
+import { CheqdIcqService } from './cheqd-icq.service';
+import { VesseloracleIcqService } from './vesseloracle-icq.service';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { TransferPlannerService } from './transfer-planner.service';
 import { BridgeManifestService } from '~@/query/services/bridge-manifest.service';
@@ -27,6 +29,15 @@ describe('ApiController (modern)', () => {
   let swapPlannerServiceMock: {
     getSwapOptions: jest.Mock;
     estimateSwap: jest.Mock;
+  };
+  let cheqdIcqServiceMock: {
+    buildDidDocQuery: jest.Mock;
+    decodeDidDocAcknowledgement: jest.Mock;
+    findResult: jest.Mock;
+  };
+  let vesseloracleIcqServiceMock: {
+    buildConsolidatedDataReportQuery: jest.Mock;
+    decodeConsolidatedDataReportAcknowledgement: jest.Mock;
   };
   let transferPlannerServiceMock: {
     planTransferRoute: jest.Mock;
@@ -52,6 +63,15 @@ describe('ApiController (modern)', () => {
       getSwapOptions: jest.fn(),
       estimateSwap: jest.fn(),
     };
+    cheqdIcqServiceMock = {
+      buildDidDocQuery: jest.fn(),
+      decodeDidDocAcknowledgement: jest.fn(),
+      findResult: jest.fn(),
+    };
+    vesseloracleIcqServiceMock = {
+      buildConsolidatedDataReportQuery: jest.fn(),
+      decodeConsolidatedDataReportAcknowledgement: jest.fn(),
+    };
     transferPlannerServiceMock = {
       planTransferRoute: jest.fn(),
     };
@@ -66,6 +86,8 @@ describe('ApiController (modern)', () => {
         { provide: PacketService, useValue: packetServiceMock },
         { provide: DenomTraceService, useValue: denomTraceServiceMock },
         { provide: LocalOsmosisSwapPlannerService, useValue: swapPlannerServiceMock },
+        { provide: CheqdIcqService, useValue: cheqdIcqServiceMock },
+        { provide: VesseloracleIcqService, useValue: vesseloracleIcqServiceMock },
         { provide: TransferPlannerService, useValue: transferPlannerServiceMock },
         { provide: BridgeManifestService, useValue: bridgeManifestServiceMock },
       ],
@@ -131,6 +153,131 @@ describe('ApiController (modern)', () => {
       unsigned_tx: {
         type_url: '/ibc.core.channel.v1.MsgTransfer',
         value: Buffer.from([0xde, 0xad, 0xbe, 0xef]).toString('base64'),
+      },
+    });
+  });
+
+  it('delegates cheqd DidDoc ICQ tx building to CheqdIcqService', async () => {
+    cheqdIcqServiceMock.buildDidDocQuery.mockResolvedValue({
+      query_path: '/cheqd.did.v2.Query/DidDoc',
+      source_port: 'icqhost',
+      source_channel: 'channel-9',
+      packet_data_hex: 'deadbeef',
+      tx: {
+        result: 1,
+        unsigned_tx: {
+          type_url: '/ibc.core.channel.v1.MsgTransfer',
+          value: Buffer.from([1, 2, 3]),
+        },
+      },
+    });
+
+    await expect(
+      controller.buildCheqdDidDocIcq({
+        source_channel: 'channel-9',
+        signer: 'addr_test1q...',
+        id: 'did:cheqd:testnet:abc123',
+      } as any),
+    ).resolves.toEqual({
+      query_path: '/cheqd.did.v2.Query/DidDoc',
+      source_port: 'icqhost',
+      source_channel: 'channel-9',
+      packet_data_hex: 'deadbeef',
+      result: 1,
+      unsigned_tx: {
+        type_url: '/ibc.core.channel.v1.MsgTransfer',
+        value: Buffer.from([1, 2, 3]).toString('base64'),
+      },
+    });
+  });
+
+  it('delegates cheqd DidDoc acknowledgement decoding to CheqdIcqService', async () => {
+    cheqdIcqServiceMock.decodeDidDocAcknowledgement.mockReturnValue({
+      status: 'success',
+      response: { value: { did_doc: { id: 'did:cheqd:testnet:abc123' } } },
+    });
+
+    await expect(
+      controller.decodeCheqdDidDocIcq({
+        acknowledgement_hex: '7b22726573756c74223a2241513d3d227d',
+      } as any),
+    ).resolves.toEqual({
+      status: 'success',
+      response: { value: { did_doc: { id: 'did:cheqd:testnet:abc123' } } },
+    });
+  });
+
+  it('delegates vesseloracle consolidated-data-report ICQ tx building to VesseloracleIcqService', async () => {
+    vesseloracleIcqServiceMock.buildConsolidatedDataReportQuery.mockResolvedValue({
+      query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
+      source_port: 'icqhost',
+      source_channel: 'channel-4',
+      packet_data_hex: 'beadfeed',
+      tx: {
+        result: 1,
+        unsigned_tx: {
+          type_url: '/ibc.core.channel.v1.MsgTransfer',
+          value: Buffer.from([4, 5, 6]),
+        },
+      },
+    });
+
+    await expect(
+      controller.buildVesseloracleConsolidatedDataReportIcq({
+        source_channel: 'channel-4',
+        signer: 'addr_test1q...',
+        imo: '9525338',
+        ts: '1713110400',
+      } as any),
+    ).resolves.toEqual({
+      query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
+      source_port: 'icqhost',
+      source_channel: 'channel-4',
+      packet_data_hex: 'beadfeed',
+      result: 1,
+      unsigned_tx: {
+        type_url: '/ibc.core.channel.v1.MsgTransfer',
+        value: Buffer.from([4, 5, 6]).toString('base64'),
+      },
+    });
+  });
+
+  it('delegates cheqd ICQ result polling to CheqdIcqService', async () => {
+    cheqdIcqServiceMock.findResult.mockResolvedValue({
+      status: 'completed',
+      tx_hash: 'deadbeef',
+      query_path: '/cheqd.did.v2.Query/DidDoc',
+      packet_data_hex: 'c0ffee',
+      current_height: '120',
+      next_search_from_height: '118',
+      completed_height: '118',
+      packet_sequence: '7',
+      acknowledgement_hex: 'bead',
+      acknowledgement: {
+        status: 'success',
+        response: { value: { did_doc: { id: 'did:cheqd:testnet:abc123' } } },
+      },
+    });
+
+    await expect(
+      controller.getCheqdIcqResult({
+        tx_hash: 'deadbeef',
+        query_path: '/cheqd.did.v2.Query/DidDoc',
+        packet_data_hex: 'c0ffee',
+      } as any),
+    ).resolves.toEqual({
+      status: 'completed',
+      tx_hash: 'deadbeef',
+      query_path: '/cheqd.did.v2.Query/DidDoc',
+      packet_data_hex: 'c0ffee',
+      current_height: '120',
+      next_search_from_height: '118',
+      completed_height: '118',
+      packet_sequence: '7',
+      acknowledgement_hex: 'bead',
+      acknowledgement: {
+        status: 'success',
+        response: { value: { did_doc: { id: 'did:cheqd:testnet:abc123' } } },
       },
     });
   });

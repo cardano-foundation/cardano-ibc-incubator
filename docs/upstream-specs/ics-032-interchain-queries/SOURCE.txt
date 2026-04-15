@@ -1,0 +1,7 @@
+Upstream repository: https://github.com/cosmos/ibc-apps
+Upstream path: modules/async-icq/README.md
+Pinned upstream commit: 5596e0a0358565b87fa6399125bbfc8dbdf97553
+Retrieved on: 2026-03-29
+Retrieval URL: https://raw.githubusercontent.com/cosmos/ibc-apps/main/modules/async-icq/README.md
+Index reference: https://github.com/cosmos/ibc/blob/main/README.md
+Index note: As of 2026-03-29, the cosmos/ibc standards index lists ICS-32 "Interchain Queries" and links to async-icq, but the async-icq README frontmatter still says "ics: TBD".

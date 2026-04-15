@@ -22,9 +22,12 @@ pub fn format_port_identifier(port_number: Int) -> ByteArray {
 /// For now we support:
 /// - legacy numeric port IDs: "port-{n}" -> "{n}"
 /// - canonical transfer port: "transfer" -> "100" (matches deployment TRANSFER_MODULE_PORT)
+/// - canonical async-icq host port: "icqhost" -> "101" (matches deployment ICQ_MODULE_PORT)
 pub fn parse_port_id_number(port_id: ByteArray) -> ByteArray {
   if port_id == "transfer" {
     "100"
+  } else if port_id == "icqhost" {
+    "101"
   } else if bytearray.take(port_id, port_prefix_with_separator_len) == port_prefix_with_separator {
     bytearray.drop(port_id, port_prefix_with_separator_len)
   } else {

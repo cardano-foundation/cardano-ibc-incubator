@@ -338,7 +338,23 @@ export const getLiveWalletUtxos = async (
   );
 };
 
-type Module = "handler" | "transfer";
+type Validator =
+  | "spendHandler"
+  | "spendClient"
+  | "spendConnection"
+  | "spendChannel"
+  | "spendMockModule"
+  | "spendTraceRegistry"
+  | "spendTransferModule"
+  | "mintIdentifier"
+  | "mintVoucher"
+  | "verifyProof"
+  | "hostStateStt"
+  | "mintClientStt"
+  | "mintConnectionStt"
+  | "mintChannelStt";
+
+type Module = "handler" | "transfer" | "mock" | "icq";
 
 type Tokens = "mock";
 
@@ -378,6 +394,13 @@ export type DeploymentTemplate = {
       >;
     };
     spendTransferModule: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    spendMockModule?: {
       title: string;
       script: string;
       scriptHash: string;

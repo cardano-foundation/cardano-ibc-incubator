@@ -93,16 +93,20 @@ import {
   UnsignedChannelOpenAckDto,
   UnsignedChannelOpenConfirmDto,
   UnsignedChannelOpenInitDto,
+  UnsignedChannelOpenTryDto,
   UnsignedConnectionOpenAckDto,
   UnsignedRecvPacketDto,
+  UnsignedRecvPacketModuleDto,
   UnsignedRecvPacketMintDto,
   UnsignedRecvPacketUnescrowDto,
+  UnsignedSendPacketModuleDto,
   UnsignedSendPacketBurnDto,
   UnsignedSendPacketEscrowDto,
   UnsignedTimeoutPacketMintDto,
   UnsignedTimeoutPacketUnescrowDto,
   UnsignedTimeoutRefreshDto,
 } from "./dtos";
+import { GatewayModuleKey } from "@shared/helpers/module-port";
 import { computeLedgerAnchoredValidityWindow } from "../../helpers/time";
 
 export type CodecType =
@@ -1267,6 +1271,50 @@ export class LucidService implements OnModuleInit {
       );
     return tx;
   }
+  private getModuleReferenceScript(moduleKey: GatewayModuleKey): UTxO {
+    if (moduleKey === "transfer") {
+      return this.referenceScripts.spendTransferModule;
+    }
+    if (!this.referenceScripts.spendMockModule) {
+      throw new GrpcInternalException(
+        `Missing reference script for module ${moduleKey}`,
+      );
+    }
+    return this.referenceScripts.spendMockModule;
+  }
+
+  private getModuleAddress(moduleKey: GatewayModuleKey): string {
+    const deploymentConfig = this.configService.get("deployment");
+    const moduleConfig = deploymentConfig.modules[moduleKey];
+    if (!moduleConfig) {
+      throw new GrpcInternalException(`Missing deployment module for ${moduleKey}`);
+    }
+    return moduleConfig.address;
+  }
+
+  private payModuleUtxo(
+    tx: TxBuilder,
+    moduleKey: GatewayModuleKey,
+    moduleUtxo: UTxO,
+    encodedUpdatedModuleDatum?: string,
+  ): TxBuilder {
+    const moduleAddress = this.getModuleAddress(moduleKey);
+    const datum = encodedUpdatedModuleDatum ?? moduleUtxo.datum;
+
+    if (datum) {
+      return tx.pay.ToContract(
+        moduleAddress,
+        {
+          kind: "inline",
+          value: datum,
+        },
+        moduleUtxo.assets,
+      );
+    }
+
+    return tx.pay.ToContract(moduleAddress, undefined, moduleUtxo.assets);
+  }
+
   public createUnsignedChannelOpenInitTransaction(
     dto: UnsignedChannelOpenInitDto,
   ): TxBuilder {
@@ -1283,15 +1331,12 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendHandler,
       this.referenceScripts.mintChannel,
-      this.referenceScripts.spendTransferModule,
+      this.getModuleReferenceScript(dto.moduleKey),
       this.referenceScripts.hostStateStt,
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.handlerUtxo], dto.encodedSpendHandlerRedeemer)
-      .collectFrom(
-        [dto.transferModuleUtxo],
-        dto.encodedSpendTransferModuleRedeemer,
-      )
+      .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
       .mintAssets(
         {
           [dto.channelTokenUnit]: 1n,
@@ -1313,59 +1358,42 @@ export class LucidService implements OnModuleInit {
         deploymentConfig.validators.spendChannel.address,
         { kind: "inline", value: dto.encodedChannelDatum },
         { [dto.channelTokenUnit]: 1n },
-      )
-      .pay.ToContract(
-        deploymentConfig.modules.transfer.address,
-        undefined,
-        dto.transferModuleUtxo.assets,
       );
+
+    this.payModuleUtxo(tx, dto.moduleKey, dto.moduleUtxo);
 
     return tx;
   }
 
   public createUnsignedChannelOpenTryTransaction(
-    handlerUtxo: UTxO,
-    hostStateUtxo: UTxO,
-    encodedHostStateRedeemer: string,
-    connectionUtxo: UTxO,
-    clientUtxo: UTxO,
-    mockModuleUtxo: UTxO,
-    encodedSpendMockModuleRedeemer: string,
-    encodedSpendHandlerRedeemer: string,
-    encodedMintChannelRedeemer: string,
-    channelTokenUnit: string,
-    encodedUpdatedHandlerDatum: string,
-    encodedUpdatedHostStateDatum: string,
-    encodedChannelDatum: string,
-    encodedNewMockModuleDatum: string,
-    constructedAddress: string,
+    dto: UnsignedChannelOpenTryDto,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
       deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
-      ...hostStateUtxo,
-      datum: hostStateUtxo.datum,
+      ...dto.hostStateUtxo,
+      datum: dto.hostStateUtxo.datum,
       datumHash: undefined,
     };
 
-    tx.collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
-      .collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
-      .collectFrom([mockModuleUtxo], encodedSpendMockModuleRedeemer)
+    tx.collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
+      .collectFrom([dto.handlerUtxo], dto.encodedSpendHandlerRedeemer)
+      .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
       .readFrom([
         this.referenceScripts.spendHandler,
         this.referenceScripts.mintChannel,
-        this.referenceScripts.spendMockModule!,
+        this.getModuleReferenceScript(dto.moduleKey),
         this.referenceScripts.hostStateStt,
       ])
       .mintAssets(
         {
-          [channelTokenUnit]: 1n,
+          [dto.channelTokenUnit]: 1n,
         },
-        encodedMintChannelRedeemer,
+        dto.encodedMintChannelRedeemer,
       )
-      .readFrom([connectionUtxo, clientUtxo]);
+      .readFrom([dto.connectionUtxo, dto.clientUtxo]);
     const addPayToContract = (
       address: string,
       inline: string,
@@ -1375,30 +1403,26 @@ export class LucidService implements OnModuleInit {
     };
     addPayToContract(
       deploymentConfig.validators.hostStateStt.address,
-      encodedUpdatedHostStateDatum,
+      dto.encodedUpdatedHostStateDatum,
       {
         [hostStateNFT]: 1n,
       },
     );
     addPayToContract(
       deploymentConfig.validators.spendHandler.address,
-      encodedUpdatedHandlerDatum,
+      dto.encodedUpdatedHandlerDatum,
       {
         [this.getHandlerTokenUnit()]: 1n,
       },
     );
     addPayToContract(
       deploymentConfig.validators.spendChannel.address,
-      encodedChannelDatum,
+      dto.encodedChannelDatum,
       {
-        [channelTokenUnit]: 1n,
+        [dto.channelTokenUnit]: 1n,
       },
     );
-    addPayToContract(
-      deploymentConfig.modules.mock.address,
-      encodedNewMockModuleDatum,
-      mockModuleUtxo.assets,
-    );
+    this.payModuleUtxo(tx, dto.moduleKey, dto.moduleUtxo);
 
     return tx;
   }
@@ -1418,17 +1442,14 @@ export class LucidService implements OnModuleInit {
 
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.referenceScripts.spendTransferModule,
+      this.getModuleReferenceScript(dto.moduleKey),
       this.referenceScripts.channelOpenAck,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom(
-        [dto.transferModuleUtxo],
-        dto.encodedSpendTransferModuleRedeemer,
-      )
+      .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
@@ -1450,11 +1471,6 @@ export class LucidService implements OnModuleInit {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(
-        deploymentConfig.modules.transfer.address,
-        undefined,
-        dto.transferModuleUtxo.assets,
-      )
       .mintAssets(
         {
           [dto.chanOpenAckPolicyId]: 1n,
@@ -1467,6 +1483,8 @@ export class LucidService implements OnModuleInit {
         },
         dto.encodedVerifyProofRedeemer,
       );
+
+    this.payModuleUtxo(tx, dto.moduleKey, dto.moduleUtxo);
 
     return tx;
   }
@@ -1485,11 +1503,11 @@ export class LucidService implements OnModuleInit {
 
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.referenceScripts.spendMockModule!,
+      this.getModuleReferenceScript(dto.moduleKey),
       this.referenceScripts.channelCloseInit,
       this.referenceScripts.hostStateStt,
     ])
-      .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
+      .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -1513,20 +1531,14 @@ export class LucidService implements OnModuleInit {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(
-        deploymentConfig.modules.mock.address,
-        {
-          kind: "inline",
-          value: dto.mockModuleUtxo.datum,
-        },
-        dto.mockModuleUtxo.assets,
-      )
       .mintAssets(
         {
           [dto.channelCloseInitPolicyId]: 1n,
         },
         encodeAuthToken(dto.channelToken, this.LucidImporter),
       );
+
+    this.payModuleUtxo(tx, dto.moduleKey, dto.moduleUtxo);
     return tx;
   }
 
@@ -1547,14 +1559,14 @@ export class LucidService implements OnModuleInit {
     // on-chain validation expects the spend and the two mint witnesses together.
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.referenceScripts.spendMockModule!,
+      this.getModuleReferenceScript(dto.moduleKey),
       this.referenceScripts.channelOpenConfirm,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
+      .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
@@ -1576,14 +1588,6 @@ export class LucidService implements OnModuleInit {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(
-        deploymentConfig.modules.mock.address,
-        {
-          kind: "inline",
-          value: dto.encodedNewMockModuleDatum,
-        },
-        dto.mockModuleUtxo.assets,
-      )
       .mintAssets(
         {
           [dto.chanOpenConfirmPolicyId]: 1n,
@@ -1596,6 +1600,8 @@ export class LucidService implements OnModuleInit {
         },
         dto.encodedVerifyProofRedeemer,
       );
+
+    this.payModuleUtxo(tx, dto.moduleKey, dto.moduleUtxo);
 
     return tx;
   }
@@ -1615,14 +1621,14 @@ export class LucidService implements OnModuleInit {
 
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.referenceScripts.spendMockModule!,
+      this.getModuleReferenceScript(dto.moduleKey),
       this.referenceScripts.channelCloseConfirm,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom([dto.mockModuleUtxo], dto.encodedSpendMockModuleRedeemer)
+      .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
@@ -1644,14 +1650,6 @@ export class LucidService implements OnModuleInit {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(
-        deploymentConfig.modules.mock.address,
-        {
-          kind: "inline",
-          value: dto.encodedNewMockModuleDatum,
-        },
-        dto.mockModuleUtxo.assets,
-      )
       .mintAssets(
         {
           [dto.channelCloseConfirmPolicyId]: 1n,
@@ -1664,6 +1662,8 @@ export class LucidService implements OnModuleInit {
         },
         dto.encodedVerifyProofRedeemer,
       );
+
+    this.payModuleUtxo(tx, dto.moduleKey, dto.moduleUtxo);
 
     return tx;
   }
@@ -1794,6 +1794,69 @@ export class LucidService implements OnModuleInit {
         },
         dto.encodedVerifyProofRedeemer,
       );
+
+    return tx;
+  }
+
+  public createUnsignedRecvPacketModuleTx(
+    dto: UnsignedRecvPacketModuleDto,
+  ): TxBuilder {
+    const deploymentConfig = this.configService.get("deployment");
+    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
+      deploymentConfig.hostStateNFT.name;
+    const hostStateUtxoWithRawDatum = {
+      ...dto.hostStateUtxo,
+      datum: dto.hostStateUtxo.datum,
+      datumHash: undefined,
+    };
+
+    const tx: TxBuilder = this.newTxBuilder();
+
+    tx.readFrom([
+      this.referenceScripts.spendChannel,
+      this.getModuleReferenceScript(dto.moduleKey),
+      this.referenceScripts.receivePacket,
+      this.referenceScripts.verifyProof,
+      this.referenceScripts.hostStateStt,
+    ])
+      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .pay.ToContract(
+        deploymentConfig.validators.hostStateStt.address,
+        {
+          kind: "inline",
+          value: dto.encodedUpdatedHostStateDatum,
+        },
+        {
+          [hostStateNFT]: 1n,
+        },
+      )
+      .pay.ToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          kind: "inline",
+          value: dto.encodedUpdatedChannelDatum,
+        },
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+      )
+      .mintAssets(
+        {
+          [dto.recvPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
+      );
+
+    this.payModuleUtxo(tx, dto.moduleKey, dto.moduleUtxo);
 
     return tx;
   }
@@ -2172,6 +2235,61 @@ export class LucidService implements OnModuleInit {
         },
         encodeAuthToken(dto.channelToken, this.LucidImporter),
       );
+
+    return tx;
+  }
+
+  public createUnsignedSendPacketModuleTx(
+    dto: UnsignedSendPacketModuleDto,
+  ): TxBuilder {
+    const deploymentConfig = this.configService.get("deployment");
+    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
+      deploymentConfig.hostStateNFT.name;
+    const hostStateUtxoWithRawDatum = {
+      ...dto.hostStateUtxo,
+      datum: dto.hostStateUtxo.datum,
+      datumHash: undefined,
+    };
+
+    const tx: TxBuilder = this.newTxBuilder();
+    tx.readFrom([
+      this.referenceScripts.spendChannel,
+      this.getModuleReferenceScript(dto.moduleKey),
+      this.referenceScripts.sendPacket,
+      this.referenceScripts.hostStateStt,
+    ])
+      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .pay.ToContract(
+        deploymentConfig.validators.hostStateStt.address,
+        {
+          kind: "inline",
+          value: dto.encodedUpdatedHostStateDatum,
+        },
+        {
+          [hostStateNFT]: 1n,
+        },
+      )
+      .pay.ToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          kind: "inline",
+          value: dto.encodedUpdatedChannelDatum,
+        },
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+      )
+      .mintAssets(
+        {
+          [dto.sendPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      );
+
+    this.payModuleUtxo(tx, dto.moduleKey, dto.moduleUtxo);
 
     return tx;
   }

@@ -31,7 +31,7 @@ export default function TestComponent() {
   return (
     <div>
       <SendToken />
-      <h1>Data from Gateway:</h1>
+      <h1>Data from Cardano trace registry:</h1>
       <pre>{JSON.stringify(data, null, 2)}</pre>
     </div>
   );

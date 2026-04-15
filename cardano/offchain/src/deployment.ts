@@ -27,8 +27,11 @@ import {
   DEPLOYMENT_NONCE_SPLIT_AMOUNT,
   EMULATOR_ENV,
   HANDLER_TOKEN_NAME,
+  ICQ_MODULE_PORT,
+  MOCK_MODULE_PORT,
   PORT_PREFIX,
   RESERVED_DEPLOYMENT_NONCE_COUNT,
+  TRACE_REGISTRY_DIRECTORY_NONCE_COUNT,
   TRACE_REGISTRY_SHARD_COUNT,
   TRANSFER_MODULE_PORT,
 } from "./constants.ts";
@@ -50,6 +53,17 @@ import {
   const int = Number.parseInt(this.toString());
   return int ?? this.toString();
 };
+
+const buildOutputReference = (utxo: UTxO): OutputReference => ({
+  transaction_id: utxo.txHash,
+  output_index: BigInt(utxo.outputIndex),
+});
+
+const encodeRawDatum = (value: unknown): string =>
+  // Lucid's generic `Data.to` typings are schema-oriented, so manually
+  // constructed nested `Constr` values need a small cast even though the
+  // runtime encoding is correct and validated by the on-chain tests.
+  Data.to(value as never, undefined as never, { canonical: true });
 
 export const createDeployment = async (
   lucid: LucidEvolution,
@@ -119,8 +133,21 @@ export const createDeployment = async (
     handlerNonceUtxo,
     hostStateNonceUtxo,
     transferModuleNonceUtxo,
-    ...traceRegistryNonceUtxos
+    ...remainingNonceUtxos
   ] = reservedNonceUtxos;
+  const traceRegistryNonceUtxos = remainingNonceUtxos.slice(
+    0,
+    TRACE_REGISTRY_SHARD_COUNT + TRACE_REGISTRY_DIRECTORY_NONCE_COUNT,
+  );
+  const mockModuleNonceUtxo = remainingNonceUtxos.at(
+    TRACE_REGISTRY_SHARD_COUNT + TRACE_REGISTRY_DIRECTORY_NONCE_COUNT,
+  );
+  const icqModuleNonceUtxo = remainingNonceUtxos.at(
+    TRACE_REGISTRY_SHARD_COUNT + TRACE_REGISTRY_DIRECTORY_NONCE_COUNT + 1,
+  );
+  if (!mockModuleNonceUtxo || !icqModuleNonceUtxo) {
+    throw new Error("Missing reserved nonce UTxOs for generic module deployment.");
+  }
 
   const hostStateOutputReference: OutputReference = {
     transaction_id: hostStateNonceUtxo.txHash,
@@ -381,6 +408,38 @@ export const createDeployment = async (
   // on-chain reverse mapping from the first deployment onward.
   referredValidators.push(traceRegistry.base.validator);
 
+  const {
+    identifierTokenUnit: mockModuleIdentifier,
+    spendModule: spendMockModule,
+  } = await deployGenericModule(
+    lucid,
+    handlerToken,
+    spendHandlerValidator,
+    mintPortValidator,
+    mintIdentifierValidator,
+    MOCK_MODULE_PORT,
+    "mock",
+    hostStateNFT,
+    mockModuleNonceUtxo,
+  );
+  referredValidators.push(spendMockModule.validator);
+
+  const {
+    identifierTokenUnit: icqModuleIdentifier,
+    spendModule: spendIcqModule,
+  } = await deployGenericModule(
+    lucid,
+    handlerToken,
+    spendHandlerValidator,
+    mintPortValidator,
+    mintIdentifierValidator,
+    ICQ_MODULE_PORT,
+    "icqhost",
+    hostStateNFT,
+    icqModuleNonceUtxo,
+  );
+  referredValidators.push(spendIcqModule.validator);
+
   // Only publish the runtime/bootstrap reference surface eagerly.
   // Deployment-only mint scripts still participate in bootstrap transactions,
   // but they do not need standalone public reference UTxOs once the bridge is live.
@@ -447,6 +506,13 @@ export const createDeployment = async (
         scriptHash: spendTransferModule.scriptHash,
         address: spendTransferModule.address,
         refUtxo: refUtxosInfo[spendTransferModule.scriptHash],
+      },
+      spendMockModule: {
+        title: "spending_mock_module.spend_mock_module.else",
+        script: spendMockModule.validator.script,
+        scriptHash: spendMockModule.scriptHash,
+        address: spendMockModule.address,
+        refUtxo: refUtxosInfo[spendMockModule.scriptHash],
       },
       mintIdentifier: {
         title: "minting_identifier.minting_identifier.mint",
@@ -541,6 +607,14 @@ export const createDeployment = async (
       transfer: {
         identifier: transferModuleIdentifier,
         address: spendTransferModule.address,
+      },
+      mock: {
+        identifier: mockModuleIdentifier,
+        address: spendMockModule.address,
+      },
+      icq: {
+        identifier: icqModuleIdentifier,
+        address: spendIcqModule.address,
       },
     },
     tokens: {
@@ -640,6 +714,14 @@ const isLikelyReferenceBatchTooLarge = (error: unknown) => {
     "maximum transaction size exceeded",
   ].some((pattern) => normalizedMessage.includes(pattern));
 };
+
+const sortPortNumbers = (ports: bigint[]) =>
+  [...ports].sort((left, right) => {
+    if (left === right) {
+      return 0;
+    }
+    return left < right ? -1 : 1;
+  });
 
 async function mintMockToken(lucid: LucidEvolution) {
   // load mint mock token validator
@@ -998,10 +1080,14 @@ const deployTransferModule = async (
     ...currentHandlerDatum,
     state: {
       ...currentHandlerDatum.state,
-      bound_port: [
+      // On-chain validation sorts bound ports numerically. Using JS default
+      // `toSorted()` here is wrong for bigint values because it sorts
+      // lexicographically as strings, which breaks after binding port 100 and
+      // then trying to bind 99 or 101.
+      bound_port: sortPortNumbers([
         ...currentHandlerDatum.state.bound_port,
         portNumber,
-      ].toSorted(),
+      ]),
     },
   };
   const spendHandlerRedeemer: HandlerOperator = "HandlerBindPort";
@@ -1071,16 +1157,131 @@ const deployTransferModule = async (
   };
 };
 
-const buildOutputReference = (utxo: UTxO): OutputReference => ({
-  transaction_id: utxo.txHash,
-  output_index: BigInt(utxo.outputIndex),
-});
+const deployGenericModule = async (
+  lucid: LucidEvolution,
+  handlerToken: AuthToken,
+  spendHandlerValidator: SpendingValidator,
+  mintPortValidator: MintingPolicy,
+  mintIdentifierValidator: MintingPolicy,
+  portNumber: bigint,
+  portIdText: string,
+  hostStateNFT: AuthToken,
+  nonceUtxo: UTxO,
+) => {
+  console.log("Create Generic Module", portIdText);
 
-const encodeRawDatum = (value: unknown): string =>
-  // Lucid's generic `Data.to` typings are schema-oriented, so manually
-  // constructed nested `Constr` values need a small cast even though the
-  // runtime encoding is correct and validated by the on-chain tests.
-  Data.to(value as never, undefined as never, { canonical: true });
+  const outputReference = buildOutputReference(nonceUtxo);
+  const mintIdentifierPolicyId = validatorToScriptHash(mintIdentifierValidator);
+  const identifierTokenName = await generateIdentifierTokenName(
+    outputReference,
+  );
+  const identifierToken: AuthToken = {
+    policy_id: mintIdentifierPolicyId,
+    name: identifierTokenName,
+  };
+  const identifierTokenUnit = mintIdentifierPolicyId + identifierTokenName;
+
+  const portId = fromText(portIdText);
+  const mintPortPolicyId = validatorToScriptHash(mintPortValidator);
+  const portTokenName = await generateTokenName(
+    hostStateNFT,
+    PORT_PREFIX,
+    portNumber,
+  );
+  const portTokenUnit = mintPortPolicyId + portTokenName;
+  const portToken: AuthToken = {
+    policy_id: mintPortPolicyId,
+    name: portTokenName,
+  };
+
+  const [
+    spendModuleValidator,
+    spendModuleScriptHash,
+    spendModuleAddress,
+  ] = await readValidator(
+    "spending_mock_module.spend_mock_module.else",
+    lucid,
+  );
+
+  const handlerTokenUnit = handlerToken.policy_id + handlerToken.name;
+  const handlerUtxo = await lucid.utxoByUnit(handlerTokenUnit);
+
+  const currentHandlerDatum = Data.from(handlerUtxo.datum!, HandlerDatum);
+  const updatedHandlerDatum: HandlerDatum = {
+    ...currentHandlerDatum,
+    state: {
+      ...currentHandlerDatum.state,
+      bound_port: sortPortNumbers([
+        ...currentHandlerDatum.state.bound_port,
+        portNumber,
+      ]),
+    },
+  };
+  const spendHandlerRedeemer: HandlerOperator = "HandlerBindPort";
+
+  const mintPortRedeemer: MintPortRedeemer = {
+    handler_token: handlerToken,
+    spend_module_script_hash: spendModuleScriptHash,
+    port_number: portNumber,
+  };
+
+  const mintModuleTx = lucid
+    .newTx()
+    .collectFrom([nonceUtxo], Data.void())
+    .collectFrom(
+      [handlerUtxo],
+      Data.to(spendHandlerRedeemer, HandlerOperator, { canonical: true }),
+    )
+    .attach.SpendingValidator(spendHandlerValidator)
+    .attach.MintingPolicy(mintPortValidator)
+    .mintAssets(
+      {
+        [portTokenUnit]: 1n,
+      },
+      Data.to(mintPortRedeemer, MintPortRedeemer, { canonical: true }),
+    )
+    .attach.MintingPolicy(mintIdentifierValidator)
+    .mintAssets(
+      {
+        [identifierTokenUnit]: 1n,
+      },
+      Data.to(outputReference, OutputReference, { canonical: true }),
+    )
+    .pay.ToContract(
+      validatorToAddress(
+        lucid.config().network || "Custom",
+        spendHandlerValidator,
+      ),
+      {
+        kind: "inline",
+        value: Data.to(updatedHandlerDatum, HandlerDatum, { canonical: true }),
+      },
+      {
+        [handlerTokenUnit]: 1n,
+      },
+    )
+    .pay.ToAddress(
+      spendModuleAddress,
+      {
+        [identifierTokenUnit]: 1n,
+        [portTokenUnit]: 1n,
+      },
+    );
+
+  await submitTx(mintModuleTx, lucid, `Mint ${portIdText} Module`);
+
+  return {
+    identifierTokenUnit,
+    spendModule: {
+      validator: spendModuleValidator,
+      scriptHash: spendModuleScriptHash,
+      address: spendModuleAddress,
+      portId,
+      portToken,
+      identifierToken,
+    },
+  };
+};
 
 const deployTraceRegistry = async (
   lucid: LucidEvolution,

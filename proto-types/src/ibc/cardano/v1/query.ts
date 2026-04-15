@@ -12,6 +12,8 @@ export interface QueryEventsRequest {
 export interface QueryEventsResponse {
   /** Current chain height at the time of the query */
   current_height: bigint;
+  /** Highest block height actually scanned for this response page */
+  scanned_to_height: bigint;
   /** Events grouped by block height */
   events: BlockEvents[];
 }
@@ -148,6 +150,7 @@ export const QueryEventsRequest = {
 function createBaseQueryEventsResponse(): QueryEventsResponse {
   return {
     current_height: BigInt(0),
+    scanned_to_height: BigInt(0),
     events: [],
   };
 }
@@ -159,6 +162,9 @@ export const QueryEventsResponse = {
     }
     for (const v of message.events) {
       BlockEvents.encode(v!, writer.uint32(18).fork()).ldelim();
+    }
+    if (message.scanned_to_height !== BigInt(0)) {
+      writer.uint32(24).uint64(message.scanned_to_height);
     }
     return writer;
   },
@@ -175,6 +181,9 @@ export const QueryEventsResponse = {
         case 2:
           message.events.push(BlockEvents.decode(reader, reader.uint32()));
           break;
+        case 3:
+          message.scanned_to_height = reader.uint64();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -185,6 +194,7 @@ export const QueryEventsResponse = {
   fromJSON(object: any): QueryEventsResponse {
     const obj = createBaseQueryEventsResponse();
     if (isSet(object.current_height)) obj.current_height = BigInt(object.current_height.toString());
+    if (isSet(object.scanned_to_height)) obj.scanned_to_height = BigInt(object.scanned_to_height.toString());
     if (Array.isArray(object?.events)) obj.events = object.events.map((e: any) => BlockEvents.fromJSON(e));
     return obj;
   },
@@ -192,6 +202,8 @@ export const QueryEventsResponse = {
     const obj: any = {};
     message.current_height !== undefined &&
       (obj.current_height = (message.current_height || BigInt(0)).toString());
+    message.scanned_to_height !== undefined &&
+      (obj.scanned_to_height = (message.scanned_to_height || BigInt(0)).toString());
     if (message.events) {
       obj.events = message.events.map((e) => (e ? BlockEvents.toJSON(e) : undefined));
     } else {
@@ -203,6 +215,9 @@ export const QueryEventsResponse = {
     const message = createBaseQueryEventsResponse();
     if (object.current_height !== undefined && object.current_height !== null) {
       message.current_height = BigInt(object.current_height.toString());
+    }
+    if (object.scanned_to_height !== undefined && object.scanned_to_height !== null) {
+      message.scanned_to_height = BigInt(object.scanned_to_height.toString());
     }
     message.events = object.events?.map((e) => BlockEvents.fromPartial(e)) || [];
     return message;

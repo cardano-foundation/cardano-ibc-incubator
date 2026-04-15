@@ -6,6 +6,8 @@ import { HttpModule } from '@nestjs/axios';
 import { MithrilModule } from '../shared/modules/mithril/mithril.module';
 import { TxModule } from '~@/tx/tx.module';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
+import { CheqdIcqService } from './cheqd-icq.service';
+import { VesseloracleIcqService } from './vesseloracle-icq.service';
 import { TransferPlannerService } from './transfer-planner.service';
 import { PlannerClientService } from './planner-client.service';
 
@@ -14,6 +16,8 @@ import { PlannerClientService } from './planner-client.service';
   controllers: [ApiController],
   providers: [
     Logger,
+    CheqdIcqService,
+    VesseloracleIcqService,
     PlannerClientService,
     LocalOsmosisSwapPlannerService,
     TransferPlannerService,
