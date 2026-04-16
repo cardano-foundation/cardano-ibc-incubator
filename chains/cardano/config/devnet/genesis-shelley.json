@@ -48,9 +48,9 @@
         "publicKey": "8a219b698d3b6e034391ae84cee62f1d76b6fbc45ddfe4e31e0d4b60",
         "relays": [],
         "rewardAccount": {
-          "credential": {
-            "key hash": "b6ffb20cf821f9286802235841d4348a2c2bafd4f73092b7de6655ea"
-          },
+        "credential": {
+          "keyHash": "b6ffb20cf821f9286802235841d4348a2c2bafd4f73092b7de6655ea"
+        },
           "network": "Testnet"
         },
         "vrf": "fec17ed60cbf2ec5be3f061fb4de0b6ef1f20947cfbfce5fb2783d12f3f69ff5"
