@@ -1896,6 +1896,32 @@ fn is_open_channel_state(state: &str) -> bool {
     normalized == "open" || normalized == "state_open"
 }
 
+fn contains_cardano_channel_proof_lag(text: &str) -> bool {
+    let normalized = text.to_ascii_lowercase();
+    normalized.contains("current hoststate root is not yet stability-accepted")
+        || normalized.contains("not yet stability-accepted for proof generation (querychannel)")
+        || normalized.contains("stability thresholds not met")
+}
+
+fn format_cardano_channel_proof_lag_error(channel_pair: &MessageChannelPair) -> String {
+    format!(
+        "ERROR: Cardano async-ICQ packet commitment exists on {}/{} but Hermes still cannot prove the channel-end state.\n\
+         \n\
+         Gateway is reporting that the current HostState root is not yet stability-accepted for queryChannel proof generation.\n\
+         This means the packet was sent, but the Cardano light-client proof path has not caught up enough yet for packet-recv.\n\
+         \n\
+         Channel: {}/{}\n\
+         Recovery:\n\
+           1. wait for a few more Cardano blocks\n\
+           2. rerun `caribic demo message-exchange`\n\
+           3. if this repeats from a stale stack, run `caribic stop` then `caribic start --clean`",
+        CARDANO_MESSAGE_PORT_ID,
+        channel_pair.cardano_channel_id,
+        CARDANO_MESSAGE_PORT_ID,
+        channel_pair.cardano_channel_id
+    )
+}
+
 fn relay_async_icq_packet(channel_pair: &MessageChannelPair) -> Result<(), String> {
     let message_exchange_config = crate::config::get_config().demo.message_exchange;
     let relay_max_retries = message_exchange_config.relay_max_retries;
@@ -1913,7 +1939,8 @@ fn relay_async_icq_packet(channel_pair: &MessageChannelPair) -> Result<(), Strin
         );
     }
     let mut recv_relayed = false;
-    for _ in 0..relay_max_retries {
+    let mut waiting_on_cardano_channel_proof = false;
+    for attempt in 1..=relay_max_retries {
         let recv_output = run_hermes_command(&[
             "tx",
             "packet-recv",
@@ -1942,6 +1969,19 @@ fn relay_async_icq_packet(channel_pair: &MessageChannelPair) -> Result<(), Strin
             continue;
         }
 
+        if contains_cardano_channel_proof_lag(&stderr) {
+            waiting_on_cardano_channel_proof = true;
+            logger::warn(&format!(
+                "WARN: Cardano packet commitment is ready but channel-end proof is still waiting for a stability-accepted HostState root (attempt {}/{} on {}/{}).",
+                attempt,
+                relay_max_retries,
+                CARDANO_MESSAGE_PORT_ID,
+                channel_pair.cardano_channel_id
+            ));
+            std::thread::sleep(Duration::from_secs(relay_retry_delay_secs));
+            continue;
+        }
+
         return Err(format!(
             "Failed relaying async-ICQ packet to Entrypoint:\n{}",
             String::from_utf8_lossy(&recv_output.stderr)
@@ -1949,6 +1989,9 @@ fn relay_async_icq_packet(channel_pair: &MessageChannelPair) -> Result<(), Strin
     }
 
     if !recv_relayed {
+        if waiting_on_cardano_channel_proof {
+            return Err(format_cardano_channel_proof_lag_error(channel_pair));
+        }
         return Err("Timed out waiting for async-ICQ packet commitments on Cardano".to_string());
     }
 
@@ -2068,7 +2111,7 @@ fn wait_for_cardano_icq_packet_relay_readiness(
                 if channel_output.status.success() {
                     ""
                 } else {
-                    " (channel query still catching up, but packet commitments are already provable)"
+                    " (packet commitments are provable; channel-end proof may still be catching up)"
                 }
             ));
             return Ok(());
