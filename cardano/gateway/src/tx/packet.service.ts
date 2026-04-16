@@ -1134,11 +1134,17 @@ export class PacketService {
     }
   }
 
-  async sendAsyncIcqPacket(data: SendModulePacketOperator): Promise<MsgTransferResponse> {
+  async sendAsyncIcqPacket(
+    data: SendModulePacketOperator,
+  ): Promise<{ packet_sequence: string; tx: MsgTransferResponse }> {
     try {
       await this.refreshWalletContext(data.signer, 'sendAsyncIcqPacketBuilder');
 
-      const { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate } = await this.buildUnsignedSendModulePacketTx(data);
+      const {
+        unsignedTx: unsignedSendPacketTx,
+        pendingTreeUpdate,
+        packetSequence,
+      } = await this.buildUnsignedSendModulePacketTx(data);
       const { currentSlot, validToSlot, validToTime } = await this.computeTxValidityWindow();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('async-icq send failed: tx time invalid');
@@ -1163,10 +1169,15 @@ export class PacketService {
       });
 
       return {
-        result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
-        unsigned_tx: {
-          type_url: '',
-          value: cborHexBytes,
+        // Surface the packet sequence at build time so result polling can key
+        // off channel+sequence without depending on tx indexing.
+        packet_sequence: packetSequence.toString(),
+        tx: {
+          result: ResponseResultType.RESPONSE_RESULT_TYPE_UNSPECIFIED,
+          unsigned_tx: {
+            type_url: '',
+            value: cborHexBytes,
+          },
         },
       };
     } catch (error) {
@@ -2366,7 +2377,7 @@ export class PacketService {
 
   async buildUnsignedSendModulePacketTx(
     sendPacketOperator: SendModulePacketOperator,
-  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate; packetSequence: bigint }> {
     if (sendPacketOperator.sourcePort !== ASYNC_ICQ_HOST_PORT) {
       throw new GrpcInvalidArgumentException(
         `Invalid argument: "source_port" ${sendPacketOperator.sourcePort} not supported for async-icq send`,
@@ -2487,6 +2498,8 @@ export class PacketService {
     return {
       unsignedTx,
       pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+      // Capture the sequence before the channel datum is advanced.
+      packetSequence: packet.sequence,
     };
   }
 

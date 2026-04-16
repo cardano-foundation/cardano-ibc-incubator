@@ -120,6 +120,7 @@ export class ApiController {
       query_path: response.query_path,
       source_port: response.source_port,
       source_channel: response.source_channel,
+      packet_sequence: response.packet_sequence,
       packet_data_hex: response.packet_data_hex,
       ...this.serializeUnsignedTxResponse(response.tx),
     };
@@ -139,6 +140,7 @@ export class ApiController {
       query_path: response.query_path,
       source_port: response.source_port,
       source_channel: response.source_channel,
+      packet_sequence: response.packet_sequence,
       packet_data_hex: response.packet_data_hex,
       ...this.serializeUnsignedTxResponse(response.tx),
     };
@@ -158,6 +160,7 @@ export class ApiController {
       query_path: response.query_path,
       source_port: response.source_port,
       source_channel: response.source_channel,
+      packet_sequence: response.packet_sequence,
       packet_data_hex: response.packet_data_hex,
       ...this.serializeUnsignedTxResponse(response.tx),
     };
@@ -177,6 +180,7 @@ export class ApiController {
       query_path: response.query_path,
       source_port: response.source_port,
       source_channel: response.source_channel,
+      packet_sequence: response.packet_sequence,
       packet_data_hex: response.packet_data_hex,
       ...this.serializeUnsignedTxResponse(response.tx),
     };
@@ -196,6 +200,7 @@ export class ApiController {
       query_path: response.query_path,
       source_port: response.source_port,
       source_channel: response.source_channel,
+      packet_sequence: response.packet_sequence,
       packet_data_hex: response.packet_data_hex,
       ...this.serializeUnsignedTxResponse(response.tx),
     };
@@ -215,6 +220,7 @@ export class ApiController {
       query_path: response.query_path,
       source_port: response.source_port,
       source_channel: response.source_channel,
+      packet_sequence: response.packet_sequence,
       packet_data_hex: response.packet_data_hex,
       ...this.serializeUnsignedTxResponse(response.tx),
     };
@@ -234,6 +240,7 @@ export class ApiController {
       query_path: response.query_path,
       source_port: response.source_port,
       source_channel: response.source_channel,
+      packet_sequence: response.packet_sequence,
       packet_data_hex: response.packet_data_hex,
       ...this.serializeUnsignedTxResponse(response.tx),
     };
@@ -259,6 +266,7 @@ export class ApiController {
       query_path: response.query_path,
       source_port: response.source_port,
       source_channel: response.source_channel,
+      packet_sequence: response.packet_sequence,
       packet_data_hex: response.packet_data_hex,
       ...this.serializeUnsignedTxResponse(response.tx),
     };
@@ -280,6 +288,7 @@ export class ApiController {
       query_path: response.query_path,
       source_port: response.source_port,
       source_channel: response.source_channel,
+      packet_sequence: response.packet_sequence,
       packet_data_hex: response.packet_data_hex,
       ...this.serializeUnsignedTxResponse(response.tx),
     };

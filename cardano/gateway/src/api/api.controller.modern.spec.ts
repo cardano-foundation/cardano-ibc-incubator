@@ -168,6 +168,7 @@ describe('ApiController (modern)', () => {
       query_path: '/cheqd.did.v2.Query/DidDoc',
       source_port: 'icqhost',
       source_channel: 'channel-9',
+      packet_sequence: '7',
       packet_data_hex: 'deadbeef',
       tx: {
         result: 1,
@@ -188,6 +189,7 @@ describe('ApiController (modern)', () => {
       query_path: '/cheqd.did.v2.Query/DidDoc',
       source_port: 'icqhost',
       source_channel: 'channel-9',
+      packet_sequence: '7',
       packet_data_hex: 'deadbeef',
       result: 1,
       unsigned_tx: {
@@ -218,6 +220,7 @@ describe('ApiController (modern)', () => {
       query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
       source_port: 'icqhost',
       source_channel: 'channel-4',
+      packet_sequence: '8',
       packet_data_hex: 'beadfeed',
       tx: {
         result: 1,
@@ -239,6 +242,7 @@ describe('ApiController (modern)', () => {
       query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
       source_port: 'icqhost',
       source_channel: 'channel-4',
+      packet_sequence: '8',
       packet_data_hex: 'beadfeed',
       result: 1,
       unsigned_tx: {
@@ -253,6 +257,7 @@ describe('ApiController (modern)', () => {
       query_path: '/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport',
       source_port: 'icqhost',
       source_channel: 'channel-5',
+      packet_sequence: '9',
       packet_data_hex: 'cafebabe',
       tx: {
         result: 1,
@@ -273,6 +278,7 @@ describe('ApiController (modern)', () => {
       query_path: '/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport',
       source_port: 'icqhost',
       source_channel: 'channel-5',
+      packet_sequence: '9',
       packet_data_hex: 'cafebabe',
       result: 1,
       unsigned_tx: {

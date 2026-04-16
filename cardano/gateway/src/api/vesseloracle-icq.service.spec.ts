@@ -1,5 +1,7 @@
 import { VesseloracleIcqService } from './vesseloracle-icq.service';
 import { PacketService } from '~@/tx/packet.service';
+import { QueryService } from '~@/query/services/query.service';
+import { GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 import {
   decodeVesseloracleProtoMessage,
   encodeVesseloracleProtoMessage,
@@ -16,22 +18,43 @@ describe('VesseloracleIcqService', () => {
   let packetServiceMock: {
     sendAsyncIcqPacket: jest.Mock;
   };
+  let queryServiceMock: {
+    latestHeight: jest.Mock;
+    queryEvents: jest.Mock;
+    queryBlockResults: jest.Mock;
+    queryTransactionByHash: jest.Mock;
+  };
+  let historyServiceMock: {
+    findTransactionEvidenceByHash: jest.Mock;
+  };
 
   beforeEach(() => {
     packetServiceMock = {
       sendAsyncIcqPacket: jest.fn().mockResolvedValue({
-        result: 1,
-        unsigned_tx: {
-          type_url: '/ibc.core.channel.v1.MsgTransfer',
-          value: Buffer.from([0xde, 0xad, 0xbe, 0xef]),
+        packet_sequence: '7',
+        tx: {
+          result: 1,
+          unsigned_tx: {
+            type_url: '/ibc.core.channel.v1.MsgTransfer',
+            value: Buffer.from([0xde, 0xad, 0xbe, 0xef]),
+          },
         },
       }),
+    };
+    queryServiceMock = {
+      latestHeight: jest.fn().mockResolvedValue({ height: 120n }),
+      queryEvents: jest.fn().mockResolvedValue({ current_height: 120n, scanned_to_height: 120n, events: [] }),
+      queryBlockResults: jest.fn().mockResolvedValue({ block_results: { txs_results: [] } }),
+      queryTransactionByHash: jest.fn().mockResolvedValue({ hash: 'deadbeef', height: 100n }),
+    };
+    historyServiceMock = {
+      findTransactionEvidenceByHash: jest.fn().mockResolvedValue(null),
     };
 
     service = new VesseloracleIcqService(
       packetServiceMock as unknown as PacketService,
-      {} as any,
-      {} as any,
+      queryServiceMock as unknown as QueryService,
+      historyServiceMock as any,
       {} as any,
     );
   });
@@ -67,6 +90,7 @@ describe('VesseloracleIcqService', () => {
     expect(response.query_path).toBe('/vesseloracle.vesseloracle.Query/ConsolidatedDataReport');
     expect(response.source_port).toBe('icqhost');
     expect(response.source_channel).toBe('channel-7');
+    expect(response.packet_sequence).toBe('7');
   });
 
   it('builds a vesseloracle latest-consolidated-data-report async-icq packet on the icqhost port', async () => {
@@ -99,6 +123,7 @@ describe('VesseloracleIcqService', () => {
     expect(response.query_path).toBe('/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport');
     expect(response.source_port).toBe('icqhost');
     expect(response.source_channel).toBe('channel-8');
+    expect(response.packet_sequence).toBe('7');
   });
 
   it('decodes a successful vesseloracle consolidated-data-report acknowledgement', () => {
@@ -240,5 +265,26 @@ describe('VesseloracleIcqService', () => {
         },
       }),
     );
+  });
+
+  it('keeps returning a pending result when tx indexing still lags on later polls', async () => {
+    queryServiceMock.queryTransactionByHash.mockRejectedValue(new GrpcNotFoundException('not found'));
+
+    await expect(
+      service.findResult({
+        tx_hash: 'deadbeef',
+        since_height: '120',
+        query_path: '/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport',
+        packet_data_hex: 'c0ffee',
+      } as any),
+    ).resolves.toEqual({
+      status: 'pending',
+      reason: 'source_tx_not_indexed',
+      tx_hash: 'deadbeef',
+      query_path: '/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport',
+      packet_data_hex: 'c0ffee',
+      current_height: '120',
+      next_search_from_height: '120',
+    });
   });
 });

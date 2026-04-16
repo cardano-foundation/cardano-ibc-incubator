@@ -43,6 +43,7 @@ import { Packet } from '@shared/types/channel/packet';
 type BuiltCheqdIcqTransaction = {
   source_port: typeof ASYNC_ICQ_HOST_PORT;
   source_channel: string;
+  packet_sequence: string;
   query_path: string;
   packet_data_hex: string;
   tx: MsgTransferResponse;
@@ -256,7 +257,7 @@ export class CheqdIcqService {
     queryPath: string,
     packetData: Uint8Array,
   ): Promise<BuiltCheqdIcqTransaction> {
-    const tx = await this.packetService.sendAsyncIcqPacket({
+    const response = await this.packetService.sendAsyncIcqPacket({
       sourcePort: ASYNC_ICQ_HOST_PORT,
       sourceChannel: dto.source_channel,
       signer: dto.signer,
@@ -268,9 +269,10 @@ export class CheqdIcqService {
     return {
       source_port: ASYNC_ICQ_HOST_PORT,
       source_channel: dto.source_channel,
+      packet_sequence: response.packet_sequence,
       query_path: queryPath,
       packet_data_hex: Buffer.from(packetData).toString('hex'),
-      tx,
+      tx: response.tx,
     };
   }
 
@@ -332,7 +334,17 @@ export class CheqdIcqService {
       };
     }
 
-    const tx = await this.queryService.queryTransactionByHash({ hash: dto.tx_hash! });
+    let tx: { height: bigint };
+    try {
+      tx = await this.queryService.queryTransactionByHash({ hash: dto.tx_hash! });
+    } catch (error) {
+      if (error instanceof GrpcNotFoundException) {
+        // Older callers may still poll by tx hash only. If indexing is still
+        // lagging, keep the result lookup pending rather than failing hard.
+        return null;
+      }
+      throw error;
+    }
     const txEvidence = await this.historyService.findTransactionEvidenceByHash(dto.tx_hash!);
     const matchingPackets = txEvidence ? this.findMatchingSendPacketsInTxEvidence(txEvidence, dto) : [];
     if (matchingPackets.length === 1) {
