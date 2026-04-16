@@ -18,3 +18,10 @@ export class VesseloracleConsolidatedDataReportIcqRequestDto extends AsyncIcqBas
   })
   ts: string;
 }
+
+export class VesseloracleLatestConsolidatedDataReportIcqRequestDto extends AsyncIcqBaseRequestDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  imo: string;
+}

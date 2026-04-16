@@ -55,3 +55,19 @@ func (k Keeper) ConsolidatedDataReport(ctx context.Context, req *types.QueryGetC
 
 	return &types.QueryGetConsolidatedDataReportResponse{ConsolidatedDataReport: val}, nil
 }
+
+func (k Keeper) LatestConsolidatedDataReport(
+	ctx context.Context,
+	req *types.QueryLatestConsolidatedDataReportRequest,
+) (*types.QueryLatestConsolidatedDataReportResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid request")
+	}
+
+	val, found := k.GetLatestConsolidatedDataReportByImo(ctx, req.Imo)
+	if !found {
+		return nil, status.Error(codes.NotFound, "not found")
+	}
+
+	return &types.QueryLatestConsolidatedDataReportResponse{ConsolidatedDataReport: val}, nil
+}

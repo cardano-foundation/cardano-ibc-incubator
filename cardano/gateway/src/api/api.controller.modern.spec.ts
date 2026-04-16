@@ -37,7 +37,9 @@ describe('ApiController (modern)', () => {
   };
   let vesseloracleIcqServiceMock: {
     buildConsolidatedDataReportQuery: jest.Mock;
+    buildLatestConsolidatedDataReportQuery: jest.Mock;
     decodeConsolidatedDataReportAcknowledgement: jest.Mock;
+    decodeLatestConsolidatedDataReportAcknowledgement: jest.Mock;
     findResult: jest.Mock;
   };
   let transferPlannerServiceMock: {
@@ -71,7 +73,9 @@ describe('ApiController (modern)', () => {
     };
     vesseloracleIcqServiceMock = {
       buildConsolidatedDataReportQuery: jest.fn(),
+      buildLatestConsolidatedDataReportQuery: jest.fn(),
       decodeConsolidatedDataReportAcknowledgement: jest.fn(),
+      decodeLatestConsolidatedDataReportAcknowledgement: jest.fn(),
       findResult: jest.fn(),
     };
     transferPlannerServiceMock = {
@@ -240,6 +244,40 @@ describe('ApiController (modern)', () => {
       unsigned_tx: {
         type_url: '/ibc.core.channel.v1.MsgTransfer',
         value: Buffer.from([4, 5, 6]).toString('base64'),
+      },
+    });
+  });
+
+  it('delegates vesseloracle latest-consolidated-data-report ICQ tx building to VesseloracleIcqService', async () => {
+    vesseloracleIcqServiceMock.buildLatestConsolidatedDataReportQuery.mockResolvedValue({
+      query_path: '/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport',
+      source_port: 'icqhost',
+      source_channel: 'channel-5',
+      packet_data_hex: 'cafebabe',
+      tx: {
+        result: 1,
+        unsigned_tx: {
+          type_url: '/ibc.core.channel.v1.MsgTransfer',
+          value: Buffer.from([7, 8, 9]),
+        },
+      },
+    });
+
+    await expect(
+      controller.buildVesseloracleLatestConsolidatedDataReportIcq({
+        source_channel: 'channel-5',
+        signer: 'addr_test1q...',
+        imo: '9525338',
+      } as any),
+    ).resolves.toEqual({
+      query_path: '/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport',
+      source_port: 'icqhost',
+      source_channel: 'channel-5',
+      packet_data_hex: 'cafebabe',
+      result: 1,
+      unsigned_tx: {
+        type_url: '/ibc.core.channel.v1.MsgTransfer',
+        value: Buffer.from([7, 8, 9]).toString('base64'),
       },
     });
   });

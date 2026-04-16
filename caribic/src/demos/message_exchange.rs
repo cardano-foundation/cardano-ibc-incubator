@@ -148,13 +148,11 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
         datasource_home.as_str(),
     )?;
 
-    let consolidated_timestamp = query_latest_consolidated_timestamp(DEFAULT_VESSEL_IMO).await?;
     let signer = resolve_cardano_demo_signer_address(project_root_path)?;
     let built_icq_tx = build_vesseloracle_icq_transaction(
         channel_pair.cardano_channel_id.as_str(),
         signer.as_str(),
         DEFAULT_VESSEL_IMO,
-        consolidated_timestamp,
     )
     .await?;
     let source_tx_hash = sign_and_submit_cardano_icq_transaction(
@@ -712,7 +710,6 @@ async fn build_vesseloracle_icq_transaction(
     source_channel: &str,
     signer: &str,
     imo: &str,
-    consolidated_timestamp: u64,
 ) -> Result<BuiltVesseloracleIcqTx, String> {
     let timeout_height = query_entrypoint_latest_height().await? + ASYNC_ICQ_TIMEOUT_HEIGHT_DELTA;
     let client = reqwest::Client::builder()
@@ -721,16 +718,17 @@ async fn build_vesseloracle_icq_transaction(
         .build()
         .map_err(|error| format!("Failed to build Gateway HTTP client: {}", error))?;
     let url = format!(
-        "{}/icq/vesseloracle/consolidated-data-report",
+        "{}/icq/vesseloracle/latest-consolidated-data-report",
         GATEWAY_API_BASE_URL
     );
+    // The demo now discovers the latest consolidated report over ICQ as well,
+    // so Cardano only needs the IMO and no longer side-reads Entrypoint for a timestamp.
     let response = client
         .post(url.as_str())
         .json(&json!({
             "source_channel": source_channel,
             "signer": signer,
             "imo": imo,
-            "ts": consolidated_timestamp.to_string(),
             "timeout_height": {
                 "revision_number": 0,
                 "revision_height": timeout_height.to_string(),
@@ -1012,105 +1010,16 @@ async fn wait_for_vesseloracle_icq_result(
     ))
 }
 
-async fn query_latest_consolidated_timestamp(imo: &str) -> Result<u64, String> {
-    let message_exchange_config = crate::config::get_config().demo.message_exchange;
-    let max_retries = message_exchange_config.consolidated_report_max_retries;
-    if max_retries == 0 {
-        return Err(
-            "Invalid config: demo.message_exchange.consolidated_report_max_retries must be > 0 in ~/.caribic/config.json"
-                .to_string(),
-        );
-    }
-    let retry_delay_secs = message_exchange_config.consolidated_report_retry_delay_secs;
-    if retry_delay_secs == 0 {
-        return Err(
-            "Invalid config: demo.message_exchange.consolidated_report_retry_delay_secs must be > 0 in ~/.caribic/config.json"
-                .to_string(),
-        );
-    }
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_secs(5))
-        .build()
-        .map_err(|error| format!("Failed to build HTTP client: {}", error))?;
-    let query_url = "http://127.0.0.1:1317/vesseloracle/vesseloracle/consolidated_data_report";
-
-    for _ in 0..max_retries {
-        let response = client.get(query_url).send().await;
-        let Ok(response) = response else {
-            tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
-            continue;
-        };
-        if !response.status().is_success() {
-            tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
-            continue;
-        }
-
-        let body = response
-            .text()
-            .await
-            .map_err(|error| format!("Failed to read consolidated report response: {}", error))?;
-        let json: Value = serde_json::from_str(body.as_str()).map_err(|error| {
-            format!(
-                "Failed to parse consolidated report response as JSON: {}",
-                error
-            )
-        })?;
-
-        let reports = json
-            .get("consolidatedDataReport")
-            .or_else(|| json.get("consolidated_data_report"))
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-
-        let mut latest_ts = None;
-        for report in reports {
-            let report_imo = report
-                .get("imo")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string();
-            if report_imo != imo {
-                continue;
-            }
-
-            let report_ts = report
-                .get("ts")
-                .and_then(parse_u64_value)
-                .unwrap_or_default();
-            if latest_ts.is_none() || report_ts > latest_ts.unwrap_or_default() {
-                latest_ts = Some(report_ts);
-            }
-        }
-
-        if let Some(latest_ts) = latest_ts {
-            logger::verbose(&format!(
-                "Using latest consolidated report timestamp {} for IMO {}",
-                latest_ts, imo
-            ));
-            return Ok(latest_ts);
-        }
-
-        tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
-    }
-
-    Err(format!(
-        "Failed to find a consolidated report for IMO {} after retries",
-        imo
-    ))
+fn parse_f64_value(value: &Value) -> Option<f64> {
+    value
+        .as_f64()
+        .or_else(|| value.as_str().and_then(|raw| raw.parse::<f64>().ok()))
 }
 
 fn parse_u64_value(value: &Value) -> Option<u64> {
     value
         .as_u64()
         .or_else(|| value.as_str().and_then(|raw| raw.parse::<u64>().ok()))
-}
-
-fn parse_f64_value(value: &Value) -> Option<f64> {
-    value
-        .as_f64()
-        .or_else(|| value.as_str().and_then(|raw| raw.parse::<f64>().ok()))
 }
 
 fn configure_hermes_for_message_exchange() -> Result<(), String> {

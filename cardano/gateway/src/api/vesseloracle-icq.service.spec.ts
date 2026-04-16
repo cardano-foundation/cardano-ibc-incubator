@@ -69,6 +69,38 @@ describe('VesseloracleIcqService', () => {
     expect(response.source_channel).toBe('channel-7');
   });
 
+  it('builds a vesseloracle latest-consolidated-data-report async-icq packet on the icqhost port', async () => {
+    const response = await service.buildLatestConsolidatedDataReportQuery({
+      source_channel: 'channel-8',
+      signer: 'addr_test1qpz...',
+      imo: '9525338',
+    } as any);
+
+    expect(packetServiceMock.sendAsyncIcqPacket).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourcePort: 'icqhost',
+        sourceChannel: 'channel-8',
+        signer: 'addr_test1qpz...',
+      }),
+    );
+
+    const sentPacketHex = packetServiceMock.sendAsyncIcqPacket.mock.calls[0][0].packetData as string;
+    const packet = decodeInterchainQueryPacketDataJson(Buffer.from(sentPacketHex, 'hex'));
+    const cosmosQuery = decodeCosmosQuery(packet.data);
+    expect(cosmosQuery.requests).toHaveLength(1);
+    expect(cosmosQuery.requests[0].path).toBe('/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport');
+    expect(
+      decodeVesseloracleProtoMessage(
+        'vesseloracle.vesseloracle.QueryLatestConsolidatedDataReportRequest',
+        cosmosQuery.requests[0].data,
+      ),
+    ).toEqual({ imo: '9525338' });
+
+    expect(response.query_path).toBe('/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport');
+    expect(response.source_port).toBe('icqhost');
+    expect(response.source_channel).toBe('channel-8');
+  });
+
   it('decodes a successful vesseloracle consolidated-data-report acknowledgement', () => {
     const responseValue = encodeVesseloracleProtoMessage('vesseloracle.vesseloracle.QueryGetConsolidatedDataReportResponse', {
       consolidatedDataReport: {
@@ -135,6 +167,74 @@ describe('VesseloracleIcqService', () => {
           info: '',
           index: '0',
           height: '42',
+          codespace: '',
+          raw_value_base64: Buffer.from(responseValue).toString('base64'),
+        },
+      }),
+    );
+  });
+
+  it('decodes a successful vesseloracle latest-consolidated-data-report acknowledgement', () => {
+    const responseValue = encodeVesseloracleProtoMessage(
+      'vesseloracle.vesseloracle.QueryLatestConsolidatedDataReportResponse',
+      {
+        consolidatedDataReport: {
+          imo: '9525338',
+          ts: 1713110401,
+          total_samples: 13,
+          eta_outliers: 0,
+          eta_mean_cleaned: 1713114100,
+          eta_mean_all: 1713114200,
+          eta_std_cleaned: 60,
+          eta_std_all: 180,
+          depport_score: 96,
+          depport: 'ARBUE',
+          creator: 'cosmos1creator',
+        },
+      },
+    );
+
+    const ackBytes = encodeInterchainQueryPacketAckJson({
+      data: encodeCosmosResponse({
+        responses: [
+          {
+            code: 0,
+            log: '',
+            info: '',
+            index: BigInt(0),
+            key: new Uint8Array(),
+            value: responseValue,
+            height: BigInt(43),
+            codespace: '',
+          },
+        ],
+      }),
+    });
+    const ackHex = Buffer.from(
+      JSON.stringify({
+        result: Buffer.from(ackBytes).toString('base64'),
+      }),
+      'utf8',
+    ).toString('hex');
+
+    expect(service.decodeLatestConsolidatedDataReportAcknowledgement(ackHex)).toEqual(
+      expect.objectContaining({
+        status: 'success',
+        query_path: '/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport',
+        source_port: 'icqhost',
+        response: expect.objectContaining({
+          consolidatedDataReport: expect.objectContaining({
+            imo: '9525338',
+            ts: '1713110401',
+            total_samples: 13,
+          }),
+        }),
+        response_query: {
+          code: 0,
+          log: '',
+          info: '',
+          index: '0',
+          height: '43',
           codespace: '',
           raw_value_base64: Buffer.from(responseValue).toString('base64'),
         },

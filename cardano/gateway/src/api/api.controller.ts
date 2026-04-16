@@ -7,7 +7,10 @@ import {
   CheqdResourceIcqRequestDto,
 } from './cheqd-icq.dto';
 import { AsyncIcqAcknowledgementDto, AsyncIcqResultRequestDto } from './async-icq.dto';
-import { VesseloracleConsolidatedDataReportIcqRequestDto } from './vesseloracle-icq.dto';
+import {
+  VesseloracleConsolidatedDataReportIcqRequestDto,
+  VesseloracleLatestConsolidatedDataReportIcqRequestDto,
+} from './vesseloracle-icq.dto';
 import { ChannelService } from '~@/query/services/channel.service';
 import { QueryChannelsRequest } from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { IdentifiedChannel } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
@@ -265,6 +268,27 @@ export class ApiController {
   @HttpCode(200)
   async decodeVesseloracleConsolidatedDataReportIcq(@Body() dto: AsyncIcqAcknowledgementDto) {
     return this.vesseloracleIcqService.decodeConsolidatedDataReportAcknowledgement(dto.acknowledgement_hex);
+  }
+
+  @Post('icq/vesseloracle/latest-consolidated-data-report')
+  @HttpCode(200)
+  async buildVesseloracleLatestConsolidatedDataReportIcq(
+    @Body() requestDto: VesseloracleLatestConsolidatedDataReportIcqRequestDto,
+  ) {
+    const response = await this.vesseloracleIcqService.buildLatestConsolidatedDataReportQuery(requestDto);
+    return {
+      query_path: response.query_path,
+      source_port: response.source_port,
+      source_channel: response.source_channel,
+      packet_data_hex: response.packet_data_hex,
+      ...this.serializeUnsignedTxResponse(response.tx),
+    };
+  }
+
+  @Post('icq/vesseloracle/latest-consolidated-data-report/decode')
+  @HttpCode(200)
+  async decodeVesseloracleLatestConsolidatedDataReportIcq(@Body() dto: AsyncIcqAcknowledgementDto) {
+    return this.vesseloracleIcqService.decodeLatestConsolidatedDataReportAcknowledgement(dto.acknowledgement_hex);
   }
 
   @Post('icq/vesseloracle/result')

@@ -10,8 +10,11 @@ import { ASYNC_ICQ_HOST_PORT } from '@shared/types/apps/async-icq/async-icq';
 import {
   buildVesseloracleConsolidatedDataReportPacketData,
   decodeVesseloracleConsolidatedDataReportAcknowledgement,
+  buildVesseloracleLatestConsolidatedDataReportPacketData,
+  decodeVesseloracleLatestConsolidatedDataReportAcknowledgement,
   DecodedVesseloracleIcqAcknowledgement,
   isSupportedVesseloracleQueryPath,
+  VESSELORACLE_LATEST_QUERY_PATH,
 } from '@shared/types/apps/async-icq/vesseloracle-icq';
 import { REDEEMER_EMPTY_DATA, REDEEMER_TYPE } from '~@/constant';
 import { HISTORY_SERVICE, HistoryService, HistoryTxEvidence } from '~@/query/services/history.service';
@@ -20,7 +23,10 @@ import { decodeSpendChannelRedeemer } from '@shared/types/channel/channel-redeem
 import { convertHex2String } from '@shared/helpers/hex';
 import { Packet } from '@shared/types/channel/packet';
 import { AsyncIcqBaseRequestDto, AsyncIcqResultRequestDto } from './async-icq.dto';
-import { VesseloracleConsolidatedDataReportIcqRequestDto } from './vesseloracle-icq.dto';
+import {
+  VesseloracleConsolidatedDataReportIcqRequestDto,
+  VesseloracleLatestConsolidatedDataReportIcqRequestDto,
+} from './vesseloracle-icq.dto';
 
 type BuiltVesseloracleIcqTransaction = {
   source_port: typeof ASYNC_ICQ_HOST_PORT;
@@ -94,8 +100,22 @@ export class VesseloracleIcqService {
     return this.buildQueryTransaction(dto, queryPath, packetData);
   }
 
+  async buildLatestConsolidatedDataReportQuery(
+    dto: VesseloracleLatestConsolidatedDataReportIcqRequestDto,
+  ): Promise<BuiltVesseloracleIcqTransaction> {
+    const { packetData, queryPath } = buildVesseloracleLatestConsolidatedDataReportPacketData({
+      imo: dto.imo,
+    });
+
+    return this.buildQueryTransaction(dto, queryPath, packetData);
+  }
+
   decodeConsolidatedDataReportAcknowledgement(ackHex: string): DecodedVesseloracleIcqAcknowledgement {
     return decodeVesseloracleConsolidatedDataReportAcknowledgement(ackHex);
+  }
+
+  decodeLatestConsolidatedDataReportAcknowledgement(ackHex: string): DecodedVesseloracleIcqAcknowledgement {
+    return decodeVesseloracleLatestConsolidatedDataReportAcknowledgement(ackHex);
   }
 
   async findResult(dto: AsyncIcqResultRequestDto): Promise<VesseloracleIcqLookupResult> {
@@ -157,7 +177,7 @@ export class VesseloracleIcqService {
       completed_height: eventMatch.height.toString(),
       packet_sequence: eventMatch.packetSequence,
       acknowledgement_hex: eventMatch.acknowledgementHex,
-      acknowledgement: decodeVesseloracleConsolidatedDataReportAcknowledgement(eventMatch.acknowledgementHex),
+      acknowledgement: this.decodeAcknowledgement(dto.query_path, eventMatch.acknowledgementHex),
     };
   }
 
@@ -197,6 +217,18 @@ export class VesseloracleIcqService {
     }
 
     return BigInt(value);
+  }
+
+  private decodeAcknowledgement(queryPath: string, ackHex: string): DecodedVesseloracleIcqAcknowledgement {
+    if (!isSupportedVesseloracleQueryPath(queryPath)) {
+      throw new GrpcInvalidArgumentException(`Unsupported vesseloracle query_path: ${queryPath}`);
+    }
+
+    if (queryPath === VESSELORACLE_LATEST_QUERY_PATH) {
+      return decodeVesseloracleLatestConsolidatedDataReportAcknowledgement(ackHex);
+    }
+
+    return decodeVesseloracleConsolidatedDataReportAcknowledgement(ackHex);
   }
 
   private async resolveSearchStartHeight(dto: AsyncIcqResultRequestDto): Promise<SearchStartResult> {

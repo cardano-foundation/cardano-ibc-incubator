@@ -31,27 +31,40 @@ message QueryGetConsolidatedDataReportRequest {
   uint64 ts = 2;
 }
 
+message QueryLatestConsolidatedDataReportRequest {
+  string imo = 1;
+}
+
 message QueryGetConsolidatedDataReportResponse {
+  ConsolidatedDataReport consolidatedDataReport = 1;
+}
+
+message QueryLatestConsolidatedDataReportResponse {
   ConsolidatedDataReport consolidatedDataReport = 1;
 }
 `;
 
 export const VESSELORACLE_QUERY_PATH = '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport';
+export const VESSELORACLE_LATEST_QUERY_PATH = '/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport';
 const VESSELORACLE_REQUEST_TYPE = 'vesseloracle.vesseloracle.QueryGetConsolidatedDataReportRequest';
 const VESSELORACLE_RESPONSE_TYPE = 'vesseloracle.vesseloracle.QueryGetConsolidatedDataReportResponse';
+const VESSELORACLE_LATEST_REQUEST_TYPE = 'vesseloracle.vesseloracle.QueryLatestConsolidatedDataReportRequest';
+const VESSELORACLE_LATEST_RESPONSE_TYPE = 'vesseloracle.vesseloracle.QueryLatestConsolidatedDataReportResponse';
+
+type SupportedVesseloracleQueryPath = typeof VESSELORACLE_QUERY_PATH | typeof VESSELORACLE_LATEST_QUERY_PATH;
 
 let vesseloracleProtoRoot: protobuf.Root | null = null;
 
 export type DecodedVesseloracleIcqAcknowledgement =
   | {
       status: 'error';
-      query_path: typeof VESSELORACLE_QUERY_PATH;
+      query_path: SupportedVesseloracleQueryPath;
       source_port: typeof ASYNC_ICQ_HOST_PORT;
       error: string;
     }
   | {
       status: 'success';
-      query_path: typeof VESSELORACLE_QUERY_PATH;
+      query_path: SupportedVesseloracleQueryPath;
       source_port: typeof ASYNC_ICQ_HOST_PORT;
       response: Record<string, unknown>;
       response_query: {
@@ -66,7 +79,7 @@ export type DecodedVesseloracleIcqAcknowledgement =
     }
   | {
       status: 'query_error';
-      query_path: typeof VESSELORACLE_QUERY_PATH;
+      query_path: SupportedVesseloracleQueryPath;
       source_port: typeof ASYNC_ICQ_HOST_PORT;
       error: string;
       response_query: {
@@ -145,19 +158,43 @@ export function buildVesseloracleConsolidatedDataReportPacketData(payload: {
   };
 }
 
-export function isSupportedVesseloracleQueryPath(queryPath: string): queryPath is typeof VESSELORACLE_QUERY_PATH {
-  return queryPath === VESSELORACLE_QUERY_PATH;
+export function buildVesseloracleLatestConsolidatedDataReportPacketData(payload: {
+  imo: string;
+}): { packetData: Uint8Array; queryPath: typeof VESSELORACLE_LATEST_QUERY_PATH } {
+  const requestData = encodeVesseloracleProtoMessage(VESSELORACLE_LATEST_REQUEST_TYPE, {
+    imo: payload.imo,
+  });
+  const request: TendermintRequestQuery = {
+    data: requestData,
+    path: VESSELORACLE_LATEST_QUERY_PATH,
+    height: BigInt(0),
+    prove: false,
+  };
+
+  return {
+    packetData: encodeAsyncIcqPacketDataFromRequests([request]),
+    queryPath: VESSELORACLE_LATEST_QUERY_PATH,
+  };
 }
 
-export function decodeVesseloracleConsolidatedDataReportAcknowledgement(
+export function isSupportedVesseloracleQueryPath(queryPath: string): queryPath is SupportedVesseloracleQueryPath {
+  return queryPath === VESSELORACLE_QUERY_PATH || queryPath === VESSELORACLE_LATEST_QUERY_PATH;
+}
+
+function responseTypeForVesseloracleQueryPath(queryPath: SupportedVesseloracleQueryPath): string {
+  return queryPath === VESSELORACLE_LATEST_QUERY_PATH ? VESSELORACLE_LATEST_RESPONSE_TYPE : VESSELORACLE_RESPONSE_TYPE;
+}
+
+function decodeVesseloracleAcknowledgementForPath(
   ackHex: string,
+  queryPath: SupportedVesseloracleQueryPath,
 ): DecodedVesseloracleIcqAcknowledgement {
   const decodedAck = decodeAsyncIcqAcknowledgementHex(ackHex);
 
   if (decodedAck.kind === 'error') {
     return {
       status: 'error',
-      query_path: VESSELORACLE_QUERY_PATH,
+      query_path: queryPath,
       source_port: ASYNC_ICQ_HOST_PORT,
       error: decodedAck.error,
     };
@@ -166,7 +203,7 @@ export function decodeVesseloracleConsolidatedDataReportAcknowledgement(
   const cosmosResponse: CosmosResponse = decodedAck.cosmosResponse;
   if (cosmosResponse.responses.length !== 1) {
     throw new Error(
-      `expected exactly one async-icq response for ${VESSELORACLE_QUERY_PATH}, got ${cosmosResponse.responses.length}`,
+      `expected exactly one async-icq response for ${queryPath}, got ${cosmosResponse.responses.length}`,
     );
   }
 
@@ -184,7 +221,7 @@ export function decodeVesseloracleConsolidatedDataReportAcknowledgement(
   if (responseQuery.code !== 0) {
     return {
       status: 'query_error',
-      query_path: VESSELORACLE_QUERY_PATH,
+      query_path: queryPath,
       source_port: ASYNC_ICQ_HOST_PORT,
       error: responseQuery.log || responseQuery.info || `remote query failed with code ${responseQuery.code}`,
       response_query: responseMetadata,
@@ -193,9 +230,21 @@ export function decodeVesseloracleConsolidatedDataReportAcknowledgement(
 
   return {
     status: 'success',
-    query_path: VESSELORACLE_QUERY_PATH,
+    query_path: queryPath,
     source_port: ASYNC_ICQ_HOST_PORT,
-    response: decodeVesseloracleProtoMessage(VESSELORACLE_RESPONSE_TYPE, responseQuery.value),
+    response: decodeVesseloracleProtoMessage(responseTypeForVesseloracleQueryPath(queryPath), responseQuery.value),
     response_query: responseMetadata,
   };
+}
+
+export function decodeVesseloracleConsolidatedDataReportAcknowledgement(
+  ackHex: string,
+): DecodedVesseloracleIcqAcknowledgement {
+  return decodeVesseloracleAcknowledgementForPath(ackHex, VESSELORACLE_QUERY_PATH);
+}
+
+export function decodeVesseloracleLatestConsolidatedDataReportAcknowledgement(
+  ackHex: string,
+): DecodedVesseloracleIcqAcknowledgement {
+  return decodeVesseloracleAcknowledgementForPath(ackHex, VESSELORACLE_LATEST_QUERY_PATH);
 }

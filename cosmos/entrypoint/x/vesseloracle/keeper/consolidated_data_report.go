@@ -43,6 +43,30 @@ func (k Keeper) GetConsolidatedDataReport(
 	return val, true
 }
 
+// GetLatestConsolidatedDataReportByImo returns the latest consolidated report for an IMO.
+func (k Keeper) GetLatestConsolidatedDataReportByImo(
+	ctx context.Context,
+	imo string,
+) (val types.ConsolidatedDataReport, found bool) {
+	storeAdapter := runtime.KVStoreAdapter(k.storeService.OpenKVStore(ctx))
+	store := prefix.NewStore(storeAdapter, types.KeyPrefix(types.ConsolidatedDataReportKeyPrefix))
+	iterator := storetypes.KVStorePrefixIterator(store, append([]byte(imo), []byte("/")...))
+	defer iterator.Close()
+
+	var latestTs uint64
+	for ; iterator.Valid(); iterator.Next() {
+		var current types.ConsolidatedDataReport
+		k.cdc.MustUnmarshal(iterator.Value(), &current)
+		if !found || current.Ts > latestTs {
+			val = current
+			latestTs = current.Ts
+			found = true
+		}
+	}
+
+	return val, found
+}
+
 // RemoveConsolidatedDataReport removes a consolidatedDataReport from the store
 func (k Keeper) RemoveConsolidatedDataReport(
 	ctx context.Context,

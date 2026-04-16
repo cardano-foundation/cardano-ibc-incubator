@@ -39,6 +39,12 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					Short:          "Shows a consolidated-data-report",
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "imo"}, {ProtoField: "ts"}},
 				},
+				{
+					RpcMethod:      "LatestConsolidatedDataReport",
+					Use:            "show-latest-consolidated-data-report [imo]",
+					Short:          "Shows the latest consolidated-data-report for an IMO",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "imo"}},
+				},
 				// this line is used by ignite scaffolding # autocli/query
 			},
 		},
