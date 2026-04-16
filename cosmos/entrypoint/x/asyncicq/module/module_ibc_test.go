@@ -83,6 +83,46 @@ func TestOnRecvPacketRejectsProofRequests(t *testing.T) {
 	require.NotEmpty(t, outer["error"])
 }
 
+func TestOnRecvPacketDoesNotPersistQuerySideEffects(t *testing.T) {
+	db := dbm.NewMemDB()
+	stateStore := store.NewCommitMultiStore(db, log.NewNopLogger(), metrics.NewNoOpMetrics())
+	queryKey := storetypes.NewKVStoreKey("async-icq-query-side-effects")
+
+	stateStore.MountStoreWithDB(queryKey, storetypes.StoreTypeIAVL, db)
+	require.NoError(t, stateStore.LoadLatestVersion())
+
+	ctx := sdk.NewContext(stateStore, cmtproto.Header{
+		ChainID: "entrypoint-test",
+		Height:  55,
+	}, false, log.NewNopLogger())
+
+	module := NewIBCModule(stubQueryRouter{
+		handlers: map[string]baseapp.GRPCQueryHandler{
+			ConsolidatedDataReportQueryPath: func(ctx sdk.Context, _ *abci.RequestQuery) (*abci.ResponseQuery, error) {
+				// A sloppy query handler must not be able to persist state or leak
+				// events through the generic async-ICQ host.
+				ctx.KVStore(queryKey).Set([]byte("written"), []byte("value"))
+				ctx.EventManager().EmitEvent(sdk.NewEvent("async-icq-query-side-effect"))
+				return &abci.ResponseQuery{Code: 0}, nil
+			},
+		},
+	}, nil)
+
+	ack := module.OnRecvPacket(ctx, Version, channeltypes.Packet{
+		Data: mustEncodeTestPacket(t, []abci.RequestQuery{{
+			Path:   ConsolidatedDataReportQueryPath,
+			Height: 0,
+			Prove:  false,
+		}}),
+	}, nil)
+
+	responses := decodeAcknowledgementResponses(t, ack.Acknowledgement())
+	require.Len(t, responses, 1)
+	require.Equal(t, uint32(0), responses[0].Code)
+	require.Nil(t, ctx.KVStore(queryKey).Get([]byte("written")))
+	require.Empty(t, ctx.EventManager().Events())
+}
+
 func TestValidateHandshakeDefaultsVersionAndRejectsWrongPort(t *testing.T) {
 	version, err := validateHandshake(channeltypes.UNORDERED, PortID, "")
 	require.NoError(t, err)

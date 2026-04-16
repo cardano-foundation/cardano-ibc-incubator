@@ -326,6 +326,8 @@ func applyFuncIfNoError(ctx sdk.Context, f func(ctx sdk.Context) error) (err err
 		}
 	}()
 
+	// Execute queries in an isolated cache so panics/errors cannot leak partial
+	// writes into the outer packet context.
 	cacheCtx, write := ctx.CacheContext()
 	err = f(cacheCtx)
 	if err != nil {
@@ -333,8 +335,9 @@ func applyFuncIfNoError(ctx sdk.Context, f func(ctx sdk.Context) error) (err err
 		return err
 	}
 
-	write()
-	ctx.EventManager().EmitEvents(cacheCtx.EventManager().Events())
+	// Async-ICQ execution must remain read-only even if a routed query handler
+	// accidentally mutates state or emits SDK events, so the cache is never written back.
+	_ = write
 	return nil
 }
 
