@@ -26,7 +26,6 @@ service Msg {
   rpc CreateConsolidatedDataReport (MsgCreateConsolidatedDataReport) returns (MsgCreateConsolidatedDataReportResponse);
   rpc UpdateConsolidatedDataReport (MsgUpdateConsolidatedDataReport) returns (MsgUpdateConsolidatedDataReportResponse);
   rpc DeleteConsolidatedDataReport (MsgDeleteConsolidatedDataReport) returns (MsgDeleteConsolidatedDataReportResponse);
-  rpc TransmitReport               (MsgTransmitReport              ) returns (MsgTransmitReportResponse              );
 }
 // MsgUpdateParams is the Msg/UpdateParams request type.
 message MsgUpdateParams {
@@ -151,16 +150,3 @@ message MsgDeleteConsolidatedDataReport {
 }
 
 message MsgDeleteConsolidatedDataReportResponse {}
-
-message MsgTransmitReport {
-  option (cosmos.msg.v1.signer) = "creator";
-  string creator = 1;
-  string imo     = 2;
-  uint64 ts      = 3;
-  string channel = 4;
-}
-
-message MsgTransmitReportResponse {
-  string imo = 1;
-  uint64 ts  = 2;
-}
