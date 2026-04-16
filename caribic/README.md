@@ -33,21 +33,21 @@ Examples:
 caribic start
 caribic start --clean --with-mithril
 caribic start bridge
-caribic start cosmos --clean
-caribic start osmosis
-caribic start injective --network local
-caribic start injective --network testnet
+caribic start entrypoint --clean
+caribic chain start --chain osmosis
+caribic chain start --chain injective --network local
+caribic chain start --chain injective --network testnet
 ```
 
 Injective startup note:
-- `caribic start injective --network local` starts a local single-node Injective devnet.
-- `caribic start injective --network testnet` starts a local `injectived` process bootstrapped from a public Injective testnet snapshot.
-- `caribic start injective --network mainnet` is intentionally not implemented yet.
+- `caribic chain start --chain injective --network local` starts a local single-node Injective devnet.
+- `caribic chain start --chain injective --network testnet` starts a local `injectived` process bootstrapped from a public Injective testnet snapshot.
+- `caribic chain start --chain injective --network mainnet` is intentionally not implemented yet.
 - If `injectived` is missing, caribic prompts to install it from source (`InjectiveFoundation/injective-core`) and runs `make install`.
 
-Cosmos startup note:
-- `caribic start cosmos` sets `IGNITE_SKIP_PROTO=1` by default in the container startup path to avoid Ignite regenerating OpenAPI/proto artifacts on every boot.
-- If you intentionally need Ignite proto regeneration, run with `IGNITE_SKIP_PROTO=0 caribic start cosmos --clean`.
+Entrypoint startup note:
+- `caribic start entrypoint` sets `IGNITE_SKIP_PROTO=1` by default in the container startup path to avoid Ignite regenerating OpenAPI/proto artifacts on every boot.
+- If you intentionally need Ignite proto regeneration, run with `IGNITE_SKIP_PROTO=0 caribic start entrypoint --clean`.
 
 Hermes config note:
 - Hermes reads `~/.hermes/config.toml` when the process starts. Editing that file while Hermes is already running does not apply live.
@@ -58,16 +58,27 @@ Hermes config note:
 
 Stops services. With no target, it behaves like `all`.
 
-- **Targets**: `all`, `network`, `bridge`, `cosmos`, `osmosis`, `injective`, `demo`, `gateway`, `relayer`, `mithril`
+- **Targets**: `all`, `network`, `bridge`, `entrypoint`, `demo`, `gateway`, `relayer`, `mithril`
 
 Examples:
 
 ```bash
 caribic stop
 caribic stop bridge
-caribic stop osmosis
-caribic stop injective --network local
-caribic stop injective --network testnet
+caribic chain stop --chain osmosis
+caribic chain stop --chain injective --network local
+caribic chain stop --chain injective --network testnet
+```
+
+### `caribic chain <start|stop|health> --chain <id>`
+
+Manages optional chains through the adapter registry. This is the canonical interface for non-core chains such as Osmosis, cheqd, and Injective.
+
+```bash
+caribic chain start --chain osmosis
+caribic chain start --chain injective --network testnet --chain-flag stateful=false
+caribic chain health --chain cheqd --network testnet
+caribic chain stop --chain injective --network local
 ```
 
 ### `caribic health-check [--service <name>]`
@@ -110,7 +121,7 @@ caribic create-channel --a-chain cardano-devnet --b-chain entrypoint --a-port tr
 ### `caribic demo <message-exchange|token-swap>`
 
 Starts a demo setup step on top of already running services.
-`caribic demo token-swap` expects `caribic start --with-mithril` and `caribic start osmosis` to have already been run. It then validates required services, prepares Hermes channels, deploys the cross-chain swap contracts, and executes the swap flow end-to-end.
+`caribic demo token-swap` expects `caribic start --with-mithril` and `caribic chain start --chain osmosis` to have already been run. It then validates required services, prepares Hermes channels, deploys the cross-chain swap contracts, and executes the swap flow end-to-end.
 `caribic demo message-exchange` now runs directly against the native `cosmos/entrypoint` chain and uses the built-in datasource at `cosmos/entrypoint/datasource` (no separate demo chain bootstrap required).
 
 Both demo flows wait for Mithril stake distributions + cardano-transactions artifacts before IBC setup.  

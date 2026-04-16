@@ -18,7 +18,8 @@ pub(super) async fn prepare_local(
     if !stateful {
         stop_local(cheqd_dir);
         // Stateless runs intentionally rebuild the validator home from the pinned mnemonics so
-        // repeated `caribic start cheqd` calls produce the same local chain identity every time.
+        // repeated `caribic chain start --chain cheqd` calls produce the same local chain
+        // identity every time.
         let network_config_dir = cheqd_dir.join("configuration/network-config");
         if network_config_dir.exists() {
             fs::remove_dir_all(network_config_dir.as_path())?;

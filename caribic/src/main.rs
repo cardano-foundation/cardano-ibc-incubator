@@ -37,12 +37,6 @@ enum StartTarget {
     Bridge,
     /// Starts the Entrypoint chain (packet-forwarding chain)
     Entrypoint,
-    /// Starts the Osmosis optional chain (network selected via --network)
-    Osmosis,
-    /// Starts the cheqd optional chain (network selected via --network)
-    Cheqd,
-    /// Starts the Injective optional chain (network selected via --network)
-    Injective,
     /// Starts only the Gateway service
     Gateway,
     /// Starts only the Hermes relayer
@@ -61,12 +55,6 @@ enum StopTarget {
     Bridge,
     /// Stops the Entrypoint chain
     Entrypoint,
-    /// Stops the Osmosis optional chain (network selected via --network)
-    Osmosis,
-    /// Stops the cheqd optional chain (network selected via --network)
-    Cheqd,
-    /// Stops the Injective optional chain (network selected via --network)
-    Injective,
     /// Stops the demo services
     Demo,
     /// Stops only the Gateway service
@@ -111,7 +99,7 @@ enum Commands {
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, entrypoint, osmosis, cheqd, injective, gateway, relayer, mithril
+    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, entrypoint, gateway, relayer, mithril
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
@@ -121,21 +109,21 @@ enum Commands {
         /// Start Mithril services for light client testing (adds 5-10 minute startup time)
         #[arg(long, default_value_t = false)]
         with_mithril: bool,
-        /// Optional network profile for optional chain targets or the managed Cardano runtime (local, preprod)
+        /// Optional network profile for the managed Cardano runtime (local, preprod)
         #[arg(long)]
         network: Option<String>,
-        /// Chain-specific KEY=VALUE flag (repeatable), only for optional chain targets
+        /// Chain-specific KEY=VALUE flag (repeatable); use `caribic chain start --chain <id>` for optional chains
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
     },
-    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, entrypoint, osmosis, cheqd, injective, demo, gateway, relayer, mithril
+    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, entrypoint, demo, gateway, relayer, mithril
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
-        /// Optional network profile for optional chain targets or the managed Cardano runtime (local, preprod)
+        /// Optional network profile for the managed Cardano runtime (local, preprod)
         #[arg(long)]
         network: Option<String>,
-        /// Chain-specific KEY=VALUE flag (repeatable), only for optional chain targets
+        /// Chain-specific KEY=VALUE flag (repeatable); use `caribic chain stop --chain <id>` for optional chains
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
     },
@@ -266,6 +254,7 @@ enum ChainCommand {
     /// Start an optional chain adapter
     Start {
         /// Chain identifier (for example: osmosis, cheqd, injective)
+        #[arg(long)]
         chain: String,
         /// Optional network profile (for example: local, testnet)
         #[arg(long)]
@@ -277,6 +266,7 @@ enum ChainCommand {
     /// Stop an optional chain adapter
     Stop {
         /// Chain identifier (for example: osmosis, cheqd, injective)
+        #[arg(long)]
         chain: String,
         /// Optional network profile (for example: local, testnet)
         #[arg(long)]
@@ -288,6 +278,7 @@ enum ChainCommand {
     /// Check health for an optional chain adapter
     Health {
         /// Chain identifier (for example: osmosis, cheqd, injective)
+        #[arg(long)]
         chain: String,
         /// Optional network profile (for example: local, testnet)
         #[arg(long)]
@@ -304,7 +295,13 @@ async fn main() {
     let args = Args::parse();
 
     // Show the banner only for startup flows to keep other commands quiet and script-friendly.
-    if matches!(args.command, Commands::Start { .. }) {
+    if matches!(
+        args.command,
+        Commands::Start { .. }
+            | Commands::Chain {
+                command: ChainCommand::Start { .. }
+            }
+    ) {
         utils::print_header();
     }
 

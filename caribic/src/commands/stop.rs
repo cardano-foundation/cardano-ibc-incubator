@@ -10,21 +10,10 @@ pub fn run_stop(
 ) -> Result<(), String> {
     let project_config = crate::config::get_config();
     let project_root_path = Path::new(&project_config.project_root);
-    let optional_chain_alias = resolve_optional_chain_alias(target.as_ref());
-
-    if let Some(chain_id) = optional_chain_alias {
-        if network.is_some() || !chain_flags.is_empty() {
-            stop_optional_chain(project_root_path, chain_id, network, chain_flags)?;
-        } else {
-            stop_all_managed_optional_chain_networks(project_root_path, chain_id)?;
-        }
-        logger::log("\nOptional chain stopped successfully");
-        return Ok(());
-    }
 
     if !chain_flags.is_empty() {
         return Err(
-            "ERROR: --chain-flag requires an optional chain target. Use `caribic stop <optional-chain-alias> --network <network>` or `caribic chain stop ...`."
+            "ERROR: --chain-flag is only supported through the chain adapter registry. Use `caribic chain stop --chain <id> --network <network>`."
                 .to_string(),
         );
     }
@@ -92,29 +81,9 @@ pub fn run_stop(
                 );
             }
         }
-        Some(StopTarget::Osmosis) | Some(StopTarget::Cheqd) | Some(StopTarget::Injective) => {
-            unreachable!("optional chain aliases return earlier");
-        }
     }
 
     Ok(())
-}
-
-fn stop_optional_chain(
-    project_root_path: &Path,
-    chain_id: &str,
-    network: Option<String>,
-    chain_flags: Vec<String>,
-) -> Result<(), String> {
-    let adapter = chains::get_chain_adapter(chain_id).ok_or_else(|| {
-        format!(
-            "ERROR: Optional chain adapter '{}' is not registered",
-            chain_id
-        )
-    })?;
-    let resolved_network = adapter.resolve_network(network.as_deref())?;
-    let parsed_flags = chains::parse_chain_flags(chain_flags.as_slice())?;
-    adapter.stop(project_root_path, resolved_network.as_str(), &parsed_flags)
 }
 
 fn stop_all_managed_optional_chain_networks(
@@ -146,16 +115,6 @@ fn stop_all_managed_optional_chain_networks(
     }
 
     Ok(())
-}
-
-/// Returns the optional-chain alias handled by `caribic stop <target>` aliases.
-fn resolve_optional_chain_alias(target: Option<&StopTarget>) -> Option<&'static str> {
-    match target {
-        Some(StopTarget::Osmosis) => Some("osmosis"),
-        Some(StopTarget::Cheqd) => Some("cheqd"),
-        Some(StopTarget::Injective) => Some("injective"),
-        _ => None,
-    }
 }
 
 /// Stops the local Cardano network and Mithril services.

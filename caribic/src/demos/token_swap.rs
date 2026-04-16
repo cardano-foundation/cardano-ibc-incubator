@@ -34,7 +34,7 @@ use crate::{
 const TOKEN_SWAP_DEFAULT_CHAIN: OptionalChainId = OptionalChainId::Osmosis;
 const INJECTIVE_TESTNET_MIN_FIRST_BLOCK_WAIT_MS: u64 = 30 * 60 * 1000;
 const INJECTIVE_TESTNET_RECOVERY_HINT: &str =
-    "caribic start injective --network testnet --chain-flag stateful=false";
+    "caribic chain start --chain injective --network testnet --chain-flag stateful=false";
 const OSMOSIS_TESTNET_DEPLOYER_MNEMONIC_FILENAME: &str = "testnet-deployer.mnemonic";
 fn token_swap_core_targets() -> Vec<HealthTarget> {
     vec![
