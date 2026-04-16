@@ -39,6 +39,11 @@ import (
 	// this line is used by starport scaffolding # ibc/app/import
 )
 
+const (
+	vesseloracleConsolidatedDataReportQueryPath       = "/vesseloracle.vesseloracle.Query/ConsolidatedDataReport"
+	vesseloracleLatestConsolidatedDataReportQueryPath = "/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport"
+)
+
 // registerIBCModules register IBC keepers and non dependency inject modules.
 func (app *App) registerIBCModules() {
 	// set up non depinject support modules store keys
@@ -154,11 +159,16 @@ func (app *App) registerIBCModules() {
 	icaHostIBCModule := icahost.NewIBCModule(app.ICAHostKeeper)
 
 	// Create static IBC router, add transfer route, then set and seal it
+	// Keep the async-ICQ host generic by declaring its query-policy here in app
+	// wiring rather than inside the host module package.
 	ibcRouter := porttypes.NewRouter().
 		AddRoute(ibctransfertypes.ModuleName, transferStack).
 		AddRoute(icacontrollertypes.SubModuleName, icaControllerIBCModule).
 		AddRoute(icahosttypes.SubModuleName, icaHostIBCModule).
-		AddRoute(asyncicqmodule.PortID, asyncicqmodule.NewIBCModule(app.GRPCQueryRouter(), nil))
+		AddRoute(asyncicqmodule.PortID, asyncicqmodule.NewIBCModule(app.GRPCQueryRouter(), []string{
+			vesseloracleConsolidatedDataReportQueryPath,
+			vesseloracleLatestConsolidatedDataReportQueryPath,
+		}))
 
 	// this line is used by starport scaffolding # ibc/app/module
 

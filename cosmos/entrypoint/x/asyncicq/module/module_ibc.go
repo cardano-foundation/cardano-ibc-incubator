@@ -24,13 +24,7 @@ import (
 const (
 	PortID  = "icqhost"
 	Version = "icq-1"
-
-	ConsolidatedDataReportQueryPath = "/vesseloracle.vesseloracle.Query/ConsolidatedDataReport"
 )
-
-var defaultAllowQueries = []string{
-	ConsolidatedDataReportQueryPath,
-}
 
 type grpcQueryRouter interface {
 	Route(path string) baseapp.GRPCQueryHandler
@@ -67,10 +61,8 @@ type IBCModule struct {
 }
 
 func NewIBCModule(queryRouter grpcQueryRouter, allowQueries []string) IBCModule {
-	if len(allowQueries) == 0 {
-		allowQueries = defaultAllowQueries
-	}
-
+	// Query-policy is application-specific and must be supplied by app wiring.
+	// An empty allowlist is valid but will reject every incoming async-ICQ request.
 	allow := make(map[string]struct{}, len(allowQueries))
 	for _, path := range allowQueries {
 		allow[path] = struct{}{}

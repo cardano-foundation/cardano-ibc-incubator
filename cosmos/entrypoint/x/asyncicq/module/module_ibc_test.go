@@ -19,6 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testConsolidatedDataReportQueryPath = "/vesseloracle.vesseloracle.Query/ConsolidatedDataReport"
+
 type stubQueryRouter struct {
 	handlers map[string]baseapp.GRPCQueryHandler
 }
@@ -31,7 +33,7 @@ func TestOnRecvPacketExecutesAllowedQuery(t *testing.T) {
 	ctx := newAsyncIcqTestContext(t, 55)
 	module := NewIBCModule(stubQueryRouter{
 		handlers: map[string]baseapp.GRPCQueryHandler{
-			ConsolidatedDataReportQueryPath: func(ctx sdk.Context, req *abci.RequestQuery) (*abci.ResponseQuery, error) {
+			testConsolidatedDataReportQueryPath: func(ctx sdk.Context, req *abci.RequestQuery) (*abci.ResponseQuery, error) {
 				require.Equal(t, []byte("payload"), req.Data)
 				return &abci.ResponseQuery{
 					Code:      0,
@@ -45,12 +47,12 @@ func TestOnRecvPacketExecutesAllowedQuery(t *testing.T) {
 				}, nil
 			},
 		},
-	}, nil)
+	}, []string{testConsolidatedDataReportQueryPath})
 
 	ack := module.OnRecvPacket(ctx, Version, channeltypes.Packet{
 		Data: mustEncodeTestPacket(t, []abci.RequestQuery{{
 			Data:   []byte("payload"),
-			Path:   ConsolidatedDataReportQueryPath,
+			Path:   testConsolidatedDataReportQueryPath,
 			Height: 0,
 			Prove:  false,
 		}}),
@@ -67,12 +69,12 @@ func TestOnRecvPacketExecutesAllowedQuery(t *testing.T) {
 
 func TestOnRecvPacketRejectsProofRequests(t *testing.T) {
 	ctx := newAsyncIcqTestContext(t, 55)
-	module := NewIBCModule(stubQueryRouter{handlers: map[string]baseapp.GRPCQueryHandler{}}, nil)
+	module := NewIBCModule(stubQueryRouter{handlers: map[string]baseapp.GRPCQueryHandler{}}, []string{testConsolidatedDataReportQueryPath})
 
 	ack := module.OnRecvPacket(ctx, Version, channeltypes.Packet{
 		Data: mustEncodeTestPacket(t, []abci.RequestQuery{{
 			Data:   []byte("payload"),
-			Path:   ConsolidatedDataReportQueryPath,
+			Path:   testConsolidatedDataReportQueryPath,
 			Height: 0,
 			Prove:  true,
 		}}),
@@ -98,7 +100,7 @@ func TestOnRecvPacketDoesNotPersistQuerySideEffects(t *testing.T) {
 
 	module := NewIBCModule(stubQueryRouter{
 		handlers: map[string]baseapp.GRPCQueryHandler{
-			ConsolidatedDataReportQueryPath: func(ctx sdk.Context, _ *abci.RequestQuery) (*abci.ResponseQuery, error) {
+			testConsolidatedDataReportQueryPath: func(ctx sdk.Context, _ *abci.RequestQuery) (*abci.ResponseQuery, error) {
 				// A sloppy query handler must not be able to persist state or leak
 				// events through the generic async-ICQ host.
 				ctx.KVStore(queryKey).Set([]byte("written"), []byte("value"))
@@ -106,11 +108,11 @@ func TestOnRecvPacketDoesNotPersistQuerySideEffects(t *testing.T) {
 				return &abci.ResponseQuery{Code: 0}, nil
 			},
 		},
-	}, nil)
+	}, []string{testConsolidatedDataReportQueryPath})
 
 	ack := module.OnRecvPacket(ctx, Version, channeltypes.Packet{
 		Data: mustEncodeTestPacket(t, []abci.RequestQuery{{
-			Path:   ConsolidatedDataReportQueryPath,
+			Path:   testConsolidatedDataReportQueryPath,
 			Height: 0,
 			Prove:  false,
 		}}),
