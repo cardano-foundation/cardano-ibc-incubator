@@ -16,8 +16,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/module"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
-	porttypes "github.com/cosmos/ibc-go/v10/modules/core/05-port/types"
-	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
 
@@ -39,7 +37,6 @@ var (
 	_ appmodule.AppModule       = (*AppModule)(nil)
 	_ appmodule.HasBeginBlocker = (*AppModule)(nil)
 	_ appmodule.HasEndBlocker   = (*AppModule)(nil)
-	_ porttypes.IBCModule       = (*IBCModule)(nil)
 )
 
 // ----------------------------------------------------------------------------
@@ -193,8 +190,6 @@ type ModuleInputs struct {
 
 	AccountKeeper types.AccountKeeper
 	BankKeeper    types.BankKeeper
-
-	IBCKeeperFn func() *ibckeeper.Keeper `optional:"true"`
 }
 
 type ModuleOutputs struct {
@@ -215,7 +210,6 @@ func ProvideModule(in ModuleInputs) ModuleOutputs {
 		in.StoreService,
 		in.Logger,
 		authority.String(),
-		in.IBCKeeperFn,
 	)
 	m := NewAppModule(
 		in.Cdc,

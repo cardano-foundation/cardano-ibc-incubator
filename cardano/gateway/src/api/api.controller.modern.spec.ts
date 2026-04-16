@@ -37,7 +37,10 @@ describe('ApiController (modern)', () => {
   };
   let vesseloracleIcqServiceMock: {
     buildConsolidatedDataReportQuery: jest.Mock;
+    buildLatestConsolidatedDataReportQuery: jest.Mock;
     decodeConsolidatedDataReportAcknowledgement: jest.Mock;
+    decodeLatestConsolidatedDataReportAcknowledgement: jest.Mock;
+    findResult: jest.Mock;
   };
   let transferPlannerServiceMock: {
     planTransferRoute: jest.Mock;
@@ -70,7 +73,10 @@ describe('ApiController (modern)', () => {
     };
     vesseloracleIcqServiceMock = {
       buildConsolidatedDataReportQuery: jest.fn(),
+      buildLatestConsolidatedDataReportQuery: jest.fn(),
       decodeConsolidatedDataReportAcknowledgement: jest.fn(),
+      decodeLatestConsolidatedDataReportAcknowledgement: jest.fn(),
+      findResult: jest.fn(),
     };
     transferPlannerServiceMock = {
       planTransferRoute: jest.fn(),
@@ -162,6 +168,7 @@ describe('ApiController (modern)', () => {
       query_path: '/cheqd.did.v2.Query/DidDoc',
       source_port: 'icqhost',
       source_channel: 'channel-9',
+      packet_sequence: '7',
       packet_data_hex: 'deadbeef',
       tx: {
         result: 1,
@@ -182,6 +189,7 @@ describe('ApiController (modern)', () => {
       query_path: '/cheqd.did.v2.Query/DidDoc',
       source_port: 'icqhost',
       source_channel: 'channel-9',
+      packet_sequence: '7',
       packet_data_hex: 'deadbeef',
       result: 1,
       unsigned_tx: {
@@ -212,6 +220,7 @@ describe('ApiController (modern)', () => {
       query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
       source_port: 'icqhost',
       source_channel: 'channel-4',
+      packet_sequence: '8',
       packet_data_hex: 'beadfeed',
       tx: {
         result: 1,
@@ -233,11 +242,48 @@ describe('ApiController (modern)', () => {
       query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
       source_port: 'icqhost',
       source_channel: 'channel-4',
+      packet_sequence: '8',
       packet_data_hex: 'beadfeed',
       result: 1,
       unsigned_tx: {
         type_url: '/ibc.core.channel.v1.MsgTransfer',
         value: Buffer.from([4, 5, 6]).toString('base64'),
+      },
+    });
+  });
+
+  it('delegates vesseloracle latest-consolidated-data-report ICQ tx building to VesseloracleIcqService', async () => {
+    vesseloracleIcqServiceMock.buildLatestConsolidatedDataReportQuery.mockResolvedValue({
+      query_path: '/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport',
+      source_port: 'icqhost',
+      source_channel: 'channel-5',
+      packet_sequence: '9',
+      packet_data_hex: 'cafebabe',
+      tx: {
+        result: 1,
+        unsigned_tx: {
+          type_url: '/ibc.core.channel.v1.MsgTransfer',
+          value: Buffer.from([7, 8, 9]),
+        },
+      },
+    });
+
+    await expect(
+      controller.buildVesseloracleLatestConsolidatedDataReportIcq({
+        source_channel: 'channel-5',
+        signer: 'addr_test1q...',
+        imo: '9525338',
+      } as any),
+    ).resolves.toEqual({
+      query_path: '/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport',
+      source_port: 'icqhost',
+      source_channel: 'channel-5',
+      packet_sequence: '9',
+      packet_data_hex: 'cafebabe',
+      result: 1,
+      unsigned_tx: {
+        type_url: '/ibc.core.channel.v1.MsgTransfer',
+        value: Buffer.from([7, 8, 9]).toString('base64'),
       },
     });
   });
@@ -278,6 +324,46 @@ describe('ApiController (modern)', () => {
       acknowledgement: {
         status: 'success',
         response: { value: { did_doc: { id: 'did:cheqd:testnet:abc123' } } },
+      },
+    });
+  });
+
+  it('delegates vesseloracle ICQ result polling to VesseloracleIcqService', async () => {
+    vesseloracleIcqServiceMock.findResult.mockResolvedValue({
+      status: 'completed',
+      tx_hash: 'deadbeef',
+      query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
+      packet_data_hex: 'c0ffee',
+      current_height: '120',
+      next_search_from_height: '118',
+      completed_height: '118',
+      packet_sequence: '7',
+      acknowledgement_hex: 'bead',
+      acknowledgement: {
+        status: 'success',
+        response: { consolidatedDataReport: { imo: '9525338', ts: '1713110400' } },
+      },
+    });
+
+    await expect(
+      controller.getVesseloracleIcqResult({
+        tx_hash: 'deadbeef',
+        query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
+        packet_data_hex: 'c0ffee',
+      } as any),
+    ).resolves.toEqual({
+      status: 'completed',
+      tx_hash: 'deadbeef',
+      query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
+      packet_data_hex: 'c0ffee',
+      current_height: '120',
+      next_search_from_height: '118',
+      completed_height: '118',
+      packet_sequence: '7',
+      acknowledgement_hex: 'bead',
+      acknowledgement: {
+        status: 'success',
+        response: { consolidatedDataReport: { imo: '9525338', ts: '1713110400' } },
       },
     });
   });

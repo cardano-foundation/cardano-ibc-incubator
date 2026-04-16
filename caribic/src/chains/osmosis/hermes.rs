@@ -39,9 +39,7 @@ pub(super) fn configure_hermes_for_demo(
     }
 }
 
-fn configure_local_hermes_for_demo(
-    osmosis_dir: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn configure_local_hermes_for_demo(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -262,9 +260,7 @@ fn configure_local_hermes_for_demo(
     Ok(())
 }
 
-fn configure_testnet_hermes_for_demo(
-    osmosis_dir: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn configure_testnet_hermes_for_demo(osmosis_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -272,9 +268,8 @@ fn configure_testnet_hermes_for_demo(
 
     if let Some(progress_bar) = &optional_progress_bar {
         progress_bar.set_style(ProgressStyle::with_template("{prefix:.bold} {wide_msg}").unwrap());
-        progress_bar.set_prefix(
-            "Configuring Hermes for Entrypoint↔Osmosis testnet channel ...".to_owned(),
-        );
+        progress_bar
+            .set_prefix("Configuring Hermes for Entrypoint↔Osmosis testnet channel ...".to_owned());
     } else {
         log("Configuring Hermes for Entrypoint↔Osmosis testnet channel ...");
     }
@@ -736,7 +731,9 @@ fn is_open_transfer_channel_entry(value: &Value) -> bool {
     local_port_id == "transfer" || remote_port_id == "transfer"
 }
 
-fn resolve_local_hermes_binary(osmosis_dir: &Path) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+fn resolve_local_hermes_binary(
+    osmosis_dir: &Path,
+) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
     let configured_project_root = std::path::PathBuf::from(config::get_config().project_root);
     hermes_support::resolve_local_hermes_binary(configured_project_root.as_path(), osmosis_dir)
         .ok_or_else(|| {

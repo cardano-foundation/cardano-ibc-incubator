@@ -43,6 +43,7 @@ import { Packet } from '@shared/types/channel/packet';
 type BuiltCheqdIcqTransaction = {
   source_port: typeof ASYNC_ICQ_HOST_PORT;
   source_channel: string;
+  packet_sequence: string;
   query_path: string;
   packet_data_hex: string;
   tx: MsgTransferResponse;
@@ -256,7 +257,7 @@ export class CheqdIcqService {
     queryPath: string,
     packetData: Uint8Array,
   ): Promise<BuiltCheqdIcqTransaction> {
-    const tx = await this.packetService.sendAsyncIcqPacket({
+    const response = await this.packetService.sendAsyncIcqPacket({
       sourcePort: ASYNC_ICQ_HOST_PORT,
       sourceChannel: dto.source_channel,
       signer: dto.signer,
@@ -268,9 +269,10 @@ export class CheqdIcqService {
     return {
       source_port: ASYNC_ICQ_HOST_PORT,
       source_channel: dto.source_channel,
+      packet_sequence: response.packet_sequence,
       query_path: queryPath,
       packet_data_hex: Buffer.from(packetData).toString('hex'),
-      tx,
+      tx: response.tx,
     };
   }
 
@@ -332,16 +334,24 @@ export class CheqdIcqService {
       };
     }
 
-    const txEvidence = await this.historyService.findTransactionEvidenceByHash(dto.tx_hash!);
-    if (!txEvidence) {
-      return null;
+    let tx: { height: bigint };
+    try {
+      tx = await this.queryService.queryTransactionByHash({ hash: dto.tx_hash! });
+    } catch (error) {
+      if (error instanceof GrpcNotFoundException) {
+        // Older callers may still poll by tx hash only. If indexing is still
+        // lagging, keep the result lookup pending rather than failing hard.
+        return null;
+      }
+      throw error;
     }
-
-    const matchingPackets = this.findMatchingSendPacketsInTxEvidence(txEvidence, dto);
-    if (matchingPackets.length === 0) {
-      throw new GrpcInvalidArgumentException(
-        `No matching send_packet found in source tx ${dto.tx_hash} for query_path ${dto.query_path}`,
-      );
+    const txEvidence = await this.historyService.findTransactionEvidenceByHash(dto.tx_hash!);
+    const matchingPackets = txEvidence ? this.findMatchingSendPacketsInTxEvidence(txEvidence, dto) : [];
+    if (matchingPackets.length === 1) {
+      return {
+        packetSequence: matchingPackets[0].packetSequence,
+        sourceChannel: matchingPackets[0].sourceChannel,
+      };
     }
     if (matchingPackets.length > 1) {
       throw new GrpcInvalidArgumentException(
@@ -349,10 +359,28 @@ export class CheqdIcqService {
       );
     }
 
-    return {
-      packetSequence: matchingPackets[0].packetSequence,
-      sourceChannel: matchingPackets[0].sourceChannel,
-    };
+    const fallbackMatches = await this.findMatchingSendPacketsInSourceBlock(tx.height, dto);
+    if (fallbackMatches.length === 1) {
+      return {
+        packetSequence: fallbackMatches[0].packetSequence,
+        sourceChannel: fallbackMatches[0].sourceChannel,
+      };
+    }
+    if (fallbackMatches.length > 1) {
+      throw new GrpcInvalidArgumentException(
+        `Ambiguous source tx ${dto.tx_hash}: multiple matching send_packet entries found; provide packet_sequence explicitly`,
+      );
+    }
+
+    return null;
+  }
+
+  private async findMatchingSendPacketsInSourceBlock(
+    txHeight: bigint,
+    dto: Pick<AsyncIcqResultRequestDto, 'packet_data_hex' | 'source_channel' | 'packet_sequence'>,
+  ): Promise<Array<{ packetSequence: string; sourceChannel: string }>> {
+    const blockResult = await this.queryService.queryBlockResults({ height: txHeight });
+    return this.findMatchingSendPacketEvents(blockResult.block_results.txs_results ?? [], dto);
   }
 
   private findAcknowledgementEvent(
@@ -454,6 +482,61 @@ export class CheqdIcqService {
         packetSequence,
         sourceChannel,
       });
+    }
+
+    return matches;
+  }
+
+  private findMatchingSendPacketEvents(
+    txResults: ResponseDeliverTx[],
+    dto: Pick<AsyncIcqResultRequestDto, 'packet_data_hex' | 'source_channel' | 'packet_sequence'>,
+  ): Array<{ packetSequence: string; sourceChannel: string }> {
+    const expectedPacketDataHex = dto.packet_data_hex.toLowerCase();
+    const expectedSourceChannel = dto.source_channel?.toLowerCase();
+    const expectedPacketSequence = dto.packet_sequence ?? null;
+    const matches: Array<{ packetSequence: string; sourceChannel: string }> = [];
+
+    for (const txResult of txResults) {
+      for (const event of txResult.events || []) {
+        if (event.type !== EVENT_TYPE_PACKET.SEND_PACKET) {
+          continue;
+        }
+
+        const attributes = Object.fromEntries(
+          (event.event_attribute || []).map((attribute) => [attribute.key, attribute.value]),
+        );
+
+        const packetDataHex = attributes[ATTRIBUTE_KEY_PACKET.PACKET_DATA_HEX]?.toLowerCase();
+        if (packetDataHex !== expectedPacketDataHex) {
+          continue;
+        }
+
+        const sourcePort = attributes[ATTRIBUTE_KEY_PACKET.PACKET_SRC_PORT]?.toLowerCase();
+        if (sourcePort !== ASYNC_ICQ_HOST_PORT) {
+          continue;
+        }
+
+        const sourceChannel = attributes[ATTRIBUTE_KEY_PACKET.PACKET_SRC_CHANNEL]?.toLowerCase();
+        if (!sourceChannel) {
+          continue;
+        }
+        if (expectedSourceChannel && sourceChannel !== expectedSourceChannel) {
+          continue;
+        }
+
+        const packetSequence = attributes[ATTRIBUTE_KEY_PACKET.PACKET_SEQUENCE] || null;
+        if (!packetSequence) {
+          continue;
+        }
+        if (expectedPacketSequence && packetSequence !== expectedPacketSequence) {
+          continue;
+        }
+
+        matches.push({
+          packetSequence,
+          sourceChannel,
+        });
+      }
     }
 
     return matches;

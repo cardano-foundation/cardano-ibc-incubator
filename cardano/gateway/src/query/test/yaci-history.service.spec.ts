@@ -141,4 +141,71 @@ describe('YaciHistoryService', () => {
       },
     });
   });
+
+  it('retries epoch-context acquisition at a newer block in the same epoch when the original point is too old', async () => {
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }])
+      .mockResolvedValueOnce([
+        {
+          number: 119,
+          hash: 'ef'.repeat(32),
+          prev_hash: '12'.repeat(32),
+          slot: '1199',
+          epoch: 7,
+          block_time: '1',
+          slot_leader: 'pool1latestinepoch',
+        },
+      ]);
+    (queryEpochContextAtPoint as jest.Mock)
+      .mockRejectedValueOnce(new Error('Failed to acquire requested point. Target point is too old.'))
+      .mockResolvedValueOnce({
+        currentEpoch: 7,
+        epochNonce: '44'.repeat(32),
+        slotsPerKesPeriod: 129600,
+        stakeDistribution: [
+          {
+            poolId: 'pool1retrypool',
+            stake: 123n,
+            vrfKeyHash: 'cc'.repeat(32),
+          },
+        ],
+      });
+
+    await expect(service.findEpochContextAtBlock(block)).resolves.toEqual({
+      epoch: 7,
+      stakeDistribution: [
+        {
+          poolId: 'pool1retrypool',
+          stake: 123n,
+          vrfKeyHash: 'cc'.repeat(32),
+        },
+      ],
+      verificationContext: {
+        epochNonce: '44'.repeat(32),
+        slotsPerKesPeriod: 129600,
+        currentEpochStartSlot: 1000n,
+        currentEpochEndSlotExclusive: 1200n,
+      },
+    });
+
+    expect(queryEpochContextAtPoint).toHaveBeenNthCalledWith(
+      1,
+      'ws://ogmios.local',
+      {
+        slot: 1100n,
+        hash: 'ab'.repeat(32),
+      },
+      'aa'.repeat(32),
+    );
+    expect(queryEpochContextAtPoint).toHaveBeenNthCalledWith(
+      2,
+      'ws://ogmios.local',
+      {
+        slot: 1199n,
+        hash: 'ef'.repeat(32),
+      },
+      'aa'.repeat(32),
+    );
+  });
 });

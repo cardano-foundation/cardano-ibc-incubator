@@ -27,6 +27,7 @@ describe('CheqdIcqService', () => {
   let queryServiceMock: {
     latestHeight: jest.Mock;
     queryEvents: jest.Mock;
+    queryBlockResults: jest.Mock;
     queryTransactionByHash: jest.Mock;
   };
   let historyServiceMock: {
@@ -40,16 +41,20 @@ describe('CheqdIcqService', () => {
   beforeEach(() => {
     packetServiceMock = {
       sendAsyncIcqPacket: jest.fn().mockResolvedValue({
-        result: 1,
-        unsigned_tx: {
-          type_url: '/ibc.core.channel.v1.MsgTransfer',
-          value: Buffer.from([0xde, 0xad, 0xbe, 0xef]),
+        packet_sequence: '7',
+        tx: {
+          result: 1,
+          unsigned_tx: {
+            type_url: '/ibc.core.channel.v1.MsgTransfer',
+            value: Buffer.from([0xde, 0xad, 0xbe, 0xef]),
+          },
         },
       }),
     };
     queryServiceMock = {
       latestHeight: jest.fn().mockResolvedValue({ height: 120n }),
       queryEvents: jest.fn().mockResolvedValue({ current_height: 120n, scanned_to_height: 120n, events: [] }),
+      queryBlockResults: jest.fn().mockResolvedValue({ block_results: { txs_results: [] } }),
       queryTransactionByHash: jest.fn().mockResolvedValue({ hash: 'deadbeef', height: 100n }),
     };
     historyServiceMock = {
@@ -116,6 +121,7 @@ describe('CheqdIcqService', () => {
     expect(response.query_path).toBe('/cheqd.did.v2.Query/DidDoc');
     expect(response.source_port).toBe('icqhost');
     expect(response.source_channel).toBe('channel-3');
+    expect(response.packet_sequence).toBe('7');
   });
 
   it('decodes a successful cheqd DidDoc acknowledgement', () => {
@@ -203,6 +209,28 @@ describe('CheqdIcqService', () => {
     await expect(
       service.findResult({
         tx_hash: 'deadbeef',
+        query_path: '/cheqd.did.v2.Query/DidDoc',
+        packet_data_hex: 'c0ffee',
+      } as any),
+    ).resolves.toEqual({
+      status: 'pending',
+      reason: 'source_tx_not_indexed',
+      tx_hash: 'deadbeef',
+      query_path: '/cheqd.did.v2.Query/DidDoc',
+      packet_data_hex: 'c0ffee',
+      current_height: '120',
+      next_search_from_height: '120',
+    });
+  });
+
+  it('keeps returning a pending result when tx indexing still lags on later polls', async () => {
+    historyServiceMock.findTransactionEvidenceByHash.mockResolvedValue(null);
+    queryServiceMock.queryTransactionByHash.mockRejectedValue(new GrpcNotFoundException('not found'));
+
+    await expect(
+      service.findResult({
+        tx_hash: 'deadbeef',
+        since_height: '120',
         query_path: '/cheqd.did.v2.Query/DidDoc',
         packet_data_hex: 'c0ffee',
       } as any),

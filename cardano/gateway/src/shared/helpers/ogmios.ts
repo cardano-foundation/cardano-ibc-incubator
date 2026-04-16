@@ -238,7 +238,10 @@ const createOgmiosSession = async (ogmiosUrl: string): Promise<{ client: WebSock
 
             cleanup();
             if (payload?.error) {
-              reject(new Error(payload.error.message ?? JSON.stringify(payload.error)));
+              const errorMessage = [payload.error.message, payload.error.data]
+                .filter((part) => typeof part === 'string' && part.trim().length > 0)
+                .join(' ');
+              reject(new Error(errorMessage || JSON.stringify(payload.error)));
               return;
             }
             resolve(payload.result as T);

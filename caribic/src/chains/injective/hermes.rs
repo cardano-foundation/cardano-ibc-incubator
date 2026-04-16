@@ -129,8 +129,7 @@ fn configure_hermes_for_demo_chain(
                 .into())
             }
         };
-        let mnemonic_file =
-            write_temp_mnemonic_file("injective-relayer", injective_mnemonic)?;
+        let mnemonic_file = write_temp_mnemonic_file("injective-relayer", injective_mnemonic)?;
         let mnemonic_arg = mnemonic_file.to_string_lossy().to_string();
         let injective_key_result = add_hermes_key(
             injective_dir,
@@ -423,15 +422,15 @@ fn resolve_local_hermes_binary(
     project_root_path: &Path,
     injective_dir: &Path,
 ) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
-    hermes_support::resolve_local_hermes_binary(project_root_path, injective_dir).ok_or_else(
-        || {
-            format!(
-                "Local Hermes binary not found. Expected {}",
-                project_root_path.join("relayer/target/release/hermes").display()
-            )
-            .into()
-        },
-    )
+    hermes_support::resolve_local_hermes_binary(project_root_path, injective_dir).ok_or_else(|| {
+        format!(
+            "Local Hermes binary not found. Expected {}",
+            project_root_path
+                .join("relayer/target/release/hermes")
+                .display()
+        )
+        .into()
+    })
 }
 
 fn write_temp_mnemonic_file(
@@ -454,7 +453,9 @@ fn ensure_chain_in_hermes_config(
     )
 }
 
-fn profile_for_chain(chain_id: &str) -> Result<HermesCosmosChainProfile, Box<dyn std::error::Error>> {
+fn profile_for_chain(
+    chain_id: &str,
+) -> Result<HermesCosmosChainProfile, Box<dyn std::error::Error>> {
     match chain_id {
         config::LOCAL_CHAIN_ID => Ok(HermesCosmosChainProfile {
             id: config::LOCAL_CHAIN_ID.to_string(),

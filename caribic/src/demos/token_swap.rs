@@ -17,11 +17,9 @@ use crate::{
         },
         osmosis::{
             configure_hermes_for_demo as configure_osmosis_hermes_for_demo,
-            demo_chain_id as osmosis_demo_chain_id,
-            demo_node_rpc_url as osmosis_demo_node_rpc_url,
-            sync_workspace_assets as sync_osmosis_workspace_assets,
+            demo_chain_id as osmosis_demo_chain_id, demo_node_rpc_url as osmosis_demo_node_rpc_url,
             stop_for_network as stop_osmosis_for_network,
-            workspace_dir,
+            sync_workspace_assets as sync_osmosis_workspace_assets, workspace_dir,
         },
     },
     config, logger,
@@ -123,9 +121,9 @@ pub async fn run_token_swap_demo(
         OptionalChainId::Injective => {
             run_injective_token_swap_demo(project_root_path, resolved_network.as_str()).await
         }
-        OptionalChainId::Cheqd => Err(
-            "ERROR: Token-swap demo is not implemented for chain 'cheqd'.".to_string(),
-        ),
+        OptionalChainId::Cheqd => {
+            Err("ERROR: Token-swap demo is not implemented for chain 'cheqd'.".to_string())
+        }
     }
 }
 
@@ -254,74 +252,72 @@ async fn run_osmosis_token_swap_demo(
     }
 
     let deployer_mnemonic = osmosis_deployer_mnemonic();
-    let preconfigured_crosschain_swaps_address = env_var_non_empty("OSMOSIS_CROSSCHAIN_SWAPS_ADDRESS");
+    let preconfigured_crosschain_swaps_address =
+        env_var_non_empty("OSMOSIS_CROSSCHAIN_SWAPS_ADDRESS");
     let preconfigured_swap_receiver = env_var_non_empty("OSMOSIS_SWAP_RECEIVER");
-    let (crosschain_swaps_address, osmosis_swap_receiver) =
-        if let Some(address) = preconfigured_crosschain_swaps_address {
-            let receiver = preconfigured_swap_receiver.ok_or_else(|| {
+    let (crosschain_swaps_address, osmosis_swap_receiver) = if let Some(address) =
+        preconfigured_crosschain_swaps_address
+    {
+        let receiver = preconfigured_swap_receiver.ok_or_else(|| {
                 "ERROR: OSMOSIS_SWAP_RECEIVER is required when OSMOSIS_CROSSCHAIN_SWAPS_ADDRESS is preconfigured."
                     .to_string()
             })?;
-            logger::log(&format!(
-                "PASS: Using preconfigured crosschain_swaps address {} for Osmosis {}",
-                address, network
-            ));
-            (address, receiver)
-        } else {
-            let setup_script_path = project_root_path
-                .join("chains")
-                .join("osmosis")
-                .join("scripts")
-                .join("setup_crosschain_swaps.sh");
-            let setup_script = setup_script_path
-                .to_str()
-                .ok_or_else(|| "ERROR: Invalid setup_crosschain_swaps.sh path".to_string())?;
+        logger::log(&format!(
+            "PASS: Using preconfigured crosschain_swaps address {} for Osmosis {}",
+            address, network
+        ));
+        (address, receiver)
+    } else {
+        let setup_script_path = project_root_path
+            .join("chains")
+            .join("osmosis")
+            .join("scripts")
+            .join("setup_crosschain_swaps.sh");
+        let setup_script = setup_script_path
+            .to_str()
+            .ok_or_else(|| "ERROR: Invalid setup_crosschain_swaps.sh path".to_string())?;
 
-            // First stage script wires Osmosis-side contracts and creates the incoming routing path
-            // for Cardano vouchers. We parse its stdout to recover the deployed contract address.
-            // The second-stage swap receiver is derived locally from the Entrypoint Hermes key and
-            // the known Osmosis->Entrypoint channel so it always matches the deployed registry.
-            let mut setup_env = vec![
-                ("CARIBIC_CLEAR_SWAP_PACKETS", "true"),
-                (
-                    "CARIBIC_PROJECT_ROOT",
-                    project_root_path
-                        .to_str()
-                        .ok_or_else(|| "ERROR: Invalid project root path".to_string())?,
-                ),
-                (
-                    "CARIBIC_OSMOSIS_DIR",
-                    osmosis_dir
-                        .to_str()
-                        .ok_or_else(|| "ERROR: Invalid osmosis workspace path".to_string())?,
-                ),
-                ("OSMOSIS_NETWORK", network),
-                ("HERMES_OSMOSIS_NAME", osmosis_chain_id),
-                ("OSMOSIS_CHAIN_ID", osmosis_chain_id),
-                ("OSMOSIS_NODE", osmosis_node_rpc_url),
-                (
-                    "CARDANO_ENTRYPOINT_CHANNEL_ID",
-                    cardano_entrypoint_channel_pair.a_channel_id.as_str(),
-                ),
-                (
-                    "ENTRYPOINT_OSMOSIS_CHANNEL_ID",
-                    entrypoint_osmosis_channel_pair.a_channel_id.as_str(),
-                ),
-                (
-                    "OSMOSIS_ENTRYPOINT_CHANNEL_ID",
-                    entrypoint_osmosis_channel_pair.b_channel_id.as_str(),
-                ),
-            ];
-            if let Some(ref mnemonic) = deployer_mnemonic {
-                setup_env.push(("OSMOSIS_DEPLOYER_MNEMONIC", mnemonic.as_str()));
-            }
+        // First stage script wires Osmosis-side contracts and creates the incoming routing path
+        // for Cardano vouchers. We parse its stdout to recover the deployed contract address.
+        // The second-stage swap receiver is derived locally from the Entrypoint Hermes key and
+        // the known Osmosis->Entrypoint channel so it always matches the deployed registry.
+        let mut setup_env = vec![
+            ("CARIBIC_CLEAR_SWAP_PACKETS", "true"),
+            (
+                "CARIBIC_PROJECT_ROOT",
+                project_root_path
+                    .to_str()
+                    .ok_or_else(|| "ERROR: Invalid project root path".to_string())?,
+            ),
+            (
+                "CARIBIC_OSMOSIS_DIR",
+                osmosis_dir
+                    .to_str()
+                    .ok_or_else(|| "ERROR: Invalid osmosis workspace path".to_string())?,
+            ),
+            ("OSMOSIS_NETWORK", network),
+            ("HERMES_OSMOSIS_NAME", osmosis_chain_id),
+            ("OSMOSIS_CHAIN_ID", osmosis_chain_id),
+            ("OSMOSIS_NODE", osmosis_node_rpc_url),
+            (
+                "CARDANO_ENTRYPOINT_CHANNEL_ID",
+                cardano_entrypoint_channel_pair.a_channel_id.as_str(),
+            ),
+            (
+                "ENTRYPOINT_OSMOSIS_CHANNEL_ID",
+                entrypoint_osmosis_channel_pair.a_channel_id.as_str(),
+            ),
+            (
+                "OSMOSIS_ENTRYPOINT_CHANNEL_ID",
+                entrypoint_osmosis_channel_pair.b_channel_id.as_str(),
+            ),
+        ];
+        if let Some(ref mnemonic) = deployer_mnemonic {
+            setup_env.push(("OSMOSIS_DEPLOYER_MNEMONIC", mnemonic.as_str()));
+        }
 
-            let setup_output = match execute_script(
-                project_root_path,
-                setup_script,
-                Vec::new(),
-                Some(setup_env),
-            ) {
+        let setup_output =
+            match execute_script(project_root_path, setup_script, Vec::new(), Some(setup_env)) {
                 Ok(output) => {
                     logger::log("\nPASS: Token swap demo setup script completed");
                     output
@@ -335,29 +331,29 @@ async fn run_osmosis_token_swap_demo(
                 }
             };
 
-            let crosschain_swaps_address =
-                parse_setup_output_value(setup_output.as_str(), "crosschain_swaps address:")
-                    .ok_or_else(|| {
-                        fail_with_osmosis_cleanup(
-                            osmosis_dir.as_path(),
-                            network,
-                            "ERROR: Could not parse crosschain_swaps address from setup script output",
-                        )
-                        .unwrap_err()
-                    })?;
-            let swap_receiver = match preconfigured_swap_receiver {
-                Some(receiver) => receiver,
-                None => resolve_entrypoint_swap_receiver(
-                    project_root_path,
-                    entrypoint_osmosis_channel_pair.b_channel_id.as_str(),
-                )
-                .map_err(|error| {
-                    fail_with_osmosis_cleanup(osmosis_dir.as_path(), network, error.as_str())
-                        .unwrap_err()
-                })?,
-            };
-            (crosschain_swaps_address, swap_receiver)
+        let crosschain_swaps_address =
+            parse_setup_output_value(setup_output.as_str(), "crosschain_swaps address:")
+                .ok_or_else(|| {
+                    fail_with_osmosis_cleanup(
+                        osmosis_dir.as_path(),
+                        network,
+                        "ERROR: Could not parse crosschain_swaps address from setup script output",
+                    )
+                    .unwrap_err()
+                })?;
+        let swap_receiver = match preconfigured_swap_receiver {
+            Some(receiver) => receiver,
+            None => resolve_entrypoint_swap_receiver(
+                project_root_path,
+                entrypoint_osmosis_channel_pair.b_channel_id.as_str(),
+            )
+            .map_err(|error| {
+                fail_with_osmosis_cleanup(osmosis_dir.as_path(), network, error.as_str())
+                    .unwrap_err()
+            })?,
         };
+        (crosschain_swaps_address, swap_receiver)
+    };
 
     logger::log(&format!(
         "PASS: Token swap setup produced crosschain_swaps address {}",
@@ -1730,8 +1726,7 @@ OSMOSIS_CROSSCHAIN_SWAPS_ADDRESS and OSMOSIS_SWAP_RECEIVER to use a predeployed 
 }
 
 fn osmosis_deployer_mnemonic() -> Option<String> {
-    env_var_non_empty("OSMOSIS_DEPLOYER_MNEMONIC")
-        .or_else(read_osmosis_deployer_mnemonic_from_file)
+    env_var_non_empty("OSMOSIS_DEPLOYER_MNEMONIC").or_else(read_osmosis_deployer_mnemonic_from_file)
 }
 
 fn read_osmosis_deployer_mnemonic_from_file() -> Option<String> {
@@ -1781,10 +1776,7 @@ fn resolve_entrypoint_swap_receiver(
             token.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-');
 
         if cleaned.starts_with("cosmos1") {
-            return Ok(format!(
-                "ibc:{}/{}",
-                osmosis_entrypoint_channel_id, cleaned
-            ));
+            return Ok(format!("ibc:{}/{}", osmosis_entrypoint_channel_id, cleaned));
         }
     }
 
@@ -1795,7 +1787,11 @@ fn resolve_entrypoint_swap_receiver(
 }
 
 /// Logs an error, stops local Osmosis demo services when relevant, and returns the original error message.
-fn fail_with_osmosis_cleanup(osmosis_dir: &Path, network: &str, message: &str) -> Result<(), String> {
+fn fail_with_osmosis_cleanup(
+    osmosis_dir: &Path,
+    network: &str,
+    message: &str,
+) -> Result<(), String> {
     logger::error(message);
     logger::log("Stopping services...");
     let _ = stop_osmosis_for_network(osmosis_dir, network);

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
-use crate::{DemoType, start::OptionalChainId};
+use crate::{start::OptionalChainId, DemoType};
 
 mod message_exchange;
 mod token_swap;

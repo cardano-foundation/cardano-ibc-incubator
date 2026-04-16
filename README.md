@@ -289,14 +289,14 @@ To stop the services:
 caribic stop
 ```
 
-### Demo: Sending a demo message from Cosmos to Cardano
+### Demo: Querying consolidated vessel data from Cardano
 
 The maintained message-exchange flow runs against the native `cosmos/entrypoint` chain and its built-in datasource in `cosmos/entrypoint/datasource`.
 
 Start the local bridge stack first:
 
 ```sh
-caribic start --clean --with-mithril
+caribic start --clean
 ```
 
 Then run the demo:
@@ -305,9 +305,9 @@ Then run the demo:
 caribic --verbose 5 demo message-exchange
 ```
 
-To demonstrate message exchange, a vessel-oracle module is integrated into the local `entrypoint` chain. It simulates vessels sending their positions and requesting a harbor in a trustless and decentralized way. The data is consolidated and cleaned on the Cosmos side and sent out as an IBC packet. This packet is picked up by Hermes and written to the Cardano blockchain, acting as an oracle.
+To demonstrate cross-chain queries, a vessel-oracle module is integrated into the local `entrypoint` chain. It simulates vessels sending their positions and requesting a harbor in a trustless and decentralized way. The data is written and consolidated on the Cosmos side, and Cardano then queries the latest consolidated report over async-ICQ.
 
-The demo command prepares Hermes, waits for Mithril artifacts, creates the message-exchange channel if needed, and runs the datasource flow automatically (`report`, `consolidate`, `transmit`).
+The demo command prepares Hermes, creates the `icqhost` channel if needed, runs the datasource flow automatically (`report`, `consolidate`), submits the Cardano async-ICQ packet, relays the acknowledgement, and prints the final consolidated report returned to Cardano.
 
 ## Demo: Cross-chain token swap
 

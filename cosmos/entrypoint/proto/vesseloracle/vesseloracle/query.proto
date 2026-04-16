@@ -6,9 +6,9 @@ import "amino/amino.proto";
 import "gogoproto/gogo.proto";
 import "google/api/annotations.proto";
 import "cosmos/base/query/v1beta1/pagination.proto";
-import "entrypoint/entrypoint/params.proto";
-import "entrypoint/entrypoint/vessel.proto";
-import "entrypoint/entrypoint/consolidated_data_report.proto";
+import "vesseloracle/vesseloracle/params.proto";
+import "vesseloracle/vesseloracle/vessel.proto";
+import "vesseloracle/vesseloracle/consolidated_data_report.proto";
 
 option go_package = "entrypoint/x/vesseloracle/types";
 
@@ -35,6 +35,10 @@ service Query {
   rpc ConsolidatedDataReport    (QueryGetConsolidatedDataReportRequest) returns (QueryGetConsolidatedDataReportResponse) {
     option (google.api.http).get = "/entrypoint/entrypoint/consolidated_data_report/{imo}/{ts}";
   
+  }
+  rpc LatestConsolidatedDataReport (QueryLatestConsolidatedDataReportRequest) returns (QueryLatestConsolidatedDataReportResponse) {
+    option (google.api.http).get = "/entrypoint/entrypoint/consolidated_data_report/latest/{imo}";
+
   }
   rpc ConsolidatedDataReportAll (QueryAllConsolidatedDataReportRequest) returns (QueryAllConsolidatedDataReportResponse) {
     option (google.api.http).get = "/entrypoint/entrypoint/consolidated_data_report";
@@ -79,6 +83,14 @@ message QueryGetConsolidatedDataReportResponse {
   ConsolidatedDataReport consolidatedDataReport = 1 [(gogoproto.nullable) = false];
 }
 
+message QueryLatestConsolidatedDataReportRequest {
+  string imo = 1;
+}
+
+message QueryLatestConsolidatedDataReportResponse {
+  ConsolidatedDataReport consolidatedDataReport = 1 [(gogoproto.nullable) = false];
+}
+
 message QueryAllConsolidatedDataReportRequest {
   cosmos.base.query.v1beta1.PageRequest pagination = 1;
 }
@@ -87,4 +99,3 @@ message QueryAllConsolidatedDataReportResponse {
   repeated ConsolidatedDataReport                 consolidatedDataReport = 1 [(gogoproto.nullable) = false];
            cosmos.base.query.v1beta1.PageResponse pagination             = 2;
 }
-

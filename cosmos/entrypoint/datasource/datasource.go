@@ -19,7 +19,6 @@ import (
 const AddressPrefix = "cosmos"                                 // the address prefix of the entrypoint chain
 const DataSourceCount = 8                                      // number of emulated data sources
 const DefaultVesselIMO = "9525338"                             // the default IMO of the vessel to fetch data for
-const DefaultChannelId = "channel-0"                           // the default value for the channel id of the transmit command
 const OutlierDeparturePortUnLoCode = "DEBWE"                   // outlier departure port UNLOCODE identifier
 const OutlierDeparturePortName = "BRAUNSCHWEIG"                // outlier departure port name
 const EtaJitterOffsetSeconds int64 = 2 * 60                    // eta jitter offset (2 minutes)
@@ -252,55 +251,14 @@ func submitDataConsolidationRequest(imo string) (*string, error) {
 	return &txResp.TxHash, nil
 }
 
-// submit a transmit data report request message
-func transmitConsolidatedDataReport(imo string, ts int64, channelId string) (*string, error) {
-	ctx := context.Background()
-
-	client, err := cosmosclient.New(ctx, cosmosclient.WithAddressPrefix(AddressPrefix))
-	if err != nil {
-		return nil, fmt.Errorf("Could not create cosmos client: %v", err)
-	}
-
-	account, err := client.Account("bob")
-	if err != nil {
-		return nil, fmt.Errorf("Could not determine account bob: %v", err)
-	}
-
-	address, err := account.Address(AddressPrefix)
-	if err != nil {
-		return nil, fmt.Errorf("Could not determine address for account bob: %v", err)
-	}
-
-	msg := &types.MsgTransmitReport{
-		Creator: address,
-		Imo:     imo,
-		Ts:      uint64(ts),
-		Channel: channelId,
-	}
-
-	fmt.Println("Submitting request for transmitting a consolidated data report from account bob, with address", address, "...")
-	fmt.Println(channelId, imo, ts)
-	txResp, err := client.BroadcastTx(ctx, account, msg)
-	if err != nil {
-		return nil, fmt.Errorf("Could not broadcast transaction for transmit data report request: %v", err)
-	}
-	fmt.Println(txResp)
-
-	return &txResp.TxHash, nil
-}
-
 func main() {
 	dataSourceCmd := flag.NewFlagSet("report", flag.ExitOnError)
 	vesselImo := dataSourceCmd.String("imo", DefaultVesselIMO, "The IMO identifier of the ship you want to fetch data for.")
 	simulate := dataSourceCmd.Bool("simulate", false, "Specify if the input shall be simulated (e.g. in case of bad connectivity or lack of API key.)")
 	consolidateCmd := flag.NewFlagSet("consolidate", flag.ExitOnError)
-	transmitCmd := flag.NewFlagSet("transmit", flag.ExitOnError)
-	channelId := transmitCmd.String("channelid", DefaultChannelId, "Specify the channel id via which to transmit the data report.")
-	transmitImo := transmitCmd.String("imo", DefaultVesselIMO, "The IMO identifier of the ship for which you want to transmit a data report.")
-	transmitTs := transmitCmd.Int64("ts", 0, "The timestamp of the consolidated data report that shall be transmitted.")
 
 	if len(os.Args) < 2 {
-		fmt.Println("expected 'report' or 'consolidate' or 'transmit' subcommands")
+		fmt.Println("expected 'report' or 'consolidate' subcommands")
 		os.Exit(1)
 	}
 
@@ -356,16 +314,8 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("Transaction: ", transaction)
-	case "transmit", "t":
-		transmitCmd.Parse(os.Args[2:])
-		transaction, err := transmitConsolidatedDataReport(*transmitImo, *transmitTs, *channelId)
-		if err != nil {
-			fmt.Println("Error while requesting to transmit a data report: ", err)
-			os.Exit(1)
-		}
-		fmt.Println("Transaction: ", transaction)
 	default:
-		fmt.Errorf("Invalid subcommand. Only supported subcommands are 'consolidate' and 'report' or 'c' and 'r'.")
+		fmt.Println("Invalid subcommand. Only supported subcommands are 'consolidate' and 'report' or 'c' and 'r'.")
 		os.Exit(1)
 	}
 }

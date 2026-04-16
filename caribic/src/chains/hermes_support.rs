@@ -56,7 +56,10 @@ pub fn hermes_config_path() -> Option<PathBuf> {
     }
 }
 
-pub fn resolve_local_hermes_binary(project_root_path: &Path, search_root: &Path) -> Option<PathBuf> {
+pub fn resolve_local_hermes_binary(
+    project_root_path: &Path,
+    search_root: &Path,
+) -> Option<PathBuf> {
     let configured_candidate = project_root_path.join("relayer/target/release/hermes");
     if configured_candidate.is_file() {
         return Some(configured_candidate);
@@ -226,9 +229,7 @@ fn render_cosmos_chain_block(profile: &HermesCosmosChainProfile) -> String {
 
 fn render_address_type(address_type: &HermesAddressType) -> String {
     match address_type {
-        HermesAddressType::Cosmos => {
-            "address_type = { derivation = 'cosmos' }".to_string()
-        }
+        HermesAddressType::Cosmos => "address_type = { derivation = 'cosmos' }".to_string(),
         HermesAddressType::Ethermint { pk_type } => format!(
             "address_type = {{ derivation = 'ethermint', proto_type = {{ pk_type = '{}' }} }}",
             pk_type

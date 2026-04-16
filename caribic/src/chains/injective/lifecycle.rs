@@ -142,15 +142,11 @@ pub(super) async fn start_testnet(
     injective_dir: &Path,
     snapshot_url_override: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let first_start_error = match start_testnet_container(
-        injective_dir,
-        snapshot_url_override,
-    )
-    .await
-    {
-        Ok(()) => return Ok(()),
-        Err(error) => error.to_string(),
-    };
+    let first_start_error =
+        match start_testnet_container(injective_dir, snapshot_url_override).await {
+            Ok(()) => return Ok(()),
+            Err(error) => error.to_string(),
+        };
 
     if !should_reset_corrupted_testnet_store(injective_dir) {
         return Err(first_start_error.into());
@@ -163,11 +159,7 @@ pub(super) async fn start_testnet(
         fs::remove_dir_all(testnet_home_dir.as_path())?;
     }
 
-    start_testnet_container(
-        injective_dir,
-        snapshot_url_override,
-    )
-    .await
+    start_testnet_container(injective_dir, snapshot_url_override).await
 }
 
 pub(super) fn stop_testnet(injective_path: &Path) {
@@ -365,8 +357,8 @@ fn should_reset_corrupted_testnet_store(injective_dir: &Path) -> bool {
 
     let corrupted_store = combined.contains("failed to load latest version")
         && combined.contains("version does not exist");
-    let incompatible_bootstrap_state = combined.contains("panic: unknown field \"abstain\"")
-        && combined.contains("tallyresult");
+    let incompatible_bootstrap_state =
+        combined.contains("panic: unknown field \"abstain\"") && combined.contains("tallyresult");
     let objstorage_missing_files = combined.contains("failed to initialize database")
         && combined.contains("unknown to the objstorage provider")
         && combined.contains("file does not exist");

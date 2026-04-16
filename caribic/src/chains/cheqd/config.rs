@@ -51,13 +51,14 @@ pub(super) fn load_demo_mnemonic(
         )
     })?;
 
-    let parsed: CheqdConfigFile = serde_yaml::from_str(file_contents.as_str()).map_err(|error| {
-        format!(
-            "Failed to parse cheqd config file {}: {}",
-            config_path.display(),
-            error
-        )
-    })?;
+    let parsed: CheqdConfigFile =
+        serde_yaml::from_str(file_contents.as_str()).map_err(|error| {
+            format!(
+                "Failed to parse cheqd config file {}: {}",
+                config_path.display(),
+                error
+            )
+        })?;
 
     parsed
         .accounts

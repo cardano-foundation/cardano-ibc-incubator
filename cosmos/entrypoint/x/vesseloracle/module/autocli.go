@@ -39,6 +39,12 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					Short:          "Shows a consolidated-data-report",
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "imo"}, {ProtoField: "ts"}},
 				},
+				{
+					RpcMethod:      "LatestConsolidatedDataReport",
+					Use:            "show-latest-consolidated-data-report [imo]",
+					Short:          "Shows the latest consolidated-data-report for an IMO",
+					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "imo"}},
+				},
 				// this line is used by ignite scaffolding # autocli/query
 			},
 		},
@@ -90,12 +96,6 @@ func (am AppModule) AutoCLIOptions() *autocliv1.ModuleOptions {
 					RpcMethod:      "DeleteConsolidatedDataReport",
 					Use:            "delete-consolidated-data-report [imo] [ts]",
 					Short:          "Delete consolidated-data-report",
-					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "imo"}, {ProtoField: "ts"}},
-				},
-				{
-					RpcMethod:      "TransmitReport",
-					Use:            "transmit-report [imo] [ts]",
-					Short:          "Send a transmit-report tx",
 					PositionalArgs: []*autocliv1.PositionalArgDescriptor{{ProtoField: "imo"}, {ProtoField: "ts"}},
 				},
 				// this line is used by ignite scaffolding # autocli/tx

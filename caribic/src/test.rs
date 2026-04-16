@@ -38,7 +38,11 @@ fn gateway_light_client_mode(project_root: &Path) -> &'static str {
 }
 
 fn normalize_env_value(value: &str) -> String {
-    value.trim().trim_matches('"').trim_matches('\'').to_string()
+    value
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_string()
 }
 
 fn set_or_append_gateway_env_var(
@@ -132,12 +136,10 @@ async fn refresh_gateway_epoch_nonce_for_stability(
 
     let current_epoch_nonce = query_current_cardano_epoch_nonce(project_root)?;
     let gateway_env_path = project_root.join("cardano/gateway/.env");
-    let configured_epoch_nonce = crate::setup::read_gateway_env_value(
-        &gateway_env_path,
-        "CARDANO_EPOCH_NONCE_GENESIS",
-    )?
-    .map(|value| normalize_env_value(&value))
-    .unwrap_or_default();
+    let configured_epoch_nonce =
+        crate::setup::read_gateway_env_value(&gateway_env_path, "CARDANO_EPOCH_NONCE_GENESIS")?
+            .map(|value| normalize_env_value(&value))
+            .unwrap_or_default();
 
     if configured_epoch_nonce == current_epoch_nonce {
         verbose("   Gateway epoch nonce already matches current Cardano epoch");
@@ -189,9 +191,7 @@ async fn refresh_gateway_epoch_nonce_for_stability(
     .await;
 
     if !gateway_healthy {
-        return Err(
-            "Gateway did not become healthy after epoch nonce refresh/recreate".into(),
-        );
+        return Err("Gateway did not become healthy after epoch nonce refresh/recreate".into());
     }
 
     verbose("   Gateway refreshed with current Cardano epoch nonce");

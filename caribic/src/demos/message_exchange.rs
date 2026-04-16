@@ -1,9 +1,11 @@
 use std::fs;
 use std::path::Path;
-use std::time::Duration;
+use std::process::Command;
+use std::time::{Duration, Instant};
 
 use dirs::home_dir;
-use serde_json::Value;
+use serde::Deserialize;
+use serde_json::{json, Value};
 
 use crate::{
     constants::ENTRYPOINT_CHAIN_ID,
@@ -12,14 +14,15 @@ use crate::{
     stop::stop_relayer,
     utils::{
         execute_script, get_cardano_tip_state, parse_tendermint_client_id,
-        parse_tendermint_connection_id,
+        parse_tendermint_connection_id, prompt_runtime_deployer_sk,
     },
 };
 
 const CARDANO_CHAIN_ID: &str = "cardano-devnet";
 const VESSEL_CHAIN_ID: &str = ENTRYPOINT_CHAIN_ID;
-const CARDANO_MESSAGE_PORT_ID: &str = "transfer";
-const VESSEL_MESSAGE_PORT_ID: &str = "vesseloracle";
+const CARDANO_MESSAGE_PORT_ID: &str = "icqhost";
+const VESSEL_MESSAGE_PORT_ID: &str = "icqhost";
+const ASYNC_ICQ_CHANNEL_VERSION: &str = "icq-1";
 const VESSEL_RELAYER_KEY_NAME: &str = "entrypoint-relayer";
 const VESSEL_RELAYER_MNEMONIC: &str = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
 const VESSEL_DEMO_CONTAINER_NAME: &str = "entrypoint-node-prod";
@@ -28,16 +31,11 @@ const VESSEL_RPC_ADDR: &str = "http://127.0.0.1:26657";
 const VESSEL_GRPC_ADDR: &str = "http://127.0.0.1:9090";
 const DEFAULT_VESSEL_IMO: &str = "9525338";
 const CARDANO_MIN_SYNC_PROGRESS_FOR_MESSAGE_EXCHANGE: f64 = 99.0;
-const CARDANO_MAX_SAFE_EPOCH_FOR_MESSAGE_EXCHANGE: u64 = 50;
-const MESSAGE_EXCHANGE_TARGETS: [HealthTarget; 7] = [
-    HealthTarget::Core(CoreServiceId::Gateway),
-    HealthTarget::Core(CoreServiceId::Cardano),
-    HealthTarget::Core(CoreServiceId::Postgres),
-    HealthTarget::Core(CoreServiceId::Kupo),
-    HealthTarget::Core(CoreServiceId::Ogmios),
-    HealthTarget::Core(CoreServiceId::Mithril),
-    HealthTarget::Core(CoreServiceId::Entrypoint),
-];
+const GATEWAY_API_BASE_URL: &str = "http://127.0.0.1:8000/api";
+const CARDANO_LOCAL_KUPO_URL: &str = "http://localhost:1442";
+const CARDANO_LOCAL_OGMIOS_URL: &str = "http://localhost:1337";
+const CARDANO_LOCAL_NETWORK_MAGIC: &str = "42";
+const ASYNC_ICQ_TIMEOUT_HEIGHT_DELTA: u64 = 10_000;
 
 #[derive(Debug, Clone)]
 struct MessageChannelPair {
@@ -60,9 +58,32 @@ struct ConnectionEndStatus {
     remote_connection_id: Option<String>,
 }
 
-/// Runs the full message-exchange demo and executes datasource report/consolidate/transmit.
+#[derive(Debug, Deserialize)]
+struct GatewayUnsignedTx {
+    value: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct BuiltVesseloracleIcqTx {
+    query_path: String,
+    packet_data_hex: String,
+    unsigned_tx: GatewayUnsignedTx,
+}
+
+#[derive(Debug, Deserialize)]
+struct WalletAddressOutput {
+    address: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SignedTxOutput {
+    tx_hash: String,
+}
+
+/// Runs the message-exchange demo by querying Entrypoint vesseloracle state from Cardano via async-ICQ.
 pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), String> {
     ensure_message_exchange_prerequisites(project_root_path)?;
+    refresh_gateway_epoch_nonce_for_stability(project_root_path).await?;
 
     logger::log("PASS: Native Cosmos Entrypoint chain is up and running");
 
@@ -82,8 +103,12 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
 
     stop_relayer(project_root_path.join("relayer").as_path());
     configure_hermes_for_message_exchange()?;
-    logger::verbose("Checking Mithril artifact readiness before message-exchange channel setup");
-    wait_for_mithril_artifacts_for_message_exchange().await?;
+    if gateway_uses_mithril(project_root_path) {
+        logger::verbose(
+            "Checking Mithril artifact readiness before message-exchange channel setup",
+        );
+        wait_for_mithril_artifacts_for_message_exchange().await?;
+    }
     let channel_pair = ensure_message_exchange_channel()?;
 
     start::start_hermes_daemon()
@@ -105,11 +130,17 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
         datasource_home.as_str(),
     )?;
     logger::log("Submitting simulated vessel reports");
-    run_datasource_command(
+    if let Err(error) = run_datasource_command(
         datasource_dir.as_path(),
         &["run", ".", "report", "-simulate"],
         datasource_home.as_str(),
-    )?;
+    ) {
+        if error.contains("index already set") {
+            logger::log("PASS: Simulated vessel reports already exist on entrypoint; continuing");
+        } else {
+            return Err(error);
+        }
+    }
     logger::log("Consolidating submitted vessel reports");
     run_datasource_command(
         datasource_dir.as_path(),
@@ -117,27 +148,42 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
         datasource_home.as_str(),
     )?;
 
-    let consolidated_timestamp = query_latest_consolidated_timestamp(DEFAULT_VESSEL_IMO).await?;
-    let channel_arg = channel_pair.vessel_channel_id.clone();
-    let timestamp_arg = consolidated_timestamp.to_string();
-    logger::log("Transmitting consolidated report over IBC");
-    run_datasource_command(
-        datasource_dir.as_path(),
-        &[
-            "run",
-            ".",
-            "transmit",
-            "-channelid",
-            channel_arg.as_str(),
-            "-imo",
-            DEFAULT_VESSEL_IMO,
-            "-ts",
-            timestamp_arg.as_str(),
-        ],
-        datasource_home.as_str(),
+    let signer = resolve_cardano_demo_signer_address(project_root_path)?;
+    let built_icq_tx = build_vesseloracle_icq_transaction(
+        channel_pair.cardano_channel_id.as_str(),
+        signer.as_str(),
+        DEFAULT_VESSEL_IMO,
+    )
+    .await?;
+    let source_tx_hash = sign_and_submit_cardano_icq_transaction(
+        project_root_path,
+        built_icq_tx.unsigned_tx.value.as_str(),
     )?;
+    logger::log(&format!(
+        "PASS: Submitted Cardano async-ICQ packet transaction {}",
+        source_tx_hash
+    ));
 
-    relay_vessel_message_packet(&channel_pair)?;
+    wait_for_cardano_icq_packet_relay_readiness(&channel_pair)?;
+    relay_async_icq_packet(&channel_pair)?;
+
+    let icq_result = wait_for_vesseloracle_icq_result(
+        source_tx_hash.as_str(),
+        built_icq_tx.query_path.as_str(),
+        built_icq_tx.packet_data_hex.as_str(),
+    )
+    .await?;
+    logger::log(&format!(
+        "PASS: Async-ICQ acknowledgement completed at height {}",
+        icq_result
+            .get("completed_height")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+    ));
+    logger::verbose(&format!(
+        "Decoded vesseloracle ICQ acknowledgement: {}",
+        serde_json::to_string_pretty(&icq_result).unwrap_or_else(|_| icq_result.to_string())
+    ));
 
     logger::log("\nPASS: Message exchange demo flow completed successfully");
     Ok(())
@@ -146,7 +192,7 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
 fn ensure_message_exchange_prerequisites(project_root_path: &Path) -> Result<(), String> {
     let mut failures = Vec::new();
 
-    for target in MESSAGE_EXCHANGE_TARGETS {
+    for target in message_exchange_targets(project_root_path) {
         match start::check_health_target(project_root_path, target) {
             Ok((true, _)) => {}
             Ok((false, status)) => failures.push(format!("{}: {}", target.name(), status)),
@@ -164,7 +210,12 @@ fn ensure_message_exchange_prerequisites(project_root_path: &Path) -> Result<(),
     for failure in failures {
         error.push_str(format!("  - {failure}\n").as_str());
     }
-    error.push_str("\nRequired command:\n  - caribic start --clean --with-mithril");
+    let recommended_start = if gateway_uses_mithril(project_root_path) {
+        "caribic start --clean --with-mithril"
+    } else {
+        "caribic start --clean"
+    };
+    error.push_str(format!("\nRequired command:\n  - {recommended_start}").as_str());
     Err(error)
 }
 
@@ -195,22 +246,271 @@ fn ensure_cardano_demo_window(project_root_path: &Path) -> Result<(), String> {
         .and_then(parse_f64_value)
         .ok_or("Cardano tip state is missing 'syncProgress'".to_string())?;
 
-    if sync_progress < CARDANO_MIN_SYNC_PROGRESS_FOR_MESSAGE_EXCHANGE
-        || epoch >= CARDANO_MAX_SAFE_EPOCH_FOR_MESSAGE_EXCHANGE
-    {
+    if sync_progress < CARDANO_MIN_SYNC_PROGRESS_FOR_MESSAGE_EXCHANGE {
         return Err(format!(
             "ERROR: Cardano devnet is not in a safe state for the message-exchange demo.\n\
              Tip snapshot: epoch={epoch}, slot={slot}, slotsToEpochEnd={slots_to_epoch_end}, syncProgress={sync_progress:.2}%\n\
              \n\
-             This usually indicates stale/lagging Cardano chain state and leads to Hermes create-client failures.\n\
+             This usually indicates stale/lagging Cardano chain state and leads to Hermes create-client and packet-relay failures.\n\
              Recommended recovery:\n\
                1. caribic stop\n\
-               2. caribic start --clean --with-mithril\n\
+               2. {}\n\
                3. caribic demo message-exchange"
+            ,
+            if gateway_uses_mithril(project_root_path) {
+                "caribic start --clean --with-mithril"
+            } else {
+                "caribic start --clean"
+            }
         ));
     }
 
     Ok(())
+}
+
+fn gateway_light_client_mode(project_root: &Path) -> &'static str {
+    let gateway_env_path = project_root.join("cardano/gateway/.env");
+    let env_contents = fs::read_to_string(&gateway_env_path).unwrap_or_default();
+
+    for line in env_contents.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        if let Some(value) = trimmed.strip_prefix("CARDANO_LIGHT_CLIENT_MODE=") {
+            let mode = value.trim().trim_matches('"').trim_matches('\'');
+            if mode == "mithril" {
+                return "mithril";
+            }
+        }
+    }
+
+    "stake-weighted-stability"
+}
+
+fn gateway_uses_mithril(project_root: &Path) -> bool {
+    gateway_light_client_mode(project_root) == "mithril"
+}
+
+fn normalize_env_value(value: &str) -> String {
+    value
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_string()
+}
+
+fn set_or_append_gateway_env_var(
+    gateway_env_path: &Path,
+    key: &str,
+    value: &str,
+) -> Result<bool, String> {
+    let existing = fs::read_to_string(gateway_env_path).unwrap_or_default();
+    let mut found = false;
+    let mut changed = false;
+    let desired_line = format!("{key}={value}");
+    let mut updated_lines = Vec::new();
+
+    for line in existing.lines() {
+        let trimmed = line.trim_start();
+        if let Some((existing_key, _)) = trimmed.split_once('=') {
+            if existing_key == key {
+                found = true;
+                if trimmed != desired_line {
+                    changed = true;
+                    updated_lines.push(desired_line.clone());
+                } else {
+                    updated_lines.push(line.to_string());
+                }
+                continue;
+            }
+        }
+
+        updated_lines.push(line.to_string());
+    }
+
+    if !found {
+        changed = true;
+        updated_lines.push(desired_line);
+    }
+
+    if changed {
+        let mut updated = updated_lines.join("\n");
+        if !updated.ends_with('\n') {
+            updated.push('\n');
+        }
+        fs::write(gateway_env_path, updated).map_err(|error| {
+            format!(
+                "Failed updating Gateway env file {}: {}",
+                gateway_env_path.display(),
+                error
+            )
+        })?;
+    }
+
+    Ok(changed)
+}
+
+fn query_current_cardano_epoch_nonce(project_root: &Path) -> Result<String, String> {
+    let cardano_dir = project_root.join("chains/cardano");
+    let output = Command::new("docker")
+        .arg("compose")
+        .arg("exec")
+        .arg("-T")
+        .arg("cardano-node")
+        .arg("cardano-cli")
+        .arg("query")
+        .arg("protocol-state")
+        .arg("--cardano-mode")
+        .arg("--testnet-magic")
+        .arg("42")
+        .current_dir(cardano_dir.as_path())
+        .output()
+        .map_err(|error| format!("Failed to query Cardano protocol-state: {}", error))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to query Cardano protocol-state for epoch nonce (exit code {:?}):\nstdout: {}\nstderr: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        ));
+    }
+
+    let protocol_state: Value = serde_json::from_slice(&output.stdout).map_err(|error| {
+        format!(
+            "Failed to parse Cardano protocol-state JSON while reading epoch nonce: {}",
+            error
+        )
+    })?;
+    protocol_state
+        .get("epochNonce")
+        .and_then(Value::as_str)
+        .map(|value| value.trim().to_string())
+        .ok_or_else(|| "Failed to extract epochNonce from Cardano protocol-state".to_string())
+}
+
+async fn check_service_health(client: &reqwest::Client, url: &str) -> bool {
+    match client.get(url).send().await {
+        Ok(response) => response.status().is_success(),
+        Err(_) => false,
+    }
+}
+
+async fn wait_for_service_health(
+    client: &reqwest::Client,
+    url: &str,
+    max_attempts: usize,
+    interval: Duration,
+) -> bool {
+    let start = Instant::now();
+    for attempt in 0..max_attempts {
+        if check_service_health(client, url).await {
+            return true;
+        }
+        logger::verbose(&format!(
+            "Waiting for {} (attempt {}/{}, elapsed {}s)...",
+            url,
+            attempt + 1,
+            max_attempts,
+            start.elapsed().as_secs()
+        ));
+        tokio::time::sleep(interval).await;
+    }
+    false
+}
+
+async fn refresh_gateway_epoch_nonce_for_stability(project_root: &Path) -> Result<(), String> {
+    if gateway_uses_mithril(project_root) {
+        return Ok(());
+    }
+
+    let current_epoch_nonce = query_current_cardano_epoch_nonce(project_root)?;
+    let gateway_env_path = project_root.join("cardano/gateway/.env");
+    let configured_epoch_nonce =
+        crate::setup::read_gateway_env_value(&gateway_env_path, "CARDANO_EPOCH_NONCE_GENESIS")
+            .map_err(|error| format!("Failed reading Gateway epoch nonce from env: {}", error))?
+            .map(|value| normalize_env_value(&value))
+            .unwrap_or_default();
+
+    if configured_epoch_nonce == current_epoch_nonce {
+        logger::verbose("Gateway epoch nonce already matches current Cardano epoch");
+        return Ok(());
+    }
+
+    logger::log(&format!(
+        "Refreshing Gateway epoch nonce for stability mode: {} -> {}",
+        if configured_epoch_nonce.is_empty() {
+            "<empty>"
+        } else {
+            configured_epoch_nonce.as_str()
+        },
+        current_epoch_nonce.as_str()
+    ));
+
+    set_or_append_gateway_env_var(
+        &gateway_env_path,
+        "CARDANO_EPOCH_NONCE_GENESIS",
+        format!("\"{}\"", current_epoch_nonce).as_str(),
+    )?;
+
+    let gateway_dir = project_root.join("cardano/gateway");
+    let recreate_output = Command::new("docker")
+        .arg("compose")
+        .arg("up")
+        .arg("-d")
+        .arg("--force-recreate")
+        .arg("app")
+        .current_dir(gateway_dir.as_path())
+        .output()
+        .map_err(|error| format!("Failed to recreate Gateway app container: {}", error))?;
+
+    if !recreate_output.status.success() {
+        return Err(format!(
+            "Failed to recreate Gateway after epoch nonce refresh (exit code {:?}):\nstdout: {}\nstderr: {}",
+            recreate_output.status.code(),
+            String::from_utf8_lossy(&recreate_output.stdout),
+            String::from_utf8_lossy(&recreate_output.stderr),
+        ));
+    }
+
+    let http_client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .map_err(|error| format!("Failed to build Gateway HTTP client: {}", error))?;
+    let gateway_healthy = wait_for_service_health(
+        &http_client,
+        "http://127.0.0.1:8000/health",
+        30,
+        Duration::from_secs(2),
+    )
+    .await;
+
+    if !gateway_healthy {
+        return Err(
+            "Gateway did not become healthy after epoch nonce refresh/recreate".to_string(),
+        );
+    }
+
+    logger::log("PASS: Gateway refreshed with current Cardano epoch nonce");
+    Ok(())
+}
+
+fn message_exchange_targets(project_root: &Path) -> Vec<HealthTarget> {
+    let mut targets = vec![
+        HealthTarget::Core(CoreServiceId::Gateway),
+        HealthTarget::Core(CoreServiceId::Cardano),
+        HealthTarget::Core(CoreServiceId::Postgres),
+        HealthTarget::Core(CoreServiceId::Kupo),
+        HealthTarget::Core(CoreServiceId::Ogmios),
+        HealthTarget::Core(CoreServiceId::Entrypoint),
+    ];
+    if gateway_uses_mithril(project_root) {
+        targets.push(HealthTarget::Core(CoreServiceId::Mithril));
+    }
+    targets
 }
 
 async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String> {
@@ -406,105 +706,320 @@ fn run_datasource_command(
     .map_err(|error| format!("ERROR: Failed running datasource command: {}", error))
 }
 
-async fn query_latest_consolidated_timestamp(imo: &str) -> Result<u64, String> {
-    let message_exchange_config = crate::config::get_config().demo.message_exchange;
-    let max_retries = message_exchange_config.consolidated_report_max_retries;
-    if max_retries == 0 {
-        return Err(
-            "Invalid config: demo.message_exchange.consolidated_report_max_retries must be > 0 in ~/.caribic/config.json"
-                .to_string(),
-        );
+async fn build_vesseloracle_icq_transaction(
+    source_channel: &str,
+    signer: &str,
+    imo: &str,
+) -> Result<BuiltVesseloracleIcqTx, String> {
+    let timeout_height = query_entrypoint_latest_height().await? + ASYNC_ICQ_TIMEOUT_HEIGHT_DELTA;
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|error| format!("Failed to build Gateway HTTP client: {}", error))?;
+    let url = format!(
+        "{}/icq/vesseloracle/latest-consolidated-data-report",
+        GATEWAY_API_BASE_URL
+    );
+    // The demo now discovers the latest consolidated report over ICQ as well,
+    // so Cardano only needs the IMO and no longer side-reads Entrypoint for a timestamp.
+    let response = client
+        .post(url.as_str())
+        .json(&json!({
+            "source_channel": source_channel,
+            "signer": signer,
+            "imo": imo,
+            "timeout_height": {
+                "revision_number": 0,
+                "revision_height": timeout_height.to_string(),
+            },
+        }))
+        .send()
+        .await
+        .map_err(|error| {
+            format!(
+                "Failed to request vesseloracle async-ICQ transaction: {}",
+                error
+            )
+        })?;
+    let status = response.status();
+    let body = response.text().await.map_err(|error| {
+        format!(
+            "Failed reading vesseloracle async-ICQ response body: {}",
+            error
+        )
+    })?;
+    if !status.is_success() {
+        return Err(format!(
+            "Gateway failed building vesseloracle async-ICQ transaction (status={}): {}",
+            status, body
+        ));
     }
-    let retry_delay_secs = message_exchange_config.consolidated_report_retry_delay_secs;
-    if retry_delay_secs == 0 {
-        return Err(
-            "Invalid config: demo.message_exchange.consolidated_report_retry_delay_secs must be > 0 in ~/.caribic/config.json"
-                .to_string(),
-        );
-    }
+
+    serde_json::from_str::<BuiltVesseloracleIcqTx>(body.as_str()).map_err(|error| {
+        format!(
+            "Failed to parse vesseloracle async-ICQ transaction response JSON: {}. Body: {}",
+            error, body
+        )
+    })
+}
+
+async fn query_entrypoint_latest_height() -> Result<u64, String> {
     let client = reqwest::Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(5))
         .build()
-        .map_err(|error| format!("Failed to build HTTP client: {}", error))?;
-    let query_url = "http://127.0.0.1:1317/vesseloracle/vesseloracle/consolidated_data_report";
+        .map_err(|error| format!("Failed to build Entrypoint RPC client: {}", error))?;
+    let response = client
+        .get(format!("{}/status", VESSEL_RPC_ADDR))
+        .send()
+        .await
+        .map_err(|error| format!("Failed querying Entrypoint latest height: {}", error))?;
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|error| format!("Failed reading Entrypoint latest height body: {}", error))?;
+    if !status.is_success() {
+        return Err(format!(
+            "Entrypoint RPC failed while querying latest height (status={}): {}",
+            status, body
+        ));
+    }
 
-    for _ in 0..max_retries {
-        let response = client.get(query_url).send().await;
-        let Ok(response) = response else {
-            tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
-            continue;
-        };
-        if !response.status().is_success() {
-            tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
-            continue;
+    let value = serde_json::from_str::<Value>(body.as_str()).map_err(|error| {
+        format!(
+            "Failed to parse Entrypoint status JSON while querying latest height: {}. Body: {}",
+            error, body
+        )
+    })?;
+    let latest_height = value
+        .get("result")
+        .and_then(|result| result.get("sync_info"))
+        .and_then(|sync_info| sync_info.get("latest_block_height"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            format!(
+                "Entrypoint status missing latest_block_height. Body: {}",
+                body
+            )
+        })?;
+
+    latest_height.parse::<u64>().map_err(|error| {
+        format!(
+            "Failed parsing Entrypoint latest_block_height '{}' as u64: {}",
+            latest_height, error
+        )
+    })
+}
+
+fn resolve_cardano_demo_signer_address(project_root_path: &Path) -> Result<String, String> {
+    let deployer_sk = resolve_local_cardano_deployer_sk(project_root_path)?;
+    let offchain_dir = project_root_path.join("cardano/offchain");
+    let output = execute_script(
+        offchain_dir.as_path(),
+        "deno",
+        vec!["run", "-A", "scripts/get-wallet-address.ts"],
+        Some(vec![
+            ("DEPLOYER_SK", deployer_sk.as_str()),
+            ("KUPO_URL", CARDANO_LOCAL_KUPO_URL),
+            ("OGMIOS_URL", CARDANO_LOCAL_OGMIOS_URL),
+            ("CARDANO_NETWORK_MAGIC", CARDANO_LOCAL_NETWORK_MAGIC),
+        ]),
+    )
+    .map_err(|error| format!("Failed resolving Cardano demo signer address: {}", error))?;
+
+    let parsed = serde_json::from_str::<WalletAddressOutput>(output.as_str()).map_err(|error| {
+        format!(
+            "Failed to parse Cardano signer address JSON output: {}. Output: {}",
+            error, output
+        )
+    })?;
+
+    Ok(parsed.address)
+}
+
+fn sign_and_submit_cardano_icq_transaction(
+    project_root_path: &Path,
+    unsigned_tx_base64: &str,
+) -> Result<String, String> {
+    let deployer_sk = resolve_local_cardano_deployer_sk(project_root_path)?;
+    let unsigned_tx_path = std::env::temp_dir().join(format!(
+        "caribic-message-exchange-unsigned-{}.txt",
+        std::process::id()
+    ));
+    fs::write(unsigned_tx_path.as_path(), unsigned_tx_base64).map_err(|error| {
+        format!(
+            "Failed to write temporary unsigned transaction file at {}: {}",
+            unsigned_tx_path.display(),
+            error
+        )
+    })?;
+
+    let unsigned_tx_arg = unsigned_tx_path.to_string_lossy().to_string();
+    let offchain_dir = project_root_path.join("cardano/offchain");
+    let output = execute_script(
+        offchain_dir.as_path(),
+        "deno",
+        vec![
+            "run",
+            "-A",
+            "scripts/sign-submit-unsigned-tx.ts",
+            unsigned_tx_arg.as_str(),
+        ],
+        Some(vec![
+            ("DEPLOYER_SK", deployer_sk.as_str()),
+            ("KUPO_URL", CARDANO_LOCAL_KUPO_URL),
+            ("OGMIOS_URL", CARDANO_LOCAL_OGMIOS_URL),
+            ("CARDANO_NETWORK_MAGIC", CARDANO_LOCAL_NETWORK_MAGIC),
+        ]),
+    )
+    .map_err(|error| {
+        format!(
+            "Failed signing/submitting Cardano async-ICQ transaction: {}",
+            error
+        )
+    });
+    let _ = fs::remove_file(unsigned_tx_path.as_path());
+    let output = output?;
+
+    let parsed = serde_json::from_str::<SignedTxOutput>(output.as_str()).map_err(|error| {
+        format!(
+            "Failed to parse signed Cardano transaction JSON output: {}. Output: {}",
+            error, output
+        )
+    })?;
+
+    Ok(parsed.tx_hash)
+}
+
+fn resolve_local_cardano_deployer_sk(project_root_path: &Path) -> Result<String, String> {
+    if let Ok(value) = std::env::var("DEPLOYER_SK") {
+        let trimmed = value.trim().to_string();
+        if !trimmed.is_empty() {
+            return Ok(trimmed);
+        }
+    }
+
+    let devnet_key_path = project_root_path.join("chains/cardano/config/credentials/me.sk");
+    if let Ok(value) = fs::read_to_string(devnet_key_path.as_path()) {
+        let trimmed = value.trim().to_string();
+        if !trimmed.is_empty() {
+            return Ok(trimmed);
+        }
+    }
+
+    prompt_runtime_deployer_sk()
+        .map(|value| value.trim().to_string())
+        .map_err(|error| {
+            format!(
+                "Failed to resolve DEPLOYER_SK for local Cardano demo: {}",
+                error
+            )
+        })
+}
+
+async fn wait_for_vesseloracle_icq_result(
+    tx_hash: &str,
+    query_path: &str,
+    packet_data_hex: &str,
+) -> Result<Value, String> {
+    let message_exchange_config = crate::config::get_config().demo.message_exchange;
+    let max_retries = message_exchange_config.relay_max_retries;
+    if max_retries == 0 {
+        return Err(
+            "Invalid config: demo.message_exchange.relay_max_retries must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+    let retry_delay_secs = message_exchange_config.relay_retry_delay_secs;
+    if retry_delay_secs == 0 {
+        return Err(
+            "Invalid config: demo.message_exchange.relay_retry_delay_secs must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|error| format!("Failed to build Gateway HTTP client: {}", error))?;
+    let url = format!("{}/icq/vesseloracle/result", GATEWAY_API_BASE_URL);
+    let mut since_height: Option<String> = None;
+
+    for attempt in 1..=max_retries {
+        let mut payload = json!({
+            "tx_hash": tx_hash,
+            "query_path": query_path,
+            "packet_data_hex": packet_data_hex,
+        });
+        if let Some(cursor) = since_height.as_ref() {
+            payload["since_height"] = Value::String(cursor.clone());
         }
 
-        let body = response
-            .text()
+        let response = client
+            .post(url.as_str())
+            .json(&payload)
+            .send()
             .await
-            .map_err(|error| format!("Failed to read consolidated report response: {}", error))?;
-        let json: Value = serde_json::from_str(body.as_str()).map_err(|error| {
+            .map_err(|error| format!("Failed polling vesseloracle async-ICQ result: {}", error))?;
+        let status = response.status();
+        let body = response.text().await.map_err(|error| {
             format!(
-                "Failed to parse consolidated report response as JSON: {}",
+                "Failed reading vesseloracle async-ICQ result body: {}",
                 error
             )
         })?;
 
-        let reports = json
-            .get("consolidatedDataReport")
-            .or_else(|| json.get("consolidated_data_report"))
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default();
-
-        let mut latest_ts = None;
-        for report in reports {
-            let report_imo = report
-                .get("imo")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string();
-            if report_imo != imo {
-                continue;
-            }
-
-            let report_ts = report
-                .get("ts")
-                .and_then(parse_u64_value)
-                .unwrap_or_default();
-            if latest_ts.is_none() || report_ts > latest_ts.unwrap_or_default() {
-                latest_ts = Some(report_ts);
-            }
-        }
-
-        if let Some(latest_ts) = latest_ts {
-            logger::verbose(&format!(
-                "Using latest consolidated report timestamp {} for IMO {}",
-                latest_ts, imo
+        if !status.is_success() {
+            return Err(format!(
+                "Gateway failed polling vesseloracle async-ICQ result (status={}): {}",
+                status, body
             ));
-            return Ok(latest_ts);
         }
 
+        let result = serde_json::from_str::<Value>(body.as_str()).map_err(|error| {
+            format!(
+                "Failed to parse vesseloracle async-ICQ result JSON: {}. Body: {}",
+                error, body
+            )
+        })?;
+
+        if result.get("status").and_then(Value::as_str) == Some("completed") {
+            return Ok(result);
+        }
+
+        since_height = result
+            .get("next_search_from_height")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .filter(|value| !value.is_empty());
+
+        logger::verbose(&format!(
+            "Waiting for vesseloracle async-ICQ acknowledgement (attempt {attempt}/{}): {}",
+            max_retries,
+            serde_json::to_string(&result).unwrap_or_else(|_| result.to_string())
+        ));
         tokio::time::sleep(Duration::from_secs(retry_delay_secs)).await;
     }
 
     Err(format!(
-        "Failed to find a consolidated report for IMO {} after retries",
-        imo
+        "Timed out waiting for vesseloracle async-ICQ acknowledgement for tx {}",
+        tx_hash
     ))
-}
-
-fn parse_u64_value(value: &Value) -> Option<u64> {
-    value
-        .as_u64()
-        .or_else(|| value.as_str().and_then(|raw| raw.parse::<u64>().ok()))
 }
 
 fn parse_f64_value(value: &Value) -> Option<f64> {
     value
         .as_f64()
         .or_else(|| value.as_str().and_then(|raw| raw.parse::<f64>().ok()))
+}
+
+fn parse_u64_value(value: &Value) -> Option<u64> {
+    value
+        .as_u64()
+        .or_else(|| value.as_str().and_then(|raw| raw.parse::<u64>().ok()))
 }
 
 fn configure_hermes_for_message_exchange() -> Result<(), String> {
@@ -587,7 +1102,7 @@ event_source = {{ mode = 'push', url = 'ws://127.0.0.1:26657/websocket', batch_d
 [chains.packet_filter]
 policy = 'allow'
 list = [
-  ['vesseloracle', '*'],
+  ['icqhost', '*'],
   ['transfer', '*'],
 ]
 
@@ -693,7 +1208,7 @@ fn ensure_message_exchange_channel() -> Result<MessageChannelPair, String> {
         channel_discovery_retry_delay_secs,
     )? {
         logger::log(&format!(
-            "PASS: Message-exchange channel already open (cardano={}, vesseloracle={})",
+            "PASS: Message-exchange channel already open (cardano={}, entrypoint={})",
             pair.cardano_channel_id, pair.vessel_channel_id
         ));
         return Ok(pair);
@@ -714,7 +1229,7 @@ fn ensure_message_exchange_channel() -> Result<MessageChannelPair, String> {
         "Created message-exchange channel, but no open channel pair could be discovered".to_string()
     })?;
     logger::log(&format!(
-        "PASS: Created message-exchange channel (cardano={}, vesseloracle={})",
+        "PASS: Created message-exchange channel (cardano={}, entrypoint={})",
         pair.cardano_channel_id, pair.vessel_channel_id
     ));
     Ok(pair)
@@ -747,7 +1262,7 @@ fn query_open_message_channel_pair() -> Result<Option<MessageChannelPair>, Strin
     .map_err(|error| error.to_string())?;
     if !output.status.success() {
         return Err(format!(
-            "Hermes query channels failed for cardano↔vesseloracle:\n{}",
+            "Hermes query channels failed for cardano↔entrypoint:\n{}",
             String::from_utf8_lossy(&output.stderr)
         ));
     }
@@ -1020,7 +1535,7 @@ fn is_open_message_connection(cardano_connection_id: &str) -> Result<bool, Strin
 
     if !is_open_channel_state(vessel_end.state.as_str()) {
         logger::verbose(&format!(
-            "Skipping {CARDANO_CHAIN_ID} connection {cardano_connection_id}: vesseloracle counterparty {} is {} (expected Open)",
+            "Skipping {CARDANO_CHAIN_ID} connection {cardano_connection_id}: entrypoint counterparty {} is {} (expected Open)",
             vessel_connection_id, vessel_end.state
         ));
         return Ok(false);
@@ -1028,7 +1543,7 @@ fn is_open_message_connection(cardano_connection_id: &str) -> Result<bool, Strin
 
     if vessel_end.remote_connection_id.as_deref() != Some(cardano_connection_id) {
         logger::verbose(&format!(
-            "Skipping {CARDANO_CHAIN_ID} connection {cardano_connection_id}: vesseloracle counterparty {} does not point back to it",
+            "Skipping {CARDANO_CHAIN_ID} connection {cardano_connection_id}: entrypoint counterparty {} does not point back to it",
             vessel_connection_id
         ));
         return Ok(false);
@@ -1094,14 +1609,14 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
         connection_discovery_retry_delay_secs,
     )? {
         logger::verbose(&format!(
-            "Using existing open Cardano↔vesseloracle connection {}",
+            "Using existing open Cardano↔entrypoint connection {}",
             open_connection_id
         ));
         return Ok(open_connection_id);
     }
 
     logger::verbose(
-        "No open Cardano↔vesseloracle connection found, creating dedicated clients and connection",
+        "No open Cardano↔entrypoint connection found, creating dedicated clients and connection",
     );
     // Every step below is strict by design.
     // If client or connection creation fails, we return that error directly.
@@ -1125,7 +1640,7 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
     let cardano_client_id =
         parse_tendermint_client_id(&cardano_client_stdout).ok_or_else(|| {
             format!(
-                "Failed to parse Cardano->vesseloracle client id from Hermes output:\n{}",
+                "Failed to parse Cardano->entrypoint client id from Hermes output:\n{}",
                 cardano_client_stdout
             )
         })?;
@@ -1149,7 +1664,7 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
         String::from_utf8_lossy(&create_vessel_client_output.stdout).to_string();
     let vessel_client_id = parse_tendermint_client_id(&vessel_client_stdout).ok_or_else(|| {
         format!(
-            "Failed to parse vesseloracle->Cardano client id from Hermes output:\n{}",
+            "Failed to parse entrypoint->Cardano client id from Hermes output:\n{}",
             vessel_client_stdout
         )
     })?;
@@ -1167,7 +1682,7 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
     .map_err(|error| error.to_string())?;
     if !create_connection_output.status.success() {
         return Err(format!(
-            "Failed to create Cardano-vesseloracle connection: {}",
+            "Failed to create Cardano-entrypoint connection: {}",
             String::from_utf8_lossy(&create_connection_output.stderr)
         ));
     }
@@ -1176,7 +1691,7 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
     let connection_id =
         parse_tendermint_connection_id(&create_connection_stdout).ok_or_else(|| {
             format!(
-                "Failed to parse Cardano-vesseloracle connection id from Hermes output:\n{}",
+                "Failed to parse Cardano-entrypoint connection id from Hermes output:\n{}",
                 create_connection_stdout
             )
         })?;
@@ -1187,7 +1702,7 @@ fn ensure_open_message_exchange_connection() -> Result<String, String> {
     )?
     else {
         return Err(format!(
-            "Created Cardano↔vesseloracle connection artifacts from {}, but no open symmetric connection is currently usable",
+            "Created Cardano↔entrypoint connection artifacts from {}, but no open symmetric connection is currently usable",
             connection_id
         ));
     };
@@ -1207,11 +1722,13 @@ fn create_message_exchange_channel_on_connection(connection_id: &str) -> Result<
         CARDANO_MESSAGE_PORT_ID,
         "--b-port",
         VESSEL_MESSAGE_PORT_ID,
+        "--channel-version",
+        ASYNC_ICQ_CHANNEL_VERSION,
     ])
     .map_err(|error| format!("Failed to execute Hermes create channel: {}", error))?;
     if !create_output.status.success() {
         return Err(format!(
-            "Failed to create Cardano↔vesseloracle message channel on connection {connection_id}:\n{}",
+            "Failed to create Cardano↔entrypoint message channel on connection {connection_id}:\n{}",
             String::from_utf8_lossy(&create_output.stderr)
         ));
     }
@@ -1288,7 +1805,33 @@ fn is_open_channel_state(state: &str) -> bool {
     normalized == "open" || normalized == "state_open"
 }
 
-fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), String> {
+fn contains_cardano_channel_proof_lag(text: &str) -> bool {
+    let normalized = text.to_ascii_lowercase();
+    normalized.contains("current hoststate root is not yet stability-accepted")
+        || normalized.contains("not yet stability-accepted for proof generation (querychannel)")
+        || normalized.contains("stability thresholds not met")
+}
+
+fn format_cardano_channel_proof_lag_error(channel_pair: &MessageChannelPair) -> String {
+    format!(
+        "ERROR: Cardano async-ICQ packet commitment exists on {}/{} but Hermes still cannot prove the channel-end state.\n\
+         \n\
+         Gateway is reporting that the current HostState root is not yet stability-accepted for queryChannel proof generation.\n\
+         This means the packet was sent, but the Cardano light-client proof path has not caught up enough yet for packet-recv.\n\
+         \n\
+         Channel: {}/{}\n\
+         Recovery:\n\
+           1. wait for a few more Cardano blocks\n\
+           2. rerun `caribic demo message-exchange`\n\
+           3. if this repeats from a stale stack, run `caribic stop` then `caribic start --clean`",
+        CARDANO_MESSAGE_PORT_ID,
+        channel_pair.cardano_channel_id,
+        CARDANO_MESSAGE_PORT_ID,
+        channel_pair.cardano_channel_id
+    )
+}
+
+fn relay_async_icq_packet(channel_pair: &MessageChannelPair) -> Result<(), String> {
     let message_exchange_config = crate::config::get_config().demo.message_exchange;
     let relay_max_retries = message_exchange_config.relay_max_retries;
     if relay_max_retries == 0 {
@@ -1305,18 +1848,19 @@ fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), 
         );
     }
     let mut recv_relayed = false;
-    for _ in 0..relay_max_retries {
+    let mut waiting_on_cardano_channel_proof = false;
+    for attempt in 1..=relay_max_retries {
         let recv_output = run_hermes_command(&[
             "tx",
             "packet-recv",
             "--dst-chain",
-            CARDANO_CHAIN_ID,
-            "--src-chain",
             VESSEL_CHAIN_ID,
+            "--src-chain",
+            CARDANO_CHAIN_ID,
             "--src-port",
-            VESSEL_MESSAGE_PORT_ID,
+            CARDANO_MESSAGE_PORT_ID,
             "--src-channel",
-            channel_pair.vessel_channel_id.as_str(),
+            channel_pair.cardano_channel_id.as_str(),
         ])
         .map_err(|error| format!("Failed to execute Hermes packet-recv: {}", error))?;
 
@@ -1334,14 +1878,30 @@ fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), 
             continue;
         }
 
+        if contains_cardano_channel_proof_lag(&stderr) {
+            waiting_on_cardano_channel_proof = true;
+            logger::warn(&format!(
+                "WARN: Cardano packet commitment is ready but channel-end proof is still waiting for a stability-accepted HostState root (attempt {}/{} on {}/{}).",
+                attempt,
+                relay_max_retries,
+                CARDANO_MESSAGE_PORT_ID,
+                channel_pair.cardano_channel_id
+            ));
+            std::thread::sleep(Duration::from_secs(relay_retry_delay_secs));
+            continue;
+        }
+
         return Err(format!(
-            "Failed relaying packet to Cardano:\n{}",
+            "Failed relaying async-ICQ packet to Entrypoint:\n{}",
             String::from_utf8_lossy(&recv_output.stderr)
         ));
     }
 
     if !recv_relayed {
-        return Err("Timed out waiting for message packet commitments on vesseloracle".to_string());
+        if waiting_on_cardano_channel_proof {
+            return Err(format_cardano_channel_proof_lag_error(channel_pair));
+        }
+        return Err("Timed out waiting for async-ICQ packet commitments on Cardano".to_string());
     }
 
     for _ in 0..relay_max_retries {
@@ -1349,18 +1909,18 @@ fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), 
             "tx",
             "packet-ack",
             "--dst-chain",
-            VESSEL_CHAIN_ID,
-            "--src-chain",
             CARDANO_CHAIN_ID,
+            "--src-chain",
+            VESSEL_CHAIN_ID,
             "--src-port",
-            CARDANO_MESSAGE_PORT_ID,
+            VESSEL_MESSAGE_PORT_ID,
             "--src-channel",
-            channel_pair.cardano_channel_id.as_str(),
+            channel_pair.vessel_channel_id.as_str(),
         ])
         .map_err(|error| format!("Failed to execute Hermes packet-ack: {}", error))?;
 
         if ack_output.status.success() {
-            logger::log("PASS: Message packet relayed and acknowledged");
+            logger::log("PASS: Async-ICQ packet relayed and acknowledged");
             return Ok(());
         }
 
@@ -1374,10 +1934,122 @@ fn relay_vessel_message_packet(channel_pair: &MessageChannelPair) -> Result<(), 
         }
 
         return Err(format!(
-            "Failed relaying packet acknowledgement back to vesseloracle:\n{}",
+            "Failed relaying async-ICQ acknowledgement back to Cardano:\n{}",
             String::from_utf8_lossy(&ack_output.stderr)
         ));
     }
 
-    Err("Timed out waiting for packet acknowledgement on Cardano".to_string())
+    Err("Timed out waiting for async-ICQ acknowledgement on Cardano".to_string())
+}
+
+fn wait_for_cardano_icq_packet_relay_readiness(
+    channel_pair: &MessageChannelPair,
+) -> Result<(), String> {
+    let message_exchange_config = crate::config::get_config().demo.message_exchange;
+    let max_retries = message_exchange_config.relay_max_retries;
+    if max_retries == 0 {
+        return Err(
+            "Invalid config: demo.message_exchange.relay_max_retries must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+    let retry_delay_secs = message_exchange_config.relay_retry_delay_secs;
+    if retry_delay_secs == 0 {
+        return Err(
+            "Invalid config: demo.message_exchange.relay_retry_delay_secs must be > 0 in ~/.caribic/config.json"
+                .to_string(),
+        );
+    }
+
+    for attempt in 1..=max_retries {
+        let channel_output = run_hermes_command(&[
+            "query",
+            "channel",
+            "end",
+            "--chain",
+            CARDANO_CHAIN_ID,
+            "--port",
+            CARDANO_MESSAGE_PORT_ID,
+            "--channel",
+            channel_pair.cardano_channel_id.as_str(),
+        ])
+        .map_err(|error| {
+            format!(
+                "Failed to execute Hermes channel query for relay readiness: {}",
+                error
+            )
+        })?;
+
+        let packet_output = run_hermes_command(&[
+            "query",
+            "packet",
+            "commitments",
+            "--chain",
+            CARDANO_CHAIN_ID,
+            "--port",
+            CARDANO_MESSAGE_PORT_ID,
+            "--channel",
+            channel_pair.cardano_channel_id.as_str(),
+        ])
+        .map_err(|error| {
+            format!(
+                "Failed to execute Hermes packet commitment query for relay readiness: {}",
+                error
+            )
+        })?;
+
+        let channel_stdout = String::from_utf8_lossy(&channel_output.stdout);
+        let channel_stderr = String::from_utf8_lossy(&channel_output.stderr);
+        let packet_stdout = String::from_utf8_lossy(&packet_output.stdout);
+        let packet_stderr = String::from_utf8_lossy(&packet_output.stderr);
+        let readiness_output = format!(
+            "{}\n{}\n{}\n{}",
+            channel_stdout, channel_stderr, packet_stdout, packet_stderr
+        )
+        .to_lowercase();
+        let has_packet_commitment =
+            !packet_stdout.contains("seqs: []") && !packet_stdout.contains("SUCCESS []");
+
+        if packet_output.status.success() && has_packet_commitment {
+            logger::verbose(&format!(
+                "Cardano ICQ packet became relay-ready on attempt {}/{} for {}/{}{}",
+                attempt,
+                max_retries,
+                CARDANO_MESSAGE_PORT_ID,
+                channel_pair.cardano_channel_id,
+                if channel_output.status.success() {
+                    ""
+                } else {
+                    " (packet commitments are provable; channel-end proof may still be catching up)"
+                }
+            ));
+            return Ok(());
+        }
+
+        let is_transient = readiness_output.contains("not yet stability-accepted")
+            || readiness_output.contains("stability thresholds not met")
+            || readiness_output.contains("current hoststate root is not yet stability-accepted")
+            || readiness_output.contains("historical tx evidence unavailable for current live hoststate tx")
+            || !has_packet_commitment;
+        if !is_transient {
+            return Err(format!(
+                "Failed waiting for Cardano ICQ packet relay readiness:\nchannel stdout:\n{}\nchannel stderr:\n{}\npacket stdout:\n{}\npacket stderr:\n{}",
+                channel_stdout.trim(),
+                channel_stderr.trim(),
+                packet_stdout.trim(),
+                packet_stderr.trim()
+            ));
+        }
+
+        logger::verbose(&format!(
+            "Waiting for Cardano ICQ packet to become proof-relayable (attempt {}/{} on {}/{}).",
+            attempt, max_retries, CARDANO_MESSAGE_PORT_ID, channel_pair.cardano_channel_id
+        ));
+        std::thread::sleep(Duration::from_secs(retry_delay_secs));
+    }
+
+    Err(format!(
+        "Timed out waiting for Cardano ICQ packet relay readiness on {}/{}",
+        CARDANO_MESSAGE_PORT_ID, channel_pair.cardano_channel_id
+    ))
 }

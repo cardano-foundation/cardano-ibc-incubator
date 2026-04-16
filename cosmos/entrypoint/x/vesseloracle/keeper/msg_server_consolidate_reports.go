@@ -46,17 +46,7 @@ func (k msgServer) consolidateEta(vesselData []types.Vessel) (etaMeanCleaned uin
 	}
 
 	var samples uint64 = uint64(len(vesselData))
-
-	etaMeanAll = 0
-	for _, vessel := range vesselData {
-		etaMeanAll = etaMeanAll + (vessel.Eta / samples)
-	}
-
-	etaStdAll = 0
-	for _, vessel := range vesselData {
-		etaStdAll = uint64((int64(vessel.Eta) - int64(etaMeanAll)) * (int64(vessel.Eta) - int64(etaMeanAll)))
-	}
-	etaStdAll = uint64(math.Sqrt(float64(etaStdAll / samples)))
+	etaMeanAll, etaStdAll = calculateEtaMeanAndStd(vesselData)
 
 	// determine outlier interval as 1 sigma environment
 	oneSigmaMin := etaMeanAll - etaStdAll
@@ -99,14 +89,13 @@ func (k msgServer) consolidateEta(vesselData []types.Vessel) (etaMeanCleaned uin
 
 	if uint64(numOutliers) < samples {
 		etaMeanCleaned = etaMeanCleaned / (samples - uint64(numOutliers))
-
-		etaStdCleaned = 0
+		var cleanedVesselData []types.Vessel
 		for _, vessel := range vesselData {
 			if vessel.Eta >= oneSigmaMedianMin && vessel.Eta <= oneSigmaMedianMax {
-				etaStdCleaned = uint64((int64(vessel.Eta) - int64(etaMeanCleaned)) * (int64(vessel.Eta) - int64(etaMeanCleaned)))
+				cleanedVesselData = append(cleanedVesselData, vessel)
 			}
 		}
-		etaStdCleaned = uint64(math.Sqrt(float64(etaStdCleaned / (samples - uint64(numOutliers)))))
+		_, etaStdCleaned = calculateEtaMeanAndStd(cleanedVesselData)
 
 		oneSigmaMinCleaned := etaMeanCleaned - etaStdCleaned
 		oneSigmaMaxCleaned := etaMeanCleaned + etaStdCleaned
@@ -124,6 +113,30 @@ func (k msgServer) consolidateEta(vesselData []types.Vessel) (etaMeanCleaned uin
 	}
 
 	return etaMeanCleaned, etaStdCleaned, etaMeanAll, etaStdAll, numOutliers, nil
+}
+
+func calculateEtaMeanAndStd(vesselData []types.Vessel) (uint64, uint64) {
+	if len(vesselData) == 0 {
+		return 0, 0
+	}
+
+	samples := uint64(len(vesselData))
+	var sum uint64
+	for _, vessel := range vesselData {
+		sum += vessel.Eta
+	}
+
+	mean := sum / samples
+	var squaredDeviationSum uint64
+	for _, vessel := range vesselData {
+		deviation := int64(vessel.Eta) - int64(mean)
+		squaredDeviationSum += uint64(deviation * deviation)
+	}
+
+	// Keep the vesseloracle stats fully integer-based, but accumulate across the
+	// whole sample set before taking the final square root.
+	std := uint64(math.Sqrt(float64(squaredDeviationSum / samples)))
+	return mean, std
 }
 
 func (k msgServer) ConsolidateVesselData(ctx sdk.Context, imo string) (*types.ConsolidatedDataReport, error) {

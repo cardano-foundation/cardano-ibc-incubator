@@ -4,9 +4,8 @@ use async_trait::async_trait;
 use dirs::home_dir;
 
 use crate::chains::{
-    check_port_health, check_rpc_health,
-    cosmos_node::CosmosNetworkKind,
-    ChainAdapter, ChainFlagSpec, ChainFlags, ChainHealthStatus, ChainNetwork, ChainStartRequest,
+    check_port_health, check_rpc_health, cosmos_node::CosmosNetworkKind, ChainAdapter,
+    ChainFlagSpec, ChainFlags, ChainHealthStatus, ChainNetwork, ChainStartRequest,
 };
 
 mod config;

@@ -85,6 +85,7 @@ import {
   MintVoucherRedeemer,
 } from "@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer";
 import {
+  UnsignedAckPacketModuleDto,
   UnsignedAckPacketMintDto,
   UnsignedAckPacketSucceedDto,
   UnsignedAckPacketUnescrowDto,
@@ -1992,6 +1993,69 @@ export class LucidService implements OnModuleInit {
       )
       .pay.ToContract(deploymentConfig.modules.transfer.address, undefined, {
         ...dto.transferModuleUtxo.assets,
+      })
+      .mintAssets(
+        {
+          [dto.ackPacketPolicyId]: 1n,
+        },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
+      );
+
+    return tx;
+  }
+
+  public createUnsignedAckPacketModuleTx(
+    dto: UnsignedAckPacketModuleDto,
+  ): TxBuilder {
+    const deploymentConfig = this.configService.get("deployment");
+    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
+      deploymentConfig.hostStateNFT.name;
+    const hostStateUtxoWithRawDatum = {
+      ...dto.hostStateUtxo,
+      datum: dto.hostStateUtxo.datum,
+      datumHash: undefined,
+    };
+
+    const tx: TxBuilder = this.newTxBuilder();
+    tx.readFrom([
+      this.referenceScripts.spendChannel,
+      this.getModuleReferenceScript(dto.moduleKey),
+      this.referenceScripts.ackPacket,
+      this.referenceScripts.verifyProof,
+      this.referenceScripts.hostStateStt,
+    ])
+      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .pay.ToContract(
+        deploymentConfig.validators.hostStateStt.address,
+        {
+          kind: "inline",
+          value: dto.encodedUpdatedHostStateDatum,
+        },
+        {
+          [hostStateNFT]: 1n,
+        },
+      )
+      .pay.ToContract(
+        deploymentConfig.validators.spendChannel.address,
+        {
+          kind: "inline",
+          value: dto.encodedUpdatedChannelDatum,
+        },
+        {
+          [dto.channelTokenUnit]: 1n,
+        },
+      )
+      .pay.ToContract(this.getModuleAddress(dto.moduleKey), undefined, {
+        ...dto.moduleUtxo.assets,
       })
       .mintAssets(
         {
