@@ -15,10 +15,13 @@ impl CardanoCli {
             .network_magic
             .to_string();
         let cardano_dir = project_root_dir.join("chains/cardano");
+        Self::for_chain_dir_and_magic(cardano_dir.as_path(), network_magic.as_str())
+    }
 
+    pub fn for_chain_dir_and_magic(cardano_dir: &Path, network_magic: &str) -> Self {
         Self {
-            docker: DockerCli::new(cardano_dir.as_path()),
-            network_magic,
+            docker: DockerCli::new(cardano_dir),
+            network_magic: network_magic.to_string(),
         }
     }
 
@@ -47,8 +50,7 @@ impl CardanoCli {
     pub fn exec_output(&self, cardano_cli_args: &[&str]) -> Result<Output, String> {
         // Caribic runs Cardano queries against the managed devnet container rather than a host
         // install, so every typed Cardano call funnels through `docker compose exec`.
-        let mut docker_args = vec!["exec", "cardano-node", "cardano-cli"];
-        docker_args.extend_from_slice(cardano_cli_args);
-        self.docker.compose_output(docker_args.as_slice())
+        self.docker
+            .compose_exec_output("cardano-node", cardano_cli_args)
     }
 }

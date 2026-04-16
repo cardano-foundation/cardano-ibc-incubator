@@ -1,4 +1,5 @@
 use reqwest::Client;
+use serde_json::Value;
 use std::future::Future;
 use std::time::Duration;
 
@@ -17,7 +18,7 @@ impl HttpHealthClient {
     }
 
     pub fn response_contains(&self, url: &str, expected: &str) -> bool {
-        self.run(async {
+        self.block_on(async {
             let Ok(response) = self.client.get(url).send().await else {
                 return false;
             };
@@ -34,7 +35,7 @@ impl HttpHealthClient {
     }
 
     pub fn responds_ok(&self, url: &str) -> bool {
-        self.run(async {
+        self.block_on(async {
             self.client
                 .get(url)
                 .send()
@@ -44,9 +45,36 @@ impl HttpHealthClient {
         })
     }
 
-    fn run<F>(&self, future: F) -> bool
+    pub fn get_json(&self, url: &str) -> Result<Value, String> {
+        self.block_on(async {
+            let response = self
+                .client
+                .get(url)
+                .send()
+                .await
+                .map_err(|error| format!("Failed to query {}: {}", url, error))?;
+
+            if !response.status().is_success() {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                return Err(format!(
+                    "HTTP query failed for {} (status={}): {}",
+                    url,
+                    status,
+                    body.trim()
+                ));
+            }
+
+            response
+                .json::<Value>()
+                .await
+                .map_err(|error| format!("Failed to parse JSON from {}: {}", url, error))
+        })
+    }
+
+    fn block_on<F, T>(&self, future: F) -> T
     where
-        F: Future<Output = bool>,
+        F: Future<Output = T>,
     {
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             // Health checks are called from both sync code and Tokio-driven command handlers.
@@ -57,8 +85,8 @@ impl HttpHealthClient {
             tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .map(|runtime| runtime.block_on(future))
-                .unwrap_or(false)
+                .expect("Failed to create Tokio runtime for HTTP process client")
+                .block_on(future)
         }
     }
 }

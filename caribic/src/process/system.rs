@@ -1,9 +1,17 @@
 use crate::process::runner;
-use std::process::Command;
+use std::ffi::OsStr;
+use std::path::Path;
+use std::process::{Command, Output};
 
 pub struct SystemChecks;
 
 impl SystemChecks {
+    pub fn output<S: AsRef<OsStr>>(command: S, args: &[&str]) -> Result<Output, String> {
+        let mut process = Command::new(command);
+        process.args(args);
+        runner::run_output(&mut process)
+    }
+
     pub fn is_process_alive(pid: u32) -> bool {
         Command::new("kill")
             .args(["-0", &pid.to_string()])
@@ -47,5 +55,30 @@ impl SystemChecks {
             .status()
             .map(|status| status.success())
             .unwrap_or(false)
+    }
+
+    pub fn shell_succeeds(command: &str) -> bool {
+        Self::output("sh", &["-lc", command])
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    }
+
+    pub fn filesystem_df_kib(path: &Path) -> Option<(u64, u64)> {
+        let path_str = path.to_str()?;
+        let output = Self::output("df", &["-Pk", path_str]).ok()?;
+        if !output.status.success() {
+            return None;
+        }
+
+        let df_stdout = String::from_utf8_lossy(&output.stdout);
+        let data_line = df_stdout.lines().nth(1)?.trim();
+        let columns: Vec<&str> = data_line.split_whitespace().collect();
+        if columns.len() < 4 {
+            return None;
+        }
+
+        let total_kib = columns.get(1)?.parse::<u64>().ok()?;
+        let free_kib = columns.get(3)?.parse::<u64>().ok()?;
+        Some((total_kib, free_kib))
     }
 }

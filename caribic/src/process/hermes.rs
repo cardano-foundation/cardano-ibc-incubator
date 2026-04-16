@@ -46,7 +46,7 @@ impl HermesCli {
         )
     }
 
-    fn command(&self, current_dir: Option<&Path>, args: &[&str]) -> Command {
+    pub(crate) fn command(&self, current_dir: Option<&Path>, args: &[&str]) -> Command {
         let mut command = Command::new(&self.binary);
         if let Some(current_dir) = current_dir {
             command.current_dir(current_dir);

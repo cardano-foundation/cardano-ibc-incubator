@@ -110,10 +110,8 @@ fn get_docker_env_vars() -> Vec<(&'static str, String)> {
 }
 
 fn managed_cardano_network_running(cardano_dir: &Path) -> bool {
-    Command::new("docker")
-        .current_dir(cardano_dir)
-        .args(["compose", "ps", "-q"])
-        .output()
+    DockerCli::new(cardano_dir)
+        .compose_output(["ps", "-q"].as_slice())
         .ok()
         .map(|output| !String::from_utf8_lossy(&output.stdout).trim().is_empty())
         .unwrap_or(false)
@@ -1602,18 +1600,9 @@ fn ensure_local_spo_services_running(
         return Ok(());
     }
 
-    let output = Command::new("docker")
-        .current_dir(cardano_dir)
-        .args(["compose", "ps", "--services", "--status", "running"])
-        .output()
+    let output = DockerCli::new(cardano_dir)
+        .compose_output(["ps", "--services", "--status", "running"].as_slice())
         .map_err(|error| format!("Failed to inspect local SPO service status: {}", error))?;
-    if !output.status.success() {
-        return Err(format!(
-            "Failed to inspect local SPO service status: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
-    }
 
     let running_services: std::collections::HashSet<String> =
         String::from_utf8_lossy(&output.stdout)
@@ -4000,12 +3989,8 @@ fn check_hermes_daemon_service() -> (bool, String) {
 }
 
 fn find_running_hermes_daemon(expected_binary_path: Option<&str>) -> bool {
-    let ps_output = Command::new("ps")
-        .args(["-ax", "-o", "pid=,command="])
-        .output();
-
-    match ps_output {
-        Ok(output) => String::from_utf8_lossy(&output.stdout)
+    match SystemChecks::find_processes_by_command() {
+        Ok(output) => output
             .lines()
             .filter_map(parse_pid_and_command)
             .any(|(_, command)| is_hermes_daemon_command(command.as_str(), expected_binary_path)),

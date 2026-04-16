@@ -1,5 +1,6 @@
 use crate::config;
 use crate::logger::{log, log_or_show_progress, verbose};
+use crate::process::{cardano::CardanoCli, docker::DockerCli};
 use crate::utils::{
     change_dir_permissions_read_only, delete_file, download_file, replace_text_in_file, unzip_file,
     IndicatorMessage,
@@ -13,7 +14,7 @@ use std::collections::HashMap;
 use std::process::Output;
 use std::thread;
 use std::time::Duration;
-use std::{fs, path::Path, process::Command};
+use std::{fs, path::Path};
 
 const CARDANO_RUNTIME_NETWORK_MARKER: &str = ".caribic-network";
 const LOCAL_CARDANO_NODE_IMAGE: &str = "ghcr.io/blinklabs-io/cardano-node:10.1.4-3";
@@ -91,10 +92,7 @@ pub fn copy_cardano_env_file(cardano_dir: &Path) -> Result<(), Box<dyn std::erro
     let source = cardano_dir.join(".env.example");
     let destination = cardano_dir.join(".env");
 
-    Command::new("cp")
-        .arg(source)
-        .arg(destination)
-        .status()
+    fs::copy(&source, &destination)
         .map_err(|error| format!("Failed to copy template Cardano .env file: {}", error))?;
     Ok(())
 }
@@ -410,9 +408,8 @@ fn write_yaci_local_genesis_files(
 }
 
 fn remove_local_yaci_postgres_volume() -> Result<(), Box<dyn std::error::Error>> {
-    let output = Command::new("docker")
-        .args(["volume", "rm", "-f", "cardano_yaci_store_postgres_data"])
-        .output()
+    let output = DockerCli::new(Path::new("."))
+        .raw_output(["volume", "rm", "-f", "cardano_yaci_store_postgres_data"].as_slice())
         .map_err(|error| format!("Failed to remove local Yaci postgres volume: {}", error))?;
 
     if output.status.success() {
@@ -517,27 +514,33 @@ fn generate_additional_local_spo_data(
     let pools_arg = additional_spo_count.to_string();
     let delegated_supply_arg = delegated_supply.to_string();
 
-    let output = Command::new("docker")
-        .args(["run", "--rm", "-v"])
-        .arg(mount_arg)
-        .arg(LOCAL_CARDANO_NODE_IMAGE)
-        .args([
-            "cli",
-            "latest",
-            "genesis",
-            "create-testnet-data",
-            "--out-dir",
-            "/out",
-            "--pools",
-        ])
-        .arg(pools_arg.as_str())
-        .args(["--stake-delegators"])
-        .arg(pools_arg.as_str())
-        .args(["--testnet-magic", "42", "--total-supply"])
-        .arg(delegated_supply_arg.as_str())
-        .args(["--delegated-supply"])
-        .arg(delegated_supply_arg.as_str())
-        .output()
+    let output = DockerCli::new(Path::new("."))
+        .raw_output(
+            [
+                "run",
+                "--rm",
+                "-v",
+                mount_arg.as_str(),
+                LOCAL_CARDANO_NODE_IMAGE,
+                "cli",
+                "latest",
+                "genesis",
+                "create-testnet-data",
+                "--out-dir",
+                "/out",
+                "--pools",
+                pools_arg.as_str(),
+                "--stake-delegators",
+                pools_arg.as_str(),
+                "--testnet-magic",
+                "42",
+                "--total-supply",
+                delegated_supply_arg.as_str(),
+                "--delegated-supply",
+                delegated_supply_arg.as_str(),
+            ]
+            .as_slice(),
+        )
         .map_err(|error| format!("Failed to generate additional local SPO data: {}", error))?;
 
     if !output.status.success() {
@@ -925,6 +928,7 @@ pub fn seed_cardano_devnet(
 ) -> Result<(), Box<dyn std::error::Error>> {
     log_or_show_progress("Seeding Cardano Devnet", optional_progress_bar);
     let bootstrap_addresses = config::get_config().cardano.bootstrap_addresses;
+    let cardano_cli = CardanoCli::for_chain_dir_and_magic(cardano_dir, "42");
 
     for bootstrap_address in bootstrap_addresses {
         log_or_show_progress(
@@ -935,7 +939,6 @@ pub fn seed_cardano_devnet(
             ),
             optional_progress_bar,
         );
-        let cardano_cli_args = vec!["compose", "exec", "cardano-node", "cardano-cli"];
         let build_address_args = vec![
             "address",
             "build",
@@ -944,11 +947,8 @@ pub fn seed_cardano_devnet(
             "--testnet-magic",
             "42",
         ];
-        let address_output = Command::new("docker")
-            .current_dir(cardano_dir)
-            .args(&cardano_cli_args)
-            .args(build_address_args)
-            .output()
+        let address_output = cardano_cli
+            .exec_output(build_address_args.as_slice())
             .map_err(|error| format!("Failed to build faucet address: {}", error))?;
         if !address_output.status.success() {
             return Err(format!(
@@ -974,11 +974,8 @@ pub fn seed_cardano_devnet(
         let mut faucet_txin_output: Option<Output> = None;
         for i in 1..5 {
             faucet_txin_output = Some(
-                Command::new("docker")
-                    .current_dir(cardano_dir)
-                    .args(&cardano_cli_args)
-                    .args(&faucet_txin_args)
-                    .output()
+                cardano_cli
+                    .exec_output(faucet_txin_args.as_slice())
                     .map_err(|error| format!("Failed to get faucet txin: {}", error))?,
             );
 
@@ -1028,11 +1025,8 @@ pub fn seed_cardano_devnet(
                         "42",
                     ];
 
-                    let build_tx_output = Command::new("docker")
-                        .current_dir(cardano_dir)
-                        .args(&cardano_cli_args)
-                        .args(build_tx_args)
-                        .output()
+                    let build_tx_output = cardano_cli
+                        .exec_output(build_tx_args.as_slice())
                         .map_err(|error| format!("Failed to build seed transaction: {}", error))?;
                     if !build_tx_output.status.success() {
                         return Err(format!(
@@ -1057,11 +1051,8 @@ pub fn seed_cardano_devnet(
                         "42",
                     ];
 
-                    let sign_tx_output = Command::new("docker")
-                        .current_dir(cardano_dir)
-                        .args(&cardano_cli_args)
-                        .args(sign_tx_args)
-                        .output()
+                    let sign_tx_output = cardano_cli
+                        .exec_output(sign_tx_args.as_slice())
                         .map_err(|error| format!("Failed to sign seed transaction: {}", error))?;
                     if !sign_tx_output.status.success() {
                         return Err(format!(
@@ -1072,11 +1063,11 @@ pub fn seed_cardano_devnet(
                         .into());
                     }
 
-                    let tx_id_output = Command::new("docker")
-                        .current_dir(cardano_dir)
-                        .args(&cardano_cli_args)
-                        .args(["conway", "transaction", "txid", "--tx-file", signed_tx_file])
-                        .output()
+                    let tx_id_output = cardano_cli
+                        .exec_output(
+                            ["conway", "transaction", "txid", "--tx-file", signed_tx_file]
+                                .as_slice(),
+                        )
                         .map_err(|error| format!("Failed to compute seed tx id: {}", error))?;
                     if !tx_id_output.status.success() {
                         return Err(format!(
@@ -1125,14 +1116,10 @@ pub fn seed_cardano_devnet(
                     let mut is_on_chain = false;
                     let mut last_submit_error: Option<String> = None;
                     for submit_attempt in 1..=6 {
-                        let submit_tx_output = Command::new("docker")
-                            .current_dir(cardano_dir)
-                            .args(&cardano_cli_args)
-                            .args(&submit_tx_args)
-                            .output()
-                            .map_err(|error| {
-                                format!("Failed to submit seed transaction: {}", error)
-                            })?;
+                        let submit_tx_output =
+                            cardano_cli.exec_output(submit_tx_args.as_slice()).map_err(
+                                |error| format!("Failed to submit seed transaction: {}", error),
+                            )?;
 
                         if !submit_tx_output.status.success() {
                             let stderr = String::from_utf8_lossy(&submit_tx_output.stderr)
@@ -1148,14 +1135,11 @@ pub fn seed_cardano_devnet(
                         }
 
                         for poll_attempt in 1..=4 {
-                            let utxo_output = Command::new("docker")
-                                .current_dir(cardano_dir)
-                                .args(&cardano_cli_args)
-                                .args(&query_utxo_args)
-                                .output()
+                            let utxo_output = cardano_cli
+                                .exec_output(query_utxo_args.as_slice())
                                 .map_err(|error| {
-                                    format!("Failed to query settlement UTxO: {}", error)
-                                })?;
+                                format!("Failed to query settlement UTxO: {}", error)
+                            })?;
 
                             if utxo_output.status.success() {
                                 let utxo_str =
@@ -1243,11 +1227,9 @@ fn get_genesis_hash(era: String, cardano_dir: &Path) -> Result<String, Box<dyn s
         ]
     };
 
-    let genesis_hash = Command::new("docker")
-        .current_dir(cardano_dir)
-        .args(["compose", "exec", "cardano-node", "cardano-cli"])
-        .args(cli_args)
-        .output()
+    let cardano_cli = CardanoCli::for_chain_dir_and_magic(cardano_dir, "42");
+    let genesis_hash = cardano_cli
+        .exec_output(cli_args.as_slice())
         .map_err(|error| format!("Failed to get genesis hash: {}", error))?
         .stdout;
 
@@ -1260,16 +1242,19 @@ fn query_epoch_nonce(
     cardano_dir: &Path,
     network_magic: u64,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let epoch_nonce = Command::new("docker")
-        .current_dir(cardano_dir)
-        .args(["compose", "exec", "cardano-node", "cardano-cli"])
-        .args([
-            "query",
-            "protocol-state",
-            "--testnet-magic",
-            &network_magic.to_string(),
-        ])
-        .output()
+    let network_magic_string = network_magic.to_string();
+    let cardano_cli =
+        CardanoCli::for_chain_dir_and_magic(cardano_dir, network_magic_string.as_str());
+    let epoch_nonce = cardano_cli
+        .exec_output(
+            [
+                "query",
+                "protocol-state",
+                "--testnet-magic",
+                network_magic_string.as_str(),
+            ]
+            .as_slice(),
+        )
         .map_err(|error| format!("Failed to get epoch nonce: {}", error))?
         .stdout;
 
@@ -1570,22 +1555,15 @@ fn ensure_gateway_databases(cardano_dir: &Path) -> Result<(), Box<dyn std::error
                              username: &str,
                              label: &str|
      -> Result<(), Box<dyn std::error::Error>> {
+        let docker = DockerCli::new(cardano_dir);
         let mut ready = false;
         for attempt in 1..=30 {
-            let health_check = Command::new("docker")
-                .current_dir(cardano_dir)
-                .args([
-                    "compose",
-                    "exec",
-                    "-T",
-                    service_name,
-                    "pg_isready",
-                    "-U",
-                    username,
-                ])
-                .output();
+            let health_check = docker.compose_exec_no_tty_output(
+                service_name,
+                ["pg_isready", "-U", username].as_slice(),
+            );
 
-            if health_check.is_ok() && health_check.unwrap().status.success() {
+            if health_check.is_ok() {
                 ready = true;
                 break;
             }
@@ -1621,25 +1599,24 @@ fn ensure_gateway_databases(cardano_dir: &Path) -> Result<(), Box<dyn std::error
                                   database_name: &str,
                                   label: &str|
      -> Result<(), Box<dyn std::error::Error>> {
-        let db_check = Command::new("docker")
-            .current_dir(cardano_dir)
-            .args([
-                "compose",
-                "exec",
-                "-T",
-                service_name,
+        let docker = DockerCli::new(cardano_dir);
+        let db_exists_query = format!(
+            "SELECT 1 FROM pg_database WHERE datname = '{}'",
+            database_name
+        );
+        let db_check = docker.compose_exec_no_tty_output(
+            service_name,
+            [
                 "psql",
                 "-U",
                 database_user,
                 "-d",
                 admin_database,
                 "-tc",
-                &format!(
-                    "SELECT 1 FROM pg_database WHERE datname = '{}'",
-                    database_name
-                ),
-            ])
-            .output();
+                db_exists_query.as_str(),
+            ]
+            .as_slice(),
+        );
 
         let db_exists = db_check
             .ok()
@@ -1653,22 +1630,21 @@ fn ensure_gateway_databases(cardano_dir: &Path) -> Result<(), Box<dyn std::error
         }
 
         log(&format!("Creating {database_name} database..."));
-        let create_result = Command::new("docker")
-            .current_dir(cardano_dir)
-            .args([
-                "compose",
-                "exec",
-                "-T",
+        let create_database_query = format!("CREATE DATABASE {}", database_name);
+        let create_result = docker
+            .compose_exec_no_tty_output(
                 service_name,
-                "psql",
-                "-U",
-                database_user,
-                "-d",
-                admin_database,
-                "-c",
-                &format!("CREATE DATABASE {}", database_name),
-            ])
-            .output()
+                [
+                    "psql",
+                    "-U",
+                    database_user,
+                    "-d",
+                    admin_database,
+                    "-c",
+                    create_database_query.as_str(),
+                ]
+                .as_slice(),
+            )
             .map_err(|error| format!("Failed to create {} database: {}", database_name, error))?;
 
         if !create_result.status.success() {
@@ -1746,12 +1722,10 @@ pub fn prepare_db_sync_and_gateway(
         )?;
 
         let epoch_nonce = query_epoch_nonce(cardano_dir, 42)?;
+        let cardano_cli = CardanoCli::for_chain_dir_and_magic(cardano_dir, "42");
 
-        let pool_params = Command::new("docker")
-            .current_dir(cardano_dir)
-            .args(["compose", "exec", "cardano-node", "cardano-cli"])
-            .args(["query", "ledger-state", "--testnet-magic", "42"])
-            .output()
+        let pool_params = cardano_cli
+            .exec_output(["query", "ledger-state", "--testnet-magic", "42"].as_slice())
             .map_err(|error| format!("Failed to get pool params: {}", error))?
             .stdout;
 
