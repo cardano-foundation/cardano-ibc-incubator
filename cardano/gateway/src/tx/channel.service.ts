@@ -1013,7 +1013,10 @@ export class ChannelService {
         channel_id: `${CHANNEL_ID_PREFIX}-${channelOpenAckOperator.channelSequence}`,
       },
       connection_hops: [convertHex2String(connectionDatum.state.counterparty.connection_id)],
-      version: convertHex2String(channelDatum.state.channel.version),
+      // The proof is over the counterparty chain's TryOpen channel end, so the
+      // committed version is the counterparty_version supplied in MsgChannelOpenAck,
+      // not our local channel version.
+      version: channelOpenAckOperator.counterpartyVersion,
     };
 
     const verifyProofRedeemer: VerifyProofRedeemer = {

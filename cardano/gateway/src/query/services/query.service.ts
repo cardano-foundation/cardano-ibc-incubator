@@ -423,6 +423,11 @@ export class QueryService {
     const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
     const hostStateRootBytes = Buffer.from(hostStateDatum.state.ibc_state_root, 'hex');
     const stabilitySlotTiming = this.getStabilitySlotTiming();
+    const currentEpochContext = this.toStabilityEpochContext(
+      Number(stabilityEvidence.anchorEpoch),
+      stabilityEvidence.epochStakeDistribution,
+      stabilityEvidence.epochVerificationContext,
+    );
 
     const clientStateStability: ClientStateStability = {
       chain_id: this.configService.get('cardanoChainId'),
@@ -443,22 +448,17 @@ export class QueryService {
       upgrade_path: [],
       host_state_nft_policy_id: Buffer.from(this.configService.get('deployment').hostStateNFT.policyId, 'hex'),
       host_state_nft_token_name: Buffer.from(this.configService.get('deployment').hostStateNFT.name, 'hex'),
-      // epoch_contexts is the canonical source of epoch verification data. Keep the
-      // legacy single-epoch mirrors empty in newly created client payloads.
-      epoch_stake_distribution: [],
-      epoch_nonce: new Uint8Array(),
-      slots_per_kes_period: 0n,
-      current_epoch_start_slot: 0n,
-      current_epoch_end_slot_exclusive: 0n,
+      // epoch_contexts is the canonical verification source, but initial client
+      // creation still needs the legacy mirrors populated so existing relayer
+      // decoders can validate the payload before the client is stored on-chain.
+      epoch_stake_distribution: currentEpochContext.stake_distribution,
+      epoch_nonce: currentEpochContext.epoch_nonce,
+      slots_per_kes_period: currentEpochContext.slots_per_kes_period,
+      current_epoch_start_slot: currentEpochContext.epoch_start_slot,
+      current_epoch_end_slot_exclusive: currentEpochContext.epoch_end_slot_exclusive,
       system_start_unix_ns: stabilitySlotTiming.systemStartUnixNs,
       slot_length_ns: stabilitySlotTiming.slotLengthNs,
-      epoch_contexts: [
-        this.toStabilityEpochContext(
-          Number(stabilityEvidence.anchorEpoch),
-          stabilityEvidence.epochStakeDistribution,
-          stabilityEvidence.epochVerificationContext,
-        ),
-      ],
+      epoch_contexts: [currentEpochContext],
     };
 
     const consensusStateStability: ConsensusStateStability = {
@@ -505,16 +505,30 @@ export class QueryService {
       lucidService: this.lucidService,
       historyService: this.historyService,
     });
+    try {
+      const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(liveHostStateTxHeight);
+      const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
+        historyService: this.historyService,
+        height: BigInt(hostStateUtxo.blockNo),
+        logger: this.logger,
+        missingAnchorBlockMessage: `Cardano history block for HostState tx ${hostStateUtxo.txHash} unavailable for stability latest height`,
+      });
 
-    const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(liveHostStateTxHeight);
-    const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
-      historyService: this.historyService,
-      height: BigInt(hostStateUtxo.blockNo),
-      logger: this.logger,
-      missingAnchorBlockMessage: `Cardano history block for HostState tx ${hostStateUtxo.txHash} unavailable for stability latest height`,
-    });
+      return { height: stabilityEvidence.anchorHeight } as QueryLatestHeightResponse;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const canReuseLiveHostStateHeight =
+        message.includes('Target point is too old') || message.includes('Failed to acquire requested point');
 
-    return { height: stabilityEvidence.anchorHeight } as QueryLatestHeightResponse;
+      if (!canReuseLiveHostStateHeight) {
+        throw error;
+      }
+
+      this.logger.warn(
+        `[latestStabilityHeight] Unable to reacquire epoch context for live HostState height ${liveHostStateTxHeight.toString()}; reusing that height until a newer HostState tx is available`,
+      );
+      return { height: liveHostStateTxHeight } as QueryLatestHeightResponse;
+    }
   }
 
   private async getHandlerDatum(): Promise<HandlerDatum> {
@@ -1536,11 +1550,12 @@ export class QueryService {
     if (!trustedHeight) {
       throw new GrpcInvalidArgumentException('Invalid argument: "trusted_height" must be provided');
     }
+    const effectiveTrustedHeight = this.normalizeStabilityTrustedHeight(BigInt(trustedHeight), BigInt(height));
 
     const stabilityEvidence = await loadStakeWeightedStabilityHeaderEvidence({
       historyService: this.historyService,
       height: BigInt(height),
-      trustedHeight: BigInt(trustedHeight),
+      trustedHeight: effectiveTrustedHeight,
       logger: this.logger,
     });
 
@@ -1642,6 +1657,29 @@ export class QueryService {
     return (
       this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
       'stake-weighted-stability'
+    );
+  }
+
+  private normalizeStabilityTrustedHeight(trustedHeight: bigint, anchorHeight: bigint): bigint {
+    if (trustedHeight < anchorHeight) {
+      return trustedHeight;
+    }
+
+    if (trustedHeight === anchorHeight) {
+      const decrementedTrustedHeight = anchorHeight - 1n;
+      if (decrementedTrustedHeight <= 0n) {
+        throw new GrpcInvalidArgumentException(
+          `Invalid stability header request: trusted height ${trustedHeight.toString()} cannot be normalized for anchor height ${anchorHeight.toString()}`,
+        );
+      }
+      this.logger.warn(
+        `Normalizing stability header request from equal trusted/anchor heights trusted_height=${trustedHeight.toString()} anchor_height=${anchorHeight.toString()} to trusted_height=${decrementedTrustedHeight.toString()}`,
+      );
+      return decrementedTrustedHeight;
+    }
+
+    throw new GrpcInvalidArgumentException(
+      `Invalid stability header request: trusted height ${trustedHeight.toString()} must be less than or equal to anchor height ${anchorHeight.toString()}`,
     );
   }
 

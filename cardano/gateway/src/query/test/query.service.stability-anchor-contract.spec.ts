@@ -1,5 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { ClientState as ClientStateStability } from '@plus/proto-types/build/ibc/lightclients/stability/v1/stability';
+import { StabilityHeader } from '@plus/proto-types/build/ibc/lightclients/stability/v1/stability';
 import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
@@ -10,6 +12,24 @@ import { HistoryService } from '../services/history.service';
 
 describe('QueryService stability anchor contract', () => {
   let service: QueryService;
+  let loggerMock: {
+    log: jest.Mock;
+    warn: jest.Mock;
+    error: jest.Mock;
+    debug: jest.Mock;
+  };
+  let lucidServiceMock: {
+    decodeDatum: jest.Mock;
+    findUtxoAtHostStateNFT: jest.Mock;
+    LucidImporter: {
+      SLOT_CONFIG_NETWORK: {
+        Preview: {
+          zeroTime: number;
+          slotLength: number;
+        };
+      };
+    };
+  };
   let historyServiceMock: {
     findLatestBlock: jest.Mock;
     findBlockByHeight: jest.Mock;
@@ -19,18 +39,21 @@ describe('QueryService stability anchor contract', () => {
     findHostStateUtxoAtOrBeforeBlockNo: jest.Mock;
     findTransactionEvidenceByHash: jest.Mock;
   };
+  let miniProtocalsServiceMock: {
+    fetchBlocksCbor: jest.Mock;
+  };
 
   beforeEach(() => {
     process.env.CARDANO_STABILITY_THRESHOLD_DEPTH = '3';
     process.env.CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS = '3';
     process.env.CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS = '6000';
 
-    const loggerMock = {
+    loggerMock = {
       log: jest.fn(),
       warn: jest.fn(),
       error: jest.fn(),
       debug: jest.fn(),
-    } as unknown as Logger;
+    };
 
     const configServiceMock = {
       get: jest.fn().mockImplementation((key: string) => {
@@ -178,25 +201,29 @@ describe('QueryService stability anchor contract', () => {
       }),
     };
 
-    service = new QueryService(
-      loggerMock,
-      configServiceMock,
-      {
-        decodeDatum: jest.fn(),
-        LucidImporter: {
-          SLOT_CONFIG_NETWORK: {
-            Preview: {
-              zeroTime: 1_700_000_000_000,
-              slotLength: 1_000,
-            },
+    lucidServiceMock = {
+      decodeDatum: jest.fn(),
+      findUtxoAtHostStateNFT: jest.fn(),
+      LucidImporter: {
+        SLOT_CONFIG_NETWORK: {
+          Preview: {
+            zeroTime: 1_700_000_000_000,
+            slotLength: 1_000,
           },
         },
-      } as unknown as LucidService,
+      },
+    };
+    miniProtocalsServiceMock = {
+      fetchBlocksCbor: jest.fn(),
+    };
+
+    service = new QueryService(
+      loggerMock as unknown as Logger,
+      configServiceMock,
+      lucidServiceMock as unknown as LucidService,
       {} as KupoService,
       historyServiceMock as unknown as HistoryService,
-      {
-        fetchBlocksCbor: jest.fn(),
-      } as unknown as MiniProtocalsService,
+      miniProtocalsServiceMock as unknown as MiniProtocalsService,
       {} as MithrilService,
       {} as DenomTraceService,
     );
@@ -211,6 +238,115 @@ describe('QueryService stability anchor contract', () => {
   it('rejects stability new-client creation when requested anchor height is not a HostState tx block', async () => {
     await expect(service.queryNewClient({ height: 100n } as any)).rejects.toThrow(
       'requested stability anchor height 100 is not a HostState tx block height',
+    );
+  });
+
+  it('populates legacy epoch mirrors in the initial stability client payload', async () => {
+    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
+      txHash: 'host-state-tx',
+      txId: 1,
+      outputIndex: 0,
+      address: 'addr_test1...',
+      assetsPolicy: 'a'.repeat(56),
+      assetsName: 'b'.repeat(64),
+      datumHash: 'cd'.repeat(32),
+      datum: 'datum-cbor',
+      blockNo: 100,
+      blockId: 100,
+      index: 0,
+    });
+    lucidServiceMock.decodeDatum.mockResolvedValue({
+      state: {
+        ibc_state_root: 'ab'.repeat(32),
+      },
+    });
+
+    const response = await service.queryNewClient({ height: 100n } as any);
+    const clientState = ClientStateStability.decode(response.client_state!.value);
+
+    expect(clientState.epoch_contexts).toHaveLength(1);
+    expect(clientState.epoch_nonce).toHaveLength(32);
+    expect(clientState.epoch_nonce).toEqual(clientState.epoch_contexts[0].epoch_nonce);
+    expect(clientState.epoch_stake_distribution).toEqual(clientState.epoch_contexts[0].stake_distribution);
+    expect(clientState.slots_per_kes_period).toBe(129600n);
+    expect(clientState.current_epoch_start_slot).toBe(900n);
+    expect(clientState.current_epoch_end_slot_exclusive).toBe(2000n);
+  });
+
+  it('normalizes equal trusted and anchor heights to the previous trusted block for stability headers', async () => {
+    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
+      txHash: 'host-state-tx',
+      txId: 1,
+      outputIndex: 0,
+      address: 'addr_test1...',
+      assetsPolicy: 'a'.repeat(56),
+      assetsName: 'b'.repeat(64),
+      datumHash: 'cd'.repeat(32),
+      datum: 'datum-cbor',
+      blockNo: 100,
+      blockId: 100,
+      index: 0,
+    });
+    historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
+    miniProtocalsServiceMock.fetchBlocksCbor.mockResolvedValue([
+      Buffer.from('01', 'hex'),
+      Buffer.from('02', 'hex'),
+      Buffer.from('03', 'hex'),
+      Buffer.from('04', 'hex'),
+      Buffer.from('05', 'hex'),
+      Buffer.from('06', 'hex'),
+    ]);
+
+    const response = await service.queryIBCHeader({ height: 100n, trusted_height: 100n } as any);
+    const header = StabilityHeader.decode(response.header!.value);
+
+    expect(header.trusted_height?.revision_height).toBe(99n);
+    expect(header.anchor_block?.height?.revision_height).toBe(100n);
+  });
+
+  it('reuses the live HostState tx height when the current epoch context point is too old', async () => {
+    lucidServiceMock.findUtxoAtHostStateNFT.mockResolvedValue({
+      txHash: 'live-host-state-tx',
+      outputIndex: 0,
+    });
+    historyServiceMock.findTransactionEvidenceByHash.mockResolvedValue({
+      txHash: 'live-host-state-tx',
+      blockNo: 1136,
+      txIndex: 0,
+      txCborHex: '',
+      txBodyCborHex: '',
+      redeemers: [],
+    });
+    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
+      txHash: 'live-host-state-tx',
+      txId: 1,
+      outputIndex: 0,
+      address: 'addr_test1...',
+      assetsPolicy: 'a'.repeat(56),
+      assetsName: 'b'.repeat(64),
+      datumHash: 'cd'.repeat(32),
+      datum: 'datum-cbor',
+      blockNo: 1136,
+      blockId: 1136,
+      index: 0,
+    });
+    historyServiceMock.findBlockByHeight.mockResolvedValue({
+      height: 1136,
+      hash: 'hash-1136',
+      prevHash: 'hash-1135',
+      slotNo: 4452n,
+      epochNo: 0,
+      timestampUnixNs: 4_452_000_000n,
+      slotLeader: 'pool-a',
+    });
+    historyServiceMock.findDescendantBlocks.mockResolvedValue([]);
+    historyServiceMock.findEpochContextAtBlock.mockRejectedValue(
+      new Error('Failed to acquire requested point. Target point is too old.'),
+    );
+
+    await expect(service.latestStabilityHeight()).resolves.toEqual({ height: 1136n });
+    expect(loggerMock.warn).toHaveBeenCalledWith(
+      expect.stringContaining('reusing that height until a newer HostState tx is available'),
     );
   });
 

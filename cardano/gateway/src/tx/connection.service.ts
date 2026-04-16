@@ -1014,15 +1014,6 @@ export class ConnectionService {
       { label: 'hostStateUtxo', utxo: hostStateUtxo, validator: 'host_state_stt' },
       { label: 'connectionUtxo', utxo: connectionUtxo, validator: 'spend_connection' },
     ]);
-    const spendConnectionRedeemer: SpendConnectionRedeemer = {
-      ConnOpenAck: {
-        counterparty_client_state: connectionOpenAckOperator.counterpartyClientState,
-        proof_try: connectionOpenAckOperator.proofTry,
-        proof_client: connectionOpenAckOperator.proofClient,
-        proof_height: connectionOpenAckOperator.proofHeight,
-      },
-    };
-
     const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
       connectionUtxo.datum!,
       'connection',
@@ -1119,10 +1110,6 @@ export class ConnectionService {
         `Invalid proof height: ${connectionOpenAckOperator.proofHeight.revisionNumber}/${connectionOpenAckOperator.proofHeight.revisionHeight}`,
       );
     }
-    const encodedSpendConnectionRedeemer = await this.lucidService.encode<SpendConnectionRedeemer>(
-      spendConnectionRedeemer,
-      'spendConnectionRedeemer',
-    );
     const encodedUpdatedConnectionDatum: string = await this.lucidService.encode<ConnectionDatum>(
       updatedConnectionDatum,
       'connection',
@@ -1131,9 +1118,6 @@ export class ConnectionService {
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     this.logConnOpenAckDebug(
       `[DEBUG] ConnOpenAck encoded_host_state_redeemer head=${encodedHostStateRedeemer.substring(0, 16)} len=${encodedHostStateRedeemer.length}`,
-    );
-    this.logConnOpenAckDebug(
-      `[DEBUG] ConnOpenAck encoded_spend_connection_redeemer head=${encodedSpendConnectionRedeemer.substring(0, 16)} len=${encodedSpendConnectionRedeemer.length}`,
     );
     this.logConnOpenAckDebug(
       `[DEBUG] ConnOpenAck encoded_updated_host_state_datum head=${encodedUpdatedHostStateDatum.substring(0, 16)} len=${encodedUpdatedHostStateDatum.length}`,
@@ -1207,7 +1191,14 @@ export class ConnectionService {
       );
     }
 
-    const expectedClientValueBytes = Buffer.from(connectionOpenAckOperator.counterpartyClientState, 'hex');
+    const requestClientValueBytes = Buffer.from(connectionOpenAckOperator.counterpartyClientState, 'hex');
+    if (!Buffer.from(proofClientValueHex, 'hex').equals(requestClientValueBytes)) {
+      this.logConnOpenAckWarn(
+        `[DEBUG] ConnOpenAck request client_state Any bytes differ from proof_client Any bytes; canonicalizing to proof value (request_len=${requestClientValueBytes.length}, proof_len=${Buffer.from(proofClientValueHex, 'hex').length})`,
+      );
+    }
+    const canonicalCounterpartyClientStateHex = proofClientValueHex;
+    const expectedClientValueBytes = Buffer.from(canonicalCounterpartyClientStateHex, 'hex');
 
     // Debugging aid: verify that the Tendermint proofs Hermes provided are actually proving
     // the key/value pair we expect for ConnOpenAck (connection state + counterparty client state).
@@ -1308,6 +1299,22 @@ export class ConnectionService {
     );
     this.logConnOpenAckDebug(
       `[DEBUG] ConnOpenAck encoded_verify_proof_redeemer head=${encodedVerifyProofRedeemer.substring(0, 16)} len=${encodedVerifyProofRedeemer.length}`,
+    );
+
+    const spendConnectionRedeemer: SpendConnectionRedeemer = {
+      ConnOpenAck: {
+        counterparty_client_state: canonicalCounterpartyClientStateHex,
+        proof_try: connectionOpenAckOperator.proofTry,
+        proof_client: connectionOpenAckOperator.proofClient,
+        proof_height: connectionOpenAckOperator.proofHeight,
+      },
+    };
+    const encodedSpendConnectionRedeemer = await this.lucidService.encode<SpendConnectionRedeemer>(
+      spendConnectionRedeemer,
+      'spendConnectionRedeemer',
+    );
+    this.logConnOpenAckDebug(
+      `[DEBUG] ConnOpenAck encoded_spend_connection_redeemer head=${encodedSpendConnectionRedeemer.substring(0, 16)} len=${encodedSpendConnectionRedeemer.length}`,
     );
 
     const unsignedConnectionOpenAckParams: UnsignedConnectionOpenAckDto = {

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{demos, DemoType, start::OptionalChainId};
+use crate::{demos, start::OptionalChainId, DemoType};
 
 /// Dispatches demo execution through demo drivers.
 pub async fn run_demo(

@@ -22,9 +22,6 @@ func RegisterInterfaces(registry cdctypes.InterfaceRegistry) {
 		&MsgUpdateConsolidatedDataReport{},
 		&MsgDeleteConsolidatedDataReport{},
 	)
-	registry.RegisterImplementations((*sdk.Msg)(nil),
-		&MsgTransmitReport{},
-	)
 	// this line is used by starport scaffolding # 3
 
 	registry.RegisterImplementations((*sdk.Msg)(nil),

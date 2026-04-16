@@ -27,6 +27,7 @@ describe('CheqdIcqService', () => {
   let queryServiceMock: {
     latestHeight: jest.Mock;
     queryEvents: jest.Mock;
+    queryBlockResults: jest.Mock;
     queryTransactionByHash: jest.Mock;
   };
   let historyServiceMock: {
@@ -50,6 +51,7 @@ describe('CheqdIcqService', () => {
     queryServiceMock = {
       latestHeight: jest.fn().mockResolvedValue({ height: 120n }),
       queryEvents: jest.fn().mockResolvedValue({ current_height: 120n, scanned_to_height: 120n, events: [] }),
+      queryBlockResults: jest.fn().mockResolvedValue({ block_results: { txs_results: [] } }),
       queryTransactionByHash: jest.fn().mockResolvedValue({ hash: 'deadbeef', height: 100n }),
     };
     historyServiceMock = {

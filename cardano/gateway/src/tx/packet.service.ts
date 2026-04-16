@@ -68,6 +68,7 @@ import {
 } from './dto';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import {
+  UnsignedAckPacketModuleDto,
   UnsignedAckPacketMintDto,
   UnsignedAckPacketSucceedDto,
   UnsignedAckPacketUnescrowDto,
@@ -97,6 +98,7 @@ import {
 @Injectable()
 export class PacketService {
   private static readonly RECV_PACKET_DEBUG_LOG = '/tmp/recv-packet-debug.log';
+  private static readonly DEFAULT_ASYNC_ICQ_TIMEOUT_HEIGHT_DELTA = 1000n;
 
   constructor(
     private readonly logger: Logger,
@@ -850,6 +852,34 @@ export class PacketService {
       return error;
     }
     return null;
+  }
+
+  private normalizeAcknowledgementResponse(acknowledgementResponse: unknown): AcknowledgementResponse {
+    const acknowledgementResult = this.extractAcknowledgementResult(acknowledgementResponse);
+    if (acknowledgementResult) {
+      return {
+        AcknowledgementResult: {
+          result: convertString2Hex(acknowledgementResult),
+        },
+      };
+    }
+
+    const acknowledgementError = this.extractAcknowledgementError(acknowledgementResponse);
+    if (acknowledgementError) {
+      return {
+        AcknowledgementError: {
+          err: convertString2Hex(acknowledgementError),
+        },
+      };
+    }
+
+    const acknowledgementResponseKeys =
+      acknowledgementResponse && typeof acknowledgementResponse === 'object'
+        ? Object.keys(acknowledgementResponse as Record<string, unknown>).join(',')
+        : '';
+    throw new GrpcInternalException(
+      `Acknowledgement Response invalid: unknown result (keys=${acknowledgementResponseKeys})`,
+    );
   }
 
   /**
@@ -2361,12 +2391,24 @@ export class PacketService {
       parseClientSequence(convertHex2String(connectionDatum.state.client_id)),
     );
     const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
     const moduleConfig = getGatewayModuleConfigForPortId(this.configService.get('deployment'), sendPacketOperator.sourcePort);
     if (moduleConfig.key === 'transfer') {
       throw new GrpcInvalidArgumentException('async-icq send must not use the transfer module');
     }
     const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);
     const channelId = convertString2Hex(sendPacketOperator.sourceChannel);
+    const resolvedTimeoutHeight =
+      sendPacketOperator.timeoutHeight.revisionNumber === 0n &&
+      sendPacketOperator.timeoutHeight.revisionHeight === 0n &&
+      sendPacketOperator.timeoutTimestamp === 0n
+        ? {
+            revisionNumber: clientDatum.state.clientState.latestHeight.revisionNumber,
+            revisionHeight:
+              clientDatum.state.clientState.latestHeight.revisionHeight +
+              PacketService.DEFAULT_ASYNC_ICQ_TIMEOUT_HEIGHT_DELTA,
+          }
+        : sendPacketOperator.timeoutHeight;
 
     const packet: Packet = {
       sequence: channelDatum.state.next_sequence_send,
@@ -2375,7 +2417,10 @@ export class PacketService {
       destination_port: channelDatum.state.channel.counterparty.port_id,
       destination_channel: channelDatum.state.channel.counterparty.channel_id,
       data: sendPacketOperator.packetData,
-      timeout_height: sendPacketOperator.timeoutHeight,
+      // Async-ICQ callers often omit explicit timeouts. Cardano still needs a
+      // valid IBC packet, so default to a future height on the destination client
+      // rather than constructing an invalid zero/zero timeout packet.
+      timeout_height: resolvedTimeoutHeight,
       timeout_timestamp: sendPacketOperator.timeoutTimestamp,
     };
 
@@ -2468,10 +2513,6 @@ export class PacketService {
       throw new Error('SendPacket to channel not in Open state');
     }
 
-    const fungibleTokenPacketData: FungibleTokenPacketDatum = JSON.parse(
-      convertHex2String(ackPacketOperator.packetData),
-    );
-
     // Get the connection token unit with connection id from channel datum
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
@@ -2507,10 +2548,6 @@ export class PacketService {
       );
     }
 
-    const transferModuleIdentifier = this.getTransferModuleIdentifier();
-    // Get mock module utxo
-
-    const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
     // channel id
     const channelId = convertString2Hex(ackPacketOperator.channelId);
     // Init packet
@@ -2539,20 +2576,10 @@ export class PacketService {
       'spendChannelRedeemer',
     );
 
-    // build transfer module redeemer
-    const fTokenPacketData: FungibleTokenPacketDatum = {
-      denom: convertString2Hex(fungibleTokenPacketData.denom),
-      amount: convertString2Hex(fungibleTokenPacketData.amount),
-      sender: convertString2Hex(fungibleTokenPacketData.sender),
-      receiver: convertString2Hex(fungibleTokenPacketData.receiver),
-      memo: convertString2Hex(fungibleTokenPacketData.memo),
-    };
-
     const acknowledgementResponse: unknown = JSON.parse(convertHex2String(ackPacketOperator.acknowledgement));
-    // Function to create IBCModuleRedeemer object
-    const createIBCModuleRedeemer = (
+    const createTransferModuleRedeemer = (
       channelId: string,
-      fTokenPacketData: any,
+      fTokenPacketData: FungibleTokenPacketDatum,
       acknowledgementResponse: AcknowledgementResponse,
     ) => ({
       Callback: [
@@ -2562,6 +2589,17 @@ export class PacketService {
             data: {
               TransferModuleData: [fTokenPacketData],
             },
+            acknowledgement: { response: acknowledgementResponse },
+          },
+        },
+      ],
+    });
+    const createModuleAckRedeemer = (channelId: string, acknowledgementResponse: AcknowledgementResponse) => ({
+      Callback: [
+        {
+          OnAcknowledgementPacket: {
+            channel_id: channelId,
+            data: 'OtherModuleData',
             acknowledgement: { response: acknowledgementResponse },
           },
         },
@@ -2614,11 +2652,76 @@ export class PacketService {
       verifyProofRedeemer,
       this.lucidService.LucidImporter,
     );
+    if (convertHex2String(packet.source_port) === ASYNC_ICQ_HOST_PORT) {
+      const moduleConfig = getGatewayModuleConfigForPortId(
+        this.configService.get('deployment'),
+        ASYNC_ICQ_HOST_PORT,
+      );
+      const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);
+      const normalizedAcknowledgementResponse = this.normalizeAcknowledgementResponse(acknowledgementResponse);
+      const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
+        createModuleAckRedeemer(channelId, normalizedAcknowledgementResponse),
+        'iBCModuleRedeemer',
+      );
+      const updatedChannelDatum: ChannelDatum = {
+        ...channelDatum,
+        state: {
+          ...channelDatum.state,
+          packet_commitment: deleteKeySortMap(channelDatum.state.packet_commitment, ackPacketOperator.packetSequence),
+        },
+      };
+      const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
+        updatedChannelDatum,
+        'channel',
+      );
+      const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
+        await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
+      const unsignedAckPacketModuleParams: UnsignedAckPacketModuleDto = {
+        hostStateUtxo,
+        channelUtxo,
+        connectionUtxo,
+        clientUtxo,
+        moduleKey: moduleConfig.key,
+        moduleUtxo,
+        encodedHostStateRedeemer,
+        encodedUpdatedHostStateDatum,
+        encodedSpendChannelRedeemer,
+        encodedSpendModuleRedeemer,
+        channelTokenUnit,
+        encodedUpdatedChannelDatum,
+        constructedAddress,
+        ackPacketPolicyId,
+        channelToken,
+        verifyProofPolicyId,
+        encodedVerifyProofRedeemer,
+      };
+      const unsignedTx = this.lucidService.createUnsignedAckPacketModuleTx(unsignedAckPacketModuleParams);
+      return {
+        unsignedTx,
+        pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+        walletSelection: {
+          context: 'acknowledgementPacket',
+        },
+      };
+    }
+
+    const transferModuleIdentifier = this.getTransferModuleIdentifier();
+    const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
+    const fungibleTokenPacketData: FungibleTokenPacketDatum = JSON.parse(
+      convertHex2String(ackPacketOperator.packetData),
+    );
+    const fTokenPacketData: FungibleTokenPacketDatum = {
+      denom: convertString2Hex(fungibleTokenPacketData.denom),
+      amount: convertString2Hex(fungibleTokenPacketData.amount),
+      sender: convertString2Hex(fungibleTokenPacketData.sender),
+      receiver: convertString2Hex(fungibleTokenPacketData.receiver),
+      memo: convertString2Hex(fungibleTokenPacketData.memo),
+    };
     const acknowledgementResult = this.extractAcknowledgementResult(acknowledgementResponse);
     if (acknowledgementResult) {
       // build update channel datum
       const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
-        createIBCModuleRedeemer(channelId, fTokenPacketData, {
+        createTransferModuleRedeemer(channelId, fTokenPacketData, {
           AcknowledgementResult: {
             result: convertString2Hex(acknowledgementResult),
           },
@@ -2678,7 +2781,7 @@ export class PacketService {
       );
     }
     const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
-      createIBCModuleRedeemer(channelId, fTokenPacketData, {
+      createTransferModuleRedeemer(channelId, fTokenPacketData, {
         AcknowledgementError: {
           err: convertString2Hex(acknowledgementError),
         },

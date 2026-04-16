@@ -24,6 +24,16 @@ function isMissingCurrentLiveHostStateEvidence(error: unknown): boolean {
   return message.includes('Historical tx evidence unavailable for current live HostState tx');
 }
 
+function isPriorEpochPointTooOld(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('Target point is too old') || message.includes('Failed to acquire requested point');
+}
+
+function isCurrentRootFromPriorEpoch(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('stake-weighted stability currently supports only current-epoch anchors');
+}
+
 export async function resolveCurrentLiveHostStateTxHeight({
   lucidService,
   historyService,
@@ -143,6 +153,10 @@ async function resolveStabilityAcceptedProofHeightForCurrentRoot({
   delayMs = 1500,
 }: Omit<ProofContextDeps, 'mithrilService' | 'lightClientMode'>): Promise<bigint> {
   const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
+  const liveHostStateTxHeight = await resolveCurrentLiveHostStateTxHeight({
+    lucidService,
+    historyService,
+  });
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
@@ -155,6 +169,13 @@ async function resolveStabilityAcceptedProofHeightForCurrentRoot({
       });
       return stabilityEvidence.anchorHeight;
     } catch (error) {
+      if (isPriorEpochPointTooOld(error) || isCurrentRootFromPriorEpoch(error)) {
+        logger.warn(
+          `[${context}] ${error instanceof Error ? error.message : String(error)}; live HostState root is still current, reusing its tx height ${liveHostStateTxHeight.toString()} for proof serving`,
+        );
+        return liveHostStateTxHeight;
+      }
+
       if (attempt + 1 < maxAttempts && isMissingCurrentLiveHostStateEvidence(error)) {
         logger.warn(`[${context}] ${error.message}; waiting for Yaci history to catch up before serving proofs`);
         await sleep(delayMs);

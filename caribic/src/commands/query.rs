@@ -71,10 +71,7 @@ pub fn run_list_clients(chain: &str) -> Result<(), String> {
             .unwrap_or("<unknown-chain>");
         let details = query_client_details(chain, client_id);
         let suffix = format_client_details_suffix(details.as_ref());
-        logger::log(&format!(
-            "  - {} -> {}{}",
-            client_id, tracked_chain, suffix
-        ));
+        logger::log(&format!("  - {} -> {}{}", client_id, tracked_chain, suffix));
     }
 
     Ok(())
@@ -92,14 +89,7 @@ fn query_client_details(chain: &str, client_id: &str) -> Result<ClientDetails, S
     // CLI output with the two most useful follow-up queries Hermes already exposes:
     // the concrete client state (type/latest height) and the client status.
     let client_state_output = run_hermes_command(&[
-        "--json",
-        "query",
-        "client",
-        "state",
-        "--chain",
-        chain,
-        "--client",
-        client_id,
+        "--json", "query", "client", "state", "--chain", chain, "--client", client_id,
     ])
     .map_err(|error| format!("failed to query client state: {}", error))?;
 
@@ -112,18 +102,12 @@ fn query_client_details(chain: &str, client_id: &str) -> Result<ClientDetails, S
         return Err(detailed_error);
     }
 
-    let client_state = parsed_last_success_result(&String::from_utf8_lossy(&client_state_output.stdout))
-        .ok_or_else(|| "missing client-state query result".to_string())?;
+    let client_state =
+        parsed_last_success_result(&String::from_utf8_lossy(&client_state_output.stdout))
+            .ok_or_else(|| "missing client-state query result".to_string())?;
 
     let client_status_output = run_hermes_command(&[
-        "--json",
-        "query",
-        "client",
-        "status",
-        "--chain",
-        chain,
-        "--client",
-        client_id,
+        "--json", "query", "client", "status", "--chain", chain, "--client", client_id,
     ])
     .map_err(|error| format!("failed to query client status: {}", error))?;
 
@@ -136,8 +120,9 @@ fn query_client_details(chain: &str, client_id: &str) -> Result<ClientDetails, S
         return Err(detailed_error);
     }
 
-    let client_status = parsed_last_success_result(&String::from_utf8_lossy(&client_status_output.stdout))
-        .ok_or_else(|| "missing client-status query result".to_string())?;
+    let client_status =
+        parsed_last_success_result(&String::from_utf8_lossy(&client_status_output.stdout))
+            .ok_or_else(|| "missing client-status query result".to_string())?;
 
     Ok(ClientDetails {
         client_type: client_state
@@ -221,7 +206,10 @@ mod tests {
             }
         });
 
-        assert_eq!(parse_latest_height(&client_state).as_deref(), Some("0-1959"));
+        assert_eq!(
+            parse_latest_height(&client_state).as_deref(),
+            Some("0-1959")
+        );
     }
 
     #[test]

@@ -25,16 +25,17 @@ pub(super) async fn prepare_local(
         }
     }
 
-    if !cheqd_dir.join("configuration/network-config/validator-0/config/genesis.json").exists() {
+    if !cheqd_dir
+        .join("configuration/network-config/validator-0/config/genesis.json")
+        .exists()
+    {
         generate_local_network_config(project_root_path, cheqd_dir)?;
     }
 
     Ok(())
 }
 
-pub(super) async fn start_local(
-    cheqd_dir: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub(super) async fn start_local(cheqd_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
     execute_script(
         cheqd_dir,
         "docker",
@@ -120,10 +121,8 @@ fn generate_local_network_config(
 ) -> Result<(), Box<dyn std::error::Error>> {
     log("Generating local cheqd network configuration ...");
 
-    let validator_mnemonic = config::load_demo_mnemonic(
-        project_root_path,
-        config::LOCAL_VALIDATOR_MNEMONIC_ACCOUNT,
-    )?;
+    let validator_mnemonic =
+        config::load_demo_mnemonic(project_root_path, config::LOCAL_VALIDATOR_MNEMONIC_ACCOUNT)?;
     let relayer_mnemonic =
         config::load_demo_mnemonic(project_root_path, config::LOCAL_RELAYER_MNEMONIC_ACCOUNT)?;
 

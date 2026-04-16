@@ -3,11 +3,11 @@ use std::path::{Path, PathBuf};
 use async_trait::async_trait;
 use dirs::home_dir;
 
-use crate::chains::{
-    check_host_port_health, check_port_health, check_rpc_health,
-    ChainAdapter, ChainFlagSpec, ChainFlags, ChainHealthStatus, ChainNetwork, ChainStartRequest,
-};
 use crate::chains::cosmos_node::CosmosNetworkKind;
+use crate::chains::{
+    check_host_port_health, check_port_health, check_rpc_health, ChainAdapter, ChainFlagSpec,
+    ChainFlags, ChainHealthStatus, ChainNetwork, ChainStartRequest,
+};
 
 mod config;
 mod hermes;
@@ -203,9 +203,9 @@ pub fn demo_chain_id(network: &str) -> Result<&'static str, String> {
     match CosmosNetworkKind::parse(network)? {
         CosmosNetworkKind::Local => Ok(config::LOCAL_CHAIN_ID),
         CosmosNetworkKind::Testnet => Ok(config::TESTNET_CHAIN_ID),
-        CosmosNetworkKind::Mainnet => Err(
-            "Osmosis token-swap demo is not implemented for network 'mainnet'.".to_string(),
-        ),
+        CosmosNetworkKind::Mainnet => {
+            Err("Osmosis token-swap demo is not implemented for network 'mainnet'.".to_string())
+        }
     }
 }
 
@@ -213,9 +213,9 @@ pub fn demo_node_rpc_url(network: &str) -> Result<&'static str, String> {
     match CosmosNetworkKind::parse(network)? {
         CosmosNetworkKind::Local => Ok(config::LOCAL_RPC_URL),
         CosmosNetworkKind::Testnet => Ok(config::TESTNET_RPC_URL),
-        CosmosNetworkKind::Mainnet => Err(
-            "Osmosis token-swap demo is not implemented for network 'mainnet'.".to_string(),
-        ),
+        CosmosNetworkKind::Mainnet => {
+            Err("Osmosis token-swap demo is not implemented for network 'mainnet'.".to_string())
+        }
     }
 }
 

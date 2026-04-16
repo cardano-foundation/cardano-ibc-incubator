@@ -115,9 +115,9 @@ pub fn get_cardano_tip_state(
             network_magic.as_str(),
         ]);
 
-    let output = query_output.output().map_err(|error| {
-        format!("Failed to query tip from cardano-node: {}", error)
-    })?;
+    let output = query_output
+        .output()
+        .map_err(|error| format!("Failed to query tip from cardano-node: {}", error))?;
 
     if output.status.success() {
         verbose(&format!(
@@ -206,10 +206,7 @@ pub fn replace_text_in_file(path: &Path, pattern: &str, replacement: &str) -> io
     Ok(())
 }
 
-pub fn change_dir_permissions_read_only(
-    dir: &Path,
-    exclude_files: &[&str],
-) -> std::io::Result<()> {
+pub fn change_dir_permissions_read_only(dir: &Path, exclude_files: &[&str]) -> std::io::Result<()> {
     if dir.is_dir() {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
@@ -424,16 +421,14 @@ pub fn execute_script(
 
     logger::info(&format!("Script exited with status: {}", status));
     if !status.success() {
-        return Err(io::Error::other(
-            format!(
-                "Command failed (status={}): {} {}\nstdout:\n{}\nstderr:\n{}",
-                status,
-                script_name,
-                script_args_display,
-                output.trim(),
-                stderr_output.trim()
-            ),
-        ));
+        return Err(io::Error::other(format!(
+            "Command failed (status={}): {} {}\nstdout:\n{}\nstderr:\n{}",
+            status,
+            script_name,
+            script_args_display,
+            output.trim(),
+            stderr_output.trim()
+        )));
     }
     Ok(output)
 }

@@ -1,4 +1,5 @@
 export * from './ack-packet-succeed.dto';
+export * from './ack-packet-module.dto';
 export * from './ack-packet-mint.dto';
 export * from './ack-packet-unescrow.dto';
 export * from './recv-packet-mint.dto';

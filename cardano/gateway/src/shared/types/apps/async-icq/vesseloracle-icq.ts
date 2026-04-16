@@ -36,7 +36,7 @@ message QueryGetConsolidatedDataReportResponse {
 }
 `;
 
-const VESSELORACLE_QUERY_PATH = '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport';
+export const VESSELORACLE_QUERY_PATH = '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport';
 const VESSELORACLE_REQUEST_TYPE = 'vesseloracle.vesseloracle.QueryGetConsolidatedDataReportRequest';
 const VESSELORACLE_RESPONSE_TYPE = 'vesseloracle.vesseloracle.QueryGetConsolidatedDataReportResponse';
 
@@ -143,6 +143,10 @@ export function buildVesseloracleConsolidatedDataReportPacketData(payload: {
     packetData: encodeAsyncIcqPacketDataFromRequests([request]),
     queryPath: VESSELORACLE_QUERY_PATH,
   };
+}
+
+export function isSupportedVesseloracleQueryPath(queryPath: string): queryPath is typeof VESSELORACLE_QUERY_PATH {
+  return queryPath === VESSELORACLE_QUERY_PATH;
 }
 
 export function decodeVesseloracleConsolidatedDataReportAcknowledgement(

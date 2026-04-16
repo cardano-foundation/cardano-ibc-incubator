@@ -38,6 +38,7 @@ describe('ApiController (modern)', () => {
   let vesseloracleIcqServiceMock: {
     buildConsolidatedDataReportQuery: jest.Mock;
     decodeConsolidatedDataReportAcknowledgement: jest.Mock;
+    findResult: jest.Mock;
   };
   let transferPlannerServiceMock: {
     planTransferRoute: jest.Mock;
@@ -71,6 +72,7 @@ describe('ApiController (modern)', () => {
     vesseloracleIcqServiceMock = {
       buildConsolidatedDataReportQuery: jest.fn(),
       decodeConsolidatedDataReportAcknowledgement: jest.fn(),
+      findResult: jest.fn(),
     };
     transferPlannerServiceMock = {
       planTransferRoute: jest.fn(),
@@ -278,6 +280,46 @@ describe('ApiController (modern)', () => {
       acknowledgement: {
         status: 'success',
         response: { value: { did_doc: { id: 'did:cheqd:testnet:abc123' } } },
+      },
+    });
+  });
+
+  it('delegates vesseloracle ICQ result polling to VesseloracleIcqService', async () => {
+    vesseloracleIcqServiceMock.findResult.mockResolvedValue({
+      status: 'completed',
+      tx_hash: 'deadbeef',
+      query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
+      packet_data_hex: 'c0ffee',
+      current_height: '120',
+      next_search_from_height: '118',
+      completed_height: '118',
+      packet_sequence: '7',
+      acknowledgement_hex: 'bead',
+      acknowledgement: {
+        status: 'success',
+        response: { consolidatedDataReport: { imo: '9525338', ts: '1713110400' } },
+      },
+    });
+
+    await expect(
+      controller.getVesseloracleIcqResult({
+        tx_hash: 'deadbeef',
+        query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
+        packet_data_hex: 'c0ffee',
+      } as any),
+    ).resolves.toEqual({
+      status: 'completed',
+      tx_hash: 'deadbeef',
+      query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
+      packet_data_hex: 'c0ffee',
+      current_height: '120',
+      next_search_from_height: '118',
+      completed_height: '118',
+      packet_sequence: '7',
+      acknowledgement_hex: 'bead',
+      acknowledgement: {
+        status: 'success',
+        response: { consolidatedDataReport: { imo: '9525338', ts: '1713110400' } },
       },
     });
   });

@@ -62,7 +62,12 @@ impl ChainAdapter for CheqdChainAdapter {
         let stateful = request
             .flags
             .get(config::FLAG_STATEFUL_NAME)
-            .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "y"))
+            .map(|value| {
+                matches!(
+                    value.trim().to_ascii_lowercase().as_str(),
+                    "true" | "1" | "yes" | "y"
+                )
+            })
             .unwrap_or(false);
 
         let cheqd_dir = workspace_dir(project_root_path);
@@ -120,9 +125,17 @@ impl ChainAdapter for CheqdChainAdapter {
             status: format!(
                 "RPC ({}): {}; gRPC ({}): {}",
                 config::LOCAL_RPC_PORT,
-                if rpc_status.healthy { "reachable" } else { "not reachable" },
+                if rpc_status.healthy {
+                    "reachable"
+                } else {
+                    "not reachable"
+                },
                 config::LOCAL_GRPC_PORT,
-                if grpc_status.healthy { "reachable" } else { "not reachable" },
+                if grpc_status.healthy {
+                    "reachable"
+                } else {
+                    "not reachable"
+                },
             ),
         }])
     }

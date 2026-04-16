@@ -84,7 +84,8 @@ fn ensure_local_key_in_hermes_keyring(
         return Ok(());
     }
 
-    let mnemonic = config::load_demo_mnemonic(project_root_path, config::LOCAL_RELAYER_MNEMONIC_ACCOUNT)?;
+    let mnemonic =
+        config::load_demo_mnemonic(project_root_path, config::LOCAL_RELAYER_MNEMONIC_ACCOUNT)?;
     let mnemonic_file = write_temp_mnemonic_file("cheqd-local-relayer", mnemonic)?;
     let mnemonic_arg = mnemonic_file.to_string_lossy().to_string();
     let hermes_binary_str = hermes_binary
@@ -141,7 +142,9 @@ fn resolve_local_hermes_binary(
     hermes_support::resolve_local_hermes_binary(project_root_path, cheqd_dir).ok_or_else(|| {
         format!(
             "Local Hermes binary not found. Expected {}",
-            project_root_path.join("relayer/target/release/hermes").display()
+            project_root_path
+                .join("relayer/target/release/hermes")
+                .display()
         )
         .into()
     })

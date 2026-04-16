@@ -240,14 +240,33 @@ export class YaciHistoryService implements HistoryService {
       return null;
     }
 
-    const epochContext = await queryEpochContextAtPoint(
-      ogmiosEndpoint,
-      {
-        slot: block.slotNo,
-        hash: block.hash,
-      },
-      this.configService.get<string>('cardanoEpochNonceGenesis'),
-    );
+    const queryEpochContext = async (pointBlock: Pick<HistoryBlock, 'slotNo' | 'hash'>) =>
+      queryEpochContextAtPoint(
+        ogmiosEndpoint,
+        {
+          slot: pointBlock.slotNo,
+          hash: pointBlock.hash,
+        },
+        this.configService.get<string>('cardanoEpochNonceGenesis'),
+      );
+
+    let epochContext;
+    try {
+      epochContext = await queryEpochContext(block);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const fallbackBlock = await this.findLatestBlockInEpoch(block.epochNo);
+      const canRetryWithSameEpochPoint =
+        fallbackBlock &&
+        fallbackBlock.height !== block.height &&
+        (message.includes('Target point is too old') || message.includes('Failed to acquire requested point'));
+
+      if (!canRetryWithSameEpochPoint) {
+        throw error;
+      }
+
+      epochContext = await queryEpochContext(fallbackBlock);
+    }
 
     if (epochContext.currentEpoch !== block.epochNo) {
       throw new Error(
@@ -472,6 +491,25 @@ export class YaciHistoryService implements HistoryService {
       currentEpochStartSlot: startSlot,
       currentEpochEndSlotExclusive,
     };
+  }
+
+  private async findLatestBlockInEpoch(epoch: number): Promise<HistoryBlock | null> {
+    const query = `
+      SELECT
+        number,
+        hash,
+        prev_hash,
+        slot,
+        epoch,
+        block_time,
+        slot_leader
+      FROM block
+      WHERE epoch = $1
+      ORDER BY number DESC
+      LIMIT 1
+    `;
+    const rows = await this.entityManager.query(query, [epoch]);
+    return rows[0] ? this.mapHistoryBlockRow(rows[0]) : null;
   }
 
   private parseSlot(row?: EpochStartSlotRow | null): bigint | null {

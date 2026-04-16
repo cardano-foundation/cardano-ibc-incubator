@@ -125,9 +125,8 @@ pub async fn run_start(
             } else {
                 "Configuring"
             };
-            progress_bar.set_prefix(
-                format!("{} {} ...", action, chain_adapter.display_name()).to_owned(),
-            );
+            progress_bar
+                .set_prefix(format!("{} {} ...", action, chain_adapter.display_name()).to_owned());
             let progress_message = if resolved_network_meta.managed_by_caribic {
                 format!("network={} (this can take a while)", resolved_network)
             } else {

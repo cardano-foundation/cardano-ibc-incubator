@@ -28,7 +28,12 @@ describe('VesseloracleIcqService', () => {
       }),
     };
 
-    service = new VesseloracleIcqService(packetServiceMock as unknown as PacketService);
+    service = new VesseloracleIcqService(
+      packetServiceMock as unknown as PacketService,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
   });
 
   it('builds a vesseloracle consolidated-data-report async-icq packet on the icqhost port', async () => {

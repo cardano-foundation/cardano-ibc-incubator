@@ -31,6 +31,10 @@ describe('proof-context stability fallback', () => {
           timestampUnixNs: 1228n,
           slotLeader: 'pool1',
         }),
+        findDescendantBlocks: jest.fn().mockResolvedValue([]),
+        findEpochContextAtBlock: jest
+          .fn()
+          .mockRejectedValue(new Error('Failed to acquire requested point. Target point is too old.')),
         findLatestBlock: jest.fn().mockResolvedValue({
           height: 2000,
           hash: 'latest-hash',

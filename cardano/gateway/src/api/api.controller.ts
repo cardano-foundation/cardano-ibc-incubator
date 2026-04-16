@@ -267,6 +267,12 @@ export class ApiController {
     return this.vesseloracleIcqService.decodeConsolidatedDataReportAcknowledgement(dto.acknowledgement_hex);
   }
 
+  @Post('icq/vesseloracle/result')
+  @HttpCode(200)
+  async getVesseloracleIcqResult(@Body() dto: AsyncIcqResultRequestDto) {
+    return this.vesseloracleIcqService.findResult(dto);
+  }
+
   private serializeUnsignedTxResponse(response: { result?: unknown; unsigned_tx?: { type_url?: string; value?: Uint8Array | string } }) {
     if (!response.unsigned_tx?.value) {
       throw new BadRequestException('Gateway response did not include an unsigned transaction');

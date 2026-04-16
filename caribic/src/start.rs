@@ -2534,7 +2534,13 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
             .map(|output| output.status.success())
             .unwrap_or(false);
         let container_running = Command::new("docker")
-            .args(["ps", "--filter", "name=gateway-app", "--format", "{{.Names}}"])
+            .args([
+                "ps",
+                "--filter",
+                "name=gateway-app",
+                "--format",
+                "{{.Names}}",
+            ])
             .output()
             .map(|output| !String::from_utf8_lossy(&output.stdout).trim().is_empty())
             .unwrap_or(false);
