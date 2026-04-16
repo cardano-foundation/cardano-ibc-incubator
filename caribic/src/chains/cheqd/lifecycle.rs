@@ -6,6 +6,7 @@ use serde_json::Value;
 
 use super::config;
 use crate::logger::{log, verbose, warn};
+use crate::process::docker::DockerCli;
 use crate::utils::{execute_script, wait_for_health_check};
 
 pub(super) async fn prepare_local(
@@ -37,18 +38,9 @@ pub(super) async fn prepare_local(
 }
 
 pub(super) async fn start_local(cheqd_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    execute_script(
-        cheqd_dir,
-        "docker",
-        Vec::from([
-            "compose",
-            "-f",
-            "configuration/docker-compose.yml",
-            "up",
-            "-d",
-        ]),
-        Some(vec![("CHEQD_LOCAL_IMAGE", config::LOCAL_DOCKER_IMAGE)]),
-    )?;
+    DockerCli::new(cheqd_dir)
+        .with_envs(&[("CHEQD_LOCAL_IMAGE", config::LOCAL_DOCKER_IMAGE)])
+        .compose_ok(&["-f", "configuration/docker-compose.yml", "up", "-d"])?;
 
     let is_healthy = wait_for_health_check(
         config::LOCAL_STATUS_URL,
@@ -79,12 +71,8 @@ pub(super) async fn start_local(cheqd_dir: &Path) -> Result<(), Box<dyn std::err
 }
 
 pub(super) fn stop_local(cheqd_dir: &Path) {
-    let _ = execute_script(
-        cheqd_dir,
-        "docker",
-        Vec::from(["compose", "-f", "configuration/docker-compose.yml", "down"]),
-        None,
-    );
+    let _ =
+        DockerCli::new(cheqd_dir).compose_ok(&["-f", "configuration/docker-compose.yml", "down"]);
 }
 
 fn sync_workspace_assets_from_repo(

@@ -1,3 +1,4 @@
+use crate::process::runner;
 use std::env;
 use std::process::Command;
 
@@ -24,54 +25,15 @@ pub fn run_privileged_command(command: &str, args: &[&str]) -> Result<(), String
 }
 
 pub fn run_command(command: &str, args: &[&str]) -> Result<(), String> {
-    let output = Command::new(command).args(args).output().map_err(|error| {
-        format!(
-            "Failed to run `{}`: {}",
-            format_command(command, args),
-            error
-        )
-    })?;
-
-    if output.status.success() {
-        return Ok(());
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let details = if !stderr.is_empty() {
-        stderr
-    } else if !stdout.is_empty() {
-        stdout
-    } else {
-        "no output".to_string()
-    };
-
-    Err(format!(
-        "`{}` failed (exit code {}): {}",
-        format_command(command, args),
-        output.status.code().unwrap_or(-1),
-        details
-    ))
+    let mut cmd = Command::new(command);
+    cmd.args(args);
+    runner::run_ok_output(&mut cmd).map(|_| ())
 }
 
 pub fn run_command_streaming(command: &str, args: &[&str]) -> Result<(), String> {
-    let status = Command::new(command).args(args).status().map_err(|error| {
-        format!(
-            "Failed to run `{}`: {}",
-            format_command(command, args),
-            error
-        )
-    })?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "`{}` failed (exit code {})",
-            format_command(command, args),
-            status.code().unwrap_or(-1)
-        ))
-    }
+    let mut cmd = Command::new(command);
+    cmd.args(args);
+    runner::run_inherit_status(&mut cmd)
 }
 
 pub fn command_exists(binary: &str) -> bool {
@@ -93,11 +55,4 @@ fn is_root_user() -> bool {
         .and_then(|output| String::from_utf8(output.stdout).ok())
         .map(|uid| uid.trim() == "0")
         .unwrap_or(false)
-}
-
-fn format_command(command: &str, args: &[&str]) -> String {
-    if args.is_empty() {
-        return command.to_string();
-    }
-    format!("{} {}", command, args.join(" "))
 }

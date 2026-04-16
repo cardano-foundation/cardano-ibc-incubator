@@ -9,6 +9,7 @@ use serde_json::Value;
 use super::config;
 use crate::chains::cosmos_node::resolve_home_relative_path;
 use crate::logger::{log, warn};
+use crate::process::docker::DockerCli;
 use crate::utils::{execute_script, wait_for_health_check};
 
 pub(super) async fn prepare_local(
@@ -37,18 +38,8 @@ pub(super) async fn start_local(
     let local_validator_mnemonic =
         config::load_demo_mnemonic(project_root_path, config::LOCAL_VALIDATOR_MNEMONIC_ACCOUNT)?;
 
-    execute_script(
-        injective_dir,
-        "docker",
-        Vec::from([
-            "compose",
-            "-f",
-            "configuration/docker-compose.yml",
-            "up",
-            "-d",
-            "injectived",
-        ]),
-        Some(vec![
+    DockerCli::new(injective_dir)
+        .with_envs(&[
             ("INJECTIVE_LOCAL_IMAGE", config::LOCAL_DOCKER_IMAGE),
             ("INJECTIVE_LOCAL_CHAIN_ID", config::LOCAL_CHAIN_ID),
             ("INJECTIVE_LOCAL_MONIKER", config::LOCAL_MONIKER),
@@ -62,8 +53,14 @@ pub(super) async fn start_local(
                 config::LOCAL_GENESIS_ACCOUNT_AMOUNT,
             ),
             ("INJECTIVE_LOCAL_GENTX_AMOUNT", config::LOCAL_GENTX_AMOUNT),
-        ]),
-    )?;
+        ])
+        .compose_ok(&[
+            "-f",
+            "configuration/docker-compose.yml",
+            "up",
+            "-d",
+            "injectived",
+        ])?;
 
     let is_healthy = wait_for_health_check(
         config::LOCAL_STATUS_URL,
@@ -92,31 +89,20 @@ pub(super) async fn start_local(
 }
 
 pub(super) fn stop_local(injective_path: &Path) {
-    let _ = execute_script(
-        injective_path,
-        "docker",
-        Vec::from([
-            "compose",
-            "-f",
-            "configuration/docker-compose.yml",
-            "stop",
-            "injectived",
-        ]),
-        None,
-    );
-    let _ = execute_script(
-        injective_path,
-        "docker",
-        Vec::from([
-            "compose",
-            "-f",
-            "configuration/docker-compose.yml",
-            "rm",
-            "-f",
-            "injectived",
-        ]),
-        None,
-    );
+    let docker = DockerCli::new(injective_path);
+    let _ = docker.compose_ok(&[
+        "-f",
+        "configuration/docker-compose.yml",
+        "stop",
+        "injectived",
+    ]);
+    let _ = docker.compose_ok(&[
+        "-f",
+        "configuration/docker-compose.yml",
+        "rm",
+        "-f",
+        "injectived",
+    ]);
 }
 
 pub(super) async fn prepare_testnet(

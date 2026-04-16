@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::process::Command;
+use std::time::Duration;
 
+use crate::process::http::HttpHealthClient;
+use crate::process::system::SystemChecks;
 use async_trait::async_trait;
 
 pub mod cheqd;
@@ -203,11 +205,7 @@ pub fn check_host_port_health(
     port: u16,
     label: &'static str,
 ) -> ChainHealthStatus {
-    let is_healthy = Command::new("nc")
-        .args(["-z", host, &port.to_string()])
-        .output()
-        .ok()
-        .is_some_and(|output| output.status.success());
+    let is_healthy = SystemChecks::tcp_port_open(host, port);
 
     if is_healthy {
         ChainHealthStatus {
@@ -254,12 +252,8 @@ pub fn check_rpc_health(
         }
     }
 
-    let rpc_response_ok = Command::new("curl")
-        .args(["-sS", "--connect-timeout", "3", "--max-time", "8", url])
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).contains("result"))
+    let rpc_response_ok = HttpHealthClient::new(Duration::from_secs(3), Duration::from_secs(8))
+        .map(|client| client.response_contains(url, "result"))
         .unwrap_or(false);
 
     if rpc_response_ok {

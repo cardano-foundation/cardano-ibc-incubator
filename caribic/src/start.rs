@@ -1,5 +1,9 @@
 use crate::constants::ENTRYPOINT_CHAIN_ID;
 use crate::logger::{log_or_print_progress, log_or_show_progress, verbose};
+use crate::process::docker::DockerCli;
+use crate::process::hermes::HermesCli;
+use crate::process::http::HttpHealthClient;
+use crate::process::system::SystemChecks;
 use crate::setup::{
     configure_cardano_preprod_runtime, configure_local_cardano_devnet, copy_cardano_env_file,
     download_mithril, local_cardano_spo_count, prepare_db_sync_and_gateway, seed_cardano_devnet,
@@ -20,7 +24,6 @@ use indicatif::{ProgressBar, ProgressStyle};
 use serde_json::Value;
 use std::cmp::min;
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -30,7 +33,6 @@ use std::time::{Duration, Instant};
 
 const ENTRYPOINT_CONTAINER_NAME: &str = "entrypoint-node-prod";
 const HERMES_PROGRESS_LOG_INTERVAL_SECS: u64 = 30;
-const HERMES_PROGRESS_POLL_INTERVAL_MILLIS: u64 = 500;
 const HERMES_PID_FILE_NAME: &str = "hermes.pid";
 const HERMES_STARTUP_CHECK_ATTEMPTS: u32 = 5;
 const HERMES_STARTUP_CHECK_INTERVAL_MILLIS: u64 = 1000;
@@ -71,27 +73,11 @@ pub(crate) fn remove_hermes_pid_file() {
 }
 
 pub(crate) fn is_process_alive(pid: u32) -> bool {
-    Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
+    SystemChecks::is_process_alive(pid)
 }
 
 pub(crate) fn process_command(pid: u32) -> Option<String> {
-    let output = Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "command="])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let command = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if command.is_empty() {
-        None
-    } else {
-        Some(command)
-    }
+    SystemChecks::process_command(pid)
 }
 
 pub(crate) fn is_expected_hermes_daemon_pid(pid: u32, expected_binary_path: Option<&str>) -> bool {
@@ -244,8 +230,9 @@ pub fn start_relayer(
     fs::write(&entrypoint_mnemonic_file, entrypoint_mnemonic)
         .map_err(|e| format!("Failed to write entrypoint chain mnemonic: {}", e))?;
 
-    let entrypoint_key_output = Command::new(&hermes_binary)
-        .args([
+    let entrypoint_key_output = HermesCli::new(hermes_binary.as_path()).output(
+        None,
+        &[
             "keys",
             "add",
             "--chain",
@@ -253,8 +240,8 @@ pub fn start_relayer(
             "--mnemonic-file",
             entrypoint_mnemonic_file.to_str().unwrap(),
             "--overwrite",
-        ])
-        .output();
+        ],
+    );
 
     let _ = fs::remove_file(&entrypoint_mnemonic_file);
 
@@ -317,8 +304,9 @@ pub fn start_relayer(
     fs::write(&cardano_key_file, &cardano_key)
         .map_err(|e| format!("Failed to write cardano key: {}", e))?;
 
-    let cardano_key_output = Command::new(&hermes_binary)
-        .args([
+    let cardano_key_output = HermesCli::new(hermes_binary.as_path()).output(
+        None,
+        &[
             "keys",
             "add",
             "--chain",
@@ -326,8 +314,8 @@ pub fn start_relayer(
             "--mnemonic-file",
             cardano_key_file.to_str().unwrap(),
             "--overwrite",
-        ])
-        .output();
+        ],
+    );
 
     let _ = fs::remove_file(&cardano_key_file);
 
@@ -2443,11 +2431,9 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         log("Starting Gateway ...");
     }
 
-    let network_exists = Command::new("docker")
-        .args(["network", "inspect", SHARED_CARDANO_NETWORK])
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false);
+    let network_exists = DockerCli::new(Path::new("."))
+        .raw_output(["network", "inspect", SHARED_CARDANO_NETWORK].as_slice())
+        .is_ok();
     if !network_exists {
         log_or_show_progress(
             &format!(
@@ -2523,25 +2509,21 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     ));
 
     for i in 0..max_retries {
-        let grpc_ready = Command::new("nc")
-            .args(["-z", "localhost", "5001"])
-            .output()
-            .map(|output| output.status.success())
+        let grpc_ready = SystemChecks::tcp_port_open("localhost", 5001);
+        let http_ready = HttpHealthClient::new(Duration::from_secs(3), Duration::from_secs(8))
+            .map(|client| client.responds_ok("http://localhost:8000/health"))
             .unwrap_or(false);
-        let http_ready = Command::new("curl")
-            .args(["-fsS", "http://localhost:8000/health"])
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false);
-        let container_running = Command::new("docker")
-            .args([
-                "ps",
-                "--filter",
-                "name=gateway-app",
-                "--format",
-                "{{.Names}}",
-            ])
-            .output()
+        let container_running = DockerCli::new(Path::new("."))
+            .raw_output(
+                [
+                    "ps",
+                    "--filter",
+                    "name=gateway-app",
+                    "--format",
+                    "{{.Names}}",
+                ]
+                .as_slice(),
+            )
             .map(|output| !String::from_utf8_lossy(&output.stdout).trim().is_empty())
             .unwrap_or(false);
 
@@ -2588,11 +2570,8 @@ fn dump_gateway_startup_logs(gateway_dir: &Path, optional_progress_bar: &Option<
         optional_progress_bar,
     );
 
-    let compose_ps = run_command_capture(
-        Command::new("docker")
-            .current_dir(gateway_dir)
-            .args(["compose", "ps"]),
-    );
+    let mut compose_ps_command = DockerCli::new(gateway_dir).compose_command(["ps"].as_slice());
+    let compose_ps = run_command_capture(&mut compose_ps_command);
     match compose_ps {
         Ok(output) if !output.trim().is_empty() => {
             log_or_print_progress("Gateway compose status", optional_progress_bar);
@@ -2607,11 +2586,9 @@ fn dump_gateway_startup_logs(gateway_dir: &Path, optional_progress_bar: &Option<
         }
     }
 
-    let compose_logs = run_command_capture(
-        Command::new("docker")
-            .current_dir(gateway_dir)
-            .args(["compose", "logs", "--tail", "200", "app"]),
-    );
+    let mut compose_logs_command =
+        DockerCli::new(gateway_dir).compose_command(["logs", "--tail", "200", "app"].as_slice());
+    let compose_logs = run_command_capture(&mut compose_logs_command);
     match compose_logs {
         Ok(output) if !output.trim().is_empty() => {
             log_or_print_progress(
@@ -2633,8 +2610,9 @@ fn dump_gateway_startup_logs(gateway_dir: &Path, optional_progress_bar: &Option<
         }
     }
 
-    let docker_logs =
-        run_command_capture(Command::new("docker").args(["logs", "--tail", "200", "gateway-app"]));
+    let mut docker_logs_command = DockerCli::new(Path::new("."))
+        .raw_command(["logs", "--tail", "200", "gateway-app"].as_slice());
+    let docker_logs = run_command_capture(&mut docker_logs_command);
     match docker_logs {
         Ok(output) if !output.trim().is_empty() => {
             log_or_print_progress(
@@ -2686,118 +2664,17 @@ fn run_command_capture(command: &mut Command) -> Result<String, String> {
     }
 }
 
-fn collect_command_output<R: std::io::Read>(
-    reader: R,
-    stream_name: &str,
-    verbose_stream: bool,
-) -> Vec<u8> {
-    let mut buffered_reader = BufReader::new(reader);
-    let mut line_buffer = String::new();
-    let mut output_bytes = Vec::new();
-
-    loop {
-        line_buffer.clear();
-        match buffered_reader.read_line(&mut line_buffer) {
-            Ok(0) => break,
-            Ok(_) => {
-                output_bytes.extend_from_slice(line_buffer.as_bytes());
-                if verbose_stream {
-                    verbose(&format!(
-                        "[Hermes/{stream_name}] {}",
-                        line_buffer.trim_end()
-                    ));
-                }
-            }
-            Err(error) => {
-                if verbose_stream {
-                    verbose(&format!(
-                        "[Hermes/{stream_name}] failed to read command output: {error}"
-                    ));
-                }
-                break;
-            }
-        }
-    }
-
-    output_bytes
-}
-
 fn run_hermes_command_with_progress(
     hermes_binary: &Path,
     args: &[&str],
 ) -> Result<Output, Box<dyn std::error::Error>> {
-    let command_display = format!("{} {}", hermes_binary.display(), args.join(" "));
-    let mut child = Command::new(hermes_binary)
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| {
-            format!(
-                "Failed to spawn Hermes command '{}': {}",
-                command_display, error
-            )
-        })?;
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| format!("Failed to capture Hermes stdout for '{}'", command_display))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| format!("Failed to capture Hermes stderr for '{}'", command_display))?;
-
-    let verbose_stream = logger::get_verbosity() == logger::Verbosity::Verbose;
-    let stdout_thread =
-        thread::spawn(move || collect_command_output(stdout, "stdout", verbose_stream));
-    let stderr_thread =
-        thread::spawn(move || collect_command_output(stderr, "stderr", verbose_stream));
-
-    let started_at = Instant::now();
-    let mut next_progress_log = Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS);
-
-    let exit_status = loop {
-        if let Some(status) = child.try_wait().map_err(|error| {
-            format!(
-                "Failed while waiting on Hermes command '{}': {}",
-                command_display, error
-            )
-        })? {
-            break status;
-        }
-
-        let elapsed = started_at.elapsed();
-        if elapsed >= next_progress_log {
-            log(&format!(
-                "Hermes command still running after {}s: {}",
-                elapsed.as_secs(),
-                args.join(" ")
-            ));
-            next_progress_log += Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS);
-        }
-
-        thread::sleep(Duration::from_millis(HERMES_PROGRESS_POLL_INTERVAL_MILLIS));
-    };
-
-    let stdout_output = stdout_thread.join().map_err(|_| {
-        format!(
-            "Failed to join Hermes stdout reader for '{}'",
-            command_display
+    HermesCli::new(hermes_binary)
+        .output_with_progress(
+            None,
+            args,
+            Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS),
         )
-    })?;
-    let stderr_output = stderr_thread.join().map_err(|_| {
-        format!(
-            "Failed to join Hermes stderr reader for '{}'",
-            command_display
-        )
-    })?;
-
-    Ok(Output {
-        status: exit_status,
-        stdout: stdout_output,
-        stderr: stderr_output,
-    })
+        .map_err(Into::into)
 }
 
 /// Resolves the Hermes binary from the relayer build output and fails if missing.
@@ -2897,14 +2774,15 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
 
     // Validate config before starting
     log_or_show_progress("Validating Hermes configuration", &optional_progress_bar);
-    let config_check = Command::new(&hermes_binary)
-        .args([
+    let config_check = HermesCli::new(hermes_binary.as_path()).output(
+        None,
+        &[
             "--config",
             hermes_config.to_str().ok_or("Invalid Hermes config path")?,
             "config",
             "validate",
-        ])
-        .output();
+        ],
+    );
 
     if let Ok(output) = config_check {
         if !output.status.success() {
@@ -3555,11 +3433,10 @@ fn external_gateway_env_value(context: &HealthContext, key: &str) -> Option<Stri
 }
 
 fn check_external_host_port(host: &str, port: &str, label: &str) -> (bool, String) {
-    let reachable = Command::new("nc")
-        .args(["-z", host, port])
-        .output()
+    let reachable = port
+        .parse::<u16>()
         .ok()
-        .is_some_and(|output| output.status.success());
+        .is_some_and(|parsed_port| SystemChecks::tcp_port_open(host, parsed_port));
     if reachable {
         (
             true,
@@ -3929,22 +3806,20 @@ pub fn comprehensive_health_check(
 
 fn docker_running_container_name(name_filter: &str) -> Option<String> {
     let filter = format!("name={name_filter}");
-    let output = Command::new("docker")
-        .args([
-            "ps",
-            "--filter",
-            filter.as_str(),
-            "--filter",
-            "status=running",
-            "--format",
-            "{{.Names}}",
-        ])
-        .output()
+    let output = DockerCli::new(Path::new("."))
+        .raw_output(
+            [
+                "ps",
+                "--filter",
+                filter.as_str(),
+                "--filter",
+                "status=running",
+                "--format",
+                "{{.Names}}",
+            ]
+            .as_slice(),
+        )
         .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     stdout
@@ -3954,29 +3829,21 @@ fn docker_running_container_name(name_filter: &str) -> Option<String> {
 }
 
 fn is_port_accessible(port: u16) -> bool {
-    Command::new("nc")
-        .args(["-z", "localhost", &port.to_string()])
-        .output()
-        .ok()
-        .is_some_and(|output| output.status.success())
+    SystemChecks::tcp_port_open("localhost", port)
 }
 
 fn endpoint_contains_result(url: &str) -> bool {
-    Command::new("curl")
-        .args(["-s", "--connect-timeout", "3", url])
-        .output()
+    HttpHealthClient::new(Duration::from_secs(3), Duration::from_secs(8))
         .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).contains("result"))
+        .map(|client| client.response_contains(url, "result"))
         .unwrap_or(false)
 }
 
 fn endpoint_responds(url: &str) -> bool {
-    Command::new("curl")
-        .args(["-sfL", "--connect-timeout", "5", url])
-        .output()
+    HttpHealthClient::new(Duration::from_secs(5), Duration::from_secs(8))
         .ok()
-        .is_some_and(|output| output.status.success())
+        .map(|client| client.responds_ok(url))
+        .unwrap_or(false)
 }
 
 fn check_container_only(name_filter: &str) -> (bool, String) {
@@ -4009,15 +3876,17 @@ fn check_postgres_service() -> (bool, String) {
         return (false, "Container not running".to_string());
     };
 
-    let ready = Command::new("docker")
-        .args([
-            "exec",
-            container_name.as_str(),
-            "pg_isready",
-            "-U",
-            "postgres",
-        ])
-        .output()
+    let ready = DockerCli::new(Path::new("."))
+        .raw_output(
+            [
+                "exec",
+                container_name.as_str(),
+                "pg_isready",
+                "-U",
+                "postgres",
+            ]
+            .as_slice(),
+        )
         .ok()
         .is_some_and(|output| output.status.success());
 

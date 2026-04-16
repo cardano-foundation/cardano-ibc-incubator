@@ -1,12 +1,12 @@
 use crate::logger::{self, verbose};
+use crate::process::runner::{self, StreamKind};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{BufRead, BufReader, IsTerminal};
+use std::io::IsTerminal;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
-use std::sync::{mpsc, OnceLock};
-use std::thread;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 fn entrypoint_chain_id() -> &'static str {
@@ -204,137 +204,52 @@ fn run_command_streaming(
     mut command: Command,
     label: &str,
 ) -> Result<Output, Box<dyn std::error::Error>> {
-    enum Stream {
-        Stdout,
-        Stderr,
-    }
-
     let verbosity = logger::get_verbosity();
-    let command_started = Instant::now();
     let mut last_progress_line: Option<String> = None;
     let mut last_progress_at = Instant::now()
         .checked_sub(Duration::from_secs(60))
         .unwrap_or_else(Instant::now);
+    Ok(runner::run_output_streaming(
+        &mut command,
+        runner::StreamingOptions {
+            label,
+            heartbeat_interval: None,
+            log_failure_output: true,
+        },
+        |stream, line| {
+            let trimmed = line.trim_end();
 
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = command.spawn()?;
-
-    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
-    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
-
-    let (sender, receiver) = mpsc::channel::<(Stream, String)>();
-
-    let stdout_sender = sender.clone();
-    let stdout_handle = thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines().flatten() {
-            let _ = stdout_sender.send((Stream::Stdout, line));
-        }
-    });
-
-    let stderr_sender = sender.clone();
-    let stderr_handle = thread::spawn(move || {
-        let reader = BufReader::new(stderr);
-        for line in reader.lines().flatten() {
-            let _ = stderr_sender.send((Stream::Stderr, line));
-        }
-    });
-
-    drop(sender);
-
-    let mut stdout_buf = String::new();
-    let mut stderr_buf = String::new();
-
-    for (stream, line) in receiver {
-        let trimmed = line.trim_end().to_string();
-
-        match stream {
-            Stream::Stdout => {
-                stdout_buf.push_str(&trimmed);
-                stdout_buf.push('\n');
-            }
-            Stream::Stderr => {
-                stderr_buf.push_str(&trimmed);
-                stderr_buf.push('\n');
-            }
-        }
-
-        // Always keep full logs available in verbose mode.
-        logger::verbose(&format!("   [{}] {}", label, trimmed));
-
-        // In normal runs, emit a few "heartbeat" lines so long Hermes steps don't look stuck.
-        if verbosity != logger::Verbosity::Verbose {
-            let is_progress_line = trimmed.contains("Waiting for Mithril snapshot")
-                || trimmed.contains("certified")
-                || trimmed.contains("submitted")
-                || trimmed.contains("Building unsigned transaction")
-                || trimmed.contains("MsgConnection")
-                || trimmed.contains("ERROR")
-                || trimmed.contains("Error")
-                || trimmed.contains("failed");
-
-            if is_progress_line {
-                let now = Instant::now();
-                let should_emit = last_progress_line.as_deref() != Some(trimmed.as_str())
-                    && now.duration_since(last_progress_at) >= Duration::from_secs(2);
-                if should_emit {
-                    logger::log(&format!("   [{}] {}", label, trimmed));
-                    last_progress_line = Some(trimmed.clone());
-                    last_progress_at = now;
+            // Always keep full logs available in verbose mode.
+            match stream {
+                StreamKind::Stdout | StreamKind::Stderr => {
+                    logger::verbose(&format!("   [{}] {}", label, trimmed));
                 }
             }
-        }
-    }
 
-    let status = child.wait()?;
-    let _ = stdout_handle.join();
-    let _ = stderr_handle.join();
-    let elapsed = command_started.elapsed();
+            // In normal runs, emit a few high-signal lines so long Hermes steps do not look stuck.
+            if verbosity != logger::Verbosity::Verbose {
+                let is_progress_line = trimmed.contains("Waiting for Mithril snapshot")
+                    || trimmed.contains("certified")
+                    || trimmed.contains("submitted")
+                    || trimmed.contains("Building unsigned transaction")
+                    || trimmed.contains("MsgConnection")
+                    || trimmed.contains("ERROR")
+                    || trimmed.contains("Error")
+                    || trimmed.contains("failed");
 
-    logger::verbose(&format!(
-        "   [{}] completed in {:.2}s (success={})",
-        label,
-        elapsed.as_secs_f32(),
-        status.success()
-    ));
-
-    if !status.success() && logger::get_verbosity() != logger::Verbosity::Quite {
-        let tail_preview = |text: &str| -> String {
-            let lines: Vec<&str> = text.lines().collect();
-            let start = lines.len().saturating_sub(20);
-            if lines.is_empty() {
-                String::new()
-            } else {
-                lines[start..]
-                    .iter()
-                    .map(|line| format!("   [tail] {line}"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
+                if is_progress_line {
+                    let now = Instant::now();
+                    let should_emit = last_progress_line.as_deref() != Some(trimmed)
+                        && now.duration_since(last_progress_at) >= Duration::from_secs(2);
+                    if should_emit {
+                        logger::log(&format!("   [{}] {}", label, trimmed));
+                        last_progress_line = Some(trimmed.to_string());
+                        last_progress_at = now;
+                    }
+                }
             }
-        };
-
-        let stdout_tail = tail_preview(&stdout_buf);
-        let stderr_tail = tail_preview(&stderr_buf);
-
-        logger::warn(&format!(
-            "   [{}] command failed after {:.2}s with exit code {:?}",
-            label,
-            elapsed.as_secs_f32(),
-            status
-        ));
-        if !stdout_tail.is_empty() {
-            logger::warn(&format!("   [{}] stdout tail:\n{}", label, stdout_tail));
-        }
-        if !stderr_tail.is_empty() {
-            logger::warn(&format!("   [{}] stderr tail:\n{}", label, stderr_tail));
-        }
-    }
-
-    Ok(Output {
-        status,
-        stdout: stdout_buf.into_bytes(),
-        stderr: stderr_buf.into_bytes(),
-    })
+        },
+    )?)
 }
 
 fn format_duration(duration: Duration) -> String {
