@@ -1,12 +1,15 @@
 use crate::logger::{self, verbose};
+use crate::process::runner::{self, StreamKind};
+use crate::process::{
+    cardano::CardanoCli, docker::DockerCli, hermes::HermesCli, http::HttpHealthClient,
+};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{BufRead, BufReader, IsTerminal};
+use std::io::IsTerminal;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
-use std::sync::{mpsc, OnceLock};
-use std::thread;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 fn entrypoint_chain_id() -> &'static str {
@@ -93,20 +96,18 @@ fn set_or_append_gateway_env_var(
 fn query_current_cardano_epoch_nonce(
     project_root: &Path,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let cardano_dir = project_root.join("chains/cardano");
-    let output = Command::new("docker")
-        .arg("compose")
-        .arg("exec")
-        .arg("-T")
-        .arg("cardano-node")
-        .arg("cardano-cli")
-        .arg("query")
-        .arg("protocol-state")
-        .arg("--cardano-mode")
-        .arg("--testnet-magic")
-        .arg("42")
-        .current_dir(&cardano_dir)
-        .output()?;
+    let output = CardanoCli::new(project_root)
+        .exec_output(
+            [
+                "query",
+                "protocol-state",
+                "--cardano-mode",
+                "--testnet-magic",
+                "42",
+            ]
+            .as_slice(),
+        )
+        .map_err(std::io::Error::other)?;
 
     if !output.status.success() {
         return Err(format!(
@@ -163,14 +164,9 @@ async fn refresh_gateway_epoch_nonce_for_stability(
     )?;
 
     let gateway_dir = project_root.join("cardano/gateway");
-    let recreate_output = Command::new("docker")
-        .arg("compose")
-        .arg("up")
-        .arg("-d")
-        .arg("--force-recreate")
-        .arg("app")
-        .current_dir(&gateway_dir)
-        .output()?;
+    let recreate_output = DockerCli::new(gateway_dir.as_path())
+        .compose_output(["up", "-d", "--force-recreate", "app"].as_slice())
+        .map_err(std::io::Error::other)?;
 
     if !recreate_output.status.success() {
         return Err(format!(
@@ -204,137 +200,67 @@ fn run_command_streaming(
     mut command: Command,
     label: &str,
 ) -> Result<Output, Box<dyn std::error::Error>> {
-    enum Stream {
-        Stdout,
-        Stderr,
-    }
-
     let verbosity = logger::get_verbosity();
-    let command_started = Instant::now();
     let mut last_progress_line: Option<String> = None;
     let mut last_progress_at = Instant::now()
         .checked_sub(Duration::from_secs(60))
         .unwrap_or_else(Instant::now);
+    Ok(runner::run_output_streaming(
+        &mut command,
+        runner::StreamingOptions {
+            label,
+            heartbeat_interval: None,
+            log_failure_output: true,
+        },
+        |stream, line| {
+            let trimmed = line.trim_end();
 
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = command.spawn()?;
-
-    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
-    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
-
-    let (sender, receiver) = mpsc::channel::<(Stream, String)>();
-
-    let stdout_sender = sender.clone();
-    let stdout_handle = thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines().flatten() {
-            let _ = stdout_sender.send((Stream::Stdout, line));
-        }
-    });
-
-    let stderr_sender = sender.clone();
-    let stderr_handle = thread::spawn(move || {
-        let reader = BufReader::new(stderr);
-        for line in reader.lines().flatten() {
-            let _ = stderr_sender.send((Stream::Stderr, line));
-        }
-    });
-
-    drop(sender);
-
-    let mut stdout_buf = String::new();
-    let mut stderr_buf = String::new();
-
-    for (stream, line) in receiver {
-        let trimmed = line.trim_end().to_string();
-
-        match stream {
-            Stream::Stdout => {
-                stdout_buf.push_str(&trimmed);
-                stdout_buf.push('\n');
-            }
-            Stream::Stderr => {
-                stderr_buf.push_str(&trimmed);
-                stderr_buf.push('\n');
-            }
-        }
-
-        // Always keep full logs available in verbose mode.
-        logger::verbose(&format!("   [{}] {}", label, trimmed));
-
-        // In normal runs, emit a few "heartbeat" lines so long Hermes steps don't look stuck.
-        if verbosity != logger::Verbosity::Verbose {
-            let is_progress_line = trimmed.contains("Waiting for Mithril snapshot")
-                || trimmed.contains("certified")
-                || trimmed.contains("submitted")
-                || trimmed.contains("Building unsigned transaction")
-                || trimmed.contains("MsgConnection")
-                || trimmed.contains("ERROR")
-                || trimmed.contains("Error")
-                || trimmed.contains("failed");
-
-            if is_progress_line {
-                let now = Instant::now();
-                let should_emit = last_progress_line.as_deref() != Some(trimmed.as_str())
-                    && now.duration_since(last_progress_at) >= Duration::from_secs(2);
-                if should_emit {
-                    logger::log(&format!("   [{}] {}", label, trimmed));
-                    last_progress_line = Some(trimmed.clone());
-                    last_progress_at = now;
+            // Always keep full logs available in verbose mode.
+            match stream {
+                StreamKind::Stdout | StreamKind::Stderr => {
+                    logger::verbose(&format!("   [{}] {}", label, trimmed));
                 }
             }
-        }
-    }
 
-    let status = child.wait()?;
-    let _ = stdout_handle.join();
-    let _ = stderr_handle.join();
-    let elapsed = command_started.elapsed();
+            // In normal runs, emit a few high-signal lines so long Hermes steps do not look stuck.
+            if verbosity != logger::Verbosity::Verbose {
+                let is_progress_line = trimmed.contains("Waiting for Mithril snapshot")
+                    || trimmed.contains("certified")
+                    || trimmed.contains("submitted")
+                    || trimmed.contains("Building unsigned transaction")
+                    || trimmed.contains("MsgConnection")
+                    || trimmed.contains("ERROR")
+                    || trimmed.contains("Error")
+                    || trimmed.contains("failed");
 
-    logger::verbose(&format!(
-        "   [{}] completed in {:.2}s (success={})",
-        label,
-        elapsed.as_secs_f32(),
-        status.success()
-    ));
-
-    if !status.success() && logger::get_verbosity() != logger::Verbosity::Quite {
-        let tail_preview = |text: &str| -> String {
-            let lines: Vec<&str> = text.lines().collect();
-            let start = lines.len().saturating_sub(20);
-            if lines.is_empty() {
-                String::new()
-            } else {
-                lines[start..]
-                    .iter()
-                    .map(|line| format!("   [tail] {line}"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
+                if is_progress_line {
+                    let now = Instant::now();
+                    let should_emit = last_progress_line.as_deref() != Some(trimmed)
+                        && now.duration_since(last_progress_at) >= Duration::from_secs(2);
+                    if should_emit {
+                        logger::log(&format!("   [{}] {}", label, trimmed));
+                        last_progress_line = Some(trimmed.to_string());
+                        last_progress_at = now;
+                    }
+                }
             }
-        };
+        },
+    )?)
+}
 
-        let stdout_tail = tail_preview(&stdout_buf);
-        let stderr_tail = tail_preview(&stderr_buf);
+fn run_hermes_output(
+    project_root: &Path,
+    args: &[&str],
+) -> Result<Output, Box<dyn std::error::Error>> {
+    let hermes_binary = project_root.join("relayer/target/release/hermes");
+    HermesCli::new(hermes_binary.as_path())
+        .output(None, args)
+        .map_err(Into::into)
+}
 
-        logger::warn(&format!(
-            "   [{}] command failed after {:.2}s with exit code {:?}",
-            label,
-            elapsed.as_secs_f32(),
-            status
-        ));
-        if !stdout_tail.is_empty() {
-            logger::warn(&format!("   [{}] stdout tail:\n{}", label, stdout_tail));
-        }
-        if !stderr_tail.is_empty() {
-            logger::warn(&format!("   [{}] stderr tail:\n{}", label, stderr_tail));
-        }
-    }
-
-    Ok(Output {
-        status,
-        stdout: stdout_buf.into_bytes(),
-        stderr: stderr_buf.into_bytes(),
-    })
+fn build_hermes_command(project_root: &Path, args: &[&str]) -> Command {
+    let hermes_binary = project_root.join("relayer/target/release/hermes");
+    HermesCli::new(hermes_binary.as_path()).command(None, args)
 }
 
 fn format_duration(duration: Duration) -> String {
@@ -2409,9 +2335,7 @@ fn run_hermes_health_check(project_root: &Path) -> Result<(), Box<dyn std::error
 
     verbose("   Running: hermes health-check");
 
-    let output = Command::new(&hermes_binary)
-        .args(&["health-check"])
-        .output()?;
+    let output = run_hermes_output(project_root, &["health-check"])?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2465,39 +2389,23 @@ fn run_hermes_health_check(project_root: &Path) -> Result<(), Box<dyn std::error
 
 /// Check if Cardano node is running using cardano-cli query tip
 fn check_cardano_node_running(project_root: &Path) -> bool {
-    let cardano_dir = project_root.join("chains/cardano");
-    let output = Command::new("docker")
-        .arg("compose")
-        .arg("exec")
-        .arg("-T")
-        .arg("cardano-node")
-        .arg("cardano-cli")
-        .arg("query")
-        .arg("tip")
-        .arg("--testnet-magic")
-        .arg("42")
-        .current_dir(&cardano_dir)
-        .output();
-
-    match output {
-        Ok(result) => result.status.success(),
-        Err(_) => false,
-    }
+    CardanoCli::new(project_root)
+        .exec_output(["query", "tip", "--testnet-magic", "42"].as_slice())
+        .is_ok()
 }
 
 /// Check if Gateway container is running
 fn check_gateway_container_running() -> bool {
-    let output = Command::new("docker")
-        .args(&[
+    match DockerCli::new(Path::new(".")).raw_output(
+        [
             "ps",
             "--filter",
             "name=gateway-app",
             "--format",
             "{{.Names}}",
-        ])
-        .output();
-
-    match output {
+        ]
+        .as_slice(),
+    ) {
         Ok(result) => {
             let stdout = String::from_utf8_lossy(&result.stdout).trim().to_string();
             !stdout.is_empty()
@@ -2637,8 +2545,6 @@ fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::
     ));
 
     // Query the HostState UTXO using cardano-cli inside the Docker container
-    let cardano_dir = project_root.join("chains/cardano");
-
     // Get hostStateStt address from deployment
     let host_state_address = deployment["validators"]["hostStateStt"]["address"]
         .as_str()
@@ -2646,25 +2552,22 @@ fn query_handler_state_root(project_root: &Path) -> Result<String, Box<dyn std::
 
     verbose(&format!("   HostState address: {}", host_state_address));
 
-    // Query UTXOs at HostState address using docker compose exec
-    let output = Command::new("docker")
-        .args(&[
-            "compose",
-            "exec",
-            "-T",
-            "cardano-node",
-            "cardano-cli",
-            "query",
-            "utxo",
-            "--address",
-            host_state_address,
-            "--testnet-magic",
-            "42",
-            "--out-file",
-            "/dev/stdout",
-        ])
-        .current_dir(&cardano_dir)
-        .output()?;
+    // Query UTXOs at HostState address via the managed Cardano CLI client.
+    let output = CardanoCli::new(project_root)
+        .exec_output(
+            [
+                "query",
+                "utxo",
+                "--address",
+                host_state_address,
+                "--testnet-magic",
+                "42",
+                "--out-file",
+                "/dev/stdout",
+            ]
+            .as_slice(),
+        )
+        .map_err(std::io::Error::other)?;
 
     if !output.status.success() {
         return Err(format!(
@@ -2757,15 +2660,14 @@ fn query_client_state(
     project_root: &Path,
     client_id: &str,
 ) -> Result<ClientStateInfo, Box<dyn std::error::Error>> {
-    let hermes_binary = project_root.join("relayer/target/release/hermes");
-
     logger::verbose(&format!(
         "   Running: hermes query client state --chain cardano-devnet --client {}",
         client_id
     ));
 
-    let output = Command::new(&hermes_binary)
-        .args(&[
+    let output = run_hermes_output(
+        project_root,
+        &[
             "query",
             "client",
             "state",
@@ -2773,8 +2675,8 @@ fn query_client_state(
             "cardano-devnet",
             "--client",
             client_id,
-        ])
-        .output()?;
+        ],
+    )?;
 
     if !output.status.success() {
         return Err(format!(
@@ -2828,23 +2730,22 @@ fn query_client_state(
 /// Update client with new headers via Hermes
 /// This exercises the Tendermint light client verification on Cardano
 fn update_client(project_root: &Path, client_id: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let hermes_binary = project_root.join("relayer/target/release/hermes");
-
     logger::verbose(&format!(
         "   Running: hermes update client --host-chain cardano-devnet --client {}",
         client_id
     ));
 
-    let output = Command::new(&hermes_binary)
-        .args(&[
+    let output = run_hermes_output(
+        project_root,
+        &[
             "update",
             "client",
             "--host-chain",
             "cardano-devnet",
             "--client",
             client_id,
-        ])
-        .output()?;
+        ],
+    )?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2893,15 +2794,17 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
 
     logger::verbose("   Running: hermes create client --host-chain cardano-devnet --reference-chain entrypoint (Cosmos Entrypoint chain)");
 
-    let mut command = Command::new(&hermes_binary);
-    command.args(&[
-        "create",
-        "client",
-        "--host-chain",
-        "cardano-devnet",
-        "--reference-chain",
-        entrypoint_chain_id(),
-    ]);
+    let command = build_hermes_command(
+        project_root,
+        &[
+            "create",
+            "client",
+            "--host-chain",
+            "cardano-devnet",
+            "--reference-chain",
+            entrypoint_chain_id(),
+        ],
+    );
     let output = run_command_streaming(command, "hermes create client")?;
 
     if !output.status.success() {
@@ -2972,30 +2875,21 @@ async fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn s
     // last submitted (OpenInit/OpenTry/OpenAck/OpenConfirm) in `~/.hermes/hermes.log`, then check
     // Gateway logs for the corresponding unsigned-tx build/evaluation errors (Plutus failures,
     // PastHorizon/slot horizon issues, etc).
-    let hermes_binary = project_root.join("relayer/target/release/hermes");
-
     logger::verbose("   Running: hermes create connection --a-chain cardano-devnet --b-chain entrypoint (Cosmos Entrypoint chain)");
 
-    let mut command = Command::new(&hermes_binary);
-    command.args(&[
-        "create",
-        "connection",
-        "--a-chain",
-        "cardano-devnet",
-        "--b-chain",
-        entrypoint_chain_id(),
-    ]);
     let run_connection_handshake =
-        |hermes_binary: &std::path::Path| -> Result<String, Box<dyn std::error::Error>> {
-            let mut command = Command::new(hermes_binary);
-            command.args(&[
-                "create",
-                "connection",
-                "--a-chain",
-                "cardano-devnet",
-                "--b-chain",
-                entrypoint_chain_id(),
-            ]);
+        |project_root: &Path| -> Result<String, Box<dyn std::error::Error>> {
+            let command = build_hermes_command(
+                project_root,
+                &[
+                    "create",
+                    "connection",
+                    "--a-chain",
+                    "cardano-devnet",
+                    "--b-chain",
+                    entrypoint_chain_id(),
+                ],
+            );
             let output = run_command_streaming(command, "hermes create connection")?;
 
             if !output.status.success() {
@@ -3036,7 +2930,7 @@ async fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn s
             Ok(connection_id)
         };
 
-    match run_connection_handshake(&hermes_binary) {
+    match run_connection_handshake(project_root) {
         Ok(connection_id) => Ok(connection_id),
         Err(first_error) => {
             let first_error_text = first_error.to_string();
@@ -3056,7 +2950,7 @@ async fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn s
                     .into());
                 }
 
-                return run_connection_handshake(&hermes_binary);
+                return run_connection_handshake(project_root);
             }
 
             if is_unknown_utxo_reference_error(&first_error_text) {
@@ -3064,7 +2958,7 @@ async fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn s
                     "Gateway rejected connection handshake with unknown UTxO references right after client creation; waiting briefly and retrying once.",
                 );
                 tokio::time::sleep(Duration::from_secs(5)).await;
-                return run_connection_handshake(&hermes_binary);
+                return run_connection_handshake(project_root);
             }
 
             Err(first_error)
@@ -3081,26 +2975,26 @@ fn create_test_channel(
 ) -> Result<String, Box<dyn std::error::Error>> {
     logger::verbose("   Creating channel via Hermes...");
 
-    let hermes_binary = project_root.join("relayer/target/release/hermes");
-
     logger::verbose(&format!(
         "   Running: hermes create channel --a-chain cardano-devnet --a-connection {} --a-port transfer --b-port transfer",
         connection_id
     ));
 
-    let mut command = Command::new(&hermes_binary);
-    command.args(&[
-        "create",
-        "channel",
-        "--a-chain",
-        "cardano-devnet",
-        "--a-connection",
-        connection_id,
-        "--a-port",
-        "transfer",
-        "--b-port",
-        "transfer",
-    ]);
+    let command = build_hermes_command(
+        project_root,
+        &[
+            "create",
+            "channel",
+            "--a-chain",
+            "cardano-devnet",
+            "--a-connection",
+            connection_id,
+            "--a-port",
+            "transfer",
+            "--b-port",
+            "transfer",
+        ],
+    );
     let output = run_command_streaming(command, "hermes create channel")?;
 
     if !output.status.success() {
@@ -3180,10 +3074,7 @@ fn get_hermes_chain_address(
     project_root: &Path,
     chain_id: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let hermes_binary = project_root.join("relayer/target/release/hermes");
-    let output = Command::new(&hermes_binary)
-        .args(&["keys", "list", "--chain", chain_id])
-        .output()?;
+    let output = run_hermes_output(project_root, &["keys", "list", "--chain", chain_id])?;
 
     if !output.status.success() {
         return Err(format!(
@@ -3247,10 +3138,7 @@ fn get_cardano_payment_credential_hex(
     // Hermes represents the Cardano relayer identity as a hex-encoded enterprise address
     // (header byte + 28-byte payment key hash). For packet receivers, the Gateway expects the
     // 28-byte payment credential hash (hex), so we strip the first byte.
-    let hermes_binary = project_root.join("relayer/target/release/hermes");
-    let output = Command::new(&hermes_binary)
-        .args(&["keys", "list", "--chain", "cardano-devnet"])
-        .output()?;
+    let output = run_hermes_output(project_root, &["keys", "list", "--chain", "cardano-devnet"])?;
 
     if !output.status.success() {
         return Err(format!(
@@ -3596,9 +3484,9 @@ fn resolve_entrypoint_channel_id_from_cardano_channel_end(
     project_root: &Path,
     cardano_channel_id: &str,
 ) -> Option<String> {
-    let hermes_binary = project_root.join("relayer/target/release/hermes");
-    let output = Command::new(&hermes_binary)
-        .args(&[
+    let output = run_hermes_output(
+        project_root,
+        &[
             "query",
             "channel",
             "end",
@@ -3608,9 +3496,9 @@ fn resolve_entrypoint_channel_id_from_cardano_channel_end(
             "transfer",
             "--channel",
             cardano_channel_id,
-        ])
-        .output()
-        .ok()?;
+        ],
+    )
+    .ok()?;
 
     if !output.status.success() {
         return None;
@@ -3646,9 +3534,9 @@ fn resolve_entrypoint_channel_id_with_retries(
 }
 
 fn resolve_cardano_transfer_channel_id(project_root: &Path) -> Option<String> {
-    let hermes_binary = project_root.join("relayer/target/release/hermes");
-    let output = Command::new(&hermes_binary)
-        .args(&[
+    let output = run_hermes_output(
+        project_root,
+        &[
             "query",
             "channels",
             "--chain",
@@ -3656,9 +3544,9 @@ fn resolve_cardano_transfer_channel_id(project_root: &Path) -> Option<String> {
             "--counterparty-chain",
             entrypoint_chain_id(),
             "--show-counterparty",
-        ])
-        .output()
-        .ok()?;
+        ],
+    )
+    .ok()?;
 
     if !output.status.success() {
         return None;
@@ -3741,23 +3629,9 @@ fn query_entrypoint_balances(
 }
 
 fn query_entrypoint_json(url: &str, timeout_secs: u64) -> Result<serde_json::Value, String> {
-    let output = Command::new("curl")
-        .args(["-sS", "--max-time", &timeout_secs.to_string(), url])
-        .output()
-        .map_err(|e| format!("Failed to execute curl for {}: {}", url, e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let detail = if !stderr.is_empty() { stderr } else { stdout };
-        return Err(format!(
-            "HTTP query failed for {} (exit={}): {}",
-            url, output.status, detail
-        ));
-    }
-
-    serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("Failed to parse JSON from {}: {}", url, e))
+    HttpHealthClient::new(Duration::from_secs(3), Duration::from_secs(timeout_secs))
+        .map_err(|e| format!("Failed to build HTTP client for {}: {}", url, e))?
+        .get_json(url)
 }
 
 fn query_entrypoint_denom_trace(hash: &str) -> Result<(String, String), String> {
@@ -3845,25 +3719,21 @@ fn query_cardano_lovelace_total(
     project_root: &Path,
     address: &str,
 ) -> Result<u64, Box<dyn std::error::Error>> {
-    let cardano_dir = project_root.join("chains/cardano");
-    let output = Command::new("docker")
-        .args(&[
-            "compose",
-            "exec",
-            "-T",
-            "cardano-node",
-            "cardano-cli",
-            "query",
-            "utxo",
-            "--address",
-            address,
-            "--testnet-magic",
-            "42",
-            "--out-file",
-            "/dev/stdout",
-        ])
-        .current_dir(&cardano_dir)
-        .output()?;
+    let output = CardanoCli::new(project_root)
+        .exec_output(
+            [
+                "query",
+                "utxo",
+                "--address",
+                address,
+                "--testnet-magic",
+                "42",
+                "--out-file",
+                "/dev/stdout",
+            ]
+            .as_slice(),
+        )
+        .map_err(std::io::Error::other)?;
 
     if !output.status.success() {
         return Err(format!(
@@ -3901,25 +3771,21 @@ fn query_cardano_utxos_json(
     project_root: &Path,
     address: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let cardano_dir = project_root.join("chains/cardano");
-    let output = Command::new("docker")
-        .args(&[
-            "compose",
-            "exec",
-            "-T",
-            "cardano-node",
-            "cardano-cli",
-            "query",
-            "utxo",
-            "--address",
-            address,
-            "--testnet-magic",
-            "42",
-            "--out-file",
-            "/dev/stdout",
-        ])
-        .current_dir(&cardano_dir)
-        .output()?;
+    let output = CardanoCli::new(project_root)
+        .exec_output(
+            [
+                "query",
+                "utxo",
+                "--address",
+                address,
+                "--testnet-magic",
+                "42",
+                "--out-file",
+                "/dev/stdout",
+            ]
+            .as_slice(),
+        )
+        .map_err(std::io::Error::other)?;
 
     if !output.status.success() {
         return Err(format!(
@@ -3937,25 +3803,21 @@ fn query_cardano_policy_assets(
     address: &str,
     policy_id: &str,
 ) -> Result<BTreeMap<String, u64>, Box<dyn std::error::Error>> {
-    let cardano_dir = project_root.join("chains/cardano");
-    let output = Command::new("docker")
-        .args(&[
-            "compose",
-            "exec",
-            "-T",
-            "cardano-node",
-            "cardano-cli",
-            "query",
-            "utxo",
-            "--address",
-            address,
-            "--testnet-magic",
-            "42",
-            "--out-file",
-            "/dev/stdout",
-        ])
-        .current_dir(&cardano_dir)
-        .output()?;
+    let output = CardanoCli::new(project_root)
+        .exec_output(
+            [
+                "query",
+                "utxo",
+                "--address",
+                address,
+                "--testnet-magic",
+                "42",
+                "--out-file",
+                "/dev/stdout",
+            ]
+            .as_slice(),
+        )
+        .map_err(std::io::Error::other)?;
 
     if !output.status.success() {
         return Err(format!(
@@ -4229,29 +4091,30 @@ fn hermes_ft_transfer(
     timeout_height_offset: u64,
     timeout_seconds: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let hermes_binary = project_root.join("relayer/target/release/hermes");
     logger::verbose(&format!(
         "   Running: hermes tx ft-transfer --src-chain {} --dst-chain {} --src-port {} --src-channel {} --amount {} --denom {}",
         src_chain, dst_chain, src_port, src_channel, amount, denom
     ));
 
-    let mut command = Command::new(&hermes_binary);
-    command.args(&[
-        "tx",
-        "ft-transfer",
-        "--src-chain",
-        src_chain,
-        "--dst-chain",
-        dst_chain,
-        "--src-port",
-        src_port,
-        "--src-channel",
-        src_channel,
-        "--amount",
-        &amount.to_string(),
-        "--denom",
-        denom,
-    ]);
+    let mut command = build_hermes_command(
+        project_root,
+        &[
+            "tx",
+            "ft-transfer",
+            "--src-chain",
+            src_chain,
+            "--dst-chain",
+            dst_chain,
+            "--src-port",
+            src_port,
+            "--src-channel",
+            src_channel,
+            "--amount",
+            &amount.to_string(),
+            "--denom",
+            denom,
+        ],
+    );
 
     if let Some(receiver) = receiver {
         command.args(&["--receiver", receiver]);
@@ -4287,23 +4150,24 @@ fn hermes_run_clear_packets(
     port: &str,
     channel: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let hermes_binary = project_root.join("relayer/target/release/hermes");
     logger::verbose(&format!(
         "   Running: hermes clear packets --chain {} --port {} --channel {}",
         chain, port, channel
     ));
 
-    let mut command = Command::new(&hermes_binary);
-    command.args(&[
-        "clear",
-        "packets",
-        "--chain",
-        chain,
-        "--port",
-        port,
-        "--channel",
-        channel,
-    ]);
+    let command = build_hermes_command(
+        project_root,
+        &[
+            "clear",
+            "packets",
+            "--chain",
+            chain,
+            "--port",
+            port,
+            "--channel",
+            channel,
+        ],
+    );
     let output = run_command_streaming(command, "hermes clear packets")?;
     if !output.status.success() {
         return Err(format!(
@@ -4409,9 +4273,9 @@ fn hermes_query_packet_pending(
     port: &str,
     channel: &str,
 ) -> Result<(bool, String), Box<dyn std::error::Error>> {
-    let hermes_binary = project_root.join("relayer/target/release/hermes");
-    let output = Command::new(&hermes_binary)
-        .args(&[
+    let output = run_hermes_output(
+        project_root,
+        &[
             "query",
             "packet",
             "pending",
@@ -4421,8 +4285,8 @@ fn hermes_query_packet_pending(
             port,
             "--channel",
             channel,
-        ])
-        .output()?;
+        ],
+    )?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -4767,10 +4631,9 @@ fn run_hermes_and_print_inner(
     label: &str,
     allow_not_found: bool,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let hermes_binary = project_root.join("relayer/target/release/hermes");
     logger::log(&format!("=== {} ===", label));
 
-    let output = Command::new(&hermes_binary).args(args).output()?;
+    let output = run_hermes_output(project_root, args)?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 

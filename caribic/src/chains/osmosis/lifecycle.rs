@@ -8,8 +8,9 @@ use serde_json::Value;
 use super::config;
 use crate::chains::cosmos_node::resolve_home_relative_path;
 use crate::logger::{self, log, log_or_show_progress, verbose};
+use crate::process::docker::DockerCli;
 use crate::setup::download_repository;
-use crate::utils::{execute_script, wait_for_health_check};
+use crate::utils::wait_for_health_check;
 
 pub(super) async fn prepare_local(
     project_root_path: &Path,
@@ -53,18 +54,10 @@ pub(super) async fn start_local(osmosis_dir: &Path) -> Result<(), Box<dyn std::e
         log("Starting Osmosis appchain ...");
     }
 
-    let status = execute_script(
-        osmosis_dir,
-        "docker",
-        Vec::from([
-            "compose",
-            "-f",
-            config::LOCAL_DOCKER_COMPOSE_FILE,
-            "up",
-            "-d",
-        ]),
-        None,
-    );
+    let status = DockerCli::new(osmosis_dir)
+        .compose_output(&["-f", config::LOCAL_DOCKER_COMPOSE_FILE, "up", "-d"])
+        .map(|_| String::new())
+        .map_err(std::io::Error::other);
 
     if status.is_ok() {
         log_or_show_progress(
@@ -124,12 +117,7 @@ pub(super) fn stop_local(osmosis_path: &Path) {
             continue;
         }
 
-        let _ = execute_script(
-            osmosis_path,
-            "docker",
-            Vec::from(["compose", "-f", compose_file, "down"]),
-            None,
-        );
+        let _ = DockerCli::new(osmosis_path).compose_ok(&["-f", compose_file, "down"]);
     }
 }
 

@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::Path;
-use std::process::{Command, Output};
+use std::process::Output;
 use std::thread;
 use std::time::Duration;
 
@@ -12,7 +12,8 @@ use crate::chains::hermes_support::{
     HermesAddressType, HermesCosmosChainProfile, HermesGasPrice, HermesTrustThreshold,
 };
 use crate::logger::{log, verbose};
-use crate::utils::{execute_script, extract_tendermint_connection_id, parse_tendermint_client_id};
+use crate::process::hermes::HermesCli;
+use crate::utils::{extract_tendermint_connection_id, parse_tendermint_client_id};
 
 const INJECTIVE_ETH_HD_PATH: &str = "m/44'/60'/0'/0/0";
 const INJECTIVE_ETH_PUBKEY_TYPE: &str = "/injective.crypto.v1beta1.ethsecp256k1.PubKey";
@@ -163,9 +164,10 @@ fn configure_hermes_for_demo_chain(
         Some("86000s"),
     )?;
 
-    let create_connection_output = Command::new(&hermes_binary)
-        .current_dir(injective_dir)
-        .args([
+    let create_connection_output = run_hermes_output(
+        hermes_binary.as_path(),
+        injective_dir,
+        &[
             "create",
             "connection",
             "--a-chain",
@@ -174,8 +176,8 @@ fn configure_hermes_for_demo_chain(
             entrypoint_client_id.as_str(),
             "--b-client",
             injective_client_id.as_str(),
-        ])
-        .output()?;
+        ],
+    )?;
     if !create_connection_output.status.success() {
         return Err(format!(
             "Failed to create Entrypoint↔Injective connection for chain {}:\n{}",
@@ -187,9 +189,10 @@ fn configure_hermes_for_demo_chain(
     let connection_id = extract_tendermint_connection_id(create_connection_output)
         .ok_or("Failed to parse connection id from Hermes output")?;
 
-    let create_channel_output = Command::new(&hermes_binary)
-        .current_dir(injective_dir)
-        .args([
+    let create_channel_output = run_hermes_output(
+        hermes_binary.as_path(),
+        injective_dir,
+        &[
             "create",
             "channel",
             "--a-chain",
@@ -200,8 +203,8 @@ fn configure_hermes_for_demo_chain(
             "transfer",
             "--b-port",
             "transfer",
-        ])
-        .output()?;
+        ],
+    )?;
     if !create_channel_output.status.success() {
         return Err(format!(
             "Failed to create Entrypoint↔Injective transfer channel for chain {}:\n{}",
@@ -232,7 +235,9 @@ fn add_hermes_key(
     }
     args.extend(["--mnemonic-file", mnemonic_file]);
 
-    execute_script(working_dir, hermes_binary, args, None)?;
+    HermesCli::new(Path::new(hermes_binary))
+        .output(Some(working_dir), args.as_slice())
+        .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
     Ok(())
 }
 
@@ -241,10 +246,11 @@ fn chain_has_any_keys(
     working_dir: &Path,
     chain_id: &str,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let output = Command::new(hermes_binary)
-        .current_dir(working_dir)
-        .args(["keys", "list", "--chain", chain_id])
-        .output()?;
+    let output = run_hermes_output(
+        hermes_binary,
+        working_dir,
+        &["keys", "list", "--chain", chain_id],
+    )?;
     if !output.status.success() {
         return Ok(false);
     }
@@ -286,10 +292,7 @@ fn create_client_with_retry(
             args.push(trusting_period);
         }
 
-        let output: Output = Command::new(hermes_binary)
-            .current_dir(working_dir)
-            .args(args.as_slice())
-            .output()?;
+        let output: Output = run_hermes_output(hermes_binary, working_dir, args.as_slice())?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         if output.status.success() {
@@ -339,9 +342,10 @@ fn has_open_transfer_channel(
     chain_id: &str,
     counterparty_chain_id: &str,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let output = Command::new(hermes_binary)
-        .current_dir(working_dir)
-        .args([
+    let output = run_hermes_output(
+        hermes_binary,
+        working_dir,
+        &[
             "--json",
             "query",
             "channels",
@@ -349,8 +353,8 @@ fn has_open_transfer_channel(
             chain_id,
             "--counterparty-chain",
             counterparty_chain_id,
-        ])
-        .output()?;
+        ],
+    )?;
 
     if !output.status.success() {
         verbose(&format!(
@@ -527,4 +531,14 @@ fn profile_for_chain(
         )
         .into()),
     }
+}
+
+fn run_hermes_output(
+    hermes_binary: &Path,
+    working_dir: &Path,
+    args: &[&str],
+) -> Result<Output, Box<dyn std::error::Error>> {
+    HermesCli::new(hermes_binary)
+        .output(Some(working_dir), args)
+        .map_err(Into::into)
 }

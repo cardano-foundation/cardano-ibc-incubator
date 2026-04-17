@@ -1,10 +1,10 @@
 use crate::logger;
+use crate::process::{docker::DockerCli, system::SystemChecks};
 use dirs::home_dir;
 use serde::Deserialize;
 use serde_json::Value;
 use std::ffi::OsStr;
 use std::path::Path;
-use std::process::Command;
 
 #[derive(Clone, Debug)]
 pub struct ToolStatus {
@@ -188,11 +188,7 @@ fn probe_deno(requirement: &ToolRequirement) -> ToolStatus {
 
 fn probe_hermes_native_toolchain(requirement: &ToolRequirement) -> ToolStatus {
     let command = "command -v cc >/dev/null 2>&1 && command -v clang >/dev/null 2>&1 && command -v pkg-config >/dev/null 2>&1 && command -v protoc >/dev/null 2>&1 && printf '#include <stddef.h>\\n' | cc -E -x c - >/dev/null 2>&1";
-    let available = Command::new("sh")
-        .args(["-lc", command])
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false);
+    let available = SystemChecks::shell_succeeds(command);
 
     let version_line = if available {
         let cc_version =
@@ -213,7 +209,7 @@ fn probe_hermes_native_toolchain(requirement: &ToolRequirement) -> ToolStatus {
 }
 
 fn run_version_command<S: AsRef<OsStr>>(command: S, args: &[&str]) -> Option<String> {
-    let output = Command::new(command).args(args).output().ok()?;
+    let output = SystemChecks::output(command, args).ok()?;
     if !output.status.success() {
         return None;
     }
@@ -349,19 +345,9 @@ fn emit_docker_space_summary(statuses: &[ToolStatus]) {
 }
 
 fn collect_docker_df_summary() -> Result<DockerDfSummary, String> {
-    let output = Command::new("docker")
-        .args(["system", "df", "--format", "{{json .}}"])
-        .output()
+    let output = DockerCli::new(Path::new("."))
+        .raw_output(["system", "df", "--format", "{{json .}}"].as_slice())
         .map_err(|error| format!("failed to execute docker: {}", error))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if stderr.is_empty() {
-            "docker system df returned non-zero exit code".to_string()
-        } else {
-            stderr
-        });
-    }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut rows = Vec::new();
@@ -398,13 +384,9 @@ fn detect_docker_available_space(estimated_used_bytes: u64) -> Option<DockerAvai
 }
 
 fn detect_docker_filesystem_space() -> Option<DockerAvailableSpace> {
-    let root_dir_output = Command::new("docker")
-        .args(["info", "--format", "{{.DockerRootDir}}"])
-        .output()
+    let root_dir_output = DockerCli::new(Path::new("."))
+        .raw_output(["info", "--format", "{{.DockerRootDir}}"].as_slice())
         .ok()?;
-    if !root_dir_output.status.success() {
-        return None;
-    }
 
     let docker_root_dir = String::from_utf8_lossy(&root_dir_output.stdout)
         .trim()
@@ -418,23 +400,7 @@ fn detect_docker_filesystem_space() -> Option<DockerAvailableSpace> {
         return None;
     }
 
-    let df_output = Command::new("df")
-        .args(["-Pk", &docker_root_dir])
-        .output()
-        .ok()?;
-    if !df_output.status.success() {
-        return None;
-    }
-
-    let df_stdout = String::from_utf8_lossy(&df_output.stdout);
-    let data_line = df_stdout.lines().nth(1)?.trim();
-    let columns: Vec<&str> = data_line.split_whitespace().collect();
-    if columns.len() < 4 {
-        return None;
-    }
-
-    let total_kib = columns.get(1)?.parse::<u64>().ok()?;
-    let free_kib = columns.get(3)?.parse::<u64>().ok()?;
+    let (total_kib, free_kib) = SystemChecks::filesystem_df_kib(docker_root_path)?;
 
     Some(DockerAvailableSpace {
         free_bytes: free_kib.saturating_mul(1024),
@@ -444,13 +410,7 @@ fn detect_docker_filesystem_space() -> Option<DockerAvailableSpace> {
 }
 
 fn detect_colima_allocated_space(estimated_used_bytes: u64) -> Option<DockerAvailableSpace> {
-    let output = Command::new("colima")
-        .args(["status", "--json"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
+    let output = SystemChecks::output("colima", &["status", "--json"]).ok()?;
 
     let status: Value = serde_json::from_slice(&output.stdout).ok()?;
     let total_bytes = status.get("disk")?.as_u64()?;

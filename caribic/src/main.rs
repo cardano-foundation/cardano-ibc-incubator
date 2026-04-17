@@ -13,6 +13,7 @@ mod constants;
 mod demos;
 mod install;
 mod logger;
+mod process;
 mod setup;
 mod start;
 mod stop;

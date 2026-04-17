@@ -1,29 +1,21 @@
 use std::path::Path;
-use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
 use crate::{
     config,
     logger::{error, log},
+    process::{docker::DockerCli, system::SystemChecks},
     start,
     utils::execute_script,
 };
 
 /// Check if any docker compose containers are running in a given directory
 fn has_running_containers(path: &Path) -> bool {
-    let output = Command::new("docker")
-        .args(&["compose", "ps", "-q"])
-        .current_dir(path)
-        .output();
-
-    match output {
-        Ok(result) => {
-            let stdout = String::from_utf8_lossy(&result.stdout);
-            !stdout.trim().is_empty()
-        }
-        Err(_) => false,
-    }
+    DockerCli::new(path)
+        .compose_output(&["ps", "-q"])
+        .map(|result| !String::from_utf8_lossy(&result.stdout).trim().is_empty())
+        .unwrap_or(false)
 }
 
 pub fn stop_gateway(project_root_path: &Path) {
@@ -127,10 +119,7 @@ pub fn stop_relayer(relayer_path: &Path) {
     }
 
     for pid in &running_pids {
-        if let Err(kill_error) = Command::new("kill")
-            .args(["-TERM", &pid.to_string()])
-            .output()
-        {
+        if let Err(kill_error) = SystemChecks::send_signal(*pid, "-TERM") {
             error(&format!(
                 "ERROR: Failed to send SIGTERM to Hermes relayer pid {}: {}",
                 pid, kill_error
@@ -146,10 +135,7 @@ pub fn stop_relayer(relayer_path: &Path) {
         .collect();
 
     for pid in &remaining_pids {
-        if let Err(kill_error) = Command::new("kill")
-            .args(["-KILL", &pid.to_string()])
-            .output()
-        {
+        if let Err(kill_error) = SystemChecks::send_signal(*pid, "-KILL") {
             error(&format!(
                 "ERROR: Failed to send SIGKILL to Hermes relayer pid {}: {}",
                 pid, kill_error
@@ -176,12 +162,8 @@ fn find_running_hermes_daemon_pids(relayer_path: &Path) -> Vec<u32> {
     let expected_binary = relayer_path.join("target/release/hermes");
     let expected_binary_str = expected_binary.to_str();
 
-    let ps_output = Command::new("ps")
-        .args(["-ax", "-o", "pid=,command="])
-        .output();
-
-    match ps_output {
-        Ok(output) => String::from_utf8_lossy(&output.stdout)
+    match SystemChecks::find_processes_by_command() {
+        Ok(output) => output
             .lines()
             .filter_map(|line| parse_pid_and_command(line))
             .filter_map(|(pid, command)| {
