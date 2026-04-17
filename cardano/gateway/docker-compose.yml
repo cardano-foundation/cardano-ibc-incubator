@@ -12,6 +12,7 @@ services:
     networks:
       - cardano_network
     volumes:
+      - ./dist:/usr/src/app/dist
       - ../../chains/mithrils/data/aggregator/stores:/usr/chains/mithrils/data/aggregator/stores
       - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments
     env_file:
@@ -27,6 +28,7 @@ services:
     networks:
       - cardano_network
     volumes:
+      - ./dist:/usr/src/app/dist
       - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments
     env_file:
       - .env

@@ -645,7 +645,7 @@ pub async fn run_start(
         } else {
             logger::log("Next steps:");
             logger::log("   1. Check health: caribic health-check");
-            logger::log("   2. Review exported preprod artifacts in cardano/offchain/deployments");
+            logger::log("   2. Review exported preprod artifacts in manifests/preprod");
             logger::log("   3. Restart gateway/relayer independently with `caribic start gateway --network preprod` or `caribic start relayer --network preprod`");
         }
     }

@@ -1,7 +1,13 @@
 import { ConfigService } from '@nestjs/config';
-import { querySystemStart } from '../../helpers/time';
+import { querySystemStart, queryTransactionInclusionBlockHeight } from '../../helpers/time';
 import { Network } from '@lucid-evolution/lucid';
+import { applyDoubleCborEncoding } from '@lucid-evolution/utils';
 import { writeFileSync } from 'fs';
+import {
+  installManagedCardanoAuthFetch,
+  resolveManagedKupmiosHeaders,
+  resolveManagedOgmiosHttpEndpoint,
+} from '../../helpers/managed-cardano-endpoints';
 export const LUCID_CLIENT = 'LUCID_CLIENT';
 export const LUCID_IMPORTER = 'LUCID_IMPORTER';
 
@@ -175,8 +181,159 @@ function computeJitteredBackoffDelayMs(failedAttempt: number): number {
   return Math.round(backoffDelay * jitterMultiplier);
 }
 
+type KupoValue = {
+  coins: number;
+  assets: Record<string, number>;
+};
+
+type KupoMatch = {
+  transaction_id: string;
+  output_index: number;
+  address: string;
+  value: KupoValue;
+  datum_hash: string | null;
+  datum_type?: 'hash' | 'inline';
+  script_hash: string | null;
+};
+
+type KupoDatum = {
+  datum: string;
+} | null;
+
+type KupoScript = {
+  language: 'native' | 'plutus:v1' | 'plutus:v2' | 'plutus:v3';
+  script: string;
+} | null;
+
+const KUPMIOs_LOOKUP_ATTEMPTS = 5;
+const KUPMIOS_LOOKUP_BASE_DELAY_MS = 300;
+
+function toAssets(value: KupoValue): Record<string, bigint> {
+  const assets: Record<string, bigint> = { lovelace: BigInt(value.coins) };
+  for (const [unit, quantity] of Object.entries(value.assets ?? {})) {
+    assets[unit.replace('.', '')] = BigInt(quantity);
+  }
+  return assets;
+}
+
+function toScriptRef(script: KupoScript | undefined): any {
+  if (!script) {
+    return undefined;
+  }
+
+  switch (script.language) {
+    case 'native':
+      return { type: 'Native', script: script.script };
+    case 'plutus:v1':
+      return { type: 'PlutusV1', script: applyDoubleCborEncoding(script.script) };
+    case 'plutus:v2':
+      return { type: 'PlutusV2', script: applyDoubleCborEncoding(script.script) };
+    case 'plutus:v3':
+      return { type: 'PlutusV3', script: applyDoubleCborEncoding(script.script) };
+  }
+}
+
+async function fetchJson<T>(url: string, headers?: Record<string, string>): Promise<T> {
+  let attempt = 1;
+  let lastError: Error | undefined;
+
+  while (attempt <= KUPMIOs_LOOKUP_ATTEMPTS) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    try {
+      const response = await fetch(url, {
+        headers,
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        throw new Error(`HTTP ${response.status} GET ${url}${body ? `: ${body}` : ''}`);
+      }
+      return (await response.json()) as T;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt >= KUPMIOs_LOOKUP_ATTEMPTS) {
+        break;
+      }
+      const delayMs = KUPMIOS_LOOKUP_BASE_DELAY_MS * 2 ** (attempt - 1);
+      await sleep(delayMs);
+      attempt += 1;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  throw lastError ?? new Error(`Failed to fetch ${url}`);
+}
+
+async function fetchKupoDatum(
+  kupoEndpoint: string,
+  datumType: 'hash' | 'inline' | undefined,
+  datumHash: string | null,
+  headers?: Record<string, string>,
+): Promise<string | undefined> {
+  if (datumType !== 'inline' || !datumHash) {
+    return undefined;
+  }
+
+  const result = await fetchJson<KupoDatum>(`${kupoEndpoint}/datums/${datumHash}`, headers);
+  return result?.datum;
+}
+
+async function fetchKupoScript(
+  kupoEndpoint: string,
+  scriptHash: string | null,
+  headers?: Record<string, string>,
+): Promise<any> {
+  if (!scriptHash) {
+    return undefined;
+  }
+
+  const result = await fetchJson<KupoScript>(`${kupoEndpoint}/scripts/${scriptHash}`, headers);
+  return toScriptRef(result ?? undefined);
+}
+
+async function fetchKupoUtxosByOutRef(
+  kupoEndpoint: string,
+  outRefs: Array<{ txHash: string; outputIndex: number }>,
+  headers?: Record<string, string>,
+): Promise<any[]> {
+  const uniqueTxHashes = [...new Set(outRefs.map((outRef) => outRef.txHash))];
+  const matches: KupoMatch[] = [];
+  for (const txHash of uniqueTxHashes) {
+    const fetchedMatches = await fetchJson<KupoMatch[]>(
+      `${kupoEndpoint}/matches/*@${txHash}?unspent`,
+      headers,
+    );
+    matches.push(...fetchedMatches);
+  }
+
+  const filteredMatches = matches.filter((match) =>
+    outRefs.some((outRef) =>
+      match.transaction_id === outRef.txHash && match.output_index === outRef.outputIndex
+    )
+  );
+
+  const utxos: any[] = [];
+  for (const match of filteredMatches) {
+    utxos.push({
+      txHash: match.transaction_id,
+      outputIndex: match.output_index,
+      address: match.address,
+      assets: toAssets(match.value),
+      datumHash: match.datum_type === 'hash' ? match.datum_hash ?? undefined : undefined,
+      datum: await fetchKupoDatum(kupoEndpoint, match.datum_type, match.datum_hash, headers),
+      scriptRef: await fetchKupoScript(kupoEndpoint, match.script_hash, headers),
+    });
+  }
+
+  return utxos;
+}
+
 async function retryWithBackoff<T>(
   operation: () => Promise<T>,
+  label: string,
 ): Promise<T> {
   for (
     let attempt = 1;
@@ -193,20 +350,20 @@ async function retryWithBackoff<T>(
       const errorSummary = summarizeError(error);
       if (attempt >= PROTOCOL_PARAMETERS_MAX_ATTEMPTS) {
         throw new Error(
-          `[startup] Kupmios protocol parameters fetch failed after ${PROTOCOL_PARAMETERS_MAX_ATTEMPTS} attempts: ${errorSummary}`,
+          `[startup] ${label} failed after ${PROTOCOL_PARAMETERS_MAX_ATTEMPTS} attempts: ${errorSummary}`,
         );
       }
 
       const retryDelayMs = computeJitteredBackoffDelayMs(attempt);
       console.warn(
-        `[startup] Kupmios protocol parameters fetch failed (attempt ${attempt}/${PROTOCOL_PARAMETERS_MAX_ATTEMPTS}): ${errorSummary}. Retrying in ${retryDelayMs}ms`,
+        `[startup] ${label} failed (attempt ${attempt}/${PROTOCOL_PARAMETERS_MAX_ATTEMPTS}): ${errorSummary}. Retrying in ${retryDelayMs}ms`,
       );
       await sleep(retryDelayMs);
     }
   }
 
   throw new Error(
-    `[startup] Kupmios protocol parameters fetch failed after ${PROTOCOL_PARAMETERS_MAX_ATTEMPTS} attempts`,
+    `[startup] ${label} failed after ${PROTOCOL_PARAMETERS_MAX_ATTEMPTS} attempts`,
   );
 }
 
@@ -216,7 +373,48 @@ export const LucidClient = {
     // Dynamically import Lucid library
     const Lucid = await (eval(`import('@lucid-evolution/lucid')`) as Promise<typeof import('@lucid-evolution/lucid')>);
     // Create Lucid provider and instance
-    const provider: any = new Lucid.Kupmios(configService.get('kupoEndpoint'), configService.get('ogmiosEndpoint'));
+    const kupoEndpoint = configService.get('kupoEndpoint');
+    const ogmiosEndpoint = resolveManagedOgmiosHttpEndpoint(
+      configService.get('ogmiosEndpoint'),
+      configService.get('ogmiosApiKey'),
+    );
+    const kupmiosHeaders = resolveManagedKupmiosHeaders(
+      kupoEndpoint,
+      configService.get('kupoApiKey'),
+      ogmiosEndpoint,
+      configService.get('ogmiosApiKey'),
+    );
+
+    installManagedCardanoAuthFetch(
+      configService.get('kupoEndpoint'),
+      configService.get('kupoApiKey'),
+      configService.get('ogmiosEndpoint'),
+      configService.get('ogmiosApiKey'),
+    );
+
+    const provider: any = new Lucid.Kupmios(kupoEndpoint, ogmiosEndpoint, kupmiosHeaders);
+    console.log(
+      `[startup] Lucid provider endpoints kupo=${kupoEndpoint} ogmiosHttp=${ogmiosEndpoint} ogmiosWs=${configService.get('ogmiosEndpoint')}`,
+    );
+    const originalGetUtxosByOutRef = provider.getUtxosByOutRef?.bind(provider);
+    if (typeof originalGetUtxosByOutRef === 'function') {
+      provider.getUtxosByOutRef = async (
+        outRefs: Array<{ txHash: string; outputIndex: number }>,
+      ) => {
+        try {
+          return await fetchKupoUtxosByOutRef(
+            kupoEndpoint,
+            outRefs,
+            kupmiosHeaders?.kupoHeader,
+          );
+        } catch (error) {
+          console.warn(
+            `[startup] custom Kupo out-ref lookup failed, falling back to provider default: ${summarizeError(error)}`,
+          );
+          return await originalGetUtxosByOutRef(outRefs);
+        }
+      };
+    }
     // DEBUG: `TxBuilder.complete()` uses `provider.evaluateTx(...)` to ask Ogmios for script
     // execution units. When evaluation fails, Lucid throws before we can decode the final
     // transaction body, which makes errors like `Spend[2]` hard to map to actual inputs.
@@ -366,15 +564,49 @@ export const LucidClient = {
       };
     }
 
+    const originalAwaitTx = provider.awaitTx?.bind(provider);
+    if (typeof originalAwaitTx === 'function') {
+      provider.awaitTx = async (txHash: string, checkInterval: number = 20_000) => {
+        const timeoutMs = Math.max(160_000, checkInterval * 8);
+        try {
+          await queryTransactionInclusionBlockHeight(
+            configService.get('ogmiosEndpoint'),
+            txHash,
+            'origin',
+            timeoutMs,
+          );
+          return true;
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.warn(
+            `[startup] Ogmios awaitTx fallback did not confirm tx ${txHash} within ${timeoutMs}ms: ${errorMessage}`,
+          );
+          return false;
+        }
+      };
+    }
+
     const network = configService.get('cardanoNetwork') as Network;
+    console.log('[startup] Fetching Kupmios protocol parameters');
     const protocolParameters = sanitizeProtocolParameters(
-      await retryWithBackoff(() => provider.getProtocolParameters()),
+      await retryWithBackoff(
+        () => provider.getProtocolParameters(),
+        'Kupmios protocol parameters fetch',
+      ),
     );
+    console.log('[startup] Kupmios protocol parameters loaded');
+    console.log(`[startup] Constructing Lucid for network=${network}`);
     const lucid = await Lucid.Lucid(provider, network, {
       presetProtocolParameters: protocolParameters,
     } as any);
+    console.log('[startup] Lucid constructed successfully');
 
-    const chainZeroTime = await querySystemStart(configService.get('ogmiosEndpoint'));
+    console.log('[startup] Querying Ogmios system start');
+    const chainZeroTime = await retryWithBackoff(
+      () => querySystemStart(configService.get('ogmiosEndpoint')),
+      'Ogmios system start query',
+    );
+    console.log('[startup] Ogmios system start loaded');
     Lucid.SLOT_CONFIG_NETWORK[network].zeroTime = chainZeroTime;
     Lucid.SLOT_CONFIG_NETWORK[network].slotLength = 1000;
     // const lucid = await Lucid.Lucid.new(

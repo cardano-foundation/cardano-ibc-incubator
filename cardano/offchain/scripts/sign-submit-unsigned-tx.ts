@@ -1,6 +1,17 @@
 import { Buffer } from "node:buffer";
-import { Kupmios } from "@lucid-evolution/lucid";
-import { buildLucidWithCompatibleProtocolParameters } from "../src/protocol_parameters.ts";
+import {
+  installManagedCardanoAuthFetch,
+  resolveManagedKupoUrl,
+  resolveManagedOgmiosUrl,
+  resolveManagedKupmiosHeaders,
+} from "../src/http_auth.ts";
+const {
+  parseNetwork,
+  queryProtocolParametersCompat,
+  resolveOgmiosHttpUrl,
+  querySystemStart,
+  sanitizeProtocolParameters,
+} = await import("../src/external_cardano.ts");
 
 const unsignedTxPath = Deno.args[0];
 if (!unsignedTxPath) {
@@ -10,6 +21,8 @@ if (!unsignedTxPath) {
 const deployerSk = Deno.env.get("DEPLOYER_SK");
 const kupoUrl = Deno.env.get("KUPO_URL");
 const ogmiosUrl = Deno.env.get("OGMIOS_URL");
+const kupoApiKey = Deno.env.get("KUPO_API_KEY")?.trim();
+const ogmiosApiKey = Deno.env.get("OGMIOS_API_KEY")?.trim();
 const cardanoNetworkMagic = Deno.env.get("CARDANO_NETWORK_MAGIC");
 
 if (!deployerSk || !kupoUrl || !ogmiosUrl || !cardanoNetworkMagic) {
@@ -38,17 +51,44 @@ function resolveUnsignedTxHex(serialized: string): string {
   return decoded.toString("hex");
 }
 
-const provider = new Kupmios(kupoUrl, ogmiosUrl);
-const lucid = await buildLucidWithCompatibleProtocolParameters(
+installManagedCardanoAuthFetch();
+const chainZeroTime = await querySystemStart(ogmiosUrl);
+const protocolParameters = sanitizeProtocolParameters(
+  await queryProtocolParametersCompat(ogmiosUrl),
+);
+const { Kupmios, Lucid, SLOT_CONFIG_NETWORK } = await import("@lucid-evolution/lucid");
+const { awaitWalletTx } = await import("../src/utils.ts");
+const provider = new Kupmios(
+  resolveManagedKupoUrl(kupoUrl, kupoApiKey),
+  resolveManagedOgmiosUrl(resolveOgmiosHttpUrl(ogmiosUrl), ogmiosApiKey),
+  resolveManagedKupmiosHeaders(
+    kupoUrl,
+    resolveManagedOgmiosUrl(resolveOgmiosHttpUrl(ogmiosUrl), ogmiosApiKey),
+    kupoApiKey,
+    ogmiosApiKey,
+  ),
+);
+SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
+const lucid = await Lucid(
   provider,
-  ogmiosUrl,
-  cardanoNetworkMagic,
+  parseNetwork(cardanoNetworkMagic),
+  {
+    presetProtocolParameters: protocolParameters,
+  } as any,
 );
 lucid.selectWallet.fromPrivateKey(deployerSk);
 
 const signedTx = await lucid.fromTx(resolveUnsignedTxHex(unsignedTxBase64)).sign.withWallet().complete();
-const txHash = await signedTx.submit();
-await lucid.awaitTx(txHash, 1000);
+// Use the signed body hash as the source of truth so submit retries and
+// adoption checks still work if Ogmios accepts the tx but drops the response.
+const txHash = signedTx.toHash();
+const submittedHash = await signedTx.submit();
+if (submittedHash !== txHash) {
+  throw new Error(
+    `Provider returned tx hash ${submittedHash}, but signed body hash is ${txHash}`,
+  );
+}
+await awaitWalletTx(lucid, txHash, 1000);
 
 console.log(
   JSON.stringify({
