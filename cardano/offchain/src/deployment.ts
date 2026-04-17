@@ -17,10 +17,11 @@ import {
 import {
   awaitWalletTx,
   DeploymentTemplate,
+  awaitWalletTx,
+  getLiveWalletUtxos,
   formatTimestamp,
   generateIdentifierTokenName,
   generateTokenName,
-  getLiveWalletUtxos,
   isRetryableOgmiosTransportError,
   readValidator,
   submitTx,
@@ -817,8 +818,7 @@ async function createReferenceUtxos(
       for (let attempt = 1; attempt <= 5; attempt += 1) {
         try {
           [newWalletUTxOs, derivedOutputs, signedTx] = await (async () => {
-            const [walletUTxOs, outputs, txSignBuilder] =
-              await buildReferenceBatchTx().chain();
+            const [walletUTxOs, outputs, txSignBuilder] = await buildReferenceBatchTx().chain();
             return [
               walletUTxOs,
               outputs,
@@ -870,11 +870,11 @@ async function createReferenceUtxos(
         continue;
       }
       if (!newWalletUTxOs || !derivedOutputs || !signedTx) {
-        throw lastBuildError ??
-          new Error("Failed to build reference batch transaction");
+        throw lastBuildError ?? new Error("Failed to build reference batch transaction");
       }
 
       const txHash = signedTx.toHash();
+      let lastSubmitError: unknown;
       for (let attempt = 1; attempt <= 6; attempt++) {
         try {
           const submittedHash = await signedTx.submit();
@@ -884,6 +884,7 @@ async function createReferenceUtxos(
             );
           }
         } catch (error) {
+          lastSubmitError = error;
           console.warn(
             `createReferenceUtxos submit retry ${attempt}/6 after error:`,
             error,
@@ -895,11 +896,46 @@ async function createReferenceUtxos(
           lucid.overrideUTxOs(newWalletUTxOs);
           break;
         } catch (error) {
-          if (attempt === 6) {
+          lastBuildError = error;
+          if (
+            batch.validators.length > 1 &&
+            isLikelyReferenceBatchTooLarge(error)
+          ) {
+            // The coarse size estimate can still under-shoot once fees/change are
+            // fully materialized, so split and retry instead of failing the whole deploy.
+            const midpoint = Math.ceil(batch.validators.length / 2);
+            console.warn(
+              `Reference batch ${batch.startIndex + 1}-${
+                batch.startIndex + batch.validators.length
+              } exceeded the transaction size budget; splitting into batches of ${midpoint} and ${
+                batch.validators.length - midpoint
+              }.`,
+            );
+            pendingBatches.unshift(
+              {
+                validators: batch.validators.slice(midpoint),
+                startIndex: batch.startIndex + midpoint,
+              },
+              {
+                validators: batch.validators.slice(0, midpoint),
+                startIndex: batch.startIndex,
+              },
+            );
+            splitBatch = true;
+            break;
+          }
+          if (!isRetryableOgmiosTransportError(error) || attempt === 5) {
             throw error;
           }
           await new Promise((resolve) => setTimeout(resolve, 2000));
         }
+      }
+      if (splitBatch) {
+        continue;
+      }
+      if (!newWalletUTxOs || !derivedOutputs || !signedTx) {
+        throw lastBuildError ??
+          new Error("Failed to build reference batch transaction");
       }
 
       console.log(
@@ -1162,9 +1198,7 @@ const deployTransferModule = async (
           ),
           {
             kind: "inline",
-            value: Data.to(updatedHandlerDatum, HandlerDatum, {
-              canonical: true,
-            }),
+            value: Data.to(updatedHandlerDatum, HandlerDatum, { canonical: true }),
           },
           {
             [handlerTokenUnit]: 1n,
@@ -1297,9 +1331,7 @@ const deployGenericModule = async (
           ),
           {
             kind: "inline",
-            value: Data.to(updatedHandlerDatum, HandlerDatum, {
-              canonical: true,
-            }),
+            value: Data.to(updatedHandlerDatum, HandlerDatum, { canonical: true }),
           },
           {
             [handlerTokenUnit]: 1n,

@@ -1,9 +1,9 @@
 import { Buffer } from "node:buffer";
 import {
   installManagedCardanoAuthFetch,
-  resolveManagedKupmiosHeaders,
   resolveManagedKupoUrl,
   resolveManagedOgmiosUrl,
+  resolveManagedKupmiosHeaders,
 } from "../src/http_auth.ts";
 const {
   parseNetwork,
@@ -58,9 +58,7 @@ const chainZeroTime = await querySystemStart(ogmiosUrl);
 const protocolParameters = sanitizeProtocolParameters(
   await queryProtocolParametersCompat(ogmiosUrl),
 );
-const { Kupmios, Lucid, SLOT_CONFIG_NETWORK } = await import(
-  "@lucid-evolution/lucid"
-);
+const { Kupmios, Lucid, SLOT_CONFIG_NETWORK } = await import("@lucid-evolution/lucid");
 const { awaitWalletTx } = await import("../src/utils.ts");
 const provider = new Kupmios(
   resolveManagedKupoUrl(kupoUrl, kupoApiKey),
@@ -82,8 +80,7 @@ const lucid = await Lucid(
 );
 lucid.selectWallet.fromPrivateKey(deployerSk);
 
-const signedTx = await lucid.fromTx(resolveUnsignedTxHex(unsignedTxBase64)).sign
-  .withWallet().complete();
+const signedTx = await lucid.fromTx(resolveUnsignedTxHex(unsignedTxBase64)).sign.withWallet().complete();
 // Use the signed body hash as the source of truth so submit retries and
 // adoption checks still work if Ogmios accepts the tx but drops the response.
 const txHash = signedTx.toHash();

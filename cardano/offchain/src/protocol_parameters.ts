@@ -123,11 +123,7 @@ function resolveOgmiosHttpRequestConfig(ogmiosUrl: string): {
 
   try {
     const parsedUrl = new URL(httpUrl);
-    parsedUrl.protocol = parsedUrl.protocol === "wss:"
-      ? "https:"
-      : parsedUrl.protocol === "ws:"
-      ? "http:"
-      : parsedUrl.protocol;
+    parsedUrl.protocol = parsedUrl.protocol === "wss:" ? "https:" : parsedUrl.protocol === "ws:" ? "http:" : parsedUrl.protocol;
     httpUrl = parsedUrl.toString();
     // DMTR authenticated hosts already carry the credential in the subdomain.
     if (apiKey && !parsedUrl.host.startsWith(`${apiKey}.`)) {

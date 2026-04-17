@@ -388,7 +388,7 @@ pub fn write_cardano_runtime_selection(
         .unwrap_or_default();
 
     let env_contents = format!(
-        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_SOCKET_PATH={socket_path}\nCARDANO_NODE_SOCKET_PATH={socket_path}\nCARDANO_CHAIN_HOST={chain_host}\nCARDANO_CHAIN_PORT={chain_port}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\nCARDANO_LOCAL_SPO_COUNT={local_spo_count}\nYACI_SYNC_START_SLOT={yaci_sync_start_slot}\nYACI_SYNC_START_BLOCKHASH={yaci_sync_start_blockhash}\nYACI_STORE_POSTGRES_VOLUME={yaci_store_postgres_volume}\nKUPO_BLOCKCHAIN_SOURCE={kupo_blockchain_source}\nKUPO_OGMIOS_HOST={kupo_ogmios_host}\nKUPO_OGMIOS_PORT={kupo_ogmios_port}\nKUPO_SINCE={kupo_since}\nOGMIOS_PROXY_UPSTREAM_HOST={ogmios_proxy_upstream_host}\nOGMIOS_PROXY_UPSTREAM_PORT={ogmios_proxy_upstream_port}\nOGMIOS_PROXY_API_KEY={ogmios_proxy_api_key}\n",
+        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_SOCKET_PATH={socket_path}\nCARDANO_NODE_SOCKET_PATH={socket_path}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\nCARDANO_LOCAL_SPO_COUNT={local_spo_count}\n",
         network = network.as_str(),
     );
 
@@ -1962,6 +1962,13 @@ fn write_gateway_env_for_network(
             )?;
             if let Some(kupo_api_key) = runtime_kupo_api_key.as_deref() {
                 set_or_append_env_var(&gateway_env, "KUPO_API_KEY", kupo_api_key)?;
+            }
+            if let Some(kupo_api_key) = resolve_preprod_live_endpoint(
+                &gateway_env,
+                "KUPO_API_KEY",
+                &["CARIBIC_KUPO_API_KEY", "KUPO_API_KEY"],
+            )? {
+                set_or_append_env_var(&gateway_env, "KUPO_API_KEY", kupo_api_key.as_str())?;
             }
 
             if let Some(ogmios_endpoint) = resolve_preprod_live_endpoint(

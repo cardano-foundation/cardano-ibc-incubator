@@ -1,10 +1,10 @@
 import {
   installManagedCardanoAuthFetch,
-  resolveManagedKupmiosHeaders,
   resolveManagedKupoAuthUrl,
   resolveManagedKupoRequestVariants,
   resolveManagedKupoUrl,
   resolveManagedOgmiosUrl,
+  resolveManagedKupmiosHeaders,
 } from "./src/http_auth.ts";
 const {
   parseNetwork,
@@ -21,9 +21,7 @@ const ogmiosUrl = Deno.env.get("OGMIOS_URL");
 const kupoApiKey = Deno.env.get("KUPO_API_KEY")?.trim();
 const ogmiosApiKey = Deno.env.get("OGMIOS_API_KEY")?.trim();
 const kupoAuthUrl = kupoUrl ? resolveManagedKupoAuthUrl(kupoUrl) : undefined;
-const kupoMatchesUrl = kupoUrl
-  ? resolveManagedKupoUrl(kupoUrl, kupoApiKey)
-  : undefined;
+const kupoMatchesUrl = kupoUrl ? resolveManagedKupoUrl(kupoUrl, kupoApiKey) : undefined;
 // Kupmios still issues plain HTTP POSTs for some internal provider calls, so it
 // must target a header-authenticated Ogmios base host instead of the auth-subdomain
 // websocket endpoint that we use for custom JSON-RPC calls.
@@ -78,16 +76,10 @@ const chainZeroTime = await querySystemStart(ogmiosUrl);
 const protocolParameters = sanitizeProtocolParameters(
   await queryProtocolParametersCompat(ogmiosUrl),
 );
-const {
-  Kupmios,
-  Lucid,
-  SLOT_CONFIG_NETWORK,
-  applyDoubleCborEncoding,
-  fromUnit,
-} = await import(
+const { Kupmios, Lucid, SLOT_CONFIG_NETWORK, applyDoubleCborEncoding, fromUnit } = await import(
   "@lucid-evolution/lucid"
 );
-const { applySingleCborEncoding } = await import("@lucid-evolution/utils");
+const { applySingleCborEncoding } = await import("npm:@lucid-evolution/utils");
 const { createDeployment } = await import("./src/deployment.ts");
 const { KUPMIOS_ENV } = await import("./src/constants.ts");
 
@@ -114,20 +106,11 @@ function toOgmiosAdditionalUtxos(utxos: any[] = []): any[] {
 
     switch (scriptRef.type) {
       case "PlutusV1":
-        return {
-          language: "plutus:v1",
-          cbor: applySingleCborEncoding(scriptRef.script),
-        };
+        return { language: "plutus:v1", cbor: applySingleCborEncoding(scriptRef.script) };
       case "PlutusV2":
-        return {
-          language: "plutus:v2",
-          cbor: applySingleCborEncoding(scriptRef.script),
-        };
+        return { language: "plutus:v2", cbor: applySingleCborEncoding(scriptRef.script) };
       case "PlutusV3":
-        return {
-          language: "plutus:v3",
-          cbor: applySingleCborEncoding(scriptRef.script),
-        };
+        return { language: "plutus:v3", cbor: applySingleCborEncoding(scriptRef.script) };
       default:
         return null;
     }
@@ -202,9 +185,7 @@ class KupmiosWithExtendedSubmitTimeout extends Kupmios {
       const transactionId = parsedResponse?.result?.transaction?.id;
       if (!transactionId) {
         throw new Error(
-          `submitTransaction returned no transaction id: ${
-            JSON.stringify(parsedResponse)
-          }`,
+          `submitTransaction returned no transaction id: ${JSON.stringify(parsedResponse)}`,
         );
       }
 
@@ -221,10 +202,7 @@ class KupmiosWithExtendedSubmitTimeout extends Kupmios {
     }
   }
 
-  override async evaluateTx(
-    tx: string,
-    additionalUTxOs: any[],
-  ): Promise<any[]> {
+  override async evaluateTx(tx: string, additionalUTxOs: any[]): Promise<any[]> {
     const parsedResponse = await queryOgmiosJsonRpc(
       this.#ogmiosUrl,
       "evaluateTransaction",
@@ -342,9 +320,7 @@ class ManagedDmtrKupmios extends KupmiosWithExtendedSubmitTimeout {
 
       if (attempt < maxAttempts) {
         console.warn(
-          `Retrying managed Kupo request ${attempt}/${maxAttempts}: ${
-            String(lastError)
-          }`,
+          `Retrying managed Kupo request ${attempt}/${maxAttempts}: ${String(lastError)}`,
         );
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
       }
@@ -391,10 +367,7 @@ class ManagedDmtrKupmios extends KupmiosWithExtendedSubmitTimeout {
     return assets;
   }
 
-  async #fetchDatum(
-    datumType?: string,
-    datumHash?: string | null,
-  ): Promise<string | undefined> {
+  async #fetchDatum(datumType?: string, datumHash?: string | null): Promise<string | undefined> {
     if (datumType !== "inline" || !datumHash) {
       return undefined;
     }
@@ -415,20 +388,11 @@ class ManagedDmtrKupmios extends KupmiosWithExtendedSubmitTimeout {
       case "native":
         return { type: "Native", script: result.script };
       case "plutus:v1":
-        return {
-          type: "PlutusV1",
-          script: applyDoubleCborEncoding(result.script),
-        };
+        return { type: "PlutusV1", script: applyDoubleCborEncoding(result.script) };
       case "plutus:v2":
-        return {
-          type: "PlutusV2",
-          script: applyDoubleCborEncoding(result.script),
-        };
+        return { type: "PlutusV2", script: applyDoubleCborEncoding(result.script) };
       case "plutus:v3":
-        return {
-          type: "PlutusV3",
-          script: applyDoubleCborEncoding(result.script),
-        };
+        return { type: "PlutusV3", script: applyDoubleCborEncoding(result.script) };
       default:
         return undefined;
     }
@@ -440,9 +404,7 @@ class ManagedDmtrKupmios extends KupmiosWithExtendedSubmitTimeout {
       outputIndex: utxo.output_index,
       address: utxo.address,
       assets: this.#toAssets(utxo.value),
-      datumHash: utxo.datum_type === "hash"
-        ? utxo.datum_hash ?? undefined
-        : undefined,
+      datumHash: utxo.datum_type === "hash" ? utxo.datum_hash ?? undefined : undefined,
       datum: await this.#fetchDatum(utxo.datum_type, utxo.datum_hash),
       scriptRef: await this.#fetchScript(utxo.script_hash),
     })));
@@ -458,40 +420,25 @@ class ManagedDmtrKupmios extends KupmiosWithExtendedSubmitTimeout {
 
   override async getUtxos(addressOrCredential: any): Promise<any[]> {
     const isAddress = typeof addressOrCredential === "string";
-    const queryPredicate = isAddress
-      ? addressOrCredential
-      : addressOrCredential.hash;
+    const queryPredicate = isAddress ? addressOrCredential : addressOrCredential.hash;
     return await this.#fetchMatchUtxos(
-      `${this.#kupoMatchesUrl}/matches/${queryPredicate}${
-        isAddress ? "" : "/*"
-      }?unspent`,
+      `${this.#kupoMatchesUrl}/matches/${queryPredicate}${isAddress ? "" : "/*"}?unspent`,
     );
   }
 
-  override async getUtxosWithUnit(
-    addressOrCredential: any,
-    unit: string,
-  ): Promise<any[]> {
+  override async getUtxosWithUnit(addressOrCredential: any, unit: string): Promise<any[]> {
     const isAddress = typeof addressOrCredential === "string";
-    const queryPredicate = isAddress
-      ? addressOrCredential
-      : addressOrCredential.hash;
+    const queryPredicate = isAddress ? addressOrCredential : addressOrCredential.hash;
     const { policyId, assetName } = fromUnit(unit);
     return await this.#fetchMatchUtxos(
-      `${this.#kupoMatchesUrl}/matches/${queryPredicate}${
-        isAddress ? "" : "/*"
-      }?unspent&policy_id=${policyId}${
-        assetName ? `&asset_name=${assetName}` : ""
-      }`,
+      `${this.#kupoMatchesUrl}/matches/${queryPredicate}${isAddress ? "" : "/*"}?unspent&policy_id=${policyId}${assetName ? `&asset_name=${assetName}` : ""}`,
     );
   }
 
   override async getUtxoByUnit(unit: string): Promise<any> {
     const { policyId, assetName } = fromUnit(unit);
     const utxos = await this.#fetchMatchUtxos(
-      `${this.#kupoMatchesUrl}/matches/${policyId}.${
-        assetName ? assetName : "*"
-      }?unspent`,
+      `${this.#kupoMatchesUrl}/matches/${policyId}.${assetName ? assetName : "*"}?unspent`,
     );
     if (utxos.length > 1) {
       throw new Error("Unit needs to be an NFT or only held by one address.");
@@ -499,9 +446,7 @@ class ManagedDmtrKupmios extends KupmiosWithExtendedSubmitTimeout {
     return utxos[0];
   }
 
-  override async getUtxosByOutRef(
-    outRefs: Array<{ txHash: string; outputIndex: number }>,
-  ): Promise<any[]> {
+  override async getUtxosByOutRef(outRefs: Array<{ txHash: string; outputIndex: number }>): Promise<any[]> {
     const queryHashes = [...new Set(outRefs.map((outRef) => outRef.txHash))];
     const utxos = (
       await Promise.all(
@@ -514,17 +459,12 @@ class ManagedDmtrKupmios extends KupmiosWithExtendedSubmitTimeout {
     ).flat();
     return utxos.filter((utxo) =>
       outRefs.some(
-        (outRef) =>
-          utxo.txHash === outRef.txHash &&
-          utxo.outputIndex === outRef.outputIndex,
+        (outRef) => utxo.txHash === outRef.txHash && utxo.outputIndex === outRef.outputIndex,
       )
     );
   }
 
-  override async awaitTx(
-    txHash: string,
-    checkInterval = 20000,
-  ): Promise<boolean> {
+  override async awaitTx(txHash: string, checkInterval = 20000): Promise<boolean> {
     const timeoutAt = Date.now() + 160000;
     while (Date.now() < timeoutAt) {
       const utxos = await this.#fetchMatchUtxos(
