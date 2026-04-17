@@ -100,12 +100,40 @@ export function sanitizeProtocolParameters(protocolParameters: any): any {
   };
 }
 
+function resolveOgmiosHttpRequestConfig(ogmiosUrl: string): {
+  url: string;
+  headers: Record<string, string>;
+} {
+  const apiKey = Deno.env.get("OGMIOS_API_KEY")?.trim();
+  let httpUrl = Deno.env.get("OGMIOS_HTTP_URL")?.trim() || ogmiosUrl;
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+
+  try {
+    const parsedUrl = new URL(httpUrl);
+    parsedUrl.protocol = parsedUrl.protocol === "wss:" ? "https:" : parsedUrl.protocol === "ws:" ? "http:" : parsedUrl.protocol;
+    httpUrl = parsedUrl.toString();
+    // DMTR authenticated hosts already carry the credential in the subdomain.
+    if (apiKey && !parsedUrl.host.startsWith(`${apiKey}.`)) {
+      headers["Dmtr-api-key"] = apiKey;
+    }
+  } catch {
+    // Keep the original URL if it cannot be parsed; the later fetch error
+    // will report the actual failing endpoint.
+    if (apiKey) {
+      headers["Dmtr-api-key"] = apiKey;
+    }
+  }
+
+  return { url: httpUrl, headers };
+}
+
 export async function queryProtocolParametersCompat(ogmiosUrl: string) {
-  const response = await fetch(ogmiosUrl, {
+  const requestConfig = resolveOgmiosHttpRequestConfig(ogmiosUrl);
+  const response = await fetch(requestConfig.url, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
+    headers: requestConfig.headers,
     body: JSON.stringify({
       jsonrpc: "2.0",
       method: "queryLedgerState/protocolParameters",
@@ -117,7 +145,7 @@ export async function queryProtocolParametersCompat(ogmiosUrl: string) {
   const responseText = await response.text();
   if (!response.ok) {
     throw new Error(
-      `queryLedgerState/protocolParameters HTTP ${response.status}: ${responseText}`,
+      `queryLedgerState/protocolParameters HTTP ${response.status} at ${requestConfig.url}: ${responseText}`,
     );
   }
 

@@ -23,12 +23,16 @@ pub(super) const LOCAL_GENTX_AMOUNT: &str = "50000000000000000000stake";
 
 pub(super) const TESTNET_CHAIN_ID: &str = "injective-888";
 pub(super) const TESTNET_MONIKER: &str = "caribic-injective-testnet";
+pub(super) const TESTNET_RPC_URL: &str = "https://injective-testnet-rpc.polkachu.com:443";
+pub(super) const TESTNET_EVENT_SOURCE_URL: &str =
+    "wss://injective-testnet-rpc.polkachu.com/websocket";
+pub(super) const TESTNET_GRPC_URL: &str = "http://injective-grpc.polkachu.com:14390";
+pub(super) const TESTNET_GRPC_HOST: &str = "injective-grpc.polkachu.com";
+pub(super) const TESTNET_GRPC_PORT: u16 = 14390;
+pub(super) const TESTNET_STATUS_URL: &str = "https://injective-testnet-rpc.polkachu.com/status";
 pub(super) const TESTNET_SNAPSHOT_URL: &str = "";
 pub(super) const TESTNET_SNAPSHOT_PAGE_URL: &str =
     "https://www.polkachu.com/testnets/injective/snapshots";
-pub(super) const TESTNET_STATUS_URL: &str = "http://127.0.0.1:26659/status";
-pub(super) const TESTNET_RPC_PORT: u16 = 26659;
-pub(super) const TESTNET_GRPC_PORT: u16 = 9096;
 pub(super) const TESTNET_GENESIS_URL: &str =
     "https://injective-snapshots.s3.amazonaws.com/testnet/genesis.json";
 pub(super) const TESTNET_HOME_DIR: &str = ".injectived-testnet";

@@ -12,8 +12,8 @@ services:
       - CARDANO_BIND_ADDR=0.0.0.0
       - CARDANO_PORT=3001
       - CARDANO_TOPOLOGY=/runtime/${CARDANO_TOPOLOGY_FILE:-topology.json}
-      - CARDANO_SOCKET_PATH=/runtime/node.socket # used by cardano-node
-      - CARDANO_NODE_SOCKET_PATH=/runtime/node.socket # used by cardano-cli
+      - CARDANO_SOCKET_PATH=${CARDANO_SOCKET_PATH:-/runtime/node.socket} # used by cardano-node
+      - CARDANO_NODE_SOCKET_PATH=${CARDANO_NODE_SOCKET_PATH:-/runtime/node.socket} # used by cardano-cli
       - CARDANO_SHELLEY_KES_KEY=/runtime/kes.skey
       - CARDANO_SHELLEY_VRF_KEY=/runtime/vrf.skey
       - CARDANO_SHELLEY_OPERATIONAL_CERTIFICATE=/runtime/opcert.cert

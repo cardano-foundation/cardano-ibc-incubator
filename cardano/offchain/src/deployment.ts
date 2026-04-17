@@ -16,10 +16,12 @@ import {
 } from "@lucid-evolution/lucid";
 import {
   DeploymentTemplate,
+  awaitWalletTx,
   getLiveWalletUtxos,
   formatTimestamp,
   generateIdentifierTokenName,
   generateTokenName,
+  isRetryableOgmiosTransportError,
   readValidator,
   submitTx,
 } from "./utils.ts";
@@ -98,13 +100,20 @@ export const createDeployment = async (
   // momentarily lag behind the just-submitted transaction set.
   if (signerUtxos.length < RESERVED_DEPLOYMENT_NONCE_COUNT) {
     const address = await lucid.wallet().address();
-    const splitTx = lucid.newTx().collectFrom(signerUtxos);
-    for (let index = 0; index < RESERVED_DEPLOYMENT_NONCE_COUNT; index++) {
-      splitTx.pay.ToAddress(address, {
-        lovelace: DEPLOYMENT_NONCE_SPLIT_AMOUNT,
-      });
-    }
-    await submitTx(splitTx, lucid, "SplitNonceUtxos", false);
+    await submitTx(
+      () => {
+        const splitTx = lucid.newTx().collectFrom(signerUtxos);
+        for (let index = 0; index < RESERVED_DEPLOYMENT_NONCE_COUNT; index++) {
+          splitTx.pay.ToAddress(address, {
+            lovelace: DEPLOYMENT_NONCE_SPLIT_AMOUNT,
+          });
+        }
+        return splitTx;
+      },
+      lucid,
+      "SplitNonceUtxos",
+      false,
+    );
     signerUtxos = await getLiveWalletUtxos(
       lucid,
       RESERVED_DEPLOYMENT_NONCE_COUNT,
@@ -736,23 +745,26 @@ async function mintMockToken(lucid: LucidEvolution) {
 
   const walletAddress = await lucid.wallet().address();
 
-  const tx = lucid
-    .newTx()
-    .attach.MintingPolicy(mintMockTokenValidator)
-    .mintAssets(
-      {
-        [tokenUnit]: 9999999999n,
-      },
-      Data.void(),
-    )
-    .pay.ToAddress(
-      walletAddress,
-      {
-        [tokenUnit]: 999999999n,
-      },
-    );
-
-  await submitTx(tx, lucid, "Mint mock token");
+  await submitTx(
+    () =>
+      lucid
+        .newTx()
+        .attach.MintingPolicy(mintMockTokenValidator)
+        .mintAssets(
+          {
+            [tokenUnit]: 9999999999n,
+          },
+          Data.void(),
+        )
+        .pay.ToAddress(
+          walletAddress,
+          {
+            [tokenUnit]: 999999999n,
+          },
+        ),
+    lucid,
+    "Mint mock token",
+  );
 
   return [mintMockTokenPolicyId, tokenName];
 }
@@ -797,83 +809,114 @@ async function createReferenceUtxos(
         `(${batch.validators.length} validators) ...`,
       );
 
-      let tx = lucid.newTx();
-      for (const validator of batch.validators) {
-        tx = tx.pay.ToContract(
-          referenceAddress,
-          {
-            kind: "inline",
-            value: Data.void(),
-          },
-          { lovelace: 1_000_000n },
-          validator,
-        );
-      }
-
-      let newWalletUTxOs: UTxO[];
-      let derivedOutputs: UTxO[];
-      let signedTx;
-      try {
-        [newWalletUTxOs, derivedOutputs, signedTx] = await (async () => {
-          const [walletUTxOs, outputs, txSignBuilder] = await tx.chain();
-          return [
-            walletUTxOs,
-            outputs,
-            await txSignBuilder.sign.withWallet().complete(),
-          ] as const;
-        })();
-      } catch (error) {
-        if (
-          batch.validators.length > 1 &&
-          isLikelyReferenceBatchTooLarge(error)
-        ) {
-          // The coarse size estimate can still under-shoot once fees/change are
-          // fully materialized, so split and retry instead of failing the whole deploy.
-          const midpoint = Math.ceil(batch.validators.length / 2);
-          console.warn(
-            `Reference batch ${batch.startIndex + 1}-${
-              batch.startIndex + batch.validators.length
-            } exceeded the transaction size budget; splitting into batches of ${midpoint} and ${
-              batch.validators.length - midpoint
-            }.`,
-          );
-          pendingBatches.unshift(
+      const buildReferenceBatchTx = () => {
+        let tx = lucid.newTx();
+        for (const validator of batch.validators) {
+          tx = tx.pay.ToContract(
+            referenceAddress,
             {
-              validators: batch.validators.slice(midpoint),
-              startIndex: batch.startIndex + midpoint,
+              kind: "inline",
+              value: Data.void(),
             },
-            {
-              validators: batch.validators.slice(0, midpoint),
-              startIndex: batch.startIndex,
-            },
+            { lovelace: 1_000_000n },
+            validator,
           );
-          continue;
         }
-        throw error;
+        return tx;
+      };
+
+      let newWalletUTxOs: UTxO[] | undefined;
+      let derivedOutputs: UTxO[] | undefined;
+      let signedTx;
+      let splitBatch = false;
+      let lastBuildError: unknown = null;
+      for (let attempt = 1; attempt <= 5; attempt += 1) {
+        try {
+          [newWalletUTxOs, derivedOutputs, signedTx] = await (async () => {
+            const [walletUTxOs, outputs, txSignBuilder] = await buildReferenceBatchTx().chain();
+            return [
+              walletUTxOs,
+              outputs,
+              await txSignBuilder.sign.withWallet().complete(),
+            ] as const;
+          })();
+          lastBuildError = null;
+          break;
+        } catch (error) {
+          lastBuildError = error;
+          if (
+            batch.validators.length > 1 &&
+            isLikelyReferenceBatchTooLarge(error)
+          ) {
+            // The coarse size estimate can still under-shoot once fees/change are
+            // fully materialized, so split and retry instead of failing the whole deploy.
+            const midpoint = Math.ceil(batch.validators.length / 2);
+            console.warn(
+              `Reference batch ${batch.startIndex + 1}-${
+                batch.startIndex + batch.validators.length
+              } exceeded the transaction size budget; splitting into batches of ${midpoint} and ${
+                batch.validators.length - midpoint
+              }.`,
+            );
+            pendingBatches.unshift(
+              {
+                validators: batch.validators.slice(midpoint),
+                startIndex: batch.startIndex + midpoint,
+              },
+              {
+                validators: batch.validators.slice(0, midpoint),
+                startIndex: batch.startIndex,
+              },
+            );
+            splitBatch = true;
+            break;
+          }
+          if (!isRetryableOgmiosTransportError(error) || attempt === 5) {
+            throw error;
+          }
+          console.warn(
+            `createReferenceUtxos build retry ${attempt}/5 after transient Ogmios transport error:`,
+            error,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      }
+      if (splitBatch) {
+        continue;
+      }
+      if (!newWalletUTxOs || !derivedOutputs || !signedTx) {
+        throw lastBuildError ?? new Error("Failed to build reference batch transaction");
       }
 
-      let txHash: string | undefined;
+      const txHash = signedTx.toHash();
       let lastSubmitError: unknown;
       for (let attempt = 1; attempt <= 6; attempt++) {
         try {
-          txHash = await signedTx.submit();
+          const submittedHash = await signedTx.submit();
+          if (submittedHash !== txHash) {
+            throw new Error(
+              `Provider returned tx hash ${submittedHash}, but signed body hash is ${txHash}`,
+            );
+          }
+        } catch (error) {
+          lastSubmitError = error;
+          console.warn(
+            `createReferenceUtxos submit retry ${attempt}/6 after error:`,
+            error,
+          );
+        }
+
+        try {
+          await awaitWalletTx(lucid, txHash, 1000, 30000);
+          lucid.overrideUTxOs(newWalletUTxOs);
           break;
         } catch (error) {
           lastSubmitError = error;
           if (attempt === 6) {
             throw error;
           }
-          console.warn(
-            `createReferenceUtxos submit retry ${attempt}/6 after error:`,
-            error,
-          );
           await new Promise((resolve) => setTimeout(resolve, 2000));
         }
-      }
-
-      if (!txHash) {
-        throw lastSubmitError ??
-          new Error("Missing tx hash after submit retries");
       }
 
       console.log(
@@ -883,8 +926,6 @@ async function createReferenceUtxos(
         }:`,
         txHash,
       );
-      await lucid.awaitTx(txHash, 1000);
-      lucid.overrideUTxOs(newWalletUTxOs);
 
       for (const output of derivedOutputs) {
         if (!output.scriptRef) {
@@ -956,29 +997,28 @@ const deployHandler = async (
   );
 
   // create and send tx create handler
-  const mintHandlerTx = lucid
-    .newTx()
-    .collectFrom([NONCE_UTXO], Data.void())
-    .attach.MintingPolicy(mintHandlerValidator)
-    .mintAssets(
-      {
-        [handlerTokenUnit]: 1n,
-      },
-      Data.void(),
-    )
-    .pay.ToContract(
-      spendHandlerAddress,
-      {
-        kind: "inline",
-        value: Data.to(initHandlerDatum, HandlerDatum, { canonical: true }),
-      },
-      {
-        [handlerTokenUnit]: 1n,
-      },
-    );
-
   await submitTx(
-    mintHandlerTx,
+    () =>
+      lucid
+        .newTx()
+        .collectFrom([NONCE_UTXO], Data.void())
+        .attach.MintingPolicy(mintHandlerValidator)
+        .mintAssets(
+          {
+            [handlerTokenUnit]: 1n,
+          },
+          Data.void(),
+        )
+        .pay.ToContract(
+          spendHandlerAddress,
+          {
+            kind: "inline",
+            value: Data.to(initHandlerDatum, HandlerDatum, { canonical: true }),
+          },
+          {
+            [handlerTokenUnit]: 1n,
+          },
+        ),
     lucid,
     "Mint Handler",
   );
@@ -1098,50 +1138,53 @@ const deployTransferModule = async (
     port_number: portNumber,
   };
 
-  const mintModuleTx = lucid
-    .newTx()
-    .collectFrom([nonceUtxo], Data.void())
-    .collectFrom(
-      [handlerUtxo],
-      Data.to(spendHandlerRedeemer, HandlerOperator, { canonical: true }),
-    )
-    .attach.SpendingValidator(spendHandlerValidator)
-    .attach.MintingPolicy(mintPortValidator)
-    .mintAssets(
-      {
-        [portTokenUnit]: 1n,
-      },
-      Data.to(mintPortRedeemer, MintPortRedeemer, { canonical: true }),
-    )
-    .attach.MintingPolicy(mintIdentifierValidator)
-    .mintAssets(
-      {
-        [identifierTokenUnit]: 1n,
-      },
-      Data.to(outputReference, OutputReference, { canonical: true }),
-    )
-    .pay.ToContract(
-      validatorToAddress(
-        lucid.config().network || "Custom",
-        spendHandlerValidator,
-      ),
-      {
-        kind: "inline",
-        value: Data.to(updatedHandlerDatum, HandlerDatum, { canonical: true }),
-      },
-      {
-        [handlerTokenUnit]: 1n,
-      },
-    )
-    .pay.ToAddress(
-      spendTransferModuleAddress,
-      {
-        [identifierTokenUnit]: 1n,
-        [portTokenUnit]: 1n,
-      },
-    );
-
-  await submitTx(mintModuleTx, lucid, "Mint Transfer Module");
+  await submitTx(
+    () =>
+      lucid
+        .newTx()
+        .collectFrom([nonceUtxo], Data.void())
+        .collectFrom(
+          [handlerUtxo],
+          Data.to(spendHandlerRedeemer, HandlerOperator, { canonical: true }),
+        )
+        .attach.SpendingValidator(spendHandlerValidator)
+        .attach.MintingPolicy(mintPortValidator)
+        .mintAssets(
+          {
+            [portTokenUnit]: 1n,
+          },
+          Data.to(mintPortRedeemer, MintPortRedeemer, { canonical: true }),
+        )
+        .attach.MintingPolicy(mintIdentifierValidator)
+        .mintAssets(
+          {
+            [identifierTokenUnit]: 1n,
+          },
+          Data.to(outputReference, OutputReference, { canonical: true }),
+        )
+        .pay.ToContract(
+          validatorToAddress(
+            lucid.config().network || "Custom",
+            spendHandlerValidator,
+          ),
+          {
+            kind: "inline",
+            value: Data.to(updatedHandlerDatum, HandlerDatum, { canonical: true }),
+          },
+          {
+            [handlerTokenUnit]: 1n,
+          },
+        )
+        .pay.ToAddress(
+          spendTransferModuleAddress,
+          {
+            [identifierTokenUnit]: 1n,
+            [portTokenUnit]: 1n,
+          },
+        ),
+    lucid,
+    "Mint Transfer Module",
+  );
 
   return {
     identifierTokenUnit,
@@ -1225,50 +1268,53 @@ const deployGenericModule = async (
     port_number: portNumber,
   };
 
-  const mintModuleTx = lucid
-    .newTx()
-    .collectFrom([nonceUtxo], Data.void())
-    .collectFrom(
-      [handlerUtxo],
-      Data.to(spendHandlerRedeemer, HandlerOperator, { canonical: true }),
-    )
-    .attach.SpendingValidator(spendHandlerValidator)
-    .attach.MintingPolicy(mintPortValidator)
-    .mintAssets(
-      {
-        [portTokenUnit]: 1n,
-      },
-      Data.to(mintPortRedeemer, MintPortRedeemer, { canonical: true }),
-    )
-    .attach.MintingPolicy(mintIdentifierValidator)
-    .mintAssets(
-      {
-        [identifierTokenUnit]: 1n,
-      },
-      Data.to(outputReference, OutputReference, { canonical: true }),
-    )
-    .pay.ToContract(
-      validatorToAddress(
-        lucid.config().network || "Custom",
-        spendHandlerValidator,
-      ),
-      {
-        kind: "inline",
-        value: Data.to(updatedHandlerDatum, HandlerDatum, { canonical: true }),
-      },
-      {
-        [handlerTokenUnit]: 1n,
-      },
-    )
-    .pay.ToAddress(
-      spendModuleAddress,
-      {
-        [identifierTokenUnit]: 1n,
-        [portTokenUnit]: 1n,
-      },
-    );
-
-  await submitTx(mintModuleTx, lucid, `Mint ${portIdText} Module`);
+  await submitTx(
+    () =>
+      lucid
+        .newTx()
+        .collectFrom([nonceUtxo], Data.void())
+        .collectFrom(
+          [handlerUtxo],
+          Data.to(spendHandlerRedeemer, HandlerOperator, { canonical: true }),
+        )
+        .attach.SpendingValidator(spendHandlerValidator)
+        .attach.MintingPolicy(mintPortValidator)
+        .mintAssets(
+          {
+            [portTokenUnit]: 1n,
+          },
+          Data.to(mintPortRedeemer, MintPortRedeemer, { canonical: true }),
+        )
+        .attach.MintingPolicy(mintIdentifierValidator)
+        .mintAssets(
+          {
+            [identifierTokenUnit]: 1n,
+          },
+          Data.to(outputReference, OutputReference, { canonical: true }),
+        )
+        .pay.ToContract(
+          validatorToAddress(
+            lucid.config().network || "Custom",
+            spendHandlerValidator,
+          ),
+          {
+            kind: "inline",
+            value: Data.to(updatedHandlerDatum, HandlerDatum, { canonical: true }),
+          },
+          {
+            [handlerTokenUnit]: 1n,
+          },
+        )
+        .pay.ToAddress(
+          spendModuleAddress,
+          {
+            [identifierTokenUnit]: 1n,
+            [portTokenUnit]: 1n,
+          },
+        ),
+    lucid,
+    `Mint ${portIdText} Module`,
+  );
 
   return {
     identifierTokenUnit,
@@ -1427,29 +1473,28 @@ const deployTraceRegistryShard = async (
   // Each shard starts as its own append-only thread UTxO with a unique shard NFT
   // and an empty entry list. Later mint transactions spend exactly one shard when
   // they need to record a first-seen voucher trace.
-  const shardTx = lucid
-    .newTx()
-    .collectFrom([nonceUtxo], Data.void())
-    .attach.MintingPolicy(mintIdentifierValidator)
-    .mintAssets(
-      {
-        [shardTokenUnit]: 1n,
-      },
-      Data.to(outputReference, OutputReference, { canonical: true }),
-    )
-    .pay.ToContract(
-      traceRegistryAddress,
-      {
-        kind: "inline",
-        value: encodedShardDatum,
-      },
-      {
-        [shardTokenUnit]: 1n,
-      },
-    );
-
   await submitTx(
-    shardTx,
+    () =>
+      lucid
+        .newTx()
+        .collectFrom([nonceUtxo], Data.void())
+        .attach.MintingPolicy(mintIdentifierValidator)
+        .mintAssets(
+          {
+            [shardTokenUnit]: 1n,
+          },
+          Data.to(outputReference, OutputReference, { canonical: true }),
+        )
+        .pay.ToContract(
+          traceRegistryAddress,
+          {
+            kind: "inline",
+            value: encodedShardDatum,
+          },
+          {
+            [shardTokenUnit]: 1n,
+          },
+        ),
     lucid,
     `Mint Trace Registry Shard ${shardIndex.toString()}`,
   );
@@ -1502,28 +1547,31 @@ const deployTraceRegistryDirectory = async (
     ]),
   );
 
-  const directoryTx = lucid
-    .newTx()
-    .collectFrom([nonceUtxo], Data.void())
-    .attach.MintingPolicy(mintIdentifierValidator)
-    .mintAssets(
-      {
-        [directoryTokenUnit]: 1n,
-      },
-      Data.to(outputReference, OutputReference, { canonical: true }),
-    )
-    .pay.ToContract(
-      traceRegistryAddress,
-      {
-        kind: "inline",
-        value: encodedDirectoryDatum,
-      },
-      {
-        [directoryTokenUnit]: 1n,
-      },
-    );
-
-  await submitTx(directoryTx, lucid, "Mint Trace Registry Directory");
+  await submitTx(
+    () =>
+      lucid
+        .newTx()
+        .collectFrom([nonceUtxo], Data.void())
+        .attach.MintingPolicy(mintIdentifierValidator)
+        .mintAssets(
+          {
+            [directoryTokenUnit]: 1n,
+          },
+          Data.to(outputReference, OutputReference, { canonical: true }),
+        )
+        .pay.ToContract(
+          traceRegistryAddress,
+          {
+            kind: "inline",
+            value: encodedDirectoryDatum,
+          },
+          {
+            [directoryTokenUnit]: 1n,
+          },
+        ),
+    lucid,
+    "Mint Trace Registry Directory",
+  );
 
   return {
     policy_id: shardPolicyId,
@@ -1618,28 +1666,31 @@ const deployHostState = async (
     canonical: true,
   });
 
-  const mintHostStateTx = lucid
-    .newTx()
-    .collectFrom([nonceUtxo])
-    .attach.MintingPolicy(mintHostStateNFTValidator)
-    .mintAssets(
-      {
-        [hostStateNFTUnit]: 1n,
-      },
-      encodedRedeemer,
-    )
-    .pay.ToContract(
-      hostStateSttAddress,
-      {
-        kind: "inline",
-        value: encodedDatum,
-      },
-      {
-        [hostStateNFTUnit]: 1n,
-      },
-    );
-
-  await submitTx(mintHostStateTx, lucid, "MintHostStateNFT");
+  await submitTx(
+    () =>
+      lucid
+        .newTx()
+        .collectFrom([nonceUtxo])
+        .attach.MintingPolicy(mintHostStateNFTValidator)
+        .mintAssets(
+          {
+            [hostStateNFTUnit]: 1n,
+          },
+          encodedRedeemer,
+        )
+        .pay.ToContract(
+          hostStateSttAddress,
+          {
+            kind: "inline",
+            value: encodedDatum,
+          },
+          {
+            [hostStateNFTUnit]: 1n,
+          },
+        ),
+    lucid,
+    "MintHostStateNFT",
+  );
 
   console.log("HostState NFT minted and HostState UTXO created");
 

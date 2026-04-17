@@ -133,6 +133,51 @@ fn managed_cardano_network_running(cardano_dir: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn managed_cardano_runtime_services_running(
+    cardano_dir: &Path,
+    network: config::CoreCardanoNetwork,
+) -> bool {
+    let output = match Command::new("docker")
+        .current_dir(cardano_dir)
+        .args(["compose", "ps", "--services", "--status", "running"])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        _ => return false,
+    };
+
+    let running_services: std::collections::HashSet<String> =
+        String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(|line| line.trim().to_string())
+            .filter(|line| !line.is_empty())
+            .collect();
+
+    let configuration = config::get_config().cardano;
+    let mut required_services: Vec<&str> = Vec::new();
+
+    if configuration.services.cardano_node {
+        required_services.push("cardano-node");
+    }
+    if configuration.services.postgres {
+        required_services.push("postgres");
+    }
+    if configuration.services.history_backend_enabled() {
+        required_services.push("yaci-store-postgres");
+        required_services.push("yaci-store");
+    }
+    if configuration.services.kupo && matches!(network, config::CoreCardanoNetwork::Local) {
+        required_services.push("kupo");
+    }
+    if configuration.services.ogmios && matches!(network, config::CoreCardanoNetwork::Local) {
+        required_services.push("cardano-node-ogmios");
+    }
+
+    required_services
+        .into_iter()
+        .all(|service| running_services.contains(service))
+}
+
 pub fn start_relayer(
     relayer_path: &Path,
     _relayer_env_template_path: &Path,
@@ -1114,8 +1159,53 @@ async fn wait_for_ogmios_protocol_parameters(
 ) -> Result<(), Box<dyn std::error::Error>> {
     const MAX_ATTEMPTS: u64 = 12;
     const POLL_INTERVAL_SECS: u64 = 5;
+    fn resolve_optional_env(keys: &[&str]) -> Option<String> {
+        keys.iter()
+            .find_map(|key| std::env::var(key).ok())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+
+    fn derive_http_url(ogmios_url: &str) -> Option<String> {
+        let mut parsed = reqwest::Url::parse(ogmios_url).ok()?;
+        let next_scheme = match parsed.scheme() {
+            "wss" => "https".to_string(),
+            "ws" => "http".to_string(),
+            current => current.to_string(),
+        };
+        parsed.set_scheme(next_scheme.as_str()).ok()?;
+        Some(parsed.to_string())
+    }
+
+    fn should_attach_dmtr_api_key(url: &str, api_key: &str) -> bool {
+        reqwest::Url::parse(url)
+            .ok()
+            .map(|parsed| {
+                !parsed
+                    .host_str()
+                    .unwrap_or_default()
+                    .starts_with(&format!("{}.", api_key))
+            })
+            .unwrap_or(true)
+    }
+
+    let ogmios_api_key = resolve_optional_env(&["CARIBIC_OGMIOS_API_KEY", "OGMIOS_API_KEY"]);
+    let ogmios_http_url = resolve_optional_env(&["CARIBIC_OGMIOS_HTTP_URL", "OGMIOS_HTTP_URL"])
+        .or_else(|| derive_http_url(ogmios_url))
+        .unwrap_or_else(|| ogmios_url.to_string());
+    let mut default_headers = reqwest::header::HeaderMap::new();
+    if let Some(api_key) = ogmios_api_key.as_deref() {
+        if should_attach_dmtr_api_key(ogmios_http_url.as_str(), api_key) {
+            default_headers.insert(
+                "Dmtr-api-key",
+                reqwest::header::HeaderValue::from_str(api_key)
+                    .map_err(|error| format!("Invalid OGMIOS API key header value: {}", error))?,
+            );
+        }
+    }
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(POLL_INTERVAL_SECS))
+        .default_headers(default_headers)
         .build()
         .map_err(|error| format!("Failed to initialize Ogmios readiness client: {}", error))?;
     let request_body = serde_json::json!({
@@ -1128,7 +1218,11 @@ async fn wait_for_ogmios_protocol_parameters(
     let mut attempt: u64 = 0;
     loop {
         attempt += 1;
-        let readiness_check = client.post(ogmios_url).json(&request_body).send().await;
+        let readiness_check = client
+            .post(ogmios_http_url.as_str())
+            .json(&request_body)
+            .send()
+            .await;
 
         match readiness_check {
             Ok(response) => {
@@ -1145,21 +1239,21 @@ async fn wait_for_ogmios_protocol_parameters(
 
                 verbose(&format!(
                     "Cardano deployment readiness not met yet at {} (attempt {}): status={}, response={}",
-                    ogmios_url, attempt, status, response_body
+                    ogmios_http_url, attempt, status, response_body
                 ));
             }
             Err(error) => {
                 verbose(&format!(
                     "Cardano deployment readiness check failed at {} (attempt {}): {}",
-                    ogmios_url, attempt, error
+                    ogmios_http_url, attempt, error
                 ));
             }
         }
 
         if attempt >= MAX_ATTEMPTS {
             return Err(format!(
-                "Ogmios at {} did not answer protocolParameters after {} attempts. Confirm your external Cardano infrastructure is reachable and synced enough for deployment.",
-                ogmios_url, MAX_ATTEMPTS
+                "Ogmios at {} did not answer protocolParameters after {} attempts. Confirm your external Cardano infrastructure is reachable, authenticated, and synced enough for deployment.",
+                ogmios_http_url, MAX_ATTEMPTS
             )
             .into());
         }
@@ -1167,7 +1261,7 @@ async fn wait_for_ogmios_protocol_parameters(
         log_or_show_progress(
             &format!(
                 "Waiting for Ogmios readiness before deployment at {} (attempt {})",
-                ogmios_url, attempt
+                ogmios_http_url, attempt
             ),
             optional_progress_bar,
         );
@@ -1195,6 +1289,121 @@ pub async fn deploy_preprod_bridge(
         progress_bar.set_prefix("Deploying Cardano preprod bridge ...".to_owned());
     } else {
         log("Deploying Cardano preprod bridge ...");
+    }
+
+    let profile = config::cardano_network_profile(config::CoreCardanoNetwork::Preprod);
+    let cardano_dir = project_root_path.join("chains/cardano");
+    let offchain_dir = project_root_path.join("cardano/offchain");
+    let gateway_dir = project_root_path.join("cardano/gateway");
+    let deployment_dir = offchain_dir.join("deployments");
+    let generic_handler_path = deployment_dir.join("handler.json");
+    let preprod_handler_path = PathBuf::from(profile.handler_json_path.clone());
+    let preprod_manifest_path = profile
+        .bridge_manifest_path
+        .clone()
+        .map(PathBuf::from)
+        .ok_or("Preprod bridge manifest path is not configured")?;
+    let network_magic = profile.network_magic.to_string();
+    let kupmios_submit_timeout_ms = String::from("120000");
+
+    fs::create_dir_all(&deployment_dir).map_err(|error| {
+        format!(
+            "Failed to create offchain deployments directory {}: {}",
+            deployment_dir.display(),
+            error
+        )
+    })?;
+    if let Some(parent) = preprod_handler_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to create preprod handler directory {}: {}",
+                parent.display(),
+                error
+            )
+        })?;
+    }
+    if let Some(parent) = preprod_manifest_path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            format!(
+                "Failed to create preprod manifest directory {}: {}",
+                parent.display(),
+                error
+            )
+        })?;
+    }
+
+    let force_preprod_redeploy = std::env::var("CARIBIC_FORCE_PREPROD_DEPLOY")
+        .ok()
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false);
+
+    if !force_preprod_redeploy {
+        if preprod_handler_path.exists() && preprod_manifest_path.exists() {
+            log_or_show_progress(
+                &format!(
+                    "{} Reusing existing preprod bridge artifacts",
+                    style("Step 1/3").bold().dim()
+                ),
+                &optional_progress_bar,
+            );
+            if let Some(progress_bar) = &optional_progress_bar {
+                progress_bar.finish_and_clear();
+            }
+            return Ok(());
+        }
+
+        if preprod_handler_path.exists() {
+            log_or_show_progress(
+                &format!(
+                    "{} Reusing existing preprod handler.json",
+                    style("Step 1/3").bold().dim()
+                ),
+                &optional_progress_bar,
+            );
+            log_or_show_progress(
+                &format!(
+                    "{} Exporting public bridge manifest from existing handler.json",
+                    style("Step 2/3").bold().dim()
+                ),
+                &optional_progress_bar,
+            );
+
+            let export_env = vec![
+                ("CARDANO_CHAIN_ID", profile.chain_id.as_str()),
+                ("CARDANO_CHAIN_NETWORK_MAGIC", network_magic.as_str()),
+                ("CARDANO_NETWORK", "preprod"),
+            ];
+            let export_result = execute_script(
+                gateway_dir.as_path(),
+                "npm",
+                vec![
+                    "run",
+                    "export:bridge-manifest",
+                    "--",
+                    preprod_handler_path
+                        .to_str()
+                        .ok_or("Failed to stringify preprod handler path")?,
+                    preprod_manifest_path
+                        .to_str()
+                        .ok_or("Failed to stringify preprod bridge manifest path")?,
+                ],
+                Some(export_env),
+            );
+
+            if let Some(progress_bar) = &optional_progress_bar {
+                progress_bar.finish_and_clear();
+            }
+
+            if let Err(error) = export_result {
+                return Err(format!("Failed to export preprod bridge manifest: {}", error).into());
+            }
+            return Ok(());
+        }
     }
 
     let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
@@ -1244,52 +1453,42 @@ pub async fn deploy_preprod_bridge(
         );
     }
 
-    let profile = config::cardano_network_profile(config::CoreCardanoNetwork::Preprod);
-    let cardano_dir = project_root_path.join("chains/cardano");
-    let offchain_dir = project_root_path.join("cardano/offchain");
-    let gateway_dir = project_root_path.join("cardano/gateway");
-    let deployment_dir = offchain_dir.join("deployments");
-    let generic_handler_path = deployment_dir.join("handler.json");
-    let preprod_handler_path = PathBuf::from(profile.handler_json_path.clone());
-    let preprod_manifest_path = profile
-        .bridge_manifest_path
-        .clone()
-        .map(PathBuf::from)
-        .ok_or("Preprod bridge manifest path is not configured")?;
-    let network_magic = profile.network_magic.to_string();
-    let kupmios_submit_timeout_ms = String::from("120000");
     let (ogmios_url, kupo_url) =
         crate::setup::resolve_external_cardano_deploy_endpoints(cardano_dir.as_path())?;
+    let normalized_ogmios_http_url =
+        reqwest::Url::parse(ogmios_url.as_str())
+            .ok()
+            .and_then(|mut parsed| {
+                let next_scheme = match parsed.scheme() {
+                    "wss" => Some("https"),
+                    "ws" => Some("http"),
+                    "https" | "http" => None,
+                    _ => return None,
+                };
+                if let Some(next_scheme) = next_scheme {
+                    parsed.set_scheme(next_scheme).ok()?;
+                }
+                Some(parsed.to_string())
+            });
+    let ogmios_http_url = ["CARIBIC_OGMIOS_HTTP_URL", "OGMIOS_HTTP_URL"]
+        .iter()
+        .find_map(|key| std::env::var(key).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let ogmios_api_key = ["CARIBIC_OGMIOS_API_KEY", "OGMIOS_API_KEY"]
+        .iter()
+        .find_map(|key| std::env::var(key).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let kupo_api_key = ["CARIBIC_KUPO_API_KEY", "KUPO_API_KEY"]
+        .iter()
+        .find_map(|key| std::env::var(key).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
 
     // Preprod deployment targets live Cardano infra; the local managed runtime
     // only supports history/indexing and gateway bootstrap around that network.
     wait_for_ogmios_protocol_parameters(ogmios_url.as_str(), &optional_progress_bar).await?;
-
-    fs::create_dir_all(&deployment_dir).map_err(|error| {
-        format!(
-            "Failed to create offchain deployments directory {}: {}",
-            deployment_dir.display(),
-            error
-        )
-    })?;
-    if let Some(parent) = preprod_handler_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Failed to create preprod handler directory {}: {}",
-                parent.display(),
-                error
-            )
-        })?;
-    }
-    if let Some(parent) = preprod_manifest_path.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            format!(
-                "Failed to create preprod manifest directory {}: {}",
-                parent.display(),
-                error
-            )
-        })?;
-    }
 
     // The offchain deploy still emits the generic handler.json used by local mode.
     // Keep that behavior intact, then copy out a preprod-specific artifact beside it.
@@ -1303,16 +1502,36 @@ pub async fn deploy_preprod_bridge(
         &optional_progress_bar,
     );
 
-    let offchain_env = vec![
+    let mut offchain_env = vec![
         ("DEPLOYER_SK", deployer_sk),
         ("KUPO_URL", kupo_url.as_str()),
-        ("OGMIOS_URL", ogmios_url.as_str()),
+        (
+            "OGMIOS_URL",
+            ogmios_http_url
+                .as_deref()
+                .or(normalized_ogmios_http_url.as_deref())
+                .unwrap_or(ogmios_url.as_str()),
+        ),
         ("CARDANO_NETWORK_MAGIC", network_magic.as_str()),
         (
             "KUPMIOS_SUBMIT_TIMEOUT_MS",
             kupmios_submit_timeout_ms.as_str(),
         ),
     ];
+    if ogmios_url.starts_with("ws://") || ogmios_url.starts_with("wss://") {
+        offchain_env.push(("OGMIOS_WS_URL", ogmios_url.as_str()));
+    }
+    if let Some(ogmios_http_url) = ogmios_http_url.as_deref() {
+        offchain_env.push(("OGMIOS_HTTP_URL", ogmios_http_url));
+    } else if let Some(normalized_ogmios_http_url) = normalized_ogmios_http_url.as_deref() {
+        offchain_env.push(("OGMIOS_HTTP_URL", normalized_ogmios_http_url));
+    }
+    if let Some(ogmios_api_key) = ogmios_api_key.as_deref() {
+        offchain_env.push(("OGMIOS_API_KEY", ogmios_api_key));
+    }
+    if let Some(kupo_api_key) = kupo_api_key.as_deref() {
+        offchain_env.push(("KUPO_API_KEY", kupo_api_key));
+    }
     let deployment_result = execute_script(
         offchain_dir.as_path(),
         "deno",
@@ -1322,6 +1541,7 @@ pub async fn deploy_preprod_bridge(
             "--allow-net",
             "--allow-env",
             "--allow-read",
+            "--allow-run",
             "--allow-ffi",
             "--allow-write",
             "index.ts",
@@ -1800,7 +2020,10 @@ pub async fn ensure_managed_cardano_runtime(
     let cardano_dir = project_root_path.join("chains/cardano");
     let active_network = config::active_core_cardano_network(project_root_path);
 
-    if managed_cardano_network_running(cardano_dir.as_path()) && active_network == network && !clean
+    if managed_cardano_network_running(cardano_dir.as_path())
+        && managed_cardano_runtime_services_running(cardano_dir.as_path(), network)
+        && active_network == network
+        && !clean
     {
         return Ok(());
     }

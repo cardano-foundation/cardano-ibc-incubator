@@ -491,9 +491,11 @@ fn profile_for_chain(
         }),
         config::TESTNET_CHAIN_ID => Ok(HermesCosmosChainProfile {
             id: config::TESTNET_CHAIN_ID.to_string(),
-            rpc_addr: format!("http://127.0.0.1:{}", config::TESTNET_RPC_PORT),
-            grpc_addr: format!("http://127.0.0.1:{}", config::TESTNET_GRPC_PORT),
-            event_source_url: format!("ws://127.0.0.1:{}/websocket", config::TESTNET_RPC_PORT),
+            // Injective testnet is consumed through public endpoints rather than a locally
+            // bootstrapped full node, mirroring the existing Osmosis testnet model.
+            rpc_addr: config::TESTNET_RPC_URL.to_string(),
+            grpc_addr: config::TESTNET_GRPC_URL.to_string(),
+            event_source_url: config::TESTNET_EVENT_SOURCE_URL.to_string(),
             rpc_timeout: "10s",
             trusted_node: Some(true),
             account_prefix: "inj",

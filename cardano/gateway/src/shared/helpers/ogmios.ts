@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import { resolveManagedOgmiosWsEndpoint, resolveManagedOgmiosWsOptions } from './managed-cardano-endpoints';
 
 type OgmiosCurrentEpochNonces = {
   epochNonce?: unknown;
@@ -49,7 +50,12 @@ type OgmiosSession = {
 };
 
 const openOgmiosConnection = async (ogmiosUrl: string): Promise<WebSocket> => {
-  const client = new WebSocket(ogmiosUrl);
+  const resolvedUrl =
+    resolveManagedOgmiosWsEndpoint(ogmiosUrl, process.env.OGMIOS_API_KEY) ?? ogmiosUrl;
+  const client = new WebSocket(
+    resolvedUrl,
+    resolveManagedOgmiosWsOptions(ogmiosUrl, process.env.OGMIOS_API_KEY),
+  );
 
   await new Promise<void>((resolve, reject) => {
     const handleOpen = () => {

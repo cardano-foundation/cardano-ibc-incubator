@@ -106,19 +106,23 @@ pub fn write_cardano_runtime_selection(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let runtime_dir = network.runtime_dir();
     let network_magic = config::cardano_network_profile(network).network_magic;
-    let (config_file, block_producer, node_image) = match network {
-        config::CoreCardanoNetwork::Local => {
-            ("cardano-node.json", "true", LOCAL_CARDANO_NODE_IMAGE)
-        }
+    let (config_file, block_producer, node_image, socket_path) = match network {
+        config::CoreCardanoNetwork::Local => (
+            "cardano-node.json",
+            "true",
+            LOCAL_CARDANO_NODE_IMAGE,
+            "/runtime/node.socket",
+        ),
         config::CoreCardanoNetwork::Preprod => (
             "config.json",
             "false",
             "ghcr.io/intersectmbo/cardano-node:10.6.2",
+            "/tmp/node.socket",
         ),
     };
 
     let env_contents = format!(
-        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\nCARDANO_LOCAL_SPO_COUNT={local_spo_count}\n",
+        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_SOCKET_PATH={socket_path}\nCARDANO_NODE_SOCKET_PATH={socket_path}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\nCARDANO_LOCAL_SPO_COUNT={local_spo_count}\n",
         network = network.as_str(),
     );
 
@@ -213,6 +217,24 @@ pub async fn configure_cardano_preprod_runtime(
                 error
             )
         })?;
+    }
+
+    // The preprod node socket lives on the bind-mounted runtime directory. If the
+    // previous run left a stale Unix socket behind, the container cannot reliably
+    // remove it during startup on this mount, so clear it on the host first.
+    for stale_socket_path in [
+        runtime_dir.join("node.socket"),
+        runtime_dir.join("node.socket.lock"),
+    ] {
+        if stale_socket_path.exists() {
+            fs::remove_file(&stale_socket_path).map_err(|error| {
+                format!(
+                    "Failed to remove stale Cardano preprod socket artifact {}: {}",
+                    stale_socket_path.display(),
+                    error
+                )
+            })?;
+        }
     }
 
     for (remote_name, local_name) in [
@@ -1521,6 +1543,13 @@ fn write_gateway_env_for_network(
             )? {
                 set_or_append_env_var(&gateway_env, "KUPO_ENDPOINT", kupo_endpoint.as_str())?;
             }
+            if let Some(kupo_api_key) = resolve_preprod_live_endpoint(
+                &gateway_env,
+                "KUPO_API_KEY",
+                &["CARIBIC_KUPO_API_KEY", "KUPO_API_KEY"],
+            )? {
+                set_or_append_env_var(&gateway_env, "KUPO_API_KEY", kupo_api_key.as_str())?;
+            }
 
             if let Some(ogmios_endpoint) = resolve_preprod_live_endpoint(
                 &gateway_env,
@@ -1528,6 +1557,13 @@ fn write_gateway_env_for_network(
                 &["CARIBIC_OGMIOS_URL", "OGMIOS_URL"],
             )? {
                 set_or_append_env_var(&gateway_env, "OGMIOS_ENDPOINT", ogmios_endpoint.as_str())?;
+            }
+            if let Some(ogmios_api_key) = resolve_preprod_live_endpoint(
+                &gateway_env,
+                "OGMIOS_API_KEY",
+                &["CARIBIC_OGMIOS_API_KEY", "OGMIOS_API_KEY"],
+            )? {
+                set_or_append_env_var(&gateway_env, "OGMIOS_API_KEY", ogmios_api_key.as_str())?;
             }
 
             set_or_append_env_var(&gateway_env, "CARDANO_EPOCH_NONCE_GENESIS", "\"\"")?;
