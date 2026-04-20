@@ -551,6 +551,7 @@ pub async fn start_local_cardano_network(
                     "cardano-node-spo3",
                     "cardano-cardano-node-ogmios-1",
                     "cardano-postgres-1",
+                    "cardano-bridge-history-postgres-1",
                     "cardano-yaci-store-postgres-1",
                     "cardano-yaci-store-1",
                 ]
@@ -559,6 +560,7 @@ pub async fn start_local_cardano_network(
                     "cardano-node",
                     "cardano-cardano-node-ogmios-1",
                     "cardano-postgres-1",
+                    "cardano-bridge-history-postgres-1",
                     "cardano-yaci-store-postgres-1",
                     "cardano-yaci-store-1",
                 ]
@@ -577,7 +579,7 @@ pub async fn start_local_cardano_network(
     if config::get_config()
         .cardano
         .services
-        .history_backend_enabled()
+        .history_ingestion_enabled()
     {
         let yaci_ready = wait_for_health_check(
             "http://localhost:8081/actuator/health",
@@ -590,7 +592,11 @@ pub async fn start_local_cardano_network(
         .await;
 
         if yaci_ready.is_err() {
-            let container_names = ["cardano-yaci-store-postgres-1", "cardano-yaci-store-1"];
+            let container_names = [
+                "cardano-bridge-history-postgres-1",
+                "cardano-yaci-store-postgres-1",
+                "cardano-yaci-store-1",
+            ];
             let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
             return Err(format!(
                 "Failed to start Yaci services - health check failed after {} seconds{}",
@@ -756,7 +762,7 @@ pub async fn start_local_cardano_network(
     if config::get_config()
         .cardano
         .services
-        .history_backend_enabled()
+        .any_history_service_enabled()
     {
         prepare_db_sync_and_gateway(
             cardano_dir.as_path(),
@@ -1684,7 +1690,11 @@ pub fn start_local_cardano_services(
         all_services.push("postgres".to_string());
         base_services.push("postgres".to_string());
     }
-    if configuration.services.history_backend_enabled() {
+    if configuration.services.history_runtime_enabled() {
+        all_services.push("bridge-history-postgres".to_string());
+        base_services.push("bridge-history-postgres".to_string());
+    }
+    if configuration.services.history_ingestion_enabled() {
         all_services.push("yaci-store-postgres".to_string());
         all_services.push("yaci-store".to_string());
         base_services.push("yaci-store-postgres".to_string());

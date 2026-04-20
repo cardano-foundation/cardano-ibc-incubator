@@ -49,6 +49,7 @@
     "services": {
       "db_sync": false,
       "yaci": true,
+      "bridge_history": true,
       "kupo": true,
       "ogmios": true,
       "cardano_node": true,

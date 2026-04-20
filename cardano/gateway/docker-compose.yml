@@ -22,7 +22,12 @@ services:
     build:
       context: ../..
       dockerfile: cardano/gateway/Dockerfile
-    command: ["node", "dist/scripts/yaci-bridge-history-sync.js"]
+    command:
+      [
+        "sh",
+        "-lc",
+        "sh /usr/src/app/scripts/restore-bridge-history.sh && node dist/scripts/yaci-bridge-history-sync.js"
+      ]
     restart: on-failure
     networks:
       - cardano_network

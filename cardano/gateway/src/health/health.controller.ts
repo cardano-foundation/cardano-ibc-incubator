@@ -53,6 +53,12 @@ export class HealthController {
     try {
       const gatewayConnected = this.gatewayDataSource.isInitialized;
       const historyConnected = this.historyDataSource.isInitialized;
+      const bridgeHistory = historyConnected
+        ? await this.fetchBridgeHistoryStatus()
+        : {
+            schemaVersion: null,
+            cursor: null,
+          };
 
       return {
         timestamp: new Date().toISOString(),
@@ -63,6 +69,7 @@ export class HealthController {
         history_backend: {
           status: historyConnected ? 'healthy' : 'unhealthy',
           connection: historyConnected,
+          bridge_history: bridgeHistory,
         },
       };
     } catch (error) {
@@ -90,5 +97,52 @@ export class HealthController {
   async metrics() {
     const metrics = await this.metricsService.getMetrics();
     return metrics;
+  }
+
+  private async fetchBridgeHistoryStatus(): Promise<{
+    schemaVersion: string | null;
+    cursor:
+      | {
+          lastBlock: number;
+          lastBlockHash: string | null;
+          lastSlot: number | null;
+          updatedAt: string;
+        }
+      | null;
+  }> {
+    try {
+      const schemaVersionRows = await this.historyDataSource.query(`
+        SELECT version
+        FROM bridge_schema_version
+        ORDER BY applied_at DESC
+        LIMIT 1
+      `);
+      const cursorRows = await this.historyDataSource.query(`
+        SELECT last_block, last_block_hash, last_slot, updated_at
+        FROM bridge_sync_cursor
+        WHERE cursor_name = 'default'
+        LIMIT 1
+      `);
+
+      return {
+        schemaVersion: schemaVersionRows[0]?.version ?? null,
+        cursor: cursorRows[0]
+          ? {
+              lastBlock: Number(cursorRows[0].last_block),
+              lastBlockHash: cursorRows[0].last_block_hash ?? null,
+              lastSlot:
+                cursorRows[0].last_slot === null || cursorRows[0].last_slot === undefined
+                  ? null
+                  : Number(cursorRows[0].last_slot),
+              updatedAt: new Date(cursorRows[0].updated_at).toISOString(),
+            }
+          : null,
+      };
+    } catch {
+      return {
+        schemaVersion: null,
+        cursor: null,
+      };
+    }
   }
 }

@@ -66,7 +66,6 @@ interface Config {
   deployment: DeploymentConfig;
   ogmiosEndpoint: string;
   kupoEndpoint: string;
-  yaciStoreEndpoint: string;
   entrypointRestEndpoint: string;
   localOsmosisRestEndpoint: string;
   swapRouterAddress: string;
@@ -100,7 +99,6 @@ export default (): Partial<Config> => {
   return {
     ogmiosEndpoint: process.env.OGMIOS_ENDPOINT,
     kupoEndpoint: process.env.KUPO_ENDPOINT,
-    yaciStoreEndpoint: process.env.YACI_STORE_ENDPOINT,
     entrypointRestEndpoint: process.env.ENTRYPOINT_REST_ENDPOINT,
     localOsmosisRestEndpoint: process.env.LOCAL_OSMOSIS_REST_ENDPOINT,
     swapRouterAddress: process.env.SWAP_ROUTER_ADDRESS || '',

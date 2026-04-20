@@ -152,6 +152,8 @@ pub struct Services {
     pub db_sync: bool,
     #[serde(default)]
     pub yaci: bool,
+    #[serde(default = "default_enabled")]
+    pub bridge_history: bool,
     pub kupo: bool,
     pub ogmios: bool,
     pub cardano_node: bool,
@@ -159,9 +161,21 @@ pub struct Services {
 }
 
 impl Services {
-    pub fn history_backend_enabled(&self) -> bool {
+    pub fn history_ingestion_enabled(&self) -> bool {
         self.yaci || self.db_sync
     }
+
+    pub fn history_runtime_enabled(&self) -> bool {
+        self.bridge_history
+    }
+
+    pub fn any_history_service_enabled(&self) -> bool {
+        self.history_runtime_enabled() || self.history_ingestion_enabled()
+    }
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 fn default_cardano_network_profiles() -> CardanoNetworkProfiles {

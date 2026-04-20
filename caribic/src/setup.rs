@@ -1460,16 +1460,20 @@ fn write_gateway_env_for_network(
     match network {
         config::CoreCardanoNetwork::Local => {
             let local_gateway_defaults = [
-                ("HISTORY_DB_HOST", "yaci-store-postgres"),
-                ("HISTORY_DB_PORT", "5432"),
-                ("HISTORY_DB_NAME", "yaci_store"),
-                ("HISTORY_DB_USERNAME", "yaci"),
-                ("HISTORY_DB_PASSWORD", "dbpass"),
+                ("BRIDGE_HISTORY_DB_HOST", "bridge-history-postgres"),
+                ("BRIDGE_HISTORY_DB_PORT", "5432"),
+                ("BRIDGE_HISTORY_DB_NAME", "bridge_history"),
+                ("BRIDGE_HISTORY_DB_USERNAME", "bridge"),
+                ("BRIDGE_HISTORY_DB_PASSWORD", "dbpass"),
+                ("YACI_STORE_DB_HOST", "yaci-store-postgres"),
+                ("YACI_STORE_DB_PORT", "5432"),
+                ("YACI_STORE_DB_NAME", "yaci_store"),
+                ("YACI_STORE_DB_USERNAME", "yaci"),
+                ("YACI_STORE_DB_PASSWORD", "dbpass"),
                 ("GATEWAY_DB_HOST", "postgres"),
                 ("GATEWAY_DB_PORT", "5432"),
                 ("KUPO_ENDPOINT", "http://kupo:1442"),
                 ("OGMIOS_ENDPOINT", "http://cardano-node-ogmios:1337"),
-                ("YACI_STORE_ENDPOINT", "http://yaci-store:8080"),
                 ("CARDANO_CHAIN_HOST", "cardano-node"),
                 ("CARDANO_CHAIN_PORT", "3001"),
                 (
@@ -1500,11 +1504,16 @@ fn write_gateway_env_for_network(
         }
         config::CoreCardanoNetwork::Preprod => {
             let preprod_gateway_defaults = [
-                ("HISTORY_DB_HOST", "yaci-store-postgres"),
-                ("HISTORY_DB_PORT", "5432"),
-                ("HISTORY_DB_NAME", "yaci_store"),
-                ("HISTORY_DB_USERNAME", "yaci"),
-                ("HISTORY_DB_PASSWORD", "dbpass"),
+                ("BRIDGE_HISTORY_DB_HOST", "bridge-history-postgres"),
+                ("BRIDGE_HISTORY_DB_PORT", "5432"),
+                ("BRIDGE_HISTORY_DB_NAME", "bridge_history"),
+                ("BRIDGE_HISTORY_DB_USERNAME", "bridge"),
+                ("BRIDGE_HISTORY_DB_PASSWORD", "dbpass"),
+                ("YACI_STORE_DB_HOST", "yaci-store-postgres"),
+                ("YACI_STORE_DB_PORT", "5432"),
+                ("YACI_STORE_DB_NAME", "yaci_store"),
+                ("YACI_STORE_DB_USERNAME", "yaci"),
+                ("YACI_STORE_DB_PASSWORD", "dbpass"),
                 ("GATEWAY_DB_HOST", "postgres"),
                 ("GATEWAY_DB_PORT", "5432"),
                 ("CARDANO_CHAIN_HOST", "cardano-node"),
@@ -1610,9 +1619,20 @@ fn ensure_gateway_databases(cardano_dir: &Path) -> Result<(), Box<dyn std::error
     if crate::config::get_config()
         .cardano
         .services
-        .history_backend_enabled()
+        .history_ingestion_enabled()
     {
         wait_for_postgres("yaci-store-postgres", "yaci", "Yaci history postgres")?;
+    }
+    if crate::config::get_config()
+        .cardano
+        .services
+        .history_runtime_enabled()
+    {
+        wait_for_postgres(
+            "bridge-history-postgres",
+            "bridge",
+            "bridge history postgres",
+        )?;
     }
 
     let ensure_database_exists = |service_name: &str,
@@ -1692,7 +1712,7 @@ fn ensure_gateway_databases(cardano_dir: &Path) -> Result<(), Box<dyn std::error
     if crate::config::get_config()
         .cardano
         .services
-        .history_backend_enabled()
+        .history_ingestion_enabled()
     {
         ensure_database_exists(
             "yaci-store-postgres",
@@ -1700,6 +1720,19 @@ fn ensure_gateway_databases(cardano_dir: &Path) -> Result<(), Box<dyn std::error
             "postgres",
             "yaci_store",
             "Yaci history backend",
+        )?;
+    }
+    if crate::config::get_config()
+        .cardano
+        .services
+        .history_runtime_enabled()
+    {
+        ensure_database_exists(
+            "bridge-history-postgres",
+            "bridge",
+            "postgres",
+            "bridge_history",
+            "Bridge runtime history",
         )?;
     }
 

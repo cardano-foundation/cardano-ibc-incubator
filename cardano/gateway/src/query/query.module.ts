@@ -12,7 +12,7 @@ import { MithrilModule } from '../shared/modules/mithril/mithril.module';
 import { DenomTraceService } from './services/denom-trace.service';
 import { HealthModule } from '../health/health.module';
 import { BridgeManifestService } from './services/bridge-manifest.service';
-import { YaciHistoryService } from './services/yaci-history.service';
+import { BridgeHistoryService } from './services/bridge-history.service';
 
 @Module({
   imports: [
@@ -25,10 +25,10 @@ import { YaciHistoryService } from './services/yaci-history.service';
   providers: [
     QueryService,
     Logger,
-    YaciHistoryService,
+    BridgeHistoryService,
     {
       provide: HISTORY_SERVICE,
-      useExisting: YaciHistoryService,
+      useExisting: BridgeHistoryService,
     },
     MiniProtocalsService,
     ConnectionService,

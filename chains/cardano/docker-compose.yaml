@@ -191,6 +191,26 @@ services:
         max-size: "200k"
         max-file: "10"
 
+  bridge-history-postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=bridge_history
+      - POSTGRES_USER=bridge
+      - POSTGRES_PASSWORD=dbpass
+    volumes:
+      - ./bridge-history-postgres:/var/lib/postgresql/data
+    restart: on-failure
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U bridge -d bridge_history" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200k"
+        max-file: "10"
+
   yaci-store:
     image: bloxbean/yaci-store:2.0.0
     ports:
@@ -203,11 +223,11 @@ services:
       - CARDANO_CHAIN_HOST=cardano-node
       - CARDANO_CHAIN_PORT=3001
       - CARDANO_CHAIN_NETWORK_MAGIC=${CARDANO_CHAIN_NETWORK_MAGIC:-42}
-      - HISTORY_DB_HOST=yaci-store-postgres
-      - HISTORY_DB_PORT=5432
-      - HISTORY_DB_NAME=yaci_store
-      - HISTORY_DB_USERNAME=yaci
-      - HISTORY_DB_PASSWORD=dbpass
+      - YACI_STORE_DB_HOST=yaci-store-postgres
+      - YACI_STORE_DB_PORT=5432
+      - YACI_STORE_DB_NAME=yaci_store
+      - YACI_STORE_DB_USERNAME=yaci
+      - YACI_STORE_DB_PASSWORD=dbpass
     volumes:
       - ./yaci/genesis:/app/genesis:ro
       - ./yaci/config:/app/config:ro

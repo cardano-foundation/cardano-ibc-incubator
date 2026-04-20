@@ -5,14 +5,12 @@ import { EntityManager } from 'typeorm';
 import { bech32 } from 'bech32';
 import { GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 import { CLIENT_PREFIX } from '../../constant';
-import { queryEpochContextAtPoint } from '../../shared/helpers/ogmios';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { UtxoDto } from '../dtos/utxo.dto';
 import { TxDto } from '../dtos/tx.dto';
 import {
   HistoryBlock,
   HistoryEpochContextAtBlock,
-  HistoryEpochVerificationContext,
   HistoryService,
   HistoryTxEvidence,
   HistoryTxRedeemer,
@@ -59,22 +57,33 @@ type BridgeTxEvidenceRow = {
   tx_size?: string | number | null;
 };
 
-type HistoryBlockRow = {
-  number: string | number;
-  hash: string;
+type BridgeBlockHistoryRow = {
+  block_no: string | number;
+  block_hash: string;
   prev_hash: string;
-  slot: string | number;
-  epoch: string | number;
+  slot_no: string | number;
+  epoch_no: string | number;
   block_time: string | Date;
   slot_leader?: string | null;
 };
 
-type EpochStartSlotRow = {
-  start_slot: string | number | null;
+type BridgeEpochContextRow = {
+  epoch_no: string | number;
+  current_epoch_start_slot: string | number;
+  current_epoch_end_slot_exclusive: string | number;
+  epoch_nonce: string;
+  slots_per_kes_period: string | number;
+  stake_distribution_json:
+    | Array<{
+        poolId: string;
+        stake: string | number;
+        vrfKeyHash: string;
+      }>
+    | null;
 };
 
 @Injectable()
-export class YaciHistoryService implements HistoryService {
+export class BridgeHistoryService implements HistoryService {
   constructor(
     private readonly configService: ConfigService,
     @Inject(LucidService) private readonly lucidService: LucidService,
@@ -158,15 +167,15 @@ export class YaciHistoryService implements HistoryService {
   async findLatestBlock(): Promise<HistoryBlock | null> {
     const query = `
       SELECT
-        number,
-        hash,
+        block_no,
+        block_hash,
         prev_hash,
-        slot,
-        epoch,
+        slot_no,
+        epoch_no,
         block_time,
         slot_leader
-      FROM block
-      ORDER BY number DESC
+      FROM bridge_block_history
+      ORDER BY block_no DESC
       LIMIT 1
     `;
     const rows = await this.entityManager.query(query);
@@ -176,15 +185,15 @@ export class YaciHistoryService implements HistoryService {
   async findBlockByHeight(height: bigint): Promise<HistoryBlock | null> {
     const query = `
       SELECT
-        number,
-        hash,
+        block_no,
+        block_hash,
         prev_hash,
-        slot,
-        epoch,
+        slot_no,
+        epoch_no,
         block_time,
         slot_leader
-      FROM block
-      WHERE number = $1
+      FROM bridge_block_history
+      WHERE block_no = $1
       LIMIT 1
     `;
     const rows = await this.entityManager.query(query, [height.toString()]);
@@ -193,112 +202,68 @@ export class YaciHistoryService implements HistoryService {
 
   async findBlockCborByHash(hash: string): Promise<Buffer | null> {
     const query = `
-      SELECT cbor_data
-      FROM block_cbor
+      SELECT block_cbor
+      FROM bridge_block_history
       WHERE block_hash = $1
       LIMIT 1
     `;
     const rows = await this.entityManager.query(query, [hash.toLowerCase()]);
-    return rows[0]?.cbor_data ?? null;
+    return rows[0]?.block_cbor ?? null;
   }
 
   async findBridgeBlocks(trustedHeight: bigint, anchorHeight: bigint): Promise<HistoryBlock[]> {
     const query = `
       SELECT
-        number,
-        hash,
+        block_no,
+        block_hash,
         prev_hash,
-        slot,
-        epoch,
+        slot_no,
+        epoch_no,
         block_time,
         slot_leader
-      FROM block
-      WHERE number > $1
-        AND number < $2
-      ORDER BY number ASC
+      FROM bridge_block_history
+      WHERE block_no > $1
+        AND block_no < $2
+      ORDER BY block_no ASC
     `;
     const rows = await this.entityManager.query(query, [trustedHeight.toString(), anchorHeight.toString()]);
-    return rows.map((row: HistoryBlockRow) => this.mapHistoryBlockRow(row));
+    return rows.map((row: BridgeBlockHistoryRow) => this.mapHistoryBlockRow(row));
   }
 
   async findDescendantBlocks(anchorHeight: bigint, limit: number): Promise<HistoryBlock[]> {
     const query = `
       SELECT
-        number,
-        hash,
+        block_no,
+        block_hash,
         prev_hash,
-        slot,
-        epoch,
+        slot_no,
+        epoch_no,
         block_time,
         slot_leader
-      FROM block
-      WHERE number > $1
-      ORDER BY number ASC
+      FROM bridge_block_history
+      WHERE block_no > $1
+      ORDER BY block_no ASC
       LIMIT $2
     `;
     const rows = await this.entityManager.query(query, [anchorHeight.toString(), limit]);
-    return rows.map((row: HistoryBlockRow) => this.mapHistoryBlockRow(row));
+    return rows.map((row: BridgeBlockHistoryRow) => this.mapHistoryBlockRow(row));
   }
 
   async findEpochContextAtBlock(block: HistoryBlock): Promise<HistoryEpochContextAtBlock | null> {
-    const slotBounds = await this.findEpochSlotBounds(block.epochNo);
-    if (!slotBounds) {
-      return null;
-    }
-
-    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
-    if (!ogmiosEndpoint) {
-      return null;
-    }
-
-    const queryEpochContext = async (pointBlock: Pick<HistoryBlock, 'slotNo' | 'hash'>) =>
-      queryEpochContextAtPoint(
-        ogmiosEndpoint,
-        {
-          slot: pointBlock.slotNo,
-          hash: pointBlock.hash,
-        },
-        this.configService.get<string>('cardanoEpochNonceGenesis'),
-      );
-
-    let epochContext;
-    try {
-      epochContext = await queryEpochContext(block);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const fallbackBlock = await this.findLatestBlockInEpoch(block.epochNo);
-      const canRetryWithSameEpochPoint =
-        fallbackBlock &&
-        fallbackBlock.height !== block.height &&
-        (message.includes('Target point is too old') || message.includes('Failed to acquire requested point'));
-
-      if (!canRetryWithSameEpochPoint) {
-        throw error;
-      }
-
-      epochContext = await queryEpochContext(fallbackBlock);
-    }
-
-    if (epochContext.currentEpoch !== block.epochNo) {
-      throw new Error(
-        `Ogmios acquired epoch ${epochContext.currentEpoch} at block ${block.height}, expected epoch ${block.epochNo}`,
-      );
-    }
-
-    return {
-      epoch: epochContext.currentEpoch,
-      stakeDistribution: epochContext.stakeDistribution.map((entry) => ({
-        poolId: normalizePoolId(entry.poolId),
-        stake: entry.stake,
-        vrfKeyHash: normalizeHex(entry.vrfKeyHash),
-      })),
-      verificationContext: {
-        epochNonce: epochContext.epochNonce,
-        slotsPerKesPeriod: epochContext.slotsPerKesPeriod,
-        currentEpochStartSlot: slotBounds.currentEpochStartSlot,
-        currentEpochEndSlotExclusive: slotBounds.currentEpochEndSlotExclusive,
-      },
-    };
+    const query = `
+      SELECT
+        epoch_no,
+        current_epoch_start_slot,
+        current_epoch_end_slot_exclusive,
+        epoch_nonce,
+        slots_per_kes_period,
+        stake_distribution_json
+      FROM bridge_epoch_context
+      WHERE epoch_no = $1
+      LIMIT 1
+    `;
+    const rows = await this.entityManager.query(query, [block.epochNo]);
+    return rows[0] ? this.mapEpochContextRow(rows[0]) : null;
   }
 
   async findUtxoClientOrAuthHandler(height: number): Promise<UtxoDto[]> {
@@ -454,85 +419,35 @@ export class YaciHistoryService implements HistoryService {
     };
   }
 
-  private mapHistoryBlockRow(row: HistoryBlockRow): HistoryBlock {
+  private mapHistoryBlockRow(row: BridgeBlockHistoryRow): HistoryBlock {
     const blockTimeMs = row.block_time instanceof Date ? row.block_time.valueOf() : Number(row.block_time) * 1_000;
     return {
-      height: Number(row.number),
-      hash: row.hash,
+      height: Number(row.block_no),
+      hash: row.block_hash,
       prevHash: row.prev_hash,
-      slotNo: BigInt(row.slot),
-      epochNo: Number(row.epoch),
+      slotNo: BigInt(row.slot_no),
+      epochNo: Number(row.epoch_no),
       timestampUnixNs: BigInt(blockTimeMs) * 1_000_000n,
       slotLeader: normalizePoolId(row.slot_leader ?? ''),
     };
   }
 
-  private async findEpochSlotBounds(epoch: number): Promise<HistoryEpochVerificationContext | null> {
-    const startSlotQuery = `
-      SELECT MIN(slot) AS start_slot
-      FROM block
-      WHERE epoch = $1
-        AND slot >= 0
-    `;
-    const nextEpochStartSlotQuery = `
-      SELECT MIN(slot) AS start_slot
-      FROM block
-      WHERE epoch = $1
-        AND slot >= 0
-    `;
-
-    const [startSlotRow] = await this.entityManager.query(startSlotQuery, [epoch]);
-    const startSlot = this.parseSlot(startSlotRow);
-    if (startSlot === null) {
-      return null;
-    }
-
-    const [nextEpochStartSlotRow] = await this.entityManager.query(nextEpochStartSlotQuery, [epoch + 1]);
-    const nextEpochStartSlot = this.parseSlot(nextEpochStartSlotRow);
-    const configuredEpochLength = BigInt(this.configService.get<number>('cardanoEpochLength') || 0);
-    const currentEpochEndSlotExclusive =
-      nextEpochStartSlot ?? (configuredEpochLength > 0n ? startSlot + configuredEpochLength : null);
-    if (currentEpochEndSlotExclusive === null) {
-      return null;
-    }
-
+  private mapEpochContextRow(row: BridgeEpochContextRow): HistoryEpochContextAtBlock {
+    const stakeDistribution = Array.isArray(row.stake_distribution_json) ? row.stake_distribution_json : [];
     return {
-      epochNonce: '',
-      slotsPerKesPeriod: 0,
-      currentEpochStartSlot: startSlot,
-      currentEpochEndSlotExclusive,
+      epoch: Number(row.epoch_no),
+      stakeDistribution: stakeDistribution.map((entry) => ({
+        poolId: normalizePoolId(entry.poolId),
+        stake: BigInt(entry.stake),
+        vrfKeyHash: normalizeHex(entry.vrfKeyHash),
+      })),
+      verificationContext: {
+        epochNonce: normalizeHex(row.epoch_nonce),
+        slotsPerKesPeriod: Number(row.slots_per_kes_period),
+        currentEpochStartSlot: BigInt(row.current_epoch_start_slot),
+        currentEpochEndSlotExclusive: BigInt(row.current_epoch_end_slot_exclusive),
+      },
     };
-  }
-
-  private async findLatestBlockInEpoch(epoch: number): Promise<HistoryBlock | null> {
-    const query = `
-      SELECT
-        number,
-        hash,
-        prev_hash,
-        slot,
-        epoch,
-        block_time,
-        slot_leader
-      FROM block
-      WHERE epoch = $1
-      ORDER BY number DESC
-      LIMIT 1
-    `;
-    const rows = await this.entityManager.query(query, [epoch]);
-    return rows[0] ? this.mapHistoryBlockRow(rows[0]) : null;
-  }
-
-  private parseSlot(row?: EpochStartSlotRow | null): bigint | null {
-    const slot = row?.start_slot;
-    if (slot === undefined || slot === null) {
-      return null;
-    }
-    const parsedSlot = BigInt(slot);
-    if (parsedSlot < 0n) {
-      return null;
-    }
-    return parsedSlot;
   }
 }
 

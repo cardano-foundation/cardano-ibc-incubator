@@ -17,6 +17,10 @@ ARG MAIN_CONTEXT=cardano/gateway
 WORKDIR /usr/src/app
 ENV NODE_PATH=/usr/src/app/node_modules
 
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl postgresql-client \
+  && rm -rf /var/lib/apt/lists/*
+
 # Bundle app source
 COPY ${MAIN_CONTEXT} .
 COPY ./packages /usr/packages

@@ -76,32 +76,37 @@ The Gateway can expose a public bridge manifest at `GET /api/bridge-manifest` an
 
 ## Historical Backend
 
-The Gateway's historical Cardano reads now go through the Yaci-backed bridge history service.
+The Gateway runtime reads historical Cardano state from a bridge-owned `bridge_history` database.
 
-`HISTORY_DB_*` is the Gateway's database config surface for the historical backend.
+`BRIDGE_HISTORY_DB_*` is the Gateway's database config surface for that runtime history backend.
+`YACI_STORE_DB_*` is the projector/Yaci config surface and is not required by the Gateway runtime itself.
 
 ## Cardano Data Plane
 
 The Gateway now uses two Cardano data planes with different responsibilities:
 
 - Live data plane: `Ogmios + Kupo + Mithril`
-- Historical data plane: `Yaci Store + bridge-specific projection`
+- Historical ingestion plane: `Yaci Store + bridge-specific projector`
+- Historical runtime plane: `bridge_history`
 
-The Yaci-backed projection is the Gateway's authoritative history backend. It stores the bridge-specific evidence the Gateway needs instead of querying a generic historical Cardano schema directly.
+Yaci is an ingestion/indexing dependency. The Gateway runtime no longer queries Yaci tables or Yaci HTTP APIs directly; it reads only the bridge-owned history contract.
 
 Current bridge history tables include:
 
+- `bridge_block_history`: canonical blocks, leaders, timestamps, and block CBOR
 - `bridge_tx_history`: light tx summary by block/slot
 - `bridge_tx_evidence`: tx CBOR, tx body CBOR, decoded redeemers, HostState evidence
 - `bridge_utxo_history`: historical bridge-relevant UTxOs by asset and block
 - `bridge_spo_event_history`: historical SPO register/unregister markers
+- `bridge_epoch_context`: persisted epoch verification context and stake distribution
 
 So the runtime split is:
 
 - use `Ogmios` for live chain progression and exact inclusion tracking
 - use `Kupo` for current live UTxO state
 - use `Mithril` for certified Cardano state roots / heights
-- use `Yaci` for historical bridge state and tx evidence
+- use `Yaci` to ingest/index history into `bridge_history`
+- use `bridge_history` for all Gateway historical reads and block-witness lookups
 
 ## Installation
 

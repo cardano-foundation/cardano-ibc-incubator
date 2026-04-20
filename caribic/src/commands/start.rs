@@ -269,10 +269,10 @@ pub async fn run_start(
                 mithril_genesis_handle = handle;
                 let managed_services = match core_cardano_network {
                     config::CoreCardanoNetwork::Local => {
-                        "cardano-node, ogmios, kupo, postgres, yaci-store, yaci-store-postgres"
+                        "cardano-node, ogmios, kupo, postgres, bridge-history-postgres, yaci-store, yaci-store-postgres"
                     }
                     config::CoreCardanoNetwork::Preprod => {
-                        "cardano-node, postgres, yaci-store, yaci-store-postgres"
+                        "cardano-node, postgres, bridge-history-postgres, yaci-store, yaci-store-postgres"
                     }
                 };
                 logger::log(&format!(
