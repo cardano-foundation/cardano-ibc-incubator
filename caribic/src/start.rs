@@ -2715,11 +2715,12 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
 
     execute_script(gateway_dir, "docker", script_args, None)?;
 
-    // Wait for Gateway to stay up long enough to answer both gRPC and HTTP
-    // checks. A transient open gRPC port is not sufficient if the app exits
-    // immediately after binding.
+    // Wait for Gateway to stay up long enough to answer both gRPC and proof-readiness
+    // checks. A transient open gRPC port is not sufficient if the app exits immediately
+    // after binding, and a plain /health pass is not sufficient if Yaci history has not
+    // caught up enough for proof-serving.
     log_or_show_progress(
-        "Waiting for Gateway gRPC server to be ready",
+        "Waiting for Gateway proof readiness",
         &optional_progress_bar,
     );
     let health_config = config::get_config().health;
@@ -2739,6 +2740,8 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         );
     }
     let mut gateway_ready = false;
+    let mut last_gateway_status =
+        "Gateway readiness checks have not completed yet".to_string();
 
     verbose(&format!(
         "Gateway readiness polling configured with max_retries={} interval_ms={}",
@@ -2746,29 +2749,9 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     ));
 
     for i in 0..max_retries {
-        let grpc_ready = Command::new("nc")
-            .args(["-z", "localhost", "5001"])
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false);
-        let http_ready = Command::new("curl")
-            .args(["-fsS", "http://localhost:8000/health"])
-            .output()
-            .map(|output| output.status.success())
-            .unwrap_or(false);
-        let container_running = Command::new("docker")
-            .args([
-                "ps",
-                "--filter",
-                "name=gateway-app",
-                "--format",
-                "{{.Names}}",
-            ])
-            .output()
-            .map(|output| !String::from_utf8_lossy(&output.stdout).trim().is_empty())
-            .unwrap_or(false);
-
-        if grpc_ready && http_ready && container_running {
+        let (ready, status) = check_gateway_service_readiness();
+        last_gateway_status = status;
+        if ready {
             gateway_ready = true;
             break;
         }
@@ -2776,7 +2759,11 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         if i < max_retries - 1 {
             thread::sleep(Duration::from_millis(interval_ms));
             log_or_show_progress(
-                &format!("Waiting for Gateway gRPC... ({}/{})", i + 1, max_retries),
+                &format!(
+                    "Waiting for Gateway proof readiness... ({}/{})",
+                    i + 1,
+                    max_retries
+                ),
                 &optional_progress_bar,
             );
         }
@@ -2787,14 +2774,15 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         if let Some(progress_bar) = &optional_progress_bar {
             progress_bar.finish_and_clear();
         }
-        return Err(
-            "Gateway readiness checks (container, gRPC, HTTP health) did not become ready in time"
-                .into(),
-        );
+        return Err(format!(
+            "Gateway readiness checks (container, gRPC, proof readiness) did not become ready in time: {}",
+            last_gateway_status
+        )
+        .into());
     }
 
     log_or_show_progress(
-        "Gateway gRPC and HTTP health endpoints are ready",
+        "Gateway gRPC and proof readiness endpoints are ready",
         &optional_progress_bar,
     );
 
@@ -3816,12 +3804,7 @@ fn run_core_health_check(
 ) -> (bool, String) {
     if context.core_cardano_network == config::CoreCardanoNetwork::Preprod {
         return match check_type {
-            CoreHealthCheckType::Gateway => check_container_with_optional_port(
-                "gateway-app",
-                5001,
-                "Container running, gRPC port 5001 accessible",
-                "Container running (gRPC not ready yet)",
-            ),
+            CoreHealthCheckType::Gateway => check_gateway_service_readiness(),
             CoreHealthCheckType::CardanoNode => check_container_only("cardano-node"),
             CoreHealthCheckType::Postgres => check_postgres_service(),
             CoreHealthCheckType::Yaci => check_container_with_optional_port(
@@ -3860,12 +3843,7 @@ fn run_core_health_check(
     }
 
     match check_type {
-        CoreHealthCheckType::Gateway => check_container_with_optional_port(
-            "gateway-app",
-            5001,
-            "Container running, gRPC port 5001 accessible",
-            "Container running (gRPC not ready yet)",
-        ),
+        CoreHealthCheckType::Gateway => check_gateway_service_readiness(),
         CoreHealthCheckType::CardanoNode => check_container_only("cardano-node"),
         CoreHealthCheckType::Postgres => check_postgres_service(),
         CoreHealthCheckType::Yaci => check_container_with_optional_port(
@@ -4200,6 +4178,82 @@ fn endpoint_responds(url: &str) -> bool {
         .output()
         .ok()
         .is_some_and(|output| output.status.success())
+}
+
+fn summarize_gateway_readiness_body(body: &str) -> String {
+    let condensed = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    if condensed.is_empty() {
+        return "<empty response>".to_string();
+    }
+
+    const MAX_LEN: usize = 240;
+    if condensed.len() <= MAX_LEN {
+        condensed
+    } else {
+        format!("{}...", &condensed[..MAX_LEN])
+    }
+}
+
+fn check_gateway_http_readiness() -> (bool, String) {
+    let client = match reqwest::blocking::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()
+    {
+        Ok(client) => client,
+        Err(error) => {
+            return (
+                false,
+                format!("Failed to build HTTP client for Gateway readiness check: {error}"),
+            )
+        }
+    };
+
+    match client.get("http://127.0.0.1:8000/health/ready").send() {
+        Ok(response) => {
+            let status = response.status();
+            let body = response.text().unwrap_or_default();
+            let summary = summarize_gateway_readiness_body(body.as_str());
+            if status.is_success() {
+                (
+                    true,
+                    format!("Gateway proof readiness endpoint passed: {}", summary),
+                )
+            } else {
+                (
+                    false,
+                    format!("Gateway proof readiness endpoint returned {}: {}", status, summary),
+                )
+            }
+        }
+        Err(error) => (
+            false,
+            format!("Gateway proof readiness endpoint unreachable: {}", error),
+        ),
+    }
+}
+
+fn check_gateway_service_readiness() -> (bool, String) {
+    if docker_running_container_name("gateway-app").is_none() {
+        return (false, "Container not running".to_string());
+    }
+
+    if !is_port_accessible(5001) {
+        return (false, "Container running but gRPC port 5001 not ready".to_string());
+    }
+
+    let (ready, readiness_status) = check_gateway_http_readiness();
+    if ready {
+        (
+            true,
+            format!(
+                "Container running, gRPC port 5001 accessible, {}",
+                readiness_status
+            ),
+        )
+    } else {
+        (false, readiness_status)
+    }
 }
 
 fn check_container_only(name_filter: &str) -> (bool, String) {

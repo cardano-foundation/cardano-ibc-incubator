@@ -184,14 +184,14 @@ async fn refresh_gateway_epoch_nonce_for_stability(
 
     let gateway_healthy = wait_for_service_health(
         http_client,
-        "http://127.0.0.1:8000/health",
+        "http://127.0.0.1:8000/health/ready",
         30,
         Duration::from_secs(2),
     )
     .await;
 
     if !gateway_healthy {
-        return Err("Gateway did not become healthy after epoch nonce refresh/recreate".into());
+        return Err("Gateway did not become proof-ready after epoch nonce refresh/recreate".into());
     }
 
     verbose("   Gateway refreshed with current Cardano epoch nonce");
