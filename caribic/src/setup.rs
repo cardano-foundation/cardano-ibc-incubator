@@ -99,6 +99,60 @@ pub fn copy_cardano_env_file(cardano_dir: &Path) -> Result<(), Box<dyn std::erro
     Ok(())
 }
 
+fn process_env_value(keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| std::env::var(key).ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+pub fn resolve_preprod_history_relay(
+    gateway_env: &Path,
+) -> Result<(String, String), Box<dyn std::error::Error>> {
+    let gateway_values = if gateway_env.exists() {
+        parse_env_file(gateway_env)?
+    } else {
+        HashMap::new()
+    };
+
+    let host = process_env_value(&["CARIBIC_CARDANO_CHAIN_HOST", "CARDANO_CHAIN_HOST"])
+        .or_else(|| {
+            gateway_values
+                .get("CARDANO_CHAIN_HOST")
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+        .ok_or_else(|| {
+            format!(
+                "Missing preprod raw Cardano relay host. Set CARDANO_CHAIN_HOST in {} or export CARIBIC_CARDANO_CHAIN_HOST.",
+                gateway_env.display()
+            )
+        })?;
+
+    let port = process_env_value(&["CARIBIC_CARDANO_CHAIN_PORT", "CARDANO_CHAIN_PORT"])
+        .or_else(|| {
+            gateway_values
+                .get("CARDANO_CHAIN_PORT")
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        })
+        .ok_or_else(|| {
+            format!(
+                "Missing preprod raw Cardano relay port. Set CARDANO_CHAIN_PORT in {} or export CARIBIC_CARDANO_CHAIN_PORT.",
+                gateway_env.display()
+            )
+        })?;
+
+    if host == "cardano-node" {
+        return Err(
+            "Preprod Yaci history cannot use CARDANO_CHAIN_HOST=cardano-node; set it to a raw preprod Cardano relay host."
+                .into(),
+        );
+    }
+
+    Ok((host, port))
+}
+
 pub fn write_cardano_runtime_selection(
     cardano_dir: &Path,
     network: config::CoreCardanoNetwork,
@@ -120,9 +174,16 @@ pub fn write_cardano_runtime_selection(
             "/tmp/node.socket",
         ),
     };
+    let (chain_host, chain_port) = match network {
+        config::CoreCardanoNetwork::Local => ("cardano-node".to_string(), "3001".to_string()),
+        config::CoreCardanoNetwork::Preprod => {
+            let gateway_env = cardano_dir.join("../../cardano/gateway/.env");
+            resolve_preprod_history_relay(gateway_env.as_path())?
+        }
+    };
 
     let env_contents = format!(
-        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_SOCKET_PATH={socket_path}\nCARDANO_NODE_SOCKET_PATH={socket_path}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\nCARDANO_LOCAL_SPO_COUNT={local_spo_count}\n",
+        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_SOCKET_PATH={socket_path}\nCARDANO_NODE_SOCKET_PATH={socket_path}\nCARDANO_CHAIN_HOST={chain_host}\nCARDANO_CHAIN_PORT={chain_port}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\nCARDANO_LOCAL_SPO_COUNT={local_spo_count}\n",
         network = network.as_str(),
     );
 
@@ -1340,6 +1401,8 @@ fn validate_preprod_gateway_env(gateway_env: &Path) -> Result<(), Box<dyn std::e
     let required_groups = [
         ("KUPO_ENDPOINT", vec!["KUPO_ENDPOINT"]),
         ("OGMIOS_ENDPOINT", vec!["OGMIOS_ENDPOINT"]),
+        ("CARDANO_CHAIN_HOST", vec!["CARDANO_CHAIN_HOST"]),
+        ("CARDANO_CHAIN_PORT", vec!["CARDANO_CHAIN_PORT"]),
     ];
 
     let missing = required_groups
@@ -1367,6 +1430,7 @@ fn validate_preprod_gateway_env(gateway_env: &Path) -> Result<(), Box<dyn std::e
     let disallowed_local_defaults = [
         ("KUPO_ENDPOINT", "http://kupo:1442"),
         ("OGMIOS_ENDPOINT", "http://cardano-node-ogmios:1337"),
+        ("CARDANO_CHAIN_HOST", "cardano-node"),
     ];
     let still_local = disallowed_local_defaults
         .iter()
@@ -1527,12 +1591,14 @@ fn write_gateway_env_for_network(
                 ("HISTORY_DB_PASSWORD", "dbpass"),
                 ("GATEWAY_DB_HOST", "postgres"),
                 ("GATEWAY_DB_PORT", "5432"),
-                ("CARDANO_CHAIN_HOST", "cardano-node"),
-                ("CARDANO_CHAIN_PORT", "3001"),
             ];
             for (key, value) in preprod_gateway_defaults {
                 set_or_append_env_var(&gateway_env, key, value)?;
             }
+
+            let (relay_host, relay_port) = resolve_preprod_history_relay(&gateway_env)?;
+            set_or_append_env_var(&gateway_env, "CARDANO_CHAIN_HOST", relay_host.as_str())?;
+            set_or_append_env_var(&gateway_env, "CARDANO_CHAIN_PORT", relay_port.as_str())?;
 
             if let Some(kupo_endpoint) = resolve_preprod_live_endpoint(
                 &gateway_env,
