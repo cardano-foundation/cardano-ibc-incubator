@@ -88,13 +88,11 @@ export function resolveManagedKupoEndpoint(
     return undefined;
   }
 
-  try {
-    // DMTR Kupo accepts provider-level wildcard out-ref lookups when requests carry
-    // `dmtr-api-key`. Prefer the normalized host so the API key is not duplicated in the URL.
-    return normalizeDmtrHost(trimmed, apiKey ?? undefined).toString().replace(/\/$/, '');
-  } catch {
-    return trimmed;
-  }
+  // DMTR Kupo requires the authenticated hostname and the `dmtr-api-key` header for
+  // some asset match queries. Normalizing to the base host causes deterministic 401s
+  // on those paths, so keep the operator-configured host and attach the header below.
+  void apiKey;
+  return trimmed;
 }
 
 export function resolveManagedKupmiosHeaders(
