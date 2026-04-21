@@ -33,6 +33,9 @@ const TRANSIENT_STARTUP_ERROR_MARKERS = [
   'socket hang up',
   'network error',
   'fetch failed',
+  'unauthorized',
+  'statuscode: non 2xx status code : unauthorized',
+  '401',
 ];
 const TRANSIENT_RUNTIME_PROVIDER_ERROR_MARKERS = [
   'timeoutexception',
@@ -145,7 +148,7 @@ function collectErrorSignals(error: unknown): string[] {
   };
 
   const visit = (value: unknown, depth: number) => {
-    if (value == null || depth > 3 || visited.has(value)) {
+    if (value == null || depth > 8 || visited.has(value)) {
       return;
     }
     visited.add(value);
@@ -158,6 +161,7 @@ function collectErrorSignals(error: unknown): string[] {
     if (value instanceof Error) {
       pushSignal(value.name);
       pushSignal(value.message);
+      pushSignal(String(value));
       if (typeof value.stack === 'string') {
         const firstStackLine = value.stack.split('\n')[0]?.trim();
         pushSignal(firstStackLine);
@@ -177,6 +181,30 @@ function collectErrorSignals(error: unknown): string[] {
       visit(record.cause, depth + 1);
       visit(record.error, depth + 1);
       visit(record.originalError, depth + 1);
+
+      for (const key of Object.getOwnPropertyNames(value)) {
+        if (
+          [
+            'message',
+            'name',
+            'code',
+            'reason',
+            'details',
+            'type',
+            'statusText',
+            'stack',
+          ].includes(key)
+        ) {
+          continue;
+        }
+        visit(record[key], depth + 1);
+      }
+
+      try {
+        pushSignal(JSON.stringify(value));
+      } catch {
+        // Circular provider errors are common; individual fields above are enough.
+      }
     }
 
     if (typeof value === 'number' || typeof value === 'boolean') {
