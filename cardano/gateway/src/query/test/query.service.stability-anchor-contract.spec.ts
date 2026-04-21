@@ -1,6 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ClientState as ClientStateStability } from '@plus/proto-types/build/ibc/lightclients/stability/v1/stability';
+import {
+  ClientState as ClientStateStability,
+  ConsensusState as ConsensusStateStability,
+} from '@plus/proto-types/build/ibc/lightclients/stability/v1/stability';
 import { StabilityHeader } from '@plus/proto-types/build/ibc/lightclients/stability/v1/stability';
 import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
@@ -9,6 +12,9 @@ import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-p
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { DenomTraceService } from '../services/denom-trace.service';
 import { HistoryService } from '../services/history.service';
+
+const STABILITY_SLOT_ORIGIN_NS = 1_700_000_000_000_000_000n;
+const timestampForSlot = (slot: bigint) => STABILITY_SLOT_ORIGIN_NS + slot * 1_000_000_000n;
 
 describe('QueryService stability anchor contract', () => {
   let service: QueryService;
@@ -79,7 +85,7 @@ describe('QueryService stability anchor contract', () => {
         prevHash: 'hash-104',
         slotNo: 1050n,
         epochNo: 7,
-        timestampUnixNs: 1_500_000_000n,
+        timestampUnixNs: timestampForSlot(1050n),
         slotLeader: 'pool-e',
       }),
       findBlockByHeight: jest.fn().mockImplementation(async (height: bigint) => {
@@ -90,7 +96,7 @@ describe('QueryService stability anchor contract', () => {
             prevHash: 'hash-97',
             slotNo: 980n,
             epochNo: 7,
-            timestampUnixNs: 980_000_000n,
+            timestampUnixNs: timestampForSlot(980n),
             slotLeader: 'pool-z',
           };
         }
@@ -100,7 +106,7 @@ describe('QueryService stability anchor contract', () => {
           prevHash: 'prev-hash',
           slotNo: 1000n,
           epochNo: 7,
-          timestampUnixNs: 1_000_000_000n,
+          timestampUnixNs: timestampForSlot(1000n),
           slotLeader: 'pool-a',
         };
       }),
@@ -111,7 +117,7 @@ describe('QueryService stability anchor contract', () => {
           prevHash: 'anchor-hash',
           slotNo: 1010n,
           epochNo: 7,
-          timestampUnixNs: 1_100_000_000n,
+          timestampUnixNs: timestampForSlot(1010n),
           slotLeader: 'pool-a',
         },
         {
@@ -120,7 +126,7 @@ describe('QueryService stability anchor contract', () => {
           prevHash: 'hash-101',
           slotNo: 1020n,
           epochNo: 7,
-          timestampUnixNs: 1_200_000_000n,
+          timestampUnixNs: timestampForSlot(1020n),
           slotLeader: 'pool-b',
         },
         {
@@ -129,7 +135,7 @@ describe('QueryService stability anchor contract', () => {
           prevHash: 'hash-102',
           slotNo: 1030n,
           epochNo: 7,
-          timestampUnixNs: 1_300_000_000n,
+          timestampUnixNs: timestampForSlot(1030n),
           slotLeader: 'pool-c',
         },
         {
@@ -138,7 +144,7 @@ describe('QueryService stability anchor contract', () => {
           prevHash: 'hash-103',
           slotNo: 1040n,
           epochNo: 7,
-          timestampUnixNs: 1_400_000_000n,
+          timestampUnixNs: timestampForSlot(1040n),
           slotLeader: 'pool-d',
         },
         {
@@ -147,7 +153,7 @@ describe('QueryService stability anchor contract', () => {
           prevHash: 'hash-104',
           slotNo: 1050n,
           epochNo: 7,
-          timestampUnixNs: 1_500_000_000n,
+          timestampUnixNs: timestampForSlot(1050n),
           slotLeader: 'pool-e',
         },
       ]),
@@ -174,7 +180,7 @@ describe('QueryService stability anchor contract', () => {
           prevHash: 'hash-98',
           slotNo: 990n,
           epochNo: 7,
-          timestampUnixNs: 990_000_000n,
+          timestampUnixNs: timestampForSlot(990n),
           slotLeader: 'pool-z',
         },
       ]),
@@ -263,6 +269,7 @@ describe('QueryService stability anchor contract', () => {
 
     const response = await service.queryNewClient({ height: 100n } as any);
     const clientState = ClientStateStability.decode(response.client_state!.value);
+    const consensusState = ConsensusStateStability.decode(response.consensus_state!.value);
 
     expect(clientState.epoch_contexts).toHaveLength(1);
     expect(clientState.epoch_nonce).toHaveLength(32);
@@ -271,6 +278,9 @@ describe('QueryService stability anchor contract', () => {
     expect(clientState.slots_per_kes_period).toBe(129600n);
     expect(clientState.current_epoch_start_slot).toBe(900n);
     expect(clientState.current_epoch_end_slot_exclusive).toBe(2000n);
+    expect(clientState.system_start_unix_ns).toBe(STABILITY_SLOT_ORIGIN_NS);
+    expect(clientState.slot_length_ns).toBe(1_000_000_000n);
+    expect(consensusState.timestamp).toBe(timestampForSlot(1000n));
   });
 
   it('normalizes equal trusted and anchor heights to the previous trusted block for stability headers', async () => {
@@ -336,7 +346,7 @@ describe('QueryService stability anchor contract', () => {
       prevHash: 'hash-1135',
       slotNo: 4452n,
       epochNo: 0,
-      timestampUnixNs: 4_452_000_000n,
+      timestampUnixNs: timestampForSlot(4452n),
       slotLeader: 'pool-a',
     });
     historyServiceMock.findDescendantBlocks.mockResolvedValue([]);

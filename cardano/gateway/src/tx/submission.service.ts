@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LucidService } from '../shared/modules/lucid/lucid.service';
 import { GrpcInternalException } from '../exception/grpc_exceptions';
@@ -8,7 +8,7 @@ import { HostStateDatum } from '../shared/types/host-state-datum';
 import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
 import { IbcTreeCacheService } from '../shared/services/ibc-tree-cache.service';
 import { getCurrentTree } from '../shared/helpers/ibc-state-root';
-import { queryNetworkTipPoint, queryTransactionInclusionBlockHeight } from '../shared/helpers/time';
+import { HISTORY_SERVICE, HistoryService } from '../query/services/history.service';
 
 @Injectable()
 export class SubmissionService {
@@ -20,6 +20,7 @@ export class SubmissionService {
     private readonly txEventsService: TxEventsService,
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
     private readonly ibcTreeCacheService: IbcTreeCacheService,
+    @Inject(HISTORY_SERVICE) private readonly historyService: HistoryService,
   ) {}
 
   /**
@@ -48,22 +49,16 @@ export class SubmissionService {
         throw new GrpcInternalException('Signed transaction CBOR is empty');
       }
 
-      const preSubmitPoint = await this.capturePreSubmitPoint();
-
       // Submit to Cardano network via Lucid/Ogmios
       // Note: Lucid's submit expects a Transaction object or signed CBOR
       const txHash = await this.submitToCardano(signedTxCbor);
       
       this.logger.log(`Transaction submitted successfully: ${txHash}`);
 
-      const isConfirmed = await this.waitForConfirmation(txHash);
-      if (!isConfirmed) {
-        throw new GrpcInternalException(`Transaction ${txHash} was not confirmed`);
-      }
-
       // Hermes expects the exact tx inclusion height in "revisionNumber-revisionHeight" form.
-      // Capture the pre-submit point and follow Ogmios forward until the submitted tx appears.
-      const confirmedBlockNo = await this.waitForTxInclusionBlockHeight(txHash, preSubmitPoint);
+      // Yaci/bridge history is the runtime history contract in stake-weighted-stability mode,
+      // so wait for that backend to index the submitted tx and use its block number.
+      const confirmedBlockNo = await this.waitForIndexedConfirmation(txHash);
 
       await this.applyPendingIbcTreeUpdate(signedTxCbor, txHash);
 
@@ -202,21 +197,6 @@ export class SubmissionService {
     }
   }
 
-  private async capturePreSubmitPoint(): Promise<{ slot: number; id: string } | 'origin'> {
-    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
-    if (!ogmiosEndpoint) {
-      throw new GrpcInternalException('Missing OGMIOS_ENDPOINT for pre-submit chain point lookup');
-    }
-
-    try {
-      return await queryNetworkTipPoint(ogmiosEndpoint);
-    } catch (error) {
-      throw new GrpcInternalException(
-        `Failed to capture pre-submit chain point from Ogmios: ${error?.message ?? error}`,
-      );
-    }
-  }
-
   /**
    * Submit signed CBOR transaction to Cardano via Lucid/Ogmios.
    */
@@ -321,49 +301,27 @@ export class SubmissionService {
   }
 
   /**
-   * Wait for transaction confirmation on-chain.
-   * Polls Kupo/Ogmios until the transaction appears in a block.
+   * Wait for the submitted transaction to be indexed by the configured history backend.
    */
-  private async waitForConfirmation(txHash: string, timeoutMs: number = 60000): Promise<boolean> {
+  private async waitForIndexedConfirmation(txHash: string, timeoutMs: number = 180000): Promise<number> {
     const startTime = Date.now();
     const pollInterval = 2000; // 2 seconds
     
     while (Date.now() - startTime < timeoutMs) {
       try {
-        // Check if transaction is confirmed via Lucid's awaitTx
-        const isConfirmed = await this.lucidService.lucid.awaitTx(txHash, pollInterval);
-        if (isConfirmed) {
-          this.logger.log(`Transaction ${txHash} confirmed`);
-          return true;
+        const indexedTx = await this.historyService.findTxByHash(txHash);
+        if (indexedTx?.height) {
+          this.logger.log(`Transaction ${txHash} indexed at block ${indexedTx.height}`);
+          return indexedTx.height;
         }
       } catch (error) {
-        // awaitTx throws if timeout reached, continue polling
-        this.logger.debug(`Polling for tx confirmation: ${txHash}`);
+        this.logger.debug(`Polling history backend for tx confirmation ${txHash}: ${error?.message ?? error}`);
       }
       
       await new Promise(resolve => setTimeout(resolve, pollInterval));
     }
     
-    this.logger.warn(`Transaction ${txHash} confirmation timeout after ${timeoutMs}ms`);
-    throw new GrpcInternalException(`Transaction ${txHash} confirmation timeout after ${timeoutMs}ms`);
-  }
-
-  private async waitForTxInclusionBlockHeight(
-    txHash: string,
-    fromPoint: { slot: number; id: string } | 'origin',
-    timeoutMs: number = 60000,
-  ): Promise<number> {
-    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
-    if (!ogmiosEndpoint) {
-      throw new GrpcInternalException('Missing OGMIOS_ENDPOINT for inclusion height lookup');
-    }
-
-    try {
-      return await queryTransactionInclusionBlockHeight(ogmiosEndpoint, txHash, fromPoint, timeoutMs);
-    } catch (error) {
-      throw new GrpcInternalException(
-        `Failed to resolve exact inclusion height for tx ${txHash} from Ogmios: ${error?.message ?? error}`,
-      );
-    }
+    this.logger.warn(`Transaction ${txHash} history indexing timeout after ${timeoutMs}ms`);
+    throw new GrpcInternalException(`Transaction ${txHash} history indexing timeout after ${timeoutMs}ms`);
   }
 }

@@ -61,8 +61,8 @@ export class GatewayReadinessService {
         historyService: this.historyService,
         context: 'health/ready',
         lightClientMode,
-        maxAttempts: 1,
-        delayMs: 0,
+        maxAttempts: 12,
+        delayMs: 1000,
       });
       const history = await this.buildHistoryReadinessStatus(liveHostStateTxHash, true);
 

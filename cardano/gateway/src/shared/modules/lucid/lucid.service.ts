@@ -222,21 +222,19 @@ export class LucidService implements OnModuleInit {
   }
 
   private async loadReferenceScripts(): Promise<ReferenceScripts> {
-    const entries = await Promise.all(
-      (
-        Object.entries(this.referenceScriptOutRefs) as Array<
-          [
-            keyof ReferenceScripts,
-            Pick<UTxO, "txHash" | "outputIndex"> | undefined,
-          ]
-        >
-      )
-        .filter(([, outRef]) => !!outRef)
-        .map(async ([label, outRef]) => {
-          const utxo = await this.resolveReferenceScriptUtxo(label, outRef);
-          return [label, utxo] as const;
-        }),
-    );
+    const entries: Array<[keyof ReferenceScripts, UTxO]> = [];
+    for (const [label, outRef] of Object.entries(this.referenceScriptOutRefs) as Array<
+      [
+        keyof ReferenceScripts,
+        Pick<UTxO, "txHash" | "outputIndex"> | undefined,
+      ]
+    >) {
+      if (!outRef) {
+        continue;
+      }
+      const utxo = await this.resolveReferenceScriptUtxo(label, outRef);
+      entries.push([label, utxo]);
+    }
 
     return Object.fromEntries(entries) as ReferenceScripts;
   }
@@ -253,14 +251,25 @@ export class LucidService implements OnModuleInit {
 
     const maxAttempts = 30;
     const retryDelayMs = 1000;
+    let lastError: unknown;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const utxos = await this.lucid.utxosByOutRef([
-        {
-          txHash: outRef.txHash,
-          outputIndex: outRef.outputIndex,
-        },
-      ]);
+      let utxos: UTxO[];
+      try {
+        utxos = await this.lucid.utxosByOutRef([
+          {
+            txHash: outRef.txHash,
+            outputIndex: outRef.outputIndex,
+          },
+        ]);
+      } catch (error) {
+        lastError = error;
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+          continue;
+        }
+        break;
+      }
 
       const utxo = utxos.find((candidate) => {
         return candidate.txHash === outRef.txHash &&
@@ -279,7 +288,11 @@ export class LucidService implements OnModuleInit {
     throw new Error(
       `Unable to resolve reference script UTxO "${
         String(label)
-      }" at ${outRef.txHash}#${outRef.outputIndex}`,
+      }" at ${outRef.txHash}#${outRef.outputIndex}${
+        lastError
+          ? `: ${lastError instanceof Error ? lastError.message : String(lastError)}`
+          : ""
+      }`,
     );
   }
 

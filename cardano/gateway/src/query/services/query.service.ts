@@ -122,7 +122,6 @@ import { resolveCurrentLiveHostStateTxHeight } from './proof-context';
 import {
   loadStakeWeightedStabilityEvidenceByHeight,
   loadStakeWeightedStabilityHeaderEvidence,
-  loadStakeWeightedStabilityEvidenceForTxHash,
 } from './stability-evidence';
 
 type ParsedTxRedeemer = {
@@ -130,6 +129,12 @@ type ParsedTxRedeemer = {
   data: string;
   index: bigint;
 };
+
+const STABILITY_LATEST_HEIGHT_MAX_ATTEMPTS = 40;
+const STABILITY_LATEST_HEIGHT_DELAY_MS = 2_000;
+const MAX_PROTO_UINT64 = (1n << 64n) - 1n;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 @Injectable()
 export class QueryService {
@@ -422,7 +427,7 @@ export class QueryService {
 
     const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
     const hostStateRootBytes = Buffer.from(hostStateDatum.state.ibc_state_root, 'hex');
-    const stabilitySlotTiming = this.getStabilitySlotTiming();
+    const stabilitySlotTiming = this.getStabilitySlotTiming(stabilityEvidence.anchorBlock);
     const currentEpochContext = this.toStabilityEpochContext(
       Number(stabilityEvidence.anchorEpoch),
       stabilityEvidence.epochStakeDistribution,
@@ -462,7 +467,7 @@ export class QueryService {
     };
 
     const consensusStateStability: ConsensusStateStability = {
-      timestamp: this.deriveStabilityTimestampNs(stabilityEvidence.anchorBlock.slotNo),
+      timestamp: stabilityEvidence.anchorBlock.timestampUnixNs,
       ibc_state_root: hostStateRootBytes,
       accepted_block_hash: stabilityEvidence.anchorBlock.hash,
       accepted_epoch: BigInt(stabilityEvidence.anchorEpoch),
@@ -501,34 +506,50 @@ export class QueryService {
   }
 
   async latestStabilityHeight(): Promise<QueryLatestHeightResponse> {
-    const liveHostStateTxHeight = await resolveCurrentLiveHostStateTxHeight({
-      lucidService: this.lucidService,
-      historyService: this.historyService,
-    });
-    try {
-      const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(liveHostStateTxHeight);
-      const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
-        historyService: this.historyService,
-        height: BigInt(hostStateUtxo.blockNo),
-        logger: this.logger,
-        missingAnchorBlockMessage: `Cardano history block for HostState tx ${hostStateUtxo.txHash} unavailable for stability latest height`,
-      });
+    for (let attempt = 0; attempt < STABILITY_LATEST_HEIGHT_MAX_ATTEMPTS; attempt++) {
+      try {
+        const liveHostStateTxHeight = await resolveCurrentLiveHostStateTxHeight({
+          lucidService: this.lucidService,
+          historyService: this.historyService,
+        });
+        try {
+          const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(liveHostStateTxHeight);
+          const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
+            historyService: this.historyService,
+            height: BigInt(hostStateUtxo.blockNo),
+            logger: this.logger,
+            missingAnchorBlockMessage: `Cardano history block for HostState tx ${hostStateUtxo.txHash} unavailable for stability latest height`,
+          });
 
-      return { height: stabilityEvidence.anchorHeight } as QueryLatestHeightResponse;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const canReuseLiveHostStateHeight =
-        message.includes('Target point is too old') || message.includes('Failed to acquire requested point');
+          return { height: stabilityEvidence.anchorHeight } as QueryLatestHeightResponse;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const canReuseLiveHostStateHeight =
+            message.includes('Target point is too old') || message.includes('Failed to acquire requested point');
 
-      if (!canReuseLiveHostStateHeight) {
-        throw error;
+          if (!canReuseLiveHostStateHeight) {
+            throw error;
+          }
+
+          this.logger.warn(
+            `[latestStabilityHeight] Unable to reacquire epoch context for live HostState height ${liveHostStateTxHeight.toString()}; reusing that height until a newer HostState tx is available`,
+          );
+          return { height: liveHostStateTxHeight } as QueryLatestHeightResponse;
+        }
+      } catch (error) {
+        if (attempt + 1 === STABILITY_LATEST_HEIGHT_MAX_ATTEMPTS) {
+          throw error;
+        }
+
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`[latestStabilityHeight] ${message}; retrying stability latest height query`);
+        await sleep(STABILITY_LATEST_HEIGHT_DELAY_MS);
       }
-
-      this.logger.warn(
-        `[latestStabilityHeight] Unable to reacquire epoch context for live HostState height ${liveHostStateTxHeight.toString()}; reusing that height until a newer HostState tx is available`,
-      );
-      return { height: liveHostStateTxHeight } as QueryLatestHeightResponse;
     }
+
+    throw new GrpcInternalException(
+      `Unable to resolve stability latest height after ${STABILITY_LATEST_HEIGHT_MAX_ATTEMPTS} attempts`,
+    );
   }
 
   private async getHandlerDatum(): Promise<HandlerDatum> {
@@ -1683,7 +1704,10 @@ export class QueryService {
     );
   }
 
-  private getStabilitySlotTiming(): { systemStartUnixNs: bigint; slotLengthNs: bigint } {
+  private getStabilitySlotTiming(referenceBlock?: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>): {
+    systemStartUnixNs: bigint;
+    slotLengthNs: bigint;
+  } {
     const network = this.configService.get('cardanoNetwork');
     const slotConfig = this.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[network];
     if (
@@ -1696,15 +1720,25 @@ export class QueryService {
       throw new GrpcInternalException(`Invalid Cardano slot timing configuration for network ${network ?? 'unknown'}`);
     }
 
-    return {
-      systemStartUnixNs: BigInt(Math.trunc(slotConfig.zeroTime)) * 1_000_000n,
-      slotLengthNs: BigInt(Math.trunc(slotConfig.slotLength)) * 1_000_000n,
-    };
-  }
+    const slotLengthNs = BigInt(Math.trunc(slotConfig.slotLength)) * 1_000_000n;
+    let systemStartUnixNs = BigInt(Math.trunc(slotConfig.zeroTime)) * 1_000_000n;
 
-  private deriveStabilityTimestampNs(slot: bigint): bigint {
-    const timing = this.getStabilitySlotTiming();
-    return timing.systemStartUnixNs + slot * timing.slotLengthNs;
+    if (referenceBlock) {
+      // The verifier checks timestamp = origin + absolute_slot * slot_length.
+      // Derive that origin from indexed chain time so nonzero zeroSlot / network-era
+      // offsets do not make fresh Cardano blocks look stale to the counterparty chain.
+      systemStartUnixNs = referenceBlock.timestampUnixNs - referenceBlock.slotNo * slotLengthNs;
+      if (systemStartUnixNs <= 0n) {
+        throw new GrpcInternalException(
+          `Invalid Cardano slot timing derived from indexed block ${referenceBlock.slotNo.toString()}`,
+        );
+      }
+    }
+
+    return {
+      systemStartUnixNs,
+      slotLengthNs,
+    };
   }
 
   private toStabilityEpochContext(
@@ -1722,7 +1756,7 @@ export class QueryService {
       stake_distribution: stakeDistribution.map(
         (entry): StakeDistributionEntry => ({
           pool_id: entry.poolId,
-          stake: entry.stake,
+          stake: this.toProtoUint64(entry.stake, `stake_distribution[${entry.poolId}].stake`),
           vrf_key_hash: Buffer.from(entry.vrfKeyHash, 'hex'),
         }),
       ),
@@ -1742,9 +1776,18 @@ export class QueryService {
       slot: block.slotNo,
       hash: block.hash,
       epoch: BigInt(block.epochNo),
-      timestamp: this.deriveStabilityTimestampNs(block.slotNo),
+      timestamp: block.timestampUnixNs,
       block_cbor: blockCbor,
     };
+  }
+
+  private toProtoUint64(value: bigint, fieldName: string): bigint {
+    if (value < 0n || value > MAX_PROTO_UINT64) {
+      throw new GrpcInternalException(
+        `IBC infrastructure error: ${fieldName} is outside protobuf uint64 bounds`,
+      );
+    }
+    return value;
   }
 
   private async findExactStabilityAnchorHostStateUtxo(anchorHeight: bigint, context: string): Promise<UtxoDto> {
