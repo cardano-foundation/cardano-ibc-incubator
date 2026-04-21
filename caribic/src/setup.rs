@@ -192,7 +192,6 @@ pub async fn configure_cardano_preprod_runtime(
         cardano_dir.join("yaci/genesis"),
         cardano_dir.join("yaci/data"),
         cardano_dir.join("yaci/logs"),
-        cardano_dir.join("yaci-postgres"),
     ];
 
     if reset_state {
@@ -775,7 +774,6 @@ pub fn configure_local_cardano_devnet(
         "yaci/genesis",
         "yaci/data",
         "yaci/logs",
-        "yaci-postgres",
         "baseinfo",
     ];
 

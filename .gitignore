@@ -41,6 +41,7 @@ chains/cardano/devnet/
 chains/cardano/kupo-db/
 chains/cardano/db-sync-data/
 chains/cardano/postgres/
+chains/cardano/yaci-postgres/
 chains/cardano/baseinfo/
 chains/cardano/persistence/
 

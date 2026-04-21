@@ -178,7 +178,7 @@ services:
     depends_on:
       - cardano-node
     volumes:
-      - ./yaci-postgres:/var/lib/postgresql/data
+      - yaci_store_postgres_data:/var/lib/postgresql/data
     restart: on-failure
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U yaci -d yaci_store" ]
@@ -272,3 +272,6 @@ secrets:
     file: ./config/secrets/postgres_password
   postgres_user:
     file: ./config/secrets/postgres_user
+
+volumes:
+  yaci_store_postgres_data:
