@@ -2029,7 +2029,8 @@ fn wait_for_cardano_icq_packet_relay_readiness(
         let is_transient = readiness_output.contains("not yet stability-accepted")
             || readiness_output.contains("stability thresholds not met")
             || readiness_output.contains("current hoststate root is not yet stability-accepted")
-            || readiness_output.contains("historical tx evidence unavailable for current live hoststate tx")
+            || readiness_output
+                .contains("historical tx evidence unavailable for current live hoststate tx")
             || !has_packet_commitment;
         if !is_transient {
             return Err(format!(

@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 use std::time::Duration;
 
 use serde_json::Value;
@@ -13,6 +13,7 @@ use crate::{
             configure_hermes_for_testnet_demo as configure_injective_hermes_for_testnet_demo,
             local_chain_id as injective_local_chain_id, stop_local as stop_injective_local,
             stop_testnet as stop_injective_testnet, testnet_chain_id as injective_testnet_chain_id,
+            testnet_status_url as injective_testnet_status_url,
             workspace_dir as injective_workspace_dir,
         },
         osmosis::{
@@ -32,9 +33,8 @@ use crate::{
 };
 
 const TOKEN_SWAP_DEFAULT_CHAIN: OptionalChainId = OptionalChainId::Osmosis;
-const INJECTIVE_TESTNET_MIN_FIRST_BLOCK_WAIT_MS: u64 = 30 * 60 * 1000;
 const INJECTIVE_TESTNET_RECOVERY_HINT: &str =
-    "caribic chain start --chain injective --network testnet --chain-flag stateful=false";
+    "caribic chain start --chain injective --network testnet";
 const OSMOSIS_TESTNET_DEPLOYER_MNEMONIC_FILENAME: &str = "testnet-deployer.mnemonic";
 fn token_swap_core_targets() -> Vec<HealthTarget> {
     vec![
@@ -84,7 +84,9 @@ fn optional_chain_target(chain: OptionalChainId, network: &str) -> Result<Health
 }
 
 fn cardano_chain_id() -> String {
-    config::get_config().chains.cardano.chain_id
+    let config = config::get_config();
+    let active_network = config::active_core_cardano_network(Path::new(&config.project_root));
+    config::cardano_network_profile(active_network).chain_id
 }
 
 fn cardano_message_port_id() -> String {
@@ -105,6 +107,111 @@ const TRANSFER_PORT_ID: &str = "transfer";
 struct TransferChannelPair {
     a_channel_id: String,
     b_channel_id: String,
+}
+
+fn hermes_output_details(output: &Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    format!(
+        "status={}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        if stdout.trim().is_empty() {
+            "<empty>"
+        } else {
+            stdout.trim()
+        },
+        if stderr.trim().is_empty() {
+            "<empty>"
+        } else {
+            stderr.trim()
+        }
+    )
+}
+
+fn is_retryable_hermes_provider_failure(details: &str) -> bool {
+    let lower = details.to_ascii_lowercase();
+    if is_non_retryable_hermes_provider_failure(lower.as_str()) {
+        return false;
+    }
+
+    lower.contains("unexpected server response: 401")
+        || lower.contains("http 401")
+        || lower.contains("gateway client error: internal server error")
+        || lower.contains("internal server error")
+        || lower.contains("deadline has elapsed")
+        || lower.contains("timed out")
+        || lower.contains("connection reset")
+}
+
+fn is_non_retryable_hermes_provider_failure(lower_details: &str) -> bool {
+    lower_details.contains("non-retryable cardano provider rejection")
+        || lower_details.contains("ogmios_codes=3010")
+        || lower_details.contains("ogmios_codes=3012")
+        || lower_details.contains("\"code\":3010")
+        || lower_details.contains("\"code\":3012")
+        || lower_details.contains("some scripts of the transactions terminated")
+        || lower_details.contains("failed to evaluate to a positive outcome")
+        || lower_details.contains("validationerror")
+        || lower_details.contains("validator returned false")
+}
+
+fn run_hermes_command_with_provider_retry(
+    args: &[&str],
+    operation: &str,
+) -> Result<Output, String> {
+    const MAX_ATTEMPTS: usize = 6;
+    let mut last_details = String::new();
+
+    for attempt in 1..=MAX_ATTEMPTS {
+        let output = run_hermes_command(args).map_err(|error| error.to_string())?;
+        if output.status.success() {
+            return Ok(output);
+        }
+
+        last_details = hermes_output_details(&output);
+        if attempt == MAX_ATTEMPTS || !is_retryable_hermes_provider_failure(&last_details) {
+            break;
+        }
+
+        logger::verbose(&format!(
+            "Hermes {operation} failed with a transient provider error (attempt {attempt}/{MAX_ATTEMPTS}); retrying in 5s"
+        ));
+        std::thread::sleep(Duration::from_secs(5));
+    }
+
+    let lower_details = last_details.to_ascii_lowercase();
+    let classification = if is_non_retryable_hermes_provider_failure(lower_details.as_str()) {
+        "non-retryable Cardano transaction validation failure"
+    } else {
+        "provider/relayer failure"
+    };
+    Err(format!(
+        "Hermes {operation} failed ({classification}): {last_details}"
+    ))
+}
+
+fn create_hermes_client_with_provider_retry(
+    host_chain: &str,
+    reference_chain: &str,
+) -> Result<String, String> {
+    let output = run_hermes_command_with_provider_retry(
+        &[
+            "create",
+            "client",
+            "--host-chain",
+            host_chain,
+            "--reference-chain",
+            reference_chain,
+        ],
+        &format!("create client {host_chain}->{reference_chain}"),
+    )?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    parse_tendermint_client_id(&stdout).ok_or_else(|| {
+        format!(
+            "Failed to parse client id for {host_chain}->{reference_chain} from Hermes output:\n{}",
+            stdout
+        )
+    })
 }
 
 /// Runs the full token swap demo and validates required services before execution.
@@ -408,26 +515,7 @@ async fn run_injective_token_swap_demo(
         if let Err(initial_error) =
             wait_for_injective_first_block_for_demo(network, injective_dir.as_path()).await
         {
-            logger::warn(&format!(
-                "WARN: Initial Injective testnet readiness failed. Attempting one clean recovery restart.\n{}",
-                initial_error
-            ));
-
-            if let Err(recovery_error) =
-                recover_injective_testnet_for_demo(project_root_path, injective_dir.as_path()).await
-            {
-                return fail_with_injective_cleanup(
-                    injective_dir.as_path(),
-                    network,
-                    &format!("{}\n{}", initial_error, recovery_error),
-                );
-            }
-
-            if let Err(error) =
-                wait_for_injective_first_block_for_demo(network, injective_dir.as_path()).await
-            {
-                return fail_with_injective_cleanup(injective_dir.as_path(), network, &error);
-            }
+            return fail_with_injective_cleanup(injective_dir.as_path(), network, &initial_error);
         }
     }
 
@@ -534,6 +622,7 @@ async fn run_injective_token_swap_demo(
         return fail_with_injective_cleanup(injective_dir.as_path(), network, &error);
     }
 
+    let cardano_chain_id = cardano_chain_id();
     let swap_script_path = project_root_path
         .join("chains")
         .join("injective")
@@ -560,6 +649,7 @@ async fn run_injective_token_swap_demo(
                     .to_str()
                     .ok_or_else(|| "ERROR: Invalid injective workspace path".to_string())?,
             ),
+            ("CARDANO_CHAIN_ID", cardano_chain_id.as_str()),
             ("INJECTIVE_CHAIN_ID", injective_chain_id),
             ("INJECTIVE_NETWORK", network),
             (
@@ -599,7 +689,7 @@ async fn run_injective_token_swap_demo(
 fn injective_status_url_for_network(network: &str) -> Result<&'static str, String> {
     match network {
         "local" => Ok("http://127.0.0.1:26660/status"),
-        "testnet" => Ok("http://127.0.0.1:26659/status"),
+        "testnet" => Ok(injective_testnet_status_url()),
         _ => Err(format!(
             "Unsupported Injective network '{}' for status readiness check",
             network
@@ -614,15 +704,7 @@ async fn wait_for_injective_first_block_for_demo(
     let status_url = injective_status_url_for_network(network)?;
     let health_config = config::get_config().health;
     let retry_interval_ms = health_config.cosmos_retry_interval_ms.max(500);
-    let configured_retries = health_config.cosmos_max_retries.max(1);
-    let min_testnet_retries = (INJECTIVE_TESTNET_MIN_FIRST_BLOCK_WAIT_MS / retry_interval_ms)
-        .max(1)
-        .min(u32::MAX as u64) as u32;
-    let max_retries = if network == "testnet" {
-        configured_retries.max(min_testnet_retries)
-    } else {
-        configured_retries
-    };
+    let max_retries = health_config.cosmos_max_retries.max(1);
     let log_every_attempts = 6_u32;
     let mut stagnant_not_syncing_checks = 0_u32;
 
@@ -641,14 +723,6 @@ async fn wait_for_injective_first_block_for_demo(
         "Waiting for Injective {} to produce first block before Hermes client creation...",
         network
     ));
-    if network == "testnet" && max_retries > configured_retries {
-        logger::log(&format!(
-            "Injective testnet readiness window extended to {} attempts (~{} min) to allow snapshot restore and p2p catch-up.",
-            max_retries,
-            (max_retries as u64 * retry_interval_ms) / 60_000
-        ));
-    }
-
     for attempt in 1..=max_retries {
         let (latest_height, catching_up) = match client.get(status_url).send().await {
             Ok(response) if response.status().is_success() => {
@@ -689,32 +763,11 @@ async fn wait_for_injective_first_block_for_demo(
                 let log_tail = injective_testnet_log_tail(injective_dir);
                 return Err(format!(
                     "Injective testnet RPC is reachable but still at height 0 with catching_up=false.\n\
-                     This usually means snapshot bootstrap or peer synchronization stalled.\n\
-                     Restart with a clean bootstrap, for example:\n\
+                     The configured external testnet endpoint is not returning usable block data.\n\
+                     Re-check Injective testnet setup with:\n\
                      {}\n\
                      Status endpoint checked: {}\n{}",
                     INJECTIVE_TESTNET_RECOVERY_HINT, status_url, log_tail
-                ));
-            }
-        }
-
-        if network == "testnet" && !injective_testnet_container_running(injective_dir) {
-            let log_tail = injective_testnet_log_tail(injective_dir);
-            return Err(format!(
-                "Injective testnet container is no longer running before first block.\n\
-                 Status endpoint checked: {}\n{}",
-                status_url, log_tail
-            ));
-        }
-
-        if network == "testnet" && (attempt == 1 || attempt % log_every_attempts == 0) {
-            let log_tail = injective_testnet_log_tail(injective_dir);
-            if injective_testnet_bootstrap_failed(log_tail.as_str()) {
-                return Err(format!(
-                    "Injective testnet snapshot bootstrap failed while latest block height is still 0.\n\
-                     Hermes client creation would fail until the local testnet node produces blocks.\n\
-                     Status endpoint checked: {}\n{}",
-                    status_url, log_tail
                 ));
             }
         }
@@ -736,111 +789,16 @@ async fn wait_for_injective_first_block_for_demo(
         tokio::time::sleep(Duration::from_millis(retry_interval_ms)).await;
     }
 
-    let log_tail = injective_testnet_log_tail(injective_dir);
     let mut message = format!(
         "Injective {} stayed at block height 0 during readiness window. Hermes client creation would fail.\n\
          Status endpoint checked: {}",
         network, status_url
     );
     if network == "testnet" {
-        let lower_log_tail = log_tail.to_ascii_lowercase();
-        if lower_log_tail.contains("snapshot bootstrap failed")
-            || lower_log_tail.contains("unable to resolve injective testnet snapshot url")
-            || lower_log_tail.contains("no space left on device")
-            || lower_log_tail.contains("failed to fetch snapshot")
-        {
-            message.push_str(
-                "\nSnapshot bootstrap failed before Injective testnet produced first block.\n\
-                 Retry with a clean bootstrap:\n",
-            );
-            message.push_str(INJECTIVE_TESTNET_RECOVERY_HINT);
-        }
-        message.push('\n');
-        message.push_str(log_tail.as_str());
+        message.push_str("\nRe-check Injective testnet setup with:\n");
+        message.push_str(INJECTIVE_TESTNET_RECOVERY_HINT);
     }
     Err(message)
-}
-
-async fn recover_injective_testnet_for_demo(
-    project_root_path: &Path,
-    injective_dir: &Path,
-) -> Result<(), String> {
-    logger::warn("WARN: Restarting Injective testnet with clean snapshot bootstrap...");
-    stop_injective_testnet(injective_dir);
-
-    let adapter = chains::get_chain_adapter("injective")
-        .ok_or_else(|| "Injective chain adapter is not registered".to_string())?;
-    let mut recovery_flags = chains::ChainFlags::new();
-    recovery_flags.insert("stateful".to_string(), "false".to_string());
-    let request = chains::ChainStartRequest {
-        network: "testnet",
-        flags: &recovery_flags,
-    };
-    adapter
-        .start(project_root_path, &request)
-        .await
-        .map_err(|error| {
-            format!(
-                "ERROR: Automatic Injective testnet recovery start failed: {}",
-                error
-            )
-        })?;
-
-    logger::log("PASS: Injective testnet recovered with clean bootstrap");
-    Ok(())
-}
-
-fn injective_testnet_bootstrap_failed(log_tail: &str) -> bool {
-    let lower = log_tail.to_ascii_lowercase();
-    lower.contains("snapshot bootstrap failed")
-        || lower.contains("unable to resolve injective testnet snapshot url")
-        || lower.contains("snapshot restore completed but")
-        || lower.contains("no space left on device")
-}
-
-fn injective_testnet_container_running(injective_dir: &Path) -> bool {
-    let output = Command::new("docker")
-        .current_dir(injective_dir)
-        .args([
-            "compose",
-            "-f",
-            "configuration/docker-compose.yml",
-            "ps",
-            "-q",
-            "injectived-testnet",
-        ])
-        .output();
-
-    let Ok(output) = output else {
-        return false;
-    };
-
-    if !output.status.success() {
-        return false;
-    }
-
-    let container_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if container_id.is_empty() {
-        return false;
-    }
-
-    let inspect_output = Command::new("docker")
-        .args([
-            "inspect",
-            "--format",
-            "{{.State.Status}}",
-            container_id.as_str(),
-        ])
-        .output();
-
-    let Ok(inspect_output) = inspect_output else {
-        return false;
-    };
-    if !inspect_output.status.success() {
-        return false;
-    }
-
-    String::from_utf8_lossy(&inspect_output.stdout).trim() == "running"
 }
 
 fn injective_testnet_log_tail(injective_dir: &Path) -> String {
@@ -1435,15 +1393,16 @@ fn is_open_cardano_entrypoint_connection(cardano_connection_id: &str) -> Result<
     };
     if !is_open_transfer_state(&cardano_end.state) {
         logger::verbose(&format!(
-            "Skipping cardano-devnet connection {cardano_connection_id}: state={} (expected Open)",
-            cardano_end.state
+            "Skipping {} connection {cardano_connection_id}: state={} (expected Open)",
+            cardano_chain_id, cardano_end.state
         ));
         return Ok(false);
     }
 
     let Some(entrypoint_connection_id) = cardano_end.remote_connection_id.as_deref() else {
         logger::verbose(&format!(
-            "Skipping cardano-devnet connection {cardano_connection_id}: missing counterparty connection id"
+            "Skipping {} connection {cardano_connection_id}: missing counterparty connection id",
+            cardano_chain_id
         ));
         return Ok(false);
     };
@@ -1454,15 +1413,15 @@ fn is_open_cardano_entrypoint_connection(cardano_connection_id: &str) -> Result<
     };
     if !is_open_transfer_state(&entrypoint_end.state) {
         logger::verbose(&format!(
-            "Skipping cardano-devnet connection {cardano_connection_id}: entrypoint counterparty {} is {} (expected Open)",
-            entrypoint_connection_id, entrypoint_end.state
+            "Skipping {} connection {cardano_connection_id}: entrypoint counterparty {} is {} (expected Open)",
+            cardano_chain_id, entrypoint_connection_id, entrypoint_end.state
         ));
         return Ok(false);
     }
     if entrypoint_end.remote_connection_id.as_deref() != Some(cardano_connection_id) {
         logger::verbose(&format!(
-            "Skipping cardano-devnet connection {cardano_connection_id}: entrypoint counterparty {} does not point back to it",
-            entrypoint_connection_id
+            "Skipping {} connection {cardano_connection_id}: entrypoint counterparty {} does not point back to it",
+            cardano_chain_id, entrypoint_connection_id
         ));
         return Ok(false);
     }
@@ -1472,7 +1431,8 @@ fn is_open_cardano_entrypoint_connection(cardano_connection_id: &str) -> Result<
         || entrypoint_end.remote_client_id.is_none()
     {
         logger::verbose(&format!(
-            "Skipping cardano-devnet connection {cardano_connection_id}: missing client identifiers on one or both ends"
+            "Skipping {} connection {cardano_connection_id}: missing client identifiers on one or both ends",
+            cardano_chain_id
         ));
         return Ok(false);
     }
@@ -1516,31 +1476,33 @@ fn create_cardano_entrypoint_transfer_channel_on_connection(
 ) -> Result<(), String> {
     let cardano_chain_id = cardano_chain_id();
     let cardano_port_id = cardano_message_port_id();
+    let entrypoint_chain_id = entrypoint_chain_id();
     let entrypoint_port_id = entrypoint_message_port_id();
     logger::verbose("Creating transfer channel on the Cardano↔Entrypoint connection");
     logger::verbose(&format!(
         "Creating transfer channel on connection {connection_id} (Cardano↔Entrypoint)"
     ));
-    let create_channel_output = run_hermes_command(&[
-        "create",
-        "channel",
-        "--a-chain",
-        cardano_chain_id.as_str(),
-        "--a-connection",
-        connection_id,
-        "--a-port",
-        cardano_port_id.as_str(),
-        "--b-port",
-        entrypoint_port_id.as_str(),
-    ])
-    .map_err(|error| error.to_string())?;
-    if !create_channel_output.status.success() {
-        return Err(format!(
-            "Failed to create Cardano-Entrypoint transfer channel on connection {}: {}",
+    run_hermes_command_with_provider_retry(
+        &[
+            "create",
+            "channel",
+            "--a-chain",
+            cardano_chain_id.as_str(),
+            "--a-connection",
             connection_id,
-            String::from_utf8_lossy(&create_channel_output.stderr)
-        ));
-    }
+            "--a-port",
+            cardano_port_id.as_str(),
+            "--b-port",
+            entrypoint_port_id.as_str(),
+        ],
+        &format!("create channel {cardano_chain_id}->{entrypoint_chain_id}"),
+    )
+    .map_err(|error| {
+        format!(
+            "Failed to create Cardano-Entrypoint transfer channel on connection {}: {}",
+            connection_id, error
+        )
+    })?;
 
     Ok(())
 }
@@ -1581,83 +1543,50 @@ fn ensure_cardano_entrypoint_transfer_channel() -> Result<TransferChannelPair, S
         return Ok(open_channel_pair);
     }
 
-    logger::verbose("Creating Cardano-devnet client with entrypoint reference");
-
-    let create_cardano_client_output = run_hermes_command(&[
-        "create",
-        "client",
-        "--host-chain",
-        cardano_chain_id.as_str(),
-        "--reference-chain",
-        entrypoint_chain_id.as_str(),
-    ])
-    .map_err(|error| error.to_string())?;
-    if !create_cardano_client_output.status.success() {
-        return Err(format!(
-            "Failed to create client for cardano-devnet->entrypoint: {}",
-            String::from_utf8_lossy(&create_cardano_client_output.stderr)
-        ));
-    }
-    let cardano_client_stdout =
-        String::from_utf8_lossy(&create_cardano_client_output.stdout).to_string();
-    let cardano_client_id =
-        parse_tendermint_client_id(&cardano_client_stdout).ok_or_else(|| {
-            format!(
-                "Failed to parse Cardano->Entrypoint client id from Hermes output:\n{}",
-                cardano_client_stdout
-            )
-        })?;
     logger::verbose(&format!(
-        "Parsed cardano-devnet client id: {cardano_client_id}"
+        "Creating {cardano_chain_id} client with {entrypoint_chain_id} reference"
     ));
 
-    logger::verbose("Creating entrypoint client with cardano-devnet reference");
-    let create_entrypoint_client_output = run_hermes_command(&[
-        "create",
-        "client",
-        "--host-chain",
-        entrypoint_chain_id.as_str(),
-        "--reference-chain",
+    let cardano_client_id = create_hermes_client_with_provider_retry(
         cardano_chain_id.as_str(),
-    ])
-    .map_err(|error| error.to_string())?;
-    if !create_entrypoint_client_output.status.success() {
-        return Err(format!(
-            "Failed to create client for entrypoint->cardano-devnet: {}",
-            String::from_utf8_lossy(&create_entrypoint_client_output.stderr)
-        ));
-    }
-    let entrypoint_client_stdout =
-        String::from_utf8_lossy(&create_entrypoint_client_output.stdout).to_string();
-    let entrypoint_client_id =
-        parse_tendermint_client_id(&entrypoint_client_stdout).ok_or_else(|| {
-            format!(
-                "Failed to parse Entrypoint->Cardano client id from Hermes output:\n{}",
-                entrypoint_client_stdout
-            )
-        })?;
+        entrypoint_chain_id.as_str(),
+    )
+    .map_err(|error| {
+        format!("Failed to create client for {cardano_chain_id}->{entrypoint_chain_id}: {error}")
+    })?;
+    logger::verbose(&format!(
+        "Parsed {cardano_chain_id} client id: {cardano_client_id}"
+    ));
+
+    logger::verbose(&format!(
+        "Creating {entrypoint_chain_id} client with {cardano_chain_id} reference"
+    ));
+    let entrypoint_client_id = create_hermes_client_with_provider_retry(
+        entrypoint_chain_id.as_str(),
+        cardano_chain_id.as_str(),
+    )
+    .map_err(|error| {
+        format!("Failed to create client for {entrypoint_chain_id}->{cardano_chain_id}: {error}")
+    })?;
     logger::verbose(&format!(
         "Parsed entrypoint client id: {entrypoint_client_id}"
     ));
 
     logger::verbose("Creating Cardano<->Entrypoint connection");
-    let create_connection_output = run_hermes_command(&[
-        "create",
-        "connection",
-        "--a-chain",
-        cardano_chain_id.as_str(),
-        "--a-client",
-        cardano_client_id.as_str(),
-        "--b-client",
-        entrypoint_client_id.as_str(),
-    ])
-    .map_err(|error| error.to_string())?;
-    if !create_connection_output.status.success() {
-        return Err(format!(
-            "Failed to create Cardano-Entrypoint connection: {}",
-            String::from_utf8_lossy(&create_connection_output.stderr)
-        ));
-    }
+    let create_connection_output = run_hermes_command_with_provider_retry(
+        &[
+            "create",
+            "connection",
+            "--a-chain",
+            cardano_chain_id.as_str(),
+            "--a-client",
+            cardano_client_id.as_str(),
+            "--b-client",
+            entrypoint_client_id.as_str(),
+        ],
+        &format!("create connection {cardano_chain_id}->{entrypoint_chain_id}"),
+    )
+    .map_err(|error| format!("Failed to create Cardano-Entrypoint connection: {error}"))?;
     let create_connection_stdout =
         String::from_utf8_lossy(&create_connection_output.stdout).to_string();
     let connection_id =
