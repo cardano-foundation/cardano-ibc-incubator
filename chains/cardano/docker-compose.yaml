@@ -272,3 +272,4 @@ secrets:
 
 volumes:
   yaci_store_postgres_data:
+    name: ${YACI_STORE_POSTGRES_VOLUME:-cardano_yaci_store_postgres_data}
