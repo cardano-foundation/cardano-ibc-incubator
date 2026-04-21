@@ -44,9 +44,9 @@ export function resolveManagedOgmiosHttpEndpoint(
     } else if (parsed.protocol === 'ws:') {
       parsed.protocol = 'http:';
     }
-    // DMTR Ogmios HTTP JSON-RPC is most stable on the normalized/base host when requests carry
-    // `dmtr-api-key`. The authenticated host can work too, but it intermittently returns 401 in
-    // the Gateway container during startup retries.
+    // DMTR Ogmios HTTP JSON-RPC is method-sensitive on authenticated hostnames:
+    // queryNetwork/startTime may work there, but queryLedgerState/protocolParameters
+    // returns 401. Use the base host and send `dmtr-api-key` explicitly.
     return normalizeDmtrHost(parsed.toString(), apiKey ?? undefined).toString().replace(/\/$/, '');
   } catch {
     return trimmed;
@@ -89,9 +89,8 @@ export function resolveManagedKupoEndpoint(
   }
 
   try {
-    // DMTR Kupo accepts provider-level wildcard out-ref lookups on the normalized/base host
-    // when the request carries `dmtr-api-key`. The authenticated hostname returns 401 once the
-    // header is redundantly attached, which is exactly what Lucid/Kupmios does for Kupo.
+    // DMTR Kupo accepts provider-level wildcard out-ref lookups when requests carry
+    // `dmtr-api-key`. Prefer the normalized host so the API key is not duplicated in the URL.
     return normalizeDmtrHost(trimmed, apiKey ?? undefined).toString().replace(/\/$/, '');
   } catch {
     return trimmed;
@@ -107,39 +106,11 @@ export function resolveManagedKupmiosHeaders(
   const headers: KupmiosHeaders = {};
   const trimmedKupoApiKey = kupoApiKey?.trim();
   if (trimmedKupoApiKey) {
-    let shouldAttachKupoHeader = true;
-    const trimmedKupoUrl = trimTrailingSlash(kupoUrl);
-    if (trimmedKupoUrl) {
-      try {
-        const parsed = new URL(trimmedKupoUrl);
-        if (parsed.host.startsWith(`${trimmedKupoApiKey}.`)) {
-          shouldAttachKupoHeader = false;
-        }
-      } catch {
-        // Fall back to attaching the header below when the URL is not parseable.
-      }
-    }
-    if (shouldAttachKupoHeader) {
-      headers.kupoHeader = { 'dmtr-api-key': trimmedKupoApiKey };
-    }
+    headers.kupoHeader = { 'dmtr-api-key': trimmedKupoApiKey };
   }
   const trimmedOgmiosApiKey = ogmiosApiKey?.trim();
   if (trimmedOgmiosApiKey) {
-    let shouldAttachOgmiosHeader = true;
-    const trimmedOgmiosUrl = trimTrailingSlash(ogmiosUrl);
-    if (trimmedOgmiosUrl) {
-      try {
-        const parsed = new URL(trimmedOgmiosUrl);
-        if (parsed.host.startsWith(`${trimmedOgmiosApiKey}.`)) {
-          shouldAttachOgmiosHeader = false;
-        }
-      } catch {
-        // Fall back to attaching the header below when the URL is not parseable.
-      }
-    }
-    if (shouldAttachOgmiosHeader) {
-      headers.ogmiosHeader = { 'dmtr-api-key': trimmedOgmiosApiKey };
-    }
+    headers.ogmiosHeader = { 'dmtr-api-key': trimmedOgmiosApiKey };
   }
   return headers.kupoHeader || headers.ogmiosHeader ? headers : undefined;
 }
@@ -199,16 +170,17 @@ export function installManagedCardanoAuthFetch(
 
   const authRules = new Map<string, string>();
   for (const rule of resolveServiceAuthRules(
-    resolveManagedKupoEndpoint(kupoUrl, kupoApiKey),
+    kupoUrl,
     kupoApiKey,
   )) {
     authRules.set(rule.host, rule.apiKey);
   }
-  // Ogmios HTTP JSON-RPC on DMTR works on the authenticated hostname without the header, so
-  // we intentionally do not install a global fetch rule for it here. Websocket auth remains
-  // handled by `resolveManagedOgmiosWsOptions(...)`.
-  void ogmiosUrl;
-  void ogmiosApiKey;
+  for (const rule of resolveServiceAuthRules(
+    resolveManagedOgmiosHttpEndpoint(ogmiosUrl, ogmiosApiKey),
+    ogmiosApiKey,
+  )) {
+    authRules.set(rule.host, rule.apiKey);
+  }
 
   if (authRules.size === 0) {
     return;
@@ -217,7 +189,21 @@ export function installManagedCardanoAuthFetch(
   const originalFetch = globalThis.fetch.bind(globalThis);
   globalThis.fetch = (async (input: Request | URL | string, init?: RequestInit) => {
     const requestUrl =
-      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input instanceof Request
+            ? input.url
+            : typeof (input as { href?: unknown }).href === 'string'
+              ? ((input as { href: string }).href)
+              : typeof (input as { url?: unknown }).url === 'string'
+                ? ((input as { url: string }).url)
+                : undefined;
+
+    if (!requestUrl) {
+      return originalFetch(input as any, init);
+    }
 
     let parsedUrl: URL;
     try {
