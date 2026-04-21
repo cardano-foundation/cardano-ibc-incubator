@@ -175,8 +175,6 @@ services:
       - POSTGRES_DB=yaci_store
       - POSTGRES_USER=yaci
       - POSTGRES_PASSWORD=dbpass
-    depends_on:
-      - cardano-node
     volumes:
       - yaci_store_postgres_data:/var/lib/postgresql/data
     restart: on-failure
@@ -196,12 +194,11 @@ services:
     ports:
       - ${YACI_STORE_PORT:-8081}:8080
     depends_on:
-      - cardano-node
       - yaci-store-postgres
     environment:
       - SPRING_CONFIG_ADDITIONAL_LOCATION=/app/config/application.properties
-      - CARDANO_CHAIN_HOST=cardano-node
-      - CARDANO_CHAIN_PORT=3001
+      - CARDANO_CHAIN_HOST=${CARDANO_CHAIN_HOST:-cardano-node}
+      - CARDANO_CHAIN_PORT=${CARDANO_CHAIN_PORT:-3001}
       - CARDANO_CHAIN_NETWORK_MAGIC=${CARDANO_CHAIN_NETWORK_MAGIC:-42}
       - HISTORY_DB_HOST=yaci-store-postgres
       - HISTORY_DB_PORT=5432
