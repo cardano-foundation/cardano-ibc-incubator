@@ -30,7 +30,10 @@ const querySystemStart = async (ogmiosUrl: string) => {
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new Error(`Ogmios startTime query failed with HTTP ${response.status}${body ? `: ${body}` : ''}`);
+    throw new Error(
+      `Ogmios startTime query failed with HTTP ${response.status} at ${resolvedUrl} ` +
+        `authHeader=${process.env.OGMIOS_API_KEY ? 'set' : 'missing'}${body ? `: ${body}` : ''}`,
+    );
   }
 
   const payload = await response.json();
