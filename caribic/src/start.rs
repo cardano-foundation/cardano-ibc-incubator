@@ -4181,6 +4181,28 @@ fn endpoint_responds(url: &str) -> bool {
 }
 
 fn summarize_gateway_readiness_body(body: &str) -> String {
+    if let Ok(parsed) = serde_json::from_str::<Value>(body) {
+        if let Some(message) = parsed
+            .pointer("/history/message")
+            .and_then(|value| value.as_str())
+        {
+            return summarize_text(message);
+        }
+
+        if let Some(detail) = parsed.get("detail").and_then(|value| value.as_str()) {
+            if let Ok(parsed_detail) = serde_json::from_str::<Value>(detail) {
+                if let Some(error) = parsed_detail.get("error").and_then(|value| value.as_str()) {
+                    return summarize_text(error);
+                }
+            }
+            return summarize_text(detail);
+        }
+    }
+
+    summarize_text(body)
+}
+
+fn summarize_text(body: &str) -> String {
     let condensed = body.split_whitespace().collect::<Vec<_>>().join(" ");
     if condensed.is_empty() {
         return "<empty response>".to_string();
@@ -4195,40 +4217,66 @@ fn summarize_gateway_readiness_body(body: &str) -> String {
 }
 
 fn check_gateway_http_readiness() -> (bool, String) {
-    let client = match reqwest::blocking::Client::builder()
-        .no_proxy()
-        .timeout(Duration::from_secs(5))
-        .build()
-    {
-        Ok(client) => client,
+    let output = Command::new("curl")
+        .args([
+            "-sS",
+            "--noproxy",
+            "*",
+            "--connect-timeout",
+            "5",
+            "--max-time",
+            "30",
+            "-w",
+            "\n%{http_code}",
+            "http://127.0.0.1:8000/health/ready",
+        ])
+        .output();
+
+    let output = match output {
+        Ok(output) => output,
         Err(error) => {
             return (
                 false,
-                format!("Failed to build HTTP client for Gateway readiness check: {error}"),
-            )
+                format!("Gateway proof readiness endpoint unreachable: {}", error),
+            );
         }
     };
 
-    match client.get("http://127.0.0.1:8000/health/ready").send() {
-        Ok(response) => {
-            let status = response.status();
-            let body = response.text().unwrap_or_default();
-            let summary = summarize_gateway_readiness_body(body.as_str());
-            if status.is_success() {
-                (
-                    true,
-                    format!("Gateway proof readiness endpoint passed: {}", summary),
-                )
-            } else {
-                (
-                    false,
-                    format!("Gateway proof readiness endpoint returned {}: {}", status, summary),
-                )
-            }
-        }
-        Err(error) => (
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut lines = stdout.lines().collect::<Vec<_>>();
+    let status_code = lines.pop().unwrap_or("000").trim();
+    let body = lines.join("\n");
+    let summary = summarize_gateway_readiness_body(body.as_str());
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return (
             false,
-            format!("Gateway proof readiness endpoint unreachable: {}", error),
+            format!(
+                "Gateway proof readiness endpoint unreachable: {}",
+                summarize_gateway_readiness_body(stderr.as_ref())
+            ),
+        );
+    }
+
+    match status_code.parse::<u16>() {
+        Ok(code) if (200..300).contains(&code) => (
+            true,
+            format!("Gateway proof readiness endpoint passed: {}", summary),
+        ),
+        Ok(code) => (
+            false,
+            format!(
+                "Gateway proof readiness endpoint returned {}: {}",
+                code, summary
+            ),
+        ),
+        Err(_) => (
+            false,
+            format!(
+                "Gateway proof readiness endpoint returned invalid HTTP status '{}': {}",
+                status_code, summary
+            ),
         ),
     }
 }
@@ -4239,7 +4287,10 @@ fn check_gateway_service_readiness() -> (bool, String) {
     }
 
     if !is_port_accessible(5001) {
-        return (false, "Container running but gRPC port 5001 not ready".to_string());
+        return (
+            false,
+            "Container running but gRPC port 5001 not ready".to_string(),
+        );
     }
 
     let (ready, readiness_status) = check_gateway_http_readiness();
