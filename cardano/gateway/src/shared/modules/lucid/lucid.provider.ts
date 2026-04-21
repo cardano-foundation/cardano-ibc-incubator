@@ -6,14 +6,19 @@ import { writeFileSync } from 'fs';
 import {
   installManagedCardanoAuthFetch,
   resolveManagedKupmiosHeaders,
+  resolveManagedKupoEndpoint,
   resolveManagedOgmiosHttpEndpoint,
 } from '../../helpers/managed-cardano-endpoints';
 export const LUCID_CLIENT = 'LUCID_CLIENT';
 export const LUCID_IMPORTER = 'LUCID_IMPORTER';
 
 const MAX_SAFE_COST_MODEL_VALUE = Number.MAX_SAFE_INTEGER;
-const PROTOCOL_PARAMETERS_MAX_ATTEMPTS = 5;
+const PROTOCOL_PARAMETERS_MAX_ATTEMPTS = 20;
 const PROTOCOL_PARAMETERS_BASE_DELAY_MS = 1000;
+const PROTOCOL_PARAMETERS_MAX_DELAY_MS = 5000;
+const RUNTIME_PROVIDER_MAX_ATTEMPTS = 10;
+const RUNTIME_PROVIDER_BASE_DELAY_MS = 500;
+const RUNTIME_PROVIDER_MAX_DELAY_MS = 5000;
 const TRANSIENT_STARTUP_ERROR_MARKERS = [
   'timeoutexception',
   'timeout',
@@ -28,6 +33,37 @@ const TRANSIENT_STARTUP_ERROR_MARKERS = [
   'socket hang up',
   'network error',
   'fetch failed',
+];
+const TRANSIENT_RUNTIME_PROVIDER_ERROR_MARKERS = [
+  'timeoutexception',
+  'timeout',
+  'timed out',
+  'etimedout',
+  'econnreset',
+  'econnrefused',
+  'requesterror',
+  'request error',
+  'transport error',
+  'socket hang up',
+  'network error',
+  'fetch failed',
+  'unauthorized',
+  'statuscode: non 2xx status code : unauthorized',
+  '401',
+  '500 post',
+  '502 post',
+  '503 post',
+  '504 post',
+];
+const NON_RETRYABLE_RUNTIME_PROVIDER_ERROR_MARKERS = [
+  '(400 post',
+  'http 400',
+  '"code":3010',
+  '"code":3012',
+  'some scripts of the transactions terminated',
+  'failed to evaluate to a positive outcome',
+  'validationerror',
+  'validator returned false',
 ];
 
 function toSafeCostModelInteger(value: unknown): number {
@@ -174,11 +210,92 @@ function isTransientStartupError(error: unknown): boolean {
   );
 }
 
+export function isNonRetryableRuntimeProviderError(error: unknown): boolean {
+  const normalized = collectErrorSignals(error)
+    .map((signal) => signal.toLowerCase())
+    .join('\n');
+  if (normalized.length === 0) {
+    return false;
+  }
+
+  return NON_RETRYABLE_RUNTIME_PROVIDER_ERROR_MARKERS.some((marker) =>
+    normalized.includes(marker),
+  );
+}
+
+function describeRuntimeProviderError(error: unknown): string {
+  const signals = collectErrorSignals(error);
+  const normalized = signals.join('\n');
+  const lower = normalized.toLowerCase();
+  const parts: string[] = [];
+
+  const statusMatch =
+    lower.match(/\((\d{3})\s+post/) ??
+    lower.match(/\bhttp\s+(\d{3})\b/) ??
+    lower.match(/\bstatus\s*(?:code)?[:=]?\s*(\d{3})\b/);
+  if (statusMatch?.[1]) {
+    parts.push(`status=${statusMatch[1]}`);
+  }
+
+  const codeMatches = [...normalized.matchAll(/"code"\s*:\s*(\d+)/gi)].map((match) => match[1]);
+  const uniqueCodes = [...new Set(codeMatches)];
+  if (uniqueCodes.length > 0) {
+    parts.push(`ogmios_codes=${uniqueCodes.join(',')}`);
+  }
+
+  const validatorMatches = [
+    ...normalized.matchAll(/"validator"\s*:\s*\{\s*"index"\s*:\s*(\d+)\s*,\s*"purpose"\s*:\s*"([^"]+)"/gi),
+  ].map((match) => `${match[2]}[${match[1]}]`);
+  const uniqueValidators = [...new Set(validatorMatches)];
+  if (uniqueValidators.length > 0) {
+    parts.push(`validators=${uniqueValidators.join(',')}`);
+  }
+
+  const validationErrorMatch = normalized.match(/"validationError"\s*:\s*"([^"]+)"/i);
+  if (validationErrorMatch?.[1]) {
+    parts.push(
+      `validation_error=${validationErrorMatch[1]
+        .replace(/\\n/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()}`,
+    );
+  }
+
+  parts.push(`summary=${summarizeError(error)}`);
+  return parts.join('; ');
+}
+
+export function isTransientRuntimeProviderError(error: unknown): boolean {
+  if (isNonRetryableRuntimeProviderError(error)) {
+    return false;
+  }
+
+  const normalizedSignals = collectErrorSignals(error).map((signal) =>
+    signal.toLowerCase(),
+  );
+  if (normalizedSignals.length === 0) {
+    return false;
+  }
+
+  return normalizedSignals.some((signal) =>
+    TRANSIENT_RUNTIME_PROVIDER_ERROR_MARKERS.some((marker) =>
+      signal.includes(marker),
+    ),
+  );
+}
+
 function computeJitteredBackoffDelayMs(failedAttempt: number): number {
   const backoffDelay =
     PROTOCOL_PARAMETERS_BASE_DELAY_MS * 2 ** Math.max(0, failedAttempt - 1);
   const jitterMultiplier = 0.8 + Math.random() * 0.4;
-  return Math.round(backoffDelay * jitterMultiplier);
+  return Math.round(Math.min(backoffDelay, PROTOCOL_PARAMETERS_MAX_DELAY_MS) * jitterMultiplier);
+}
+
+function computeRuntimeProviderDelayMs(failedAttempt: number): number {
+  const backoffDelay =
+    RUNTIME_PROVIDER_BASE_DELAY_MS * 2 ** Math.max(0, failedAttempt - 1);
+  const jitterMultiplier = 0.8 + Math.random() * 0.4;
+  return Math.round(Math.min(backoffDelay, RUNTIME_PROVIDER_MAX_DELAY_MS) * jitterMultiplier);
 }
 
 type KupoValue = {
@@ -205,8 +322,9 @@ type KupoScript = {
   script: string;
 } | null;
 
-const KUPMIOs_LOOKUP_ATTEMPTS = 5;
+const KUPMIOs_LOOKUP_ATTEMPTS = 10;
 const KUPMIOS_LOOKUP_BASE_DELAY_MS = 300;
+const KUPMIOS_LOOKUP_MAX_DELAY_MS = 3000;
 
 function toAssets(value: KupoValue): Record<string, bigint> {
   const assets: Record<string, bigint> = { lovelace: BigInt(value.coins) };
@@ -236,6 +354,19 @@ function toScriptRef(script: KupoScript | undefined): any {
 async function fetchJson<T>(url: string, headers?: Record<string, string>): Promise<T> {
   let attempt = 1;
   let lastError: Error | undefined;
+  const requestHeaders = { ...(headers ?? {}) };
+  try {
+    const parsedUrl = new URL(url);
+    if (
+      parsedUrl.host.includes('kupo-m1.dmtr.host') &&
+      !requestHeaders['dmtr-api-key'] &&
+      process.env.KUPO_API_KEY
+    ) {
+      requestHeaders['dmtr-api-key'] = process.env.KUPO_API_KEY;
+    }
+  } catch {
+    // Let fetch surface malformed URLs below.
+  }
 
   while (attempt <= KUPMIOs_LOOKUP_ATTEMPTS) {
     const controller = new AbortController();
@@ -243,12 +374,14 @@ async function fetchJson<T>(url: string, headers?: Record<string, string>): Prom
 
     try {
       const response = await fetch(url, {
-        headers,
+        headers: requestHeaders,
         signal: controller.signal,
       });
       if (!response.ok) {
         const body = await response.text().catch(() => '');
-        throw new Error(`HTTP ${response.status} GET ${url}${body ? `: ${body}` : ''}`);
+        throw new Error(
+          `HTTP ${response.status} GET ${url} authHeader=${requestHeaders['dmtr-api-key'] ? 'set' : 'missing'}${body ? `: ${body}` : ''}`,
+        );
       }
       return (await response.json()) as T;
     } catch (error) {
@@ -256,7 +389,10 @@ async function fetchJson<T>(url: string, headers?: Record<string, string>): Prom
       if (attempt >= KUPMIOs_LOOKUP_ATTEMPTS) {
         break;
       }
-      const delayMs = KUPMIOS_LOOKUP_BASE_DELAY_MS * 2 ** (attempt - 1);
+      const delayMs = Math.min(
+        KUPMIOS_LOOKUP_BASE_DELAY_MS * 2 ** (attempt - 1),
+        KUPMIOS_LOOKUP_MAX_DELAY_MS,
+      );
       await sleep(delayMs);
       attempt += 1;
     } finally {
@@ -277,7 +413,7 @@ async function fetchKupoDatum(
     return undefined;
   }
 
-  const result = await fetchJson<KupoDatum>(`${kupoEndpoint}/datums/${datumHash}`, headers);
+  const result = await fetchJson<KupoDatum>(`${kupoEndpoint}/datums/${datumHash}?inline`, headers);
   return result?.datum;
 }
 
@@ -292,6 +428,93 @@ async function fetchKupoScript(
 
   const result = await fetchJson<KupoScript>(`${kupoEndpoint}/scripts/${scriptHash}`, headers);
   return toScriptRef(result ?? undefined);
+}
+
+async function kupoMatchesToUtxos(
+  kupoEndpoint: string,
+  matches: KupoMatch[],
+  headers?: Record<string, string>,
+): Promise<any[]> {
+  const utxos: any[] = [];
+  for (const match of matches) {
+    utxos.push({
+      txHash: match.transaction_id,
+      outputIndex: match.output_index,
+      address: match.address,
+      assets: toAssets(match.value),
+      datumHash: match.datum_type === 'hash' ? match.datum_hash ?? undefined : undefined,
+      datum: await fetchKupoDatum(kupoEndpoint, match.datum_type, match.datum_hash, headers),
+      scriptRef: await fetchKupoScript(kupoEndpoint, match.script_hash, headers),
+    });
+  }
+
+  return utxos;
+}
+
+function kupoQueryPredicate(addressOrCredential: string | { hash: string }): {
+  queryPredicate: string;
+  isAddress: boolean;
+} {
+  const isAddress = typeof addressOrCredential === 'string';
+  return {
+    queryPredicate: isAddress ? addressOrCredential : addressOrCredential.hash,
+    isAddress,
+  };
+}
+
+function splitUnit(unit: string): { policyId: string; assetName: string } {
+  if (unit === 'lovelace' || unit.length < 56) {
+    throw new Error(`Unsupported Kupo asset unit for policy query: ${unit}`);
+  }
+  return {
+    policyId: unit.slice(0, 56),
+    assetName: unit.slice(56),
+  };
+}
+
+async function fetchKupoUtxos(
+  kupoEndpoint: string,
+  addressOrCredential: string | { hash: string },
+  headers?: Record<string, string>,
+): Promise<any[]> {
+  const { queryPredicate, isAddress } = kupoQueryPredicate(addressOrCredential);
+  const matches = await fetchJson<KupoMatch[]>(
+    `${kupoEndpoint}/matches/${queryPredicate}${isAddress ? '' : '/*'}?unspent`,
+    headers,
+  );
+  return kupoMatchesToUtxos(kupoEndpoint, matches, headers);
+}
+
+async function fetchKupoUtxosWithUnit(
+  kupoEndpoint: string,
+  addressOrCredential: string | { hash: string },
+  unit: string,
+  headers?: Record<string, string>,
+): Promise<any[]> {
+  const { queryPredicate, isAddress } = kupoQueryPredicate(addressOrCredential);
+  const { policyId, assetName } = splitUnit(unit);
+  const matches = await fetchJson<KupoMatch[]>(
+    `${kupoEndpoint}/matches/${queryPredicate}${isAddress ? '' : '/*'}?unspent&policy_id=${policyId}${assetName ? `&asset_name=${assetName}` : ''}`,
+    headers,
+  );
+  return kupoMatchesToUtxos(kupoEndpoint, matches, headers);
+}
+
+async function fetchKupoUtxoByUnit(
+  kupoEndpoint: string,
+  unit: string,
+  headers?: Record<string, string>,
+): Promise<any | undefined> {
+  const { policyId, assetName } = splitUnit(unit);
+  const matches = await fetchJson<KupoMatch[]>(
+    `${kupoEndpoint}/matches/${policyId}.${assetName || '*'}?unspent`,
+    headers,
+  );
+  const utxos = await kupoMatchesToUtxos(kupoEndpoint, matches, headers);
+  if (utxos.length > 1) {
+    throw new Error('Unit needs to be an NFT or only held by one address.');
+  }
+  return utxos[0];
 }
 
 async function fetchKupoUtxosByOutRef(
@@ -315,20 +538,7 @@ async function fetchKupoUtxosByOutRef(
     )
   );
 
-  const utxos: any[] = [];
-  for (const match of filteredMatches) {
-    utxos.push({
-      txHash: match.transaction_id,
-      outputIndex: match.output_index,
-      address: match.address,
-      assets: toAssets(match.value),
-      datumHash: match.datum_type === 'hash' ? match.datum_hash ?? undefined : undefined,
-      datum: await fetchKupoDatum(kupoEndpoint, match.datum_type, match.datum_hash, headers),
-      scriptRef: await fetchKupoScript(kupoEndpoint, match.script_hash, headers),
-    });
-  }
-
-  return utxos;
+  return kupoMatchesToUtxos(kupoEndpoint, filteredMatches, headers);
 }
 
 async function retryWithBackoff<T>(
@@ -367,52 +577,98 @@ async function retryWithBackoff<T>(
   );
 }
 
+async function retryRuntimeProviderOperation<T>(
+  operation: () => Promise<T>,
+  label: string,
+): Promise<T> {
+  for (let attempt = 1; attempt <= RUNTIME_PROVIDER_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (isNonRetryableRuntimeProviderError(error)) {
+        throw new Error(
+          `[runtime] ${label} failed with non-retryable Cardano provider rejection: ` +
+            `${describeRuntimeProviderError(error)}. Not retrying.`,
+        );
+      }
+
+      if (!isTransientRuntimeProviderError(error) || attempt >= RUNTIME_PROVIDER_MAX_ATTEMPTS) {
+        throw error;
+      }
+
+      const retryDelayMs = computeRuntimeProviderDelayMs(attempt);
+      console.warn(
+        `[runtime] ${label} failed with transient provider error (attempt ${attempt}/${RUNTIME_PROVIDER_MAX_ATTEMPTS}): ${summarizeError(error)}. Retrying in ${retryDelayMs}ms`,
+      );
+      await sleep(retryDelayMs);
+    }
+  }
+
+  throw new Error(
+    `[runtime] ${label} failed after ${RUNTIME_PROVIDER_MAX_ATTEMPTS} attempts`,
+  );
+}
+
 export const LucidClient = {
   provide: LUCID_CLIENT,
   useFactory: async (configService: ConfigService) => {
     // Dynamically import Lucid library
     const Lucid = await (eval(`import('@lucid-evolution/lucid')`) as Promise<typeof import('@lucid-evolution/lucid')>);
     // Create Lucid provider and instance
-    const kupoEndpoint = configService.get('kupoEndpoint');
+    const kupoApiKey = configService.get('kupoApiKey') ?? process.env.KUPO_API_KEY;
+    const ogmiosApiKey = configService.get('ogmiosApiKey') ?? process.env.OGMIOS_API_KEY;
+    const rawKupoEndpoint = configService.get('kupoEndpoint');
+    const kupoEndpoint = resolveManagedKupoEndpoint(
+      rawKupoEndpoint,
+      kupoApiKey,
+    ) ?? rawKupoEndpoint;
     const ogmiosEndpoint = resolveManagedOgmiosHttpEndpoint(
       configService.get('ogmiosEndpoint'),
-      configService.get('ogmiosApiKey'),
+      ogmiosApiKey,
     );
     const kupmiosHeaders = resolveManagedKupmiosHeaders(
       kupoEndpoint,
-      configService.get('kupoApiKey'),
+      kupoApiKey,
       ogmiosEndpoint,
-      configService.get('ogmiosApiKey'),
+      ogmiosApiKey,
     );
 
     installManagedCardanoAuthFetch(
       configService.get('kupoEndpoint'),
-      configService.get('kupoApiKey'),
+      kupoApiKey,
       configService.get('ogmiosEndpoint'),
-      configService.get('ogmiosApiKey'),
+      ogmiosApiKey,
     );
 
     const provider: any = new Lucid.Kupmios(kupoEndpoint, ogmiosEndpoint, kupmiosHeaders);
     console.log(
-      `[startup] Lucid provider endpoints kupo=${kupoEndpoint} ogmiosHttp=${ogmiosEndpoint} ogmiosWs=${configService.get('ogmiosEndpoint')}`,
+      `[startup] Lucid provider endpoints kupo=${kupoEndpoint} ogmiosHttp=${ogmiosEndpoint} ogmiosWs=${configService.get('ogmiosEndpoint')} kupoAuth=${kupoApiKey ? 'set' : 'missing'} ogmiosAuth=${ogmiosApiKey ? 'set' : 'missing'}`,
     );
+    if (typeof provider.getUtxos === 'function') {
+      provider.getUtxos = async (addressOrCredential: string | { hash: string }) =>
+        fetchKupoUtxos(kupoEndpoint, addressOrCredential, kupmiosHeaders?.kupoHeader);
+    }
+    if (typeof provider.getUtxosWithUnit === 'function') {
+      provider.getUtxosWithUnit = async (
+        addressOrCredential: string | { hash: string },
+        unit: string,
+      ) => fetchKupoUtxosWithUnit(kupoEndpoint, addressOrCredential, unit, kupmiosHeaders?.kupoHeader);
+    }
+    if (typeof provider.getUtxoByUnit === 'function') {
+      provider.getUtxoByUnit = async (unit: string) =>
+        fetchKupoUtxoByUnit(kupoEndpoint, unit, kupmiosHeaders?.kupoHeader);
+    }
     const originalGetUtxosByOutRef = provider.getUtxosByOutRef?.bind(provider);
     if (typeof originalGetUtxosByOutRef === 'function') {
       provider.getUtxosByOutRef = async (
         outRefs: Array<{ txHash: string; outputIndex: number }>,
       ) => {
-        try {
-          return await fetchKupoUtxosByOutRef(
-            kupoEndpoint,
-            outRefs,
-            kupmiosHeaders?.kupoHeader,
-          );
-        } catch (error) {
-          console.warn(
-            `[startup] custom Kupo out-ref lookup failed, falling back to provider default: ${summarizeError(error)}`,
-          );
-          return await originalGetUtxosByOutRef(outRefs);
-        }
+        void originalGetUtxosByOutRef;
+        return await fetchKupoUtxosByOutRef(
+          kupoEndpoint,
+          outRefs,
+          kupmiosHeaders?.kupoHeader,
+        );
       };
     }
     // DEBUG: `TxBuilder.complete()` uses `provider.evaluateTx(...)` to ask Ogmios for script
@@ -426,7 +682,10 @@ export const LucidClient = {
     if (typeof originalEvaluateTx === 'function') {
       provider.evaluateTx = async (tx: string, additionalUTxOs?: any[]) => {
         try {
-          return await originalEvaluateTx(tx, additionalUTxOs);
+          return await retryRuntimeProviderOperation(
+            () => originalEvaluateTx(tx, additionalUTxOs),
+            'Kupmios.evaluateTx',
+          );
         } catch (error) {
           try {
             const dumpId = Date.now();
@@ -562,6 +821,12 @@ export const LucidClient = {
           throw error;
         }
       };
+    }
+
+    const originalSubmitTx = provider.submitTx?.bind(provider);
+    if (typeof originalSubmitTx === 'function') {
+      provider.submitTx = async (cbor: string) =>
+        retryRuntimeProviderOperation(() => originalSubmitTx(cbor), 'Kupmios.submitTx');
     }
 
     const originalAwaitTx = provider.awaitTx?.bind(provider);

@@ -60,6 +60,7 @@ import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
+import { isNonRetryableRuntimeProviderError } from '../shared/modules/lucid/lucid.provider';
 
 @Injectable()
 export class ConnectionService {
@@ -102,6 +103,10 @@ export class ConnectionService {
   }
 
   private isTransientKupmiosTransportError(error: unknown): boolean {
+    if (isNonRetryableRuntimeProviderError(error)) {
+      return false;
+    }
+
     const errorText = inspect(error, { depth: 10 }).toLowerCase();
     const transientMarkers = [
       'kupmioserror',
