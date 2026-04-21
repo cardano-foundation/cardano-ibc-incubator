@@ -181,9 +181,13 @@ pub fn write_cardano_runtime_selection(
             resolve_preprod_history_relay(gateway_env.as_path())?
         }
     };
+    let yaci_store_postgres_volume = match network {
+        config::CoreCardanoNetwork::Local => "cardano_yaci_store_postgres_local_data",
+        config::CoreCardanoNetwork::Preprod => "cardano_yaci_store_postgres_data",
+    };
 
     let env_contents = format!(
-        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_SOCKET_PATH={socket_path}\nCARDANO_NODE_SOCKET_PATH={socket_path}\nCARDANO_CHAIN_HOST={chain_host}\nCARDANO_CHAIN_PORT={chain_port}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\nCARDANO_LOCAL_SPO_COUNT={local_spo_count}\n",
+        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_SOCKET_PATH={socket_path}\nCARDANO_NODE_SOCKET_PATH={socket_path}\nCARDANO_CHAIN_HOST={chain_host}\nCARDANO_CHAIN_PORT={chain_port}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\nCARDANO_LOCAL_SPO_COUNT={local_spo_count}\nYACI_STORE_POSTGRES_VOLUME={yaci_store_postgres_volume}\n",
         network = network.as_str(),
     );
 

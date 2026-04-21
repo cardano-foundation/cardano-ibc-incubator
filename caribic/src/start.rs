@@ -539,12 +539,13 @@ pub async fn start_local_cardano_network(
 
     write_cardano_runtime_selection(cardano_dir.as_path(), network, local_spo_count)?;
     if clean {
-        execute_script(
-            cardano_dir.as_path(),
-            "docker",
-            Vec::from(["compose", "down", "-v", "--remove-orphans"]),
-            None,
-        )?;
+        let mut compose_down_args = vec!["compose", "down", "--remove-orphans"];
+        if matches!(network, config::CoreCardanoNetwork::Local) {
+            compose_down_args.insert(2, "-v");
+        } else {
+            verbose("Preserving preprod Yaci history volume during clean Cardano restart");
+        }
+        execute_script(cardano_dir.as_path(), "docker", compose_down_args, None)?;
     }
     log_or_show_progress(
         &format!(
