@@ -145,6 +145,18 @@ enum Commands {
         #[arg(long)]
         service: Option<String>,
     },
+    /// Prints or writes a deterministic Yaci bootstrap checkpoint for public Cardano history
+    YaciCheckpoint {
+        /// Cardano network profile to query
+        #[arg(long, default_value = "preprod")]
+        network: String,
+        /// Select the first block of tip_epoch - epochs_back
+        #[arg(long, default_value_t = 2)]
+        epochs_back: u64,
+        /// Write YACI_SYNC_START_* values into cardano/gateway/.env and chains/cardano/.env
+        #[arg(long, default_value_t = false)]
+        write_env: bool,
+    },
     /// Runs security and validator audits (gateway npm, caribic cargo, onchain aiken)
     Audit,
     /// List IBC clients hosted on a given chain
@@ -345,6 +357,13 @@ async fn main() {
         Commands::Keys { command } => commands::run_keys(project_root_path, command),
         Commands::HealthCheck { service } => {
             commands::run_health_check(project_root_path, service.as_deref())
+        }
+        Commands::YaciCheckpoint {
+            network,
+            epochs_back,
+            write_env,
+        } => {
+            commands::run_yaci_checkpoint(project_root_path, &network, epochs_back, write_env).await
         }
         Commands::Audit => commands::run_audit(project_root_path),
         Commands::ListClients { chain } => commands::run_list_clients(&chain),

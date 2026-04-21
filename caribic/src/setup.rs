@@ -24,6 +24,16 @@ const LOCAL_STABILITY_THRESHOLD_UNIQUE_POOLS: &str = "2";
 const LOCAL_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: &str = "6000";
 const PREPROD_ENVIRONMENT_BASE_URL: &str =
     "https://book.world.dev.cardano.org/environments/preprod";
+const YACI_SYNC_START_SLOT_KEY: &str = "YACI_SYNC_START_SLOT";
+const YACI_SYNC_START_BLOCKHASH_KEY: &str = "YACI_SYNC_START_BLOCKHASH";
+const YACI_SYNC_START_BLOCK_NO_KEY: &str = "YACI_SYNC_START_BLOCK_NO";
+
+#[derive(Debug, Clone)]
+pub struct YaciSyncCheckpoint {
+    pub slot: String,
+    pub block_hash: String,
+    pub block_no: Option<String>,
+}
 
 pub fn local_cardano_spo_count(with_mithril: bool, network: config::CoreCardanoNetwork) -> usize {
     if matches!(network, config::CoreCardanoNetwork::Local) && !with_mithril {
@@ -153,6 +163,110 @@ pub fn resolve_preprod_history_relay(
     Ok((host, port))
 }
 
+fn resolve_env_or_file_value(
+    env_values: &HashMap<String, String>,
+    env_keys: &[&str],
+    file_keys: &[&str],
+) -> Option<String> {
+    process_env_value(env_keys)
+        .or_else(|| {
+            file_keys.iter().find_map(|key| {
+                env_values
+                    .get(*key)
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+            })
+        })
+        .filter(|value| !value.is_empty())
+}
+
+fn is_hex_64(value: &str) -> bool {
+    value.len() == 64 && value.chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
+pub fn resolve_preprod_yaci_checkpoint(
+    gateway_env: &Path,
+) -> Result<YaciSyncCheckpoint, Box<dyn std::error::Error>> {
+    let gateway_values = if gateway_env.exists() {
+        parse_env_file(gateway_env)?
+    } else {
+        HashMap::new()
+    };
+
+    let slot = resolve_env_or_file_value(
+        &gateway_values,
+        &["CARIBIC_YACI_SYNC_START_SLOT", YACI_SYNC_START_SLOT_KEY],
+        &[YACI_SYNC_START_SLOT_KEY],
+    )
+    .ok_or_else(|| {
+        format!(
+            "Missing preprod Yaci checkpoint slot. Set {YACI_SYNC_START_SLOT_KEY} in {} or export CARIBIC_YACI_SYNC_START_SLOT.\nGenerate a recent checkpoint with: caribic yaci-checkpoint --network preprod --epochs-back 2 --write-env",
+            gateway_env.display()
+        )
+    })?;
+
+    let slot_number = slot
+        .parse::<u64>()
+        .map_err(|error| format!("Invalid preprod Yaci checkpoint slot '{}': {}", slot, error))?;
+    if slot_number == 0 {
+        return Err(
+            "Preprod Yaci checkpoint slot must be > 0. Do not sync preprod history from genesis."
+                .into(),
+        );
+    }
+
+    let block_hash = resolve_env_or_file_value(
+        &gateway_values,
+        &[
+            "CARIBIC_YACI_SYNC_START_BLOCKHASH",
+            YACI_SYNC_START_BLOCKHASH_KEY,
+            "CARIBIC_YACI_SYNC_START_BLOCK_HASH",
+            "YACI_SYNC_START_BLOCK_HASH",
+        ],
+        &[YACI_SYNC_START_BLOCKHASH_KEY, "YACI_SYNC_START_BLOCK_HASH"],
+    )
+    .ok_or_else(|| {
+        format!(
+            "Missing preprod Yaci checkpoint block hash. Set {YACI_SYNC_START_BLOCKHASH_KEY} in {} or export CARIBIC_YACI_SYNC_START_BLOCKHASH.",
+            gateway_env.display()
+        )
+    })?
+    .to_lowercase();
+
+    if !is_hex_64(block_hash.as_str()) {
+        return Err(format!(
+            "Invalid preprod Yaci checkpoint block hash '{}': expected a 64-character hex hash.",
+            block_hash
+        )
+        .into());
+    }
+
+    let block_no = resolve_env_or_file_value(
+        &gateway_values,
+        &[
+            "CARIBIC_YACI_SYNC_START_BLOCK_NO",
+            YACI_SYNC_START_BLOCK_NO_KEY,
+        ],
+        &[YACI_SYNC_START_BLOCK_NO_KEY],
+    )
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty());
+    if let Some(block_no) = &block_no {
+        block_no.parse::<u64>().map_err(|error| {
+            format!(
+                "Invalid preprod Yaci checkpoint block number '{}': {}",
+                block_no, error
+            )
+        })?;
+    }
+
+    Ok(YaciSyncCheckpoint {
+        slot,
+        block_hash,
+        block_no,
+    })
+}
+
 pub fn write_cardano_runtime_selection(
     cardano_dir: &Path,
     network: config::CoreCardanoNetwork,
@@ -181,13 +295,37 @@ pub fn write_cardano_runtime_selection(
             resolve_preprod_history_relay(gateway_env.as_path())?
         }
     };
-    let yaci_store_postgres_volume = match network {
-        config::CoreCardanoNetwork::Local => "cardano_yaci_store_postgres_local_data",
-        config::CoreCardanoNetwork::Preprod => "cardano_yaci_store_postgres_data",
+    let yaci_checkpoint = match network {
+        config::CoreCardanoNetwork::Local => None,
+        config::CoreCardanoNetwork::Preprod => {
+            let gateway_env = cardano_dir.join("../../cardano/gateway/.env");
+            Some(resolve_preprod_yaci_checkpoint(gateway_env.as_path())?)
+        }
+    };
+    let yaci_sync_start_slot = yaci_checkpoint
+        .as_ref()
+        .map(|checkpoint| checkpoint.slot.as_str())
+        .unwrap_or("0");
+    let yaci_sync_start_blockhash = yaci_checkpoint
+        .as_ref()
+        .map(|checkpoint| checkpoint.block_hash.as_str())
+        .unwrap_or("");
+    let yaci_store_postgres_volume = match (network, yaci_checkpoint.as_ref()) {
+        (config::CoreCardanoNetwork::Local, _) => {
+            "cardano_yaci_store_postgres_local_data".to_string()
+        }
+        (config::CoreCardanoNetwork::Preprod, Some(checkpoint)) => format!(
+            "cardano_yaci_store_postgres_preprod_{}_{}",
+            checkpoint.slot,
+            &checkpoint.block_hash[..12]
+        ),
+        (config::CoreCardanoNetwork::Preprod, None) => {
+            unreachable!("preprod checkpoint was resolved above")
+        }
     };
 
     let env_contents = format!(
-        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_SOCKET_PATH={socket_path}\nCARDANO_NODE_SOCKET_PATH={socket_path}\nCARDANO_CHAIN_HOST={chain_host}\nCARDANO_CHAIN_PORT={chain_port}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\nCARDANO_LOCAL_SPO_COUNT={local_spo_count}\nYACI_STORE_POSTGRES_VOLUME={yaci_store_postgres_volume}\n",
+        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_SOCKET_PATH={socket_path}\nCARDANO_NODE_SOCKET_PATH={socket_path}\nCARDANO_CHAIN_HOST={chain_host}\nCARDANO_CHAIN_PORT={chain_port}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\nCARDANO_LOCAL_SPO_COUNT={local_spo_count}\nYACI_SYNC_START_SLOT={yaci_sync_start_slot}\nYACI_SYNC_START_BLOCKHASH={yaci_sync_start_blockhash}\nYACI_STORE_POSTGRES_VOLUME={yaci_store_postgres_volume}\n",
         network = network.as_str(),
     );
 
@@ -395,7 +533,7 @@ fn write_yaci_preprod_genesis_files(
     Ok(())
 }
 
-fn set_or_append_env_var(
+pub(crate) fn set_or_append_env_var(
     env_path: &Path,
     key: &str,
     value: &str,
@@ -1604,6 +1742,21 @@ fn write_gateway_env_for_network(
             set_or_append_env_var(&gateway_env, "CARDANO_CHAIN_HOST", relay_host.as_str())?;
             set_or_append_env_var(&gateway_env, "CARDANO_CHAIN_PORT", relay_port.as_str())?;
 
+            let yaci_checkpoint = resolve_preprod_yaci_checkpoint(&gateway_env)?;
+            set_or_append_env_var(
+                &gateway_env,
+                YACI_SYNC_START_SLOT_KEY,
+                yaci_checkpoint.slot.as_str(),
+            )?;
+            set_or_append_env_var(
+                &gateway_env,
+                YACI_SYNC_START_BLOCKHASH_KEY,
+                yaci_checkpoint.block_hash.as_str(),
+            )?;
+            if let Some(block_no) = yaci_checkpoint.block_no.as_deref() {
+                set_or_append_env_var(&gateway_env, YACI_SYNC_START_BLOCK_NO_KEY, block_no)?;
+            }
+
             if let Some(kupo_endpoint) = resolve_preprod_live_endpoint(
                 &gateway_env,
                 "KUPO_ENDPOINT",
@@ -1888,7 +2041,9 @@ pub fn prepare_db_sync_and_gateway(
     match network {
         config::CoreCardanoNetwork::Local => ensure_gateway_databases(cardano_dir)?,
         config::CoreCardanoNetwork::Preprod => {
-            validate_preprod_gateway_env(&cardano_dir.join("../../cardano/gateway/.env"))?;
+            let gateway_env = cardano_dir.join("../../cardano/gateway/.env");
+            resolve_preprod_yaci_checkpoint(&gateway_env)?;
+            validate_preprod_gateway_env(&gateway_env)?;
             ensure_gateway_databases(cardano_dir)?
         }
     }

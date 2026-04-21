@@ -2741,8 +2741,7 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         );
     }
     let mut gateway_ready = false;
-    let mut last_gateway_status =
-        "Gateway readiness checks have not completed yet".to_string();
+    let mut last_gateway_status = "Gateway readiness checks have not completed yet".to_string();
 
     verbose(&format!(
         "Gateway readiness polling configured with max_retries={} interval_ms={}",

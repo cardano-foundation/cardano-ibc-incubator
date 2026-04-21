@@ -39,6 +39,17 @@ caribic chain start --chain injective --network local
 caribic chain start --chain injective --network testnet
 ```
 
+Preprod Yaci checkpoint note:
+- `caribic start --network preprod` requires Yaci to start from an explicit recent checkpoint, not genesis.
+- Generate and persist a checkpoint before deploying bridge contracts:
+
+```bash
+caribic yaci-checkpoint --network preprod --epochs-back 2 --write-env
+caribic start network --network preprod
+```
+
+- This writes `YACI_SYNC_START_SLOT`, `YACI_SYNC_START_BLOCKHASH`, and `YACI_SYNC_START_BLOCK_NO` into the local env files. Resolve these once; do not keep them as a moving "relative to now" value.
+
 Injective startup note:
 - `caribic chain start --chain injective --network local` starts a local single-node Injective devnet.
 - `caribic chain start --chain injective --network testnet` starts a local `injectived` process bootstrapped from a public Injective testnet snapshot.
