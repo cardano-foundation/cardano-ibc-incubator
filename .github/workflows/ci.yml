@@ -1,0 +1,183 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: true
+  npm_config_audit: false
+  npm_config_fund: false
+  CARGO_TERM_COLOR: always
+
+jobs:
+  gateway:
+    name: Cardano Gateway
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            cardano/gateway/package-lock.json
+            proto-types/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --prefix cardano/gateway --legacy-peer-deps
+
+      - name: Build proto types
+        run: |
+          npm ci --prefix proto-types
+          npm run --prefix proto-types build
+
+      - name: Install tx builder runtime dependencies
+        run: npm install --package-lock=false --omit=dev --legacy-peer-deps --prefix packages/cardano-ibc-tx-builder
+
+      - name: Build
+        run: npm run --prefix cardano/gateway build
+
+      - name: Test
+        run: npm test --prefix cardano/gateway
+
+  proto-types:
+    name: Proto Types
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: proto-types
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: proto-types/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+  typescript-packages:
+    name: TypeScript Packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build planner
+        run: |
+          npm install --package-lock=false --prefix packages/cardano-ibc-planner
+          npm run --prefix packages/cardano-ibc-planner build
+
+      - name: Build tx builder
+        run: |
+          npm install --package-lock=false --prefix packages/cardano-ibc-tx-builder
+          npm run --prefix packages/cardano-ibc-tx-builder build
+
+      - name: Build tx builder runtime
+        run: |
+          npm install --package-lock=false --prefix packages/cardano-ibc-tx-builder-runtime
+          npm run --prefix packages/cardano-ibc-tx-builder-runtime build
+
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - cosmos/entrypoint
+          - cosmos/entrypoint/datasource
+          - cosmos/ibcclientest
+
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.23.8
+          cache-dependency-path: |
+            cosmos/entrypoint/go.sum
+            cosmos/entrypoint/datasource/go.sum
+            cosmos/ibcclientest/go.sum
+
+      - name: Test
+        env:
+          GOWORK: off
+        run: go test ./...
+
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.91.1
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            caribic/target
+          key: ${{ runner.os }}-cargo-caribic-${{ hashFiles('caribic/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-caribic-
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path caribic/Cargo.toml -- --check
+
+      - name: Lint
+        run: >
+          cargo clippy --manifest-path caribic/Cargo.toml --locked --all-targets --
+          -D warnings
+          -A clippy::manual_is_multiple_of
+          -A clippy::too_many_arguments
+
+      - name: Test
+        run: cargo test --manifest-path caribic/Cargo.toml --locked

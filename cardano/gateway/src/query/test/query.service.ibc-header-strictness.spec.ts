@@ -81,6 +81,7 @@ describe('QueryService IBC header strictness regressions', () => {
     const configServiceMock = {
       get: jest.fn().mockImplementation((key: string) => {
         if (key === 'cardanoChainId') return 'cardano-devnet';
+        if (key === 'cardanoLightClientMode') return 'mithril';
         if (key === 'deployment') {
           return {
             hostStateNFT: {

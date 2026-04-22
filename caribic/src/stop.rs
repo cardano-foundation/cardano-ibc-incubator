@@ -165,7 +165,7 @@ fn find_running_hermes_daemon_pids(relayer_path: &Path) -> Vec<u32> {
     match SystemChecks::find_processes_by_command() {
         Ok(output) => output
             .lines()
-            .filter_map(|line| parse_pid_and_command(line))
+            .filter_map(parse_pid_and_command)
             .filter_map(|(pid, command)| {
                 if start::is_hermes_daemon_command(command.as_str(), expected_binary_str) {
                     Some(pid)

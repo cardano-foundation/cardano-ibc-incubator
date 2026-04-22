@@ -9,14 +9,21 @@ use std::fs;
 use std::io::IsTerminal;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
+#[cfg(not(test))]
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+#[cfg(not(test))]
 fn entrypoint_chain_id() -> &'static str {
     static ENTRYPOINT_CHAIN_ID: OnceLock<String> = OnceLock::new();
     ENTRYPOINT_CHAIN_ID
         .get_or_init(|| crate::config::get_config().chains.entrypoint.chain_id)
         .as_str()
+}
+
+#[cfg(test)]
+fn entrypoint_chain_id() -> &'static str {
+    "entrypoint"
 }
 
 fn gateway_light_client_mode(project_root: &Path) -> &'static str {
@@ -1497,11 +1504,7 @@ pub async fn run_integration_tests(
                 let timeout_seconds = 600;
 
                 let mut transfer_result: Result<(), Box<dyn std::error::Error>> =
-                    Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "hermes ft-transfer not attempted",
-                    )
-                    .into());
+                    Err(std::io::Error::other("hermes ft-transfer not attempted").into());
                 let transfer_attempts = 5;
                 let transfer_retry_delay = Duration::from_secs(10);
                 let mut transfer_attempt_errors: Vec<String> = Vec::new();
@@ -2695,15 +2698,20 @@ fn query_client_state(
     for line in stdout.lines() {
         let line = line.trim();
         if line.contains("chain_id:") {
-            info.chain_id = line.split(':').last().unwrap_or("").trim().to_string();
+            info.chain_id = line.split(':').next_back().unwrap_or("").trim().to_string();
         } else if line.contains("latest_height:") || line.contains("revision_height:") {
             if info.latest_height.is_empty() {
-                info.latest_height = line.split(':').last().unwrap_or("").trim().to_string();
+                info.latest_height = line.split(':').next_back().unwrap_or("").trim().to_string();
             }
-        } else if line.contains("trust_level:") || line.contains("numerator:") {
-            if info.trust_level.is_empty() {
-                info.trust_level = line.split(':').last().unwrap_or("1/3").trim().to_string();
-            }
+        } else if (line.contains("trust_level:") || line.contains("numerator:"))
+            && info.trust_level.is_empty()
+        {
+            info.trust_level = line
+                .split(':')
+                .next_back()
+                .unwrap_or("1/3")
+                .trim()
+                .to_string();
         }
     }
 
@@ -3111,7 +3119,7 @@ fn get_hermes_chain_address(
                 let address_bytes = decode_hex_bytes(cleaned)?;
                 let network_id = address_bytes.first().copied().unwrap_or(0) & 0x0f;
                 let hrp = if network_id == 0 { "addr_test" } else { "addr" };
-                return Ok(cardano_hex_address_to_bech32(cleaned, hrp)?);
+                return cardano_hex_address_to_bech32(cleaned, hrp);
             }
             continue;
         }
@@ -3178,7 +3186,7 @@ fn cardano_hex_address_to_bech32(
     hrp: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let bytes = decode_hex_bytes(hex_address)?;
-    Ok(bech32_encode_bytes(hrp, &bytes)?)
+    bech32_encode_bytes(hrp, &bytes)
 }
 
 fn cardano_enterprise_address_from_payment_credential(
@@ -3228,7 +3236,7 @@ fn cardano_enterprise_address_from_payment_credential(
     address_bytes.push(header);
     address_bytes.extend_from_slice(&credential_bytes);
 
-    Ok(bech32_encode_bytes(hrp, &address_bytes)?)
+    bech32_encode_bytes(hrp, &address_bytes)
 }
 
 fn encode_hex_string(input: &str) -> String {
@@ -3326,8 +3334,8 @@ fn bech32_create_checksum(hrp: &str, data5: &[u8]) -> [u8; 6] {
     let polymod = bech32_polymod(&values) ^ 1;
 
     let mut checksum = [0u8; 6];
-    for i in 0..6 {
-        checksum[i] = ((polymod >> (5 * (5 - i))) & 0x1f) as u8;
+    for (i, checksum_byte) in checksum.iter_mut().enumerate() {
+        *checksum_byte = ((polymod >> (5 * (5 - i))) & 0x1f) as u8;
     }
     checksum
 }
@@ -4117,16 +4125,16 @@ fn hermes_ft_transfer(
     );
 
     if let Some(receiver) = receiver {
-        command.args(&["--receiver", receiver]);
+        command.args(["--receiver", receiver]);
     }
     if timeout_height_offset > 0 {
-        command.args(&[
+        command.args([
             "--timeout-height-offset",
             &timeout_height_offset.to_string(),
         ]);
     }
     if timeout_seconds > 0 {
-        command.args(&["--timeout-seconds", &timeout_seconds.to_string()]);
+        command.args(["--timeout-seconds", &timeout_seconds.to_string()]);
     }
 
     let output = run_command_streaming(command, "hermes tx ft-transfer")?;

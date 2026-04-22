@@ -59,52 +59,55 @@ pub(super) async fn start_local(osmosis_dir: &Path) -> Result<(), Box<dyn std::e
         .map(|_| String::new())
         .map_err(std::io::Error::other);
 
-    if status.is_ok() {
-        log_or_show_progress(
-            "Waiting for the Osmosis appchain to become healthy ...",
-            &optional_progress_bar,
-        );
+    match status {
+        Ok(_) => {
+            log_or_show_progress(
+                "Waiting for the Osmosis appchain to become healthy ...",
+                &optional_progress_bar,
+            );
 
-        let osmosis_status_url = config::LOCAL_STATUS_URL;
-        let is_healthy = wait_for_health_check(
-            osmosis_status_url,
-            30,
-            3000,
-            Some(|response_body: &String| {
-                let json: Value = serde_json::from_str(&response_body).unwrap_or_default();
+            let osmosis_status_url = config::LOCAL_STATUS_URL;
+            let is_healthy = wait_for_health_check(
+                osmosis_status_url,
+                30,
+                3000,
+                Some(|response_body: &String| {
+                    let json: Value = serde_json::from_str(response_body).unwrap_or_default();
 
-                if let Some(height) = json["result"]["sync_info"]["latest_block_height"]
-                    .as_str()
-                    .and_then(|h| h.parse::<u64>().ok())
-                {
-                    verbose(&format!("Current block height: {}", height));
-                    return height > 0;
-                }
+                    if let Some(height) = json["result"]["sync_info"]["latest_block_height"]
+                        .as_str()
+                        .and_then(|h| h.parse::<u64>().ok())
+                    {
+                        verbose(&format!("Current block height: {}", height));
+                        return height > 0;
+                    }
 
-                verbose(&format!(
-                    "Failed to get the current block height from the response {}",
-                    response_body,
-                ));
+                    verbose(&format!(
+                        "Failed to get the current block height from the response {}",
+                        response_body,
+                    ));
 
-                false
-            }),
-        )
-        .await;
+                    false
+                }),
+            )
+            .await;
 
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.finish_and_clear();
+            if let Some(progress_bar) = &optional_progress_bar {
+                progress_bar.finish_and_clear();
+            }
+            if is_healthy.is_ok() {
+                Ok(())
+            } else {
+                Err(format!("Run into timeout while checking {}", osmosis_status_url).into())
+            }
         }
-        if is_healthy.is_ok() {
-            Ok(())
-        } else {
-            Err(format!("Run into timeout while checking {}", osmosis_status_url).into())
-        }
-    } else {
-        if let Some(progress_bar) = &optional_progress_bar {
-            progress_bar.finish_and_clear();
-        }
+        Err(err) => {
+            if let Some(progress_bar) = &optional_progress_bar {
+                progress_bar.finish_and_clear();
+            }
 
-        Err(status.unwrap_err().into())
+            Err(err.into())
+        }
     }
 }
 
@@ -143,7 +146,7 @@ fn copy_local_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::Er
         osmosis_dir.join("cosmwasm").display()
     ));
     copy_items(
-        &vec![osmosis_dir.join("../configuration/cosmwasm/wasm")],
+        &[osmosis_dir.join("../configuration/cosmwasm/wasm")],
         osmosis_dir.join("cosmwasm"),
         &fs_extra::dir::CopyOptions::new().overwrite(true),
     )?;
@@ -154,7 +157,7 @@ fn copy_local_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::Er
         osmosis_dir.join("scripts").display()
     ));
     copy_items(
-        &vec![osmosis_dir.join("../configuration/hermes")],
+        &[osmosis_dir.join("../configuration/hermes")],
         osmosis_dir.join("scripts"),
         &fs_extra::dir::CopyOptions::new().overwrite(true),
     )?;
@@ -214,7 +217,7 @@ fn sync_workspace_assets_from_repo(
     fs::create_dir_all(workspace_root)?;
 
     copy_items(
-        &vec![configuration_source, scripts_source],
+        &[configuration_source, scripts_source],
         workspace_root,
         &fs_extra::dir::CopyOptions::new().overwrite(true),
     )?;

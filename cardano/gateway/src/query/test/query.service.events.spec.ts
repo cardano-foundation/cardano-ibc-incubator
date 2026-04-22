@@ -55,6 +55,7 @@ describe('QueryService queryEvents', () => {
 
     await expect(service.queryEvents({ since_height: 5n })).resolves.toEqual({
       current_height: 7n,
+      scanned_to_height: 7n,
       events: [
         {
           height: 6n,
