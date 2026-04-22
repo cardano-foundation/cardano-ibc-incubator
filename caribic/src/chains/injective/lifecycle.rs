@@ -310,7 +310,7 @@ fn sync_workspace_assets_from_repo(
     fs::create_dir_all(injective_dir)?;
 
     copy_items(
-        &vec![configuration_source, scripts_source],
+        &[configuration_source, scripts_source],
         injective_dir,
         &fs_extra::dir::CopyOptions::new().overwrite(true),
     )?;

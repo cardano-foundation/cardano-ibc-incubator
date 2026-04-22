@@ -308,8 +308,9 @@ describe('PacketService denom regression coverage', () => {
       state: {
         clientState: {
           chainId: '',
+          latestHeight: { revisionNumber: 0n, revisionHeight: 44n },
         },
-        consensusStates: new Map([[proofHeight, { timestamp: 0n }]]),
+        consensusStates: new Map([[proofHeight, { timestamp: 0n, root: { hash: 'consensus-root' } }]]),
       },
     };
 
@@ -478,8 +479,9 @@ describe('PacketService denom regression coverage', () => {
       state: {
         clientState: {
           chainId: '',
+          latestHeight: { revisionNumber: 0n, revisionHeight: 44n },
         },
-        consensusStates: new Map([[proofHeight, { timestamp: 0n }]]),
+        consensusStates: new Map([[proofHeight, { timestamp: 0n, root: { hash: 'consensus-root' } }]]),
       },
     };
 
@@ -548,11 +550,15 @@ describe('PacketService denom regression coverage', () => {
         return {
           validators: {
             spendChannel: {
+              address: 'addr_test1spendchannel',
               refValidator: {
                 recv_packet: {
                   scriptHash: 'recv-packet-policy-id',
                 },
               },
+            },
+            hostStateStt: {
+              address: 'addr_test1hoststate',
             },
             verifyProof: {
               scriptHash: 'verify-proof-policy-id',
@@ -644,13 +650,15 @@ describe('PacketService denom regression coverage', () => {
       state: {
         clientState: {
           chainId: '',
+          latestHeight: { revisionNumber: 0n, revisionHeight: 44n },
         },
-        consensusStates: new Map([[proofHeight, { timestamp: 0n }]]),
+        consensusStates: new Map([[proofHeight, { timestamp: 0n, root: { hash: 'consensus-root' } }]]),
       },
     };
     const transferModuleUtxo = {
       txHash: 'transfer',
       outputIndex: 0,
+      address: 'addr_test1transfermodule',
       datum: 'transfer-datum',
       assets: {
         lovelace: 3_000_000n,

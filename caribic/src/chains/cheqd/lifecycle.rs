@@ -95,7 +95,7 @@ fn sync_workspace_assets_from_repo(
 
     fs::create_dir_all(cheqd_dir)?;
     copy_items(
-        &vec![configuration_source, scripts_source],
+        &[configuration_source, scripts_source],
         cheqd_dir,
         &fs_extra::dir::CopyOptions::new().overwrite(true),
     )?;
