@@ -1875,6 +1875,16 @@ export class LucidService implements OnModuleInit {
     };
 
     const tx: TxBuilder = this.newTxBuilder();
+    const isFirstSeenVoucher = !!dto.traceRegistryUpdate &&
+      dto.traceRegistryUpdate.kind !== "existing";
+    const mintVoucherAssets = isFirstSeenVoucher
+      ? {
+        [dto.voucherTokenUnit]: dto.transferAmount,
+        [dto.voucherReferenceTokenUnit!]: 1n,
+      }
+      : {
+        [dto.voucherTokenUnit]: dto.transferAmount,
+      };
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
@@ -1895,9 +1905,7 @@ export class LucidService implements OnModuleInit {
       )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
       .mintAssets(
-        {
-          [dto.voucherTokenUnit]: dto.transferAmount,
-        },
+        mintVoucherAssets,
         dto.encodedMintVoucherRedeemer,
       )
       .pay.ToContract(
@@ -1938,6 +1946,27 @@ export class LucidService implements OnModuleInit {
         },
         dto.encodedVerifyProofRedeemer,
       );
+
+    if (isFirstSeenVoucher) {
+      if (
+        !dto.voucherMetadataAddress || !dto.encodedVoucherMetadataDatum ||
+        !dto.voucherReferenceTokenUnit
+      ) {
+        throw new GrpcInternalException(
+          "Missing CIP-68 voucher metadata output fields for first-seen voucher mint",
+        );
+      }
+      tx.pay.ToContract(
+        dto.voucherMetadataAddress,
+        {
+          kind: "inline",
+          value: dto.encodedVoucherMetadataDatum,
+        },
+        {
+          [dto.voucherReferenceTokenUnit]: 1n,
+        },
+      );
+    }
 
     return tx;
   }
@@ -2160,6 +2189,16 @@ export class LucidService implements OnModuleInit {
     };
 
     const tx: TxBuilder = this.newTxBuilder();
+    const isFirstSeenVoucher = !!dto.traceRegistryUpdate &&
+      dto.traceRegistryUpdate.kind !== "existing";
+    const mintVoucherAssets = isFirstSeenVoucher
+      ? {
+        [dto.voucherTokenUnit]: dto.transferAmount,
+        [dto.voucherReferenceTokenUnit!]: 1n,
+      }
+      : {
+        [dto.voucherTokenUnit]: dto.transferAmount,
+      };
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
@@ -2180,9 +2219,7 @@ export class LucidService implements OnModuleInit {
       )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
       .mintAssets(
-        {
-          [dto.voucherTokenUnit]: dto.transferAmount,
-        },
+        mintVoucherAssets,
         dto.encodedMintVoucherRedeemer,
       )
       .pay.ToContract(
@@ -2228,6 +2265,27 @@ export class LucidService implements OnModuleInit {
         },
         dto.encodedVerifyProofRedeemer,
       );
+
+    if (isFirstSeenVoucher) {
+      if (
+        !dto.voucherMetadataAddress || !dto.encodedVoucherMetadataDatum ||
+        !dto.voucherReferenceTokenUnit
+      ) {
+        throw new GrpcInternalException(
+          "Missing CIP-68 voucher metadata output fields for first-seen voucher mint",
+        );
+      }
+      tx.pay.ToContract(
+        dto.voucherMetadataAddress,
+        {
+          kind: "inline",
+          value: dto.encodedVoucherMetadataDatum,
+        },
+        {
+          [dto.voucherReferenceTokenUnit]: 1n,
+        },
+      );
+    }
 
     return tx;
   }
@@ -2438,6 +2496,16 @@ export class LucidService implements OnModuleInit {
       datumHash: undefined,
     };
     const tx: TxBuilder = this.newTxBuilder();
+    const isFirstSeenVoucher = !!dto.traceRegistryUpdate &&
+      dto.traceRegistryUpdate.kind !== "existing";
+    const mintVoucherAssets = isFirstSeenVoucher
+      ? {
+        [dto.voucherTokenUnit]: dto.transferAmount,
+        [dto.voucherReferenceTokenUnit!]: 1n,
+      }
+      : {
+        [dto.voucherTokenUnit]: dto.transferAmount,
+      };
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
@@ -2458,9 +2526,7 @@ export class LucidService implements OnModuleInit {
       )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
       .mintAssets(
-        {
-          [dto.voucherTokenUnit]: dto.transferAmount,
-        },
+        mintVoucherAssets,
         dto.encodedMintVoucherRedeemer,
       )
       .pay.ToContract(
@@ -2505,6 +2571,27 @@ export class LucidService implements OnModuleInit {
         },
         dto.encodedVerifyProofRedeemer,
       );
+
+    if (isFirstSeenVoucher) {
+      if (
+        !dto.voucherMetadataAddress || !dto.encodedVoucherMetadataDatum ||
+        !dto.voucherReferenceTokenUnit
+      ) {
+        throw new GrpcInternalException(
+          "Missing CIP-68 voucher metadata output fields for first-seen voucher mint",
+        );
+      }
+      tx.pay.ToContract(
+        dto.voucherMetadataAddress,
+        {
+          kind: "inline",
+          value: dto.encodedVoucherMetadataDatum,
+        },
+        {
+          [dto.voucherReferenceTokenUnit]: 1n,
+        },
+      );
+    }
 
     return tx;
   }

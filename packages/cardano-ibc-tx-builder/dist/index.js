@@ -1,8 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.buildUnsignedSendPacketTx = buildUnsignedSendPacketTx;
-const js_sha3_1 = require("js-sha3");
+const blake2b_1 = require("@noble/hashes/blake2b");
 const LOVELACE = 'lovelace';
+const CIP67_FT_LABEL_HEX = '0014df10';
 const LOOKUP_RETRY_OPTIONS = {
     maxAttempts: 6,
     retryDelayMs: 1000,
@@ -213,7 +214,8 @@ function buildVoucherTokenName(denom, deps) {
     if (isHexDenom(denom)) {
         throw deps.invalidArgument('Voucher denom appears to be already hex-encoded; refusing to hash a double-encoded denom');
     }
-    return (0, js_sha3_1.sha3_256)(Buffer.from(convertStringToHex(denom), 'hex')).toString();
+    const voucherDenomHash = Buffer.from((0, blake2b_1.blake2b)(Buffer.from(denom, 'utf8'), { dkLen: 28 })).toString('hex');
+    return `${CIP67_FT_LABEL_HEX}${voucherDenomHash}`;
 }
 async function resolvePacketDenomForSend(denom, deps) {
     if (!denom.startsWith('ibc/')) {

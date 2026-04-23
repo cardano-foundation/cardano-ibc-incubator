@@ -6,6 +6,9 @@
   "sideEffects": false,
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "dependencies": {
+    "@noble/hashes": "^1.8.0"
+  },
   "peerDependencies": {
     "@lucid-evolution/lucid": "^0.4.18"
   }

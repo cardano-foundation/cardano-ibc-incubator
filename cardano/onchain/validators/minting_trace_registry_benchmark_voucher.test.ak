@@ -1,14 +1,14 @@
-use aiken/crypto
 use cardano/assets.{PolicyId, add, from_asset}
 use cardano/transaction.{Transaction}
+use ibc/apps/transfer/voucher_asset_name
 use minting_trace_registry_benchmark_voucher
 
 fn test_policy_id() -> PolicyId {
   "trace registry benchmark voucher policy"
 }
 
-test trace_registry_benchmark_voucher_mint_succeeds_for_single_positive_32_byte_asset_name() {
-  let token_name = crypto.sha3_256("transfer/channel-7/benchmark-uatom")
+test trace_registry_benchmark_voucher_mint_succeeds_for_single_positive_28_byte_asset_name() {
+  let token_name = voucher_asset_name.voucher_denom_hash("transfer/channel-7/benchmark-uatom")
   let mint = from_asset(test_policy_id(), token_name, 1)
   let transaction = Transaction { ..transaction.placeholder, mint }
 
@@ -20,8 +20,9 @@ test trace_registry_benchmark_voucher_mint_succeeds_for_single_positive_32_byte_
 }
 
 test trace_registry_benchmark_voucher_mint_fails_for_multiple_assets() fail {
-  let token_name = crypto.sha3_256("transfer/channel-7/benchmark-uatom")
-  let second_token_name = crypto.sha3_256("transfer/channel-8/benchmark-uosmo")
+  let token_name = voucher_asset_name.voucher_denom_hash("transfer/channel-7/benchmark-uatom")
+  let second_token_name =
+    voucher_asset_name.voucher_denom_hash("transfer/channel-8/benchmark-uosmo")
   let mint =
     from_asset(test_policy_id(), token_name, 1)
       |> add(test_policy_id(), second_token_name, 1)
@@ -34,7 +35,7 @@ test trace_registry_benchmark_voucher_mint_fails_for_multiple_assets() fail {
   )
 }
 
-test trace_registry_benchmark_voucher_mint_fails_for_non_32_byte_asset_name() fail {
+test trace_registry_benchmark_voucher_mint_fails_for_non_28_byte_asset_name() fail {
   let mint = from_asset(test_policy_id(), "not-a-voucher-hash", 1)
   let transaction = Transaction { ..transaction.placeholder, mint }
 
@@ -46,7 +47,7 @@ test trace_registry_benchmark_voucher_mint_fails_for_non_32_byte_asset_name() fa
 }
 
 test trace_registry_benchmark_voucher_mint_fails_for_non_positive_quantity() fail {
-  let token_name = crypto.sha3_256("transfer/channel-7/benchmark-uatom")
+  let token_name = voucher_asset_name.voucher_denom_hash("transfer/channel-7/benchmark-uatom")
   let mint = from_asset(test_policy_id(), token_name, 0)
   let transaction = Transaction { ..transaction.placeholder, mint }
 

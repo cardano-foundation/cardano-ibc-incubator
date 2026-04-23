@@ -375,6 +375,7 @@ export const createDeployment = async (
   const {
     identifierTokenUnit: transferModuleIdentifier,
     mintVoucher,
+    voucherMetadata,
     spendTransferModule,
   } = await deployTransferModule(
     lucid,
@@ -388,7 +389,11 @@ export const createDeployment = async (
     traceRegistryDirectoryAuthToken,
     transferModuleNonceUtxo,
   );
-  referredValidators.push(mintVoucher.validator, spendTransferModule.validator);
+  referredValidators.push(
+    mintVoucher.validator,
+    voucherMetadata.validator,
+    spendTransferModule.validator,
+  );
   const traceRegistryBenchmarkVoucher = await loadTraceRegistryBenchmarkVoucher(
     lucid,
   );
@@ -534,6 +539,13 @@ export const createDeployment = async (
         scriptHash: mintVoucher.policyId,
         address: "",
         refUtxo: refUtxosInfo[mintVoucher.policyId],
+      },
+      voucherMetadata: {
+        title: "voucher_metadata.voucher_metadata.spend",
+        script: voucherMetadata.validator.script,
+        scriptHash: voucherMetadata.scriptHash,
+        address: voucherMetadata.address,
+        refUtxo: refUtxosInfo[voucherMetadata.scriptHash],
       },
       ...(traceRegistryBenchmarkVoucher
         ? {
@@ -1011,13 +1023,26 @@ const deployTransferModule = async (
     name: identifierTokenName,
   };
   const identifierTokenUnit = mintIdentifierPolicyId + identifierTokenName;
+  const [
+    voucherMetadataValidator,
+    voucherMetadataScriptHash,
+    voucherMetadataAddress,
+  ] = await readValidator(
+    "voucher_metadata.voucher_metadata.spend",
+    lucid,
+  );
   const [mintVoucherValidator, mintVoucherPolicyId] = await readValidator(
     "minting_voucher.mint_voucher.mint",
     lucid,
-    [identifierToken, traceRegistryDirectoryAuthToken],
-    Data.Tuple([AuthTokenSchema, AuthTokenSchema]) as unknown as [
+    [
+      identifierToken,
+      traceRegistryDirectoryAuthToken,
+      voucherMetadataScriptHash,
+    ],
+    Data.Tuple([AuthTokenSchema, AuthTokenSchema, Data.Bytes()]) as unknown as [
       AuthToken,
       AuthToken,
+      string,
     ],
   );
 
@@ -1148,6 +1173,11 @@ const deployTransferModule = async (
     mintVoucher: {
       validator: mintVoucherValidator,
       policyId: mintVoucherPolicyId,
+    },
+    voucherMetadata: {
+      validator: voucherMetadataValidator,
+      scriptHash: voucherMetadataScriptHash,
+      address: voucherMetadataAddress,
     },
     spendTransferModule: {
       validator: spendTransferModuleValidator,

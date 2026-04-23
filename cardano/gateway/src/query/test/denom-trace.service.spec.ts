@@ -132,7 +132,7 @@ describe('DenomTraceService', () => {
   });
 
   it('builds an on-chain insert context for a first-seen voucher hash', async () => {
-    const hash = `a${'1'.repeat(63)}`;
+    const hash = `a${'1'.repeat(55)}`;
     const fullDenom = 'transfer/channel-7/uatom';
 
     const result = await service.prepareOnChainInsert(hash, fullDenom);
@@ -149,7 +149,7 @@ describe('DenomTraceService', () => {
   });
 
   it('skips an on-chain insert when the shard already contains the same mapping', async () => {
-    const hash = `f${'2'.repeat(63)}`;
+    const hash = `f${'2'.repeat(55)}`;
     const fullDenom = 'transfer/channel-44/factory/osmo1abcd/mytoken';
     lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
       if (unit === 'trace-shard-policy0f') {
@@ -174,7 +174,7 @@ describe('DenomTraceService', () => {
   });
 
   it('fails hard when the same voucher hash resolves to a conflicting full denom', async () => {
-    const hash = `0${'3'.repeat(63)}`;
+    const hash = `0${'3'.repeat(55)}`;
     lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
       if (unit === 'trace-shard-policy00') {
         return makeShardUtxo([{ voucher_hash: hash, full_denom: 'transfer/channel-9/uosmo' }], 0);
@@ -193,7 +193,7 @@ describe('DenomTraceService', () => {
   });
 
   it('fails hard when the same voucher hash appears in multiple bucket shards', async () => {
-    const hash = `a${'9'.repeat(63)}`;
+    const hash = `a${'9'.repeat(55)}`;
     const fullDenom = 'transfer/channel-7/uatom';
     lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
       if (unit === 'trace-shard-policy0a') {
@@ -228,7 +228,7 @@ describe('DenomTraceService', () => {
     }));
 
     await expect(
-      service.prepareOnChainInsert(`a${'4'.repeat(63)}`, 'transfer/channel-7/uatom'),
+      service.prepareOnChainInsert(`a${'4'.repeat(55)}`, 'transfer/channel-7/uatom'),
     ).rejects.toThrow('Trace registry deployment config is missing');
   });
 
@@ -241,7 +241,7 @@ describe('DenomTraceService', () => {
       },
     }));
 
-    await expect(service.findByHash(`a${'4'.repeat(63)}`)).rejects.toThrow(
+    await expect(service.findByHash(`a${'4'.repeat(55)}`)).rejects.toThrow(
       'Trace registry deployment config is missing',
     );
     await expect(service.findAll()).rejects.toThrow(
@@ -261,8 +261,8 @@ describe('DenomTraceService', () => {
   it('materializes traces from shard data and resolves by ibc denom hash', async () => {
     const atomTrace = 'transfer/channel-7/uatom';
     const osmoTrace = 'transfer/channel-44/factory/osmo1abcd/mytoken';
-    const atomHash = `0${'a'.repeat(63)}`;
-    const osmoHash = `f${'b'.repeat(63)}`;
+    const atomHash = `0${'a'.repeat(55)}`;
+    const osmoHash = `f${'b'.repeat(55)}`;
     lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
       if (unit === 'trace-shard-policy00') {
         return makeShardUtxo([{ voucher_hash: atomHash, full_denom: atomTrace }], 0);
@@ -287,8 +287,15 @@ describe('DenomTraceService', () => {
       hash: atomHash,
       path: 'transfer/channel-7',
       base_denom: 'uatom',
+      full_denom: atomTrace,
+      voucher_token_name: `0014df10${atomHash}`,
+      voucher_reference_token_name: `000643b0${atomHash}`,
       voucher_policy_id: 'mint-voucher-policy-id',
       ibc_denom_hash: hashSHA256(convertString2Hex(atomTrace)).toLowerCase(),
+      cip68_reference_asset_id: `mint-voucher-policy-id000643b0${atomHash}`,
+      name: 'ATOM (IBC)',
+      description: 'IBC voucher for transfer/channel-7/uatom',
+      ticker: 'ATOM',
     });
 
     await expect(
@@ -297,21 +304,28 @@ describe('DenomTraceService', () => {
       hash: osmoHash,
       path: 'transfer/channel-44',
       base_denom: 'factory/osmo1abcd/mytoken',
+      full_denom: osmoTrace,
+      voucher_token_name: `0014df10${osmoHash}`,
+      voucher_reference_token_name: `000643b0${osmoHash}`,
       voucher_policy_id: 'mint-voucher-policy-id',
       ibc_denom_hash: hashSHA256(convertString2Hex(osmoTrace)).toLowerCase(),
+      cip68_reference_asset_id: `mint-voucher-policy-id000643b0${osmoHash}`,
+      name: 'MYTOKEN (IBC)',
+      description: `IBC voucher for ${osmoTrace}`,
+      ticker: 'MYTOKEN',
     });
   });
 
   it('lists all traces in sorted order and honors pagination offset', async () => {
     lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
       if (unit === 'trace-shard-policy00') {
-        return makeShardUtxo([{ voucher_hash: `0${'1'.repeat(63)}`, full_denom: 'transfer/channel-9/uosmo' }], 0);
+        return makeShardUtxo([{ voucher_hash: `0${'1'.repeat(55)}`, full_denom: 'transfer/channel-9/uosmo' }], 0);
       }
       if (unit === 'trace-shard-policy0a') {
-        return makeShardUtxo([{ voucher_hash: `a${'2'.repeat(63)}`, full_denom: 'transfer/channel-7/uatom' }], 10);
+        return makeShardUtxo([{ voucher_hash: `a${'2'.repeat(55)}`, full_denom: 'transfer/channel-7/uatom' }], 10);
       }
       if (unit === 'trace-shard-policy0f') {
-        return makeShardUtxo([{ voucher_hash: `f${'3'.repeat(63)}`, full_denom: 'factory/osmo1abcd/mytoken' }], 15);
+        return makeShardUtxo([{ voucher_hash: `f${'3'.repeat(55)}`, full_denom: 'factory/osmo1abcd/mytoken' }], 15);
       }
       if (unit === 'trace-shard-policydir') {
         return makeDirectoryUtxo([
@@ -332,7 +346,7 @@ describe('DenomTraceService', () => {
   });
 
   it('prepares a rollover context when forced', async () => {
-    const hash = `a${'4'.repeat(63)}`;
+    const hash = `a${'4'.repeat(55)}`;
     const fullDenom = 'transfer/channel-77/uatom';
 
     const result = await service.prepareOnChainInsert(hash, fullDenom, { forceRollover: true });
@@ -351,13 +365,13 @@ describe('DenomTraceService', () => {
   it('summarizes bucket and shard counts from the on-chain directory', async () => {
     lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
       if (unit === 'trace-shard-policy00') {
-        return makeShardUtxo([{ voucher_hash: `0${'1'.repeat(63)}`, full_denom: 'transfer/channel-9/uosmo' }], 0);
+        return makeShardUtxo([{ voucher_hash: `0${'1'.repeat(55)}`, full_denom: 'transfer/channel-9/uosmo' }], 0);
       }
       if (unit === 'trace-shard-policy0a') {
-        return makeShardUtxo([{ voucher_hash: `a${'2'.repeat(63)}`, full_denom: 'transfer/channel-7/uatom' }], 10);
+        return makeShardUtxo([{ voucher_hash: `a${'2'.repeat(55)}`, full_denom: 'transfer/channel-7/uatom' }], 10);
       }
       if (unit === 'trace-shard-policy1a') {
-        return makeShardUtxo([{ voucher_hash: `a${'3'.repeat(63)}`, full_denom: 'transfer/channel-8/uatom' }], 10);
+        return makeShardUtxo([{ voucher_hash: `a${'3'.repeat(55)}`, full_denom: 'transfer/channel-8/uatom' }], 10);
       }
       if (unit === 'trace-shard-policy0f') {
         return makeShardUtxo([], 15);

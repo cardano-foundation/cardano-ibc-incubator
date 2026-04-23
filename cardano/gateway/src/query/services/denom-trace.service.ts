@@ -8,7 +8,17 @@ import {
   hashSHA256,
   hashSha3_256,
 } from "../../shared/helpers/hex";
+import { decodeVoucherCip68MetadataDatum } from "../../shared/helpers/cip68-voucher-metadata";
 import { splitFullDenomTrace } from "../../shared/helpers/denom-trace";
+import { deriveVoucherPresentation } from "../../shared/helpers/voucher-presentation";
+import {
+  buildVoucherDenomHashFromFullDenom,
+  buildVoucherReferenceTokenNameFromDenomHash,
+  buildVoucherUserTokenNameFromDenomHash,
+  deriveVoucherReferenceAssetId,
+  expectVoucherAssetName,
+  VOUCHER_DENOM_HASH_HEX_LENGTH,
+} from "../../shared/helpers/voucher-asset";
 import { LucidService } from "../../shared/modules/lucid/lucid.service";
 import {
   decodeTraceRegistryDatum,
@@ -86,8 +96,19 @@ export type ResolvedDenomTrace = {
   hash: string;
   path: string;
   base_denom: string;
+  full_denom: string;
+  voucher_token_name: string;
+  voucher_reference_token_name: string;
   voucher_policy_id: string;
   ibc_denom_hash: string;
+  cip68_reference_asset_id: string;
+  metadata_version?: number;
+  name: string;
+  description: string;
+  ticker?: string;
+  decimals?: number;
+  url?: string;
+  logo?: string;
 };
 
 export type TraceRegistryShardStats = {
@@ -354,12 +375,15 @@ export class DenomTraceService {
     const startTime = Date.now();
 
     try {
-      const normalizedHash = hash.toLowerCase();
+      const normalizedHash = this.normalizeVoucherDenomHash(hash);
       const onChainEntry = await this.findOnChainEntryByHash(normalizedHash);
       if (!onChainEntry) {
         return null;
       }
-      return this.materializeTrace(onChainEntry.hash, onChainEntry.fullDenom);
+      return await this.materializeTrace(
+        onChainEntry.hash,
+        onChainEntry.fullDenom,
+      );
     } catch (error) {
       this.logger.error(
         `Failed to find denom trace by hash ${hash}: ${error.message}`,
@@ -374,19 +398,14 @@ export class DenomTraceService {
     const startTime = Date.now();
 
     try {
-      const traces = (await this.findAllOnChainEntries())
-        .map((entry) => this.materializeTrace(entry.hash, entry.fullDenom))
-        .sort((left, right) => {
-          const leftFullDenom = left.path
-            ? `${left.path}/${left.base_denom}`
-            : left.base_denom;
-          const rightFullDenom = right.path
-            ? `${right.path}/${right.base_denom}`
-            : right.base_denom;
-          return leftFullDenom.localeCompare(rightFullDenom) ||
-            left.hash.localeCompare(right.hash);
-        });
-
+      const traces = await Promise.all(
+        (await this.findAllOnChainEntries())
+          .map((entry) => this.materializeTrace(entry.hash, entry.fullDenom)),
+      );
+      traces.sort((left, right) => {
+        return left.full_denom.localeCompare(right.full_denom) ||
+          left.hash.localeCompare(right.hash);
+      });
       const offset = pagination?.offset ?? 0;
       return traces.slice(offset, offset + 100);
     } catch (error) {
@@ -412,7 +431,7 @@ export class DenomTraceService {
       if (!match) {
         return null;
       }
-      return this.materializeTrace(match.hash, match.fullDenom);
+      return await this.materializeTrace(match.hash, match.fullDenom);
     } catch (error) {
       this.logger.error(
         `Failed to find denom trace by ibc hash ${denomHash}: ${error.message}`,
@@ -636,12 +655,29 @@ export class DenomTraceService {
   }
 
   private getBucketIndexForHash(hash: string): number {
-    if (!/^[0-9a-f]{64}$/i.test(hash)) {
+    if (!new RegExp(`^[0-9a-f]{${VOUCHER_DENOM_HASH_HEX_LENGTH}}$`, "i").test(hash)) {
       throw new Error(
         `Invalid voucher hash for trace-registry lookup: ${hash}`,
       );
     }
     return parseInt(hash[0], 16);
+  }
+
+  private normalizeVoucherDenomHash(hashOrTokenName: string): string {
+    const normalized = hashOrTokenName.trim().toLowerCase();
+    if (!normalized) {
+      throw new Error("Voucher hash cannot be empty");
+    }
+
+    if (
+      new RegExp(`^[0-9a-f]{${VOUCHER_DENOM_HASH_HEX_LENGTH}}$`, "i").test(
+        normalized,
+      )
+    ) {
+      return normalized;
+    }
+
+    return expectVoucherAssetName(normalized).voucherDenomHash;
   }
 
   private getMaxTxSize(): number {
@@ -930,17 +966,44 @@ export class DenomTraceService {
     return decoded.Shard;
   }
 
-  private materializeTrace(
+  private async materializeTrace(
     hash: string,
     fullDenom: string,
-  ): ResolvedDenomTrace {
+  ): Promise<ResolvedDenomTrace> {
     const trace = splitFullDenomTrace(fullDenom);
+    const voucherPolicyId = this.getVoucherPolicyId();
+    const voucherTokenName = buildVoucherUserTokenNameFromDenomHash(hash);
+    const voucherReferenceTokenName = buildVoucherReferenceTokenNameFromDenomHash(
+      hash,
+    );
+    const referenceAssetId = deriveVoucherReferenceAssetId(
+      voucherPolicyId,
+      hash,
+    );
+    const presentation = deriveVoucherPresentation(fullDenom, trace.baseDenom);
+    const metadata = await this.resolveVoucherMetadata(hash);
+
     return {
       hash: hash.toLowerCase(),
       path: trace.path,
       base_denom: trace.baseDenom,
-      voucher_policy_id: this.getVoucherPolicyId(),
+      full_denom: fullDenom,
+      voucher_token_name: voucherTokenName,
+      voucher_reference_token_name: voucherReferenceTokenName,
+      voucher_policy_id: voucherPolicyId,
       ibc_denom_hash: this.computeIbcDenomHashFromFullDenom(fullDenom),
+      cip68_reference_asset_id: referenceAssetId,
+      name: metadata?.name ?? presentation.displayName,
+      description: metadata?.description ?? presentation.displayDescription,
+      ticker: metadata?.ticker ?? presentation.displaySymbol,
+      ...(typeof metadata?.version === "number"
+        ? { metadata_version: metadata.version }
+        : {}),
+      ...(typeof metadata?.decimals === "number"
+        ? { decimals: metadata.decimals }
+        : {}),
+      ...(metadata?.url ? { url: metadata.url } : {}),
+      ...(metadata?.logo ? { logo: metadata.logo } : {}),
     };
   }
 
@@ -949,7 +1012,32 @@ export class DenomTraceService {
   }
 
   private computeVoucherHashFromFullDenom(fullDenom: string): string {
-    return hashSha3_256(convertString2Hex(fullDenom)).toLowerCase();
+    return buildVoucherDenomHashFromFullDenom(fullDenom).toLowerCase();
+  }
+
+  private async resolveVoucherMetadata(
+    voucherDenomHash: string,
+  ): Promise<ReturnType<typeof decodeVoucherCip68MetadataDatum> | null> {
+    const referenceAssetId = deriveVoucherReferenceAssetId(
+      this.getVoucherPolicyId(),
+      voucherDenomHash,
+    );
+
+    try {
+      const utxo = await this.lucidService.findUtxoByUnit(referenceAssetId);
+      if (!utxo?.datum) {
+        return null;
+      }
+      return decodeVoucherCip68MetadataDatum(
+        utxo.datum,
+        this.lucidService.LucidImporter,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to resolve CIP-68 voucher metadata for ${referenceAssetId}: ${error.message}`,
+      );
+      return null;
+    }
   }
 
   private measureShardDatumBytes(shardDatum: TraceRegistryShardDatum): number {

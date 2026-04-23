@@ -1,5 +1,5 @@
-// Trace registry state is Cardano-local metadata used to reverse a voucher hash
-// back into the canonical ICS-20 full denom trace.
+// Trace registry state is Cardano-local metadata used to reverse the canonical
+// 28-byte voucher core back into the canonical ICS-20 full denom trace.
 //
 // The registry deliberately lives outside HostState:
 // - HostState remains the counterparty-proven IBC commitment thread
@@ -10,7 +10,7 @@
 // - a new mapping is accepted only when the same transaction mints the matching
 //   voucher token under the production voucher minting policy or, on local
 //   benchmark deployments only, under the dedicated benchmark voucher policy
-// - the inserted full denom must hash exactly to the voucher token name
+// - the inserted full denom must hash exactly to the voucher core
 // - directory witnesses must carry the exact deployed directory auth token and
 //   sit at the same trace-registry script address as the shard they govern
 // - existing mappings are immutable once written
@@ -18,7 +18,7 @@
 //   to a fresh active shard chosen in the directory
 //
 // Operational model:
-// - the first four bits of the voucher hash choose one of 16 buckets
+// - the first four bits of the voucher core choose one of 16 buckets
 // - each bucket has one active shard NFT plus zero or more archived shard NFTs
 // - a separate directory UTxO tracks which shard token name is currently active
 // - first-seen voucher mints either append to the active shard or, if the
@@ -40,6 +40,7 @@ use ibc/apps/transfer/trace_registry.{
   TraceRegistryEntry, TraceRegistryRedeemer, TraceRegistryShardDatum,
   bucket_index_for_hash,
 }
+use ibc/apps/transfer/voucher_asset_name
 use ibc/auth.{AuthToken}
 use ibc/utils/validator_utils
 
@@ -153,7 +154,7 @@ fn validate_insert_trace(
   voucher_minting_policy_id: PolicyId,
   benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
-  expect bytearray.length(voucher_hash) == 32
+  expect bytearray.length(voucher_hash) == voucher_asset_name.voucher_denom_hash_length
   expect bytearray.length(full_denom) > 0
 
   let expected_entry = TraceRegistryEntry { voucher_hash, full_denom }
@@ -193,7 +194,8 @@ fn validate_insert_trace(
       old_datum.bucket_index,
       shard_token.name,
     )
-  let voucher_hash_matches = crypto.sha3_256(full_denom) == voucher_hash
+  let voucher_hash_matches =
+    voucher_asset_name.voucher_denom_hash(full_denom) == voucher_hash
   let matching_voucher_mint =
     matching_voucher_mint_present(
       mint,
@@ -251,7 +253,7 @@ fn validate_rollover_insert_trace(
   voucher_minting_policy_id: PolicyId,
   benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
-  expect bytearray.length(voucher_hash) == 32
+  expect bytearray.length(voucher_hash) == voucher_asset_name.voucher_denom_hash_length
   expect bytearray.length(full_denom) > 0
   expect bytearray.length(new_active_shard_name) > 0
 
@@ -329,7 +331,7 @@ fn validate_rollover_insert_trace(
       old_datum.bucket_index,
       current_active_token.name,
     ),
-    crypto.sha3_256(full_denom) == voucher_hash,
+    voucher_asset_name.voucher_denom_hash(full_denom) == voucher_hash,
     matching_voucher_mint_present(
       mint,
       voucher_hash,
@@ -386,7 +388,7 @@ fn validate_advance_directory(
   voucher_minting_policy_id: PolicyId,
   benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
-  expect bytearray.length(voucher_hash) == 32
+  expect bytearray.length(voucher_hash) == voucher_asset_name.voucher_denom_hash_length
   expect bytearray.length(full_denom) > 0
   expect bytearray.length(previous_active_shard_name) > 0
   expect bytearray.length(new_active_shard_name) > 0
@@ -452,7 +454,7 @@ fn validate_advance_directory(
     // not merely "some" single shard-policy token carrying a Directory datum.
     output_has_only_token(spent_output, directory_auth_token),
     bucket_index == bucket_index_for_hash(voucher_hash),
-    crypto.sha3_256(full_denom) == voucher_hash,
+    voucher_asset_name.voucher_denom_hash(full_denom) == voucher_hash,
     matching_voucher_mint_present(
       mint,
       voucher_hash,
@@ -496,7 +498,11 @@ fn matching_voucher_mint_present(
   benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
   let has_production_voucher_mint =
-    quantity_of(mint, voucher_minting_policy_id, voucher_hash) > 0
+    quantity_of(
+      mint,
+      voucher_minting_policy_id,
+      voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+    ) > 0
   let has_benchmark_voucher_mint =
     bytearray.length(benchmark_voucher_minting_policy_id) > 0 && quantity_of(
       mint,
@@ -846,7 +852,7 @@ fn test_non_registry_reference_input(output_index: Int) -> Input {
 }
 
 fn test_expected_entry(full_denom: ByteArray) -> TraceRegistryEntry {
-  TraceRegistryEntry { voucher_hash: crypto.sha3_256(full_denom), full_denom }
+  TraceRegistryEntry { voucher_hash: voucher_asset_name.voucher_denom_hash(full_denom), full_denom }
 }
 
 fn run_trace_registry_spend(
@@ -925,13 +931,13 @@ fn test_noise_bucket(bucket_index: Int) -> TraceRegistryDirectoryBucket {
 // byte-for-byte unchanged so mutations can prove the validator rejects drift.
 fn test_rollover_fixture(extra_bucket_seed: Int) -> TestRolloverFixture {
   let full_denom = "transfer/channel-77/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let previous_active_shard_name = "active-0a"
   let new_active_shard_name = "active-0a-v2"
   let old_entry =
     TraceRegistryEntry {
-      voucher_hash: crypto.sha3_256("transfer/channel-7/uosmo"),
+      voucher_hash: voucher_asset_name.voucher_denom_hash("transfer/channel-7/uosmo"),
       full_denom: "transfer/channel-7/uosmo",
     }
   let old_shard = TraceRegistryShardDatum { bucket_index, entries: [old_entry] }
@@ -988,7 +994,11 @@ fn test_rollover_fixture(extra_bucket_seed: Int) -> TestRolloverFixture {
   let updated_directory_output =
     test_directory_output(updated_directory.buckets)
   let mint =
-    from_asset(test_voucher_policy_id(), voucher_hash, 1)
+    from_asset(
+      test_voucher_policy_id(),
+      voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+      1,
+    )
       |> add(test_shard_policy_id(), new_active_shard_name, 1)
 
   TestRolloverFixture {
@@ -1266,7 +1276,7 @@ test prop_trace_registry_rollover_rejects_without_matching_voucher_mint(
 
 test trace_registry_insert_trace_succeeds_with_matching_voucher_mint() {
   let full_denom = "transfer/channel-7/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let shard_name = "active-0a"
   let spent_input =
@@ -1288,7 +1298,12 @@ test trace_registry_insert_trace_succeeds_with_matching_voucher_mint() {
       inputs: [spent_input],
       reference_inputs: [directory_input],
       outputs: [updated_output],
-      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1),
+      mint:
+        from_asset(
+          test_voucher_policy_id(),
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+          1,
+        ),
     }
 
   run_trace_registry_spend(
@@ -1301,7 +1316,7 @@ test trace_registry_insert_trace_succeeds_with_matching_voucher_mint() {
 
 test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint() {
   let full_denom = "transfer/channel-7/benchmark-uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let shard_name = "active-bench"
   let spent_input =
@@ -1337,7 +1352,7 @@ test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint()
 
 test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint_and_extra_reference_inputs() {
   let full_denom = "transfer/channel-7/benchmark-uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let shard_name = "active-bench"
   let spent_input =
@@ -1375,7 +1390,7 @@ test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint_a
 
 test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint_and_benchmark_sink_output() {
   let full_denom = "transfer/channel-0/benchmark-uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let shard_name = "active-bench"
   let benchmark_policy_id = test_benchmark_voucher_policy_id()
@@ -1424,7 +1439,7 @@ test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint_a
 
 test trace_registry_insert_trace_fails_without_matching_voucher_mint() fail {
   let full_denom = "transfer/channel-7/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let shard_name = "active-0a"
   let spent_input =
@@ -1459,7 +1474,7 @@ test trace_registry_insert_trace_fails_without_matching_voucher_mint() fail {
 
 test trace_registry_insert_trace_fails_when_bucket_does_not_match_hash() fail {
   let full_denom = "transfer/channel-7/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let correct_bucket_index = bucket_index_for_hash(voucher_hash)
   let wrong_bucket_index = ( correct_bucket_index + 1 ) % 16
   let shard_name = "active-wrong"
@@ -1483,7 +1498,12 @@ test trace_registry_insert_trace_fails_when_bucket_does_not_match_hash() fail {
       inputs: [spent_input],
       reference_inputs: [directory_input],
       outputs: [updated_output],
-      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1),
+      mint:
+        from_asset(
+          test_voucher_policy_id(),
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+          1,
+        ),
     }
 
   run_trace_registry_spend(
@@ -1501,7 +1521,7 @@ test trace_registry_insert_trace_fails_when_bucket_does_not_match_hash() fail {
 
 test trace_registry_insert_trace_fails_when_hash_already_exists() fail {
   let full_denom = "transfer/channel-7/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let shard_name = "active-0a"
   let existing_entry = test_expected_entry(full_denom)
@@ -1524,7 +1544,12 @@ test trace_registry_insert_trace_fails_when_hash_already_exists() fail {
       inputs: [spent_input],
       reference_inputs: [directory_input],
       outputs: [updated_output],
-      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1),
+      mint:
+        from_asset(
+          test_voucher_policy_id(),
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+          1,
+        ),
     }
 
   run_trace_registry_spend(
@@ -1537,7 +1562,7 @@ test trace_registry_insert_trace_fails_when_hash_already_exists() fail {
 
 test trace_registry_insert_trace_fails_when_hash_exists_in_archived_shard() fail {
   let full_denom = "transfer/channel-7/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let active_shard_name = "active-0a"
   let archived_shard_name = "archived-0a"
@@ -1571,7 +1596,12 @@ test trace_registry_insert_trace_fails_when_hash_exists_in_archived_shard() fail
       inputs: [spent_input],
       reference_inputs: [directory_input, archived_shard_reference_input],
       outputs: [updated_output],
-      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1),
+      mint:
+        from_asset(
+          test_voucher_policy_id(),
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+          1,
+        ),
     }
 
   run_trace_registry_spend(
@@ -1584,7 +1614,7 @@ test trace_registry_insert_trace_fails_when_hash_exists_in_archived_shard() fail
 
 test trace_registry_insert_trace_fails_when_spent_shard_is_not_directory_active() fail {
   let full_denom = "transfer/channel-7/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let shard_name = "archived-0a"
   let spent_input =
@@ -1607,7 +1637,12 @@ test trace_registry_insert_trace_fails_when_spent_shard_is_not_directory_active(
       inputs: [spent_input],
       reference_inputs: [directory_input],
       outputs: [updated_output],
-      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1),
+      mint:
+        from_asset(
+          test_voucher_policy_id(),
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+          1,
+        ),
     }
 
   run_trace_registry_spend(
@@ -1620,7 +1655,7 @@ test trace_registry_insert_trace_fails_when_spent_shard_is_not_directory_active(
 
 test trace_registry_insert_trace_fails_with_forged_directory_token() fail {
   let full_denom = "transfer/channel-7/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let shard_name = "active-0a"
   let spent_input =
@@ -1655,7 +1690,12 @@ test trace_registry_insert_trace_fails_with_forged_directory_token() fail {
       inputs: [spent_input],
       reference_inputs: [forged_directory_input],
       outputs: [updated_output],
-      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1),
+      mint:
+        from_asset(
+          test_voucher_policy_id(),
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+          1,
+        ),
     }
 
   run_trace_registry_spend(
@@ -1668,7 +1708,7 @@ test trace_registry_insert_trace_fails_with_forged_directory_token() fail {
 
 test trace_registry_insert_trace_fails_when_directory_input_is_not_at_registry_address() fail {
   let full_denom = "transfer/channel-7/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let shard_name = "active-0a"
   let spent_input =
@@ -1704,7 +1744,12 @@ test trace_registry_insert_trace_fails_when_directory_input_is_not_at_registry_a
       inputs: [spent_input],
       reference_inputs: [misplaced_directory_input],
       outputs: [updated_output],
-      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1),
+      mint:
+        from_asset(
+          test_voucher_policy_id(),
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+          1,
+        ),
     }
 
   run_trace_registry_spend(
@@ -1717,13 +1762,13 @@ test trace_registry_insert_trace_fails_when_directory_input_is_not_at_registry_a
 
 test trace_registry_rollover_insert_succeeds_and_preserves_old_shard() {
   let full_denom = "transfer/channel-77/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let previous_active_shard_name = "active-0a"
   let new_active_shard_name = "active-0a-v2"
   let old_entry =
     TraceRegistryEntry {
-      voucher_hash: crypto.sha3_256("transfer/channel-7/uosmo"),
+      voucher_hash: voucher_asset_name.voucher_denom_hash("transfer/channel-7/uosmo"),
       full_denom: "transfer/channel-7/uosmo",
     }
   let old_shard = TraceRegistryShardDatum { bucket_index, entries: [old_entry] }
@@ -1766,7 +1811,12 @@ test trace_registry_rollover_insert_succeeds_and_preserves_old_shard() {
       ..placeholder,
       inputs: [spent_input, directory_input],
       outputs: [archived_output, new_active_output, updated_directory_output],
-      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1)
+      mint:
+        from_asset(
+          test_voucher_policy_id(),
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+          1,
+        )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 
@@ -1780,7 +1830,7 @@ test trace_registry_rollover_insert_succeeds_and_preserves_old_shard() {
 
 test trace_registry_rollover_insert_fails_when_directory_does_not_advance() fail {
   let full_denom = "transfer/channel-77/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let previous_active_shard_name = "active-0a"
   let new_active_shard_name = "active-0a-v2"
@@ -1816,7 +1866,12 @@ test trace_registry_rollover_insert_fails_when_directory_does_not_advance() fail
       ..placeholder,
       inputs: [spent_input, directory_input],
       outputs: [archived_output, new_active_output, stale_directory_output],
-      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1)
+      mint:
+        from_asset(
+          test_voucher_policy_id(),
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+          1,
+        )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 
@@ -1830,14 +1885,14 @@ test trace_registry_rollover_insert_fails_when_directory_does_not_advance() fail
 
 test trace_registry_rollover_insert_fails_when_spent_shard_is_not_old_active() fail {
   let full_denom = "transfer/channel-88/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let spent_shard_name = "archived-0a"
   let directory_active_shard_name = "active-0a"
   let new_active_shard_name = "active-0a-v2"
   let old_entry =
     TraceRegistryEntry {
-      voucher_hash: crypto.sha3_256("transfer/channel-7/uosmo"),
+      voucher_hash: voucher_asset_name.voucher_denom_hash("transfer/channel-7/uosmo"),
       full_denom: "transfer/channel-7/uosmo",
     }
   let old_shard = TraceRegistryShardDatum { bucket_index, entries: [old_entry] }
@@ -1881,7 +1936,12 @@ test trace_registry_rollover_insert_fails_when_spent_shard_is_not_old_active() f
       ..placeholder,
       inputs: [spent_input, directory_input],
       outputs: [archived_output, new_active_output, updated_directory_output],
-      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1)
+      mint:
+        from_asset(
+          test_voucher_policy_id(),
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+          1,
+        )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 
@@ -1895,7 +1955,7 @@ test trace_registry_rollover_insert_fails_when_spent_shard_is_not_old_active() f
 
 test trace_registry_rollover_insert_fails_when_hash_exists_in_archived_shard() fail {
   let full_denom = "transfer/channel-88/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let previous_active_shard_name = "active-0a"
   let archived_shard_name = "archived-0a"
@@ -1947,7 +2007,12 @@ test trace_registry_rollover_insert_fails_when_hash_exists_in_archived_shard() f
       inputs: [spent_input, directory_input],
       reference_inputs: [archived_shard_reference_input],
       outputs: [archived_output, new_active_output, updated_directory_output],
-      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1)
+      mint:
+        from_asset(
+          test_voucher_policy_id(),
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+          1,
+        )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 
@@ -1961,7 +2026,7 @@ test trace_registry_rollover_insert_fails_when_hash_exists_in_archived_shard() f
 
 test trace_registry_rollover_insert_fails_when_updated_directory_output_uses_wrong_auth_token() fail {
   let full_denom = "transfer/channel-66/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let previous_active_shard_name = "active-0a"
   let new_active_shard_name = "active-0a-v2"
@@ -1998,7 +2063,12 @@ test trace_registry_rollover_insert_fails_when_updated_directory_output_uses_wro
       ..placeholder,
       inputs: [spent_input, directory_input],
       outputs: [archived_output, new_active_output, forged_directory_output],
-      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1)
+      mint:
+        from_asset(
+          test_voucher_policy_id(),
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+          1,
+        )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 
@@ -2012,7 +2082,7 @@ test trace_registry_rollover_insert_fails_when_updated_directory_output_uses_wro
 
 test trace_registry_advance_directory_succeeds_for_valid_rollover() {
   let full_denom = "transfer/channel-99/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let previous_active_shard_name = "active-0a"
   let new_active_shard_name = "active-0a-v2"
@@ -2055,7 +2125,12 @@ test trace_registry_advance_directory_succeeds_for_valid_rollover() {
       ..placeholder,
       inputs: [spent_input],
       outputs: [updated_directory_output, archived_output, new_active_output],
-      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1)
+      mint:
+        from_asset(
+          test_voucher_policy_id(),
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+          1,
+        )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 
@@ -2075,7 +2150,7 @@ test trace_registry_advance_directory_succeeds_for_valid_rollover() {
 
 test trace_registry_advance_directory_fails_when_previous_shard_is_not_archived() fail {
   let full_denom = "transfer/channel-99/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let previous_active_shard_name = "active-0a"
   let new_active_shard_name = "active-0a-v2"
@@ -2118,7 +2193,12 @@ test trace_registry_advance_directory_fails_when_previous_shard_is_not_archived(
       ..placeholder,
       inputs: [spent_input],
       outputs: [invalid_directory_output, archived_output, new_active_output],
-      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1)
+      mint:
+        from_asset(
+          test_voucher_policy_id(),
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+          1,
+        )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 
@@ -2138,7 +2218,7 @@ test trace_registry_advance_directory_fails_when_previous_shard_is_not_archived(
 
 test trace_registry_advance_directory_fails_when_bucket_set_is_not_bijective() fail {
   let full_denom = "transfer/channel-101/uatom"
-  let voucher_hash = crypto.sha3_256(full_denom)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let other_bucket_index = bucket_index + 1
   let previous_active_shard_name = "active-0a"
@@ -2192,7 +2272,12 @@ test trace_registry_advance_directory_fails_when_bucket_set_is_not_bijective() f
       ..placeholder,
       inputs: [spent_input],
       outputs: [invalid_directory_output, archived_output, new_active_output],
-      mint: from_asset(test_voucher_policy_id(), voucher_hash, 1)
+      mint:
+        from_asset(
+          test_voucher_policy_id(),
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+          1,
+        )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 

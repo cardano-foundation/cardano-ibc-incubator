@@ -348,6 +348,7 @@ type Validator =
   | "spendTransferModule"
   | "mintIdentifier"
   | "mintVoucher"
+  | "voucherMetadata"
   | "verifyProof"
   | "hostStateStt"
   | "mintClientStt"
@@ -422,6 +423,13 @@ export type DeploymentTemplate = {
       refUtxo: UTxO;
     };
     mintVoucher: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    voucherMetadata?: {
       title: string;
       script: string;
       scriptHash: string;

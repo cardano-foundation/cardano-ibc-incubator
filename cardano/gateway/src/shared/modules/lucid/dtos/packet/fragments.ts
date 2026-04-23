@@ -63,6 +63,12 @@ export type WithMintVoucherRedeemer = {
   encodedMintVoucherRedeemer: string;
 };
 
+export type WithVoucherMetadataOutput = {
+  voucherReferenceTokenUnit?: string;
+  voucherMetadataAddress?: string;
+  encodedVoucherMetadataDatum?: string;
+};
+
 export type TraceRegistryAppendUpdate = {
   kind: "append";
   traceRegistryDirectoryUtxo: UTxO;

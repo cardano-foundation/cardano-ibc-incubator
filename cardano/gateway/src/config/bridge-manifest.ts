@@ -70,6 +70,7 @@ export type DeploymentConfig = {
     mintConnectionStt: DeploymentValidator;
     mintChannelStt: DeploymentValidator;
     mintVoucher: DeploymentValidator;
+    voucherMetadata?: DeploymentValidator;
   };
   modules: {
     handler: DeploymentModule;
@@ -159,6 +160,7 @@ export type BridgeManifest = {
     mint_connection_stt: BridgeManifestValidator;
     mint_channel_stt: BridgeManifestValidator;
     mint_voucher: BridgeManifestValidator;
+    voucher_metadata?: BridgeManifestValidator;
   };
   modules: {
     handler: BridgeManifestModule;
@@ -545,6 +547,9 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
       mintConnectionStt: requireDeploymentValidator(validators.mintConnectionStt, 'validators.mintConnectionStt'),
       mintChannelStt: requireDeploymentValidator(validators.mintChannelStt, 'validators.mintChannelStt'),
       mintVoucher: requireDeploymentValidator(validators.mintVoucher, 'validators.mintVoucher'),
+      ...(validators.voucherMetadata
+        ? { voucherMetadata: requireDeploymentValidator(validators.voucherMetadata, 'validators.voucherMetadata') }
+        : {}),
     },
     modules: {
       handler: requireDeploymentModule(modules.handler, 'modules.handler'),
@@ -598,6 +603,11 @@ export function normalizeHandlerJsonDeploymentConfig(
         mint_connection_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintConnectionStt),
         mint_channel_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintChannelStt),
         mint_voucher: deploymentValidatorToManifest(normalizedDeployment.validators.mintVoucher),
+        ...(normalizedDeployment.validators.voucherMetadata
+          ? {
+              voucher_metadata: deploymentValidatorToManifest(normalizedDeployment.validators.voucherMetadata),
+            }
+          : {}),
       },
       modules: {
         handler: normalizedDeployment.modules.handler,
@@ -651,6 +661,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       mint_connection_stt: requireManifestValidator(validators.mint_connection_stt, 'validators.mint_connection_stt'),
       mint_channel_stt: requireManifestValidator(validators.mint_channel_stt, 'validators.mint_channel_stt'),
       mint_voucher: requireManifestValidator(validators.mint_voucher, 'validators.mint_voucher'),
+      ...(validators.voucher_metadata
+        ? { voucher_metadata: requireManifestValidator(validators.voucher_metadata, 'validators.voucher_metadata') }
+        : {}),
     },
     modules: {
       handler: requireManifestModule(modules.handler, 'modules.handler'),
@@ -692,6 +705,11 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
         mintConnectionStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_connection_stt),
         mintChannelStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_channel_stt),
         mintVoucher: manifestValidatorToDeployment(bridgeManifest.validators.mint_voucher),
+        ...(bridgeManifest.validators.voucher_metadata
+          ? {
+              voucherMetadata: manifestValidatorToDeployment(bridgeManifest.validators.voucher_metadata),
+            }
+          : {}),
       },
       modules: {
         handler: requireDeploymentModule(bridgeManifest.modules.handler, 'modules.handler'),

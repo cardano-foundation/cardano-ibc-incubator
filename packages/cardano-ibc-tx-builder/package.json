@@ -12,6 +12,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@noble/hashes": "^1.8.0",
     "js-sha3": "^0.9.3"
   },
   "devDependencies": {
@@ -21,6 +22,7 @@
   },
   "peerDependencies": {
     "@lucid-evolution/lucid": "^0.4.29",
+    "@noble/hashes": "^1.8.0",
     "js-sha3": "^0.9.3"
   }
 }

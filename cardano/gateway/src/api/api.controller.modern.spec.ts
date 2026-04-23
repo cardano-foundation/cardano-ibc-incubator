@@ -449,23 +449,37 @@ describe('ApiController (modern)', () => {
       base_denom: Buffer.from('lovelace', 'utf8').toString('hex'),
       full_denom: 'lovelace',
       voucher_token_name: null,
+      cip68_reference_asset_id: null,
       voucher_policy_id: null,
       ibc_denom_hash: null,
       display_name: 'ADA',
       display_symbol: 'ADA',
       display_description: 'Cardano native asset lovelace',
+      description: null,
+      ticker: null,
+      decimals: null,
+      url: null,
+      logo: null,
+      metadata_version: null,
     });
   });
 
   it('returns a persisted voucher trace when policy id and voucher token match', async () => {
     const voucherPolicyId = 'a'.repeat(56);
-    const voucherTokenName = 'b'.repeat(64);
+    const voucherTokenName = `0014df10${'b'.repeat(56)}`;
     denomTraceServiceMock.findByHash.mockResolvedValue({
-      hash: voucherTokenName,
+      hash: 'b'.repeat(56),
       path: 'transfer/channel-7',
       base_denom: 'uatom',
+      full_denom: 'transfer/channel-7/uatom',
+      voucher_token_name: voucherTokenName,
+      voucher_reference_token_name: `000643b0${'b'.repeat(56)}`,
       voucher_policy_id: voucherPolicyId.toUpperCase(),
       ibc_denom_hash: 'c'.repeat(64),
+      cip68_reference_asset_id: `${voucherPolicyId}${`000643b0${'b'.repeat(56)}`}`,
+      name: 'ATOM (IBC)',
+      description: 'IBC voucher for transfer/channel-7/uatom',
+      ticker: 'ATOM',
     });
 
     const response = await controller.getCardanoAssetDenomTrace(`${voucherPolicyId}${voucherTokenName}`);
@@ -478,11 +492,18 @@ describe('ApiController (modern)', () => {
       base_denom: 'uatom',
       full_denom: 'transfer/channel-7/uatom',
       voucher_token_name: voucherTokenName,
+      cip68_reference_asset_id: `${voucherPolicyId}${`000643b0${'b'.repeat(56)}`}`,
       voucher_policy_id: voucherPolicyId.toUpperCase(),
       ibc_denom_hash: 'c'.repeat(64),
       display_name: 'ATOM (IBC)',
       display_symbol: 'ATOM',
       display_description: 'IBC voucher for transfer/channel-7/uatom',
+      description: 'IBC voucher for transfer/channel-7/uatom',
+      ticker: 'ATOM',
+      decimals: null,
+      url: null,
+      logo: null,
+      metadata_version: null,
     });
   });
 
@@ -499,11 +520,18 @@ describe('ApiController (modern)', () => {
       base_denom: nativeAssetId,
       full_denom: nativeAssetId,
       voucher_token_name: null,
+      cip68_reference_asset_id: null,
       voucher_policy_id: null,
       ibc_denom_hash: null,
       display_name: nativeAssetId,
       display_symbol: nativeAssetId,
       display_description: `Cardano native asset ${nativeAssetId}`,
+      description: null,
+      ticker: null,
+      decimals: null,
+      url: null,
+      logo: null,
+      metadata_version: null,
     });
   });
 
@@ -515,11 +543,18 @@ describe('ApiController (modern)', () => {
   it('lists persisted ibc voucher assets through the http api', async () => {
     denomTraceServiceMock.findAll.mockResolvedValue([
       {
-        hash: 'e'.repeat(64),
+        hash: 'e'.repeat(56),
         path: 'transfer/channel-3',
         base_denom: 'gamm/pool/1',
+        full_denom: 'transfer/channel-3/gamm/pool/1',
+        voucher_token_name: `0014df10${'e'.repeat(56)}`,
+        voucher_reference_token_name: `000643b0${'e'.repeat(56)}`,
         voucher_policy_id: 'f'.repeat(56),
         ibc_denom_hash: '1'.repeat(64),
+        cip68_reference_asset_id: `${'f'.repeat(56)}${`000643b0${'e'.repeat(56)}`}`,
+        name: '1 (IBC)',
+        description: 'IBC voucher for transfer/channel-3/gamm/pool/1',
+        ticker: '1',
       },
     ]);
 
@@ -528,17 +563,24 @@ describe('ApiController (modern)', () => {
     expect(denomTraceServiceMock.findAll).toHaveBeenCalled();
     expect(response).toEqual([
       {
-        asset_id: `${'f'.repeat(56)}${'e'.repeat(64)}`,
+        asset_id: `${'f'.repeat(56)}${`0014df10${'e'.repeat(56)}`}`,
         kind: 'ibc_voucher',
         path: 'transfer/channel-3',
         base_denom: 'gamm/pool/1',
         full_denom: 'transfer/channel-3/gamm/pool/1',
-        voucher_token_name: 'e'.repeat(64),
+        voucher_token_name: `0014df10${'e'.repeat(56)}`,
+        cip68_reference_asset_id: `${'f'.repeat(56)}${`000643b0${'e'.repeat(56)}`}`,
         voucher_policy_id: 'f'.repeat(56),
         ibc_denom_hash: '1'.repeat(64),
         display_name: '1 (IBC)',
         display_symbol: '1',
         display_description: 'IBC voucher for transfer/channel-3/gamm/pool/1',
+        description: 'IBC voucher for transfer/channel-3/gamm/pool/1',
+        ticker: '1',
+        decimals: null,
+        url: null,
+        logo: null,
+        metadata_version: null,
       },
     ]);
   });

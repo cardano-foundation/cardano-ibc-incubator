@@ -1,6 +1,10 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { convertHex2String, convertString2Hex, hashSHA256, hashSha3_256 } from '@shared/helpers/hex';
+import { convertHex2String, convertString2Hex, hashSHA256 } from '@shared/helpers/hex';
+import {
+  buildVoucherDenomHashFromFullDenom,
+  buildVoucherUserTokenNameFromDenomHash,
+} from '@shared/helpers/voucher-asset';
 import { DenomTraceService } from '../../query/services/denom-trace.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { PacketService } from '../packet.service';
@@ -49,6 +53,9 @@ describe('PacketService denom regression coverage', () => {
             },
             mintVoucher: {
               scriptHash: 'mint-voucher-policy-id',
+            },
+            voucherMetadata: {
+              address: 'addr_test1vouchermetadata',
             },
           },
           modules: {
@@ -139,7 +146,9 @@ describe('PacketService denom regression coverage', () => {
       base_denom: 'factory/osmo1abcd/mytoken',
     });
 
-    const voucherTokenName = hashSha3_256(convertString2Hex(canonicalDenom));
+    const voucherTokenName = buildVoucherUserTokenNameFromDenomHash(
+      buildVoucherDenomHashFromFullDenom(canonicalDenom),
+    );
     const voucherTokenUnit = `mint-voucher-policy-id${voucherTokenName}`;
     const senderVoucherUtxo = {
       txHash: 'sender-voucher-utxo',
@@ -201,7 +210,7 @@ describe('PacketService denom regression coverage', () => {
     expect(transferModuleDenomHex).toBe(convertString2Hex(canonicalDenom));
   });
 
-  it('uses sha3_256(data.denom) for acknowledgement-error refund voucher minting', async () => {
+  it('uses the labeled blake2b_224 voucher token name for acknowledgement-error refund voucher minting', async () => {
     const loggerMock = {
       log: jest.fn(),
       warn: jest.fn(),
@@ -226,6 +235,9 @@ describe('PacketService denom regression coverage', () => {
             },
             mintVoucher: {
               scriptHash: 'mint-voucher-policy-id',
+            },
+            voucherMetadata: {
+              address: 'addr_test1vouchermetadata',
             },
           },
           modules: {
@@ -352,8 +364,11 @@ describe('PacketService denom regression coverage', () => {
       'addr_test1operator',
     );
 
-    const expectedTokenName = hashSha3_256(convertString2Hex(canonicalDenom));
-    const expectedDoublePrefixed = hashSha3_256(convertString2Hex(`transfer/channel-7/${canonicalDenom}`));
+    const expectedVoucherDenomHash = buildVoucherDenomHashFromFullDenom(canonicalDenom);
+    const expectedTokenName = buildVoucherUserTokenNameFromDenomHash(expectedVoucherDenomHash);
+    const expectedDoublePrefixed = buildVoucherUserTokenNameFromDenomHash(
+      buildVoucherDenomHashFromFullDenom(`transfer/channel-7/${canonicalDenom}`),
+    );
     expect(expectedTokenName).not.toBe(expectedDoublePrefixed);
 
     expect(lucidServiceMock.createUnsignedAckPacketMintTx).toHaveBeenCalledWith(
@@ -367,7 +382,7 @@ describe('PacketService denom regression coverage', () => {
     expect(lucidServiceMock.createUnsignedAckPacketSucceedTx).not.toHaveBeenCalled();
 
     expect(denomTraceServiceMock.prepareOnChainInsert).toHaveBeenCalledWith(
-      expectedTokenName,
+      expectedVoucherDenomHash,
       canonicalDenom,
     );
   });
@@ -397,6 +412,9 @@ describe('PacketService denom regression coverage', () => {
             },
             mintVoucher: {
               scriptHash: 'mint-voucher-policy-id',
+            },
+            voucherMetadata: {
+              address: 'addr_test1vouchermetadata',
             },
           },
           modules: {
@@ -565,6 +583,9 @@ describe('PacketService denom regression coverage', () => {
             },
             mintVoucher: {
               scriptHash: 'mint-voucher-policy-id',
+            },
+            voucherMetadata: {
+              address: 'addr_test1vouchermetadata',
             },
           },
           modules: {

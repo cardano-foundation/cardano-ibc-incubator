@@ -24,7 +24,7 @@ import { TransferPlannerService } from './transfer-planner.service';
 import { BridgeManifestService } from '~@/query/services/bridge-manifest.service';
 import { CheqdIcqService } from './cheqd-icq.service';
 import { VesseloracleIcqService } from './vesseloracle-icq.service';
-import { deriveVoucherPresentation } from '../shared/helpers/voucher-presentation';
+import { parseVoucherAssetName } from '../shared/helpers/voucher-asset';
 
 type ApiCardanoAssetDenomTrace = {
   asset_id: string;
@@ -33,11 +33,18 @@ type ApiCardanoAssetDenomTrace = {
   base_denom: string;
   full_denom: string;
   voucher_token_name: string | null;
+  cip68_reference_asset_id?: string | null;
   voucher_policy_id: string | null;
   ibc_denom_hash: string | null;
   display_name: string;
   display_symbol: string;
   display_description: string;
+  description?: string | null;
+  ticker?: string | null;
+  decimals?: number | null;
+  url?: string | null;
+  logo?: string | null;
+  metadata_version?: number | null;
 };
 
 type ParsedCardanoAssetId = {
@@ -337,6 +344,11 @@ export class ApiController {
     }
 
     const parsed = this.parseCardanoAssetId(assetId);
+    const parsedVoucherAssetName = parseVoucherAssetName(parsed.assetNameHex);
+    if (parsedVoucherAssetName?.kind !== 'ft') {
+      return this.buildNativeAssetTrace(parsed.assetId, parsed.assetId, parsed.assetId);
+    }
+
     const trace = await this.denomTraceService.findByHash(parsed.assetNameHex);
     if (trace && trace.voucher_policy_id?.toLowerCase() === parsed.policyId) {
       return this.mapVoucherTrace(parsed.assetId, trace);
@@ -349,7 +361,10 @@ export class ApiController {
   async listCardanoIbcAssets(): Promise<ApiCardanoAssetDenomTrace[]> {
     const traces = await this.denomTraceService.findAll();
     return traces.map((trace) =>
-      this.mapVoucherTrace(`${trace.voucher_policy_id}${trace.hash}`.toLowerCase(), trace),
+      this.mapVoucherTrace(
+        `${trace.voucher_policy_id}${trace.voucher_token_name}`.toLowerCase(),
+        trace,
+      ),
     );
   }
 
@@ -411,29 +426,41 @@ export class ApiController {
       base_denom: baseDenom,
       full_denom: fullDenom,
       voucher_token_name: null,
+      cip68_reference_asset_id: null,
       voucher_policy_id: null,
       ibc_denom_hash: null,
       display_name: displayName,
       display_symbol: displayName,
       display_description: `Cardano native asset ${fullDenom}`,
+      description: null,
+      ticker: null,
+      decimals: null,
+      url: null,
+      logo: null,
+      metadata_version: null,
     };
   }
 
   private mapVoucherTrace(assetId: string, trace: ResolvedDenomTrace): ApiCardanoAssetDenomTrace {
-    const fullDenom = trace.path ? `${trace.path}/${trace.base_denom}` : trace.base_denom;
-    const presentation = deriveVoucherPresentation(fullDenom, trace.base_denom);
     return {
       asset_id: assetId,
       kind: 'ibc_voucher',
       path: trace.path,
       base_denom: trace.base_denom,
-      full_denom: fullDenom,
-      voucher_token_name: trace.hash,
+      full_denom: trace.full_denom,
+      voucher_token_name: trace.voucher_token_name,
+      cip68_reference_asset_id: trace.cip68_reference_asset_id ?? null,
       voucher_policy_id: trace.voucher_policy_id,
       ibc_denom_hash: trace.ibc_denom_hash ?? null,
-      display_name: presentation.displayName,
-      display_symbol: presentation.displaySymbol,
-      display_description: presentation.displayDescription,
+      display_name: trace.name,
+      display_symbol: trace.ticker ?? trace.name,
+      display_description: trace.description,
+      description: trace.description,
+      ticker: trace.ticker ?? null,
+      decimals: typeof trace.decimals === 'number' ? trace.decimals : null,
+      url: trace.url ?? null,
+      logo: trace.logo ?? null,
+      metadata_version: trace.metadata_version ?? null,
     };
   }
 }

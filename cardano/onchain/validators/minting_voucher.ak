@@ -4,10 +4,10 @@ use aiken/collection/pairs
 use aiken/crypto
 use aiken/primitive/bytearray
 use aiken/primitive/int
-use cardano/address.{from_verification_key}
+use cardano/address.{from_script, from_verification_key}
 use cardano/assets.{AssetName, PolicyId, quantity_of, tokens}
 use cardano/transaction.{
-  Input, Output, Redeemer, ScriptPurpose, Spend, Transaction,
+  InlineDatum, Input, Output, Redeemer, ScriptPurpose, Spend, Transaction,
 }
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
@@ -17,6 +17,7 @@ use ibc/apps/transfer/trace_registry.{
   TraceRegistryDirectoryBucket, TraceRegistryRedeemer, bucket_index_for_hash,
 }
 use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
+use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/auth.{AuthToken}
@@ -31,6 +32,7 @@ use ibc/utils/validator_utils
 validator mint_voucher(
   module_token: AuthToken,
   directory_auth_token: AuthToken,
+  voucher_metadata_script_hash: crypto.ScriptHash,
 ) {
   mint(
     redeemer: MintVoucherRedeemer,
@@ -66,14 +68,20 @@ validator mint_voucher(
         let source_prefix =
           transfer_coin.get_denom_prefix(packet_dest_port, packet_dest_channel)
         let prefixed_denom = bytearray.concat(source_prefix, data.denom)
-        let token_name = crypto.sha3_256(prefixed_denom)
-        let registry_completeness_satisfied =
+        let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(prefixed_denom)
+        let user_token_name =
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_denom_hash)
+        let reference_token_name =
+          voucher_asset_name.voucher_reference_token_name_from_denom_hash(
+            voucher_denom_hash,
+          )
+        let registry_completeness =
           trace_registry_completeness_satisfied(
             inputs,
             reference_inputs,
             redeemers,
             directory_auth_token,
-            token_name,
+            voucher_denom_hash,
             prefixed_denom,
           )
 
@@ -81,9 +89,12 @@ validator mint_voucher(
 
         let minted_tokens = tokens(mint, voucher_minting_policy_id)
         let valid_minted_tokens =
-          minted_tokens == (
-            dict.empty
-              |> dict.insert(token_name, transfer_amount)
+          positive_voucher_mint_matches(
+            minted_tokens,
+            user_token_name,
+            reference_token_name,
+            transfer_amount,
+            registry_completeness,
           )
         trace @"mint_voucher: minted token is valid"
 
@@ -111,11 +122,17 @@ validator mint_voucher(
         and {
           valid_receiver?,
           valid_minted_tokens?,
-          registry_completeness_satisfied,
+          metadata_output_valid(
+            outputs,
+            voucher_minting_policy_id,
+            reference_token_name,
+            voucher_metadata_script_hash,
+            registry_completeness,
+          ),
           valid_voucher_output(
             payout_output,
             voucher_minting_policy_id,
-            token_name,
+            user_token_name,
             transfer_amount,
           )?,
         }
@@ -139,7 +156,7 @@ validator mint_voucher(
 
         expect Some(transfer_amount) = int.from_utf8(data.amount)
 
-        let token_name = crypto.sha3_256(data.denom)
+        let token_name = voucher_asset_name.voucher_user_token_name(data.denom)
         let minted_tokens = tokens(mint, voucher_minting_policy_id)
         let valid_minted_tokens =
           minted_tokens == (
@@ -179,22 +196,31 @@ validator mint_voucher(
 
         expect Some(transfer_amount) = int.from_utf8(data.amount)
 
-        let token_name = crypto.sha3_256(data.denom)
-        let registry_completeness_satisfied =
+        let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(data.denom)
+        let user_token_name =
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_denom_hash)
+        let reference_token_name =
+          voucher_asset_name.voucher_reference_token_name_from_denom_hash(
+            voucher_denom_hash,
+          )
+        let registry_completeness =
           trace_registry_completeness_satisfied(
             inputs,
             reference_inputs,
             redeemers,
             directory_auth_token,
-            token_name,
+            voucher_denom_hash,
             data.denom,
           )
 
         let minted_tokens = tokens(mint, voucher_minting_policy_id)
         let valid_minted_tokens =
-          minted_tokens == (
-            dict.empty
-              |> dict.insert(token_name, transfer_amount)
+          positive_voucher_mint_matches(
+            minted_tokens,
+            user_token_name,
+            reference_token_name,
+            transfer_amount,
+            registry_completeness,
           )
         trace @"mint_voucher: minted token is valid"
 
@@ -216,7 +242,7 @@ validator mint_voucher(
                   quantity_of(
                     output.value,
                     voucher_minting_policy_id,
-                    token_name,
+                    user_token_name,
                   )
                 acc + output_token
               } else {
@@ -235,7 +261,7 @@ validator mint_voucher(
                   quantity_of(
                     output.value,
                     voucher_minting_policy_id,
-                    token_name,
+                    user_token_name,
                   )
                 acc + output_token
               } else {
@@ -247,7 +273,13 @@ validator mint_voucher(
           outputs_token - inputs_token == transfer_amount,
           valid_minted_tokens,
           valid_sender,
-          registry_completeness_satisfied,
+          metadata_output_valid(
+            outputs,
+            voucher_minting_policy_id,
+            reference_token_name,
+            voucher_metadata_script_hash,
+            registry_completeness,
+          ),
         }
       }
     }
@@ -256,6 +288,11 @@ validator mint_voucher(
   else(_) {
     fail
   }
+}
+
+type TraceRegistryCompleteness {
+  ExistingMapping
+  FirstSeenMapping
 }
 
 fn extract_module_redeemer(
@@ -289,7 +326,7 @@ fn trace_registry_completeness_satisfied(
   directory_auth_token: AuthToken,
   voucher_hash: ByteArray,
   full_denom: ByteArray,
-) -> Bool {
+) -> Option<TraceRegistryCompleteness> {
   let directory_bucket =
     find_directory_bucket_witness(
       inputs,
@@ -298,21 +335,31 @@ fn trace_registry_completeness_satisfied(
       bucket_index_for_hash(voucher_hash),
     )
 
-  matching_registry_update_present(
-    inputs,
-    reference_inputs,
-    redeemers,
-    directory_auth_token,
-    directory_bucket,
-    voucher_hash,
-    full_denom,
-  ) || existing_registry_mapping_present(
-    reference_inputs,
-    directory_bucket,
-    directory_auth_token,
-    voucher_hash,
-    full_denom,
-  )
+  if
+    matching_registry_update_present(
+      inputs,
+      reference_inputs,
+      redeemers,
+      directory_auth_token,
+      directory_bucket,
+      voucher_hash,
+      full_denom,
+    )
+  {
+    Some(FirstSeenMapping)
+  } else if
+    existing_registry_mapping_present(
+      reference_inputs,
+      directory_bucket,
+      directory_auth_token,
+      voucher_hash,
+      full_denom,
+    )
+  {
+    Some(ExistingMapping)
+  } else {
+    None
+  }
 }
 
 fn find_directory_bucket_witness(
@@ -545,8 +592,75 @@ fn valid_voucher_output(
 ) -> Bool {
   let voucher_output_value = assets.without_lovelace(voucher_output.value)
   expect [actual_policy_id] = assets.policies(voucher_output_value)
+  expect [only_token_name] = assets.tokens(voucher_output_value, voucher_policy_id) |> dict.keys()
   and {
     (actual_policy_id == voucher_policy_id)?,
+    (only_token_name == asset_name)?,
     (quantity_of(voucher_output_value, voucher_policy_id, asset_name) == transfer_amount)?,
+  }
+}
+
+fn positive_voucher_mint_matches(
+  minted_tokens,
+  user_token_name: AssetName,
+  reference_token_name: AssetName,
+  transfer_amount: Int,
+  registry_completeness: Option<TraceRegistryCompleteness>,
+) -> Bool {
+  when registry_completeness is {
+    Some(ExistingMapping) ->
+      minted_tokens == (
+        dict.empty
+          |> dict.insert(user_token_name, transfer_amount)
+      )
+
+    Some(FirstSeenMapping) ->
+      minted_tokens == (
+        dict.empty
+          |> dict.insert(user_token_name, transfer_amount)
+          |> dict.insert(reference_token_name, 1)
+      )
+
+    None -> False
+  }
+}
+
+fn metadata_output_valid(
+  outputs: List<Output>,
+  voucher_policy_id: PolicyId,
+  reference_token_name: AssetName,
+  voucher_metadata_script_hash: crypto.ScriptHash,
+  registry_completeness: Option<TraceRegistryCompleteness>,
+) -> Bool {
+  let metadata_address = from_script(voucher_metadata_script_hash)
+  let metadata_outputs =
+    list.filter(
+      outputs,
+      fn(output) {
+        output.address == metadata_address &&
+          quantity_of(output.value, voucher_policy_id, reference_token_name) ==
+            1
+      },
+    )
+
+  when registry_completeness is {
+    Some(ExistingMapping) -> list.length(metadata_outputs) == 0
+
+    Some(FirstSeenMapping) ->
+      when metadata_outputs is {
+        [metadata_output] -> {
+          expect [policy_id] = metadata_output.value |> assets.without_lovelace |> assets.policies()
+          expect [token_name] =
+            assets.tokens(metadata_output.value, voucher_policy_id) |> dict.keys()
+          expect InlineDatum(_) = metadata_output.datum
+
+          policy_id == voucher_policy_id &&
+            token_name == reference_token_name
+        }
+
+        _ -> False
+      }
+
+    None -> False
   }
 }

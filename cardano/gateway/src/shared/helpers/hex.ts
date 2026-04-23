@@ -1,3 +1,4 @@
+import { blake2b } from '@noble/hashes/blake2b';
 import { sha3_256 } from 'js-sha3';
 import crypto from 'crypto';
 
@@ -25,6 +26,10 @@ export function convertString2Hex(str: string) {
 export function hashSha3_256(data: string): string {
   const hash = sha3_256(Buffer.from(data, 'hex')).toString();
   return hash;
+}
+
+export function hashBlake2b224(data: string): string {
+  return Buffer.from(blake2b(fromHex(data), { dkLen: 28 })).toString('hex');
 }
 
 export function toHex(bytes) {

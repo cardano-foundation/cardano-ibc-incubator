@@ -1,3 +1,6 @@
+import { createHash } from 'crypto';
+import { blake2b } from '@noble/hashes/blake2b';
+
 export interface CardanoAssetDenomTrace {
   assetId: string;
   kind: 'native' | 'ibc_voucher';
@@ -5,11 +8,18 @@ export interface CardanoAssetDenomTrace {
   baseDenom: string;
   fullDenom: string;
   voucherTokenName: string | null;
+  cip68ReferenceAssetId?: string | null;
   voucherPolicyId: string | null;
   ibcDenomHash: string | null;
   displayName: string;
   displaySymbol: string;
   displayDescription: string;
+  description?: string | null;
+  ticker?: string | null;
+  decimals?: number | null;
+  url?: string | null;
+  logo?: string | null;
+  metadataVersion?: number | null;
 }
 
 export type TraceRegistryClientConfig = {
@@ -98,6 +108,9 @@ type LoadedRegistryContext = {
 const LOVELACE = 'lovelace';
 const CARDANO_POLICY_ID_HEX_LENGTH = 56;
 const CHANNEL_ID_SEGMENT_REGEX = /^channel-\d+$/;
+const CIP67_REFERENCE_NFT_LABEL_HEX = '000643b0';
+const CIP67_FT_LABEL_HEX = '0014df10';
+const VOUCHER_DENOM_HASH_HEX_LENGTH = 56;
 
 function assertString(value: unknown, message: string): string {
   if (typeof value !== 'string') {
@@ -142,6 +155,56 @@ function hexToText(hex: string): string {
     bytes[index / 2] = Number.parseInt(hex.slice(index, index + 2), 16);
   }
   return new TextDecoder().decode(bytes);
+}
+
+function buildVoucherDenomHashFromFullDenom(fullDenom: string): string {
+  return Buffer.from(
+    blake2b(Buffer.from(fullDenom, 'utf8'), { dkLen: 28 }),
+  ).toString('hex').toLowerCase();
+}
+
+function buildVoucherUserTokenNameFromDenomHash(voucherDenomHash: string): string {
+  return `${CIP67_FT_LABEL_HEX}${normalizeVoucherDenomHash(voucherDenomHash)}`;
+}
+
+function buildVoucherReferenceTokenNameFromDenomHash(voucherDenomHash: string): string {
+  return `${CIP67_REFERENCE_NFT_LABEL_HEX}${normalizeVoucherDenomHash(voucherDenomHash)}`;
+}
+
+function deriveVoucherReferenceAssetId(
+  policyId: string,
+  voucherDenomHash: string,
+): string {
+  return `${policyId.toLowerCase()}${buildVoucherReferenceTokenNameFromDenomHash(voucherDenomHash)}`;
+}
+
+function normalizeVoucherDenomHash(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (!new RegExp(`^[0-9a-f]{${VOUCHER_DENOM_HASH_HEX_LENGTH}}$`, 'i').test(normalized)) {
+    throw new Error(
+      `Invalid voucher denom hash: expected ${VOUCHER_DENOM_HASH_HEX_LENGTH} hex characters, received ${value}`,
+    );
+  }
+  return normalized;
+}
+
+function parseVoucherAssetName(
+  assetNameHex: string,
+): { kind: 'ft' | 'reference_nft'; voucherDenomHash: string } | null {
+  const normalized = assetNameHex.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/i.test(normalized)) {
+    return null;
+  }
+
+  const label = normalized.slice(0, 8);
+  const voucherDenomHash = normalized.slice(8);
+  if (label === CIP67_FT_LABEL_HEX) {
+    return { kind: 'ft', voucherDenomHash };
+  }
+  if (label === CIP67_REFERENCE_NFT_LABEL_HEX) {
+    return { kind: 'reference_nft', voucherDenomHash };
+  }
+  return null;
 }
 
 function decodeEntry(value: unknown): TraceRegistryEntry {
@@ -282,6 +345,103 @@ function deriveVoucherPresentation(fullDenom: string, baseDenom: string) {
   };
 }
 
+type Cip68VoucherMetadata = {
+  name: string;
+  description: string;
+  ticker?: string;
+  decimals?: number;
+  url?: string;
+  logo?: string;
+  version: number;
+};
+
+function decodeVoucherCip68MetadataDatum(
+  encodedDatum: string,
+  Lucid: LucidModule,
+): Cip68VoucherMetadata {
+  const decoded = Lucid.Data.from(encodedDatum);
+  const outer = expectConstr(decoded, 0);
+  const [metadataRaw, versionRaw] = outer.fields;
+  if (typeof versionRaw !== 'bigint') {
+    throw new Error('Invalid CIP-68 voucher metadata version');
+  }
+
+  const metadataMap = toEntriesMap(metadataRaw);
+
+  return {
+    name: decodeRequiredBytes(metadataMap, 'name'),
+    description: decodeRequiredBytes(metadataMap, 'description'),
+    ticker: decodeOptionalBytes(metadataMap, 'ticker'),
+    decimals: decodeOptionalInteger(metadataMap, 'decimals'),
+    url: decodeOptionalUri(metadataMap, 'url'),
+    logo: decodeOptionalUri(metadataMap, 'logo'),
+    version: Number(versionRaw),
+  };
+}
+
+function toEntriesMap(value: unknown): Map<string, unknown> {
+  const entries = value instanceof Map ? [...value.entries()] : value;
+  if (!Array.isArray(entries)) {
+    throw new Error('Expected CIP-68 voucher metadata map');
+  }
+
+  const normalized = new Map<string, unknown>();
+  for (const entry of entries) {
+    if (!Array.isArray(entry) || entry.length !== 2) {
+      throw new Error('Invalid CIP-68 voucher metadata map entry');
+    }
+    const [key, item] = entry;
+    if (typeof key !== 'string') {
+      throw new Error('Invalid CIP-68 voucher metadata map key');
+    }
+    normalized.set(hexToText(key), item);
+  }
+  return normalized;
+}
+
+function decodeRequiredBytes(map: Map<string, unknown>, key: string): string {
+  const value = map.get(key);
+  if (typeof value !== 'string') {
+    throw new Error(`Missing required CIP-68 voucher metadata field "${key}"`);
+  }
+  return hexToText(value);
+}
+
+function decodeOptionalBytes(
+  map: Map<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = map.get(key);
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'string') {
+    throw new Error(`Invalid CIP-68 voucher metadata field "${key}"`);
+  }
+  return hexToText(value);
+}
+
+function decodeOptionalInteger(
+  map: Map<string, unknown>,
+  key: string,
+): number | undefined {
+  const value = map.get(key);
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== 'bigint') {
+    throw new Error(`Invalid CIP-68 voucher metadata integer "${key}"`);
+  }
+  return Number(value);
+}
+
+function decodeOptionalUri(
+  map: Map<string, unknown>,
+  key: string,
+): string | undefined {
+  return decodeOptionalBytes(map, key);
+}
+
 async function computeIbcDenomHash(fullDenom: string): Promise<string> {
   const bytes = new TextEncoder().encode(fullDenom);
 
@@ -309,11 +469,18 @@ function buildNativeAssetTrace(
     baseDenom,
     fullDenom,
     voucherTokenName: null,
+    cip68ReferenceAssetId: null,
     voucherPolicyId: null,
     ibcDenomHash: null,
     displayName,
     displaySymbol: displayName,
     displayDescription: `Cardano native asset ${fullDenom}`,
+    description: null,
+    ticker: null,
+    decimals: null,
+    url: null,
+    logo: null,
+    metadataVersion: null,
   };
 }
 
@@ -321,10 +488,12 @@ async function mapVoucherTrace(
   assetId: string,
   hash: string,
   fullDenom: string,
+  metadata: Cip68VoucherMetadata | null,
   voucherPolicyId: string,
 ): Promise<CardanoAssetDenomTrace> {
   const trace = splitFullDenomTrace(fullDenom);
   const presentation = deriveVoucherPresentation(fullDenom, trace.baseDenom);
+  const voucherTokenName = buildVoucherUserTokenNameFromDenomHash(hash);
 
   return {
     assetId,
@@ -332,12 +501,19 @@ async function mapVoucherTrace(
     path: trace.path,
     baseDenom: trace.baseDenom,
     fullDenom,
-    voucherTokenName: hash,
+    voucherTokenName,
+    cip68ReferenceAssetId: deriveVoucherReferenceAssetId(voucherPolicyId, hash),
     voucherPolicyId,
     ibcDenomHash: await computeIbcDenomHash(fullDenom),
-    displayName: presentation.displayName,
-    displaySymbol: presentation.displaySymbol,
-    displayDescription: presentation.displayDescription,
+    displayName: metadata?.name ?? presentation.displayName,
+    displaySymbol: metadata?.ticker ?? presentation.displaySymbol,
+    displayDescription: metadata?.description ?? presentation.displayDescription,
+    description: metadata?.description ?? presentation.displayDescription,
+    ticker: metadata?.ticker ?? presentation.displaySymbol,
+    decimals: metadata?.decimals ?? null,
+    url: metadata?.url ?? null,
+    logo: metadata?.logo ?? null,
+    metadataVersion: metadata?.version ?? null,
   };
 }
 
@@ -374,7 +550,7 @@ function parseCardanoAssetId(assetId: string): {
 }
 
 function getBucketIndexForHash(hash: string): number {
-  if (!/^[0-9a-f]{64}$/i.test(hash)) {
+  if (!new RegExp(`^[0-9a-f]{${VOUCHER_DENOM_HASH_HEX_LENGTH}}$`, 'i').test(hash)) {
     throw new Error(`Invalid voucher hash for trace-registry lookup: ${hash}`);
   }
   return Number.parseInt(hash[0], 16);
@@ -563,6 +739,28 @@ export function createTraceRegistryClient(
     return matches[0] ?? null;
   }
 
+  async function resolveVoucherMetadata(
+    voucherPolicyId: string,
+    voucherDenomHash: string,
+  ): Promise<Cip68VoucherMetadata | null> {
+    const context = await loadRegistryContext();
+    const referenceAssetId = deriveVoucherReferenceAssetId(
+      voucherPolicyId,
+      voucherDenomHash,
+    );
+    const referenceUtxo = await context.provider.getUtxoByUnit(referenceAssetId);
+
+    if (!referenceUtxo?.datum) {
+      return null;
+    }
+
+    try {
+      return decodeVoucherCip68MetadataDatum(referenceUtxo.datum, context.Lucid);
+    } catch {
+      return null;
+    }
+  }
+
   async function findAllVoucherEntries(): Promise<TraceRegistryEntry[]> {
     const context = await loadRegistryContext();
     const shardsPerBucket = await Promise.all(
@@ -614,7 +812,16 @@ export function createTraceRegistryClient(
       );
     }
 
-    const entry = await findVoucherEntryByHash(parsed.assetNameHex);
+    const parsedVoucherAssetName = parseVoucherAssetName(parsed.assetNameHex);
+    if (!parsedVoucherAssetName) {
+      return buildNativeAssetTrace(
+        parsed.assetId,
+        parsed.assetId,
+        parsed.assetId,
+      );
+    }
+
+    const entry = await findVoucherEntryByHash(parsedVoucherAssetName.voucherDenomHash);
     if (!entry) {
       return buildNativeAssetTrace(
         parsed.assetId,
@@ -623,10 +830,12 @@ export function createTraceRegistryClient(
       );
     }
 
+    const metadata = await resolveVoucherMetadata(voucherPolicyId, entry.voucher_hash);
     return await mapVoucherTrace(
       parsed.assetId,
       entry.voucher_hash,
       entry.full_denom,
+      metadata,
       voucherPolicyId,
     );
   }
@@ -654,10 +863,12 @@ export function createTraceRegistryClient(
       return null;
     }
 
+    const metadata = await resolveVoucherMetadata(voucherPolicyId, match.voucher_hash);
     return mapVoucherTrace(
-      `${voucherPolicyId}${match.voucher_hash}`.toLowerCase(),
+      `${voucherPolicyId}${buildVoucherUserTokenNameFromDenomHash(match.voucher_hash)}`.toLowerCase(),
       match.voucher_hash,
       match.full_denom,
+      metadata,
       voucherPolicyId,
     );
   }
@@ -668,11 +879,12 @@ export function createTraceRegistryClient(
     const entries = await findAllVoucherEntries();
 
     const traces = await Promise.all(
-      entries.map((entry) =>
+      entries.map(async (entry) =>
         mapVoucherTrace(
-          `${voucherPolicyId}${entry.voucher_hash}`.toLowerCase(),
+          `${voucherPolicyId}${buildVoucherUserTokenNameFromDenomHash(entry.voucher_hash)}`.toLowerCase(),
           entry.voucher_hash,
           entry.full_denom,
+          await resolveVoucherMetadata(voucherPolicyId, entry.voucher_hash),
           voucherPolicyId,
         ),
       ),

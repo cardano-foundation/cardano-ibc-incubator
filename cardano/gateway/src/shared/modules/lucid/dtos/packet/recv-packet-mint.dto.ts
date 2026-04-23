@@ -11,6 +11,7 @@ import {
   WithTransferAmount,
   WithTransferModuleSpend,
   WithTransferModuleUtxo,
+  WithVoucherMetadataOutput,
   WithVerifyProof,
 } from './fragments';
 
@@ -35,6 +36,7 @@ export type UnsignedRecvPacketMintDto = WithHostStateUpdate &
   WithChannelSpend &
   WithTransferModuleSpend &
   WithMintVoucherRedeemer &
+  WithVoucherMetadataOutput &
   WithOptionalTraceRegistryUpdate &
   WithTransferAmount &
   WithConstructedAddress &

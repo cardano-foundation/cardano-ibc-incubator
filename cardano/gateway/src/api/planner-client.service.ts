@@ -7,6 +7,7 @@ import {
   type ResolvedCardanoAssetTrace,
 } from '@cardano-ibc/planner';
 import { DenomTraceService } from '~@/query/services/denom-trace.service';
+import { parseVoucherAssetName } from '~@/shared/helpers/voucher-asset';
 
 const CARDANO_POLICY_ID_HEX_LENGTH = 56;
 
@@ -67,7 +68,12 @@ export class PlannerClientService {
 
     const policyId = normalized.slice(0, CARDANO_POLICY_ID_HEX_LENGTH);
     const voucherTokenName = normalized.slice(CARDANO_POLICY_ID_HEX_LENGTH);
-    const trace = await this.denomTraceService.findByHash(voucherTokenName);
+    const parsedVoucherAssetName = parseVoucherAssetName(voucherTokenName);
+    if (parsedVoucherAssetName?.kind !== 'ft') {
+      return null;
+    }
+
+    const trace = await this.denomTraceService.findByHash(parsedVoucherAssetName.voucherDenomHash);
     if (!trace || trace.voucher_policy_id?.toLowerCase() !== policyId) {
       return null;
     }
@@ -75,9 +81,7 @@ export class PlannerClientService {
     return {
       path: trace.path,
       baseDenom: trace.base_denom,
-      fullDenom: trace.path
-        ? `${trace.path}/${trace.base_denom}`
-        : trace.base_denom,
+      fullDenom: trace.full_denom,
     };
   }
 }
