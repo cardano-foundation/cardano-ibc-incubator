@@ -16,6 +16,7 @@ use ibc/apps/transfer/trace_registry.{
   Directory, InsertTrace, RolloverInsertTrace, Shard, TraceRegistryDatum,
   TraceRegistryDirectoryBucket, TraceRegistryRedeemer, bucket_index_for_hash,
 }
+use ibc/apps/transfer/voucher_metadata as voucher_metadata_datum
 use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
 use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/types/coin as transfer_coin
@@ -124,6 +125,8 @@ validator mint_voucher(
           valid_minted_tokens?,
           metadata_output_valid(
             outputs,
+            prefixed_denom,
+            user_token_name,
             voucher_minting_policy_id,
             reference_token_name,
             voucher_metadata_script_hash,
@@ -275,6 +278,8 @@ validator mint_voucher(
           valid_sender,
           metadata_output_valid(
             outputs,
+            data.denom,
+            user_token_name,
             voucher_minting_policy_id,
             reference_token_name,
             voucher_metadata_script_hash,
@@ -627,6 +632,8 @@ fn positive_voucher_mint_matches(
 
 fn metadata_output_valid(
   outputs: List<Output>,
+  full_denom: ByteArray,
+  user_token_name: AssetName,
   voucher_policy_id: PolicyId,
   reference_token_name: AssetName,
   voucher_metadata_script_hash: crypto.ScriptHash,
@@ -652,10 +659,16 @@ fn metadata_output_valid(
           expect [policy_id] = metadata_output.value |> assets.without_lovelace |> assets.policies()
           expect [token_name] =
             assets.tokens(metadata_output.value, voucher_policy_id) |> dict.keys()
-          expect InlineDatum(_) = metadata_output.datum
+          expect InlineDatum(metadata_datum) = metadata_output.datum
 
           policy_id == voucher_policy_id &&
-            token_name == reference_token_name
+            token_name == reference_token_name &&
+            metadata_datum ==
+              voucher_metadata_datum.build_datum(
+                full_denom,
+                user_token_name,
+                voucher_policy_id,
+              )
         }
 
         _ -> False

@@ -1,5 +1,9 @@
 import { Logger } from '@nestjs/common';
 import * as Lucid from '@lucid-evolution/lucid';
+import {
+  buildVoucherCip68Metadata,
+  encodeVoucherCip68MetadataDatum,
+} from '../../shared/helpers/cip68-voucher-metadata';
 import { DenomTraceService } from '../services/denom-trace.service';
 import { encodeTraceRegistryDatum } from '../../shared/types/trace-registry';
 import { convertString2Hex, hashSHA256 } from '../../shared/helpers/hex';
@@ -49,6 +53,13 @@ describe('DenomTraceService', () => {
       },
       Lucid,
     ),
+  });
+
+  const makeVoucherMetadataUtxo = (datum: string) => ({
+    txHash: 'voucher-metadata',
+    outputIndex: 0,
+    assets: {},
+    datum,
   });
 
   beforeEach(() => {
@@ -293,9 +304,9 @@ describe('DenomTraceService', () => {
       voucher_policy_id: 'mint-voucher-policy-id',
       ibc_denom_hash: hashSHA256(convertString2Hex(atomTrace)).toLowerCase(),
       cip68_reference_asset_id: `mint-voucher-policy-id000643b0${atomHash}`,
-      name: 'ATOM (IBC)',
+      name: 'uatom',
       description: 'IBC voucher for transfer/channel-7/uatom',
-      ticker: 'ATOM',
+      ticker: 'uatom',
     });
 
     await expect(
@@ -310,9 +321,55 @@ describe('DenomTraceService', () => {
       voucher_policy_id: 'mint-voucher-policy-id',
       ibc_denom_hash: hashSHA256(convertString2Hex(osmoTrace)).toLowerCase(),
       cip68_reference_asset_id: `mint-voucher-policy-id000643b0${osmoHash}`,
-      name: 'MYTOKEN (IBC)',
+      name: 'mytoken',
       description: `IBC voucher for ${osmoTrace}`,
-      ticker: 'MYTOKEN',
+      ticker: 'mytoken',
+    });
+  });
+
+  it('ignores voucher metadata datums that do not match the queried voucher', async () => {
+    const fullDenom = 'transfer/channel-7/uatom';
+    const hash = `0${'c'.repeat(55)}`;
+    const referenceAssetId = `mint-voucher-policy-id000643b0${hash}`;
+    const nonCanonicalMetadata = buildVoucherCip68Metadata({
+      path: 'transfer/channel-404',
+      baseDenom: 'uosmo',
+      fullDenom: 'transfer/channel-404/uosmo',
+      voucherTokenName: `0014df10${hash}`,
+      voucherPolicyId: 'mint-voucher-policy-id',
+      ibcDenomHash: 'f'.repeat(64),
+    });
+
+    lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
+      if (unit === 'trace-shard-policy00') {
+        return makeShardUtxo([{ voucher_hash: hash, full_denom: fullDenom }], 0);
+      }
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          { bucket_index: 0n, active_shard_name: '00', archived_shard_names: [] },
+        ]);
+      }
+      if (unit === referenceAssetId) {
+        return makeVoucherMetadataUtxo(
+          encodeVoucherCip68MetadataDatum(nonCanonicalMetadata, Lucid),
+        );
+      }
+      throw new Error(`unexpected unit lookup: ${unit}`);
+    });
+
+    await expect(service.findByHash(hash)).resolves.toEqual({
+      hash,
+      path: 'transfer/channel-7',
+      base_denom: 'uatom',
+      full_denom: fullDenom,
+      voucher_token_name: `0014df10${hash}`,
+      voucher_reference_token_name: `000643b0${hash}`,
+      voucher_policy_id: 'mint-voucher-policy-id',
+      ibc_denom_hash: hashSHA256(convertString2Hex(fullDenom)).toLowerCase(),
+      cip68_reference_asset_id: referenceAssetId,
+      name: 'uatom',
+      description: `IBC voucher for ${fullDenom}`,
+      ticker: 'uatom',
     });
   });
 

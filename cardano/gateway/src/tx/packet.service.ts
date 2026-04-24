@@ -92,11 +92,11 @@ import { queryNetworkTipPoint } from '../shared/helpers/time';
 import { getGatewayModuleConfigForPortId } from '@shared/helpers/module-port';
 import { buildVoucherCip68Metadata, encodeVoucherCip68MetadataDatum } from '../shared/helpers/cip68-voucher-metadata';
 import {
+  buildIbcDenomHashFromFullDenom,
   buildVoucherDenomHashFromFullDenom,
   buildVoucherReferenceTokenNameFromDenomHash,
   buildVoucherUserTokenNameFromDenomHash,
 } from '../shared/helpers/voucher-asset';
-import { VOUCHER_METADATA_REGISTRY } from '../shared/helpers/voucher-metadata-registry';
 import {
   buildUnsignedSendPacketTx as buildUnsignedSendPacketTxWithPackage,
   type SendPacketOperator as SharedSendPacketOperator,
@@ -3135,8 +3135,7 @@ export class PacketService {
       fullDenom,
       voucherTokenName,
       voucherPolicyId,
-      ibcDenomHash: hashSHA256(convertString2Hex(fullDenom)).toLowerCase(),
-      curated: VOUCHER_METADATA_REGISTRY[fullDenom],
+      ibcDenomHash: buildIbcDenomHashFromFullDenom(fullDenom),
     });
 
     return {

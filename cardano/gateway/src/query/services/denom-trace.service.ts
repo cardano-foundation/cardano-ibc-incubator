@@ -4,14 +4,13 @@ import { TxBuilder, UTxO } from "@lucid-evolution/lucid";
 import { PaginationKeyDto } from "../dtos/pagination.dto";
 import { MetricsService } from "../../health/metrics.service";
 import {
-  convertString2Hex,
-  hashSHA256,
   hashSha3_256,
 } from "../../shared/helpers/hex";
-import { decodeVoucherCip68MetadataDatum } from "../../shared/helpers/cip68-voucher-metadata";
+import { decodeVerifiedVoucherCip68MetadataDatum } from "../../shared/helpers/cip68-voucher-metadata";
 import { splitFullDenomTrace } from "../../shared/helpers/denom-trace";
 import { deriveVoucherPresentation } from "../../shared/helpers/voucher-presentation";
 import {
+  buildIbcDenomHashFromFullDenom,
   buildVoucherDenomHashFromFullDenom,
   buildVoucherReferenceTokenNameFromDenomHash,
   buildVoucherUserTokenNameFromDenomHash,
@@ -981,7 +980,7 @@ export class DenomTraceService {
       hash,
     );
     const presentation = deriveVoucherPresentation(fullDenom, trace.baseDenom);
-    const metadata = await this.resolveVoucherMetadata(hash);
+    const metadata = await this.resolveVoucherMetadata(hash, fullDenom);
 
     return {
       hash: hash.toLowerCase(),
@@ -1008,7 +1007,7 @@ export class DenomTraceService {
   }
 
   private computeIbcDenomHashFromFullDenom(fullDenom: string): string {
-    return hashSHA256(convertString2Hex(fullDenom)).toLowerCase();
+    return buildIbcDenomHashFromFullDenom(fullDenom);
   }
 
   private computeVoucherHashFromFullDenom(fullDenom: string): string {
@@ -1017,9 +1016,12 @@ export class DenomTraceService {
 
   private async resolveVoucherMetadata(
     voucherDenomHash: string,
-  ): Promise<ReturnType<typeof decodeVoucherCip68MetadataDatum> | null> {
+    fullDenom: string,
+  ): Promise<ReturnType<typeof decodeVerifiedVoucherCip68MetadataDatum> | null> {
+    const trace = splitFullDenomTrace(fullDenom);
+    const voucherPolicyId = this.getVoucherPolicyId();
     const referenceAssetId = deriveVoucherReferenceAssetId(
-      this.getVoucherPolicyId(),
+      voucherPolicyId,
       voucherDenomHash,
     );
 
@@ -1028,8 +1030,18 @@ export class DenomTraceService {
       if (!utxo?.datum) {
         return null;
       }
-      return decodeVoucherCip68MetadataDatum(
+      return decodeVerifiedVoucherCip68MetadataDatum(
         utxo.datum,
+        {
+          path: trace.path,
+          baseDenom: trace.baseDenom,
+          fullDenom,
+          voucherTokenName: buildVoucherUserTokenNameFromDenomHash(
+            voucherDenomHash,
+          ),
+          voucherPolicyId,
+          ibcDenomHash: this.computeIbcDenomHashFromFullDenom(fullDenom),
+        },
         this.lucidService.LucidImporter,
       );
     } catch (error) {

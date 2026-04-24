@@ -1,12 +1,12 @@
 import { deriveVoucherPresentation } from './voucher-presentation';
 
 describe('deriveVoucherPresentation', () => {
-  it('strips micro-prefixes for common base denoms', () => {
+  it('uses the final base-denom segment for both display name and symbol', () => {
     expect(
       deriveVoucherPresentation('transfer/channel-7/uatom', 'uatom'),
     ).toEqual({
-      displayName: 'ATOM (IBC)',
-      displaySymbol: 'ATOM',
+      displayName: 'uatom',
+      displaySymbol: 'uatom',
       displayDescription: 'IBC voucher for transfer/channel-7/uatom',
     });
   });
@@ -15,7 +15,7 @@ describe('deriveVoucherPresentation', () => {
     expect(
       deriveVoucherPresentation('transfer/channel-3/gamm/pool/1', 'gamm/pool/1'),
     ).toEqual({
-      displayName: '1 (IBC)',
+      displayName: '1',
       displaySymbol: '1',
       displayDescription: 'IBC voucher for transfer/channel-3/gamm/pool/1',
     });

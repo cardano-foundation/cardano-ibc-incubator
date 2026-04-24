@@ -20,6 +20,8 @@
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "paths": {
+      "@cardano-ibc/trace-registry": ["../../packages/cardano-ibc-trace-registry/src/index.ts"],
+      "@cardano-ibc/trace-registry/*": ["../../packages/cardano-ibc-trace-registry/src/*"],
       "~@/*": ["src/*"],
       "@shared/*": ["src/shared/*"],
       "@utils/*": ["src/utils/*"],

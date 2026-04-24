@@ -15,6 +15,7 @@ use ibc/apps/transfer/trace_registry.{
   TraceRegistryDirectoryDatum, TraceRegistryEntry, TraceRegistryShardDatum,
   bucket_index_for_hash,
 }
+use ibc/apps/transfer/voucher_metadata
 use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
@@ -191,13 +192,22 @@ fn make_shard_spend_input(
 
 fn make_metadata_output(
   voucher_metadata_script_hash: crypto.ScriptHash,
+  full_denom: ByteArray,
   voucher_policy_id: PolicyId,
+  voucher_token_name: ByteArray,
   reference_token_name: ByteArray,
 ) -> Output {
   Output {
     address: from_script(voucher_metadata_script_hash),
     value: from_asset(voucher_policy_id, reference_token_name, 1),
-    datum: InlineDatum(Void),
+    datum:
+      InlineDatum(
+        voucher_metadata.build_datum(
+          full_denom,
+          voucher_token_name,
+          voucher_policy_id,
+        ),
+      ),
     reference_script: None,
   }
 }
@@ -311,7 +321,146 @@ test test_mint_voucher() {
   let metadata_output =
     make_metadata_output(
       mock_data.voucher_metadata_script_hash,
+      prefixed_denom,
       mock_data.voucher_minting_policy_id,
+      token_name,
+      reference_token_name,
+    )
+
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock_data.module_input, active_shard_input],
+      reference_inputs: [directory_input],
+      outputs: [voucher_output, metadata_output],
+      redeemers,
+      mint,
+    }
+
+  minting_voucher.mint_voucher.mint(
+    mock_data.module_token,
+    mock_data.directory_auth_token,
+    mock_data.voucher_metadata_script_hash,
+    mint_voucher_redeemer,
+    mock_data.voucher_minting_policy_id,
+    transaction,
+  )
+}
+
+test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
+  let mock_data = prepare_mock_data()
+
+  let packet_source_port = "transfer"
+  let packet_source_channel = "channel-1"
+  let packet_dest_port = "port-99"
+  let packet_dest_channel = "channel-99"
+
+  let mint_voucher_redeemer =
+    MintVoucher {
+      packet_source_port,
+      packet_source_channel,
+      packet_dest_port,
+      packet_dest_channel,
+    }
+
+  let transfer_amount = 100
+
+  let receiver =
+    #"3532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232"
+
+  let ftpd =
+    FungibleTokenPacketData {
+      denom: "ibc/usdt",
+      amount: string.from_int(transfer_amount) |> string.to_bytearray(),
+      sender: "cosmos sender address",
+      receiver,
+      memo: "",
+    }
+
+  let packet_data = TransferModuleData(ftpd)
+
+  let spend_module_redeemer =
+    Callback(
+      OnRecvPacket {
+        channel_id: packet_dest_channel,
+        acknowledgement: acknowledgement.new_result_acknowledgement(#[1]),
+        data: packet_data,
+      },
+    )
+
+  let purpose = Mint(mock_data.voucher_minting_policy_id)
+
+  let source_prefix =
+    transfer_coin.get_denom_prefix(packet_dest_port, packet_dest_channel)
+  let prefixed_denom = bytearray.concat(source_prefix, ftpd.denom)
+  let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(prefixed_denom)
+  let token_name =
+    voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_denom_hash)
+  let reference_token_name =
+    voucher_asset_name.voucher_reference_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+  let bucket_index = bucket_index_for_hash(voucher_denom_hash)
+  let active_shard_name = "active-shard-0a"
+  let directory_input =
+    make_directory_input(
+      mock_data.directory_auth_token,
+      bucket_index,
+      active_shard_name,
+    )
+  let active_shard_input =
+    make_shard_spend_input(
+      mock_data.directory_auth_token.policy_id,
+      active_shard_name,
+      bucket_index,
+    )
+  let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
+  let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
+  let trace_registry_redeemer_in_data: Redeemer =
+    InsertTrace { voucher_hash: voucher_denom_hash, full_denom: prefixed_denom }
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(purpose, mint_voucher_redeemer_in_data),
+      Pair(
+        Spend(mock_data.module_input.output_reference),
+        spend_module_redeemer_in_data,
+      ),
+      Pair(
+        Spend(active_shard_input.output_reference),
+        trace_registry_redeemer_in_data,
+      ),
+    ]
+
+  let mint =
+    from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
+      |> assets.add(
+        mock_data.voucher_minting_policy_id,
+        reference_token_name,
+        1,
+      )
+
+  expect Some(receiver_public_key_hash) =
+    string_utils.hex_string_to_bytes(receiver)
+
+  let voucher_output =
+    Output {
+      address: from_verification_key(receiver_public_key_hash),
+      value:
+        from_asset(
+          mock_data.voucher_minting_policy_id,
+          token_name,
+          transfer_amount,
+        ),
+      datum: NoDatum,
+      reference_script: None,
+    }
+  let metadata_output =
+    make_metadata_output(
+      mock_data.voucher_metadata_script_hash,
+      "transfer/channel-404/ibc/usdt",
+      mock_data.voucher_minting_policy_id,
+      token_name,
       reference_token_name,
     )
 
