@@ -19,6 +19,10 @@ type DeploymentValidator = {
   refUtxo: RefUtxo;
 };
 
+type DeploymentVoucherMetadata = {
+  address: string;
+};
+
 type DeploymentSpendChannelValidator = DeploymentValidator & {
   refValidator: {
     acknowledge_packet: DeploymentRefValidator;
@@ -70,7 +74,7 @@ export type DeploymentConfig = {
     mintConnectionStt: DeploymentValidator;
     mintChannelStt: DeploymentValidator;
     mintVoucher: DeploymentValidator;
-    voucherMetadata?: DeploymentValidator;
+    voucherMetadata?: DeploymentVoucherMetadata;
   };
   modules: {
     handler: DeploymentModule;
@@ -100,6 +104,10 @@ type BridgeManifestValidator = {
   script_hash: string;
   address: string;
   ref_utxo: BridgeManifestRefUtxo;
+};
+
+type BridgeManifestVoucherMetadata = {
+  address: string;
 };
 
 type BridgeManifestSpendChannelValidator = BridgeManifestValidator & {
@@ -160,7 +168,10 @@ export type BridgeManifest = {
     mint_connection_stt: BridgeManifestValidator;
     mint_channel_stt: BridgeManifestValidator;
     mint_voucher: BridgeManifestValidator;
-    voucher_metadata?: BridgeManifestValidator;
+    // The runtime only needs the target script address for the immutable
+    // CIP-68 metadata output. We intentionally do not expose ref_utxo or
+    // script_hash here because they are not consumed after deployment.
+    voucher_metadata?: BridgeManifestVoucherMetadata;
   };
   modules: {
     handler: BridgeManifestModule;
@@ -276,6 +287,20 @@ function requireManifestValidator(value: unknown, path: string): BridgeManifestV
     script_hash: requireNonEmptyString(validator.script_hash, `${path}.script_hash`),
     address: typeof validator.address === 'string' ? validator.address : '',
     ref_utxo: requireManifestRefUtxo(validator.ref_utxo, `${path}.ref_utxo`),
+  };
+}
+
+function requireDeploymentVoucherMetadata(value: unknown, path: string): DeploymentVoucherMetadata {
+  const validator = requireObject(value, path);
+  return {
+    address: requireNonEmptyString(validator.address, `${path}.address`),
+  };
+}
+
+function requireManifestVoucherMetadata(value: unknown, path: string): BridgeManifestVoucherMetadata {
+  const validator = requireObject(value, path);
+  return {
+    address: requireNonEmptyString(validator.address, `${path}.address`),
   };
 }
 
@@ -451,6 +476,22 @@ function manifestValidatorToDeployment(validator: BridgeManifestValidator): Depl
   };
 }
 
+function deploymentVoucherMetadataToManifest(
+  validator: DeploymentVoucherMetadata,
+): BridgeManifestVoucherMetadata {
+  return {
+    address: validator.address,
+  };
+}
+
+function manifestVoucherMetadataToDeployment(
+  validator: BridgeManifestVoucherMetadata,
+): DeploymentVoucherMetadata {
+  return {
+    address: validator.address,
+  };
+}
+
 function deploymentRefValidatorToManifest(validator: DeploymentRefValidator): BridgeManifestRefValidator {
   return {
     script_hash: validator.scriptHash,
@@ -548,7 +589,7 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
       mintChannelStt: requireDeploymentValidator(validators.mintChannelStt, 'validators.mintChannelStt'),
       mintVoucher: requireDeploymentValidator(validators.mintVoucher, 'validators.mintVoucher'),
       ...(validators.voucherMetadata
-        ? { voucherMetadata: requireDeploymentValidator(validators.voucherMetadata, 'validators.voucherMetadata') }
+        ? { voucherMetadata: requireDeploymentVoucherMetadata(validators.voucherMetadata, 'validators.voucherMetadata') }
         : {}),
     },
     modules: {
@@ -576,7 +617,7 @@ export function normalizeHandlerJsonDeploymentConfig(
   return {
     deployment: normalizedDeployment,
     bridgeManifest: {
-      schema_version: 2,
+      schema_version: 3,
       deployment_id: buildDeploymentId(normalizedCardano, normalizedDeployment.hostStateNFT),
       deployed_at: normalizedDeployment.deployedAt,
       cardano: normalizedCardano,
@@ -605,7 +646,7 @@ export function normalizeHandlerJsonDeploymentConfig(
         mint_voucher: deploymentValidatorToManifest(normalizedDeployment.validators.mintVoucher),
         ...(normalizedDeployment.validators.voucherMetadata
           ? {
-              voucher_metadata: deploymentValidatorToManifest(normalizedDeployment.validators.voucherMetadata),
+              voucher_metadata: deploymentVoucherMetadataToManifest(normalizedDeployment.validators.voucherMetadata),
             }
           : {}),
       },
@@ -662,7 +703,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       mint_channel_stt: requireManifestValidator(validators.mint_channel_stt, 'validators.mint_channel_stt'),
       mint_voucher: requireManifestValidator(validators.mint_voucher, 'validators.mint_voucher'),
       ...(validators.voucher_metadata
-        ? { voucher_metadata: requireManifestValidator(validators.voucher_metadata, 'validators.voucher_metadata') }
+        ? { voucher_metadata: requireManifestVoucherMetadata(validators.voucher_metadata, 'validators.voucher_metadata') }
         : {}),
     },
     modules: {
@@ -676,7 +717,10 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       : {}),
   };
 
-  assert(bridgeManifest.schema_version === 2, 'Invalid bridge config: "schema_version" must be 2');
+  assert(
+    bridgeManifest.schema_version === 2 || bridgeManifest.schema_version === 3,
+    'Invalid bridge config: "schema_version" must be 2 or 3',
+  );
 
   return {
     bridgeManifest,
@@ -707,7 +751,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
         mintVoucher: manifestValidatorToDeployment(bridgeManifest.validators.mint_voucher),
         ...(bridgeManifest.validators.voucher_metadata
           ? {
-              voucherMetadata: manifestValidatorToDeployment(bridgeManifest.validators.voucher_metadata),
+              voucherMetadata: manifestVoucherMetadataToDeployment(bridgeManifest.validators.voucher_metadata),
             }
           : {}),
       },

@@ -541,11 +541,7 @@ export const createDeployment = async (
         refUtxo: refUtxosInfo[mintVoucher.policyId],
       },
       voucherMetadata: {
-        title: "voucher_metadata.voucher_metadata.spend",
-        script: voucherMetadata.validator.script,
-        scriptHash: voucherMetadata.scriptHash,
         address: voucherMetadata.address,
-        refUtxo: refUtxosInfo[voucherMetadata.scriptHash],
       },
       ...(traceRegistryBenchmarkVoucher
         ? {

@@ -429,12 +429,11 @@ export type DeploymentTemplate = {
       address: string;
       refUtxo: UTxO;
     };
+    // Runtime only needs the voucher-metadata script address in order to create
+    // the immutable CIP-68 output. The script/ref UTxO remains a deployment-time
+    // concern for deriving the address and parameterizing mint_voucher.
     voucherMetadata?: {
-      title: string;
-      script: string;
-      scriptHash: string;
       address: string;
-      refUtxo: UTxO;
     };
     mintTraceRegistryBenchmarkVoucher?: {
       title: string;
