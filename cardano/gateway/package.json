@@ -104,8 +104,6 @@
     ],
     "rootDir": "src",
     "moduleNameMapper": {
-      "^@cardano-ibc/trace-registry$": "<rootDir>/../../../packages/cardano-ibc-trace-registry/src/index.ts",
-      "^@cardano-ibc/trace-registry/(.*)$": "<rootDir>/../../../packages/cardano-ibc-trace-registry/src/$1",
       "^src/(.*)$": "<rootDir>/$1",
       "^~@/(.*)$": "<rootDir>/$1",
       "^@shared/(.*)$": "<rootDir>/shared/$1",
