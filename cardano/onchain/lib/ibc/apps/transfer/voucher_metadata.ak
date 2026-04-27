@@ -10,10 +10,7 @@ use ibc/utils/string as string_utils
 pub const voucher_metadata_version = 1
 
 pub type DenomTrace {
-  DenomTrace {
-    path: ByteArray,
-    base_denom: ByteArray,
-  }
+  DenomTrace { path: ByteArray, base_denom: ByteArray }
 }
 
 pub fn build_datum(
@@ -25,37 +22,44 @@ pub fn build_datum(
   let label = canonical_label(denom_trace.base_denom)
 
   let metadata_map =
-    builtin.map_data([
-      Pair(builtin.b_data("name"), builtin.b_data(label)),
-      Pair(builtin.b_data("ticker"), builtin.b_data(label)),
-      Pair(
-        builtin.b_data("description"),
-        builtin.b_data(description(full_denom)),
-      ),
-    ])
+    builtin.map_data(
+      [
+        Pair(builtin.b_data("name"), builtin.b_data(label)),
+        Pair(builtin.b_data("ticker"), builtin.b_data(label)),
+        Pair(
+          builtin.b_data("description"),
+          builtin.b_data(description(full_denom)),
+        ),
+      ],
+    )
 
   let extra_map =
-    builtin.map_data([
-      Pair(builtin.b_data("path"), builtin.b_data(denom_trace.path)),
-      Pair(builtin.b_data("baseDenom"), builtin.b_data(denom_trace.base_denom)),
-      Pair(builtin.b_data("fullDenom"), builtin.b_data(full_denom)),
-      Pair(
-        builtin.b_data("ibcDenomHash"),
-        builtin.b_data(ibc_denom_hash(full_denom)),
-      ),
-      Pair(
-        builtin.b_data("traceVersion"),
-        builtin.i_data(voucher_metadata_version),
-      ),
-      Pair(
-        builtin.b_data("voucherPolicyId"),
-        builtin.b_data(voucher_policy_id),
-      ),
-      Pair(
-        builtin.b_data("voucherTokenName"),
-        builtin.b_data(voucher_token_name),
-      ),
-    ])
+    builtin.map_data(
+      [
+        Pair(builtin.b_data("path"), builtin.b_data(denom_trace.path)),
+        Pair(
+          builtin.b_data("baseDenom"),
+          builtin.b_data(denom_trace.base_denom),
+        ),
+        Pair(builtin.b_data("fullDenom"), builtin.b_data(full_denom)),
+        Pair(
+          builtin.b_data("ibcDenomHash"),
+          builtin.b_data(ibc_denom_hash(full_denom)),
+        ),
+        Pair(
+          builtin.b_data("traceVersion"),
+          builtin.i_data(voucher_metadata_version),
+        ),
+        Pair(
+          builtin.b_data("voucherPolicyId"),
+          builtin.b_data(hex_ascii(voucher_policy_id)),
+        ),
+        Pair(
+          builtin.b_data("voucherTokenName"),
+          builtin.b_data(hex_ascii(voucher_token_name)),
+        ),
+      ],
+    )
 
   builtin.constr_data(
     0,
@@ -86,7 +90,10 @@ fn do_split_full_denom_trace(
       }
     [maybe_port, maybe_channel, ..rest] ->
       if chan_keys_mod.is_valid_channel_id(maybe_channel) {
-        do_split_full_denom_trace(rest, [maybe_channel, maybe_port, ..reversed_path_segments])
+        do_split_full_denom_trace(
+          rest,
+          [maybe_channel, maybe_port, ..reversed_path_segments],
+        )
       } else {
         DenomTrace {
           path: join_segments(list.reverse(reversed_path_segments)),
@@ -121,6 +128,11 @@ fn description(full_denom: ByteArray) -> ByteArray {
 
 fn ibc_denom_hash(full_denom: ByteArray) -> ByteArray {
   crypto.sha2_256(full_denom)
+    |> hex_ascii
+}
+
+fn hex_ascii(bytes: ByteArray) -> ByteArray {
+  bytes
     |> bytearray.to_hex
     |> string.to_bytearray
     |> ascii_lower

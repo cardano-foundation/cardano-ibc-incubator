@@ -1,4 +1,3 @@
-import { Constr } from '@lucid-evolution/lucid';
 import { blake2b } from '@noble/hashes/blake2b';
 import { sha256 } from '@noble/hashes/sha256';
 
@@ -57,6 +56,7 @@ export type BuildVoucherMetadataParams = {
 };
 
 export type LucidDataModule = {
+  Constr: new (index: number, fields: unknown[]) => unknown;
   Data: {
     from(encodedDatum: string): unknown;
     to(value: unknown, schema?: unknown, options?: unknown): string;
@@ -282,7 +282,7 @@ export function encodeVoucherCip68MetadataDatum(
   ]);
 
   return Lucid.Data.to(
-    new Constr(0, [metadataMap, BigInt(metadata.version), extraMap]),
+    new Lucid.Constr(0, [metadataMap, BigInt(metadata.version), extraMap]),
     undefined,
     { canonical: true },
   );
