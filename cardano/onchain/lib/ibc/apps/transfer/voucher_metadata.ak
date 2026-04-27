@@ -21,6 +21,7 @@ pub fn build_datum(
   let denom_trace = split_full_denom_trace(full_denom)
   let label = canonical_label(denom_trace.base_denom)
 
+  // CIP-68 user-facing metadata; derived on-chain, not relayer-provided.
   let metadata_map =
     builtin.map_data(
       [
@@ -33,6 +34,7 @@ pub fn build_datum(
       ],
     )
 
+  // Non-display fields used by off-chain clients to verify this datum matches the voucher.
   let extra_map =
     builtin.map_data(
       [
@@ -68,6 +70,7 @@ pub fn build_datum(
 }
 
 pub fn split_full_denom_trace(full_denom: ByteArray) -> DenomTrace {
+  // Parse leading port/channel pairs; the remaining suffix is the base denom.
   let normalized = string_utils.trim_space(full_denom)
   expect normalized != ""
 
@@ -104,6 +107,7 @@ fn do_split_full_denom_trace(
 }
 
 fn canonical_label(base_denom: ByteArray) -> ByteArray {
+  // For now, name/ticker are the final slash-separated base-denom segment.
   let trimmed = string_utils.trim_space(base_denom)
   if trimmed == "" {
     "IBC"
@@ -127,11 +131,13 @@ fn description(full_denom: ByteArray) -> ByteArray {
 }
 
 fn ibc_denom_hash(full_denom: ByteArray) -> ByteArray {
+  // ICS-20 hash for off-chain verification; distinct from the CIP-68 name hash.
   crypto.sha2_256(full_denom)
     |> hex_ascii
 }
 
 fn hex_ascii(bytes: ByteArray) -> ByteArray {
+  // Match the TypeScript encoder's lowercase ASCII hex representation.
   bytes
     |> bytearray.to_hex
     |> string.to_bytearray
