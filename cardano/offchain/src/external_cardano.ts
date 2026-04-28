@@ -86,7 +86,6 @@ export function resolveOgmiosHttpUrl(ogmiosUrl: string): string {
 
 function resolveOgmiosWsUrl(ogmiosUrl: string): string {
   const explicitWsUrl = Deno.env.get("OGMIOS_WS_URL")?.trim();
-  const apiKey = Deno.env.get("OGMIOS_API_KEY")?.trim();
   const rawUrl = explicitWsUrl || ogmiosUrl;
 
   try {
@@ -95,10 +94,6 @@ function resolveOgmiosWsUrl(ogmiosUrl: string): string {
       parsedUrl.protocol = "wss:";
     } else if (parsedUrl.protocol === "http:") {
       parsedUrl.protocol = "ws:";
-    }
-
-    if (apiKey && parsedUrl.host.startsWith(`${apiKey}.`)) {
-      parsedUrl.host = parsedUrl.host.replace(`${apiKey}.`, "");
     }
 
     return parsedUrl.toString();
@@ -123,7 +118,6 @@ function resolveOgmiosWsVariants(ogmiosUrl: string): Array<{
   headers?: Record<string, string>;
 }> {
   const rawUrl = resolveOgmiosWsUrl(ogmiosUrl);
-  const apiKey = Deno.env.get("OGMIOS_API_KEY")?.trim();
   const defaultHeaders = resolveOgmiosWsHeaders();
   const variants: Array<{
     url: string;
@@ -145,18 +139,6 @@ function resolveOgmiosWsVariants(ogmiosUrl: string): Array<{
 
   pushVariant(rawUrl);
   pushVariant(rawUrl, defaultHeaders);
-
-  if (apiKey) {
-    try {
-      const parsedUrl = new URL(rawUrl);
-      if (parsedUrl.host.startsWith(`${apiKey}.`)) {
-        parsedUrl.host = parsedUrl.host.replace(`${apiKey}.`, "");
-        pushVariant(parsedUrl.toString(), defaultHeaders);
-      }
-    } catch {
-      // Keep the direct variants when the managed websocket URL cannot be parsed.
-    }
-  }
 
   return variants;
 }

@@ -253,21 +253,24 @@ fn chain_has_any_keys(
         &["keys", "list", "--chain", chain_id],
     )?;
     if !output.status.success() {
-        return Ok(false);
+        return Err(format!(
+            "Failed to list Hermes keys for chain '{}': {}",
+            chain_id,
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+        .into());
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let combined = format!("{}\n{}", stdout, stderr);
-    let lower = combined.to_ascii_lowercase();
+    let lower = stdout.to_ascii_lowercase();
     if lower.contains("no keys found") {
         return Ok(false);
     }
 
-    Ok(combined.contains("inj1")
-        || combined.contains("cosmos1")
-        || combined.contains("osmo1")
-        || !combined.trim().is_empty())
+    Ok(stdout.lines().any(|line| {
+        let trimmed = line.trim();
+        trimmed.starts_with('-') && trimmed.contains("(inj1") && trimmed.ends_with(')')
+    }))
 }
 
 fn create_client_with_retry(
@@ -376,14 +379,110 @@ fn has_open_transfer_channel(
             continue;
         };
 
-        if result
-            .as_array()
-            .is_some_and(|array| array.iter().any(is_open_transfer_channel_entry))
-        {
+        if result.as_array().is_some_and(|array| {
+            array.iter().any(|value| {
+                is_open_transfer_channel_entry(value)
+                    || transfer_channel_candidate_is_open(
+                        hermes_binary,
+                        working_dir,
+                        chain_id,
+                        value,
+                    )
+                    .unwrap_or(false)
+            })
+        }) {
             return Ok(true);
         }
 
-        if is_open_transfer_channel_entry(result) {
+        if is_open_transfer_channel_entry(result)
+            || transfer_channel_candidate_is_open(hermes_binary, working_dir, chain_id, result)?
+        {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+fn transfer_channel_candidate_is_open(
+    hermes_binary: &Path,
+    working_dir: &Path,
+    chain_id: &str,
+    value: &Value,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let channel_id = value
+        .get("channel_id")
+        .or_else(|| value.get("channel_a"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !channel_id.starts_with("channel-") {
+        return Ok(false);
+    }
+
+    let port_id = value
+        .get("port_id")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            value
+                .get("counterparty")
+                .and_then(|counterparty| counterparty.get("port_id"))
+                .and_then(Value::as_str)
+        })
+        .unwrap_or_default();
+    if port_id != "transfer" {
+        return Ok(false);
+    }
+
+    query_channel_end_is_open(hermes_binary, working_dir, chain_id, channel_id, port_id)
+}
+
+fn query_channel_end_is_open(
+    hermes_binary: &Path,
+    working_dir: &Path,
+    chain_id: &str,
+    channel_id: &str,
+    port_id: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let output = Command::new(hermes_binary)
+        .current_dir(working_dir)
+        .args([
+            "--json",
+            "query",
+            "channel",
+            "end",
+            "--chain",
+            chain_id,
+            "--port",
+            port_id,
+            "--channel",
+            channel_id,
+        ])
+        .output()?;
+
+    if !output.status.success() {
+        verbose(&format!(
+            "Hermes channel end query failed for {} {} on {}: {}",
+            port_id,
+            channel_id,
+            chain_id,
+            String::from_utf8_lossy(&output.stderr)
+        ));
+        return Ok(false);
+    }
+
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let Ok(entry) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let Some(result) = entry.get("result") else {
+            continue;
+        };
+        let state = result
+            .get("state")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if state == "open" {
             return Ok(true);
         }
     }

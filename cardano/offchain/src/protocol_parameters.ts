@@ -219,14 +219,15 @@ export async function buildLucidWithCompatibleProtocolParameters(
   networkMagic: string,
 ): Promise<LucidEvolution> {
   const chainZeroTime = await querySystemStart(ogmiosUrl);
-  SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
+  const cardanoNetwork = parseNetwork(networkMagic);
+  SLOT_CONFIG_NETWORK[cardanoNetwork].zeroTime = chainZeroTime;
   const protocolParameters = sanitizeProtocolParameters(
     await queryProtocolParametersCompat(ogmiosUrl),
   );
 
   return await Lucid(
     provider as any,
-    parseNetwork(networkMagic),
+    cardanoNetwork,
     {
       presetProtocolParameters: protocolParameters,
     } as any,

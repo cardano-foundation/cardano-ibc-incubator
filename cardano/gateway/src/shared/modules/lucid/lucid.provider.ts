@@ -2,7 +2,6 @@ import { ConfigService } from '@nestjs/config';
 import { querySystemStart, queryTransactionInclusionBlockHeight } from '../../helpers/time';
 import { Network } from '@lucid-evolution/lucid';
 import { applyDoubleCborEncoding } from '@lucid-evolution/utils';
-import { writeFileSync } from 'fs';
 import {
   installManagedCardanoAuthFetch,
   resolveManagedKupmiosHeaders,
@@ -53,6 +52,8 @@ const TRANSIENT_RUNTIME_PROVIDER_ERROR_MARKERS = [
   'unauthorized',
   'statuscode: non 2xx status code : unauthorized',
   '401',
+  '429',
+  'unexpected server response: 429',
   '500 post',
   '502 post',
   '503 post',
@@ -251,6 +252,25 @@ export function isNonRetryableRuntimeProviderError(error: unknown): boolean {
   );
 }
 
+export function isTransientRuntimeProviderError(error: unknown): boolean {
+  if (isNonRetryableRuntimeProviderError(error)) {
+    return false;
+  }
+
+  const normalizedSignals = collectErrorSignals(error).map((signal) =>
+    signal.toLowerCase(),
+  );
+  if (normalizedSignals.length === 0) {
+    return false;
+  }
+
+  return normalizedSignals.some((signal) =>
+    TRANSIENT_RUNTIME_PROVIDER_ERROR_MARKERS.some((marker) =>
+      signal.includes(marker),
+    ),
+  );
+}
+
 function describeRuntimeProviderError(error: unknown): string {
   const signals = collectErrorSignals(error);
   const normalized = signals.join('\n');
@@ -293,25 +313,6 @@ function describeRuntimeProviderError(error: unknown): string {
   return parts.join('; ');
 }
 
-export function isTransientRuntimeProviderError(error: unknown): boolean {
-  if (isNonRetryableRuntimeProviderError(error)) {
-    return false;
-  }
-
-  const normalizedSignals = collectErrorSignals(error).map((signal) =>
-    signal.toLowerCase(),
-  );
-  if (normalizedSignals.length === 0) {
-    return false;
-  }
-
-  return normalizedSignals.some((signal) =>
-    TRANSIENT_RUNTIME_PROVIDER_ERROR_MARKERS.some((marker) =>
-      signal.includes(marker),
-    ),
-  );
-}
-
 function computeJitteredBackoffDelayMs(failedAttempt: number): number {
   const backoffDelay =
     PROTOCOL_PARAMETERS_BASE_DELAY_MS * 2 ** Math.max(0, failedAttempt - 1);
@@ -350,9 +351,45 @@ type KupoScript = {
   script: string;
 } | null;
 
-const KUPMIOs_LOOKUP_ATTEMPTS = 10;
-const KUPMIOS_LOOKUP_BASE_DELAY_MS = 300;
-const KUPMIOS_LOOKUP_MAX_DELAY_MS = 3000;
+const DEFAULT_KUPMIOS_LOOKUP_MAX_ATTEMPTS = 30;
+const KUPMIOS_LOOKUP_BASE_DELAY_MS = 500;
+const KUPMIOS_LOOKUP_MAX_DELAY_MS = 5000;
+
+class KupoFetchError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'KupoFetchError';
+  }
+}
+
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+  const parsed = Number(process.env[name]);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function isRetryableKupoLookupError(error: Error): boolean {
+  if (error instanceof KupoFetchError) {
+    return (
+      error.status === 401 ||
+      error.status === 408 ||
+      error.status === 425 ||
+      error.status === 429 ||
+      error.status >= 500
+    );
+  }
+
+  return isTransientRuntimeProviderError(error);
+}
+
+function computeKupoLookupDelayMs(failedAttempt: number): number {
+  const backoffDelay =
+    KUPMIOS_LOOKUP_BASE_DELAY_MS * 2 ** Math.max(0, failedAttempt - 1);
+  const jitterMultiplier = 0.8 + Math.random() * 0.4;
+  return Math.round(Math.min(backoffDelay, KUPMIOS_LOOKUP_MAX_DELAY_MS) * jitterMultiplier);
+}
 
 function toAssets(value: KupoValue): Record<string, bigint> {
   const assets: Record<string, bigint> = { lovelace: BigInt(value.coins) };
@@ -382,21 +419,30 @@ function toScriptRef(script: KupoScript | undefined): any {
 async function fetchJson<T>(url: string, headers?: Record<string, string>): Promise<T> {
   let attempt = 1;
   let lastError: Error | undefined;
+  const maxAttempts = readPositiveIntegerEnv(
+    'KUPMIOS_LOOKUP_MAX_ATTEMPTS',
+    DEFAULT_KUPMIOS_LOOKUP_MAX_ATTEMPTS,
+  );
   const requestHeaders = { ...(headers ?? {}) };
   try {
     const parsedUrl = new URL(url);
+    const configuredKupoApiKey = process.env.KUPO_API_KEY;
+    const usesAuthenticatedDemeterHost = configuredKupoApiKey
+      ? parsedUrl.host.startsWith(`${configuredKupoApiKey}.`)
+      : false;
     if (
       parsedUrl.host.includes('kupo-m1.dmtr.host') &&
+      !usesAuthenticatedDemeterHost &&
       !requestHeaders['dmtr-api-key'] &&
-      process.env.KUPO_API_KEY
+      configuredKupoApiKey
     ) {
-      requestHeaders['dmtr-api-key'] = process.env.KUPO_API_KEY;
+      requestHeaders['dmtr-api-key'] = configuredKupoApiKey;
     }
   } catch {
     // Let fetch surface malformed URLs below.
   }
 
-  while (attempt <= KUPMIOs_LOOKUP_ATTEMPTS) {
+  while (attempt <= maxAttempts) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
 
@@ -407,19 +453,21 @@ async function fetchJson<T>(url: string, headers?: Record<string, string>): Prom
       });
       if (!response.ok) {
         const body = await response.text().catch(() => '');
-        throw new Error(
+        throw new KupoFetchError(
+          response.status,
           `HTTP ${response.status} GET ${url} authHeader=${requestHeaders['dmtr-api-key'] ? 'set' : 'missing'}${body ? `: ${body}` : ''}`,
         );
       }
       return (await response.json()) as T;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      if (attempt >= KUPMIOs_LOOKUP_ATTEMPTS) {
-        break;
+      if (!isRetryableKupoLookupError(lastError) || attempt >= maxAttempts) {
+        throw lastError;
       }
-      const delayMs = Math.min(
-        KUPMIOS_LOOKUP_BASE_DELAY_MS * 2 ** (attempt - 1),
-        KUPMIOS_LOOKUP_MAX_DELAY_MS,
+
+      const delayMs = computeKupoLookupDelayMs(attempt);
+      console.warn(
+        `[runtime] Kupo GET failed with retryable provider error (attempt ${attempt}/${maxAttempts}): ${summarizeError(lastError)}. Retrying in ${delayMs}ms`,
       );
       await sleep(delayMs);
       attempt += 1;
@@ -699,156 +747,13 @@ export const LucidClient = {
         );
       };
     }
-    // DEBUG: `TxBuilder.complete()` uses `provider.evaluateTx(...)` to ask Ogmios for script
-    // execution units. When evaluation fails, Lucid throws before we can decode the final
-    // transaction body, which makes errors like `Spend[2]` hard to map to actual inputs.
-    //
-    // By logging the transaction's input ordering *at the evaluation boundary*, we can
-    // deterministically map `purpose=spend,index=N` to a concrete `txHash#ix` and then
-    // identify which validator/UTxO is failing (HostState vs connection vs wallet input).
     const originalEvaluateTx = provider.evaluateTx?.bind(provider);
     if (typeof originalEvaluateTx === 'function') {
-      provider.evaluateTx = async (tx: string, additionalUTxOs?: any[]) => {
-        try {
-          return await retryRuntimeProviderOperation(
-            () => originalEvaluateTx(tx, additionalUTxOs),
-            'Kupmios.evaluateTx',
-          );
-        } catch (error) {
-          try {
-            const dumpId = Date.now();
-            const dumpTxPath = `/tmp/gateway-evaluateTx-failure-${dumpId}.tx`;
-            const dumpContextPath = `/tmp/gateway-evaluateTx-failure-${dumpId}.context.json`;
-            const latestTxPath = '/tmp/gateway-evaluateTx-last-failure.tx';
-            const latestContextPath = '/tmp/gateway-evaluateTx-last-failure.context.json';
-
-            writeFileSync(dumpTxPath, Buffer.from(tx, 'hex'));
-            writeFileSync(latestTxPath, Buffer.from(tx, 'hex'));
-            console.error(`[DEBUG] Kupmios.evaluateTx dumped failing tx to ${dumpTxPath}`);
-            console.error(`[DEBUG] Kupmios.evaluateTx updated latest failing tx at ${latestTxPath}`);
-
-            try {
-              const dumpContext = {
-                error:
-                  error instanceof Error
-                    ? {
-                        name: error.name,
-                        message: error.message,
-                        stack: error.stack,
-                      }
-                    : String(error),
-                additionalUTxOs: additionalUTxOs ?? [],
-              };
-              const dumpContextJson = JSON.stringify(
-                dumpContext,
-                (_key, value) => (typeof value === 'bigint' ? value.toString() : value),
-                2,
-              );
-              writeFileSync(dumpContextPath, dumpContextJson);
-              writeFileSync(latestContextPath, dumpContextJson);
-              console.error(`[DEBUG] Kupmios.evaluateTx dumped failure context to ${dumpContextPath}`);
-              console.error(`[DEBUG] Kupmios.evaluateTx updated latest failure context at ${latestContextPath}`);
-            } catch (contextError) {
-              console.error(`[DEBUG] Kupmios.evaluateTx failed to dump additionalUTxOs:`, contextError);
-            }
-
-            const CML = (Lucid as any)?.CML;
-            if (CML?.Transaction?.from_cbor_hex) {
-              const parsedTx = CML.Transaction.from_cbor_hex(tx);
-              const body = parsedTx.body();
-
-              const inputs = body.inputs();
-              const inputRefs: string[] = [];
-              for (let i = 0; i < inputs.len(); i += 1) {
-                const input = inputs.get(i);
-                inputRefs.push(`${input.transaction_id().to_hex()}#${input.index()}`);
-              }
-
-              const referenceInputs = body.reference_inputs();
-              const refInputRefs: string[] = [];
-              if (referenceInputs) {
-                for (let i = 0; i < referenceInputs.len(); i += 1) {
-                  const input = referenceInputs.get(i);
-                  refInputRefs.push(`${input.transaction_id().to_hex()}#${input.index()}`);
-                }
-              }
-
-              console.error(
-                `[DEBUG] Kupmios.evaluateTx failed: tx_cbor_len=${tx.length} head=${tx.substring(0, 120)} inputs(${inputRefs.length})=${inputRefs.join(', ')} reference_inputs(${refInputRefs.length})=${refInputRefs.join(', ')} additionalUTxOs=${additionalUTxOs?.length ?? 0}`,
-              );
-
-              // Best-effort redeemer pointer dump (helps interpret `purpose=spend,index=N`).
-              try {
-                const redeemers = parsedTx.witness_set().redeemers();
-                if (redeemers) {
-                  const mintPolicyIds: string[] = [];
-                  try {
-                    const mint = body.mint();
-                    if (mint) {
-                      const keys = mint.keys();
-                      for (let i = 0; i < keys.len(); i += 1) {
-                        mintPolicyIds.push(keys.get(i).to_hex());
-                      }
-                    }
-                  } catch {
-                    // Best-effort only.
-                  }
-
-                  const lines: string[] = [];
-                  if (redeemers.kind() === CML.RedeemersKind.MapRedeemerKeyToRedeemerVal) {
-                    const m = redeemers.as_map_redeemer_key_to_redeemer_val();
-                    const keys = m.keys();
-                    for (let i = 0; i < keys.len(); i += 1) {
-                      const key = keys.get(i);
-                      const tag = key.tag();
-                      const index = Number(key.index());
-                      const tagName = (CML.RedeemerTag as any)[tag] ?? String(tag);
-                      const inputLabel =
-                        tag === CML.RedeemerTag.Spend
-                          ? inputRefs[index] ?? `<missing input for Spend[${index}]>`
-                          : undefined;
-                      lines.push(inputLabel ? `${tagName}[${index}] -> ${inputLabel}` : `${tagName}[${index}]`);
-                    }
-                  } else {
-                    const legacy = redeemers.as_arr_legacy_redeemer();
-                    if (legacy) {
-                      for (let i = 0; i < legacy.len(); i += 1) {
-                        const r = legacy.get(i);
-                        const tag = r.tag();
-                        const index = Number(r.index());
-                        const tagName = (CML.RedeemerTag as any)[tag] ?? String(tag);
-                        if (tag === CML.RedeemerTag.Spend) {
-                          lines.push(
-                            `${tagName}[${index}] -> ${inputRefs[index] ?? `<missing input for Spend[${index}]>`}`,
-                          );
-                        } else if (tag === CML.RedeemerTag.Mint) {
-                          const policy = mintPolicyIds[index];
-                          lines.push(policy ? `${tagName}[${index}] -> ${policy}` : `${tagName}[${index}]`);
-                        } else {
-                          lines.push(`${tagName}[${index}]`);
-                        }
-                      }
-                    } else {
-                      lines.push(`legacy_redeemers cbor_head=${redeemers.to_cbor_hex().substring(0, 120)}`);
-                    }
-                  }
-                  console.error(`[DEBUG] Kupmios.evaluateTx redeemers(${lines.length}): ${lines.join(', ')}`);
-                }
-              } catch {
-                // Best-effort only: never mask the original error.
-              }
-            } else {
-              console.error(
-                `[DEBUG] Kupmios.evaluateTx failed: tx_cbor_len=${tx.length} head=${tx.substring(0, 120)} additionalUTxOs=${additionalUTxOs?.length ?? 0}`,
-              );
-            }
-          } catch (logError) {
-            console.error(`[DEBUG] Kupmios.evaluateTx failed and could not decode tx:`, logError);
-          }
-
-          throw error;
-        }
-      };
+      provider.evaluateTx = async (tx: string, additionalUTxOs?: any[]) =>
+        retryRuntimeProviderOperation(
+          () => originalEvaluateTx(tx, additionalUTxOs),
+          'Kupmios.evaluateTx',
+        );
     }
 
     const originalSubmitTx = provider.submitTx?.bind(provider);
@@ -895,11 +800,23 @@ export const LucidClient = {
     console.log('[startup] Lucid constructed successfully');
 
     console.log('[startup] Querying Ogmios system start');
-    const chainZeroTime = await retryWithBackoff(
-      () => querySystemStart(configService.get('ogmiosEndpoint')),
-      'Ogmios system start query',
-    );
-    console.log('[startup] Ogmios system start loaded');
+    let chainZeroTime = Lucid.SLOT_CONFIG_NETWORK[network].zeroTime;
+    try {
+      chainZeroTime = await retryWithBackoff(
+        () => querySystemStart(configService.get('ogmiosEndpoint')),
+        'Ogmios system start query',
+      );
+      console.log('[startup] Ogmios system start loaded');
+    } catch (error) {
+      const fallbackPreprodZeroTime = Date.parse('2022-06-01T00:00:00Z');
+      if (network === 'Preprod') {
+        chainZeroTime = fallbackPreprodZeroTime;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[startup] Falling back to configured slot zero time for ${network}: ${chainZeroTime} (${message})`,
+      );
+    }
     Lucid.SLOT_CONFIG_NETWORK[network].zeroTime = chainZeroTime;
     Lucid.SLOT_CONFIG_NETWORK[network].slotLength = 1000;
     // const lucid = await Lucid.Lucid.new(

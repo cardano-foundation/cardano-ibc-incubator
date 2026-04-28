@@ -70,10 +70,11 @@ const provider = new Kupmios(
     ogmiosApiKey,
   ),
 );
-SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
+const cardanoNetwork = parseNetwork(cardanoNetworkMagic);
+SLOT_CONFIG_NETWORK[cardanoNetwork].zeroTime = chainZeroTime;
 const lucid = await Lucid(
   provider,
-  parseNetwork(cardanoNetworkMagic),
+  cardanoNetwork,
   {
     presetProtocolParameters: protocolParameters,
   } as any,
