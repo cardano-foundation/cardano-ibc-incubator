@@ -10,13 +10,13 @@ on_error() {
 
 trap 'on_error "$?" "$LINENO" "$BASH_COMMAND"' ERR
 
-SETTLEMENT_CLEAR_TIMEOUT_SECS="${SETTLEMENT_CLEAR_TIMEOUT_SECS:-120}"
-SETTLEMENT_TIMEOUT_SECS="${SETTLEMENT_TIMEOUT_SECS:-900}"
+SETTLEMENT_CLEAR_TIMEOUT_SECS="${SETTLEMENT_CLEAR_TIMEOUT_SECS:-}"
+SETTLEMENT_TIMEOUT_SECS="${SETTLEMENT_TIMEOUT_SECS:-}"
 SETTLEMENT_PROGRESS_EVERY_N_POLLS="${SETTLEMENT_PROGRESS_EVERY_N_POLLS:-2}"
 # Keep this watchdog conservative by default since Mithril certification can be slow.
-SETTLEMENT_NO_PROGRESS_TIMEOUT_SECS="${SETTLEMENT_NO_PROGRESS_TIMEOUT_SECS:-540}"
+SETTLEMENT_NO_PROGRESS_TIMEOUT_SECS="${SETTLEMENT_NO_PROGRESS_TIMEOUT_SECS:-}"
 SETTLEMENT_NO_PROGRESS_MIN_CLEAR_PASSES="${SETTLEMENT_NO_PROGRESS_MIN_CLEAR_PASSES:-12}"
-TRANSFER_SUBMIT_TIMEOUT_SECS="${TRANSFER_SUBMIT_TIMEOUT_SECS:-300}"
+TRANSFER_SUBMIT_TIMEOUT_SECS="${TRANSFER_SUBMIT_TIMEOUT_SECS:-}"
 TRANSFER_SUBMIT_MAX_ATTEMPTS="${TRANSFER_SUBMIT_MAX_ATTEMPTS:-4}"
 TRANSFER_RETRY_BASE_DELAY_SECS="${TRANSFER_RETRY_BASE_DELAY_SECS:-3}"
 PFM_FORWARD_TIMEOUT="${PFM_FORWARD_TIMEOUT:-30m}"
@@ -165,6 +165,15 @@ is_transient_transfer_error() {
   lowered="$(tr '[:upper:]' '[:lower:]' <"$output_file")"
   printf '%s' "$lowered" | grep -Eq \
     'h2 protocol error|http2 error|transport error|requesterror|timeoutexception|timed out|timeout|econnreset|econnrefused|etimedout|connection reset|connection refused|broken pipe|kupmioserror'
+}
+
+transfer_output_has_submitted_tx() {
+  local output_file="$1"
+  if [ ! -f "$output_file" ]; then
+    return 1
+  fi
+
+  grep -Eq 'Transaction submitted: [0-9a-f]+ at height|Transaction [0-9a-f]+ indexed at block' "$output_file"
 }
 
 dump_gateway_log_tail() {
@@ -320,6 +329,11 @@ run_transfer_with_retries() {
     local should_retry=0
     if [ "$timed_out" -eq 1 ] || is_transient_transfer_error "$output_file"; then
       should_retry=1
+    fi
+
+    if [ "$timed_out" -eq 1 ] && transfer_output_has_submitted_tx "$output_file"; then
+      echo "Not retrying ${description}: a transaction was already submitted before the timeout."
+      should_retry=0
     fi
 
     rm -f "$output_file" "$timeout_file"
@@ -631,10 +645,49 @@ ENTRYPOINT_RECEIVER="${ENTRYPOINT_RECEIVER:-pfm}"
 CARDANO_RECEIVER="${CARDANO_RECEIVER:-247570b8ba7dc725e9ff37e9757b8148b4d5a125958edac2fd4417b8}"
 INJECTIVE_LOCAL_VALIDATOR_KEY="${INJECTIVE_LOCAL_VALIDATOR_KEY:-validator}"
 SENT_AMOUNT_NUM="${CARIBIC_TOKEN_SWAP_AMOUNT:-12345}"
-INJECTIVE_RETURN_AMOUNT="${INJECTIVE_RETURN_AMOUNT:-1000000000000000000}"
-HANDLER_JSON="$repo_root/cardano/offchain/deployments/handler.json"
+if [ -z "$SETTLEMENT_CLEAR_TIMEOUT_SECS" ]; then
+  if [ "$CARDANO_CHAIN_ID" = "cardano-preprod" ]; then
+    SETTLEMENT_CLEAR_TIMEOUT_SECS=900
+  else
+    SETTLEMENT_CLEAR_TIMEOUT_SECS=120
+  fi
+fi
+if [ -z "$SETTLEMENT_TIMEOUT_SECS" ]; then
+  if [ "$CARDANO_CHAIN_ID" = "cardano-preprod" ]; then
+    SETTLEMENT_TIMEOUT_SECS=1800
+  else
+    SETTLEMENT_TIMEOUT_SECS=900
+  fi
+fi
+if [ -z "$SETTLEMENT_NO_PROGRESS_TIMEOUT_SECS" ]; then
+  if [ "$CARDANO_CHAIN_ID" = "cardano-preprod" ]; then
+    SETTLEMENT_NO_PROGRESS_TIMEOUT_SECS=1200
+  else
+    SETTLEMENT_NO_PROGRESS_TIMEOUT_SECS=540
+  fi
+fi
+if [ -z "$TRANSFER_SUBMIT_TIMEOUT_SECS" ]; then
+  if [ "$CARDANO_CHAIN_ID" = "cardano-preprod" ]; then
+    TRANSFER_SUBMIT_TIMEOUT_SECS=900
+  else
+    TRANSFER_SUBMIT_TIMEOUT_SECS=300
+  fi
+fi
+INJECTIVE_RETURN_AMOUNT="${INJECTIVE_RETURN_AMOUNT:-}"
+if [ -z "$INJECTIVE_RETURN_AMOUNT" ]; then
+  if [ "$INJECTIVE_NETWORK" = "testnet" ]; then
+    INJECTIVE_RETURN_AMOUNT=10000000000000000
+  else
+    INJECTIVE_RETURN_AMOUNT=1000000000000000000
+  fi
+fi
+default_handler_json="$repo_root/cardano/offchain/deployments/handler.json"
+if [ "$CARDANO_CHAIN_ID" = "cardano-preprod" ]; then
+  default_handler_json="$repo_root/manifests/preprod/cardano-preprod-handler.json"
+fi
+HANDLER_JSON="${HANDLER_JSON:-$default_handler_json}"
 SENT_DENOM="$(get_mock_token_denom "$HANDLER_JSON" || true)"
-check_string_empty "$SENT_DENOM" "Could not resolve mock token denom from handler.json. Please ensure it exists."
+check_string_empty "$SENT_DENOM" "Could not resolve mock token denom from $HANDLER_JSON. Please ensure it exists."
 
 cardano_entrypoint_channel_id="${CARDANO_ENTRYPOINT_CHANNEL_ID:-}"
 check_string_empty "$cardano_entrypoint_channel_id" "CARDANO_ENTRYPOINT_CHANNEL_ID is required. caribic should pass the exact Cardano->Entrypoint transfer channel."
