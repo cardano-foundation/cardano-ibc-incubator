@@ -1,17 +1,95 @@
 /* global BigInt */
-import { transfer } from '@/apis/restapi/cardano';
-import { lookupCardanoAssetDenomTrace } from '@/apis/restapi/cardano';
+import {
+  lookupCardanoAssetDenomTrace,
+  transfer,
+  type CardanoWalletUtxo,
+} from '@/apis/restapi/cardano';
+import { FORWARD_TIMEOUT } from '@/constants';
 import { isCardanoChainRef } from '@/configs/runtime';
 import { Coin } from 'cosmjs-types/cosmos/base/v1beta1/coin';
 import { MsgTransfer } from 'cosmjs-types/ibc/applications/transfer/v1/tx';
 import { getPublicKeyHashFromAddress } from './address';
-import { FORWARD_TIMEOUT } from '@/constants';
 
 const pfmReceiver = 'pfm';
 
 interface Token {
   denom: string;
   amount: string;
+}
+
+function requireUnsignedTx(data: any): { typeUrl: string; value: any } {
+  const unsignedTx = data?.unsignedTx;
+  if (!unsignedTx?.type_url || !unsignedTx?.value) {
+    throw new Error('Cardano transfer builder did not return an unsigned tx.');
+  }
+
+  return { typeUrl: unsignedTx.type_url, value: unsignedTx.value };
+}
+
+function normalizeMeshWalletUtxo(utxo: any): CardanoWalletUtxo | null {
+  const txHash = utxo?.input?.txHash;
+  const outputIndex = utxo?.input?.outputIndex;
+  const address = utxo?.output?.address;
+  const amount = utxo?.output?.amount;
+
+  if (
+    typeof txHash !== 'string' ||
+    typeof outputIndex !== 'number' ||
+    typeof address !== 'string' ||
+    !Array.isArray(amount)
+  ) {
+    return null;
+  }
+
+  const assets: Record<string, string> = {};
+  amount.forEach((asset) => {
+    if (typeof asset?.unit === 'string' && asset.quantity !== undefined) {
+      assets[asset.unit] = String(asset.quantity);
+    }
+  });
+
+  return {
+    txHash,
+    outputIndex,
+    address,
+    assets,
+    datumHash: utxo.output.dataHash ?? null,
+    datum: utxo.output.plutusData ?? null,
+    scriptRef: utxo.output.scriptRef ?? null,
+  };
+}
+
+function dedupeWalletUtxos(utxos: CardanoWalletUtxo[]): CardanoWalletUtxo[] {
+  const seen = utxos.reduce((map, utxo) => {
+    map.set(`${utxo.txHash}#${utxo.outputIndex}`, utxo);
+    return map;
+  }, new Map<string, CardanoWalletUtxo>());
+  return Array.from(seen.values());
+}
+
+export async function getCardanoWalletUtxosForBuilder(
+  wallet: any,
+): Promise<CardanoWalletUtxo[]> {
+  const [walletUtxosResult, collateralUtxosResult] = await Promise.allSettled([
+    wallet?.getUtxos?.(),
+    wallet?.getCollateral?.(),
+  ]);
+  const rawUtxos = [
+    ...(walletUtxosResult.status === 'fulfilled' &&
+    Array.isArray(walletUtxosResult.value)
+      ? walletUtxosResult.value
+      : []),
+    ...(collateralUtxosResult.status === 'fulfilled' &&
+    Array.isArray(collateralUtxosResult.value)
+      ? collateralUtxosResult.value
+      : []),
+  ];
+
+  return dedupeWalletUtxos(
+    rawUtxos
+      .map(normalizeMeshWalletUtxo)
+      .filter((utxo): utxo is CardanoWalletUtxo => Boolean(utxo)),
+  );
 }
 
 function buildForwardMemo(routes: string[], receiver: string): string {
@@ -105,6 +183,7 @@ export async function unsignedTxTransferFromCardano(
   receiver: string,
   timeoutTimeOffset: bigint, // nanosec
   token: Token,
+  walletUtxos?: CardanoWalletUtxo[],
 ): Promise<{ typeUrl: string; value: any }[]> {
   const currentTimeStamp = BigInt(Date.now()) * BigInt(1000000);
   const cardanoTokenTrace = await lookupCardanoAssetDenomTrace(token.denom);
@@ -134,11 +213,10 @@ export async function unsignedTxTransferFromCardano(
         currentTimeStamp + BigInt(timeoutTimeOffset)
       ).toString(),
       signer: sender,
+      walletUtxos,
       memo: '',
     });
-    return [
-      { typeUrl: data?.unsignedTx?.type_url, value: data?.unsignedTx?.value },
-    ];
+    return [requireUnsignedTx(data)];
   }
   // pfm
   const [route, ...restRoutes] = routes;
@@ -158,9 +236,8 @@ export async function unsignedTxTransferFromCardano(
     },
     timeoutTimestamp: (currentTimeStamp + BigInt(timeoutTimeOffset)).toString(),
     signer: sender,
+    walletUtxos,
     memo: buildForwardMemo(restRoutes, receiver),
   });
-  return [
-    { typeUrl: data?.unsignedTx?.type_url, value: data?.unsignedTx?.value },
-  ];
+  return [requireUnsignedTx(data)];
 }

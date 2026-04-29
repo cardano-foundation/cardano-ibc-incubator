@@ -8,6 +8,16 @@ import {
 } from '@/services/cardanoTraceRegistry';
 import { cardanoPlannerClient } from '@/services/cardanoPlanner';
 
+export type CardanoWalletUtxo = {
+  txHash: string;
+  outputIndex: number;
+  address: string;
+  assets: Record<string, string>;
+  datumHash?: string | null;
+  datum?: string | null;
+  scriptRef?: string | null;
+};
+
 interface TransferParams {
   sourcePort: string;
   sourceChannel: string;
@@ -24,6 +34,7 @@ interface TransferParams {
   timeoutTimestamp?: string;
   memo?: string;
   signer: string;
+  walletUtxos?: CardanoWalletUtxo[];
 }
 
 interface UnsignedTx {
@@ -246,6 +257,7 @@ export async function transfer({
   timeoutTimestamp,
   memo,
   signer,
+  walletUtxos,
 }: TransferParams): Promise<TransferResponseData> {
   try {
     const response = await axios({
@@ -261,6 +273,7 @@ export async function transfer({
         timeout_timestamp: timeoutTimestamp,
         memo,
         signer,
+        wallet_utxos: walletUtxos,
       },
     });
     return response.data;
