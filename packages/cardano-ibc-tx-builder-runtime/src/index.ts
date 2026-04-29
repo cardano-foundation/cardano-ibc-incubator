@@ -1167,7 +1167,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
       return context.lucidService.findUtxoAtWithUnit(address, unit);
     };
 
-    const initialWalletUtxos = await context.lucidService.tryFindUtxosAt(
+    const initialWalletUtxos = await getWalletUtxos(
       sendPacketOperator.signer,
       LOOKUP_RETRY_OPTIONS,
     );
