@@ -41,6 +41,7 @@ const LOVELACE = 'lovelace';
 const CARDANO_POLICY_ID_HEX_LENGTH = 56;
 const QUERY_CHANNELS_PREFIX_URL = '/ibc/core/channel/v1/channels';
 const QUERY_ALL_CHANNELS_URL = `${QUERY_CHANNELS_PREFIX_URL}?pagination.count_total=true&pagination.limit=10000`;
+const QUERY_CARDANO_CHANNELS_URL = '/api/channels?offset=0&limit=10000&countTotal=true&reverse=false';
 const QUERY_ALL_DENOMS_URL = '/ibc/apps/transfer/v1/denoms';
 const QUERY_PACKET_FORWARD_PARAMS_URL = '/ibc/apps/packetforward/v1/params';
 const QUERY_SWAP_ROUTER_STATE = '/cosmwasm/wasm/v1/contract/SWAP_ROUTER_ADDRESS/state?pagination.limit=100000000';
@@ -60,7 +61,10 @@ function createPlannerClient(config) {
     let swapMetadataCache;
     const getPlannerMetadata = async () => {
         const [channels, entrypointDenomTraces, localOsmosisDenomTraces] = await Promise.all([
-            fetchAllChannels(ENTRYPOINT_CHAIN_ID, resolvedConfig.entrypointRestEndpoint, resolvedConfig.fetchImpl),
+            fetchAllChannels(ENTRYPOINT_CHAIN_ID, resolvedConfig.entrypointRestEndpoint, resolvedConfig.fetchImpl, {
+                cardanoChainId: resolvedConfig.cardanoChainId,
+                cardanoRestEndpoint: resolvedConfig.cardanoRestEndpoint,
+            }),
             fetchAllDenomTraces(resolvedConfig.entrypointRestEndpoint, resolvedConfig.fetchImpl),
             fetchAllDenomTraces(resolvedConfig.localOsmosisRestEndpoint, resolvedConfig.fetchImpl),
         ]);
@@ -449,7 +453,7 @@ async function fetchAllDenomTraces(restUrl, fetchImpl) {
 function stringifyTrace(trace) {
     return trace.flatMap((hop) => [hop.port_id, hop.channel_id]).join('/');
 }
-async function fetchAllChannels(chainId, restUrl, fetchImpl) {
+async function fetchAllChannels(chainId, restUrl, fetchImpl, options = {}) {
     const openChannels = [];
     let nextKey;
     do {
@@ -477,6 +481,9 @@ async function fetchAllChannels(chainId, restUrl, fetchImpl) {
         }
         nextKey = data.pagination?.next_key;
     } while (nextKey);
+    const cardanoChannels = options.cardanoRestEndpoint && options.cardanoChainId
+        ? await fetchCardanoOpenChannels(options.cardanoRestEndpoint, fetchImpl)
+        : undefined;
     const adjacency = {};
     const channelByRoute = {};
     const insert = (channel) => {
@@ -487,6 +494,14 @@ async function fetchAllChannels(chainId, restUrl, fetchImpl) {
             channel;
     };
     for (const channel of openChannels) {
+        if (cardanoChannels &&
+            options.cardanoChainId &&
+            channel.srcChain === ENTRYPOINT_CHAIN_ID &&
+            channel.destChain === options.cardanoChainId &&
+            !hasReciprocalCardanoChannel(channel, cardanoChannels)) {
+            // Cardano can retain stale channel UTxOs; only route through pairs that point back.
+            continue;
+        }
         insert(channel);
         insert({
             srcChain: channel.destChain,
@@ -498,6 +513,16 @@ async function fetchAllChannels(chainId, restUrl, fetchImpl) {
         });
     }
     return { adjacency, channelByRoute };
+}
+async function fetchCardanoOpenChannels(restUrl, fetchImpl) {
+    const data = await fetchJson(`${trimTrailingSlash(restUrl)}${QUERY_CARDANO_CHANNELS_URL}`, fetchImpl);
+    return (data.channels || []).filter((channel) => isOpenChannelState(channel.state));
+}
+function hasReciprocalCardanoChannel(entrypointChannel, cardanoChannels) {
+    return cardanoChannels.some((cardanoChannel) => cardanoChannel.port_id === entrypointChannel.destPort &&
+        cardanoChannel.channel_id === entrypointChannel.destChannel &&
+        cardanoChannel.counterparty.port_id === entrypointChannel.srcPort &&
+        cardanoChannel.counterparty.channel_id === entrypointChannel.srcChannel);
 }
 async function fetchClientStateFromChannel(restUrl, channelId, portId, fetchImpl) {
     const url = `${restUrl}${QUERY_CHANNELS_PREFIX_URL}/${channelId}/ports/${portId}/client_state`;
@@ -1011,6 +1036,9 @@ async function fetchJson(url, fetchImpl) {
         throw new Error(`Request failed for ${url}: ${response.status} ${response.statusText}`);
     }
     return (await response.json());
+}
+function trimTrailingSlash(value) {
+    return value.replace(/\/+$/, '');
 }
 function getMaxChannelId(channel1, channel2) {
     const id1 = Number(channel1.split('-')[1] || 0);

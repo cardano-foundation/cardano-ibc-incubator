@@ -53,6 +53,7 @@ export type SwapEstimateResponse = {
 };
 export type PlannerClientConfig = {
     cardanoChainId: string;
+    cardanoRestEndpoint?: string;
     entrypointRestEndpoint: string;
     localOsmosisRestEndpoint: string;
     swapRouterAddress?: string;

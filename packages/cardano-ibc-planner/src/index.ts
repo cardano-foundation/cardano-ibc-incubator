@@ -6,6 +6,8 @@ const CARDANO_POLICY_ID_HEX_LENGTH = 56;
 const QUERY_CHANNELS_PREFIX_URL = '/ibc/core/channel/v1/channels';
 const QUERY_ALL_CHANNELS_URL =
   `${QUERY_CHANNELS_PREFIX_URL}?pagination.count_total=true&pagination.limit=10000`;
+const QUERY_CARDANO_CHANNELS_URL =
+  '/api/channels?offset=0&limit=10000&countTotal=true&reverse=false';
 const QUERY_ALL_DENOMS_URL = '/ibc/apps/transfer/v1/denoms';
 const QUERY_PACKET_FORWARD_PARAMS_URL = '/ibc/apps/packetforward/v1/params';
 const QUERY_SWAP_ROUTER_STATE =
@@ -90,6 +92,7 @@ export type SwapEstimateResponse = {
 
 export type PlannerClientConfig = {
   cardanoChainId: string;
+  cardanoRestEndpoint?: string;
   entrypointRestEndpoint: string;
   localOsmosisRestEndpoint: string;
   swapRouterAddress?: string;
@@ -241,6 +244,10 @@ export function createPlannerClient(
           ENTRYPOINT_CHAIN_ID,
           resolvedConfig.entrypointRestEndpoint,
           resolvedConfig.fetchImpl,
+          {
+            cardanoChainId: resolvedConfig.cardanoChainId,
+            cardanoRestEndpoint: resolvedConfig.cardanoRestEndpoint,
+          },
         ),
         fetchAllDenomTraces(
           resolvedConfig.entrypointRestEndpoint,
@@ -808,6 +815,10 @@ async function fetchAllChannels(
   chainId: string,
   restUrl: string,
   fetchImpl: typeof fetch,
+  options: {
+    cardanoChainId?: string;
+    cardanoRestEndpoint?: string;
+  } = {},
 ): Promise<Pick<PlannerMetadata, 'adjacency' | 'channelByRoute'>> {
   const openChannels: OpenChannel[] = [];
   let nextKey: string | undefined;
@@ -850,6 +861,10 @@ async function fetchAllChannels(
     nextKey = data.pagination?.next_key;
   } while (nextKey);
 
+  const cardanoChannels =
+    options.cardanoRestEndpoint && options.cardanoChainId
+      ? await fetchCardanoOpenChannels(options.cardanoRestEndpoint, fetchImpl)
+      : undefined;
   const adjacency: PlannerMetadata['adjacency'] = {};
   const channelByRoute: PlannerMetadata['channelByRoute'] = {};
 
@@ -862,6 +877,17 @@ async function fetchAllChannels(
   };
 
   for (const channel of openChannels) {
+    if (
+      cardanoChannels &&
+      options.cardanoChainId &&
+      channel.srcChain === ENTRYPOINT_CHAIN_ID &&
+      channel.destChain === options.cardanoChainId &&
+      !hasReciprocalCardanoChannel(channel, cardanoChannels)
+    ) {
+      // Cardano can retain stale channel UTxOs; only route through pairs that point back.
+      continue;
+    }
+
     insert(channel);
     insert({
       srcChain: channel.destChain,
@@ -874,6 +900,32 @@ async function fetchAllChannels(
   }
 
   return { adjacency, channelByRoute };
+}
+
+async function fetchCardanoOpenChannels(
+  restUrl: string,
+  fetchImpl: typeof fetch,
+): Promise<QueryChannelResponse[]> {
+  const data = await fetchJson<{
+    channels?: QueryChannelResponse[];
+  }>(`${trimTrailingSlash(restUrl)}${QUERY_CARDANO_CHANNELS_URL}`, fetchImpl);
+
+  return (data.channels || []).filter((channel) =>
+    isOpenChannelState(channel.state),
+  );
+}
+
+function hasReciprocalCardanoChannel(
+  entrypointChannel: OpenChannel,
+  cardanoChannels: QueryChannelResponse[],
+): boolean {
+  return cardanoChannels.some(
+    (cardanoChannel) =>
+      cardanoChannel.port_id === entrypointChannel.destPort &&
+      cardanoChannel.channel_id === entrypointChannel.destChannel &&
+      cardanoChannel.counterparty.port_id === entrypointChannel.srcPort &&
+      cardanoChannel.counterparty.channel_id === entrypointChannel.srcChannel,
+  );
 }
 
 async function fetchClientStateFromChannel(
@@ -1656,6 +1708,10 @@ async function fetchJson<T>(
     );
   }
   return (await response.json()) as T;
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, '');
 }
 
 function getMaxChannelId(channel1: string, channel2: string): string {
