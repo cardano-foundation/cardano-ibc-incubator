@@ -19,11 +19,11 @@ interface Token {
 
 function requireUnsignedTx(data: any): { typeUrl: string; value: any } {
   const unsignedTx = data?.unsignedTx;
-  if (!unsignedTx?.type_url || !unsignedTx?.value) {
+  if (!unsignedTx?.value) {
     throw new Error('Cardano transfer builder did not return an unsigned tx.');
   }
 
-  return { typeUrl: unsignedTx.type_url, value: unsignedTx.value };
+  return { typeUrl: unsignedTx.type_url ?? '', value: unsignedTx.value };
 }
 
 function normalizeMeshWalletUtxo(utxo: any): CardanoWalletUtxo | null {
