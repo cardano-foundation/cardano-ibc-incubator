@@ -31,6 +31,7 @@ type LocalUnsignedTransferResponse = {
         type_url: string;
         value: string;
     };
+    feeLovelace: string;
 };
 type RuntimeLogger = {
     log: (...args: unknown[]) => void;

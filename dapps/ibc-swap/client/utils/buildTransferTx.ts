@@ -17,13 +17,54 @@ interface Token {
   amount: string;
 }
 
-function requireUnsignedTx(data: any): { typeUrl: string; value: any } {
+type UnsignedTxMessage = {
+  typeUrl: string;
+  value: any;
+  feeLovelace?: string;
+};
+
+function stringifyTransferResponse(data: unknown): string {
+  try {
+    return JSON.stringify(data);
+  } catch {
+    return String(data);
+  }
+}
+
+function getTransferResponseErrorMessage(data: any): string | undefined {
+  const candidates = [
+    data?.message,
+    data?.error,
+    data?.reason,
+    data?.details?.message,
+    data?.details?.cause?.message,
+  ];
+
+  return candidates.find(
+    (candidate) => typeof candidate === 'string' && candidate.trim(),
+  );
+}
+
+function requireUnsignedTx(data: any): UnsignedTxMessage {
   const unsignedTx = data?.unsignedTx;
   if (!unsignedTx?.value) {
-    throw new Error('Cardano transfer builder did not return an unsigned tx.');
+    const responseError = getTransferResponseErrorMessage(data);
+    const responseSummary =
+      responseError ||
+      (data?.result !== undefined
+        ? `builder result code ${data.result}`
+        : stringifyTransferResponse(data));
+    throw new Error(
+      `Cardano transfer builder did not return an unsigned tx: ${responseSummary}`,
+    );
   }
 
-  return { typeUrl: unsignedTx.type_url ?? '', value: unsignedTx.value };
+  return {
+    typeUrl: unsignedTx.type_url ?? '',
+    value: unsignedTx.value,
+    feeLovelace:
+      typeof data?.feeLovelace === 'string' ? data.feeLovelace : undefined,
+  };
 }
 
 function normalizeMeshWalletUtxo(utxo: any): CardanoWalletUtxo | null {
@@ -127,7 +168,7 @@ export function unsignedTxTransferFromCosmos(
   receiver: string,
   timeoutTimeOffset: bigint, // nanosec
   coin: Coin,
-): { typeUrl: string; value: any }[] {
+): UnsignedTxMessage[] {
   const currentTimeStamp = BigInt(Date.now()) * BigInt(1000000);
   let msg: MsgTransfer;
 
@@ -184,7 +225,7 @@ export async function unsignedTxTransferFromCardano(
   timeoutTimeOffset: bigint, // nanosec
   token: Token,
   walletUtxos?: CardanoWalletUtxo[],
-): Promise<{ typeUrl: string; value: any }[]> {
+): Promise<UnsignedTxMessage[]> {
   const currentTimeStamp = BigInt(Date.now()) * BigInt(1000000);
   const cardanoTokenTrace = await lookupCardanoAssetDenomTrace(token.denom);
   const sendTokenDenom = cardanoTokenTrace?.fullDenom

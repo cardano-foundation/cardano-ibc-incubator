@@ -44,6 +44,7 @@ interface UnsignedTx {
 
 interface TransferResponseData {
   unsignedTx?: UnsignedTx;
+  feeLovelace?: string;
 }
 
 export type { CardanoAssetDenomTrace } from '@/types/cardanoTrace';
