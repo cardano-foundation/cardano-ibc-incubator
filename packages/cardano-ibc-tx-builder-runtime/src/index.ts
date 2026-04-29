@@ -16,7 +16,7 @@ const LOOKUP_RETRY_OPTIONS = {
   maxAttempts: 6,
   retryDelayMs: 1000,
 } as const;
-const TRANSACTION_TIME_TO_LIVE = 10 * 60 * 1000;
+const TRANSACTION_TIME_TO_LIVE = 120_000;
 // Browser wallets should not need the gateway relayer's conservative 20 ADA floor.
 // Lucid still raises this when protocol collateral requirements exceed the floor.
 const TRANSACTION_SET_COLLATERAL = BigInt(5_000_000);
