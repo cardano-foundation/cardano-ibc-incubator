@@ -3,6 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { Method } from 'axios';
 import { lastValueFrom, map } from 'rxjs';
+import http from 'node:http';
+import https from 'node:https';
 import { CurrentEpochSettingsResponseDTO } from './dtos/get-current-epoch-settings.dto';
 import { CertificateDTO } from './dtos/get-most-recent-certificates.dto';
 import { RegisterdSignersResponseDTO } from './dtos/get-registerd-signers-for-epoch.dto';
@@ -10,6 +12,40 @@ import { CertificateDetailDTO } from './dtos/get-certificate-by-hash.dto';
 import { SnapshotDTO } from './dtos/get-most-recent-snapshots.dto';
 import { CardanoTransactionSetSnapshotDTO } from './dtos/get-most-recent-cardano-transactions.dto';
 import { MithrilStakeDistributionDTO } from './dtos/get-most-recent-mithril-stake-distributions.dto';
+
+const MITHRIL_REQUEST_TIMEOUT_MS = 10_000;
+const MITHRIL_MAX_ATTEMPTS = 8;
+const MITHRIL_BASE_DELAY_MS = 500;
+const MITHRIL_MAX_DELAY_MS = 5_000;
+const TRANSIENT_MITHRIL_ERROR_MARKERS = [
+  'socket hang up',
+  'econnreset',
+  'econnrefused',
+  'etimedout',
+  'timeout',
+  'timed out',
+  'network error',
+  'tls',
+  'ssl',
+  'handshake',
+  'temporary',
+  'temporarily unavailable',
+  'service unavailable',
+  'bad gateway',
+  'gateway timeout',
+  'response aborted',
+];
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isTransientMithrilError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  return TRANSIENT_MITHRIL_ERROR_MARKERS.some((marker) => normalized.includes(marker));
+};
+
+const HTTP_AGENT = new http.Agent({ keepAlive: false });
+const HTTPS_AGENT = new https.Agent({ keepAlive: false });
 
 @Injectable()
 export class MithrilService {
@@ -98,16 +134,37 @@ export class MithrilService {
     const { path, payload = {}, params = {}, method = 'POST' } = requestData;
     const mithrilEndpoint = this.configService.get('mithrilEndpoint');
     const pathUrl = `${mithrilEndpoint}${path}`;
-    const response = await lastValueFrom(
-      this.httpService
-        .request({
-          url: pathUrl,
-          method,
-          data: payload,
-          params,
-        })
-        .pipe(map((res) => res.data)),
-    );
-    return response;
+
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= MITHRIL_MAX_ATTEMPTS; attempt++) {
+      try {
+        return await lastValueFrom(
+          this.httpService
+            .request({
+              url: pathUrl,
+              method,
+              data: payload,
+              params,
+              timeout: MITHRIL_REQUEST_TIMEOUT_MS,
+              httpAgent: HTTP_AGENT,
+              httpsAgent: HTTPS_AGENT,
+              headers: {
+                Connection: 'close',
+              },
+            })
+            .pipe(map((res) => res.data)),
+        );
+      } catch (error) {
+        lastError = error;
+        if (!isTransientMithrilError(error) || attempt === MITHRIL_MAX_ATTEMPTS) {
+          throw error;
+        }
+
+        const delayMs = Math.min(MITHRIL_MAX_DELAY_MS, MITHRIL_BASE_DELAY_MS * 2 ** (attempt - 1));
+        await sleep(delayMs);
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error(`Mithril request failed for ${path}`);
   }
 }

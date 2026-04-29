@@ -16,6 +16,7 @@ pub enum StreamKind {
 pub struct StreamingOptions<'a> {
     pub label: &'a str,
     pub heartbeat_interval: Option<Duration>,
+    pub timeout: Option<Duration>,
     pub log_failure_output: bool,
 }
 
@@ -24,6 +25,7 @@ impl<'a> StreamingOptions<'a> {
         Self {
             label,
             heartbeat_interval: None,
+            timeout: None,
             log_failure_output: false,
         }
     }
@@ -162,6 +164,22 @@ where
                 next_heartbeat = options
                     .heartbeat_interval
                     .map(|interval| Instant::now() + interval);
+            }
+        }
+
+        if status.is_none() {
+            if let Some(timeout) = options.timeout {
+                let elapsed = started_at.elapsed();
+                if elapsed >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!(
+                        "{} timed out after {}s: {}",
+                        options.label,
+                        timeout.as_secs(),
+                        command_display
+                    ));
+                }
             }
         }
 

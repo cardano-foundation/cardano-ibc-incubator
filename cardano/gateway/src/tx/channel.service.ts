@@ -521,11 +521,15 @@ export class ChannelService {
     channelOpenInitOperator: ChannelOpenInitOperator,
     constructedAddress: string,
   ): Promise<{ unsignedTx: TxBuilder; channelId: string; pendingTreeUpdate: PendingTreeUpdate }> {
+    this.logger.debug('[channelOpenInitBuilder] step=hostState.find.start');
     // STT Architecture: Query the HostState UTXO via its unique NFT.
     // This datum is the authoritative source of:
     // - `ibc_state_root` (the Merkle commitment root)
     // - sequence counters (client/connection/channel)
     const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
+    this.logger.debug(
+      `[channelOpenInitBuilder] step=hostState.find.done tx=${hostStateUtxo.txHash}#${hostStateUtxo.outputIndex}`,
+    );
     if (!hostStateUtxo.datum) {
       throw new GrpcInternalException('HostState UTXO has no datum');
     }
@@ -533,12 +537,24 @@ export class ChannelService {
       hostStateUtxo.datum,
       'host_state',
     );
+    this.logger.debug(
+      `[channelOpenInitBuilder] step=hostState.decode.done root=${hostStateDatum.state.ibc_state_root}`,
+    );
 
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing witnesses.
+    this.logger.debug('[channelOpenInitBuilder] step=tree.align.start');
     await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+    this.logger.debug('[channelOpenInitBuilder] step=tree.align.done');
 
+    this.logger.debug('[channelOpenInitBuilder] step=handler.find.start');
     const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
+    this.logger.debug(
+      `[channelOpenInitBuilder] step=handler.find.done tx=${handlerUtxo.txHash}#${handlerUtxo.outputIndex}`,
+    );
     const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
+    this.logger.debug(
+      `[channelOpenInitBuilder] step=handler.decode.done next_channel_sequence=${handlerDatum.state.next_channel_sequence}`,
+    );
     if (handlerDatum.state.next_channel_sequence !== hostStateDatum.state.next_channel_sequence) {
       throw new GrpcInternalException(
         `Handler/HostState channel sequence mismatch: handler=${handlerDatum.state.next_channel_sequence}, hostState=${hostStateDatum.state.next_channel_sequence}`,
@@ -550,15 +566,24 @@ export class ChannelService {
     );
     const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
     // Find the UTXO for the client token
+    this.logger.debug(`[channelOpenInitBuilder] step=connection.find.start unit=${connectionTokenUnit}`);
     const connectionUtxo = await this.lucidService.findUtxoByUnit(connectionTokenUnit);
+    this.logger.debug(
+      `[channelOpenInitBuilder] step=connection.find.done tx=${connectionUtxo.txHash}#${connectionUtxo.outputIndex}`,
+    );
     const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
       connectionUtxo.datum!,
       'connection',
     );
+    this.logger.debug('[channelOpenInitBuilder] step=connection.decode.done');
     const connectionClientSequence = parseClientSequence(convertHex2String(connectionDatum.state.client_id));
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionClientSequence);
+    this.logger.debug(`[channelOpenInitBuilder] step=client.find.start unit=${clientTokenUnit}`);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    this.logger.debug(
+      `[channelOpenInitBuilder] step=client.find.done tx=${clientUtxo.txHash}#${clientUtxo.outputIndex}`,
+    );
     const spendHandlerRedeemer: HandlerOperator = 'HandlerChanOpenInit';
     const encodedSpendHandlerRedeemer: string = await this.lucidService.encode<HandlerOperator>(
       spendHandlerRedeemer,
@@ -617,6 +642,7 @@ export class ChannelService {
       channelId,
       channelDatum,
     );
+    this.logger.debug(`[channelOpenInitBuilder] step=tree.compute.done new_root=${newRoot}`);
 
     const updatedHandlerDatum: HandlerDatum = {
       ...handlerDatum,
@@ -655,7 +681,13 @@ export class ChannelService {
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     const encodedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(channelDatum, 'channel');
     const moduleConfig = this.getModuleConfig(channelOpenInitOperator.port_id);
+    this.logger.debug(
+      `[channelOpenInitBuilder] step=module.find.start key=${moduleConfig.key} unit=${moduleConfig.identifier}`,
+    );
     const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);
+    this.logger.debug(
+      `[channelOpenInitBuilder] step=module.find.done tx=${moduleUtxo.txHash}#${moduleUtxo.outputIndex}`,
+    );
     const spendModuleRedeemer: IBCModuleRedeemer = {
       Callback: [
         {
@@ -688,6 +720,7 @@ export class ChannelService {
     };
     const unsignedUnorderedChannelTx =
       this.lucidService.createUnsignedChannelOpenInitTransaction(unsignedChannelOpenInitParams);
+    this.logger.debug('[channelOpenInitBuilder] step=unsignedTx.create.done');
     return {
       unsignedTx: unsignedUnorderedChannelTx,
       channelId,

@@ -26,12 +26,23 @@ impl HermesCli {
         args: &[&str],
         heartbeat_interval: Duration,
     ) -> Result<Output, String> {
+        self.output_with_progress_and_timeout(current_dir, args, heartbeat_interval, None)
+    }
+
+    pub fn output_with_progress_and_timeout(
+        &self,
+        current_dir: Option<&Path>,
+        args: &[&str],
+        heartbeat_interval: Duration,
+        timeout: Option<Duration>,
+    ) -> Result<Output, String> {
         let mut command = self.command(current_dir, args);
         runner::run_output_streaming(
             &mut command,
             StreamingOptions {
                 label: "Hermes command",
                 heartbeat_interval: Some(heartbeat_interval),
+                timeout,
                 log_failure_output: false,
             },
             |stream, line| {

@@ -23,6 +23,7 @@ import { HostStateDatum } from '../types/host-state-datum';
 @Injectable()
 export class TreeInitService implements OnModuleInit {
   private readonly logger = new Logger(TreeInitService.name);
+  private initPromise?: Promise<void>;
 
   constructor(
     private readonly kupoService: KupoService,
@@ -32,6 +33,21 @@ export class TreeInitService implements OnModuleInit {
   ) {}
 
   async onModuleInit() {
+    await this.initialize();
+  }
+
+  async initialize(): Promise<void> {
+    if (!this.initPromise) {
+      this.initPromise = this.initializeTree().catch((error) => {
+        this.initPromise = undefined;
+        throw error;
+      });
+    }
+
+    await this.initPromise;
+  }
+
+  private async initializeTree(): Promise<void> {
     this.logger.log('Initializing IBC state tree from on-chain UTXOs...');
 
     // Cache services for on-demand tree alignment (used by alignTreeWithChain)

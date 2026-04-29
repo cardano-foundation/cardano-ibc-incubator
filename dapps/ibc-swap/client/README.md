@@ -9,11 +9,16 @@ Create `.env` files with the following variables:
 | Variable                                | Meaning                                                                                                                                 | Note                                                                     |
 |-----------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------|
 | BASE_PATH                               | NextJs will run instance under sub-path of a domain, refer to [this](https://nextjs.org/docs/app/api-reference/next-config-js/basePath) | Default: "/ibc"                                                          |
-| NEXT_PUBLIC_CARDANO_CHAIN_ID            | Network magic of Cardano chain                                                                                                          | Currently we use 42 for local Cardano, for preview, it will be 2         |
+| NEXT_PUBLIC_IBC_SWAP_MODE               | Runtime-locked frontend mode                                                                                                            | `local`, `testnet`, or `mainnet`; default: `local`                       |
+| NEXT_PUBLIC_CARDANO_CHAIN_ID            | Network magic of Cardano chain                                                                                                          | Default: `42` local, `1` testnet/preprod, `764824073` mainnet            |
+| NEXT_PUBLIC_CARDANO_IBC_CHAIN_ID        | IBC chain id used by the Cardano bridge                                                                                                 | Default: `cardano-devnet`, `cardano-preprod`, or `cardano-mainnet`       |
 | NEXT_PUBLIC_ENTRYPOINT_RPC_ENDPOINT     | RPC end-point of Entrypoint chain                                                                                                       | Default: http://localhost:26657                                          |
 | NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT    | Rest end-point of Entrypoint chain                                                                                                      | Default: http://localhost:1317                                           |
 | NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT    | RPC end-point of local Osmosis                                                                                                          | Default: http://localhost:26658                                          |
 | NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT   | Rest end-point of local Osmosis                                                                                                         | Default: http://localhost:1318                                           |
+| NEXT_PUBLIC_INJECTIVE_RPC_ENDPOINT      | RPC endpoint for the active Injective profile                                                                                           | Defaults to Injective testnet public RPC in `testnet` mode               |
+| NEXT_PUBLIC_INJECTIVE_REST_ENDPOINT     | REST endpoint for the active Injective profile                                                                                          | Defaults to Injective testnet public REST in `testnet` mode              |
+| NEXT_PUBLIC_ENABLE_MAINNET_IBC_SWAP     | Enables executable mainnet routes when all mainnet config is supplied                                                                   | Default: disabled                                                        |
 | NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT | Rest end-point of gateway                                                                                                               | Default: http://localhost:8000. This is only used as the default bridge-manifest host when `NEXT_PUBLIC_CARDANO_BRIDGE_MANIFEST_URL` is unset. |
 | NEXT_PUBLIC_CARDANO_BRIDGE_MANIFEST_URL | URL of the public Cardano bridge manifest                                                                                               | Default: `${NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT}/api/bridge-manifest` |
 | NEXT_PUBLIC_KUPMIOS_URL                 | Url of Kupo and Ogmios instances, should not be use when using NEXT_PUBLIC_BLOCKFROST_PROJECT_ID                                        | Default: "http://localhost:1442,http://localhost:1337"                   |
@@ -36,9 +41,15 @@ yarn && yarn dev
 ```
 
 ## Containerized local run
-This frontend is optional and is not started by `caribic start`.
+The default `caribic start` stack starts this frontend automatically. It can
+also be managed independently:
 
-To run it as a containerized demo UI:
+```bash
+caribic start dapp
+caribic stop dapp
+```
+
+To run it through compose directly:
 
 ```bash
 docker compose -f dapps/docker-compose.yml up --build ibc-swap-client

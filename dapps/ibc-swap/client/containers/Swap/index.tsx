@@ -24,7 +24,7 @@ import { COLOR } from '@/styles/color';
 import SwapContext from '@/contexts/SwapContext';
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
 import { formatNumberInput, formatPrice } from '@/utils/string';
-import { allChains } from '@/configs/customChainInfo';
+import { selectableChains } from '@/configs/customChainInfo';
 import TransferContext from '@/contexts/TransferContext';
 import {
   verifyAddress,
@@ -33,6 +33,7 @@ import {
 import { HOUR_IN_NANOSEC } from '@/constants';
 import { unsignedTxSwapFromCardano } from '@/utils/buildSwapTx';
 import { CARDANO_CHAIN_ID } from '@/configs/runtime';
+import { activeRuntimeConfig } from '@/configs/runtimeConfig';
 import { estimateLocalOsmosisSwap } from '@/apis/restapi/cardano';
 import TransactionFee from './TransactionFee';
 import SettingSlippage from './SettingSlippage';
@@ -159,13 +160,18 @@ const SwapContainer = () => {
   };
 
   useEffect(() => {
-    const networkListData: NetworkItemProps[] = allChains.map((chain) => ({
-      networkId: chain.chain_id,
-      ibcChainId: chain.ibc_chain_id || chain.chain_id,
-      networkLogo: chain?.logo_URIs?.svg || DefaultCosmosNetworkIcon.src,
-      networkName: chain.chain_name,
-      networkPrettyName: chain?.pretty_name,
-    }));
+    const networkListData: NetworkItemProps[] = selectableChains.map(
+      (chain) => ({
+        networkId: chain.chain_id,
+        ibcChainId: chain.ibc_chain_id || chain.chain_id,
+        networkLogo: chain?.logo_URIs?.svg || DefaultCosmosNetworkIcon.src,
+        networkName: chain.chain_name,
+        networkPrettyName: chain?.pretty_name,
+        networkType: chain.network_type,
+        networkRole: 'user',
+        isDisabled: chain.status !== 'active',
+      }),
+    );
     handleResetTransferData();
     setNetworkList(networkListData);
   }, [handleResetTransferData]);
@@ -294,6 +300,23 @@ const SwapContainer = () => {
     isCheckedAnotherWallet,
     cardanoAddress,
   ]);
+
+  if (!activeRuntimeConfig.features.localSwap.enabled) {
+    return (
+      <StyledWrapContainer>
+        <StyledSwap>
+          <Heading className="title">
+            Swap unavailable in {activeRuntimeConfig.label}
+          </Heading>
+          <Text color={COLOR.neutral_3} mt="8px">
+            The swap screen is currently the Local Osmosis demo path. Use
+            Transfer for the active {activeRuntimeConfig.label.toLowerCase()}{' '}
+            profile.
+          </Text>
+        </StyledSwap>
+      </StyledWrapContainer>
+    );
+  }
 
   return (
     <AnimatePresence mode="wait">

@@ -5,7 +5,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { inspect } from 'util';
 import { appendFileSync } from 'fs';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
-import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
+import { GrpcInternalException } from '~@/exception/grpc_exceptions';
 import {
   MsgConnectionOpenAck,
   MsgConnectionOpenAckResponse,
@@ -46,8 +46,6 @@ import {
 	  getCurrentTree,
 	} from '../shared/helpers/ibc-state-root';
 import { ConnectionEnd, State as ConnectionState } from '@plus/proto-types/build/ibc/core/connection/v1/connection';
-import { clientStatePath } from '~@/shared/helpers/client-state';
-import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import {
   ConnectionOpenAckOperator,
   ConnectionOpenConfirmOperator,
@@ -112,6 +110,8 @@ export class ConnectionService {
       'kupmioserror',
       'transport error',
       'requesterror',
+      'timeout',
+      'timed out',
       'etimedout',
       'econnreset',
       'econnrefused',
@@ -1171,52 +1171,12 @@ export class ConnectionService {
       return undefined;
     };
 
-    // `verify_proof` checks exact bytes at the proof path. Require proof Any and
-    // request Any.type_url to match exactly; reject mismatches.
-    const proofClientExist = firstExist(connectionOpenAckOperator.proofClient as any);
-    if (!proofClientExist?.value) {
-      throw new GrpcInvalidArgumentException(
-        'Invalid argument: proof_client must include an existence proof with Any-encoded client state value',
-      );
-    }
-    const proofClientValueHex = proofClientExist.value;
-    let proofClientStateTypeUrl = '';
-    try {
-      const proofClientAny = Any.decode(Buffer.from(proofClientValueHex, 'hex'));
-      proofClientStateTypeUrl = proofClientAny.type_url;
-    } catch (error) {
-      throw new GrpcInvalidArgumentException(`Invalid argument: failed to decode proof_client Any value: ${error}`);
-    }
-    if (!proofClientStateTypeUrl) {
-      throw new GrpcInvalidArgumentException('Invalid argument: proof_client Any.type_url is required');
-    }
-    if (proofClientStateTypeUrl !== connectionOpenAckOperator.counterpartyClientStateTypeUrl) {
-      throw new GrpcInvalidArgumentException(
-        `Invalid argument: client_state.type_url mismatch (request=${connectionOpenAckOperator.counterpartyClientStateTypeUrl}, proof=${proofClientStateTypeUrl})`,
-      );
-    }
-
-    const requestClientValueBytes = Buffer.from(connectionOpenAckOperator.counterpartyClientState, 'hex');
-    if (!Buffer.from(proofClientValueHex, 'hex').equals(requestClientValueBytes)) {
-      this.logConnOpenAckWarn(
-        `[DEBUG] ConnOpenAck request client_state Any bytes differ from proof_client Any bytes; canonicalizing to proof value (request_len=${requestClientValueBytes.length}, proof_len=${Buffer.from(proofClientValueHex, 'hex').length})`,
-      );
-    }
-    const canonicalCounterpartyClientStateHex = proofClientValueHex;
-    const expectedClientValueBytes = Buffer.from(canonicalCounterpartyClientStateHex, 'hex');
-
-    // Debugging aid: verify that the Tendermint proofs Hermes provided are actually proving
-    // the key/value pair we expect for ConnOpenAck (connection state + counterparty client state).
-    //
-    // If this is wrong, the on-chain `verify_proof` minting policy will fail, and the
-    // `spend_connection` script will fail as well (it requires a successful verify-proof mint).
+    // Debugging aid: verify that the Tendermint proof Hermes provided is actually proving
+    // the counterparty connection state we expect for ConnOpenAck.
     try {
       const expectedConnKeyUtf8 = connectionPath(convertHex2String(updatedConnectionDatum.state.counterparty.connection_id));
       const expectedConnValue = ConnectionEnd.encode(cardanoConnectionEnd).finish();
-      const expectedClientKeyUtf8 = clientStatePath(convertHex2String(updatedConnectionDatum.state.counterparty.client_id));
-      const expectedClientValue = expectedClientValueBytes;
       const expectedConnValueBuf = Buffer.from(expectedConnValue);
-      const expectedClientValueBuf = Buffer.from(expectedClientValue);
 
       const tryExist = firstExist(connectionOpenAckOperator.proofTry as any);
       if (tryExist?.key && tryExist?.value) {
@@ -1230,19 +1190,6 @@ export class ConnectionService {
           `[DEBUG] ConnOpenAck proof_try_value_matches_expected=${valueBytes.equals(expectedConnValueBuf)}`,
         );
       }
-
-      const clientExist = firstExist(connectionOpenAckOperator.proofClient as any);
-      if (clientExist?.key && clientExist?.value) {
-        const keyUtf8 = Buffer.from(clientExist.key, 'hex').toString('utf8');
-        const valueBytes = Buffer.from(clientExist.value, 'hex');
-        const decodedAny = Any.decode(valueBytes);
-        this.logConnOpenAckDebug(
-          `[DEBUG] ConnOpenAck proof_client: key='${keyUtf8}', expected='${expectedClientKeyUtf8}', value_len=${valueBytes.length}, expected_len=${expectedClientValue.length}, any_type_url=${decodedAny.type_url}`,
-        );
-        this.logConnOpenAckDebug(
-          `[DEBUG] ConnOpenAck proof_client_value_matches_expected=${valueBytes.equals(expectedClientValueBuf)}`,
-        );
-      }
     } catch (e) {
       this.logConnOpenAckWarn(`[DEBUG] ConnOpenAck proof debug failed: ${e}`);
     }
@@ -1252,50 +1199,24 @@ export class ConnectionService {
       `[DEBUG] ConnOpenAck delay_period(ns)=${updatedConnectionDatum.state.delay_period} delay_block_period=${delayBlockPeriod} proof_height=${connectionOpenAckOperator.proofHeight.revisionNumber}/${connectionOpenAckOperator.proofHeight.revisionHeight}`,
     );
 
-    const clientMembershipValueHex = proofClientValueHex;
-    this.logConnOpenAckDebug(
-      `[DEBUG] ConnOpenAck verify_proof client value source=proof hex_len=${clientMembershipValueHex.length}`,
-    );
-
     const verifyProofRedeemer: VerifyProofRedeemer = {
-      BatchVerifyMembership: [
-        [
-          {
-            cs: clientDatum.state.clientState,
-            cons_state: consensusState,
-            height: connectionOpenAckOperator.proofHeight,
-            delay_time_period: updatedConnectionDatum.state.delay_period,
-            delay_block_period: delayBlockPeriod,
-            proof: connectionOpenAckOperator.proofTry,
-            path: {
-              key_path: [
-                updatedConnectionDatum.state.counterparty.prefix.key_prefix,
-                convertString2Hex(
-                  connectionPath(convertHex2String(updatedConnectionDatum.state.counterparty.connection_id)),
-                ),
-              ],
-            },
-            value: toHex(ConnectionEnd.encode(cardanoConnectionEnd).finish()),
-          },
-          {
-            cs: clientDatum.state.clientState,
-            cons_state: consensusState,
-            height: connectionOpenAckOperator.proofHeight,
-            delay_time_period: updatedConnectionDatum.state.delay_period,
-            delay_block_period: delayBlockPeriod,
-            proof: connectionOpenAckOperator.proofClient,
-            path: {
-              key_path: [
-                updatedConnectionDatum.state.counterparty.prefix.key_prefix,
-                convertString2Hex(
-                  clientStatePath(convertHex2String(updatedConnectionDatum.state.counterparty.client_id)),
-                ),
-              ],
-            },
-            value: clientMembershipValueHex,
-          },
-        ],
-      ],
+      VerifyMembership: {
+        cs: clientDatum.state.clientState,
+        cons_state: consensusState,
+        height: connectionOpenAckOperator.proofHeight,
+        delay_time_period: updatedConnectionDatum.state.delay_period,
+        delay_block_period: delayBlockPeriod,
+        proof: connectionOpenAckOperator.proofTry,
+        path: {
+          key_path: [
+            updatedConnectionDatum.state.counterparty.prefix.key_prefix,
+            convertString2Hex(
+              connectionPath(convertHex2String(updatedConnectionDatum.state.counterparty.connection_id)),
+            ),
+          ],
+        },
+        value: toHex(ConnectionEnd.encode(cardanoConnectionEnd).finish()),
+      },
     };
 
     const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
@@ -1306,14 +1227,7 @@ export class ConnectionService {
       `[DEBUG] ConnOpenAck encoded_verify_proof_redeemer head=${encodedVerifyProofRedeemer.substring(0, 16)} len=${encodedVerifyProofRedeemer.length}`,
     );
 
-    const spendConnectionRedeemer: SpendConnectionRedeemer = {
-      ConnOpenAck: {
-        counterparty_client_state: canonicalCounterpartyClientStateHex,
-        proof_try: connectionOpenAckOperator.proofTry,
-        proof_client: connectionOpenAckOperator.proofClient,
-        proof_height: connectionOpenAckOperator.proofHeight,
-      },
-    };
+    const spendConnectionRedeemer: SpendConnectionRedeemer = 'ConnOpenAck';
     const encodedSpendConnectionRedeemer = await this.lucidService.encode<SpendConnectionRedeemer>(
       spendConnectionRedeemer,
       'spendConnectionRedeemer',

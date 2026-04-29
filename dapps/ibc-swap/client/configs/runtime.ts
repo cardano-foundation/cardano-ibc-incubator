@@ -6,12 +6,6 @@ export const firstNonEmpty = (
 export type IbcSwapMode = 'local' | 'testnet' | 'mainnet';
 
 const rawMode = firstNonEmpty(process.env.NEXT_PUBLIC_IBC_SWAP_MODE);
-const isServerRuntime = typeof window === 'undefined';
-
-const serverFirstNonEmpty = (
-  ...values: Array<string | undefined>
-): string | undefined =>
-  isServerRuntime ? firstNonEmpty(...values) : undefined;
 
 export const IBC_SWAP_MODE: IbcSwapMode =
   rawMode === 'testnet' || rawMode === 'mainnet' ? rawMode : 'local';

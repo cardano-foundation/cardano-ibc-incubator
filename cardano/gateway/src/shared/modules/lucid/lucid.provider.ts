@@ -327,6 +327,57 @@ function computeRuntimeProviderDelayMs(failedAttempt: number): number {
   return Math.round(Math.min(backoffDelay, RUNTIME_PROVIDER_MAX_DELAY_MS) * jitterMultiplier);
 }
 
+function extractOverlappingOutRefs(error: unknown): Set<string> {
+  const message = summarizeError(error);
+  if (!message.toLowerCase().includes('overlappingoutputreferences')) {
+    return new Set();
+  }
+
+  const refs = new Set<string>();
+  const refPattern =
+    /"transaction"\s*:\s*\{\s*"id"\s*:\s*"([0-9a-f]{64})"\s*\}\s*,\s*"index"\s*:\s*(\d+)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = refPattern.exec(message)) !== null) {
+    refs.add(`${match[1].toLowerCase()}#${Number(match[2])}`);
+  }
+  return refs;
+}
+
+async function evaluateTxWithOverlapFallback(
+  originalEvaluateTx: (tx: string, additionalUTxOs?: any[]) => Promise<any>,
+  tx: string,
+  additionalUTxOs?: any[],
+): Promise<any> {
+  try {
+    return await retryRuntimeProviderOperation(
+      () => originalEvaluateTx(tx, additionalUTxOs),
+      'Kupmios.evaluateTx',
+    );
+  } catch (error) {
+    const overlappingRefs = extractOverlappingOutRefs(error);
+    if (!Array.isArray(additionalUTxOs) || overlappingRefs.size === 0) {
+      throw error;
+    }
+
+    const filteredAdditionalUtxos = additionalUTxOs.filter((utxo) => {
+      const txHash = typeof utxo?.txHash === 'string' ? utxo.txHash.toLowerCase() : '';
+      const outputIndex = Number(utxo?.outputIndex);
+      return !overlappingRefs.has(`${txHash}#${outputIndex}`);
+    });
+    if (filteredAdditionalUtxos.length === additionalUTxOs.length) {
+      throw error;
+    }
+
+    console.warn(
+      `[runtime] Kupmios.evaluateTx rejected ${additionalUTxOs.length - filteredAdditionalUtxos.length} overlapping additional UTxO(s); retrying without them`,
+    );
+    return await retryRuntimeProviderOperation(
+      () => originalEvaluateTx(tx, filteredAdditionalUtxos.length > 0 ? filteredAdditionalUtxos : undefined),
+      'Kupmios.evaluateTx',
+    );
+  }
+}
+
 type KupoValue = {
   coins: number;
   assets: Record<string, number>;
@@ -750,10 +801,7 @@ export const LucidClient = {
     const originalEvaluateTx = provider.evaluateTx?.bind(provider);
     if (typeof originalEvaluateTx === 'function') {
       provider.evaluateTx = async (tx: string, additionalUTxOs?: any[]) =>
-        retryRuntimeProviderOperation(
-          () => originalEvaluateTx(tx, additionalUTxOs),
-          'Kupmios.evaluateTx',
-        );
+        evaluateTxWithOverlapFallback(originalEvaluateTx, tx, additionalUTxOs);
     }
 
     const originalSubmitTx = provider.submitTx?.bind(provider);

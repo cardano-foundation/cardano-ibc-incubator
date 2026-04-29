@@ -9,9 +9,9 @@ use crate::{
     config, logger,
     start::{
         build_aiken_validators_if_needed, build_hermes_if_needed, deploy_contracts,
-        deploy_preprod_bridge, start_cosmos_entrypoint_chain,
-        start_cosmos_entrypoint_chain_services, start_gateway, start_hermes_daemon, start_mithril,
-        start_relayer, wait_for_cosmos_entrypoint_chain_ready,
+        deploy_preprod_bridge, ibc_swap_dapp_url, start_cosmos_entrypoint_chain,
+        start_cosmos_entrypoint_chain_services, start_dapp, start_gateway, start_hermes_daemon,
+        start_mithril, start_relayer, wait_for_cosmos_entrypoint_chain_ready,
     },
     utils::{prompt_runtime_deployer_sk, query_balance},
     StartTarget, StopTarget,
@@ -76,6 +76,7 @@ pub async fn run_start(
     let start_network = start_all || target == Some(StartTarget::Network);
     let start_cosmos = start_all || target == Some(StartTarget::Entrypoint);
     let start_bridge = start_all || target == Some(StartTarget::Bridge);
+    let start_dapp_target = start_all || target == Some(StartTarget::Dapp);
 
     if !chain_flags.is_empty() {
         return Err(
@@ -647,6 +648,22 @@ pub async fn run_start(
             logger::log("   1. Check health: caribic health-check");
             logger::log("   2. Review exported preprod artifacts in manifests/preprod");
             logger::log("   3. Restart gateway/relayer independently with `caribic start gateway --network preprod` or `caribic start relayer --network preprod`");
+        }
+    }
+
+    if start_dapp_target {
+        match start_dapp(project_root_path, clean, core_cardano_network) {
+            Ok(_) => logger::log(&format!(
+                "PASS: IBC Swap dapp started (Next.js UI at {})",
+                ibc_swap_dapp_url()
+            )),
+            Err(error) => {
+                return fail_and_stop_started_services(
+                    project_root_path,
+                    StopTarget::Dapp,
+                    &format!("ERROR: Failed to start IBC Swap dapp: {}", error),
+                )
+            }
         }
     }
 

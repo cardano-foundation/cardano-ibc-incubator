@@ -113,28 +113,69 @@ services:
         max-file: "20"
     depends_on:
       - cardano-node
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - ${KUPO_PORT:-1442}:1442
+    entrypoint:
+      - /bin/sh
+      - -ec
     command:
-      [
-        "--node-socket",
-        "/runtime/node.socket",
-        "--node-config",
-        "/runtime/${CARDANO_NODE_CONFIG_FILE:-cardano-node.json}",
-        "--since",
-        "${KUPO_SINCE:-origin}",
-        "--match",
-        "${KUPO_MATCH:-*}",
-        "--workdir",
-        "/db",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "1442"
-      ]
+      - |
+        set --
+        if [ -n "${KUPO_MATCHES:-}" ]; then
+          for pattern in ${KUPO_MATCHES}; do
+            set -- "$$@" --match "$$pattern"
+          done
+        else
+          set -- "$$@" --match "${KUPO_MATCH:-*}"
+        fi
+        if [ "${KUPO_BLOCKCHAIN_SOURCE:-node}" = "ogmios" ]; then
+          test -n "${KUPO_OGMIOS_HOST:-}" || {
+            echo "KUPO_OGMIOS_HOST is required when KUPO_BLOCKCHAIN_SOURCE=ogmios" >&2
+            exit 1
+          }
+          exec kupo \
+            --ogmios-host "${KUPO_OGMIOS_HOST}" \
+            --ogmios-port "${KUPO_OGMIOS_PORT:-443}" \
+            --since "${KUPO_SINCE:-tip}" \
+            --workdir /db \
+            --host 0.0.0.0 \
+            --port 1442 \
+            "$$@"
+        fi
+        exec kupo \
+          --node-socket /runtime/node.socket \
+          --node-config /runtime/${CARDANO_NODE_CONFIG_FILE:-cardano-node.json} \
+          --since "${KUPO_SINCE:-origin}" \
+          --workdir /db \
+          --host 0.0.0.0 \
+          --port 1442 \
+          "$$@"
     volumes:
       - ./${CARDANO_RUNTIME_DIR:-devnet}:/runtime
       - ./kupo-db:/db
+
+  ogmios-proxy:
+    image: node:20-alpine
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "400k"
+        max-file: "20"
+    environment:
+      - OGMIOS_PROXY_UPSTREAM_HOST=${OGMIOS_PROXY_UPSTREAM_HOST:-}
+      - OGMIOS_PROXY_UPSTREAM_PORT=${OGMIOS_PROXY_UPSTREAM_PORT:-443}
+      - OGMIOS_PROXY_API_KEY=${OGMIOS_PROXY_API_KEY:-}
+      - OGMIOS_PROXY_LISTEN_PORT=1337
+    ports:
+      - ${OGMIOS_PROXY_HOST_PORT:-1337}:1337
+    command:
+      - node
+      - /proxy/ws-proxy.js
+    volumes:
+      - ./ogmios-proxy/ws-proxy.js:/proxy/ws-proxy.js:ro
+      - ../../cardano/gateway/node_modules:/workspace/node_modules:ro
 
   postgres:
     image: postgres:15

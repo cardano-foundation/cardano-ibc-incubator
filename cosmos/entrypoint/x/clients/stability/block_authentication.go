@@ -235,7 +235,7 @@ func buildBlockVerificationArtifacts(decodedBlock ledger.Block) (string, string,
 		if err != nil {
 			return "", "", nil, err
 		}
-		return hex.EncodeToString(block.Header.Cbor()), bodyHex, bytes.Clone(block.Header.Body.VrfKey), nil
+		return hex.EncodeToString(block.BlockHeader.Cbor()), bodyHex, bytes.Clone(block.BlockHeader.Body.VrfKey), nil
 	case *ledger.ConwayBlock:
 		bodyHex, err := encodeNativeVerifiedBlockBodyHex(
 			len(block.TransactionBodies),
@@ -250,7 +250,7 @@ func buildBlockVerificationArtifacts(decodedBlock ledger.Block) (string, string,
 		if err != nil {
 			return "", "", nil, err
 		}
-		return hex.EncodeToString(block.Header.Cbor()), bodyHex, bytes.Clone(block.Header.Body.VrfKey), nil
+		return hex.EncodeToString(block.BlockHeader.Cbor()), bodyHex, bytes.Clone(block.BlockHeader.Body.VrfKey), nil
 	default:
 		return "", "", nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "unsupported block era %T", decodedBlock)
 	}
@@ -259,9 +259,9 @@ func buildBlockVerificationArtifacts(decodedBlock ledger.Block) (string, string,
 func blockPrevHash(decodedBlock ledger.Block) (string, error) {
 	switch block := decodedBlock.(type) {
 	case *ledger.BabbageBlock:
-		return block.Header.Body.PrevHash.String(), nil
+		return block.BlockHeader.Body.PrevHash.String(), nil
 	case *ledger.ConwayBlock:
-		return block.Header.Body.PrevHash.String(), nil
+		return block.BlockHeader.Body.PrevHash.String(), nil
 	default:
 		return "", errorsmod.Wrapf(ErrInvalidAcceptedBlock, "unsupported block era %T", decodedBlock)
 	}

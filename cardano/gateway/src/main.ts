@@ -4,9 +4,11 @@ import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { grpcClientOptions } from './grpc-client.options';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { TreeInitService } from './shared/services/tree-init.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: true });
+  await app.get(TreeInitService, { strict: false }).initialize();
   app.connectMicroservice<MicroserviceOptions>(grpcClientOptions);
   app.connectMicroservice<MicroserviceOptions>({
     transport: Transport.TCP,

@@ -668,7 +668,8 @@ if [ -z "$SETTLEMENT_NO_PROGRESS_TIMEOUT_SECS" ]; then
 fi
 if [ -z "$TRANSFER_SUBMIT_TIMEOUT_SECS" ]; then
   if [ "$CARDANO_CHAIN_ID" = "cardano-preprod" ]; then
-    TRANSFER_SUBMIT_TIMEOUT_SECS=900
+    # Cardano-origin submits wait for the gateway's stability proof window.
+    TRANSFER_SUBMIT_TIMEOUT_SECS=2400
   else
     TRANSFER_SUBMIT_TIMEOUT_SECS=300
   fi

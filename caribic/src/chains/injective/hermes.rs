@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::Path;
-use std::process::Output;
+use std::process::{Command, Output};
 use std::thread;
 use std::time::Duration;
 

@@ -1,5 +1,6 @@
-import { Box, Image } from '@chakra-ui/react';
+import { Box, Image, Text } from '@chakra-ui/react';
 import EllipseIcon from '@/assets/icons/elippse.svg';
+import { COLOR } from '@/styles/color';
 import { StyledNetworkItemName, StyledNetworkItemWrapper } from './index.style';
 
 export type NetworkItemProps = {
@@ -8,6 +9,9 @@ export type NetworkItemProps = {
   networkName?: string;
   networkLogo?: string;
   networkPrettyName?: string;
+  networkType?: string;
+  networkRole?: string;
+  disabledReason?: string;
   isActive?: boolean;
   onClick?: () => void;
   isDisabled?: boolean;
@@ -19,10 +23,19 @@ export const NetworkItem = ({
   networkName,
   networkLogo,
   networkPrettyName,
+  networkType,
+  networkRole,
+  disabledReason,
   isActive,
   onClick,
   isDisabled,
 }: NetworkItemProps) => {
+  const subtitle =
+    disabledReason ||
+    [networkType, networkRole === 'route-infra' ? 'route infrastructure' : null]
+      .filter(Boolean)
+      .join(' / ');
+
   return (
     <StyledNetworkItemWrapper
       onClick={isDisabled ? () => {} : onClick}
@@ -34,7 +47,12 @@ export const NetworkItem = ({
       <Box borderRadius="100%" width={30}>
         <Image src={networkLogo} alt={networkName} width={30} height={30} />
       </Box>
-      <StyledNetworkItemName>{networkPrettyName}</StyledNetworkItemName>
+      <Box>
+        <StyledNetworkItemName>{networkPrettyName}</StyledNetworkItemName>
+        <Text color={COLOR.neutral_3} fontSize="11px" lineHeight="14px">
+          {subtitle}
+        </Text>
+      </Box>
       <Box
         flex="1"
         display={isActive ? 'flex' : 'none'}

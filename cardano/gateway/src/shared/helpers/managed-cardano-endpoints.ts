@@ -28,6 +28,23 @@ function normalizeDmtrHost(url: string, apiKey?: string): URL {
   return parsedUrl;
 }
 
+function isAuthenticatedDmtrHost(
+  rawUrl?: string | null,
+  apiKey?: string | null,
+): boolean {
+  const trimmedUrl = trimTrailingSlash(rawUrl);
+  const trimmedApiKey = apiKey?.trim();
+  if (!trimmedUrl || !trimmedApiKey) {
+    return false;
+  }
+
+  try {
+    return new URL(trimmedUrl).host.startsWith(`${trimmedApiKey}.`);
+  } catch {
+    return false;
+  }
+}
+
 export function resolveManagedOgmiosHttpEndpoint(
   rawUrl?: string | null,
   apiKey?: string | null,
@@ -88,9 +105,9 @@ export function resolveManagedKupoEndpoint(
     return undefined;
   }
 
-  // DMTR Kupo requires the authenticated hostname and the `dmtr-api-key` header for
-  // some asset match queries. Normalizing to the base host causes deterministic 401s
-  // on those paths, so keep the operator-configured host and attach the header below.
+  // Keep the operator-configured Kupo host. For DMTR this should normally be the
+  // authenticated hostname; sending the API key again as a header to that hostname
+  // causes intermittent 401s on some routes.
   void apiKey;
   return trimmed;
 }
@@ -103,7 +120,7 @@ export function resolveManagedKupmiosHeaders(
 ): KupmiosHeaders | undefined {
   const headers: KupmiosHeaders = {};
   const trimmedKupoApiKey = kupoApiKey?.trim();
-  if (trimmedKupoApiKey) {
+  if (trimmedKupoApiKey && !isAuthenticatedDmtrHost(kupoUrl, trimmedKupoApiKey)) {
     headers.kupoHeader = { 'dmtr-api-key': trimmedKupoApiKey };
   }
   const trimmedOgmiosApiKey = ogmiosApiKey?.trim();
@@ -167,10 +184,11 @@ export function installManagedCardanoAuthFetch(
   }
 
   const authRules = new Map<string, string>();
-  for (const rule of resolveServiceAuthRules(
-    kupoUrl,
-    kupoApiKey,
-  )) {
+  const normalizedKupoUrl =
+    kupoApiKey?.trim() && kupoUrl
+      ? normalizeDmtrHost(kupoUrl, kupoApiKey).toString()
+      : kupoUrl;
+  for (const rule of resolveServiceAuthRules(normalizedKupoUrl, kupoApiKey)) {
     authRules.set(rule.host, rule.apiKey);
   }
   for (const rule of resolveServiceAuthRules(

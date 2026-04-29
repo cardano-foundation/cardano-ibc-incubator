@@ -581,7 +581,8 @@ export class ClientService {
       },
     };
     let currentConsStateInArray = Array.from(currentClientDatumState.consensusStates.entries()).filter(
-      ([_, consState]) => !isExpired(newClientState, consState.timestamp, updateClientOperator.txValidFrom),
+      ([_, consState]) =>
+        !isExpired(currentClientDatumState.clientState, consState.timestamp, updateClientOperator.txValidFrom),
     );
 
     if (currentConsStateInArray.some(([key]) => headerHeight === key.revisionHeight)) {

@@ -14,6 +14,7 @@ import {
 } from '../shared/services/ibc-tree-cache.service';
 import { getCurrentTree } from '../shared/helpers/ibc-state-root';
 import { HISTORY_SERVICE, HistoryService } from '../query/services/history.service';
+import { TRANSACTION_CONFIRMATION_TIMEOUT_MS } from '../config/constant.config';
 
 @Injectable()
 export class SubmissionService {
@@ -63,7 +64,7 @@ export class SubmissionService {
       // Hermes expects the exact tx inclusion height in "revisionNumber-revisionHeight" form.
       // Yaci/bridge history is the runtime history contract in stake-weighted-stability mode,
       // so wait for that backend to index the submitted tx and use its block number.
-      const confirmedBlockNo = await this.waitForIndexedConfirmation(txHash);
+      const confirmedBlockNo = await this.waitForIndexedConfirmation(txHash, TRANSACTION_CONFIRMATION_TIMEOUT_MS);
 
       await this.applyPendingIbcTreeUpdate(signedTxCbor, txHash, BigInt(confirmedBlockNo));
 
@@ -235,6 +236,12 @@ export class SubmissionService {
       } catch (error) {
         const tooEarly = this.parseTxSubmittedTooEarlyError(error);
         if (!tooEarly) {
+          const acceptedTxHash = await this.resolveAcceptedDuplicateSubmit(
+            signedTxCbor,
+            error,
+          );
+          if (acceptedTxHash) return acceptedTxHash;
+
           const message = typeof error?.message === 'string' ? error.message : String(error);
           this.logger.error(`Failed to submit to Cardano: ${message}`);
           throw new GrpcInternalException(`Cardano submission failed: ${message}`);
@@ -272,6 +279,122 @@ export class SubmissionService {
 
     // Unreachable (loop either returns a tx hash or throws), but keeps TypeScript happy.
     throw new GrpcInternalException('Cardano submission failed: unexpected retry loop exit');
+  }
+
+  private async resolveAcceptedDuplicateSubmit(
+    signedTxCbor: string,
+    error: unknown,
+  ): Promise<string | null> {
+    if (!this.isUnknownOutputReferenceError(error)) return null;
+
+    const txHash = this.computeTxBodyHashHex(signedTxCbor);
+    if (!txHash) return null;
+
+    this.logger.warn(
+      `Submit returned unknown input references for ${txHash}; checking whether an earlier timed-out submit was accepted`,
+    );
+
+    try {
+      await this.waitForIndexedConfirmation(
+        txHash,
+        Math.min(TRANSACTION_CONFIRMATION_TIMEOUT_MS, 90_000),
+      );
+      this.logger.warn(
+        `Treating duplicate submit rejection for ${txHash} as success because the transaction is indexed`,
+      );
+      return txHash;
+    } catch (confirmationError) {
+      this.logger.warn(
+        `Duplicate-submit reconciliation for ${txHash} did not find an indexed transaction: ${
+          confirmationError?.message ?? confirmationError
+        }`,
+      );
+      return null;
+    }
+  }
+
+  private isUnknownOutputReferenceError(error: unknown): boolean {
+    const normalized = this.collectErrorSignals(error)
+      .map((signal) => signal.toLowerCase())
+      .join('\n');
+
+    return (
+      normalized.includes('unknownoutputreferences') ||
+      normalized.includes('unknown utxo references as inputs')
+    );
+  }
+
+  private collectErrorSignals(error: unknown): string[] {
+    const signals: string[] = [];
+    const visited = new Set<unknown>();
+
+    const push = (value: unknown) => {
+      if (typeof value !== 'string') return;
+      const trimmed = value.trim();
+      if (trimmed) signals.push(trimmed);
+    };
+
+    const visit = (value: unknown, depth: number) => {
+      if (value == null || depth > 8 || visited.has(value)) return;
+      visited.add(value);
+
+      if (typeof value === 'string') {
+        push(value);
+        return;
+      }
+
+      if (value instanceof Error) {
+        push(value.name);
+        push(value.message);
+        push(String(value));
+      }
+
+      if (typeof value === 'object') {
+        const record = value as Record<string, unknown>;
+        push(record.message);
+        push(record.name);
+        push(record.code);
+        push(record.reason);
+        push(record.details);
+        push(record.type);
+        push(record.statusText);
+
+        visit(record.cause, depth + 1);
+        visit(record.error, depth + 1);
+        visit(record.originalError, depth + 1);
+
+        for (const key of Object.getOwnPropertyNames(value)) {
+          if (
+            [
+              'message',
+              'name',
+              'code',
+              'reason',
+              'details',
+              'type',
+              'statusText',
+              'stack',
+            ].includes(key)
+          ) {
+            continue;
+          }
+          visit(record[key], depth + 1);
+        }
+
+        try {
+          push(JSON.stringify(value));
+        } catch {
+          // Circular provider errors are common; individual fields above are enough.
+        }
+      }
+
+      if (typeof value === 'number' || typeof value === 'boolean') {
+        push(String(value));
+      }
+    };
+
+    visit(error, 0);
+    return signals;
   }
 
   /**

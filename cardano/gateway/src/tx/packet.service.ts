@@ -1640,11 +1640,14 @@ export class PacketService {
       };
       // This keeps async-icq in the same host-state / channel-state update flow as
       // any other successful recv path.
+      this.logRecvPacketDebug('[DEBUG recvPacket] branch=async_icq_module');
       const unsignedTx = this.lucidService.createUnsignedRecvPacketModuleTx(unsignedRecvPacketModuleParams);
       return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
     }
 
     const stringData = convertHex2String(recvPacketOperator.packetData) || '';
+    this.logRecvPacketDebug(`[DEBUG recvPacket] incoming packet_data_hex=${recvPacketOperator.packetData}`);
+    this.logRecvPacketDebug(`[DEBUG recvPacket] incoming packet_data_utf8=${stringData}`);
 
     if (stringData.startsWith('{') && stringData.endsWith('}')) {
       let jsonData: unknown;
@@ -1791,6 +1794,7 @@ export class PacketService {
               receiverAddress: this.lucidService.credentialToAddress(fungibleTokenPacketData.receiver),
               denomToken,
             });
+            this.logRecvPacketDebug('[DEBUG recvPacket] branch=ics20_unescrow');
             const unsignedTx = this.lucidService.createUnsignedRecvPacketUnescrowTx(unsignedRecvPacketUnescrowParams);
             return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
           } else {
@@ -1939,6 +1943,7 @@ export class PacketService {
               voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
               traceRegistryKind: traceRegistryUpdate?.kind ?? 'none',
             });
+            this.logRecvPacketDebug('[DEBUG recvPacket] branch=ics20_mint_voucher');
             const unsignedTx = this.lucidService.createUnsignedRecvPacketMintTx(
               buildUnsignedRecvPacketMintParams(traceRegistryUpdate),
             );
@@ -2011,6 +2016,7 @@ export class PacketService {
       packetSequence: packet.sequence.toString(),
     });
     // handle recv packet mint
+    this.logRecvPacketDebug('[DEBUG recvPacket] branch=generic_non_ics20');
     const unsignedTx = this.lucidService.createUnsignedRecvPacketTx(unsignedRecvPacketMintParams);
     return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
   }

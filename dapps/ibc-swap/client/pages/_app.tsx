@@ -28,14 +28,13 @@ import { manrope } from 'styles/font';
 import { theme } from 'styles/theme';
 import { Layout } from '@/components/common';
 import { CustomAppProvider } from '@/contexts';
-import { customChainassets, customChains } from '@/configs/customChainInfo';
-import { CosmosWalletModal } from '@/components/common/Header/CosmosWalletModal';
 import {
-  ENTRYPOINT_REST_ENDPOINT,
-  ENTRYPOINT_RPC_ENDPOINT,
-  LOCAL_OSMOSIS_REST_ENDPOINT,
-  LOCAL_OSMOSIS_RPC_ENDPOINT,
-} from '@/configs/runtime';
+  cosmosEndpointOptions,
+  customChainassets,
+  customChains,
+} from '@/configs/customChainInfo';
+import { CosmosWalletModal } from '@/components/common/Header/CosmosWalletModal';
+import { RuntimeConfigProvider } from '@/contexts/RuntimeConfigContext';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -131,21 +130,6 @@ const getGasPrice = (chainId: string): string => {
   return `${fee?.fixed_min_gas_price}${fee?.denom}`;
 };
 
-const endpointOptions = {
-  endpoints: {
-    entrypoint: {
-      isLazy: true,
-      rpc: [ENTRYPOINT_RPC_ENDPOINT],
-      rest: [ENTRYPOINT_REST_ENDPOINT],
-    },
-    localosmosis: {
-      isLazy: true,
-      rpc: [LOCAL_OSMOSIS_RPC_ENDPOINT],
-      rest: [LOCAL_OSMOSIS_REST_ENDPOINT],
-    },
-  },
-};
-
 function MyApp({ Component, pageProps }: AppProps) {
   const [availableCosmosWallets, setAvailableCosmosWallets] = useState<any[]>(
     [],
@@ -207,30 +191,32 @@ function MyApp({ Component, pageProps }: AppProps) {
 
   return (
     <ChakraProvider theme={theme}>
-      {cosmosWalletsReady ? (
-        <ChainProvider
-          key={cosmosWalletProviderKey}
-          chains={customChains as any}
-          assetLists={customChainassets as any}
-          wallets={availableCosmosWallets}
-          signerOptions={signerOptions}
-          endpointOptions={endpointOptions}
-          walletModal={CosmosWalletModal}
-        >
-          <QueryClientProvider client={queryClient}>
-            <MeshProvider>
-              <Layout>
-                <main id="main" className={manrope.className}>
-                  <CustomAppProvider>
-                    <Component {...pageProps} />
-                    <ToastContainer />
-                  </CustomAppProvider>
-                </main>
-              </Layout>
-            </MeshProvider>
-          </QueryClientProvider>
-        </ChainProvider>
-      ) : null}
+      <RuntimeConfigProvider>
+        {cosmosWalletsReady ? (
+          <ChainProvider
+            key={cosmosWalletProviderKey}
+            chains={customChains as any}
+            assetLists={customChainassets as any}
+            wallets={availableCosmosWallets}
+            signerOptions={signerOptions}
+            endpointOptions={cosmosEndpointOptions}
+            walletModal={CosmosWalletModal}
+          >
+            <QueryClientProvider client={queryClient}>
+              <MeshProvider>
+                <Layout>
+                  <main id="main" className={manrope.className}>
+                    <CustomAppProvider>
+                      <Component {...pageProps} />
+                      <ToastContainer />
+                    </CustomAppProvider>
+                  </main>
+                </Layout>
+              </MeshProvider>
+            </QueryClientProvider>
+          </ChainProvider>
+        ) : null}
+      </RuntimeConfigProvider>
     </ChakraProvider>
   );
 }

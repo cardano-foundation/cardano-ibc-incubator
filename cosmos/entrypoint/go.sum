@@ -618,6 +618,8 @@ cloud.google.com/go/workflows v1.9.0/go.mod h1:ZGkj1aFIOd9c8Gerkjjq7OW7I5+l6cSvT
 cloud.google.com/go/workflows v1.10.0/go.mod h1:fZ8LmRmZQWacon9UCX1r/g/DfAXx5VcPALq2CxzdePw=
 connectrpc.com/connect v1.16.1 h1:rOdrK/RTI/7TVnn3JsVxt3n028MlTRwmK5Q4heSpjis=
 connectrpc.com/connect v1.16.1/go.mod h1:XpZAduBQUySsb4/KO5JffORVkDI4B6/EYPi7N8xpNZw=
+connectrpc.com/connect v1.17.0 h1:W0ZqMhtVzn9Zhn2yATuUokDLO5N+gIuBWMOnsQrfmZk=
+connectrpc.com/connect v1.17.0/go.mod h1:0292hj1rnx8oFrStN7cB4jjVBeqs+Yx5yDIC2prWDO8=
 connectrpc.com/otelconnect v0.7.0 h1:ZH55ZZtcJOTKWWLy3qmL4Pam4RzRWBJFOqTPyAqCXkY=
 connectrpc.com/otelconnect v0.7.0/go.mod h1:Bt2ivBymHZHqxvo4HkJ0EwHuUzQN6k2l0oH+mp/8nwc=
 cosmossdk.io/api v0.9.2 h1:9i9ptOBdmoIEVEVWLtYYHjxZonlF/aOVODLFaxpmNtg=
@@ -737,6 +739,8 @@ github.com/bits-and-blooms/bitset v1.22.0 h1:Tquv9S8+SGaS3EhyA+up3FXzmkhxPGjQQCk
 github.com/bits-and-blooms/bitset v1.22.0/go.mod h1:7hO7Gc7Pp1vODcmWvKMRA9BNmbv6a/7QIWpPxHddWR8=
 github.com/blinklabs-io/gouroboros v0.89.1 h1:pcD9hc2EkiPkq915aMDBAbgQZTX4I73gUzZf2UUcggs=
 github.com/blinklabs-io/gouroboros v0.89.1/go.mod h1:l6G9mwAa/p0CBGCZBjK1W67815gWrRlmcGl6fccbt4U=
+github.com/blinklabs-io/gouroboros v0.105.0 h1:8/uo7mtijJrbS1mNP0KRCzdZm+lWuTGhWuA8Y40EsDU=
+github.com/blinklabs-io/gouroboros v0.105.0/go.mod h1:nW0/J6Zv5Oupr4MHehfJ3noSXu7VSxKWusFRNKo0nhI=
 github.com/boombuler/barcode v1.0.0/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=
 github.com/boombuler/barcode v1.0.1/go.mod h1:paBWMcWSl3LHKBqUq+rly7CNSldXjb2rDl3JlRe0mD8=
 github.com/btcsuite/btcd v0.20.1-beta h1:Ik4hyJqN8Jfyv3S4AGBOmyouMsYE3EdYODkMbQjwPGw=
@@ -1642,6 +1646,8 @@ github.com/urfave/cli v1.20.0/go.mod h1:70zkFmudgCuE/ngEzBv17Jvp/497gISqfk5gWijb
 github.com/urfave/cli v1.22.1/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
 github.com/utxorpc/go-codegen v0.5.1 h1:Xhq3CdWAQEJgi46Naq7epeO4G5EyGApP38yNxMCqCbY=
 github.com/utxorpc/go-codegen v0.5.1/go.mod h1:sEfglXN19j3cq0qQvb2NS4IcxUSrK1crYXbsVf11SGM=
+github.com/utxorpc/go-codegen v0.12.0 h1:uSmJ4jTQpFbPaq8zCdYJi1/pnJmoCLFCcBitybjH+gQ=
+github.com/utxorpc/go-codegen v0.12.0/go.mod h1:NHXsykQWNetMMm2Kak+PfqmEY9Htgs6unJENPC4Kobs=
 github.com/vbatts/tar-split v0.11.5 h1:3bHCTIheBm1qFTcgh9oPu+nNBtX+XJIupG/vacinCts=
 github.com/vbatts/tar-split v0.11.5/go.mod h1:yZbwRsSeGjusneWgA781EKej9HF8vme8okylkAeNKLk=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=

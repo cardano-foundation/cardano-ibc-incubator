@@ -65,7 +65,7 @@ export class KupoService {
     tokenNamePrefix?: string,
   ): Promise<Array<UTxO & { matchedTokenNames: string[] }>> {
     try {
-      const utxos = await this.lucidService.findUtxoAt(address);
+      const utxos = await this.lucidService.findIndexedUtxosAt(address);
       return utxos
         .map((utxo) => ({
           ...utxo,

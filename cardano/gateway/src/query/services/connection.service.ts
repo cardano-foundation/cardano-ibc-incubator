@@ -66,16 +66,21 @@ export class ConnectionService {
 
   private async getQueryHeight(): Promise<bigint> {
     try {
-      const height = await resolveProofHeightForCurrentRoot({
-        logger: this.logger,
-        lucidService: this.lucidService,
-        mithrilService: this.mithrilService,
-        historyService: this.historyService,
-        context: 'queryConnection',
-        lightClientMode:
-          this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
-          'stake-weighted-stability',
-      });
+      const height = await Promise.race([
+        resolveProofHeightForCurrentRoot({
+          logger: this.logger,
+          lucidService: this.lucidService,
+          mithrilService: this.mithrilService,
+          historyService: this.historyService,
+          context: 'queryConnection',
+          lightClientMode:
+            this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
+            'stake-weighted-stability',
+        }),
+        new Promise<bigint>((_, reject) =>
+          setTimeout(() => reject(new Error('query height timeout')), 5000),
+        ),
+      ]);
       return height > 0n ? height : 1n;
     } catch {
       // Ignore and fall through.

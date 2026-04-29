@@ -307,7 +307,7 @@ export async function buildUnsignedSendPacketTx(
     const voucherTokenUnit =
       context.deployment.mintVoucherScriptHash +
       buildVoucherTokenName(resolvedDenom, deps);
-    const senderAddress = sendPacketOperator.sender;
+    const senderAddress = sendPacketOperator.signer;
     const senderVoucherTokenUtxo = await deps.findUtxoAtWithUnit(
       senderAddress,
       voucherTokenUnit,
@@ -359,7 +359,7 @@ export async function buildUnsignedSendPacketTx(
     };
   }
 
-  const senderAddress = sendPacketOperator.sender;
+  const senderAddress = sendPacketOperator.signer;
   const senderWalletUtxos = await deps.tryFindUtxosAt(
     senderAddress,
     LOOKUP_RETRY_OPTIONS,

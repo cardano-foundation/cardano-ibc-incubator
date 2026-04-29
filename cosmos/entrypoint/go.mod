@@ -26,7 +26,7 @@ require (
 	cosmossdk.io/x/feegrant v0.1.1
 	cosmossdk.io/x/upgrade v0.2.0
 	github.com/ComposableFi/go-merkle-trees v0.0.0-20220505132313-e976260288cc
-	github.com/blinklabs-io/gouroboros v0.89.1
+	github.com/blinklabs-io/gouroboros v0.105.0
 	github.com/bufbuild/buf v1.31.0
 	github.com/cometbft/cometbft v0.38.17
 	github.com/cosmos/cosmos-db v1.1.1
@@ -64,7 +64,7 @@ require (
 	cloud.google.com/go/iam v1.2.2 // indirect
 	cloud.google.com/go/monitoring v1.21.2 // indirect
 	cloud.google.com/go/storage v1.49.0 // indirect
-	connectrpc.com/connect v1.16.1 // indirect
+	connectrpc.com/connect v1.17.0 // indirect
 	connectrpc.com/otelconnect v0.7.0 // indirect
 	cosmossdk.io/collections v1.2.0 // indirect
 	cosmossdk.io/math v1.5.3 // indirect
@@ -243,7 +243,7 @@ require (
 	github.com/tidwall/btree v1.7.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ulikunitz/xz v0.5.11 // indirect
-	github.com/utxorpc/go-codegen v0.5.1 // indirect
+	github.com/utxorpc/go-codegen v0.12.0 // indirect
 	github.com/vbatts/tar-split v0.11.5 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zeebo/errs v1.4.0 // indirect

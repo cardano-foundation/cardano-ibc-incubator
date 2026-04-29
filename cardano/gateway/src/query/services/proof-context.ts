@@ -42,6 +42,28 @@ type ProofQueryContext =
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function isTransientMithrilTransportError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  return [
+    'socket hang up',
+    'econnreset',
+    'econnrefused',
+    'etimedout',
+    'timeout',
+    'timed out',
+    'network error',
+    'tls',
+    'ssl',
+    'handshake',
+    'temporary',
+    'temporarily unavailable',
+    'bad gateway',
+    'gateway timeout',
+    'service unavailable',
+  ].some((marker) => normalized.includes(marker));
+}
+
 function isMissingCurrentLiveHostStateEvidence(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes('Historical tx evidence unavailable for current live HostState tx');
@@ -182,36 +204,48 @@ async function resolveCertifiedProofHeightForCurrentRoot({
   const liveRoot = liveHostStateDatum.state.ibc_state_root;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const snapshots = await mithrilService.getCardanoTransactionsSetSnapshot();
-    const latestSnapshot = snapshots?.[0];
-    if (!latestSnapshot) {
-      if (attempt + 1 === maxAttempts) {
-        throw new GrpcInternalException('Mithril transaction snapshots unavailable for proof_height');
+    try {
+      const snapshots = await mithrilService.getCardanoTransactionsSetSnapshot();
+      const latestSnapshot = snapshots?.[0];
+      if (!latestSnapshot) {
+        if (attempt + 1 === maxAttempts) {
+          throw new GrpcInternalException('Mithril transaction snapshots unavailable for proof_height');
+        }
+        await sleep(delayMs);
+        continue;
       }
-      await sleep(delayMs);
-      continue;
-    }
 
-    const certifiedHostStateUtxo = await historyService.findHostStateUtxoAtOrBeforeBlockNo(
-      BigInt(latestSnapshot.block_number),
-    );
-
-    const currentRootCertified =
-      certifiedHostStateUtxo.txHash === liveHostStateUtxo.txHash &&
-      certifiedHostStateUtxo.outputIndex === liveHostStateUtxo.outputIndex;
-
-    if (currentRootCertified) {
-      return BigInt(latestSnapshot.block_number);
-    }
-
-    if (attempt + 1 < maxAttempts) {
-      logger.warn(
-        `[${context}] Mithril-certified HostState ${certifiedHostStateUtxo.txHash}#${certifiedHostStateUtxo.outputIndex}` +
-          ` at block ${latestSnapshot.block_number} lags current root ${liveRoot.substring(0, 16)}...` +
-          ` (${liveHostStateUtxo.txHash}#${liveHostStateUtxo.outputIndex}); waiting for certification`,
+      const certifiedHostStateUtxo = await historyService.findHostStateUtxoAtOrBeforeBlockNo(
+        BigInt(latestSnapshot.block_number),
       );
-      await sleep(delayMs);
-      continue;
+
+      const currentRootCertified =
+        certifiedHostStateUtxo.txHash === liveHostStateUtxo.txHash &&
+        certifiedHostStateUtxo.outputIndex === liveHostStateUtxo.outputIndex;
+
+      if (currentRootCertified) {
+        return BigInt(latestSnapshot.block_number);
+      }
+
+      if (attempt + 1 < maxAttempts) {
+        logger.warn(
+          `[${context}] Mithril-certified HostState ${certifiedHostStateUtxo.txHash}#${certifiedHostStateUtxo.outputIndex}` +
+            ` at block ${latestSnapshot.block_number} lags current root ${liveRoot.substring(0, 16)}...` +
+            ` (${liveHostStateUtxo.txHash}#${liveHostStateUtxo.outputIndex}); waiting for certification`,
+        );
+        await sleep(delayMs);
+        continue;
+      }
+    } catch (error) {
+      if (attempt + 1 < maxAttempts && isTransientMithrilTransportError(error)) {
+        logger.warn(
+          `[${context}] Mithril transport failed while resolving proof height: ${error instanceof Error ? error.message : String(error)}; retrying`,
+        );
+        await sleep(delayMs);
+        continue;
+      }
+
+      throw error;
     }
   }
 
@@ -228,14 +262,22 @@ async function resolveStabilityAcceptedProofHeightForCurrentRoot({
   maxAttempts = 10,
   delayMs = 1500,
 }: Omit<ProofContextDeps, 'mithrilService' | 'lightClientMode'>): Promise<bigint> {
+  const startedAt = Date.now();
   const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
+  logger.debug(
+    `[${context}] loaded live HostState UTxO ${liveHostStateUtxo.txHash}#${liveHostStateUtxo.outputIndex} in ${Date.now() - startedAt}ms`,
+  );
   const liveHostStateTxHeight = await resolveCurrentLiveHostStateTxHeight({
     lucidService,
     historyService,
   });
+  logger.debug(
+    `[${context}] resolved live HostState tx height ${liveHostStateTxHeight.toString()} in ${Date.now() - startedAt}ms`,
+  );
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
+      const attemptStartedAt = Date.now();
       const stabilityEvidence = await loadStakeWeightedStabilityEvidenceForTxHash({
         historyService,
         txHash: liveHostStateUtxo.txHash,
@@ -243,6 +285,9 @@ async function resolveStabilityAcceptedProofHeightForCurrentRoot({
         missingTxEvidenceMessage: `HostState tx evidence unavailable for proof generation (${context})`,
         missingAnchorBlockMessage: `Cardano history block for HostState tx ${liveHostStateUtxo.txHash} unavailable for stability proof generation (${context})`,
       });
+      logger.debug(
+        `[${context}] stability evidence accepted at ${stabilityEvidence.anchorHeight.toString()} on attempt ${attempt + 1} in ${Date.now() - attemptStartedAt}ms`,
+      );
       return stabilityEvidence.anchorHeight;
     } catch (error) {
       if (isPriorEpochPointTooOld(error) || isCurrentRootFromPriorEpoch(error)) {

@@ -1,27 +1,13 @@
-import {
-  createContext,
-  useMemo,
-  useState,
-  useEffect,
-} from 'react';
-import {
-  RawChannelMapping,
-  ChainToChainChannels,
-} from '@/types/IBCParams';
+import { createContext, useMemo, useState, useEffect } from 'react';
+import { RawChannelMapping, ChainToChainChannels } from '@/types/IBCParams';
 import {
   fetchAllChannels,
   fetchPacketForwardFee,
 } from '@/services/CommonCosmosServices';
 import BigNumber from 'bignumber.js';
-import {
-  DEFAULT_PFM_FEE,
-  ENTRYPOINT_CHAIN_ID,
-  OSMOSIS_CHAIN_ID,
-} from '@/constants';
+import { DEFAULT_PFM_FEE } from '@/constants';
 import { chainsRestEndpoints } from '@/configs/customChainInfo';
-import {
-  ENTRYPOINT_REST_ENDPOINT,
-} from '@/configs/runtime';
+import { activeRuntimeConfig } from '@/configs/runtimeConfig';
 
 type IBCParamsContextType = {
   rawChannelMappings: RawChannelMapping[];
@@ -52,8 +38,10 @@ export const IBCParamsProvider = ({
 
   const fetchRawChannelsMapping = async () => {
     fetchAllChannels(
-      ENTRYPOINT_CHAIN_ID,
-      ENTRYPOINT_REST_ENDPOINT,
+      activeRuntimeConfig.entrypointChainId,
+      activeRuntimeConfig.chains.find(
+        (chain) => chain.id === activeRuntimeConfig.entrypointChainId,
+      )?.restEndpoint || '',
     ).then((res: any) => {
       setRawChannelMappings(res.bestChannel);
     });
@@ -112,18 +100,20 @@ export const IBCParamsProvider = ({
   };
 
   const fetchPFMs = async () => {
-    const chains = Object.keys(chainsRestEndpoints);
+    const chains = activeRuntimeConfig.pfmFeeChainIds;
     await Promise.all(
       chains.map((chainId) => {
-        if (chainId === OSMOSIS_CHAIN_ID) {
+        const restEndpoint = chainsRestEndpoints[chainId];
+        if (!restEndpoint) {
           return Promise.resolve({
             chainId,
             fee: BigNumber(DEFAULT_PFM_FEE),
           });
         }
-        return fetchPacketForwardFee(chainsRestEndpoints[chainId]).then(
-          (res) => ({ chainId, fee: res }),
-        );
+        return fetchPacketForwardFee(restEndpoint).then((res) => ({
+          chainId,
+          fee: res,
+        }));
       }),
     ).then((fees: { chainId: string; fee: BigNumber }[]) => {
       const dataFees = fees.reduce((acc: { [key: string]: BigNumber }, cur) => {
@@ -157,11 +147,7 @@ export const IBCParamsProvider = ({
           chainToChainMappings,
           getPfmFee,
         }),
-        [
-          rawChannelMappings,
-          chainToChainMappings,
-          getPfmFee,
-        ],
+        [rawChannelMappings, chainToChainMappings, getPfmFee],
       )}
     >
       {children}

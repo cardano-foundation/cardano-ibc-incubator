@@ -73,7 +73,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
         }, 'mintVoucherRedeemer');
         const voucherTokenUnit = context.deployment.mintVoucherScriptHash +
             buildVoucherTokenName(resolvedDenom, deps);
-        const senderAddress = sendPacketOperator.sender;
+        const senderAddress = sendPacketOperator.signer;
         const senderVoucherTokenUtxo = await deps.findUtxoAtWithUnit(senderAddress, voucherTokenUnit);
         const senderWalletUtxos = await deps.tryFindUtxosAt(senderAddress, LOOKUP_RETRY_OPTIONS);
         const walletUtxos = dedupeUtxos([
@@ -116,7 +116,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
             },
         };
     }
-    const senderAddress = sendPacketOperator.sender;
+    const senderAddress = sendPacketOperator.signer;
     const senderWalletUtxos = await deps.tryFindUtxosAt(senderAddress, LOOKUP_RETRY_OPTIONS);
     if (senderWalletUtxos.length === 0) {
         throw deps.internalError(`No spendable UTxOs found for sender ${senderAddress}`);

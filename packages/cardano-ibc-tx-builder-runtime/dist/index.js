@@ -699,19 +699,7 @@ function createTxBuilderRuntime(config) {
     async function buildUnsignedTransferUnsafe(body) {
         const context = await getContext();
         const sendPacketOperator = parseSendPacketOperator(body);
-        const providedWalletUtxos = parseWalletUtxos(body.wallet_utxos);
-        const getWalletUtxos = async (address, options) => dedupeUtxos([
-            ...providedWalletUtxos,
-            ...(await context.lucidService.tryFindUtxosAt(address, options)),
-        ]);
-        const findWalletUtxoAtWithUnit = async (address, unit) => {
-            const providedMatch = providedWalletUtxos.find((utxo) => Object.prototype.hasOwnProperty.call(utxo.assets, unit));
-            if (providedMatch) {
-                return providedMatch;
-            }
-            return context.lucidService.findUtxoAtWithUnit(address, unit);
-        };
-        const initialWalletUtxos = await getWalletUtxos(sendPacketOperator.signer, LOOKUP_RETRY_OPTIONS);
+        const initialWalletUtxos = await context.lucidService.tryFindUtxosAt(sendPacketOperator.signer, LOOKUP_RETRY_OPTIONS);
         if (initialWalletUtxos.length === 0) {
             throw new Error(`sendPacketBuilder failed: no spendable UTxOs found for ${sendPacketOperator.signer}`);
         }

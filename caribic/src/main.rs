@@ -30,12 +30,14 @@ enum DemoType {
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StartTarget {
-    /// Starts everything (network + packet-forwarding chain + bridge)
+    /// Starts everything (network + packet-forwarding chain + bridge + dapp)
     All,
     /// Starts the local Cardano network related services
     Network,
     /// Deploys the light client contracts and starts the gateway and relayer
     Bridge,
+    /// Starts the IBC Swap frontend dapp
+    Dapp,
     /// Starts the Entrypoint chain (packet-forwarding chain)
     Entrypoint,
     /// Starts only the Gateway service
@@ -48,12 +50,14 @@ enum StartTarget {
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StopTarget {
-    /// Stops everything (network + packet-forwarding chain + bridge + demos)
+    /// Stops everything (network + packet-forwarding chain + bridge + demos + dapp)
     All,
     /// Stops the local Cardano network related services
     Network,
     /// Tears down the gateway and relayer
     Bridge,
+    /// Stops the IBC Swap frontend dapp
+    Dapp,
     /// Stops the Entrypoint chain
     Entrypoint,
     /// Stops the demo services
@@ -100,7 +104,7 @@ enum Commands {
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, entrypoint, gateway, relayer, mithril
+    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, dapp, entrypoint, gateway, relayer, mithril
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
@@ -117,7 +121,7 @@ enum Commands {
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
     },
-    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, entrypoint, demo, gateway, relayer, mithril
+    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, dapp, entrypoint, demo, gateway, relayer, mithril
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
@@ -142,7 +146,7 @@ enum Commands {
     },
     /// Check health of bridge services
     HealthCheck {
-        /// Optional: specific service to check (gateway, cardano, postgres, yaci, kupo, ogmios, mithril, hermes, entrypoint, osmosis, redis, cheqd, injective)
+        /// Optional: specific service to check (gateway, dapp, cardano, postgres, yaci, kupo, ogmios, mithril, hermes, entrypoint, osmosis, redis, cheqd, injective)
         #[arg(long)]
         service: Option<String>,
     },

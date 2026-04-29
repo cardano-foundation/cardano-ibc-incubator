@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::process::Command;
 use std::thread;
 use std::time::Duration;
 
@@ -16,6 +17,21 @@ fn has_running_containers(path: &Path) -> bool {
         .compose_output(&["ps", "-q"])
         .map(|result| !String::from_utf8_lossy(&result.stdout).trim().is_empty())
         .unwrap_or(false)
+}
+
+fn has_running_service_container(path: &Path, service: &str) -> bool {
+    let output = Command::new("docker")
+        .args(["compose", "ps", "-q", service])
+        .current_dir(path)
+        .output();
+
+    match output {
+        Ok(result) if result.status.success() => {
+            let stdout = String::from_utf8_lossy(&result.stdout);
+            !stdout.trim().is_empty()
+        }
+        _ => false,
+    }
 }
 
 pub fn stop_gateway(project_root_path: &Path) {
@@ -38,6 +54,31 @@ pub fn stop_gateway(project_root_path: &Path) {
         }
         Err(e) => {
             error(&format!("ERROR: Failed to stop gateway: {}", e));
+        }
+    }
+}
+
+pub fn stop_dapp(project_root_path: &Path) {
+    let dapps_path = project_root_path.join("dapps");
+    let service = "ibc-swap-client";
+
+    if !has_running_service_container(&dapps_path, service) {
+        log("IBC Swap dapp was not running");
+        return;
+    }
+
+    let dapp_result = execute_script(
+        &dapps_path,
+        "docker",
+        Vec::from(["compose", "rm", "-f", "-s", service]),
+        None,
+    );
+    match dapp_result {
+        Ok(_) => {
+            log("IBC Swap dapp stopped successfully");
+        }
+        Err(e) => {
+            error(&format!("ERROR: Failed to stop IBC Swap dapp: {}", e));
         }
     }
 }

@@ -1,5 +1,7 @@
 import { Inject, Injectable, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { InjectEntityManager } from "@nestjs/typeorm";
+import { bech32 } from "bech32";
 import {
   credentialToAddress,
   getAddressDetails,
@@ -108,6 +110,29 @@ import {
 } from "./dtos";
 import { GatewayModuleKey } from "@shared/helpers/module-port";
 import { computeLedgerAnchoredValidityWindow } from "../../helpers/time";
+import { EntityManager } from "typeorm";
+
+type KoiosAddressAsset = {
+  policy_id?: string | null;
+  asset_name?: string | null;
+  quantity?: string | number | null;
+};
+
+type KoiosAddressUtxo = {
+  tx_hash?: string | null;
+  tx_index?: string | number | null;
+  address?: string | null;
+  value?: string | number | null;
+  datum_hash?: string | null;
+  inline_datum?: string | null;
+  asset_list?: KoiosAddressAsset[] | null;
+  is_spent?: boolean | null;
+};
+
+type KoiosTxUtxos = {
+  tx_hash?: string | null;
+  outputs?: KoiosAddressUtxo[] | null;
+};
 
 export type CodecType =
   | "client"
@@ -165,11 +190,221 @@ export class LucidService implements OnModuleInit {
   private activeWalletSelectionScopeId: number | null = null;
   private explicitWalletSelectionForScopeId: number | null = null;
   private explicitWalletSelectionAddress: string | null = null;
+  private readonly preprodKoiosBaseUrl = "https://preprod.koios.rest/api/v1";
+
+  private isBridgeManagedAddress(address: string): boolean {
+    const deploymentConfig = this.configService.get("deployment");
+    const managedAddresses = new Set<string>(
+      [
+        deploymentConfig?.validators?.hostStateStt?.address,
+        deploymentConfig?.validators?.spendHandler?.address,
+        deploymentConfig?.validators?.spendClient?.address,
+        deploymentConfig?.validators?.spendConnection?.address,
+        deploymentConfig?.validators?.spendChannel?.address,
+        deploymentConfig?.validators?.spendMockModule?.address,
+        deploymentConfig?.validators?.spendTraceRegistry?.address,
+        deploymentConfig?.validators?.spendTransferModule?.address,
+        deploymentConfig?.modules?.handler?.address,
+        deploymentConfig?.modules?.transfer?.address,
+        deploymentConfig?.modules?.mock?.address,
+        deploymentConfig?.modules?.icq?.address,
+      ].filter((value): value is string => Boolean(value)),
+    );
+    return managedAddresses.has(address);
+  }
+
+  private resolveLiveWalletUtxoEndpoint(): string | undefined {
+    const configured =
+      process.env.CARDANO_KOIOS_ENDPOINT?.trim() ||
+      process.env.KOIOS_ENDPOINT?.trim();
+    if (configured) {
+      return configured.replace(/\/$/, "");
+    }
+
+    const chainId = this.configService.get<string>("cardanoChainId");
+    return chainId === "cardano-preprod" ? this.preprodKoiosBaseUrl : undefined;
+  }
+
+  private mapKoiosWalletUtxo(row: KoiosAddressUtxo): UTxO | undefined {
+    if (
+      !row.tx_hash ||
+      row.tx_index === undefined ||
+      row.tx_index === null ||
+      !row.address
+    ) {
+      return undefined;
+    }
+
+    const outputIndex = Number(row.tx_index);
+    if (!Number.isInteger(outputIndex) || outputIndex < 0) {
+      return undefined;
+    }
+
+    const assets: Record<string, bigint> = {
+      lovelace: BigInt(row.value ?? 0),
+    };
+    for (const asset of row.asset_list ?? []) {
+      const policyId = asset.policy_id?.toLowerCase();
+      if (!policyId) {
+        continue;
+      }
+      assets[`${policyId}${asset.asset_name?.toLowerCase() ?? ""}`] =
+        BigInt(asset.quantity ?? 0);
+    }
+
+    return {
+      txHash: row.tx_hash,
+      outputIndex,
+      address: row.address,
+      assets,
+      datumHash: row.datum_hash ?? undefined,
+      datum: row.inline_datum ?? undefined,
+    } as UTxO;
+  }
+
+  private async hydrateKoiosWalletRows(
+    baseUrl: string,
+    rows: KoiosAddressUtxo[],
+  ): Promise<KoiosAddressUtxo[]> {
+    const txHashes = [
+      ...new Set(
+        rows
+          .map((row) => row.tx_hash?.toLowerCase())
+          .filter((txHash): txHash is string => Boolean(txHash)),
+      ),
+    ];
+    if (txHashes.length === 0) {
+      return rows;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const response = await fetch(`${baseUrl}/tx_utxos`, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ _tx_hashes: txHashes }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        console.warn(
+          `[walletContext] Live wallet UTxO hydration failed: HTTP ${response.status} ${body.slice(0, 200)}`,
+        );
+        return rows;
+      }
+
+      const hydratedOutputs = new Map<string, KoiosAddressUtxo>();
+      for (const tx of (await response.json()) as KoiosTxUtxos[]) {
+        const txHash = tx.tx_hash?.toLowerCase();
+        if (!txHash) {
+          continue;
+        }
+        for (const output of tx.outputs ?? []) {
+          hydratedOutputs.set(`${txHash}#${Number(output.tx_index)}`, output);
+        }
+      }
+
+      return rows.map((row) => {
+        const txHash = row.tx_hash?.toLowerCase();
+        const outputIndex = Number(row.tx_index);
+        const hydrated = hydratedOutputs.get(`${txHash}#${outputIndex}`);
+        return hydrated
+          ? {
+              ...row,
+              asset_list: hydrated.asset_list ?? row.asset_list,
+              datum_hash: hydrated.datum_hash ?? row.datum_hash,
+              inline_datum: hydrated.inline_datum ?? row.inline_datum,
+            }
+          : row;
+      });
+    } catch (error) {
+      console.warn(
+        `[walletContext] Live wallet UTxO hydration failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return rows;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private nonAdaAssetCount(utxo: UTxO): number {
+    return Object.keys(utxo.assets).filter((unit) => unit !== "lovelace").length;
+  }
+
+  private async fetchLiveWalletUtxos(address: string): Promise<UTxO[] | undefined> {
+    const baseUrl = this.resolveLiveWalletUtxoEndpoint();
+    if (!baseUrl) {
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const response = await fetch(`${baseUrl}/address_utxos`, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ _addresses: [address] }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        console.warn(
+          `[walletContext] Live wallet UTxO query failed: HTTP ${response.status} ${body.slice(0, 200)}`,
+        );
+        return undefined;
+      }
+
+      const rows = await this.hydrateKoiosWalletRows(
+        baseUrl,
+        (await response.json()) as KoiosAddressUtxo[],
+      );
+      return rows
+        .filter((row) => row.is_spent !== true)
+        .map((row) => this.mapKoiosWalletUtxo(row))
+        .filter((utxo): utxo is UTxO => Boolean(utxo))
+        .sort((left, right) => {
+          const leftAssetCount = this.nonAdaAssetCount(left);
+          const rightAssetCount = this.nonAdaAssetCount(right);
+          if (leftAssetCount !== rightAssetCount) {
+            return leftAssetCount - rightAssetCount;
+          }
+
+          const leftLovelace = left.assets.lovelace ?? 0n;
+          const rightLovelace = right.assets.lovelace ?? 0n;
+          return leftLovelace === rightLovelace
+            ? 0
+            : leftLovelace > rightLovelace ? -1 : 1;
+        });
+    } catch (error) {
+      console.warn(
+        `[walletContext] Live wallet UTxO query failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return undefined;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   constructor(
     @Inject(LUCID_IMPORTER) public LucidImporter:
       typeof import("@lucid-evolution/lucid"),
     @Inject(LUCID_CLIENT) public lucid: LucidEvolution,
     private configService: ConfigService,
+    @InjectEntityManager("history")
+    private readonly historyEntityManager: EntityManager,
   ) {
     const deploymentConfig = this.configService.get("deployment");
     this.referenceScriptOutRefs = {
@@ -251,6 +486,11 @@ export class LucidService implements OnModuleInit {
     const maxAttempts = 30;
     const retryDelayMs = 1000;
     let lastError: unknown;
+
+    const liveYaciUtxo = await this.findLiveUtxoByOutRefFromAddressUtxo(outRef);
+    if (liveYaciUtxo) {
+      return liveYaciUtxo;
+    }
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       let utxos: UTxO[];
@@ -337,6 +577,14 @@ export class LucidService implements OnModuleInit {
     const normalizedAddress = this.normalizeAddressOrCredential(
       addressOrCredential,
     );
+    const liveYaciUtxos = await this.findLiveUtxosAtWithUnitFromAddressUtxo(
+      normalizedAddress,
+      unit,
+    );
+    if (liveYaciUtxos.length > 0) {
+      return liveYaciUtxos[liveYaciUtxos.length - 1];
+    }
+
     const utxos = await this.lucid.utxosAtWithUnit(normalizedAddress, unit);
 
     if (utxos.length === 0) {
@@ -346,33 +594,350 @@ export class LucidService implements OnModuleInit {
   }
 
   public async findUtxoByUnit(unit: string): Promise<UTxO> {
+    const liveYaciUtxo = await this.findLiveUtxoByUnitFromAddressUtxo(unit);
+    if (liveYaciUtxo) {
+      return liveYaciUtxo;
+    }
+
     // Kupo indexing can lag shortly after minting or transfers, retry briefly before failing.
     const maxAttempts = 10;
     const retryDelayMs = 1000;
+    let lastError: unknown = null;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const utxo = await this.lucid.utxoByUnit(unit);
-      if (utxo) {
-        try {
-          const liveUtxos = await this.lucid.utxosByOutRef([
-            {
-              txHash: utxo.txHash,
-              outputIndex: utxo.outputIndex,
-            },
-          ]);
-          if (liveUtxos.length > 0) {
-            return liveUtxos[0];
+      try {
+        const utxo = await this.lucid.utxoByUnit(unit);
+        if (utxo) {
+          try {
+            const liveUtxos = await this.lucid.utxosByOutRef([
+              {
+                txHash: utxo.txHash,
+                outputIndex: utxo.outputIndex,
+              },
+            ]);
+            if (liveUtxos.length > 0) {
+              return liveUtxos[0];
+            }
+          } catch {
+            // Retry until the provider view converges to a live out-ref.
           }
-        } catch {
-          // Retry until the provider view converges to a live out-ref.
         }
+      } catch (error) {
+        lastError = error;
       }
       if (attempt < maxAttempts) {
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
       }
     }
 
+    const liveYaciRetryUtxo = await this.findLiveUtxoByUnitFromAddressUtxo(unit);
+    if (liveYaciRetryUtxo) {
+      return liveYaciRetryUtxo;
+    }
+
+    const historyFallback = await this.findLiveUtxoByUnitFromHistory(unit);
+    if (historyFallback) {
+      return historyFallback;
+    }
+
+    void lastError;
     throw new GrpcNotFoundException(`Unable to find UTxO with unit ${unit}`);
+  }
+
+  private splitUnit(
+    unit: string,
+  ): { policyId: string; assetName: string } {
+    if (unit === "lovelace" || unit.length < 56) {
+      throw new GrpcNotFoundException(
+        `Unsupported asset unit for history fallback: ${unit}`,
+      );
+    }
+
+    return {
+      policyId: unit.slice(0, 56).toLowerCase(),
+      assetName: unit.slice(56).toLowerCase(),
+    };
+  }
+
+  private async findLiveUtxoByUnitFromHistory(
+    unit: string,
+  ): Promise<UTxO | undefined> {
+    const { policyId, assetName } = this.splitUnit(unit);
+    const rows = await this.historyEntityManager.query(
+      `
+        SELECT tx_hash, output_index
+        FROM bridge_utxo_history
+        WHERE assets_policy = $1
+          AND assets_name = $2
+        ORDER BY block_no DESC, COALESCE(tx_index, 0) DESC, output_index DESC
+        LIMIT 20
+      `,
+      [policyId, assetName],
+    );
+
+    for (const row of rows as Array<{
+      tx_hash: string;
+      output_index: string | number;
+    }>) {
+      const liveYaciUtxo = await this.findLiveUtxoByOutRefFromAddressUtxo({
+        txHash: row.tx_hash,
+        outputIndex: Number(row.output_index),
+      });
+      if (liveYaciUtxo) {
+        return liveYaciUtxo;
+      }
+    }
+
+    return undefined;
+  }
+
+  private async findLiveUtxoByUnitFromAddressUtxo(
+    unit: string,
+  ): Promise<UTxO | undefined> {
+    const rows = await this.historyEntityManager.query(
+      `
+        SELECT
+          tx_hash,
+          output_index,
+          owner_addr,
+          owner_addr_full,
+          data_hash,
+          inline_datum,
+          script_ref,
+          lovelace_amount,
+          amounts
+        FROM address_utxo
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM tx_input
+          WHERE tx_input.tx_hash = address_utxo.tx_hash
+            AND tx_input.output_index = address_utxo.output_index
+        )
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(COALESCE(amounts, '[]'::jsonb)) AS amount
+            WHERE lower(COALESCE(amount->>'unit', '')) = $1
+          )
+        ORDER BY block DESC, output_index DESC
+        LIMIT 5
+      `,
+      [unit.toLowerCase()],
+    );
+
+    return this.mapAddressUtxoRows(rows)[0];
+  }
+
+  private async findLiveUtxosAtWithUnitFromAddressUtxo(
+    addressOrCredential: string,
+    unit: string,
+  ): Promise<UTxO[]> {
+    const rows = await this.historyEntityManager.query(
+      `
+        SELECT
+          tx_hash,
+          output_index,
+          owner_addr,
+          owner_addr_full,
+          data_hash,
+          inline_datum,
+          script_ref,
+          lovelace_amount,
+          amounts
+        FROM address_utxo
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM tx_input
+          WHERE tx_input.tx_hash = address_utxo.tx_hash
+            AND tx_input.output_index = address_utxo.output_index
+        )
+          AND (owner_addr = $1 OR owner_addr_full = $1)
+          AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(COALESCE(amounts, '[]'::jsonb)) AS amount
+            WHERE lower(COALESCE(amount->>'unit', '')) = $2
+          )
+        ORDER BY block DESC, output_index DESC
+        LIMIT 1
+      `,
+      [addressOrCredential, unit.toLowerCase()],
+    );
+
+    return this.mapAddressUtxoRows(rows);
+  }
+
+  private async findLiveUtxosAtFromAddressUtxo(
+    addressOrCredential: string,
+  ): Promise<UTxO[]> {
+    const rows = await this.historyEntityManager.query(
+      `
+        SELECT
+          tx_hash,
+          output_index,
+          owner_addr,
+          owner_addr_full,
+          data_hash,
+          inline_datum,
+          script_ref,
+          lovelace_amount,
+          amounts
+        FROM address_utxo
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM tx_input
+          WHERE tx_input.tx_hash = address_utxo.tx_hash
+            AND tx_input.output_index = address_utxo.output_index
+        )
+          AND (owner_addr = $1 OR owner_addr_full = $1)
+        ORDER BY block DESC, output_index DESC
+      `,
+      [addressOrCredential],
+    );
+
+    return this.mapAddressUtxoRows(rows);
+  }
+
+  private async findLiveUtxoByOutRefFromAddressUtxo(
+    outRef: Pick<UTxO, "txHash" | "outputIndex">,
+  ): Promise<UTxO | undefined> {
+    const rows = await this.historyEntityManager.query(
+      `
+        SELECT
+          tx_hash,
+          output_index,
+          owner_addr,
+          owner_addr_full,
+          data_hash,
+          inline_datum,
+          script_ref,
+          lovelace_amount,
+          amounts
+        FROM address_utxo
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM tx_input
+          WHERE tx_input.tx_hash = address_utxo.tx_hash
+            AND tx_input.output_index = address_utxo.output_index
+        )
+          AND tx_hash = $1
+          AND output_index = $2
+        LIMIT 1
+      `,
+      [outRef.txHash.toLowerCase(), outRef.outputIndex],
+    );
+
+    return this.mapAddressUtxoRows(rows)[0];
+  }
+
+  private mapAddressUtxoRows(
+    rows: Array<{
+      tx_hash: string;
+      output_index: string | number;
+      owner_addr?: string | null;
+      owner_addr_full?: string | null;
+      data_hash?: string | null;
+      inline_datum?: string | null;
+      script_ref?: string | null;
+      lovelace_amount?: string | number | null;
+      amounts?: Array<{
+        unit?: string | null;
+        quantity?: string | number | null;
+      }> | string | null;
+    }>,
+  ): UTxO[] {
+    const utxos: UTxO[] = [];
+
+    for (const row of rows) {
+      const address = row.owner_addr_full ?? row.owner_addr;
+      if (!address) {
+        continue;
+      }
+
+      const parsedAmounts = this.parseAddressUtxoAmounts(
+        row.amounts,
+        row.lovelace_amount,
+      );
+      if (Object.keys(parsedAmounts).length === 0) {
+        continue;
+      }
+
+      utxos.push({
+        txHash: row.tx_hash,
+        outputIndex: Number(row.output_index),
+        address,
+        assets: parsedAmounts,
+        datumHash: row.data_hash ?? undefined,
+        datum: row.inline_datum ?? undefined,
+        scriptRef: this.parseAddressUtxoScriptRef(row.script_ref),
+      } as UTxO);
+    }
+
+    return utxos;
+  }
+
+  private parseAddressUtxoScriptRef(
+    scriptRefHex?: string | null,
+  ): UTxO["scriptRef"] | undefined {
+    if (!scriptRefHex) {
+      return undefined;
+    }
+
+    try {
+      return this.LucidImporter.fromScriptRef(
+        this.LucidImporter.CML.Script.from_cbor_hex(scriptRefHex),
+      );
+    } catch (error) {
+      console.warn(
+        `[history] Failed to decode address_utxo.script_ref (${scriptRefHex.slice(0, 24)}...): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return undefined;
+    }
+  }
+
+  private parseAddressUtxoAmounts(
+    amounts: Array<{
+      unit?: string | null;
+      quantity?: string | number | null;
+    }> | string | null | undefined,
+    lovelaceAmount?: string | number | null,
+  ): Record<string, bigint> {
+    const assets: Record<string, bigint> = {};
+    const parsedAmounts =
+      typeof amounts === "string"
+        ? (JSON.parse(amounts) as Array<{
+            unit?: string | null;
+            quantity?: string | number | null;
+          }>)
+        : amounts ?? [];
+
+    for (const amount of parsedAmounts) {
+      const unit = amount?.unit?.toLowerCase();
+      if (!unit) {
+        continue;
+      }
+
+      assets[unit] = BigInt(amount.quantity ?? 0);
+    }
+
+    if (!("lovelace" in assets) && lovelaceAmount !== undefined && lovelaceAmount !== null) {
+      assets.lovelace = BigInt(lovelaceAmount);
+    }
+
+    return assets;
+  }
+
+  private async withTimeout<T>(
+    operation: Promise<T>,
+    timeoutMs: number,
+    label: string,
+  ): Promise<T> {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
   }
 
   private async filterLiveUtxos(utxos: UTxO[]): Promise<UTxO[]> {
@@ -404,6 +969,66 @@ export class LucidService implements OnModuleInit {
     const normalizedAddress = this.normalizeAddressOrCredential(
       addressOrCredential,
     );
+    const bridgeManagedAddress = this.isBridgeManagedAddress(normalizedAddress);
+    if (!bridgeManagedAddress) {
+      const liveWalletUtxos = await this.fetchLiveWalletUtxos(normalizedAddress);
+      if (liveWalletUtxos !== undefined) {
+        if (liveWalletUtxos.length === 0) {
+          throw new GrpcNotFoundException(
+            `Unable to find live UTxO at  ${addressOrCredential}`,
+          );
+        }
+        return liveWalletUtxos;
+      }
+
+      const utxos = await this.lucid.utxosAt(normalizedAddress);
+      if (utxos.length === 0) {
+        throw new GrpcNotFoundException(
+          `Unable to find UTxO at  ${addressOrCredential}`,
+        );
+      }
+      const liveUtxos = await this.filterLiveUtxos(utxos);
+      if (liveUtxos.length === 0) {
+        throw new GrpcNotFoundException(
+          `Unable to find live UTxO at  ${addressOrCredential}`,
+        );
+      }
+      return liveUtxos;
+    }
+
+    const liveYaciUtxos = await this.findLiveUtxosAtFromAddressUtxo(
+      normalizedAddress,
+    );
+    if (liveYaciUtxos.length > 0) {
+      if (bridgeManagedAddress) {
+        return liveYaciUtxos;
+      }
+      try {
+        const providerConfirmedUtxos = bridgeManagedAddress
+          ? await this.withTimeout(
+              this.filterLiveUtxos(liveYaciUtxos),
+              5000,
+              `provider out-ref confirmation for ${normalizedAddress}`,
+            )
+          : await this.filterLiveUtxos(liveYaciUtxos);
+        if (providerConfirmedUtxos.length > 0) {
+          return providerConfirmedUtxos;
+        }
+      } catch (error) {
+        if (!bridgeManagedAddress) {
+          throw error;
+        }
+        console.warn(
+          `[history] Bridge-managed address provider confirmation failed for ${normalizedAddress}; using Yaci live rows directly: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+      if (bridgeManagedAddress) {
+        return liveYaciUtxos;
+      }
+    }
+
     const utxos = await this.lucid.utxosAt(normalizedAddress);
     if (utxos.length === 0) {
       throw new GrpcNotFoundException(
@@ -411,6 +1036,13 @@ export class LucidService implements OnModuleInit {
       );
     }
     return utxos;
+  }
+
+  public async findIndexedUtxosAt(addressOrCredential: string): Promise<UTxO[]> {
+    const normalizedAddress = this.normalizeAddressOrCredential(
+      addressOrCredential,
+    );
+    return this.findLiveUtxosAtFromAddressUtxo(normalizedAddress);
   }
 
   /**
@@ -428,10 +1060,83 @@ export class LucidService implements OnModuleInit {
     const normalizedAddress = this.normalizeAddressOrCredential(
       addressOrCredential,
     );
+    const bridgeManagedAddress = this.isBridgeManagedAddress(normalizedAddress);
+    let lastError: unknown = null;
+    if (!bridgeManagedAddress) {
+      const maxAttempts = Math.max(1, opts?.maxAttempts ?? 5);
+      const retryDelayMs = Math.max(0, opts?.retryDelayMs ?? 750);
+      let liveWalletQuerySucceeded = false;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const liveWalletUtxos = await this.fetchLiveWalletUtxos(normalizedAddress);
+          if (liveWalletUtxos !== undefined) {
+            liveWalletQuerySucceeded = true;
+            if (liveWalletUtxos.length > 0) {
+              return liveWalletUtxos;
+            }
+          }
+
+          const utxos = await this.lucid.utxosAt(normalizedAddress);
+          if (utxos.length > 0) {
+            const liveUtxos = await this.filterLiveUtxos(utxos);
+            if (liveUtxos.length > 0) {
+              return liveUtxos;
+            }
+          }
+        } catch (err) {
+          lastError = err;
+        }
+
+        if (attempt < maxAttempts && retryDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        }
+      }
+
+      if (liveWalletQuerySucceeded) {
+        return [];
+      }
+
+      void lastError;
+      return [];
+    }
+
+    const liveYaciUtxos = await this.findLiveUtxosAtFromAddressUtxo(
+      normalizedAddress,
+    );
+    if (liveYaciUtxos.length > 0) {
+      if (bridgeManagedAddress) {
+        return liveYaciUtxos;
+      }
+      try {
+        const providerConfirmedUtxos = bridgeManagedAddress
+          ? await this.withTimeout(
+              this.filterLiveUtxos(liveYaciUtxos),
+              5000,
+              `provider out-ref confirmation for ${normalizedAddress}`,
+            )
+          : await this.filterLiveUtxos(liveYaciUtxos);
+        if (providerConfirmedUtxos.length > 0) {
+          return providerConfirmedUtxos;
+        }
+      } catch (error) {
+        if (!bridgeManagedAddress) {
+          lastError = error;
+        } else {
+          console.warn(
+            `[history] Bridge-managed address provider confirmation failed for ${normalizedAddress}; using Yaci live rows directly: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          return liveYaciUtxos;
+        }
+      }
+      if (bridgeManagedAddress) {
+        return liveYaciUtxos;
+      }
+    }
+
     const maxAttempts = Math.max(1, opts?.maxAttempts ?? 5);
     const retryDelayMs = Math.max(0, opts?.retryDelayMs ?? 750);
-
-    let lastError: unknown = null;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const utxos = await this.lucid.utxosAt(normalizedAddress);
@@ -512,7 +1217,7 @@ export class LucidService implements OnModuleInit {
       this.configService.get("deployment").handlerAuthToken;
     const handlerAuthToken = handlerAuthTokenConfig.policyId +
       handlerAuthTokenConfig.name;
-    const handlerUtxos = await this.lucid.utxosAt(addressOrCredential);
+    const handlerUtxos = await this.findUtxoAt(addressOrCredential);
     if (handlerUtxos.length === 0) {
       throw new GrpcNotFoundException(
         `Unable to find UTxO at  ${addressOrCredential}`,
@@ -548,7 +1253,7 @@ export class LucidService implements OnModuleInit {
       this.configService.get("deployment").hostStateNFT;
     const hostStateNFT = hostStateNFTConfig.policyId + hostStateNFTConfig.name;
 
-    const hostStateUtxos = await this.lucid.utxosAt(addressOrCredential);
+    const hostStateUtxos = await this.findUtxoAt(addressOrCredential);
     if (hostStateUtxos.length === 0) {
       throw new GrpcNotFoundException(
         `Unable to find UTxOs at HostState STT address: ${addressOrCredential}`,

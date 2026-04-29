@@ -1,9 +1,9 @@
 import DefaultCardanoNetworkIcon from '@/assets/icons/cardano.svg';
 import DefaultCosmosNetworkIcon from '@/assets/icons/cosmos-icon.svg';
 import {
-  CARDANO_BRIDGE_MANIFEST_URL,
   CARDANO_CHAIN_ID,
   CARDANO_IBC_CHAIN_ID,
+  CARDANO_BRIDGE_MANIFEST_URL,
   ENTRYPOINT_REST_ENDPOINT,
   ENTRYPOINT_RPC_ENDPOINT,
   IBC_SWAP_MODE,

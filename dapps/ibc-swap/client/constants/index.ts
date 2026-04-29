@@ -1,13 +1,17 @@
 /* global BigInt */
 
+import {
+  activeRuntimeConfig,
+  ENTRYPOINT_CHAIN_ID as RUNTIME_ENTRYPOINT_CHAIN_ID,
+} from '@/configs/runtimeConfig';
+
 export const THEME_MODE = {
   LIGHT: 'light',
   DARK: 'dark',
 };
 
-export const ENTRYPOINT_CHAIN_ID = 'entrypoint';
-export const INJECTIVE_TESTNET_CHAIN_ID = 'injective-888';
-export const defaultChainName = ENTRYPOINT_CHAIN_ID;
+export const ENTRYPOINT_CHAIN_ID = RUNTIME_ENTRYPOINT_CHAIN_ID;
+export const defaultChainName = activeRuntimeConfig.defaultCosmosChainId;
 
 export const FROM_TO = {
   FROM: 'From',
@@ -46,5 +50,8 @@ export const queryAllDenomTracesUrl = '/ibc/apps/transfer/v1/denoms';
 export const queryChannelsPrefixUrl = `/ibc/core/channel/v1/channels`;
 export const queryPacketForwardParamsUrl = `/ibc/apps/packetforward/v1/params`;
 export const queryAllChannelsUrl = `${queryChannelsPrefixUrl}?pagination.count_total=true&pagination.limit=10000`;
-export const cosmosChainsSupported = ['localosmosis', ENTRYPOINT_CHAIN_ID];
-export const OSMOSIS_CHAIN_ID = 'localosmosis';
+export const cosmosChainsSupported = activeRuntimeConfig.chains
+  .filter((chain) => chain.kind === 'cosmos')
+  .map((chain) => chain.id);
+export const OSMOSIS_CHAIN_ID =
+  activeRuntimeConfig.features.localSwap.toChainId;

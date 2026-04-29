@@ -1,5 +1,4 @@
 import { List, ListItem } from '@chakra-ui/react';
-import { OSMOSIS_CHAIN_ID } from '@/constants';
 import { NetworkItem, NetworkItemProps } from '../NetworkItem/NetworkItem';
 
 type NetworkListProps = {
@@ -26,16 +25,19 @@ export const NetworkList = ({
         {networkList.map((network) => (
           <NetworkItem
             key={network.networkId}
+            networkId={network.networkId}
+            ibcChainId={network.ibcChainId}
             networkName={network.networkName}
             networkLogo={network.networkLogo}
             networkPrettyName={network.networkPrettyName}
+            networkType={network.networkType}
+            networkRole={network.networkRole}
+            disabledReason={network.disabledReason}
             isActive={networkSelected?.networkId === network.networkId}
             onClick={() => handleClickNetworkItem(network)}
             isDisabled={
-              !!(
-                disabledNetwork?.networkId === OSMOSIS_CHAIN_ID &&
-                network?.networkId === OSMOSIS_CHAIN_ID
-              )
+              network.isDisabled ||
+              disabledNetwork?.networkId === network.networkId
             }
           />
         ))}

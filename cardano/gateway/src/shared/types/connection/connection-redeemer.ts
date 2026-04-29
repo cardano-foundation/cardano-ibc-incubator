@@ -26,14 +26,7 @@ export type MintConnectionRedeemer =
     };
 
 export type SpendConnectionRedeemer =
-  | {
-      ConnOpenAck: {
-        counterparty_client_state: string;
-        proof_try: MerkleProof;
-        proof_client: MerkleProof;
-        proof_height: Height;
-      };
-    }
+  | 'ConnOpenAck'
   | {
       ConnOpenConfirm: {
         proof_ack: MerkleProof;
@@ -69,14 +62,7 @@ function buildSpendConnectionRedeemerSchema(Data: LucidData) {
   const { MerkleProofSchema } = createIcs23MerkleProofSchema(Data);
 
   return Data.Enum([
-    Data.Object({
-      ConnOpenAck: Data.Object({
-        counterparty_client_state: Data.Bytes(),
-        proof_try: MerkleProofSchema,
-        proof_client: MerkleProofSchema,
-        proof_height: HeightSchema,
-      }),
-    }),
+    Data.Literal('ConnOpenAck'),
     Data.Object({
       ConnOpenConfirm: Data.Object({
         proof_ack: MerkleProofSchema,

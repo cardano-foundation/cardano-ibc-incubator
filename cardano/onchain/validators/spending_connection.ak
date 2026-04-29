@@ -12,8 +12,7 @@ use ibc/client/ics_007_tendermint_client/client_state
 use ibc/client/ics_007_tendermint_client/cometbft/protos/connection_pb
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  BatchVerifyMembership, VerifyMembership, VerifyMembershipParams,
-  VerifyProofRedeemer,
+  VerifyMembership, VerifyProofRedeemer,
 }
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -27,7 +26,6 @@ use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_023_vector_commitments/merkle_prefix
-use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
 use ibc/utils/validator_utils
 
@@ -88,12 +86,7 @@ validator spend_connection(
     trace @"spend_connection: extract connection_id"
 
     when redeemer is {
-      ConnOpenAck {
-        counterparty_client_state,
-        proof_try,
-        proof_client,
-        proof_height,
-      } -> {
+      ConnOpenAck -> {
         trace @"spend_connection: ConnOpenAck branch"
 
         let client_datum =
@@ -118,10 +111,6 @@ validator spend_connection(
             client_datum.state,
             connection_id,
             updated_datum.state,
-            counterparty_client_state,
-            proof_try,
-            proof_client,
-            proof_height,
             redeemers,
             verify_proof_policy_id,
           )
@@ -188,10 +177,6 @@ fn validate_conn_open_ack_proof(
   client_datum_state: ClientDatumState,
   connection_id: ByteArray,
   connection: ConnectionEnd,
-  counterparty_client_state: ByteArray,
-  proof_try: MerkleProof,
-  proof_client: MerkleProof,
-  proof_height: Height,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   verify_proof_policy_id: PolicyId,
 ) -> Bool {
@@ -222,17 +207,6 @@ fn validate_conn_open_ack_proof(
       ),
     )
 
-  let client_merkle_path =
-    merkle.apply_prefix(
-      connection.counterparty.prefix,
-      merkle.new_merkle_path(
-        [client_keys.full_client_state_path(connection.counterparty.client_id)],
-      ),
-    )
-
-  expect Some(consensus_state) =
-    pairs.get_first(client_datum_state.consensus_states, proof_height)
-
   let expected_connection_bz =
     connection_pb.marshal_for_connection_end(
       connection_end.convert_to_connection_end_proto(expected_connection),
@@ -244,12 +218,23 @@ fn validate_conn_open_ack_proof(
 
   let valid_proof_redeemer =
     when verify_proof_redeemer is {
-      BatchVerifyMembership([item0, item1]) -> {
+      VerifyMembership {
+        cs,
+        cons_state,
+        height,
+        delay_time_period,
+        delay_block_period,
+        proof: _proof,
+        path,
+        value,
+      } -> {
+        expect Some(expected_consensus_state) =
+          pairs.get_first(client_datum_state.consensus_states, height)
+
         // Avoid relying on derived equality for `MerklePath`/`List<ByteArray>` inside
         // the redeemer match. For IBC on Cosmos, proofs are always built for a 2-level
         // path (store prefix + key), so we assert the shape and compare element-wise.
-
-        expect [item0_prefix, item0_key] = item0.path.key_path
+        expect [item0_prefix, item0_key] = path.key_path
         expect [exp0_prefix, exp0_key] = conn_merkle_path.key_path
 
         let ok0_path = and {
@@ -257,31 +242,13 @@ fn validate_conn_open_ack_proof(
             item0_key == exp0_key,
           }
 
-        expect [item1_prefix, item1_key] = item1.path.key_path
-        expect [exp1_prefix, exp1_key] = client_merkle_path.key_path
-
-        let ok1_path = and {
-            item1_prefix == exp1_prefix,
-            item1_key == exp1_key,
-          }
-
         and {
-          item0.cs == client_datum_state.client_state,
-          item0.cons_state == consensus_state,
-          item0.height == proof_height,
-          item0.delay_time_period == time_delay,
-          item0.delay_block_period == block_delay,
-          item0.proof == proof_try,
+          cs == client_datum_state.client_state,
+          cons_state == expected_consensus_state,
+          delay_time_period == time_delay,
+          delay_block_period == block_delay,
           ok0_path,
-          item0.value == expected_connection_bz,
-          item1.cs == client_datum_state.client_state,
-          item1.cons_state == consensus_state,
-          item1.height == proof_height,
-          item1.delay_time_period == time_delay,
-          item1.delay_block_period == block_delay,
-          item1.proof == proof_client,
-          ok1_path,
-          item1.value == counterparty_client_state,
+          value == expected_connection_bz,
         }
       }
       _ -> False

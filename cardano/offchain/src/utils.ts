@@ -79,8 +79,12 @@ export const submitTx = async (
   lucid: LucidEvolution,
   txName: string,
   logSize = true,
-  localUPLCEval = false, // Default to false to use Ogmios for script evaluation
+  localUPLCEval = true, // Deployment txs are more reliable with local UPLC evaluation than remote Ogmios round-trips
 ) => {
+  const envLocalUPLCEval = Deno.env.get("OFFCHAIN_LOCAL_UPLC_EVAL")?.trim();
+  const effectiveLocalUPLCEval = envLocalUPLCEval === undefined
+    ? localUPLCEval
+    : envLocalUPLCEval.toLowerCase() === "true";
   const ADOPTION_ATTEMPTS = 6;
   const ADOPTION_TIMEOUT_MS = 30000;
   const ADOPTION_RETRY_DELAY_MS = 5000;
@@ -115,7 +119,9 @@ export const submitTx = async (
       // Rebuild the transaction from scratch on each completion retry. Lucid's
       // TxBuilder is stateful, so reusing the same builder after a transient
       // Ogmios failure can duplicate mint entries or other accumulated effects.
-      completedTx = await (await buildTx()).complete({ localUPLCEval });
+      completedTx = await (await buildTx()).complete({
+        localUPLCEval: effectiveLocalUPLCEval,
+      });
       lastCompletionError = null;
       break;
     } catch (error) {

@@ -544,10 +544,13 @@ async fn wait_for_mithril_artifacts_for_message_exchange() -> Result<(), String>
         "Waiting for Mithril artifacts to become available (up to {} minutes)...",
         total_wait_secs / 60
     ));
-    let aggregator_base_url = crate::config::get_config()
-        .mithril
-        .aggregator_url
+    let config = crate::config::get_config();
+    let active_network =
+        crate::config::active_core_cardano_network(std::path::Path::new(&config.project_root));
+    let aggregator_base_url = crate::config::cardano_network_profile(active_network)
+        .mithril_aggregator_url
         .trim_end_matches('/')
+        .trim_end_matches("/aggregator")
         .to_string();
     let stake_distributions_url =
         format!("{aggregator_base_url}/aggregator/artifact/mithril-stake-distributions");
@@ -1088,7 +1091,7 @@ account_prefix = 'cosmos'
 key_name = '{key_name}'
 store_prefix = 'ibc'
 default_gas = 200000
-max_gas = 5000000
+max_gas = 25000000
 gas_price = {{ price = 0.025, denom = 'stake' }}
 gas_multiplier = 1.1
 max_msg_num = 30

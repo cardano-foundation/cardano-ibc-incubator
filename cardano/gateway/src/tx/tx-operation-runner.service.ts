@@ -4,6 +4,7 @@ import { TxBuilder } from '@lucid-evolution/lucid';
 import { TRANSACTION_SET_COLLATERAL } from '~@/config/constant.config';
 
 import { LucidService } from '../shared/modules/lucid/lucid.service';
+import { isTransientRuntimeProviderError } from '../shared/modules/lucid/lucid.provider';
 import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 
 import { GatewayEvent, TxEventsService } from './tx-events.service';
@@ -64,6 +65,9 @@ export type TxOperationRunnerResult<TExtraResponseFields = Record<string, never>
 
 @Injectable()
 export class TxOperationRunnerService {
+  private static readonly DEFAULT_COMPLETE_MAX_ATTEMPTS = 5;
+  private static readonly DEFAULT_COMPLETE_BASE_DELAY_MS = 1000;
+  private static readonly DEFAULT_COMPLETE_TIMEOUT_MS = 120_000;
   private completionChain: Promise<void> = Promise.resolve();
 
   constructor(
@@ -123,7 +127,8 @@ export class TxOperationRunnerService {
   private async completeWithExplicitWalletSelection<TExtraResponseFields>(
     plan: TxOperationPlan<TExtraResponseFields>,
   ): Promise<CompletedUnsignedTx> {
-    const maxAttempts = Math.max(1, plan.completeRetry?.maxAttempts ?? 1);
+    const retryPolicy = plan.completeRetry ?? this.getDefaultCompleteRetryPolicy(plan.operationName);
+    const maxAttempts = Math.max(1, retryPolicy?.maxAttempts ?? 1);
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -134,17 +139,27 @@ export class TxOperationRunnerService {
       const txWithValidity = plan.validity.apply(txBuilder);
       const walletScopeId = this.lucidService.beginWalletSelectionScope();
       try {
+        console.log(`[txRunner] ${plan.operationName} attempt ${attempt}/${maxAttempts}: applying wallet instruction`);
         await this.applyWalletInstruction(plan.wallet);
         this.lucidService.assertWalletSelectionScopeSatisfied(walletScopeId, plan.operationName);
 
-        return (await txWithValidity.complete({
-          localUPLCEval: false,
-          setCollateral: TRANSACTION_SET_COLLATERAL,
-          ...(plan.completeOptions || {}),
-        })) as CompletedUnsignedTx;
+        console.log(`[txRunner] ${plan.operationName} attempt ${attempt}/${maxAttempts}: starting tx completion`);
+        const completedTx = await this.withTimeout(
+          txWithValidity.complete({
+            localUPLCEval: false,
+            setCollateral: TRANSACTION_SET_COLLATERAL,
+            ...(plan.completeOptions || {}),
+          }),
+          TxOperationRunnerService.DEFAULT_COMPLETE_TIMEOUT_MS,
+          `${plan.operationName} tx completion`,
+        );
+        console.log(`[txRunner] ${plan.operationName} attempt ${attempt}/${maxAttempts}: tx completion finished`);
+
+        return completedTx as CompletedUnsignedTx;
       } catch (error) {
+        const summary = error instanceof Error ? `${error.message}\n${error.stack ?? ''}` : String(error);
+        console.error(`[txRunner] ${plan.operationName} attempt ${attempt}/${maxAttempts}: failure: ${summary}`);
         lastError = error;
-        const retryPolicy = plan.completeRetry;
         const shouldRetry =
           retryPolicy &&
           attempt < maxAttempts &&
@@ -184,5 +199,41 @@ export class TxOperationRunnerService {
 
   private async sleep(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+    let timeoutHandle: NodeJS.Timeout | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(() => {
+        reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    }
+  }
+
+  private getDefaultCompleteRetryPolicy(operationName: string): TxCompleteRetryPolicy {
+    return {
+      maxAttempts: TxOperationRunnerService.DEFAULT_COMPLETE_MAX_ATTEMPTS,
+      isRetryable: (error) => isTransientRuntimeProviderError(error),
+      getDelayMs: (attempt) => {
+        const exp = Math.max(0, attempt - 1);
+        return Math.round(
+          TxOperationRunnerService.DEFAULT_COMPLETE_BASE_DELAY_MS * Math.pow(2, exp),
+        );
+      },
+      onRetry: (error, attempt, maxAttempts, delayMs) => {
+        const summary = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[${operationName}] transient provider failure while completing tx (attempt ${attempt}/${maxAttempts}); retrying in ${delayMs}ms: ${summary}`,
+        );
+      },
+    };
   }
 }

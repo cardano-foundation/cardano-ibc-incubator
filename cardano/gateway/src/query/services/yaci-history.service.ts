@@ -75,6 +75,8 @@ type EpochStartSlotRow = {
 
 @Injectable()
 export class YaciHistoryService implements HistoryService {
+  private readonly epochContextCache = new Map<number, Promise<HistoryEpochContextAtBlock | null>>();
+
   constructor(
     private readonly configService: ConfigService,
     @Inject(LucidService) private readonly lucidService: LucidService,
@@ -264,6 +266,20 @@ export class YaciHistoryService implements HistoryService {
   }
 
   async findEpochContextAtBlock(block: HistoryBlock): Promise<HistoryEpochContextAtBlock | null> {
+    const cached = this.epochContextCache.get(block.epochNo);
+    if (cached) {
+      return cached;
+    }
+
+    const loadPromise = this.loadEpochContextAtBlock(block).catch((error) => {
+      this.epochContextCache.delete(block.epochNo);
+      throw error;
+    });
+    this.epochContextCache.set(block.epochNo, loadPromise);
+    return loadPromise;
+  }
+
+  private async loadEpochContextAtBlock(block: HistoryBlock): Promise<HistoryEpochContextAtBlock | null> {
     const slotBounds = await this.findEpochSlotBounds(block.epochNo);
     if (!slotBounds) {
       return null;

@@ -267,7 +267,8 @@ export class QueryService {
 
   private async getProofHeight(context: string): Promise<bigint> {
     const lightClientMode =
-      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril';
+      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
+      'stake-weighted-stability';
 
     return resolveProofHeightForCurrentRoot({
       logger: this.logger,
@@ -715,7 +716,6 @@ export class QueryService {
       `[queryClientState] loaded client UTxO ${spendClientUTXO.txHash}#${spendClientUTXO.outputIndex} in ${Date.now() - startedAt}ms`,
     );
     const clientStateTendermint = normalizeClientStateFromDatum(clientDatum.state.clientState);
-
     const clientStateAny: Any = {
       type_url: '/ibc.lightclients.tendermint.v1.ClientState',
       value: ClientStateTendermint.encode(clientStateTendermint).finish(),

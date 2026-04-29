@@ -346,6 +346,7 @@ pub fn execute_script(
         runner::StreamingOptions {
             label: script_name,
             heartbeat_interval: None,
+            timeout: None,
             log_failure_output: false,
         },
         |_, line| logger::info(line),

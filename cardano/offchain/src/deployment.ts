@@ -95,11 +95,16 @@ export const createDeployment = async (
   let signerUtxos = await getLiveWalletUtxos(lucid);
   if (signerUtxos.length < 1) throw new Error("No UTXO found.");
 
+  const isAdaOnlyUtxo = (utxo: UTxO) =>
+    Object.keys(utxo.assets).every((unit) => unit === "lovelace");
+
   // Reserve enough wallet UTxOs up front for every deployment-only mint that
   // needs a unique OutputReference nonce. Re-querying "the first wallet UTxO"
   // between sequential mints is fragile on local devnets because the indexer can
   // momentarily lag behind the just-submitted transaction set.
-  if (signerUtxos.length < RESERVED_DEPLOYMENT_NONCE_COUNT) {
+  if (
+    signerUtxos.filter(isAdaOnlyUtxo).length < RESERVED_DEPLOYMENT_NONCE_COUNT
+  ) {
     const address = await lucid.wallet().address();
     await submitTx(
       () => {
@@ -123,7 +128,7 @@ export const createDeployment = async (
 
   // Prefer large UTxOs for these nonce inputs so Lucid doesn't need to auto-select
   // additional wallet inputs, which could accidentally spend the other nonce.
-  const sortedUtxos = [...signerUtxos].sort((a, b) => {
+  const sortedUtxos = signerUtxos.filter(isAdaOnlyUtxo).sort((a, b) => {
     const aLovelace = a.assets.lovelace ?? 0n;
     const bLovelace = b.assets.lovelace ?? 0n;
     if (aLovelace === bLovelace) return 0;
@@ -1015,31 +1020,52 @@ const deployHandler = async (
     },
   );
 
+  const buildMintHandlerTx = () =>
+    lucid
+      .newTx()
+      .collectFrom([NONCE_UTXO], Data.void())
+      .attach.MintingPolicy(mintHandlerValidator)
+      .mintAssets(
+        {
+          [handlerTokenUnit]: 1n,
+        },
+        Data.void(),
+      )
+      .pay.ToContract(
+        spendHandlerAddress,
+        {
+          kind: "inline",
+          value: Data.to(initHandlerDatum, HandlerDatum, { canonical: true }),
+        },
+        {
+          [handlerTokenUnit]: 1n,
+        },
+      );
+
   // create and send tx create handler
   await submitTx(
-    () =>
-      lucid
-        .newTx()
-        .collectFrom([NONCE_UTXO], Data.void())
-        .attach.MintingPolicy(mintHandlerValidator)
-        .mintAssets(
-          {
-            [handlerTokenUnit]: 1n,
-          },
-          Data.void(),
-        )
-        .pay.ToContract(
-          spendHandlerAddress,
-          {
-            kind: "inline",
-            value: Data.to(initHandlerDatum, HandlerDatum, { canonical: true }),
-          },
-          {
-            [handlerTokenUnit]: 1n,
-          },
-        ),
+    async () => {
+      const debugTx = buildMintHandlerTx();
+      const debugConfig = await debugTx.config();
+      console.log("Mint Handler debug:", {
+        nonceUtxo: NONCE_UTXO,
+        spendHandlerScriptHash,
+        spendHandlerAddress,
+        handlerTokenUnit,
+        initHandlerDatum,
+        collectedInputs: debugConfig.collectedInputs,
+        walletInputs: debugConfig.walletInputs,
+        mintedAssets: debugConfig.mintedAssets,
+        totalOutputAssets: debugConfig.totalOutputAssets,
+        payToOutputs: debugConfig.payToOutputs,
+      });
+
+      return buildMintHandlerTx();
+    },
     lucid,
     "Mint Handler",
+    true,
+    false,
   );
 
   return [mintHandlerPolicyId, HANDLER_TOKEN_NAME];

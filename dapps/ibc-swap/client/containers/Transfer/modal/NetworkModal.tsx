@@ -22,6 +22,10 @@ import SwitchIcon from '@/assets/icons/transfer.svg';
 import EarchIcon from '@/assets/icons/earth.svg';
 import TransferContext from '@/contexts/TransferContext';
 import { debounce } from '@/utils/helper';
+import {
+  findRuntimeRoute,
+  runtimeRouteDisabledReason,
+} from '@/configs/runtimeConfig';
 
 import {
   StyledNetworkBox,
@@ -111,16 +115,48 @@ export const NetworkModal = ({
   const [fromNetworkList, setFromNetworkList] =
     useState<NetworkItemProps[]>(networkList);
 
+  const buildToNetworkList = (sourceNetwork: NetworkItemProps) =>
+    networkList
+      .filter(
+        (networkItem) => networkItem.networkId !== sourceNetwork.networkId,
+      )
+      .map((networkItem) => {
+        const route = findRuntimeRoute(
+          sourceNetwork.networkId,
+          networkItem.networkId,
+        );
+        if (route?.enabled) {
+          return {
+            ...networkItem,
+            isDisabled: false,
+            disabledReason: networkItem.disabledReason,
+          };
+        }
+        return {
+          ...networkItem,
+          isDisabled: true,
+          disabledReason: runtimeRouteDisabledReason(
+            sourceNetwork.networkId,
+            networkItem.networkId,
+          ),
+        };
+      });
+
   const handleSelectFromNetwork = (network: NetworkItemProps) => {
-    const newToNetworkList = networkList.filter(
-      (networkItem) => networkItem.networkId !== network.networkId,
-    );
-    setToNetworkList(newToNetworkList);
+    setToNetworkList(buildToNetworkList(network));
     setCurrentFromNetwork(network);
     setCurrentToNetwork({});
   };
 
   const HandleSwitchNetwork = () => {
+    if (
+      !findRuntimeRoute(
+        currentToNetwork.networkId,
+        currentFromNetwork.networkId,
+      )?.enabled
+    ) {
+      return;
+    }
     const newToNetwork = currentFromNetwork;
     const newFromNetwork = currentToNetwork;
     setCurrentToNetwork(newToNetwork);
@@ -142,16 +178,15 @@ export const NetworkModal = ({
   const handleSearch = debounce(
     (setCurrentList: any, searchString: string, isToNetWorkList?: boolean) => {
       if (networkList?.length) {
-        let newList = networkList.filter((item) =>
+        const sourceList =
+          isToNetWorkList && currentFromNetwork.networkId
+            ? buildToNetworkList(currentFromNetwork)
+            : networkList;
+        const newList = sourceList.filter((item) =>
           item?.networkPrettyName
             ?.toLowerCase()
             ?.includes(searchString.toLowerCase()),
         );
-        if (isToNetWorkList) {
-          newList = newList.filter(
-            (item) => item.networkId !== currentFromNetwork.networkId,
-          );
-        }
         setCurrentList(newList);
       }
     },
@@ -159,10 +194,10 @@ export const NetworkModal = ({
   );
 
   useEffect(() => {
-    if (fromNetwork) {
+    if (fromNetwork.networkId) {
       handleSelectFromNetwork(fromNetwork);
     }
-    if (toNetwork) {
+    if (toNetwork.networkId) {
       setCurrentToNetwork(toNetwork);
     }
   }, [fromNetwork, toNetwork]);

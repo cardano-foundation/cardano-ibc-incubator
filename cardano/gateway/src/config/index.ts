@@ -90,6 +90,29 @@ interface Config {
   mtithrilGenesisVerificationKey: string;
 }
 
+function runtimeEndpointOverride(
+  runtimeOverrideKey: string,
+  defaultKey: string,
+): string | undefined {
+  const runtimeOverride = process.env[runtimeOverrideKey]?.trim();
+  if (runtimeOverride) {
+    return runtimeOverride;
+  }
+  return process.env[defaultKey];
+}
+
+function runtimeOptionalOverride(
+  runtimeOverrideKey: string,
+  defaultKey: string,
+): string | undefined {
+  if (Object.prototype.hasOwnProperty.call(process.env, runtimeOverrideKey)) {
+    const runtimeOverride = process.env[runtimeOverrideKey]?.trim();
+    return runtimeOverride ? runtimeOverride : undefined;
+  }
+  const defaultValue = process.env[defaultKey]?.trim();
+  return defaultValue ? defaultValue : undefined;
+}
+
 export default (): Partial<Config> => {
   let cardanoNetwork: Network = 'Custom';
   if (process.env.CARDANO_NETWORK_MAGIC === '1') {
@@ -103,8 +126,8 @@ export default (): Partial<Config> => {
   return {
     ogmiosEndpoint: process.env.OGMIOS_ENDPOINT,
     ogmiosApiKey: process.env.OGMIOS_API_KEY,
-    kupoEndpoint: process.env.KUPO_ENDPOINT,
-    kupoApiKey: process.env.KUPO_API_KEY,
+    kupoEndpoint: runtimeEndpointOverride('GATEWAY_RUNTIME_KUPO_ENDPOINT', 'KUPO_ENDPOINT'),
+    kupoApiKey: runtimeOptionalOverride('GATEWAY_RUNTIME_KUPO_API_KEY', 'KUPO_API_KEY'),
     yaciStoreEndpoint: process.env.YACI_STORE_ENDPOINT,
     cardanoRestEndpoint: process.env.CARDANO_REST_ENDPOINT,
     entrypointRestEndpoint: process.env.ENTRYPOINT_REST_ENDPOINT,

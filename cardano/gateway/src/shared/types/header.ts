@@ -1,5 +1,5 @@
 import { ValidatorSet as ValidatorSetMsg } from '@plus/proto-types/build/tendermint/types/validator';
-import { ValidatorSet, validatorSetFromProto } from './cometbft/validator-set';
+import { ValidatorSet, validatorSetFromProto, validatorSetHashHex } from './cometbft/validator-set';
 import { SignedHeader, validateBasic as validateSignedHeaderBasic } from './cometbft/signed-header';
 import { Height } from './height';
 import { Header as HeaderMsg } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
@@ -314,24 +314,12 @@ export function checkTrustedHeader(header: Header, _consState: ConsensusState): 
     throw new GrpcInvalidArgumentException('trusted validator set in not tendermint validator set type');
   }
 
-  // TODO
-  // assert that trustedVals is NextValidators of last trusted header
-  // to do this, we check that trustedVals.Hash() == consState.NextValidatorsHash
-  // const tvalHash = tmTrustedValidators.Hash()
-  // if !bytes.Equal(consState.NextValidatorsHash, tvalHash) {
-  //   return errorsmod.Wrapf(
-  //     ErrInvalidValidatorSet,
-  //     "trusted validators %s, does not hash to latest trusted validators. Expected: %X, got: %X",
-  //     header.TrustedValidators, consState.NextValidatorsHash, tvalHash,
-  //   )
-  // }
-
-  // TODO
-  // if (header.signedHeader.header.nextValidatorsHash !== consState.next_validators_hash) {
-  //   throw new GrpcInvalidArgumentException(
-  //     `trusted validators does not hash to latest trusted validators. Expected: ${consState.next_validators_hash}, got: ${header.signedHeader.header.nextValidatorsHash}`,
-  //   );
-  // }
+  const trustedValidatorHash = validatorSetHashHex(tmTrustedValidators);
+  if (trustedValidatorHash !== consState.next_validators_hash) {
+    throw new GrpcInvalidArgumentException(
+      `trusted validators hash mismatch. Expected: ${consState.next_validators_hash}, got: ${trustedValidatorHash}`,
+    );
+  }
   return true;
 }
 
@@ -460,10 +448,12 @@ function verifyNewHeaderAndVals(
     );
   }
 
-  // TODO
-  // if (!compareArrays(untrustedHeader.header.validatorsHash, untrustedVals.Hash())) { // Assuming compareArrays exists
-  //   throw new GrpcInvalidArgumentException(`expected new header validators (${untrustedHeader.ValidatorsHash}) to match those supplied (${untrustedVals.Hash()}) at height ${untrustedHeader.Height}`);
-  // }
+  const untrustedValidatorHash = validatorSetHashHex(untrustedVals);
+  if (untrustedHeader.header.validatorsHash !== untrustedValidatorHash) {
+    throw new GrpcInvalidArgumentException(
+      `expected new header validators hash ${untrustedHeader.header.validatorsHash} to match supplied validator set hash ${untrustedValidatorHash}`,
+    );
+  }
 
   return null; // No errors found
 }
@@ -497,7 +487,7 @@ function verifyAdjacent(
   // 	return ErrInvalidHeader{err}
   // }
 
-  return false;
+  return true;
 }
 export function decodeHeader(value: Uint8Array): HeaderMsg {
   try {

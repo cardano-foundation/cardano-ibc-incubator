@@ -25,6 +25,7 @@ pub fn run_stop(
 
     match target {
         Some(StopTarget::All) | None => {
+            stop::stop_dapp(project_root_path);
             stop::stop_cosmos(
                 project_root_path.join("cosmos").as_path(),
                 "Cosmos Entrypoint chain",
@@ -40,6 +41,10 @@ pub fn run_stop(
             bridge_down(project_root_path);
             logger::log("\nBridge stopped successfully");
         }
+        Some(StopTarget::Dapp) => {
+            stop::stop_dapp(project_root_path);
+            logger::log("\nIBC Swap dapp stopped successfully");
+        }
         Some(StopTarget::Network) => {
             network_down(project_root_path);
             logger::log("\nCardano Network stopped successfully");
@@ -52,6 +57,7 @@ pub fn run_stop(
             logger::log("\nEntrypoint chain stopped successfully");
         }
         Some(StopTarget::Demo) => {
+            stop::stop_dapp(project_root_path);
             stop::stop_cosmos(
                 project_root_path.join("cosmos").as_path(),
                 "Cosmos Entrypoint chain",

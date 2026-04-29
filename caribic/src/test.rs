@@ -217,6 +217,7 @@ fn run_command_streaming(
         runner::StreamingOptions {
             label,
             heartbeat_interval: None,
+            timeout: None,
             log_failure_output: true,
         },
         |stream, line| {

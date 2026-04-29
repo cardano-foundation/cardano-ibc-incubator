@@ -36,6 +36,16 @@ pub struct YaciSyncCheckpoint {
     pub block_no: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+struct PreprodKupoOgmiosTarget {
+    kupo_host: String,
+    kupo_port: String,
+    since: String,
+    proxy_upstream_host: String,
+    proxy_upstream_port: String,
+    proxy_api_key: String,
+}
+
 pub fn local_cardano_spo_count(with_mithril: bool, network: config::CoreCardanoNetwork) -> usize {
     if matches!(network, config::CoreCardanoNetwork::Local) && !with_mithril {
         LOCAL_STABILITY_SPO_COUNT
@@ -321,39 +331,14 @@ pub fn write_cardano_runtime_selection(
             unreachable!("preprod checkpoint was resolved above")
         }
     };
-    let yaci_sync_start_slot = yaci_checkpoint
-        .as_ref()
-        .map(|checkpoint| checkpoint.slot.as_str())
-        .unwrap_or("0");
-    let yaci_sync_start_blockhash = yaci_checkpoint
-        .as_ref()
-        .map(|checkpoint| checkpoint.block_hash.as_str())
-        .unwrap_or("");
-    let yaci_store_postgres_volume = match (network, yaci_checkpoint.as_ref()) {
-        (config::CoreCardanoNetwork::Local, _) => {
-            "cardano_yaci_store_postgres_local_data".to_string()
-        }
-        (config::CoreCardanoNetwork::Preprod, Some(checkpoint)) => format!(
-            "cardano_yaci_store_postgres_preprod_{}_{}",
-            checkpoint.slot,
-            &checkpoint.block_hash[..12]
-        ),
-        (config::CoreCardanoNetwork::Preprod, None) => {
-            unreachable!("preprod checkpoint was resolved above")
-        }
-    };
     let preprod_kupo_target = match network {
         config::CoreCardanoNetwork::Local => None,
         config::CoreCardanoNetwork::Preprod => {
             let gateway_env = cardano_dir.join("../../cardano/gateway/.env");
-            if resolve_preprod_kupo_mode(gateway_env.as_path())? == PreprodKupoMode::Local {
-                Some(resolve_preprod_kupo_ogmios_target(gateway_env.as_path())?)
-            } else {
-                None
-            }
+            Some(resolve_preprod_kupo_ogmios_target(gateway_env.as_path())?)
         }
     };
-    let kupo_blockchain_source = if preprod_kupo_target.is_some() {
+    let kupo_blockchain_source = if matches!(network, config::CoreCardanoNetwork::Preprod) {
         "ogmios".to_string()
     } else {
         "node".to_string()
@@ -384,7 +369,7 @@ pub fn write_cardano_runtime_selection(
         .unwrap_or_default();
 
     let env_contents = format!(
-        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_SOCKET_PATH={socket_path}\nCARDANO_NODE_SOCKET_PATH={socket_path}\nCARDANO_CHAIN_HOST={chain_host}\nCARDANO_CHAIN_PORT={chain_port}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\nCARDANO_LOCAL_SPO_COUNT={local_spo_count}\nYACI_SYNC_START_SLOT={yaci_sync_start_slot}\nYACI_SYNC_START_BLOCKHASH={yaci_sync_start_blockhash}\nYACI_STORE_POSTGRES_VOLUME={yaci_store_postgres_volume}\n",
+        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_SOCKET_PATH={socket_path}\nCARDANO_NODE_SOCKET_PATH={socket_path}\nCARDANO_CHAIN_HOST={chain_host}\nCARDANO_CHAIN_PORT={chain_port}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\nCARDANO_LOCAL_SPO_COUNT={local_spo_count}\nYACI_SYNC_START_SLOT={yaci_sync_start_slot}\nYACI_SYNC_START_BLOCKHASH={yaci_sync_start_blockhash}\nYACI_STORE_POSTGRES_VOLUME={yaci_store_postgres_volume}\nKUPO_BLOCKCHAIN_SOURCE={kupo_blockchain_source}\nKUPO_OGMIOS_HOST={kupo_ogmios_host}\nKUPO_OGMIOS_PORT={kupo_ogmios_port}\nKUPO_SINCE={kupo_since}\nOGMIOS_PROXY_UPSTREAM_HOST={ogmios_proxy_upstream_host}\nOGMIOS_PROXY_UPSTREAM_PORT={ogmios_proxy_upstream_port}\nOGMIOS_PROXY_API_KEY={ogmios_proxy_api_key}\n",
         network = network.as_str(),
     );
 
@@ -1574,7 +1559,6 @@ fn validate_preprod_gateway_env(gateway_env: &Path) -> Result<(), Box<dyn std::e
     let env_values = parse_env_file(gateway_env)?;
     let kupo_mode = resolve_preprod_kupo_mode(gateway_env)?;
     let required_groups = [
-        ("KUPO_ENDPOINT", vec!["KUPO_ENDPOINT"]),
         ("OGMIOS_ENDPOINT", vec!["OGMIOS_ENDPOINT"]),
         (PREPROD_KUPO_MODE_KEY, vec![PREPROD_KUPO_MODE_KEY]),
         ("CARDANO_CHAIN_HOST", vec!["CARDANO_CHAIN_HOST"]),
@@ -1594,8 +1578,9 @@ fn validate_preprod_gateway_env(gateway_env: &Path) -> Result<(), Box<dyn std::e
         .map(|(label, _)| *label)
         .collect::<Vec<_>>();
     if !missing.is_empty() {
-        // Preprod is a hybrid mode: caribic manages the local history followers,
-        // but live chain access still comes from external Kupo/Ogmios endpoints.
+        // Preprod is a hybrid mode: caribic manages the local history followers
+        // and now runs Kupo locally, but still requires external live Ogmios and
+        // a host-reachable relay for Yaci.
         return Err(format!(
             "Preprod startup uses managed local history services but still requires external live Cardano endpoints. cardano/gateway/.env is missing: {}.\nSet those keys to host-reachable preprod infrastructure before starting.",
             missing.join(", ")
@@ -1604,7 +1589,6 @@ fn validate_preprod_gateway_env(gateway_env: &Path) -> Result<(), Box<dyn std::e
     }
 
     let disallowed_local_defaults = [
-        ("KUPO_ENDPOINT", "http://kupo:1442"),
         ("OGMIOS_ENDPOINT", "http://cardano-node-ogmios:1337"),
         ("CARDANO_CHAIN_HOST", "cardano-node"),
     ];
@@ -1662,64 +1646,6 @@ fn resolve_preprod_live_endpoint(
         .filter(|value| !value.is_empty());
 
     Ok(env_value.or(gateway_value))
-}
-
-fn is_local_kupo_endpoint(endpoint: &str) -> bool {
-    reqwest::Url::parse(endpoint)
-        .ok()
-        .and_then(|parsed| {
-            parsed
-                .host_str()
-                .map(|host| host.eq_ignore_ascii_case("kupo"))
-        })
-        .unwrap_or_else(|| endpoint.trim().starts_with("http://kupo:1442"))
-}
-
-pub fn resolve_preprod_kupo_mode(
-    gateway_env: &Path,
-) -> Result<PreprodKupoMode, Box<dyn std::error::Error>> {
-    let mode = resolve_preprod_live_endpoint(
-        gateway_env,
-        PREPROD_KUPO_MODE_KEY,
-        &["CARIBIC_PREPROD_KUPO_MODE", PREPROD_KUPO_MODE_KEY],
-    )?
-    .ok_or_else(|| {
-        format!(
-            "Missing {}. Set {}=remote to use a managed Kupo endpoint or {}=local to run local Kupo explicitly.",
-            PREPROD_KUPO_MODE_KEY, PREPROD_KUPO_MODE_KEY, PREPROD_KUPO_MODE_KEY
-        )
-    })?;
-
-    match mode.trim().to_lowercase().as_str() {
-        "local" => Ok(PreprodKupoMode::Local),
-        "remote" => Ok(PreprodKupoMode::Remote),
-        other => Err(format!(
-            "Invalid {} value '{}'. Expected 'remote' or 'local'.",
-            PREPROD_KUPO_MODE_KEY, other
-        )
-        .into()),
-    }
-}
-
-fn resolve_preprod_remote_kupo_endpoint(
-    gateway_env: &Path,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let endpoint = resolve_preprod_live_endpoint(
-        gateway_env,
-        "KUPO_ENDPOINT",
-        &["CARIBIC_KUPO_URL", "KUPO_URL"],
-    )?
-    .ok_or("Missing remote Kupo endpoint. Set CARIBIC_KUPO_URL/KUPO_URL or KUPO_ENDPOINT.")?;
-
-    if is_local_kupo_endpoint(endpoint.as_str()) {
-        return Err(format!(
-            "{}=remote requires a non-local Kupo endpoint, got '{}'.",
-            PREPROD_KUPO_MODE_KEY, endpoint
-        )
-        .into());
-    }
-
-    Ok(endpoint)
 }
 
 fn resolve_preprod_kupo_ogmios_target(
@@ -1941,28 +1867,14 @@ fn write_gateway_env_for_network(
                 set_or_append_env_var(&gateway_env, YACI_SYNC_START_BLOCK_NO_KEY, block_no)?;
             }
 
-            if let Some(kupo_endpoint) = resolve_preprod_live_endpoint(
+            let runtime_kupo_endpoint = resolve_preprod_live_endpoint(
                 &gateway_env,
-                YACI_SYNC_START_SLOT_KEY,
-                yaci_checkpoint.slot.as_str(),
+                "KUPO_ENDPOINT",
+                &["CARIBIC_KUPO_URL", "KUPO_URL"],
             )?;
-            set_or_append_env_var(
-                &gateway_env,
-                YACI_SYNC_START_BLOCKHASH_KEY,
-                yaci_checkpoint.block_hash.as_str(),
-            )?;
-            if let Some(block_no) = yaci_checkpoint.block_no.as_deref() {
-                set_or_append_env_var(&gateway_env, YACI_SYNC_START_BLOCK_NO_KEY, block_no)?;
+            if let Some(kupo_endpoint) = runtime_kupo_endpoint.as_deref() {
+                set_or_append_env_var(&gateway_env, "KUPO_ENDPOINT", kupo_endpoint)?;
             }
-
-            let runtime_kupo_endpoint = match preprod_kupo_mode {
-                PreprodKupoMode::Remote => {
-                    let kupo_endpoint = resolve_preprod_remote_kupo_endpoint(&gateway_env)?;
-                    set_or_append_env_var(&gateway_env, "KUPO_ENDPOINT", kupo_endpoint.as_str())?;
-                    kupo_endpoint
-                }
-                PreprodKupoMode::Local => "http://kupo:1442".to_string(),
-            };
             let runtime_kupo_api_key = resolve_preprod_live_endpoint(
                 &gateway_env,
                 "KUPO_API_KEY",
@@ -1970,13 +1882,6 @@ fn write_gateway_env_for_network(
             )?;
             if let Some(kupo_api_key) = runtime_kupo_api_key.as_deref() {
                 set_or_append_env_var(&gateway_env, "KUPO_API_KEY", kupo_api_key)?;
-            }
-            if let Some(kupo_api_key) = resolve_preprod_live_endpoint(
-                &gateway_env,
-                "KUPO_API_KEY",
-                &["CARIBIC_KUPO_API_KEY", "KUPO_API_KEY"],
-            )? {
-                set_or_append_env_var(&gateway_env, "KUPO_API_KEY", kupo_api_key.as_str())?;
             }
 
             if let Some(ogmios_endpoint) = resolve_preprod_live_endpoint(
@@ -1994,11 +1899,13 @@ fn write_gateway_env_for_network(
                 set_or_append_env_var(&gateway_env, "OGMIOS_API_KEY", ogmios_api_key.as_str())?;
             }
 
-            set_or_append_env_var(
-                &gateway_env,
-                "GATEWAY_RUNTIME_KUPO_ENDPOINT",
-                runtime_kupo_endpoint.as_str(),
-            )?;
+            if let Some(kupo_endpoint) = runtime_kupo_endpoint.as_deref() {
+                set_or_append_env_var(
+                    &gateway_env,
+                    "GATEWAY_RUNTIME_KUPO_ENDPOINT",
+                    kupo_endpoint,
+                )?;
+            }
             set_or_append_env_var(
                 &gateway_env,
                 "GATEWAY_RUNTIME_KUPO_API_KEY",

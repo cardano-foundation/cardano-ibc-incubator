@@ -53,9 +53,14 @@ const STAKE_DISTRIBUTION_WEIGHT_SCALE = 1_000_000_000_000n;
 const OGMIOS_TRANSIENT_MAX_ATTEMPTS = 10;
 const OGMIOS_TRANSIENT_BASE_DELAY_MS = 500;
 const OGMIOS_TRANSIENT_MAX_DELAY_MS = 5_000;
+const OGMIOS_WEBSOCKET_OPEN_TIMEOUT_MS = 10_000;
+const OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS = 30_000;
 const TRANSIENT_OGMIOS_ERROR_MARKERS = [
   'unexpected server response: 401',
+  'unexpected server response: 429',
   'unauthorized',
+  'http 429',
+  '429',
   'http 401',
   'econnreset',
   'econnrefused',
@@ -107,12 +112,24 @@ const openOgmiosConnection = async (ogmiosUrl: string): Promise<WebSocket> => {
   );
 
   await new Promise<void>((resolve, reject) => {
-    const handleOpen = () => {
+    const timeout = setTimeout(() => {
+      cleanup();
+      client.terminate();
+      reject(new Error(`Ogmios websocket open timed out after ${OGMIOS_WEBSOCKET_OPEN_TIMEOUT_MS}ms`));
+    }, OGMIOS_WEBSOCKET_OPEN_TIMEOUT_MS);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      client.off('open', handleOpen);
       client.off('error', handleError);
+    };
+
+    const handleOpen = () => {
+      cleanup();
       resolve();
     };
     const handleError = (error: Error) => {
-      client.off('open', handleOpen);
+      cleanup();
       reject(error);
     };
 
@@ -265,8 +282,13 @@ const createOgmiosSession = async (ogmiosUrl: string): Promise<{ client: WebSock
     request<T>(methodname: string, args: unknown = {}): Promise<T> {
       return new Promise<T>((resolve, reject) => {
         const requestId = `${methodname}-${++nextId}`;
+        const timeout = setTimeout(() => {
+          cleanup();
+          reject(new Error(`Ogmios request ${methodname} timed out after ${OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS}ms`));
+        }, OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS);
 
         const cleanup = () => {
+          clearTimeout(timeout);
           client.off('message', handleMessage);
           client.off('error', handleError);
         };
