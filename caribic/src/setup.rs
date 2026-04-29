@@ -11,7 +11,6 @@ use fs_extra::{copy_items, file::copy};
 use indicatif::ProgressBar;
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::process::Output;
 use std::thread;
 use std::time::Duration;
 use std::{fs, path::Path};
@@ -971,236 +970,222 @@ pub fn seed_cardano_devnet(
             "42",
         ];
 
-        let mut faucet_txin_output: Option<Output> = None;
-        for i in 1..5 {
-            faucet_txin_output = Some(
-                cardano_cli
-                    .exec_output(faucet_txin_args.as_slice())
-                    .map_err(|error| format!("Failed to get faucet txin: {}", error))?,
+        let wallet_address = &bootstrap_address.address;
+        let tx_out = &format!("{}+{}", wallet_address, bootstrap_address.amount);
+        let draft_tx_file = &format!("/runtime/seed-{}.draft", wallet_address.as_str());
+        let signed_tx_file = &format!("/runtime/seed-{}.signed", wallet_address.as_str());
+
+        // With multiple active SPOs, a freshly queried faucet UTxO can still belong to a block
+        // that later loses a same-slot fork race. Rebuild the transaction on each retry so a stale
+        // input does not poison every subsequent submit attempt.
+        let mut is_on_chain = false;
+        let mut last_tx_in: Option<String> = None;
+        let mut last_seed_error: Option<String> = None;
+        for submit_attempt in 1..=6 {
+            let faucet_txin_output = cardano_cli
+                .exec_output(faucet_txin_args.as_slice())
+                .map_err(|error| format!("Failed to get faucet txin: {}", error))?;
+
+            if !faucet_txin_output.status.success() {
+                let stderr = String::from_utf8_lossy(&faucet_txin_output.stderr)
+                    .trim()
+                    .to_string();
+                verbose(&format!(
+                    "Faucet UTxO query attempt {}/6 for {} returned: {}",
+                    submit_attempt, wallet_address, stderr
+                ));
+                last_seed_error = Some(stderr);
+                thread::sleep(Duration::from_secs(5));
+                continue;
+            }
+
+            let output_str = String::from_utf8_lossy(&faucet_txin_output.stdout);
+            let parsed_json: Value = serde_json::from_str(&output_str)
+                .map_err(|error| format!("Failed to parse faucet UTxO JSON: {}", error))?;
+            let Some(faucet_txin) = parsed_json
+                .as_object()
+                .and_then(|obj| obj.iter().find(|(_, value)| *value != "null"))
+                .map(|(tx_in, _)| tx_in.to_string())
+            else {
+                last_seed_error = Some("Faucet has no UTxO available yet".to_string());
+                thread::sleep(Duration::from_secs(5));
+                continue;
+            };
+
+            let build_tx_args = vec![
+                "conway",
+                "transaction",
+                "build",
+                "--change-address",
+                &faucet_address,
+                "--tx-in",
+                &faucet_txin,
+                "--tx-out",
+                tx_out,
+                "--out-file",
+                draft_tx_file,
+                "--testnet-magic",
+                "42",
+            ];
+
+            let build_tx_output = cardano_cli
+                .exec_output(build_tx_args.as_slice())
+                .map_err(|error| format!("Failed to build seed transaction: {}", error))?;
+            if !build_tx_output.status.success() {
+                let stderr = String::from_utf8_lossy(&build_tx_output.stderr)
+                    .trim()
+                    .to_string();
+                verbose(&format!(
+                    "Seed transaction build attempt {}/6 for {} returned: {}",
+                    submit_attempt, wallet_address, stderr
+                ));
+                last_seed_error = Some(stderr);
+                thread::sleep(Duration::from_secs(5));
+                continue;
+            }
+
+            let sign_tx_args = vec![
+                "conway",
+                "transaction",
+                "sign",
+                "--tx-body-file",
+                draft_tx_file,
+                "--signing-key-file",
+                "/runtime/credentials/faucet.sk",
+                "--out-file",
+                signed_tx_file,
+                "--testnet-magic",
+                "42",
+            ];
+
+            let sign_tx_output = cardano_cli
+                .exec_output(sign_tx_args.as_slice())
+                .map_err(|error| format!("Failed to sign seed transaction: {}", error))?;
+            if !sign_tx_output.status.success() {
+                return Err(format!(
+                    "Failed to sign seed transaction for {}: {}",
+                    wallet_address,
+                    String::from_utf8_lossy(&sign_tx_output.stderr)
+                )
+                .into());
+            }
+
+            let tx_id_output = cardano_cli
+                .exec_output(
+                    ["conway", "transaction", "txid", "--tx-file", signed_tx_file].as_slice(),
+                )
+                .map_err(|error| format!("Failed to compute seed tx id: {}", error))?;
+            if !tx_id_output.status.success() {
+                return Err(format!(
+                    "Failed to compute seed tx id for {}: {}",
+                    wallet_address,
+                    String::from_utf8_lossy(&tx_id_output.stderr)
+                )
+                .into());
+            }
+            let tx_id = tx_id_output.stdout;
+
+            let raw_tx_id = String::from_utf8(tx_id)
+                .map_err(|error| format!("Failed to decode seed tx id: {}", error))?;
+            let tx_id: String = raw_tx_id.chars().filter(|c| !c.is_whitespace()).collect();
+            let tx_in = format!("{}#0", tx_id);
+            last_tx_in = Some(tx_in.clone());
+
+            let submit_tx_args = vec![
+                "conway",
+                "transaction",
+                "submit",
+                "--tx-file",
+                signed_tx_file,
+                "--testnet-magic",
+                "42",
+            ];
+            let query_utxo_args = vec![
+                "query",
+                "utxo",
+                "--tx-in",
+                tx_in.as_str(),
+                "--output-json",
+                "--testnet-magic",
+                "42",
+            ];
+            log_or_show_progress(
+                &format!(
+                    "Waiting for transaction {} to settle",
+                    style(&tx_in).bold().dim()
+                ),
+                optional_progress_bar,
             );
 
-            if faucet_txin_output.as_ref().unwrap().status.success() {
-                break;
+            let submit_tx_output = cardano_cli
+                .exec_output(submit_tx_args.as_slice())
+                .map_err(|error| format!("Failed to submit seed transaction: {}", error))?;
+
+            if !submit_tx_output.status.success() {
+                let stderr = String::from_utf8_lossy(&submit_tx_output.stderr)
+                    .trim()
+                    .to_string();
+                verbose(&format!(
+                    "Seed transaction submit attempt {}/6 for {} returned: {}",
+                    submit_attempt, wallet_address, stderr
+                ));
+                last_seed_error = Some(stderr);
             } else {
-                if i < 5 {
-                    verbose(
-                        "The cardano-node isn't ready yet. Retrying to get faucet txin in 5 sec...",
-                    );
+                last_seed_error = None;
+            }
+
+            for poll_attempt in 1..=4 {
+                let utxo_output = cardano_cli
+                    .exec_output(query_utxo_args.as_slice())
+                    .map_err(|error| format!("Failed to query settlement UTxO: {}", error))?;
+
+                if utxo_output.status.success() {
+                    let utxo_str = String::from_utf8(utxo_output.stdout).map_err(|error| {
+                        format!("Failed to decode settlement UTxO response: {}", error)
+                    })?;
+                    let parsed_utxo: Value = serde_json::from_str(&utxo_str).map_err(|error| {
+                        format!("Failed to parse settlement UTxO response: {}", error)
+                    })?;
+
+                    if parsed_utxo
+                        .get(tx_in.as_str())
+                        .is_some_and(|value| value != "null")
+                    {
+                        verbose(&format!(
+                            "Seed transaction settled on canonical chain:\n{}",
+                            utxo_str
+                        ));
+                        is_on_chain = true;
+                        break;
+                    }
+                }
+
+                if poll_attempt < 4 {
+                    verbose("... still waiting for confirmation ...");
                     thread::sleep(Duration::from_secs(5));
                 }
-                faucet_txin_output = None;
             }
+
+            if is_on_chain {
+                break;
+            }
+
+            verbose(&format!(
+                "Seed transaction {} was not visible on the canonical chain after submit attempt {}/6; retrying with a fresh faucet UTxO",
+                tx_in, submit_attempt
+            ));
         }
 
-        match faucet_txin_output {
-            Some(output) => {
-                if output.status.success() {
-                    let output_str = String::from_utf8_lossy(&output.stdout);
-                    let parsed_json: Value = serde_json::from_str(&output_str)
-                        .map_err(|error| format!("Failed to parse faucet UTxO JSON: {}", error))?;
-                    let faucet_txin = parsed_json
-                        .as_object()
-                        .and_then(|obj| obj.keys().next())
-                        .ok_or("Failed to extract faucet txin from query result")?;
-
-                    let wallet_address = &bootstrap_address.address;
-                    let tx_out = &format!("{}+{}", wallet_address, bootstrap_address.amount);
-                    let draft_tx_file = &format!("/runtime/seed-{}.draft", wallet_address.as_str());
-                    let signed_tx_file =
-                        &format!("/runtime/seed-{}.signed", wallet_address.as_str());
-
-                    let build_tx_args = vec![
-                        "conway",
-                        "transaction",
-                        "build",
-                        "--change-address",
-                        &faucet_address,
-                        "--tx-in",
-                        &faucet_txin,
-                        "--tx-out",
-                        tx_out,
-                        "--out-file",
-                        draft_tx_file,
-                        "--testnet-magic",
-                        "42",
-                    ];
-
-                    let build_tx_output = cardano_cli
-                        .exec_output(build_tx_args.as_slice())
-                        .map_err(|error| format!("Failed to build seed transaction: {}", error))?;
-                    if !build_tx_output.status.success() {
-                        return Err(format!(
-                            "Failed to build seed transaction for {}: {}",
-                            wallet_address,
-                            String::from_utf8_lossy(&build_tx_output.stderr)
-                        )
-                        .into());
-                    }
-
-                    let sign_tx_args = vec![
-                        "conway",
-                        "transaction",
-                        "sign",
-                        "--tx-body-file",
-                        draft_tx_file,
-                        "--signing-key-file",
-                        "/runtime/credentials/faucet.sk",
-                        "--out-file",
-                        signed_tx_file,
-                        "--testnet-magic",
-                        "42",
-                    ];
-
-                    let sign_tx_output = cardano_cli
-                        .exec_output(sign_tx_args.as_slice())
-                        .map_err(|error| format!("Failed to sign seed transaction: {}", error))?;
-                    if !sign_tx_output.status.success() {
-                        return Err(format!(
-                            "Failed to sign seed transaction for {}: {}",
-                            wallet_address,
-                            String::from_utf8_lossy(&sign_tx_output.stderr)
-                        )
-                        .into());
-                    }
-
-                    let tx_id_output = cardano_cli
-                        .exec_output(
-                            ["conway", "transaction", "txid", "--tx-file", signed_tx_file]
-                                .as_slice(),
-                        )
-                        .map_err(|error| format!("Failed to compute seed tx id: {}", error))?;
-                    if !tx_id_output.status.success() {
-                        return Err(format!(
-                            "Failed to compute seed tx id for {}: {}",
-                            wallet_address,
-                            String::from_utf8_lossy(&tx_id_output.stderr)
-                        )
-                        .into());
-                    }
-                    let tx_id = tx_id_output.stdout;
-
-                    let raw_tx_id = String::from_utf8(tx_id)
-                        .map_err(|error| format!("Failed to decode seed tx id: {}", error))?;
-                    let tx_id: String = raw_tx_id.chars().filter(|c| !c.is_whitespace()).collect();
-
-                    let tx_in = &format!("{}#0", tx_id);
-                    let submit_tx_args = vec![
-                        "conway",
-                        "transaction",
-                        "submit",
-                        "--tx-file",
-                        signed_tx_file,
-                        "--testnet-magic",
-                        "42",
-                    ];
-                    let query_utxo_args = vec![
-                        "query",
-                        "utxo",
-                        "--tx-in",
-                        tx_in,
-                        "--output-json",
-                        "--testnet-magic",
-                        "42",
-                    ];
-                    log_or_show_progress(
-                        &format!(
-                            "Waiting for transaction {} to settle",
-                            style(tx_in).bold().dim()
-                        ),
-                        optional_progress_bar,
-                    );
-
-                    // With multiple active SPOs, a just-submitted seed transaction can land in a
-                    // block that later loses a same-slot fork race. Keep resubmitting until the
-                    // output is visible on the canonical chain.
-                    let mut is_on_chain = false;
-                    let mut last_submit_error: Option<String> = None;
-                    for submit_attempt in 1..=6 {
-                        let submit_tx_output =
-                            cardano_cli.exec_output(submit_tx_args.as_slice()).map_err(
-                                |error| format!("Failed to submit seed transaction: {}", error),
-                            )?;
-
-                        if !submit_tx_output.status.success() {
-                            let stderr = String::from_utf8_lossy(&submit_tx_output.stderr)
-                                .trim()
-                                .to_string();
-                            verbose(&format!(
-                                "Seed transaction submit attempt {}/6 for {} returned: {}",
-                                submit_attempt, wallet_address, stderr
-                            ));
-                            last_submit_error = Some(stderr);
-                        } else {
-                            last_submit_error = None;
-                        }
-
-                        for poll_attempt in 1..=4 {
-                            let utxo_output = cardano_cli
-                                .exec_output(query_utxo_args.as_slice())
-                                .map_err(|error| {
-                                format!("Failed to query settlement UTxO: {}", error)
-                            })?;
-
-                            if utxo_output.status.success() {
-                                let utxo_str =
-                                    String::from_utf8(utxo_output.stdout).map_err(|error| {
-                                        format!(
-                                            "Failed to decode settlement UTxO response: {}",
-                                            error
-                                        )
-                                    })?;
-                                let parsed_utxo: Value =
-                                    serde_json::from_str(&utxo_str).map_err(|error| {
-                                        format!(
-                                            "Failed to parse settlement UTxO response: {}",
-                                            error
-                                        )
-                                    })?;
-
-                                if parsed_utxo.get(tx_in).is_some_and(|value| value != "null") {
-                                    verbose(&format!(
-                                        "Seed transaction settled on canonical chain:\n{}",
-                                        utxo_str
-                                    ));
-                                    is_on_chain = true;
-                                    break;
-                                }
-                            }
-
-                            if poll_attempt < 4 {
-                                verbose("... still waiting for confirmation ...");
-                                thread::sleep(Duration::from_secs(5));
-                            }
-                        }
-
-                        if is_on_chain {
-                            break;
-                        }
-
-                        verbose(&format!(
-                            "Seed transaction {} was not visible on the canonical chain after submit attempt {}/6; retrying",
-                            tx_in, submit_attempt
-                        ));
-                    }
-
-                    if !is_on_chain {
-                        let submit_error = last_submit_error
-                            .map(|error| format!(" Last submit error: {}", error))
-                            .unwrap_or_default();
-                        return Err(format!(
-                            "Seed transaction {} for {} did not settle on the canonical chain after multiple attempts.{}",
-                            tx_in, wallet_address, submit_error
-                        )
-                        .into());
-                    }
-                }
-            }
-            None => {
-                return Err(
-                    "It seems the cardano-node has an issue. Please check the logs in your docker container logs if there is any issue."
-                        .into(),
-                );
-            }
+        if !is_on_chain {
+            let tx_in = last_tx_in.as_deref().unwrap_or("unknown");
+            let seed_error = last_seed_error
+                .map(|error| format!(" Last seed error: {}", error))
+                .unwrap_or_default();
+            return Err(format!(
+                "Seed transaction {} for {} did not settle on the canonical chain after multiple attempts.{}",
+                tx_in, wallet_address, seed_error
+            )
+            .into());
         }
     }
 

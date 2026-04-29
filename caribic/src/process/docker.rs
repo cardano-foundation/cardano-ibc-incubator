@@ -33,12 +33,6 @@ impl DockerCli {
         runner::run_ok_output(&mut command).map(|_| ())
     }
 
-    pub fn compose_exec_output(&self, service: &str, args: &[&str]) -> Result<Output, String> {
-        let mut compose_args = vec!["exec", service];
-        compose_args.extend_from_slice(args);
-        self.compose_output(compose_args.as_slice())
-    }
-
     pub fn compose_exec_no_tty_output(
         &self,
         service: &str,

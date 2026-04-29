@@ -22,6 +22,10 @@ COPY ${MAIN_CONTEXT} .
 COPY ./packages /usr/packages
 COPY --from=protos /usr/src/proto-types /usr/proto-types
 
+# Build local file dependencies that publish compiled artifacts from dist/.
+RUN npm install --package-lock=false --prefix /usr/packages/cardano-ibc-trace-registry \
+  && npm run --prefix /usr/packages/cardano-ibc-trace-registry build
+
 # Install app dependencies
 RUN npm ci --legacy-peer-deps
 

@@ -1,8 +1,12 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
-import { convertString2Hex, hashSHA256, hashSha3_256 } from '@shared/helpers/hex';
+import { convertString2Hex, hashSHA256 } from '@shared/helpers/hex';
 import { insertSortMapWithNumberKey, prependToMap } from '@shared/helpers/helper';
+import {
+  buildVoucherDenomHashFromFullDenom,
+  buildVoucherUserTokenNameFromDenomHash,
+} from '@shared/helpers/voucher-asset';
 import { PacketService } from '../packet.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { DenomTraceService } from '../../query/services/denom-trace.service';
@@ -121,7 +125,7 @@ describe('PacketService denom invariants', () => {
   it('does not fall back from escrow denom to voucher token units', () => {
     const inputDenom = 'def68337867cb4f1f95b6b811fedbfcdd7780d10a95cc072077088ea6d6f636b';
     const resolvedDenom = inputDenom;
-    const unrelatedVoucherTokenUnit = `voucherpolicy${hashSha3_256(convertString2Hex('transfer/channel-0/stake'))}`;
+    const unrelatedVoucherTokenUnit = `voucherpolicy${buildVoucherUserTokenNameFromDenomHash(buildVoucherDenomHashFromFullDenom('transfer/channel-0/stake'))}`;
     const senderWalletUtxos = [
       {
         assets: {
@@ -172,7 +176,7 @@ describe('PacketService denom invariants', () => {
     const canonicalDenom = 'transfer/channel-0/stake';
     const tokenName = (service as any)._buildVoucherTokenName(canonicalDenom);
 
-    expect(tokenName).toBe(hashSha3_256(convertString2Hex(canonicalDenom)));
+    expect(tokenName).toBe(buildVoucherUserTokenNameFromDenomHash(buildVoucherDenomHashFromFullDenom(canonicalDenom)));
   });
 
   it('does not apply an extra prefix when hashing refund voucher denoms', () => {
@@ -180,8 +184,8 @@ describe('PacketService denom invariants', () => {
     const doublePrefixedDenom = `transfer/channel-0/${canonicalDenom}`;
     const tokenName = (service as any)._buildVoucherTokenName(canonicalDenom);
 
-    expect(tokenName).toBe(hashSha3_256(convertString2Hex(canonicalDenom)));
-    expect(tokenName).not.toBe(hashSha3_256(convertString2Hex(doublePrefixedDenom)));
+    expect(tokenName).toBe(buildVoucherUserTokenNameFromDenomHash(buildVoucherDenomHashFromFullDenom(canonicalDenom)));
+    expect(tokenName).not.toBe(buildVoucherUserTokenNameFromDenomHash(buildVoucherDenomHashFromFullDenom(doublePrefixedDenom)));
   });
 
   it('produces the same voucher token-name after ibc hash reverse lookup round-trip', async () => {

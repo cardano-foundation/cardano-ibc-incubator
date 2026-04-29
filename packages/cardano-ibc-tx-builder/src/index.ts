@@ -1,7 +1,8 @@
 import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
-import { sha3_256 } from 'js-sha3';
+import { blake2b } from '@noble/hashes/blake2b';
 
 const LOVELACE = 'lovelace';
+const CIP67_FT_LABEL_HEX = '0014df10';
 const LOOKUP_RETRY_OPTIONS = {
   maxAttempts: 6,
   retryDelayMs: 1000,
@@ -509,7 +510,10 @@ function buildVoucherTokenName(
     );
   }
 
-  return sha3_256(Buffer.from(convertStringToHex(denom), 'hex')).toString();
+  const voucherDenomHash = Buffer.from(
+    blake2b(Buffer.from(denom, 'utf8'), { dkLen: 28 }),
+  ).toString('hex');
+  return `${CIP67_FT_LABEL_HEX}${voucherDenomHash}`;
 }
 
 async function resolvePacketDenomForSend(

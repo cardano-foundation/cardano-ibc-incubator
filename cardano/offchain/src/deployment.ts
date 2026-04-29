@@ -16,10 +16,10 @@ import {
 } from "@lucid-evolution/lucid";
 import {
   DeploymentTemplate,
-  getLiveWalletUtxos,
   formatTimestamp,
   generateIdentifierTokenName,
   generateTokenName,
+  getLiveWalletUtxos,
   readValidator,
   submitTx,
 } from "./utils.ts";
@@ -146,7 +146,9 @@ export const createDeployment = async (
     TRACE_REGISTRY_SHARD_COUNT + TRACE_REGISTRY_DIRECTORY_NONCE_COUNT + 1,
   );
   if (!mockModuleNonceUtxo || !icqModuleNonceUtxo) {
-    throw new Error("Missing reserved nonce UTxOs for generic module deployment.");
+    throw new Error(
+      "Missing reserved nonce UTxOs for generic module deployment.",
+    );
   }
 
   const hostStateOutputReference: OutputReference = {
@@ -363,7 +365,9 @@ export const createDeployment = async (
   const traceRegistryDirectoryNonce =
     traceRegistryNonceUtxos[TRACE_REGISTRY_SHARD_COUNT];
   if (!traceRegistryDirectoryNonce) {
-    throw new Error("Missing reserved nonce UTxO for trace registry directory.");
+    throw new Error(
+      "Missing reserved nonce UTxO for trace registry directory.",
+    );
   }
   const traceRegistryDirectoryAuthToken: AuthToken = {
     policy_id: validatorToScriptHash(mintIdentifierValidator),
@@ -375,6 +379,7 @@ export const createDeployment = async (
   const {
     identifierTokenUnit: transferModuleIdentifier,
     mintVoucher,
+    voucherMetadata,
     spendTransferModule,
   } = await deployTransferModule(
     lucid,
@@ -388,7 +393,10 @@ export const createDeployment = async (
     traceRegistryDirectoryAuthToken,
     transferModuleNonceUtxo,
   );
-  referredValidators.push(mintVoucher.validator, spendTransferModule.validator);
+  referredValidators.push(
+    mintVoucher.validator,
+    spendTransferModule.validator,
+  );
   const traceRegistryBenchmarkVoucher = await loadTraceRegistryBenchmarkVoucher(
     lucid,
   );
@@ -534,6 +542,9 @@ export const createDeployment = async (
         scriptHash: mintVoucher.policyId,
         address: "",
         refUtxo: refUtxosInfo[mintVoucher.policyId],
+      },
+      voucherMetadata: {
+        address: voucherMetadata.address,
       },
       ...(traceRegistryBenchmarkVoucher
         ? {
@@ -1011,13 +1022,23 @@ const deployTransferModule = async (
     name: identifierTokenName,
   };
   const identifierTokenUnit = mintIdentifierPolicyId + identifierTokenName;
+  const [, voucherMetadataScriptHash, voucherMetadataAddress] =
+    await readValidator(
+      "voucher_metadata.voucher_metadata.else",
+      lucid,
+    );
   const [mintVoucherValidator, mintVoucherPolicyId] = await readValidator(
     "minting_voucher.mint_voucher.mint",
     lucid,
-    [identifierToken, traceRegistryDirectoryAuthToken],
-    Data.Tuple([AuthTokenSchema, AuthTokenSchema]) as unknown as [
+    [
+      identifierToken,
+      traceRegistryDirectoryAuthToken,
+      voucherMetadataScriptHash,
+    ],
+    Data.Tuple([AuthTokenSchema, AuthTokenSchema, Data.Bytes()]) as unknown as [
       AuthToken,
       AuthToken,
+      string,
     ],
   );
 
@@ -1148,6 +1169,9 @@ const deployTransferModule = async (
     mintVoucher: {
       validator: mintVoucherValidator,
       policyId: mintVoucherPolicyId,
+    },
+    voucherMetadata: {
+      address: voucherMetadataAddress,
     },
     spendTransferModule: {
       validator: spendTransferModuleValidator,

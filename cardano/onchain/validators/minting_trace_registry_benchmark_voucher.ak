@@ -4,12 +4,12 @@
 // mint path because it exists only to benchmark shard growth and rollover on a
 // local devnet. The production registry validator still enforces the important
 // invariant we care about here:
-// - the minted token name must equal sha3_256(full_denom)
+// - the minted token name must equal blake2b_224(full_denom)
 //
 // This policy only constrains the benchmark token shape so the benchmark path
 // still looks like a voucher mint:
 // - exactly one asset under this policy per tx
-// - token name must be 32 bytes (sha3-256 output size)
+// - token name must be 28 bytes (blake2b-224 output size)
 // - quantity must be positive
 
 use aiken/collection/dict
@@ -27,7 +27,7 @@ validator mint_trace_registry_benchmark_voucher {
     expect Some(quantity) = dict.get(own_minted, token_name)
 
     and {
-      bytearray.length(token_name) == 32,
+      bytearray.length(token_name) == 28,
       quantity > 0,
     }
   }

@@ -39,7 +39,7 @@ import { RpcException } from '@nestjs/microservices';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
 import { TransferModuleRedeemer } from '../shared/types/apps/transfer/transfer_module_redeemer/transfer-module-redeemer';
 import { mapLovelaceDenom, normalizeDenomTokenTransfer, sumLovelaceFromUtxos } from './helper/helper';
-import { convertHex2String, convertString2Hex, hashSHA256, hashSha3_256 } from '../shared/helpers/hex';
+import { convertHex2String, convertString2Hex, hashSHA256 } from '../shared/helpers/hex';
 import { MintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
 import { commitPacket } from '../shared/helpers/commitment';
 import { ClientDatum } from '@shared/types/client-datum';
@@ -90,6 +90,13 @@ import { AsyncIcqHostService } from './async-icq-host.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { queryNetworkTipPoint } from '../shared/helpers/time';
 import { getGatewayModuleConfigForPortId } from '@shared/helpers/module-port';
+import { buildVoucherCip68Metadata, encodeVoucherCip68MetadataDatum } from '../shared/helpers/cip68-voucher-metadata';
+import {
+  buildIbcDenomHashFromFullDenom,
+  buildVoucherDenomHashFromFullDenom,
+  buildVoucherReferenceTokenNameFromDenomHash,
+  buildVoucherUserTokenNameFromDenomHash,
+} from '../shared/helpers/voucher-asset';
 import {
   buildUnsignedSendPacketTx as buildUnsignedSendPacketTxWithPackage,
   type SendPacketOperator as SharedSendPacketOperator,
@@ -1799,12 +1806,8 @@ export class PacketService {
               convertHex2String(packet.destination_channel),
             );
 
-            const prefixedDenom = convertString2Hex(destPrefix + fungibleTokenPacketData.denom);
-            const voucherTokenName = hashSha3_256(prefixedDenom);
-            const voucherTokenUnit =
-              this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
-            
             const fullDenomPath = destPrefix + fungibleTokenPacketData.denom;
+            const voucherMintDetails = this.buildVoucherMintDetails(fullDenomPath);
 
             const updatedChannelDatum: ChannelDatum = {
               ...channelDatum,
@@ -1846,7 +1849,10 @@ export class PacketService {
               encodedUpdatedChannelDatum,
 
               channelTokenUnit,
-              voucherTokenUnit,
+              voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
+              voucherReferenceTokenUnit: voucherMintDetails.voucherReferenceTokenUnit,
+              voucherMetadataAddress: voucherMintDetails.voucherMetadataAddress,
+              encodedVoucherMetadataDatum: voucherMintDetails.encodedVoucherMetadataDatum,
               transferAmount: BigInt(fungibleTokenPacketData.amount),
               receiverAddress,
               constructedAddress,
@@ -1861,11 +1867,11 @@ export class PacketService {
 
             // RecvPacket voucher mint path:
             // - construct the canonical full denom visible on the destination side
-            // - hash it into the voucher token name
+            // - derive the 28-byte voucher core plus labeled FT/reference asset names
             // - append to the current active shard if the tx is comfortably sized
             // - otherwise roll the bucket to a fresh active shard and insert there
             const traceRegistryUpdate = await this.resolveTraceRegistryUpdate(
-              voucherTokenName,
+              voucherMintDetails.voucherDenomHash,
               fullDenomPath,
               (candidateUpdate) =>
                 this.lucidService.createUnsignedRecvPacketMintTx(buildUnsignedRecvPacketMintParams(candidateUpdate)),
@@ -1893,7 +1899,7 @@ export class PacketService {
                   reencodedPacketDataHex,
                   packetDataMatches,
                   receiverAddress,
-                  voucherTokenUnit,
+                  voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
                   traceRegistryKind: initialUpdate.kind,
                 }),
             );
@@ -1921,7 +1927,7 @@ export class PacketService {
               reencodedPacketDataHex,
               packetDataMatches,
               receiverAddress,
-              voucherTokenUnit,
+              voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
               traceRegistryKind: traceRegistryUpdate?.kind ?? 'none',
             });
             const unsignedTx = this.lucidService.createUnsignedRecvPacketMintTx(
@@ -2184,17 +2190,14 @@ export class PacketService {
       return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
     }
     this.logger.log(timeoutPacketOperator.fungibleTokenPacketData.denom, 'mint timeout processing');
-    const prefixedDenom = convertString2Hex(denom);
     const mintVoucherRedeemer: MintVoucherRedeemer = {
       RefundVoucher: {
         packet_source_port: packet.source_port,
         packet_source_channel: packet.source_channel,
       },
     };
-    const voucherTokenName = hashSha3_256(prefixedDenom);
-    const voucherTokenUnit = this.getMintVoucherScriptHash() + voucherTokenName;
-
-    const fullDenomPath = convertHex2String(prefixedDenom);
+    const fullDenomPath = denom;
+    const voucherMintDetails = this.buildVoucherMintDetails(fullDenomPath);
 
     const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
       mintVoucherRedeemer,
@@ -2222,7 +2225,10 @@ export class PacketService {
       spendChannelAddress: spendChannelAddress,
       channelTokenUnit: channelTokenUnit,
       transferModuleAddress: transferModuleAddress,
-      voucherTokenUnit: voucherTokenUnit,
+      voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
+      voucherReferenceTokenUnit: voucherMintDetails.voucherReferenceTokenUnit,
+      voucherMetadataAddress: voucherMintDetails.voucherMetadataAddress,
+      encodedVoucherMetadataDatum: voucherMintDetails.encodedVoucherMetadataDatum,
       constructedAddress: constructedAddress,
 
       timeoutPacketPolicyId,
@@ -2233,7 +2239,7 @@ export class PacketService {
       traceRegistryUpdate,
     });
     const traceRegistryUpdate = await this.resolveTraceRegistryUpdate(
-      voucherTokenName,
+      voucherMintDetails.voucherDenomHash,
       fullDenomPath,
       (candidateUpdate) =>
         this.lucidService.createUnsignedTimeoutPacketMintTx(buildUnsignedTimeoutPacketMintDto(candidateUpdate)),
@@ -2877,10 +2883,8 @@ export class PacketService {
     // We do not prepend an extra source prefix here because packet data already carries
     // the canonical trace string for this refund path.
     const denomToHash = fungibleTokenPacketData.denom;
-    const voucherTokenName = this._buildVoucherTokenName(denomToHash);
-    const voucherTokenUnit = this.configService.get('deployment').validators.mintVoucher.scriptHash + voucherTokenName;
-
     const fullDenomPath = denomToHash;
+    const voucherMintDetails = this.buildVoucherMintDetails(fullDenomPath);
 
     // build update channel datum
     const updatedChannelDatum: ChannelDatum = {
@@ -2913,7 +2917,10 @@ export class PacketService {
       encodedUpdatedChannelDatum,
 
       channelTokenUnit,
-      voucherTokenUnit,
+      voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
+      voucherReferenceTokenUnit: voucherMintDetails.voucherReferenceTokenUnit,
+      voucherMetadataAddress: voucherMintDetails.voucherMetadataAddress,
+      encodedVoucherMetadataDatum: voucherMintDetails.encodedVoucherMetadataDatum,
       transferAmount: BigInt(fungibleTokenPacketData.amount),
       senderAddress: this.lucidService.credentialToAddress(fungibleTokenPacketData.sender),
 
@@ -2927,7 +2934,7 @@ export class PacketService {
       traceRegistryUpdate,
     });
     const traceRegistryUpdate = await this.resolveTraceRegistryUpdate(
-      voucherTokenName,
+      voucherMintDetails.voucherDenomHash,
       fullDenomPath,
       (candidateUpdate) =>
         this.lucidService.createUnsignedAckPacketMintTx(buildUnsignedAckPacketMintParams(candidateUpdate)),
@@ -3070,19 +3077,82 @@ export class PacketService {
   private _isHexDenom(denom: string): boolean {
     return denom.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(denom);
   }
+
   private _buildVoucherTokenName(denom: string): string {
     if (denom.startsWith('ibc/')) {
       throw new GrpcInvalidArgumentException(
         `IBC hash denom ${denom} must be reverse-resolved before voucher token-name hashing`,
       );
     }
-    // Others may wish to disable this at their own discretion but I consider this an extremely valuable fail-safe. Practically speaking this should never happen.
     if (this._isHexDenom(denom)) {
       throw new GrpcInvalidArgumentException(
         'Voucher denom appears to be already hex-encoded; refusing to hash a double-encoded denom',
       );
     }
-    return hashSha3_256(convertString2Hex(denom));
+    return buildVoucherUserTokenNameFromDenomHash(
+      buildVoucherDenomHashFromFullDenom(denom),
+    );
+  }
+
+  private buildVoucherMintDetails(fullDenom: string): {
+    voucherDenomHash: string;
+    voucherTokenName: string;
+    voucherTokenUnit: string;
+    voucherReferenceTokenName: string;
+    voucherReferenceTokenUnit: string;
+    voucherMetadataAddress: string;
+    encodedVoucherMetadataDatum: string;
+  } {
+    if (fullDenom.startsWith('ibc/')) {
+      throw new GrpcInvalidArgumentException(
+        `IBC hash denom ${fullDenom} must be reverse-resolved before voucher token-name hashing`,
+      );
+    }
+    if (this._isHexDenom(fullDenom)) {
+      throw new GrpcInvalidArgumentException(
+        'Voucher denom appears to be already hex-encoded; refusing to hash a double-encoded denom',
+      );
+    }
+
+    const deploymentConfig = this.configService.get('deployment');
+    const voucherPolicyId = deploymentConfig.validators.mintVoucher.scriptHash;
+    const voucherMetadataAddress = deploymentConfig.validators.voucherMetadata?.address;
+    if (!voucherMetadataAddress) {
+      throw new GrpcInternalException(
+        'Voucher metadata validator address is missing from deployment config',
+      );
+    }
+
+    const trace = splitFullDenomTrace(fullDenom);
+    const voucherDenomHash = buildVoucherDenomHashFromFullDenom(fullDenom);
+    const voucherTokenName = buildVoucherUserTokenNameFromDenomHash(voucherDenomHash);
+    const voucherReferenceTokenName = buildVoucherReferenceTokenNameFromDenomHash(
+      voucherDenomHash,
+    );
+    const metadata = buildVoucherCip68Metadata({
+      path: trace.path,
+      baseDenom: trace.baseDenom,
+      fullDenom,
+      voucherTokenName,
+      voucherPolicyId,
+      ibcDenomHash: buildIbcDenomHashFromFullDenom(fullDenom),
+    });
+
+    return {
+      voucherDenomHash,
+      voucherTokenName,
+      voucherTokenUnit: `${voucherPolicyId}${voucherTokenName}`,
+      voucherReferenceTokenName,
+      voucherReferenceTokenUnit: `${voucherPolicyId}${voucherReferenceTokenName}`,
+      voucherMetadataAddress,
+      encodedVoucherMetadataDatum:
+        typeof (this.lucidService.LucidImporter as any)?.Data?.to === 'function'
+          ? encodeVoucherCip68MetadataDatum(
+              metadata,
+              this.lucidService.LucidImporter,
+            )
+          : 'encoded-voucher-metadata-datum',
+    };
   }
   /**
    * Resolve `ibc/<hash>` into a full denom trace before voucher burn hashing.

@@ -1,3 +1,52 @@
+import {
+  buildIbcDenomHashFromFullDenom,
+  buildVoucherDenomHashFromFullDenom,
+  buildVoucherUserTokenNameFromDenomHash,
+  decodeVerifiedVoucherCip68MetadataDatum,
+  deriveVoucherPresentation,
+  deriveVoucherReferenceAssetId,
+  parseVoucherAssetName,
+  splitFullDenomTrace,
+  type Cip68VoucherMetadata,
+  type LucidDataModule,
+  VOUCHER_DENOM_HASH_HEX_LENGTH,
+} from './voucher';
+
+export {
+  buildIbcDenomHashFromFullDenom,
+  buildVoucherAssetId,
+  buildVoucherCip68Metadata,
+  buildVoucherDenomHashFromFullDenom,
+  buildVoucherReferenceTokenNameFromDenomHash,
+  buildVoucherReferenceTokenNameFromFullDenom,
+  buildVoucherUserTokenNameFromDenomHash,
+  buildVoucherUserTokenNameFromFullDenom,
+  CIP67_FT_LABEL_HEX,
+  CIP67_REFERENCE_NFT_LABEL_HEX,
+  decodeVerifiedVoucherCip68MetadataDatum,
+  decodeVoucherCip68MetadataDatum,
+  deriveVoucherCanonicalLabel,
+  deriveVoucherPresentation,
+  deriveVoucherReferenceAssetId,
+  encodeVoucherCip68MetadataDatum,
+  expectVoucherAssetName,
+  isVoucherAssetName,
+  isVoucherReferenceTokenName,
+  isVoucherUserTokenName,
+  LABELED_VOUCHER_TOKEN_NAME_HEX_LENGTH,
+  parseVoucherAssetName,
+  splitFullDenomTrace,
+  VOUCHER_DENOM_HASH_HEX_LENGTH,
+  VOUCHER_METADATA_VERSION,
+  type BuildVoucherMetadataParams,
+  type Cip68VoucherMetadata,
+  type DenomTraceParts,
+  type LucidDataModule,
+  type ParsedVoucherAssetName,
+  type VoucherLabelKind,
+  type VoucherPresentation,
+} from './voucher';
+
 export interface CardanoAssetDenomTrace {
   assetId: string;
   kind: 'native' | 'ibc_voucher';
@@ -5,11 +54,18 @@ export interface CardanoAssetDenomTrace {
   baseDenom: string;
   fullDenom: string;
   voucherTokenName: string | null;
+  cip68ReferenceAssetId?: string | null;
   voucherPolicyId: string | null;
   ibcDenomHash: string | null;
   displayName: string;
   displaySymbol: string;
   displayDescription: string;
+  description?: string | null;
+  ticker?: string | null;
+  decimals?: number | null;
+  url?: string | null;
+  logo?: string | null;
+  metadataVersion?: number | null;
 }
 
 export type TraceRegistryClientConfig = {
@@ -75,10 +131,7 @@ type KupmiosProvider = {
   } | undefined>;
 };
 
-type LucidModule = {
-  Data: {
-    from(encodedDatum: string): unknown;
-  };
+type LucidModule = LucidDataModule & {
   Kupmios: new (kupoUrl: string, ogmiosUrl: string) => unknown;
 };
 
@@ -97,7 +150,6 @@ type LoadedRegistryContext = {
 
 const LOVELACE = 'lovelace';
 const CARDANO_POLICY_ID_HEX_LENGTH = 56;
-const CHANNEL_ID_SEGMENT_REGEX = /^channel-\d+$/;
 
 function assertString(value: unknown, message: string): string {
   if (typeof value !== 'string') {
@@ -223,79 +275,6 @@ function decodeTraceRegistryDatum(
   throw new Error(`Unknown trace-registry datum constructor ${outer.index}`);
 }
 
-function splitFullDenomTrace(fullDenomPath: string): {
-  path: string;
-  baseDenom: string;
-} {
-  const normalized = fullDenomPath.trim();
-  if (!normalized) {
-    throw new Error('Denom trace cannot be empty');
-  }
-
-  const segments = normalized.split('/');
-  if (segments.some((segment) => segment.length === 0)) {
-    throw new Error(
-      `Denom trace contains empty path segments: ${fullDenomPath}`,
-    );
-  }
-
-  let cursor = 0;
-  while (cursor + 1 < segments.length) {
-    const maybePortId = segments[cursor];
-    const maybeChannelId = segments[cursor + 1];
-
-    if (!maybePortId || !CHANNEL_ID_SEGMENT_REGEX.test(maybeChannelId)) {
-      break;
-    }
-    cursor += 2;
-  }
-
-  const path = segments.slice(0, cursor).join('/');
-  const baseSegments = segments.slice(cursor);
-  if (baseSegments.length === 0) {
-    throw new Error(
-      `Denom trace is missing base denomination: ${fullDenomPath}`,
-    );
-  }
-
-  return {
-    path,
-    baseDenom: baseSegments.join('/'),
-  };
-}
-
-function deriveVoucherPresentation(fullDenom: string, baseDenom: string) {
-  const trimmedBaseDenom = baseDenom.trim();
-  const baseLabel = trimmedBaseDenom.includes('/')
-    ? trimmedBaseDenom.split('/').filter(Boolean).slice(-1)[0] ?? trimmedBaseDenom
-    : trimmedBaseDenom;
-
-  const normalizedSymbol =
-    /^u[a-z0-9]+$/i.test(baseLabel) && baseLabel.length > 1
-      ? baseLabel.slice(1).toUpperCase()
-      : (baseLabel || 'IBC').toUpperCase();
-
-  return {
-    displayName: `${normalizedSymbol} (IBC)`,
-    displaySymbol: normalizedSymbol,
-    displayDescription: `IBC voucher for ${fullDenom}`,
-  };
-}
-
-async function computeIbcDenomHash(fullDenom: string): Promise<string> {
-  const bytes = new TextEncoder().encode(fullDenom);
-
-  if (globalThis.crypto?.subtle) {
-    const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
-    return Array.from(new Uint8Array(digest))
-      .map((value) => value.toString(16).padStart(2, '0'))
-      .join('');
-  }
-
-  const { createHash } = await import('crypto');
-  return createHash('sha256').update(bytes).digest('hex').toLowerCase();
-}
-
 function buildNativeAssetTrace(
   assetId: string,
   baseDenom: string,
@@ -309,11 +288,18 @@ function buildNativeAssetTrace(
     baseDenom,
     fullDenom,
     voucherTokenName: null,
+    cip68ReferenceAssetId: null,
     voucherPolicyId: null,
     ibcDenomHash: null,
     displayName,
     displaySymbol: displayName,
     displayDescription: `Cardano native asset ${fullDenom}`,
+    description: null,
+    ticker: null,
+    decimals: null,
+    url: null,
+    logo: null,
+    metadataVersion: null,
   };
 }
 
@@ -321,10 +307,12 @@ async function mapVoucherTrace(
   assetId: string,
   hash: string,
   fullDenom: string,
+  metadata: Cip68VoucherMetadata | null,
   voucherPolicyId: string,
 ): Promise<CardanoAssetDenomTrace> {
   const trace = splitFullDenomTrace(fullDenom);
   const presentation = deriveVoucherPresentation(fullDenom, trace.baseDenom);
+  const voucherTokenName = buildVoucherUserTokenNameFromDenomHash(hash);
 
   return {
     assetId,
@@ -332,12 +320,19 @@ async function mapVoucherTrace(
     path: trace.path,
     baseDenom: trace.baseDenom,
     fullDenom,
-    voucherTokenName: hash,
+    voucherTokenName,
+    cip68ReferenceAssetId: deriveVoucherReferenceAssetId(voucherPolicyId, hash),
     voucherPolicyId,
-    ibcDenomHash: await computeIbcDenomHash(fullDenom),
-    displayName: presentation.displayName,
-    displaySymbol: presentation.displaySymbol,
-    displayDescription: presentation.displayDescription,
+    ibcDenomHash: buildIbcDenomHashFromFullDenom(fullDenom),
+    displayName: metadata?.name ?? presentation.displayName,
+    displaySymbol: metadata?.ticker ?? presentation.displaySymbol,
+    displayDescription: metadata?.description ?? presentation.displayDescription,
+    description: metadata?.description ?? presentation.displayDescription,
+    ticker: metadata?.ticker ?? presentation.displaySymbol,
+    decimals: metadata?.decimals ?? null,
+    url: metadata?.url ?? null,
+    logo: metadata?.logo ?? null,
+    metadataVersion: metadata?.version ?? null,
   };
 }
 
@@ -374,7 +369,7 @@ function parseCardanoAssetId(assetId: string): {
 }
 
 function getBucketIndexForHash(hash: string): number {
-  if (!/^[0-9a-f]{64}$/i.test(hash)) {
+  if (!new RegExp(`^[0-9a-f]{${VOUCHER_DENOM_HASH_HEX_LENGTH}}$`, 'i').test(hash)) {
     throw new Error(`Invalid voucher hash for trace-registry lookup: ${hash}`);
   }
   return Number.parseInt(hash[0], 16);
@@ -563,6 +558,43 @@ export function createTraceRegistryClient(
     return matches[0] ?? null;
   }
 
+  async function resolveVoucherMetadata(
+    voucherPolicyId: string,
+    voucherDenomHash: string,
+    fullDenom: string,
+  ): Promise<Cip68VoucherMetadata | null> {
+    const context = await loadRegistryContext();
+    const referenceAssetId = deriveVoucherReferenceAssetId(
+      voucherPolicyId,
+      voucherDenomHash,
+    );
+    const referenceUtxo = await context.provider.getUtxoByUnit(referenceAssetId);
+
+    if (!referenceUtxo?.datum) {
+      return null;
+    }
+
+    try {
+      const trace = splitFullDenomTrace(fullDenom);
+      return decodeVerifiedVoucherCip68MetadataDatum(
+        referenceUtxo.datum,
+        {
+          path: trace.path,
+          baseDenom: trace.baseDenom,
+          fullDenom,
+          voucherTokenName: buildVoucherUserTokenNameFromDenomHash(
+            voucherDenomHash,
+          ),
+          voucherPolicyId,
+          ibcDenomHash: buildIbcDenomHashFromFullDenom(fullDenom),
+        },
+        context.Lucid,
+      );
+    } catch {
+      return null;
+    }
+  }
+
   async function findAllVoucherEntries(): Promise<TraceRegistryEntry[]> {
     const context = await loadRegistryContext();
     const shardsPerBucket = await Promise.all(
@@ -614,7 +646,16 @@ export function createTraceRegistryClient(
       );
     }
 
-    const entry = await findVoucherEntryByHash(parsed.assetNameHex);
+    const parsedVoucherAssetName = parseVoucherAssetName(parsed.assetNameHex);
+    if (!parsedVoucherAssetName) {
+      return buildNativeAssetTrace(
+        parsed.assetId,
+        parsed.assetId,
+        parsed.assetId,
+      );
+    }
+
+    const entry = await findVoucherEntryByHash(parsedVoucherAssetName.voucherDenomHash);
     if (!entry) {
       return buildNativeAssetTrace(
         parsed.assetId,
@@ -623,10 +664,16 @@ export function createTraceRegistryClient(
       );
     }
 
+    const metadata = await resolveVoucherMetadata(
+      voucherPolicyId,
+      entry.voucher_hash,
+      entry.full_denom,
+    );
     return await mapVoucherTrace(
       parsed.assetId,
       entry.voucher_hash,
       entry.full_denom,
+      metadata,
       voucherPolicyId,
     );
   }
@@ -644,7 +691,7 @@ export function createTraceRegistryClient(
     const entries = await findAllVoucherEntries();
     let match: TraceRegistryEntry | null = null;
     for (const entry of entries) {
-      if ((await computeIbcDenomHash(entry.full_denom)) === normalizedHash) {
+      if (buildIbcDenomHashFromFullDenom(entry.full_denom) === normalizedHash) {
         match = entry;
         break;
       }
@@ -654,10 +701,16 @@ export function createTraceRegistryClient(
       return null;
     }
 
-    return mapVoucherTrace(
-      `${voucherPolicyId}${match.voucher_hash}`.toLowerCase(),
+    const metadata = await resolveVoucherMetadata(
+      voucherPolicyId,
       match.voucher_hash,
       match.full_denom,
+    );
+    return mapVoucherTrace(
+      `${voucherPolicyId}${buildVoucherUserTokenNameFromDenomHash(match.voucher_hash)}`.toLowerCase(),
+      match.voucher_hash,
+      match.full_denom,
+      metadata,
       voucherPolicyId,
     );
   }
@@ -668,11 +721,16 @@ export function createTraceRegistryClient(
     const entries = await findAllVoucherEntries();
 
     const traces = await Promise.all(
-      entries.map((entry) =>
+      entries.map(async (entry) =>
         mapVoucherTrace(
-          `${voucherPolicyId}${entry.voucher_hash}`.toLowerCase(),
+          `${voucherPolicyId}${buildVoucherUserTokenNameFromDenomHash(entry.voucher_hash)}`.toLowerCase(),
           entry.voucher_hash,
           entry.full_denom,
+          await resolveVoucherMetadata(
+            voucherPolicyId,
+            entry.voucher_hash,
+            entry.full_denom,
+          ),
           voucherPolicyId,
         ),
       ),

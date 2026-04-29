@@ -50,7 +50,9 @@ impl CardanoCli {
     pub fn exec_output(&self, cardano_cli_args: &[&str]) -> Result<Output, String> {
         // Caribic runs Cardano queries against the managed devnet container rather than a host
         // install, so every typed Cardano call funnels through `docker compose exec`.
+        let mut args = vec!["cardano-cli"];
+        args.extend_from_slice(cardano_cli_args);
         self.docker
-            .compose_exec_output("cardano-node", cardano_cli_args)
+            .compose_exec_no_tty_output("cardano-node", args.as_slice())
     }
 }

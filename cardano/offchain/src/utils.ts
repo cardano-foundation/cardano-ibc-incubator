@@ -61,7 +61,8 @@ export const submitTx = async (
   const ADOPTION_ATTEMPTS = 6;
   const ADOPTION_TIMEOUT_MS = 30000;
   const ADOPTION_RETRY_DELAY_MS = 5000;
-  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const sleep = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
   const awaitTxWithTimeout = async (hash: string) => {
     await Promise.race([
       lucid.awaitTx(hash, 1000),
@@ -348,6 +349,7 @@ type Validator =
   | "spendTransferModule"
   | "mintIdentifier"
   | "mintVoucher"
+  | "voucherMetadata"
   | "verifyProof"
   | "hostStateStt"
   | "mintClientStt"
@@ -427,6 +429,12 @@ export type DeploymentTemplate = {
       scriptHash: string;
       address: string;
       refUtxo: UTxO;
+    };
+    // Runtime only needs the voucher-metadata script address in order to create
+    // the immutable CIP-68 output. The script remains a deployment-time concern
+    // for deriving the address and parameterizing mint_voucher.
+    voucherMetadata?: {
+      address: string;
     };
     mintTraceRegistryBenchmarkVoucher?: {
       title: string;

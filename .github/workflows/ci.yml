@@ -50,6 +50,11 @@ jobs:
       - name: Install tx builder runtime dependencies
         run: npm install --package-lock=false --omit=dev --legacy-peer-deps --prefix packages/cardano-ibc-tx-builder
 
+      - name: Build trace registry
+        run: |
+          npm install --package-lock=false --prefix packages/cardano-ibc-trace-registry
+          npm run --prefix packages/cardano-ibc-trace-registry build
+
       - name: Build
         run: npm run --prefix cardano/gateway build
 
@@ -104,6 +109,12 @@ jobs:
         run: |
           npm install --package-lock=false --prefix packages/cardano-ibc-tx-builder
           npm run --prefix packages/cardano-ibc-tx-builder build
+          npm prune --omit=dev --prefix packages/cardano-ibc-tx-builder
+
+      - name: Build trace registry
+        run: |
+          npm install --package-lock=false --prefix packages/cardano-ibc-trace-registry
+          npm run --prefix packages/cardano-ibc-trace-registry build
 
       - name: Build tx builder runtime
         run: |
