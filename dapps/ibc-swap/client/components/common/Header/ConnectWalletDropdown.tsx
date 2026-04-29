@@ -35,11 +35,6 @@ import CardanoWalletModal, { WalletProps } from './CardanoWalletModal';
 const readStoredCardanoWalletName = () => {
   if (typeof window === 'undefined') return undefined;
 
-type CardanoWalletProvider = {
-  name?: string;
-  isEnabled?: () => Promise<boolean>;
-};
-
 const readStoredCardanoWalletName = () => {
   if (typeof window === 'undefined') return undefined;
 
@@ -52,20 +47,6 @@ const readStoredCardanoWalletName = () => {
   } catch {
     return storedValue;
   }
-};
-
-const getCardanoProviderByName = (walletName: string) => {
-  if (typeof window === 'undefined') return undefined;
-
-  const cardano = (
-    window as typeof window & {
-      cardano?: Record<string, CardanoWalletProvider>;
-    }
-  ).cardano;
-
-  return Object.values(cardano ?? {}).find(
-    (provider) => provider.name?.toLowerCase() === walletName.toLowerCase(),
-  );
 };
 
 export const ConnectWalletDropdown = () => {
@@ -196,32 +177,28 @@ export const ConnectWalletDropdown = () => {
       isConnectingCardanoWallet ||
       cardanoWallets.length === 0
     ) {
-      return;
+      return undefined;
     }
 
     const storedWalletName = readStoredCardanoWalletName();
-    if (!storedWalletName) return;
+    if (!storedWalletName) return undefined;
 
     const installedWallet = cardanoWallets.find(
       (wallet) => wallet.name.toLowerCase() === storedWalletName.toLowerCase(),
     );
-    if (!installedWallet) return;
-
-    const walletProvider = getCardanoProviderByName(installedWallet.name);
-    if (!walletProvider?.isEnabled) return;
+    if (!installedWallet) return undefined;
 
     attemptedCardanoReconnectRef.current = true;
     let cancelled = false;
 
     const reconnectCardanoWallet = async () => {
       try {
-        const isEnabled = await walletProvider.isEnabled?.();
-        if (!cancelled && isEnabled) {
-          setPendingCardanoWalletName(installedWallet.name);
-          await connectCardanoWallet(installedWallet.name);
+        setPendingCardanoWalletName(installedWallet.name);
+        await connectCardanoWallet(installedWallet.name);
+      } catch {
+        if (!cancelled) {
+          setPendingCardanoWalletName(undefined);
         }
-      } catch (error) {
-        console.warn('Cardano wallet reconnect check failed', error);
       }
     };
 
