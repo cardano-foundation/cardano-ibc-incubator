@@ -24,16 +24,9 @@ import {
   getCardanoWalletErrorMessage,
   isCardanoWalletLockedError,
 } from '@/utils/cardanoWalletStatus';
-import {
-  logCardanoWalletDebug,
-  logCardanoWalletError,
-} from '@/utils/cardanoWalletDebug';
 import { useWallet, useWalletList } from '@meshsdk/react';
 import { UseCosmosWallet } from './UseCosmosWallet';
 import CardanoWalletModal, { WalletProps } from './CardanoWalletModal';
-
-const readStoredCardanoWalletName = () => {
-  if (typeof window === 'undefined') return undefined;
 
 const readStoredCardanoWalletName = () => {
   if (typeof window === 'undefined') return undefined;
@@ -70,6 +63,8 @@ export const ConnectWalletDropdown = () => {
   const cardanoWallets = useWalletList();
   const [pendingCardanoWalletName, setPendingCardanoWalletName] =
     useState<string>();
+  const [localCardanoWalletErrorMessage, setLocalCardanoWalletErrorMessage] =
+    useState<string>();
   const attemptedCardanoReconnectRef = useRef(false);
 
   const {
@@ -87,7 +82,11 @@ export const ConnectWalletDropdown = () => {
   const cardanoWalletLabel =
     walletCardano?.name || connectedCardanoWalletName || undefined;
 
-  const cardanoWalletErrorMessage = localCardanoWalletErrorMessage;
+  const cardanoWalletErrorMessage =
+    localCardanoWalletErrorMessage ||
+    (cardanoWalletError
+      ? getCardanoWalletErrorMessage(cardanoWalletError)
+      : undefined);
 
   const handleOpenCardanoWalletModal = () => {
     logCardanoWalletDebug('connect:modal:open', {
@@ -107,24 +106,7 @@ export const ConnectWalletDropdown = () => {
     });
     setPendingCardanoWalletName(wallet.name);
     setLocalCardanoWalletErrorMessage(undefined);
-    handledCardanoWalletErrorRef.current = cardanoWalletError;
-    try {
-      await connectCardanoWallet(wallet.name);
-      logCardanoWalletDebug('connect:manual:success', {
-        walletName: wallet.name,
-        elapsedMs: Date.now() - startedAt,
-      });
-    } catch (error) {
-      logCardanoWalletError('connect:manual:error', error, {
-        walletName: wallet.name,
-        elapsedMs: Date.now() - startedAt,
-      });
-      setPendingCardanoWalletName(undefined);
-      setLocalCardanoWalletErrorMessage(getCardanoWalletErrorMessage(error));
-      if (isCardanoWalletLockedError(error)) {
-        onOpenCardanoWalletModal();
-      }
-    }
+    await connectCardanoWallet(wallet.name);
   };
 
   const handleDisconnectCardanoWallet = async () => {
@@ -139,6 +121,20 @@ export const ConnectWalletDropdown = () => {
       walletName: connectedCardanoWalletName,
     });
   };
+
+  useEffect(() => {
+    if (!cardanoWalletError) return;
+
+    const message = getCardanoWalletErrorMessage(cardanoWalletError);
+    setLocalCardanoWalletErrorMessage(message);
+    setPendingCardanoWalletName(undefined);
+
+    if (isCardanoWalletLockedError(cardanoWalletError)) {
+      forgetStoredCardanoWallet();
+      disconnectCardanoWallet();
+      onOpenCardanoWalletModal();
+    }
+  }, [cardanoWalletError, disconnectCardanoWallet, onOpenCardanoWalletModal]);
 
   useEffect(() => {
     if (isCardanoWalletConnected && connectedCardanoWalletName) {
@@ -156,10 +152,7 @@ export const ConnectWalletDropdown = () => {
     }
 
     if (pendingCardanoWalletName && !isConnectingCardanoWallet) {
-      logCardanoWalletDebug('connect:pending:cleared', {
-        pendingWalletName: pendingCardanoWalletName,
-        connectedWalletName: connectedCardanoWalletName,
-      });
+      forgetStoredCardanoWallet();
       setPendingCardanoWalletName(undefined);
     }
   }, [

@@ -16,7 +16,7 @@ const LOOKUP_RETRY_OPTIONS = {
   maxAttempts: 6,
   retryDelayMs: 1000,
 } as const;
-const TRANSACTION_TIME_TO_LIVE = 120_000;
+const TRANSACTION_TIME_TO_LIVE = 10 * 60 * 1000;
 // Browser wallets should not need the gateway relayer's conservative 20 ADA floor.
 // Lucid still raises this when protocol collateral requirements exceed the floor.
 const TRANSACTION_SET_COLLATERAL = BigInt(5_000_000);
@@ -320,26 +320,6 @@ function defaultLogger(scope: string): RuntimeLogger {
     warn: (...args: unknown[]) => console.warn(`[${scope}]`, ...args),
     error: (...args: unknown[]) => console.error(`[${scope}]`, ...args),
   };
-}
-
-function normalizeCardanoNetwork(network: string): Network {
-  const normalized = network.trim().toLowerCase();
-  switch (normalized) {
-    case 'mainnet':
-      return 'Mainnet';
-    case 'preprod':
-      return 'Preprod';
-    case 'preview':
-      return 'Preview';
-    case 'custom':
-    case 'devnet':
-    case 'cardano-devnet':
-      return 'Custom';
-    default:
-      throw new Error(
-        `Unsupported Cardano network "${network}" in bridge manifest. Expected one of ${LUCID_NETWORKS.join(', ')}.`,
-      );
-  }
 }
 
 function describeFetchFailure(error: unknown): string {
