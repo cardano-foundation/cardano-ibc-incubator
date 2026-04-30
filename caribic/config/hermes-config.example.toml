@@ -105,7 +105,9 @@ trust_threshold = { numerator = '2', denominator = '3' }
 [chains.packet_filter]
 policy = 'allow'
 list = [
-  ['transfer', 'channel-0'],  # Allow transfers on channel-0
+  # Cardano transfer channels are recreated across preprod/devnet setups.
+  # Do not pin channel-0 here; Hermes must discover the currently open pair.
+  ['transfer', '*'],
 ]
 
 
