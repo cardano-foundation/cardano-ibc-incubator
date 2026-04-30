@@ -64,9 +64,11 @@ import {
   EVENT_TYPE_CHANNEL,
   EVENT_TYPE_CLIENT,
   EVENT_TYPE_CONNECTION,
+  EVENT_TYPE_PACKET,
   EVENT_TYPE_SPO,
   REDEEMER_EMPTY_DATA,
   REDEEMER_TYPE,
+  ATTRIBUTE_KEY_PACKET,
 } from '../../constant';
 import { AuthToken } from '@shared/types/auth-token';
 import { ConnectionDatum, decodeConnectionDatum } from '@shared/types/connection/connection-datum';
@@ -130,6 +132,35 @@ type ParsedTxRedeemer = {
   data: string;
   index: bigint;
 };
+
+export type IndexedPacketEvent = {
+  tx_hash: string;
+  height: string;
+  type: string;
+  attributes: Record<string, string>;
+  packet: {
+    sequence: string;
+    source_port: string;
+    source_channel: string;
+    destination_port: string;
+    destination_channel: string;
+    data_hex: string;
+    acknowledgement_hex?: string;
+  } | null;
+};
+
+export type PacketEventQuery = {
+  sourceChannel: string;
+  destinationChannel: string;
+  sequence: string;
+  eventType?: string;
+};
+
+const STABILITY_LATEST_HEIGHT_MAX_ATTEMPTS = 40;
+const STABILITY_LATEST_HEIGHT_DELAY_MS = 2_000;
+const MAX_PROTO_UINT64 = (1n << 64n) - 1n;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 @Injectable()
 export class QueryService {
@@ -1160,6 +1191,164 @@ export class QueryService {
     return filteredTxsResults;
   }
 
+  private getPacketEventContext(): {
+    hostStateNFT: AuthToken;
+    mintChannelScriptHash: string;
+  } {
+    const deploymentConfig = this.configService.get('deployment');
+    return {
+      hostStateNFT: deploymentConfig.hostStateNFT as unknown as AuthToken,
+      mintChannelScriptHash: deploymentConfig.validators.mintChannelStt.scriptHash,
+    };
+  }
+
+  private isPacketEventType(type: string): boolean {
+    return Object.values(EVENT_TYPE_PACKET).includes(type);
+  }
+
+  private mapPacketEvent(txHash: string, height: number, event: any): IndexedPacketEvent | null {
+    if (!this.isPacketEventType(event.type)) return null;
+
+    const attributes = (event.event_attribute || []).reduce((acc: Record<string, string>, attr: any) => {
+      if (attr?.key === undefined) return acc;
+      acc[String(attr.key)] = attr?.value === undefined ? '' : String(attr.value);
+      return acc;
+    }, {});
+
+    const sequence = attributes[ATTRIBUTE_KEY_PACKET.PACKET_SEQUENCE];
+    const sourcePort = attributes[ATTRIBUTE_KEY_PACKET.PACKET_SRC_PORT];
+    const sourceChannel = attributes[ATTRIBUTE_KEY_PACKET.PACKET_SRC_CHANNEL];
+    const destinationPort = attributes[ATTRIBUTE_KEY_PACKET.PACKET_DST_PORT];
+    const destinationChannel = attributes[ATTRIBUTE_KEY_PACKET.PACKET_DST_CHANNEL];
+    const dataHex = attributes[ATTRIBUTE_KEY_PACKET.PACKET_DATA_HEX];
+    const acknowledgementHex = attributes[ATTRIBUTE_KEY_PACKET.PACKET_ACK_HEX];
+
+    return {
+      tx_hash: txHash,
+      height: height.toString(),
+      type: event.type,
+      attributes,
+      packet:
+        sequence && sourcePort && sourceChannel && destinationPort && destinationChannel && dataHex
+          ? {
+              sequence,
+              source_port: sourcePort,
+              source_channel: sourceChannel,
+              destination_port: destinationPort,
+              destination_channel: destinationChannel,
+              data_hex: dataHex,
+              ...(acknowledgementHex ? { acknowledgement_hex: acknowledgementHex } : {}),
+            }
+          : null,
+    };
+  }
+
+  private async parsePacketEventsForChannelUtxos(
+    utxos: UtxoDto[],
+    context: { hostStateNFT: AuthToken; mintChannelScriptHash: string },
+  ): Promise<IndexedPacketEvent[]> {
+    const packetEvents: IndexedPacketEvent[] = [];
+
+    for (const utxo of utxos) {
+      if (utxo.assetsPolicy !== context.mintChannelScriptHash) continue;
+
+      const txsResult = await this._parseEventChannel(utxo, context.hostStateNFT, context.mintChannelScriptHash);
+      if (!txsResult?.events?.length) continue;
+
+      for (const event of txsResult.events) {
+        const packetEvent = this.mapPacketEvent(utxo.txHash, utxo.blockNo, event);
+        if (packetEvent) packetEvents.push(packetEvent);
+      }
+    }
+
+    return packetEvents;
+  }
+
+  private packetEventMatchesQuery(event: IndexedPacketEvent, query: PacketEventQuery): boolean {
+    if (!event.packet) return false;
+    if (query.eventType && event.type !== query.eventType) return false;
+    return (
+      event.packet.sequence === query.sequence &&
+      event.packet.source_channel === query.sourceChannel &&
+      event.packet.destination_channel === query.destinationChannel
+    );
+  }
+
+  async queryPacketEventsByTxHash(hash: string): Promise<{
+    tx_hash: string;
+    height: string;
+    indexed: boolean;
+    events: IndexedPacketEvent[];
+  }> {
+    if (!hash) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "hash" must be provided');
+    }
+
+    const normalizedHash = hash.toLowerCase();
+    const tx = await this.historyService.findTxByHash(normalizedHash);
+    if (!tx) {
+      throw new GrpcNotFoundException(`Not found: "hash" ${hash} not found`);
+    }
+
+    const context = this.getPacketEventContext();
+    const utxosInBlock = await this.historyService.findUtxosByBlockNo(tx.height);
+    const txChannelUtxos = utxosInBlock.filter((utxo) => utxo.txHash.toLowerCase() === normalizedHash);
+    const events = await this.parsePacketEventsForChannelUtxos(txChannelUtxos, context);
+
+    return {
+      tx_hash: tx.hash,
+      height: tx.height.toString(),
+      indexed: true,
+      events,
+    };
+  }
+
+  async queryPacketEventsByPacket(query: PacketEventQuery): Promise<{
+    events: IndexedPacketEvent[];
+  }> {
+    if (!query.sourceChannel?.startsWith(`${CHANNEL_ID_PREFIX}-`)) {
+      throw new GrpcInvalidArgumentException(
+        `Invalid argument: "sourceChannel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
+      );
+    }
+    if (!query.destinationChannel?.startsWith(`${CHANNEL_ID_PREFIX}-`)) {
+      throw new GrpcInvalidArgumentException(
+        `Invalid argument: "destinationChannel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
+      );
+    }
+    if (!query.sequence || !/^\d+$/.test(query.sequence)) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "sequence" must be a non-negative integer string');
+    }
+
+    const context = this.getPacketEventContext();
+    const candidateChannelIds = Array.from(new Set([query.sourceChannel, query.destinationChannel]));
+    const channelTokenNames = candidateChannelIds.map((channelId) =>
+      this.lucidService.generateTokenName(
+        context.hostStateNFT,
+        CHANNEL_TOKEN_PREFIX,
+        BigInt(channelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '')),
+      ),
+    );
+
+    const utxosByRef = new Map<string, UtxoDto>();
+    for (const channelTokenName of channelTokenNames) {
+      const utxos = await this.historyService.findUtxosByPolicyIdAndPrefixTokenName(
+        context.mintChannelScriptHash,
+        channelTokenName,
+      );
+      for (const utxo of utxos) {
+        utxosByRef.set(`${utxo.txHash}#${utxo.outputIndex ?? ''}`, utxo);
+      }
+    }
+
+    const packetEvents = await this.parsePacketEventsForChannelUtxos(Array.from(utxosByRef.values()), context);
+    const events = packetEvents
+      .filter((event) => this.packetEventMatchesQuery(event, query))
+      .sort((a, b) => Number(BigInt(a.height) - BigInt(b.height)));
+
+    return { events };
+  }
+
   async queryBlockSearch(request: QueryBlockSearchRequest): Promise<QueryBlockSearchResponse> {
     this.logger.log(
       `packet_src_channel = ${request.packet_src_channel}, packet_dst_channel = ${request.packet_dst_channel}, packet_sequence=${request.packet_sequence}`,
@@ -1745,6 +1934,13 @@ export class QueryService {
       timestamp: this.deriveStabilityTimestampNs(block.slotNo),
       block_cbor: blockCbor,
     };
+  }
+
+  private toProtoUint64(value: bigint, fieldName: string): bigint {
+    if (value < 0n || value > MAX_PROTO_UINT64) {
+      throw new GrpcInternalException(`IBC infrastructure error: ${fieldName} is outside protobuf uint64 bounds`);
+    }
+    return value;
   }
 
   private async findExactStabilityAnchorHostStateUtxo(anchorHeight: bigint, context: string): Promise<UtxoDto> {

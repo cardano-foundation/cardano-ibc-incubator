@@ -17,6 +17,10 @@ import {
   runtimeChainLabel,
   runtimeRouteChainIds,
 } from '@/configs/runtimeConfig';
+import type {
+  TransferPacketHop,
+  TransferStatusResponse,
+} from '@/types/transferStatus';
 
 import {
   StyledSwitchNetwork,
@@ -66,6 +70,22 @@ const getStepMarkerColor = (status: 'complete' | 'active' | 'pending') => {
   return COLOR.neutral_4;
 };
 
+type ProgressStepStatus = 'complete' | 'active' | 'pending';
+
+const getShortTxHash = (txHash?: string): string =>
+  txHash ? shortenHash(txHash) : 'transaction pending';
+
+const hasAnyHopValue = (
+  packets: TransferPacketHop[],
+  key: 'recv' | 'writeAcknowledgement' | 'acknowledge' | 'timeout',
+): boolean => packets.some((packet) => Boolean(packet[key]));
+
+const stepStatus = (complete: boolean, active: boolean): ProgressStepStatus => {
+  if (complete) return 'complete';
+  if (active) return 'active';
+  return 'pending';
+};
+
 export const TransferResult = ({
   setIsSubmitted,
   estReceiveAmount,
@@ -77,6 +97,9 @@ export const TransferResult = ({
   const { handleReset, fromNetwork, toNetwork, selectedToken, sendAmount } =
     useContext(TransferContext);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [transferStatus, setTransferStatus] =
+    useState<TransferStatusResponse | null>(null);
+  const [transferStatusError, setTransferStatusError] = useState('');
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -84,6 +107,59 @@ export const TransferResult = ({
     }, 1000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const sourceChainId = fromNetwork.networkId;
+    const destinationChainId = toNetwork.networkId;
+    if (!lastTxHash || !sourceChainId || !destinationChainId) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const fetchTransferStatus = async () => {
+      const params = new URLSearchParams({
+        sourceTxHash: lastTxHash,
+        sourceChainId,
+        destinationChainId,
+      });
+      const response = await fetch(`/api/transfer/status?${params}`);
+      const data = (await response.json()) as TransferStatusResponse;
+      if (!response.ok) {
+        throw new Error(data.error || data.message || 'Status query failed.');
+      }
+      if (!cancelled) {
+        setTransferStatus(data);
+        setTransferStatusError('');
+      }
+    };
+
+    fetchTransferStatus().catch((error) => {
+      if (!cancelled) {
+        setTransferStatusError(
+          error instanceof Error
+            ? error.message
+            : 'Unable to query live transfer status.',
+        );
+      }
+    });
+
+    const interval = window.setInterval(() => {
+      fetchTransferStatus().catch((error) => {
+        if (!cancelled) {
+          setTransferStatusError(
+            error instanceof Error
+              ? error.message
+              : 'Unable to query live transfer status.',
+          );
+        }
+      });
+    }, 10_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [fromNetwork.networkId, lastTxHash, toNetwork.networkId]);
 
   const routeLabels = useMemo(
     () =>
@@ -98,29 +174,81 @@ export const TransferResult = ({
       ? getCardanoExplorerTxUrl(lastTxHash)
       : undefined;
 
-  const progressSteps = [
+  const firstHop = transferStatus?.packets[0];
+  const packets = transferStatus?.packets || [];
+  const sourcePacketIndexed = Boolean(firstHop?.send);
+  const recvObserved =
+    packets.length > 0 && packets.every((packet) => Boolean(packet.recv));
+  const writeAckObserved =
+    packets.length > 0 &&
+    packets.every((packet) => Boolean(packet.writeAcknowledgement));
+  const acknowledgeObserved =
+    packets.length > 0 &&
+    packets.every((packet) => Boolean(packet.acknowledge));
+  const timeoutObserved = hasAnyHopValue(packets, 'timeout');
+
+  let sourceStepDescription = 'Waiting for the source wallet transaction.';
+  if (firstHop?.send) {
+    sourceStepDescription = `Bridge history indexed packet ${
+      firstHop.packet.sourceChannel
+    }/${firstHop.packet.sequence} from tx ${getShortTxHash(
+      firstHop.send.txHash,
+    )}.`;
+  } else if (lastTxHash) {
+    sourceStepDescription = `Wallet returned source tx ${shortenHash(
+      lastTxHash,
+    )}. Waiting for bridge history to index the IBC send_packet.`;
+  }
+
+  const relayStepStatus = stepStatus(recvObserved, sourcePacketIndexed);
+  const writeAckStepStatus = stepStatus(writeAckObserved, recvObserved);
+  const sourceAckStepStatus = stepStatus(
+    acknowledgeObserved || timeoutObserved,
+    writeAckObserved,
+  );
+
+  let sourceAckDescription =
+    'After the destination writes an acknowledgement, the relayer must relay it back to the source chain.';
+  if (timeoutObserved) {
+    sourceAckDescription =
+      'A timeout_packet has been observed for this transfer.';
+  } else if (acknowledgeObserved) {
+    sourceAckDescription =
+      'acknowledge_packet has been observed back on the source side.';
+  }
+
+  const progressSteps: Array<{
+    title: string;
+    description: string;
+    status: ProgressStepStatus;
+  }> = [
     {
-      title: 'Source transaction submitted',
-      description: lastTxHash
-        ? `Wallet returned source tx ${shortenHash(
-            lastTxHash,
-          )}. It still needs source-chain confirmation before the relayer can act.`
-        : 'The wallet returned a source transaction hash.',
-      status: 'active',
+      title: 'Source send_packet indexed',
+      description: sourceStepDescription,
+      status: sourcePacketIndexed ? 'complete' : 'active',
     },
     {
-      title: 'Waiting for relayer',
-      description:
-        'After source-chain confirmation, the relayer observes the packet and relays it through the configured route.',
-      status: 'pending',
+      title: 'Relayer delivery',
+      description: firstHop?.recv
+        ? `recv_packet observed on ${runtimeChainLabel(
+            firstHop.destinationChainId,
+          )} in tx ${getShortTxHash(firstHop.recv.txHash)}.`
+        : 'The relayer needs to deliver the indexed packet to the next chain in the route.',
+      status: relayStepStatus,
     },
     {
-      title: 'Destination chain receive',
-      description:
-        'The destination chain will process the relayed packet and credit the receiving account.',
-      status: 'pending',
+      title: 'Destination acknowledgement',
+      description: writeAckObserved
+        ? 'write_acknowledgement has been observed on the packet destination side.'
+        : 'The receiving chain must process the packet and write the IBC acknowledgement.',
+      status: writeAckStepStatus,
     },
-  ] as const;
+    {
+      title: timeoutObserved ? 'Packet timed out' : 'Source acknowledgement',
+      description: sourceAckDescription,
+      status: sourceAckStepStatus,
+    },
+  ];
 
   const handleBackToTransfer = () => {
     resetLastTxData();
@@ -291,6 +419,20 @@ export const TransferResult = ({
             borderRadius="10px"
             background={COLOR.neutral_5}
           >
+            <Text fontSize={12} fontWeight={700} color={COLOR.neutral_3}>
+              Live IBC status
+            </Text>
+            <Text fontSize={13} lineHeight="18px" color={COLOR.neutral_1}>
+              {transferStatusError ||
+                transferStatus?.message ||
+                'Querying packet status from bridge and chain events...'}
+            </Text>
+            {transferStatus?.updatedAt && (
+              <Text fontSize={11} lineHeight="16px" color={COLOR.neutral_2}>
+                Updated{' '}
+                {new Date(transferStatus.updatedAt).toLocaleTimeString()}
+              </Text>
+            )}
             {progressSteps.map((step) => {
               const markerColor = getStepMarkerColor(step.status);
               return (
@@ -328,6 +470,27 @@ export const TransferResult = ({
                 </Box>
               );
             })}
+            {packets.length > 0 && (
+              <Box display="inline-grid" gap="6px" pt="2px">
+                <Text fontSize={12} fontWeight={700} color={COLOR.neutral_3}>
+                  Packet hops
+                </Text>
+                {packets.map((packet) => (
+                  <Text
+                    key={`${packet.sourceChainId}-${packet.destinationChainId}-${packet.packet.sequence}`}
+                    fontSize={12}
+                    lineHeight="18px"
+                    color={COLOR.neutral_2}
+                  >
+                    Hop {packet.index + 1}:{' '}
+                    {runtimeChainLabel(packet.sourceChainId)} {'->'}{' '}
+                    {runtimeChainLabel(packet.destinationChainId)} -{' '}
+                    {packet.packet.sourceChannel}/{packet.packet.sequence} -{' '}
+                    {packet.status.replaceAll('_', ' ')}
+                  </Text>
+                ))}
+              </Box>
+            )}
           </Box>
           {lastTxHash && (
             <Box
@@ -346,11 +509,10 @@ export const TransferResult = ({
               </Text>
             </Box>
           )}
-          {IBC_SWAP_MODE !== 'local' && (
+          {IBC_SWAP_MODE !== 'local' && !transferStatus && (
             <Text fontSize={12} lineHeight="18px" color={COLOR.neutral_2}>
-              This screen does not yet have live packet acknowledgements. Use
-              the source transaction link for chain confirmation while the
-              relayer completes the IBC path.
+              Live packet status is starting. The source transaction link is
+              still available while the bridge history catches up.
             </Text>
           )}
           <Box display="inline-grid" w="100%" gap={2}>
