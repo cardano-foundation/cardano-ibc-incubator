@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import Image from 'next/image';
 
 import { Box, Text } from '@chakra-ui/react';
@@ -75,15 +75,156 @@ type ProgressStepStatus = 'complete' | 'active' | 'pending';
 const getShortTxHash = (txHash?: string): string =>
   txHash ? shortenHash(txHash) : 'transaction pending';
 
-const hasAnyHopValue = (
-  packets: TransferPacketHop[],
-  key: 'recv' | 'writeAcknowledgement' | 'acknowledge' | 'timeout',
-): boolean => packets.some((packet) => Boolean(packet[key]));
-
 const stepStatus = (complete: boolean, active: boolean): ProgressStepStatus => {
   if (complete) return 'complete';
   if (active) return 'active';
   return 'pending';
+};
+
+type HopProgressStep = {
+  title: string;
+  description: string;
+  status: ProgressStepStatus;
+};
+
+type RouteHopProgress = {
+  index: number;
+  sourceChainId: string;
+  destinationChainId: string;
+  status: ProgressStepStatus;
+  statusLabel: string;
+  packetLabel: string;
+  steps: HopProgressStep[];
+};
+
+const getPacketLabel = (packetHop?: TransferPacketHop): string =>
+  packetHop
+    ? `${packetHop.packet.sourceChannel}/${packetHop.packet.sequence}`
+    : 'not emitted yet';
+
+const getEventTxLabel = (txHash?: string): string =>
+  txHash ? ` in tx ${getShortTxHash(txHash)}` : '';
+
+const buildRouteHopProgress = (params: {
+  index: number;
+  sourceChainId: string;
+  destinationChainId: string;
+  packetHop?: TransferPacketHop;
+  previousPacketHop?: TransferPacketHop;
+  sourceTxHash?: string;
+}): RouteHopProgress => {
+  const {
+    index,
+    sourceChainId,
+    destinationChainId,
+    packetHop,
+    previousPacketHop,
+    sourceTxHash,
+  } = params;
+  const sourceLabel = runtimeChainLabel(sourceChainId);
+  const destinationLabel = runtimeChainLabel(destinationChainId);
+  const packetLabel = getPacketLabel(packetHop);
+
+  let statusLabel = 'Waiting for previous hop';
+  if (packetHop?.timeout) statusLabel = 'Timed out';
+  else if (packetHop?.acknowledge) statusLabel = 'Acknowledged';
+  else if (packetHop?.writeAcknowledgement)
+    statusLabel = 'Returning acknowledgement';
+  else if (packetHop?.recv) statusLabel = `Received on ${destinationLabel}`;
+  else if (packetHop?.send) statusLabel = `Relaying to ${destinationLabel}`;
+  else if (index === 0 && sourceTxHash) statusLabel = 'Indexing source packet';
+  else if (previousPacketHop?.recv)
+    statusLabel = `Waiting for ${sourceLabel} forwarding`;
+
+  let sendDescription = `This hop can start after the previous hop reaches ${sourceLabel}.`;
+  let sendStatus = stepStatus(false, false);
+  if (packetHop?.send) {
+    sendDescription = `${sourceLabel} emitted send_packet ${packetLabel}${getEventTxLabel(
+      packetHop.send.txHash,
+    )}.`;
+    sendStatus = 'complete';
+  } else if (index === 0 && sourceTxHash) {
+    sendDescription = `Wallet returned source tx ${shortenHash(
+      sourceTxHash,
+    )}. Waiting for bridge history to index its IBC send_packet.`;
+    sendStatus = 'active';
+  } else if (previousPacketHop?.recv) {
+    sendDescription = `${sourceLabel} received the previous hop. Waiting for the forwarded send_packet for ${destinationLabel}.`;
+    sendStatus = 'active';
+  }
+
+  let receiveDescription = `No packet exists yet for ${destinationLabel}.`;
+  if (packetHop?.recv) {
+    receiveDescription = `${destinationLabel} observed recv_packet ${packetLabel}${getEventTxLabel(
+      packetHop.recv.txHash,
+    )}.`;
+  } else if (packetHop?.send) {
+    receiveDescription = `Waiting for a relayer to deliver packet ${packetLabel} to ${destinationLabel}.`;
+  }
+
+  let acknowledgementDescription = `Waiting for recv_packet before ${destinationLabel} can acknowledge this hop.`;
+  if (packetHop?.writeAcknowledgement) {
+    acknowledgementDescription = `${destinationLabel} wrote the IBC acknowledgement${getEventTxLabel(
+      packetHop.writeAcknowledgement.txHash,
+    )}.`;
+  } else if (packetHop?.recv) {
+    acknowledgementDescription = `Waiting for ${destinationLabel} to process the packet and write an acknowledgement.`;
+  }
+
+  let sourceAckDescription = `Waiting for acknowledgement relay back to ${sourceLabel}.`;
+  if (packetHop?.timeout) {
+    sourceAckDescription = `${sourceLabel} observed timeout_packet ${packetLabel}${getEventTxLabel(
+      packetHop.timeout.txHash,
+    )}.`;
+  } else if (packetHop?.acknowledge) {
+    sourceAckDescription = `${sourceLabel} observed acknowledge_packet ${packetLabel}${getEventTxLabel(
+      packetHop.acknowledge.txHash,
+    )}.`;
+  } else if (!packetHop?.writeAcknowledgement) {
+    sourceAckDescription = `Waiting for destination acknowledgement before it can return to ${sourceLabel}.`;
+  }
+
+  const status = stepStatus(
+    Boolean(packetHop?.acknowledge),
+    Boolean(packetHop || sourceTxHash || previousPacketHop?.recv),
+  );
+
+  return {
+    index,
+    sourceChainId,
+    destinationChainId,
+    status,
+    statusLabel,
+    packetLabel,
+    steps: [
+      {
+        title: 'send_packet',
+        description: sendDescription,
+        status: sendStatus,
+      },
+      {
+        title: 'recv_packet',
+        description: receiveDescription,
+        status: stepStatus(Boolean(packetHop?.recv), Boolean(packetHop?.send)),
+      },
+      {
+        title: 'destination acknowledgement',
+        description: acknowledgementDescription,
+        status: stepStatus(
+          Boolean(packetHop?.writeAcknowledgement),
+          Boolean(packetHop?.recv),
+        ),
+      },
+      {
+        title: packetHop?.timeout ? 'timeout' : 'source acknowledgement',
+        description: sourceAckDescription,
+        status: stepStatus(
+          Boolean(packetHop?.acknowledge || packetHop?.timeout),
+          Boolean(packetHop?.writeAcknowledgement),
+        ),
+      },
+    ],
+  };
 };
 
 export const TransferResult = ({
@@ -161,94 +302,32 @@ export const TransferResult = ({
     };
   }, [fromNetwork.networkId, lastTxHash, toNetwork.networkId]);
 
-  const routeLabels = useMemo(
-    () =>
-      runtimeRouteChainIds(fromNetwork.networkId, toNetwork.networkId).map(
-        runtimeChainLabel,
-      ),
-    [fromNetwork.networkId, toNetwork.networkId],
-  );
+  const routeChainIds = transferStatus?.routeChainIds.length
+    ? transferStatus.routeChainIds
+    : runtimeRouteChainIds(fromNetwork.networkId, toNetwork.networkId);
+  const routeLabels = routeChainIds.map(runtimeChainLabel);
 
   const sourceExplorerUrl =
     fromNetwork.networkId === CARDANO_CHAIN_ID
       ? getCardanoExplorerTxUrl(lastTxHash)
       : undefined;
 
-  const firstHop = transferStatus?.packets[0];
   const packets = transferStatus?.packets || [];
-  const sourcePacketIndexed = Boolean(firstHop?.send);
-  const recvObserved =
-    packets.length > 0 && packets.every((packet) => Boolean(packet.recv));
-  const writeAckObserved =
-    packets.length > 0 &&
-    packets.every((packet) => Boolean(packet.writeAcknowledgement));
-  const acknowledgeObserved =
-    packets.length > 0 &&
-    packets.every((packet) => Boolean(packet.acknowledge));
-  const timeoutObserved = hasAnyHopValue(packets, 'timeout');
-
-  let sourceStepDescription = 'Waiting for the source wallet transaction.';
-  if (firstHop?.send) {
-    sourceStepDescription = `Bridge history indexed packet ${
-      firstHop.packet.sourceChannel
-    }/${firstHop.packet.sequence} from tx ${getShortTxHash(
-      firstHop.send.txHash,
-    )}.`;
-  } else if (lastTxHash) {
-    sourceStepDescription = `Wallet returned source tx ${shortenHash(
-      lastTxHash,
-    )}. Waiting for bridge history to index the IBC send_packet.`;
-  }
-
-  const relayStepStatus = stepStatus(recvObserved, sourcePacketIndexed);
-  const writeAckStepStatus = stepStatus(writeAckObserved, recvObserved);
-  const sourceAckStepStatus = stepStatus(
-    acknowledgeObserved || timeoutObserved,
-    writeAckObserved,
-  );
-
-  let sourceAckDescription =
-    'After the destination writes an acknowledgement, the relayer must relay it back to the source chain.';
-  if (timeoutObserved) {
-    sourceAckDescription =
-      'A timeout_packet has been observed for this transfer.';
-  } else if (acknowledgeObserved) {
-    sourceAckDescription =
-      'acknowledge_packet has been observed back on the source side.';
-  }
-
-  const progressSteps: Array<{
-    title: string;
-    description: string;
-    status: ProgressStepStatus;
-  }> = [
-    {
-      title: 'Source send_packet indexed',
-      description: sourceStepDescription,
-      status: sourcePacketIndexed ? 'complete' : 'active',
-    },
-    {
-      title: 'Relayer delivery',
-      description: firstHop?.recv
-        ? `recv_packet observed on ${runtimeChainLabel(
-            firstHop.destinationChainId,
-          )} in tx ${getShortTxHash(firstHop.recv.txHash)}.`
-        : 'The relayer needs to deliver the indexed packet to the next chain in the route.',
-      status: relayStepStatus,
-    },
-    {
-      title: 'Destination acknowledgement',
-      description: writeAckObserved
-        ? 'write_acknowledgement has been observed on the packet destination side.'
-        : 'The receiving chain must process the packet and write the IBC acknowledgement.',
-      status: writeAckStepStatus,
-    },
-    {
-      title: timeoutObserved ? 'Packet timed out' : 'Source acknowledgement',
-      description: sourceAckDescription,
-      status: sourceAckStepStatus,
-    },
-  ];
+  const routeHopProgress = routeChainIds
+    .slice(0, -1)
+    .map((sourceChainId, index) =>
+      buildRouteHopProgress({
+        index,
+        sourceChainId,
+        destinationChainId: routeChainIds[index + 1],
+        packetHop: packets.find((packet) => packet.index === index),
+        previousPacketHop:
+          index > 0
+            ? packets.find((packet) => packet.index === index - 1)
+            : undefined,
+        sourceTxHash: index === 0 ? lastTxHash : undefined,
+      }),
+    );
 
   const handleBackToTransfer = () => {
     resetLastTxData();
@@ -433,64 +512,116 @@ export const TransferResult = ({
                 {new Date(transferStatus.updatedAt).toLocaleTimeString()}
               </Text>
             )}
-            {progressSteps.map((step) => {
-              const markerColor = getStepMarkerColor(step.status);
-              return (
-                <Box
-                  key={step.title}
-                  display="grid"
-                  gridTemplateColumns="18px 1fr"
-                  gap="10px"
-                  alignItems="start"
-                >
-                  <Box
-                    mt="3px"
-                    w="10px"
-                    h="10px"
-                    borderRadius="50%"
-                    background={markerColor}
-                    boxShadow={
-                      step.status === 'active'
-                        ? `0 0 10px ${COLOR.warning}`
-                        : undefined
-                    }
-                  />
-                  <Box>
-                    <Text fontSize={13} fontWeight={700}>
-                      {step.title}
-                    </Text>
-                    <Text
-                      fontSize={12}
-                      lineHeight="18px"
-                      color={COLOR.neutral_2}
-                    >
-                      {step.description}
-                    </Text>
-                  </Box>
-                </Box>
-              );
-            })}
-            {packets.length > 0 && (
-              <Box display="inline-grid" gap="6px" pt="2px">
-                <Text fontSize={12} fontWeight={700} color={COLOR.neutral_3}>
-                  Packet hops
+            <Box display="inline-grid" gap="10px" pt="2px">
+              <Text fontSize={12} fontWeight={700} color={COLOR.neutral_3}>
+                Packet route progress
+              </Text>
+              {routeHopProgress.length > 1 && (
+                <Text fontSize={11} lineHeight="16px" color={COLOR.neutral_2}>
+                  Multi-hop transfers settle hop by hop. If a later hop stalls
+                  after an intermediary receives funds, the hop status below
+                  shows where the transfer is currently held.
                 </Text>
-                {packets.map((packet) => (
-                  <Text
-                    key={`${packet.sourceChainId}-${packet.destinationChainId}-${packet.packet.sequence}`}
-                    fontSize={12}
-                    lineHeight="18px"
-                    color={COLOR.neutral_2}
+              )}
+              {routeHopProgress.map((hop) => {
+                const hopMarkerColor = getStepMarkerColor(hop.status);
+                return (
+                  <Box
+                    key={`${hop.sourceChainId}-${hop.destinationChainId}-${hop.index}`}
+                    display="inline-grid"
+                    gap="8px"
+                    p="10px"
+                    borderRadius="10px"
+                    border="1px solid #FFFFFF0D"
+                    background="#0E0E124D"
                   >
-                    Hop {packet.index + 1}:{' '}
-                    {runtimeChainLabel(packet.sourceChainId)} {'->'}{' '}
-                    {runtimeChainLabel(packet.destinationChainId)} -{' '}
-                    {packet.packet.sourceChannel}/{packet.packet.sequence} -{' '}
-                    {packet.status.replaceAll('_', ' ')}
-                  </Text>
-                ))}
-              </Box>
-            )}
+                    <Box
+                      display="flex"
+                      justifyContent="space-between"
+                      gap="10px"
+                      alignItems="start"
+                    >
+                      <Box display="inline-grid" gap="2px">
+                        <Text fontSize={13} fontWeight={700}>
+                          Hop {hop.index + 1}:{' '}
+                          {runtimeChainLabel(hop.sourceChainId)} {'->'}{' '}
+                          {runtimeChainLabel(hop.destinationChainId)}
+                        </Text>
+                        <Text
+                          fontSize={11}
+                          lineHeight="16px"
+                          color={COLOR.neutral_2}
+                        >
+                          Packet {hop.packetLabel}
+                        </Text>
+                      </Box>
+                      <Box
+                        display="inline-flex"
+                        alignItems="center"
+                        gap="6px"
+                        flexShrink={0}
+                      >
+                        <Box
+                          w="8px"
+                          h="8px"
+                          borderRadius="50%"
+                          background={hopMarkerColor}
+                          boxShadow={
+                            hop.status === 'active'
+                              ? `0 0 10px ${COLOR.warning}`
+                              : undefined
+                          }
+                        />
+                        <Text
+                          fontSize={11}
+                          lineHeight="16px"
+                          color={COLOR.neutral_2}
+                        >
+                          {hop.statusLabel}
+                        </Text>
+                      </Box>
+                    </Box>
+                    {hop.steps.map((step) => {
+                      const markerColor = getStepMarkerColor(step.status);
+                      return (
+                        <Box
+                          key={step.title}
+                          display="grid"
+                          gridTemplateColumns="16px 1fr"
+                          gap="8px"
+                          alignItems="start"
+                        >
+                          <Box
+                            mt="4px"
+                            w="8px"
+                            h="8px"
+                            borderRadius="50%"
+                            background={markerColor}
+                            boxShadow={
+                              step.status === 'active'
+                                ? `0 0 10px ${COLOR.warning}`
+                                : undefined
+                            }
+                          />
+                          <Box>
+                            <Text fontSize={12} fontWeight={700}>
+                              {step.title}
+                            </Text>
+                            <Text
+                              fontSize={12}
+                              lineHeight="18px"
+                              color={COLOR.neutral_2}
+                            >
+                              {step.description}
+                            </Text>
+                          </Box>
+                        </Box>
+                      );
+                    })}
+                  </Box>
+                );
+              })}
+            </Box>
           </Box>
           {lastTxHash && (
             <Box
