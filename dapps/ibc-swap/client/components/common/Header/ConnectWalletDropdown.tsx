@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Box,
   Button,
@@ -18,38 +18,28 @@ import CosmosIcon from '@/assets/icons/cosmos-icon.svg';
 import LogoutIcon from '@/assets/icons/Logout.svg';
 import CardanoIcon from '@/assets/icons/cardano.svg';
 import { capitalizeString } from '@/utils/string';
+import {
+  CARDANO_WALLET_STORAGE_KEY,
+  forgetStoredCardanoWallet,
+  getCardanoWalletErrorMessage,
+  isCardanoWalletLockedError,
+} from '@/utils/cardanoWalletStatus';
 import { useWallet, useWalletList } from '@meshsdk/react';
 import { UseCosmosWallet } from './UseCosmosWallet';
 import CardanoWalletModal, { WalletProps } from './CardanoWalletModal';
 
-const CARDANO_WALLET_STORAGE_KEY = 'cardano-wallet';
+const readStoredCardanoWalletName = () => {
+  if (typeof window === 'undefined') return undefined;
 
-const getStoredCardanoWalletName = (): string | undefined => {
-  const rawWallet = localStorage.getItem(CARDANO_WALLET_STORAGE_KEY);
-
-  if (!rawWallet) {
-    return undefined;
-  }
+  const storedValue = localStorage.getItem(CARDANO_WALLET_STORAGE_KEY);
+  if (!storedValue) return undefined;
 
   try {
-    const parsedWallet = JSON.parse(rawWallet);
-
-    if (typeof parsedWallet === 'string') {
-      return parsedWallet;
-    }
-
-    if (
-      parsedWallet &&
-      typeof parsedWallet === 'object' &&
-      typeof parsedWallet.name === 'string'
-    ) {
-      return parsedWallet.name;
-    }
+    const parsedValue = JSON.parse(storedValue);
+    return typeof parsedValue === 'string' ? parsedValue : undefined;
   } catch {
-    return rawWallet;
+    return storedValue;
   }
-
-  return undefined;
 };
 
 export const ConnectWalletDropdown = () => {
@@ -73,7 +63,9 @@ export const ConnectWalletDropdown = () => {
   const cardanoWallets = useWalletList();
   const [pendingCardanoWalletName, setPendingCardanoWalletName] =
     useState<string>();
-  const [hasAttemptedRestore, setHasAttemptedRestore] = useState(false);
+  const [localCardanoWalletErrorMessage, setLocalCardanoWalletErrorMessage] =
+    useState<string>();
+  const attemptedCardanoReconnectRef = useRef(false);
 
   const {
     isOpen: isOpenCardanoWalletModal,
@@ -90,13 +82,11 @@ export const ConnectWalletDropdown = () => {
   const cardanoWalletLabel =
     walletCardano?.name || connectedCardanoWalletName || undefined;
 
-  let cardanoWalletErrorMessage: string | undefined;
-
-  if (typeof cardanoWalletError === 'string') {
-    cardanoWalletErrorMessage = cardanoWalletError;
-  } else if (cardanoWalletError instanceof Error) {
-    cardanoWalletErrorMessage = cardanoWalletError.message;
-  }
+  const cardanoWalletErrorMessage =
+    localCardanoWalletErrorMessage ||
+    (cardanoWalletError
+      ? getCardanoWalletErrorMessage(cardanoWalletError)
+      : undefined);
 
   const handleOpenCardanoWalletModal = () => {
     onOpenCardanoWalletModal();
@@ -104,29 +94,30 @@ export const ConnectWalletDropdown = () => {
 
   const handleConnectCardanoWallet = async (wallet: WalletProps) => {
     setPendingCardanoWalletName(wallet.name);
+    setLocalCardanoWalletErrorMessage(undefined);
     await connectCardanoWallet(wallet.name);
   };
 
   const handleDisconnectCardanoWallet = async () => {
     setPendingCardanoWalletName(undefined);
-    localStorage.removeItem(CARDANO_WALLET_STORAGE_KEY);
+    setLocalCardanoWalletErrorMessage(undefined);
+    forgetStoredCardanoWallet();
     disconnectCardanoWallet();
   };
 
   useEffect(() => {
-    if (hasAttemptedRestore) {
-      return;
+    if (!cardanoWalletError) return;
+
+    const message = getCardanoWalletErrorMessage(cardanoWalletError);
+    setLocalCardanoWalletErrorMessage(message);
+    setPendingCardanoWalletName(undefined);
+
+    if (isCardanoWalletLockedError(cardanoWalletError)) {
+      forgetStoredCardanoWallet();
+      disconnectCardanoWallet();
+      onOpenCardanoWalletModal();
     }
-
-    setHasAttemptedRestore(true);
-
-    const storedWalletName = getStoredCardanoWalletName();
-
-    if (storedWalletName) {
-      setPendingCardanoWalletName(storedWalletName);
-      connectCardanoWallet(storedWalletName);
-    }
-  }, [connectCardanoWallet, hasAttemptedRestore]);
+  }, [cardanoWalletError, disconnectCardanoWallet, onOpenCardanoWalletModal]);
 
   useEffect(() => {
     if (isCardanoWalletConnected && connectedCardanoWalletName) {
@@ -134,13 +125,14 @@ export const ConnectWalletDropdown = () => {
         CARDANO_WALLET_STORAGE_KEY,
         JSON.stringify(connectedCardanoWalletName),
       );
+      setLocalCardanoWalletErrorMessage(undefined);
       setPendingCardanoWalletName(undefined);
       onCloseCardanoWalletModal();
       return;
     }
 
     if (pendingCardanoWalletName && !isConnectingCardanoWallet) {
-      localStorage.removeItem(CARDANO_WALLET_STORAGE_KEY);
+      forgetStoredCardanoWallet();
       setPendingCardanoWalletName(undefined);
     }
   }, [
@@ -149,6 +141,50 @@ export const ConnectWalletDropdown = () => {
     isConnectingCardanoWallet,
     onCloseCardanoWalletModal,
     pendingCardanoWalletName,
+  ]);
+
+  useEffect(() => {
+    if (
+      attemptedCardanoReconnectRef.current ||
+      isCardanoWalletConnected ||
+      isConnectingCardanoWallet ||
+      cardanoWallets.length === 0
+    ) {
+      return undefined;
+    }
+
+    const storedWalletName = readStoredCardanoWalletName();
+    if (!storedWalletName) return undefined;
+
+    const installedWallet = cardanoWallets.find(
+      (wallet) => wallet.name.toLowerCase() === storedWalletName.toLowerCase(),
+    );
+    if (!installedWallet) return undefined;
+
+    attemptedCardanoReconnectRef.current = true;
+    let cancelled = false;
+
+    const reconnectCardanoWallet = async () => {
+      try {
+        setPendingCardanoWalletName(installedWallet.name);
+        await connectCardanoWallet(installedWallet.name);
+      } catch {
+        if (!cancelled) {
+          setPendingCardanoWalletName(undefined);
+        }
+      }
+    };
+
+    reconnectCardanoWallet();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    cardanoWallets,
+    connectCardanoWallet,
+    isCardanoWalletConnected,
+    isConnectingCardanoWallet,
   ]);
 
   return (

@@ -17,8 +17,9 @@ import {
   Text,
 } from '@chakra-ui/react';
 import { toast } from 'react-toastify';
-import { useAddress, useWallet } from '@meshsdk/react';
+import { useWallet } from '@meshsdk/react';
 import { COLOR } from '@/styles/color';
+import { useSafeCardanoAddress } from '@/hooks/useSafeCardanoAddress';
 import {
   buildCheqdIcqTx,
   type CheqdIcqBuildParams,
@@ -289,7 +290,7 @@ export default function QueriesContainer() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
 
-  const cardanoAddress = useAddress();
+  const cardanoAddress = useSafeCardanoAddress();
   const { wallet: cardanoWallet } = useWallet();
   const selectedQuery =
     QUERY_DEFINITIONS.find((query) => query.kind === selectedKind) ||

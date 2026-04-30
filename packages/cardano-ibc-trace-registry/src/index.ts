@@ -405,6 +405,44 @@ function getKupmiosEndpoints(kupmiosUrl: string) {
   return { kupoUrl, ogmiosUrl };
 }
 
+function describeFetchFailure(error: unknown): string {
+  const cause =
+    error instanceof Error
+      ? (error as Error & { cause?: unknown }).cause
+      : undefined;
+  const causeRecord =
+    typeof cause === 'object' && cause !== null
+      ? (cause as Record<string, unknown>)
+      : undefined;
+  const code =
+    typeof causeRecord?.code === 'string' ? causeRecord.code : undefined;
+  const address =
+    typeof causeRecord?.address === 'string' ? causeRecord.address : undefined;
+  const port =
+    typeof causeRecord?.port === 'string' || typeof causeRecord?.port === 'number'
+      ? String(causeRecord.port)
+      : undefined;
+  const causeMessage = cause instanceof Error ? cause.message : undefined;
+
+  if (code && address && port) {
+    return `${code} while connecting to ${address}:${port}`;
+  }
+
+  if (code) {
+    return causeMessage ? `${code}: ${causeMessage}` : code;
+  }
+
+  if (causeMessage) {
+    return causeMessage;
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
 export function createTraceRegistryClient(
   config: TraceRegistryClientConfig,
 ): TraceRegistryClient {
@@ -418,16 +456,24 @@ export function createTraceRegistryClient(
 
   async function getBridgeManifest(): Promise<BridgeManifest> {
     if (!bridgeManifestPromise) {
-      bridgeManifestPromise = fetchImpl(config.bridgeManifestUrl).then(
-        async (response) => {
+      bridgeManifestPromise = (async () => {
+        let response: Response;
+        try {
+          response = await fetchImpl(config.bridgeManifestUrl);
+        } catch (error) {
+          throw new Error(
+            `Failed to load Cardano bridge manifest from ${config.bridgeManifestUrl}: ${describeFetchFailure(error)}`,
+            { cause: error },
+          );
+        }
+
           if (!response.ok) {
             throw new Error(
               `Failed to load Cardano bridge manifest from ${config.bridgeManifestUrl} (${response.status})`,
             );
           }
           return response.json() as Promise<BridgeManifest>;
-        },
-      );
+      })();
     }
 
     return bridgeManifestPromise;
