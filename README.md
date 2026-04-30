@@ -141,7 +141,7 @@ Additional architecture diagrams:
 
 This project uses a fork of the [Hermes IBC relayer](https://github.com/informalsystems/hermes) with native Cardano support. The relayer is integrated as a **git submodule** pointing to:
 
-**Fork Repository:** https://github.com/webisoftSoftware/hermes  
+**Fork Repository:** https://github.com/cardano-foundation/hermes-relayer
 **Branch:** `feat/cardano-integration`
 
 The Cardano implementation resides in `relayer/crates/relayer/src/chain/cardano/` and includes:
