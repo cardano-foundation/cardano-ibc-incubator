@@ -37,11 +37,7 @@ import BigNumber from 'bignumber.js';
 import { debounce } from '@/utils/helper';
 import { CARDANO_CHAIN_ID } from '@/configs/runtime';
 import { signAndSubmitCardanoTxWithCip30 } from '@/utils/cardanoWalletTx';
-import {
-  forgetStoredCardanoWallet,
-  getCardanoWalletErrorMessage,
-  isCardanoWalletLockedError,
-} from '@/utils/cardanoWalletStatus';
+import { getCardanoWalletErrorMessage } from '@/utils/cardanoWalletStatus';
 import {
   findRuntimeChain,
   findRuntimeRoute,
@@ -174,7 +170,7 @@ const getCardanoBuildErrorMessage = (error: unknown): string => {
     message.includes('KupmiosError') &&
     message.includes('TimeoutException')
   ) {
-    return 'Cardano transaction preparation timed out while querying the Cardano data provider. The bridge services are reachable, but Kupo/Ogmios did not answer within 10 seconds. Retry the transfer; if it keeps happening, use a faster Cardano data-provider endpoint.';
+    return 'Cardano transaction preparation timed out while querying Kupo/Ogmios. The Cardano data provider did not respond within 10 seconds. Retry the transfer; if this keeps happening, the bridge operator may need to restart or replace the Cardano data-provider endpoint.';
   }
 
   if (
@@ -256,11 +252,8 @@ const Transfer = () => {
     useState<RoutePreviewState>(initRoutePreview);
   const [lastPrepareFailed, setLastPrepareFailed] = useState(false);
   const [lastTxHash, setLastTxHash] = useState<string>('');
-  const {
-    wallet: cardanoWallet,
-    name: connectedCardanoWalletName,
-    disconnect: disconnectCardanoWallet,
-  } = useWallet();
+  const { wallet: cardanoWallet, name: connectedCardanoWalletName } =
+    useWallet();
 
   const resetLastTxData = () => {
     setEstData(initEstData);
@@ -647,20 +640,14 @@ const Transfer = () => {
       }
     } catch (e: unknown) {
       const message = getCardanoWalletErrorMessage(e);
-      if (isCardanoWalletLockedError(e)) {
-        forgetStoredCardanoWallet();
-        disconnectCardanoWallet();
-        setEstData(initEstData);
-        setLastPrepareFailed(false);
-        setRoutePreview({
-          status: 'error',
-          chainIds: runtimeRouteChainIds(
-            fromNetwork.networkId,
-            toNetwork.networkId,
-          ),
-          message,
-        });
-      }
+      setRoutePreview({
+        status: 'error',
+        chainIds: runtimeRouteChainIds(
+          fromNetwork.networkId,
+          toNetwork.networkId,
+        ),
+        message,
+      });
       toast.error(message, { theme: 'colored' });
     } finally {
       setIsProcessingTransfer(false);

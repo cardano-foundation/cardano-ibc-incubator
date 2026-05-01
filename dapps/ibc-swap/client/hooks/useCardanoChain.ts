@@ -4,13 +4,12 @@
 
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Asset } from '@meshsdk/common';
-import { useWallet, WalletContext } from '@meshsdk/react';
+import { WalletContext } from '@meshsdk/react';
 import { toast } from 'react-toastify';
 import { useSafeCardanoAddress } from '@/hooks/useSafeCardanoAddress';
 import {
   CARDANO_WALLET_LOCKED_MESSAGE,
   CARDANO_WALLET_LOCKED_TOAST_ID,
-  forgetStoredCardanoWallet,
   isCardanoWalletLockedError,
 } from '@/utils/cardanoWalletStatus';
 
@@ -41,7 +40,6 @@ export const useCardanoChain = () => {
   const [assets, setAssets] = useState<Asset[]>();
   const { hasConnectedWallet, connectedWalletName, connectedWalletInstance } =
     useContext(WalletContext);
-  const { disconnect: disconnectCardanoWallet } = useWallet();
   const cardanoAddress = useSafeCardanoAddress();
 
   const getAssets = useCallback(async (): Promise<Asset[]> => {
@@ -72,15 +70,15 @@ export const useCardanoChain = () => {
         .catch((error) => {
           if (cancelled) return;
 
-          setAssets(undefined);
           if (isCardanoWalletLockedError(error)) {
-            forgetStoredCardanoWallet();
-            disconnectCardanoWallet();
             toast.error(CARDANO_WALLET_LOCKED_MESSAGE, {
               theme: 'colored',
               toastId: CARDANO_WALLET_LOCKED_TOAST_ID,
             });
+            return;
           }
+
+          setAssets(undefined);
         });
 
       return () => {
@@ -89,13 +87,7 @@ export const useCardanoChain = () => {
     }
     setAssets(undefined);
     return undefined;
-  }, [
-    cardanoAddress,
-    connectedWalletName,
-    disconnectCardanoWallet,
-    getAssets,
-    hasConnectedWallet,
-  ]);
+  }, [cardanoAddress, connectedWalletName, getAssets, hasConnectedWallet]);
 
   const sortAssetsByQuantity = useCallback((assetList: Asset[]): Asset[] => {
     return assetList.sort((assetA, assetB) => {

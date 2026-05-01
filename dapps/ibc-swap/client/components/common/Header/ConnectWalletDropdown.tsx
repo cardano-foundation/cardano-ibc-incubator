@@ -66,6 +66,7 @@ export const ConnectWalletDropdown = () => {
   const [localCardanoWalletErrorMessage, setLocalCardanoWalletErrorMessage] =
     useState<string>();
   const attemptedCardanoReconnectRef = useRef(false);
+  const handledCardanoWalletErrorRef = useRef<unknown>();
 
   const {
     isOpen: isOpenCardanoWalletModal,
@@ -82,20 +83,26 @@ export const ConnectWalletDropdown = () => {
   const cardanoWalletLabel =
     walletCardano?.name || connectedCardanoWalletName || undefined;
 
-  const cardanoWalletErrorMessage =
-    localCardanoWalletErrorMessage ||
-    (cardanoWalletError
-      ? getCardanoWalletErrorMessage(cardanoWalletError)
-      : undefined);
+  const cardanoWalletErrorMessage = localCardanoWalletErrorMessage;
 
   const handleOpenCardanoWalletModal = () => {
+    setLocalCardanoWalletErrorMessage(undefined);
     onOpenCardanoWalletModal();
   };
 
   const handleConnectCardanoWallet = async (wallet: WalletProps) => {
     setPendingCardanoWalletName(wallet.name);
     setLocalCardanoWalletErrorMessage(undefined);
-    await connectCardanoWallet(wallet.name);
+    handledCardanoWalletErrorRef.current = cardanoWalletError;
+    try {
+      await connectCardanoWallet(wallet.name);
+    } catch (error) {
+      setPendingCardanoWalletName(undefined);
+      setLocalCardanoWalletErrorMessage(getCardanoWalletErrorMessage(error));
+      if (isCardanoWalletLockedError(error)) {
+        onOpenCardanoWalletModal();
+      }
+    }
   };
 
   const handleDisconnectCardanoWallet = async () => {
@@ -107,17 +114,17 @@ export const ConnectWalletDropdown = () => {
 
   useEffect(() => {
     if (!cardanoWalletError) return;
+    if (handledCardanoWalletErrorRef.current === cardanoWalletError) return;
+    handledCardanoWalletErrorRef.current = cardanoWalletError;
 
     const message = getCardanoWalletErrorMessage(cardanoWalletError);
     setLocalCardanoWalletErrorMessage(message);
     setPendingCardanoWalletName(undefined);
 
     if (isCardanoWalletLockedError(cardanoWalletError)) {
-      forgetStoredCardanoWallet();
-      disconnectCardanoWallet();
       onOpenCardanoWalletModal();
     }
-  }, [cardanoWalletError, disconnectCardanoWallet, onOpenCardanoWalletModal]);
+  }, [cardanoWalletError, onOpenCardanoWalletModal]);
 
   useEffect(() => {
     if (isCardanoWalletConnected && connectedCardanoWalletName) {
@@ -132,7 +139,6 @@ export const ConnectWalletDropdown = () => {
     }
 
     if (pendingCardanoWalletName && !isConnectingCardanoWallet) {
-      forgetStoredCardanoWallet();
       setPendingCardanoWalletName(undefined);
     }
   }, [

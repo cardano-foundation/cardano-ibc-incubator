@@ -1,3 +1,5 @@
+import { getCardanoWalletErrorMessage } from './cardanoWalletStatus';
+
 type CardanoWalletApi = {
   signTx: Function;
   submitTx: Function;
@@ -51,7 +53,12 @@ export async function signAndSubmitCardanoTxWithCip30(
 ): Promise<string> {
   const provider = resolveCardanoProvider(walletName);
   const walletApi = await provider.enable();
-  const witnessSetCbor = (await walletApi.signTx(unsignedTx, true)) as string;
+  let witnessSetCbor: string;
+  try {
+    witnessSetCbor = (await walletApi.signTx(unsignedTx, true)) as string;
+  } catch (error) {
+    throw new Error(getCardanoWalletErrorMessage(error, { phase: 'sign' }));
+  }
   const CML = await import('@anastasia-labs/cardano-multiplatform-lib-browser');
 
   const tx = CML.Transaction.from_cbor_hex(unsignedTx);
@@ -68,5 +75,9 @@ export async function signAndSubmitCardanoTxWithCip30(
     tx.auxiliary_data(),
   ).to_cbor_hex();
 
-  return walletApi.submitTx(signedTx) as Promise<string>;
+  try {
+    return (await walletApi.submitTx(signedTx)) as string;
+  } catch (error) {
+    throw new Error(getCardanoWalletErrorMessage(error, { phase: 'submit' }));
+  }
 }
