@@ -117,6 +117,17 @@ fn managed_cardano_network_running(cardano_dir: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn gateway_env_path_from_cardano_dir(cardano_dir: &Path) -> PathBuf {
+    cardano_dir.join("../../cardano/gateway/.env")
+}
+
+fn preprod_uses_local_kupo_runtime(
+    gateway_env_path: &Path,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    Ok(crate::setup::resolve_preprod_kupo_mode(gateway_env_path)?
+        == crate::setup::PreprodKupoMode::Local)
+}
+
 fn managed_cardano_runtime_services_running(
     cardano_dir: &Path,
     network: config::CoreCardanoNetwork,
@@ -150,7 +161,11 @@ fn managed_cardano_runtime_services_running(
         required_services.push("yaci-store-postgres");
         required_services.push("yaci-store");
     }
-    if configuration.services.kupo && matches!(network, config::CoreCardanoNetwork::Local) {
+    let gateway_env_path = gateway_env_path_from_cardano_dir(cardano_dir);
+    let use_local_kupo = !matches!(network, config::CoreCardanoNetwork::Preprod)
+        || preprod_uses_local_kupo_runtime(gateway_env_path.as_path()).unwrap_or(false);
+
+    if configuration.services.kupo && use_local_kupo {
         required_services.push("kupo");
     }
     if configuration.services.ogmios && matches!(network, config::CoreCardanoNetwork::Local) {
@@ -1862,6 +1877,9 @@ pub fn start_local_cardano_services(
     local_spo_count: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let configuration = config::get_config().cardano;
+    let gateway_env_path = gateway_env_path_from_cardano_dir(cardano_dir);
+    let use_local_kupo = !matches!(network, config::CoreCardanoNetwork::Preprod)
+        || preprod_uses_local_kupo_runtime(gateway_env_path.as_path())?;
 
     let mut all_services: Vec<String> = vec![];
     let mut base_services: Vec<String> = vec![];
@@ -1888,7 +1906,14 @@ pub fn start_local_cardano_services(
         base_services.push("yaci-store-postgres".to_string());
         follow_up_services.push("yaci-store".to_string());
     }
-    if configuration.services.kupo && matches!(network, config::CoreCardanoNetwork::Local) {
+    if configuration.services.kupo
+        && matches!(network, config::CoreCardanoNetwork::Preprod)
+        && use_local_kupo
+    {
+        all_services.push("ogmios-proxy".to_string());
+        follow_up_services.push("ogmios-proxy".to_string());
+    }
+    if configuration.services.kupo && use_local_kupo {
         all_services.push("kupo".to_string());
         follow_up_services.push("kupo".to_string());
     }
@@ -1904,6 +1929,18 @@ pub fn start_local_cardano_services(
         .collect();
     script_stop_args.append(&mut all_service_args);
     execute_script(cardano_dir, "docker", script_stop_args, None)?;
+
+    if matches!(network, config::CoreCardanoNetwork::Preprod)
+        && configuration.services.kupo
+        && !use_local_kupo
+    {
+        execute_script(
+            cardano_dir,
+            "docker",
+            vec!["compose", "stop", "kupo", "ogmios-proxy"],
+            None,
+        )?;
+    }
 
     let docker_env = get_docker_env_vars();
     let docker_env_refs: Vec<(&str, &str)> =
@@ -3697,14 +3734,29 @@ fn run_core_health_check(
                 "Running on port 8081",
                 "Container running",
             ),
-            CoreHealthCheckType::Kupo => external_gateway_env_value(context, "KUPO_ENDPOINT")
-                .map(|url| check_external_url_port(url.as_str(), "Kupo"))
-                .unwrap_or_else(|| {
-                    (
-                        false,
-                        "Missing KUPO_ENDPOINT in cardano/gateway/.env".to_string(),
-                    )
-                }),
+            CoreHealthCheckType::Kupo => {
+                match preprod_uses_local_kupo_runtime(context.gateway_env_path.as_path()) {
+                    Ok(true) => check_container_with_optional_port(
+                        "cardano-kupo",
+                        1442,
+                        "Running on port 1442",
+                        "Container running",
+                    ),
+                    Ok(false) => {
+                        external_gateway_env_value(context, "GATEWAY_RUNTIME_KUPO_ENDPOINT")
+                            .or_else(|| external_gateway_env_value(context, "KUPO_ENDPOINT"))
+                            .map(|url| check_external_url_port(url.as_str(), "Kupo"))
+                            .unwrap_or_else(|| {
+                                (
+                                    false,
+                                    "Missing Kupo runtime endpoint in cardano/gateway/.env"
+                                        .to_string(),
+                                )
+                            })
+                    }
+                    Err(error) => (false, error.to_string()),
+                }
+            }
             CoreHealthCheckType::Ogmios => external_gateway_env_value(context, "OGMIOS_ENDPOINT")
                 .map(|url| check_external_url_port(url.as_str(), "Ogmios"))
                 .unwrap_or_else(|| {
