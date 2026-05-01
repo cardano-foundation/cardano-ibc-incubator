@@ -3,13 +3,7 @@ import type { LucidEvolution, Network, TxBuilder, UTxO } from '@lucid-evolution/
 import { buildUnsignedSendPacketTx, type SendPacketOperator } from '@cardano-ibc/tx-builder';
 import { createTraceRegistryClient } from '@cardano-ibc/trace-registry';
 import WebSocket from 'ws';
-import {
-  alignTreeWithChain,
-  computeRootWithHandlePacketUpdate,
-  initTreeServices,
-  isTreeAligned,
-  rebuildTreeFromChain,
-} from './ibcStateRoot';
+import { alignTreeWithChain, computeRootWithHandlePacketUpdate, initTreeServices, isTreeAligned, rebuildTreeFromChain } from './ibcStateRoot';
 import { LucidIbcAdapter } from './lucidIbcAdapter';
 
 const LOOKUP_RETRY_OPTIONS = {
@@ -322,23 +316,33 @@ function defaultLogger(scope: string): RuntimeLogger {
   };
 }
 
+function startTimer(): bigint {
+  return process.hrtime.bigint();
+}
+
+function elapsedMs(start: bigint): string {
+  const elapsed = Number(process.hrtime.bigint() - start) / 1_000_000;
+  return `${Math.round(elapsed)}ms`;
+}
+
+async function timed<T>(logger: RuntimeLogger, scope: string, label: string, operation: () => Promise<T>): Promise<T> {
+  const startedAt = startTimer();
+  try {
+    const result = await operation();
+    logger.log(`${scope} ${label} completed in ${elapsedMs(startedAt)}`);
+    return result;
+  } catch (error) {
+    logger.error(`${scope} ${label} failed in ${elapsedMs(startedAt)}`, error);
+    throw error;
+  }
+}
+
 function describeFetchFailure(error: unknown): string {
-  const cause =
-    error instanceof Error
-      ? (error as Error & { cause?: unknown }).cause
-      : undefined;
-  const causeRecord =
-    typeof cause === 'object' && cause !== null
-      ? (cause as Record<string, unknown>)
-      : undefined;
-  const code =
-    typeof causeRecord?.code === 'string' ? causeRecord.code : undefined;
-  const address =
-    typeof causeRecord?.address === 'string' ? causeRecord.address : undefined;
-  const port =
-    typeof causeRecord?.port === 'string' || typeof causeRecord?.port === 'number'
-      ? String(causeRecord.port)
-      : undefined;
+  const cause = error instanceof Error ? (error as Error & { cause?: unknown }).cause : undefined;
+  const causeRecord = typeof cause === 'object' && cause !== null ? (cause as Record<string, unknown>) : undefined;
+  const code = typeof causeRecord?.code === 'string' ? causeRecord.code : undefined;
+  const address = typeof causeRecord?.address === 'string' ? causeRecord.address : undefined;
+  const port = typeof causeRecord?.port === 'string' || typeof causeRecord?.port === 'number' ? String(causeRecord.port) : undefined;
   const causeMessage = cause instanceof Error ? cause.message : undefined;
 
   if (code && address && port) {
@@ -367,11 +371,7 @@ function mapRefUtxo(refUtxo: { tx_hash: string; output_index: number }): RefUtxo
   };
 }
 
-function mapValidator(validator: {
-  script_hash: string;
-  address: string;
-  ref_utxo: { tx_hash: string; output_index: number };
-}): DeploymentValidator {
+function mapValidator(validator: { script_hash: string; address: string; ref_utxo: { tx_hash: string; output_index: number } }): DeploymentValidator {
   return {
     scriptHash: validator.script_hash,
     address: validator.address,
@@ -471,7 +471,10 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
   };
 }
 
-function splitKupmiosUrl(kupmiosUrl: string): { kupoEndpoint: string; ogmiosEndpoint: string } {
+function splitKupmiosUrl(kupmiosUrl: string): {
+  kupoEndpoint: string;
+  ogmiosEndpoint: string;
+} {
   const [kupoEndpoint, ogmiosEndpoint] = kupmiosUrl.split(',').map((value) => value.trim());
   if (!kupoEndpoint || !ogmiosEndpoint) {
     throw new Error('kupmiosUrl must be "<kupoEndpoint>,<ogmiosEndpoint>"');
@@ -599,11 +602,7 @@ function parseClientSequence(clientId: string): bigint {
   return BigInt(match[1]);
 }
 
-function commitPacket(packet: {
-  timeout_height: { revisionNumber: bigint; revisionHeight: bigint };
-  timeout_timestamp: bigint;
-  data: string;
-}): string {
+function commitPacket(packet: { timeout_height: { revisionNumber: bigint; revisionHeight: bigint }; timeout_timestamp: bigint; data: string }): string {
   let buffer = uint64ToBigEndian(packet.timeout_timestamp);
   buffer = appendBuffer(buffer, uint64ToBigEndian(packet.timeout_height.revisionNumber));
   buffer = appendBuffer(buffer, uint64ToBigEndian(packet.timeout_height.revisionHeight));
@@ -795,14 +794,11 @@ function collectErrorSignals(error: unknown): string[] {
 
 function isTransientStartupError(error: unknown): boolean {
   const normalizedSignals = collectErrorSignals(error).map((signal) => signal.toLowerCase());
-  return normalizedSignals.some((signal) =>
-    TRANSIENT_STARTUP_ERROR_MARKERS.some((marker) => signal.includes(marker))
-  );
+  return normalizedSignals.some((signal) => TRANSIENT_STARTUP_ERROR_MARKERS.some((marker) => signal.includes(marker)));
 }
 
 function computeJitteredBackoffDelayMs(failedAttempt: number): number {
-  const backoffDelay =
-    PROTOCOL_PARAMETERS_BASE_DELAY_MS * 2 ** Math.max(0, failedAttempt - 1);
+  const backoffDelay = PROTOCOL_PARAMETERS_BASE_DELAY_MS * 2 ** Math.max(0, failedAttempt - 1);
   const jitterMultiplier = 0.8 + Math.random() * 0.4;
   return Math.round(backoffDelay * jitterMultiplier);
 }
@@ -823,27 +819,19 @@ async function retryWithBackoff<T>(operation: () => Promise<T>): Promise<T> {
   throw new Error('Kupmios protocol parameters fetch failed');
 }
 
-async function createLucidRuntime(
-  kupoEndpoint: string,
-  ogmiosEndpoint: string,
-  cardanoNetwork: Network,
-): Promise<{ lucidImporter: LucidModule; lucid: LucidEvolution }> {
-  const Lucid = await (eval(`import('@lucid-evolution/lucid')`) as Promise<LucidModule>);
+async function createLucidRuntime(kupoEndpoint: string, ogmiosEndpoint: string, cardanoNetwork: Network, logger: RuntimeLogger): Promise<{ lucidImporter: LucidModule; lucid: LucidEvolution }> {
+  const Lucid = await timed(logger, '[context]', 'import lucid', () => eval(`import('@lucid-evolution/lucid')`) as Promise<LucidModule>);
   const provider = new Lucid.Kupmios(kupoEndpoint, ogmiosEndpoint);
-  const protocolParameters = sanitizeProtocolParameters(
-    await retryWithBackoff(() => provider.getProtocolParameters()),
+  const protocolParameters = sanitizeProtocolParameters(await timed(logger, '[context]', 'fetch protocol parameters', () => retryWithBackoff(() => provider.getProtocolParameters())));
+  const lucid = await timed(logger, '[context]', 'create lucid runtime', () =>
+    Lucid.Lucid(provider, cardanoNetwork, {
+      presetProtocolParameters: protocolParameters,
+    } as any),
   );
-  const lucid = await Lucid.Lucid(provider, cardanoNetwork, {
-    presetProtocolParameters: protocolParameters,
-  } as any);
 
-  const chainZeroTime = await querySystemStart(ogmiosEndpoint);
-  const slotConfig = Lucid.SLOT_CONFIG_NETWORK?.[cardanoNetwork] as SlotConfig | undefined;
-  if (!slotConfig) {
-    throw new Error(`Lucid does not expose a slot configuration for Cardano network ${cardanoNetwork}`);
-  }
-  slotConfig.zeroTime = chainZeroTime;
-  slotConfig.slotLength = 1000;
+  const chainZeroTime = await timed(logger, '[context]', 'query system start', () => querySystemStart(ogmiosEndpoint));
+  Lucid.SLOT_CONFIG_NETWORK[cardanoNetwork].zeroTime = chainZeroTime;
+  Lucid.SLOT_CONFIG_NETWORK[cardanoNetwork].slotLength = 1000;
 
   return {
     lucidImporter: Lucid,
@@ -859,10 +847,7 @@ class RuntimeKupoService implements KupoLikeService {
   private readonly connectionAddress: string;
   private readonly channelAddress: string;
 
-  constructor(
-    private readonly lucidService: LucidIbcAdapter,
-    deployment: DeploymentConfig,
-  ) {
+  constructor(private readonly lucidService: LucidIbcAdapter, deployment: DeploymentConfig) {
     this.clientTokenPrefix = deployment.validators.mintClientStt.scriptHash;
     this.connectionTokenPrefix = deployment.validators.mintConnectionStt.scriptHash;
     this.channelTokenPrefix = deployment.validators.mintChannelStt.scriptHash;
@@ -915,33 +900,20 @@ function dedupeUtxos(utxos: UTxO[]): UTxO[] {
   return orderedKeys.map((key) => seen.get(key)).filter(Boolean) as UTxO[];
 }
 
-async function ensureTreeAlignedForRoot(
-  context: BuilderContext,
-  onChainRoot: string,
-): Promise<void> {
+async function ensureTreeAlignedForRoot(context: BuilderContext, onChainRoot: string): Promise<void> {
   if (!isTreeAligned(onChainRoot)) {
-    context.logger.warn(
-      `IBC tree root mismatch for local tx builder runtime, aligning to ${onChainRoot.slice(0, 16)}...`,
-    );
+    context.logger.warn(`IBC tree root mismatch for local tx builder runtime, aligning to ${onChainRoot.slice(0, 16)}...`);
     await alignTreeWithChain();
   }
 }
 
-async function buildHostStateUpdateForHandlePacket(
-  context: BuilderContext,
-  inputChannelDatum: any,
-  outputChannelDatum: any,
-  channelIdForRoot: string,
-) {
+async function buildHostStateUpdateForHandlePacket(context: BuilderContext, inputChannelDatum: any, outputChannelDatum: any, channelIdForRoot: string) {
   const hostStateUtxo = await context.lucidService.findUtxoAtHostStateNFT();
   if (!hostStateUtxo.datum) {
     throw new Error('HostState UTXO has no datum');
   }
 
-  const hostStateDatum = await context.lucidService.decodeDatum<any>(
-    hostStateUtxo.datum,
-    'host_state',
-  );
+  const hostStateDatum = await context.lucidService.decodeDatum<any>(hostStateUtxo.datum, 'host_state');
 
   await ensureTreeAlignedForRoot(context, hostStateDatum.state.ibc_state_root);
 
@@ -956,14 +928,7 @@ async function buildHostStateUpdateForHandlePacket(
     packetReceiptSiblings,
     packetAcknowledgementSiblings,
     commit,
-  } = await computeRootWithHandlePacketUpdate(
-    hostStateDatum.state.ibc_state_root,
-    portId,
-    channelIdForRoot,
-    inputChannelDatum,
-    outputChannelDatum,
-    context.lucidService.LucidImporter,
-  );
+  } = await computeRootWithHandlePacketUpdate(hostStateDatum.state.ibc_state_root, portId, channelIdForRoot, inputChannelDatum, outputChannelDatum, context.lucidService.LucidImporter);
 
   const updatedHostStateDatum = {
     ...hostStateDatum,
@@ -989,14 +954,8 @@ async function buildHostStateUpdateForHandlePacket(
 
   return {
     hostStateUtxo,
-    encodedHostStateRedeemer: await context.lucidService.encode(
-      hostStateRedeemer,
-      'host_state_redeemer',
-    ),
-    encodedUpdatedHostStateDatum: await context.lucidService.encode(
-      updatedHostStateDatum,
-      'host_state',
-    ),
+    encodedHostStateRedeemer: await context.lucidService.encode(hostStateRedeemer, 'host_state_redeemer'),
+    encodedUpdatedHostStateDatum: await context.lucidService.encode(updatedHostStateDatum, 'host_state'),
     newRoot,
     commit,
   };
@@ -1007,15 +966,12 @@ async function computeTxValidityWindow(context: BuilderContext) {
   const currentSlot = tip === 'origin' ? 0 : tip.slot;
   const ttlSlots = Math.max(1, Math.ceil(TRANSACTION_TIME_TO_LIVE / 1000));
   const validToSlot = currentSlot + ttlSlots;
-  const slotConfig = context.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[context.cardanoNetwork] as
-    | SlotConfig
-    | undefined;
+  const slotConfig = context.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[context.cardanoNetwork] as SlotConfig | undefined;
   if (!slotConfig || slotConfig.slotLength <= 0) {
     throw new Error(`Invalid Cardano slot configuration for network ${context.cardanoNetwork}`);
   }
 
-  const validToTime =
-    slotConfig.zeroTime + (validToSlot + 1 - slotConfig.zeroSlot) * slotConfig.slotLength - 1;
+  const validToTime = slotConfig.zeroTime + (validToSlot + 1 - slotConfig.zeroSlot) * slotConfig.slotLength - 1;
 
   return {
     currentSlot,
@@ -1048,6 +1004,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
   const logger = config.logger ?? defaultLogger('txBuilderRuntime');
   let cachedContextPromise: Promise<BuilderContext> | null = null;
   const transferBuildQueue = new AsyncMutex();
+  let transferBuildCounter = 0;
 
   const traceRegistryClient = createTraceRegistryClient({
     bridgeManifestUrl: config.bridgeManifestUrl,
@@ -1059,41 +1016,37 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
     const fetchImpl = config.fetchImpl ?? fetch;
     let response: Response;
     try {
-      response = await fetchImpl(config.bridgeManifestUrl, { cache: 'no-store' });
+      response = await fetchImpl(config.bridgeManifestUrl, {
+        cache: 'no-store',
+      });
     } catch (error) {
-      throw new Error(
-        `Failed to load bridge manifest from ${config.bridgeManifestUrl}: ${describeFetchFailure(error)}`,
-        { cause: error },
-      );
+      throw new Error(`Failed to load bridge manifest from ${config.bridgeManifestUrl}: ${describeFetchFailure(error)}`, { cause: error });
     }
 
     if (!response.ok) {
-      throw new Error(
-        `Failed to load bridge manifest from ${config.bridgeManifestUrl}: ${response.status} ${response.statusText}`,
-      );
+      throw new Error(`Failed to load bridge manifest from ${config.bridgeManifestUrl}: ${response.status} ${response.statusText}`);
     }
     return response.json() as Promise<BridgeManifest>;
   }
 
   async function createContext(): Promise<BuilderContext> {
-    const manifest = await getBridgeManifest();
+    const contextStartedAt = startTimer();
+    logger.log('[context] initializing shared Cardano tx-builder runtime context');
+
+    const manifest = await timed(logger, '[context]', 'load bridge manifest', getBridgeManifest);
     const { deployment, bridgeManifest } = normalizeBridgeManifest(manifest);
     const { kupoEndpoint, ogmiosEndpoint } = splitKupmiosUrl(config.kupmiosUrl);
     const cardanoNetwork = normalizeCardanoNetwork(bridgeManifest.cardano.network);
 
-    const { lucidImporter, lucid } = await createLucidRuntime(
-      kupoEndpoint,
-      ogmiosEndpoint,
-      cardanoNetwork,
-    );
+    const { lucidImporter, lucid } = await createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork, logger);
     const lucidService = new LucidIbcAdapter(lucidImporter, lucid, deployment);
-    await lucidService.onModuleInit();
+    await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
 
     const kupoService = new RuntimeKupoService(lucidService, deployment);
     initTreeServices(kupoService, lucidService);
-    await rebuildTreeFromChain(kupoService, lucidService);
+    await timed(logger, '[context]', 'rebuild IBC state tree', () => rebuildTreeFromChain(kupoService, lucidService));
 
-    logger.log('Initialized shared Cardano tx-builder runtime context');
+    logger.log(`[context] initialized shared Cardano tx-builder runtime context in ${elapsedMs(contextStartedAt)}`);
 
     return {
       deployment,
@@ -1120,118 +1073,105 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
     body: TransferApiRequestBody,
   ): Promise<LocalUnsignedTransferResponse> {
     // Lucid wallet selection and IBC tree state are shared by the runtime context.
-    return transferBuildQueue.runExclusive(() => buildUnsignedTransferUnsafe(body));
+    const buildId = ++transferBuildCounter;
+    const scope = `[transfer:${buildId}]`;
+    return transferBuildQueue.runExclusive(() => buildUnsignedTransferUnsafe(body, scope));
   }
 
   async function buildUnsignedTransferUnsafe(
     body: TransferApiRequestBody,
+    scope: string,
   ): Promise<LocalUnsignedTransferResponse> {
-    const context = await getContext();
+    const buildStartedAt = startTimer();
+    logger.log(`${scope} preparing unsigned Cardano transfer`);
+
+    const context = await timed(logger, scope, 'get runtime context', getContext);
     const sendPacketOperator = parseSendPacketOperator(body);
     const providedWalletUtxos = parseWalletUtxos(body.wallet_utxos);
-    const getWalletUtxos = async (
-      address: string,
-      options: { maxAttempts: number; retryDelayMs: number },
-    ) =>
-      dedupeUtxos([
-        ...providedWalletUtxos,
-        ...(await context.lucidService.tryFindUtxosAt(address, options)),
-      ]);
+    logger.log(`${scope} parsed request for ${sendPacketOperator.signer}; provided wallet UTxOs=${providedWalletUtxos.length}`);
+    const getWalletUtxos = async (address: string, options: { maxAttempts: number; retryDelayMs: number }) => {
+      const providedWalletUtxosForAddress = providedWalletUtxos.filter((utxo) => utxo.address === address);
+      if (providedWalletUtxosForAddress.length > 0) {
+        const dedupedProvidedWalletUtxos = dedupeUtxos(providedWalletUtxosForAddress);
+        logger.log(`${scope} using ${dedupedProvidedWalletUtxos.length} wallet-provided UTxOs for ${address}; skipped provider wallet UTxO lookup`);
+        return dedupedProvidedWalletUtxos;
+      }
+
+      const providerWalletUtxos = await timed(logger, scope, `provider wallet UTxO lookup for ${address}`, () => context.lucidService.tryFindUtxosAt(address, options));
+      const mergedWalletUtxos = dedupeUtxos([...providedWalletUtxosForAddress, ...providerWalletUtxos]);
+      logger.log(`${scope} wallet UTxO merge for ${address}: provided=${providedWalletUtxosForAddress.length}, provider=${providerWalletUtxos.length}, merged=${mergedWalletUtxos.length}`);
+      return mergedWalletUtxos;
+    };
     const findWalletUtxoAtWithUnit = async (address: string, unit: string) => {
-      const providedMatch = providedWalletUtxos.find(
-        (utxo) => Object.prototype.hasOwnProperty.call(utxo.assets, unit),
-      );
+      const providedMatch = providedWalletUtxos.find((utxo) => utxo.address === address && Object.prototype.hasOwnProperty.call(utxo.assets, unit));
       if (providedMatch) {
         return providedMatch;
       }
       return context.lucidService.findUtxoAtWithUnit(address, unit);
     };
 
-    const initialWalletUtxos = await getWalletUtxos(
-      sendPacketOperator.signer,
-      LOOKUP_RETRY_OPTIONS,
-    );
+    const initialWalletUtxos = await timed(logger, scope, 'load initial wallet UTxOs', () => getWalletUtxos(sendPacketOperator.signer, LOOKUP_RETRY_OPTIONS));
     if (initialWalletUtxos.length === 0) {
-      throw new Error(
-        `sendPacketBuilder failed: no spendable UTxOs found for ${sendPacketOperator.signer}`,
-      );
+      throw new Error(`sendPacketBuilder failed: no spendable UTxOs found for ${sendPacketOperator.signer}`);
     }
-    context.lucidService.selectWalletFromAddress(
-      sendPacketOperator.signer,
-      initialWalletUtxos,
-    );
+    logger.log(`${scope} initial wallet UTxOs selected=${initialWalletUtxos.length}`);
+    context.lucidService.selectWalletFromAddress(sendPacketOperator.signer, initialWalletUtxos);
 
-    const { unsignedTx, walletOverride } = await buildUnsignedSendPacketTx(
-      sendPacketOperator,
-      {
+    const { unsignedTx, walletOverride } = await timed(logger, scope, 'build send_packet tx skeleton', () =>
+      buildUnsignedSendPacketTx(sendPacketOperator, {
         loadContext: async (operator) => {
-          const channelSequence = operator.sourceChannel.replace('channel-', '');
-          const [mintChannelPolicyId, channelTokenName] =
-            context.lucidService.getChannelTokenUnit(BigInt(channelSequence));
-          const channelTokenUnit = mintChannelPolicyId + channelTokenName;
-          const channelUtxo = await context.lucidService.findUtxoByUnit(channelTokenUnit);
-          const channelDatum = await context.lucidService.decodeDatum<any>(
-            channelUtxo.datum!,
-            'channel',
-          );
+          const loadContextStartedAt = startTimer();
+          try {
+            const channelSequence = operator.sourceChannel.replace('channel-', '');
+            const [mintChannelPolicyId, channelTokenName] = context.lucidService.getChannelTokenUnit(BigInt(channelSequence));
+            const channelTokenUnit = mintChannelPolicyId + channelTokenName;
+            const channelUtxo = await timed(logger, scope, 'load channel UTxO', () => context.lucidService.findUtxoByUnit(channelTokenUnit));
+            const channelDatum = await timed(logger, scope, 'decode channel datum', () => context.lucidService.decodeDatum<any>(channelUtxo.datum!, 'channel'));
 
-          const [mintConnectionPolicyId, connectionTokenName] =
-            context.lucidService.getConnectionTokenUnit(
-              parseConnectionSequence(
-                convertHex2String(channelDatum.state.channel.connection_hops[0]),
-              ),
+            const [mintConnectionPolicyId, connectionTokenName] = context.lucidService.getConnectionTokenUnit(
+              parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
             );
-          const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
-          const connectionUtxo = await context.lucidService.findUtxoByUnit(connectionTokenUnit);
-          const connectionDatum = await context.lucidService.decodeDatum<any>(
-            connectionUtxo.datum!,
-            'connection',
-          );
+            const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
+            const connectionUtxo = await timed(logger, scope, 'load connection UTxO', () => context.lucidService.findUtxoByUnit(connectionTokenUnit));
+            const connectionDatum = await timed(logger, scope, 'decode connection datum', () => context.lucidService.decodeDatum<any>(connectionUtxo.datum!, 'connection'));
 
-          const clientTokenUnit = context.lucidService.getClientTokenUnit(
-            parseClientSequence(convertHex2String(connectionDatum.state.client_id)).toString(),
-          );
-          const clientUtxo = await context.lucidService.findUtxoByUnit(clientTokenUnit);
-          const transferModuleIdentifier = context.deployment.modules.transfer.identifier;
-          const transferModuleUtxo = await context.lucidService.findUtxoByUnit(
-            transferModuleIdentifier,
-          );
-          const deployment = context.deployment;
-          const spendChannelAddress = deployment.validators.spendChannel.address;
-          if (!spendChannelAddress) {
-            throw new Error('Spend channel script address is missing from deployment config');
+            const clientTokenUnit = context.lucidService.getClientTokenUnit(parseClientSequence(convertHex2String(connectionDatum.state.client_id)).toString());
+            const clientUtxo = await timed(logger, scope, 'load client UTxO', () => context.lucidService.findUtxoByUnit(clientTokenUnit));
+            const transferModuleIdentifier = context.deployment.modules.transfer.identifier;
+            const transferModuleUtxo = await timed(logger, scope, 'load transfer module UTxO', () => context.lucidService.findUtxoByUnit(transferModuleIdentifier));
+            const deployment = context.deployment;
+            const spendChannelAddress = deployment.validators.spendChannel.address;
+            if (!spendChannelAddress) {
+              throw new Error('Spend channel script address is missing from deployment config');
+            }
+
+            return {
+              channelUtxo,
+              channelDatum,
+              connectionUtxo,
+              connectionDatum,
+              clientUtxo,
+              transferModuleUtxo,
+              channelTokenUnit,
+              channelToken: {
+                policyId: mintChannelPolicyId,
+                name: channelTokenName,
+              },
+              deployment: {
+                sendPacketPolicyId: deployment.validators.spendChannel.refValidator.send_packet.scriptHash,
+                mintVoucherScriptHash: deployment.validators.mintVoucher.scriptHash,
+                spendChannelAddress,
+                transferModuleAddress: deployment.modules.transfer.address,
+              },
+            };
+          } finally {
+            logger.log(`${scope} load builder context completed in ${elapsedMs(loadContextStartedAt)}`);
           }
-
-          return {
-            channelUtxo,
-            channelDatum,
-            connectionUtxo,
-            connectionDatum,
-            clientUtxo,
-            transferModuleUtxo,
-            channelTokenUnit,
-            channelToken: {
-              policyId: mintChannelPolicyId,
-              name: channelTokenName,
-            },
-            deployment: {
-              sendPacketPolicyId:
-                deployment.validators.spendChannel.refValidator.send_packet.scriptHash,
-              mintVoucherScriptHash: deployment.validators.mintVoucher.scriptHash,
-              spendChannelAddress,
-              transferModuleAddress: deployment.modules.transfer.address,
-            },
-          };
         },
         buildHostStateUpdate: (inputChannelDatum, outputChannelDatum, channelIdForRoot) =>
-          buildHostStateUpdateForHandlePacket(
-            context,
-            inputChannelDatum,
-            outputChannelDatum,
-            channelIdForRoot,
-          ),
+          timed(logger, scope, 'build host-state update', () => buildHostStateUpdateForHandlePacket(context, inputChannelDatum, outputChannelDatum, channelIdForRoot)),
         resolveIbcDenomHash: async (denomHash) => {
-          const match = await context.traceRegistryClient.lookupIbcDenomTrace(denomHash);
+          const match = await timed(logger, scope, `resolve denom hash ${denomHash}`, () => context.traceRegistryClient.lookupIbcDenomTrace(denomHash));
           if (!match) {
             return null;
           }
@@ -1245,43 +1185,43 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
         encode: (value, kind) => context.lucidService.encode(value, kind as never),
         findUtxoAtWithUnit: findWalletUtxoAtWithUnit,
         tryFindUtxosAt: getWalletUtxos,
-        createUnsignedSendPacketBurnTx: (dto) =>
-          context.lucidService.createUnsignedSendPacketBurnTx(dto as never),
-        createUnsignedSendPacketEscrowTx: (dto) =>
-          context.lucidService.createUnsignedSendPacketEscrowTx(dto as never),
+        createUnsignedSendPacketBurnTx: (dto) => context.lucidService.createUnsignedSendPacketBurnTx(dto as never),
+        createUnsignedSendPacketEscrowTx: (dto) => context.lucidService.createUnsignedSendPacketEscrowTx(dto as never),
         invalidArgument: (message) => new Error(message),
         internalError: (message) => new Error(message),
-      },
+      }),
     );
 
     if (!walletOverride) {
       throw new Error('sendPacket failed: wallet override context was not produced');
     }
 
-    const { currentSlot, validToSlot, validToTime } = await computeTxValidityWindow(context);
+    const { currentSlot, validToSlot, validToTime } = await timed(logger, scope, 'compute validity window', () => computeTxValidityWindow(context));
     if (currentSlot > validToSlot) {
       throw new Error('sendPacket failed: tx time invalid');
     }
 
     const walletScopeId = context.lucidService.beginWalletSelectionScope();
     try {
-      const refreshedUtxos = await getWalletUtxos(
-        walletOverride.address,
-        LOOKUP_RETRY_OPTIONS,
-      );
-      const mergedUtxos = dedupeUtxos([...(walletOverride.utxos ?? []), ...refreshedUtxos]);
-      const utxosToUse = mergedUtxos.length > 0 ? mergedUtxos : walletOverride.utxos;
+      const refreshedUtxos = await timed(logger, scope, 'refresh wallet UTxOs before completion', () => getWalletUtxos(walletOverride.address, LOOKUP_RETRY_OPTIONS));
+      const overrideUtxos = walletOverride.utxos ?? [];
+      const mergedUtxos = dedupeUtxos([...overrideUtxos, ...refreshedUtxos]);
+      const utxosToUse = mergedUtxos.length > 0 ? mergedUtxos : overrideUtxos;
+      logger.log(`${scope} completion wallet UTxOs: override=${overrideUtxos.length}, refreshed=${refreshedUtxos.length}, using=${utxosToUse.length}`);
 
       context.lucidService.selectWalletFromAddress(walletOverride.address, utxosToUse);
       context.lucidService.assertWalletSelectionScopeSatisfied(walletScopeId, 'sendPacket');
 
-      const completedUnsignedTx = await (unsignedTx as TxBuilder).validTo(validToTime).complete({
-        localUPLCEval: false,
-        setCollateral: TRANSACTION_SET_COLLATERAL,
-      });
+      const completedUnsignedTx = await timed(logger, scope, 'complete unsigned tx', () =>
+        (unsignedTx as TxBuilder).validTo(validToTime).complete({
+          localUPLCEval: true,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        }),
+      );
 
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
       const feeLovelace = completedUnsignedTx.toTransaction().body().fee().toString();
+      logger.log(`${scope} prepared unsigned Cardano transfer in ${elapsedMs(buildStartedAt)}`);
 
       return {
         result: 0,
@@ -1301,8 +1241,4 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
   };
 }
 
-export type {
-  BuilderRuntimeConfig,
-  LocalUnsignedTransferResponse,
-  TransferApiRequestBody,
-};
+export type { BuilderRuntimeConfig, LocalUnsignedTransferResponse, TransferApiRequestBody };

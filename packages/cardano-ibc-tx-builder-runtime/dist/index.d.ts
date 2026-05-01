@@ -47,4 +47,4 @@ type BuilderRuntimeConfig = {
 export declare function createTxBuilderRuntime(config: BuilderRuntimeConfig): {
     buildUnsignedTransfer: (body: TransferApiRequestBody) => Promise<LocalUnsignedTransferResponse>;
 };
-export type { BuilderRuntimeConfig, LocalUnsignedTransferResponse, TransferApiRequestBody, };
+export type { BuilderRuntimeConfig, LocalUnsignedTransferResponse, TransferApiRequestBody };
