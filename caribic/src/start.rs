@@ -180,19 +180,30 @@ fn read_preprod_runtime_kupo_endpoint(gateway_env_path: &Path) -> Option<String>
         .filter(|value| !value.is_empty())
 }
 
-fn preprod_uses_local_kupo_runtime(gateway_env_path: &Path) -> bool {
-    let Some(endpoint) = read_preprod_runtime_kupo_endpoint(gateway_env_path) else {
-        return true;
-    };
+fn preprod_uses_local_kupo_runtime(
+    gateway_env_path: &Path,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    Ok(crate::setup::resolve_preprod_kupo_mode(gateway_env_path)?
+        == crate::setup::PreprodKupoMode::Local)
+}
 
-    reqwest::Url::parse(endpoint.as_str())
-        .ok()
-        .and_then(|parsed| {
-            parsed
-                .host_str()
-                .map(|host| host.eq_ignore_ascii_case("kupo"))
-        })
-        .unwrap_or_else(|| endpoint.starts_with("http://kupo:1442"))
+fn read_preprod_remote_kupmios_url(
+    gateway_env_path: &Path,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    if preprod_uses_local_kupo_runtime(gateway_env_path)? {
+        return Ok(None);
+    }
+
+    let kupo_endpoint = read_preprod_runtime_kupo_endpoint(gateway_env_path).ok_or(
+        "PREPROD_KUPO_MODE=remote requires GATEWAY_RUNTIME_KUPO_ENDPOINT or KUPO_ENDPOINT",
+    )?;
+    let ogmios_endpoint =
+        crate::setup::read_gateway_env_value(gateway_env_path, "OGMIOS_ENDPOINT")?
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .ok_or("PREPROD_KUPO_MODE=remote requires OGMIOS_ENDPOINT")?;
+
+    Ok(Some(format!("{kupo_endpoint},{ogmios_endpoint}")))
 }
 
 fn managed_cardano_runtime_services_running(
@@ -230,7 +241,7 @@ fn managed_cardano_runtime_services_running(
     }
     let gateway_env_path = gateway_env_path_from_cardano_dir(cardano_dir);
     let use_local_kupo = !matches!(network, config::CoreCardanoNetwork::Preprod)
-        || preprod_uses_local_kupo_runtime(gateway_env_path.as_path());
+        || preprod_uses_local_kupo_runtime(gateway_env_path.as_path()).unwrap_or(false);
 
     if configuration.services.kupo && use_local_kupo {
         required_services.push("kupo");
@@ -2055,7 +2066,7 @@ pub fn start_local_cardano_services(
     let configuration = config::get_config().cardano;
     let gateway_env_path = gateway_env_path_from_cardano_dir(cardano_dir);
     let use_local_kupo = !matches!(network, config::CoreCardanoNetwork::Preprod)
-        || preprod_uses_local_kupo_runtime(gateway_env_path.as_path());
+        || preprod_uses_local_kupo_runtime(gateway_env_path.as_path())?;
 
     let mut all_services: Vec<String> = vec![];
     let mut base_services: Vec<String> = vec![];
@@ -3091,13 +3102,29 @@ fn run_dapp_compose_command(
         .unwrap_or_else(|_| ibc_swap_cardano_ibc_chain_id(core_cardano_network).to_string());
     let dapp_mode = std::env::var("IBC_SWAP_MODE")
         .unwrap_or_else(|_| ibc_swap_mode(core_cardano_network).to_string());
-    let output = Command::new("docker")
+    let mut command = Command::new("docker");
+    command
         .current_dir(dapps_dir)
         .env("IBC_SWAP_MODE", dapp_mode)
         .env("IBC_SWAP_CARDANO_CHAIN_ID", cardano_chain_id)
-        .env("IBC_SWAP_CARDANO_IBC_CHAIN_ID", cardano_ibc_chain_id)
-        .args(args)
-        .output()?;
+        .env("IBC_SWAP_CARDANO_IBC_CHAIN_ID", cardano_ibc_chain_id);
+
+    if core_cardano_network == config::CoreCardanoNetwork::Preprod {
+        let project_root_path = dapps_dir
+            .parent()
+            .ok_or("Failed to derive project root from dapps directory")?;
+        let gateway_env_path = project_root_path
+            .join("cardano")
+            .join("gateway")
+            .join(".env");
+        if let Some(kupmios_url) = read_preprod_remote_kupmios_url(gateway_env_path.as_path())? {
+            command
+                .env("IBC_SWAP_KUPMIOS_URL", kupmios_url.as_str())
+                .env("IBC_SWAP_KUPMIOS_INTERNAL_URL", kupmios_url.as_str());
+        }
+    }
+
+    let output = command.args(args).output()?;
 
     let command_label = format!("docker {}", args.join(" "));
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -4145,23 +4172,26 @@ fn run_core_health_check(
                 "Container running",
             ),
             CoreHealthCheckType::Kupo => {
-                if preprod_uses_local_kupo_runtime(context.gateway_env_path.as_path()) {
-                    check_container_with_optional_port(
+                match preprod_uses_local_kupo_runtime(context.gateway_env_path.as_path()) {
+                    Ok(true) => check_container_with_optional_port(
                         "cardano-kupo",
                         1442,
                         "Running on port 1442",
                         "Container running",
-                    )
-                } else {
-                    external_gateway_env_value(context, "GATEWAY_RUNTIME_KUPO_ENDPOINT")
-                        .or_else(|| external_gateway_env_value(context, "KUPO_ENDPOINT"))
-                        .map(|url| check_external_url_port(url.as_str(), "Kupo"))
-                        .unwrap_or_else(|| {
-                            (
-                                false,
-                                "Missing Kupo runtime endpoint in cardano/gateway/.env".to_string(),
-                            )
-                        })
+                    ),
+                    Ok(false) => {
+                        external_gateway_env_value(context, "GATEWAY_RUNTIME_KUPO_ENDPOINT")
+                            .or_else(|| external_gateway_env_value(context, "KUPO_ENDPOINT"))
+                            .map(|url| check_external_url_port(url.as_str(), "Kupo"))
+                            .unwrap_or_else(|| {
+                                (
+                                    false,
+                                    "Missing Kupo runtime endpoint in cardano/gateway/.env"
+                                        .to_string(),
+                                )
+                            })
+                    }
+                    Err(error) => (false, error.to_string()),
                 }
             }
             CoreHealthCheckType::Ogmios => external_gateway_env_value(context, "OGMIOS_ENDPOINT")
