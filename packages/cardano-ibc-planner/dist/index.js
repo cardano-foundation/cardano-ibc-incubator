@@ -15,23 +15,13 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+    __setModuleDefault(result, mod);
+    return result;
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createPlannerClient = createPlannerClient;
 const ENTRYPOINT_CHAIN_ID = 'entrypoint';
@@ -44,6 +34,7 @@ const QUERY_ALL_CHANNELS_URL = `${QUERY_CHANNELS_PREFIX_URL}?pagination.count_to
 const QUERY_CARDANO_CHANNELS_URL = '/api/channels?offset=0&limit=10000&countTotal=true&reverse=false';
 const QUERY_ALL_DENOMS_URL = '/ibc/apps/transfer/v1/denoms';
 const QUERY_PACKET_FORWARD_PARAMS_URL = '/ibc/apps/packetforward/v1/params';
+const QUERY_CONSENSUS_STATES_PREFIX_URL = '/ibc/core/client/v1/consensus_states';
 const QUERY_SWAP_ROUTER_STATE = '/cosmwasm/wasm/v1/contract/SWAP_ROUTER_ADDRESS/state?pagination.limit=100000000';
 const SWAP_ROUTING_TABLE_PREFIX = '\x00\rrouting_table\x00D';
 const BIGINT_ZERO = BigInt(0);
@@ -466,6 +457,9 @@ async function fetchAllChannels(chainId, restUrl, fetchImpl, options = {}) {
                 continue;
             }
             const clientState = await fetchClientStateFromChannel(restUrl, channel.channel_id, channel.port_id, fetchImpl);
+            if (!(await isUsableChannelClient(restUrl, clientState, fetchImpl))) {
+                continue;
+            }
             const destChain = clientState.identified_client_state?.client_state?.chain_id;
             if (!destChain) {
                 continue;
@@ -513,6 +507,79 @@ async function fetchAllChannels(chainId, restUrl, fetchImpl, options = {}) {
         });
     }
     return { adjacency, channelByRoute };
+}
+async function isUsableChannelClient(restUrl, response, fetchImpl) {
+    const identified = response.identified_client_state;
+    const clientState = identified?.client_state;
+    if (!identified?.client_id || !clientState) {
+        return true;
+    }
+    if (isNonZeroHeight(clientState.frozen_height)) {
+        return false;
+    }
+    const trustingPeriodMs = parseDurationMs(clientState.trusting_period);
+    const latestHeight = clientState.latest_height;
+    if (trustingPeriodMs === null ||
+        !latestHeight?.revision_number ||
+        !latestHeight.revision_height) {
+        return true;
+    }
+    const consensusState = await fetchConsensusState(restUrl, identified.client_id, latestHeight.revision_number, latestHeight.revision_height, fetchImpl);
+    const timestampMs = Date.parse(consensusState?.consensus_state?.timestamp || '');
+    if (!Number.isFinite(timestampMs)) {
+        return true;
+    }
+    return Date.now() - timestampMs <= trustingPeriodMs;
+}
+async function fetchConsensusState(restUrl, clientId, revisionNumber, revisionHeight, fetchImpl) {
+    try {
+        return await fetchJson(`${trimTrailingSlash(restUrl)}${QUERY_CONSENSUS_STATES_PREFIX_URL}/${encodeURIComponent(clientId)}/revision/${encodeURIComponent(revisionNumber)}/height/${encodeURIComponent(revisionHeight)}`, fetchImpl);
+    }
+    catch {
+        return null;
+    }
+}
+function isNonZeroHeight(height) {
+    if (!height) {
+        return false;
+    }
+    return height.revision_number !== '0' || height.revision_height !== '0';
+}
+function parseDurationMs(value) {
+    if (!value) {
+        return null;
+    }
+    const match = value.trim().match(/^(\d+)(?:\.(\d+))?([a-z]+)$/i);
+    if (!match) {
+        return null;
+    }
+    const amount = Number(`${match[1]}.${match[2] || '0'}`);
+    if (!Number.isFinite(amount)) {
+        return null;
+    }
+    switch (match[3].toLowerCase()) {
+        case 's':
+        case 'sec':
+        case 'second':
+        case 'seconds':
+            return amount * 1000;
+        case 'm':
+        case 'min':
+        case 'minute':
+        case 'minutes':
+            return amount * 60 * 1000;
+        case 'h':
+        case 'hr':
+        case 'hour':
+        case 'hours':
+            return amount * 60 * 60 * 1000;
+        case 'd':
+        case 'day':
+        case 'days':
+            return amount * 24 * 60 * 60 * 1000;
+        default:
+            return null;
+    }
 }
 async function fetchCardanoOpenChannels(restUrl, fetchImpl) {
     const data = await fetchJson(`${trimTrailingSlash(restUrl)}${QUERY_CARDANO_CHANNELS_URL}`, fetchImpl);
