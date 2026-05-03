@@ -57,8 +57,15 @@ export type PlannerClientConfig = {
     entrypointRestEndpoint: string;
     localOsmosisRestEndpoint: string;
     swapRouterAddress?: string;
+    preferredChannels?: PreferredChannel[];
     resolveCardanoAssetDenomTrace?: (assetId: string) => Promise<ResolvedCardanoAssetTrace | null>;
     fetchImpl?: typeof fetch;
+};
+export type PreferredChannel = {
+    fromChainId: string;
+    toChainId: string;
+    srcPort: string;
+    srcChannel: string;
 };
 export type PlannerClient = {
     planTransferRoute: (request: TransferPlanRequest) => Promise<TransferPlanResponse>;

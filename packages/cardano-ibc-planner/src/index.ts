@@ -98,10 +98,18 @@ export type PlannerClientConfig = {
   entrypointRestEndpoint: string;
   localOsmosisRestEndpoint: string;
   swapRouterAddress?: string;
+  preferredChannels?: PreferredChannel[];
   resolveCardanoAssetDenomTrace?: (
     assetId: string,
   ) => Promise<ResolvedCardanoAssetTrace | null>;
   fetchImpl?: typeof fetch;
+};
+
+export type PreferredChannel = {
+  fromChainId: string;
+  toChainId: string;
+  srcPort: string;
+  srcChannel: string;
 };
 
 export type PlannerClient = {
@@ -277,8 +285,13 @@ export function createPlannerClient(
         ),
       ]);
 
+    const adjacency = applyPreferredChannels(
+      channels.adjacency,
+      resolvedConfig.preferredChannels || [],
+    );
+
     return {
-      adjacency: channels.adjacency,
+      adjacency,
       channelByRoute: channels.channelByRoute,
       denomTracesByChain: {
         [ENTRYPOINT_CHAIN_ID]: entrypointDenomTraces,
@@ -764,6 +777,49 @@ function resolveUniqueForwardRoute(
   }
 
   return { chains, routes };
+}
+
+function applyPreferredChannels(
+  adjacency: PlannerMetadata['adjacency'],
+  preferredChannels: PreferredChannel[],
+): PlannerMetadata['adjacency'] {
+  if (preferredChannels.length === 0) {
+    return adjacency;
+  }
+
+  const filtered: PlannerMetadata['adjacency'] = {};
+  for (const [srcChain, destinations] of Object.entries(adjacency)) {
+    filtered[srcChain] = {};
+    for (const [destChain, channels] of Object.entries(destinations)) {
+      filtered[srcChain][destChain] = [...channels];
+    }
+  }
+
+  for (const preferred of preferredChannels) {
+    const channels =
+      filtered[preferred.fromChainId]?.[preferred.toChainId] || [];
+    const match = channels.find(
+      (channel) =>
+        channel.srcPort === preferred.srcPort &&
+        channel.srcChannel === preferred.srcChannel,
+    );
+    if (!match) {
+      continue;
+    }
+
+    filtered[preferred.fromChainId][preferred.toChainId] = [match];
+
+    const reverse = filtered[match.destChain]?.[match.srcChain]?.find(
+      (channel) =>
+        channel.srcPort === match.destPort &&
+        channel.srcChannel === match.destChannel,
+    );
+    if (reverse) {
+      filtered[match.destChain][match.srcChain] = [reverse];
+    }
+  }
+
+  return filtered;
 }
 
 function parseHops(path: string): Array<{ port: string; channel: string }> {

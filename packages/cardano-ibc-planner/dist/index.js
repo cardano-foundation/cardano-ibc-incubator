@@ -15,13 +15,23 @@ var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (
 }) : function(o, v) {
     o["default"] = v;
 });
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
-    __setModuleDefault(result, mod);
-    return result;
-};
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createPlannerClient = createPlannerClient;
 const ENTRYPOINT_CHAIN_ID = 'entrypoint';
@@ -59,8 +69,9 @@ function createPlannerClient(config) {
             fetchAllDenomTraces(resolvedConfig.entrypointRestEndpoint, resolvedConfig.fetchImpl),
             fetchAllDenomTraces(resolvedConfig.localOsmosisRestEndpoint, resolvedConfig.fetchImpl),
         ]);
+        const adjacency = applyPreferredChannels(channels.adjacency, resolvedConfig.preferredChannels || []);
         return {
-            adjacency: channels.adjacency,
+            adjacency,
             channelByRoute: channels.channelByRoute,
             denomTracesByChain: {
                 [ENTRYPOINT_CHAIN_ID]: entrypointDenomTraces,
@@ -401,6 +412,33 @@ function resolveUniqueForwardRoute(fromChainId, toChainId, metadata, initialVisi
         routes.push(`${channels[0].srcPort}/${channels[0].srcChannel}`);
     }
     return { chains, routes };
+}
+function applyPreferredChannels(adjacency, preferredChannels) {
+    if (preferredChannels.length === 0) {
+        return adjacency;
+    }
+    const filtered = {};
+    for (const [srcChain, destinations] of Object.entries(adjacency)) {
+        filtered[srcChain] = {};
+        for (const [destChain, channels] of Object.entries(destinations)) {
+            filtered[srcChain][destChain] = [...channels];
+        }
+    }
+    for (const preferred of preferredChannels) {
+        const channels = filtered[preferred.fromChainId]?.[preferred.toChainId] || [];
+        const match = channels.find((channel) => channel.srcPort === preferred.srcPort &&
+            channel.srcChannel === preferred.srcChannel);
+        if (!match) {
+            continue;
+        }
+        filtered[preferred.fromChainId][preferred.toChainId] = [match];
+        const reverse = filtered[match.destChain]?.[match.srcChain]?.find((channel) => channel.srcPort === match.destPort &&
+            channel.srcChannel === match.destChannel);
+        if (reverse) {
+            filtered[match.destChain][match.srcChain] = [reverse];
+        }
+    }
+    return filtered;
 }
 function parseHops(path) {
     if (!path) {
