@@ -4,7 +4,8 @@ use std::path::Path;
 use super::config;
 use crate::chains::hermes_support;
 use crate::chains::hermes_support::{
-    HermesAddressType, HermesCosmosChainProfile, HermesGasPrice, HermesTrustThreshold,
+    HermesAddressType, HermesCosmosChainProfile, HermesEventSource, HermesGasPrice,
+    HermesTrustThreshold,
 };
 use crate::process::hermes::HermesCli;
 
@@ -46,7 +47,10 @@ fn local_chain_profile() -> HermesCosmosChainProfile {
         id: config::LOCAL_CHAIN_ID.to_string(),
         rpc_addr: format!("http://127.0.0.1:{}", config::LOCAL_RPC_PORT),
         grpc_addr: format!("http://127.0.0.1:{}", config::LOCAL_GRPC_PORT),
-        event_source_url: format!("ws://127.0.0.1:{}/websocket", config::LOCAL_RPC_PORT),
+        event_source: HermesEventSource::Push {
+            url: format!("ws://127.0.0.1:{}/websocket", config::LOCAL_RPC_PORT),
+            batch_delay: "200ms",
+        },
         rpc_timeout: "10s",
         trusted_node: Some(true),
         account_prefix: "cheqd",
