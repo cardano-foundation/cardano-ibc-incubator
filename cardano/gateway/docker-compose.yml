@@ -15,6 +15,7 @@ services:
       - ./dist:/usr/src/app/dist
       - ../../chains/mithrils/data/aggregator/stores:/usr/chains/mithrils/data/aggregator/stores
       - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments
+      - ../../manifests:/usr/src/app/manifests:ro
     env_file:
       - .env
 
@@ -30,6 +31,7 @@ services:
     volumes:
       - ./dist:/usr/src/app/dist
       - ../offchain/deployments:/usr/src/app/cardano/offchain/deployments
+      - ../../manifests:/usr/src/app/manifests:ro
     env_file:
       - .env
 

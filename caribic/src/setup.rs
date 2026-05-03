@@ -1839,6 +1839,7 @@ fn write_gateway_env_for_network(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let profile = config::cardano_network_profile(network);
     let network_magic = profile.network_magic.to_string();
+    let project_root = cardano_dir.join("../..");
     let cardano_source_dir = cardano_dir.join("../../cardano");
     let gateway_dir = cardano_source_dir.join("gateway");
     let gateway_env = gateway_dir.join(".env");
@@ -1995,17 +1996,10 @@ fn write_gateway_env_for_network(
         .bridge_manifest_path
         .as_deref()
         .filter(|path| Path::new(path).exists())
-        .and_then(|path| {
-            Path::new(path)
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(|file_name| format!("/usr/src/app/cardano/offchain/deployments/{file_name}"))
-        });
-    let handler_container_path = Path::new(profile.handler_json_path.as_str())
-        .file_name()
-        .and_then(|name| name.to_str())
-        .map(|file_name| format!("/usr/src/app/cardano/offchain/deployments/{file_name}"))
-        .ok_or("Failed to derive deployment artifact container path")?;
+        .and_then(|path| gateway_container_artifact_path(project_root.as_path(), path));
+    let handler_container_path =
+        gateway_container_artifact_path(project_root.as_path(), profile.handler_json_path.as_str())
+            .ok_or("Failed to derive deployment artifact container path")?;
 
     if let Some(manifest_path) = manifest_container_path {
         set_or_append_env_var(&gateway_env, "BRIDGE_MANIFEST_PATH", manifest_path.as_str())?;
@@ -2020,6 +2014,37 @@ fn write_gateway_env_for_network(
     }
 
     Ok(())
+}
+
+fn gateway_container_artifact_path(project_root: &Path, artifact_path: &str) -> Option<String> {
+    let artifact_path = Path::new(artifact_path);
+    let artifact_path = artifact_path
+        .canonicalize()
+        .unwrap_or_else(|_| artifact_path.to_path_buf());
+    let project_root = project_root
+        .canonicalize()
+        .unwrap_or_else(|_| project_root.to_path_buf());
+    let deployments_dir = project_root.join("cardano/offchain/deployments");
+    let manifests_dir = project_root.join("manifests");
+
+    if let Ok(relative_path) = artifact_path.strip_prefix(&deployments_dir) {
+        return Some(format!(
+            "/usr/src/app/cardano/offchain/deployments/{}",
+            relative_path.to_string_lossy()
+        ));
+    }
+
+    if let Ok(relative_path) = artifact_path.strip_prefix(&manifests_dir) {
+        return Some(format!(
+            "/usr/src/app/manifests/{}",
+            relative_path.to_string_lossy()
+        ));
+    }
+
+    artifact_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(|file_name| format!("/usr/src/app/cardano/offchain/deployments/{file_name}"))
 }
 
 fn ensure_gateway_databases(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
