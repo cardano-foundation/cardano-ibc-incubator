@@ -39,6 +39,11 @@ import { CARDANO_CHAIN_ID } from '@/configs/runtime';
 import { signAndSubmitCardanoTxWithCip30 } from '@/utils/cardanoWalletTx';
 import { getCardanoWalletErrorMessage } from '@/utils/cardanoWalletStatus';
 import {
+  logCardanoWalletDebug,
+  logCardanoWalletError,
+  shortValue,
+} from '@/utils/cardanoWalletDebug';
+import {
   findRuntimeChain,
   findRuntimeRoute,
   runtimeChainLabel,
@@ -565,9 +570,26 @@ const Transfer = () => {
       }
     } else {
       try {
+        const prepareStartedAt = Date.now();
+        logCardanoWalletDebug('transfer:prepare:start', {
+          walletName: connectedCardanoWalletName,
+          sender: shortValue(cardanoAddress),
+          destination: shortValue(destinationAddress),
+          amount: sendAmount,
+          denom: shortValue(selectedToken.tokenId),
+          route: liveRouteChainIds.join(' -> '),
+        });
+
+        const walletUtxosStartedAt = Date.now();
         const walletUtxos = await getCardanoWalletUtxosForBuilder(
           cardanoWallet,
         );
+        logCardanoWalletDebug('transfer:walletUtxos:success', {
+          walletName: connectedCardanoWalletName,
+          elapsedMs: Date.now() - walletUtxosStartedAt,
+          utxoCount: walletUtxos.length,
+        });
+
         const msg = await unsignedTxTransferFromCardano(
           chains,
           routes,
@@ -579,6 +601,13 @@ const Transfer = () => {
         );
         const unsignedTx = decodeUnsignedCardanoTx(msg[0].value);
         const estFee = msg[0].feeLovelace;
+
+        logCardanoWalletDebug('transfer:prepare:success', {
+          walletName: connectedCardanoWalletName,
+          elapsedMs: Date.now() - prepareStartedAt,
+          unsignedTxLength: unsignedTx.length,
+          estFeeLovelace: estFee,
+        });
 
         setRoutePreview({
           status: 'ready',
@@ -594,6 +623,11 @@ const Transfer = () => {
           estTime: CARDANO_TRANSFER_EST_TIME,
         };
       } catch (e) {
+        logCardanoWalletError('transfer:prepare:error', e, {
+          walletName: connectedCardanoWalletName,
+          sender: shortValue(cardanoAddress),
+          destination: shortValue(destinationAddress),
+        });
         const message = getCardanoBuildErrorMessage(e);
         setLastPrepareFailed(true);
         setRoutePreview({
@@ -626,19 +660,41 @@ const Transfer = () => {
     preparedEstData: EstimateFeeType = estData,
   ) => {
     if (!preparedEstData.canEst) {
+      logCardanoWalletDebug('transfer:submit:skip:not-ready', {
+        walletName: connectedCardanoWalletName,
+      });
       return;
     }
     setIsProcessingTransfer(true);
+    const startedAt = Date.now();
+    logCardanoWalletDebug('transfer:submit:start', {
+      walletName: connectedCardanoWalletName,
+      sender: shortValue(cardanoAddress),
+      destination: shortValue(destinationAddress),
+      unsignedTxLength:
+        typeof preparedEstData.msgs[0] === 'string'
+          ? preparedEstData.msgs[0].length
+          : undefined,
+    });
     try {
       const txHash = await signAndSubmitCardanoTxWithCip30(
         preparedEstData.msgs[0],
         connectedCardanoWalletName,
       );
       if (txHash) {
+        logCardanoWalletDebug('transfer:submit:success', {
+          walletName: connectedCardanoWalletName,
+          elapsedMs: Date.now() - startedAt,
+          txHash: shortValue(txHash),
+        });
         setLastTxHash(txHash);
         setIsSubmitted(true);
       }
     } catch (e: unknown) {
+      logCardanoWalletError('transfer:submit:error', e, {
+        walletName: connectedCardanoWalletName,
+        elapsedMs: Date.now() - startedAt,
+      });
       const message = getCardanoWalletErrorMessage(e);
       setRoutePreview({
         status: 'error',

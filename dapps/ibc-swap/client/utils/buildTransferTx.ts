@@ -9,6 +9,10 @@ import { isCardanoChainRef } from '@/configs/runtime';
 import { Coin } from 'cosmjs-types/cosmos/base/v1beta1/coin';
 import { MsgTransfer } from 'cosmjs-types/ibc/applications/transfer/v1/tx';
 import { getPublicKeyHashFromAddress } from './address';
+import {
+  logCardanoWalletDebug,
+  logCardanoWalletError,
+} from './cardanoWalletDebug';
 
 const pfmReceiver = 'pfm';
 
@@ -111,10 +115,29 @@ function dedupeWalletUtxos(utxos: CardanoWalletUtxo[]): CardanoWalletUtxo[] {
 export async function getCardanoWalletUtxosForBuilder(
   wallet: any,
 ): Promise<CardanoWalletUtxo[]> {
+  const startedAt = Date.now();
+  logCardanoWalletDebug('walletUtxos:load:start', {
+    hasWallet: Boolean(wallet),
+    hasGetUtxos: typeof wallet?.getUtxos === 'function',
+    hasGetCollateral: typeof wallet?.getCollateral === 'function',
+  });
   const [walletUtxosResult, collateralUtxosResult] = await Promise.allSettled([
     wallet?.getUtxos?.(),
     wallet?.getCollateral?.(),
   ]);
+  if (walletUtxosResult.status === 'rejected') {
+    logCardanoWalletError(
+      'walletUtxos:getUtxos:error',
+      walletUtxosResult.reason,
+    );
+  }
+  if (collateralUtxosResult.status === 'rejected') {
+    logCardanoWalletError(
+      'walletUtxos:getCollateral:error',
+      collateralUtxosResult.reason,
+    );
+  }
+
   const rawUtxos = [
     ...(walletUtxosResult.status === 'fulfilled' &&
     Array.isArray(walletUtxosResult.value)
@@ -126,11 +149,19 @@ export async function getCardanoWalletUtxosForBuilder(
       : []),
   ];
 
-  return dedupeWalletUtxos(
+  const normalizedUtxos = dedupeWalletUtxos(
     rawUtxos
       .map(normalizeMeshWalletUtxo)
       .filter((utxo): utxo is CardanoWalletUtxo => Boolean(utxo)),
   );
+  logCardanoWalletDebug('walletUtxos:load:success', {
+    elapsedMs: Date.now() - startedAt,
+    rawUtxoCount: rawUtxos.length,
+    normalizedUtxoCount: normalizedUtxos.length,
+    walletUtxosStatus: walletUtxosResult.status,
+    collateralUtxosStatus: collateralUtxosResult.status,
+  });
+  return normalizedUtxos;
 }
 
 function buildForwardMemo(routes: string[], receiver: string): string {

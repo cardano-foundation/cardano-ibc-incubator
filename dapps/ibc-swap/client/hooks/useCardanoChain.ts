@@ -12,6 +12,10 @@ import {
   CARDANO_WALLET_LOCKED_TOAST_ID,
   isCardanoWalletLockedError,
 } from '@/utils/cardanoWalletStatus';
+import {
+  logCardanoWalletDebug,
+  logCardanoWalletError,
+} from '@/utils/cardanoWalletDebug';
 
 const hexToText = (hex: string): string => {
   if (!hex || hex.length % 2 !== 0) {
@@ -44,9 +48,21 @@ export const useCardanoChain = () => {
 
   const getAssets = useCallback(async (): Promise<Asset[]> => {
     if (!connectedWalletInstance) {
+      logCardanoWalletDebug('balance:skip:no-wallet-instance', {
+        walletName: connectedWalletName,
+      });
       return [];
     }
+    const startedAt = Date.now();
+    logCardanoWalletDebug('balance:getBalance:start', {
+      walletName: connectedWalletName,
+    });
     const balance = await connectedWalletInstance.getBalance();
+    logCardanoWalletDebug('balance:getBalance:success', {
+      walletName: connectedWalletName,
+      elapsedMs: Date.now() - startedAt,
+      assetCount: balance.length,
+    });
     return balance.map((asset) => {
       const assetKey = asset.unit;
       return {
@@ -55,7 +71,7 @@ export const useCardanoChain = () => {
         assetName: tryAssetName(assetKey),
       } as Asset;
     });
-  }, [connectedWalletInstance]);
+  }, [connectedWalletInstance, connectedWalletName]);
 
   useEffect(() => {
     if (hasConnectedWallet && cardanoAddress) {
@@ -69,6 +85,10 @@ export const useCardanoChain = () => {
         })
         .catch((error) => {
           if (cancelled) return;
+
+          logCardanoWalletError('balance:getBalance:error', error, {
+            walletName: connectedWalletName,
+          });
 
           if (isCardanoWalletLockedError(error)) {
             toast.error(CARDANO_WALLET_LOCKED_MESSAGE, {
