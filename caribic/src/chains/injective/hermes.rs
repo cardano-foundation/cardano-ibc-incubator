@@ -602,7 +602,7 @@ fn profile_for_chain(
             // bootstrapped full node, mirroring the existing Osmosis testnet model.
             rpc_addr: config::TESTNET_RPC_URL.to_string(),
             grpc_addr: config::TESTNET_GRPC_URL.to_string(),
-            event_source_url: config::TESTNET_EVENT_SOURCE_URL.to_string(),
+            event_source: HermesEventSource::Pull { interval: "2s" },
             rpc_timeout: "10s",
             trusted_node: Some(true),
             account_prefix: "inj",
