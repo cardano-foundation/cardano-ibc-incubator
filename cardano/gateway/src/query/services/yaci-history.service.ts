@@ -73,6 +73,11 @@ type EpochStartSlotRow = {
   start_slot: string | number | null;
 };
 
+function isOgmiosPointTooOldError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('Target point is too old') || message.includes('Failed to acquire requested point');
+}
+
 @Injectable()
 export class YaciHistoryService implements HistoryService {
   private readonly epochContextCache = new Map<number, Promise<HistoryEpochContextAtBlock | null>>();
@@ -279,6 +284,10 @@ export class YaciHistoryService implements HistoryService {
     return loadPromise;
   }
 
+  async findEpochVerificationContext(epoch: number): Promise<HistoryEpochVerificationContext | null> {
+    return this.findEpochSlotBounds(epoch);
+  }
+
   private async loadEpochContextAtBlock(block: HistoryBlock): Promise<HistoryEpochContextAtBlock | null> {
     const slotBounds = await this.findEpochSlotBounds(block.epochNo);
     if (!slotBounds) {
@@ -290,32 +299,49 @@ export class YaciHistoryService implements HistoryService {
       return null;
     }
 
-    const queryEpochContext = async (pointBlock: Pick<HistoryBlock, 'slotNo' | 'hash'>) =>
-      queryEpochContextAtPoint(
+    const queryEpochContext = async (pointBlock: Pick<HistoryBlock, 'slotNo' | 'hash'>) => {
+      const slot = Number(pointBlock.slotNo);
+      if (!Number.isSafeInteger(slot)) {
+        throw new Error(`Ogmios point slot ${pointBlock.slotNo.toString()} exceeds JavaScript safe integer range`);
+      }
+
+      return queryEpochContextAtPoint(
         ogmiosEndpoint,
         {
-          slot: pointBlock.slotNo,
+          slot,
           hash: pointBlock.hash,
         },
         this.configService.get<string>('cardanoEpochNonceGenesis'),
       );
+    };
 
     let epochContext;
     try {
       epochContext = await queryEpochContext(block);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       const fallbackBlock = await this.findLatestBlockInEpoch(block.epochNo);
       const canRetryWithSameEpochPoint =
-        fallbackBlock &&
-        fallbackBlock.height !== block.height &&
-        (message.includes('Target point is too old') || message.includes('Failed to acquire requested point'));
+        fallbackBlock && fallbackBlock.height !== block.height && isOgmiosPointTooOldError(error);
 
       if (!canRetryWithSameEpochPoint) {
         throw error;
       }
 
-      epochContext = await queryEpochContext(fallbackBlock);
+      try {
+        epochContext = await queryEpochContext(fallbackBlock);
+      } catch (fallbackError) {
+        if (!isOgmiosPointTooOldError(fallbackError)) {
+          throw fallbackError;
+        }
+
+        // Historical same-epoch headers do not carry a new epoch context; the
+        // counterparty already has it. Slot bounds from indexed history are enough.
+        return {
+          epoch: block.epochNo,
+          stakeDistribution: [],
+          verificationContext: slotBounds,
+        };
+      }
     }
 
     if (epochContext.currentEpoch !== block.epochNo) {

@@ -67,6 +67,7 @@ const TRANSIENT_OGMIOS_ERROR_MARKERS = [
   'etimedout',
   'socket hang up',
   'network timeout',
+  'timed out',
   'failed to fetch',
   'temporarily unavailable',
 ];

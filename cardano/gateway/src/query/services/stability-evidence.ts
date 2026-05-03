@@ -434,13 +434,13 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     `Stake-weighted stability anchor block for height ${anchorBlock.height}`,
   );
 
-  const trustedEpochContext =
+  const trustedEpochVerificationContext =
     trustedBlock.epochNo === anchorBlock.epochNo
-      ? anchorEpochContext
-      : await historyService.findEpochContextAtBlock(trustedBlock);
-  if (!trustedEpochContext) {
+      ? anchorEpochContext.verificationContext
+      : await historyService.findEpochVerificationContext(trustedBlock.epochNo);
+  if (!trustedEpochVerificationContext) {
     throw historyNotReady(
-      `Epoch context unavailable for trusted height ${trustedBlock.height} in epoch ${trustedBlock.epochNo}`,
+      `Epoch verification context unavailable for trusted height ${trustedBlock.height} in epoch ${trustedBlock.epochNo}`,
     );
   }
 
@@ -462,9 +462,11 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
   }
   for (const block of bridgeBlocks) {
     if (block.epochNo === trustedBlock.epochNo) {
+      // The counterparty client already stores the trusted epoch context; the Gateway only needs
+      // indexed slot bounds here to validate that bridge blocks stay inside the trusted epoch.
       assertBlocksRemainWithinEpochSlotBounds(
         [block],
-        trustedEpochContext.verificationContext,
+        trustedEpochVerificationContext,
         `Stake-weighted stability bridge segment for anchor height ${height.toString()}`,
       );
       continue;

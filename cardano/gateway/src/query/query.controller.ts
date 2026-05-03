@@ -14,6 +14,8 @@ import {
   QueryNewClientResponse,
 } from '@plus/proto-types/build/ibc/core/client/v1/query';
 import {
+  QueryClientConnectionsRequest,
+  QueryClientConnectionsResponse,
   QueryConnectionRequest,
   QueryConnectionResponse,
   QueryConnectionsRequest,
@@ -138,6 +140,12 @@ export class QueryController {
   async queryConnections(request: QueryConnectionsRequest): Promise<QueryConnectionsResponse> {
     const response: QueryConnectionsResponse = await this.connectionService.queryConnections(request);
     return response as unknown as QueryConnectionsResponse;
+  }
+
+  @GrpcMethod('Query', 'ClientConnections')
+  async queryClientConnections(request: QueryClientConnectionsRequest): Promise<QueryClientConnectionsResponse> {
+    const response: QueryClientConnectionsResponse = await this.connectionService.queryClientConnections(request);
+    return response as unknown as QueryClientConnectionsResponse;
   }
 
   @GrpcMethod('Query', 'Connection')

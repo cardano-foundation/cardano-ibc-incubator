@@ -65,6 +65,7 @@ export type HistoryService = {
   findBridgeBlocks(trustedHeight: bigint, anchorHeight: bigint): Promise<HistoryBlock[]>;
   findDescendantBlocks(anchorHeight: bigint, limit: number): Promise<HistoryBlock[]>;
   findEpochContextAtBlock(block: HistoryBlock): Promise<HistoryEpochContextAtBlock | null>;
+  findEpochVerificationContext(epoch: number): Promise<HistoryEpochVerificationContext | null>;
   findUtxoClientOrAuthHandler(height: number): Promise<UtxoDto[]>;
   checkExistPoolUpdateByBlockNo(height: number): Promise<boolean>;
   checkExistPoolRetireByBlockNo(height: number): Promise<boolean>;
