@@ -10,7 +10,7 @@ pub struct HermesCosmosChainProfile {
     pub id: String,
     pub rpc_addr: String,
     pub grpc_addr: String,
-    pub event_source_url: String,
+    pub event_source: HermesEventSource,
     pub rpc_timeout: &'static str,
     pub trusted_node: Option<bool>,
     pub account_prefix: &'static str,
@@ -29,6 +29,16 @@ pub struct HermesCosmosChainProfile {
     pub memo_prefix: Option<&'static str>,
     pub trust_threshold: HermesTrustThreshold,
     pub compat_mode: Option<&'static str>,
+}
+
+pub enum HermesEventSource {
+    Push {
+        url: String,
+        batch_delay: &'static str,
+    },
+    Pull {
+        interval: &'static str,
+    },
 }
 
 pub enum HermesAddressType {
@@ -188,10 +198,7 @@ fn render_cosmos_chain_block(profile: &HermesCosmosChainProfile) -> String {
     lines.push("type = 'CosmosSdk'".to_string());
     lines.push(format!("rpc_addr = '{}'", profile.rpc_addr));
     lines.push(format!("grpc_addr = '{}'", profile.grpc_addr));
-    lines.push(format!(
-        "event_source = {{ mode = 'push', url = '{}', batch_delay = '200ms' }}",
-        profile.event_source_url
-    ));
+    lines.push(render_event_source(&profile.event_source));
     lines.push(format!("rpc_timeout = '{}'", profile.rpc_timeout));
     if let Some(trusted_node) = profile.trusted_node {
         lines.push(format!("trusted_node = {}", trusted_node));
@@ -225,6 +232,21 @@ fn render_cosmos_chain_block(profile: &HermesCosmosChainProfile) -> String {
         lines.push(format!("compat_mode = '{}'", compat_mode));
     }
     lines.join("\n")
+}
+
+fn render_event_source(event_source: &HermesEventSource) -> String {
+    match event_source {
+        HermesEventSource::Push { url, batch_delay } => format!(
+            "event_source = {{ mode = 'push', url = '{}', batch_delay = '{}' }}",
+            url, batch_delay
+        ),
+        HermesEventSource::Pull { interval } => {
+            format!(
+                "event_source = {{ mode = 'pull', interval = '{}' }}",
+                interval
+            )
+        }
+    }
 }
 
 fn render_address_type(address_type: &HermesAddressType) -> String {

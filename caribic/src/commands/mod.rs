@@ -12,6 +12,7 @@ pub mod query;
 pub mod start;
 pub mod stop;
 pub mod test;
+pub mod yaci_checkpoint;
 
 pub use audit::run_audit;
 pub use benchmark::run_denom_registry_benchmark;
@@ -27,3 +28,4 @@ pub use query::run_list_clients;
 pub use start::run_start;
 pub use stop::run_stop;
 pub use test::run_tests;
+pub use yaci_checkpoint::run_yaci_checkpoint;

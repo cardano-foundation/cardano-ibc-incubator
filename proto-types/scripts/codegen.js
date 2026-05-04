@@ -1,10 +1,59 @@
 #!/usr/bin/env node
 
 const { join } = require("path");
-const { writeFileSync } = require("fs");
+const { readFileSync, writeFileSync } = require("fs");
 const telescope = require("@cosmology/telescope").default;
 
 const outPath = join(__dirname, "/../src");
+
+function preserveUnsignedVarintHelpers() {
+  const varintPath = join(outPath, "varint.ts");
+  let source = readFileSync(varintPath, "utf8");
+
+  const preservedWriteVarint64 = `export function writeVarint64(val: { lo: number; hi: number }, buf: Uint8Array | number[], pos: number) {
+  let lo = val.lo >>> 0;
+  let hi = val.hi >>> 0;
+
+  while (hi) {
+    buf[pos++] = (lo & 127) | 128;
+    lo = ((lo >>> 7) | (hi << 25)) >>> 0;
+    hi >>>= 7;
+  }
+  while (lo > 127) {
+    buf[pos++] = (lo & 127) | 128;
+    lo >>>= 7;
+  }
+  buf[pos++] = lo;
+}`;
+
+  const generatedInt64Length = `export function int64Length(lo: number, hi: number) {
+  let part0 = lo,
+    part1 = ((lo >>> 28) | (hi << 4)) >>> 0,
+    part2 = hi >>> 24;`;
+
+  const preservedInt64Length = `export function int64Length(lo: number, hi: number) {
+  const unsignedLo = lo >>> 0;
+  const unsignedHi = hi >>> 0;
+  let part0 = unsignedLo,
+    part1 = ((unsignedLo >>> 28) | (unsignedHi << 4)) >>> 0,
+    part2 = unsignedHi >>> 24;`;
+
+  const withPreservedWrite = source.replace(
+    /export function writeVarint64\([\s\S]*?\n\}\n\nexport function int64Length/,
+    `${preservedWriteVarint64}\n\nexport function int64Length`,
+  );
+  if (withPreservedWrite === source) {
+    throw new Error("Unable to preserve unsigned writeVarint64 helper");
+  }
+
+  const withPreservedLength = withPreservedWrite.replace(generatedInt64Length, preservedInt64Length);
+  if (withPreservedLength === withPreservedWrite) {
+    throw new Error("Unable to preserve unsigned int64Length helper");
+  }
+
+  source = withPreservedLength;
+  writeFileSync(varintPath, source);
+}
 
 telescope({
   protoDirs: ["protos/ibc-go"],
@@ -107,6 +156,7 @@ telescope({
     export { DeepPartial, Exact } from "./helpers";
     `;
     writeFileSync(`${outPath}/index.ts`, index_ts);
+    preserveUnsignedVarintHelpers();
 
     console.log("All Done!");
   },

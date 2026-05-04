@@ -9,7 +9,8 @@ use serde_json::Value;
 
 use crate::chains::hermes_support;
 use crate::chains::hermes_support::{
-    HermesAddressType, HermesCosmosChainProfile, HermesGasPrice, HermesTrustThreshold,
+    HermesAddressType, HermesCosmosChainProfile, HermesEventSource, HermesGasPrice,
+    HermesTrustThreshold,
 };
 use crate::chains::osmosis::config as osmosis_config;
 use crate::config;
@@ -421,7 +422,10 @@ fn local_chain_profile() -> HermesCosmosChainProfile {
         id: osmosis_config::LOCAL_CHAIN_ID.to_string(),
         rpc_addr: osmosis_config::LOCAL_RPC_URL.to_string(),
         grpc_addr: "http://127.0.0.1:9094".to_string(),
-        event_source_url: "ws://127.0.0.1:26658/websocket".to_string(),
+        event_source: HermesEventSource::Push {
+            url: "ws://127.0.0.1:26658/websocket".to_string(),
+            batch_delay: "200ms",
+        },
         rpc_timeout: "10s",
         trusted_node: None,
         account_prefix: "osmo",
@@ -454,7 +458,10 @@ fn testnet_chain_profile() -> HermesCosmosChainProfile {
         id: osmosis_config::TESTNET_CHAIN_ID.to_string(),
         rpc_addr: osmosis_config::TESTNET_RPC_URL.to_string(),
         grpc_addr: osmosis_config::TESTNET_GRPC_URL.to_string(),
-        event_source_url: osmosis_config::TESTNET_EVENT_SOURCE_URL.to_string(),
+        event_source: HermesEventSource::Push {
+            url: osmosis_config::TESTNET_EVENT_SOURCE_URL.to_string(),
+            batch_delay: "200ms",
+        },
         rpc_timeout: "10s",
         trusted_node: None,
         account_prefix: "osmo",

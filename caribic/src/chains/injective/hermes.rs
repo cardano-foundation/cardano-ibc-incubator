@@ -9,7 +9,8 @@ use serde_json::Value;
 use super::config;
 use crate::chains::hermes_support;
 use crate::chains::hermes_support::{
-    HermesAddressType, HermesCosmosChainProfile, HermesGasPrice, HermesTrustThreshold,
+    HermesAddressType, HermesCosmosChainProfile, HermesEventSource, HermesGasPrice,
+    HermesTrustThreshold,
 };
 use crate::logger::{log, verbose};
 use crate::process::hermes::HermesCli;
@@ -465,7 +466,10 @@ fn profile_for_chain(
             id: config::LOCAL_CHAIN_ID.to_string(),
             rpc_addr: format!("http://127.0.0.1:{}", config::LOCAL_RPC_PORT),
             grpc_addr: format!("http://127.0.0.1:{}", config::LOCAL_GRPC_PORT),
-            event_source_url: format!("ws://127.0.0.1:{}/websocket", config::LOCAL_RPC_PORT),
+            event_source: HermesEventSource::Push {
+                url: format!("ws://127.0.0.1:{}/websocket", config::LOCAL_RPC_PORT),
+                batch_delay: "200ms",
+            },
             rpc_timeout: "10s",
             trusted_node: Some(true),
             account_prefix: "inj",
@@ -495,9 +499,11 @@ fn profile_for_chain(
         }),
         config::TESTNET_CHAIN_ID => Ok(HermesCosmosChainProfile {
             id: config::TESTNET_CHAIN_ID.to_string(),
-            rpc_addr: format!("http://127.0.0.1:{}", config::TESTNET_RPC_PORT),
-            grpc_addr: format!("http://127.0.0.1:{}", config::TESTNET_GRPC_PORT),
-            event_source_url: format!("ws://127.0.0.1:{}/websocket", config::TESTNET_RPC_PORT),
+            // Injective testnet is consumed through public endpoints rather than a locally
+            // bootstrapped full node, mirroring the existing Osmosis testnet model.
+            rpc_addr: config::TESTNET_RPC_URL.to_string(),
+            grpc_addr: config::TESTNET_GRPC_URL.to_string(),
+            event_source: HermesEventSource::Pull { interval: "2s" },
             rpc_timeout: "10s",
             trusted_node: Some(true),
             account_prefix: "inj",
@@ -509,7 +515,9 @@ fn profile_for_chain(
             default_gas: 5_000_000,
             max_gas: 9_000_000,
             gas_price: HermesGasPrice {
-                price: "0.025",
+                // Injective testnet validators enforce a high min gas price in base units.
+                // Current effective floor observed from testnet rejection responses is 500,000,000inj.
+                price: "500000000",
                 denom: "inj",
             },
             gas_multiplier: "1.8",
