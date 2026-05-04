@@ -891,6 +891,7 @@ pub async fn deploy_contracts(
             &optional_progress_bar,
         );
 
+        // Verbose trace builds embed Aiken trace data in validators and can exceed Cardano tx size limits when deployed as reference scripts.
         let build_args = if is_verbose {
             vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
         } else {
