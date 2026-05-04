@@ -49,7 +49,7 @@ export type TxOperationPlan<TExtraResponseFields = Record<string, never>> = {
   wallet: TxWalletInstruction;
   completeOptions?: TxCompleteOptions;
   completeRetry?: TxCompleteRetryPolicy;
-  pendingTreeUpdate?: PendingTreeUpdate;
+  pendingTreeUpdate?: PendingTreeUpdate | (() => PendingTreeUpdate | undefined);
   syntheticEvents?: GatewayEvent[];
   extraResponseFields?: TExtraResponseFields;
 };
@@ -84,8 +84,12 @@ export class TxOperationRunnerService {
     const unsignedTxHash = completedUnsignedTx.toHash();
     const unsignedTxBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
-    if (plan.pendingTreeUpdate) {
-      this.ibcTreePendingUpdatesService.register(unsignedTxHash, plan.pendingTreeUpdate);
+    const pendingTreeUpdate =
+      typeof plan.pendingTreeUpdate === 'function'
+        ? plan.pendingTreeUpdate()
+        : plan.pendingTreeUpdate;
+    if (pendingTreeUpdate) {
+      this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
     }
 
     if (plan.syntheticEvents && plan.syntheticEvents.length > 0) {
@@ -147,6 +151,12 @@ export class TxOperationRunnerService {
           retryPolicy.isRetryable(error);
 
         if (!shouldRetry) {
+          throw error;
+        }
+        if (!plan.rebuildUnsignedTx) {
+          console.warn(
+            `[txRunner] ${plan.operationName} retryable failure but no rebuildUnsignedTx callback was provided; not retrying mutable tx builder`,
+          );
           throw error;
         }
 
