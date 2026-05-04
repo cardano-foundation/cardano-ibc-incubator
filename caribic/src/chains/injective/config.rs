@@ -23,6 +23,8 @@ pub(super) const LOCAL_GENTX_AMOUNT: &str = "50000000000000000000stake";
 
 pub(super) const TESTNET_CHAIN_ID: &str = "injective-888";
 pub(super) const TESTNET_MONIKER: &str = "caribic-injective-testnet";
+pub(super) const TESTNET_RPC_URL: &str = "https://injective-testnet-rpc.polkachu.com:443";
+pub(super) const TESTNET_GRPC_URL: &str = "http://injective-testnet-grpc.polkachu.com:14390";
 pub(super) const TESTNET_SNAPSHOT_URL: &str = "";
 pub(super) const TESTNET_SNAPSHOT_PAGE_URL: &str =
     "https://www.polkachu.com/testnets/injective/snapshots";
