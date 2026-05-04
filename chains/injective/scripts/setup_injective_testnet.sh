@@ -42,25 +42,13 @@ download_snapshot_to_file() {
 
   # Download snapshots to a real file first so retries do not corrupt a streamed tar pipeline.
   if command -v curl >/dev/null 2>&1; then
-    if [ -f "${destination_file}" ]; then
-      echo "[injective-testnet] Resuming snapshot download into ${destination_file} ..."
-    else
-      echo "[injective-testnet] Starting snapshot download into ${destination_file} ..."
-    fi
-
-    curl -fL --http1.1 -C - --retry 10 --retry-all-errors --retry-delay 5 --connect-timeout 20 \
+    curl -fL --retry 5 --retry-all-errors --connect-timeout 10 \
       -o "$destination_file" "$url"
     return 0
   fi
 
   if command -v wget >/dev/null 2>&1; then
-    if [ -f "${destination_file}" ]; then
-      echo "[injective-testnet] Resuming snapshot download into ${destination_file} ..."
-    else
-      echo "[injective-testnet] Starting snapshot download into ${destination_file} ..."
-    fi
-
-    wget -c -qO "$destination_file" "$url"
+    wget -qO "$destination_file" "$url"
     return 0
   fi
 
@@ -135,25 +123,16 @@ restore_snapshot() {
   mkdir -p "${INJECTIVE_HOME}"
 
   snapshot_archive_file="${INJECTIVE_HOME}/.caribic_injective_snapshot.tar.lz4"
-  snapshot_source_marker_file="${snapshot_archive_file}.source"
-  existing_snapshot_source=""
-  if [ -f "${snapshot_source_marker_file}" ]; then
-    existing_snapshot_source="$(cat "${snapshot_source_marker_file}")"
-  fi
-  if [ -f "${snapshot_archive_file}" ] && [ "${existing_snapshot_source}" != "${snapshot_url}" ]; then
-    echo "[injective-testnet] Removing stale snapshot archive from a different source URL."
-    rm -f "${snapshot_archive_file}" "${snapshot_source_marker_file}"
-  fi
-
+  rm -f "${snapshot_archive_file}"
   echo "[injective-testnet] Downloading snapshot archive to ${snapshot_archive_file} ..."
-  printf '%s\n' "${snapshot_url}" > "${snapshot_source_marker_file}"
   download_snapshot_to_file "${snapshot_url}" "${snapshot_archive_file}"
 
   if ! lz4 -d "${snapshot_archive_file}" - | tar -x -C "${INJECTIVE_HOME}"; then
-    echo "[injective-testnet] Snapshot bootstrap failed while downloading/decompressing/extracting. Keeping the archive so the next run can resume or reuse it."
+    rm -f "${snapshot_archive_file}"
+    echo "[injective-testnet] Snapshot bootstrap failed while downloading/decompressing/extracting."
     exit 1
   fi
-  rm -f "${snapshot_archive_file}" "${snapshot_source_marker_file}"
+  rm -f "${snapshot_archive_file}"
 
   # Some providers package files under an "injectived/" root directory.
   if [ -d "${INJECTIVE_HOME}/injectived" ] && [ ! -d "${INJECTIVE_HOME}/data" ]; then
