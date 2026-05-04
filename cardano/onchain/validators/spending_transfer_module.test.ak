@@ -1186,7 +1186,11 @@ test on_timeout_packet_unescrow_succeed() {
   let receiver_output =
     Output {
       address: from_verification_key(sender_public_key_hash),
-      value: from_asset(ada_policy_id, ada_asset_name, transfer_amount),
+      value: from_asset(
+        ada_policy_id,
+        ada_asset_name,
+        transfer_amount + 1_000_000,
+      ),
       datum: NoDatum,
       reference_script: None,
     }

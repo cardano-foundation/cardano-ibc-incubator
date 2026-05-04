@@ -412,22 +412,27 @@ export function writeVarint32(val: number, buf: Uint8Array | number[], pos: numb
  * writing varint64 to pos
  */
 export function writeVarint64(val: { lo: number; hi: number }, buf: Uint8Array | number[], pos: number) {
-  while (val.hi) {
-    buf[pos++] = (val.lo & 127) | 128;
-    val.lo = ((val.lo >>> 7) | (val.hi << 25)) >>> 0;
-    val.hi >>>= 7;
+  let lo = val.lo >>> 0;
+  let hi = val.hi >>> 0;
+
+  while (hi) {
+    buf[pos++] = (lo & 127) | 128;
+    lo = ((lo >>> 7) | (hi << 25)) >>> 0;
+    hi >>>= 7;
   }
-  while (val.lo > 127) {
-    buf[pos++] = (val.lo & 127) | 128;
-    val.lo = val.lo >>> 7;
+  while (lo > 127) {
+    buf[pos++] = (lo & 127) | 128;
+    lo >>>= 7;
   }
-  buf[pos++] = val.lo;
+  buf[pos++] = lo;
 }
 
 export function int64Length(lo: number, hi: number) {
-  let part0 = lo,
-    part1 = ((lo >>> 28) | (hi << 4)) >>> 0,
-    part2 = hi >>> 24;
+  const unsignedLo = lo >>> 0;
+  const unsignedHi = hi >>> 0;
+  let part0 = unsignedLo,
+    part1 = ((unsignedLo >>> 28) | (unsignedHi << 4)) >>> 0,
+    part2 = unsignedHi >>> 24;
   return part2 === 0
     ? part1 === 0
       ? part0 < 16384

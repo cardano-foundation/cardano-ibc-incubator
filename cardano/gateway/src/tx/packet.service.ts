@@ -1205,15 +1205,23 @@ export class PacketService {
     try {
       this.logger.log('timeoutPacket is processing');
       const { constructedAddress, timeoutPacketOperator } = validateAndFormatTimeoutPacketParams(data);
-      await this.refreshWalletContext(constructedAddress, 'timeoutPacketBuilder');
-      const { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate } = await this.buildUnsignedTimeoutPacketTx(
-        timeoutPacketOperator,
-        constructedAddress,
-      );
+      const buildTimeoutAttempt = async () => {
+        await this.refreshWalletContext(constructedAddress, 'timeoutPacketBuilder');
+        return this.buildUnsignedTimeoutPacketTx(
+          timeoutPacketOperator,
+          constructedAddress,
+        );
+      };
+      let { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate } = await buildTimeoutAttempt();
       const { validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'timeoutPacket',
         unsignedTx: unsignedSendPacketTx,
+        rebuildUnsignedTx: async () => {
+          const rebuilt = await buildTimeoutAttempt();
+          pendingTreeUpdate = rebuilt.pendingTreeUpdate;
+          return rebuilt.unsignedTx;
+        },
         validity: {
           apply: (builder: TxBuilder) => builder.validTo(validToTime),
         },
@@ -1226,7 +1234,7 @@ export class PacketService {
           localUPLCEval: false,
           setCollateral: TRANSACTION_SET_COLLATERAL,
         },
-        pendingTreeUpdate,
+        pendingTreeUpdate: () => pendingTreeUpdate,
       });
 
       this.logger.log('Returning unsigned tx for timeout packet');

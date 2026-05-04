@@ -168,8 +168,9 @@ experimental_close_on_slow_client = false
 # See https://github.com/tendermint/tendermint/issues/3435
 timeout_broadcast_tx_commit = "10s"
 
-# Maximum size of request body, in bytes
-max_body_bytes = 1000000
+# Maximum size of request body, in bytes. Cardano proof-carrying IBC txs can
+# exceed the CometBFT default during preprod settlement.
+max_body_bytes = 16777216
 
 # Maximum size of request header, in bytes
 max_header_bytes = 1048576

@@ -898,9 +898,16 @@ fn validate_refund_packet_token(
           }
         },
       )
+    let receiver_delta = post_receiver_token - prev_receiver_token
+    let correct_receiver_amount =
+      if escrowed_token_unit == "lovelace" {
+        receiver_delta >= transfer_amount
+      } else {
+        receiver_delta == transfer_amount
+      }
     and {
       correct_transfer_amount?,
-      post_receiver_token - prev_receiver_token == transfer_amount,
+      correct_receiver_amount?,
     }
   } else {
     expect Some(mint_voucher_redeemer) =
