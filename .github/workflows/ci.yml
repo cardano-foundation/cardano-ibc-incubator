@@ -180,6 +180,8 @@ jobs:
 
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
 
       - name: Build Aiken blueprint
         working-directory: cardano/onchain
@@ -211,6 +213,8 @@ jobs:
 
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
 
       - name: Check formatting
         run: aiken fmt --check
@@ -236,6 +240,8 @@ jobs:
 
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
 
       - name: Regenerate proto types
         run: |
