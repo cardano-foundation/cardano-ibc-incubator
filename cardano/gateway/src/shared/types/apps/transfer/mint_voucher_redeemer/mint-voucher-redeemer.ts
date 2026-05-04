@@ -1,5 +1,4 @@
 import { Data } from '@lucid-evolution/lucid';
-import { FungibleTokenPacketDatum } from '../types/fungible-token-packet-data';
 export type MintVoucherRedeemer =
   | {
       MintVoucher: {

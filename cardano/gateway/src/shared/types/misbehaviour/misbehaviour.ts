@@ -92,7 +92,6 @@ function checkMisbehaviourHeader(
       `current timestamp minus the latest consensus state timestamp is greater than or equal to the trusting period (${currentTimestamp - consState.timestamp} >= ${clientState.trustingPeriod})`,
     );
 
-  const chainID = clientState.chainId;
   // - ValidatorSet must have TrustLevel similarity with trusted FromValidatorSet
   // - ValidatorSets on both headers are valid given the last trusted ValidatorSet
   // if err := tmTrustedValset.VerifyCommitLightTrusting(

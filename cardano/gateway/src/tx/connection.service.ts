@@ -330,7 +330,7 @@ export class ConnectionService {
       );
       const { validToTime } = await this.computeTxValidityWindow();
 
-      const { unsignedTxCbor, unsignedTxHash, unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
+      const { unsignedTxCbor, unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'connectionOpenInit',
         unsignedTx: unsignedConnectionOpenInitTx,
         validity: {

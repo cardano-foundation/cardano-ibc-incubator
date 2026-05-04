@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals } from "@std/assert";
 import type { Script } from "@lucid-evolution/lucid";
 
 import { buildReferenceValidatorBatches } from "./deployment.ts";

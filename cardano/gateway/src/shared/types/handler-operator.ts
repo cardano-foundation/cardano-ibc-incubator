@@ -1,5 +1,4 @@
 import { type Data } from '@lucid-evolution/lucid';
-import { Height } from './height';
 
 export type HandlerOperator =
   | 'CreateClient'

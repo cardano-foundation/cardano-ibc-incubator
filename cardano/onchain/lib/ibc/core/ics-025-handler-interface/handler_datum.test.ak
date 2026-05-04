@@ -130,7 +130,7 @@ fn setup_validate_create_connection() -> (HandlerDatum, HandlerDatum) {
         next_connection_sequence,
         next_channel_sequence,
         bound_port: [],
-      ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
+        ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       },
       token: AuthToken { policy_id: policy_id_sample, name: name_sample },
     }
@@ -142,7 +142,7 @@ fn setup_validate_create_connection() -> (HandlerDatum, HandlerDatum) {
         next_connection_sequence: old_datum.state.next_connection_sequence + 1,
         next_channel_sequence,
         bound_port: [],
-      ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
+        ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       },
       token: AuthToken { policy_id: policy_id_sample, name: name_sample },
     }
@@ -180,7 +180,7 @@ fn setup_validate_create_channel() -> (HandlerDatum, HandlerDatum) {
         next_connection_sequence,
         next_channel_sequence,
         bound_port: [],
-      ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
+        ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       },
       token: AuthToken { policy_id: policy_id_sample, name: name_sample },
     }
@@ -192,7 +192,7 @@ fn setup_validate_create_channel() -> (HandlerDatum, HandlerDatum) {
         next_connection_sequence,
         next_channel_sequence: old_datum.state.next_channel_sequence + 1,
         bound_port: [],
-      ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
+        ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       },
       token: AuthToken { policy_id: policy_id_sample, name: name_sample },
     }
@@ -232,7 +232,7 @@ test is_initialized_valid_succeed() {
         next_connection_sequence: 0,
         next_channel_sequence: 0,
         bound_port: [],
-      ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
+        ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
       },
       token,
     }

@@ -85,7 +85,10 @@ validator spend_transfer_module(
     // as the base token. The transfer module must derive the *same* token name when
     // locating the channel UTxO in the transaction.
     let host_state_nft =
-      AuthToken { policy_id: host_state_nft_policy_id, name: host_state_token_name }
+      AuthToken {
+        policy_id: host_state_nft_policy_id,
+        name: host_state_token_name,
+      }
 
     when redeemer is {
       Callback(cb) ->

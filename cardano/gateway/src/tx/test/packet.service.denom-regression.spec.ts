@@ -347,7 +347,7 @@ describe('PacketService denom regression coverage', () => {
       memo: '',
     };
 
-    const result = await service.buildUnsignedAcknowlegementPacketTx(
+    await service.buildUnsignedAcknowlegementPacketTx(
       {
         channelId: 'channel-7',
         packetSequence,

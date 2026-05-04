@@ -27,7 +27,7 @@ export function validateBasic(vals: ValidatorSet) {
 export function validatorSetFromProto(vp: ValidatorSet): ValidatorSet | null {
   if (!vp) throw new GrpcInvalidArgumentException('nil validator set');
 
-  let vals: ValidatorSet = {} as unknown as ValidatorSet;
+  const vals: ValidatorSet = {} as unknown as ValidatorSet;
   if (vp.validators.some((v) => !v)) throw new GrpcInvalidArgumentException('nil validator'); // Error occurred during validation
 
   vals.validators = vp.validators;

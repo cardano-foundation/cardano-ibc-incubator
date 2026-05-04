@@ -1,5 +1,4 @@
 import { type Data } from '@lucid-evolution/lucid';
-import cbor from 'cbor';
 import { AuthToken } from './auth-token';
 import { ClientDatumState } from './client-datum-state';
 

@@ -8,7 +8,8 @@ fn test_policy_id() -> PolicyId {
 }
 
 test trace_registry_benchmark_voucher_mint_succeeds_for_single_positive_28_byte_asset_name() {
-  let token_name = voucher_asset_name.voucher_denom_hash("transfer/channel-7/benchmark-uatom")
+  let token_name =
+    voucher_asset_name.voucher_denom_hash("transfer/channel-7/benchmark-uatom")
   let mint = from_asset(test_policy_id(), token_name, 1)
   let transaction = Transaction { ..transaction.placeholder, mint }
 
@@ -20,7 +21,8 @@ test trace_registry_benchmark_voucher_mint_succeeds_for_single_positive_28_byte_
 }
 
 test trace_registry_benchmark_voucher_mint_fails_for_multiple_assets() fail {
-  let token_name = voucher_asset_name.voucher_denom_hash("transfer/channel-7/benchmark-uatom")
+  let token_name =
+    voucher_asset_name.voucher_denom_hash("transfer/channel-7/benchmark-uatom")
   let second_token_name =
     voucher_asset_name.voucher_denom_hash("transfer/channel-8/benchmark-uosmo")
   let mint =
@@ -47,7 +49,8 @@ test trace_registry_benchmark_voucher_mint_fails_for_non_28_byte_asset_name() fa
 }
 
 test trace_registry_benchmark_voucher_mint_fails_for_non_positive_quantity() fail {
-  let token_name = voucher_asset_name.voucher_denom_hash("transfer/channel-7/benchmark-uatom")
+  let token_name =
+    voucher_asset_name.voucher_denom_hash("transfer/channel-7/benchmark-uatom")
   let mint = from_asset(test_policy_id(), token_name, 0)
   let transaction = Transaction { ..transaction.placeholder, mint }
 

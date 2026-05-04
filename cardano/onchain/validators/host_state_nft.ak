@@ -14,9 +14,7 @@
 
 use aiken/collection/dict
 use cardano/assets.{PolicyId, tokens}
-use cardano/transaction.{
-  Input, OutputReference, Transaction, find_input,
-}
+use cardano/transaction.{Input, OutputReference, Transaction, find_input}
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 
 /// Redeemer for NFT minting
@@ -55,15 +53,14 @@ validator host_state_nft(utxo_ref: OutputReference) {
     let own_minted = tokens(mint, policy_id)
 
     // 3. Verify exactly 1 token minted with correct name
-    expect
-      dict.size(own_minted) == 1 && {
+    expect dict.size(own_minted) == 1 && {
         expect Some(quantity) = dict.get(own_minted, host_state_token_name)
         quantity == 1
       }
 
     True
   }
-  
+
   else(_) {
     fail @"HostState NFT can only be minted"
   }

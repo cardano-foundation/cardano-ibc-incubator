@@ -132,8 +132,8 @@ test test_create_valid_client() {
       ..transaction.placeholder,
       inputs: [handler_input],
       outputs: [client_output],
-      mint: mint,
-      redeemers: redeemers,
+      mint,
+      redeemers,
       validity_range: interval.before(valid_to),
     }
 
@@ -239,8 +239,8 @@ test fail_create_valid_client() fail {
       ..transaction.placeholder,
       inputs: [handler_input],
       outputs: [client_output],
-      mint: mint,
-      redeemers: redeemers,
+      mint,
+      redeemers,
       validity_range: interval.before(valid_to),
     }
 

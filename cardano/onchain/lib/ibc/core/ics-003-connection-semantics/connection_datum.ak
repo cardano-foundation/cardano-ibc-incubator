@@ -82,9 +82,9 @@ pub fn is_connection_open_ack_valid(
   // NOTE: Avoid relying on derived equality for nested records that contain lists
   // (versions/features). We compare all fields explicitly to ensure OpenAck only
   // mutates the expected parts of the datum.
-
   let ConnectionDatum { state: input_state, token: input_token } = input_datum
-  let ConnectionDatum { state: output_state, token: output_token } = output_datum
+  let ConnectionDatum { state: output_state, token: output_token } =
+    output_datum
 
   let ConnectionEnd {
     client_id: input_client_id,
@@ -138,9 +138,9 @@ pub fn is_connection_open_confirm_valid(
   // NOTE: Avoid relying on derived equality for nested records that contain lists
   // (versions/features). We compare all fields explicitly to ensure OpenConfirm only
   // mutates the connection state.
-
   let ConnectionDatum { state: input_state, token: input_token } = input_datum
-  let ConnectionDatum { state: output_state, token: output_token } = output_datum
+  let ConnectionDatum { state: output_state, token: output_token } =
+    output_datum
 
   let ConnectionEnd {
     client_id: input_client_id,
@@ -177,8 +177,7 @@ fn versions_equal(
     [output_head, ..output_tail] ->
       when input_versions is {
         [] -> False
-        [input_head, ..input_tail] ->
-          and {
+        [input_head, ..input_tail] -> and {
             version_equal(output_head, input_head),
             versions_equal(output_tail, input_tail),
           }
@@ -202,8 +201,7 @@ fn features_equal(
     [output_head, ..output_tail] ->
       when input_features is {
         [] -> False
-        [input_head, ..input_tail] ->
-          and {
+        [input_head, ..input_tail] -> and {
             output_head == input_head,
             features_equal(output_tail, input_tail),
           }

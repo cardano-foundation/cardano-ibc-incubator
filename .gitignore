@@ -63,4 +63,3 @@ run_token_swap.sh
 
 # Internal package build artifacts
 packages/*/dist/
-packages/*/package-lock.json

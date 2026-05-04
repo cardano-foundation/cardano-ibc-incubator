@@ -16,11 +16,11 @@ use ibc/apps/transfer/trace_registry.{
   Directory, InsertTrace, RolloverInsertTrace, Shard, TraceRegistryDatum,
   TraceRegistryDirectoryBucket, TraceRegistryRedeemer, bucket_index_for_hash,
 }
-use ibc/apps/transfer/voucher_metadata as voucher_metadata_datum
 use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
-use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
+use ibc/apps/transfer/voucher_asset_name
+use ibc/apps/transfer/voucher_metadata as voucher_metadata_datum
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/types/acknowledgement_response.{AcknowledgementError}
 use ibc/core/ics_005/types/ibc_module_redeemer.{
@@ -69,9 +69,12 @@ validator mint_voucher(
         let source_prefix =
           transfer_coin.get_denom_prefix(packet_dest_port, packet_dest_channel)
         let prefixed_denom = bytearray.concat(source_prefix, data.denom)
-        let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(prefixed_denom)
+        let voucher_denom_hash =
+          voucher_asset_name.voucher_denom_hash(prefixed_denom)
         let user_token_name =
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_denom_hash)
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(
+            voucher_denom_hash,
+          )
         let reference_token_name =
           voucher_asset_name.voucher_reference_token_name_from_denom_hash(
             voucher_denom_hash,
@@ -199,9 +202,12 @@ validator mint_voucher(
 
         expect Some(transfer_amount) = int.from_utf8(data.amount)
 
-        let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(data.denom)
+        let voucher_denom_hash =
+          voucher_asset_name.voucher_denom_hash(data.denom)
         let user_token_name =
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_denom_hash)
+          voucher_asset_name.voucher_user_token_name_from_denom_hash(
+            voucher_denom_hash,
+          )
         let reference_token_name =
           voucher_asset_name.voucher_reference_token_name_from_denom_hash(
             voucher_denom_hash,
@@ -340,27 +346,23 @@ fn trace_registry_completeness_satisfied(
       bucket_index_for_hash(voucher_hash),
     )
 
-  if
-    matching_registry_update_present(
-      inputs,
-      reference_inputs,
-      redeemers,
-      directory_auth_token,
-      directory_bucket,
-      voucher_hash,
-      full_denom,
-    )
-  {
+  if matching_registry_update_present(
+    inputs,
+    reference_inputs,
+    redeemers,
+    directory_auth_token,
+    directory_bucket,
+    voucher_hash,
+    full_denom,
+  ) {
     Some(FirstSeenMapping)
-  } else if
-    existing_registry_mapping_present(
-      reference_inputs,
-      directory_bucket,
-      directory_auth_token,
-      voucher_hash,
-      full_denom,
-    )
-  {
+  } else if existing_registry_mapping_present(
+    reference_inputs,
+    directory_bucket,
+    directory_auth_token,
+    voucher_hash,
+    full_denom,
+  ) {
     Some(ExistingMapping)
   } else {
     None
@@ -376,15 +378,18 @@ fn find_directory_bucket_witness(
   expect [directory_input] =
     list.filter(
       list.concat(inputs, reference_inputs),
-      fn(input) { input.output |> auth.contain_auth_token(directory_auth_token) },
+      fn(input) {
+        input.output |> auth.contain_auth_token(directory_auth_token)
+      },
     )
 
   expect Directory(directory): TraceRegistryDatum =
     validator_utils.get_inline_datum(directory_input.output)
   expect Some(bucket) =
-    list.find(directory.buckets, fn(candidate) {
-      candidate.bucket_index == bucket_index
-    })
+    list.find(
+      directory.buckets,
+      fn(candidate) { candidate.bucket_index == bucket_index },
+    )
 
   bucket
 }
@@ -404,9 +409,12 @@ fn matching_registry_update_present(
       name: directory_bucket.active_shard_name,
     }
 
-  when list.find(inputs, fn(input) {
-    input.output |> auth.contain_auth_token(active_shard_token)
-  }) is {
+  when
+    list.find(
+      inputs,
+      fn(input) { input.output |> auth.contain_auth_token(active_shard_token) },
+    )
+  is {
     Some(active_shard_input) -> {
       expect Shard(_): TraceRegistryDatum =
         validator_utils.get_inline_datum(active_shard_input.output)
@@ -437,16 +445,14 @@ fn matching_registry_update_present(
                 voucher_hash: redeemer_hash,
                 full_denom: redeemer_full_denom,
               } ->
-                redeemer_hash == voucher_hash &&
-                  redeemer_full_denom == full_denom
+                redeemer_hash == voucher_hash && redeemer_full_denom == full_denom
 
               RolloverInsertTrace {
                 voucher_hash: redeemer_hash,
                 full_denom: redeemer_full_denom,
                 ..
               } ->
-                redeemer_hash == voucher_hash &&
-                  redeemer_full_denom == full_denom
+                redeemer_hash == voucher_hash && redeemer_full_denom == full_denom
 
               _ -> False
             }
@@ -486,14 +492,13 @@ fn existing_registry_mapping_present(
       shard_names,
       directory_auth_token,
       voucher_hash,
-    ) == 1 &&
-      bucket_exact_entry_match_count(
-        reference_inputs,
-        shard_names,
-        directory_auth_token,
-        voucher_hash,
-        full_denom,
-      ) == 1
+    ) == 1 && bucket_exact_entry_match_count(
+      reference_inputs,
+      shard_names,
+      directory_auth_token,
+      voucher_hash,
+      full_denom,
+    ) == 1
   }
 }
 
@@ -512,9 +517,10 @@ fn bucket_shard_reference_inputs_are_complete(
         }
 
       list.length(
-        list.filter(reference_inputs, fn(input) {
-          input.output |> auth.contain_auth_token(shard_token)
-        }),
+        list.filter(
+          reference_inputs,
+          fn(input) { input.output |> auth.contain_auth_token(shard_token) },
+        ),
       ) == 1
     },
   )
@@ -536,9 +542,10 @@ fn bucket_hash_match_count(
           name: shard_name,
         }
       expect Some(shard_input) =
-        list.find(reference_inputs, fn(input) {
-          input.output |> auth.contain_auth_token(shard_token)
-        })
+        list.find(
+          reference_inputs,
+          fn(input) { input.output |> auth.contain_auth_token(shard_token) },
+        )
       expect Shard(shard): TraceRegistryDatum =
         validator_utils.get_inline_datum(shard_input.output)
 
@@ -569,9 +576,10 @@ fn bucket_exact_entry_match_count(
           name: shard_name,
         }
       expect Some(shard_input) =
-        list.find(reference_inputs, fn(input) {
-          input.output |> auth.contain_auth_token(shard_token)
-        })
+        list.find(
+          reference_inputs,
+          fn(input) { input.output |> auth.contain_auth_token(shard_token) },
+        )
       expect Shard(shard): TraceRegistryDatum =
         validator_utils.get_inline_datum(shard_input.output)
 
@@ -597,7 +605,8 @@ fn valid_voucher_output(
 ) -> Bool {
   let voucher_output_value = assets.without_lovelace(voucher_output.value)
   expect [actual_policy_id] = assets.policies(voucher_output_value)
-  expect [only_token_name] = assets.tokens(voucher_output_value, voucher_policy_id) |> dict.keys()
+  expect [only_token_name] =
+    assets.tokens(voucher_output_value, voucher_policy_id) |> dict.keys()
   and {
     (actual_policy_id == voucher_policy_id)?,
     (only_token_name == asset_name)?,
@@ -644,9 +653,11 @@ fn metadata_output_valid(
     list.filter(
       outputs,
       fn(output) {
-        output.address == metadata_address &&
-          quantity_of(output.value, voucher_policy_id, reference_token_name) ==
-            1
+        output.address == metadata_address && quantity_of(
+          output.value,
+          voucher_policy_id,
+          reference_token_name,
+        ) == 1
       },
     )
 
@@ -656,19 +667,20 @@ fn metadata_output_valid(
     Some(FirstSeenMapping) ->
       when metadata_outputs is {
         [metadata_output] -> {
-          expect [policy_id] = metadata_output.value |> assets.without_lovelace |> assets.policies()
+          expect [policy_id] =
+            metadata_output.value
+              |> assets.without_lovelace
+              |> assets.policies()
           expect [token_name] =
-            assets.tokens(metadata_output.value, voucher_policy_id) |> dict.keys()
+            assets.tokens(metadata_output.value, voucher_policy_id)
+              |> dict.keys()
           expect InlineDatum(metadata_datum) = metadata_output.datum
 
-          policy_id == voucher_policy_id &&
-            token_name == reference_token_name &&
-            metadata_datum ==
-              voucher_metadata_datum.build_datum(
-                full_denom,
-                user_token_name,
-                voucher_policy_id,
-              )
+          policy_id == voucher_policy_id && token_name == reference_token_name && metadata_datum == voucher_metadata_datum.build_datum(
+            full_denom,
+            user_token_name,
+            voucher_policy_id,
+          )
         }
 
         _ -> False

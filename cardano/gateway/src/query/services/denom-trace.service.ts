@@ -23,7 +23,6 @@ import {
   decodeTraceRegistryDatum,
   encodeTraceRegistryDatum,
   encodeTraceRegistryRedeemer,
-  TraceRegistryDatum,
   TraceRegistryDirectoryBucket,
   TraceRegistryDirectoryDatum,
   TraceRegistryShardDatum,

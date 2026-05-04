@@ -60,7 +60,10 @@ fn setup() -> MockData {
     }
 
   let host_state_input =
-    Input { output_reference: host_state_output_reference, output: host_state_output }
+    Input {
+      output_reference: host_state_output_reference,
+      output: host_state_output,
+    }
 
   let client_token =
     AuthToken { policy_id: "mock policy_id", name: "mock name" }
@@ -339,12 +342,7 @@ test update_client_misbehaviour_conflict_header() {
     )
 
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      validity_range: validity_range,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, validity_range }
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
@@ -579,12 +577,7 @@ test update_client_misbehaviour_monotonic_time_violation() {
     )
 
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      validity_range: validity_range,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, validity_range }
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
@@ -810,12 +803,7 @@ test update_client_verify_adjacent_succeed() {
     )
 
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      validity_range: validity_range,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, validity_range }
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
@@ -1038,12 +1026,7 @@ test update_client_verify_adjacent_fails_without_host_state_co_spend() fail {
     )
 
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      validity_range: validity_range,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, validity_range }
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
@@ -1269,12 +1252,7 @@ test update_client_verify_non_adjacent_succeed() {
     )
 
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      validity_range: validity_range,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, validity_range }
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,

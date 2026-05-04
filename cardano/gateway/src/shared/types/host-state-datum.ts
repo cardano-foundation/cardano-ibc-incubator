@@ -1,4 +1,3 @@
-import { AuthToken } from './auth-token';
 import { type Data } from '@lucid-evolution/lucid';
 
 export type HostStateDatum = {

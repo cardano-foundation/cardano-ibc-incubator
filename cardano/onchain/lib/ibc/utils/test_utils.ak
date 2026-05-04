@@ -69,7 +69,7 @@ pub fn update_client(
       state: ClientDatumState {
         client_state: ClientState {
           ..client_datum.state.client_state,
-          latest_height: latest_height,
+          latest_height,
         },
         consensus_states: [
           Pair(height, consensus_state),

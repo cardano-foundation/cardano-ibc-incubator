@@ -336,7 +336,7 @@ export class SubmissionService {
           this.logger.log(`Transaction ${txHash} confirmed`);
           return true;
         }
-      } catch (error) {
+      } catch (_error) {
         // awaitTx throws if timeout reached, continue polling
         this.logger.debug(`Polling for tx confirmation: ${txHash}`);
       }

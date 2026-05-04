@@ -9,7 +9,9 @@ const ogmiosUrl = Deno.env.get("OGMIOS_URL");
 const cardanoNetworkMagic = Deno.env.get("CARDANO_NETWORK_MAGIC");
 
 if (!cardanoNetworkMagic) {
-  throw new Error("CARDANO_NETWORK_MAGIC is not set in the environment variables");
+  throw new Error(
+    "CARDANO_NETWORK_MAGIC is not set in the environment variables",
+  );
 }
 
 if (!deployerSk || !kupoUrl || !ogmiosUrl) {

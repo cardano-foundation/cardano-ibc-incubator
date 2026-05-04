@@ -35,10 +35,7 @@ pub type TraceRegistryDatum {
 }
 
 pub type TraceRegistryRedeemer {
-  InsertTrace {
-    voucher_hash: ByteArray,
-    full_denom: ByteArray,
-  }
+  InsertTrace { voucher_hash: ByteArray, full_denom: ByteArray }
   RolloverInsertTrace {
     voucher_hash: ByteArray,
     full_denom: ByteArray,

@@ -401,7 +401,7 @@ fn update_client(
       state: ClientDatumState {
         client_state: ClientState {
           ..client_datum.state.client_state,
-          latest_height: latest_height,
+          latest_height,
         },
         consensus_states: [
           Pair(height, consensus_state),
@@ -467,7 +467,8 @@ test chan_open_ack_succeed() {
 
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
-  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
+  let inputs =
+    [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 14 }
@@ -636,11 +637,11 @@ test chan_open_ack_succeed() {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: inputs,
-      reference_inputs: reference_inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-      validity_range: validity_range,
+      inputs,
+      reference_inputs,
+      outputs,
+      redeemers,
+      validity_range,
     }
 
   spending_channel.spend_channel.spend(
@@ -694,7 +695,8 @@ test chan_open_confirm_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
+  let inputs =
+    [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 16 }
@@ -850,11 +852,11 @@ test chan_open_confirm_succeed() {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: inputs,
-      reference_inputs: reference_inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-      validity_range: validity_range,
+      inputs,
+      reference_inputs,
+      outputs,
+      redeemers,
+      validity_range,
     }
 
   spending_channel.spend_channel.spend(
@@ -908,7 +910,8 @@ test recv_packet_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
+  let inputs =
+    [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 19 }
@@ -1090,11 +1093,11 @@ test recv_packet_succeed() {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: inputs,
-      reference_inputs: reference_inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-      validity_range: validity_range,
+      inputs,
+      reference_inputs,
+      outputs,
+      redeemers,
+      validity_range,
     }
 
   spending_channel.spend_channel.spend(
@@ -1160,7 +1163,8 @@ test send_packet_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
+  let inputs =
+    [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let reference_inputs = [mock_data.connection_input, mock_data.client_input]
@@ -1209,11 +1213,11 @@ test send_packet_succeed() {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: inputs,
-      reference_inputs: reference_inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-      validity_range: validity_range,
+      inputs,
+      reference_inputs,
+      outputs,
+      redeemers,
+      validity_range,
     }
 
   spending_channel.spend_channel.spend(
@@ -1283,7 +1287,8 @@ test timeout_packet_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
+  let inputs =
+    [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height =
@@ -1472,11 +1477,11 @@ test timeout_packet_succeed() {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: inputs,
-      reference_inputs: reference_inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-      validity_range: validity_range,
+      inputs,
+      reference_inputs,
+      outputs,
+      redeemers,
+      validity_range,
     }
 
   spending_channel.spend_channel.spend(
@@ -1544,7 +1549,8 @@ test acknowledge_packet_succeed() {
   let channel_input =
     build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input, mock_data.host_state_input]
+  let inputs =
+    [mock_data.module_input, channel_input, mock_data.host_state_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 20 }
@@ -1723,11 +1729,11 @@ test acknowledge_packet_succeed() {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: inputs,
-      reference_inputs: reference_inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-      validity_range: validity_range,
+      inputs,
+      reference_inputs,
+      outputs,
+      redeemers,
+      validity_range,
     }
 
   spending_channel.spend_channel.spend(
@@ -1793,9 +1799,9 @@ test chan_close_init_succeed() {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: inputs,
+      inputs,
       outputs: [fake_data.host_state_output],
-      redeemers: redeemers,
+      redeemers,
     }
 
   let spend_channel_redeemer = ChanCloseInit
@@ -1857,12 +1863,7 @@ test chan_close_init_fails_without_host_state_co_spend() fail {
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [Pair(Mint(fake_data.chan_close_init_policy_id), chan_close_init_redeemer)]
 
-  let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      redeemers: redeemers,
-    }
+  let transaction = Transaction { ..transaction.placeholder, inputs, redeemers }
 
   let spend_channel_redeemer = ChanCloseInit
 
@@ -1934,9 +1935,9 @@ test chan_close_confirm_succeed() {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: inputs,
+      inputs,
       outputs: [fake_data.host_state_output],
-      redeemers: redeemers,
+      redeemers,
     }
 
   let proof_init = MerkleProof { proofs: [] }

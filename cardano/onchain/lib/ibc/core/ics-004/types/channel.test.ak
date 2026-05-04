@@ -38,8 +38,7 @@ test fail_if_ordering_is_invalid() fail {
 test fail_if_connection_hops_number_is_not_1() fail {
   let channel = setup()
 
-  let invalid_connection_hops =
-    ["connection-99", ..channel.connection_hops]
+  let invalid_connection_hops = ["connection-99", ..channel.connection_hops]
 
   let channel = Channel { ..channel, connection_hops: invalid_connection_hops }
 
@@ -49,8 +48,7 @@ test fail_if_connection_hops_number_is_not_1() fail {
 test fail_if_connection_id_is_invalid() fail {
   let channel = setup()
 
-  let invalid_connection_hops =
-    ["invalid id ##^^%%"]
+  let invalid_connection_hops = ["invalid id ##^^%%"]
 
   let channel = Channel { ..channel, connection_hops: invalid_connection_hops }
 

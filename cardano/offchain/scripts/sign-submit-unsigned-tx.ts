@@ -4,7 +4,9 @@ import { buildLucidWithCompatibleProtocolParameters } from "../src/protocol_para
 
 const unsignedTxPath = Deno.args[0];
 if (!unsignedTxPath) {
-  throw new Error("Usage: sign-submit-unsigned-tx.ts <unsigned-tx-base64-file>");
+  throw new Error(
+    "Usage: sign-submit-unsigned-tx.ts <unsigned-tx-base64-file>",
+  );
 }
 
 const deployerSk = Deno.env.get("DEPLOYER_SK");
@@ -46,7 +48,8 @@ const lucid = await buildLucidWithCompatibleProtocolParameters(
 );
 lucid.selectWallet.fromPrivateKey(deployerSk);
 
-const signedTx = await lucid.fromTx(resolveUnsignedTxHex(unsignedTxBase64)).sign.withWallet().complete();
+const signedTx = await lucid.fromTx(resolveUnsignedTxHex(unsignedTxBase64)).sign
+  .withWallet().complete();
 const txHash = await signedTx.submit();
 await lucid.awaitTx(txHash, 1000);
 

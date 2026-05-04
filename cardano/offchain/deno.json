@@ -1,13 +1,22 @@
 {
-    "imports": {
-        "@std/crypto": "jsr:@std/crypto@^1.0.5",
-        "@std/path": "jsr:@std/path@^1.0.13",
-        "@std/fs": "jsr:@std/fs@^1.0.13",
-        "@lucid-evolution/lucid": "npm:@lucid-evolution/lucid@0.4.29"
-    },
-    "nodeModulesDir": "auto",
-    "tasks": {
-        "clean": "rm -rf deployments",
-        "start": "deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-ffi --allow-write index.ts"
+  "imports": {
+    "@std/assert": "jsr:@std/assert@^1.0.11",
+    "@std/crypto": "jsr:@std/crypto@^1.0.5",
+    "@std/path": "jsr:@std/path@^1.0.13",
+    "@std/fs": "jsr:@std/fs@^1.0.13",
+    "@lucid-evolution/lucid": "npm:@lucid-evolution/lucid@0.4.29"
+  },
+  "nodeModulesDir": "auto",
+  "lint": {
+    "rules": {
+      "exclude": ["no-explicit-any"]
     }
+  },
+  "tasks": {
+    "clean": "rm -rf deployments",
+    "fmt:check": "deno fmt --check",
+    "lint": "deno lint",
+    "check": "deno check index.ts src/*.ts scripts/*.ts types/**/*.ts",
+    "start": "deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-ffi --allow-write index.ts"
+  }
 }
