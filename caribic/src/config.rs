@@ -183,10 +183,10 @@ fn default_cardano_network_profiles() -> CardanoNetworkProfiles {
                 "https://aggregator.release-preprod.api.mithril.network/aggregator".to_string(),
             mithril_genesis_verification_key:
                 "e2ea7ff3d783299ae9f12ea3c4e425ec70073c17613f1d7de4dd2ebf59c24ef4".to_string(),
-            handler_json_path: "../../cardano/offchain/deployments/preprod-handler.json"
+            handler_json_path: "../../manifests/preprod/cardano-preprod-handler.json"
                 .to_string(),
             bridge_manifest_path: Some(
-                "../../cardano/offchain/deployments/preprod-bridge-manifest.json".to_string(),
+                "../../manifests/preprod/cardano-preprod-bridge-manifest.json".to_string(),
             ),
         },
     }

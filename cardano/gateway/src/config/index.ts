@@ -65,7 +65,9 @@ type DeploymentConfig = {
 interface Config {
   deployment: DeploymentConfig;
   ogmiosEndpoint: string;
+  ogmiosApiKey?: string;
   kupoEndpoint: string;
+  kupoApiKey?: string;
   yaciStoreEndpoint: string;
   entrypointRestEndpoint: string;
   localOsmosisRestEndpoint: string;
@@ -99,7 +101,9 @@ export default (): Partial<Config> => {
 
   return {
     ogmiosEndpoint: process.env.OGMIOS_ENDPOINT,
+    ogmiosApiKey: process.env.OGMIOS_API_KEY,
     kupoEndpoint: process.env.KUPO_ENDPOINT,
+    kupoApiKey: process.env.KUPO_API_KEY,
     yaciStoreEndpoint: process.env.YACI_STORE_ENDPOINT,
     entrypointRestEndpoint: process.env.ENTRYPOINT_REST_ENDPOINT,
     localOsmosisRestEndpoint: process.env.LOCAL_OSMOSIS_REST_ENDPOINT,
