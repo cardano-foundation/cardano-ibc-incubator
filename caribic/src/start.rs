@@ -37,6 +37,8 @@ const HERMES_PROGRESS_LOG_INTERVAL_SECS: u64 = 30;
 const HERMES_PID_FILE_NAME: &str = "hermes.pid";
 const HERMES_STARTUP_CHECK_ATTEMPTS: u32 = 5;
 const HERMES_STARTUP_CHECK_INTERVAL_MILLIS: u64 = 1000;
+const CARDANO_PREPROD_CHAIN_ID: &str = "cardano-preprod";
+const INJECTIVE_TESTNET_CHAIN_ID: &str = "injective-888";
 const GATEWAY_HTTP_READINESS_ATTEMPTS: u32 = 4;
 const GATEWAY_HTTP_READINESS_RETRY_INTERVAL_MILLIS: u64 = 5000;
 const IBC_SWAP_DAPP_SERVICE: &str = "ibc-swap-client";
@@ -107,6 +109,93 @@ pub(crate) fn is_hermes_daemon_command(command: &str, expected_binary_path: Opti
     }
 
     normalized_command.contains("hermes") && normalized_command.ends_with(" start")
+}
+
+fn hermes_config_chain_ids(config: &str) -> Vec<String> {
+    let mut chain_ids = Vec::new();
+    let mut in_chain_block = false;
+
+    for raw_line in config.lines() {
+        let line = raw_line.trim();
+
+        if line == "[[chains]]" {
+            in_chain_block = true;
+            continue;
+        }
+
+        if line.starts_with("[[") {
+            in_chain_block = false;
+            continue;
+        }
+
+        if !in_chain_block {
+            continue;
+        }
+
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+
+        if key.trim() != "id" {
+            continue;
+        }
+
+        let chain_id = value.trim().trim_matches('"').trim_matches('\'').trim();
+        if !chain_id.is_empty() {
+            chain_ids.push(chain_id.to_owned());
+        }
+    }
+
+    chain_ids
+}
+
+fn validate_preprod_hermes_route_coverage(
+    hermes_config: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = fs::read_to_string(hermes_config).map_err(|error| {
+        format!(
+            "Failed to read Hermes config '{}': {}",
+            hermes_config.display(),
+            error
+        )
+    })?;
+    let chain_ids = hermes_config_chain_ids(&config);
+
+    if !chain_ids.iter().any(|id| id == CARDANO_PREPROD_CHAIN_ID) {
+        return Ok(());
+    }
+
+    let required_chain_ids = [ENTRYPOINT_CHAIN_ID, INJECTIVE_TESTNET_CHAIN_ID];
+    let missing_chain_ids: Vec<&str> = required_chain_ids
+        .iter()
+        .copied()
+        .filter(|required| !chain_ids.iter().any(|id| id == required))
+        .collect();
+
+    if missing_chain_ids.is_empty() {
+        return Ok(());
+    }
+
+    let found_chain_ids = if chain_ids.is_empty() {
+        "none".to_owned()
+    } else {
+        chain_ids.join(", ")
+    };
+
+    // Preprod swaps are multi-hop; a Cardano-only Hermes config can strand funds on Entrypoint.
+    Err(format!(
+        "Invalid Hermes route for Cardano preprod swaps.\n\
+         Found chains: {}\n\
+         Missing chains: {}\n\
+         Required route: {} -> {} -> {}\n\
+         Configure the complete Injective testnet route before starting Hermes.",
+        found_chain_ids,
+        missing_chain_ids.join(", "),
+        CARDANO_PREPROD_CHAIN_ID,
+        ENTRYPOINT_CHAIN_ID,
+        INJECTIVE_TESTNET_CHAIN_ID
+    )
+    .into())
 }
 
 /// Get environment variables for Docker Compose, including UID/GID
@@ -222,7 +311,9 @@ fn read_preprod_remote_kupmios_api_keys(
             })
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
-            .ok_or("PREPROD_KUPO_MODE=remote requires GATEWAY_RUNTIME_KUPO_API_KEY or KUPO_API_KEY")?;
+            .ok_or(
+                "PREPROD_KUPO_MODE=remote requires GATEWAY_RUNTIME_KUPO_API_KEY or KUPO_API_KEY",
+            )?;
     let ogmios_api_key = crate::setup::read_gateway_env_value(gateway_env_path, "OGMIOS_API_KEY")?
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
@@ -3472,6 +3563,8 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
     let hermes_config = home_path.join(".hermes/config.toml");
     let hermes_err_log = hermes_log.with_extension("err");
     let expected_binary_str = hermes_binary.to_str();
+
+    validate_preprod_hermes_route_coverage(&hermes_config)?;
 
     if let Some(existing_pid) = read_hermes_pid_file() {
         if is_process_alive(existing_pid)
