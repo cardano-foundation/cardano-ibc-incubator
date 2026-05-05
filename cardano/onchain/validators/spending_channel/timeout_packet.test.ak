@@ -309,14 +309,13 @@ test succeed_timeout_unordered_packet() {
       validity_range,
     }
 
-  timeout_packet.timeout_packet.spend(
+  timeout_packet.timeout_packet.mint(
     mock_data.client_minting_policy_id,
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
-    None,
     mock_data.channel_token,
-    channel_input.output_reference,
+    mock_data.timeout_packet_policy_id,
     transaction,
   )
 }
@@ -485,14 +484,13 @@ test succeed_timeout_ordered_packet() {
       validity_range,
     }
 
-  timeout_packet.timeout_packet.spend(
+  timeout_packet.timeout_packet.mint(
     mock_data.client_minting_policy_id,
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
-    None,
     mock_data.channel_token,
-    channel_input.output_reference,
+    mock_data.timeout_packet_policy_id,
     transaction,
   )
 }

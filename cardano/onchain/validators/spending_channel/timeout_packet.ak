@@ -2,9 +2,7 @@ use aiken/collection/list
 use aiken/collection/pairs
 use aiken/primitive/bytearray.{from_int_big_endian}
 use cardano/assets.{PolicyId}
-use cardano/transaction.{
-  Mint, Output, OutputReference, Redeemer, ScriptPurpose, Transaction,
-}
+use cardano/transaction.{Mint, Output, Redeemer, ScriptPurpose, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -39,10 +37,10 @@ validator timeout_packet(
   port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
 ) {
-  spend(
-    _datum: Option<Data>,
+  // Timeout packet handling mints the channel auth token for this transition.
+  mint(
     channel_token: AuthToken,
-    _spent_output: OutputReference,
+    _timeout_packet_policy_id: PolicyId,
     transaction: Transaction,
   ) {
     let Transaction {
