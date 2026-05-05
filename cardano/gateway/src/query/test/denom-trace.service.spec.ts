@@ -304,7 +304,7 @@ describe('DenomTraceService', () => {
       voucher_policy_id: 'mint-voucher-policy-id',
       ibc_denom_hash: hashSHA256(convertString2Hex(atomTrace)).toLowerCase(),
       cip68_reference_asset_id: `mint-voucher-policy-id000643b0${atomHash}`,
-      name: 'uatom',
+      name: atomTrace,
       description: 'IBC voucher for transfer/channel-7/uatom',
       ticker: 'uatom',
     });
@@ -321,7 +321,7 @@ describe('DenomTraceService', () => {
       voucher_policy_id: 'mint-voucher-policy-id',
       ibc_denom_hash: hashSHA256(convertString2Hex(osmoTrace)).toLowerCase(),
       cip68_reference_asset_id: `mint-voucher-policy-id000643b0${osmoHash}`,
-      name: 'mytoken',
+      name: osmoTrace,
       description: `IBC voucher for ${osmoTrace}`,
       ticker: 'mytoken',
     });
@@ -367,7 +367,7 @@ describe('DenomTraceService', () => {
       voucher_policy_id: 'mint-voucher-policy-id',
       ibc_denom_hash: hashSHA256(convertString2Hex(fullDenom)).toLowerCase(),
       cip68_reference_asset_id: referenceAssetId,
-      name: 'uatom',
+      name: fullDenom,
       description: `IBC voucher for ${fullDenom}`,
       ticker: 'uatom',
     });
