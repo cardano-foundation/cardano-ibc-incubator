@@ -1,6 +1,10 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GrpcInternalException, GrpcInvalidArgumentException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
+import {
+  GrpcInternalException,
+  GrpcInvalidArgumentException,
+  GrpcNotFoundException,
+} from '~@/exception/grpc_exceptions';
 import { DenomTraceService } from '../services/denom-trace.service';
 import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
@@ -44,6 +48,7 @@ describe('QueryService denom trace queries', () => {
       {} as MiniProtocalsService,
       {} as MithrilService,
       denomTraceServiceMock as unknown as DenomTraceService,
+      {} as any,
     );
   });
 

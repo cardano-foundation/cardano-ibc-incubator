@@ -3,18 +3,18 @@ import { KupoService } from '../modules/kupo/kupo.service';
 import { LucidService } from '../modules/lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
 import { rebuildTreeFromChain, initTreeServices, setCurrentTree } from '../helpers/ibc-state-root';
-import { IbcTreeCacheService } from './ibc-tree-cache.service';
+import { CURRENT_IBC_TREE_CACHE_ID, IbcTreeCacheService, ibcTreeCacheIdForRoot } from './ibc-tree-cache.service';
 import { HostStateDatum } from '../types/host-state-datum';
 
 /**
  * TreeInitService - Initializes the IBC state tree on Gateway startup
- * 
+ *
  * Purpose:
  * - Ensures the in-memory Merkle tree is synchronized with on-chain state
  * - Makes Gateway resilient to restarts and crashes
  * - Verifies tree integrity before processing transactions
  * - Caches services for on-demand tree alignment
- * 
+ *
  * Lifecycle:
  * - Called automatically by NestJS on module initialization
  * - Blocks Gateway startup until tree is rebuilt
@@ -33,24 +33,24 @@ export class TreeInitService implements OnModuleInit {
 
   async onModuleInit() {
     this.logger.log('Initializing IBC state tree from on-chain UTXOs...');
-    
+
     // Cache services for on-demand tree alignment (used by alignTreeWithChain)
     initTreeServices(this.kupoService, this.lucidService);
-    
+
     try {
       const cacheEnabled = process.env.IBC_TREE_CACHE_ENABLED !== 'false';
       if (cacheEnabled) {
         await this.ibcTreeCacheService.ensureSchema();
 
-        const cached = await this.ibcTreeCacheService.load('current');
+        const cached = await this.ibcTreeCacheService.load(CURRENT_IBC_TREE_CACHE_ID);
         if (cached) {
           // Verify cached root against the authoritative on-chain HostState commitment.
           const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
-	          if (!hostStateUtxo?.datum) {
-	            throw new Error('HostState UTXO has no datum - cannot verify cached tree');
-	          }
-	          const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
-	          const onChainRoot = hostStateDatum.state.ibc_state_root;
+          if (!hostStateUtxo?.datum) {
+            throw new Error('HostState UTXO has no datum - cannot verify cached tree');
+          }
+          const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
+          const onChainRoot = hostStateDatum.state.ibc_state_root;
 
           if (onChainRoot === cached.root) {
             setCurrentTree(cached.tree);
@@ -64,23 +64,19 @@ export class TreeInitService implements OnModuleInit {
         }
       }
 
-      const { tree, root } = await rebuildTreeFromChain(
-        this.kupoService,
-        this.lucidService,
-      );
-      
+      const { tree, root } = await rebuildTreeFromChain(this.kupoService, this.lucidService);
+
       this.logger.log(`IBC state tree initialized successfully`);
       this.logger.log(`   Root: ${root.substring(0, 16)}...`);
 
       if (process.env.IBC_TREE_CACHE_ENABLED !== 'false') {
         try {
-          await this.ibcTreeCacheService.save(tree, 'current');
+          await this.ibcTreeCacheService.saveAliases(tree, [CURRENT_IBC_TREE_CACHE_ID, ibcTreeCacheIdForRoot(root)]);
           this.logger.log(`Persisted IBC state tree cache, root: ${root.substring(0, 16)}...`);
         } catch (error) {
           this.logger.warn(`Failed to persist IBC state tree cache: ${error?.message ?? error}`);
         }
       }
-      
     } catch (error) {
       this.logger.error(`Failed to initialize IBC state tree: ${error.message}`);
       this.logger.error(`   Gateway cannot start without valid tree state`);
@@ -88,7 +84,7 @@ export class TreeInitService implements OnModuleInit {
       this.logger.error(`   - Kupo is running and indexing`);
       this.logger.error(`   - Handler UTXO exists on-chain`);
       this.logger.error(`   - Kupo has indexed from Handler deployment block`);
-      
+
       // Throw error to prevent Gateway from starting with invalid state
       throw new Error(`Tree initialization failed: ${error.message}`);
     }

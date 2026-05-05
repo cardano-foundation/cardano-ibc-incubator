@@ -117,13 +117,18 @@ import { Denom, Hop } from '@plus/proto-types/build/ibc/applications/transfer/v1
 import { DenomTraceService } from './denom-trace.service';
 import { convertHex2String } from '@shared/helpers/hex';
 import { HISTORY_SERVICE, HistoryBlock, HistoryService } from './history.service';
-import { resolveProofHeightForCurrentRoot } from './proof-context';
-import { resolveCurrentLiveHostStateTxHeight } from './proof-context';
+import {
+  resolveCurrentLiveHostStateTxHeight,
+  resolveProofContextForQuery,
+  resolveProofHeightForCurrentRoot,
+} from './proof-context';
 import {
   loadStakeWeightedStabilityEvidenceByHeight,
   loadStakeWeightedStabilityHeaderEvidence,
   loadStakeWeightedStabilityEvidenceForTxHash,
 } from './stability-evidence';
+import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
+import { ProofQueryOptions } from '../helpers/query-height';
 
 type ParsedTxRedeemer = {
   type: string;
@@ -144,6 +149,7 @@ export class QueryService {
     @Inject(MiniProtocalsService) private miniProtocalsService: MiniProtocalsService,
     @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(DenomTraceService) private denomTraceService: DenomTraceService,
+    @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
   ) {}
 
   /**
@@ -235,6 +241,24 @@ export class QueryService {
       mithrilService: this.mithrilService,
       historyService: this.historyService,
       context,
+      lightClientMode,
+      maxAttempts: lightClientMode === 'stake-weighted-stability' ? 40 : 10,
+      delayMs: lightClientMode === 'stake-weighted-stability' ? 2_000 : 1_500,
+    });
+  }
+
+  private async getProofContext(context: string, requestedHeight?: bigint) {
+    const lightClientMode =
+      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril';
+
+    return resolveProofContextForQuery({
+      logger: this.logger,
+      lucidService: this.lucidService,
+      mithrilService: this.mithrilService,
+      historyService: this.historyService,
+      ibcTreeCacheService: this.ibcTreeCacheService,
+      context,
+      requestedHeight,
       lightClientMode,
       maxAttempts: lightClientMode === 'stake-weighted-stability' ? 40 : 10,
       delayMs: lightClientMode === 'stake-weighted-stability' ? 2_000 : 1_500,
@@ -554,12 +578,14 @@ export class QueryService {
     return decodeHostStateDatum(hostStateUtxo.datum, this.lucidService.LucidImporter);
   }
 
-  private async getClientDatum(clientId: string): Promise<[ClientDatum, UTxO]> {
+  private async getClientDatum(clientId: string, queryHeight?: bigint): Promise<[ClientDatum, UtxoDto | UTxO]> {
     // Client auth tokens are derived from the host-state NFT + client sequence.
     // The sequence alone is enough to derive the token unit; the handler datum is
     // not part of the addressing scheme for persisted client UTxOs.
     const clientAuthTokenUnit = this.lucidService.getClientAuthTokenUnit(BigInt(clientId));
-    const spendClientUTXO = await this.lucidService.findUtxoByUnit(clientAuthTokenUnit);
+    const spendClientUTXO = queryHeight
+      ? await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(clientAuthTokenUnit, queryHeight)
+      : await this.lucidService.findUtxoByUnit(clientAuthTokenUnit);
 
     const clientDatum = await decodeClientDatum(spendClientUTXO.datum, this.lucidService.LucidImporter);
     return [clientDatum, spendClientUTXO];
@@ -622,18 +648,20 @@ export class QueryService {
    *   snapshots are implemented, callers should treat this as "latest only" even if they have their
    *   own notion of query height.
    */
-  async queryClientState(request: QueryClientStateRequest): Promise<QueryClientStateResponse> {
+  async queryClientState(
+    request: QueryClientStateRequest,
+    options: ProofQueryOptions = {},
+  ): Promise<QueryClientStateResponse> {
     this.logger.log(request.client_id, 'queryClientState');
     const { client_id: clientId } = validQueryClientStateParam(request);
 
-    const [clientDatum, spendClientUTXO] = await this.getClientDatum(clientId);
+    const proofContext = await this.getProofContext('queryClientState', options.queryHeight);
+    const [clientDatum, spendClientUTXO] = await this.getClientDatum(
+      clientId,
+      proofContext.historical ? proofContext.proofHeight : undefined,
+    );
     const clientStateTendermint = normalizeClientStateFromDatum(clientDatum.state.clientState);
 
-    // NOTE: The Gateway currently serves proofs from the latest aligned in-memory tree.
-    // Therefore `proof_height` must correspond to the height of the root that those proofs
-    // verify against (i.e., the Mithril-certified height the counterparty will update to),
-    // not the height of the UTxO that happens to store this datum.
-    const proofHeight = await this.getProofHeight('queryClientState');
     const clientStateAny: Any = {
       type_url: '/ibc.lightclients.tendermint.v1.ClientState',
       value: ClientStateTendermint.encode(clientStateTendermint).finish(),
@@ -644,13 +672,11 @@ export class QueryService {
     // `clientId` here is the sequence number after prefix stripping.
     const ibcPath = `clients/07-tendermint-${clientId}/clientState`;
 
-    // CRITICAL: Ensure the in-memory Merkle tree is aligned with on-chain state before
-    // generating proofs. The tree can become stale after Gateway restarts, failed
-    // transactions, or if state was modified by another process. If we generate a proof
-    // from a stale tree, the proof won't verify against the on-chain commitment.
-    await this.ensureTreeAligned();
+    if (!proofContext.historical) {
+      await this.ensureTreeAligned();
+    }
 
-    const tree = getCurrentTree();
+    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
 
     let clientProof: Buffer;
     try {
@@ -668,7 +694,7 @@ export class QueryService {
       proof: clientProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
-        revision_height: proofHeight,
+        revision_height: proofContext.proofHeight,
       },
     };
 
@@ -689,13 +715,20 @@ export class QueryService {
    * This is different from the "query height" concept in queryClientState.
    * See the documentation in client.validate.ts for the full explanation of the two height types.
    */
-  async queryConsensusState(request: QueryConsensusStateRequest): Promise<QueryConsensusStateResponse> {
+  async queryConsensusState(
+    request: QueryConsensusStateRequest,
+    options: ProofQueryOptions = {},
+  ): Promise<QueryConsensusStateResponse> {
     this.logger.log(
       `client_id = ${request.client_id}, revision_number = ${request.revision_number}, revision_height = ${request.revision_height}, latest_height = ${request.latest_height}`,
       'queryConsensusState',
     );
     const { client_id: clientId } = validQueryConsensusStateParam(request);
-    const [clientDatum, spendClientUTXO] = await this.getClientDatum(clientId);
+    const proofContext = await this.getProofContext('queryConsensusState', options.queryHeight);
+    const [clientDatum, spendClientUTXO] = await this.getClientDatum(
+      clientId,
+      proofContext.historical ? proofContext.proofHeight : undefined,
+    );
 
     // Consensus height: identifies which consensus state entry to retrieve
     // If latest_height is true, use the latest consensus state for this client.
@@ -715,17 +748,15 @@ export class QueryService {
       type_url: '/ibc.lightclients.tendermint.v1.ConsensusState',
       value: ConsensusStateTendermint.encode(consensusStateTendermint).finish(),
     };
-    const proofHeight = await this.getProofHeight('queryConsensusState');
 
     // Generate ICS-23 proof from the IBC state tree.
     const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${heightReq}`;
 
-    // CRITICAL: Ensure the in-memory Merkle tree is aligned with on-chain state before
-    // generating proofs. See ensureTreeAligned() for detailed explanation of why this
-    // is necessary and when the tree can become stale.
-    await this.ensureTreeAligned();
+    if (!proofContext.historical) {
+      await this.ensureTreeAligned();
+    }
 
-    const tree = getCurrentTree();
+    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
 
     let consensusProof: Buffer;
     try {
@@ -745,7 +776,7 @@ export class QueryService {
       proof: consensusProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
-        revision_height: proofHeight,
+        revision_height: proofContext.proofHeight,
       },
     };
     return response as unknown as QueryConsensusStateResponse;

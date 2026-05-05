@@ -39,19 +39,21 @@ describe('QueryService queryEvents', () => {
       {} as MiniProtocalsService,
       {} as MithrilService,
       {} as DenomTraceService,
+      {} as any,
     );
 
     const latestHeightSpy = jest
       .spyOn(service, 'latestHeight')
       .mockRejectedValue(new Error('queryEvents must not depend on accepted stability height'));
 
-    const queryBlockResultsSpy = jest
-      .spyOn(service, 'queryBlockResults')
-      .mockImplementation(async ({ height }: any) => ({
-        block_results: {
-          txs_results: height === 6n ? [{ type: 'create_client' }] : [],
-        },
-      }) as any);
+    const queryBlockResultsSpy = jest.spyOn(service, 'queryBlockResults').mockImplementation(
+      async ({ height }: any) =>
+        ({
+          block_results: {
+            txs_results: height === 6n ? [{ type: 'create_client' }] : [],
+          },
+        }) as any,
+    );
 
     await expect(service.queryEvents({ since_height: 5n })).resolves.toEqual({
       current_height: 7n,

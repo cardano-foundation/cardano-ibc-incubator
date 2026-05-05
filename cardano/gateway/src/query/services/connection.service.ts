@@ -30,7 +30,9 @@ import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { HostStateDatum } from '../../shared/types/host-state-datum';
 import { HISTORY_SERVICE, HistoryService } from './history.service';
-import { resolveProofHeightForCurrentRoot } from './proof-context';
+import { resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from './proof-context';
+import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
+import { ProofQueryOptions } from '../helpers/query-height';
 
 @Injectable()
 export class ConnectionService {
@@ -41,6 +43,7 @@ export class ConnectionService {
     @Inject(KupoService) private kupoService: KupoService,
     @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(HISTORY_SERVICE) private historyService: HistoryService,
+    @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
   ) {}
 
   private async ensureTreeAligned(): Promise<void> {
@@ -79,6 +82,22 @@ export class ConnectionService {
     {
       return 1n;
     }
+  }
+
+  private async getProofContext(context: string, requestedHeight?: bigint) {
+    const lightClientMode =
+      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril';
+
+    return resolveProofContextForQuery({
+      logger: this.logger,
+      lucidService: this.lucidService,
+      mithrilService: this.mithrilService,
+      historyService: this.historyService,
+      ibcTreeCacheService: this.ibcTreeCacheService,
+      context,
+      requestedHeight,
+      lightClientMode,
+    });
   }
 
   async queryConnections(request: QueryConnectionsRequest): Promise<QueryConnectionsResponse> {
@@ -129,14 +148,14 @@ export class ConnectionService {
           })),
           /** current state of the connection end. */
           state: stateFromJSON(STATE_MAPPING_CONNECTION[connDatumDecoded.state.state]),
-	          /** counterparty chain associated with this connection. */
-	          counterparty: {
-	            client_id: convertHex2String(connDatumDecoded.state.counterparty.client_id),
-	            // identifies the connection end on the counterparty chain associated with a given connection.
-	            connection_id: convertHex2String(connDatumDecoded.state.counterparty.connection_id),
-	            // commitment merkle prefix of the counterparty chain.
-	            prefix: { key_prefix: fromHex(connDatumDecoded.state.counterparty.prefix.key_prefix) },
-	          },
+          /** counterparty chain associated with this connection. */
+          counterparty: {
+            client_id: convertHex2String(connDatumDecoded.state.counterparty.client_id),
+            // identifies the connection end on the counterparty chain associated with a given connection.
+            connection_id: convertHex2String(connDatumDecoded.state.counterparty.connection_id),
+            // commitment merkle prefix of the counterparty chain.
+            prefix: { key_prefix: fromHex(connDatumDecoded.state.counterparty.prefix.key_prefix) },
+          },
           /** delay period associated with this connection. */
           delay_period: connDatumDecoded.state.delay_period,
         };
@@ -180,7 +199,10 @@ export class ConnectionService {
     return response;
   }
 
-  async queryConnection(request: QueryConnectionRequest): Promise<QueryConnectionResponse> {
+  async queryConnection(
+    request: QueryConnectionRequest,
+    options: ProofQueryOptions = {},
+  ): Promise<QueryConnectionResponse> {
     const { connection_id: connectionId } = validQueryConnectionParam(request);
     if (!connectionId) {
       throw new GrpcInvalidArgumentException('Invalid argument: "connection_id" must be provided');
@@ -200,37 +222,35 @@ export class ConnectionService {
       );
 
       const connTokenUnit = mintConnScriptHash + connectionTokenName;
-      const utxo = await this.lucidService.findUtxoByUnit(connTokenUnit);
+      const proofContext = await this.getProofContext('queryConnection', options.queryHeight);
+      const utxo = proofContext.historical
+        ? await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(connTokenUnit, proofContext.proofHeight)
+        : await this.lucidService.findUtxoByUnit(connTokenUnit);
       const connDatumDecoded: ConnectionDatum = await decodeConnectionDatum(
         utxo.datum!,
         this.lucidService.LucidImporter,
       );
-      const proofHeight = await resolveProofHeightForCurrentRoot({
-        logger: this.logger,
-        lucidService: this.lucidService,
-        mithrilService: this.mithrilService,
-        historyService: this.historyService,
-        context: 'queryConnection',
-        lightClientMode:
-          this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril',
-      });
 
-      await this.ensureTreeAligned();
+      if (!proofContext.historical) {
+        await this.ensureTreeAligned();
+      }
 
       // Generate ICS-23 proof from the IBC state tree
-      // 
+      //
       // The proof contains sibling hashes that let Cosmos verify this connection state
       // is authentic by reconstructing the Merkle root (which is certified by Mithril).
       // Even if Gateway is compromised, it cannot forge valid proofs.
       const ibcPath = `connections/${CONNECTION_ID_PREFIX}-${connectionId}`;
-      const tree = getCurrentTree();
-      
+      const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+
       let connectionProof: Buffer;
       try {
         const existenceProof = tree.generateProof(ibcPath);
         connectionProof = serializeExistenceProof(existenceProof);
-        
-        this.logger.log(`Generated ICS-23 proof for connection ${connectionId}, proof size: ${connectionProof.length} bytes`);
+
+        this.logger.log(
+          `Generated ICS-23 proof for connection ${connectionId}, proof size: ${connectionProof.length} bytes`,
+        );
       } catch (error) {
         this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
         throw new GrpcInternalException(`Proof generation failed: ${error.message}`);
@@ -246,19 +266,19 @@ export class ConnectionService {
           state:
             STATE_MAPPING_CONNECTION[connDatumDecoded.state.state] ??
             StateConnectionEnd.STATE_UNINITIALIZED_UNSPECIFIED,
-	          counterparty: {
-	            client_id: convertHex2String(connDatumDecoded.state.counterparty.client_id),
-	            // identifies the connection end on the counterparty chain associated with a given connection.
-	            connection_id: convertHex2String(connDatumDecoded.state.counterparty.connection_id),
-	            // commitment merkle prefix of the counterparty chain.
-	            prefix: { key_prefix: fromHex(connDatumDecoded.state.counterparty.prefix.key_prefix) },
-	          },
+          counterparty: {
+            client_id: convertHex2String(connDatumDecoded.state.counterparty.client_id),
+            // identifies the connection end on the counterparty chain associated with a given connection.
+            connection_id: convertHex2String(connDatumDecoded.state.counterparty.connection_id),
+            // commitment merkle prefix of the counterparty chain.
+            prefix: { key_prefix: fromHex(connDatumDecoded.state.counterparty.prefix.key_prefix) },
+          },
           delay_period: connDatumDecoded.state.delay_period,
         } as unknown as ConnectionEnd,
         proof: connectionProof, // ICS-23 Merkle proof
         proof_height: {
           revision_number: 0,
-          revision_height: proofHeight,
+          revision_height: proofContext.proofHeight,
         },
       } as unknown as QueryConnectionResponse;
       return response;

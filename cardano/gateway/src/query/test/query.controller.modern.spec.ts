@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { Metadata } from '@grpc/grpc-js';
 import { QueryController } from '../query.controller';
 import { QueryService } from '../services/query.service';
 import { ConnectionService } from '../services/connection.service';
@@ -90,7 +91,8 @@ describe('QueryController (modern)', () => {
 
     const response = await (controller as any)[controllerMethod](request);
 
-    expect(serviceMock[serviceMethod]).toHaveBeenCalledWith(request);
+    expect(serviceMock[serviceMethod]).toHaveBeenCalled();
+    expect(serviceMock[serviceMethod].mock.calls[0][0]).toBe(request);
     expect(response).toBe(expected);
   }
 
@@ -99,7 +101,13 @@ describe('QueryController (modern)', () => {
   });
 
   it('delegates queryClientStates to QueryService', async () => {
-    await expectDelegation('queryClientStates', queryServiceMock, 'queryClientStates', { pagination: {} }, { client_states: [] });
+    await expectDelegation(
+      'queryClientStates',
+      queryServiceMock,
+      'queryClientStates',
+      { pagination: {} },
+      { client_states: [] },
+    );
   });
 
   it('delegates queryConsensusState to QueryService', async () => {
@@ -142,11 +150,23 @@ describe('QueryController (modern)', () => {
   });
 
   it('delegates queryConnections to ConnectionService', async () => {
-    await expectDelegation('queryConnections', connectionServiceMock, 'queryConnections', { pagination: {} }, { connections: [] });
+    await expectDelegation(
+      'queryConnections',
+      connectionServiceMock,
+      'queryConnections',
+      { pagination: {} },
+      { connections: [] },
+    );
   });
 
   it('delegates queryConnection to ConnectionService', async () => {
-    await expectDelegation('queryConnection', connectionServiceMock, 'queryConnection', { connection_id: 'connection-0' }, { connection: {} });
+    await expectDelegation(
+      'queryConnection',
+      connectionServiceMock,
+      'queryConnection',
+      { connection_id: 'connection-0' },
+      { connection: {} },
+    );
   });
 
   it('delegates queryChannels to ChannelService', async () => {
@@ -154,7 +174,13 @@ describe('QueryController (modern)', () => {
   });
 
   it('delegates queryChannel to ChannelService', async () => {
-    await expectDelegation('queryChannel', channelServiceMock, 'queryChannel', { channel_id: 'channel-0' }, { channel: {} });
+    await expectDelegation(
+      'queryChannel',
+      channelServiceMock,
+      'queryChannel',
+      { channel_id: 'channel-0' },
+      { channel: {} },
+    );
   });
 
   it('delegates queryConnectionChannels to ChannelService', async () => {
@@ -195,6 +221,19 @@ describe('QueryController (modern)', () => {
       { port_id: 'transfer', channel_id: 'channel-0', sequence: 1n },
       { commitment: Buffer.from('c') },
     );
+  });
+
+  it('passes x-cosmos-block-height metadata to proof-bearing packet queries', async () => {
+    const metadata = new Metadata();
+    metadata.add('x-cosmos-block-height', '123');
+    const request = { port_id: 'transfer', channel_id: 'channel-0', sequence: 1n };
+    const expected = { commitment: Buffer.from('c') };
+    packetServiceMock.queryPacketCommitment.mockResolvedValue(expected);
+
+    const response = await controller.queryPacketCommitment(request as any, metadata);
+
+    expect(packetServiceMock.queryPacketCommitment).toHaveBeenCalledWith(request, { queryHeight: 123n });
+    expect(response).toBe(expected);
   });
 
   it('delegates queryPacketCommitments to PacketService', async () => {
@@ -321,12 +360,6 @@ describe('QueryController (modern)', () => {
   });
 
   it('delegates denoms to QueryService', async () => {
-    await expectDelegation(
-      'denoms',
-      queryServiceMock,
-      'queryDenoms',
-      { pagination: {} },
-      { denoms: [] },
-    );
+    await expectDelegation('denoms', queryServiceMock, 'queryDenoms', { pagination: {} }, { denoms: [] });
   });
 });
