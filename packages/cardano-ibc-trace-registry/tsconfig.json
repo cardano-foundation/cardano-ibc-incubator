@@ -8,6 +8,7 @@
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
+    "noImplicitOverride": true,
     "esModuleInterop": true,
     "moduleResolution": "node",
     "resolveJsonModule": true,

@@ -15,11 +15,11 @@ use ibc/apps/transfer/trace_registry.{
   TraceRegistryDirectoryDatum, TraceRegistryEntry, TraceRegistryShardDatum,
   bucket_index_for_hash,
 }
-use ibc/apps/transfer/voucher_metadata
-use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
+use ibc/apps/transfer/voucher_asset_name
+use ibc/apps/transfer/voucher_metadata
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/types/acknowledgement
 use ibc/core/ics_005/types/ibc_module_redeemer.{
@@ -57,8 +57,10 @@ fn prepare_mock_data() -> MockData {
 
   MockData {
     module_token,
-    directory_auth_token:
-      AuthToken { policy_id: "trace shard policy id", name: "dir" },
+    directory_auth_token: AuthToken {
+      policy_id: "trace shard policy id",
+      name: "dir",
+    },
     voucher_minting_policy_id: "mint voucher policy id",
     voucher_metadata_script_hash: "voucher metadata script hash",
     module_input,
@@ -91,26 +93,24 @@ fn make_directory_input_with_archived(
     },
     output: Output {
       address: from_script("trace registry script hash"),
-      value:
-        from_asset(
-          directory_auth_token.policy_id,
-          directory_auth_token.name,
-          1,
+      value: from_asset(
+        directory_auth_token.policy_id,
+        directory_auth_token.name,
+        1,
+      ),
+      datum: InlineDatum(
+        Directory(
+          TraceRegistryDirectoryDatum {
+            buckets: [
+              TraceRegistryDirectoryBucket {
+                bucket_index,
+                active_shard_name,
+                archived_shard_names,
+              },
+            ],
+          },
         ),
-      datum:
-        InlineDatum(
-          Directory(
-            TraceRegistryDirectoryDatum {
-              buckets: [
-                TraceRegistryDirectoryBucket {
-                  bucket_index,
-                  active_shard_name,
-                  archived_shard_names,
-                },
-              ],
-            },
-          ),
-        ),
+      ),
       reference_script: None,
     },
   }
@@ -149,15 +149,14 @@ fn make_shard_reference_input_with_output_index(
     output: Output {
       address: from_script("trace registry script hash"),
       value: from_asset(shard_policy_id, shard_name, 1),
-      datum:
-        InlineDatum(
-          Shard(
-            TraceRegistryShardDatum {
-              bucket_index,
-              entries: [TraceRegistryEntry { voucher_hash, full_denom }],
-            },
-          ),
+      datum: InlineDatum(
+        Shard(
+          TraceRegistryShardDatum {
+            bucket_index,
+            entries: [TraceRegistryEntry { voucher_hash, full_denom }],
+          },
         ),
+      ),
       reference_script: None,
     },
   }
@@ -176,15 +175,9 @@ fn make_shard_spend_input(
     output: Output {
       address: from_script("trace registry script hash"),
       value: from_asset(shard_policy_id, shard_name, 1),
-      datum:
-        InlineDatum(
-          Shard(
-            TraceRegistryShardDatum {
-              bucket_index,
-              entries: [],
-            },
-          ),
-        ),
+      datum: InlineDatum(
+        Shard(TraceRegistryShardDatum { bucket_index, entries: [] }),
+      ),
       reference_script: None,
     },
   }
@@ -200,14 +193,13 @@ fn make_metadata_output(
   Output {
     address: from_script(voucher_metadata_script_hash),
     value: from_asset(voucher_policy_id, reference_token_name, 1),
-    datum:
-      InlineDatum(
-        voucher_metadata.build_datum(
-          full_denom,
-          voucher_token_name,
-          voucher_policy_id,
-        ),
+    datum: InlineDatum(
+      voucher_metadata.build_datum(
+        full_denom,
+        voucher_token_name,
+        voucher_policy_id,
       ),
+    ),
     reference_script: None,
   }
 }
@@ -260,9 +252,13 @@ test test_mint_voucher() {
   let prefixed_denom = bytearray.concat(source_prefix, ftpd.denom)
   let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(prefixed_denom)
   let token_name =
-    voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_denom_hash)
+    voucher_asset_name.voucher_user_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
   let reference_token_name =
-    voucher_asset_name.voucher_reference_token_name_from_denom_hash(voucher_denom_hash)
+    voucher_asset_name.voucher_reference_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
   let bucket_index = bucket_index_for_hash(voucher_denom_hash)
   let active_shard_name = "active-shard-0a"
   let directory_input =
@@ -298,10 +294,10 @@ test test_mint_voucher() {
   let mint =
     from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
       |> assets.add(
-        mock_data.voucher_minting_policy_id,
-        reference_token_name,
-        1,
-      )
+          mock_data.voucher_minting_policy_id,
+          reference_token_name,
+          1,
+        )
 
   expect Some(receiver_public_key_hash) =
     string_utils.hex_string_to_bytes(receiver)
@@ -309,12 +305,11 @@ test test_mint_voucher() {
   let voucher_output =
     Output {
       address: from_verification_key(receiver_public_key_hash),
-      value:
-        from_asset(
-          mock_data.voucher_minting_policy_id,
-          token_name,
-          transfer_amount,
-        ),
+      value: from_asset(
+        mock_data.voucher_minting_policy_id,
+        token_name,
+        transfer_amount,
+      ),
       datum: NoDatum,
       reference_script: None,
     }
@@ -395,7 +390,9 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
   let prefixed_denom = bytearray.concat(source_prefix, ftpd.denom)
   let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(prefixed_denom)
   let token_name =
-    voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_denom_hash)
+    voucher_asset_name.voucher_user_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
   let reference_token_name =
     voucher_asset_name.voucher_reference_token_name_from_denom_hash(
       voucher_denom_hash,
@@ -435,10 +432,10 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
   let mint =
     from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
       |> assets.add(
-        mock_data.voucher_minting_policy_id,
-        reference_token_name,
-        1,
-      )
+          mock_data.voucher_minting_policy_id,
+          reference_token_name,
+          1,
+        )
 
   expect Some(receiver_public_key_hash) =
     string_utils.hex_string_to_bytes(receiver)
@@ -446,12 +443,11 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
   let voucher_output =
     Output {
       address: from_verification_key(receiver_public_key_hash),
-      value:
-        from_asset(
-          mock_data.voucher_minting_policy_id,
-          token_name,
-          transfer_amount,
-        ),
+      value: from_asset(
+        mock_data.voucher_minting_policy_id,
+        token_name,
+        transfer_amount,
+      ),
       datum: NoDatum,
       reference_script: None,
     }
@@ -617,12 +613,11 @@ test test_burn_voucher() {
           spend_module_redeemer_in_data,
         ),
       ],
-      mint:
-        from_asset(
-          mock_data.voucher_minting_policy_id,
-          token_name,
-          -transfer_amount,
-        ),
+      mint: from_asset(
+        mock_data.voucher_minting_policy_id,
+        token_name,
+        -transfer_amount,
+      ),
     }
 
   minting_voucher.mint_voucher.mint(
@@ -660,7 +655,9 @@ test test_refund_voucher() {
 
   let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(ftpd.denom)
   let token_name =
-    voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_denom_hash)
+    voucher_asset_name.voucher_user_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
   let bucket_index = bucket_index_for_hash(voucher_denom_hash)
   let active_shard_name = "active-shard-0f"
   let directory_input =
@@ -755,7 +752,9 @@ test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail 
 
   let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(ftpd.denom)
   let token_name =
-    voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_denom_hash)
+    voucher_asset_name.voucher_user_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
   let bucket_index = bucket_index_for_hash(voucher_denom_hash)
   let active_shard_name = "active-shard-0f"
   let archived_shard_name = "archived-shard-0f"
@@ -806,8 +805,7 @@ test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail 
       ..transaction.placeholder,
       inputs: [mock_data.module_input],
       reference_inputs: [
-        directory_input,
-        active_shard_reference_input,
+        directory_input, active_shard_reference_input,
         archived_duplicate_reference_input,
       ],
       outputs: [
@@ -868,7 +866,9 @@ test test_refund_voucher_fail() fail {
 
   let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(ftpd.denom)
   let token_name =
-    voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_denom_hash)
+    voucher_asset_name.voucher_user_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
   let bucket_index = bucket_index_for_hash(voucher_denom_hash)
   let active_shard_name = "active-shard-0f"
   let directory_input =

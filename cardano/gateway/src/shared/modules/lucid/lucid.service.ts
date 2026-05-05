@@ -1,6 +1,5 @@
 import { Inject, Injectable, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { bech32 } from "bech32";
 import {
   credentialToAddress,
   getAddressDetails,
@@ -888,7 +887,7 @@ export class LucidService implements OnModuleInit {
     encodedUpdatedHostStateDatum: string,
     encodedNewClientDatum: string,
     clientTokenUnit: string,
-    constructedAddress: string,
+    _constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
@@ -934,7 +933,7 @@ export class LucidService implements OnModuleInit {
     encodedMintClientRedeemer: string,
     encodedUpdatedHostStateDatum: string,
     encodedClientDatum: string,
-    constructedAddress: string,
+    _constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
@@ -1037,7 +1036,7 @@ export class LucidService implements OnModuleInit {
     encodedUpdatedHandlerDatum: string,
     encodedUpdatedHostStateDatum: string,
     encodedConnectionDatum: string,
-    constructedAddress: string,
+    _constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
@@ -1105,7 +1104,7 @@ export class LucidService implements OnModuleInit {
     encodedUpdatedHandlerDatum: string,
     encodedUpdatedHostStateDatum: string,
     encodedConnectionDatum: string,
-    constructedAddress: string,
+    _constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();
@@ -1227,7 +1226,7 @@ export class LucidService implements OnModuleInit {
     connectionTokenUnit: string,
     clientUtxo: UTxO,
     encodedUpdatedConnectionDatum: string,
-    constructedAddress: string,
+    _constructedAddress: string,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
     const tx: TxBuilder = this.newTxBuilder();

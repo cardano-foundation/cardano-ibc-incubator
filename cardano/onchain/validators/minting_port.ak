@@ -6,10 +6,10 @@ use cardano/transaction.{Input, NoDatum, Output, Spend, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
-use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/core/ics_025_handler_interface/handler_redeemer.{
   HandlerBindPort, HandlerOperator,
 }
+use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/utils/string as string_utils
 
 // Introduced to prevent high spending costs or potentially prevent tx from being executed.
@@ -57,7 +57,10 @@ validator mint_port(host_state_nft_policy_id: PolicyId) {
     // To make the port-token name derivable from the channel-token name, the port-token
     // name must also be derived from the same HostState NFT base.
     let host_state_nft =
-      AuthToken { policy_id: host_state_nft_policy_id, name: host_state_token_name }
+      AuthToken {
+        policy_id: host_state_nft_policy_id,
+        name: host_state_token_name,
+      }
     let port_token_name =
       string_utils.int_to_string(port_number)
         |> auth.generate_token_name(host_state_nft, port_keys.port_prefix, _)

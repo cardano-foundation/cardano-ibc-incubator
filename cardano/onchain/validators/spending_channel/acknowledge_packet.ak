@@ -1,9 +1,7 @@
 use aiken/collection/list
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
-use cardano/transaction.{
-  Mint, Output, Redeemer, ScriptPurpose, Transaction,
-}
+use cardano/transaction.{Mint, Output, Redeemer, ScriptPurpose, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -44,11 +42,7 @@ validator acknowledge_packet(
   verify_proof_policy_id: PolicyId,
 ) {
   //  mint(redeemer: MyMintRedeemer, policy_id: PolicyId, self: Transaction)
-  mint(
-    channel_token: AuthToken,
-    _policy_id: PolicyId,
-    transaction: Transaction,
-  ) {
+  mint(channel_token: AuthToken, _policy_id: PolicyId, transaction: Transaction) {
     let Transaction {
       inputs,
       outputs,
@@ -58,8 +52,7 @@ validator acknowledge_packet(
       ..
     } = transaction
 
-// TODO missing minting validation it should be list of ((_policy_id) ->1, (verify_proof_policy_id) -> 1)
-
+    // TODO missing minting validation it should be list of ((_policy_id) ->1, (verify_proof_policy_id) -> 1)
     let (datum, channel_redeemer, spent_output) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)
 

@@ -86,12 +86,17 @@ validator mint_connection_stt(
       ) == Active
 
     let id_str = string_utils.int_to_string(connection_id_sequence)
-    let host_state_nft = AuthToken {
-      policy_id: host_state_nft_policy_id,
-      name: host_state_token_name,
-    }
+    let host_state_nft =
+      AuthToken {
+        policy_id: host_state_nft_policy_id,
+        name: host_state_token_name,
+      }
     let connection_token_name =
-      auth.generate_token_name(host_state_nft, conn_keys.connection_prefix, id_str)
+      auth.generate_token_name(
+        host_state_nft,
+        conn_keys.connection_prefix,
+        id_str,
+      )
     let connection_token =
       AuthToken {
         policy_id: connection_minting_policy_id,

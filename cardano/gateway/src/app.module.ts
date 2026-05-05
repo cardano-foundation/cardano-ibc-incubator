@@ -1,4 +1,5 @@
 import { Logger, Module } from '@nestjs/common';
+import * as fs from 'fs';
 import { TxModule } from './tx/tx.module';
 import { QueryModule } from './query/query.module';
 import { HistoryDatabaseConfig } from './config/history-database.config';
@@ -16,6 +17,11 @@ import {
   loadBridgeConfigFromEnv,
 } from './config/bridge-manifest';
 
+const bridgeConfigFileReader = {
+  readFileSync: (path: string, encoding: string) =>
+    fs.readFileSync(path, encoding as BufferEncoding),
+};
+
 @Module({
   imports: [
     TypeOrmModule.forRoot(HistoryDatabaseConfig),
@@ -23,10 +29,7 @@ import {
     ConfigModule.forRoot({
       load: [
         configuration,
-        () => {
-          const fs = require('fs');
-          return loadBridgeConfigFromEnv(process.env, fs);
-        },
+        () => loadBridgeConfigFromEnv(process.env, bridgeConfigFileReader),
       ],
       isGlobal: true,
     }),

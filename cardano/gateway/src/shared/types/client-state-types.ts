@@ -1,5 +1,4 @@
 // import { type Data } from '@lucid-evolution/lucid';
-import { CardanoClientState } from './cardano';
 import { Height } from './height';
 import { ProofSpec } from './proof-specs';
 export type ClientState = {

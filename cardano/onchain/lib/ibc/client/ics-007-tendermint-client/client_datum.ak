@@ -62,10 +62,7 @@ pub fn update_state(
     }
   }
   let expected_client_state =
-    ClientState {
-      ..input_datum.state.client_state,
-      latest_height: latest_height,
-    }
+    ClientState { ..input_datum.state.client_state, latest_height }
 
   let expected_cons_state =
     list.filter(
@@ -132,7 +129,7 @@ pub fn update_state_on_misbehaviour(
         ..input_datum.state,
         client_state: ClientState {
           ..input_datum.state.client_state,
-          frozen_height: frozen_height,
+          frozen_height,
         },
       },
     }

@@ -108,7 +108,7 @@ fn bit_at(hash: ByteArray, bit_index: Int) -> Int {
   //
   // We count bytes from the end of that 8-byte segment so that bit 0 starts at
   // the least significant end (byte 7, bit 0).
-  let byte_index = 7 - (bit_index / 8)
+  let byte_index = 7 - bit_index / 8
   let bit_in_byte = bit_index % 8
 
   let byte = builtin.index_bytearray(hash, byte_index)

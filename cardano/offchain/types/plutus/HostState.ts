@@ -31,4 +31,3 @@ export const HostStateDatumSchema = Data.Object({
 
 export type HostStateDatum = Data.Static<typeof HostStateDatumSchema>;
 export const HostStateDatum = HostStateDatumSchema as unknown as HostStateDatum;
-

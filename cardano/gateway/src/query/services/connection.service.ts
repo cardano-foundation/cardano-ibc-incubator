@@ -94,7 +94,6 @@ export class ConnectionService {
     if (key) offset = decodePaginationKey(key);
 
     const deploymentConfig = this.configService.get('deployment');
-    const handlerAuthToken = deploymentConfig.handlerAuthToken as unknown as AuthToken;
     const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
 
     const baseToken = hostStateNFT;
@@ -189,7 +188,6 @@ export class ConnectionService {
     this.logger.log(connectionId, 'queryConnection');
     try {
       const deploymentConfig = this.configService.get('deployment');
-      const handlerAuthToken = deploymentConfig.handlerAuthToken as unknown as AuthToken;
       const hostStateNFT = deploymentConfig.hostStateNFT as unknown as AuthToken;
 
       const baseToken = hostStateNFT;

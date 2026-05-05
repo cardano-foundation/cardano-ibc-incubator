@@ -96,7 +96,7 @@ export class KupoService {
           assetId.startsWith(this.clientTokenPrefix)
         );
       });
-    } catch (error) {
+    } catch (_error) {
       // If no UTXOs found, return empty array (no clients exist yet)
       return [];
     }

@@ -22,8 +22,7 @@ import {
   QueryNextSequenceReceiveResponse,
 } from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
-import { AuthToken } from '../../shared/types/auth-token';
-import { CHANNEL_ID_PREFIX, CHANNEL_TOKEN_PREFIX } from '../../constant';
+import { CHANNEL_ID_PREFIX } from '../../constant';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
 import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
@@ -39,7 +38,7 @@ import {
   validQueryNextSequenceReceiveParam,
 } from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
-import { convertHex2String, fromHex, toHex } from '../../shared/helpers/hex';
+import { convertHex2String, toHex } from '../../shared/helpers/hex';
 import { Acknowledgement } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { GrpcInvalidArgumentException, GrpcInternalException } from '~@/exception/grpc_exceptions';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
@@ -107,7 +106,7 @@ export class PacketService {
     const channelTokenUnit = mintChannelPolicyId + channelTokenName;
     const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-    const packetAcknowledgement =
+    const _packetAcknowledgement =
       channelDatumDecoded.state.packet_acknowledgement.get(BigInt(sequence)) || JSON.stringify({ result: '01' });
     const ackData = {
       result: Buffer.from('01').toString('base64'),

@@ -21,6 +21,46 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  repo-invariants:
+    name: Repository Invariants
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check repo invariants
+        run: node scripts/ci/check-repo-invariants.mjs
+
+  quality-ratchets:
+    name: Quality Ratchets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check lint suppressions
+        run: node scripts/ci/check-lint-suppressions.mjs
+
+      - name: Check unused exports
+        run: node scripts/ci/check-knip-ratchet.mjs
+
+      - name: Check npm audit ratchet
+        run: node scripts/ci/check-npm-audit-ratchet.mjs
+
   gateway:
     name: Cardano Gateway
     runs-on: ubuntu-latest
@@ -38,28 +78,48 @@ jobs:
           cache-dependency-path: |
             cardano/gateway/package-lock.json
             proto-types/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci --prefix cardano/gateway --legacy-peer-deps
+            packages/cardano-ibc-planner/package-lock.json
+            packages/cardano-ibc-tx-builder/package-lock.json
+            packages/cardano-ibc-trace-registry/package-lock.json
+            packages/cardano-ibc-tx-builder-runtime/package-lock.json
 
       - name: Build proto types
         run: |
           npm ci --prefix proto-types
           npm run --prefix proto-types build
 
-      - name: Install tx builder runtime dependencies
-        run: npm install --package-lock=false --omit=dev --legacy-peer-deps --prefix packages/cardano-ibc-tx-builder
-
-      - name: Build trace registry
+      - name: Build package dependencies
         run: |
-          npm install --package-lock=false --prefix packages/cardano-ibc-trace-registry
+          npm ci --prefix packages/cardano-ibc-planner
+          npm run --prefix packages/cardano-ibc-planner build
+
+          npm ci --prefix packages/cardano-ibc-tx-builder --legacy-peer-deps
+          npm run --prefix packages/cardano-ibc-tx-builder build
+
+          npm ci --prefix packages/cardano-ibc-trace-registry --legacy-peer-deps
           npm run --prefix packages/cardano-ibc-trace-registry build
+
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --legacy-peer-deps
+          npm run --prefix packages/cardano-ibc-tx-builder-runtime build
+
+      - name: Prune package-local installs for gateway
+        run: |
+          rm -rf packages/cardano-ibc-planner/node_modules
+          rm -rf packages/cardano-ibc-tx-builder-runtime/node_modules
+          npm ci --prefix packages/cardano-ibc-tx-builder --omit=dev --legacy-peer-deps
+          npm ci --prefix packages/cardano-ibc-trace-registry --omit=dev --legacy-peer-deps
+
+      - name: Install dependencies
+        run: npm ci --prefix cardano/gateway --legacy-peer-deps
+
+      - name: Lint
+        run: npm run --prefix cardano/gateway lint:check
 
       - name: Build
         run: npm run --prefix cardano/gateway build
 
-      - name: Test
-        run: npm test --prefix cardano/gateway
+      - name: Test with coverage
+        run: npm run --prefix cardano/gateway test:cov:ci
 
   proto-types:
     name: Proto Types
@@ -99,27 +159,124 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            packages/cardano-ibc-planner/package-lock.json
+            packages/cardano-ibc-tx-builder/package-lock.json
+            packages/cardano-ibc-trace-registry/package-lock.json
+            packages/cardano-ibc-tx-builder-runtime/package-lock.json
 
       - name: Build planner
         run: |
-          npm install --package-lock=false --prefix packages/cardano-ibc-planner
+          npm ci --prefix packages/cardano-ibc-planner
           npm run --prefix packages/cardano-ibc-planner build
 
       - name: Build tx builder
         run: |
-          npm install --package-lock=false --prefix packages/cardano-ibc-tx-builder
+          npm ci --prefix packages/cardano-ibc-tx-builder --legacy-peer-deps
           npm run --prefix packages/cardano-ibc-tx-builder build
           npm prune --omit=dev --prefix packages/cardano-ibc-tx-builder
 
       - name: Build trace registry
         run: |
-          npm install --package-lock=false --prefix packages/cardano-ibc-trace-registry
+          npm ci --prefix packages/cardano-ibc-trace-registry --legacy-peer-deps
           npm run --prefix packages/cardano-ibc-trace-registry build
 
       - name: Build tx builder runtime
         run: |
-          npm install --package-lock=false --prefix packages/cardano-ibc-tx-builder-runtime
+          npm ci --prefix packages/cardano-ibc-tx-builder-runtime --legacy-peer-deps
           npm run --prefix packages/cardano-ibc-tx-builder-runtime build
+
+  deno-offchain:
+    name: Cardano Offchain Deno
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Setup Aiken
+        uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
+
+      - name: Build Aiken blueprint
+        working-directory: cardano/onchain
+        run: aiken build
+
+      - name: Check formatting
+        working-directory: cardano/offchain
+        run: deno task fmt:check
+
+      - name: Lint
+        working-directory: cardano/offchain
+        run: deno task lint
+
+      - name: Type check
+        working-directory: cardano/offchain
+        run: deno task check
+
+  aiken:
+    name: Cardano Onchain Aiken
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: cardano/onchain
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Aiken
+        uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
+
+      - name: Check formatting
+        run: aiken fmt --check
+
+      - name: Check and test
+        run: aiken check
+
+  generated-artifacts:
+    name: Generated Artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: proto-types/package-lock.json
+
+      - name: Setup Aiken
+        uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
+
+      - name: Regenerate proto types
+        run: |
+          npm ci --prefix proto-types
+          npm run --prefix proto-types codegen
+
+      - name: Regenerate Aiken blueprint
+        working-directory: cardano/onchain
+        run: aiken build
+
+      - name: Check generated artifacts
+        run: scripts/ci/check-generated-artifacts-clean.sh
 
   go:
     name: Go
@@ -155,6 +312,15 @@ jobs:
           GOWORK: off
         run: go test ./...
 
+      - name: Vet non-generated packages
+        env:
+          GOWORK: off
+        run: |
+          mapfile -t packages < <(go list ./... | grep -v '/api/' || true)
+          if [ "${#packages[@]}" -gt 0 ]; then
+            go vet "${packages[@]}"
+          fi
+
   rust:
     name: Rust
     runs-on: ubuntu-latest
@@ -175,10 +341,23 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+            ~/.cargo/bin/cargo-audit
             caribic/target
           key: ${{ runner.os }}-cargo-caribic-${{ hashFiles('caribic/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-caribic-
+
+      - name: Install cargo-audit
+        run: command -v cargo-audit || cargo install cargo-audit --locked
+
+      - name: Audit Rust dependencies
+        run: >
+          cargo audit --file caribic/Cargo.lock
+          --ignore RUSTSEC-2026-0104
+          --ignore RUSTSEC-2026-0098
+          --ignore RUSTSEC-2026-0099
+          --ignore RUSTSEC-2026-0049
+          --ignore RUSTSEC-2026-0009
 
       - name: Check formatting
         run: cargo fmt --manifest-path caribic/Cargo.toml -- --check

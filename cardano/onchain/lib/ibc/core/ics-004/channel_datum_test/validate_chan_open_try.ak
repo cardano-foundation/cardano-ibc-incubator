@@ -162,7 +162,10 @@ test fail_if_packet_receipt_is_not_empty() fail {
   let chan_datum =
     ChannelDatum {
       ..chan_datum,
-      state: ChannelDatumState { ..chan_datum.state, packet_receipt: [Pair(1, "")] },
+      state: ChannelDatumState {
+        ..chan_datum.state,
+        packet_receipt: [Pair(1, "")],
+      },
     }
 
   channel_datum_mod.validate_chan_open_try(chan_datum, auth_token)

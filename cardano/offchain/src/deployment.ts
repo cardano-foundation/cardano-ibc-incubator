@@ -15,12 +15,12 @@ import {
   validatorToScriptHash,
 } from "@lucid-evolution/lucid";
 import {
-  DeploymentTemplate,
   awaitWalletTx,
-  getLiveWalletUtxos,
+  DeploymentTemplate,
   formatTimestamp,
   generateIdentifierTokenName,
   generateTokenName,
+  getLiveWalletUtxos,
   isRetryableOgmiosTransportError,
   readValidator,
   submitTx,
@@ -211,13 +211,6 @@ export const createDeployment = async (
   );
   referredValidators.push(mintClientSttValidator);
 
-  // load mint client validator
-  const [, mintClientPolicyId] = await readValidator(
-    "minting_client.mint_client.mint",
-    lucid,
-    [spendClientScriptHash],
-  );
-
   // load spend connection validator
   const [
     spendConnectionValidator,
@@ -259,13 +252,6 @@ export const createDeployment = async (
     );
   referredValidators.push(mintConnectionSttValidator);
 
-  // load mint connection validator
-  const [, mintConnectionPolicyId] = await readValidator(
-    "minting_connection.mint_connection.mint",
-    lucid,
-    [mintClientPolicyId, verifyProofPolicyId, spendConnectionScriptHash],
-  );
-
   // load spend channel validator
   const spendingChannel = await deploySpendChannel(
     lucid,
@@ -281,19 +267,6 @@ export const createDeployment = async (
     ...Object.values(spendingChannel.referredScripts).map(
       (val) => val.script,
     ),
-  );
-
-  // load mint channel validator
-  const [, mintChannelPolicyId] = await readValidator(
-    "minting_channel.mint_channel.mint",
-    lucid,
-    [
-      mintClientPolicyId,
-      mintConnectionPolicyId,
-      mintPortPolicyId,
-      verifyProofPolicyId,
-      spendingChannel.base.hash,
-    ],
   );
 
   // Load mint channel STT validator (parameterized by client_mint, connection_mint, port_mint, verify_proof, spend_channel, host_state_nft hashes)
@@ -844,7 +817,8 @@ async function createReferenceUtxos(
       for (let attempt = 1; attempt <= 5; attempt += 1) {
         try {
           [newWalletUTxOs, derivedOutputs, signedTx] = await (async () => {
-            const [walletUTxOs, outputs, txSignBuilder] = await buildReferenceBatchTx().chain();
+            const [walletUTxOs, outputs, txSignBuilder] =
+              await buildReferenceBatchTx().chain();
             return [
               walletUTxOs,
               outputs,
@@ -896,11 +870,11 @@ async function createReferenceUtxos(
         continue;
       }
       if (!newWalletUTxOs || !derivedOutputs || !signedTx) {
-        throw lastBuildError ?? new Error("Failed to build reference batch transaction");
+        throw lastBuildError ??
+          new Error("Failed to build reference batch transaction");
       }
 
       const txHash = signedTx.toHash();
-      let lastSubmitError: unknown;
       for (let attempt = 1; attempt <= 6; attempt++) {
         try {
           const submittedHash = await signedTx.submit();
@@ -910,7 +884,6 @@ async function createReferenceUtxos(
             );
           }
         } catch (error) {
-          lastSubmitError = error;
           console.warn(
             `createReferenceUtxos submit retry ${attempt}/6 after error:`,
             error,
@@ -922,7 +895,6 @@ async function createReferenceUtxos(
           lucid.overrideUTxOs(newWalletUTxOs);
           break;
         } catch (error) {
-          lastSubmitError = error;
           if (attempt === 6) {
             throw error;
           }
@@ -1190,7 +1162,9 @@ const deployTransferModule = async (
           ),
           {
             kind: "inline",
-            value: Data.to(updatedHandlerDatum, HandlerDatum, { canonical: true }),
+            value: Data.to(updatedHandlerDatum, HandlerDatum, {
+              canonical: true,
+            }),
           },
           {
             [handlerTokenUnit]: 1n,
@@ -1323,7 +1297,9 @@ const deployGenericModule = async (
           ),
           {
             kind: "inline",
-            value: Data.to(updatedHandlerDatum, HandlerDatum, { canonical: true }),
+            value: Data.to(updatedHandlerDatum, HandlerDatum, {
+              canonical: true,
+            }),
           },
           {
             [handlerTokenUnit]: 1n,

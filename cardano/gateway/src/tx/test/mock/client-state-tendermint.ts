@@ -1,4 +1,3 @@
-import { BinaryWriter } from '@plus/proto-types/build/binary';
 import { ClientState } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 
 class ClientStateTendermintMockBuilder {

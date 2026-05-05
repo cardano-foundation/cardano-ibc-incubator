@@ -49,6 +49,7 @@ function parseArgs(argv: string[]): ScriptArgs {
       case "--help":
       case "-h":
         usage();
+        break;
       default:
         throw new Error(`Unknown argument: ${arg}`);
     }
@@ -148,7 +149,9 @@ async function main() {
 
 main().catch((error) => {
   console.error(
-    `mint-mock-token failed: ${error instanceof Error ? error.message : String(error)}`,
+    `mint-mock-token failed: ${
+      error instanceof Error ? error.message : String(error)
+    }`,
   );
   Deno.exit(1);
 });

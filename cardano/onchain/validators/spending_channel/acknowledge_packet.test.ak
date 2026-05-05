@@ -300,11 +300,11 @@ test succeed_acknowledge_packet() {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: inputs,
-      reference_inputs: reference_inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-      validity_range: validity_range,
+      inputs,
+      reference_inputs,
+      outputs,
+      redeemers,
+      validity_range,
     }
 
   acknowledge_packet.acknowledge_packet.mint(

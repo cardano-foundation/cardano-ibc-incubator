@@ -891,7 +891,7 @@ export class QueryService {
     }
   }
 
-  private async _querySpoEvents(height: BigInt): Promise<ResponseDeliverTx[]> {
+  private async _querySpoEvents(height: bigint): Promise<ResponseDeliverTx[]> {
     const txsResults: ResponseDeliverTx[] = [];
     const hasEventRegister = await this.historyService.checkExistPoolUpdateByBlockNo(parseInt(height.toString()));
     if (hasEventRegister) {

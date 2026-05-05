@@ -308,7 +308,7 @@ export function verifyHeader(msg: Header, clientDatum: ClientDatum): boolean {
 }
 
 // checkTrustedHeader checks that consensus state matches trusted fields of Header
-export function checkTrustedHeader(header: Header, consState: ConsensusState): boolean {
+export function checkTrustedHeader(header: Header, _consState: ConsensusState): boolean {
   const tmTrustedValidators = validatorSetFromProto(header.trustedValidators);
   if (!tmTrustedValidators) {
     throw new GrpcInvalidArgumentException('trusted validator set in not tendermint validator set type');
@@ -390,7 +390,7 @@ function verifyNonAdjacent(
   trustingPeriod: bigint,
   now: bigint,
   maxClockDrift: bigint,
-  trustedLevel: Rational,
+  _trustedLevel: Rational,
 ): boolean {
   if (untrustedHeader.header.height === trustedHeader.header.height + 1n) {
     throw new GrpcInvalidArgumentException('headers must be non adjacent in height');
@@ -476,7 +476,7 @@ function verifyAdjacent(
   trustingPeriod: bigint,
   now: bigint,
   maxClockDrift: bigint,
-  trustedLevel: Rational,
+  _trustedLevel: Rational,
 ): boolean {
   if (untrustedHeader.header.height !== trustedHeader.header.height + 1n) {
     throw new GrpcInvalidArgumentException('headers must be adjacent in height');

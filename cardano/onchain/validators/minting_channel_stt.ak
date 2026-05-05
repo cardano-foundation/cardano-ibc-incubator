@@ -94,12 +94,17 @@ validator mint_channel_stt(
       ) == Active
 
     let id_str = string_utils.int_to_string(channel_id_sequence)
-    let host_state_nft = AuthToken {
-      policy_id: host_state_nft_policy_id,
-      name: host_state_token_name,
-    }
+    let host_state_nft =
+      AuthToken {
+        policy_id: host_state_nft_policy_id,
+        name: host_state_token_name,
+      }
     let channel_token_name =
-      auth.generate_token_name(host_state_nft, channel_keys.channel_prefix, id_str)
+      auth.generate_token_name(
+        host_state_nft,
+        channel_keys.channel_prefix,
+        id_str,
+      )
     let channel_token =
       AuthToken {
         policy_id: channel_minting_policy_id,

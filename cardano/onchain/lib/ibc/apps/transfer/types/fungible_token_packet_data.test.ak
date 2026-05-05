@@ -53,10 +53,7 @@ test validate_basic_fail_if_denom_is_invalid() {
 }
 
 //=======================================get_bytes==============================
-fn assert_get_bytes(
-  ftpd: FungibleTokenPacketData,
-  expected: ByteArray,
-) -> Bool {
+fn assert_get_bytes(ftpd: FungibleTokenPacketData, expected: ByteArray) -> Bool {
   ftpd_mod.get_bytes(ftpd) == expected
 }
 

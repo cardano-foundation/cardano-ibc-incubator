@@ -37,7 +37,6 @@ import {
 } from '@shared/helpers/helper';
 import { RpcException } from '@nestjs/microservices';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
-import { TransferModuleRedeemer } from '../shared/types/apps/transfer/transfer_module_redeemer/transfer-module-redeemer';
 import { mapLovelaceDenom, normalizeDenomTokenTransfer, sumLovelaceFromUtxos } from './helper/helper';
 import { convertHex2String, convertString2Hex, hashSHA256 } from '../shared/helpers/hex';
 import { MintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
@@ -993,7 +992,7 @@ export class PacketService {
         ['spendTraceRegistryRefScript', deploymentConfig.validators.spendTraceRegistry?.refUtxo],
       ]);
 
-      const { currentSlot, validToSlot, validToTime: initialValidToTime } = await this.computeTxValidityWindow();
+      const { currentSlot, validToTime: initialValidToTime } = await this.computeTxValidityWindow();
       let validToTime = initialValidToTime;
       if (recvPacketOperator.timeoutTimestamp > 0n) {
         // On-chain requires tx_valid_to * 1_000_000 < packet.timeout_timestamp.
@@ -1212,7 +1211,9 @@ export class PacketService {
           constructedAddress,
         );
       };
-      let { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate } = await buildTimeoutAttempt();
+      const timeoutAttempt = await buildTimeoutAttempt();
+      const unsignedSendPacketTx = timeoutAttempt.unsignedTx;
+      let pendingTreeUpdate = timeoutAttempt.pendingTreeUpdate;
       const { validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'timeoutPacket',

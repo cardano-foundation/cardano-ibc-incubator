@@ -80,8 +80,10 @@ pub fn validate_bind_port(
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
-    new.state.bound_port == ( list.push(old.state.bound_port, port)
-      |> list.sort(int.compare) ),
+    new.state.bound_port == (
+      list.push(old.state.bound_port, port)
+        |> list.sort(int.compare)
+    ),
     new.token == old.token,
   }
 }

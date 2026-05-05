@@ -373,5 +373,7 @@ test test_validate_basic() {
     ]
 
   test_cases
-    |> list.all(fn(case) { connection_end.validate_basic(case.1st) == case.2nd })
+    |> list.all(
+        fn(case) { connection_end.validate_basic(case.1st) == case.2nd },
+      )
 }

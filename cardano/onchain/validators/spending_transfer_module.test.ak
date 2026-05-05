@@ -136,7 +136,10 @@ fn setup() -> MockData {
 
   let channel_token_name =
     auth.generate_token_name(
-      AuthToken { policy_id: host_state_nft_policy_id, name: host_state_token_name },
+      AuthToken {
+        policy_id: host_state_nft_policy_id,
+        name: host_state_token_name,
+      },
       channel_keys.channel_prefix,
       channel_sequence,
     )
@@ -365,7 +368,8 @@ test on_chan_open_init_succeed() {
   let inputs = [mock.module_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -382,12 +386,7 @@ test on_chan_open_init_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -426,12 +425,7 @@ test on_chan_open_init_fails_without_host_state_co_spend() fail {
     ]
 
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -457,7 +451,8 @@ test on_chan_open_try_succeed() {
   let inputs = [mock.module_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -479,12 +474,7 @@ test on_chan_open_try_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -510,7 +500,8 @@ test on_chan_open_ack_succeed() {
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -531,12 +522,7 @@ test on_chan_open_ack_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -562,7 +548,8 @@ test on_chan_open_confirm_succeed() {
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
@@ -579,12 +566,7 @@ test on_chan_open_confirm_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -610,7 +592,8 @@ test on_recv_packet_mint_voucher_succeed() {
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -662,12 +645,7 @@ test on_recv_packet_mint_voucher_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -715,7 +693,13 @@ test on_recv_packet_unescrow_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output, mock.host_state_output]
+  let outputs =
+    [
+      module_output,
+      mock.channel_output,
+      receiver_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -765,12 +749,7 @@ test on_recv_packet_unescrow_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -818,7 +797,13 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output, mock.host_state_output]
+  let outputs =
+    [
+      module_output,
+      mock.channel_output,
+      receiver_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -877,12 +862,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -957,12 +937,7 @@ test transfer_escrow_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -1010,7 +985,13 @@ test transfer_burn_voucher_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output, mock.host_state_output]
+  let outputs =
+    [
+      module_output,
+      mock.channel_output,
+      receiver_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -1056,12 +1037,7 @@ test transfer_burn_voucher_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -1089,7 +1065,8 @@ test on_timeout_packet_mint_voucher_succeed() {
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -1139,12 +1116,7 @@ test on_timeout_packet_mint_voucher_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -1195,7 +1167,13 @@ test on_timeout_packet_unescrow_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output, mock.host_state_output]
+  let outputs =
+    [
+      module_output,
+      mock.channel_output,
+      receiver_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let source_port = "port-0"
@@ -1237,12 +1215,7 @@ test on_timeout_packet_unescrow_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -1270,7 +1243,8 @@ test on_acknowledgement_packet_result_succeed() {
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -1323,12 +1297,7 @@ test on_acknowledgement_packet_result_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -1356,7 +1325,8 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let outputs = [mock.module_output, mock.channel_output, mock.host_state_output]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -1416,12 +1386,7 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -1468,7 +1433,13 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
       reference_script: None,
     }
 
-  let outputs = [module_output, mock.channel_output, receiver_output, mock.host_state_output]
+  let outputs =
+    [
+      module_output,
+      mock.channel_output,
+      receiver_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let source_port = "port-0"
@@ -1521,12 +1492,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -1564,12 +1530,7 @@ test on_chan_close_init_given_any_input_returns_false() {
     [Pair(Spend(fake_data.module_input.output_reference), module_redeemer)]
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -1607,12 +1568,7 @@ test on_chan_close_confirm_given_any_input_returns_false() {
     [Pair(Spend(fake_data.module_input.output_reference), module_redeemer)]
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 

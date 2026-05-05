@@ -69,7 +69,10 @@ fn setup() -> MockData {
   let port_token_name =
     string_utils.int_to_string(port_number)
       |> auth.generate_token_name(
-          AuthToken { policy_id: host_state_nft_policy_id, name: host_state_token_name },
+          AuthToken {
+            policy_id: host_state_nft_policy_id,
+            name: host_state_token_name,
+          },
           port_keys.port_prefix,
           _,
         )
@@ -131,13 +134,7 @@ test mint_port_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs: inputs,
-      outputs: outputs,
-      mint: mint,
-      redeemers: redeemers,
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, mint, redeemers }
 
   minting_port.mint_port.mint(
     mock.host_state_nft_policy_id,

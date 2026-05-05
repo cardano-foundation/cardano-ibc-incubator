@@ -1,5 +1,3 @@
-import { Beacon } from './common.dto';
-
 export class CardanoTransactionSetSnapshotDTO {
   merkle_root: string;
   epoch: number;

@@ -284,12 +284,12 @@ test conn_open_init_succeed() {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: inputs,
-      reference_inputs: reference_inputs,
-      outputs: outputs,
-      mint: mint,
-      redeemers: redeemers,
-      validity_range: validity_range,
+      inputs,
+      reference_inputs,
+      outputs,
+      mint,
+      redeemers,
+      validity_range,
     }
 
   minting_connection.mint_connection.mint(
@@ -360,12 +360,12 @@ test fail_conn_open_init_invalid_datum() fail {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: inputs,
-      reference_inputs: reference_inputs,
-      outputs: outputs,
-      mint: mint,
-      redeemers: redeemers,
-      validity_range: validity_range,
+      inputs,
+      reference_inputs,
+      outputs,
+      mint,
+      redeemers,
+      validity_range,
     }
 
   minting_connection.mint_connection.mint(

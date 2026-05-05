@@ -417,12 +417,12 @@ test succeed_chan_open_init() {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: inputs,
-      reference_inputs: reference_inputs,
-      outputs: outputs,
-      mint: mint,
-      redeemers: redeemers,
-      validity_range: validity_range,
+      inputs,
+      reference_inputs,
+      outputs,
+      mint,
+      redeemers,
+      validity_range,
     }
 
   minting_channel.mint_channel.mint(
@@ -688,12 +688,12 @@ test succeed_chan_open_try() {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: inputs,
-      reference_inputs: reference_inputs,
-      outputs: outputs,
-      mint: mint,
-      redeemers: redeemers,
-      validity_range: validity_range,
+      inputs,
+      reference_inputs,
+      outputs,
+      mint,
+      redeemers,
+      validity_range,
     }
 
   minting_channel.mint_channel.mint(
@@ -959,12 +959,12 @@ test fail_chan_open_try_invalid_datum() fail {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: inputs,
-      reference_inputs: reference_inputs,
-      outputs: outputs,
-      mint: mint,
-      redeemers: redeemers,
-      validity_range: validity_range,
+      inputs,
+      reference_inputs,
+      outputs,
+      mint,
+      redeemers,
+      validity_range,
     }
 
   minting_channel.mint_channel.mint(

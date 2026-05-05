@@ -7,13 +7,12 @@ import {
 } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 import { getNanoseconds } from './time';
 import { doubleToFraction } from './number';
-import { convertHex2String } from './hex';
 
 export function normalizeMithrilStakeDistribution(
   stakeDistribution: any,
   stakeDistributionCertificate: any,
 ): MithrilStakeDistribution {
-  let mithrilStakeDistribution: MithrilStakeDistribution = {
+  const mithrilStakeDistribution: MithrilStakeDistribution = {
     epoch: BigInt(stakeDistribution.epoch),
     hash: stakeDistribution.hash,
     certificate_hash: stakeDistribution.certificate_hash,
@@ -37,7 +36,7 @@ export function normalizeMithrilStakeDistributionCertificate(
   stakeDistribution: any,
   stakeDistributionCertificate: any,
 ): MithrilCertificate {
-  let stakeDistributionSignedEntityType: SignedEntityType = {};
+  const stakeDistributionSignedEntityType: SignedEntityType = {};
   if (stakeDistributionCertificate.signed_entity_type.hasOwnProperty('MithrilStakeDistribution'))
     stakeDistributionSignedEntityType.mithril_stake_distribution = normalizeMithrilStakeDistribution(
       stakeDistribution,
@@ -89,10 +88,6 @@ export function normalizeMithrilStakeDistributionCertificate(
       } as MessagePart;
     });
   }
-
-  let multiSignature = stakeDistributionCertificate.multi_signature
-    ? JSON.parse(convertHex2String(stakeDistributionCertificate.multi_signature))
-    : null;
 
   return {
     hash: stakeDistributionCertificate.hash,

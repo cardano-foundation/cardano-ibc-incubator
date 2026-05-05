@@ -154,7 +154,8 @@ fn validate_insert_trace(
   voucher_minting_policy_id: PolicyId,
   benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
-  expect bytearray.length(voucher_hash) == voucher_asset_name.voucher_denom_hash_length
+  expect
+    bytearray.length(voucher_hash) == voucher_asset_name.voucher_denom_hash_length
   expect bytearray.length(full_denom) > 0
 
   let expected_entry = TraceRegistryEntry { voucher_hash, full_denom }
@@ -253,7 +254,8 @@ fn validate_rollover_insert_trace(
   voucher_minting_policy_id: PolicyId,
   benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
-  expect bytearray.length(voucher_hash) == voucher_asset_name.voucher_denom_hash_length
+  expect
+    bytearray.length(voucher_hash) == voucher_asset_name.voucher_denom_hash_length
   expect bytearray.length(full_denom) > 0
   expect bytearray.length(new_active_shard_name) > 0
 
@@ -388,7 +390,8 @@ fn validate_advance_directory(
   voucher_minting_policy_id: PolicyId,
   benchmark_voucher_minting_policy_id: PolicyId,
 ) -> Bool {
-  expect bytearray.length(voucher_hash) == voucher_asset_name.voucher_denom_hash_length
+  expect
+    bytearray.length(voucher_hash) == voucher_asset_name.voucher_denom_hash_length
   expect bytearray.length(full_denom) > 0
   expect bytearray.length(previous_active_shard_name) > 0
   expect bytearray.length(new_active_shard_name) > 0
@@ -638,10 +641,7 @@ fn bucket_shards_do_not_contain_hash(
       expect Shard(shard): TraceRegistryDatum =
         validator_utils.get_inline_datum(shard_input.output)
 
-      list.find(
-        shard.entries,
-        fn(entry) { entry.voucher_hash == voucher_hash },
-      ) == None
+      list.find(shard.entries, fn(entry) { entry.voucher_hash == voucher_hash }) == None
     },
   )
 }
@@ -799,11 +799,7 @@ fn test_directory_output_with_token_name(
   token_name: ByteArray,
   buckets: List<TraceRegistryDirectoryBucket>,
 ) -> Output {
-  test_directory_output_at_address(
-    test_registry_address(),
-    token_name,
-    buckets,
-  )
+  test_directory_output_at_address(test_registry_address(), token_name, buckets)
 }
 
 fn test_directory_output_at_address(
@@ -852,7 +848,10 @@ fn test_non_registry_reference_input(output_index: Int) -> Input {
 }
 
 fn test_expected_entry(full_denom: ByteArray) -> TraceRegistryEntry {
-  TraceRegistryEntry { voucher_hash: voucher_asset_name.voucher_denom_hash(full_denom), full_denom }
+  TraceRegistryEntry {
+    voucher_hash: voucher_asset_name.voucher_denom_hash(full_denom),
+    full_denom,
+  }
 }
 
 fn run_trace_registry_spend(
@@ -937,7 +936,9 @@ fn test_rollover_fixture(extra_bucket_seed: Int) -> TestRolloverFixture {
   let new_active_shard_name = "active-0a-v2"
   let old_entry =
     TraceRegistryEntry {
-      voucher_hash: voucher_asset_name.voucher_denom_hash("transfer/channel-7/uosmo"),
+      voucher_hash: voucher_asset_name.voucher_denom_hash(
+        "transfer/channel-7/uosmo",
+      ),
       full_denom: "transfer/channel-7/uosmo",
     }
   let old_shard = TraceRegistryShardDatum { bucket_index, entries: [old_entry] }
@@ -1298,12 +1299,11 @@ test trace_registry_insert_trace_succeeds_with_matching_voucher_mint() {
       inputs: [spent_input],
       reference_inputs: [directory_input],
       outputs: [updated_output],
-      mint:
-        from_asset(
-          test_voucher_policy_id(),
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-          1,
-        ),
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      ),
     }
 
   run_trace_registry_spend(
@@ -1411,9 +1411,8 @@ test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint_a
   let benchmark_sink_output =
     Output {
       address: test_registry_address(),
-      value:
-        assets.from_lovelace(2_000_000)
-          |> add(benchmark_policy_id, voucher_hash, 1),
+      value: assets.from_lovelace(2_000_000)
+        |> add(benchmark_policy_id, voucher_hash, 1),
       datum: NoDatum,
       reference_script: None,
     }
@@ -1435,7 +1434,6 @@ test trace_registry_insert_trace_succeeds_with_matching_benchmark_voucher_mint_a
     benchmark_policy_id,
   )
 }
-
 
 test trace_registry_insert_trace_fails_without_matching_voucher_mint() fail {
   let full_denom = "transfer/channel-7/uatom"
@@ -1498,20 +1496,16 @@ test trace_registry_insert_trace_fails_when_bucket_does_not_match_hash() fail {
       inputs: [spent_input],
       reference_inputs: [directory_input],
       outputs: [updated_output],
-      mint:
-        from_asset(
-          test_voucher_policy_id(),
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-          1,
-        ),
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      ),
     }
 
   run_trace_registry_spend(
     Shard(
-      TraceRegistryShardDatum {
-        bucket_index: wrong_bucket_index,
-        entries: [],
-      },
+      TraceRegistryShardDatum { bucket_index: wrong_bucket_index, entries: [] },
     ),
     InsertTrace { voucher_hash, full_denom },
     test_output_ref(0),
@@ -1544,12 +1538,11 @@ test trace_registry_insert_trace_fails_when_hash_already_exists() fail {
       inputs: [spent_input],
       reference_inputs: [directory_input],
       outputs: [updated_output],
-      mint:
-        from_asset(
-          test_voucher_policy_id(),
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-          1,
-        ),
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      ),
     }
 
   run_trace_registry_spend(
@@ -1573,7 +1566,12 @@ test trace_registry_insert_trace_fails_when_hash_exists_in_archived_shard() fail
       output: test_shard_output(bucket_index, active_shard_name, []),
     }
   let directory_input =
-    test_directory_input(1, bucket_index, active_shard_name, [archived_shard_name])
+    test_directory_input(
+      1,
+      bucket_index,
+      active_shard_name,
+      [archived_shard_name],
+    )
   let archived_shard_reference_input =
     Input {
       output_reference: test_output_ref(2),
@@ -1596,12 +1594,11 @@ test trace_registry_insert_trace_fails_when_hash_exists_in_archived_shard() fail
       inputs: [spent_input],
       reference_inputs: [directory_input, archived_shard_reference_input],
       outputs: [updated_output],
-      mint:
-        from_asset(
-          test_voucher_policy_id(),
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-          1,
-        ),
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      ),
     }
 
   run_trace_registry_spend(
@@ -1637,12 +1634,11 @@ test trace_registry_insert_trace_fails_when_spent_shard_is_not_directory_active(
       inputs: [spent_input],
       reference_inputs: [directory_input],
       outputs: [updated_output],
-      mint:
-        from_asset(
-          test_voucher_policy_id(),
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-          1,
-        ),
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      ),
     }
 
   run_trace_registry_spend(
@@ -1690,12 +1686,11 @@ test trace_registry_insert_trace_fails_with_forged_directory_token() fail {
       inputs: [spent_input],
       reference_inputs: [forged_directory_input],
       outputs: [updated_output],
-      mint:
-        from_asset(
-          test_voucher_policy_id(),
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-          1,
-        ),
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      ),
     }
 
   run_trace_registry_spend(
@@ -1744,12 +1739,11 @@ test trace_registry_insert_trace_fails_when_directory_input_is_not_at_registry_a
       inputs: [spent_input],
       reference_inputs: [misplaced_directory_input],
       outputs: [updated_output],
-      mint:
-        from_asset(
-          test_voucher_policy_id(),
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-          1,
-        ),
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      ),
     }
 
   run_trace_registry_spend(
@@ -1768,7 +1762,9 @@ test trace_registry_rollover_insert_succeeds_and_preserves_old_shard() {
   let new_active_shard_name = "active-0a-v2"
   let old_entry =
     TraceRegistryEntry {
-      voucher_hash: voucher_asset_name.voucher_denom_hash("transfer/channel-7/uosmo"),
+      voucher_hash: voucher_asset_name.voucher_denom_hash(
+        "transfer/channel-7/uosmo",
+      ),
       full_denom: "transfer/channel-7/uosmo",
     }
   let old_shard = TraceRegistryShardDatum { bucket_index, entries: [old_entry] }
@@ -1811,12 +1807,11 @@ test trace_registry_rollover_insert_succeeds_and_preserves_old_shard() {
       ..placeholder,
       inputs: [spent_input, directory_input],
       outputs: [archived_output, new_active_output, updated_directory_output],
-      mint:
-        from_asset(
-          test_voucher_policy_id(),
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-          1,
-        )
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 
@@ -1866,12 +1861,11 @@ test trace_registry_rollover_insert_fails_when_directory_does_not_advance() fail
       ..placeholder,
       inputs: [spent_input, directory_input],
       outputs: [archived_output, new_active_output, stale_directory_output],
-      mint:
-        from_asset(
-          test_voucher_policy_id(),
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-          1,
-        )
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 
@@ -1892,7 +1886,9 @@ test trace_registry_rollover_insert_fails_when_spent_shard_is_not_old_active() f
   let new_active_shard_name = "active-0a-v2"
   let old_entry =
     TraceRegistryEntry {
-      voucher_hash: voucher_asset_name.voucher_denom_hash("transfer/channel-7/uosmo"),
+      voucher_hash: voucher_asset_name.voucher_denom_hash(
+        "transfer/channel-7/uosmo",
+      ),
       full_denom: "transfer/channel-7/uosmo",
     }
   let old_shard = TraceRegistryShardDatum { bucket_index, entries: [old_entry] }
@@ -1936,12 +1932,11 @@ test trace_registry_rollover_insert_fails_when_spent_shard_is_not_old_active() f
       ..placeholder,
       inputs: [spent_input, directory_input],
       outputs: [archived_output, new_active_output, updated_directory_output],
-      mint:
-        from_asset(
-          test_voucher_policy_id(),
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-          1,
-        )
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 
@@ -1996,7 +1991,9 @@ test trace_registry_rollover_insert_fails_when_hash_exists_in_archived_shard() f
         TraceRegistryDirectoryBucket {
           bucket_index,
           active_shard_name: new_active_shard_name,
-          archived_shard_names: [archived_shard_name, previous_active_shard_name],
+          archived_shard_names: [
+            archived_shard_name, previous_active_shard_name,
+          ],
         },
       ],
     )
@@ -2007,12 +2004,11 @@ test trace_registry_rollover_insert_fails_when_hash_exists_in_archived_shard() f
       inputs: [spent_input, directory_input],
       reference_inputs: [archived_shard_reference_input],
       outputs: [archived_output, new_active_output, updated_directory_output],
-      mint:
-        from_asset(
-          test_voucher_policy_id(),
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-          1,
-        )
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 
@@ -2063,12 +2059,11 @@ test trace_registry_rollover_insert_fails_when_updated_directory_output_uses_wro
       ..placeholder,
       inputs: [spent_input, directory_input],
       outputs: [archived_output, new_active_output, forged_directory_output],
-      mint:
-        from_asset(
-          test_voucher_policy_id(),
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-          1,
-        )
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 
@@ -2125,12 +2120,11 @@ test trace_registry_advance_directory_succeeds_for_valid_rollover() {
       ..placeholder,
       inputs: [spent_input],
       outputs: [updated_directory_output, archived_output, new_active_output],
-      mint:
-        from_asset(
-          test_voucher_policy_id(),
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-          1,
-        )
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 
@@ -2193,12 +2187,11 @@ test trace_registry_advance_directory_fails_when_previous_shard_is_not_archived(
       ..placeholder,
       inputs: [spent_input],
       outputs: [invalid_directory_output, archived_output, new_active_output],
-      mint:
-        from_asset(
-          test_voucher_policy_id(),
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-          1,
-        )
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 
@@ -2272,12 +2265,11 @@ test trace_registry_advance_directory_fails_when_bucket_set_is_not_bijective() f
       ..placeholder,
       inputs: [spent_input],
       outputs: [invalid_directory_output, archived_output, new_active_output],
-      mint:
-        from_asset(
-          test_voucher_policy_id(),
-          voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
-          1,
-        )
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      )
         |> add(test_shard_policy_id(), new_active_shard_name, 1),
     }
 

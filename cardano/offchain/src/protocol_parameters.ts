@@ -43,7 +43,9 @@ function toSafeCostModelInteger(value: unknown): number {
   }
 
   if (!Number.isSafeInteger(parsedValue)) {
-    return parsedValue > 0 ? MAX_SAFE_COST_MODEL_VALUE : -MAX_SAFE_COST_MODEL_VALUE;
+    return parsedValue > 0
+      ? MAX_SAFE_COST_MODEL_VALUE
+      : -MAX_SAFE_COST_MODEL_VALUE;
   }
 
   return parsedValue;
@@ -53,13 +55,18 @@ function parseRatio(value: string): number {
   const [numerator, denominator] = value.split("/").map((entry) =>
     Number.parseFloat(entry)
   );
-  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) {
+  if (
+    !Number.isFinite(numerator) || !Number.isFinite(denominator) ||
+    denominator === 0
+  ) {
     throw new Error(`Invalid Ogmios ratio value: ${value}`);
   }
   return numerator / denominator;
 }
 
-function toCostModelEntries(values: unknown[] | undefined): Record<string, number> {
+function toCostModelEntries(
+  values: unknown[] | undefined,
+): Record<string, number> {
   return Object.fromEntries(
     (values ?? []).map((value, index) => [
       index.toString(),
@@ -76,7 +83,11 @@ export function sanitizeProtocolParameters(protocolParameters: any): any {
   let sanitizedEntries = 0;
   const sanitizedCostModels: Record<string, Record<string, number>> = {};
 
-  for (const [version, model] of Object.entries(protocolParameters.costModels as Record<string, Record<string, unknown>>)) {
+  for (
+    const [version, model] of Object.entries(
+      protocolParameters.costModels as Record<string, Record<string, unknown>>,
+    )
+  ) {
     const sanitizedModel: Record<string, number> = {};
     for (const [index, value] of Object.entries(model ?? {})) {
       const sanitized = toSafeCostModelInteger(value);
@@ -112,7 +123,11 @@ function resolveOgmiosHttpRequestConfig(ogmiosUrl: string): {
 
   try {
     const parsedUrl = new URL(httpUrl);
-    parsedUrl.protocol = parsedUrl.protocol === "wss:" ? "https:" : parsedUrl.protocol === "ws:" ? "http:" : parsedUrl.protocol;
+    parsedUrl.protocol = parsedUrl.protocol === "wss:"
+      ? "https:"
+      : parsedUrl.protocol === "ws:"
+      ? "http:"
+      : parsedUrl.protocol;
     httpUrl = parsedUrl.toString();
     // DMTR authenticated hosts already carry the credential in the subdomain.
     if (apiKey && !parsedUrl.host.startsWith(`${apiKey}.`)) {
@@ -176,8 +191,12 @@ export async function queryProtocolParametersCompat(ogmiosUrl: string) {
     maxValSize: result.maxValueSize.bytes,
     keyDeposit: BigInt(result.stakeCredentialDeposit.ada.lovelace),
     poolDeposit: BigInt(result.stakePoolDeposit.ada.lovelace),
-    drepDeposit: BigInt(result.delegateRepresentativeDeposit?.ada?.lovelace ?? 0),
-    govActionDeposit: BigInt(result.governanceActionDeposit?.ada?.lovelace ?? 0),
+    drepDeposit: BigInt(
+      result.delegateRepresentativeDeposit?.ada?.lovelace ?? 0,
+    ),
+    govActionDeposit: BigInt(
+      result.governanceActionDeposit?.ada?.lovelace ?? 0,
+    ),
     priceMem: parseRatio(result.scriptExecutionPrices.memory),
     priceStep: parseRatio(result.scriptExecutionPrices.cpu),
     maxTxExMem: BigInt(result.maxExecutionUnitsPerTransaction.memory),
@@ -191,7 +210,9 @@ export async function queryProtocolParametersCompat(ogmiosUrl: string) {
     costModels: {
       PlutusV1: toCostModelEntries(plutusCostModels["plutus:v1"]),
       PlutusV2: toCostModelEntries(plutusV2CostModel),
-      PlutusV3: toCostModelEntries(plutusCostModels["plutus:v3"] ?? plutusV2CostModel),
+      PlutusV3: toCostModelEntries(
+        plutusCostModels["plutus:v3"] ?? plutusV2CostModel,
+      ),
     },
   };
 }

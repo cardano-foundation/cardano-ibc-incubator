@@ -18,11 +18,46 @@ module.exports = {
     '@typescript-eslint/explicit-function-return-type': 'off',
     '@typescript-eslint/explicit-module-boundary-types': 'off',
     '@typescript-eslint/no-explicit-any': 'off',
+    '@typescript-eslint/no-unused-vars': [
+      'error',
+      {
+        argsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+        destructuredArrayIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+      },
+    ],
     'prettier/prettier': [
       'error',
       {
         singleQuote: true, // Enforces double quotes
       },
     ],
+    complexity: ['error', 45],
+    'max-depth': ['error', 9],
+    'max-lines-per-function': [
+      'error',
+      {
+        max: 550,
+        skipBlankLines: true,
+        skipComments: true,
+      },
+    ],
   },
+  overrides: [
+    {
+      files: ['**/*.spec.ts', 'src/**/test/**/*.ts'],
+      rules: {
+        complexity: ['error', 70],
+        'max-lines-per-function': [
+          'error',
+          {
+            max: 700,
+            skipBlankLines: true,
+            skipComments: true,
+          },
+        ],
+      },
+    },
+  ],
 };

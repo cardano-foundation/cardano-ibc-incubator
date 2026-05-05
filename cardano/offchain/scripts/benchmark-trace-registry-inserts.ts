@@ -11,11 +11,7 @@ import {
   type UTxO,
   validatorToScriptHash,
 } from "@lucid-evolution/lucid";
-import {
-  generateIdentifierTokenName,
-  hashSha3_256,
-  submitTx,
-} from "../src/utils.ts";
+import { generateIdentifierTokenName, hashSha3_256 } from "../src/utils.ts";
 import {
   buildLucidWithCompatibleProtocolParameters,
 } from "../src/protocol_parameters.ts";
@@ -229,6 +225,7 @@ function parseArgs(argv: string[]): ScriptArgs {
       case "-h":
         console.log(usage());
         Deno.exit(0);
+        break;
       default:
         throw new Error(`Unknown argument: ${arg}`);
     }
@@ -375,12 +372,16 @@ async function buildLucid(): Promise<LucidEvolution> {
   const provider = new Kupmios(kupoUrl, ogmiosUrl);
   const originalEvaluateTx = (provider as any).evaluateTx?.bind(provider);
   if (typeof originalEvaluateTx === "function") {
-    (provider as any).evaluateTx = async (tx: string, additionalUTxOs?: any[]) => {
+    (provider as any).evaluateTx = async (
+      tx: string,
+      additionalUTxOs?: any[],
+    ) => {
       try {
         return await originalEvaluateTx(tx, additionalUTxOs);
       } catch (error) {
         const dumpId = Date.now();
-        const dumpTxPath = `/tmp/trace-registry-benchmark-evaluateTx-${dumpId}.tx`;
+        const dumpTxPath =
+          `/tmp/trace-registry-benchmark-evaluateTx-${dumpId}.tx`;
         const dumpContextPath =
           `/tmp/trace-registry-benchmark-evaluateTx-${dumpId}.context.json`;
 
@@ -793,34 +794,6 @@ function benchmarkSinkAddress(lucid: LucidEvolution): string {
   });
 }
 
-async function resolveOutRefUtxo(
-  lucid: LucidEvolution,
-  outRef: RefUtxo,
-): Promise<UTxO> {
-  const maxAttempts = 10;
-  const retryDelayMs = 1000;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const utxos = await lucid.utxosByOutRef([
-      {
-        txHash: outRef.txHash,
-        outputIndex: outRef.outputIndex,
-      },
-    ]);
-    if (utxos.length > 0) {
-      return utxos[0];
-    }
-
-    if (attempt < maxAttempts) {
-      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
-    }
-  }
-
-  throw new Error(
-    `Unable to resolve live reference UTxO ${outRef.txHash}#${outRef.outputIndex}`,
-  );
-}
-
 async function findUtxoByUnit(
   lucid: LucidEvolution,
   unit: string,
@@ -844,11 +817,11 @@ async function findUtxoByUnit(
   throw new Error(`Unable to find live UTxO with unit ${unit}`);
 }
 
-async function loadBenchmarkReferenceScripts(
-  lucid: LucidEvolution,
+function loadBenchmarkReferenceScripts(
   deployment: DeploymentInfo,
-): Promise<BenchmarkReferenceScripts> {
-  const benchmarkPolicy = deployment.validators.mintTraceRegistryBenchmarkVoucher;
+): BenchmarkReferenceScripts {
+  const benchmarkPolicy =
+    deployment.validators.mintTraceRegistryBenchmarkVoucher;
   if (!benchmarkPolicy?.script) {
     throw new Error(
       "Local benchmark voucher policy script is missing from handler.json. Re-run the bridge deployment on feat/cardano-onchain-trace-registry first.",
@@ -1097,7 +1070,9 @@ async function prepareInsertContexts(
     );
   }
   if (bucketMatches.length > 0) {
-    const conflicting = bucketMatches.find((entry) => entry.fullDenom !== fullDenom);
+    const conflicting = bucketMatches.find((entry) =>
+      entry.fullDenom !== fullDenom
+    );
     if (conflicting) {
       throw new Error(
         `Conflicting bucket trace-registry mapping for hash ${voucherHash}: existing=${conflicting.fullDenom}, incoming=${fullDenom}`,
@@ -1405,7 +1380,7 @@ async function main() {
   assertBenchmarkDeploymentMatchesCurrentValidators(deployment);
   const registry = getTraceRegistryConfig(deployment);
   const benchmarkPolicyId = benchmarkVoucherPolicyId(deployment);
-  const references = await loadBenchmarkReferenceScripts(lucid, deployment);
+  const references = loadBenchmarkReferenceScripts(deployment);
   const { datum: directory } = await loadDirectoryDatum(lucid, registry);
   const initialBucket = getDirectoryBucket(directory, bucket);
   const seenHashes = await loadBucketEntrySet(lucid, registry, initialBucket);

@@ -2,6 +2,7 @@
   "version": "5",
   "specifiers": {
     "jsr:@std/assert@*": "1.0.19",
+    "jsr:@std/assert@^1.0.11": "1.0.19",
     "jsr:@std/crypto@^1.0.5": "1.0.5",
     "jsr:@std/fs@^1.0.13": "1.0.19",
     "jsr:@std/internal@^1.0.10": "1.0.12",
@@ -10,9 +11,11 @@
     "jsr:@std/path@^1.1.1": "1.1.2",
     "npm:@lucid-evolution/lucid@0.4.29": "0.4.29_effect@3.19.2",
     "npm:@lucid-evolution/utils@*": "0.1.66_effect@3.19.2_@harmoniclabs+plutus-data@1.2.6__@harmoniclabs+bytestring@1.0.0__@harmoniclabs+cbor@1.6.6",
+    "npm:@lucid-evolution/utils@0.1.66": "0.1.66_effect@3.19.2_@harmoniclabs+plutus-data@1.2.6__@harmoniclabs+bytestring@1.0.0__@harmoniclabs+cbor@1.6.6",
     "npm:@types/node@*": "24.2.0",
     "npm:cbor@10": "10.0.11",
-    "npm:ws@*": "7.5.10"
+    "npm:ws@*": "7.5.10",
+    "npm:ws@7.5.10": "7.5.10"
   },
   "jsr": {
     "@std/assert@1.0.19": {
@@ -1041,10 +1044,13 @@
   },
   "workspace": {
     "dependencies": [
+      "jsr:@std/assert@^1.0.11",
       "jsr:@std/crypto@^1.0.5",
       "jsr:@std/fs@^1.0.13",
       "jsr:@std/path@^1.0.13",
-      "npm:@lucid-evolution/lucid@0.4.29"
+      "npm:@lucid-evolution/lucid@0.4.29",
+      "npm:@lucid-evolution/utils@0.1.66",
+      "npm:ws@7.5.10"
     ]
   }
 }

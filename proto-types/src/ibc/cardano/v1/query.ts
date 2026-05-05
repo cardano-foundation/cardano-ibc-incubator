@@ -160,11 +160,11 @@ export const QueryEventsResponse = {
     if (message.current_height !== BigInt(0)) {
       writer.uint32(8).uint64(message.current_height);
     }
-    for (const v of message.events) {
-      BlockEvents.encode(v!, writer.uint32(18).fork()).ldelim();
-    }
     if (message.scanned_to_height !== BigInt(0)) {
       writer.uint32(24).uint64(message.scanned_to_height);
+    }
+    for (const v of message.events) {
+      BlockEvents.encode(v!, writer.uint32(18).fork()).ldelim();
     }
     return writer;
   },
@@ -178,11 +178,11 @@ export const QueryEventsResponse = {
         case 1:
           message.current_height = reader.uint64();
           break;
-        case 2:
-          message.events.push(BlockEvents.decode(reader, reader.uint32()));
-          break;
         case 3:
           message.scanned_to_height = reader.uint64();
+          break;
+        case 2:
+          message.events.push(BlockEvents.decode(reader, reader.uint32()));
           break;
         default:
           reader.skipType(tag & 7);

@@ -263,7 +263,7 @@ export class ChannelService {
       } as unknown as MsgChannelOpenInitResponse;
       return response;
     } catch (error) {
-      let throwError: Error = error as Error;
+      const throwError: Error = error as Error;
       this.logger.error(`channelOpenInit: ${throwError.name} - ${throwError.message}`, throwError.stack);
       if (!(error instanceof RpcException)) {
         throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
@@ -697,7 +697,7 @@ export class ChannelService {
   /* istanbul ignore next */
   async buildUnsignedChannelOpenTryTx(
     channelOpenTryOperator: ChannelOpenTryOperator,
-    constructedAddress: string,
+    _constructedAddress: string,
   ): Promise<TxBuilder> {
     // STT Architecture: Query the HostState UTXO via its unique NFT.
     const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
