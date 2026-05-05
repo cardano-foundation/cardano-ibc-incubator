@@ -11,6 +11,70 @@ const basePath = process?.env?.BASE_PATH || '';
 process.env.WS_NO_BUFFER_UTIL ||= '1';
 process.env.WS_NO_UTF_8_VALIDATE ||= '1';
 
+function firstNonEmpty(...values) {
+  return values.find(
+    (value) => typeof value === 'string' && value.trim().length > 0,
+  );
+}
+
+function isDemeterPublicEndpoint(endpoint, authenticatedPrefix) {
+  try {
+    const hostname = new URL(endpoint).hostname;
+    const isDemeterHost =
+      hostname.endsWith('.dmtr.host') || hostname.endsWith('.demeter.run');
+    return isDemeterHost && !hostname.startsWith(authenticatedPrefix);
+  } catch {
+    return false;
+  }
+}
+
+function validateRemoteKupmiosAuth() {
+  const mode = firstNonEmpty(
+    process.env.NEXT_PUBLIC_IBC_SWAP_MODE,
+    process.env.IBC_SWAP_MODE,
+  );
+  if (mode !== 'testnet' && mode !== 'mainnet') return;
+
+  const kupmiosUrl = firstNonEmpty(
+    process.env.IBC_SWAP_KUPMIOS_INTERNAL_URL,
+    process.env.IBC_SWAP_KUPMIOS_URL,
+    process.env.NEXT_PUBLIC_KUPMIOS_URL,
+  );
+  if (!kupmiosUrl) return;
+
+  const [kupoEndpoint = '', ogmiosEndpoint = ''] = kupmiosUrl
+    .split(',')
+    .map((value) => value.trim());
+  const missing = [];
+
+  if (
+    isDemeterPublicEndpoint(kupoEndpoint, 'kupo') &&
+    !firstNonEmpty(process.env.IBC_SWAP_KUPO_API_KEY, process.env.KUPO_API_KEY)
+  ) {
+    missing.push('IBC_SWAP_KUPO_API_KEY');
+  }
+
+  if (
+    isDemeterPublicEndpoint(ogmiosEndpoint, 'ogmios') &&
+    !firstNonEmpty(
+      process.env.IBC_SWAP_OGMIOS_API_KEY,
+      process.env.OGMIOS_API_KEY,
+    )
+  ) {
+    missing.push('IBC_SWAP_OGMIOS_API_KEY');
+  }
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Remote Cardano Kupo/Ogmios endpoints require server-side API key env vars: ${missing.join(
+        ', ',
+      )}`,
+    );
+  }
+}
+
+validateRemoteKupmiosAuth();
+
 function ensureSodiumWrapperEsmArtifact() {
   const packageRoots = [
     __dirname,

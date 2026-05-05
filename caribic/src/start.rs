@@ -206,6 +206,31 @@ fn read_preprod_remote_kupmios_url(
     Ok(Some(format!("{kupo_endpoint},{ogmios_endpoint}")))
 }
 
+fn read_preprod_remote_kupmios_api_keys(
+    gateway_env_path: &Path,
+) -> Result<Option<(String, String)>, Box<dyn std::error::Error>> {
+    if preprod_uses_local_kupo_runtime(gateway_env_path)? {
+        return Ok(None);
+    }
+
+    let kupo_api_key =
+        crate::setup::read_gateway_env_value(gateway_env_path, "GATEWAY_RUNTIME_KUPO_API_KEY")?
+            .or_else(|| {
+                crate::setup::read_gateway_env_value(gateway_env_path, "KUPO_API_KEY")
+                    .ok()
+                    .flatten()
+            })
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .ok_or("PREPROD_KUPO_MODE=remote requires GATEWAY_RUNTIME_KUPO_API_KEY or KUPO_API_KEY")?;
+    let ogmios_api_key = crate::setup::read_gateway_env_value(gateway_env_path, "OGMIOS_API_KEY")?
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or("PREPROD_KUPO_MODE=remote requires OGMIOS_API_KEY")?;
+
+    Ok(Some((kupo_api_key, ogmios_api_key)))
+}
+
 fn managed_cardano_runtime_services_running(
     cardano_dir: &Path,
     network: config::CoreCardanoNetwork,
@@ -3121,6 +3146,13 @@ fn run_dapp_compose_command(
             command
                 .env("IBC_SWAP_KUPMIOS_URL", kupmios_url.as_str())
                 .env("IBC_SWAP_KUPMIOS_INTERNAL_URL", kupmios_url.as_str());
+        }
+        if let Some((kupo_api_key, ogmios_api_key)) =
+            read_preprod_remote_kupmios_api_keys(gateway_env_path.as_path())?
+        {
+            command
+                .env("IBC_SWAP_KUPO_API_KEY", kupo_api_key)
+                .env("IBC_SWAP_OGMIOS_API_KEY", ogmios_api_key);
         }
     }
 

@@ -38,9 +38,14 @@ type RuntimeLogger = {
     warn: (...args: unknown[]) => void;
     error: (...args: unknown[]) => void;
 };
+type KupmiosAuthHeaders = {
+    kupoHeader?: Record<string, string>;
+    ogmiosHeader?: Record<string, string>;
+};
 type BuilderRuntimeConfig = {
     bridgeManifestUrl: string;
     kupmiosUrl: string;
+    kupmiosHeaders?: KupmiosAuthHeaders;
     fetchImpl?: typeof fetch;
     logger?: RuntimeLogger;
 };

@@ -1,7 +1,11 @@
 /* eslint-disable no-console */
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { createTxBuilderRuntime } from '@cardano-ibc/tx-builder-runtime';
-import { CARDANO_BRIDGE_MANIFEST_URL, KUPMIOS_URL } from '@/configs/runtime';
+import {
+  CARDANO_BRIDGE_MANIFEST_URL,
+  KUPMIOS_AUTH_HEADERS,
+  KUPMIOS_URL,
+} from '@/configs/runtime';
 
 export const config = {
   api: {
@@ -20,6 +24,7 @@ const RATE_LIMIT_MAX_REQUESTS = 20;
 const transferBuilderRuntime = createTxBuilderRuntime({
   bridgeManifestUrl: CARDANO_BRIDGE_MANIFEST_URL,
   kupmiosUrl: KUPMIOS_URL,
+  kupmiosHeaders: KUPMIOS_AUTH_HEADERS,
 });
 
 type LocalUnsignedTransferResponse = Awaited<

@@ -281,9 +281,15 @@ type RuntimeLogger = {
   error: (...args: unknown[]) => void;
 };
 
+type KupmiosAuthHeaders = {
+  kupoHeader?: Record<string, string>;
+  ogmiosHeader?: Record<string, string>;
+};
+
 type BuilderRuntimeConfig = {
   bridgeManifestUrl: string;
   kupmiosUrl: string;
+  kupmiosHeaders?: KupmiosAuthHeaders;
   fetchImpl?: typeof fetch;
   logger?: RuntimeLogger;
 };
@@ -294,6 +300,7 @@ type BuilderContext = {
   logger: RuntimeLogger;
   cardanoNetwork: Network;
   ogmiosEndpoint: string;
+  kupmiosHeaders?: KupmiosAuthHeaders;
   traceRegistryClient: ReturnType<typeof createTraceRegistryClient>;
 };
 
@@ -323,6 +330,26 @@ function startTimer(): bigint {
 function elapsedMs(start: bigint): string {
   const elapsed = Number(process.hrtime.bigint() - start) / 1_000_000;
   return `${Math.round(elapsed)}ms`;
+}
+
+function normalizeCardanoNetwork(network: string): Network {
+  const normalized = network.trim().toLowerCase();
+  switch (normalized) {
+    case 'mainnet':
+      return 'Mainnet';
+    case 'preprod':
+      return 'Preprod';
+    case 'preview':
+      return 'Preview';
+    case 'custom':
+    case 'devnet':
+    case 'cardano-devnet':
+      return 'Custom';
+    default:
+      throw new Error(
+        `Unsupported Cardano network "${network}" in bridge manifest. Expected one of ${LUCID_NETWORKS.join(', ')}.`,
+      );
+  }
 }
 
 async function timed<T>(logger: RuntimeLogger, scope: string, label: string, operation: () => Promise<T>): Promise<T> {
@@ -628,9 +655,14 @@ function appendBuffer(left: Uint8Array, right: Uint8Array): Uint8Array {
   return result;
 }
 
-function ogmiosRequest<T>(ogmiosUrl: string, methodName: string, args: unknown): Promise<T> {
+function ogmiosRequest<T>(
+  ogmiosUrl: string,
+  methodName: string,
+  args: unknown,
+  headers?: Record<string, string>,
+): Promise<T> {
   return new Promise(async (resolve, reject) => {
-    const client = new WebSocket(ogmiosUrl);
+    const client = new WebSocket(ogmiosUrl, headers ? { headers } : undefined);
 
     const cleanup = () => {
       if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) {
@@ -670,13 +702,13 @@ function ogmiosRequest<T>(ogmiosUrl: string, methodName: string, args: unknown):
   });
 }
 
-async function querySystemStart(ogmiosUrl: string): Promise<number> {
-  const systemStart = await ogmiosRequest<string>(ogmiosUrl, 'queryNetwork/startTime', {});
+async function querySystemStart(ogmiosUrl: string, headers?: Record<string, string>): Promise<number> {
+  const systemStart = await ogmiosRequest<string>(ogmiosUrl, 'queryNetwork/startTime', {}, headers);
   return Date.parse(systemStart);
 }
 
-async function queryNetworkTipPoint(ogmiosUrl: string): Promise<OgmiosPoint | 'origin'> {
-  const result = await ogmiosRequest<OgmiosPoint | 'origin'>(ogmiosUrl, 'queryNetwork/tip', {});
+async function queryNetworkTipPoint(ogmiosUrl: string, headers?: Record<string, string>): Promise<OgmiosPoint | 'origin'> {
+  const result = await ogmiosRequest<OgmiosPoint | 'origin'>(ogmiosUrl, 'queryNetwork/tip', {}, headers);
   if (result === 'origin') {
     return 'origin';
   }
@@ -819,9 +851,15 @@ async function retryWithBackoff<T>(operation: () => Promise<T>): Promise<T> {
   throw new Error('Kupmios protocol parameters fetch failed');
 }
 
-async function createLucidRuntime(kupoEndpoint: string, ogmiosEndpoint: string, cardanoNetwork: Network, logger: RuntimeLogger): Promise<{ lucidImporter: LucidModule; lucid: LucidEvolution }> {
+async function createLucidRuntime(
+  kupoEndpoint: string,
+  ogmiosEndpoint: string,
+  cardanoNetwork: Network,
+  logger: RuntimeLogger,
+  headers?: KupmiosAuthHeaders,
+): Promise<{ lucidImporter: LucidModule; lucid: LucidEvolution }> {
   const Lucid = await timed(logger, '[context]', 'import lucid', () => eval(`import('@lucid-evolution/lucid')`) as Promise<LucidModule>);
-  const provider = new Lucid.Kupmios(kupoEndpoint, ogmiosEndpoint);
+  const provider = new Lucid.Kupmios(kupoEndpoint, ogmiosEndpoint, headers);
   const protocolParameters = sanitizeProtocolParameters(await timed(logger, '[context]', 'fetch protocol parameters', () => retryWithBackoff(() => provider.getProtocolParameters())));
   const lucid = await timed(logger, '[context]', 'create lucid runtime', () =>
     Lucid.Lucid(provider, cardanoNetwork, {
@@ -829,7 +867,9 @@ async function createLucidRuntime(kupoEndpoint: string, ogmiosEndpoint: string, 
     } as any),
   );
 
-  const chainZeroTime = await timed(logger, '[context]', 'query system start', () => querySystemStart(ogmiosEndpoint));
+  const chainZeroTime = await timed(logger, '[context]', 'query system start', () =>
+    querySystemStart(ogmiosEndpoint, headers?.ogmiosHeader),
+  );
   Lucid.SLOT_CONFIG_NETWORK[cardanoNetwork].zeroTime = chainZeroTime;
   Lucid.SLOT_CONFIG_NETWORK[cardanoNetwork].slotLength = 1000;
 
@@ -962,7 +1002,7 @@ async function buildHostStateUpdateForHandlePacket(context: BuilderContext, inpu
 }
 
 async function computeTxValidityWindow(context: BuilderContext) {
-  const tip = await queryNetworkTipPoint(context.ogmiosEndpoint);
+  const tip = await queryNetworkTipPoint(context.ogmiosEndpoint, context.kupmiosHeaders?.ogmiosHeader);
   const currentSlot = tip === 'origin' ? 0 : tip.slot;
   const ttlSlots = Math.max(1, Math.ceil(TRANSACTION_TIME_TO_LIVE / 1000));
   const validToSlot = currentSlot + ttlSlots;
@@ -1009,6 +1049,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
   const traceRegistryClient = createTraceRegistryClient({
     bridgeManifestUrl: config.bridgeManifestUrl,
     kupmiosUrl: config.kupmiosUrl,
+    kupmiosHeaders: config.kupmiosHeaders,
     fetchImpl: config.fetchImpl,
   });
 
@@ -1038,7 +1079,13 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
     const { kupoEndpoint, ogmiosEndpoint } = splitKupmiosUrl(config.kupmiosUrl);
     const cardanoNetwork = normalizeCardanoNetwork(bridgeManifest.cardano.network);
 
-    const { lucidImporter, lucid } = await createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork, logger);
+    const { lucidImporter, lucid } = await createLucidRuntime(
+      kupoEndpoint,
+      ogmiosEndpoint,
+      cardanoNetwork,
+      logger,
+      config.kupmiosHeaders,
+    );
     const lucidService = new LucidIbcAdapter(lucidImporter, lucid, deployment);
     await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
 
@@ -1054,6 +1101,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
       logger,
       cardanoNetwork,
       ogmiosEndpoint,
+      kupmiosHeaders: config.kupmiosHeaders,
       traceRegistryClient,
     };
   }

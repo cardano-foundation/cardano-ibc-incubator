@@ -68,9 +68,15 @@ export interface CardanoAssetDenomTrace {
   metadataVersion?: number | null;
 }
 
+type KupmiosAuthHeaders = {
+  kupoHeader?: Record<string, string>;
+  ogmiosHeader?: Record<string, string>;
+};
+
 export type TraceRegistryClientConfig = {
   bridgeManifestUrl: string;
   kupmiosUrl: string;
+  kupmiosHeaders?: KupmiosAuthHeaders;
   fetchImpl?: typeof fetch;
 };
 
@@ -132,7 +138,11 @@ type KupmiosProvider = {
 };
 
 type LucidModule = LucidDataModule & {
-  Kupmios: new (kupoUrl: string, ogmiosUrl: string) => unknown;
+  Kupmios: new (
+    kupoUrl: string,
+    ogmiosUrl: string,
+    headers?: KupmiosAuthHeaders,
+  ) => unknown;
 };
 
 type LoadedBucketShard = {
@@ -498,6 +508,7 @@ export function createTraceRegistryClient(
           provider: new Lucid.Kupmios(
             kupoUrl,
             ogmiosUrl,
+            config.kupmiosHeaders,
           ) as unknown as KupmiosProvider,
         };
       })();
