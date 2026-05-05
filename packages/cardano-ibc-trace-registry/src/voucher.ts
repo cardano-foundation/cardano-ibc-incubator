@@ -202,9 +202,10 @@ export function deriveVoucherPresentation(
   fullDenom: string,
   baseDenom: string,
 ): VoucherPresentation {
+  const displayName = baseDenom.trim() || 'IBC';
   const canonicalLabel = deriveVoucherCanonicalLabel(baseDenom);
   return {
-    displayName: canonicalLabel,
+    displayName,
     displaySymbol: canonicalLabel,
     displayDescription: `IBC voucher for ${fullDenom}`,
   };
