@@ -1,4 +1,16 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Param, ParseBoolPipe, ParseIntPipe, Post, Query, UseFilters } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  ParseBoolPipe,
+  ParseIntPipe,
+  Post,
+  Query,
+  UseFilters,
+} from '@nestjs/common';
 import { EstimateLocalOsmosisSwapDto, MsgtransferDto, PlanTransferRouteDto } from './api.dto';
 import {
   CheqdDidDocIcqRequestDto,
@@ -22,6 +34,7 @@ import { LOVELACE } from '../constant';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { TransferPlannerService } from './transfer-planner.service';
 import { BridgeManifestService } from '~@/query/services/bridge-manifest.service';
+import { QueryService } from '~@/query/services/query.service';
 import { CheqdIcqService } from './cheqd-icq.service';
 import { VesseloracleIcqService } from './vesseloracle-icq.service';
 import { parseVoucherAssetName } from '../shared/helpers/voucher-asset';
@@ -66,6 +79,7 @@ export class ApiController {
     private readonly localOsmosisSwapPlannerService: LocalOsmosisSwapPlannerService,
     private readonly transferPlannerService: TransferPlannerService,
     private readonly bridgeManifestService: BridgeManifestService,
+    private readonly queryService: QueryService,
     private readonly cheqdIcqService: CheqdIcqService,
     private readonly vesseloracleIcqService: VesseloracleIcqService,
   ) {}
@@ -256,7 +270,7 @@ export class ApiController {
   @Post('icq/cheqd/latest-resource-version-metadata/decode')
   @HttpCode(200)
   async decodeCheqdLatestResourceVersionMetadataIcq(@Body() dto: AsyncIcqAcknowledgementDto) {
-  return this.cheqdIcqService.decodeLatestResourceVersionMetadataAcknowledgement(dto.acknowledgement_hex);
+    return this.cheqdIcqService.decodeLatestResourceVersionMetadataAcknowledgement(dto.acknowledgement_hex);
   }
 
   @Post('icq/cheqd/result')
@@ -267,7 +281,9 @@ export class ApiController {
 
   @Post('icq/vesseloracle/consolidated-data-report')
   @HttpCode(200)
-  async buildVesseloracleConsolidatedDataReportIcq(@Body() requestDto: VesseloracleConsolidatedDataReportIcqRequestDto) {
+  async buildVesseloracleConsolidatedDataReportIcq(
+    @Body() requestDto: VesseloracleConsolidatedDataReportIcqRequestDto,
+  ) {
     const response = await this.vesseloracleIcqService.buildConsolidatedDataReportQuery(requestDto);
     return {
       query_path: response.query_path,
@@ -313,7 +329,10 @@ export class ApiController {
     return this.vesseloracleIcqService.findResult(dto);
   }
 
-  private serializeUnsignedTxResponse(response: { result?: unknown; unsigned_tx?: { type_url?: string; value?: Uint8Array | string } }) {
+  private serializeUnsignedTxResponse(response: {
+    result?: unknown;
+    unsigned_tx?: { type_url?: string; value?: Uint8Array | string };
+  }) {
     if (!response.unsigned_tx?.value) {
       throw new BadRequestException('Gateway response did not include an unsigned transaction');
     }
@@ -361,11 +380,28 @@ export class ApiController {
   async listCardanoIbcAssets(): Promise<ApiCardanoAssetDenomTrace[]> {
     const traces = await this.denomTraceService.findAll();
     return traces.map((trace) =>
-      this.mapVoucherTrace(
-        `${trace.voucher_policy_id}${trace.voucher_token_name}`.toLowerCase(),
-        trace,
-      ),
+      this.mapVoucherTrace(`${trace.voucher_policy_id}${trace.voucher_token_name}`.toLowerCase(), trace),
     );
+  }
+
+  @Get('cardano/tx/:txHash/packet-events')
+  async getCardanoTxPacketEvents(@Param('txHash') txHash: string) {
+    return this.queryService.queryPacketEventsByTxHash(txHash);
+  }
+
+  @Get('cardano/packet-events')
+  async getCardanoPacketEvents(
+    @Query('source_channel') sourceChannel: string,
+    @Query('destination_channel') destinationChannel: string,
+    @Query('sequence') sequence: string,
+    @Query('event_type') eventType?: string,
+  ) {
+    return this.queryService.queryPacketEventsByPacket({
+      sourceChannel,
+      destinationChannel,
+      sequence,
+      eventType,
+    });
   }
 
   @Get('local-osmosis/swap/options')
@@ -375,9 +411,7 @@ export class ApiController {
 
   @Post('local-osmosis/swap/estimate')
   @HttpCode(200)
-  async estimateLocalOsmosisSwap(
-    @Body() estimateSwapDto: EstimateLocalOsmosisSwapDto,
-  ) {
+  async estimateLocalOsmosisSwap(@Body() estimateSwapDto: EstimateLocalOsmosisSwapDto) {
     return this.localOsmosisSwapPlannerService.estimateSwap({
       fromChainId: estimateSwapDto.from_chain_id,
       tokenInDenom: estimateSwapDto.token_in_denom,
@@ -413,11 +447,7 @@ export class ApiController {
     };
   }
 
-  private buildNativeAssetTrace(
-    assetId: string,
-    baseDenom: string,
-    fullDenom: string,
-  ): ApiCardanoAssetDenomTrace {
+  private buildNativeAssetTrace(assetId: string, baseDenom: string, fullDenom: string): ApiCardanoAssetDenomTrace {
     const displayName = fullDenom === LOVELACE ? 'ADA' : baseDenom;
     return {
       asset_id: assetId,

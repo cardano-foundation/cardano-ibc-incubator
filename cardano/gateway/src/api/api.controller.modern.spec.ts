@@ -13,6 +13,7 @@ import { VesseloracleIcqService } from './vesseloracle-icq.service';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { TransferPlannerService } from './transfer-planner.service';
 import { BridgeManifestService } from '~@/query/services/bridge-manifest.service';
+import { QueryService } from '~@/query/services/query.service';
 
 describe('ApiController (modern)', () => {
   let controller: ApiController;
@@ -47,6 +48,10 @@ describe('ApiController (modern)', () => {
   };
   let bridgeManifestServiceMock: {
     getBridgeManifest: jest.Mock;
+  };
+  let queryServiceMock: {
+    queryPacketEventsByTxHash: jest.Mock;
+    queryPacketEventsByPacket: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -84,6 +89,10 @@ describe('ApiController (modern)', () => {
     bridgeManifestServiceMock = {
       getBridgeManifest: jest.fn(),
     };
+    queryServiceMock = {
+      queryPacketEventsByTxHash: jest.fn(),
+      queryPacketEventsByPacket: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ApiController],
@@ -96,6 +105,7 @@ describe('ApiController (modern)', () => {
         { provide: VesseloracleIcqService, useValue: vesseloracleIcqServiceMock },
         { provide: TransferPlannerService, useValue: transferPlannerServiceMock },
         { provide: BridgeManifestService, useValue: bridgeManifestServiceMock },
+        { provide: QueryService, useValue: queryServiceMock },
       ],
     }).compile();
 
@@ -602,6 +612,37 @@ describe('ApiController (modern)', () => {
       to_tokens: [{ token_id: 'uosmo', token_name: 'uosmo', token_logo: null }],
     });
     expect(swapPlannerServiceMock.getSwapOptions).toHaveBeenCalled();
+  });
+
+  it('delegates Cardano tx packet-event lookups to QueryService', async () => {
+    queryServiceMock.queryPacketEventsByTxHash.mockResolvedValue({
+      tx_hash: 'abc',
+      height: '123',
+      indexed: true,
+      events: [],
+    });
+
+    await expect(controller.getCardanoTxPacketEvents('abc')).resolves.toEqual({
+      tx_hash: 'abc',
+      height: '123',
+      indexed: true,
+      events: [],
+    });
+    expect(queryServiceMock.queryPacketEventsByTxHash).toHaveBeenCalledWith('abc');
+  });
+
+  it('delegates Cardano packet-event searches to QueryService', async () => {
+    queryServiceMock.queryPacketEventsByPacket.mockResolvedValue({ events: [] });
+
+    await expect(
+      controller.getCardanoPacketEvents('channel-1', 'channel-2', '7', 'acknowledge_packet'),
+    ).resolves.toEqual({ events: [] });
+    expect(queryServiceMock.queryPacketEventsByPacket).toHaveBeenCalledWith({
+      sourceChannel: 'channel-1',
+      destinationChannel: 'channel-2',
+      sequence: '7',
+      eventType: 'acknowledge_packet',
+    });
   });
 
   it('delegates local Osmosis swap estimates to LocalOsmosisSwapPlannerService', async () => {
