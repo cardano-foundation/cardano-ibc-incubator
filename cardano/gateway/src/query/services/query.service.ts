@@ -134,7 +134,7 @@ type ParsedTxRedeemer = {
 };
 
 // Packet status responses keep raw attributes so callers can inspect partially decoded events.
-export type IndexedPacketEvent = {
+type IndexedPacketEvent = {
   tx_hash: string;
   height: string;
   type: string;
@@ -150,7 +150,7 @@ export type IndexedPacketEvent = {
   } | null;
 };
 
-export type PacketEventQuery = {
+type PacketEventQuery = {
   sourceChannel: string;
   destinationChannel: string;
   sequence: string;
