@@ -292,6 +292,7 @@ type BuilderContext = {
 type OgmiosPoint = { slot: number; id: string };
 type SlotConfig = { zeroTime: number; zeroSlot: number; slotLength: number };
 type LucidModule = typeof import('@lucid-evolution/lucid');
+const LUCID_NETWORKS = ['Mainnet', 'Preprod', 'Preview', 'Custom'] as const;
 
 type KupoLikeService = {
   queryAllClientUtxos(): Promise<UTxO[]>;
@@ -305,6 +306,26 @@ function defaultLogger(scope: string): RuntimeLogger {
     warn: (...args: unknown[]) => console.warn(`[${scope}]`, ...args),
     error: (...args: unknown[]) => console.error(`[${scope}]`, ...args),
   };
+}
+
+function normalizeCardanoNetwork(network: string): Network {
+  const normalized = network.trim().toLowerCase();
+  switch (normalized) {
+    case 'mainnet':
+      return 'Mainnet';
+    case 'preprod':
+      return 'Preprod';
+    case 'preview':
+      return 'Preview';
+    case 'custom':
+    case 'devnet':
+    case 'cardano-devnet':
+      return 'Custom';
+    default:
+      throw new Error(
+        `Unsupported Cardano network "${network}" in bridge manifest. Expected one of ${LUCID_NETWORKS.join(', ')}.`,
+      );
+  }
 }
 
 function mapRefUtxo(refUtxo: { tx_hash: string; output_index: number }): RefUtxo {
@@ -733,8 +754,12 @@ async function createLucidRuntime(
   } as any);
 
   const chainZeroTime = await querySystemStart(ogmiosEndpoint);
-  Lucid.SLOT_CONFIG_NETWORK[cardanoNetwork].zeroTime = chainZeroTime;
-  Lucid.SLOT_CONFIG_NETWORK[cardanoNetwork].slotLength = 1000;
+  const slotConfig = Lucid.SLOT_CONFIG_NETWORK?.[cardanoNetwork] as SlotConfig | undefined;
+  if (!slotConfig) {
+    throw new Error(`Lucid does not expose a slot configuration for Cardano network ${cardanoNetwork}`);
+  }
+  slotConfig.zeroTime = chainZeroTime;
+  slotConfig.slotLength = 1000;
 
   return {
     lucidImporter: Lucid,
@@ -940,7 +965,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
     const manifest = await getBridgeManifest();
     const { deployment, bridgeManifest } = normalizeBridgeManifest(manifest);
     const { kupoEndpoint, ogmiosEndpoint } = splitKupmiosUrl(config.kupmiosUrl);
-    const cardanoNetwork = bridgeManifest.cardano.network as Network;
+    const cardanoNetwork = normalizeCardanoNetwork(bridgeManifest.cardano.network);
 
     const { lucidImporter, lucid } = await createLucidRuntime(
       kupoEndpoint,
