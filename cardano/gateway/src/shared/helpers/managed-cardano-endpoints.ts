@@ -28,10 +28,42 @@ function normalizeDmtrHost(url: string, apiKey?: string): URL {
   return parsedUrl;
 }
 
-export function resolveManagedOgmiosHttpEndpoint(
-  rawUrl?: string | null,
-  apiKey?: string | null,
-): string | undefined {
+function isDemeterHost(hostname: string): boolean {
+  return hostname.endsWith('.dmtr.host') || hostname.endsWith('.demeter.run');
+}
+
+function resolveManagedAuthHost(url: string, apiKey?: string | null): string {
+  const trimmedApiKey = apiKey?.trim();
+  if (!trimmedApiKey) {
+    return url.replace(/\/$/, '');
+  }
+
+  try {
+    const parsedUrl = new URL(url);
+    if (isDemeterHost(parsedUrl.hostname) && !parsedUrl.host.startsWith(`${trimmedApiKey}.`)) {
+      parsedUrl.host = `${trimmedApiKey}.${parsedUrl.host}`;
+    }
+    return parsedUrl.toString().replace(/\/$/, '');
+  } catch {
+    return url.replace(/\/$/, '');
+  }
+}
+
+function isAuthenticatedDmtrHost(rawUrl?: string | null, apiKey?: string | null): boolean {
+  const trimmedUrl = trimTrailingSlash(rawUrl);
+  const trimmedApiKey = apiKey?.trim();
+  if (!trimmedUrl || !trimmedApiKey) {
+    return false;
+  }
+
+  try {
+    return new URL(trimmedUrl).host.startsWith(`${trimmedApiKey}.`);
+  } catch {
+    return false;
+  }
+}
+
+export function resolveManagedOgmiosHttpEndpoint(rawUrl?: string | null, apiKey?: string | null): string | undefined {
   const trimmed = trimTrailingSlash(rawUrl);
   if (!trimmed) {
     return undefined;
@@ -44,19 +76,15 @@ export function resolveManagedOgmiosHttpEndpoint(
     } else if (parsed.protocol === 'ws:') {
       parsed.protocol = 'http:';
     }
-    // DMTR Ogmios HTTP JSON-RPC is method-sensitive on authenticated hostnames:
-    // queryNetwork/startTime may work there, but queryLedgerState/protocolParameters
-    // returns 401. Use the base host and send `dmtr-api-key` explicitly.
-    return normalizeDmtrHost(parsed.toString(), apiKey ?? undefined).toString().replace(/\/$/, '');
+    // Demeter Ogmios HTTP JSON-RPC expects host-based auth. Header auth on the
+    // base host can leave POST requests waiting until the provider timeout.
+    return resolveManagedAuthHost(parsed.toString(), apiKey);
   } catch {
     return trimmed;
   }
 }
 
-export function resolveManagedOgmiosWsEndpoint(
-  rawUrl?: string | null,
-  apiKey?: string | null,
-): string | undefined {
+export function resolveManagedOgmiosWsEndpoint(rawUrl?: string | null, apiKey?: string | null): string | undefined {
   const trimmed = trimTrailingSlash(rawUrl);
   if (!trimmed) {
     return undefined;
@@ -79,18 +107,15 @@ export function resolveManagedOgmiosWsEndpoint(
   }
 }
 
-export function resolveManagedKupoEndpoint(
-  rawUrl?: string | null,
-  apiKey?: string | null,
-): string | undefined {
+export function resolveManagedKupoEndpoint(rawUrl?: string | null, apiKey?: string | null): string | undefined {
   const trimmed = trimTrailingSlash(rawUrl);
   if (!trimmed) {
     return undefined;
   }
 
-  // DMTR Kupo requires the authenticated hostname and the `dmtr-api-key` header for
-  // some asset match queries. Normalizing to the base host causes deterministic 401s
-  // on those paths, so keep the operator-configured host and attach the header below.
+  // Keep the operator-configured Kupo host. For DMTR this should normally be the
+  // authenticated hostname; sending the API key again as a header to that hostname
+  // causes intermittent 401s on some routes.
   void apiKey;
   return trimmed;
 }
@@ -103,11 +128,11 @@ export function resolveManagedKupmiosHeaders(
 ): KupmiosHeaders | undefined {
   const headers: KupmiosHeaders = {};
   const trimmedKupoApiKey = kupoApiKey?.trim();
-  if (trimmedKupoApiKey) {
+  if (trimmedKupoApiKey && !isAuthenticatedDmtrHost(kupoUrl, trimmedKupoApiKey)) {
     headers.kupoHeader = { 'dmtr-api-key': trimmedKupoApiKey };
   }
   const trimmedOgmiosApiKey = ogmiosApiKey?.trim();
-  if (trimmedOgmiosApiKey) {
+  if (trimmedOgmiosApiKey && !isAuthenticatedDmtrHost(ogmiosUrl, trimmedOgmiosApiKey)) {
     headers.ogmiosHeader = { 'dmtr-api-key': trimmedOgmiosApiKey };
   }
   return headers.kupoHeader || headers.ogmiosHeader ? headers : undefined;
@@ -133,10 +158,7 @@ export function resolveManagedOgmiosWsOptions(
   };
 }
 
-function resolveServiceAuthRules(
-  rawUrl?: string | null,
-  apiKey?: string | null,
-): ServiceAuthRule[] {
+function resolveServiceAuthRules(rawUrl?: string | null, apiKey?: string | null): ServiceAuthRule[] {
   const trimmedUrl = trimTrailingSlash(rawUrl);
   const trimmedApiKey = apiKey?.trim();
   if (!trimmedUrl || !trimmedApiKey) {
@@ -167,16 +189,16 @@ export function installManagedCardanoAuthFetch(
   }
 
   const authRules = new Map<string, string>();
-  for (const rule of resolveServiceAuthRules(
-    kupoUrl,
-    kupoApiKey,
-  )) {
+  const normalizedKupoUrl = kupoApiKey?.trim() && kupoUrl ? normalizeDmtrHost(kupoUrl, kupoApiKey).toString() : kupoUrl;
+  for (const rule of resolveServiceAuthRules(normalizedKupoUrl, kupoApiKey)) {
     authRules.set(rule.host, rule.apiKey);
   }
-  for (const rule of resolveServiceAuthRules(
-    resolveManagedOgmiosHttpEndpoint(ogmiosUrl, ogmiosApiKey),
-    ogmiosApiKey,
-  )) {
+  const ogmiosHttpEndpoint = resolveManagedOgmiosHttpEndpoint(ogmiosUrl, ogmiosApiKey);
+  const headerAuthenticatedOgmiosEndpoint =
+    ogmiosApiKey?.trim() && ogmiosHttpEndpoint
+      ? normalizeDmtrHost(ogmiosHttpEndpoint, ogmiosApiKey).toString()
+      : ogmiosHttpEndpoint;
+  for (const rule of resolveServiceAuthRules(headerAuthenticatedOgmiosEndpoint, ogmiosApiKey)) {
     authRules.set(rule.host, rule.apiKey);
   }
 
@@ -194,9 +216,9 @@ export function installManagedCardanoAuthFetch(
           : input instanceof Request
             ? input.url
             : typeof (input as { href?: unknown }).href === 'string'
-              ? ((input as { href: string }).href)
+              ? (input as { href: string }).href
               : typeof (input as { url?: unknown }).url === 'string'
-                ? ((input as { url: string }).url)
+                ? (input as { url: string }).url
                 : undefined;
 
     if (!requestUrl) {

@@ -29,7 +29,11 @@ function resolveServiceAuthRule(
   return resolveDmtrRule(rawUrl, apiKey, urlEnvName === "KUPO_URL");
 }
 
-function resolveDmtrRule(rawUrl: string, apiKey: string, _isKupoRule: boolean): ServiceAuthRule | null {
+function resolveDmtrRule(
+  rawUrl: string,
+  apiKey: string,
+  _isKupoRule: boolean,
+): ServiceAuthRule | null {
   try {
     const parsedUrl = new URL(rawUrl);
     const isAuthenticatedHost = parsedUrl.host.startsWith(`${apiKey}.`);
@@ -41,6 +45,29 @@ function resolveDmtrRule(rawUrl: string, apiKey: string, _isKupoRule: boolean): 
     };
   } catch {
     return null;
+  }
+}
+
+function isDemeterHost(hostname: string): boolean {
+  return hostname.endsWith(".dmtr.host") || hostname.endsWith(".demeter.run");
+}
+
+function withManagedAuthHost(rawUrl: string, apiKey?: string): string {
+  if (!apiKey) {
+    return rawUrl.replace(/\/$/, "");
+  }
+
+  try {
+    const parsedUrl = new URL(rawUrl);
+    if (
+      isDemeterHost(parsedUrl.hostname) &&
+      !parsedUrl.host.startsWith(`${apiKey}.`)
+    ) {
+      parsedUrl.host = `${apiKey}.${parsedUrl.host}`;
+    }
+    return parsedUrl.toString().replace(/\/$/, "");
+  } catch {
+    return rawUrl.replace(/\/$/, "");
   }
 }
 
@@ -116,17 +143,18 @@ export function resolveManagedKupoRequestVariants(
   return variants;
 }
 
-export function resolveManagedOgmiosUrl(rawUrl: string, apiKey?: string): string {
-  if (!apiKey) {
-    return rawUrl.replace(/\/$/, "");
-  }
-
+export function resolveManagedOgmiosUrl(
+  rawUrl: string,
+  apiKey?: string,
+): string {
   try {
     const parsedUrl = new URL(rawUrl);
-    if (parsedUrl.host.startsWith(`${apiKey}.`)) {
-      parsedUrl.host = parsedUrl.host.replace(`${apiKey}.`, "");
+    if (parsedUrl.protocol === "wss:") {
+      parsedUrl.protocol = "https:";
+    } else if (parsedUrl.protocol === "ws:") {
+      parsedUrl.protocol = "http:";
     }
-    return parsedUrl.toString().replace(/\/$/, "");
+    return withManagedAuthHost(parsedUrl.toString(), apiKey);
   } catch {
     return rawUrl.replace(/\/$/, "");
   }
@@ -146,7 +174,14 @@ export function resolveManagedKupmiosHeaders(
 
   if (ogmiosApiKey) {
     const ogmiosRule = resolveDmtrRule(ogmiosUrl, ogmiosApiKey, false);
-    if (ogmiosRule?.attachHeader) {
+    // Demeter's authenticated Ogmios HTTP host expects host-based auth; adding
+    // the API key header on that host can hang some JSON-RPC POST requests.
+    if (
+      ogmiosRule?.attachHeader &&
+      !withManagedAuthHost(ogmiosUrl, ogmiosApiKey).includes(
+        `${ogmiosApiKey}.`,
+      )
+    ) {
       headers.ogmiosHeader = { "dmtr-api-key": ogmiosApiKey };
     }
   }
@@ -186,12 +221,11 @@ export function installManagedCardanoAuthFetch(): void {
 
   const originalFetch = globalThis.fetch.bind(globalThis);
   globalThis.fetch = ((input: Request | URL | string, init?: RequestInit) => {
-    const requestUrl =
-      typeof input === "string"
-        ? input
-        : input instanceof URL
-          ? input.toString()
-          : input.url;
+    const requestUrl = typeof input === "string"
+      ? input
+      : input instanceof URL
+      ? input.toString()
+      : input.url;
 
     let parsedUrl: URL;
     try {
@@ -209,7 +243,9 @@ export function installManagedCardanoAuthFetch(): void {
       input instanceof Request ? input.headers : undefined,
     );
     if (init?.headers) {
-      new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+      new Headers(init.headers).forEach((value, key) =>
+        headers.set(key, value)
+      );
     }
 
     if (authRule.attachHeader && !headers.has("dmtr-api-key")) {
@@ -217,16 +253,18 @@ export function installManagedCardanoAuthFetch(): void {
     }
 
     if (input instanceof Request) {
-      return originalFetch(new Request(parsedUrl.toString(), {
-        method: input.method,
-        headers,
-        body: init?.body ?? input.body,
-        redirect: input.redirect,
-        integrity: input.integrity,
-        keepalive: input.keepalive,
-        mode: input.mode,
-        signal: init?.signal ?? input.signal,
-      }));
+      return originalFetch(
+        new Request(parsedUrl.toString(), {
+          method: input.method,
+          headers,
+          body: init?.body ?? input.body,
+          redirect: input.redirect,
+          integrity: input.integrity,
+          keepalive: input.keepalive,
+          mode: input.mode,
+          signal: init?.signal ?? input.signal,
+        }),
+      );
     }
 
     return originalFetch(parsedUrl.toString(), { ...init, headers });
