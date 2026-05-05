@@ -52,10 +52,10 @@ const formatElapsedTime = (seconds: number): string => {
 const getCardanoExplorerTxUrl = (txHash: string): string | undefined => {
   if (!txHash) return undefined;
   if (CARDANO_CHAIN_ID === PREPROD_CARDANO_CHAIN_ID) {
-    return `https://preprod.cardanoscan.io/transaction/${txHash}`;
+    return `https://preprod.cexplorer.io/tx/${txHash}`;
   }
   if (CARDANO_CHAIN_ID === MAINNET_CARDANO_CHAIN_ID) {
-    return `https://cardanoscan.io/transaction/${txHash}`;
+    return `https://cexplorer.io/tx/${txHash}`;
   }
   return undefined;
 };
