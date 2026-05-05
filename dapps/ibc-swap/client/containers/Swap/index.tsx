@@ -12,10 +12,11 @@ import {
   useDisclosure,
 } from '@chakra-ui/react';
 import { toast } from 'react-toastify';
-import { useAddress, useWallet } from '@meshsdk/react';
+import { useWallet } from '@meshsdk/react';
 import { FaArrowDown } from 'react-icons/fa6';
 import * as CSL from '@emurgo/cardano-serialization-lib-browser';
 import TokenBox from '@/components/TokenBox';
+import { useSafeCardanoAddress } from '@/hooks/useSafeCardanoAddress';
 import CustomInput from '@/components/CustomInput';
 import InfoIcon from '@/assets/icons/info.svg';
 import DefaultCosmosNetworkIcon from '@/assets/icons/cosmos-icon.svg';
@@ -65,7 +66,7 @@ const SwapContainer = () => {
   const [isCheckedAnotherWallet, setIsCheckAnotherWallet] =
     useState<boolean>(false);
 
-  const cardanoAddress = useAddress();
+  const cardanoAddress = useSafeCardanoAddress();
   const { wallet: cardanoWallet } = useWallet();
 
   const [networkList, setNetworkList] = useState<NetworkItemProps[]>([]);

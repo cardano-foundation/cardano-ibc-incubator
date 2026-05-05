@@ -6,11 +6,17 @@
 !cardano/gateway/**
 !packages/
 !packages/**
+!dapps/
+!dapps/ibc-swap/
+!dapps/ibc-swap/client/
+!dapps/ibc-swap/client/**
 !proto-types/
 !proto-types/**
 
 cardano/gateway/node_modules
 cardano/gateway/dist
 packages/**/node_modules
+dapps/ibc-swap/client/node_modules
+dapps/ibc-swap/client/.next
 proto-types/node_modules
 proto-types/dist

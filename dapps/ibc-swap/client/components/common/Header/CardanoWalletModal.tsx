@@ -43,7 +43,7 @@ const CardanoWalletModal = ({
       return;
     }
 
-    onSelectWallet(wal);
+    Promise.resolve(onSelectWallet(wal)).catch(() => undefined);
   };
 
   return (

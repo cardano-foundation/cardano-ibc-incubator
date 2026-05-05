@@ -14,8 +14,10 @@ const LOOKUP_RETRY_OPTIONS = {
     maxAttempts: 6,
     retryDelayMs: 1000,
 };
-const TRANSACTION_TIME_TO_LIVE = 120_000;
-const TRANSACTION_SET_COLLATERAL = BigInt(20_000_000);
+const TRANSACTION_TIME_TO_LIVE = 10 * 60 * 1000;
+// Browser wallets should not need the gateway relayer's conservative 20 ADA floor.
+// Lucid still raises this when protocol collateral requirements exceed the floor.
+const TRANSACTION_SET_COLLATERAL = BigInt(5_000_000);
 const MAX_SAFE_COST_MODEL_VALUE = Number.MAX_SAFE_INTEGER;
 const PROTOCOL_PARAMETERS_MAX_ATTEMPTS = 5;
 const PROTOCOL_PARAMETERS_BASE_DELAY_MS = 1000;
@@ -58,6 +60,33 @@ function normalizeCardanoNetwork(network) {
         default:
             throw new Error(`Unsupported Cardano network "${network}" in bridge manifest. Expected one of ${LUCID_NETWORKS.join(', ')}.`);
     }
+}
+function describeFetchFailure(error) {
+    const cause = error instanceof Error
+        ? error.cause
+        : undefined;
+    const causeRecord = typeof cause === 'object' && cause !== null
+        ? cause
+        : undefined;
+    const code = typeof causeRecord?.code === 'string' ? causeRecord.code : undefined;
+    const address = typeof causeRecord?.address === 'string' ? causeRecord.address : undefined;
+    const port = typeof causeRecord?.port === 'string' || typeof causeRecord?.port === 'number'
+        ? String(causeRecord.port)
+        : undefined;
+    const causeMessage = cause instanceof Error ? cause.message : undefined;
+    if (code && address && port) {
+        return `${code} while connecting to ${address}:${port}`;
+    }
+    if (code) {
+        return causeMessage ? `${code}: ${causeMessage}` : code;
+    }
+    if (causeMessage) {
+        return causeMessage;
+    }
+    if (error instanceof Error && error.message.trim()) {
+        return error.message;
+    }
+    return String(error);
 }
 function mapRefUtxo(refUtxo) {
     return {
@@ -207,6 +236,52 @@ function parseSendPacketOperator(body) {
         timeoutTimestamp: parseBigIntValue(body.timeout_timestamp ?? '0', 'timeout_timestamp'),
         memo: body.memo ?? '',
     };
+}
+function parseOptionalString(value, fieldName) {
+    if (value === undefined || value === null || value === '') {
+        return undefined;
+    }
+    if (typeof value !== 'string') {
+        throw new Error(`Invalid argument: "${fieldName}" must be a string`);
+    }
+    return value;
+}
+function parseWalletUtxoAssets(value, fieldName) {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        throw new Error(`Invalid argument: "${fieldName}" must be an asset map`);
+    }
+    const assets = {};
+    for (const [unit, quantity] of Object.entries(value)) {
+        assets[unit] = parseBigIntValue(quantity, `${fieldName}.${unit}`);
+    }
+    return assets;
+}
+function parseWalletUtxos(value) {
+    if (value === undefined || value === null) {
+        return [];
+    }
+    if (!Array.isArray(value)) {
+        throw new Error('Invalid argument: "wallet_utxos" must be an array');
+    }
+    return value.map((utxo, index) => {
+        if (typeof utxo !== 'object' || utxo === null || Array.isArray(utxo)) {
+            throw new Error(`Invalid argument: "wallet_utxos[${index}]" must be an object`);
+        }
+        const item = utxo;
+        const txHash = parseRequiredString(item.txHash, `wallet_utxos[${index}].txHash`);
+        const outputIndex = Number(item.outputIndex);
+        if (!Number.isInteger(outputIndex) || outputIndex < 0) {
+            throw new Error(`Invalid argument: "wallet_utxos[${index}].outputIndex" must be a non-negative integer`);
+        }
+        return {
+            txHash,
+            outputIndex,
+            address: parseRequiredString(item.address, `wallet_utxos[${index}].address`),
+            assets: parseWalletUtxoAssets(item.assets, `wallet_utxos[${index}].assets`),
+            datumHash: parseOptionalString(item.datumHash, `wallet_utxos[${index}].datumHash`),
+            datum: parseOptionalString(item.datum, `wallet_utxos[${index}].datum`),
+        };
+    });
 }
 function convertHex2String(value) {
     if (!value) {
@@ -557,7 +632,13 @@ function createTxBuilderRuntime(config) {
     });
     async function getBridgeManifest() {
         const fetchImpl = config.fetchImpl ?? fetch;
-        const response = await fetchImpl(config.bridgeManifestUrl, { cache: 'no-store' });
+        let response;
+        try {
+            response = await fetchImpl(config.bridgeManifestUrl, { cache: 'no-store' });
+        }
+        catch (error) {
+            throw new Error(`Failed to load bridge manifest from ${config.bridgeManifestUrl}: ${describeFetchFailure(error)}`, { cause: error });
+        }
         if (!response.ok) {
             throw new Error(`Failed to load bridge manifest from ${config.bridgeManifestUrl}: ${response.status} ${response.statusText}`);
         }
@@ -596,11 +677,23 @@ function createTxBuilderRuntime(config) {
     async function buildUnsignedTransfer(body) {
         const context = await getContext();
         const sendPacketOperator = parseSendPacketOperator(body);
-        const initialWalletUtxos = await context.lucidService.tryFindUtxosAt(sendPacketOperator.sender, LOOKUP_RETRY_OPTIONS);
+        const providedWalletUtxos = parseWalletUtxos(body.wallet_utxos);
+        const getWalletUtxos = async (address, options) => dedupeUtxos([
+            ...providedWalletUtxos,
+            ...(await context.lucidService.tryFindUtxosAt(address, options)),
+        ]);
+        const findWalletUtxoAtWithUnit = async (address, unit) => {
+            const providedMatch = providedWalletUtxos.find((utxo) => Object.prototype.hasOwnProperty.call(utxo.assets, unit));
+            if (providedMatch) {
+                return providedMatch;
+            }
+            return context.lucidService.findUtxoAtWithUnit(address, unit);
+        };
+        const initialWalletUtxos = await getWalletUtxos(sendPacketOperator.signer, LOOKUP_RETRY_OPTIONS);
         if (initialWalletUtxos.length === 0) {
-            throw new Error(`sendPacketBuilder failed: no spendable UTxOs found for ${sendPacketOperator.sender}`);
+            throw new Error(`sendPacketBuilder failed: no spendable UTxOs found for ${sendPacketOperator.signer}`);
         }
-        context.lucidService.selectWalletFromAddress(sendPacketOperator.sender, initialWalletUtxos);
+        context.lucidService.selectWalletFromAddress(sendPacketOperator.signer, initialWalletUtxos);
         const { unsignedTx, walletOverride } = await (0, tx_builder_1.buildUnsignedSendPacketTx)(sendPacketOperator, {
             loadContext: async (operator) => {
                 const channelSequence = operator.sourceChannel.replace('channel-', '');
@@ -654,8 +747,8 @@ function createTxBuilderRuntime(config) {
             },
             commitPacket: (packet) => commitPacket(packet),
             encode: (value, kind) => context.lucidService.encode(value, kind),
-            findUtxoAtWithUnit: (address, unit) => context.lucidService.findUtxoAtWithUnit(address, unit),
-            tryFindUtxosAt: (address, options) => context.lucidService.tryFindUtxosAt(address, options),
+            findUtxoAtWithUnit: findWalletUtxoAtWithUnit,
+            tryFindUtxosAt: getWalletUtxos,
             createUnsignedSendPacketBurnTx: (dto) => context.lucidService.createUnsignedSendPacketBurnTx(dto),
             createUnsignedSendPacketEscrowTx: (dto) => context.lucidService.createUnsignedSendPacketEscrowTx(dto),
             invalidArgument: (message) => new Error(message),
@@ -670,7 +763,7 @@ function createTxBuilderRuntime(config) {
         }
         const walletScopeId = context.lucidService.beginWalletSelectionScope();
         try {
-            const refreshedUtxos = await context.lucidService.tryFindUtxosAt(walletOverride.address, LOOKUP_RETRY_OPTIONS);
+            const refreshedUtxos = await getWalletUtxos(walletOverride.address, LOOKUP_RETRY_OPTIONS);
             const mergedUtxos = dedupeUtxos([...(walletOverride.utxos ?? []), ...refreshedUtxos]);
             const utxosToUse = mergedUtxos.length > 0 ? mergedUtxos : walletOverride.utxos;
             context.lucidService.selectWalletFromAddress(walletOverride.address, utxosToUse);
@@ -681,12 +774,14 @@ function createTxBuilderRuntime(config) {
             });
             const unsignedTxCbor = completedUnsignedTx.toCBOR();
             const unsignedTxBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
+            const feeLovelace = completedUnsignedTx.toTransaction().body().fee().toString();
             return {
                 result: 0,
                 unsignedTx: {
                     type_url: '',
                     value: Buffer.from(unsignedTxBytes).toString('base64'),
                 },
+                feeLovelace,
             };
         }
         finally {

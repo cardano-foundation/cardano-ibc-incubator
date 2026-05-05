@@ -14,6 +14,16 @@ type TransferApiRequestBody = {
     timeout_timestamp?: string;
     memo?: string;
     signer?: string;
+    wallet_utxos?: WalletUtxoInput[];
+};
+type WalletUtxoInput = {
+    txHash?: string;
+    outputIndex?: number;
+    address?: string;
+    assets?: Record<string, string | number | bigint>;
+    datumHash?: string | null;
+    datum?: string | null;
+    scriptRef?: unknown;
 };
 type LocalUnsignedTransferResponse = {
     result: number;
@@ -21,6 +31,7 @@ type LocalUnsignedTransferResponse = {
         type_url: string;
         value: string;
     };
+    feeLovelace: string;
 };
 type RuntimeLogger = {
     log: (...args: unknown[]) => void;

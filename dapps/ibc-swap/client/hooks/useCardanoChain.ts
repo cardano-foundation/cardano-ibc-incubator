@@ -1,8 +1,21 @@
 'use client';
 
+/* global BigInt */
+
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Asset } from '@meshsdk/common';
-import { useAddress, WalletContext } from '@meshsdk/react';
+import { WalletContext } from '@meshsdk/react';
+import { toast } from 'react-toastify';
+import { useSafeCardanoAddress } from '@/hooks/useSafeCardanoAddress';
+import {
+  CARDANO_WALLET_LOCKED_MESSAGE,
+  CARDANO_WALLET_LOCKED_TOAST_ID,
+  isCardanoWalletLockedError,
+} from '@/utils/cardanoWalletStatus';
+import {
+  logCardanoWalletDebug,
+  logCardanoWalletError,
+} from '@/utils/cardanoWalletDebug';
 
 const hexToText = (hex: string): string => {
   if (!hex || hex.length % 2 !== 0) {
@@ -31,13 +44,25 @@ export const useCardanoChain = () => {
   const [assets, setAssets] = useState<Asset[]>();
   const { hasConnectedWallet, connectedWalletName, connectedWalletInstance } =
     useContext(WalletContext);
-  const cardanoAddress = useAddress();
+  const cardanoAddress = useSafeCardanoAddress();
 
   const getAssets = useCallback(async (): Promise<Asset[]> => {
     if (!connectedWalletInstance) {
+      logCardanoWalletDebug('balance:skip:no-wallet-instance', {
+        walletName: connectedWalletName,
+      });
       return [];
     }
+    const startedAt = Date.now();
+    logCardanoWalletDebug('balance:getBalance:start', {
+      walletName: connectedWalletName,
+    });
     const balance = await connectedWalletInstance.getBalance();
+    logCardanoWalletDebug('balance:getBalance:success', {
+      walletName: connectedWalletName,
+      elapsedMs: Date.now() - startedAt,
+      assetCount: balance.length,
+    });
     return balance.map((asset) => {
       const assetKey = asset.unit;
       return {
@@ -46,18 +71,46 @@ export const useCardanoChain = () => {
         assetName: tryAssetName(assetKey),
       } as Asset;
     });
-  }, [connectedWalletInstance]);
+  }, [connectedWalletInstance, connectedWalletName]);
 
   useEffect(() => {
     if (hasConnectedWallet && cardanoAddress) {
-      getAssets().then(setAssets);
-      return;
+      let cancelled = false;
+
+      getAssets()
+        .then((walletAssets) => {
+          if (!cancelled) {
+            setAssets(walletAssets);
+          }
+        })
+        .catch((error) => {
+          if (cancelled) return;
+
+          logCardanoWalletError('balance:getBalance:error', error, {
+            walletName: connectedWalletName,
+          });
+
+          if (isCardanoWalletLockedError(error)) {
+            toast.error(CARDANO_WALLET_LOCKED_MESSAGE, {
+              theme: 'colored',
+              toastId: CARDANO_WALLET_LOCKED_TOAST_ID,
+            });
+            return;
+          }
+
+          setAssets(undefined);
+        });
+
+      return () => {
+        cancelled = true;
+      };
     }
     setAssets(undefined);
+    return undefined;
   }, [cardanoAddress, connectedWalletName, getAssets, hasConnectedWallet]);
 
-  const sortAssetsByQuantity = useCallback((assets: Asset[]): Asset[] => {
-    return assets.sort((assetA, assetB) => {
+  const sortAssetsByQuantity = useCallback((assetList: Asset[]): Asset[] => {
+    return assetList.sort((assetA, assetB) => {
       const quantityA = BigInt(assetA.quantity);
       const quantityB = BigInt(assetB.quantity);
 
@@ -75,13 +128,16 @@ export const useCardanoChain = () => {
     return sortAssetsByQuantity(assets ?? []);
   }, [assets, sortAssetsByQuantity]);
 
-  const getBalanceByDenom = useCallback((denom: string): string => {
-    const assetData = assets?.find((asset) => asset?.unit === denom);
-    if (!assetData) {
-      return '0';
-    }
-    return assetData?.quantity.toString();
-  }, [assets]);
+  const getBalanceByDenom = useCallback(
+    (denom: string): string => {
+      const assetData = assets?.find((asset) => asset?.unit === denom);
+      if (!assetData) {
+        return '0';
+      }
+      return assetData?.quantity.toString();
+    },
+    [assets],
+  );
 
   return useMemo(
     () => ({ getTotalSupply, getBalanceByDenom }),
