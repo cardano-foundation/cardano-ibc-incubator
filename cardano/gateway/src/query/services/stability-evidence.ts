@@ -1,8 +1,12 @@
 import { Logger } from '@nestjs/common';
 import { HeuristicParams } from '@plus/proto-types/build/ibc/lightclients/stability/v1/stability';
 import {
+  GATEWAY_GRPC_ERROR_CODE,
+  GrpcFailedPreconditionException,
   GrpcInternalException,
+  GrpcInvalidArgumentException,
   GrpcNotFoundException,
+  gatewayGrpcError,
 } from '~@/exception/grpc_exceptions';
 import {
   HistoryBlock,
@@ -158,6 +162,35 @@ type LoadStakeWeightedStabilityHeaderEvidenceParams = LoadStakeWeightedStability
   trustedHeight: bigint;
 };
 
+function heightNotFound(height: bigint, message?: string): GrpcNotFoundException {
+  return new GrpcNotFoundException(
+    gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_FOUND, message ?? `Height ${height.toString()} not found`, {
+      height: height.toString(),
+    }),
+  );
+}
+
+function heightNotAccepted(height: bigint, message: string): GrpcFailedPreconditionException {
+  return new GrpcFailedPreconditionException(
+    gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_ACCEPTED, message, {
+      height: height.toString(),
+    }),
+  );
+}
+
+function historyNotReady(message: string): GrpcFailedPreconditionException {
+  return new GrpcFailedPreconditionException(gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.HISTORY_NOT_READY, message));
+}
+
+function invalidTrustedHeight(trustedHeight: bigint, height: bigint, message: string): GrpcInvalidArgumentException {
+  return new GrpcInvalidArgumentException(
+    gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.INVALID_TRUSTED_HEIGHT, message, {
+      trustedHeight: trustedHeight.toString(),
+      height: height.toString(),
+    }),
+  );
+}
+
 export async function loadStakeWeightedStabilityEvidenceByHeight({
   historyService,
   height,
@@ -169,7 +202,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
 }: LoadStakeWeightedStabilityEvidenceByHeightParams): Promise<StakeWeightedStabilityEvidence> {
   const anchorBlock = await historyService.findBlockByHeight(height);
   if (!anchorBlock) {
-    throw new GrpcNotFoundException(missingAnchorBlockMessage ?? `Not found: "height" ${height.toString()} not found`);
+    throw heightNotFound(height, missingAnchorBlockMessage ?? `Height ${height.toString()} not found`);
   }
 
   const descendantBlocks = await historyService.findDescendantBlocks(
@@ -341,41 +374,56 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
   trustedHeight,
   logger: _logger,
   heuristicParams = getStabilityHeuristicParams(),
+  requireThresholds = true,
   missingAnchorBlockMessage,
 }: LoadStakeWeightedStabilityHeaderEvidenceParams): Promise<StakeWeightedStabilityHeaderEvidence> {
   if (trustedHeight <= 0n) {
-    throw new GrpcInternalException(`Invalid trusted height ${trustedHeight.toString()} for stability header`);
+    throw invalidTrustedHeight(
+      trustedHeight,
+      height,
+      `Invalid trusted height ${trustedHeight.toString()} for stability header`,
+    );
   }
   if (trustedHeight >= height) {
-    throw new GrpcInternalException(
+    throw invalidTrustedHeight(
+      trustedHeight,
+      height,
       `Invalid stability header request: trusted height ${trustedHeight.toString()} must be less than anchor height ${height.toString()}`,
     );
   }
 
   const trustedBlock = await historyService.findBlockByHeight(trustedHeight);
   if (!trustedBlock) {
-    throw new GrpcNotFoundException(`Not found: trusted height ${trustedHeight.toString()} not found`);
+    throw invalidTrustedHeight(
+      trustedHeight,
+      height,
+      `Trusted height ${trustedHeight.toString()} not found for stability header`,
+    );
   }
 
   const anchorBlock = await historyService.findBlockByHeight(height);
   if (!anchorBlock) {
-    throw new GrpcNotFoundException(missingAnchorBlockMessage ?? `Not found: "height" ${height.toString()} not found`);
+    throw heightNotFound(height, missingAnchorBlockMessage ?? `Height ${height.toString()} not found`);
   }
 
   if (anchorBlock.epochNo < trustedBlock.epochNo) {
-    throw new GrpcInternalException(
+    throw invalidTrustedHeight(
+      trustedHeight,
+      height,
       `Invalid stability header request: trusted epoch ${trustedBlock.epochNo} must not be greater than anchor epoch ${anchorBlock.epochNo}`,
     );
   }
   if (anchorBlock.epochNo > trustedBlock.epochNo + 1) {
-    throw new GrpcInternalException(
+    throw invalidTrustedHeight(
+      trustedHeight,
+      height,
       `Stability rollover currently supports only adjacent epoch transitions; trusted epoch ${trustedBlock.epochNo}, anchor epoch ${anchorBlock.epochNo}`,
     );
   }
 
   const anchorEpochContext = await historyService.findEpochContextAtBlock(anchorBlock);
   if (!anchorEpochContext) {
-    throw new GrpcInternalException(
+    throw historyNotReady(
       `Epoch context unavailable for anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
     );
   }
@@ -391,7 +439,7 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
       ? anchorEpochContext
       : await historyService.findEpochContextAtBlock(trustedBlock);
   if (!trustedEpochContext) {
-    throw new GrpcInternalException(
+    throw historyNotReady(
       `Epoch context unavailable for trusted height ${trustedBlock.height} in epoch ${trustedBlock.epochNo}`,
     );
   }
@@ -399,7 +447,7 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
   const bridgeBlocks = await historyService.findBridgeBlocks(trustedHeight, height);
   const expectedBridgeCount = Number(height - trustedHeight - 1n);
   if (bridgeBlocks.length !== expectedBridgeCount) {
-    throw new GrpcInternalException(
+    throw historyNotReady(
       `Incomplete stability bridge segment between trusted height ${trustedHeight.toString()} and anchor height ${height.toString()}`,
     );
   }
@@ -407,7 +455,7 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
   for (let index = 0; index < bridgeBlocks.length; index++) {
     const expectedHeight = Number(trustedHeight) + index + 1;
     if (bridgeBlocks[index].height !== expectedHeight) {
-      throw new GrpcInternalException(
+      throw historyNotReady(
         `Non-contiguous stability bridge segment at height ${bridgeBlocks[index].height}; expected ${expectedHeight}`,
       );
     }
@@ -431,7 +479,7 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
       continue;
     }
 
-    throw new GrpcInternalException(
+    throw historyNotReady(
       `Stake-weighted stability bridge segment for anchor height ${height.toString()} crosses unsupported epoch ${block.epochNo}`,
     );
   }
@@ -448,11 +496,30 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
   const eligibleDescendantBlocks =
     firstInvalidDescendantIndex >= 0 ? descendantBlocks.slice(0, firstInvalidDescendantIndex) : descendantBlocks;
 
+  const acceptedDescendantBlocks = eligibleDescendantBlocks;
+  const metrics = computeStabilityMetrics(
+    eligibleDescendantBlocks,
+    anchorEpochContext.stakeDistribution,
+    heuristicParams,
+  );
+
+  if (requireThresholds) {
+    const thresholdFailure = getStabilityThresholdFailure(
+      metrics,
+      heuristicParams,
+      anchorBlock.height.toString(),
+      acceptedDescendantBlocks.length,
+    );
+    if (thresholdFailure) {
+      throw heightNotAccepted(BigInt(anchorBlock.height), thresholdFailure);
+    }
+  }
+
   return {
     anchorHeight: BigInt(anchorBlock.height) as CardanoHeight,
     anchorEpoch: anchorBlock.epochNo as EpochNumber,
     anchorBlock,
-    descendantBlocks: eligibleDescendantBlocks,
+    descendantBlocks: acceptedDescendantBlocks,
     epochStakeDistribution: anchorEpochContext.stakeDistribution,
     epochVerificationContext: anchorEpochContext.verificationContext,
     trustedHeight: trustedHeight as CardanoHeight,

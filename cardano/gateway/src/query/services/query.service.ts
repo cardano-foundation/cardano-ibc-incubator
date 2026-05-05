@@ -41,9 +41,12 @@ import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
 import { normalizeConsensusStateFromDatum } from '@shared/helpers/consensus-state';
 import { ClientDatum, decodeClientDatum } from '@shared/types/client-datum';
 import {
+  GATEWAY_GRPC_ERROR_CODE,
+  GrpcFailedPreconditionException,
   GrpcInternalException,
   GrpcInvalidArgumentException,
   GrpcNotFoundException,
+  gatewayGrpcError,
 } from '~@/exception/grpc_exceptions';
 import {
   QueryBlockResultsRequest,
@@ -1594,7 +1597,12 @@ export class QueryService {
     // Mithril data to the Cosmos-side light client), we only need the raw certificate payload.
     const mithrilStakeDistributionsList = await this.mithrilService.getMostRecentMithrilStakeDistributions();
     if (!mithrilStakeDistributionsList?.length) {
-      throw new GrpcNotFoundException('Not found: no Mithril stake distributions available');
+      throw new GrpcFailedPreconditionException(
+        gatewayGrpcError(
+          GATEWAY_GRPC_ERROR_CODE.HISTORY_NOT_READY,
+          'Mithril stake distributions are not available for header generation',
+        ),
+      );
     }
 
     // Mithril stake distribution certificate chain (epoch catch-up).
@@ -1625,13 +1633,23 @@ export class QueryService {
     const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
     const latestSnapshot = listSnapshots[0];
     if (!latestSnapshot) {
-      throw new GrpcNotFoundException('Not found: no Mithril transaction snapshots available');
+      throw new GrpcFailedPreconditionException(
+        gatewayGrpcError(
+          GATEWAY_GRPC_ERROR_CODE.HISTORY_NOT_READY,
+          'Mithril transaction snapshots are not available for header generation',
+        ),
+      );
     }
 
     // We always anchor to a certified snapshot height. If the caller requested a future height,
     // fail early (this matches the expectation that "height" is a Mithril-certified height).
     if (BigInt(height) > BigInt(latestSnapshot.block_number)) {
-      throw new GrpcNotFoundException(`Not found: "height" ${height} not found`);
+      throw new GrpcNotFoundException(
+        gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_FOUND, `Height ${height.toString()} not found`, {
+          height: height.toString(),
+          latestSnapshotHeight: latestSnapshot.block_number,
+        }),
+      );
     }
 
     // Start from the latest certified height (proof endpoint certifies against latest).
@@ -1652,8 +1670,11 @@ export class QueryService {
         (proofCertificateHash ? listSnapshots.find((s) => s.certificate_hash === proofCertificateHash) : undefined);
 
       if (!snapshotForProof) {
-        throw new GrpcNotFoundException(
-          `Not found: Mithril transaction snapshot for proof height ${proofSnapshotHeight} not found`,
+        throw new GrpcFailedPreconditionException(
+          gatewayGrpcError(
+            GATEWAY_GRPC_ERROR_CODE.HISTORY_NOT_READY,
+            `Mithril transaction snapshot for proof height ${proofSnapshotHeight} is unavailable`,
+          ),
         );
       }
 
@@ -1685,13 +1706,21 @@ export class QueryService {
     // - Both certificates to refer to the same epoch progression.
     const stakeDistributionCertHash = snapshotCertificate.previous_hash;
     if (!stakeDistributionCertHash) {
-      throw new GrpcNotFoundException('Not found: transaction snapshot certificate is missing previous_hash');
+      throw new GrpcFailedPreconditionException(
+        gatewayGrpcError(
+          GATEWAY_GRPC_ERROR_CODE.HISTORY_NOT_READY,
+          'Transaction snapshot certificate is missing previous_hash',
+        ),
+      );
     }
 
     const mithrilStakeDistribution = stakeDistributionByCertificateHash.get(stakeDistributionCertHash);
     if (!mithrilStakeDistribution) {
-      throw new GrpcNotFoundException(
-        `Not found: no Mithril stake distribution found for certificate ${stakeDistributionCertHash}`,
+      throw new GrpcFailedPreconditionException(
+        gatewayGrpcError(
+          GATEWAY_GRPC_ERROR_CODE.HISTORY_NOT_READY,
+          `Mithril stake distribution for certificate ${stakeDistributionCertHash} is unavailable`,
+        ),
       );
     }
     const distributionCertificate = await this.mithrilService.getCertificateByHash(stakeDistributionCertHash);

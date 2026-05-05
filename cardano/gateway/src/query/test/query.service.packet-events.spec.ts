@@ -6,6 +6,7 @@ import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
+import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { DenomTraceService } from '../services/denom-trace.service';
 import { HistoryService } from '../services/history.service';
 import { QueryService } from '../services/query.service';
@@ -89,6 +90,7 @@ describe('QueryService packet event queries', () => {
       {} as MiniProtocalsService,
       {} as MithrilService,
       {} as DenomTraceService,
+      {} as IbcTreeCacheService,
     );
   });
 
