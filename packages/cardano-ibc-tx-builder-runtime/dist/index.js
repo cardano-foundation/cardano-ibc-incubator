@@ -34,12 +34,30 @@ const TRANSIENT_STARTUP_ERROR_MARKERS = [
     'network error',
     'fetch failed',
 ];
+const LUCID_NETWORKS = ['Mainnet', 'Preprod', 'Preview', 'Custom'];
 function defaultLogger(scope) {
     return {
         log: (...args) => console.log(`[${scope}]`, ...args),
         warn: (...args) => console.warn(`[${scope}]`, ...args),
         error: (...args) => console.error(`[${scope}]`, ...args),
     };
+}
+function normalizeCardanoNetwork(network) {
+    const normalized = network.trim().toLowerCase();
+    switch (normalized) {
+        case 'mainnet':
+            return 'Mainnet';
+        case 'preprod':
+            return 'Preprod';
+        case 'preview':
+            return 'Preview';
+        case 'custom':
+        case 'devnet':
+        case 'cardano-devnet':
+            return 'Custom';
+        default:
+            throw new Error(`Unsupported Cardano network "${network}" in bridge manifest. Expected one of ${LUCID_NETWORKS.join(', ')}.`);
+    }
 }
 function mapRefUtxo(refUtxo) {
     return {
@@ -405,8 +423,12 @@ async function createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork) 
         presetProtocolParameters: protocolParameters,
     });
     const chainZeroTime = await querySystemStart(ogmiosEndpoint);
-    Lucid.SLOT_CONFIG_NETWORK[cardanoNetwork].zeroTime = chainZeroTime;
-    Lucid.SLOT_CONFIG_NETWORK[cardanoNetwork].slotLength = 1000;
+    const slotConfig = Lucid.SLOT_CONFIG_NETWORK?.[cardanoNetwork];
+    if (!slotConfig) {
+        throw new Error(`Lucid does not expose a slot configuration for Cardano network ${cardanoNetwork}`);
+    }
+    slotConfig.zeroTime = chainZeroTime;
+    slotConfig.slotLength = 1000;
     return {
         lucidImporter: Lucid,
         lucid,
@@ -545,7 +567,7 @@ function createTxBuilderRuntime(config) {
         const manifest = await getBridgeManifest();
         const { deployment, bridgeManifest } = normalizeBridgeManifest(manifest);
         const { kupoEndpoint, ogmiosEndpoint } = splitKupmiosUrl(config.kupmiosUrl);
-        const cardanoNetwork = bridgeManifest.cardano.network;
+        const cardanoNetwork = normalizeCardanoNetwork(bridgeManifest.cardano.network);
         const { lucidImporter, lucid } = await createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork);
         const lucidService = new lucidIbcAdapter_1.LucidIbcAdapter(lucidImporter, lucid, deployment);
         await lucidService.onModuleInit();

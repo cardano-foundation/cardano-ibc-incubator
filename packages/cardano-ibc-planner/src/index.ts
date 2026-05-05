@@ -6,8 +6,12 @@ const CARDANO_POLICY_ID_HEX_LENGTH = 56;
 const QUERY_CHANNELS_PREFIX_URL = '/ibc/core/channel/v1/channels';
 const QUERY_ALL_CHANNELS_URL =
   `${QUERY_CHANNELS_PREFIX_URL}?pagination.count_total=true&pagination.limit=10000`;
+const QUERY_CARDANO_CHANNELS_URL =
+  '/api/channels?offset=0&limit=10000&countTotal=true&reverse=false';
 const QUERY_ALL_DENOMS_URL = '/ibc/apps/transfer/v1/denoms';
 const QUERY_PACKET_FORWARD_PARAMS_URL = '/ibc/apps/packetforward/v1/params';
+const QUERY_CONSENSUS_STATES_PREFIX_URL =
+  '/ibc/core/client/v1/consensus_states';
 const QUERY_SWAP_ROUTER_STATE =
   '/cosmwasm/wasm/v1/contract/SWAP_ROUTER_ADDRESS/state?pagination.limit=100000000';
 const SWAP_ROUTING_TABLE_PREFIX = '\x00\rrouting_table\x00D';
@@ -90,13 +94,22 @@ export type SwapEstimateResponse = {
 
 export type PlannerClientConfig = {
   cardanoChainId: string;
+  cardanoRestEndpoint?: string;
   entrypointRestEndpoint: string;
   localOsmosisRestEndpoint: string;
   swapRouterAddress?: string;
+  preferredChannels?: PreferredChannel[];
   resolveCardanoAssetDenomTrace?: (
     assetId: string,
   ) => Promise<ResolvedCardanoAssetTrace | null>;
   fetchImpl?: typeof fetch;
+};
+
+export type PreferredChannel = {
+  fromChainId: string;
+  toChainId: string;
+  srcPort: string;
+  srcChannel: string;
 };
 
 export type PlannerClient = {
@@ -121,9 +134,25 @@ type QueryChannelResponse = {
 
 type QueryClientStateResponse = {
   identified_client_state?: {
+    client_id?: string;
     client_state?: {
       chain_id?: string;
+      trusting_period?: string;
+      latest_height?: {
+        revision_number?: string;
+        revision_height?: string;
+      };
+      frozen_height?: {
+        revision_number?: string;
+        revision_height?: string;
+      };
     };
+  };
+};
+
+type QueryConsensusStateResponse = {
+  consensus_state?: {
+    timestamp?: string;
   };
 };
 
@@ -241,6 +270,10 @@ export function createPlannerClient(
           ENTRYPOINT_CHAIN_ID,
           resolvedConfig.entrypointRestEndpoint,
           resolvedConfig.fetchImpl,
+          {
+            cardanoChainId: resolvedConfig.cardanoChainId,
+            cardanoRestEndpoint: resolvedConfig.cardanoRestEndpoint,
+          },
         ),
         fetchAllDenomTraces(
           resolvedConfig.entrypointRestEndpoint,
@@ -252,8 +285,13 @@ export function createPlannerClient(
         ),
       ]);
 
+    const adjacency = applyPreferredChannels(
+      channels.adjacency,
+      resolvedConfig.preferredChannels || [],
+    );
+
     return {
-      adjacency: channels.adjacency,
+      adjacency,
       channelByRoute: channels.channelByRoute,
       denomTracesByChain: {
         [ENTRYPOINT_CHAIN_ID]: entrypointDenomTraces,
@@ -741,6 +779,49 @@ function resolveUniqueForwardRoute(
   return { chains, routes };
 }
 
+function applyPreferredChannels(
+  adjacency: PlannerMetadata['adjacency'],
+  preferredChannels: PreferredChannel[],
+): PlannerMetadata['adjacency'] {
+  if (preferredChannels.length === 0) {
+    return adjacency;
+  }
+
+  const filtered: PlannerMetadata['adjacency'] = {};
+  for (const [srcChain, destinations] of Object.entries(adjacency)) {
+    filtered[srcChain] = {};
+    for (const [destChain, channels] of Object.entries(destinations)) {
+      filtered[srcChain][destChain] = [...channels];
+    }
+  }
+
+  for (const preferred of preferredChannels) {
+    const channels =
+      filtered[preferred.fromChainId]?.[preferred.toChainId] || [];
+    const match = channels.find(
+      (channel) =>
+        channel.srcPort === preferred.srcPort &&
+        channel.srcChannel === preferred.srcChannel,
+    );
+    if (!match) {
+      continue;
+    }
+
+    filtered[preferred.fromChainId][preferred.toChainId] = [match];
+
+    const reverse = filtered[match.destChain]?.[match.srcChain]?.find(
+      (channel) =>
+        channel.srcPort === match.destPort &&
+        channel.srcChannel === match.destChannel,
+    );
+    if (reverse) {
+      filtered[match.destChain][match.srcChain] = [reverse];
+    }
+  }
+
+  return filtered;
+}
+
 function parseHops(path: string): Array<{ port: string; channel: string }> {
   if (!path) {
     return [];
@@ -808,6 +889,10 @@ async function fetchAllChannels(
   chainId: string,
   restUrl: string,
   fetchImpl: typeof fetch,
+  options: {
+    cardanoChainId?: string;
+    cardanoRestEndpoint?: string;
+  } = {},
 ): Promise<Pick<PlannerMetadata, 'adjacency' | 'channelByRoute'>> {
   const openChannels: OpenChannel[] = [];
   let nextKey: string | undefined;
@@ -832,6 +917,10 @@ async function fetchAllChannels(
         channel.port_id,
         fetchImpl,
       );
+      if (!(await isUsableChannelClient(restUrl, clientState, fetchImpl))) {
+        continue;
+      }
+
       const destChain = clientState.identified_client_state?.client_state?.chain_id;
       if (!destChain) {
         continue;
@@ -850,6 +939,10 @@ async function fetchAllChannels(
     nextKey = data.pagination?.next_key;
   } while (nextKey);
 
+  const cardanoChannels =
+    options.cardanoRestEndpoint && options.cardanoChainId
+      ? await fetchCardanoOpenChannels(options.cardanoRestEndpoint, fetchImpl)
+      : undefined;
   const adjacency: PlannerMetadata['adjacency'] = {};
   const channelByRoute: PlannerMetadata['channelByRoute'] = {};
 
@@ -862,6 +955,17 @@ async function fetchAllChannels(
   };
 
   for (const channel of openChannels) {
+    if (
+      cardanoChannels &&
+      options.cardanoChainId &&
+      channel.srcChain === ENTRYPOINT_CHAIN_ID &&
+      channel.destChain === options.cardanoChainId &&
+      !hasReciprocalCardanoChannel(channel, cardanoChannels)
+    ) {
+      // Cardano can retain stale channel UTxOs; only route through pairs that point back.
+      continue;
+    }
+
     insert(channel);
     insert({
       srcChain: channel.destChain,
@@ -874,6 +978,143 @@ async function fetchAllChannels(
   }
 
   return { adjacency, channelByRoute };
+}
+
+async function isUsableChannelClient(
+  restUrl: string,
+  response: QueryClientStateResponse,
+  fetchImpl: typeof fetch,
+): Promise<boolean> {
+  const identified = response.identified_client_state;
+  const clientState = identified?.client_state;
+  if (!identified?.client_id || !clientState) {
+    return true;
+  }
+
+  if (isNonZeroHeight(clientState.frozen_height)) {
+    return false;
+  }
+
+  const trustingPeriodMs = parseDurationMs(clientState.trusting_period);
+  const latestHeight = clientState.latest_height;
+  if (
+    trustingPeriodMs === null ||
+    !latestHeight?.revision_number ||
+    !latestHeight.revision_height
+  ) {
+    return true;
+  }
+
+  const consensusState = await fetchConsensusState(
+    restUrl,
+    identified.client_id,
+    latestHeight.revision_number,
+    latestHeight.revision_height,
+    fetchImpl,
+  );
+  const timestampMs = Date.parse(consensusState?.consensus_state?.timestamp || '');
+  if (!Number.isFinite(timestampMs)) {
+    return true;
+  }
+
+  return Date.now() - timestampMs <= trustingPeriodMs;
+}
+
+async function fetchConsensusState(
+  restUrl: string,
+  clientId: string,
+  revisionNumber: string,
+  revisionHeight: string,
+  fetchImpl: typeof fetch,
+): Promise<QueryConsensusStateResponse | null> {
+  try {
+    return await fetchJson<QueryConsensusStateResponse>(
+      `${trimTrailingSlash(restUrl)}${QUERY_CONSENSUS_STATES_PREFIX_URL}/${encodeURIComponent(
+        clientId,
+      )}/revision/${encodeURIComponent(revisionNumber)}/height/${encodeURIComponent(
+        revisionHeight,
+      )}`,
+      fetchImpl,
+    );
+  } catch {
+    return null;
+  }
+}
+
+function isNonZeroHeight(height?: {
+  revision_number?: string;
+  revision_height?: string;
+}): boolean {
+  if (!height) {
+    return false;
+  }
+  return height.revision_number !== '0' || height.revision_height !== '0';
+}
+
+function parseDurationMs(value?: string): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.trim().match(/^(\d+)(?:\.(\d+))?([a-z]+)$/i);
+  if (!match) {
+    return null;
+  }
+
+  const amount = Number(`${match[1]}.${match[2] || '0'}`);
+  if (!Number.isFinite(amount)) {
+    return null;
+  }
+
+  switch (match[3].toLowerCase()) {
+    case 's':
+    case 'sec':
+    case 'second':
+    case 'seconds':
+      return amount * 1000;
+    case 'm':
+    case 'min':
+    case 'minute':
+    case 'minutes':
+      return amount * 60 * 1000;
+    case 'h':
+    case 'hr':
+    case 'hour':
+    case 'hours':
+      return amount * 60 * 60 * 1000;
+    case 'd':
+    case 'day':
+    case 'days':
+      return amount * 24 * 60 * 60 * 1000;
+    default:
+      return null;
+  }
+}
+
+async function fetchCardanoOpenChannels(
+  restUrl: string,
+  fetchImpl: typeof fetch,
+): Promise<QueryChannelResponse[]> {
+  const data = await fetchJson<{
+    channels?: QueryChannelResponse[];
+  }>(`${trimTrailingSlash(restUrl)}${QUERY_CARDANO_CHANNELS_URL}`, fetchImpl);
+
+  return (data.channels || []).filter((channel) =>
+    isOpenChannelState(channel.state),
+  );
+}
+
+function hasReciprocalCardanoChannel(
+  entrypointChannel: OpenChannel,
+  cardanoChannels: QueryChannelResponse[],
+): boolean {
+  return cardanoChannels.some(
+    (cardanoChannel) =>
+      cardanoChannel.port_id === entrypointChannel.destPort &&
+      cardanoChannel.channel_id === entrypointChannel.destChannel &&
+      cardanoChannel.counterparty.port_id === entrypointChannel.srcPort &&
+      cardanoChannel.counterparty.channel_id === entrypointChannel.srcChannel,
+  );
 }
 
 async function fetchClientStateFromChannel(
@@ -1656,6 +1897,10 @@ async function fetchJson<T>(
     );
   }
   return (await response.json()) as T;
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, '');
 }
 
 function getMaxChannelId(channel1: string, channel2: string): string {

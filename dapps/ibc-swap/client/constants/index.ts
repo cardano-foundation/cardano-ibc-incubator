@@ -6,6 +6,7 @@ export const THEME_MODE = {
 };
 
 export const ENTRYPOINT_CHAIN_ID = 'entrypoint';
+export const INJECTIVE_TESTNET_CHAIN_ID = 'injective-888';
 export const defaultChainName = ENTRYPOINT_CHAIN_ID;
 
 export const FROM_TO = {
