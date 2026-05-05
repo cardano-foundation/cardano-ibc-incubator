@@ -35,6 +35,7 @@ export type TransferPacketHopStatus =
   | 'acknowledged'
   | 'timed_out';
 
+// One hop represents one source-to-destination edge in the configured route.
 export type TransferPacketHop = {
   index: number;
   sourceChainId: string;

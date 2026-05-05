@@ -133,6 +133,7 @@ type ParsedTxRedeemer = {
   index: bigint;
 };
 
+// Packet status responses keep raw attributes so callers can inspect partially decoded events.
 export type IndexedPacketEvent = {
   tx_hash: string;
   height: string;
@@ -1209,6 +1210,7 @@ export class QueryService {
   private mapPacketEvent(txHash: string, height: number, event: any): IndexedPacketEvent | null {
     if (!this.isPacketEventType(event.type)) return null;
 
+    // Keep malformed packet events visible while omitting the normalized packet summary.
     const attributes = (event.event_attribute || []).reduce((acc: Record<string, string>, attr: any) => {
       if (attr?.key === undefined) return acc;
       acc[String(attr.key)] = attr?.value === undefined ? '' : String(attr.value);
@@ -1252,6 +1254,7 @@ export class QueryService {
     for (const utxo of utxos) {
       if (utxo.assetsPolicy !== context.mintChannelScriptHash) continue;
 
+      // Cardano packet events are encoded through channel state transitions, not a Tendermint event index.
       const txsResult = await this._parseEventChannel(utxo, context.hostStateNFT, context.mintChannelScriptHash);
       if (!txsResult?.events?.length) continue;
 
@@ -1321,6 +1324,7 @@ export class QueryService {
     }
 
     const context = this.getPacketEventContext();
+    // Either channel endpoint can be the state token touched by the packet transition.
     const candidateChannelIds = Array.from(new Set([query.sourceChannel, query.destinationChannel]));
     const channelTokenNames = candidateChannelIds.map((channelId) =>
       this.lucidService.generateTokenName(

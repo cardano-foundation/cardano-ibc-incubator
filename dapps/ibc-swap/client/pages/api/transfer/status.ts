@@ -86,6 +86,7 @@ function resolveServerRestEndpoint(
 ): string | null {
   if (!endpoint) return null;
 
+  // The Next API runs server-side, so local browser endpoints may need a Docker host alias.
   const internalLoopbackHost =
     process.env.IBC_SWAP_LOCALHOST_INTERNAL_HOST ||
     (GATEWAY_TX_BUILDER_ENDPOINT.includes('host.docker.internal')
@@ -121,6 +122,7 @@ async function fetchJsonOrNull<T>(url: URL): Promise<T | null> {
     headers: { accept: 'application/json' },
   });
 
+  // A missing tx is a normal transient state while chain history indexes catch up.
   if (response.status === 404) return null;
   if (!response.ok) {
     const body = await response.text().catch(() => '');
@@ -144,6 +146,7 @@ async function fetchJsonOrNull<T>(url: URL): Promise<T | null> {
 function attributeRecordFromArray(attributes: unknown): Record<string, string> {
   if (!Array.isArray(attributes)) return {};
 
+  // Cosmos REST emits event attributes as arrays, unlike the normalized Cardano gateway shape.
   return attributes.reduce((acc: Record<string, string>, attr) => {
     if (typeof attr !== 'object' || attr === null) return acc;
     const { key, value } = attr as JsonRecord;
@@ -222,6 +225,7 @@ function observedEventFromCardano(
 ): TransferObservedEvent | null {
   if (!event.type || !event.packet) return null;
 
+  // Accept both snake_case and camelCase fields to tolerate older gateway responses.
   const { packet } = event;
   const sequence = packet.sequence === undefined ? '' : String(packet.sequence);
   const sourcePort = packet.source_port || packet.sourcePort || '';
@@ -310,6 +314,7 @@ async function queryCardanoPacketEvent(
   eventType: PacketEventType,
   packet: IbcPacketSummary,
 ): Promise<TransferObservedEvent | null> {
+  // Cardano has no Tendermint tx search, so Gateway exposes packet-keyed lookups.
   const url = new URL(
     'api/cardano/packet-events',
     normalizeBaseUrl(GATEWAY_TX_BUILDER_ENDPOINT),
@@ -395,6 +400,7 @@ function cosmosPacketEventQuery(
   eventType: PacketEventType,
   packet: IbcPacketSummary,
 ): string {
+  // Cosmos tx search can filter directly on packet attributes for a specific event type.
   return [
     `${eventType}.${packetAttrKeys.sequence}='${packet.sequence}'`,
     `${eventType}.${packetAttrKeys.sourceChannel}='${packet.sourceChannel}'`,
@@ -446,6 +452,7 @@ async function findForwardedSendPacket(
 ): Promise<TransferObservedEvent | null> {
   if (!txHash) return null;
 
+  // PFM emits the next hop's send_packet in the intermediary recv transaction.
   const txEvents = await getTxPacketEvents(chain, txHash);
   if (!txEvents) return null;
 
@@ -494,6 +501,7 @@ async function buildTransferStatus(params: {
     params.sourceChainId,
     params.destinationChainId,
   );
+  // Status resolution starts at the wallet tx and follows each packet through the configured route.
   const sourceChain = getRuntimeChainOrThrow(params.sourceChainId);
   const sourceTxEvents = await getTxPacketEvents(
     sourceChain,
@@ -546,6 +554,7 @@ async function buildTransferStatus(params: {
   let currentSend: TransferObservedEvent | null = firstSend;
   let currentPacket = firstSend.packet;
 
+  // Each loop resolves one route edge and stops at the first unobserved packet milestone.
   for (let index = 0; index < routeChainIds.length - 1; index += 1) {
     const hopSourceChain = getRuntimeChainOrThrow(routeChainIds[index]);
     const hopDestinationChain = getRuntimeChainOrThrow(
@@ -621,6 +630,7 @@ async function buildTransferStatus(params: {
     );
     if (!forwardedSend) break;
 
+    // Multi-hop progress advances only after the intermediary emits a different outbound packet.
     currentSend = forwardedSend;
     currentPacket = forwardedSend.packet;
   }

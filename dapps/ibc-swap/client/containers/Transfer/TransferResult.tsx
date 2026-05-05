@@ -105,6 +105,7 @@ const getPacketLabel = (packetHop?: TransferPacketHop): string =>
 const getEventTxLabel = (txHash?: string): string =>
   txHash ? ` in tx ${getShortTxHash(txHash)}` : '';
 
+// Convert packet milestones into stable copy for the compact per-hop progress UI.
 const buildRouteHopProgress = (params: {
   index: number;
   sourceChainId: string;
@@ -125,6 +126,7 @@ const buildRouteHopProgress = (params: {
   const destinationLabel = runtimeChainLabel(destinationChainId);
   const packetLabel = getPacketLabel(packetHop);
 
+  // The most advanced observed event on the hop determines the summary label.
   let statusLabel = 'Waiting for previous hop';
   if (packetHop?.timeout) statusLabel = 'Timed out';
   else if (packetHop?.acknowledge) statusLabel = 'Acknowledged';
@@ -258,6 +260,7 @@ export const TransferResult = ({
 
     let cancelled = false;
     const fetchTransferStatus = async () => {
+      // Poll through the Next API so the browser never talks directly to chain REST endpoints.
       const params = new URLSearchParams({
         sourceTxHash: lastTxHash,
         sourceChainId,
@@ -302,6 +305,7 @@ export const TransferResult = ({
     };
   }, [fromNetwork.networkId, lastTxHash, toNetwork.networkId]);
 
+  // Fall back to local route config until the live status endpoint returns the canonical route.
   const routeChainIds = transferStatus?.routeChainIds.length
     ? transferStatus.routeChainIds
     : runtimeRouteChainIds(fromNetwork.networkId, toNetwork.networkId);
@@ -313,6 +317,7 @@ export const TransferResult = ({
       : undefined;
 
   const packets = transferStatus?.packets || [];
+  // Render every route edge even before its packet is indexed so stalled hops remain visible.
   const routeHopProgress = routeChainIds
     .slice(0, -1)
     .map((sourceChainId, index) =>
