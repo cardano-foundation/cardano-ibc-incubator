@@ -376,7 +376,7 @@ impl TestResults {
     }
 }
 
-const MAX_TEST_INDEX: u8 = 12;
+const MAX_TEST_INDEX: u8 = 13;
 
 #[derive(Debug, Clone)]
 struct TestSelection {
@@ -432,7 +432,9 @@ impl TestSelection {
 fn parse_test_selector(raw: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
-        return Err("Empty test selector. Use examples like --tests 9-12 or --tests 6,9-12".into());
+        return Err(
+            "Empty test selector. Use examples like --tests 10-13 or --tests 6,10-13".into(),
+        );
     }
 
     let mut selected = BTreeMap::new();
@@ -482,7 +484,7 @@ fn parse_test_selector(raw: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>>
     }
 
     if selected.is_empty() {
-        return Err("No tests selected. Use examples like --tests 9-12 or --tests 6,9-12".into());
+        return Err("No tests selected. Use examples like --tests 10-13 or --tests 6,10-13".into());
     }
 
     Ok(selected.keys().copied().collect())
@@ -515,8 +517,9 @@ fn test_prerequisites(test: u8) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         8 => vec![1, 2, 3, 4, 7],
         9 => vec![1, 2, 3, 4, 7, 8],
         10 => vec![1, 2, 3, 4, 7, 8, 9],
-        11 => vec![1, 2, 3, 4, 7, 8],
-        12 => vec![1, 2, 3, 4, 7, 8, 11],
+        11 => vec![1, 2, 3, 4, 7, 8, 9, 10],
+        12 => vec![1, 2, 3, 4, 7, 8, 9],
+        13 => vec![1, 2, 3, 4, 7, 8, 9, 12],
         _ => {
             return Err(format!(
                 "Test {} is out of range. Supported tests are 1-{}",
@@ -534,28 +537,28 @@ mod test_selection_tests {
 
     #[test]
     fn parse_selector_handles_ranges_and_lists() {
-        let parsed = parse_test_selector("6,9-12").expect("selector should parse");
-        assert_eq!(parsed, vec![6, 9, 10, 11, 12]);
+        let parsed = parse_test_selector("6,10-13").expect("selector should parse");
+        assert_eq!(parsed, vec![6, 10, 11, 12, 13]);
     }
 
     #[test]
     fn parse_selector_rejects_invalid_values() {
         assert!(parse_test_selector("").is_err());
         assert!(parse_test_selector("0").is_err());
-        assert!(parse_test_selector("13").is_err());
+        assert!(parse_test_selector("14").is_err());
         assert!(parse_test_selector("10-9").is_err());
         assert!(parse_test_selector("abc").is_err());
     }
 
     #[test]
     fn selection_auto_includes_prerequisites_for_ics20_range() {
-        let selection = TestSelection::parse(Some("9-12")).expect("selection should parse");
+        let selection = TestSelection::parse(Some("10-13")).expect("selection should parse");
 
-        let expected_requested = vec![9, 10, 11, 12];
+        let expected_requested = vec![10, 11, 12, 13];
         let actual_requested: Vec<u8> = selection.requested.keys().copied().collect();
         assert_eq!(actual_requested, expected_requested);
 
-        let expected_expanded = vec![1, 2, 3, 4, 7, 8, 9, 10, 11, 12];
+        let expected_expanded = vec![1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13];
         let actual_expanded: Vec<u8> = selection.expanded.keys().copied().collect();
         assert_eq!(actual_expanded, expected_expanded);
     }
@@ -1129,7 +1132,9 @@ pub async fn run_integration_tests(
         };
     }
 
-    if channel_id.is_none() && (selection.should_run(9) || selection.should_run(11)) {
+    if channel_id.is_none()
+        && (selection.should_run(9) || selection.should_run(10) || selection.should_run(12))
+    {
         if let Some(existing_channel_id) = resolve_cardano_transfer_channel_id(project_root) {
             logger::warn(&format!(
                 "No channel created during this run; reusing existing transfer channel {} for downstream ICS-20 tests.",
@@ -1139,7 +1144,169 @@ pub async fn run_integration_tests(
         }
     }
 
-    // Test 9: ICS-20 transfer (Cosmos -> Cardano) and packet clearing
+    // Test 9: Historical proof-height pinning
+    //
+    // This checks the proof-serving invariant before any token transfers run:
+    //   - Hermes asks Cardano/Gateway for channel state at height H
+    //   - Gateway serves an exact-height proof for H
+    //   - A newer latest proof does not make historical queries drift to latest
+    if selection.should_run(9) {
+        let mut test_9 = TestTimer::start(
+            "Test 9: Cardano historical proof-height pinning through Gateway and Hermes...",
+        );
+
+        if let Some(cardano_channel_id) = &channel_id {
+            if let Some(ref cid) = client_id {
+                match wait_for_gateway_channel_proof_height(
+                    cardano_channel_id,
+                    None,
+                    120,
+                    Duration::from_secs(2),
+                )
+                .await
+                {
+                    Ok(first_proof) => {
+                        logger::verbose(&format!(
+                            "   Initial Gateway channel proof height: {} (proof bytes={})",
+                            first_proof.proof_height, first_proof.proof_len
+                        ));
+
+                        match hermes_query_channel_end_at_height(
+                            project_root,
+                            cardano_channel_id,
+                            first_proof.proof_height,
+                        ) {
+                            Ok(()) => {
+                                match update_client_with_retries_for_proof_height(
+                                    project_root,
+                                    cid,
+                                    12,
+                                    Duration::from_secs(5),
+                                )
+                                .await
+                                {
+                                    Ok(()) => {
+                                        match wait_for_gateway_channel_proof_height(
+                                            cardano_channel_id,
+                                            Some(first_proof.proof_height),
+                                            180,
+                                            Duration::from_secs(2),
+                                        )
+                                        .await
+                                        {
+                                            Ok(second_proof) => {
+                                                let old_query_result =
+                                                    assert_gateway_channel_proof_at_height(
+                                                        cardano_channel_id,
+                                                        first_proof.proof_height,
+                                                    )
+                                                    .await;
+                                                let new_query_result =
+                                                    assert_gateway_channel_proof_at_height(
+                                                        cardano_channel_id,
+                                                        second_proof.proof_height,
+                                                    )
+                                                    .await;
+                                                let future_query_result =
+                                                    assert_gateway_channel_future_height_rejected(
+                                                        cardano_channel_id,
+                                                        second_proof.proof_height + 1_000_000,
+                                                    )
+                                                    .await;
+
+                                                match (
+                                                    old_query_result,
+                                                    new_query_result,
+                                                    future_query_result,
+                                                ) {
+                                                    (Ok(old_proof), Ok(new_proof), Ok(())) => {
+                                                        let elapsed = test_9.finish();
+                                                        logger::log(&format!(
+                                                            "PASS Test 9: Gateway served exact channel proofs at historical heights {} and {} and rejected a future height (took {}) (proof bytes old={}, new={})\n",
+                                                            old_proof.proof_height,
+                                                            new_proof.proof_height,
+                                                            format_duration(elapsed),
+                                                            old_proof.proof_len,
+                                                            new_proof.proof_len
+                                                        ));
+                                                        results.passed += 1;
+                                                    }
+                                                    (old_result, new_result, future_result) => {
+                                                        let elapsed = test_9.finish();
+                                                        logger::log(&format!(
+                                                            "FAIL Test 9: Gateway historical channel proof assertions failed (took {})\nold height result: {:?}\nnew height result: {:?}\nfuture height rejection result: {:?}\n",
+                                                            format_duration(elapsed),
+                                                            old_result,
+                                                            new_result,
+                                                            future_result
+                                                        ));
+                                                        results.failed += 1;
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                let elapsed = test_9.finish();
+                                                logger::log(&format!(
+                                                    "FAIL Test 9: Gateway latest proof height did not advance after client update (took {})\n{}\n",
+                                                    format_duration(elapsed),
+                                                    e
+                                                ));
+                                                results.failed += 1;
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        let elapsed = test_9.finish();
+                                        logger::log(&format!(
+                                            "FAIL Test 9: Could not create a newer Cardano HostState transition for historical proof check (took {})\n{}\n",
+                                            format_duration(elapsed),
+                                            e
+                                        ));
+                                        results.failed += 1;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                let elapsed = test_9.finish();
+                                logger::log(&format!(
+                                    "FAIL Test 9: Hermes height-pinned channel query failed at Cardano proof height {} (took {})\n{}\n",
+                                    first_proof.proof_height,
+                                    format_duration(elapsed),
+                                    e
+                                ));
+                                results.failed += 1;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let elapsed = test_9.finish();
+                        logger::log(&format!(
+                            "FAIL Test 9: Could not obtain an initial Gateway channel proof (took {})\n{}\n",
+                            format_duration(elapsed),
+                            e
+                        ));
+                        results.failed += 1;
+                    }
+                }
+            } else {
+                let elapsed = test_9.finish();
+                logger::log(&format!(
+                    "SKIP Test 9: Skipped because no Cardano-hosted client was available for a HostState update (took {})\n",
+                    format_duration(elapsed)
+                ));
+                results.skipped += 1;
+            }
+        } else {
+            let elapsed = test_9.finish();
+            logger::log(&format!(
+                "SKIP Test 9: Skipped because no transfer channel was established (took {})\n",
+                format_duration(elapsed)
+            ));
+            results.skipped += 1;
+        }
+    }
+
+    // Test 10: ICS-20 transfer (Cosmos -> Cardano) and packet clearing
     //
     // This tests the first real packet path:
     //   - Submit MsgTransfer on the packet-forwarding chain (Cosmos)
@@ -1147,9 +1314,9 @@ pub async fn run_integration_tests(
     //   - Validate basic token effects and Cardano voucher minting
     let mut transfer_test_passed = false;
     let mut stake_denom_trace_hash: Option<String> = None;
-    if selection.should_run(9) {
-        let mut test_9 =
-            TestTimer::start("Test 9: ICS-20 transfer (Entrypoint chain -> Cardano)...");
+    if selection.should_run(10) {
+        let mut test_10 =
+            TestTimer::start("Test 10: ICS-20 transfer (Entrypoint chain -> Cardano)...");
 
         if let Some(cardano_channel_id) = &channel_id {
             let entrypoint_channel_id = resolve_entrypoint_channel_id_with_retries(
@@ -1241,16 +1408,16 @@ pub async fn run_integration_tests(
                         if entrypoint_balance_before < entrypoint_balance_after
                             || entrypoint_delta < amount as u128
                         {
-                            let elapsed = test_9.finish();
+                            let elapsed = test_10.finish();
                             logger::log(&format!(
-                            "FAIL Test 9: entrypoint chain balance did not decrease as expected (took {}) (before={}, after={}, delta={}, expected_delta >= {})\n",
+                            "FAIL Test 10: entrypoint chain balance did not decrease as expected (took {}) (before={}, after={}, delta={}, expected_delta >= {})\n",
                             format_duration(elapsed),
                             entrypoint_balance_before,
                             entrypoint_balance_after,
                             entrypoint_delta,
                             amount
                         ));
-                            dump_test_9_ics20_diagnostics(
+                            dump_test_10_ics20_diagnostics(
                                 project_root,
                                 cardano_channel_id,
                                 &entrypoint_channel_id,
@@ -1262,16 +1429,16 @@ pub async fn run_integration_tests(
                             );
                             results.failed += 1;
                         } else if voucher_delta < amount {
-                            let elapsed = test_9.finish();
+                            let elapsed = test_10.finish();
                             logger::log(&format!(
-                            "FAIL Test 9: Cardano voucher token was not minted as expected (took {}) (before={}, after={}, delta={}, expected_delta >= {})\n",
+                            "FAIL Test 10: Cardano voucher token was not minted as expected (took {}) (before={}, after={}, delta={}, expected_delta >= {})\n",
                             format_duration(elapsed),
                             cardano_voucher_before,
                             cardano_voucher_after,
                             voucher_delta,
                             amount
                         ));
-                            dump_test_9_ics20_diagnostics(
+                            dump_test_10_ics20_diagnostics(
                                 project_root,
                                 cardano_channel_id,
                                 &entrypoint_channel_id,
@@ -1283,13 +1450,13 @@ pub async fn run_integration_tests(
                             );
                             results.failed += 1;
                         } else if cardano_root_after == cardano_root_before {
-                            let elapsed = test_9.finish();
+                            let elapsed = test_10.finish();
                             logger::log(&format!(
-	                            "FAIL Test 9: Cardano ibc_state_root did not change after transfer (took {}) (root={}...)\n",
+	                            "FAIL Test 10: Cardano ibc_state_root did not change after transfer (took {}) (root={}...)\n",
 	                            format_duration(elapsed),
 	                            &cardano_root_after[..16],
 	                        ));
-                            dump_test_9_ics20_diagnostics(
+                            dump_test_10_ics20_diagnostics(
                                 project_root,
                                 cardano_channel_id,
                                 &entrypoint_channel_id,
@@ -1309,13 +1476,13 @@ pub async fn run_integration_tests(
                             ) {
                                 Ok(hash) => Some(hash),
                                 Err(e) => {
-                                    let elapsed = test_9.finish();
+                                    let elapsed = test_10.finish();
                                     logger::log(&format!(
-	                                    "FAIL Test 9: Could not resolve minted Cardano voucher token name for denom-trace reverse lookup (took {})\n{}\n",
+	                                    "FAIL Test 10: Could not resolve minted Cardano voucher token name for denom-trace reverse lookup (took {})\n{}\n",
 	                                    format_duration(elapsed),
 	                                    e
 	                                ));
-                                    dump_test_9_ics20_diagnostics(
+                                    dump_test_10_ics20_diagnostics(
                                         project_root,
                                         cardano_channel_id,
                                         &entrypoint_channel_id,
@@ -1341,9 +1508,9 @@ pub async fn run_integration_tests(
                                         .await
                                         {
                                             Ok(()) => {
-                                                let elapsed = test_9.finish();
+                                                let elapsed = test_10.finish();
                                                 logger::log(&format!(
-	                                                "PASS Test 9: Transfer relayed, voucher minted, and denom-trace reverse lookup succeeded (took {})\n",
+	                                                "PASS Test 10: Transfer relayed, voucher minted, and denom-trace reverse lookup succeeded (took {})\n",
 	                                                format_duration(elapsed)
 	                                            ));
                                                 results.passed += 1;
@@ -1351,13 +1518,13 @@ pub async fn run_integration_tests(
                                                 stake_denom_trace_hash = Some(denom_trace_hash);
                                             }
                                             Err(e) => {
-                                                let elapsed = test_9.finish();
+                                                let elapsed = test_10.finish();
                                                 logger::log(&format!(
-	                                                "FAIL Test 9: Denom-trace reverse lookup failed for minted Cardano voucher (took {})\n{}\n",
+	                                                "FAIL Test 10: Denom-trace reverse lookup failed for minted Cardano voucher (took {})\n{}\n",
 	                                                format_duration(elapsed),
 	                                                e
 	                                            ));
-                                                dump_test_9_ics20_diagnostics(
+                                                dump_test_10_ics20_diagnostics(
                                                     project_root,
                                                     cardano_channel_id,
                                                     &entrypoint_channel_id,
@@ -1372,13 +1539,13 @@ pub async fn run_integration_tests(
                                         }
                                     }
                                     Err(e) => {
-                                        let elapsed = test_9.finish();
+                                        let elapsed = test_10.finish();
                                         logger::log(&format!(
-	                                        "FAIL Test 9: Could not compute IBC denom-trace hash (took {})\n{}\n",
+	                                        "FAIL Test 10: Could not compute IBC denom-trace hash (took {})\n{}\n",
 	                                        format_duration(elapsed),
 	                                        e
 	                                    ));
-                                        dump_test_9_ics20_diagnostics(
+                                        dump_test_10_ics20_diagnostics(
                                             project_root,
                                             cardano_channel_id,
                                             &entrypoint_channel_id,
@@ -1395,13 +1562,13 @@ pub async fn run_integration_tests(
                         }
                     }
                     Err(e) => {
-                        let elapsed = test_9.finish();
+                        let elapsed = test_10.finish();
                         logger::log(&format!(
-                            "FAIL Test 9: Failed to relay packets (took {})\n{}\n",
+                            "FAIL Test 10: Failed to relay packets (took {})\n{}\n",
                             format_duration(elapsed),
                             e
                         ));
-                        dump_test_9_ics20_diagnostics(
+                        dump_test_10_ics20_diagnostics(
                             project_root,
                             cardano_channel_id,
                             &entrypoint_channel_id,
@@ -1415,13 +1582,13 @@ pub async fn run_integration_tests(
                     }
                 },
                 Err(e) => {
-                    let elapsed = test_9.finish();
+                    let elapsed = test_10.finish();
                     logger::log(&format!(
-                        "FAIL Test 9: hermes tx ft-transfer failed (took {})\n{}\n",
+                        "FAIL Test 10: hermes tx ft-transfer failed (took {})\n{}\n",
                         format_duration(elapsed),
                         e
                     ));
-                    dump_test_9_ics20_diagnostics(
+                    dump_test_10_ics20_diagnostics(
                         project_root,
                         cardano_channel_id,
                         &entrypoint_channel_id,
@@ -1435,23 +1602,23 @@ pub async fn run_integration_tests(
                 }
             }
         } else {
-            let elapsed = test_9.finish();
+            let elapsed = test_10.finish();
             logger::log(&format!(
-                "SKIP Test 9: Skipped because no transfer channel was established (took {})\n",
+                "SKIP Test 10: Skipped because no transfer channel was established (took {})\n",
                 format_duration(elapsed)
             ));
             results.skipped += 1;
         }
     }
 
-    // Test 10: Round-trip transfer (Cardano -> Cosmos)
+    // Test 11: Round-trip transfer (Cardano -> Cosmos)
     //
     // Send the Cardano voucher back to the packet-forwarding chain and verify:
     //   - Voucher is burned on Cardano
     //   - Native token balance is restored on Cosmos (minus fees)
-    if selection.should_run(10) {
-        let mut test_10 =
-            TestTimer::start("Test 10: ICS-20 round-trip (Cardano -> Entrypoint chain)...");
+    if selection.should_run(11) {
+        let mut test_11 =
+            TestTimer::start("Test 11: ICS-20 round-trip (Cardano -> Entrypoint chain)...");
         if transfer_test_passed {
             if let Some(cardano_channel_id) = &channel_id {
                 let entrypoint_channel_id = resolve_entrypoint_channel_id_with_retries(
@@ -1478,7 +1645,7 @@ pub async fn run_integration_tests(
 
                 let denom = "stake";
                 // Current voucher-burn path on Cardano requires extra headroom in the sender voucher balance.
-                // Sending half of the freshly minted Test 9 amount keeps this test deterministic.
+                // Sending half of the freshly minted Test 10 amount keeps this test deterministic.
                 let amount: u64 = 500_000;
 
                 let voucher_policy_id = read_handler_json_value(
@@ -1533,7 +1700,7 @@ pub async fn run_integration_tests(
                                 || err_str.contains("TxBuilderError");
                             if retryable && attempt < transfer_attempts {
                                 logger::log(&format!(
-                                "Test 10: hermes ft-transfer attempt {}/{} failed due to wallet selection; retrying in {:?}\n{}\n",
+                                "Test 11: hermes ft-transfer attempt {}/{} failed due to wallet selection; retrying in {:?}\n{}\n",
                                 attempt,
                                 transfer_attempts,
                                 transfer_retry_delay,
@@ -1574,9 +1741,9 @@ pub async fn run_integration_tests(
                                 cardano_voucher_before.saturating_sub(cardano_voucher_after);
 
                             if cardano_voucher_after + amount > cardano_voucher_before {
-                                let elapsed = test_10.finish();
+                                let elapsed = test_11.finish();
                                 logger::log(&format!(
-                                "FAIL Test 10: Cardano voucher token did not burn as expected (took {}) (before={}, after={}, delta={}, expected_delta >= {})\n",
+                                "FAIL Test 11: Cardano voucher token did not burn as expected (took {}) (before={}, after={}, delta={}, expected_delta >= {})\n",
                                 format_duration(elapsed),
                                 cardano_voucher_before,
                                 cardano_voucher_after,
@@ -1585,9 +1752,9 @@ pub async fn run_integration_tests(
                             ));
                                 results.failed += 1;
                             } else if entrypoint_balance_after <= entrypoint_balance_before {
-                                let elapsed = test_10.finish();
+                                let elapsed = test_11.finish();
                                 logger::log(&format!(
-	                                "FAIL Test 10: entrypoint chain balance did not increase after round-trip (took {}) (before={}, after={}, delta={}, expected_delta > 0)\n",
+	                                "FAIL Test 11: entrypoint chain balance did not increase after round-trip (took {}) (before={}, after={}, delta={}, expected_delta > 0)\n",
 	                                format_duration(elapsed),
 	                                entrypoint_balance_before,
 	                                entrypoint_balance_after,
@@ -1599,9 +1766,9 @@ pub async fn run_integration_tests(
                                 let stake_hash = match stake_denom_trace_hash.as_deref() {
                                     Some(hash) => Some(hash),
                                     None => {
-                                        let elapsed = test_10.finish();
+                                        let elapsed = test_11.finish();
                                         logger::log(&format!(
-		                                        "FAIL Test 10: Missing stake voucher hash from Test 9; cannot verify denom-trace reverse lookup (took {})\n",
+		                                        "FAIL Test 11: Missing stake voucher hash from Test 10; cannot verify denom-trace reverse lookup (took {})\n",
 		                                        format_duration(elapsed)
 		                                    ));
                                         results.failed += 1;
@@ -1618,17 +1785,17 @@ pub async fn run_integration_tests(
                                     .await
                                     {
                                         Ok(()) => {
-                                            let elapsed = test_10.finish();
+                                            let elapsed = test_11.finish();
                                             logger::log(&format!(
-		                                            "PASS Test 10: Round-trip completed, voucher burned, and denom-trace reverse lookup still succeeds (took {})\n",
+		                                            "PASS Test 11: Round-trip completed, voucher burned, and denom-trace reverse lookup still succeeds (took {})\n",
 		                                            format_duration(elapsed)
 		                                        ));
                                             results.passed += 1;
                                         }
                                         Err(e) => {
-                                            let elapsed = test_10.finish();
+                                            let elapsed = test_11.finish();
                                             logger::log(&format!(
-		                                            "FAIL Test 10: Denom-trace reverse lookup failed after burning voucher (took {})\n{}\n",
+		                                            "FAIL Test 11: Denom-trace reverse lookup failed after burning voucher (took {})\n{}\n",
 		                                            format_duration(elapsed),
 		                                            e
 		                                        ));
@@ -1639,9 +1806,9 @@ pub async fn run_integration_tests(
                             }
                         }
                         Err(e) => {
-                            let elapsed = test_10.finish();
+                            let elapsed = test_11.finish();
                             logger::log(&format!(
-                                "FAIL Test 10: Failed to relay packets (took {})\n{}\n",
+                                "FAIL Test 11: Failed to relay packets (took {})\n{}\n",
                                 format_duration(elapsed),
                                 e
                             ));
@@ -1649,7 +1816,7 @@ pub async fn run_integration_tests(
                         }
                     },
                     Err(e) => {
-                        let elapsed = test_10.finish();
+                        let elapsed = test_11.finish();
                         let cardano_lovelace_total =
                             query_cardano_lovelace_total(project_root, &cardano_receiver_address)
                                 .unwrap_or(0);
@@ -1659,7 +1826,7 @@ pub async fn run_integration_tests(
                                     format!("Failed to query Cardano UTxOs: {}", err)
                                 });
                         logger::log(&format!(
-                            "FAIL Test 10: hermes tx ft-transfer failed (took {})\n{}\n\n=== Test 10 diagnostics (Cardano -> Entrypoint chain) ===\ncardano address: {}\nvoucher policy id: {}\ncardano lovelace total: {}\ncardano voucher assets: {:?}\ncardano utxos:\n{}\n\n=== Test 10 transfer attempt errors (most recent last) ===\n{}\n",
+                            "FAIL Test 11: hermes tx ft-transfer failed (took {})\n{}\n\n=== Test 11 diagnostics (Cardano -> Entrypoint chain) ===\ncardano address: {}\nvoucher policy id: {}\ncardano lovelace total: {}\ncardano voucher assets: {:?}\ncardano utxos:\n{}\n\n=== Test 11 transfer attempt errors (most recent last) ===\n{}\n",
                             format_duration(elapsed),
                             e,
                             cardano_receiver_address,
@@ -1677,24 +1844,24 @@ pub async fn run_integration_tests(
                     }
                 }
             } else {
-                let elapsed = test_10.finish();
+                let elapsed = test_11.finish();
                 logger::log(&format!(
-                    "SKIP Test 10: Skipped because no transfer channel was established (took {})\n",
+                    "SKIP Test 11: Skipped because no transfer channel was established (took {})\n",
                     format_duration(elapsed)
                 ));
                 results.skipped += 1;
             }
         } else {
-            let elapsed = test_10.finish();
+            let elapsed = test_11.finish();
             logger::log(&format!(
-                "SKIP Test 10: Skipped due to Test 9 failure (took {})\n",
+                "SKIP Test 11: Skipped due to Test 10 failure (took {})\n",
                 format_duration(elapsed)
             ));
             results.skipped += 1;
         }
     }
 
-    // Test 11: Transfer Cardano native token (Cardano -> Cosmos)
+    // Test 12: Transfer Cardano native token (Cardano -> Cosmos)
     //
     // Tests the "Cardano is the source chain" path for ICS-20:
     //   - Cardano escrows a native token in the transfer module
@@ -1703,9 +1870,9 @@ pub async fn run_integration_tests(
     let mut cardano_native_voucher_denom: Option<String> = None;
     let mut cardano_native_entrypoint_channel_id: Option<String> = None;
     let mut cardano_native_base_denom: Option<String> = None;
-    if selection.should_run(11) {
-        let mut test_11 = TestTimer::start(
-            "Test 11: ICS-20 transfer of Cardano native token (Cardano -> Entrypoint chain)...",
+    if selection.should_run(12) {
+        let mut test_12 = TestTimer::start(
+            "Test 12: ICS-20 transfer of Cardano native token (Cardano -> Entrypoint chain)...",
         );
 
         if let Some(cardano_channel_id) = &channel_id {
@@ -1778,15 +1945,15 @@ pub async fn run_integration_tests(
                         let native_token_delta =
                             cardano_native_before.saturating_sub(cardano_native_after);
                         if native_token_delta < amount {
-                            let elapsed = test_11.finish();
+                            let elapsed = test_12.finish();
                             logger::log(&format!(
-                            "FAIL Test 11: Cardano native token balance did not decrease by the transfer amount (took {}) (before={}, after={}, expected delta >= {})\n",
+                            "FAIL Test 12: Cardano native token balance did not decrease by the transfer amount (took {}) (before={}, after={}, expected delta >= {})\n",
                             format_duration(elapsed),
                             cardano_native_before,
                             cardano_native_after,
                             amount
                         ));
-                            dump_test_11_ics20_diagnostics(
+                            dump_test_12_ics20_diagnostics(
                                 project_root,
                                 cardano_channel_id,
                                 &entrypoint_channel_id,
@@ -1794,13 +1961,13 @@ pub async fn run_integration_tests(
                             );
                             results.failed += 1;
                         } else if cardano_root_after == cardano_root_before {
-                            let elapsed = test_11.finish();
+                            let elapsed = test_12.finish();
                             logger::log(&format!(
-                            "FAIL Test 11: Cardano ibc_state_root did not change after escrow transfer (took {}) (root={}...)\n",
+                            "FAIL Test 12: Cardano ibc_state_root did not change after escrow transfer (took {}) (root={}...)\n",
                             format_duration(elapsed),
                             &cardano_root_after[..16],
                         ));
-                            dump_test_11_ics20_diagnostics(
+                            dump_test_12_ics20_diagnostics(
                                 project_root,
                                 cardano_channel_id,
                                 &entrypoint_channel_id,
@@ -1837,9 +2004,9 @@ pub async fn run_integration_tests(
                                     &expected_base_denom,
                                 ) {
                                     Ok(()) => {
-                                        let elapsed = test_11.finish();
+                                        let elapsed = test_12.finish();
                                         logger::log(&format!(
-                                        "PASS Test 11: Cardano token escrowed, IBC voucher minted, and denom-trace reverse lookup succeeded (took {}) (denom={})\n",
+                                        "PASS Test 12: Cardano token escrowed, IBC voucher minted, and denom-trace reverse lookup succeeded (took {}) (denom={})\n",
                                         format_duration(elapsed),
                                         minted_denom
                                     ));
@@ -1851,14 +2018,14 @@ pub async fn run_integration_tests(
                                         cardano_native_base_denom = Some(base_denom.clone());
                                     }
                                     Err(e) => {
-                                        let elapsed = test_11.finish();
+                                        let elapsed = test_12.finish();
                                         logger::log(&format!(
-                                        "FAIL Test 11: Denom-trace reverse lookup failed for entrypoint voucher denom (took {}) (denom={})\n{}\n",
+                                        "FAIL Test 12: Denom-trace reverse lookup failed for entrypoint voucher denom (took {}) (denom={})\n{}\n",
                                         format_duration(elapsed),
                                         minted_denom,
                                         e
                                     ));
-                                        dump_test_11_ics20_diagnostics(
+                                        dump_test_12_ics20_diagnostics(
                                             project_root,
                                             cardano_channel_id,
                                             &entrypoint_channel_id,
@@ -1868,7 +2035,7 @@ pub async fn run_integration_tests(
                                     }
                                 }
                             } else {
-                                let elapsed = test_11.finish();
+                                let elapsed = test_12.finish();
                                 let mut ibc_deltas: Vec<(String, u128)> = Vec::new();
                                 for (balance_denom, after_amount) in &entrypoint_balances_after {
                                     if !balance_denom.starts_with("ibc/") {
@@ -1885,17 +2052,17 @@ pub async fn run_integration_tests(
                                 }
                                 ibc_deltas.sort_by(|a, b| b.1.cmp(&a.1));
                                 logger::log(&format!(
-                                "FAIL Test 11: No new IBC voucher denom minted on entrypoint chain (took {})\n",
+                                "FAIL Test 12: No new IBC voucher denom minted on entrypoint chain (took {})\n",
                                 format_duration(elapsed)
                             ));
                                 if !ibc_deltas.is_empty() {
-                                    logger::log("=== Test 11: observed IBC denom deltas (top candidates) ===");
+                                    logger::log("=== Test 12: observed IBC denom deltas (top candidates) ===");
                                     for (denom, delta) in ibc_deltas.into_iter().take(10) {
                                         logger::log(&format!("{}: +{}", denom, delta));
                                     }
                                     logger::log("");
                                 }
-                                dump_test_11_ics20_diagnostics(
+                                dump_test_12_ics20_diagnostics(
                                     project_root,
                                     cardano_channel_id,
                                     &entrypoint_channel_id,
@@ -1906,13 +2073,13 @@ pub async fn run_integration_tests(
                         }
                     }
                     Err(e) => {
-                        let elapsed = test_11.finish();
+                        let elapsed = test_12.finish();
                         logger::log(&format!(
-                            "FAIL Test 11: Failed to relay packets (took {})\n{}\n",
+                            "FAIL Test 12: Failed to relay packets (took {})\n{}\n",
                             format_duration(elapsed),
                             e
                         ));
-                        dump_test_11_ics20_diagnostics(
+                        dump_test_12_ics20_diagnostics(
                             project_root,
                             cardano_channel_id,
                             &entrypoint_channel_id,
@@ -1922,13 +2089,13 @@ pub async fn run_integration_tests(
                     }
                 },
                 Err(e) => {
-                    let elapsed = test_11.finish();
+                    let elapsed = test_12.finish();
                     logger::log(&format!(
-                        "FAIL Test 11: hermes tx ft-transfer failed (took {})\n{}\n",
+                        "FAIL Test 12: hermes tx ft-transfer failed (took {})\n{}\n",
                         format_duration(elapsed),
                         e
                     ));
-                    dump_test_11_ics20_diagnostics(
+                    dump_test_12_ics20_diagnostics(
                         project_root,
                         cardano_channel_id,
                         &entrypoint_channel_id,
@@ -1938,23 +2105,23 @@ pub async fn run_integration_tests(
                 }
             }
         } else {
-            let elapsed = test_11.finish();
+            let elapsed = test_12.finish();
             logger::log(&format!(
-                "SKIP Test 11: Skipped because no transfer channel was established (took {})\n",
+                "SKIP Test 12: Skipped because no transfer channel was established (took {})\n",
                 format_duration(elapsed)
             ));
             results.skipped += 1;
         }
     }
 
-    // Test 12: Round-trip Cardano native token (Cosmos -> Cardano)
+    // Test 13: Round-trip Cardano native token (Cosmos -> Cardano)
     //
-    // Send the voucher minted in Test 11 back to Cardano and verify:
+    // Send the voucher minted in Test 12 back to Cardano and verify:
     //   - Voucher is burned on Cosmos
     //   - Escrowed Cardano native token is released back to the Cardano receiver
-    if selection.should_run(12) {
-        let mut test_12 = TestTimer::start(
-            "Test 12: ICS-20 round-trip of Cardano native token (Entrypoint chain -> Cardano)...",
+    if selection.should_run(13) {
+        let mut test_13 = TestTimer::start(
+            "Test 13: ICS-20 round-trip of Cardano native token (Entrypoint chain -> Cardano)...",
         );
         if cardano_native_transfer_passed {
             if let (Some(voucher_denom), Some(entrypoint_channel_id), Some(base_denom)) = (
@@ -1978,7 +2145,7 @@ pub async fn run_integration_tests(
                     query_cardano_asset_total(project_root, &cardano_receiver_address, base_denom)?;
                 let cardano_root_before = query_handler_state_root(project_root)?;
 
-                let cardano_channel_id_for_test_12 = channel_id
+                let cardano_channel_id_for_test_13 = channel_id
                     .as_deref()
                     .unwrap_or(entrypoint_channel_id.as_str());
 
@@ -2009,12 +2176,12 @@ pub async fn run_integration_tests(
                             "transfer",
                             entrypoint_channel_id,
                             "cardano-devnet",
-                            cardano_channel_id_for_test_12,
+                            cardano_channel_id_for_test_13,
                             Some(3),
                         );
                         if let Err(error) = &clear_packets_result {
                             logger::warn(&format!(
-                                "Test 12 packet clearing did not fully converge within bounded retries; continuing with state assertions: {}",
+                                "Test 13 packet clearing did not fully converge within bounded retries; continuing with state assertions: {}",
                                 error
                             ));
                         }
@@ -2031,16 +2198,16 @@ pub async fn run_integration_tests(
                         let voucher_delta =
                             entrypoint_voucher_before.saturating_sub(entrypoint_voucher_after);
                         if voucher_delta < amount as u128 {
-                            let elapsed = test_12.finish();
+                            let elapsed = test_13.finish();
                             logger::log(&format!(
-                            "FAIL Test 12: Entrypoint chain voucher did not burn as expected (took {}) (before={}, after={}, expected delta >= {})\n",
+                            "FAIL Test 13: Entrypoint chain voucher did not burn as expected (took {}) (before={}, after={}, expected delta >= {})\n",
                             format_duration(elapsed),
                             entrypoint_voucher_before,
                             entrypoint_voucher_after,
                             amount
                         ));
                             if let Some(cardano_channel_id) = &channel_id {
-                                dump_test_12_ics20_diagnostics(
+                                dump_test_13_ics20_diagnostics(
                                     project_root,
                                     cardano_channel_id,
                                     entrypoint_channel_id,
@@ -2052,14 +2219,14 @@ pub async fn run_integration_tests(
                             }
                             results.failed += 1;
                         } else if cardano_root_after == cardano_root_before {
-                            let elapsed = test_12.finish();
+                            let elapsed = test_13.finish();
                             logger::log(&format!(
-                            "FAIL Test 12: Cardano ibc_state_root did not change after unescrow (took {}) (root={}...)\n",
+                            "FAIL Test 13: Cardano ibc_state_root did not change after unescrow (took {}) (root={}...)\n",
                             format_duration(elapsed),
                             &cardano_root_after[..16],
                         ));
                             if let Some(cardano_channel_id) = &channel_id {
-                                dump_test_12_ics20_diagnostics(
+                                dump_test_13_ics20_diagnostics(
                                     project_root,
                                     cardano_channel_id,
                                     entrypoint_channel_id,
@@ -2073,11 +2240,11 @@ pub async fn run_integration_tests(
                         } else if cardano_native_after.saturating_sub(cardano_native_before)
                             < amount
                         {
-                            let elapsed = test_12.finish();
+                            let elapsed = test_13.finish();
                             let increase =
                                 cardano_native_after.saturating_sub(cardano_native_before);
                             logger::log(&format!(
-                            "FAIL Test 12: Cardano native token balance did not increase by the returned amount (took {}) (before={}, after={}, delta={}, expected delta >= {})\n",
+                            "FAIL Test 13: Cardano native token balance did not increase by the returned amount (took {}) (before={}, after={}, delta={}, expected delta >= {})\n",
                             format_duration(elapsed),
                             cardano_native_before,
                             cardano_native_after,
@@ -2085,7 +2252,7 @@ pub async fn run_integration_tests(
                             amount
                         ));
                             if let Some(cardano_channel_id) = &channel_id {
-                                dump_test_12_ics20_diagnostics(
+                                dump_test_13_ics20_diagnostics(
                                     project_root,
                                     cardano_channel_id,
                                     entrypoint_channel_id,
@@ -2109,29 +2276,29 @@ pub async fn run_integration_tests(
                                 &expected_base_denom,
                             ) {
                                 Ok(()) => {
-                                    let elapsed = test_12.finish();
+                                    let elapsed = test_13.finish();
                                     if clear_packets_result.is_ok() {
                                         logger::log(&format!(
-                                            "PASS Test 12: Cardano native token round-trip succeeded and denom-trace reverse lookup still succeeds (took {})\n",
+                                            "PASS Test 13: Cardano native token round-trip succeeded and denom-trace reverse lookup still succeeds (took {})\n",
                                             format_duration(elapsed)
                                         ));
                                     } else {
                                         logger::log(&format!(
-                                            "PASS Test 12: Cardano native token round-trip and denom-trace assertions succeeded (took {}) despite residual pending packet(s)\n",
+                                            "PASS Test 13: Cardano native token round-trip and denom-trace assertions succeeded (took {}) despite residual pending packet(s)\n",
                                             format_duration(elapsed)
                                         ));
                                     }
                                     results.passed += 1;
                                 }
                                 Err(e) => {
-                                    let elapsed = test_12.finish();
+                                    let elapsed = test_13.finish();
                                     logger::log(&format!(
-                                    "FAIL Test 12: Denom-trace reverse lookup failed for Entrypoint chain voucher denom after burn (took {})\n{}\n",
+                                    "FAIL Test 13: Denom-trace reverse lookup failed for Entrypoint chain voucher denom after burn (took {})\n{}\n",
                                     format_duration(elapsed),
                                     e
                                 ));
                                     if let Some(cardano_channel_id) = &channel_id {
-                                        dump_test_12_ics20_diagnostics(
+                                        dump_test_13_ics20_diagnostics(
                                             project_root,
                                             cardano_channel_id,
                                             entrypoint_channel_id,
@@ -2147,14 +2314,14 @@ pub async fn run_integration_tests(
                         }
                     }
                     Err(e) => {
-                        let elapsed = test_12.finish();
+                        let elapsed = test_13.finish();
                         logger::log(&format!(
-                            "FAIL Test 12: hermes tx ft-transfer failed (took {})\n{}\n",
+                            "FAIL Test 13: hermes tx ft-transfer failed (took {})\n{}\n",
                             format_duration(elapsed),
                             e
                         ));
                         if let Some(cardano_channel_id) = &channel_id {
-                            dump_test_12_ics20_diagnostics(
+                            dump_test_13_ics20_diagnostics(
                                 project_root,
                                 cardano_channel_id,
                                 entrypoint_channel_id,
@@ -2168,17 +2335,17 @@ pub async fn run_integration_tests(
                     }
                 }
             } else {
-                let elapsed = test_12.finish();
+                let elapsed = test_13.finish();
                 logger::log(&format!(
-                    "SKIP Test 12: Skipped because Test 11 did not produce a voucher denom (took {})\n",
+                    "SKIP Test 13: Skipped because Test 12 did not produce a voucher denom (took {})\n",
                     format_duration(elapsed)
                 ));
                 results.skipped += 1;
             }
         } else {
-            let elapsed = test_12.finish();
+            let elapsed = test_13.finish();
             logger::log(&format!(
-                "SKIP Test 12: Skipped due to Test 11 failure (took {})\n",
+                "SKIP Test 13: Skipped due to Test 12 failure (took {})\n",
                 format_duration(elapsed)
             ));
             results.skipped += 1;
@@ -2775,6 +2942,104 @@ fn update_client(project_root: &Path, client_id: &str) -> Result<(), Box<dyn std
     let combined = format!("{} {}", stdout, stderr);
     if combined.contains("already updated") || combined.contains("no update") {
         return Err("Client already up to date - no new blocks to verify".into());
+    }
+
+    Ok(())
+}
+
+fn is_retryable_client_update_gap(error: &str) -> bool {
+    error.contains("already up to date")
+        || error.contains("already updated")
+        || error.contains("no need to update")
+        || error.contains("no update")
+        || error.contains("No new blocks available")
+        || error.contains("no new blocks")
+}
+
+async fn update_client_with_retries_for_proof_height(
+    project_root: &Path,
+    client_id: &str,
+    attempts: usize,
+    delay: Duration,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut last_err: Option<String> = None;
+
+    for attempt in 1..=attempts {
+        match update_client(project_root, client_id) {
+            Ok(()) => {
+                logger::verbose("   Waiting for client update transaction confirmation...");
+                tokio::time::sleep(Duration::from_secs(10)).await;
+                return Ok(());
+            }
+            Err(e) => {
+                let error = e.to_string();
+                if !is_retryable_client_update_gap(&error) || attempt == attempts {
+                    return Err(format!(
+                        "Client update did not produce a new HostState transition after {}/{} attempts: {}",
+                        attempt, attempts, error
+                    )
+                    .into());
+                }
+
+                last_err = Some(error);
+                logger::verbose(&format!(
+                    "   Client has no new update yet (attempt {}/{}); retrying in {:?}",
+                    attempt, attempts, delay
+                ));
+                tokio::time::sleep(delay).await;
+            }
+        }
+    }
+
+    Err(format!(
+        "Client update did not produce a new HostState transition; last error: {}",
+        last_err.unwrap_or_else(|| "no update attempted".to_string())
+    )
+    .into())
+}
+
+fn hermes_query_channel_end_at_height(
+    project_root: &Path,
+    channel_id: &str,
+    height: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    logger::verbose(&format!(
+        "   Running: hermes query channel end --chain cardano-devnet --port transfer --channel {} --height {}",
+        channel_id, height
+    ));
+
+    let height_arg = height.to_string();
+    let output = run_hermes_output(
+        project_root,
+        &[
+            "query",
+            "channel",
+            "end",
+            "--chain",
+            "cardano-devnet",
+            "--port",
+            "transfer",
+            "--channel",
+            channel_id,
+            "--height",
+            &height_arg,
+        ],
+    )?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    logger::verbose(&format!("   stdout: {}", stdout.trim()));
+    if !stderr.is_empty() {
+        logger::verbose(&format!("   stderr: {}", stderr.trim()));
+    }
+
+    if !output.status.success() {
+        return Err(format!(
+            "Hermes channel query failed at height {}:\nstdout: {}\nstderr: {}",
+            height, stdout, stderr
+        )
+        .into());
     }
 
     Ok(())
@@ -3968,6 +4233,36 @@ struct Hop {
     channel_id: String,
 }
 
+#[derive(Clone, PartialEq, ::prost::Message)]
+struct QueryChannelRequest {
+    #[prost(string, tag = "1")]
+    port_id: String,
+    #[prost(string, tag = "2")]
+    channel_id: String,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+struct QueryChannelResponse {
+    #[prost(bytes = "vec", tag = "2")]
+    proof: Vec<u8>,
+    #[prost(message, optional, tag = "3")]
+    proof_height: Option<IbcHeight>,
+}
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+struct IbcHeight {
+    #[prost(uint64, tag = "1")]
+    revision_number: u64,
+    #[prost(uint64, tag = "2")]
+    revision_height: u64,
+}
+
+#[derive(Debug)]
+struct GatewayChannelProof {
+    proof_height: u64,
+    proof_len: usize,
+}
+
 fn ibc_denom_trace_hash(path: &str, base_denom: &str) -> Result<String, String> {
     let full_denom_trace = if path.is_empty() {
         base_denom.to_string()
@@ -4011,6 +4306,156 @@ fn ibc_denom_trace_hash(path: &str, base_denom: &str) -> Result<String, String> 
         .ok_or_else(|| format!("Failed to parse shasum output: {}", stdout))?;
 
     Ok(hash.to_string())
+}
+
+async fn query_gateway_channel_proof(
+    channel_id: &str,
+    query_height: Option<u64>,
+) -> Result<GatewayChannelProof, String> {
+    let endpoint = tonic::transport::Endpoint::from_shared("http://localhost:5001".to_string())
+        .map_err(|e| format!("Invalid Gateway gRPC endpoint: {}", e))?
+        .timeout(Duration::from_secs(5));
+
+    let channel = endpoint
+        .connect()
+        .await
+        .map_err(|e| format!("Failed to connect to Gateway gRPC: {}", e))?;
+
+    let mut grpc = tonic::client::Grpc::new(channel);
+    grpc.ready()
+        .await
+        .map_err(|e| format!("Gateway gRPC service not ready: {}", e))?;
+
+    let mut request = tonic::Request::new(QueryChannelRequest {
+        port_id: "transfer".to_string(),
+        channel_id: channel_id.to_string(),
+    });
+
+    if let Some(height) = query_height {
+        let metadata_value = height
+            .to_string()
+            .parse::<tonic::metadata::AsciiMetadataValue>()
+            .map_err(|e| format!("Invalid gRPC query-height metadata value: {}", e))?;
+        request
+            .metadata_mut()
+            .insert("x-cosmos-block-height", metadata_value);
+    }
+
+    let path =
+        tonic::codegen::http::uri::PathAndQuery::from_static("/ibc.core.channel.v1.Query/Channel");
+
+    let response: QueryChannelResponse = grpc
+        .unary(request, path, tonic::codec::ProstCodec::default())
+        .await
+        .map_err(|e| {
+            if let Some(height) = query_height {
+                format!(
+                    "Gateway channel query failed for {} at height {}: {}",
+                    channel_id, height, e
+                )
+            } else {
+                format!(
+                    "Gateway latest channel query failed for {}: {}",
+                    channel_id, e
+                )
+            }
+        })?
+        .into_inner();
+
+    if response.proof.is_empty() {
+        return Err(format!(
+            "Gateway channel query for {} returned an empty proof",
+            channel_id
+        ));
+    }
+
+    let proof_height = response.proof_height.ok_or_else(|| {
+        format!(
+            "Gateway channel query for {} returned no proof_height",
+            channel_id
+        )
+    })?;
+
+    if proof_height.revision_number != 0 {
+        return Err(format!(
+            "Gateway channel query for {} returned unexpected proof revision_number {}",
+            channel_id, proof_height.revision_number
+        ));
+    }
+
+    Ok(GatewayChannelProof {
+        proof_height: proof_height.revision_height,
+        proof_len: response.proof.len(),
+    })
+}
+
+async fn wait_for_gateway_channel_proof_height(
+    channel_id: &str,
+    min_exclusive_height: Option<u64>,
+    attempts: usize,
+    delay: Duration,
+) -> Result<GatewayChannelProof, String> {
+    let mut last_err: Option<String> = None;
+
+    for attempt in 1..=attempts {
+        match query_gateway_channel_proof(channel_id, None).await {
+            Ok(proof) => {
+                if min_exclusive_height
+                    .map(|min_height| proof.proof_height > min_height)
+                    .unwrap_or(true)
+                {
+                    return Ok(proof);
+                }
+
+                last_err = Some(format!(
+                    "Gateway latest channel proof height {} has not advanced past {}",
+                    proof.proof_height,
+                    min_exclusive_height.unwrap_or_default()
+                ));
+            }
+            Err(e) => last_err = Some(e),
+        }
+
+        if attempt < attempts {
+            tokio::time::sleep(delay).await;
+        }
+    }
+
+    Err(format!(
+        "Timed out waiting for Gateway channel proof height for {}{}; last error: {}",
+        channel_id,
+        min_exclusive_height
+            .map(|height| format!(" to advance past {}", height))
+            .unwrap_or_default(),
+        last_err.unwrap_or_else(|| "no query attempted".to_string())
+    ))
+}
+
+async fn assert_gateway_channel_proof_at_height(
+    channel_id: &str,
+    height: u64,
+) -> Result<GatewayChannelProof, String> {
+    let proof = query_gateway_channel_proof(channel_id, Some(height)).await?;
+    if proof.proof_height != height {
+        return Err(format!(
+            "Gateway channel proof height mismatch for {}: requested {}, got {}",
+            channel_id, height, proof.proof_height
+        ));
+    }
+    Ok(proof)
+}
+
+async fn assert_gateway_channel_future_height_rejected(
+    channel_id: &str,
+    future_height: u64,
+) -> Result<(), String> {
+    match query_gateway_channel_proof(channel_id, Some(future_height)).await {
+        Ok(proof) => Err(format!(
+            "Gateway unexpectedly served channel proof at future height {} for {} (returned proof_height={}, proof_len={})",
+            future_height, channel_id, proof.proof_height, proof.proof_len
+        )),
+        Err(_) => Ok(()),
+    }
 }
 
 async fn query_gateway_denom_trace(hash: &str) -> Result<(String, String), String> {
@@ -4352,13 +4797,13 @@ fn hermes_query_packet_pending(
     Ok((has_pending_packets, combined))
 }
 
-fn dump_test_11_ics20_diagnostics(
+fn dump_test_12_ics20_diagnostics(
     project_root: &Path,
     cardano_channel_id: &str,
     entrypoint_channel_id: &str,
     entrypoint_address: &str,
 ) {
-    logger::log("=== Test 11 diagnostics (ICS-20 Cardano -> Entrypoint chain) ===");
+    logger::log("=== Test 12 diagnostics (ICS-20 Cardano -> Entrypoint chain) ===");
     logger::log(&format!("cardano-devnet channel: {}", cardano_channel_id));
     logger::log(&format!(
         "entrypoint channel:     {}",
@@ -4379,7 +4824,7 @@ fn dump_test_11_ics20_diagnostics(
     }
 }
 
-fn dump_test_9_ics20_diagnostics(
+fn dump_test_10_ics20_diagnostics(
     project_root: &Path,
     cardano_channel_id: &str,
     entrypoint_channel_id: &str,
@@ -4389,7 +4834,7 @@ fn dump_test_9_ics20_diagnostics(
     cardano_receiver_address: &str,
     voucher_policy_id: &str,
 ) {
-    logger::log("=== Test 9 diagnostics (ICS-20 Entrypoint chain -> Cardano) ===");
+    logger::log("=== Test 10 diagnostics (ICS-20 Entrypoint chain -> Cardano) ===");
     logger::log(&format!(
         "entrypoint channel:     {}",
         entrypoint_channel_id
@@ -4470,7 +4915,7 @@ fn dump_test_9_ics20_diagnostics(
     }
 }
 
-fn dump_test_12_ics20_diagnostics(
+fn dump_test_13_ics20_diagnostics(
     project_root: &Path,
     cardano_channel_id: &str,
     entrypoint_channel_id: &str,
@@ -4479,7 +4924,7 @@ fn dump_test_12_ics20_diagnostics(
     amount: u64,
     cardano_receiver_address: &str,
 ) {
-    logger::log("=== Test 12 diagnostics (ICS-20 Entrypoint chain -> Cardano, Cardano native round-trip return) ===");
+    logger::log("=== Test 13 diagnostics (ICS-20 Entrypoint chain -> Cardano, Cardano native round-trip return) ===");
     logger::log(&format!(
         "entrypoint channel:     {}",
         entrypoint_channel_id

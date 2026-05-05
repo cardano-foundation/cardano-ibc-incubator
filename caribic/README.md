@@ -204,10 +204,11 @@ The test suite is ordered and will **skip** later tests if prerequisites are not
 - **Test 6**: updates the client with new Tendermint headers, may skip if there are no new blocks or if height handling is required
 - **Test 7**: creates an IBC connection, may skip if the Cosmos-side Cardano light client pieces are not available yet
 - **Test 8**: creates an ICS-20 transfer channel, depends on Test 7 establishing a connection
-- **Test 9**: ICS-20 transfer from the entrypoint chain to Cardano, relays packets, verifies voucher minting and `ibc_state_root` changes, and captures voucher identity for later checks
-- **Test 10**: round-trip of that voucher back to the entrypoint chain, verifies voucher burn and denom-trace reverse lookup still succeeds
-- **Test 11**: ICS-20 transfer of Cardano native `lovelace` to the entrypoint chain (Cardano escrows, Cosmos mints voucher), verifies denom-trace reverse lookup
-- **Test 12**: round-trip of that voucher back to Cardano (burn + unescrow), verifies `ibc_state_root` changes and balance recovery within a fee budget
+- **Test 9**: queries Cardano channel proofs at exact historical heights through Gateway and Hermes before token transfers run
+- **Test 10**: ICS-20 transfer from the entrypoint chain to Cardano, relays packets, verifies voucher minting and `ibc_state_root` changes, and captures voucher identity for later checks
+- **Test 11**: round-trip of that voucher back to the entrypoint chain, verifies voucher burn and denom-trace reverse lookup still succeeds
+- **Test 12**: ICS-20 transfer of Cardano native `lovelace` to the entrypoint chain (Cardano escrows, Cosmos mints voucher), verifies denom-trace reverse lookup
+- **Test 13**: round-trip of that voucher back to Cardano (burn + unescrow), verifies `ibc_state_root` changes and balance recovery within a fee budget
 
 ### Troubleshooting tips
 
