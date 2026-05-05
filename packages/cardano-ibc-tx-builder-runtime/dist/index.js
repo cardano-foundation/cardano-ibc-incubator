@@ -511,8 +511,12 @@ async function createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork, 
         presetProtocolParameters: protocolParameters,
     }));
     const chainZeroTime = await timed(logger, '[context]', 'query system start', () => querySystemStart(ogmiosEndpoint, headers?.ogmiosHeader));
-    Lucid.SLOT_CONFIG_NETWORK[cardanoNetwork].zeroTime = chainZeroTime;
-    Lucid.SLOT_CONFIG_NETWORK[cardanoNetwork].slotLength = 1000;
+    const slotConfig = Lucid.SLOT_CONFIG_NETWORK?.[cardanoNetwork];
+    if (!slotConfig) {
+        throw new Error(`Lucid does not expose a slot configuration for Cardano network ${cardanoNetwork}`);
+    }
+    slotConfig.zeroTime = chainZeroTime;
+    slotConfig.slotLength = 1000;
     return {
         lucidImporter: Lucid,
         lucid,
