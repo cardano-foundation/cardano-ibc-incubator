@@ -69,6 +69,7 @@ describe('QueryService new client height strictness', () => {
       {} as MiniProtocalsService,
       mithrilServiceMock as unknown as MithrilService,
       {} as DenomTraceService,
+      {} as any,
     );
   });
 

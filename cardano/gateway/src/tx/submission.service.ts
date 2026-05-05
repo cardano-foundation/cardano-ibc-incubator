@@ -6,7 +6,12 @@ import { SubmitSignedTxRequest, SubmitSignedTxResponse } from './dto/submit-sign
 import { TxEventsService } from './tx-events.service';
 import { HostStateDatum } from '../shared/types/host-state-datum';
 import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
-import { IbcTreeCacheService } from '../shared/services/ibc-tree-cache.service';
+import {
+  CURRENT_IBC_TREE_CACHE_ID,
+  IbcTreeCacheService,
+  ibcTreeCacheIdForHeight,
+  ibcTreeCacheIdForRoot,
+} from '../shared/services/ibc-tree-cache.service';
 import { getCurrentTree } from '../shared/helpers/ibc-state-root';
 import { queryNetworkTipPoint, queryTransactionInclusionBlockHeight } from '../shared/helpers/time';
 
@@ -25,24 +30,24 @@ export class SubmissionService {
   /**
    * Submits a signed Cardano transaction to the network.
    * This endpoint is called by the Hermes relayer after it signs the transaction.
-   * 
+   *
    * Flow:
    * 1. Hermes receives unsigned CBOR from Gateway
    * 2. Hermes signs with CIP-1852 key (Ed25519)
    * 3. Hermes calls this endpoint with signed CBOR
    * 4. Gateway submits to Cardano via Ogmios
    * 5. Gateway returns tx hash and events
-   * 
+   *
    * @param request - Contains signed transaction CBOR hex string
    * @returns Transaction hash and confirmation details
    */
   async submitSignedTransaction(request: SubmitSignedTxRequest): Promise<SubmitSignedTxResponse> {
     try {
       this.logger.log(`Submitting signed transaction: ${request.description || 'unnamed'}`);
-      
+
       // Parse signed transaction from hex CBOR
       const signedTxCbor = request.signed_tx_cbor;
-      
+
       // Validate the CBOR format
       if (!signedTxCbor || signedTxCbor.length === 0) {
         throw new GrpcInternalException('Signed transaction CBOR is empty');
@@ -53,7 +58,7 @@ export class SubmissionService {
       // Submit to Cardano network via Lucid/Ogmios
       // Note: Lucid's submit expects a Transaction object or signed CBOR
       const txHash = await this.submitToCardano(signedTxCbor);
-      
+
       this.logger.log(`Transaction submitted successfully: ${txHash}`);
 
       const isConfirmed = await this.waitForConfirmation(txHash);
@@ -65,11 +70,11 @@ export class SubmissionService {
       // Capture the pre-submit point and follow Ogmios forward until the submitted tx appears.
       const confirmedBlockNo = await this.waitForTxInclusionBlockHeight(txHash, preSubmitPoint);
 
-      await this.applyPendingIbcTreeUpdate(signedTxCbor, txHash);
+      await this.applyPendingIbcTreeUpdate(signedTxCbor, txHash, BigInt(confirmedBlockNo));
 
       const events = this.txEventsService.take(txHash) || [];
       this.logger.log(`[DEBUG] Returning ${events.length} events for tx ${txHash}`);
-      
+
       const response: SubmitSignedTxResponse = {
         tx_hash: txHash,
         height: `0-${confirmedBlockNo}`,
@@ -83,7 +88,11 @@ export class SubmissionService {
     }
   }
 
-  private async applyPendingIbcTreeUpdate(signedTxCbor: string, txHash: string): Promise<void> {
+  private async applyPendingIbcTreeUpdate(
+    signedTxCbor: string,
+    txHash: string,
+    confirmedBlockNo: bigint,
+  ): Promise<void> {
     // Tree updates are registered when building unsigned txs and keyed by tx hash.
     // We only commit them after confirmation, to avoid stale in-memory state if submission fails.
     let pending = this.ibcTreePendingUpdatesService.take(txHash);
@@ -135,7 +144,11 @@ export class SubmissionService {
     // Persist the updated tree so restarts don't require scanning all IBC UTxOs.
     if (process.env.IBC_TREE_CACHE_ENABLED === 'false') return;
     try {
-      await this.ibcTreeCacheService.save(getCurrentTree(), 'current');
+      await this.ibcTreeCacheService.saveAliases(getCurrentTree(), [
+        CURRENT_IBC_TREE_CACHE_ID,
+        ibcTreeCacheIdForRoot(confirmedRoot),
+        ibcTreeCacheIdForHeight(confirmedBlockNo),
+      ]);
     } catch (error) {
       this.logger.warn(`Failed to persist IBC tree cache after tx ${txHash}: ${error?.message ?? error}`);
     }
@@ -294,7 +307,9 @@ export class SubmissionService {
     // Ogmios uses code 3118 for validity interval failures.
     // We also check the human-readable substring to reduce false positives.
     const isValidityIntervalError =
-      message.includes('outside of its validity interval') || message.includes('"code":3118') || message.includes('"code\\":3118');
+      message.includes('outside of its validity interval') ||
+      message.includes('"code":3118') ||
+      message.includes('"code\\":3118');
     if (!isValidityIntervalError) return null;
 
     const currentSlot = this.extractNumberAfterToken(message, 'currentSlot');
@@ -327,7 +342,7 @@ export class SubmissionService {
   private async waitForConfirmation(txHash: string, timeoutMs: number = 60000): Promise<boolean> {
     const startTime = Date.now();
     const pollInterval = 2000; // 2 seconds
-    
+
     while (Date.now() - startTime < timeoutMs) {
       try {
         // Check if transaction is confirmed via Lucid's awaitTx
@@ -340,10 +355,10 @@ export class SubmissionService {
         // awaitTx throws if timeout reached, continue polling
         this.logger.debug(`Polling for tx confirmation: ${txHash}`);
       }
-      
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
     }
-    
+
     this.logger.warn(`Transaction ${txHash} confirmation timeout after ${timeoutMs}ms`);
     throw new GrpcInternalException(`Transaction ${txHash} confirmation timeout after ${timeoutMs}ms`);
   }

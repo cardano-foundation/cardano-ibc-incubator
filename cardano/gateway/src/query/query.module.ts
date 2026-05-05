@@ -13,14 +13,10 @@ import { DenomTraceService } from './services/denom-trace.service';
 import { HealthModule } from '../health/health.module';
 import { BridgeManifestService } from './services/bridge-manifest.service';
 import { YaciHistoryService } from './services/yaci-history.service';
+import { IbcTreeCacheService } from '../shared/services/ibc-tree-cache.service';
 
 @Module({
-  imports: [
-    LucidModule,
-    KupoModule,
-    MithrilModule,
-    HealthModule,
-  ],
+  imports: [LucidModule, KupoModule, MithrilModule, HealthModule],
   controllers: [QueryController],
   providers: [
     QueryService,
@@ -36,6 +32,7 @@ import { YaciHistoryService } from './services/yaci-history.service';
     PacketService,
     DenomTraceService,
     BridgeManifestService,
+    IbcTreeCacheService,
   ],
   exports: [
     QueryService,
@@ -46,6 +43,7 @@ import { YaciHistoryService } from './services/yaci-history.service';
     PacketService,
     DenomTraceService,
     BridgeManifestService,
+    IbcTreeCacheService,
   ],
 })
 export class QueryModule {}

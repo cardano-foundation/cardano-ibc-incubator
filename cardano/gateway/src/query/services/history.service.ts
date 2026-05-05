@@ -58,6 +58,7 @@ export type HistoryEpochContextAtBlock = {
 export type HistoryService = {
   findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]>;
   findUtxosByBlockNo(height: number): Promise<UtxoDto[]>;
+  findUtxoByUnitAtOrBeforeBlockNo(unit: string, height: bigint): Promise<UtxoDto>;
   findHostStateUtxoAtOrBeforeBlockNo(height: bigint): Promise<UtxoDto>;
   findLatestBlock(): Promise<HistoryBlock | null>;
   findBlockByHeight(height: bigint): Promise<HistoryBlock | null>;

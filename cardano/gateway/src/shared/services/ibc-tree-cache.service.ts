@@ -4,6 +4,16 @@ import { EntityManager } from 'typeorm';
 import zlib from 'zlib';
 import { ICS23MerkleTree } from '../helpers/ics23-merkle-tree';
 
+export const CURRENT_IBC_TREE_CACHE_ID = 'current';
+
+export function ibcTreeCacheIdForRoot(root: string): string {
+  return `root:${root.toLowerCase()}`;
+}
+
+export function ibcTreeCacheIdForHeight(height: bigint | number | string): string {
+  return `height:${height.toString()}`;
+}
+
 type CachedTreeRow = {
   id: string;
   root: string;
@@ -29,7 +39,7 @@ export class IbcTreeCacheService {
     `);
   }
 
-  async load(id: string = 'current'): Promise<{ tree: ICS23MerkleTree; root: string } | null> {
+  async load(id: string = CURRENT_IBC_TREE_CACHE_ID): Promise<{ tree: ICS23MerkleTree; root: string } | null> {
     const rows: CachedTreeRow[] = await this.entityManager.query(
       `
         SELECT id, root, leaves_gzip, updated_at
@@ -62,7 +72,7 @@ export class IbcTreeCacheService {
     }
   }
 
-  async save(tree: ICS23MerkleTree, id: string = 'current'): Promise<{ root: string }> {
+  async save(tree: ICS23MerkleTree, id: string = CURRENT_IBC_TREE_CACHE_ID): Promise<{ root: string }> {
     const root = tree.getRoot();
     const payload = JSON.stringify(tree.toJSON());
     const leavesGzip = zlib.gzipSync(Buffer.from(payload, 'utf8'));
@@ -79,5 +89,13 @@ export class IbcTreeCacheService {
 
     return { root };
   }
-}
 
+  async saveAliases(tree: ICS23MerkleTree, ids: string[]): Promise<{ root: string }> {
+    const uniqueIds = [...new Set(ids.filter((id) => id && id.trim().length > 0))];
+    let root = tree.getRoot();
+    for (const id of uniqueIds) {
+      ({ root } = await this.save(tree, id));
+    }
+    return { root };
+  }
+}

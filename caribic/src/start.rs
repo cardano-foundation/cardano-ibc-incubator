@@ -951,6 +951,7 @@ pub async fn deploy_contracts(
             "--allow-net",
             "--allow-env",
             "--allow-read",
+            "--allow-run",
             "--allow-ffi",
             "--allow-write",
             "index.ts",

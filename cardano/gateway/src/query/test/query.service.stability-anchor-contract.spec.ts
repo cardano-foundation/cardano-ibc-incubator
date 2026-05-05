@@ -226,6 +226,7 @@ describe('QueryService stability anchor contract', () => {
       miniProtocalsServiceMock as unknown as MiniProtocalsService,
       {} as MithrilService,
       {} as DenomTraceService,
+      {} as any,
     );
   });
 

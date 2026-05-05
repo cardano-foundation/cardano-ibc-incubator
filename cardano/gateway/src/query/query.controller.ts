@@ -1,5 +1,6 @@
 import { Controller } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
+import { Metadata } from '@grpc/grpc-js';
 import {
   QueryClientStateResponse,
   QueryClientStateRequest,
@@ -73,6 +74,7 @@ import { ChannelService } from './services/channel.service';
 import { PacketService } from './services/packet.service';
 import { DenomTraceService } from './services/denom-trace.service';
 import { BridgeManifestService } from './services/bridge-manifest.service';
+import { getQueryHeightFromMetadata } from './helpers/query-height';
 
 @Controller()
 export class QueryController {
@@ -86,8 +88,10 @@ export class QueryController {
   ) {}
 
   @GrpcMethod('Query', 'ClientState')
-  async queryClientState(request: QueryClientStateRequest): Promise<QueryClientStateResponse> {
-    const response: QueryClientStateResponse = await this.queryService.queryClientState(request);
+  async queryClientState(request: QueryClientStateRequest, metadata?: Metadata): Promise<QueryClientStateResponse> {
+    const response: QueryClientStateResponse = await this.queryService.queryClientState(request, {
+      queryHeight: getQueryHeightFromMetadata(metadata),
+    });
     return response;
   }
 
@@ -102,8 +106,13 @@ export class QueryController {
   }
 
   @GrpcMethod('Query', 'ConsensusState')
-  async queryConsensusState(data: QueryConsensusStateRequest): Promise<QueryConsensusStateResponse> {
-    const response: QueryConsensusStateResponse = await this.queryService.queryConsensusState(data);
+  async queryConsensusState(
+    data: QueryConsensusStateRequest,
+    metadata?: Metadata,
+  ): Promise<QueryConsensusStateResponse> {
+    const response: QueryConsensusStateResponse = await this.queryService.queryConsensusState(data, {
+      queryHeight: getQueryHeightFromMetadata(metadata),
+    });
     return response;
   }
 
@@ -132,8 +141,10 @@ export class QueryController {
   }
 
   @GrpcMethod('Query', 'Connection')
-  async queryConnection(request: QueryConnectionRequest): Promise<QueryConnectionResponse> {
-    const response: QueryConnectionResponse = await this.connectionService.queryConnection(request);
+  async queryConnection(request: QueryConnectionRequest, metadata?: Metadata): Promise<QueryConnectionResponse> {
+    const response: QueryConnectionResponse = await this.connectionService.queryConnection(request, {
+      queryHeight: getQueryHeightFromMetadata(metadata),
+    });
     return response as unknown as QueryConnectionResponse;
   }
 
@@ -144,8 +155,10 @@ export class QueryController {
   }
 
   @GrpcMethod('Query', 'Channel')
-  async queryChannel(request: QueryChannelRequest): Promise<QueryChannelResponse> {
-    const response: QueryChannelResponse = await this.channelService.queryChannel(request);
+  async queryChannel(request: QueryChannelRequest, metadata?: Metadata): Promise<QueryChannelResponse> {
+    const response: QueryChannelResponse = await this.channelService.queryChannel(request, {
+      queryHeight: getQueryHeightFromMetadata(metadata),
+    });
     return response as unknown as QueryChannelResponse;
   }
 
@@ -158,8 +171,11 @@ export class QueryController {
   @GrpcMethod('Query', 'PacketAcknowledgement')
   async queryPacketAcknowledgement(
     request: QueryPacketAcknowledgementRequest,
+    metadata?: Metadata,
   ): Promise<QueryPacketAcknowledgementResponse> {
-    const response: QueryPacketAcknowledgementResponse = await this.packetService.queryPacketAcknowledgement(request);
+    const response: QueryPacketAcknowledgementResponse = await this.packetService.queryPacketAcknowledgement(request, {
+      queryHeight: getQueryHeightFromMetadata(metadata),
+    });
     return response as unknown as QueryPacketAcknowledgementResponse;
   }
 
@@ -172,8 +188,13 @@ export class QueryController {
   }
 
   @GrpcMethod('Query', 'PacketCommitment')
-  async queryPacketCommitment(request: QueryPacketCommitmentRequest): Promise<QueryPacketCommitmentResponse> {
-    const response: QueryPacketCommitmentResponse = await this.packetService.queryPacketCommitment(request);
+  async queryPacketCommitment(
+    request: QueryPacketCommitmentRequest,
+    metadata?: Metadata,
+  ): Promise<QueryPacketCommitmentResponse> {
+    const response: QueryPacketCommitmentResponse = await this.packetService.queryPacketCommitment(request, {
+      queryHeight: getQueryHeightFromMetadata(metadata),
+    });
     return response as unknown as QueryPacketCommitmentResponse;
   }
 
@@ -184,8 +205,13 @@ export class QueryController {
   }
 
   @GrpcMethod('Query', 'PacketReceipt')
-  async queryPacketReceipt(request: QueryPacketReceiptRequest): Promise<QueryPacketReceiptResponse> {
-    const response: QueryPacketReceiptResponse = await this.packetService.queryPacketReceipt(request);
+  async queryPacketReceipt(
+    request: QueryPacketReceiptRequest,
+    metadata?: Metadata,
+  ): Promise<QueryPacketReceiptResponse> {
+    const response: QueryPacketReceiptResponse = await this.packetService.queryPacketReceipt(request, {
+      queryHeight: getQueryHeightFromMetadata(metadata),
+    });
     return response as unknown as QueryPacketReceiptResponse;
   }
   // write api query UnreceivedPackets
@@ -223,13 +249,23 @@ export class QueryController {
     return response as unknown as QueryIBCHeaderResponse;
   }
   @GrpcMethod('Query', 'NextSequenceReceive')
-  async queryNextSequenceReceive(request: QueryNextSequenceReceiveRequest): Promise<QueryNextSequenceReceiveResponse> {
-    const response: QueryNextSequenceReceiveResponse = await this.packetService.queryNextSequenceReceive(request);
+  async queryNextSequenceReceive(
+    request: QueryNextSequenceReceiveRequest,
+    metadata?: Metadata,
+  ): Promise<QueryNextSequenceReceiveResponse> {
+    const response: QueryNextSequenceReceiveResponse = await this.packetService.queryNextSequenceReceive(request, {
+      queryHeight: getQueryHeightFromMetadata(metadata),
+    });
     return response as unknown as QueryNextSequenceReceiveResponse;
   }
   @GrpcMethod('Query', 'NextSequenceAck')
-  async queryNextSequenceAck(request: QueryNextSequenceReceiveRequest): Promise<QueryNextSequenceReceiveResponse> {
-    const response: QueryNextSequenceReceiveResponse = await this.packetService.QueryNextSequenceAck(request);
+  async queryNextSequenceAck(
+    request: QueryNextSequenceReceiveRequest,
+    metadata?: Metadata,
+  ): Promise<QueryNextSequenceReceiveResponse> {
+    const response: QueryNextSequenceReceiveResponse = await this.packetService.QueryNextSequenceAck(request, {
+      queryHeight: getQueryHeightFromMetadata(metadata),
+    });
     return response as unknown as QueryNextSequenceReceiveResponse;
   }
 

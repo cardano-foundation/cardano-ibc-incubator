@@ -34,7 +34,9 @@ import { AuthToken } from '../../shared/types/auth-token';
 import { CHANNEL_TOKEN_PREFIX } from '../../constant';
 import { getChannelIdByTokenName } from '../../shared/helpers/channel';
 import { HISTORY_SERVICE, HistoryService } from './history.service';
-import { resolveProofHeightForCurrentRoot } from './proof-context';
+import { resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from './proof-context';
+import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
+import { ProofQueryOptions } from '../helpers/query-height';
 
 @Injectable()
 export class ChannelService {
@@ -45,6 +47,7 @@ export class ChannelService {
     @Inject(KupoService) private kupoService: KupoService,
     @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(HISTORY_SERVICE) private historyService: HistoryService,
+    @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
   ) {}
 
   private async ensureTreeAligned(): Promise<void> {
@@ -58,7 +61,9 @@ export class ChannelService {
 
     if (isTreeAligned(onChainRoot)) return;
 
-    this.logger.warn(`Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding from chain...`);
+    this.logger.warn(
+      `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding from chain...`,
+    );
     await alignTreeWithChain();
   }
 
@@ -82,6 +87,23 @@ export class ChannelService {
     } catch {
       return 1n;
     }
+  }
+
+  private async getProofContext(context: string, requestedHeight?: bigint) {
+    const lightClientMode =
+      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
+      'stake-weighted-stability';
+
+    return resolveProofContextForQuery({
+      logger: this.logger,
+      lucidService: this.lucidService,
+      mithrilService: this.mithrilService,
+      historyService: this.historyService,
+      ibcTreeCacheService: this.ibcTreeCacheService,
+      context,
+      requestedHeight,
+      lightClientMode,
+    });
   }
 
   private getChannelTokenPrefix(): { policyId: string; tokenNamePrefix: string; baseToken: AuthToken } {
@@ -110,7 +132,11 @@ export class ChannelService {
     let { 'pagination.offset': offset } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const { policyId: mintChannelPolicyId, tokenNamePrefix: channelTokenPrefix, baseToken } = this.getChannelTokenPrefix();
+    const {
+      policyId: mintChannelPolicyId,
+      tokenNamePrefix: channelTokenPrefix,
+      baseToken,
+    } = this.getChannelTokenPrefix();
     const utxos = await this.kupoService.queryUtxosAtAddressByPolicyAndTokenPrefix(
       this.configService.get('deployment').validators.spendChannel.address,
       mintChannelPolicyId,
@@ -191,29 +217,33 @@ export class ChannelService {
     return response;
   }
 
-  async queryChannel(request: QueryChannelRequest): Promise<QueryChannelResponse> {
+  async queryChannel(request: QueryChannelRequest, options: ProofQueryOptions = {}): Promise<QueryChannelResponse> {
     const { channel_id: channelId } = validQueryChannelParam(request);
     this.logger.log(channelId, 'queryChannel');
     try {
       const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
       const channelTokenUnit = mintChannelPolicyId + channelTokenName;
-      const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+      const proofContext = await this.getProofContext('queryChannel', options.queryHeight);
+      const utxo = proofContext.historical
+        ? await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(channelTokenUnit, proofContext.proofHeight)
+        : await this.lucidService.findUtxoByUnit(channelTokenUnit);
       const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-      const proofHeight = await this.getProofHeight();
 
-      await this.ensureTreeAligned();
+      if (!proofContext.historical) {
+        await this.ensureTreeAligned();
+      }
 
       // Generate ICS-23 proof from the IBC state tree
       // Channel path: channelEnds/ports/{portId}/channels/{channelId}
       const portId = convertHex2String(channelDatumDecoded.port || 'transfer');
       const ibcPath = `channelEnds/ports/${portId}/channels/channel-${channelId}`;
-      const tree = getCurrentTree();
-      
+      const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+
       let channelProof: Buffer;
       try {
         const existenceProof = tree.generateProof(ibcPath);
         channelProof = serializeExistenceProof(existenceProof);
-        
+
         this.logger.log(`Generated ICS-23 proof for channel ${channelId}, proof size: ${channelProof.length} bytes`);
       } catch (error) {
         this.logger.error(`Failed to generate ICS-23 proof for ${ibcPath}: ${error.message}`);
@@ -247,7 +277,7 @@ export class ChannelService {
         proof: channelProof, // ICS-23 Merkle proof
         proof_height: {
           revision_number: 0,
-          revision_height: proofHeight,
+          revision_height: proofContext.proofHeight,
         },
       } as unknown as QueryChannelResponse;
       return response;
@@ -270,7 +300,11 @@ export class ChannelService {
     let { 'pagination.offset': offset } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const { policyId: mintChannelPolicyId, tokenNamePrefix: channelTokenPrefix, baseToken } = this.getChannelTokenPrefix();
+    const {
+      policyId: mintChannelPolicyId,
+      tokenNamePrefix: channelTokenPrefix,
+      baseToken,
+    } = this.getChannelTokenPrefix();
     const utxos = await this.kupoService.queryUtxosAtAddressByPolicyAndTokenPrefix(
       this.configService.get('deployment').validators.spendChannel.address,
       mintChannelPolicyId,

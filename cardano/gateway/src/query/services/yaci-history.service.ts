@@ -124,6 +124,40 @@ export class YaciHistoryService implements HistoryService {
     return rows.map((row: BridgeUtxoHistoryRow) => this.mapUtxoRow(row));
   }
 
+  async findUtxoByUnitAtOrBeforeBlockNo(unit: string, height: bigint): Promise<UtxoDto> {
+    const policyId = unit.slice(0, 56).toLowerCase();
+    const assetName = unit.slice(56).toLowerCase();
+    if (!policyId || !assetName) {
+      throw new GrpcNotFoundException(`Not found: invalid asset unit for historical UTxO lookup`);
+    }
+
+    const query = `
+      SELECT
+        address,
+        tx_hash,
+        tx_id,
+        output_index,
+        datum,
+        datum_hash,
+        assets_policy,
+        assets_name,
+        block_no,
+        block_id
+      FROM bridge_utxo_history
+      WHERE block_no <= $1
+        AND lower(assets_policy) = $2
+        AND lower(assets_name) = $3
+      ORDER BY block_no DESC, COALESCE(tx_index, 0) DESC, output_index DESC
+      LIMIT 1
+    `;
+    const rows = await this.entityManager.query(query, [height.toString(), policyId, assetName]);
+    if (rows.length <= 0) {
+      throw new GrpcNotFoundException(`Not found: UTxO ${unit} not found at or before height ${height.toString()}`);
+    }
+
+    return this.mapUtxoRow(rows[0]);
+  }
+
   async findHostStateUtxoAtOrBeforeBlockNo(height: bigint): Promise<UtxoDto> {
     const query = `
       SELECT

@@ -185,6 +185,7 @@ describe('QueryService IBC header strictness regressions', () => {
       } as unknown as MiniProtocalsService,
       mithrilServiceMock as unknown as MithrilService,
       {} as DenomTraceService,
+      {} as any,
     );
   });
 
