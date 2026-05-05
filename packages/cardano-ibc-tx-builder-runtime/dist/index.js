@@ -209,6 +209,37 @@ function splitKupmiosUrl(kupmiosUrl) {
     }
     return { kupoEndpoint, ogmiosEndpoint };
 }
+function isDemeterHost(hostname) {
+    return hostname.endsWith('.dmtr.host') || hostname.endsWith('.demeter.run');
+}
+function normalizeDemeterOgmiosEndpoint(ogmiosEndpoint, headers) {
+    const apiKey = headers?.ogmiosHeader?.['dmtr-api-key']?.trim();
+    if (!apiKey) {
+        return { ogmiosEndpoint, headers };
+    }
+    try {
+        const parsed = new URL(ogmiosEndpoint);
+        if (!isDemeterHost(parsed.hostname)) {
+            return { ogmiosEndpoint, headers };
+        }
+        if (!parsed.host.startsWith(`${apiKey}.`)) {
+            parsed.host = `${apiKey}.${parsed.host}`;
+        }
+        const nextHeaders = { ...headers };
+        // Demeter Ogmios uses host-based auth for HTTP JSON-RPC; the same key as a
+        // header can leave POST requests waiting until the provider timeout.
+        delete nextHeaders.ogmiosHeader;
+        return {
+            ogmiosEndpoint: parsed.toString().replace(/\/$/, ''),
+            headers: nextHeaders.kupoHeader || nextHeaders.ogmiosHeader
+                ? nextHeaders
+                : undefined,
+        };
+    }
+    catch {
+        return { ogmiosEndpoint, headers };
+    }
+}
 function parseRequiredString(value, fieldName) {
     if (typeof value !== 'string' || value.trim().length === 0) {
         throw new Error(`Invalid argument: "${fieldName}" is required`);
@@ -684,9 +715,10 @@ function createTxBuilderRuntime(config) {
         logger.log('[context] initializing shared Cardano tx-builder runtime context');
         const manifest = await timed(logger, '[context]', 'load bridge manifest', getBridgeManifest);
         const { deployment, bridgeManifest } = normalizeBridgeManifest(manifest);
-        const { kupoEndpoint, ogmiosEndpoint } = splitKupmiosUrl(config.kupmiosUrl);
+        const { kupoEndpoint, ogmiosEndpoint: rawOgmiosEndpoint } = splitKupmiosUrl(config.kupmiosUrl);
+        const { ogmiosEndpoint, headers: kupmiosHeaders } = normalizeDemeterOgmiosEndpoint(rawOgmiosEndpoint, config.kupmiosHeaders);
         const cardanoNetwork = normalizeCardanoNetwork(bridgeManifest.cardano.network);
-        const { lucidImporter, lucid } = await createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork, logger, config.kupmiosHeaders);
+        const { lucidImporter, lucid } = await createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork, logger, kupmiosHeaders);
         const lucidService = new lucidIbcAdapter_1.LucidIbcAdapter(lucidImporter, lucid, deployment);
         await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
         const kupoService = new RuntimeKupoService(lucidService, deployment);
@@ -699,7 +731,7 @@ function createTxBuilderRuntime(config) {
             logger,
             cardanoNetwork,
             ogmiosEndpoint,
-            kupmiosHeaders: config.kupmiosHeaders,
+            kupmiosHeaders,
             traceRegistryClient,
         };
     }

@@ -421,6 +421,43 @@ function getKupmiosEndpoints(kupmiosUrl: string) {
   return { kupoUrl, ogmiosUrl };
 }
 
+function isDemeterHost(hostname: string): boolean {
+  return hostname.endsWith('.dmtr.host') || hostname.endsWith('.demeter.run');
+}
+
+function normalizeDemeterOgmiosEndpoint(
+  ogmiosUrl: string,
+  headers?: KupmiosAuthHeaders,
+): { ogmiosUrl: string; headers?: KupmiosAuthHeaders } {
+  const apiKey = headers?.ogmiosHeader?.['dmtr-api-key']?.trim();
+  if (!apiKey) {
+    return { ogmiosUrl, headers };
+  }
+
+  try {
+    const parsed = new URL(ogmiosUrl);
+    if (!isDemeterHost(parsed.hostname)) {
+      return { ogmiosUrl, headers };
+    }
+    if (!parsed.host.startsWith(`${apiKey}.`)) {
+      parsed.host = `${apiKey}.${parsed.host}`;
+    }
+    const nextHeaders: KupmiosAuthHeaders = { ...headers };
+    // Demeter Ogmios uses host-based auth for HTTP JSON-RPC; the same key as a
+    // header can leave POST requests waiting until the provider timeout.
+    delete nextHeaders.ogmiosHeader;
+    return {
+      ogmiosUrl: parsed.toString().replace(/\/$/, ''),
+      headers:
+        nextHeaders.kupoHeader || nextHeaders.ogmiosHeader
+          ? nextHeaders
+          : undefined,
+    };
+  } catch {
+    return { ogmiosUrl, headers };
+  }
+}
+
 function describeFetchFailure(error: unknown): string {
   const cause =
     error instanceof Error
@@ -501,14 +538,18 @@ export function createTraceRegistryClient(
         const Lucid = await (eval(
           `import('@lucid-evolution/lucid')`,
         ) as Promise<LucidModule>);
-        const { kupoUrl, ogmiosUrl } = getKupmiosEndpoints(config.kupmiosUrl);
+        const { kupoUrl, ogmiosUrl: rawOgmiosUrl } = getKupmiosEndpoints(config.kupmiosUrl);
+        const { ogmiosUrl, headers } = normalizeDemeterOgmiosEndpoint(
+          rawOgmiosUrl,
+          config.kupmiosHeaders,
+        );
 
         return {
           Lucid,
           provider: new Lucid.Kupmios(
             kupoUrl,
             ogmiosUrl,
-            config.kupmiosHeaders,
+            headers,
           ) as unknown as KupmiosProvider,
         };
       })();
