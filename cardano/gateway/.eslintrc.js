@@ -33,5 +33,31 @@ module.exports = {
         singleQuote: true, // Enforces double quotes
       },
     ],
+    complexity: ['error', 45],
+    'max-depth': ['error', 9],
+    'max-lines-per-function': [
+      'error',
+      {
+        max: 550,
+        skipBlankLines: true,
+        skipComments: true,
+      },
+    ],
   },
+  overrides: [
+    {
+      files: ['**/*.spec.ts', 'src/**/test/**/*.ts'],
+      rules: {
+        complexity: ['error', 70],
+        'max-lines-per-function': [
+          'error',
+          {
+            max: 700,
+            skipBlankLines: true,
+            skipComments: true,
+          },
+        ],
+      },
+    },
+  ],
 };

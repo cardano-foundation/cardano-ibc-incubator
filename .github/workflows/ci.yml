@@ -38,6 +38,29 @@ jobs:
       - name: Check repo invariants
         run: node scripts/ci/check-repo-invariants.mjs
 
+  quality-ratchets:
+    name: Quality Ratchets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check lint suppressions
+        run: node scripts/ci/check-lint-suppressions.mjs
+
+      - name: Check unused exports
+        run: node scripts/ci/check-knip-ratchet.mjs
+
+      - name: Check npm audit ratchet
+        run: node scripts/ci/check-npm-audit-ratchet.mjs
+
   gateway:
     name: Cardano Gateway
     runs-on: ubuntu-latest
@@ -289,6 +312,15 @@ jobs:
           GOWORK: off
         run: go test ./...
 
+      - name: Vet non-generated packages
+        env:
+          GOWORK: off
+        run: |
+          mapfile -t packages < <(go list ./... | grep -v '/api/' || true)
+          if [ "${#packages[@]}" -gt 0 ]; then
+            go vet "${packages[@]}"
+          fi
+
   rust:
     name: Rust
     runs-on: ubuntu-latest
@@ -309,10 +341,23 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
+            ~/.cargo/bin/cargo-audit
             caribic/target
           key: ${{ runner.os }}-cargo-caribic-${{ hashFiles('caribic/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-caribic-
+
+      - name: Install cargo-audit
+        run: command -v cargo-audit || cargo install cargo-audit --locked
+
+      - name: Audit Rust dependencies
+        run: >
+          cargo audit --file caribic/Cargo.lock
+          --ignore RUSTSEC-2026-0104
+          --ignore RUSTSEC-2026-0098
+          --ignore RUSTSEC-2026-0099
+          --ignore RUSTSEC-2026-0049
+          --ignore RUSTSEC-2026-0009
 
       - name: Check formatting
         run: cargo fmt --manifest-path caribic/Cargo.toml -- --check
