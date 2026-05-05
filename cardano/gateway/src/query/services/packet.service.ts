@@ -545,9 +545,6 @@ export class PacketService {
       proofContext.historical ? proofContext.proofHeight : undefined,
     );
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
-
-    console.dir({ channelDatum }, { depth: 10 });
-
     const nextSequenceRecv = channelDatum.state.next_sequence_recv;
 
     if (!proofContext.historical) {

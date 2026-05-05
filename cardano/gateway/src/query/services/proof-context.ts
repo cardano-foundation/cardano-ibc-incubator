@@ -28,7 +28,7 @@ type HistoricalProofContextDeps = ProofContextDeps & {
   requestedHeight?: bigint;
 };
 
-export type ProofQueryContext =
+type ProofQueryContext =
   | {
       historical: false;
       proofHeight: bigint;
