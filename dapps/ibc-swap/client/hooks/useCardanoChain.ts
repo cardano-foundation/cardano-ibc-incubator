@@ -13,6 +13,7 @@ import {
   forgetStoredCardanoWallet,
   isCardanoWalletLockedError,
 } from '@/utils/cardanoWalletStatus';
+import { logCardanoWalletDebug } from '@/utils/cardanoWalletDebug';
 
 const hexToText = (hex: string): string => {
   if (!hex || hex.length % 2 !== 0) {
