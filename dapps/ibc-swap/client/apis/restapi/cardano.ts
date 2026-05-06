@@ -100,6 +100,18 @@ export interface TransferPlanResponse {
     | 'no-outbound-channels'
     | 'no-route-found';
   failureMessage?: string;
+  routeDiagnostics?: {
+    expectedChainPath: string[];
+    missingHops: Array<{
+      fromChainId: string;
+      toChainId: string;
+      reason:
+        | 'no-outbound-channel'
+        | 'no-channel-to-destination'
+        | 'blocked-by-visited-chain';
+      availableDestChainIds: string[];
+    }>;
+  };
 }
 
 export type CheqdIcqQueryKind =
@@ -374,12 +386,14 @@ export async function planTransferRoute(params: {
   fromChainId: string;
   toChainId: string;
   tokenDenom: string;
+  expectedChainPath?: string[];
 }): Promise<TransferPlanResponse | null> {
   try {
     return await cardanoPlannerClient.planTransferRoute({
       fromChainId: params.fromChainId,
       toChainId: params.toChainId,
       tokenDenom: params.tokenDenom,
+      expectedChainPath: params.expectedChainPath,
     });
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);
