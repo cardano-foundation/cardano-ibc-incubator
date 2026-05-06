@@ -1,7 +1,7 @@
 import { deriveVoucherPresentation } from './voucher-presentation';
 
 describe('deriveVoucherPresentation', () => {
-  it('uses the full denom as the display name and the base denom as symbol when the base denom is simple', () => {
+  it('uses the full denom as the display name and a one-segment base denom as the symbol', () => {
     expect(
       deriveVoucherPresentation('transfer/channel-7/uatom', 'uatom'),
     ).toEqual({
@@ -11,7 +11,7 @@ describe('deriveVoucherPresentation', () => {
     });
   });
 
-  it('keeps the whole trace as the display name and uses the final base-denom segment as symbol', () => {
+  it('uses the full denom as the display name and the final base-denom segment as the symbol', () => {
     expect(
       deriveVoucherPresentation('transfer/channel-3/gamm/pool/1', 'gamm/pool/1'),
     ).toEqual({
@@ -21,7 +21,7 @@ describe('deriveVoucherPresentation', () => {
     });
   });
 
-  it('keeps factory denom traces intact as the display name', () => {
+  it('uses the full factory denom trace as the display name and the token segment as the symbol', () => {
     expect(
       deriveVoucherPresentation(
         'transfer/channel-8/factory/osmo1abcd/mytoken',
