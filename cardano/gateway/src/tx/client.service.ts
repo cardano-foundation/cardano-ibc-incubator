@@ -10,7 +10,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConsensusState } from '../shared/types/consensus-state';
 import { ClientState } from '../shared/types/client-state-types';
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
-import { GrpcInternalException } from '~@/exception/grpc_exceptions';
+import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { decodeHeader, initializeHeader } from '../shared/types/header';
 import { RpcException } from '@nestjs/microservices';
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
@@ -34,12 +34,12 @@ import {
   getClientMessageFromTendermint,
   verifyClientMessage,
 } from '../shared/types/msgs/client-message';
-import { checkForMisbehaviour } from '@shared/types/misbehaviour/misbehaviour';
+import { checkForMisbehaviour, TENDERMINT_MISBEHAVIOUR_TYPE_URL } from '@shared/types/misbehaviour/misbehaviour';
 import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto';
 import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParams } from './helper/client.validate';
 import { sumLovelaceFromUtxos } from './helper/helper';
 import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
-import { 
+import {
   computeRootWithClientUpdate as computeRootWithClientUpdateHelper,
   computeRootWithCreateClientUpdate,
   computeRootWithUpdateClientUpdate,
@@ -109,11 +109,11 @@ export class ClientService {
 
   /**
    * Computes the new IBC state root after client update
-   * 
+   *
    * IMPORTANT: This is now side-effect free. The result contains a commit()
    * function that should be called after tx confirmation, but for simplicity
    * we just return the newRoot and let the next operation rebuild from chain.
-   * 
+   *
    * @param oldRoot - Current IBC state root
    * @param clientId - Client identifier (e.g., "07-tendermint-0")
    * @param clientState - The client state to store
@@ -122,8 +122,8 @@ export class ClientService {
    * @returns The new IBC state root (64-character hex string)
    */
   private computeRootWithClientUpdate(
-    oldRoot: string, 
-    clientId: string, 
+    oldRoot: string,
+    clientId: string,
     clientState: any,
     consensusState?: any,
     consensusHeight?: string | number | bigint,
@@ -133,7 +133,7 @@ export class ClientService {
     // This is safer because it handles failed transactions automatically
     return result.newRoot;
   }
-  
+
   /**
    * Ensure the in-memory Merkle tree is aligned with on-chain state
    * Call this before building transactions if the tree may be stale
@@ -219,7 +219,7 @@ export class ClientService {
 
       this.logger.log(`Returning unsigned tx for client creation (client_id: ${createdClientId})`);
       this.logger.log(`CBOR hex string length: ${unsignedTxCbor.length}, first 40 chars: ${unsignedTxCbor.substring(0, 40)}`);
-      
+
       const response: MsgCreateClientResponse = {
         unsigned_tx: {
           type_url: '',
@@ -327,6 +327,9 @@ export class ClientService {
           client_id: parseInt(clientId.toString()),
         } as unknown as MsgUpdateClientResponse;
         return response;
+      }
+      if (data.client_message.type_url === TENDERMINT_MISBEHAVIOUR_TYPE_URL) {
+        throw new GrpcInvalidArgumentException('submitted Tendermint misbehaviour does not prove a conflict');
       }
       const headerMsg = decodeHeader(data.client_message.value);
       const header = initializeHeader(headerMsg);
@@ -728,29 +731,29 @@ export class ClientService {
     // which eliminates race conditions and indexing ambiguities that would otherwise require
     // sophisticated conflict resolution when multiple Handler UTXOs could theoretically coexist.
     const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
-    
+
     this.logger.log(`[DEBUG] HostState UTXO: ${hostStateUtxo.txHash}#${hostStateUtxo.outputIndex}`);
     this.logger.log(`[DEBUG] HostState UTXO address: ${hostStateUtxo.address}`);
     this.logger.log(`[DEBUG] HostState UTXO datum (FULL CBOR): ${hostStateUtxo.datum || 'MISSING!'}`);
     this.logger.log(`[DEBUG] HostState UTXO datumHash: ${hostStateUtxo.datumHash || 'NONE (inline)'}`);
-    
+
     if (!hostStateUtxo.datum) {
       throw new GrpcInternalException(`HostState UTXO has no inline datum! This indicates a deployment issue.`);
     }
-    
+
     // Decode the HostState datum from the UTXO
     const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
-    
+
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
     // This prevents stale tree state from causing root mismatches after failed transactions
     await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
-    
+
     this.logger.log(`[DEBUG] Decoded HostState datum - version: ${hostStateDatum.state.version}, nft_policy: ${hostStateDatum.nft_policy.substring(0, 20)}...`);
-    
+
     this.logger.log(`[DEBUG] HostState datum version: ${hostStateDatum.state.version}`);
     this.logger.log(`[DEBUG] HostState next_client_sequence: ${hostStateDatum.state.next_client_sequence}`);
     this.logger.log(`[DEBUG] HostState ibc_state_root: ${hostStateDatum.state.ibc_state_root.slice(0, 20)}...`);
-    
+
     // Compute new IBC state root with client update
     // When creating a client, we need to add BOTH the clientState AND the initial consensusState
     // to the Merkle tree. The consensus state is keyed by the client's latest height.
@@ -778,7 +781,7 @@ export class ClientService {
         consensusStateValue,
         consensusHeight,
       );
-    
+
     // Create an updated HostState datum with:
     // - Incremented version (STT monotonicity requirement)
     // - Incremented client sequence
@@ -819,7 +822,7 @@ export class ClientService {
       },
     };
     const clientAuthTokenUnit = mintClientScriptHash + clientTokenName;
-    
+
     // STT redeemer: Explicitly specify the operation type
     // The reason I'm doing it this way is because the validator needs type-specific invariants -
     // CreateClient requires incrementing next_client_sequence while preserving connection/channel
@@ -840,7 +843,7 @@ export class ClientService {
       'host_state',
     );
     const encodedClientDatum = await this.lucidService.encode<ClientDatum>(clientDatum, 'client');
-    
+
     this.logger.log(`[DEBUG] ==================== TRANSACTION CBOR VALUES ====================`);
     this.logger.log(`[DEBUG] Client token name: ${clientTokenName}`);
     this.logger.log(`[DEBUG] Client auth token unit: ${clientAuthTokenUnit}`);
@@ -850,7 +853,7 @@ export class ClientService {
     this.logger.log(`[DEBUG] Encoded client datum (CBOR - first 200 chars): ${encodedClientDatum.substring(0, 200)}...`);
     this.logger.log(`[DEBUG] Updated HostState datum next_client_sequence: ${updatedHostStateDatum.state.next_client_sequence}`);
     this.logger.log(`[DEBUG] ==================================================================`);
-    
+
     // Create and return the unsigned transaction for creating new client
     // This will spend the old HostState UTXO and create a new one with the same NFT
     const unsignedTx = this.lucidService.createUnsignedCreateClientTransaction(
@@ -869,7 +872,7 @@ export class ClientService {
       pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
     };
   }
-  
+
   private generateClientTokenName(hostStateDatum: any): string {
     // Generate client token name from HostState NFT policy
     const hostStateNFT = this.configService.get('deployment').hostStateNFT;

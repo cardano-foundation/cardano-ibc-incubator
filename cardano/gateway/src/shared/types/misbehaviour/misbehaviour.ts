@@ -11,6 +11,9 @@ import { deepEquals } from '@shared/helpers/deep-equal';
 import { getConsensusStateFromTmHeader } from '../cometbft/header';
 import { Height } from '../height';
 
+const TENDERMINT_HEADER_TYPE_URL = '/ibc.lightclients.tendermint.v1.Header';
+export const TENDERMINT_MISBEHAVIOUR_TYPE_URL = '/ibc.lightclients.tendermint.v1.Misbehaviour';
+
 export type Misbehaviour = {
   client_id: string;
   header1: Header;
@@ -36,6 +39,8 @@ export function initializeMisbehaviour(misbehaviourMsg: MisbehaviourMsg): Misbeh
 // to misbehaviour.Header2
 // Misbehaviour sets frozen height to {0, 1} since it is only used as a boolean value (zero or non-zero).
 export function verifyMisbehaviour(misbehaviour: Misbehaviour, clientDatum: ClientDatum): boolean {
+  validateBasicMisbehaviour(misbehaviour);
+
   // Regardless of the type of misbehaviour, ensure that both headers are valid and would have been accepted by light-client
   const consensusHeightsArray = Array.from(clientDatum.state.consensusStates.entries());
   // Retrieve trusted consensus states for each Header in misbehaviour
@@ -68,6 +73,32 @@ export function verifyMisbehaviour(misbehaviour: Misbehaviour, clientDatum: Clie
   checkMisbehaviourHeader(cs, tmConsensusState2, misbehaviour.header2, misbehaviour.header2.signedHeader.header.time);
 
   return true;
+}
+
+function validateBasicMisbehaviour(misbehaviour: Misbehaviour): void {
+  if (!misbehaviour.header1 || !misbehaviour.header2) {
+    throw new GrpcInvalidArgumentException('misbehaviour requires two headers');
+  }
+
+  if (misbehaviour.header1.trustedHeight.revisionHeight === 0n) {
+    throw new GrpcInvalidArgumentException('misbehaviour header1 trusted height must be non-zero');
+  }
+
+  if (misbehaviour.header2.trustedHeight.revisionHeight === 0n) {
+    throw new GrpcInvalidArgumentException('misbehaviour header2 trusted height must be non-zero');
+  }
+
+  if (!misbehaviour.header1.trustedValidators || !misbehaviour.header2.trustedValidators) {
+    throw new GrpcInvalidArgumentException('misbehaviour requires trusted validators for both headers');
+  }
+
+  if (misbehaviour.header1.signedHeader.header.chainId !== misbehaviour.header2.signedHeader.header.chainId) {
+    throw new GrpcInvalidArgumentException('misbehaviour headers must use the same chain id');
+  }
+
+  if (misbehaviour.header1.signedHeader.header.height < misbehaviour.header2.signedHeader.header.height) {
+    throw new GrpcInvalidArgumentException('misbehaviour header1 height must be greater than or equal to header2');
+  }
 }
 
 function checkMisbehaviourHeader(
@@ -105,7 +136,7 @@ function checkMisbehaviourHeader(
 
 export function checkForMisbehaviour(clientMessage: Any, clientDatum: ClientDatum): boolean {
   switch (clientMessage.type_url) {
-    case '/ibc.lightclients.tendermint.v1.Header': {
+    case TENDERMINT_HEADER_TYPE_URL: {
       const headerMsg = decodeHeader(clientMessage.value);
       const header = initializeHeader(headerMsg);
       const consState = getConsensusStateFromTmHeader(header.signedHeader.header);
@@ -142,7 +173,7 @@ export function checkForMisbehaviour(clientMessage: Any, clientDatum: ClientDatu
 
       break;
     }
-    case '/ibc.lightclients.tendermint.v1.Misbehaviour': {
+    case TENDERMINT_MISBEHAVIOUR_TYPE_URL: {
       const misbehaviourMsg = decodeMisBehaviour(clientMessage.value);
       const msg = initializeMisbehaviour(misbehaviourMsg);
 
@@ -157,9 +188,10 @@ export function checkForMisbehaviour(clientMessage: Any, clientDatum: ClientDatu
 
         // Ensure that Commit Hashes are different
         if (blockID1.hash !== blockID2.hash) return true;
-      } else if (msg.header1.signedHeader.header.time <= msg.header2.signedHeader.header.time) {
-        // Header1 is at greater height than Header2, therefore Header1 time must be less than or equal to
-        // Header2 time in order to be valid misbehaviour (violation of monotonic time).
+      // Compare timestamps by height order so reversed headers cannot fake a time violation.
+      } else if (msg.header1.signedHeader.header.height > msg.header2.signedHeader.header.height) {
+        if (msg.header1.signedHeader.header.time <= msg.header2.signedHeader.header.time) return true;
+      } else if (msg.header2.signedHeader.header.time <= msg.header1.signedHeader.header.time) {
         return true;
       }
       break;

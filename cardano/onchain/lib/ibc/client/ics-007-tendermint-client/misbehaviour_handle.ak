@@ -66,24 +66,22 @@ pub fn check_for_misbehaviour(
       }
 
     MisbehaviourCase(misbehaviour) ->
-      if height_mod.compare(
-        header_mod.get_height(misbehaviour.header1),
-        header_mod.get_height(misbehaviour.header2),
-      ) == Equal {
-        if !(bytearray.compare(
-          misbehaviour.header1.signed_header.commit.block_id.hash,
-          misbehaviour.header2.signed_header.commit.block_id.hash,
-        ) == Equal) {
-          True
-        } else {
-          False
-        }
-      } else {
-        if !(misbehaviour.header1.signed_header.header.time > misbehaviour.header2.signed_header.header.time) {
-          True
-        } else {
-          False
-        }
+      // Compare timestamps by height order so reversed headers cannot fake a time violation.
+      when
+        height_mod.compare(
+          header_mod.get_height(misbehaviour.header1),
+          header_mod.get_height(misbehaviour.header2),
+        )
+      is {
+        Equal ->
+          !(bytearray.compare(
+            misbehaviour.header1.signed_header.commit.block_id.hash,
+            misbehaviour.header2.signed_header.commit.block_id.hash,
+          ) == Equal)
+        Greater ->
+          misbehaviour.header1.signed_header.header.time <= misbehaviour.header2.signed_header.header.time
+        Less ->
+          misbehaviour.header2.signed_header.header.time <= misbehaviour.header1.signed_header.header.time
       }
   }
 }
@@ -96,6 +94,8 @@ pub fn verify_misbehaviour(
   consensus_states: Pairs<Height, ConsensusState>,
   misbehaviour: Misbehaviour,
 ) -> Bool {
+  expect misbehaviour_mod.validate_basic(misbehaviour)
+
   expect Some(cons_state1) =
     pairs.get_first(consensus_states, misbehaviour.header1.trusted_height)
   expect Some(cons_state2) =
