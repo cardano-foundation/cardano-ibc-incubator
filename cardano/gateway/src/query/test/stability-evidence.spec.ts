@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { status } from '@grpc/grpc-js';
 import { HistoryService } from '../services/history.service';
 import {
   loadStakeWeightedStabilityEvidenceByHeight,
@@ -6,6 +7,23 @@ import {
   loadStakeWeightedStabilityHeaderEvidence,
 } from '../services/stability-evidence';
 import { getStabilityHeuristicParams } from '../services/stability-scoring';
+
+async function expectGrpcError(
+  promise: Promise<unknown>,
+  code: status,
+  gatewayCode: string,
+): Promise<{ message: string; code: number }> {
+  try {
+    await promise;
+  } catch (error) {
+    const payload = (error as { getError?: () => { message: string; code: number } }).getError?.();
+    expect(payload?.code).toBe(code);
+    expect(payload?.message).toContain(gatewayCode);
+    return payload!;
+  }
+
+  throw new Error(`Expected ${gatewayCode} gRPC error`);
+}
 
 describe('stability-evidence', () => {
   const heuristicParams = getStabilityHeuristicParams({
@@ -180,6 +198,89 @@ describe('stability-evidence', () => {
     expect(evidence.bridgeBlocks).toEqual(bridgeBlocks);
   });
 
+  it('returns typed not-found status when a stability header height is unknown', async () => {
+    const localHistoryService = {
+      ...historyServiceMock,
+      findBlockByHeight: jest.fn().mockImplementation(async (height: bigint) => {
+        if (height === 97n) {
+          return {
+            ...anchorBlock,
+            height: 97,
+            hash: 'trusted-hash',
+            prevHash: 'hash-96',
+            slotNo: 970n,
+          };
+        }
+        return null;
+      }),
+    } as Partial<HistoryService>;
+
+    await expectGrpcError(
+      loadStakeWeightedStabilityHeaderEvidence({
+        historyService: localHistoryService as HistoryService,
+        trustedHeight: 97n,
+        height: 100n,
+        logger: { warn: jest.fn() } as unknown as Logger,
+        heuristicParams,
+      }),
+      status.NOT_FOUND,
+      'HEIGHT_NOT_FOUND',
+    );
+  });
+
+  it('returns typed failed-precondition status when a stability header height is not accepted', async () => {
+    const strictHeuristicParams = getStabilityHeuristicParams({
+      CARDANO_STABILITY_THRESHOLD_DEPTH: '4',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS: '4',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: '9000',
+    } as NodeJS.ProcessEnv);
+
+    await expectGrpcError(
+      loadStakeWeightedStabilityHeaderEvidence({
+        historyService: historyServiceMock as HistoryService,
+        trustedHeight: 97n,
+        height: 100n,
+        logger: { warn: jest.fn() } as unknown as Logger,
+        heuristicParams: strictHeuristicParams,
+      }),
+      status.FAILED_PRECONDITION,
+      'HEIGHT_NOT_ACCEPTED',
+    );
+  });
+
+  it('returns typed invalid-argument status for invalid trusted stability header heights', async () => {
+    await expectGrpcError(
+      loadStakeWeightedStabilityHeaderEvidence({
+        historyService: historyServiceMock as HistoryService,
+        trustedHeight: 100n,
+        height: 100n,
+        logger: { warn: jest.fn() } as unknown as Logger,
+        heuristicParams,
+      }),
+      status.INVALID_ARGUMENT,
+      'INVALID_TRUSTED_HEIGHT',
+    );
+  });
+
+  it('returns typed failed-precondition status when stability history is incomplete', async () => {
+    const localHistoryService = {
+      ...historyServiceMock,
+      findBridgeBlocks: jest.fn().mockResolvedValue([]),
+    } as Partial<HistoryService>;
+
+    await expectGrpcError(
+      loadStakeWeightedStabilityHeaderEvidence({
+        historyService: localHistoryService as HistoryService,
+        trustedHeight: 97n,
+        height: 100n,
+        logger: { warn: jest.fn() } as unknown as Logger,
+        heuristicParams,
+      }),
+      status.FAILED_PRECONDITION,
+      'HISTORY_NOT_READY',
+    );
+  });
+
   it('accepts the first descendant prefix that meets thresholds within the lookahead window', async () => {
     const progressiveHeuristicParams = getStabilityHeuristicParams({
       CARDANO_STABILITY_THRESHOLD_DEPTH: '3',
@@ -267,7 +368,7 @@ describe('stability-evidence', () => {
         logger: { warn: jest.fn() } as unknown as Logger,
         heuristicParams,
       }),
-    ).rejects.toThrow('epoch stake distribution unavailable');
+    ).rejects.toThrow('Epoch stake distribution unavailable');
   });
 
   it('fails closed when epoch verification context is unavailable', async () => {

@@ -42,9 +42,7 @@ describe('stability-scoring', () => {
     expect(metrics.uniquePoolsCount).toBe(3);
     expect(metrics.uniqueStakeBps).toBe(10000);
     expect(metrics.securityScoreBps).toBe(10000);
-    expect(() =>
-      assertStabilityThresholds(metrics, heuristicParams, '100', descendants.length),
-    ).not.toThrow();
+    expect(() => assertStabilityThresholds(metrics, heuristicParams, '100', descendants.length)).not.toThrow();
   });
 
   it('fails threshold checks when depth and unique stake are too low', () => {
@@ -69,9 +67,9 @@ describe('stability-scoring', () => {
 
     expect(metrics.uniquePoolsCount).toBe(2);
     expect(metrics.uniqueStakeBps).toBe(6000);
-    expect(() =>
-      assertStabilityThresholds(metrics, heuristicParams, '200', descendants.length),
-    ).toThrow('stability thresholds not met');
+    expect(() => assertStabilityThresholds(metrics, heuristicParams, '200', descendants.length)).toThrow(
+      'stability thresholds not met',
+    );
   });
 
   it('computes unique stake bps from summed raw stake instead of summing rounded per-pool bps', () => {
@@ -116,7 +114,7 @@ describe('stability-scoring', () => {
     ];
 
     expect(() => computeStabilityMetrics(descendants, [], heuristicParams)).toThrow(
-      'epoch stake distribution unavailable',
+      'Epoch stake distribution unavailable',
     );
   });
 });

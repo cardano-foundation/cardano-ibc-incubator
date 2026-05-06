@@ -1,6 +1,10 @@
 import { Logger } from '@nestjs/common';
 import { HeuristicParams } from '@plus/proto-types/build/ibc/lightclients/stability/v1/stability';
-import { GrpcNotFoundException } from '~@/exception/grpc_exceptions';
+import {
+  GATEWAY_GRPC_ERROR_CODE,
+  GrpcFailedPreconditionException,
+  gatewayGrpcError,
+} from '~@/exception/grpc_exceptions';
 import { HistoryBlock, HistoryStakeDistributionEntry } from './history.service';
 
 export type StabilityMetrics = {
@@ -14,15 +18,21 @@ export function assertEpochStakeDistributionAvailable(
   context: string,
 ): void {
   if (epochStakeDistribution.length === 0) {
-    throw new GrpcNotFoundException(
-      `Not found: epoch stake distribution unavailable for ${context}`,
+    throw new GrpcFailedPreconditionException(
+      gatewayGrpcError(
+        GATEWAY_GRPC_ERROR_CODE.HISTORY_NOT_READY,
+        `Epoch stake distribution unavailable for ${context}`,
+      ),
     );
   }
 
   const totalStake = epochStakeDistribution.reduce((sum, entry) => sum + entry.stake, 0n);
   if (totalStake <= 0n) {
-    throw new GrpcNotFoundException(
-      `Not found: epoch stake distribution has zero total stake for ${context}`,
+    throw new GrpcFailedPreconditionException(
+      gatewayGrpcError(
+        GATEWAY_GRPC_ERROR_CODE.HISTORY_NOT_READY,
+        `Epoch stake distribution has zero total stake for ${context}`,
+      ),
     );
   }
 }
@@ -120,7 +130,12 @@ export function assertStabilityThresholds(
 ): void {
   const failure = getStabilityThresholdFailure(metrics, heuristicParams, height, descendantDepth);
   if (failure) {
-    throw new GrpcNotFoundException(failure);
+    throw new GrpcFailedPreconditionException(
+      gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_ACCEPTED, failure, {
+        height,
+        descendantDepth,
+      }),
+    );
   }
 }
 
