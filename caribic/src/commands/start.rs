@@ -6,7 +6,7 @@ use std::time::Instant;
 use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::{
-    config, logger,
+    chains, config, logger,
     start::{
         build_aiken_validators_if_needed, build_hermes_if_needed, deploy_contracts,
         deploy_preprod_bridge, start_cosmos_entrypoint_chain,
@@ -19,6 +19,22 @@ use crate::{
 
 const HERMES_BUILD_PROGRESS_LOG_INTERVAL_SECS: u64 = 10;
 const HERMES_BUILD_POLL_INTERVAL_SECS: u64 = 2;
+
+fn ensure_preprod_optional_relayer_routes(
+    project_root_path: &Path,
+    network: config::CoreCardanoNetwork,
+) -> Result<(), String> {
+    if network != config::CoreCardanoNetwork::Preprod {
+        return Ok(());
+    }
+
+    chains::injective::ensure_testnet_chain_in_hermes_config(project_root_path).map_err(|error| {
+        format!(
+            "ERROR: Failed to configure Injective testnet Hermes route: {}",
+            error
+        )
+    })
+}
 
 fn require_preprod_bridge_artifact(artifact_path: &Path, label: &str) -> Result<(), String> {
     if artifact_path.exists() {
@@ -196,6 +212,8 @@ pub async fn run_start(
                 ))
             }
         };
+
+        ensure_preprod_optional_relayer_routes(project_root_path, core_cardano_network)?;
 
         match start_hermes_daemon() {
             Ok(_) => logger::log("PASS: Hermes daemon started successfully"),
@@ -561,6 +579,12 @@ pub async fn run_start(
                     &format!("ERROR: Failed to configure Hermes relayer: {}", error),
                 )
             }
+        }
+
+        if let Err(error) =
+            ensure_preprod_optional_relayer_routes(project_root_path, core_cardano_network)
+        {
+            return fail_and_stop_started_services(project_root_path, StopTarget::Bridge, &error);
         }
 
         match start_hermes_daemon() {
