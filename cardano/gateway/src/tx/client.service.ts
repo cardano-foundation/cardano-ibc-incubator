@@ -16,7 +16,14 @@ import { RpcException } from '@nestjs/microservices';
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { ConfigService } from '@nestjs/config';
 import { ClientDatumState } from 'src/shared/types/client-datum-state';
-import { CLIENT_ID_PREFIX, CLIENT_PREFIX, HANDLER_TOKEN_NAME, MAX_CONSENSUS_STATE_SIZE } from 'src/constant';
+import {
+  ATTRIBUTE_KEY_CLIENT,
+  CLIENT_ID_PREFIX,
+  CLIENT_PREFIX,
+  EVENT_TYPE_CLIENT,
+  HANDLER_TOKEN_NAME,
+  MAX_CONSENSUS_STATE_SIZE,
+} from 'src/constant';
 import { ClientDatum, encodeClientStateValue, encodeConsensusStateValue } from 'src/shared/types/client-datum';
 import { MintClientOperator } from 'src/shared/types/mint-client-operator';
 import { SpendClientRedeemer } from 'src/shared/types/client-redeemer';
@@ -42,6 +49,9 @@ import {
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
+import { Any } from '@plus/proto-types/build/google/protobuf/any';
+import { toHex } from '../shared/helpers/hex';
+import type { GatewayEvent } from './tx-events.service';
 
 @Injectable()
 export class ClientService {
@@ -64,6 +74,37 @@ export class ClientService {
     this.logger.log(
       `[walletContext] ${context} selecting wallet from ${address}, utxos=${walletUtxos.length}, lovelace_total=${sumLovelaceFromUtxos(walletUtxos)}`,
     );
+  }
+
+  private buildUpdateClientSyntheticEvent(
+    eventType: string,
+    clientId: bigint | number | string,
+    consensusHeight: Height,
+    clientMessage: Any,
+  ): GatewayEvent {
+    const clientMessageAnyHex = toHex(Any.encode(clientMessage).finish());
+    const fullClientId = `${CLIENT_ID_PREFIX}-${clientId.toString()}`;
+
+    // Hermes replays the canonical client_message Any from this event.
+    return {
+      type: eventType,
+      attributes: [
+        { key: ATTRIBUTE_KEY_CLIENT.CLIENT_ID, value: fullClientId },
+        { key: ATTRIBUTE_KEY_CLIENT.CLIENT_TYPE, value: CLIENT_ID_PREFIX },
+        {
+          key: ATTRIBUTE_KEY_CLIENT.CONSENSUS_HEIGHT,
+          value: `${consensusHeight.revisionNumber.toString()}-${consensusHeight.revisionHeight.toString()}`,
+        },
+        {
+          key: ATTRIBUTE_KEY_CLIENT.CLIENT_MESSAGE_ANY_HEX,
+          value: clientMessageAnyHex,
+        },
+        {
+          key: ATTRIBUTE_KEY_CLIENT.HEADER,
+          value: eventType === EVENT_TYPE_CLIENT.UPDATE_CLIENT ? clientMessageAnyHex : '',
+        },
+      ],
+    };
   }
 
   /**
@@ -246,6 +287,10 @@ export class ClientService {
           maxAllowedBackdateMs < maxBackdateCapMs ? maxAllowedBackdateMs : maxBackdateCapMs,
         );
         const { validFromTime: validFromTimeMs, validToTime } = await this.computeTxValidityWindow(safeBackdateMs);
+        const frozenHeight = {
+          revisionNumber: 0n,
+          revisionHeight: 1n,
+        } as Height;
         const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
           operationName: 'updateClientOnMisbehaviour',
           unsignedTx: unsignedUpdateClientTx,
@@ -262,10 +307,18 @@ export class ClientService {
             setCollateral: TRANSACTION_SET_COLLATERAL,
           },
           pendingTreeUpdate,
+          syntheticEvents: [
+            this.buildUpdateClientSyntheticEvent(
+              EVENT_TYPE_CLIENT.CLIENT_MISBEHAVIOR,
+              clientId,
+              frozenHeight,
+              data.client_message,
+            ),
+          ],
         });
 
         this.logger.log(`Returning unsigned tx for update client on misbehaviour (client_id: ${clientId})`);
-        
+
         const response: MsgUpdateClientResponse = {
           unsigned_tx: {
             type_url: '',
@@ -277,6 +330,10 @@ export class ClientService {
       }
       const headerMsg = decodeHeader(data.client_message.value);
       const header = initializeHeader(headerMsg);
+      const updateConsensusHeight = {
+        revisionNumber: header.trustedHeight.revisionNumber,
+        revisionHeight: header.signedHeader.header.height,
+      } as Height;
       // NOTE: UpdateClient header verification uses the transaction validity lower bound
       // (`valid_from`) as a proxy for "current time" in the Tendermint light client.
       //
@@ -332,8 +389,16 @@ export class ClientService {
           setCollateral: TRANSACTION_SET_COLLATERAL,
         },
         pendingTreeUpdate,
+        syntheticEvents: [
+          this.buildUpdateClientSyntheticEvent(
+            EVENT_TYPE_CLIENT.UPDATE_CLIENT,
+            clientId,
+            updateConsensusHeight,
+            data.client_message,
+          ),
+        ],
       });
-      
+
       this.logger.log(`Returning unsigned tx for update client (client_id: ${clientId})`);
 
       const response: MsgUpdateClientResponse = {
@@ -766,7 +831,7 @@ export class ClientService {
         consensus_state_siblings: consensusStateSiblings,
       },
     };
-    
+
     // Encode all data for the transaction
     const encodedMintClientRedeemer: string = await this.lucidService.encode(mintClientRedeemer, 'mintClientRedeemer');
     const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');

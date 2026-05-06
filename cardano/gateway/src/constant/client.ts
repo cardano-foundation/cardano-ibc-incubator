@@ -15,6 +15,7 @@ export const ATTRIBUTE_KEY_CLIENT = {
   CONSENSUS_HEIGHT: 'consensus_height',
   CONSENSUS_HEIGHTS: 'consensus_heights',
   HEADER: 'header',
+  CLIENT_MESSAGE_ANY_HEX: 'client_message_any_hex',
   UPGRADE_STORE: 'upgrade_store',
   UPGRADE_PLAN_HEIGHT: 'upgrade_plan_height',
   title: 'title',
