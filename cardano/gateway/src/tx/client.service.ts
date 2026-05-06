@@ -261,7 +261,10 @@ export class ClientService {
         'client',
       );
 
-      verifyClientMessage(data.client_message, currentClientDatum);
+      if (!verifyClientMessage(data.client_message, currentClientDatum)) {
+        throw new GrpcInvalidArgumentException('Invalid client message');
+      }
+
       const foundMisbehaviour = checkForMisbehaviour(data.client_message, currentClientDatum);
 
       if (foundMisbehaviour) {
