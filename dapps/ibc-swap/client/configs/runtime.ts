@@ -123,11 +123,3 @@ export const KUPMIOS_AUTH_HEADERS = serverFirstNonEmpty(KUPMIOS_URL)
 export const CROSSCHAIN_SWAP_ADDRESS = firstNonEmpty(
   process.env.NEXT_PUBLIC_CROSSCHAIN_SWAP_ADDRESS,
 );
-
-export const CARDANO_ENTRYPOINT_CHANNEL_ID = firstNonEmpty(
-  process.env.NEXT_PUBLIC_CARDANO_ENTRYPOINT_CHANNEL_ID,
-);
-
-export const ENTRYPOINT_INJECTIVE_CHANNEL_ID = firstNonEmpty(
-  process.env.NEXT_PUBLIC_ENTRYPOINT_INJECTIVE_CHANNEL_ID,
-);
