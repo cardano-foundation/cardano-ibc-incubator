@@ -24,6 +24,7 @@ import {
   getCardanoWalletErrorMessage,
   isCardanoWalletLockedError,
 } from '@/utils/cardanoWalletStatus';
+import { logCardanoWalletDebug } from '@/utils/cardanoWalletDebug';
 import { useWallet, useWalletList } from '@meshsdk/react';
 import { UseCosmosWallet } from './UseCosmosWallet';
 import CardanoWalletModal, { WalletProps } from './CardanoWalletModal';
