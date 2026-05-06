@@ -159,13 +159,19 @@ export function normalizeTxsResultFromClientDatum(
     const clientMessage = spendClientRedeemer['UpdateClient'].msg;
 
     if (clientMessage && clientMessage.hasOwnProperty('HeaderCase')) {
-      const msgUpdateClient = convertHeaderToTendermint(clientMessage['HeaderCase'][0]);
+      const updateHeader = clientMessage['HeaderCase'][0];
+      const msgUpdateClient = convertHeaderToTendermint(updateHeader);
       const headerAny: Any = {
         type_url: '/ibc.lightclients.tendermint.v1.Header',
         value: Header.encode(msgUpdateClient).finish(),
       };
       clientMessageAnyHex = toHex(Any.encode(headerAny).finish());
       header = clientMessageAnyHex;
+      // Replayed update events must use the submitted header height, not map insertion order.
+      consensusHeight = {
+        revisionNumber: updateHeader.trustedHeight.revisionNumber,
+        revisionHeight: updateHeader.signedHeader.header.height,
+      };
     } else if (clientMessage && clientMessage.hasOwnProperty('MisbehaviourCase')) {
       const misbehaviour = clientMessage['MisbehaviourCase'][0];
       const misbehaviourAny: Any = {
