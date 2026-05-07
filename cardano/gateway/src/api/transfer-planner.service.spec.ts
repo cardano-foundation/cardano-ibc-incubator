@@ -13,6 +13,7 @@ type FetchJsonResponse = {
 
 const ENTRYPOINT_REST_ENDPOINT = 'http://entrypoint:1317';
 const LOCAL_OSMOSIS_REST_ENDPOINT = 'http://localosmosis:1318';
+const CARDANO_REST_ENDPOINT = 'http://gateway:3000';
 
 const ibcHash = (fullDenom: string) =>
   `ibc/${createHash('sha256').update(fullDenom).digest('hex').toUpperCase()}`;
@@ -53,6 +54,7 @@ describe('TransferPlannerService', () => {
     const configService = {
       get: jest.fn((key: string) => {
         if (key === 'cardanoChainId') return 'cardano-devnet';
+        if (key === 'cardanoRestEndpoint') return CARDANO_REST_ENDPOINT;
         if (key === 'entrypointRestEndpoint') return ENTRYPOINT_REST_ENDPOINT;
         if (key === 'localOsmosisRestEndpoint') return LOCAL_OSMOSIS_REST_ENDPOINT;
         return undefined;
@@ -198,10 +200,50 @@ describe('TransferPlannerService', () => {
     });
   });
 
+  it('keeps the canonical route when the Cardano outbound channel has pending ordered packets', async () => {
+    mockPlannerNetwork({
+      entrypointChannels: [
+        { channelId: 'channel-0', counterpartyChannelId: 'channel-9', destChainId: 'cardano-devnet' },
+        { channelId: 'channel-1', counterpartyChannelId: 'channel-3', destChainId: 'localosmosis' },
+      ],
+      entrypointDenomTraces: [],
+      localOsmosisDenomTraces: [],
+      cardanoChannelHealth: {
+        'transfer/channel-9': {
+          port_id: 'transfer',
+          channel_id: 'channel-9',
+          status: 'blocked',
+          reason: 'Ordered Cardano channel transfer/channel-9 has 1 pending packet commitment(s); earliest sequence 1 must be received, acknowledged, or timed out before later packets can progress.',
+        },
+      },
+    });
+
+    await expect(
+      service.planTransferRoute({
+        fromChainId: 'cardano-devnet',
+        toChainId: 'localosmosis',
+        tokenDenom: 'lovelace',
+      }),
+    ).resolves.toEqual({
+      foundRoute: true,
+      mode: 'native-forward',
+      chains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
+      routes: ['transfer/channel-9', 'transfer/channel-1'],
+      tokenTrace: {
+        kind: 'native',
+        path: '',
+        baseDenom: 'lovelace',
+        fullDenom: 'lovelace',
+      },
+    });
+  });
+
   const mockPlannerNetwork = ({
     entrypointChannels,
     entrypointDenomTraces,
     localOsmosisDenomTraces,
+    cardanoChannels,
+    cardanoChannelHealth = {},
   }: {
     entrypointChannels: Array<{
       channelId: string;
@@ -216,7 +258,20 @@ describe('TransferPlannerService', () => {
       base: string;
       trace: Array<{ port_id: string; channel_id: string }>;
     }>;
+    cardanoChannels?: ReturnType<typeof openChannel>[];
+    cardanoChannelHealth?: Record<string, unknown>;
   }) => {
+    const resolvedCardanoChannels =
+      cardanoChannels ||
+      entrypointChannels
+        .filter((channel) => channel.destChainId === 'cardano-devnet')
+        .map((channel) =>
+          openChannel({
+            channelId: channel.counterpartyChannelId,
+            counterpartyChannelId: channel.channelId,
+          }),
+        );
+
     fetchMock.mockImplementation((url: string): Promise<FetchJsonResponse> => {
       if (url === `${ENTRYPOINT_REST_ENDPOINT}/ibc/core/channel/v1/channels?pagination.count_total=true&pagination.limit=10000`) {
         return Promise.resolve(jsonResponse({
@@ -240,6 +295,31 @@ describe('TransferPlannerService', () => {
                 },
               },
             }),
+          );
+        }
+      }
+
+      if (url === `${CARDANO_REST_ENDPOINT}/api/channels?offset=0&limit=10000&countTotal=true&reverse=false`) {
+        return Promise.resolve(jsonResponse({
+          channels: resolvedCardanoChannels,
+          pagination: {},
+        }));
+      }
+
+      for (const channel of resolvedCardanoChannels) {
+        if (
+          url ===
+          `${CARDANO_REST_ENDPOINT}/api/cardano/channels/${channel.channel_id}/health?port_id=transfer`
+        ) {
+          return Promise.resolve(
+            jsonResponse(
+              cardanoChannelHealth[`transfer/${channel.channel_id}`] || {
+                port_id: 'transfer',
+                channel_id: channel.channel_id,
+                status: 'available',
+                reason: null,
+              },
+            ),
           );
         }
       }

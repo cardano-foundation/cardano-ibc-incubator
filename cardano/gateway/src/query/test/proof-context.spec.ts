@@ -62,6 +62,7 @@ function makeDeps(root: string, cached?: { tree: ICS23MerkleTree; root: string }
 describe('proof-context stability fallback', () => {
   it('reuses the live HostState tx height when the current root was created in a prior epoch', async () => {
     const logger = {
+      debug: jest.fn(),
       warn: jest.fn(),
     } as unknown as Logger;
 

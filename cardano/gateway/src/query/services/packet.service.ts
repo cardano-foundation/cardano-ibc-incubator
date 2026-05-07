@@ -118,12 +118,20 @@ export class PacketService {
     });
   }
 
+  private async findChannelUtxo(channelTokenUnit: string) {
+    const deploymentConfig = this.configService.get('deployment');
+    return this.lucidService.findUtxoAtWithUnit(
+      deploymentConfig.validators.spendChannel.address,
+      channelTokenUnit,
+    );
+  }
+
   private async getChannelUtxo(channelId: string, queryHeight?: bigint) {
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
     const channelTokenUnit = mintChannelPolicyId + channelTokenName;
     return queryHeight
       ? this.historyService.findUtxoByUnitAtOrBeforeBlockNo(channelTokenUnit, queryHeight)
-      : this.lucidService.findUtxoByUnit(channelTokenUnit);
+      : this.findChannelUtxo(channelTokenUnit);
   }
 
   async queryPacketAcknowledgement(
@@ -151,7 +159,6 @@ export class PacketService {
     // Path: acks/ports/{portId}/channels/{channelId}/sequences/{sequence}
     const ibcPath = `acks/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
     const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
-
     let ackProof: Buffer;
     try {
       const existenceProof = tree.generateProof(ibcPath);
@@ -195,9 +202,7 @@ export class PacketService {
     let { 'pagination.offset': offset } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
-    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
-    const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+    const utxo = await this.getChannelUtxo(channelId);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetAcknowledgementSeqs = [...channelDatumDecoded.state.packet_acknowledgement.keys()];
 
@@ -263,7 +268,6 @@ export class PacketService {
     // Path: commitments/ports/{portId}/channels/{channelId}/sequences/{sequence}
     const ibcPath = `commitments/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
     const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
-
     let commitmentProof: Buffer;
     try {
       const existenceProof = tree.generateProof(ibcPath);
@@ -305,9 +309,7 @@ export class PacketService {
     let { 'pagination.offset': offset } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
-    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
-    const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+    const utxo = await this.getChannelUtxo(channelId);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetCommitmentSeqs = [...channelDatumDecoded.state.packet_commitment.keys()];
 
@@ -374,7 +376,6 @@ export class PacketService {
     // If received=false: NonExistenceProof showing receipt marker doesn't exist
     const ibcPath = `receipts/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
     const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
-
     let receiptProof: Buffer;
     try {
       if (packetReceipt) {
@@ -418,9 +419,7 @@ export class PacketService {
       'QueryUnreceivedPacketsRequest',
     );
 
-    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
-    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
-    const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+    const utxo = await this.getChannelUtxo(channelId);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetReceiptSeqs = channelDatumDecoded.state.packet_receipt;
     const sequences = request.packet_commitment_sequences.filter((seq) => !packetReceiptSeqs.has(BigInt(seq)));
@@ -449,9 +448,7 @@ export class PacketService {
       'QueryUnreceivedAcksRequest',
     );
 
-    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
-    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
-    const utxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+    const utxo = await this.getChannelUtxo(channelId);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
     const packetCommitsSeqs = channelDatumDecoded.state.packet_commitment;
     const sequences = packetAcksSequences.filter((seq) => packetCommitsSeqs.has(BigInt(seq)));
@@ -509,7 +506,6 @@ export class PacketService {
     // Path: receipts/ports/{portId}/channels/{channelId}/sequences/{sequence}
     const ibcPath = `receipts/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
     const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
-
     let unreceivedProof: Buffer;
     try {
       const nonExistenceProof = tree.generateNonExistenceProof(ibcPath);
@@ -555,7 +551,6 @@ export class PacketService {
     // Path: nextSequenceRecv/ports/{portId}/channels/{channelId}
     const ibcPath = `nextSequenceRecv/ports/${portId}/channels/channel-${channelId}`;
     const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
-
     let nextSeqProof: Buffer;
     try {
       const existenceProof = tree.generateProof(ibcPath);
@@ -602,7 +597,6 @@ export class PacketService {
     // Path: nextSequenceAck/ports/{portId}/channels/{channelId}
     const ibcPath = `nextSequenceAck/ports/${portId}/channels/channel-${channelId}`;
     const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
-
     let nextAckProof: Buffer;
     try {
       const existenceProof = tree.generateProof(ibcPath);

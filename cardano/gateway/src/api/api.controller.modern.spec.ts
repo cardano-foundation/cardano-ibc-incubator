@@ -19,6 +19,7 @@ describe('ApiController (modern)', () => {
   let controller: ApiController;
   let channelServiceMock: {
     queryChannels: jest.Mock;
+    getChannelHealth: jest.Mock;
   };
   let packetServiceMock: {
     sendPacket: jest.Mock;
@@ -59,6 +60,7 @@ describe('ApiController (modern)', () => {
     // Channel/packet services are mocked so external IBC logic is out of scope here.
     channelServiceMock = {
       queryChannels: jest.fn(),
+      getChannelHealth: jest.fn(),
     };
     packetServiceMock = {
       sendPacket: jest.fn(),
@@ -134,6 +136,18 @@ describe('ApiController (modern)', () => {
         revision_number: '7',
       },
     });
+  });
+
+  it('delegates Cardano channel health lookups to ChannelService', async () => {
+    const expected = {
+      port_id: 'transfer',
+      channel_id: 'channel-0',
+      status: 'available',
+    };
+    channelServiceMock.getChannelHealth.mockResolvedValue(expected);
+
+    await expect(controller.getCardanoChannelHealth('channel-0', 'transfer')).resolves.toBe(expected);
+    expect(channelServiceMock.getChannelHealth).toHaveBeenCalledWith('channel-0', 'transfer');
   });
 
   it('delegates buildTransferMsg to PacketService and base64-encodes unsigned tx bytes', async () => {

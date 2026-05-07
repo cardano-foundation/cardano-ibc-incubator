@@ -39,7 +39,7 @@ describe('SubmissionService pending update strictness', () => {
       }),
     };
     const txEventsServiceMock = {};
-    const ibcTreeCacheServiceMock = {};
+    const ibcTreeCacheServiceMock = { saveAliases: jest.fn() };
 
     service = new SubmissionService(
       lucidServiceMock as any,
@@ -53,7 +53,7 @@ describe('SubmissionService pending update strictness', () => {
   it('fails hard when confirmed tx has no pending update entry', async () => {
     jest.spyOn(service as any, 'readConfirmedTxRoot').mockResolvedValueOnce('root-at-tx');
 
-    await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'abc123')).rejects.toThrow();
+    await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'abc123', 1234)).rejects.toThrow();
 
     expect(ibcTreePendingUpdatesServiceMock.take).toHaveBeenCalledWith('abc123');
     expect(ibcTreePendingUpdatesServiceMock.takeByExpectedRoot).toHaveBeenCalledWith('root-at-tx');
@@ -67,7 +67,7 @@ describe('SubmissionService pending update strictness', () => {
     });
     jest.spyOn(service as any, 'readConfirmedTxRoot').mockRejectedValueOnce(new Error('tx root decode error'));
 
-    await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'tx-hash-abc')).rejects.toThrow(
+    await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'tx-hash-abc', 1234)).rejects.toThrow(
       'tx root decode error',
     );
   });

@@ -575,8 +575,8 @@ const Transfer = () => {
         'invalid-request': 'Transfer route planning request was invalid.',
       };
       const message =
-        (failureCode && messageByFailureCode[failureCode]) ||
         failureMessage ||
+        (failureCode && messageByFailureCode[failureCode]) ||
         `No IBC transfer route found from ${fromChainName} to ${toChainName}.`;
       console.error('IBC transfer route resolution failed', {
         fromChainId: dataTransfer.fromNetwork.networkId,

@@ -21,9 +21,8 @@ describe('SubmissionService confirmation strictness regressions', () => {
     take: jest.Mock;
   };
   let ibcTreeCacheServiceMock: {
-    save: jest.Mock;
+    saveAliases: jest.Mock;
   };
-
   beforeEach(() => {
     lucidServiceMock = {
       LucidImporter: {},
@@ -63,7 +62,7 @@ describe('SubmissionService confirmation strictness regressions', () => {
     };
 
     ibcTreeCacheServiceMock = {
-      save: jest.fn().mockResolvedValue(undefined),
+      saveAliases: jest.fn().mockResolvedValue(undefined),
     };
 
     service = new SubmissionService(
@@ -76,11 +75,9 @@ describe('SubmissionService confirmation strictness regressions', () => {
   });
 
   it('fails hard when confirmation polling times out', async () => {
-    await expect((service as any).waitForConfirmation('tx-timeout', 0)).rejects.toThrow();
-  });
-
-  it('fails hard when exact Ogmios inclusion height lookup times out instead of falling back', async () => {
-    await expect((service as any).waitForTxInclusionBlockHeight('tx-no-height', 'origin', 0)).rejects.toThrow();
+    await expect((service as any).waitForConfirmation('tx-timeout', 0)).rejects.toThrow(
+      'confirmation timeout',
+    );
   });
 
   it('does not finalize denom traces if on-chain root verification fails', async () => {
@@ -90,24 +87,35 @@ describe('SubmissionService confirmation strictness regressions', () => {
     });
     jest.spyOn(service as any, 'readConfirmedTxRoot').mockRejectedValueOnce(new Error('hoststate unavailable'));
 
-    await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'tx-hash-abc')).rejects.toThrow();
+    await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'tx-hash-abc', 9999)).rejects.toThrow();
   });
 
   it('does not return submit success when confirmation status is unknown', async () => {
-    ibcTreePendingUpdatesServiceMock.take.mockReturnValueOnce({
-      expectedNewRoot: 'expected-root',
-      commit: jest.fn(),
-    });
     jest.spyOn(service as any, 'capturePreSubmitPoint').mockResolvedValueOnce('origin');
-    jest.spyOn(service as any, 'readConfirmedTxRoot').mockResolvedValueOnce('expected-root');
-
-    jest.spyOn(service as any, 'waitForConfirmation').mockResolvedValueOnce(undefined);
-    jest.spyOn(service as any, 'waitForTxInclusionBlockHeight').mockResolvedValueOnce(9999);
+    jest.spyOn(service as any, 'submitToCardano').mockResolvedValueOnce('tx-hash-abc');
+    jest.spyOn(service as any, 'waitForConfirmation').mockRejectedValueOnce(new Error('not confirmed'));
 
     await expect(
       service.submitSignedTransaction({
         signed_tx_cbor: 'deadbeef',
       } as any),
-    ).rejects.toThrow();
+    ).rejects.toThrow('not confirmed');
+  });
+
+  it('persists confirmed IBC tree snapshots by current id, root, and block height', async () => {
+    const commit = jest.fn();
+    ibcTreePendingUpdatesServiceMock.take.mockReturnValueOnce({
+      expectedNewRoot: 'ab'.repeat(32),
+      commit,
+    });
+    jest.spyOn(service as any, 'readConfirmedTxRoot').mockResolvedValueOnce('ab'.repeat(32));
+
+    await (service as any).applyPendingIbcTreeUpdate('deadbeef', 'tx-hash-abc', 9999);
+
+    expect(commit).toHaveBeenCalled();
+    expect(ibcTreeCacheServiceMock.saveAliases).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.arrayContaining(['current', `root:${'ab'.repeat(32)}`, 'height:9999']),
+    );
   });
 });

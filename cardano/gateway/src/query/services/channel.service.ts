@@ -26,7 +26,7 @@ import { convertHex2String } from '../../shared/helpers/hex';
 import { validQueryChannelParam, validQueryConnectionChannelsParam } from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
 import { MithrilService } from '~@/shared/modules/mithril/mithril.service';
-import { GrpcInternalException } from '~@/exception/grpc_exceptions';
+import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { HostStateDatum } from '../../shared/types/host-state-datum';
@@ -37,6 +37,18 @@ import { HISTORY_SERVICE, HistoryService } from './history.service';
 import { resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from './proof-context';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ProofQueryOptions } from '../helpers/query-height';
+
+type CardanoChannelHealthResponse = {
+  port_id: string;
+  channel_id: string;
+  state: string;
+  ordering: string;
+  status: 'available' | 'blocked';
+  reason: string | null;
+  pending_packet_commitment_count: string;
+  earliest_pending_packet_sequence: string | null;
+  next_sequence_send: string;
+};
 
 @Injectable()
 export class ChannelService {
@@ -118,6 +130,57 @@ export class ChannelService {
   private getChannelIdFromMatchedTokenName(tokenName: string, baseToken: AuthToken): string {
     const channelId = getChannelIdByTokenName(tokenName, baseToken, CHANNEL_TOKEN_PREFIX);
     return channelId ? `${CHANNEL_ID_PREFIX}-${channelId}` : `${CHANNEL_ID_PREFIX}-`;
+  }
+
+  private async findChannelUtxo(channelTokenUnit: string) {
+    const deploymentConfig = this.configService.get('deployment');
+    return this.lucidService.findUtxoAtWithUnit(
+      deploymentConfig.validators.spendChannel.address,
+      channelTokenUnit,
+    );
+  }
+
+  async getChannelHealth(channelId: string, expectedPortId = 'transfer'): Promise<CardanoChannelHealthResponse> {
+    if (!channelId?.trim()) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "channel_id" must be provided');
+    }
+
+    const normalizedChannelId = channelId.startsWith(`${CHANNEL_ID_PREFIX}-`)
+      ? channelId.slice(`${CHANNEL_ID_PREFIX}-`.length)
+      : channelId;
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(normalizedChannelId));
+    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
+    const utxo = await this.findChannelUtxo(channelTokenUnit);
+    const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    const portId = convertHex2String(channelDatumDecoded.port);
+
+    if (expectedPortId && portId !== expectedPortId) {
+      throw new GrpcInvalidArgumentException(
+        `Invalid argument: channel ${CHANNEL_ID_PREFIX}-${normalizedChannelId} belongs to port ${portId}, not ${expectedPortId}`,
+      );
+    }
+
+    const pendingSequences = Array.from(channelDatumDecoded.state.packet_commitment.keys()).sort((left, right) =>
+      left === right ? 0 : left < right ? -1 : 1,
+    );
+    const isOrdered = channelDatumDecoded.state.channel.ordering === 'Ordered';
+    const status = isOrdered && pendingSequences.length > 0 ? 'blocked' : 'available';
+    const earliestPendingPacketSequence = pendingSequences[0]?.toString() ?? null;
+
+    return {
+      port_id: portId,
+      channel_id: `${CHANNEL_ID_PREFIX}-${normalizedChannelId}`,
+      state: channelDatumDecoded.state.channel.state,
+      ordering: channelDatumDecoded.state.channel.ordering,
+      status,
+      reason:
+        status === 'blocked'
+          ? `Ordered Cardano channel ${portId}/${CHANNEL_ID_PREFIX}-${normalizedChannelId} has ${pendingSequences.length} pending packet commitment(s); earliest sequence ${earliestPendingPacketSequence} must be received, acknowledged, or timed out before later packets can progress.`
+          : null,
+      pending_packet_commitment_count: pendingSequences.length.toString(),
+      earliest_pending_packet_sequence: earliestPendingPacketSequence,
+      next_sequence_send: channelDatumDecoded.state.next_sequence_send.toString(),
+    };
   }
 
   async queryChannels(request: QueryChannelsRequest): Promise<QueryChannelsResponse> {
@@ -226,7 +289,7 @@ export class ChannelService {
       const proofContext = await this.getProofContext('queryChannel', options.queryHeight);
       const utxo = proofContext.historical
         ? await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(channelTokenUnit, proofContext.proofHeight)
-        : await this.lucidService.findUtxoByUnit(channelTokenUnit);
+        : await this.findChannelUtxo(channelTokenUnit);
       const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
 
       if (!proofContext.historical) {
@@ -238,7 +301,6 @@ export class ChannelService {
       const portId = convertHex2String(channelDatumDecoded.port || 'transfer');
       const ibcPath = `channelEnds/ports/${portId}/channels/channel-${channelId}`;
       const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
-
       let channelProof: Buffer;
       try {
         const existenceProof = tree.generateProof(ibcPath);

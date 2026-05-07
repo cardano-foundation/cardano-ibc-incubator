@@ -384,6 +384,14 @@ export class ApiController {
     );
   }
 
+  @Get('cardano/channels/:channelId/health')
+  async getCardanoChannelHealth(
+    @Param('channelId') channelId: string,
+    @Query('port_id') portId = 'transfer',
+  ) {
+    return this.channelService.getChannelHealth(channelId, portId);
+  }
+
   @Get('cardano/tx/:txHash/packet-events')
   async getCardanoTxPacketEvents(@Param('txHash') txHash: string) {
     return this.queryService.queryPacketEventsByTxHash(txHash);
