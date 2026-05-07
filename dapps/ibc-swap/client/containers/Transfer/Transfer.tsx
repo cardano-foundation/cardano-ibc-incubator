@@ -44,7 +44,7 @@ import { useSafeCardanoAddress } from '@/hooks/useSafeCardanoAddress';
 import SwapContext from '@/contexts/SwapContext';
 import BigNumber from 'bignumber.js';
 import { CARDANO_CHAIN_ID } from '@/configs/runtime';
-import { signAndSubmitCardanoTxWithCip30 } from '@/utils/cardanoWalletTx';
+import { signAndSubmitCardanoTxWithMeshWallet } from '@/utils/cardanoWalletTx';
 import { getCardanoWalletErrorMessage } from '@/utils/cardanoWalletStatus';
 import {
   logCardanoWalletDebug,
@@ -803,8 +803,9 @@ const Transfer = () => {
           : undefined,
     });
     try {
-      const txHash = await signAndSubmitCardanoTxWithCip30(
+      const txHash = await signAndSubmitCardanoTxWithMeshWallet(
         preparedEstData.msgs[0],
+        cardanoWallet,
         connectedCardanoWalletName,
       );
       if (txHash) {
