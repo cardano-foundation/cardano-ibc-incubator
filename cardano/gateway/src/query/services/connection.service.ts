@@ -6,6 +6,8 @@ import { KupoService } from '../../shared/modules/kupo/kupo.service';
 
 import { CONNECTION_ID_PREFIX, CONNECTION_TOKEN_PREFIX, STATE_MAPPING_CONNECTION } from '../../constant';
 import {
+  QueryClientConnectionsRequest,
+  QueryClientConnectionsResponse,
   QueryConnectionRequest,
   QueryConnectionResponse,
   QueryConnectionsRequest,
@@ -86,7 +88,8 @@ export class ConnectionService {
 
   private async getProofContext(context: string, requestedHeight?: bigint) {
     const lightClientMode =
-      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril';
+      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
+      'stake-weighted-stability';
 
     return resolveProofContextForQuery({
       logger: this.logger,
@@ -98,6 +101,14 @@ export class ConnectionService {
       requestedHeight,
       lightClientMode,
     });
+  }
+
+  private async findConnectionUtxo(connectionTokenUnit: string) {
+    const deploymentConfig = this.configService.get('deployment');
+    return this.lucidService.findUtxoAtWithUnit(
+      deploymentConfig.validators.spendConnection.address,
+      connectionTokenUnit,
+    );
   }
 
   async queryConnections(request: QueryConnectionsRequest): Promise<QueryConnectionsResponse> {
@@ -199,6 +210,23 @@ export class ConnectionService {
     return response;
   }
 
+  async queryClientConnections(request: QueryClientConnectionsRequest): Promise<QueryClientConnectionsResponse> {
+    if (!request.client_id) {
+      throw new GrpcInvalidArgumentException('Invalid argument: "client_id" must be provided');
+    }
+
+    const response = await this.queryConnections({ pagination: undefined } as QueryConnectionsRequest);
+    const connectionPaths = (response.connections || [])
+      .filter((connection) => connection.client_id === request.client_id)
+      .map((connection) => connection.id);
+
+    return {
+      connection_paths: connectionPaths,
+      proof: new Uint8Array(),
+      proof_height: response.height,
+    } as unknown as QueryClientConnectionsResponse;
+  }
+
   async queryConnection(
     request: QueryConnectionRequest,
     options: ProofQueryOptions = {},
@@ -223,16 +251,21 @@ export class ConnectionService {
 
       const connTokenUnit = mintConnScriptHash + connectionTokenName;
       const proofContext = await this.getProofContext('queryConnection', options.queryHeight);
+      const lookupStartedAt = Date.now();
       const utxo = proofContext.historical
         ? await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(connTokenUnit, proofContext.proofHeight)
-        : await this.lucidService.findUtxoByUnit(connTokenUnit);
+        : await this.findConnectionUtxo(connTokenUnit);
+      this.logger.debug(
+        `[queryConnection] loaded connection UTxO ${utxo.txHash}#${utxo.outputIndex} in ${Date.now() - lookupStartedAt}ms`,
+      );
       const connDatumDecoded: ConnectionDatum = await decodeConnectionDatum(
         utxo.datum!,
         this.lucidService.LucidImporter,
       );
-
       if (!proofContext.historical) {
+        const treeAlignmentStartedAt = Date.now();
         await this.ensureTreeAligned();
+        this.logger.debug(`[queryConnection] tree alignment completed in ${Date.now() - treeAlignmentStartedAt}ms`);
       }
 
       // Generate ICS-23 proof from the IBC state tree
@@ -242,7 +275,6 @@ export class ConnectionService {
       // Even if Gateway is compromised, it cannot forge valid proofs.
       const ibcPath = `connections/${CONNECTION_ID_PREFIX}-${connectionId}`;
       const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
-
       let connectionProof: Buffer;
       try {
         const existenceProof = tree.generateProof(ibcPath);

@@ -120,6 +120,14 @@ export class ChannelService {
     return channelId ? `${CHANNEL_ID_PREFIX}-${channelId}` : `${CHANNEL_ID_PREFIX}-`;
   }
 
+  private async findChannelUtxo(channelTokenUnit: string) {
+    const deploymentConfig = this.configService.get('deployment');
+    return this.lucidService.findUtxoAtWithUnit(
+      deploymentConfig.validators.spendChannel.address,
+      channelTokenUnit,
+    );
+  }
+
   async queryChannels(request: QueryChannelsRequest): Promise<QueryChannelsResponse> {
     this.logger.log('', 'queryChannels');
     const pagination = getPaginationParams(validPagination(request.pagination));
@@ -226,7 +234,7 @@ export class ChannelService {
       const proofContext = await this.getProofContext('queryChannel', options.queryHeight);
       const utxo = proofContext.historical
         ? await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(channelTokenUnit, proofContext.proofHeight)
-        : await this.lucidService.findUtxoByUnit(channelTokenUnit);
+        : await this.findChannelUtxo(channelTokenUnit);
       const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
 
       if (!proofContext.historical) {
@@ -238,7 +246,6 @@ export class ChannelService {
       const portId = convertHex2String(channelDatumDecoded.port || 'transfer');
       const ibcPath = `channelEnds/ports/${portId}/channels/channel-${channelId}`;
       const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
-
       let channelProof: Buffer;
       try {
         const existenceProof = tree.generateProof(ibcPath);

@@ -284,7 +284,8 @@ export class QueryService {
 
   private async getProofContext(context: string, requestedHeight?: bigint) {
     const lightClientMode =
-      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril';
+      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
+      'stake-weighted-stability';
 
     return resolveProofContextForQuery({
       logger: this.logger,
@@ -679,9 +680,8 @@ export class QueryService {
    * Note on heights:
    * - In canonical IBC/Cosmos gRPC, "query height" (state snapshot height) is passed via gRPC metadata
    *   (commonly `x-cosmos-block-height`), not as a request field.
-   * - The Gateway currently serves proofs from its latest aligned in-memory tree. Until historical
-   *   snapshots are implemented, callers should treat this as "latest only" even if they have their
-   *   own notion of query height.
+   * - When a query height is provided, the Gateway serves the state and proof from the cached tree
+   *   whose root matches the HostState visible at or before that Cardano block height.
    */
   async queryClientState(
     request: QueryClientStateRequest,
@@ -690,10 +690,14 @@ export class QueryService {
     this.logger.log(request.client_id, 'queryClientState');
     const { client_id: clientId } = validQueryClientStateParam(request);
 
+    const startedAt = Date.now();
     const proofContext = await this.getProofContext('queryClientState', options.queryHeight);
     const [clientDatum, spendClientUTXO] = await this.getClientDatum(
       clientId,
       proofContext.historical ? proofContext.proofHeight : undefined,
+    );
+    this.logger.debug(
+      `[queryClientState] loaded client UTxO ${spendClientUTXO.txHash}#${spendClientUTXO.outputIndex} in ${Date.now() - startedAt}ms`,
     );
     const clientStateTendermint = normalizeClientStateFromDatum(clientDatum.state.clientState);
 
@@ -708,7 +712,9 @@ export class QueryService {
     const ibcPath = `clients/07-tendermint-${clientId}/clientState`;
 
     if (!proofContext.historical) {
+      const treeAlignmentStartedAt = Date.now();
       await this.ensureTreeAligned();
+      this.logger.debug(`[queryClientState] tree alignment completed in ${Date.now() - treeAlignmentStartedAt}ms`);
     }
 
     const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
@@ -760,7 +766,7 @@ export class QueryService {
     );
     const { client_id: clientId } = validQueryConsensusStateParam(request);
     const proofContext = await this.getProofContext('queryConsensusState', options.queryHeight);
-    const [clientDatum, spendClientUTXO] = await this.getClientDatum(
+    const [clientDatum] = await this.getClientDatum(
       clientId,
       proofContext.historical ? proofContext.proofHeight : undefined,
     );
@@ -783,7 +789,6 @@ export class QueryService {
       type_url: '/ibc.lightclients.tendermint.v1.ConsensusState',
       value: ConsensusStateTendermint.encode(consensusStateTendermint).finish(),
     };
-
     // Generate ICS-23 proof from the IBC state tree.
     const ibcPath = `clients/07-tendermint-${clientId}/consensusStates/${heightReq}`;
 
