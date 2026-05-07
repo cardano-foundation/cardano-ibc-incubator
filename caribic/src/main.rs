@@ -1,3 +1,5 @@
+#![deny(dead_code, unused_imports, unused_variables)]
+
 use std::path::Path;
 use std::path::PathBuf;
 
