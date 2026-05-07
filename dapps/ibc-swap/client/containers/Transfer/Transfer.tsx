@@ -465,7 +465,6 @@ const Transfer = () => {
         'no-forward-route': `No canonical transfer route exists from ${fromChainName} to ${toChainName}.`,
         'ambiguous-forward-route': `Multiple forward IBC routes exist from ${fromChainName} to ${toChainName}; refusing to guess.`,
         'ambiguous-forward-hop': `A transfer hop on the route from ${fromChainName} to ${toChainName} has multiple open channels; refusing to guess.`,
-        'blocked-channel': `A required IBC channel from ${fromChainName} to ${toChainName} is blocked by pending packets. Wait for the relayer to clear or time out the earlier packet, then retry.`,
         'invalid-request': 'Transfer route planning request was invalid.',
       };
       const message =

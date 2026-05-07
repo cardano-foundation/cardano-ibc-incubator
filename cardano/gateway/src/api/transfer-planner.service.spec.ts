@@ -200,7 +200,7 @@ describe('TransferPlannerService', () => {
     });
   });
 
-  it('fails with a blocked-channel reason when the Cardano outbound channel has pending ordered packets', async () => {
+  it('keeps the canonical route when the Cardano outbound channel has pending ordered packets', async () => {
     mockPlannerNetwork({
       entrypointChannels: [
         { channelId: 'channel-0', counterpartyChannelId: 'channel-9', destChainId: 'cardano-devnet' },
@@ -224,11 +224,17 @@ describe('TransferPlannerService', () => {
         toChainId: 'localosmosis',
         tokenDenom: 'lovelace',
       }),
-    ).resolves.toMatchObject({
-      foundRoute: false,
-      mode: null,
-      failureCode: 'blocked-channel',
-      failureMessage: expect.stringContaining('Cardano channel transfer/channel-9 has 1 pending packet'),
+    ).resolves.toEqual({
+      foundRoute: true,
+      mode: 'native-forward',
+      chains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
+      routes: ['transfer/channel-9', 'transfer/channel-1'],
+      tokenTrace: {
+        kind: 'native',
+        path: '',
+        baseDenom: 'lovelace',
+        fullDenom: 'lovelace',
+      },
     });
   });
 

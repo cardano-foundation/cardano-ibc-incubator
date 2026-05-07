@@ -8,7 +8,6 @@ const QUERY_ALL_CHANNELS_URL =
   `${QUERY_CHANNELS_PREFIX_URL}?pagination.count_total=true&pagination.limit=10000`;
 const QUERY_CARDANO_CHANNELS_URL =
   '/api/channels?offset=0&limit=10000&countTotal=true&reverse=false';
-const QUERY_CARDANO_CHANNEL_HEALTH_PREFIX_URL = '/api/cardano/channels';
 const QUERY_ALL_DENOMS_URL = '/ibc/apps/transfer/v1/denoms';
 const QUERY_PACKET_FORWARD_PARAMS_URL = '/ibc/apps/packetforward/v1/params';
 const QUERY_CONSENSUS_STATES_PREFIX_URL =
@@ -56,7 +55,6 @@ export type TransferPlanResponse = {
     | 'source-chain-unavailable'
     | 'destination-chain-unavailable'
     | 'no-outbound-channels'
-    | 'blocked-channel'
     | 'no-route-found';
   failureMessage?: string;
 };
@@ -135,15 +133,6 @@ type QueryChannelResponse = {
   };
 };
 
-type CardanoChannelHealthResponse = {
-  port_id: string;
-  channel_id: string;
-  status: 'available' | 'blocked';
-  reason?: string | null;
-  pending_packet_commitment_count?: string;
-  earliest_pending_packet_sequence?: string | null;
-};
-
 type QueryClientStateResponse = {
   identified_client_state?: {
     client_id?: string;
@@ -190,7 +179,6 @@ type PlannerMetadata = {
   adjacency: Record<string, Record<string, OpenChannel[]>>;
   channelByRoute: Record<string, OpenChannel>;
   denomTracesByChain: Record<string, IbcDenomTraceMap>;
-  routeIssues: Record<string, string[]>;
 };
 
 type AvailableChannel = {
@@ -309,7 +297,6 @@ export function createPlannerClient(
         [ENTRYPOINT_CHAIN_ID]: entrypointDenomTraces,
         [LOCAL_OSMOSIS_CHAIN_ID]: counterpartyDenomTraces,
       },
-      routeIssues: channels.routeIssues,
     };
   };
 
@@ -358,7 +345,7 @@ export function createPlannerClient(
         const tokenTrace = await resolveTransferTokenTrace(
           fromChainId,
           tokenDenom,
-          { adjacency: {}, channelByRoute: {}, denomTracesByChain: {}, routeIssues: {} },
+          { adjacency: {}, channelByRoute: {}, denomTracesByChain: {} },
           resolvedConfig,
         );
 
@@ -752,7 +739,7 @@ function resolveUniqueForwardRoute(
       chains: [fromChainId],
       routes: [],
       failure: {
-        code: issueSummary.hasExplicitRouteIssue ? 'blocked-channel' : 'no-forward-route',
+        code: 'no-forward-route',
         message: issueSummary.message
           ? `No canonical transfer route exists from ${fromChainId} to ${toChainId}. ${issueSummary.message}`
           : `No canonical transfer route exists from ${fromChainId} to ${toChainId}.`,
@@ -799,7 +786,7 @@ function describeCanonicalRouteIssues(
   fromChainId: string,
   toChainId: string,
   metadata: PlannerMetadata,
-): { message: string | null; hasExplicitRouteIssue: boolean } {
+): { message: string | null } {
   const hops =
     fromChainId === ENTRYPOINT_CHAIN_ID || toChainId === ENTRYPOINT_CHAIN_ID
       ? [[fromChainId, toChainId]]
@@ -809,16 +796,7 @@ function describeCanonicalRouteIssues(
         ];
 
   const descriptions: string[] = [];
-  let hasExplicitRouteIssue = false;
   for (const [from, to] of hops) {
-    const issueKey = routeIssueKey(from, to);
-    const explicitIssues = metadata.routeIssues[issueKey] || [];
-    if (explicitIssues.length > 0) {
-      hasExplicitRouteIssue = true;
-      descriptions.push(`${from} -> ${to} (${dedupe(explicitIssues).join('; ')})`);
-      continue;
-    }
-
     const outbound = metadata.adjacency[from] || {};
     if ((outbound[to] || []).length > 0) {
       continue;
@@ -837,7 +815,6 @@ function describeCanonicalRouteIssues(
       descriptions.length > 0
         ? `Missing live IBC transfer channels for: ${descriptions.join('; ')}.`
         : null,
-    hasExplicitRouteIssue,
   };
 }
 
@@ -882,10 +859,6 @@ function applyPreferredChannels(
   }
 
   return filtered;
-}
-
-function dedupe(values: string[]): string[] {
-  return Array.from(new Set(values));
 }
 
 function parseHops(path: string): Array<{ port: string; channel: string }> {
@@ -959,7 +932,7 @@ async function fetchAllChannels(
     cardanoChainId?: string;
     cardanoRestEndpoint?: string;
   } = {},
-): Promise<Pick<PlannerMetadata, 'adjacency' | 'channelByRoute' | 'routeIssues'>> {
+): Promise<Pick<PlannerMetadata, 'adjacency' | 'channelByRoute'>> {
   const openChannels: OpenChannel[] = [];
   let nextKey: string | undefined;
 
@@ -1009,17 +982,8 @@ async function fetchAllChannels(
     options.cardanoRestEndpoint && options.cardanoChainId
       ? await fetchCardanoOpenChannels(options.cardanoRestEndpoint, fetchImpl)
       : undefined;
-  const cardanoChannelHealth =
-    options.cardanoRestEndpoint && cardanoChannels
-      ? await fetchCardanoChannelHealth(
-          options.cardanoRestEndpoint,
-          cardanoChannels,
-          fetchImpl,
-        )
-      : {};
   const adjacency: PlannerMetadata['adjacency'] = {};
   const channelByRoute: PlannerMetadata['channelByRoute'] = {};
-  const routeIssues: PlannerMetadata['routeIssues'] = {};
 
   const insert = (channel: OpenChannel) => {
     adjacency[channel.srcChain] ||= {};
@@ -1027,12 +991,6 @@ async function fetchAllChannels(
     adjacency[channel.srcChain][channel.destChain].push(channel);
     channelByRoute[`${channel.srcChain}_${channel.srcPort}_${channel.srcChannel}`] =
       channel;
-  };
-
-  const addRouteIssue = (fromChainId: string, toChainId: string, issue: string) => {
-    const key = routeIssueKey(fromChainId, toChainId);
-    routeIssues[key] ||= [];
-    routeIssues[key].push(issue);
   };
 
   for (const channel of openChannels) {
@@ -1064,23 +1022,10 @@ async function fetchAllChannels(
       destChannel: channel.srcChannel,
     };
 
-    if (isEntrypointToCardano && reciprocalCardanoChannel && options.cardanoChainId) {
-      const health = cardanoChannelHealth[channelKey(reciprocalCardanoChannel.port_id, reciprocalCardanoChannel.channel_id)];
-      if (health?.status === 'blocked') {
-        addRouteIssue(
-          options.cardanoChainId,
-          ENTRYPOINT_CHAIN_ID,
-          health.reason ||
-            `Cardano channel ${reciprocalCardanoChannel.port_id}/${reciprocalCardanoChannel.channel_id} is blocked.`,
-        );
-        continue;
-      }
-    }
-
     insert(reverseChannel);
   }
 
-  return { adjacency, channelByRoute, routeIssues };
+  return { adjacency, channelByRoute };
 }
 
 async function isUsableChannelClient(
@@ -1207,35 +1152,6 @@ async function fetchCardanoOpenChannels(
   );
 }
 
-async function fetchCardanoChannelHealth(
-  restUrl: string,
-  channels: QueryChannelResponse[],
-  fetchImpl: typeof fetch,
-): Promise<Record<string, CardanoChannelHealthResponse>> {
-  const entries = await Promise.all(
-    channels.map(async (channel) => {
-      try {
-        const health = await fetchJson<CardanoChannelHealthResponse>(
-          `${trimTrailingSlash(restUrl)}${QUERY_CARDANO_CHANNEL_HEALTH_PREFIX_URL}/${encodeURIComponent(
-            channel.channel_id,
-          )}/health?port_id=${encodeURIComponent(channel.port_id)}`,
-          fetchImpl,
-        );
-        return [channelKey(channel.port_id, channel.channel_id), health] as const;
-      } catch {
-        return [channelKey(channel.port_id, channel.channel_id), null] as const;
-      }
-    }),
-  );
-
-  return entries.reduce<Record<string, CardanoChannelHealthResponse>>((acc, [key, health]) => {
-    if (health) {
-      acc[key] = health;
-    }
-    return acc;
-  }, {});
-}
-
 function findReciprocalCardanoChannel(
   entrypointChannel: OpenChannel,
   cardanoChannels: QueryChannelResponse[],
@@ -1247,14 +1163,6 @@ function findReciprocalCardanoChannel(
       cardanoChannel.counterparty.port_id === entrypointChannel.srcPort &&
       cardanoChannel.counterparty.channel_id === entrypointChannel.srcChannel,
   );
-}
-
-function channelKey(portId: string, channelId: string): string {
-  return `${portId}/${channelId}`;
-}
-
-function routeIssueKey(fromChainId: string, toChainId: string): string {
-  return `${fromChainId}->${toChainId}`;
 }
 
 async function fetchClientStateFromChannel(
