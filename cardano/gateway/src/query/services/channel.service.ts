@@ -38,7 +38,7 @@ import { resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from '.
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ProofQueryOptions } from '../helpers/query-height';
 
-export type CardanoChannelHealthResponse = {
+type CardanoChannelHealthResponse = {
   port_id: string;
   channel_id: string;
   state: string;
