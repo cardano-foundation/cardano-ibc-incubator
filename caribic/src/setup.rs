@@ -1237,7 +1237,7 @@ pub fn seed_cardano_devnet(
             "42",
         ];
         let address_output = cardano_cli
-            .exec_output(build_address_args.as_slice())
+            .exec_output_allow_failure(build_address_args.as_slice())
             .map_err(|error| format!("Failed to build faucet address: {}", error))?;
         if !address_output.status.success() {
             return Err(format!(
@@ -1273,7 +1273,7 @@ pub fn seed_cardano_devnet(
         let mut last_seed_error: Option<String> = None;
         for submit_attempt in 1..=6 {
             let faucet_txin_output = cardano_cli
-                .exec_output(faucet_txin_args.as_slice())
+                .exec_output_allow_failure(faucet_txin_args.as_slice())
                 .map_err(|error| format!("Failed to get faucet txin: {}", error))?;
 
             if !faucet_txin_output.status.success() {
@@ -1319,7 +1319,7 @@ pub fn seed_cardano_devnet(
             ];
 
             let build_tx_output = cardano_cli
-                .exec_output(build_tx_args.as_slice())
+                .exec_output_allow_failure(build_tx_args.as_slice())
                 .map_err(|error| format!("Failed to build seed transaction: {}", error))?;
             if !build_tx_output.status.success() {
                 let stderr = String::from_utf8_lossy(&build_tx_output.stderr)
@@ -1349,7 +1349,7 @@ pub fn seed_cardano_devnet(
             ];
 
             let sign_tx_output = cardano_cli
-                .exec_output(sign_tx_args.as_slice())
+                .exec_output_allow_failure(sign_tx_args.as_slice())
                 .map_err(|error| format!("Failed to sign seed transaction: {}", error))?;
             if !sign_tx_output.status.success() {
                 return Err(format!(
@@ -1361,7 +1361,7 @@ pub fn seed_cardano_devnet(
             }
 
             let tx_id_output = cardano_cli
-                .exec_output(
+                .exec_output_allow_failure(
                     ["conway", "transaction", "txid", "--tx-file", signed_tx_file].as_slice(),
                 )
                 .map_err(|error| format!("Failed to compute seed tx id: {}", error))?;
@@ -1408,7 +1408,7 @@ pub fn seed_cardano_devnet(
             );
 
             let submit_tx_output = cardano_cli
-                .exec_output(submit_tx_args.as_slice())
+                .exec_output_allow_failure(submit_tx_args.as_slice())
                 .map_err(|error| format!("Failed to submit seed transaction: {}", error))?;
 
             if !submit_tx_output.status.success() {
@@ -1426,7 +1426,7 @@ pub fn seed_cardano_devnet(
 
             for poll_attempt in 1..=4 {
                 let utxo_output = cardano_cli
-                    .exec_output(query_utxo_args.as_slice())
+                    .exec_output_allow_failure(query_utxo_args.as_slice())
                     .map_err(|error| format!("Failed to query settlement UTxO: {}", error))?;
 
                 if utxo_output.status.success() {
