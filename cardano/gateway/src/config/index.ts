@@ -69,6 +69,7 @@ interface Config {
   kupoEndpoint: string;
   kupoApiKey?: string;
   yaciStoreEndpoint: string;
+  cardanoRestEndpoint?: string;
   entrypointRestEndpoint: string;
   localOsmosisRestEndpoint: string;
   swapRouterAddress: string;
@@ -105,6 +106,7 @@ export default (): Partial<Config> => {
     kupoEndpoint: process.env.KUPO_ENDPOINT,
     kupoApiKey: process.env.KUPO_API_KEY,
     yaciStoreEndpoint: process.env.YACI_STORE_ENDPOINT,
+    cardanoRestEndpoint: process.env.CARDANO_REST_ENDPOINT,
     entrypointRestEndpoint: process.env.ENTRYPOINT_REST_ENDPOINT,
     localOsmosisRestEndpoint: process.env.LOCAL_OSMOSIS_REST_ENDPOINT,
     swapRouterAddress: process.env.SWAP_ROUTER_ADDRESS || '',

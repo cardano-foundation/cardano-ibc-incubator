@@ -101,6 +101,7 @@ export interface TransferPlanResponse {
     | 'source-chain-unavailable'
     | 'destination-chain-unavailable'
     | 'no-outbound-channels'
+    | 'blocked-channel'
     | 'no-route-found';
   failureMessage?: string;
 }

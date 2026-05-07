@@ -32,6 +32,9 @@ export class PlannerClientService {
     return {
       cardanoChainId:
         this.configService.get<string>('cardanoChainId') || 'cardano-devnet',
+      cardanoRestEndpoint:
+        this.configService.get<string>('cardanoRestEndpoint') ||
+        process.env.CARDANO_REST_ENDPOINT,
       entrypointRestEndpoint: this.requireConfig(
         'entrypointRestEndpoint',
         'ENTRYPOINT_REST_ENDPOINT',
