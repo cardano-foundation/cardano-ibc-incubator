@@ -47,6 +47,13 @@ export type TransferPacketHop = {
   writeAcknowledgement?: TransferObservedEvent;
   acknowledge?: TransferObservedEvent;
   timeout?: TransferObservedEvent;
+  blockedByPriorPackets?: {
+    channelId: string;
+    pendingPacketCommitmentCount: string;
+    earliestPendingPacketSequence: string | null;
+    pendingPacketSequencesBeforeCurrent: string[];
+    reason: string;
+  };
 };
 
 export type TransferStatusResponse = {

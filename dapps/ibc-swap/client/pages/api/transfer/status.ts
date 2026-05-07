@@ -50,6 +50,15 @@ type CardanoPacketEvent = {
   };
 };
 
+type CardanoChannelHealthResponse = {
+  channel_id?: string;
+  status?: 'available' | 'blocked';
+  reason?: string | null;
+  pending_packet_commitment_count?: string;
+  earliest_pending_packet_sequence?: string | null;
+  pending_packet_commitment_sequences?: string[];
+};
+
 const packetAttrKeys = {
   sequence: 'packet_sequence',
   sourcePort: 'packet_src_port',
@@ -334,6 +343,74 @@ async function queryCardanoPacketEvent(
   return findPacketEvent(events, eventType, packet);
 }
 
+async function queryCardanoChannelHealth(
+  packet: IbcPacketSummary,
+): Promise<CardanoChannelHealthResponse | null> {
+  const url = new URL(
+    `api/cardano/channels/${encodeURIComponent(packet.sourceChannel)}/health`,
+    normalizeBaseUrl(GATEWAY_TX_BUILDER_ENDPOINT),
+  );
+  url.searchParams.set('port_id', packet.sourcePort);
+
+  return fetchJsonOrNull<CardanoChannelHealthResponse>(url);
+}
+
+function sequenceToBigInt(sequence: string | null | undefined): bigint | null {
+  if (!sequence || !/^\d+$/.test(sequence)) return null;
+  return BigInt(sequence);
+}
+
+async function queryCardanoOrderedChannelBlockage(
+  chain: RuntimeChainConfig,
+  packet: IbcPacketSummary,
+): Promise<TransferPacketHop['blockedByPriorPackets'] | undefined> {
+  if (!isCardanoChain(chain)) return undefined;
+
+  const health = await queryCardanoChannelHealth(packet).catch((error) => {
+    console.warn('Unable to query Cardano channel health for transfer status', {
+      channelId: packet.sourceChannel,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  });
+  if (!health || health.status !== 'blocked') return undefined;
+
+  const currentSequence = sequenceToBigInt(packet.sequence);
+  const priorSequences = (health.pending_packet_commitment_sequences || [])
+    .filter((sequence) => {
+      const parsedSequence = sequenceToBigInt(sequence);
+      return (
+        parsedSequence !== null &&
+        currentSequence !== null &&
+        parsedSequence < currentSequence
+      );
+    })
+    .sort((left, right) => {
+      const leftSequence = sequenceToBigInt(left);
+      const rightSequence = sequenceToBigInt(right);
+      if (leftSequence === null || rightSequence === null) return 0;
+      return leftSequence === rightSequence
+        ? 0
+        : leftSequence < rightSequence
+          ? -1
+          : 1;
+    });
+
+  if (priorSequences.length === 0) return undefined;
+
+  return {
+    channelId: health.channel_id || packet.sourceChannel,
+    pendingPacketCommitmentCount:
+      health.pending_packet_commitment_count || priorSequences.length.toString(),
+    earliestPendingPacketSequence:
+      health.earliest_pending_packet_sequence || priorSequences[0] || null,
+    pendingPacketSequencesBeforeCurrent: priorSequences,
+    reason:
+      health.reason ||
+      `Ordered Cardano channel ${packet.sourcePort}/${packet.sourceChannel} is blocked by earlier pending packet(s) ${priorSequences.join(', ')}.`,
+  };
+}
+
 function cosmosTxEventsFromResponse(
   chainId: string,
   response: JsonRecord,
@@ -551,6 +628,7 @@ async function buildTransferStatus(params: {
 
   const packets: TransferPacketHop[] = [];
   let status: TransferLifecyclePhase = 'send_packet_indexed';
+  let statusMessage: string | undefined;
   let currentSend: TransferObservedEvent | null = firstSend;
   let currentPacket = firstSend.packet;
 
@@ -588,6 +666,16 @@ async function buildTransferStatus(params: {
       currentPacket,
     );
     if (!recv) {
+      const blockage = await queryCardanoOrderedChannelBlockage(
+        hopSourceChain,
+        currentPacket,
+      );
+      if (blockage) {
+        hop.blockedByPriorPackets = blockage;
+        statusMessage = `IBC send_packet ${currentPacket.sourceChannel}/${currentPacket.sequence} is indexed, but the ordered Cardano channel is blocked by earlier pending packet(s) ${blockage.pendingPacketSequencesBeforeCurrent.join(
+          ', ',
+        )}. The relayer must receive or time out those packet(s) before this packet can reach ${hopDestinationChain.prettyName || hopDestinationChain.id}.`;
+      }
       packets.push(hop);
       status = 'send_packet_indexed';
       break;
@@ -637,7 +725,7 @@ async function buildTransferStatus(params: {
 
   return {
     status,
-    message: phaseMessage(status, currentPacket),
+    message: statusMessage || phaseMessage(status, currentPacket),
     sourceTxHash: params.sourceTxHash,
     sourceChainId: params.sourceChainId,
     destinationChainId: params.destinationChainId,

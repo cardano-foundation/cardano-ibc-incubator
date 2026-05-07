@@ -56,10 +56,10 @@ const formatElapsedTime = (seconds: number): string => {
 const getCardanoExplorerTxUrl = (txHash: string): string | undefined => {
   if (!txHash) return undefined;
   if (CARDANO_CHAIN_ID === PREPROD_CARDANO_CHAIN_ID) {
-    return `https://preprod.cardanoscan.io/transaction/${txHash}`;
+    return `https://preprod.cexplorer.io/tx/${txHash}`;
   }
   if (CARDANO_CHAIN_ID === MAINNET_CARDANO_CHAIN_ID) {
-    return `https://cardanoscan.io/transaction/${txHash}`;
+    return `https://cexplorer.io/tx/${txHash}`;
   }
   return undefined;
 };
@@ -106,6 +106,9 @@ const getEventTxLabel = (txHash?: string): string =>
   txHash ? ` in tx ${getShortTxHash(txHash)}` : '';
 
 // Convert packet milestones into stable copy for the compact per-hop progress UI.
+const formatPacketSequenceList = (sequences: string[]): string =>
+  sequences.length > 0 ? sequences.join(', ') : 'unknown earlier packets';
+
 const buildRouteHopProgress = (params: {
   index: number;
   sourceChainId: string;
@@ -133,6 +136,8 @@ const buildRouteHopProgress = (params: {
   else if (packetHop?.writeAcknowledgement)
     statusLabel = 'Returning acknowledgement';
   else if (packetHop?.recv) statusLabel = `Received on ${destinationLabel}`;
+  else if (packetHop?.blockedByPriorPackets)
+    statusLabel = 'Blocked by earlier packet(s)';
   else if (packetHop?.send) statusLabel = `Relaying to ${destinationLabel}`;
   else if (index === 0 && sourceTxHash) statusLabel = 'Indexing source packet';
   else if (previousPacketHop?.recv)
@@ -160,6 +165,11 @@ const buildRouteHopProgress = (params: {
     receiveDescription = `${destinationLabel} observed recv_packet ${packetLabel}${getEventTxLabel(
       packetHop.recv.txHash,
     )}.`;
+  } else if (packetHop?.blockedByPriorPackets) {
+    const blockedSequences = formatPacketSequenceList(
+      packetHop.blockedByPriorPackets.pendingPacketSequencesBeforeCurrent,
+    );
+    receiveDescription = `Ordered channel ${packetHop.blockedByPriorPackets.channelId} is blocked by earlier pending packet(s) ${blockedSequences}. The relayer must receive or time out those packet(s) before packet ${packetLabel} can reach ${destinationLabel}.`;
   } else if (packetHop?.send) {
     receiveDescription = `Waiting for a relayer to deliver packet ${packetLabel} to ${destinationLabel}.`;
   }
