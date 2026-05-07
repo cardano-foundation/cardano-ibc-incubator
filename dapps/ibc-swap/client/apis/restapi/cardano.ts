@@ -39,7 +39,8 @@ interface TransferParams {
 
 interface UnsignedTx {
   type_url: string;
-  value: any;
+  unsignedTxCborHex?: string;
+  value?: any;
 }
 
 interface TransferResponseData {

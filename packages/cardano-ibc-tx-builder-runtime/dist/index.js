@@ -795,13 +795,12 @@ function createTxBuilderRuntime(config) {
                 setCollateral: TRANSACTION_SET_COLLATERAL,
             });
             const unsignedTxCbor = completedUnsignedTx.toCBOR();
-            const unsignedTxBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
             const feeLovelace = completedUnsignedTx.toTransaction().body().fee().toString();
             return {
                 result: 0,
                 unsignedTx: {
                     type_url: '',
-                    value: Buffer.from(unsignedTxBytes).toString('base64'),
+                    unsignedTxCborHex: unsignedTxCbor,
                 },
                 feeLovelace,
             };

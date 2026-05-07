@@ -25,6 +25,7 @@ import {
 
 import {
   getCardanoWalletUtxosForBuilder,
+  requireUnsignedCardanoTxCborHex,
   unsignedTxTransferFromCosmos,
   unsignedTxTransferFromCardano,
 } from '@/utils/buildTransferTx';
@@ -157,27 +158,6 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
   }
 
   return fallback;
-};
-
-const decodeUnsignedCardanoTx = (base64Value: unknown): string => {
-  if (typeof base64Value !== 'string' || !base64Value.trim()) {
-    throw new Error(
-      'Cardano transfer builder returned an unsigned tx with an empty payload.',
-    );
-  }
-
-  const unsignedTx = Buffer.from(base64Value, 'base64').toString('utf8').trim();
-  if (
-    !unsignedTx ||
-    unsignedTx.length % 2 !== 0 ||
-    /[^0-9a-f]/i.test(unsignedTx)
-  ) {
-    throw new Error(
-      'Cardano transfer builder returned an unsigned tx payload that is not hex-encoded transaction CBOR.',
-    );
-  }
-
-  return unsignedTx;
 };
 
 const getCardanoBuildErrorMessage = (error: unknown): string => {
@@ -710,7 +690,9 @@ const Transfer = () => {
           { amount: transferBaseAmount, denom: selectedToken.tokenId! },
           walletUtxos,
         );
-        const unsignedTx = decodeUnsignedCardanoTx(msg[0].value);
+        const unsignedTx = requireUnsignedCardanoTxCborHex(
+          msg[0].unsignedTxCborHex,
+        );
         const estFee = msg[0].feeLovelace;
 
         logCardanoWalletDebug('transfer:prepare:success', {

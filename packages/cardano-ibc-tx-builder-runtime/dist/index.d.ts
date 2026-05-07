@@ -29,7 +29,7 @@ type LocalUnsignedTransferResponse = {
     result: number;
     unsignedTx: {
         type_url: string;
-        value: string;
+        unsignedTxCborHex: string;
     };
     feeLovelace: string;
 };

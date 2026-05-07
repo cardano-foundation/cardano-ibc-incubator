@@ -236,7 +236,7 @@ const SwapContainer = () => {
 
       let estDataResult: any;
       try {
-        const unsignedTx = Buffer.from(msg[0].value, 'base64').toString('hex');
+        const unsignedTx = msg[0].unsignedTxCborHex;
         const tx = CSL.Transaction.from_hex(unsignedTx);
         const estFee = tx.body().fee().to_str();
         estDataResult = {

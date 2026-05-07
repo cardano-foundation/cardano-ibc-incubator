@@ -23,7 +23,8 @@ interface Token {
 
 type UnsignedTxMessage = {
   typeUrl: string;
-  value: any;
+  value?: any;
+  unsignedTxCborHex?: string;
   feeLovelace?: string;
 };
 
@@ -49,9 +50,29 @@ function getTransferResponseErrorMessage(data: any): string | undefined {
   );
 }
 
+export function requireUnsignedCardanoTxCborHex(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(
+      'Cardano transfer builder returned an unsigned tx with an empty payload.',
+    );
+  }
+
+  const unsignedTxCborHex = value.trim();
+  if (
+    unsignedTxCborHex.length % 2 !== 0 ||
+    /[^0-9a-f]/i.test(unsignedTxCborHex)
+  ) {
+    throw new Error(
+      'Cardano transfer builder returned an unsigned tx payload that is not hex-encoded transaction CBOR.',
+    );
+  }
+
+  return unsignedTxCborHex;
+}
+
 function requireUnsignedTx(data: any): UnsignedTxMessage {
   const unsignedTx = data?.unsignedTx;
-  if (!unsignedTx?.value) {
+  if (!unsignedTx?.unsignedTxCborHex) {
     const responseError = getTransferResponseErrorMessage(data);
     const responseSummary =
       responseError ||
@@ -65,7 +86,9 @@ function requireUnsignedTx(data: any): UnsignedTxMessage {
 
   return {
     typeUrl: unsignedTx.type_url ?? '',
-    value: unsignedTx.value,
+    unsignedTxCborHex: requireUnsignedCardanoTxCborHex(
+      unsignedTx.unsignedTxCborHex,
+    ),
     feeLovelace:
       typeof data?.feeLovelace === 'string' ? data.feeLovelace : undefined,
   };
