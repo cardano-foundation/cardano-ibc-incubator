@@ -369,5 +369,11 @@ jobs:
           -A clippy::manual_is_multiple_of
           -A clippy::too_many_arguments
 
+      - name: Check install build warnings
+        run: >
+          cargo rustc --manifest-path caribic/Cargo.toml --locked --release
+          --bin caribic --
+          -D warnings
+
       - name: Test
         run: cargo test --manifest-path caribic/Cargo.toml --locked
