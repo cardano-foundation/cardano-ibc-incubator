@@ -1044,9 +1044,30 @@ async function computeTxValidityWindow(context: BuilderContext) {
   };
 }
 
+class AsyncMutex {
+  private tail: Promise<void> = Promise.resolve();
+
+  async runExclusive<T>(operation: () => Promise<T>): Promise<T> {
+    let release!: () => void;
+    const previous = this.tail;
+    this.tail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await previous;
+
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
+  }
+}
+
 export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
   const logger = config.logger ?? defaultLogger('txBuilderRuntime');
   let cachedContextPromise: Promise<BuilderContext> | null = null;
+  const transferBuildQueue = new AsyncMutex();
 
   const traceRegistryClient = createTraceRegistryClient({
     bridgeManifestUrl: config.bridgeManifestUrl,
@@ -1116,6 +1137,13 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
   }
 
   async function buildUnsignedTransfer(
+    body: TransferApiRequestBody,
+  ): Promise<LocalUnsignedTransferResponse> {
+    // Lucid wallet selection and IBC tree state are shared by the runtime context.
+    return transferBuildQueue.runExclusive(() => buildUnsignedTransferUnsafe(body));
+  }
+
+  async function buildUnsignedTransferUnsafe(
     body: TransferApiRequestBody,
   ): Promise<LocalUnsignedTransferResponse> {
     const context = await getContext();
