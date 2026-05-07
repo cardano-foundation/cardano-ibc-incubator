@@ -1,12 +1,12 @@
 import axios from 'axios';
 import { toast } from 'react-toastify';
-import API from './api';
 import type { CardanoAssetDenomTrace } from '@/types/cardanoTrace';
 import {
   listCardanoIbcAssetsFromRegistry,
   lookupCardanoAssetDenomTraceFromRegistry,
 } from '@/services/cardanoTraceRegistry';
 import { cardanoPlannerClient } from '@/services/cardanoPlanner';
+import API from './api';
 
 export type CardanoWalletUtxo = {
   txHash: string;
@@ -294,6 +294,18 @@ export async function lookupCardanoAssetDenomTrace(
     const errorMessage = getGatewayErrorMessage(error);
     toast.error(errorMessage, { theme: 'colored' });
     return null;
+  }
+}
+
+export async function requireCardanoAssetDenomTrace(
+  assetId: string,
+): Promise<CardanoAssetDenomTrace> {
+  try {
+    return await lookupCardanoAssetDenomTraceFromRegistry(assetId);
+  } catch (error) {
+    const errorMessage = getGatewayErrorMessage(error);
+    toast.error(errorMessage, { theme: 'colored' });
+    throw new Error(errorMessage);
   }
 }
 

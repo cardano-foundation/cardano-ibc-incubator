@@ -1,6 +1,6 @@
 /* global BigInt */
 import {
-  lookupCardanoAssetDenomTrace,
+  requireCardanoAssetDenomTrace,
   transfer,
   type CardanoWalletUtxo,
 } from '@/apis/restapi/cardano';
@@ -258,10 +258,8 @@ export async function unsignedTxTransferFromCardano(
   walletUtxos?: CardanoWalletUtxo[],
 ): Promise<UnsignedTxMessage[]> {
   const currentTimeStamp = BigInt(Date.now()) * BigInt(1000000);
-  const cardanoTokenTrace = await lookupCardanoAssetDenomTrace(token.denom);
-  const sendTokenDenom = cardanoTokenTrace?.fullDenom
-    ? cardanoTokenTrace.fullDenom
-    : token.denom;
+  const cardanoTokenTrace = await requireCardanoAssetDenomTrace(token.denom);
+  const sendTokenDenom = cardanoTokenTrace.fullDenom;
   let data: any;
   if (routes.length === 1) {
     // normal transfer

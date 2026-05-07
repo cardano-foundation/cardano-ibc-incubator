@@ -1,8 +1,11 @@
-import { transfer } from '@/apis/restapi/cardano';
-import { lookupCardanoAssetDenomTrace } from '@/apis/restapi/cardano';
+/* global BigInt */
+import {
+  requireCardanoAssetDenomTrace,
+  transfer,
+} from '@/apis/restapi/cardano';
 import { CROSSCHAIN_SWAP_ADDRESS } from '@/configs/runtime';
-import { getPublicKeyHashFromAddress } from './address';
 import { FORWARD_TIMEOUT } from '@/constants';
+import { getPublicKeyHashFromAddress } from './address';
 
 const pfmReceiver = 'pfm';
 
@@ -146,10 +149,8 @@ export async function unsignedTxSwapFromCardano({
     transferRoutes: restRoutes,
     osmosisSwapMemo,
   });
-  const cardanoTokenTrace = await lookupCardanoAssetDenomTrace(tokenIn.denom);
-  const sendTokenDenom = cardanoTokenTrace?.fullDenom
-    ? cardanoTokenTrace.fullDenom
-    : tokenIn.denom;
+  const cardanoTokenTrace = await requireCardanoAssetDenomTrace(tokenIn.denom);
+  const sendTokenDenom = cardanoTokenTrace.fullDenom;
   const data = await transfer({
     sourcePort: srcPort,
     sourceChannel: srcChannel,

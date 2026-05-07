@@ -394,6 +394,12 @@ function getVoucherPolicyId(manifest: BridgeManifest): string {
   return policyId;
 }
 
+function unresolvedVoucherTraceError(assetId: string, voucherHash: string): Error {
+  return new Error(
+    `Cardano asset ${assetId} matches the bridge voucher mint policy and CIP-67 voucher label, but denom trace ${voucherHash} could not be resolved. Refusing to treat it as a native Cardano asset.`,
+  );
+}
+
 function getKupmiosEndpoints(kupmiosUrl: string) {
   const [kupoUrl, ogmiosUrl] = kupmiosUrl.split(',').map((value) => value.trim());
   if (!kupoUrl || !ogmiosUrl) {
@@ -703,10 +709,9 @@ export function createTraceRegistryClient(
 
     const entry = await findVoucherEntryByHash(parsedVoucherAssetName.voucherDenomHash);
     if (!entry) {
-      return buildNativeAssetTrace(
+      throw unresolvedVoucherTraceError(
         parsed.assetId,
-        parsed.assetId,
-        parsed.assetId,
+        parsedVoucherAssetName.voucherDenomHash,
       );
     }
 
