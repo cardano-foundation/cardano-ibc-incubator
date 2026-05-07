@@ -1,12 +1,8 @@
 import axios from 'axios';
 import { toast } from 'react-toastify';
-import API from './api';
 import type { CardanoAssetDenomTrace } from '@/types/cardanoTrace';
-import {
-  listCardanoIbcAssetsFromRegistry,
-  lookupCardanoAssetDenomTraceFromRegistry,
-} from '@/services/cardanoTraceRegistry';
 import { cardanoPlannerClient } from '@/services/cardanoPlanner';
+import API from './api';
 
 export type CardanoWalletUtxo = {
   txHash: string;
@@ -39,7 +35,8 @@ interface TransferParams {
 
 interface UnsignedTx {
   type_url: string;
-  value: any;
+  unsignedTxCborHex?: string;
+  value?: any;
 }
 
 interface TransferResponseData {
@@ -289,7 +286,10 @@ export async function lookupCardanoAssetDenomTrace(
   assetId: string,
 ): Promise<CardanoAssetDenomTrace | null> {
   try {
-    return await lookupCardanoAssetDenomTraceFromRegistry(assetId);
+    const response = await axios.get<CardanoAssetDenomTrace>(
+      `/api/cardano/trace-registry/${encodeURIComponent(assetId)}`,
+    );
+    return response.data;
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);
     toast.error(errorMessage, { theme: 'colored' });
@@ -297,11 +297,29 @@ export async function lookupCardanoAssetDenomTrace(
   }
 }
 
+export async function requireCardanoAssetDenomTrace(
+  assetId: string,
+): Promise<CardanoAssetDenomTrace> {
+  try {
+    const response = await axios.get<CardanoAssetDenomTrace>(
+      `/api/cardano/trace-registry/${encodeURIComponent(assetId)}`,
+    );
+    return response.data;
+  } catch (error) {
+    const errorMessage = getGatewayErrorMessage(error);
+    toast.error(errorMessage, { theme: 'colored' });
+    throw new Error(errorMessage);
+  }
+}
+
 export async function listCardanoIbcAssets(): Promise<
   CardanoAssetDenomTrace[]
 > {
   try {
-    return await listCardanoIbcAssetsFromRegistry();
+    const response = await axios.get<CardanoAssetDenomTrace[]>(
+      '/api/cardano/trace-registry',
+    );
+    return response.data;
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);
     toast.error(errorMessage, { theme: 'colored' });

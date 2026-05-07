@@ -1,8 +1,12 @@
-import { transfer } from '@/apis/restapi/cardano';
-import { lookupCardanoAssetDenomTrace } from '@/apis/restapi/cardano';
+/* global BigInt */
+import {
+  requireCardanoAssetDenomTrace,
+  transfer,
+} from '@/apis/restapi/cardano';
 import { CROSSCHAIN_SWAP_ADDRESS } from '@/configs/runtime';
-import { getPublicKeyHashFromAddress } from './address';
 import { FORWARD_TIMEOUT } from '@/constants';
+import { requirePaymentKeyHashFromCardanoAddress } from './address';
+import { requireUnsignedCardanoTxCborHex } from './buildTransferTx';
 
 const pfmReceiver = 'pfm';
 
@@ -123,7 +127,7 @@ export async function unsignedTxSwapFromCardano({
   transferBackRoutes: string[];
   slippagePercentage: string;
   timeoutTimeOffset: bigint; // nanosec
-}): Promise<{ typeUrl: string; value: any }[]> {
+}): Promise<{ typeUrl: string; unsignedTxCborHex: string }[]> {
   if (!CROSSCHAIN_SWAP_ADDRESS) {
     throw new Error(
       'NEXT_PUBLIC_CROSSCHAIN_SWAP_ADDRESS is required to build swap transactions.',
@@ -135,7 +139,7 @@ export async function unsignedTxSwapFromCardano({
   const [srcPort, srcChannel] = route.split('/');
   const nextMemo = buildNextMemo(
     transferBackRoutes,
-    getPublicKeyHashFromAddress(receiver)!,
+    requirePaymentKeyHashFromCardanoAddress(receiver),
   );
   const osmosisSwapMemo = buildOsmosisSwapMemo({
     nextMemo,
@@ -146,10 +150,8 @@ export async function unsignedTxSwapFromCardano({
     transferRoutes: restRoutes,
     osmosisSwapMemo,
   });
-  const cardanoTokenTrace = await lookupCardanoAssetDenomTrace(tokenIn.denom);
-  const sendTokenDenom = cardanoTokenTrace?.fullDenom
-    ? cardanoTokenTrace.fullDenom
-    : tokenIn.denom;
+  const cardanoTokenTrace = await requireCardanoAssetDenomTrace(tokenIn.denom);
+  const sendTokenDenom = cardanoTokenTrace.fullDenom;
   const data = await transfer({
     sourcePort: srcPort,
     sourceChannel: srcChannel,
@@ -157,7 +159,7 @@ export async function unsignedTxSwapFromCardano({
       denom: sendTokenDenom,
       amount: tokenIn.amount,
     },
-    sender: getPublicKeyHashFromAddress(sender),
+    sender: requirePaymentKeyHashFromCardanoAddress(sender),
     receiver: pfmReceiver,
     timeoutHeight: {
       revisionNumber: BigInt(0).toString(),
@@ -168,6 +170,11 @@ export async function unsignedTxSwapFromCardano({
     memo: forwardMemo,
   });
   return [
-    { typeUrl: data?.unsignedTx?.type_url!, value: data?.unsignedTx?.value },
+    {
+      typeUrl: data?.unsignedTx?.type_url ?? '',
+      unsignedTxCborHex: requireUnsignedCardanoTxCborHex(
+        data?.unsignedTx?.unsignedTxCborHex,
+      ),
+    },
   ];
 }

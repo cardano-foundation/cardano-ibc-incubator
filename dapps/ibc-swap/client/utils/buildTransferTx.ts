@@ -1,6 +1,6 @@
 /* global BigInt */
 import {
-  lookupCardanoAssetDenomTrace,
+  requireCardanoAssetDenomTrace,
   transfer,
   type CardanoWalletUtxo,
 } from '@/apis/restapi/cardano';
@@ -8,7 +8,7 @@ import { FORWARD_TIMEOUT } from '@/constants';
 import { isCardanoChainRef } from '@/configs/runtime';
 import { Coin } from 'cosmjs-types/cosmos/base/v1beta1/coin';
 import { MsgTransfer } from 'cosmjs-types/ibc/applications/transfer/v1/tx';
-import { getPublicKeyHashFromAddress } from './address';
+import { requirePaymentKeyHashFromCardanoAddress } from './address';
 import {
   logCardanoWalletDebug,
   logCardanoWalletError,
@@ -24,6 +24,7 @@ interface Token {
 type UnsignedTxMessage = {
   typeUrl: string;
   value: any;
+  unsignedTxCborHex?: string;
   feeLovelace?: string;
 };
 
@@ -49,9 +50,29 @@ function getTransferResponseErrorMessage(data: any): string | undefined {
   );
 }
 
+export function requireUnsignedCardanoTxCborHex(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(
+      'Cardano transfer builder returned an unsigned tx with an empty payload.',
+    );
+  }
+
+  const unsignedTxCborHex = value.trim();
+  if (
+    unsignedTxCborHex.length % 2 !== 0 ||
+    /[^0-9a-f]/i.test(unsignedTxCborHex)
+  ) {
+    throw new Error(
+      'Cardano transfer builder returned an unsigned tx payload that is not hex-encoded transaction CBOR.',
+    );
+  }
+
+  return unsignedTxCborHex;
+}
+
 function requireUnsignedTx(data: any): UnsignedTxMessage {
   const unsignedTx = data?.unsignedTx;
-  if (!unsignedTx?.value) {
+  if (!unsignedTx?.unsignedTxCborHex) {
     const responseError = getTransferResponseErrorMessage(data);
     const responseSummary =
       responseError ||
@@ -65,7 +86,10 @@ function requireUnsignedTx(data: any): UnsignedTxMessage {
 
   return {
     typeUrl: unsignedTx.type_url ?? '',
-    value: unsignedTx.value,
+    value: undefined,
+    unsignedTxCborHex: requireUnsignedCardanoTxCborHex(
+      unsignedTx.unsignedTxCborHex,
+    ),
     feeLovelace:
       typeof data?.feeLovelace === 'string' ? data.feeLovelace : undefined,
   };
@@ -205,7 +229,7 @@ export function unsignedTxTransferFromCosmos(
 
   let tmpReceiver = receiver;
   if (isCardanoChainRef(chains[chains.length - 1])) {
-    tmpReceiver = getPublicKeyHashFromAddress(receiver)!;
+    tmpReceiver = requirePaymentKeyHashFromCardanoAddress(receiver);
   }
 
   if (routes.length === 1) {
@@ -258,10 +282,8 @@ export async function unsignedTxTransferFromCardano(
   walletUtxos?: CardanoWalletUtxo[],
 ): Promise<UnsignedTxMessage[]> {
   const currentTimeStamp = BigInt(Date.now()) * BigInt(1000000);
-  const cardanoTokenTrace = await lookupCardanoAssetDenomTrace(token.denom);
-  const sendTokenDenom = cardanoTokenTrace?.fullDenom
-    ? cardanoTokenTrace.fullDenom
-    : token.denom;
+  const cardanoTokenTrace = await requireCardanoAssetDenomTrace(token.denom);
+  const sendTokenDenom = cardanoTokenTrace.fullDenom;
   let data: any;
   if (routes.length === 1) {
     // normal transfer
@@ -275,7 +297,7 @@ export async function unsignedTxTransferFromCardano(
         denom: sendTokenDenom,
         amount: token.amount,
       },
-      sender: getPublicKeyHashFromAddress(sender),
+      sender: requirePaymentKeyHashFromCardanoAddress(sender),
       receiver,
       timeoutHeight: {
         revisionNumber: BigInt(0).toString(),
@@ -300,7 +322,7 @@ export async function unsignedTxTransferFromCardano(
       denom: sendTokenDenom,
       amount: token.amount,
     },
-    sender: getPublicKeyHashFromAddress(sender),
+    sender: requirePaymentKeyHashFromCardanoAddress(sender),
     receiver: pfmReceiver,
     timeoutHeight: {
       revisionNumber: BigInt(0).toString(),

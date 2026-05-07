@@ -253,7 +253,11 @@ export function createPlannerClient(
     fetchImpl: config.fetchImpl || fetch,
     resolveCardanoAssetDenomTrace:
       config.resolveCardanoAssetDenomTrace ||
-      (async () => null),
+      (async (assetId) => {
+        throw new Error(
+          `Cardano asset trace resolver is required before planning transfers for asset ${assetId}.`,
+        );
+      }),
   };
 
   let swapMetadataCache:

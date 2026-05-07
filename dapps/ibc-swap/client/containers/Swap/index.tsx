@@ -26,7 +26,10 @@ import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
 import { formatNumberInput, formatPrice } from '@/utils/string';
 import { allChains } from '@/configs/customChainInfo';
 import TransferContext from '@/contexts/TransferContext';
-import { verifyAddress } from '@/utils/address';
+import {
+  verifyAddress,
+  verifyCardanoPaymentKeyHashAddress,
+} from '@/utils/address';
 import { HOUR_IN_NANOSEC } from '@/constants';
 import { unsignedTxSwapFromCardano } from '@/utils/buildSwapTx';
 import { CARDANO_CHAIN_ID } from '@/configs/runtime';
@@ -99,6 +102,10 @@ const SwapContainer = () => {
         setErrorAddressMsg('Address is required');
       } else if (!isValidAddress) {
         setErrorAddressMsg('Invalid address');
+      } else if (!verifyCardanoPaymentKeyHashAddress(value)) {
+        setErrorAddressMsg(
+          'Cardano receiver must be a base or enterprise address with a payment key credential',
+        );
       } else {
         setErrorAddressMsg('');
       }
@@ -229,7 +236,7 @@ const SwapContainer = () => {
 
       let estDataResult: any;
       try {
-        const unsignedTx = Buffer.from(msg[0].value, 'base64').toString('hex');
+        const unsignedTx = msg[0].unsignedTxCborHex;
         const tx = CSL.Transaction.from_hex(unsignedTx);
         const estFee = tx.body().fee().to_str();
         estDataResult = {
@@ -317,11 +324,11 @@ const SwapContainer = () => {
           <StyledWrapContainer>
             <StyledSwap>
               <Box display="flex" justifyContent="space-between">
-          <Heading className="title">Swap Via Local Osmosis</Heading>
-          <Text color={COLOR.neutral_3} mt="8px" mb="12px">
-            This demo routes Cardano assets through Entrypoint, executes the
-            swap on Local Osmosis, and returns the result to Cardano.
-          </Text>
+                <Heading className="title">Swap Via Local Osmosis</Heading>
+                <Text color={COLOR.neutral_3} mt="8px" mb="12px">
+                  This demo routes Cardano assets through Entrypoint, executes
+                  the swap on Local Osmosis, and returns the result to Cardano.
+                </Text>
                 <SettingSlippage />
               </Box>
               <SelectNetworkModal
@@ -332,13 +339,17 @@ const SwapContainer = () => {
               <TokenBox
                 handleClick={openModalSelectNetwork}
                 token={swapData.fromToken}
-                handleChangeAmount={(event: React.ChangeEvent<HTMLInputElement>) =>
-                  handleChangeAmount(event.target.value, true)
-                }
+                handleChangeAmount={(
+                  event: React.ChangeEvent<HTMLInputElement>,
+                ) => handleChangeAmount(event.target.value, true)}
               />
               <motion.div
                 animate={{ y: [0, -2, 0] }}
-                transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
+                transition={{
+                  duration: 2.2,
+                  repeat: Infinity,
+                  ease: 'easeInOut',
+                }}
               >
                 <StyledSwitchNetwork>
                   <FaArrowDown color={COLOR.neutral_1} />

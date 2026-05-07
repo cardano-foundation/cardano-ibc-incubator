@@ -622,9 +622,27 @@ async function computeTxValidityWindow(context) {
         validToTime,
     };
 }
+class AsyncMutex {
+    tail = Promise.resolve();
+    async runExclusive(operation) {
+        let release;
+        const previous = this.tail;
+        this.tail = new Promise((resolve) => {
+            release = resolve;
+        });
+        await previous;
+        try {
+            return await operation();
+        }
+        finally {
+            release();
+        }
+    }
+}
 function createTxBuilderRuntime(config) {
     const logger = config.logger ?? defaultLogger('txBuilderRuntime');
     let cachedContextPromise = null;
+    const transferBuildQueue = new AsyncMutex();
     const traceRegistryClient = (0, trace_registry_1.createTraceRegistryClient)({
         bridgeManifestUrl: config.bridgeManifestUrl,
         kupmiosUrl: config.kupmiosUrl,
@@ -675,6 +693,10 @@ function createTxBuilderRuntime(config) {
         return cachedContextPromise;
     }
     async function buildUnsignedTransfer(body) {
+        // Lucid wallet selection and IBC tree state are shared by the runtime context.
+        return transferBuildQueue.runExclusive(() => buildUnsignedTransferUnsafe(body));
+    }
+    async function buildUnsignedTransferUnsafe(body) {
         const context = await getContext();
         const sendPacketOperator = parseSendPacketOperator(body);
         const providedWalletUtxos = parseWalletUtxos(body.wallet_utxos);
@@ -773,13 +795,12 @@ function createTxBuilderRuntime(config) {
                 setCollateral: TRANSACTION_SET_COLLATERAL,
             });
             const unsignedTxCbor = completedUnsignedTx.toCBOR();
-            const unsignedTxBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
             const feeLovelace = completedUnsignedTx.toTransaction().body().fee().toString();
             return {
                 result: 0,
                 unsignedTx: {
                     type_url: '',
-                    value: Buffer.from(unsignedTxBytes).toString('base64'),
+                    unsignedTxCborHex: unsignedTxCbor,
                 },
                 feeLovelace,
             };

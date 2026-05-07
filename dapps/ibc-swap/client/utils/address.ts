@@ -4,8 +4,8 @@ import {
   Address,
   BaseAddress,
   ByronAddress,
-  RewardAddress,
   EnterpriseAddress,
+  RewardAddress,
 } from '@emurgo/cardano-serialization-lib-browser';
 
 export function verifyAddress(address: string, chainId?: string): boolean {
@@ -74,4 +74,39 @@ export function getPublicKeyHashFromAddress(
   } catch (error) {
     return undefined;
   }
+}
+
+export function getPaymentKeyHashFromCardanoAddress(
+  addressString: string,
+): string | undefined {
+  try {
+    const address = Address.from_bech32(addressString);
+    const baseAddress = BaseAddress.from_address(address);
+    if (baseAddress) {
+      return baseAddress.payment_cred().to_keyhash()?.to_hex();
+    }
+
+    return EnterpriseAddress.from_address(address)
+      ?.payment_cred()
+      ?.to_keyhash()
+      ?.to_hex();
+  } catch {
+    return undefined;
+  }
+}
+
+export function requirePaymentKeyHashFromCardanoAddress(
+  addressString: string,
+): string {
+  const paymentKeyHash = getPaymentKeyHashFromCardanoAddress(addressString);
+  if (!paymentKeyHash) {
+    throw new Error(
+      'Cardano address must be a base or enterprise address with a payment key credential. Script, Byron, reward, and unsupported address types are not supported.',
+    );
+  }
+  return paymentKeyHash;
+}
+
+export function verifyCardanoPaymentKeyHashAddress(address: string): boolean {
+  return Boolean(getPaymentKeyHashFromCardanoAddress(address));
 }
