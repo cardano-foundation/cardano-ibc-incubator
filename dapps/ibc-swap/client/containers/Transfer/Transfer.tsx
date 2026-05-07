@@ -1,7 +1,7 @@
 'use client';
 
 import { Box, Heading, Spinner, Text, useDisclosure } from '@chakra-ui/react';
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import CustomInput from '@/components/CustomInput';
 import TransferContext from '@/contexts/TransferContext';
@@ -40,7 +40,6 @@ import { useCardanoChain } from '@/hooks/useCardanoChain';
 import { useSafeCardanoAddress } from '@/hooks/useSafeCardanoAddress';
 import SwapContext from '@/contexts/SwapContext';
 import BigNumber from 'bignumber.js';
-import { debounce } from '@/utils/helper';
 import { CARDANO_CHAIN_ID } from '@/configs/runtime';
 import { signAndSubmitCardanoTxWithCip30 } from '@/utils/cardanoWalletTx';
 import { getCardanoWalletErrorMessage } from '@/utils/cardanoWalletStatus';
@@ -76,6 +75,14 @@ type EstimateFeeType = {
   estReceiveAmount: string;
   estTime: string;
   estFee: string;
+  intentId?: string;
+  requiresCardanoBuild?: boolean;
+};
+
+type CalculateEstOptions = {
+  intentId: string;
+  buildCardanoTx?: boolean;
+  shouldApplySideEffects?: () => boolean;
 };
 
 type RoutePreviewState = {
@@ -101,6 +108,11 @@ const initEstData = {
   estTime: '----',
 };
 
+const initEstDataForIntent = (intentId?: string): EstimateFeeType => ({
+  ...initEstData,
+  intentId,
+});
+
 const initRoutePreview: RoutePreviewState = {
   status: 'idle',
   chainIds: [],
@@ -111,6 +123,9 @@ const CARDANO_TRANSFER_EST_TIME = '~10 mins';
 
 const normalizeTokenExponent = (exponent?: number | null): number =>
   Number.isInteger(exponent) && exponent && exponent > 0 ? exponent : 0;
+
+const buildTransferIntentId = (intent: Record<string, unknown>): string =>
+  JSON.stringify(intent);
 
 const routePreviewStatusColor: Record<RoutePreviewState['status'], string> = {
   idle: '#FFFFFF52',
@@ -258,6 +273,7 @@ const Transfer = () => {
     useState<RoutePreviewState>(initRoutePreview);
   const [lastPrepareFailed, setLastPrepareFailed] = useState(false);
   const [lastTxHash, setLastTxHash] = useState<string>('');
+  const transferIntentIdRef = useRef('');
   const { wallet: cardanoWallet, name: connectedCardanoWalletName } =
     useWallet();
 
@@ -316,6 +332,31 @@ const Transfer = () => {
     toNetwork.networkId,
   );
 
+  const selectedTransferBaseAmount = decimalDisplayToBaseAmount(
+    sendAmount,
+    selectedToken.tokenExponent ?? 0,
+  );
+  const currentTransferIntentId = buildTransferIntentId({
+    fromNetworkId: fromNetwork.networkId || '',
+    fromIbcChainId: fromNetwork.ibcChainId || '',
+    toNetworkId: toNetwork.networkId || '',
+    toIbcChainId: toNetwork.ibcChainId || '',
+    tokenId: selectedToken.tokenId || '',
+    tokenBalance: selectedToken.balance || '',
+    tokenExponent: selectedToken.tokenExponent ?? 0,
+    amount: selectedTransferBaseAmount || '',
+    destinationAddress,
+    cardanoAddress: cardanoAddress || '',
+    cardanoWallet: connectedCardanoWalletName || '',
+    cosmosAddress: cosmosChain.address || '',
+    routeId: currentConfiguredRoute?.id || '',
+    routeEnabled: Boolean(currentConfiguredRoute?.enabled),
+  });
+  transferIntentIdRef.current = currentTransferIntentId;
+
+  const isCurrentTransferIntent = (intentId?: string): boolean =>
+    Boolean(intentId) && transferIntentIdRef.current === intentId;
+
   const getSourceWalletMismatch = (): string | null => {
     if (!fromNetwork.networkId) return null;
     const sourceChain = findRuntimeChain(fromNetwork.networkId);
@@ -331,11 +372,9 @@ const Transfer = () => {
     return null;
   };
 
-  const validateAddress = () => {
-    setValidationAddress('');
+  const getDestinationAddressError = (): string => {
     if (!destinationAddress) {
-      setValidationAddress('Address is required');
-      return false;
+      return 'Address is required';
     }
     const dataTransfer = getDataTransfer();
     const isValidAddress = verifyAddress(
@@ -343,31 +382,51 @@ const Transfer = () => {
       dataTransfer?.toNetwork?.networkId?.toString() || undefined,
     );
     if (!isValidAddress) {
-      setValidationAddress('Invalid address');
-      return false;
+      return 'Invalid address';
     }
-    return true;
+    return '';
   };
 
-  const calculateEst = async (): Promise<EstimateFeeType> => {
-    setLastPrepareFailed(false);
+  const calculateEst = async ({
+    intentId,
+    buildCardanoTx = true,
+    shouldApplySideEffects,
+  }: CalculateEstOptions): Promise<EstimateFeeType> => {
+    const canApplySideEffects = () =>
+      isCurrentTransferIntent(intentId) && (shouldApplySideEffects?.() ?? true);
+    const applySideEffect = (callback: () => void) => {
+      if (canApplySideEffects()) callback();
+    };
+    const setRoutePreviewForIntent = (preview: RoutePreviewState) => {
+      applySideEffect(() => setRoutePreview(preview));
+    };
+    const toastErrorForIntent = (message: string) => {
+      applySideEffect(() =>
+        toast.error(message, { theme: 'colored', autoClose: 7000 }),
+      );
+    };
+    const emptyEstData = () => initEstDataForIntent(intentId);
+
+    applySideEffect(() => setLastPrepareFailed(false));
     const routeChainIds = runtimeRouteChainIds(
       fromNetwork.networkId,
       toNetwork.networkId,
     );
     const markCardanoPrepareFailed = () => {
-      if (fromNetwork.networkId === CARDANO_CHAIN_ID) {
-        setLastPrepareFailed(true);
-      }
+      applySideEffect(() => {
+        if (fromNetwork.networkId === CARDANO_CHAIN_ID) {
+          setLastPrepareFailed(true);
+        }
+      });
     };
 
     if (!fromNetwork.networkId || !toNetwork.networkId) {
-      setRoutePreview(initRoutePreview);
-      return initEstData;
+      setRoutePreviewForIntent(initRoutePreview);
+      return emptyEstData();
     }
 
     if (!currentConfiguredRoute?.enabled) {
-      setRoutePreview({
+      setRoutePreviewForIntent({
         status: 'error',
         chainIds: routeChainIds,
         message: runtimeRouteDisabledReason(
@@ -375,17 +434,17 @@ const Transfer = () => {
           toNetwork.networkId,
         ),
       });
-      return initEstData;
+      return emptyEstData();
     }
 
     const walletMismatch = getSourceWalletMismatch();
     if (walletMismatch) {
-      setRoutePreview({
+      setRoutePreviewForIntent({
         status: 'error',
         chainIds: routeChainIds,
         message: walletMismatch,
       });
-      return initEstData;
+      return emptyEstData();
     }
 
     const transferBaseAmount = decimalDisplayToBaseAmount(
@@ -393,28 +452,30 @@ const Transfer = () => {
       selectedToken.tokenExponent ?? 0,
     );
 
-    // do verify address:
-    if (!validateAddress() || !isPositiveBaseAmount(transferBaseAmount)) {
-      setRoutePreview({
+    const destinationAddressError = getDestinationAddressError();
+    applySideEffect(() => setValidationAddress(destinationAddressError));
+
+    if (destinationAddressError || !isPositiveBaseAmount(transferBaseAmount)) {
+      setRoutePreviewForIntent({
         status: 'ready',
         chainIds: routeChainIds,
         message:
           'Configured route found. Enter amount and destination to estimate.',
       });
-      return initEstData;
+      return emptyEstData();
     }
 
     if (!isBaseAmountWithinBalance(transferBaseAmount, selectedToken.balance)) {
-      setRoutePreview({
+      setRoutePreviewForIntent({
         status: 'error',
         chainIds: routeChainIds,
         message: 'Amount exceeds the selected token balance.',
       });
-      return initEstData;
+      return emptyEstData();
     }
 
     const dataTransfer = getDataTransfer();
-    setRoutePreview({
+    setRoutePreviewForIntent({
       status: 'loading',
       chainIds: routeChainIds,
       message: 'Checking the live IBC route before building the transfer.',
@@ -436,23 +497,23 @@ const Transfer = () => {
         'Unable to load route plan from the active stack.',
       );
       markCardanoPrepareFailed();
-      setRoutePreview({
+      setRoutePreviewForIntent({
         status: 'error',
         chainIds: routeChainIds,
         message,
       });
-      toast.error(message, { theme: 'colored', autoClose: 7000 });
-      return initEstData;
+      toastErrorForIntent(message);
+      return emptyEstData();
     }
 
     if (!routePlan) {
       markCardanoPrepareFailed();
-      setRoutePreview({
+      setRoutePreviewForIntent({
         status: 'error',
         chainIds: routeChainIds,
         message: 'Unable to load route plan from the active stack.',
       });
-      return initEstData;
+      return emptyEstData();
     }
 
     const { chains, foundRoute, routes, failureCode, failureMessage } =
@@ -495,8 +556,8 @@ const Transfer = () => {
         routeBuilderDetail: failureMessage,
       });
       markCardanoPrepareFailed();
-      toast.error(message, { theme: 'colored', autoClose: 7000 });
-      setRoutePreview({
+      toastErrorForIntent(message);
+      setRoutePreviewForIntent({
         status: 'error',
         chainIds: runtimeRouteChainIds(
           fromNetwork.networkId,
@@ -505,7 +566,7 @@ const Transfer = () => {
         ),
         message,
       });
-      return initEstData;
+      return emptyEstData();
     }
 
     const liveRouteChainIds = runtimeRouteChainIds(
@@ -513,14 +574,17 @@ const Transfer = () => {
       toNetwork.networkId,
       chains,
     );
+    let liveRouteMessage = 'Live route found. Estimating wallet fee now.';
+    if (fromNetwork.networkId === CARDANO_CHAIN_ID) {
+      liveRouteMessage = buildCardanoTx
+        ? 'Live route found. Building the unsigned Cardano transaction now.'
+        : 'Live route found. The Cardano transaction will be built when you submit.';
+    }
 
-    setRoutePreview({
+    setRoutePreviewForIntent({
       status: 'loading',
       chainIds: liveRouteChainIds,
-      message:
-        fromNetwork.networkId === CARDANO_CHAIN_ID
-          ? 'Live route found. Building the unsigned Cardano transaction now.'
-          : 'Live route found. Estimating wallet fee now.',
+      message: liveRouteMessage,
     });
 
     // // check token amount > 0, decimals
@@ -558,7 +622,7 @@ const Transfer = () => {
       try {
         const est = await estimateFee(msg);
         const estFee = est.amount[0];
-        setRoutePreview({
+        setRoutePreviewForIntent({
           status: 'ready',
           chainIds: liveRouteChainIds,
           message: 'Transfer estimate ready. You can submit the transaction.',
@@ -570,24 +634,45 @@ const Transfer = () => {
           estReceiveAmount: estReceiveAmount.toString(10),
           estFee: `${estFee.amount} ${estFee.denom.toUpperCase()}`,
           estTime: COSMOS_TRANSFER_EST_TIME,
+          intentId,
         };
       } catch (e) {
         const message = getErrorMessage(
           e,
           'Unable to estimate the wallet fee for this transfer.',
         );
-        setRoutePreview({
+        setRoutePreviewForIntent({
           status: 'error',
           chainIds: liveRouteChainIds,
           message,
         });
-        toast.error(message, { theme: 'colored', autoClose: 7000 });
-        return initEstData;
+        toastErrorForIntent(message);
+        return emptyEstData();
       }
     } else {
+      if (!buildCardanoTx) {
+        setRoutePreviewForIntent({
+          status: 'ready',
+          chainIds: liveRouteChainIds,
+          message:
+            'Route estimate ready. The Cardano transaction will be built when you submit.',
+        });
+        return {
+          display: true,
+          canEst: true,
+          msgs: [],
+          estReceiveAmount: estReceiveAmount.toString(10),
+          estFee: 'Built on submit',
+          estTime: CARDANO_TRANSFER_EST_TIME,
+          intentId,
+          requiresCardanoBuild: true,
+        };
+      }
+
       try {
         const prepareStartedAt = Date.now();
         logCardanoWalletDebug('transfer:prepare:start', {
+          intentId,
           walletName: connectedCardanoWalletName,
           sender: shortValue(cardanoAddress),
           destination: shortValue(destinationAddress),
@@ -620,13 +705,14 @@ const Transfer = () => {
         const estFee = msg[0].feeLovelace;
 
         logCardanoWalletDebug('transfer:prepare:success', {
+          intentId,
           walletName: connectedCardanoWalletName,
           elapsedMs: Date.now() - prepareStartedAt,
           unsignedTxLength: unsignedTx.length,
           estFeeLovelace: estFee,
         });
 
-        setRoutePreview({
+        setRoutePreviewForIntent({
           status: 'ready',
           chainIds: liveRouteChainIds,
           message: 'Unsigned Cardano transaction ready. You can sign it now.',
@@ -638,30 +724,27 @@ const Transfer = () => {
           estReceiveAmount: estReceiveAmount.toString(10),
           estFee: estFee ? `${formatPrice(estFee)} lovelace` : 'See wallet',
           estTime: CARDANO_TRANSFER_EST_TIME,
+          intentId,
         };
       } catch (e) {
         logCardanoWalletError('transfer:prepare:error', e, {
+          intentId,
           walletName: connectedCardanoWalletName,
           sender: shortValue(cardanoAddress),
           destination: shortValue(destinationAddress),
         });
         const message = getCardanoBuildErrorMessage(e);
-        setLastPrepareFailed(true);
-        setRoutePreview({
+        markCardanoPrepareFailed();
+        setRoutePreviewForIntent({
           status: 'error',
           chainIds: liveRouteChainIds,
           message,
         });
-        toast.error(message, { theme: 'colored', autoClose: 7000 });
-        return initEstData;
+        toastErrorForIntent(message);
+        return emptyEstData();
       }
     }
   };
-
-  const selectedTransferBaseAmount = decimalDisplayToBaseAmount(
-    sendAmount,
-    selectedToken.tokenExponent ?? 0,
-  );
 
   const canRetryCardanoPrepare =
     fromNetwork.networkId === CARDANO_CHAIN_ID &&
@@ -685,15 +768,23 @@ const Transfer = () => {
   const handleTransferFromCardano = async (
     preparedEstData: EstimateFeeType = estData,
   ) => {
-    if (!preparedEstData.canEst) {
+    if (
+      !preparedEstData.canEst ||
+      !preparedEstData.msgs[0] ||
+      !isCurrentTransferIntent(preparedEstData.intentId)
+    ) {
       logCardanoWalletDebug('transfer:submit:skip:not-ready', {
         walletName: connectedCardanoWalletName,
+        intentId: preparedEstData.intentId,
+        currentIntentId: currentTransferIntentId,
       });
+      setIsProcessingTransfer(false);
       return;
     }
     setIsProcessingTransfer(true);
     const startedAt = Date.now();
     logCardanoWalletDebug('transfer:submit:start', {
+      intentId: preparedEstData.intentId,
       walletName: connectedCardanoWalletName,
       sender: shortValue(cardanoAddress),
       destination: shortValue(destinationAddress),
@@ -709,6 +800,7 @@ const Transfer = () => {
       );
       if (txHash) {
         logCardanoWalletDebug('transfer:submit:success', {
+          intentId: preparedEstData.intentId,
           walletName: connectedCardanoWalletName,
           elapsedMs: Date.now() - startedAt,
           txHash: shortValue(txHash),
@@ -718,6 +810,7 @@ const Transfer = () => {
       }
     } catch (e: unknown) {
       logCardanoWalletError('transfer:submit:error', e, {
+        intentId: preparedEstData.intentId,
         walletName: connectedCardanoWalletName,
         elapsedMs: Date.now() - startedAt,
       });
@@ -737,7 +830,8 @@ const Transfer = () => {
   };
 
   const handleTransferFromCosmos = async () => {
-    if (!estData.canEst) {
+    if (!estData.canEst || !isCurrentTransferIntent(estData.intentId)) {
+      setEstData(initEstData);
       return;
     }
     try {
@@ -768,15 +862,35 @@ const Transfer = () => {
 
   const handleTransfer = async () => {
     if (fromNetwork.networkId === CARDANO_CHAIN_ID) {
-      let preparedEstData = estData;
-      if (!preparedEstData.canEst && canRetryCardanoPrepare) {
-        setIsProcessingTransfer(true);
-        preparedEstData = await calculateEst();
-        setEstData(preparedEstData);
-        if (!preparedEstData.canEst) {
-          setIsProcessingTransfer(false);
-          return;
-        }
+      const requestIntentId = currentTransferIntentId;
+      setIsProcessingTransfer(true);
+      const preparedEstData = await calculateEst({
+        intentId: requestIntentId,
+        buildCardanoTx: true,
+      });
+      if (
+        preparedEstData.intentId !== requestIntentId ||
+        !isCurrentTransferIntent(requestIntentId)
+      ) {
+        setIsProcessingTransfer(false);
+        setEstData(initEstData);
+        const message =
+          'Transfer details changed while preparing the transaction. Review the current form and submit again.';
+        setRoutePreview({
+          status: 'ready',
+          chainIds: runtimeRouteChainIds(
+            fromNetwork.networkId,
+            toNetwork.networkId,
+          ),
+          message,
+        });
+        toast.error(message, { theme: 'colored' });
+        return;
+      }
+      setEstData(preparedEstData);
+      if (!preparedEstData.canEst || !preparedEstData.msgs[0]) {
+        setIsProcessingTransfer(false);
+        return;
       }
       await handleTransferFromCardano(preparedEstData);
     } else {
@@ -915,28 +1029,47 @@ const Transfer = () => {
 
   useEffect(() => {
     setEstData(initEstData);
-    const checkEstData = async () => {
-      await calculateEst().then(setEstData);
-    };
-    const transferBaseAmount = decimalDisplayToBaseAmount(
-      sendAmount,
-      selectedToken.tokenExponent ?? 0,
-    );
     if (
-      isPositiveBaseAmount(transferBaseAmount) &&
-      isBaseAmountWithinBalance(transferBaseAmount, selectedToken.balance)
+      isPositiveBaseAmount(selectedTransferBaseAmount) &&
+      isBaseAmountWithinBalance(
+        selectedTransferBaseAmount,
+        selectedToken.balance,
+      )
     ) {
-      debounce(checkEstData, 500)();
-    } else {
-      setEstData(initEstData);
-      setLastPrepareFailed(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(getDataTransfer())]);
+      const requestIntentId = currentTransferIntentId;
+      let isActive = true;
+      const timeoutId = setTimeout(async () => {
+        const nextEstData = await calculateEst({
+          intentId: requestIntentId,
+          buildCardanoTx: fromNetwork.networkId !== CARDANO_CHAIN_ID,
+          shouldApplySideEffects: () => isActive,
+        });
+        if (
+          isActive &&
+          nextEstData.intentId === requestIntentId &&
+          isCurrentTransferIntent(requestIntentId)
+        ) {
+          setEstData(nextEstData);
+        }
+      }, 500);
 
+      return () => {
+        isActive = false;
+        clearTimeout(timeoutId);
+      };
+    }
+
+    setEstData(initEstData);
+    setLastPrepareFailed(false);
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTransferIntentId]);
+
+  const canUseCurrentEstData =
+    estData.canEst && isCurrentTransferIntent(estData.intentId);
   const isPreparingTransfer = routePreview.status === 'loading';
   const transferButtonDisabled =
-    (!estData.canEst && !canRetryCardanoPrepare) ||
+    (!canUseCurrentEstData && !canRetryCardanoPrepare) ||
     isProcessingTransfer ||
     isPreparingTransfer;
   const transferButtonLabel = canRetryCardanoPrepare
@@ -962,7 +1095,9 @@ const Transfer = () => {
           <SelectNetwork onOpenNetworkModal={onOpenNetworkModal} />
           <RoutePreview preview={routePreview} />
           <SelectToken onOpenTokenModal={onOpenTokenModal} />
-          {estData.display && <CalculatorBox {...estData} />}
+          {estData.display && isCurrentTransferIntent(estData.intentId) && (
+            <CalculatorBox {...estData} />
+          )}
           <CustomInput
             title="Destination address"
             placeholder="Enter destination address here..."
