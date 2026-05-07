@@ -23,7 +23,7 @@ interface Token {
 
 type UnsignedTxMessage = {
   typeUrl: string;
-  value?: any;
+  value: any;
   unsignedTxCborHex?: string;
   feeLovelace?: string;
 };
@@ -86,6 +86,7 @@ function requireUnsignedTx(data: any): UnsignedTxMessage {
 
   return {
     typeUrl: unsignedTx.type_url ?? '',
+    value: undefined,
     unsignedTxCborHex: requireUnsignedCardanoTxCborHex(
       unsignedTx.unsignedTxCborHex,
     ),
