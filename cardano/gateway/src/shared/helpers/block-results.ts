@@ -1,5 +1,6 @@
 import { Event, EventAttribute, ResponseDeliverTx } from '@plus/proto-types/build/ibc/core/types/v1/block';
 import {
+  EVENT_TYPE_CLIENT,
   EVENT_TYPE_CONNECTION,
   ATTRIBUTE_KEY_CONNECTION,
   EVENT_TYPE_CHANNEL,
@@ -23,7 +24,10 @@ import { IBCModuleCallback, IBCModuleRedeemer } from '../types/port/ibc_module_r
 import { AcknowledgementResponse } from '../types/channel/acknowledgement_response';
 import { SpendClientRedeemer } from '../types/client-redeemer';
 import { convertHeaderToTendermint } from '../types/header';
-import { Header } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import {
+  Header,
+  Misbehaviour as MisbehaviourMsg,
+} from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { acknowledgementHexFromResponse, acknowledgementJsonFromResponse } from './acknowledgement';
 
@@ -147,17 +151,40 @@ export function normalizeTxsResultFromClientDatum(
 ): ResponseDeliverTx {
   const [latestHeight] = [...ClientDatum.state.consensusStates].at(-1);
   let header = '';
+  let clientMessageAnyHex = '';
+  let eventType = clientEvent;
+  let consensusHeight = latestHeight;
 
   if (spendClientRedeemer && spendClientRedeemer.hasOwnProperty('UpdateClient')) {
     const clientMessage = spendClientRedeemer['UpdateClient'].msg;
 
     if (clientMessage && clientMessage.hasOwnProperty('HeaderCase')) {
-      const msgUpdateClient = convertHeaderToTendermint(clientMessage['HeaderCase'][0]);
+      const updateHeader = clientMessage['HeaderCase'][0];
+      const msgUpdateClient = convertHeaderToTendermint(updateHeader);
       const headerAny: Any = {
         type_url: '/ibc.lightclients.tendermint.v1.Header',
         value: Header.encode(msgUpdateClient).finish(),
       };
-      header = toHex(Any.encode(headerAny).finish());
+      clientMessageAnyHex = toHex(Any.encode(headerAny).finish());
+      header = clientMessageAnyHex;
+      // Replayed update events must use the submitted header height, not map insertion order.
+      consensusHeight = {
+        revisionNumber: updateHeader.trustedHeight.revisionNumber,
+        revisionHeight: updateHeader.signedHeader.header.height,
+      };
+    } else if (clientMessage && clientMessage.hasOwnProperty('MisbehaviourCase')) {
+      const misbehaviour = clientMessage['MisbehaviourCase'][0];
+      const misbehaviourAny: Any = {
+        type_url: '/ibc.lightclients.tendermint.v1.Misbehaviour',
+        value: MisbehaviourMsg.encode({
+          client_id: misbehaviour.client_id,
+          header1: convertHeaderToTendermint(misbehaviour.header1),
+          header2: convertHeaderToTendermint(misbehaviour.header2),
+        }).finish(),
+      };
+      clientMessageAnyHex = toHex(Any.encode(misbehaviourAny).finish());
+      eventType = EVENT_TYPE_CLIENT.CLIENT_MISBEHAVIOR;
+      consensusHeight = ClientDatum.state.clientState.frozenHeight;
     }
   }
 
@@ -165,7 +192,7 @@ export function normalizeTxsResultFromClientDatum(
     code: 0,
     events: [
       {
-        type: clientEvent,
+        type: eventType,
         event_attribute: [
           {
             key: ATTRIBUTE_KEY_CLIENT.CLIENT_ID,
@@ -177,11 +204,16 @@ export function normalizeTxsResultFromClientDatum(
           },
           {
             key: ATTRIBUTE_KEY_CLIENT.CONSENSUS_HEIGHT,
-            value: `${latestHeight.revisionNumber}-${latestHeight.revisionHeight}`,
+            value: `${consensusHeight.revisionNumber}-${consensusHeight.revisionHeight}`,
           },
+          // Hermes consumes the canonical client_message Any; `header` remains for legacy readers.
           {
             key: ATTRIBUTE_KEY_CLIENT.HEADER,
             value: header,
+          },
+          {
+            key: ATTRIBUTE_KEY_CLIENT.CLIENT_MESSAGE_ANY_HEX,
+            value: clientMessageAnyHex,
           },
         ].map(
           (attr) =>
