@@ -58,6 +58,11 @@ impl DockerCli {
         runner::run_ok_output(&mut command)
     }
 
+    pub fn raw_output_allow_failure(&self, args: &[&str]) -> Result<Output, String> {
+        let mut command = self.raw_command(args);
+        runner::run_output(&mut command)
+    }
+
     pub(crate) fn compose_command(&self, args: &[&str]) -> Command {
         let mut command = self.base_command();
         command.arg("compose").args(args);

@@ -23,6 +23,7 @@ const LOCAL_STABILITY_TARGET_POOL_STAKE_LOVELACE: u64 = 900_000_000_000;
 const LOCAL_STABILITY_THRESHOLD_DEPTH: &str = "10";
 const LOCAL_STABILITY_THRESHOLD_UNIQUE_POOLS: &str = "2";
 const LOCAL_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: &str = "5000";
+const LOCAL_YACI_STORE_POSTGRES_VOLUME: &str = "cardano_yaci_store_postgres_local_data";
 const PREPROD_ENVIRONMENT_BASE_URL: &str =
     "https://book.world.dev.cardano.org/environments/preprod";
 const YACI_SYNC_START_SLOT_KEY: &str = "YACI_SYNC_START_SLOT";
@@ -335,9 +336,7 @@ pub fn write_cardano_runtime_selection(
         .map(|checkpoint| checkpoint.block_hash.as_str())
         .unwrap_or("");
     let yaci_store_postgres_volume = match (network, yaci_checkpoint.as_ref()) {
-        (config::CoreCardanoNetwork::Local, _) => {
-            "cardano_yaci_store_postgres_local_data".to_string()
-        }
+        (config::CoreCardanoNetwork::Local, _) => LOCAL_YACI_STORE_POSTGRES_VOLUME.to_string(),
         (config::CoreCardanoNetwork::Preprod, Some(checkpoint)) => format!(
             "cardano_yaci_store_postgres_preprod_{}_{}",
             checkpoint.slot,
@@ -699,7 +698,9 @@ fn write_yaci_local_genesis_files(
 
 fn remove_local_yaci_postgres_volume() -> Result<(), Box<dyn std::error::Error>> {
     let output = DockerCli::new(Path::new("."))
-        .raw_output(["volume", "rm", "-f", "cardano_yaci_store_postgres_data"].as_slice())
+        .raw_output_allow_failure(
+            ["volume", "rm", "-f", LOCAL_YACI_STORE_POSTGRES_VOLUME].as_slice(),
+        )
         .map_err(|error| format!("Failed to remove local Yaci postgres volume: {}", error))?;
 
     if output.status.success() {
