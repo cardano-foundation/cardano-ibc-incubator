@@ -11,7 +11,10 @@ import DefaultCardanoNetworkIcon from '@/assets/icons/cardano.svg';
 
 import { NetworkItemProps } from '@/components/NetworkItem/NetworkItem';
 import { selectableChains } from '@/configs/customChainInfo';
-import { verifyAddress } from '@/utils/address';
+import {
+  verifyAddress,
+  verifyCardanoPaymentKeyHashAddress,
+} from '@/utils/address';
 import { TransferTokenItemProps } from '@/components/TransferTokenItem/TransferTokenItem';
 import { useCosmosChain } from '@/hooks/useCosmosChain';
 import {
@@ -383,6 +386,12 @@ const Transfer = () => {
     );
     if (!isValidAddress) {
       return 'Invalid address';
+    }
+    if (
+      dataTransfer?.toNetwork?.networkId === CARDANO_CHAIN_ID &&
+      !verifyCardanoPaymentKeyHashAddress(destinationAddress)
+    ) {
+      return 'Cardano receiver must be a base or enterprise address with a payment key credential';
     }
     return '';
   };

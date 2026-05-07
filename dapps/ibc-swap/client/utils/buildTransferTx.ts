@@ -8,7 +8,7 @@ import { FORWARD_TIMEOUT } from '@/constants';
 import { isCardanoChainRef } from '@/configs/runtime';
 import { Coin } from 'cosmjs-types/cosmos/base/v1beta1/coin';
 import { MsgTransfer } from 'cosmjs-types/ibc/applications/transfer/v1/tx';
-import { getPublicKeyHashFromAddress } from './address';
+import { requirePaymentKeyHashFromCardanoAddress } from './address';
 import {
   logCardanoWalletDebug,
   logCardanoWalletError,
@@ -205,7 +205,7 @@ export function unsignedTxTransferFromCosmos(
 
   let tmpReceiver = receiver;
   if (isCardanoChainRef(chains[chains.length - 1])) {
-    tmpReceiver = getPublicKeyHashFromAddress(receiver)!;
+    tmpReceiver = requirePaymentKeyHashFromCardanoAddress(receiver);
   }
 
   if (routes.length === 1) {
@@ -273,7 +273,7 @@ export async function unsignedTxTransferFromCardano(
         denom: sendTokenDenom,
         amount: token.amount,
       },
-      sender: getPublicKeyHashFromAddress(sender),
+      sender: requirePaymentKeyHashFromCardanoAddress(sender),
       receiver,
       timeoutHeight: {
         revisionNumber: BigInt(0).toString(),
@@ -298,7 +298,7 @@ export async function unsignedTxTransferFromCardano(
       denom: sendTokenDenom,
       amount: token.amount,
     },
-    sender: getPublicKeyHashFromAddress(sender),
+    sender: requirePaymentKeyHashFromCardanoAddress(sender),
     receiver: pfmReceiver,
     timeoutHeight: {
       revisionNumber: BigInt(0).toString(),

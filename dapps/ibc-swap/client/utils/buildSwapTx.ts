@@ -5,7 +5,7 @@ import {
 } from '@/apis/restapi/cardano';
 import { CROSSCHAIN_SWAP_ADDRESS } from '@/configs/runtime';
 import { FORWARD_TIMEOUT } from '@/constants';
-import { getPublicKeyHashFromAddress } from './address';
+import { requirePaymentKeyHashFromCardanoAddress } from './address';
 
 const pfmReceiver = 'pfm';
 
@@ -138,7 +138,7 @@ export async function unsignedTxSwapFromCardano({
   const [srcPort, srcChannel] = route.split('/');
   const nextMemo = buildNextMemo(
     transferBackRoutes,
-    getPublicKeyHashFromAddress(receiver)!,
+    requirePaymentKeyHashFromCardanoAddress(receiver),
   );
   const osmosisSwapMemo = buildOsmosisSwapMemo({
     nextMemo,
@@ -158,7 +158,7 @@ export async function unsignedTxSwapFromCardano({
       denom: sendTokenDenom,
       amount: tokenIn.amount,
     },
-    sender: getPublicKeyHashFromAddress(sender),
+    sender: requirePaymentKeyHashFromCardanoAddress(sender),
     receiver: pfmReceiver,
     timeoutHeight: {
       revisionNumber: BigInt(0).toString(),
