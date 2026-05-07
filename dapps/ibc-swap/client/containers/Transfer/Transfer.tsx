@@ -32,6 +32,7 @@ import {
 import {
   lookupCardanoAssetDenomTrace,
   planTransferRoute,
+  type CardanoAssetDenomTrace,
 } from '@/apis/restapi/cardano';
 import { useWallet } from '@meshsdk/react';
 import {
@@ -102,6 +103,46 @@ type CardanoAsset = {
   fingerprint?: string;
   policyId?: string;
 };
+
+type CompleteVoucherDisplayTrace = CardanoAssetDenomTrace & {
+  kind: 'ibc_voucher';
+  displayName: string;
+  displaySymbol: string;
+  decimals: number;
+};
+
+const CARDANO_POLICY_ID_HEX_LENGTH = 56;
+const CIP67_FT_LABEL_HEX = '0014df10';
+const CIP67_REFERENCE_NFT_LABEL_HEX = '000643b0';
+const LABELED_VOUCHER_TOKEN_NAME_HEX_LENGTH = 64;
+
+const getCip67VoucherKind = (
+  assetUnit?: string,
+): 'ft' | 'reference_nft' | null => {
+  const assetNameHex = assetUnit?.slice(CARDANO_POLICY_ID_HEX_LENGTH);
+  if (
+    !assetNameHex ||
+    assetNameHex.length !== LABELED_VOUCHER_TOKEN_NAME_HEX_LENGTH ||
+    /[^0-9a-f]/i.test(assetNameHex)
+  ) {
+    return null;
+  }
+
+  const label = assetNameHex.slice(0, 8).toLowerCase();
+  if (label === CIP67_FT_LABEL_HEX) return 'ft';
+  if (label === CIP67_REFERENCE_NFT_LABEL_HEX) return 'reference_nft';
+  return null;
+};
+
+const hasCompleteVoucherDisplayMetadata = (
+  trace: CardanoAssetDenomTrace | null,
+): trace is CompleteVoucherDisplayTrace =>
+  trace?.kind === 'ibc_voucher' &&
+  Boolean(trace.displayName?.trim()) &&
+  Boolean(trace.displaySymbol?.trim()) &&
+  typeof trace.decimals === 'number' &&
+  Number.isInteger(trace.decimals) &&
+  trace.decimals >= 0;
 
 const initEstData = {
   display: false,
@@ -909,7 +950,7 @@ const Transfer = () => {
   };
 
   const fetchTokenList = async () => {
-    let tokenListData: TransferTokenItemProps[] | undefined = [];
+    let tokenListData: TransferTokenItemProps[] = [];
 
     // Cosmos
     if (
@@ -948,20 +989,55 @@ const Transfer = () => {
       try {
         setIsFetchDataLoading(true);
         if (cardanoAssets?.length) {
-          tokenListData = await Promise.all(
-            cardanoAssets?.map(async (asset) => {
-              const trace = asset.unit
-                ? await lookupCardanoAssetDenomTrace(asset.unit)
-                : null;
-              return {
-                tokenId: asset.unit,
-                tokenLogo: DefaultCardanoNetworkIcon.src,
-                tokenName: trace?.displayName || asset.assetName,
-                tokenSymbol: trace?.displaySymbol || asset.unit,
-                tokenExponent: normalizeTokenExponent(trace?.decimals),
-                balance: asset.quantity,
-              };
-            }) || [],
+          const cardanoTokenList: Array<TransferTokenItemProps | null> =
+            await Promise.all(
+              cardanoAssets.map(
+                async (asset): Promise<TransferTokenItemProps | null> => {
+                  const voucherKind = getCip67VoucherKind(asset.unit);
+                  if (voucherKind === 'reference_nft') {
+                    return null;
+                  }
+
+                  const trace = asset.unit
+                    ? await lookupCardanoAssetDenomTrace(asset.unit)
+                    : null;
+                  if (voucherKind === 'ft' && !trace) {
+                    return null;
+                  }
+                  if (
+                    trace?.kind === 'ibc_voucher' &&
+                    !hasCompleteVoucherDisplayMetadata(trace)
+                  ) {
+                    return null;
+                  }
+                  if (hasCompleteVoucherDisplayMetadata(trace)) {
+                    return {
+                      tokenId: asset.unit,
+                      tokenLogo: trace.logo || DefaultCardanoNetworkIcon.src,
+                      tokenName: trace.displayName,
+                      tokenSymbol: trace.displaySymbol,
+                      tokenExponent: trace.decimals,
+                      balance: asset.quantity,
+                    };
+                  }
+
+                  const nativeTokenName =
+                    trace?.assetId === 'lovelace'
+                      ? trace.displayName
+                      : asset.assetName;
+                  return {
+                    tokenId: asset.unit,
+                    tokenLogo: DefaultCardanoNetworkIcon.src,
+                    tokenName: nativeTokenName,
+                    tokenSymbol: nativeTokenName,
+                    tokenExponent: 0,
+                    balance: asset.quantity,
+                  };
+                },
+              ),
+            );
+          tokenListData = cardanoTokenList.filter(
+            (token): token is TransferTokenItemProps => token !== null,
           );
         }
       } catch (error) {
