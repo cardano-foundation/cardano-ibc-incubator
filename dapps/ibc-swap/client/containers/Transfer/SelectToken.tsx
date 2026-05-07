@@ -4,6 +4,7 @@ import { IoChevronDown } from 'react-icons/io5';
 import { COLOR } from '@/styles/color';
 import TransferContext from '@/contexts/TransferContext';
 import {
+  baseAmountToDisplayAmount,
   formatNumberInput,
   formatPrice,
   formatTokenSymbol,
@@ -29,7 +30,7 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
     const inputString = event.target.value;
     const displayString = formatNumberInput(
       inputString,
-      selectedToken.tokenExponent!,
+      selectedToken.tokenExponent ?? 0,
       selectedToken.balance,
     );
     setSendAmount(displayString);
@@ -42,6 +43,10 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
 
   const isDisabledAmountInput =
     !selectedToken.tokenId || !fromNetwork.networkId || !toNetwork.networkId;
+  const displayBalance = baseAmountToDisplayAmount(
+    selectedToken?.balance || '0',
+    selectedToken?.tokenExponent ?? 0,
+  );
 
   return (
     <StyledTokenSection>
@@ -50,7 +55,7 @@ const SelectToken = ({ onOpenTokenModal }: SelectTokenProps) => {
           Asset
         </Text>
         <Text fontSize={14} lineHeight="20px" fontWeight={600}>
-          Balance: {formatPrice(selectedToken?.balance) || 0.0}
+          Balance: {formatPrice(displayBalance) || 0.0}
         </Text>
       </Box>
       <Spacer />

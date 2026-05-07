@@ -62,6 +62,7 @@ const TokenBoxComponent = ({
                 tokenLogo={token.tokenLogo}
                 tokenSymbol={token.tokenSymbol}
                 balance={token.balance}
+                tokenExponent={token.tokenExponent}
                 onClick={() => setCurrentToken(token)}
                 isActive={currentToken?.tokenId === token.tokenId}
               />

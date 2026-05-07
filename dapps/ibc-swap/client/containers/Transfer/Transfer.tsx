@@ -1,7 +1,5 @@
 'use client';
 
-/* global BigInt */
-
 import { Box, Heading, Spinner, Text, useDisclosure } from '@chakra-ui/react';
 import React, { useContext, useEffect, useState } from 'react';
 import { toast } from 'react-toastify';
@@ -27,9 +25,17 @@ import {
   unsignedTxTransferFromCosmos,
   unsignedTxTransferFromCardano,
 } from '@/utils/buildTransferTx';
-import { planTransferRoute } from '@/apis/restapi/cardano';
+import {
+  lookupCardanoAssetDenomTrace,
+  planTransferRoute,
+} from '@/apis/restapi/cardano';
 import { useWallet } from '@meshsdk/react';
-import { formatPrice } from '@/utils/string';
+import {
+  decimalDisplayToBaseAmount,
+  formatPrice,
+  isBaseAmountWithinBalance,
+  isPositiveBaseAmount,
+} from '@/utils/string';
 import { useCardanoChain } from '@/hooks/useCardanoChain';
 import { useSafeCardanoAddress } from '@/hooks/useSafeCardanoAddress';
 import SwapContext from '@/contexts/SwapContext';
@@ -103,6 +109,9 @@ const initRoutePreview: RoutePreviewState = {
 const COSMOS_TRANSFER_EST_TIME = '~2 mins';
 const CARDANO_TRANSFER_EST_TIME = '~10 mins';
 
+const normalizeTokenExponent = (exponent?: number | null): number =>
+  Number.isInteger(exponent) && exponent && exponent > 0 ? exponent : 0;
+
 const routePreviewStatusColor: Record<RoutePreviewState['status'], string> = {
   idle: '#FFFFFF52',
   loading: '#F6C85F',
@@ -130,14 +139,6 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
   }
 
   return fallback;
-};
-
-const hasPositiveIntegerAmount = (value: string): boolean => {
-  try {
-    return BigInt(value || '0') >= BigInt(1);
-  } catch {
-    return false;
-  }
 };
 
 const decodeUnsignedCardanoTx = (base64Value: unknown): string => {
@@ -387,8 +388,13 @@ const Transfer = () => {
       return initEstData;
     }
 
+    const transferBaseAmount = decimalDisplayToBaseAmount(
+      sendAmount,
+      selectedToken.tokenExponent ?? 0,
+    );
+
     // do verify address:
-    if (!validateAddress() || !hasPositiveIntegerAmount(sendAmount)) {
+    if (!validateAddress() || !isPositiveBaseAmount(transferBaseAmount)) {
       setRoutePreview({
         status: 'ready',
         chainIds: routeChainIds,
@@ -397,6 +403,16 @@ const Transfer = () => {
       });
       return initEstData;
     }
+
+    if (!isBaseAmountWithinBalance(transferBaseAmount, selectedToken.balance)) {
+      setRoutePreview({
+        status: 'error',
+        chainIds: routeChainIds,
+        message: 'Amount exceeds the selected token balance.',
+      });
+      return initEstData;
+    }
+
     const dataTransfer = getDataTransfer();
     setRoutePreview({
       status: 'loading',
@@ -514,7 +530,7 @@ const Transfer = () => {
     // });
 
     // estimate amount after PFM
-    let estReceiveAmount = BigNumber(sendAmount);
+    let estReceiveAmount = BigNumber(transferBaseAmount);
     if (chains.length > 2) {
       const feeChains = chains.slice(1, chains.length - 1);
       feeChains.forEach((chainId) => {
@@ -537,7 +553,7 @@ const Transfer = () => {
         senderAddress?.address,
         destinationAddress,
         HOUR_IN_NANOSEC,
-        { amount: sendAmount, denom: selectedToken.tokenId! },
+        { amount: transferBaseAmount, denom: selectedToken.tokenId! },
       );
       try {
         const est = await estimateFee(msg);
@@ -575,7 +591,8 @@ const Transfer = () => {
           walletName: connectedCardanoWalletName,
           sender: shortValue(cardanoAddress),
           destination: shortValue(destinationAddress),
-          amount: sendAmount,
+          amount: transferBaseAmount,
+          displayAmount: sendAmount,
           denom: shortValue(selectedToken.tokenId),
           route: liveRouteChainIds.join(' -> '),
         });
@@ -596,7 +613,7 @@ const Transfer = () => {
           cardanoAddress || '',
           destinationAddress,
           HOUR_IN_NANOSEC,
-          { amount: sendAmount, denom: selectedToken.tokenId! },
+          { amount: transferBaseAmount, denom: selectedToken.tokenId! },
           walletUtxos,
         );
         const unsignedTx = decodeUnsignedCardanoTx(msg[0].value);
@@ -641,6 +658,11 @@ const Transfer = () => {
     }
   };
 
+  const selectedTransferBaseAmount = decimalDisplayToBaseAmount(
+    sendAmount,
+    selectedToken.tokenExponent ?? 0,
+  );
+
   const canRetryCardanoPrepare =
     fromNetwork.networkId === CARDANO_CHAIN_ID &&
     lastPrepareFailed &&
@@ -652,7 +674,11 @@ const Transfer = () => {
     Boolean(currentConfiguredRoute?.enabled) &&
     Boolean(selectedToken.tokenId) &&
     Boolean(destinationAddress) &&
-    hasPositiveIntegerAmount(sendAmount) &&
+    isPositiveBaseAmount(selectedTransferBaseAmount) &&
+    isBaseAmountWithinBalance(
+      selectedTransferBaseAmount,
+      selectedToken.balance,
+    ) &&
     !getSourceWalletMismatch() &&
     verifyAddress(destinationAddress, toNetwork.networkId?.toString());
 
@@ -788,15 +814,23 @@ const Transfer = () => {
         setIsFetchDataLoading(true);
         const allBalances = await cosmosChain?.getAllBalances();
         if (allBalances?.length) {
+          const sourceChain = findRuntimeChain(fromNetwork.networkId);
           tokenListData =
-            allBalances?.map((asset) => ({
-              tokenId: asset.denom,
-              tokenLogo: DefaultCosmosNetworkIcon.src,
-              tokenName: asset.denom,
-              tokenSymbol: asset.denom,
-              tokenExponent: 0,
-              balance: asset.amount,
-            })) || [];
+            allBalances?.map((asset) => {
+              const runtimeAsset = sourceChain?.assets?.find(
+                (configuredAsset) =>
+                  configuredAsset.base === asset.denom ||
+                  configuredAsset.display === asset.denom,
+              );
+              return {
+                tokenId: asset.denom,
+                tokenLogo: DefaultCosmosNetworkIcon.src,
+                tokenName: runtimeAsset?.name || asset.denom,
+                tokenSymbol: runtimeAsset?.symbol || asset.denom,
+                tokenExponent: normalizeTokenExponent(runtimeAsset?.exponent),
+                balance: asset.amount,
+              };
+            }) || [];
         }
       } catch (error) {
         setIsFetchDataLoading(false);
@@ -808,15 +842,21 @@ const Transfer = () => {
       try {
         setIsFetchDataLoading(true);
         if (cardanoAssets?.length) {
-          tokenListData =
-            cardanoAssets?.map((asset) => ({
-              tokenId: asset.unit,
-              tokenLogo: DefaultCardanoNetworkIcon.src,
-              tokenName: asset.assetName,
-              tokenSymbol: asset.unit,
-              tokenExponent: 0,
-              balance: asset.quantity,
-            })) || [];
+          tokenListData = await Promise.all(
+            cardanoAssets?.map(async (asset) => {
+              const trace = asset.unit
+                ? await lookupCardanoAssetDenomTrace(asset.unit)
+                : null;
+              return {
+                tokenId: asset.unit,
+                tokenLogo: DefaultCardanoNetworkIcon.src,
+                tokenName: trace?.displayName || asset.assetName,
+                tokenSymbol: trace?.displaySymbol || asset.unit,
+                tokenExponent: normalizeTokenExponent(trace?.decimals),
+                balance: asset.quantity,
+              };
+            }) || [],
+          );
         }
       } catch (error) {
         setIsFetchDataLoading(false);
@@ -878,7 +918,14 @@ const Transfer = () => {
     const checkEstData = async () => {
       await calculateEst().then(setEstData);
     };
-    if (hasPositiveIntegerAmount(sendAmount)) {
+    const transferBaseAmount = decimalDisplayToBaseAmount(
+      sendAmount,
+      selectedToken.tokenExponent ?? 0,
+    );
+    if (
+      isPositiveBaseAmount(transferBaseAmount) &&
+      isBaseAmountWithinBalance(transferBaseAmount, selectedToken.balance)
+    ) {
       debounce(checkEstData, 500)();
     } else {
       setEstData(initEstData);
