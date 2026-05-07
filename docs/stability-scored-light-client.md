@@ -50,7 +50,7 @@ It implements an IBC 02-client shape in the `ibc-go` v10 sense, meaning:
 - Hermes-side type plumbing
 - Gateway support for latest height / new client / header queries
 
-But the security model is still probabilistic and not based around finality. If the heuristic accepts a Cardano fork that is later rolled back, standard IBC gives no clean way to rewind the counterparty state that already acted on that proof, and to be clear that is not something Mithril solved either. So at the time of writing, this should be understood as an experimental fast-settlement client, which could at some point be tuned further closer to finality, but not as “true Cardano finality”. When Cardano finality times do reach <5 minutes, this style of light client should be well positioned to benefit from that.
+But the security model is still probabilistic and not based around finality. If the heuristic accepts Cardano history that is later reorganized out of the canonical chain, that is a safety failure for an IBC integration: standard IBC assumes accepted consensus history is not invalidated and has no mechanism to rewind counterparty state that already acted on that proof. To be clear, that is not something Mithril solved either. So at the time of writing, this should be understood as an experimental fast-settlement client, which could at some point be tuned further closer to finality, but not as “true Cardano finality”. When Cardano finality times do reach <5 minutes, this style of light client should be well positioned to benefit from that.
 
 ## Move from Mithril
 
@@ -66,7 +66,7 @@ The stability-scored client explores a different tradeoff:
 That tradeoff comes with some weaker semantics:
 
 - no cryptographic "finality" certificate (a mithril certificate is not finality)
-- no clean rollback recovery in standard IBC if accepted Cardano history is later rolled back
+- accepted Cardano history later being reorganized out would be a safety failure for an IBC integration, not a recoverable IBC event
 - a weaker trust anchor than Mithril, because acceptance is based on a heuristic over block history and stake observations rather than a Mithril certificate chain
 - more operational dependence on the quality of the block-history and epoch-stake data source
 
