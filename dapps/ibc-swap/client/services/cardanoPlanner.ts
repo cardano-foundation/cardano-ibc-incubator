@@ -2,6 +2,7 @@ import {
   createPlannerClient,
   type ResolvedCardanoAssetTrace,
 } from '@cardano-ibc/planner';
+import axios from 'axios';
 import {
   CARDANO_ENTRYPOINT_CHANNEL_ID,
   CARDANO_IBC_CHAIN_ID,
@@ -12,12 +13,15 @@ import {
   GATEWAY_TX_BUILDER_ENDPOINT,
 } from '@/configs/runtime';
 import { ENTRYPOINT_CHAIN_ID, INJECTIVE_TESTNET_CHAIN_ID } from '@/constants';
-import { lookupCardanoAssetDenomTraceFromRegistry } from './cardanoTraceRegistry';
+import type { CardanoAssetDenomTrace } from '@/types/cardanoTrace';
 
 async function resolveCardanoAssetTrace(
   assetId: string,
 ): Promise<ResolvedCardanoAssetTrace | null> {
-  const trace = await lookupCardanoAssetDenomTraceFromRegistry(assetId);
+  const response = await axios.get<CardanoAssetDenomTrace>(
+    `/api/cardano/trace-registry/${encodeURIComponent(assetId)}`,
+  );
+  const trace = response.data;
   if (trace.kind !== 'ibc_voucher') {
     return null;
   }

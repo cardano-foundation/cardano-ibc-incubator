@@ -1,10 +1,6 @@
 import axios from 'axios';
 import { toast } from 'react-toastify';
 import type { CardanoAssetDenomTrace } from '@/types/cardanoTrace';
-import {
-  listCardanoIbcAssetsFromRegistry,
-  lookupCardanoAssetDenomTraceFromRegistry,
-} from '@/services/cardanoTraceRegistry';
 import { cardanoPlannerClient } from '@/services/cardanoPlanner';
 import API from './api';
 
@@ -290,7 +286,10 @@ export async function lookupCardanoAssetDenomTrace(
   assetId: string,
 ): Promise<CardanoAssetDenomTrace | null> {
   try {
-    return await lookupCardanoAssetDenomTraceFromRegistry(assetId);
+    const response = await axios.get<CardanoAssetDenomTrace>(
+      `/api/cardano/trace-registry/${encodeURIComponent(assetId)}`,
+    );
+    return response.data;
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);
     toast.error(errorMessage, { theme: 'colored' });
@@ -302,7 +301,10 @@ export async function requireCardanoAssetDenomTrace(
   assetId: string,
 ): Promise<CardanoAssetDenomTrace> {
   try {
-    return await lookupCardanoAssetDenomTraceFromRegistry(assetId);
+    const response = await axios.get<CardanoAssetDenomTrace>(
+      `/api/cardano/trace-registry/${encodeURIComponent(assetId)}`,
+    );
+    return response.data;
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);
     toast.error(errorMessage, { theme: 'colored' });
@@ -314,7 +316,10 @@ export async function listCardanoIbcAssets(): Promise<
   CardanoAssetDenomTrace[]
 > {
   try {
-    return await listCardanoIbcAssetsFromRegistry();
+    const response = await axios.get<CardanoAssetDenomTrace[]>(
+      '/api/cardano/trace-registry',
+    );
+    return response.data;
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);
     toast.error(errorMessage, { theme: 'colored' });
