@@ -188,4 +188,55 @@ describe('PacketService recv packet fail-open regression', () => {
     expect(lucidServiceMock.createUnsignedRecvPacketTx).not.toHaveBeenCalled();
     expect(lucidServiceMock.createUnsignedRecvPacketMintTx).not.toHaveBeenCalled();
   });
+
+  it('rejects recv packet processing when the channel is closed', async () => {
+    lucidServiceMock.findUtxoByUnit.mockResolvedValueOnce({ datum: 'channel-datum' });
+
+    const channelDatum = {
+      port: convertString2Hex('transfer'),
+      state: {
+        channel: {
+          state: 'Close',
+          ordering: 'Unordered',
+          counterparty: {
+            port_id: convertString2Hex('transfer'),
+            channel_id: convertString2Hex('channel-7'),
+          },
+          connection_hops: [convertString2Hex('connection-0')],
+        },
+        next_sequence_recv: 1n,
+        packet_receipt: new Map<bigint, string>(),
+        packet_acknowledgement: new Map<bigint, string>(),
+      },
+    };
+
+    lucidServiceMock.decodeDatum.mockResolvedValueOnce(channelDatum);
+
+    const recvPacketOperator = {
+      channelId: 'channel-1',
+      packetSequence: 1n,
+      packetData: convertString2Hex(
+        '{"denom":"transfer/channel-0/uosmo","amount":"1","sender":"cosmos1sender","receiver":"addr_test1receiver"}',
+      ),
+      proofCommitment: { proofs: [] },
+      proofHeight: {
+        revisionNumber: 0n,
+        revisionHeight: 10n,
+      },
+      timeoutHeight: {
+        revisionNumber: 0n,
+        revisionHeight: 0n,
+      },
+      timeoutTimestamp: 1735689600000000000n,
+    };
+
+    await expect(
+      (service as any).buildUnsignedRecvPacketTx(recvPacketOperator, 'addr_test1constructed'),
+    ).rejects.toThrow('not in Open state');
+
+    expect(lucidServiceMock.getConnectionTokenUnit).not.toHaveBeenCalled();
+    expect(lucidServiceMock.getClientTokenUnit).not.toHaveBeenCalled();
+    expect(lucidServiceMock.createUnsignedRecvPacketTx).not.toHaveBeenCalled();
+    expect(lucidServiceMock.createUnsignedRecvPacketMintTx).not.toHaveBeenCalled();
+  });
 });
