@@ -423,6 +423,42 @@ async function queryNetworkTipPoint(ogmiosUrl, headers) {
         id: result.id,
     };
 }
+async function submitSignedTxCbor(ogmiosUrl, signedTxCbor, headers, fetchImpl) {
+    const response = await fetchImpl(ogmiosUrl, {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+            ...(headers ?? {}),
+        },
+        body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'submitTransaction',
+            params: {
+                transaction: { cbor: signedTxCbor },
+            },
+            id: null,
+        }),
+    });
+    const responseText = await response.text();
+    let payload;
+    try {
+        payload = responseText ? JSON.parse(responseText) : null;
+    }
+    catch {
+        payload = null;
+    }
+    if (!response.ok) {
+        throw new Error(`Ogmios submitTransaction failed (${response.status} ${response.statusText}): ${responseText.slice(0, 1000)}`);
+    }
+    if (payload?.error) {
+        throw new Error(`Ogmios submitTransaction rejected: ${payload.error.message ?? JSON.stringify(payload.error)}`);
+    }
+    const txHash = payload?.result?.transaction?.id;
+    if (typeof txHash !== 'string' || txHash.trim().length === 0) {
+        throw new Error(`Ogmios submitTransaction returned an invalid response: ${responseText.slice(0, 1000)}`);
+    }
+    return txHash;
+}
 function toSafeCostModelInteger(value) {
     let parsedValue;
     if (typeof value === 'number') {
@@ -599,13 +635,16 @@ function dedupeUtxos(utxos) {
     const seen = new Map();
     const orderedKeys = [];
     for (const utxo of utxos) {
-        const key = `${utxo.txHash}#${utxo.outputIndex}`;
+        const key = utxoRef(utxo);
         if (!seen.has(key)) {
             orderedKeys.push(key);
         }
         seen.set(key, utxo);
     }
     return orderedKeys.map((key) => seen.get(key)).filter(Boolean);
+}
+function utxoRef(utxo) {
+    return `${utxo.txHash}#${utxo.outputIndex}`;
 }
 async function ensureTreeAlignedForRoot(context, onChainRoot) {
     if (!(0, ibcStateRoot_1.isTreeAligned)(onChainRoot)) {
@@ -758,21 +797,25 @@ function createTxBuilderRuntime(config) {
         const providedWalletUtxos = parseWalletUtxos(body.wallet_utxos);
         logger.log(`${scope} parsed request for ${sendPacketOperator.signer}; provided wallet UTxOs=${providedWalletUtxos.length}`);
         const getWalletUtxos = async (address, options) => {
-            const providedWalletUtxosForAddress = providedWalletUtxos.filter((utxo) => utxo.address === address);
-            if (providedWalletUtxosForAddress.length > 0) {
-                const dedupedProvidedWalletUtxos = dedupeUtxos(providedWalletUtxosForAddress);
-                logger.log(`${scope} using ${dedupedProvidedWalletUtxos.length} wallet-provided UTxOs for ${address}; skipped provider wallet UTxO lookup`);
-                return dedupedProvidedWalletUtxos;
-            }
+            const providedWalletUtxosForAddress = dedupeUtxos(providedWalletUtxos.filter((utxo) => utxo.address === address));
             const providerWalletUtxos = await timed(logger, scope, `provider wallet UTxO lookup for ${address}`, () => context.lucidService.tryFindUtxosAt(address, options));
-            const mergedWalletUtxos = dedupeUtxos([...providedWalletUtxosForAddress, ...providerWalletUtxos]);
-            logger.log(`${scope} wallet UTxO merge for ${address}: provided=${providedWalletUtxosForAddress.length}, provider=${providerWalletUtxos.length}, merged=${mergedWalletUtxos.length}`);
-            return mergedWalletUtxos;
+            if (providedWalletUtxosForAddress.length > 0) {
+                const providerRefs = new Set(providerWalletUtxos.map(utxoRef));
+                // Browser wallet UTxOs are hints; keep only refs still live according to the node.
+                const liveProvidedWalletUtxos = providedWalletUtxosForAddress.filter((utxo) => providerRefs.has(utxoRef(utxo)));
+                const staleProvidedCount = providedWalletUtxosForAddress.length - liveProvidedWalletUtxos.length;
+                const mergedWalletUtxos = dedupeUtxos([...liveProvidedWalletUtxos, ...providerWalletUtxos]);
+                logger.log(`${scope} wallet UTxO live validation for ${address}: provided=${providedWalletUtxosForAddress.length}, stale_provided=${staleProvidedCount}, provider=${providerWalletUtxos.length}, merged=${mergedWalletUtxos.length}`);
+                return mergedWalletUtxos;
+            }
+            logger.log(`${scope} wallet UTxO lookup for ${address}: provider=${providerWalletUtxos.length}`);
+            return providerWalletUtxos;
         };
         const findWalletUtxoAtWithUnit = async (address, unit) => {
-            const providedMatch = providedWalletUtxos.find((utxo) => utxo.address === address && Object.prototype.hasOwnProperty.call(utxo.assets, unit));
-            if (providedMatch) {
-                return providedMatch;
+            const liveWalletUtxos = await getWalletUtxos(address, LOOKUP_RETRY_OPTIONS);
+            const liveMatch = liveWalletUtxos.find((utxo) => Object.prototype.hasOwnProperty.call(utxo.assets, unit));
+            if (liveMatch) {
+                return liveMatch;
             }
             return context.lucidService.findUtxoAtWithUnit(address, unit);
         };
@@ -884,7 +927,25 @@ function createTxBuilderRuntime(config) {
             context.lucidService.endWalletSelectionScope(walletScopeId);
         }
     }
+    async function submitSignedTransaction(body) {
+        const submitId = ++transferBuildCounter;
+        const scope = `[submit:${submitId}]`;
+        const submitStartedAt = startTimer();
+        const signedTxCbor = parseRequiredString(body.signed_tx_cbor, 'signed_tx_cbor');
+        const description = typeof body.description === 'string' && body.description.trim()
+            ? body.description.trim()
+            : 'Cardano signed transaction';
+        if (!/^[0-9a-f]+$/i.test(signedTxCbor) || signedTxCbor.length % 2 !== 0) {
+            throw new Error('Invalid argument: "signed_tx_cbor" must be even-length hex CBOR');
+        }
+        logger.log(`${scope} submitting ${description}; signedTxLength=${signedTxCbor.length}`);
+        const context = await timed(logger, scope, 'get runtime context', getContext);
+        const txHash = await timed(logger, scope, 'submit signed transaction via Ogmios', () => submitSignedTxCbor(context.ogmiosEndpoint, signedTxCbor, context.kupmiosHeaders?.ogmiosHeader, config.fetchImpl ?? fetch));
+        logger.log(`${scope} submitted signed Cardano transaction ${txHash} in ${elapsedMs(submitStartedAt)}`);
+        return { txHash };
+    }
     return {
         buildUnsignedTransfer,
+        submitSignedTransaction,
     };
 }

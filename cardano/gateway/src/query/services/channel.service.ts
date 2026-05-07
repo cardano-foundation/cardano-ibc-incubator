@@ -47,6 +47,7 @@ type CardanoChannelHealthResponse = {
   reason: string | null;
   pending_packet_commitment_count: string;
   earliest_pending_packet_sequence: string | null;
+  pending_packet_commitment_sequences: string[];
   next_sequence_send: string;
 };
 
@@ -179,6 +180,7 @@ export class ChannelService {
           : null,
       pending_packet_commitment_count: pendingSequences.length.toString(),
       earliest_pending_packet_sequence: earliestPendingPacketSequence,
+      pending_packet_commitment_sequences: pendingSequences.map((sequence) => sequence.toString()),
       next_sequence_send: channelDatumDecoded.state.next_sequence_send.toString(),
     };
   }

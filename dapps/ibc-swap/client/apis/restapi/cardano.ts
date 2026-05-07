@@ -44,6 +44,10 @@ interface TransferResponseData {
   feeLovelace?: string;
 }
 
+interface SubmitSignedCardanoTxResponse {
+  txHash: string;
+}
+
 export type { CardanoAssetDenomTrace } from '@/types/cardanoTrace';
 
 export interface SwapOptionToken {
@@ -291,6 +295,25 @@ export async function transfer({
     const errorMessage = getGatewayErrorMessage(error);
     toast.error(errorMessage, { theme: 'colored' });
     return { unsignedTx: undefined };
+  }
+}
+
+export async function submitSignedCardanoTx(
+  signedTxCbor: string,
+): Promise<string> {
+  try {
+    const response = await axios<SubmitSignedCardanoTxResponse>({
+      method: 'POST',
+      url: '/api/cardano/submit',
+      data: {
+        signed_tx_cbor: signedTxCbor,
+        description: 'IBC transfer signed by browser wallet',
+      },
+    });
+    return response.data.txHash;
+  } catch (error) {
+    const errorMessage = getGatewayErrorMessage(error);
+    throw new Error(errorMessage);
   }
 }
 
