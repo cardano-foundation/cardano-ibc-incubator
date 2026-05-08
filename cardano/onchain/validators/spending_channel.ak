@@ -4,11 +4,10 @@ use cardano/address.{Address}
 use cardano/assets.{PolicyId}
 use cardano/transaction.{Input, Mint, Output, OutputReference, Transaction}
 use ibc/auth.{AuthToken}
-use ibc/core/ics_004/channel_datum.{ChannelDatum} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, ChanCloseConfirm, ChanCloseInit, ChanOpenAck,
-  ChanOpenConfirm, RecvPacket, RefreshUtxo, SendPacket, SpendChannelRedeemer,
-  TimeoutPacket,
+  ChanOpenConfirm, RecvPacket, SendPacket, SpendChannelRedeemer, TimeoutPacket,
 }
 use ibc/utils/validator_utils
 
@@ -169,17 +168,6 @@ validator spend_channel(
         expect redeemer: AuthToken = redeemer
         expect _ = validate_output_datum(spent_output.address, outputs)
         redeemer == datum.token
-      }
-      RefreshUtxo -> {
-        expect auth.contain_auth_token(spent_output, datum.token)
-
-        let updated_output = find_updated_output(spent_output.address, outputs)
-        let updated_datum = extract_output_datum(updated_output)
-
-        and {
-          auth.contains_only_auth_tokens(updated_output, [datum.token]),
-          channel_datum_mod.validate_refresh_utxo(datum, updated_datum),
-        }
       }
     }
   }

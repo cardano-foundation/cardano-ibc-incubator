@@ -331,10 +331,3 @@ pub fn validate_acknowledge_packet(
 
   expected_datum == output_datum
 }
-
-pub fn validate_refresh_utxo(
-  input_datum: ChannelDatum,
-  output_datum: ChannelDatum,
-) -> Bool {
-  input_datum == output_datum
-}

@@ -32,8 +32,6 @@ import {
   MsgRecvPacket,
   MsgRecvPacketResponse,
   MsgTimeout,
-  MsgTimeoutRefresh,
-  MsgTimeoutRefreshResponse,
   MsgTimeoutResponse,
   MsgTransfer,
   MsgTransferResponse,
@@ -129,11 +127,6 @@ export class TxController {
   @GrpcMethod('Msg', 'Timeout')
   async Timeout(data: MsgTimeout): Promise<MsgTimeoutResponse> {
     const response: MsgTimeoutResponse = await this.packetService.timeoutPacket(data);
-    return response;
-  }
-  @GrpcMethod('Msg', 'TimeoutRefresh')
-  async TimeoutRefresh(data: MsgTimeoutRefresh): Promise<MsgTimeoutRefreshResponse> {
-    const response: MsgTimeoutRefreshResponse = await this.packetService.timeoutRefresh(data);
     return response;
   }
   @GrpcMethod('Msg', 'ChannelCloseInit')

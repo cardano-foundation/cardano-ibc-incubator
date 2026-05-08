@@ -217,21 +217,6 @@ export interface MsgTransferResponse {
   result: ResponseResultType;
   unsigned_tx?: Any;
 }
-/**
- * MsgChannelOpenConfirm defines a msg sent by a Relayer to Chain B to
- * acknowledge the change of channel state to OPEN on Chain A.
- */
-export interface MsgTimeoutRefresh {
-  channel_id: string;
-  signer: string;
-}
-/**
- * MsgChannelOpenConfirmResponse defines the Msg/ChannelOpenConfirm response
- * type.
- */
-export interface MsgTimeoutRefreshResponse {
-  unsigned_tx?: Any;
-}
 function createBaseMsgChannelOpenInit(): MsgChannelOpenInit {
   return {
     port_id: "",
@@ -1942,113 +1927,6 @@ export const MsgTransferResponse = {
     return message;
   },
 };
-function createBaseMsgTimeoutRefresh(): MsgTimeoutRefresh {
-  return {
-    channel_id: "",
-    signer: "",
-  };
-}
-export const MsgTimeoutRefresh = {
-  typeUrl: "/ibc.core.channel.v1.MsgTimeoutRefresh",
-  encode(message: MsgTimeoutRefresh, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
-    if (message.channel_id !== "") {
-      writer.uint32(10).string(message.channel_id);
-    }
-    if (message.signer !== "") {
-      writer.uint32(18).string(message.signer);
-    }
-    return writer;
-  },
-  decode(input: BinaryReader | Uint8Array, length?: number): MsgTimeoutRefresh {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseMsgTimeoutRefresh();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1:
-          message.channel_id = reader.string();
-          break;
-        case 2:
-          message.signer = reader.string();
-          break;
-        default:
-          reader.skipType(tag & 7);
-          break;
-      }
-    }
-    return message;
-  },
-  fromJSON(object: any): MsgTimeoutRefresh {
-    const obj = createBaseMsgTimeoutRefresh();
-    if (isSet(object.channel_id)) obj.channel_id = String(object.channel_id);
-    if (isSet(object.signer)) obj.signer = String(object.signer);
-    return obj;
-  },
-  toJSON(message: MsgTimeoutRefresh): unknown {
-    const obj: any = {};
-    message.channel_id !== undefined && (obj.channel_id = message.channel_id);
-    message.signer !== undefined && (obj.signer = message.signer);
-    return obj;
-  },
-  fromPartial<I extends Exact<DeepPartial<MsgTimeoutRefresh>, I>>(object: I): MsgTimeoutRefresh {
-    const message = createBaseMsgTimeoutRefresh();
-    message.channel_id = object.channel_id ?? "";
-    message.signer = object.signer ?? "";
-    return message;
-  },
-};
-function createBaseMsgTimeoutRefreshResponse(): MsgTimeoutRefreshResponse {
-  return {
-    unsigned_tx: undefined,
-  };
-}
-export const MsgTimeoutRefreshResponse = {
-  typeUrl: "/ibc.core.channel.v1.MsgTimeoutRefreshResponse",
-  encode(message: MsgTimeoutRefreshResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
-    if (message.unsigned_tx !== undefined) {
-      Any.encode(message.unsigned_tx, writer.uint32(10).fork()).ldelim();
-    }
-    return writer;
-  },
-  decode(input: BinaryReader | Uint8Array, length?: number): MsgTimeoutRefreshResponse {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseMsgTimeoutRefreshResponse();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1:
-          message.unsigned_tx = Any.decode(reader, reader.uint32());
-          break;
-        default:
-          reader.skipType(tag & 7);
-          break;
-      }
-    }
-    return message;
-  },
-  fromJSON(object: any): MsgTimeoutRefreshResponse {
-    const obj = createBaseMsgTimeoutRefreshResponse();
-    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
-    return obj;
-  },
-  toJSON(message: MsgTimeoutRefreshResponse): unknown {
-    const obj: any = {};
-    message.unsigned_tx !== undefined &&
-      (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
-    return obj;
-  },
-  fromPartial<I extends Exact<DeepPartial<MsgTimeoutRefreshResponse>, I>>(
-    object: I,
-  ): MsgTimeoutRefreshResponse {
-    const message = createBaseMsgTimeoutRefreshResponse();
-    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
-      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
-    }
-    return message;
-  },
-};
 /** Msg defines the ibc/channel Msg service. */
 export interface Msg {
   /** ChannelOpenInit defines a rpc handler method for MsgChannelOpenInit. */
@@ -2076,8 +1954,6 @@ export interface Msg {
   Acknowledgement(request: MsgAcknowledgement): Promise<MsgAcknowledgementResponse>;
   /** Transfer defines a rpc handler method for MsgTransfer. */
   Transfer(request: MsgTransfer): Promise<MsgTransferResponse>;
-  /** TimeoutRefresh defines a rpc handler method for MsgTimeoutRefresh. */
-  TimeoutRefresh(request: MsgTimeoutRefresh): Promise<MsgTimeoutRefreshResponse>;
 }
 export class MsgClientImpl implements Msg {
   private readonly rpc: Rpc;
@@ -2094,7 +1970,6 @@ export class MsgClientImpl implements Msg {
     this.TimeoutOnClose = this.TimeoutOnClose.bind(this);
     this.Acknowledgement = this.Acknowledgement.bind(this);
     this.Transfer = this.Transfer.bind(this);
-    this.TimeoutRefresh = this.TimeoutRefresh.bind(this);
   }
   ChannelOpenInit(request: MsgChannelOpenInit): Promise<MsgChannelOpenInitResponse> {
     const data = MsgChannelOpenInit.encode(request).finish();
@@ -2150,10 +2025,5 @@ export class MsgClientImpl implements Msg {
     const data = MsgTransfer.encode(request).finish();
     const promise = this.rpc.request("ibc.core.channel.v1.Msg", "Transfer", data);
     return promise.then((data) => MsgTransferResponse.decode(new BinaryReader(data)));
-  }
-  TimeoutRefresh(request: MsgTimeoutRefresh): Promise<MsgTimeoutRefreshResponse> {
-    const data = MsgTimeoutRefresh.encode(request).finish();
-    const promise = this.rpc.request("ibc.core.channel.v1.Msg", "TimeoutRefresh", data);
-    return promise.then((data) => MsgTimeoutRefreshResponse.decode(new BinaryReader(data)));
   }
 }

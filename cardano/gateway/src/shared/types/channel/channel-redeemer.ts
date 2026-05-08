@@ -74,8 +74,7 @@ export type SpendChannelRedeemer =
         proof_init: MerkleProof;
         proof_height: Height;
       };
-    }
-  | 'RefreshUtxo';
+    };
 
 function buildMintChannelRedeemerSchema(Data: LucidData) {
   const AuthTokenSchema = createAuthTokenSchema(Data);
@@ -153,7 +152,6 @@ function buildSpendChannelRedeemerSchema(Data: LucidData) {
         proof_height: HeightSchema,
       }),
     }),
-    Data.Literal('RefreshUtxo'),
   ]);
 }
 

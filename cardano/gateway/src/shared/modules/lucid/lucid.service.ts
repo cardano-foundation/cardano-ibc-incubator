@@ -104,7 +104,6 @@ import {
   UnsignedSendPacketEscrowDto,
   UnsignedTimeoutPacketMintDto,
   UnsignedTimeoutPacketUnescrowDto,
-  UnsignedTimeoutRefreshDto,
 } from "./dtos";
 import { GatewayModuleKey } from "@shared/helpers/module-port";
 import { computeLedgerAnchoredValidityWindow } from "../../helpers/time";
@@ -2663,27 +2662,6 @@ export class LucidService implements OnModuleInit {
           [dto.verifyProofPolicyId]: 1n,
         },
         dto.encodedVerifyProofRedeemer,
-      );
-
-    return tx;
-  }
-  public createUnsignedTimeoutRefreshTx(
-    dto: UnsignedTimeoutRefreshDto,
-  ): TxBuilder {
-    const deploymentConfig = this.configService.get("deployment");
-    const tx: TxBuilder = this.newTxBuilder();
-
-    tx.readFrom([this.referenceScripts.spendChannel])
-      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .pay.ToContract(
-        deploymentConfig.validators.spendChannel.address,
-        {
-          kind: "inline",
-          value: dto.encodedChannelDatum,
-        },
-        {
-          [dto.channelTokenUnit]: 1n,
-        },
       );
 
     return tx;
