@@ -1740,7 +1740,12 @@ export class PacketService {
               requestedDenomToken,
               transferAmount,
             );
-            const escrowSourceAssets = transferEscrowShard.utxo?.assets ?? transferModuleUtxo.assets;
+            if (!transferEscrowShard.utxo) {
+              throw new GrpcInvalidArgumentException(
+                `Transfer escrow shard not found for channel ${recvPacketOperator.channelId} and denom ${unescrowDenom}`,
+              );
+            }
+            const escrowSourceAssets = transferEscrowShard.utxo.assets;
             const denomToken = this._resolveAssetUnitFromUtxoAssets(
               escrowSourceAssets,
               requestedDenomToken,
@@ -2187,7 +2192,12 @@ export class PacketService {
         denomToken,
         transferAmount,
       );
-      const escrowSourceAssets = transferEscrowShard.utxo?.assets ?? transferModuleUtxo.assets;
+      if (!transferEscrowShard.utxo) {
+        throw new GrpcInvalidArgumentException(
+          `Transfer escrow shard not found for channel ${convertHex2String(packet.source_channel)} and denom ${timeoutPacketOperator.fungibleTokenPacketData.denom}`,
+        );
+      }
+      const escrowSourceAssets = transferEscrowShard.utxo.assets;
       const escrowedAmount = escrowSourceAssets[denomToken] ?? 0n;
       if (escrowedAmount < transferAmount) {
         throw new GrpcInvalidArgumentException(
@@ -2865,7 +2875,12 @@ export class PacketService {
         denomToken,
         transferAmount,
       );
-      const escrowSourceAssets = transferEscrowShard.utxo?.assets ?? transferModuleUtxo.assets;
+      if (!transferEscrowShard.utxo) {
+        throw new GrpcInvalidArgumentException(
+          `Transfer escrow shard not found for channel ${ackPacketOperator.channelId} and denom ${fungibleTokenPacketData.denom}`,
+        );
+      }
+      const escrowSourceAssets = transferEscrowShard.utxo.assets;
       const escrowedAmount = escrowSourceAssets[denomToken] ?? 0n;
       if (escrowedAmount < transferAmount) {
         throw new GrpcInvalidArgumentException(

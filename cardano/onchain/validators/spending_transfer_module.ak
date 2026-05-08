@@ -415,14 +415,7 @@ fn validate_module_escrow_transition(
                 escrowed_token_unit,
               )?,
             }
-          None ->
-            // Backward-compatible drain for assets that were escrowed on the
-            // legacy module-state UTxO before escrow shards existed.
-            validate_output_amount(
-              spent_input,
-              updated_output,
-              expected_value_difference,
-            )
+          None -> False
         }
       }
     }
