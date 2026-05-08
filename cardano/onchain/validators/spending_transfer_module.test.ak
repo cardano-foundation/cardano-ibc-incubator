@@ -11,6 +11,7 @@ use ibc/apps/transfer/mint_voucher_redeemer.{
 }
 use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
+use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/types/keys as transfer_module_keys
 use ibc/auth.{AuthToken}
@@ -328,6 +329,41 @@ fn setup() -> MockData {
     proof,
     cardano_public_key_hash,
     cosmos_address,
+  }
+}
+
+fn transfer_escrow_input(
+  output_index: Int,
+  module_output: Output,
+  channel_id: ByteArray,
+  denom: ByteArray,
+  amount: Int,
+) -> Input {
+  Input {
+    output_reference: OutputReference {
+      transaction_id: #"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      output_index,
+    },
+    output: Output {
+      address: module_output.address,
+      value: from_asset(ada_policy_id, ada_asset_name, amount),
+      datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
+      reference_script: None,
+    },
+  }
+}
+
+fn transfer_escrow_output(
+  module_output: Output,
+  channel_id: ByteArray,
+  denom: ByteArray,
+  amount: Int,
+) -> Output {
+  Output {
+    address: module_output.address,
+    value: from_asset(ada_policy_id, ada_asset_name, amount),
+    datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
+    reference_script: None,
   }
 }
 
@@ -671,17 +707,6 @@ test on_recv_packet_unescrow_succeed() {
 
   let receiver = mock.cardano_public_key_hash
 
-  //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
-
-  //==========================arrange outputs=========================
-  let module_output =
-    Output {
-      ..mock.module_output,
-      value: mock.module_output.value
-        |> add(ada_policy_id, ada_asset_name, -transfer_amount),
-    }
-
   expect Some(receiver_public_key_hash) =
     string_utils.hex_string_to_bytes(receiver)
 
@@ -695,7 +720,7 @@ test on_recv_packet_unescrow_succeed() {
 
   let outputs =
     [
-      module_output,
+      mock.module_output,
       mock.channel_output,
       receiver_output,
       mock.host_state_output,
@@ -711,6 +736,19 @@ test on_recv_packet_unescrow_succeed() {
     transfer_coin.get_denom_prefix(source_port, source_channel)
       |> bytearray.concat("6c6f76656c616365")
 
+  //==========================arrange inputs=========================
+  let escrow_input =
+    transfer_escrow_input(
+      1,
+      mock.module_output,
+      mock.channel_id,
+      "6c6f76656c616365",
+      transfer_amount,
+    )
+  let inputs =
+    [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
+
+  //==========================arrange outputs=========================
   let (ftpd, packet) =
     build_packet(
       denom,
@@ -775,17 +813,6 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
 
   let receiver = mock.cardano_public_key_hash
 
-  //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
-
-  //==========================arrange outputs=========================
-  let module_output =
-    Output {
-      ..mock.module_output,
-      value: mock.module_output.value
-        |> add(ada_policy_id, ada_asset_name, -transfer_amount),
-    }
-
   expect Some(receiver_public_key_hash) =
     string_utils.hex_string_to_bytes(receiver)
 
@@ -799,7 +826,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
 
   let outputs =
     [
-      module_output,
+      mock.module_output,
       mock.channel_output,
       receiver_output,
       mock.host_state_output,
@@ -814,6 +841,18 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
   let denom =
     transfer_coin.get_denom_prefix(source_port, source_channel)
       |> bytearray.concat("6c6f76656c616365")
+
+  //==========================arrange inputs=========================
+  let escrow_input =
+    transfer_escrow_input(
+      1,
+      mock.module_output,
+      mock.channel_id,
+      "6c6f76656c616365",
+      transfer_amount,
+    )
+  let inputs =
+    [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
 
   let (ftpd, packet) =
     build_packet(
@@ -891,22 +930,29 @@ test transfer_escrow_succeed() {
   //==========================arrange inputs=========================
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
-  //==========================arrange outputs=========================
-  let module_output =
-    Output {
-      ..mock.module_output,
-      value: mock.module_output.value
-        |> add(ada_policy_id, ada_asset_name, transfer_amount),
-    }
-
-  let outputs = [module_output, mock.channel_output, mock.host_state_output]
-
   //==========================arrange redeemers=========================
   let source_port = "port-0"
   let source_channel = "channel-0"
 
   // lovelace
   let denom = "6c6f76656c616365"
+
+  //==========================arrange outputs=========================
+  let escrow_output =
+    transfer_escrow_output(
+      mock.module_output,
+      mock.channel_id,
+      denom,
+      transfer_amount,
+    )
+
+  let outputs =
+    [
+      mock.module_output,
+      escrow_output,
+      mock.channel_output,
+      mock.host_state_output,
+    ]
 
   let (ftpd, packet) =
     build_packet(
@@ -967,31 +1013,8 @@ test transfer_burn_voucher_succeed() {
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
 
   //==========================arrange outputs=========================
-  let module_output =
-    Output {
-      ..mock.module_output,
-      value: mock.module_output.value
-        |> add(ada_policy_id, ada_asset_name, -transfer_amount),
-    }
-
-  expect Some(receiver_public_key_hash) =
-    string_utils.hex_string_to_bytes(receiver)
-
-  let receiver_output =
-    Output {
-      address: from_verification_key(receiver_public_key_hash),
-      value: from_asset(ada_policy_id, ada_asset_name, transfer_amount),
-      datum: NoDatum,
-      reference_script: None,
-    }
-
   let outputs =
-    [
-      module_output,
-      mock.channel_output,
-      receiver_output,
-      mock.host_state_output,
-    ]
+    [mock.module_output, mock.channel_output, mock.host_state_output]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -1142,17 +1165,6 @@ test on_timeout_packet_unescrow_succeed() {
 
   let sender = mock.cardano_public_key_hash
 
-  //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
-
-  //==========================arrange outputs=========================
-  let module_output =
-    Output {
-      ..mock.module_output,
-      value: mock.module_output.value
-        |> add(ada_policy_id, ada_asset_name, -transfer_amount),
-    }
-
   expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
 
   let receiver_output =
@@ -1169,7 +1181,7 @@ test on_timeout_packet_unescrow_succeed() {
 
   let outputs =
     [
-      module_output,
+      mock.module_output,
       mock.channel_output,
       receiver_output,
       mock.host_state_output,
@@ -1181,6 +1193,18 @@ test on_timeout_packet_unescrow_succeed() {
 
   // lovelace
   let denom = "6c6f76656c616365"
+
+  //==========================arrange inputs=========================
+  let escrow_input =
+    transfer_escrow_input(
+      1,
+      mock.module_output,
+      source_channel,
+      denom,
+      transfer_amount,
+    )
+  let inputs =
+    [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
 
   let (ftpd, packet) =
     build_packet(
@@ -1412,17 +1436,6 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
 
   let sender = mock.cardano_public_key_hash
 
-  //==========================arrange inputs=========================
-  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
-
-  //==========================arrange outputs=========================
-  let module_output =
-    Output {
-      ..mock.module_output,
-      value: mock.module_output.value
-        |> add(ada_policy_id, ada_asset_name, -transfer_amount),
-    }
-
   expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
 
   let receiver_output =
@@ -1435,7 +1448,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
 
   let outputs =
     [
-      module_output,
+      mock.module_output,
       mock.channel_output,
       receiver_output,
       mock.host_state_output,
@@ -1447,6 +1460,18 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
 
   // lovelace
   let denom = "6c6f76656c616365"
+
+  //==========================arrange inputs=========================
+  let escrow_input =
+    transfer_escrow_input(
+      1,
+      mock.module_output,
+      source_channel,
+      denom,
+      transfer_amount,
+    )
+  let inputs =
+    [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
 
   let (ftpd, packet) =
     build_packet(

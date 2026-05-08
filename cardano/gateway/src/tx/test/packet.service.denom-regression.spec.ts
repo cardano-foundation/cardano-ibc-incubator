@@ -13,23 +13,23 @@ jest.mock('../../shared/types/connection/verify-proof-redeemer', () => ({
   encodeVerifyProofRedeemer: jest.fn(() => 'encoded-verify-proof-redeemer'),
 }));
 
-describe('PacketService denom regression coverage', () => {
-  const existingTraceRegistryProof = {
-    kind: 'existing' as const,
-    traceRegistryDirectoryUtxo: {
-      txHash: 'trace-directory',
-      outputIndex: 0,
-      assets: { tracedir: 1n },
+const existingTraceRegistryProof = {
+  kind: 'existing' as const,
+  traceRegistryDirectoryUtxo: {
+    txHash: 'trace-directory',
+    outputIndex: 0,
+    assets: { tracedir: 1n },
+  },
+  traceRegistryShardWitnessUtxos: [
+    {
+      txHash: 'trace-shard',
+      outputIndex: 1,
+      assets: { traceshard: 1n },
     },
-    traceRegistryShardWitnessUtxos: [
-      {
-        txHash: 'trace-shard',
-        outputIndex: 1,
-        assets: { traceshard: 1n },
-      },
-    ],
-  };
+  ],
+};
 
+describe('PacketService denom regression coverage', () => {
   it('resolves ibc/<hash> to canonical denom and uses burn path packet/module denoms', async () => {
     const loggerMock = {
       log: jest.fn(),

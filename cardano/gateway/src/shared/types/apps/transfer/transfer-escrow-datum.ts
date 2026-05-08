@@ -5,7 +5,7 @@ export type TransferEscrowDatum = {
   denom: string;
 };
 
-export function transferEscrowDatumSchema(Lucid: typeof import('@lucid-evolution/lucid')) {
+function transferEscrowDatumSchema(Lucid: typeof import('@lucid-evolution/lucid')) {
   return Lucid.Data.Object({
     channel_id: Lucid.Data.Bytes(),
     denom: Lucid.Data.Bytes(),
