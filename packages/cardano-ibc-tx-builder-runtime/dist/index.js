@@ -563,6 +563,33 @@ function dedupeUtxos(utxos) {
     }
     return orderedKeys.map((key) => seen.get(key)).filter(Boolean);
 }
+function escrowShardHasOnlyDenom(utxo, denomToken) {
+    return Object.keys(utxo.assets ?? {}).every((unit) => unit === 'lovelace' || unit === denomToken);
+}
+async function findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount) {
+    const encodedDatum = await context.lucidService.encode({ channel_id: channelId, denom: packetDenom }, 'transferEscrow');
+    let utxos = [];
+    try {
+        utxos = await context.lucidService.findUtxoAt(context.deployment.modules.transfer.address);
+    }
+    catch {
+        utxos = [];
+    }
+    const candidates = utxos
+        .filter((utxo) => utxo.datum === encodedDatum)
+        .filter((utxo) => escrowShardHasOnlyDenom(utxo, denomToken))
+        .filter((utxo) => requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
+        .sort((a, b) => {
+        const aAmount = a.assets[denomToken] ?? 0n;
+        const bAmount = b.assets[denomToken] ?? 0n;
+        if (aAmount === bAmount) {
+            const txHashCompare = a.txHash.localeCompare(b.txHash);
+            return txHashCompare !== 0 ? txHashCompare : a.outputIndex - b.outputIndex;
+        }
+        return aAmount > bAmount ? -1 : 1;
+    });
+    return { utxo: candidates[0], encodedDatum };
+}
 async function ensureTreeAlignedForRoot(context, onChainRoot) {
     if (!(0, ibcStateRoot_1.isTreeAligned)(onChainRoot)) {
         context.logger.warn(`IBC tree root mismatch for local tx builder runtime, aligning to ${onChainRoot.slice(0, 16)}...`);
@@ -771,6 +798,7 @@ function createTxBuilderRuntime(config) {
             encode: (value, kind) => context.lucidService.encode(value, kind),
             findUtxoAtWithUnit: findWalletUtxoAtWithUnit,
             tryFindUtxosAt: getWalletUtxos,
+            findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) => findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount),
             createUnsignedSendPacketBurnTx: (dto) => context.lucidService.createUnsignedSendPacketBurnTx(dto),
             createUnsignedSendPacketEscrowTx: (dto) => context.lucidService.createUnsignedSendPacketEscrowTx(dto),
             invalidArgument: (message) => new Error(message),

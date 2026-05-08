@@ -46,7 +46,7 @@ type DeploymentConfig = {
         };
     };
 };
-export type CodecType = 'client' | 'connection' | 'channel' | 'host_state' | 'host_state_redeemer' | 'spendChannelRedeemer' | 'iBCModuleRedeemer' | 'mintVoucherRedeemer';
+export type CodecType = 'client' | 'connection' | 'channel' | 'transferEscrow' | 'host_state' | 'host_state_redeemer' | 'spendChannelRedeemer' | 'iBCModuleRedeemer' | 'mintVoucherRedeemer';
 export declare class LucidIbcAdapter {
     private readonly lucid;
     private readonly deployment;

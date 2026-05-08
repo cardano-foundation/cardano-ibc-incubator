@@ -37,6 +37,7 @@ import {
 } from '@shared/helpers/helper';
 import { RpcException } from '@nestjs/microservices';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
+import { TransferEscrowDatum } from '@shared/types/apps/transfer/transfer-escrow-datum';
 import { mapLovelaceDenom, normalizeDenomTokenTransfer, sumLovelaceFromUtxos } from './helper/helper';
 import { convertHex2String, convertString2Hex, hashSHA256 } from '../shared/helpers/hex';
 import { MintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
@@ -1732,11 +1733,19 @@ export class PacketService {
               packetSourceChannel,
             );
             const transferAmount = BigInt(fungibleTokenPacketData.amount);
-            const denomToken = this._resolveAssetUnitFromUtxoAssets(
-              transferModuleUtxo.assets,
-              mapLovelaceDenom(unescrowDenom, 'packet_to_asset'),
+            const requestedDenomToken = mapLovelaceDenom(unescrowDenom, 'packet_to_asset');
+            const transferEscrowShard = await this.findTransferEscrowShard(
+              channelId,
+              convertString2Hex(unescrowDenom),
+              requestedDenomToken,
+              transferAmount,
             );
-            const escrowedAmount = transferModuleUtxo.assets[denomToken] ?? 0n;
+            const escrowSourceAssets = transferEscrowShard.utxo?.assets ?? transferModuleUtxo.assets;
+            const denomToken = this._resolveAssetUnitFromUtxoAssets(
+              escrowSourceAssets,
+              requestedDenomToken,
+            );
+            const escrowedAmount = escrowSourceAssets[denomToken] ?? 0n;
             if (escrowedAmount < transferAmount) {
               throw new GrpcInvalidArgumentException(
                 `Insufficient escrowed amount for ${denomToken}: have ${escrowedAmount}, need ${transferAmount}`,
@@ -1749,11 +1758,13 @@ export class PacketService {
               connectionUtxo,
               clientUtxo,
               transferModuleUtxo,
+              transferEscrowUtxo: transferEscrowShard.utxo,
 
               encodedHostStateRedeemer,
               encodedUpdatedHostStateDatum,
               encodedSpendChannelRedeemer,
               encodedSpendTransferModuleRedeemer,
+              encodedTransferEscrowDatum: transferEscrowShard.encodedDatum,
               channelTokenUnit,
               encodedUpdatedChannelDatum,
               transferAmount,
@@ -1772,6 +1783,9 @@ export class PacketService {
                 { label: 'host_state', utxo: hostStateUtxo },
                 { label: 'channel', utxo: channelUtxo },
                 { label: 'transfer_module', utxo: transferModuleUtxo },
+                ...(transferEscrowShard.utxo
+                  ? [{ label: 'transfer_escrow', utxo: transferEscrowShard.utxo }]
+                  : []),
               ],
               channelOutputAddress: deploymentConfig.validators.spendChannel.address,
               hostStateOutputAddress: deploymentConfig.validators.hostStateStt.address,
@@ -2166,11 +2180,26 @@ export class PacketService {
 
     if (!voucherHasPrefix) {
       this.logger.log(denom, 'unescrow timeout processing');
+      const denomToken = normalizeDenomTokenTransfer(denom);
+      const transferEscrowShard = await this.findTransferEscrowShard(
+        packet.source_channel,
+        convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.denom),
+        denomToken,
+        transferAmount,
+      );
+      const escrowSourceAssets = transferEscrowShard.utxo?.assets ?? transferModuleUtxo.assets;
+      const escrowedAmount = escrowSourceAssets[denomToken] ?? 0n;
+      if (escrowedAmount < transferAmount) {
+        throw new GrpcInvalidArgumentException(
+          `Insufficient escrowed amount for ${denomToken}: have ${escrowedAmount}, need ${transferAmount}`,
+        );
+      }
 
       const unsignedSendPacketParams: UnsignedTimeoutPacketUnescrowDto = {
         hostStateUtxo: hostStateUtxo,
         channelUtxo: channelUtxo,
         transferModuleUtxo: transferModuleUtxo,
+        transferEscrowUtxo: transferEscrowShard.utxo,
         connectionUtxo: connectionUtxo,
         clientUtxo: clientUtxo,
 
@@ -2178,13 +2207,14 @@ export class PacketService {
         encodedUpdatedHostStateDatum: encodedUpdatedHostStateDatum,
         encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
         encodedSpendTransferModuleRedeemer: encodedSpendTransferModuleRedeemer,
+        encodedTransferEscrowDatum: transferEscrowShard.encodedDatum,
         encodedUpdatedChannelDatum: encodedUpdatedChannelDatum,
 
         transferAmount: transferAmount,
         channelTokenUnit: channelTokenUnit,
         spendChannelAddress: spendChannelAddress,
         transferModuleAddress: transferModuleAddress,
-        denomToken: normalizeDenomTokenTransfer(denom),
+        denomToken,
         senderAddress: this.lucidService.credentialToAddress(senderPublicKeyHash),
 
         constructedAddress: constructedAddress,
@@ -2375,6 +2405,8 @@ export class PacketService {
           this.lucidService.findUtxoAtWithUnit(address, unit),
         tryFindUtxosAt: (address, options) =>
           this.lucidService.tryFindUtxosAt(address, options),
+        findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) =>
+          this.findTransferEscrowShard(channelId, packetDenom, denomToken, requiredAmount),
         createUnsignedSendPacketBurnTx: (dto) =>
           this.lucidService.createUnsignedSendPacketBurnTx(
             dto as UnsignedSendPacketBurnDto,
@@ -2826,6 +2858,20 @@ export class PacketService {
     ) {
       this.logger.log('AckPacketUnescrow');
       const denomToken = mapLovelaceDenom(fungibleTokenPacketData.denom, 'packet_to_asset');
+      const transferAmount = BigInt(fungibleTokenPacketData.amount);
+      const transferEscrowShard = await this.findTransferEscrowShard(
+        channelId,
+        fTokenPacketData.denom,
+        denomToken,
+        transferAmount,
+      );
+      const escrowSourceAssets = transferEscrowShard.utxo?.assets ?? transferModuleUtxo.assets;
+      const escrowedAmount = escrowSourceAssets[denomToken] ?? 0n;
+      if (escrowedAmount < transferAmount) {
+        throw new GrpcInvalidArgumentException(
+          `Insufficient escrowed amount for ${denomToken}: have ${escrowedAmount}, need ${transferAmount}`,
+        );
+      }
       // build update channel datum
       const updatedChannelDatum: ChannelDatum = {
         ...channelDatum,
@@ -2846,14 +2892,16 @@ export class PacketService {
         connectionUtxo,
         clientUtxo,
         transferModuleUtxo,
+        transferEscrowUtxo: transferEscrowShard.utxo,
 
         encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum,
         encodedSpendChannelRedeemer,
         encodedSpendTransferModuleRedeemer,
+        encodedTransferEscrowDatum: transferEscrowShard.encodedDatum,
         channelTokenUnit,
         encodedUpdatedChannelDatum,
-        transferAmount: BigInt(fungibleTokenPacketData.amount),
+        transferAmount,
         senderAddress: this.lucidService.credentialToAddress(fungibleTokenPacketData.sender),
 
         denomToken,
@@ -3221,6 +3269,56 @@ export class PacketService {
   }
   private getSpendChannelAddress(): string {
     return this.configService.get('deployment').validators.spendChannel.address;
+  }
+  private buildTransferEscrowDatum(channelId: string, packetDenom: string): TransferEscrowDatum {
+    return {
+      channel_id: channelId,
+      denom: packetDenom,
+    };
+  }
+  private async encodeTransferEscrowDatum(channelId: string, packetDenom: string): Promise<string> {
+    return this.lucidService.encode(
+      this.buildTransferEscrowDatum(channelId, packetDenom),
+      'transferEscrow',
+    );
+  }
+  private escrowShardHasOnlyDenom(utxo: UTxO, denomToken: string): boolean {
+    return Object.keys(utxo.assets ?? {}).every((unit) =>
+      unit === LOVELACE || unit === denomToken
+    );
+  }
+  private async findTransferEscrowShard(
+    channelId: string,
+    packetDenom: string,
+    denomToken: string,
+    requiredAmount?: bigint,
+  ): Promise<{ utxo?: UTxO; encodedDatum: string }> {
+    const encodedDatum = await this.encodeTransferEscrowDatum(channelId, packetDenom);
+    let utxos: UTxO[] = [];
+    try {
+      utxos = await this.lucidService.findUtxoAt(this.getTransferModuleAddress());
+    } catch {
+      utxos = [];
+    }
+
+    const candidates = utxos
+      .filter((utxo) => utxo.datum === encodedDatum)
+      .filter((utxo) => this.escrowShardHasOnlyDenom(utxo, denomToken))
+      .filter((utxo) => requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
+      .sort((a, b) => {
+        const aAmount = a.assets[denomToken] ?? 0n;
+        const bAmount = b.assets[denomToken] ?? 0n;
+        if (aAmount === bAmount) {
+          const txHashCompare = a.txHash.localeCompare(b.txHash);
+          return txHashCompare !== 0 ? txHashCompare : a.outputIndex - b.outputIndex;
+        }
+        return aAmount > bAmount ? -1 : 1;
+      });
+
+    return {
+      utxo: candidates[0],
+      encodedDatum,
+    };
   }
   private getTransferModuleIdentifier(): string {
     return this.configService.get('deployment').modules.transfer.identifier;

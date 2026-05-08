@@ -7,6 +7,7 @@ import {
   WithLegacyTransferModuleUtxo,
   WithPacketPolicyAndChannelToken,
   WithTransferAmount,
+  WithTransferEscrowShard,
   WithTransferModuleSpend,
 } from './fragments';
 
@@ -15,6 +16,7 @@ export type UnsignedSendPacketEscrowDto = WithHostStateUpdate &
   WithLegacyTransferModuleUtxo &
   WithChannelSpend &
   WithTransferModuleSpend &
+  WithTransferEscrowShard &
   WithTransferAmount &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'sendPacketPolicyId'> & {

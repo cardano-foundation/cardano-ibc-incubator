@@ -123,6 +123,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
     }
     const walletUtxos = dedupeUtxos(senderWalletUtxos);
     const denomToken = resolveEscrowDenomToken(inputDenom, resolvedDenom, walletUtxos, deps);
+    const transferEscrowShard = await deps.findTransferEscrowShard(convertStringToHex(sendPacketOperator.sourceChannel), convertStringToHex(packetDenom), denomToken);
     const unsignedTx = deps.createUnsignedSendPacketEscrowTx({
         hostStateUtxo,
         channelUTxO: context.channelUtxo,
@@ -143,6 +144,8 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
         channelTokenUnit: context.channelTokenUnit,
         transferModuleAddress: context.deployment.transferModuleAddress,
         denomToken,
+        transferEscrowUtxo: transferEscrowShard.utxo,
+        encodedTransferEscrowDatum: transferEscrowShard.encodedDatum,
         sendPacketPolicyId: context.deployment.sendPacketPolicyId,
         channelToken: context.channelToken,
     });

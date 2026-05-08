@@ -5,6 +5,7 @@ import {
   WithHostStateUpdate,
   WithPacketPolicyAndChannelToken,
   WithTransferAmount,
+  WithTransferEscrowShard,
   WithTransferModuleSpend,
   WithTransferModuleUtxo,
   WithVerifyProof,
@@ -15,6 +16,7 @@ export type UnsignedAckPacketUnescrowDto = WithHostStateUpdate &
   WithTransferModuleUtxo &
   WithChannelSpend &
   WithTransferModuleSpend &
+  WithTransferEscrowShard &
   WithTransferAmount &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'ackPacketPolicyId'> &

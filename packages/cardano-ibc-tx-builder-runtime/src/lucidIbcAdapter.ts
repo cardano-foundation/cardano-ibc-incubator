@@ -49,6 +49,7 @@ export type CodecType =
   | 'client'
   | 'connection'
   | 'channel'
+  | 'transferEscrow'
   | 'host_state'
   | 'host_state_redeemer'
   | 'spendChannelRedeemer'
@@ -72,6 +73,42 @@ function updateTransferModuleAssets(
   }
 
   return updatedAssets;
+}
+
+function payTransferEscrowDelta(
+  tx: TxBuilder,
+  transferModuleAddress: string,
+  encodedTransferEscrowDatum: string,
+  transferAmount: bigint,
+  denomToken: string,
+  transferEscrowUtxo?: UTxO,
+): TxBuilder {
+  const baseAssets = transferEscrowUtxo?.assets ?? {};
+  const updatedAssets = updateTransferModuleAssets(baseAssets, transferAmount, denomToken);
+  const targetAmount = updatedAssets[denomToken] ?? 0n;
+  const keepsNonLovelace = Object.keys(updatedAssets).some((unit) => unit !== 'lovelace');
+
+  if (targetAmount <= 0n && !keepsNonLovelace) {
+    return tx;
+  }
+
+  return tx.pay.ToContract(
+    transferModuleAddress,
+    { kind: 'inline', value: encodedTransferEscrowDatum },
+    updatedAssets,
+  );
+}
+
+function encodeTransferEscrowDatum(
+  data: any,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+): string {
+  const { Data } = Lucid;
+  const TransferEscrowDatumSchema = Data.Object({
+    channel_id: Data.Bytes(),
+    denom: Data.Bytes(),
+  });
+  return Data.to(data, TransferEscrowDatumSchema as any, { canonical: true });
 }
 
 function encodeAuthToken(
@@ -881,6 +918,8 @@ export class LucidIbcAdapter {
     switch (type) {
       case 'host_state':
         return encodeHostStateDatum(data, this.LucidImporter);
+      case 'transferEscrow':
+        return encodeTransferEscrowDatum(data, this.LucidImporter);
       case 'host_state_redeemer':
         return encodeHostStateRedeemer(data, this.LucidImporter);
       case 'spendChannelRedeemer':
@@ -949,7 +988,12 @@ export class LucidIbcAdapter {
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
-      .collectFrom([dto.transferModuleUTxO], dto.encodedSpendTransferModuleRedeemer)
+      .collectFrom(
+        dto.transferEscrowUtxo
+          ? [dto.transferModuleUTxO, dto.transferEscrowUtxo]
+          : [dto.transferModuleUTxO],
+        dto.encodedSpendTransferModuleRedeemer,
+      )
       .readFrom([dto.connectionUTxO, dto.clientUTxO])
       .pay.ToContract(
         hostStateAddress,
@@ -964,16 +1008,24 @@ export class LucidIbcAdapter {
       .pay.ToContract(
         dto.transferModuleAddress,
         undefined,
-        updateTransferModuleAssets(
-          dto.transferModuleUTxO.assets,
-          dto.transferAmount,
-          dto.denomToken,
-        ),
+        { ...dto.transferModuleUTxO.assets },
       )
       .mintAssets(
         { [dto.sendPacketPolicyId]: 1n },
         encodeAuthToken(dto.channelToken, this.LucidImporter),
       );
+
+    if (!dto.encodedTransferEscrowDatum) {
+      throw new Error('Transfer escrow datum is required for sharded escrow updates');
+    }
+    payTransferEscrowDelta(
+      tx,
+      dto.transferModuleAddress,
+      dto.encodedTransferEscrowDatum,
+      dto.transferAmount,
+      dto.denomToken,
+      dto.transferEscrowUtxo,
+    );
 
     return tx;
   }
