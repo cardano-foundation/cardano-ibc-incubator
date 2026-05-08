@@ -43,9 +43,24 @@ impl DockerCli {
         self.compose_output(compose_args.as_slice())
     }
 
+    pub fn compose_exec_no_tty_output_allow_failure(
+        &self,
+        service: &str,
+        args: &[&str],
+    ) -> Result<Output, String> {
+        let mut command = self.compose_command(&["exec", "-T", service]);
+        command.args(args);
+        runner::run_output(&mut command)
+    }
+
     pub fn raw_output(&self, args: &[&str]) -> Result<Output, String> {
         let mut command = self.raw_command(args);
         runner::run_ok_output(&mut command)
+    }
+
+    pub fn raw_output_allow_failure(&self, args: &[&str]) -> Result<Output, String> {
+        let mut command = self.raw_command(args);
+        runner::run_output(&mut command)
     }
 
     pub(crate) fn compose_command(&self, args: &[&str]) -> Command {

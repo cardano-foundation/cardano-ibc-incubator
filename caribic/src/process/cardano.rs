@@ -55,4 +55,11 @@ impl CardanoCli {
         self.docker
             .compose_exec_no_tty_output("cardano-node", args.as_slice())
     }
+
+    pub fn exec_output_allow_failure(&self, cardano_cli_args: &[&str]) -> Result<Output, String> {
+        let mut args = vec!["cardano-cli"];
+        args.extend_from_slice(cardano_cli_args);
+        self.docker
+            .compose_exec_no_tty_output_allow_failure("cardano-node", args.as_slice())
+    }
 }

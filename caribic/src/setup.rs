@@ -23,6 +23,7 @@ const LOCAL_STABILITY_TARGET_POOL_STAKE_LOVELACE: u64 = 900_000_000_000;
 const LOCAL_STABILITY_THRESHOLD_DEPTH: &str = "10";
 const LOCAL_STABILITY_THRESHOLD_UNIQUE_POOLS: &str = "2";
 const LOCAL_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: &str = "5000";
+const LOCAL_YACI_STORE_POSTGRES_VOLUME: &str = "cardano_yaci_store_postgres_local_data";
 const PREPROD_ENVIRONMENT_BASE_URL: &str =
     "https://book.world.dev.cardano.org/environments/preprod";
 const YACI_SYNC_START_SLOT_KEY: &str = "YACI_SYNC_START_SLOT";
@@ -335,9 +336,7 @@ pub fn write_cardano_runtime_selection(
         .map(|checkpoint| checkpoint.block_hash.as_str())
         .unwrap_or("");
     let yaci_store_postgres_volume = match (network, yaci_checkpoint.as_ref()) {
-        (config::CoreCardanoNetwork::Local, _) => {
-            "cardano_yaci_store_postgres_local_data".to_string()
-        }
+        (config::CoreCardanoNetwork::Local, _) => LOCAL_YACI_STORE_POSTGRES_VOLUME.to_string(),
         (config::CoreCardanoNetwork::Preprod, Some(checkpoint)) => format!(
             "cardano_yaci_store_postgres_preprod_{}_{}",
             checkpoint.slot,
@@ -699,7 +698,9 @@ fn write_yaci_local_genesis_files(
 
 fn remove_local_yaci_postgres_volume() -> Result<(), Box<dyn std::error::Error>> {
     let output = DockerCli::new(Path::new("."))
-        .raw_output(["volume", "rm", "-f", "cardano_yaci_store_postgres_data"].as_slice())
+        .raw_output_allow_failure(
+            ["volume", "rm", "-f", LOCAL_YACI_STORE_POSTGRES_VOLUME].as_slice(),
+        )
         .map_err(|error| format!("Failed to remove local Yaci postgres volume: {}", error))?;
 
     if output.status.success() {
@@ -1237,7 +1238,7 @@ pub fn seed_cardano_devnet(
             "42",
         ];
         let address_output = cardano_cli
-            .exec_output(build_address_args.as_slice())
+            .exec_output_allow_failure(build_address_args.as_slice())
             .map_err(|error| format!("Failed to build faucet address: {}", error))?;
         if !address_output.status.success() {
             return Err(format!(
@@ -1273,7 +1274,7 @@ pub fn seed_cardano_devnet(
         let mut last_seed_error: Option<String> = None;
         for submit_attempt in 1..=6 {
             let faucet_txin_output = cardano_cli
-                .exec_output(faucet_txin_args.as_slice())
+                .exec_output_allow_failure(faucet_txin_args.as_slice())
                 .map_err(|error| format!("Failed to get faucet txin: {}", error))?;
 
             if !faucet_txin_output.status.success() {
@@ -1319,7 +1320,7 @@ pub fn seed_cardano_devnet(
             ];
 
             let build_tx_output = cardano_cli
-                .exec_output(build_tx_args.as_slice())
+                .exec_output_allow_failure(build_tx_args.as_slice())
                 .map_err(|error| format!("Failed to build seed transaction: {}", error))?;
             if !build_tx_output.status.success() {
                 let stderr = String::from_utf8_lossy(&build_tx_output.stderr)
@@ -1349,7 +1350,7 @@ pub fn seed_cardano_devnet(
             ];
 
             let sign_tx_output = cardano_cli
-                .exec_output(sign_tx_args.as_slice())
+                .exec_output_allow_failure(sign_tx_args.as_slice())
                 .map_err(|error| format!("Failed to sign seed transaction: {}", error))?;
             if !sign_tx_output.status.success() {
                 return Err(format!(
@@ -1361,7 +1362,7 @@ pub fn seed_cardano_devnet(
             }
 
             let tx_id_output = cardano_cli
-                .exec_output(
+                .exec_output_allow_failure(
                     ["conway", "transaction", "txid", "--tx-file", signed_tx_file].as_slice(),
                 )
                 .map_err(|error| format!("Failed to compute seed tx id: {}", error))?;
@@ -1408,7 +1409,7 @@ pub fn seed_cardano_devnet(
             );
 
             let submit_tx_output = cardano_cli
-                .exec_output(submit_tx_args.as_slice())
+                .exec_output_allow_failure(submit_tx_args.as_slice())
                 .map_err(|error| format!("Failed to submit seed transaction: {}", error))?;
 
             if !submit_tx_output.status.success() {
@@ -1426,7 +1427,7 @@ pub fn seed_cardano_devnet(
 
             for poll_attempt in 1..=4 {
                 let utxo_output = cardano_cli
-                    .exec_output(query_utxo_args.as_slice())
+                    .exec_output_allow_failure(query_utxo_args.as_slice())
                     .map_err(|error| format!("Failed to query settlement UTxO: {}", error))?;
 
                 if utxo_output.status.success() {
