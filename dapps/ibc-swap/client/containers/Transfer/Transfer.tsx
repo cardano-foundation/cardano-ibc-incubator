@@ -3,7 +3,7 @@
 /* global BigInt */
 
 import { Box, Heading, Spinner, Text, useDisclosure } from '@chakra-ui/react';
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import CustomInput from '@/components/CustomInput';
 import TransferContext from '@/contexts/TransferContext';
@@ -24,6 +24,7 @@ import {
 
 import {
   getCardanoWalletUtxosForBuilder,
+  requireUnsignedCardanoTxCborHex,
   unsignedTxTransferFromCosmos,
   unsignedTxTransferFromCardano,
 } from '@/utils/buildTransferTx';
@@ -50,6 +51,12 @@ import {
   logCardanoWalletError,
   shortValue,
 } from '@/utils/cardanoWalletDebug';
+import {
+  clearResumableTransfer,
+  persistResumableTransfer,
+  readResumableTransfer,
+  type ResumableTransferRecord,
+} from '@/utils/resumableTransfer';
 import {
   findRuntimeChain,
   findRuntimeRoute,
@@ -182,27 +189,6 @@ const hasPositiveIntegerAmount = (value: string): boolean => {
   }
 };
 
-const decodeUnsignedCardanoTx = (base64Value: unknown): string => {
-  if (typeof base64Value !== 'string' || !base64Value.trim()) {
-    throw new Error(
-      'Cardano transfer builder returned an unsigned tx with an empty payload.',
-    );
-  }
-
-  const unsignedTx = Buffer.from(base64Value, 'base64').toString('utf8').trim();
-  if (
-    !unsignedTx ||
-    unsignedTx.length % 2 !== 0 ||
-    /[^0-9a-f]/i.test(unsignedTx)
-  ) {
-    throw new Error(
-      'Cardano transfer builder returned an unsigned tx payload that is not hex-encoded transaction CBOR.',
-    );
-  }
-
-  return unsignedTx;
-};
-
 const getCardanoBuildErrorMessage = (error: unknown): string => {
   const message = getErrorMessage(
     error,
@@ -236,6 +222,54 @@ const getCardanoBuildErrorMessage = (error: unknown): string => {
   }
 
   return message;
+};
+
+const networkItemFromChainId = (
+  chainId?: string,
+  savedNetwork?: NetworkItemProps,
+): NetworkItemProps => {
+  if (savedNetwork?.networkId) {
+    return savedNetwork;
+  }
+
+  const chain = selectableChains.find(
+    (candidate) =>
+      candidate.chain_id === chainId || candidate.ibc_chain_id === chainId,
+  );
+  if (chain) {
+    return {
+      networkId: chain.chain_id,
+      ibcChainId: chain.ibc_chain_id || chain.chain_id,
+      networkLogo:
+        chain?.logo_URIs?.svg ||
+        (chain.chain_id === CARDANO_CHAIN_ID
+          ? DefaultCardanoNetworkIcon.src
+          : DefaultCosmosNetworkIcon.src),
+      networkName: chain.chain_name,
+      networkPrettyName: chain?.pretty_name,
+      networkType: chain.network_type,
+      networkRole: 'user',
+      isDisabled: chain.status !== 'active',
+      disabledReason:
+        chain.status !== 'active' ? 'Unavailable in this mode' : undefined,
+    };
+  }
+
+  if (!chainId) {
+    return {};
+  }
+
+  return {
+    networkId: chainId,
+    ibcChainId: chainId,
+    networkLogo:
+      chainId === CARDANO_CHAIN_ID
+        ? DefaultCardanoNetworkIcon.src
+        : DefaultCosmosNetworkIcon.src,
+    networkName: chainId,
+    networkPrettyName: runtimeChainLabel(chainId),
+    networkRole: 'user',
+  };
 };
 
 const RoutePreview = ({ preview }: { preview: RoutePreviewState }) => {
@@ -299,6 +333,10 @@ const Transfer = () => {
     useState<RoutePreviewState>(initRoutePreview);
   const [lastPrepareFailed, setLastPrepareFailed] = useState(false);
   const [lastTxHash, setLastTxHash] = useState<string>('');
+  const [lastTransferSubmittedAt, setLastTransferSubmittedAt] =
+    useState<string>('');
+  const [resumeChecked, setResumeChecked] = useState(false);
+  const isRestoringTransferRef = useRef(false);
   const {
     wallet: cardanoWallet,
     name: connectedCardanoWalletName,
@@ -309,6 +347,8 @@ const Transfer = () => {
     setEstData(initEstData);
     setLastPrepareFailed(false);
     setLastTxHash('');
+    setLastTransferSubmittedAt('');
+    clearResumableTransfer();
   };
 
   const {
@@ -317,7 +357,9 @@ const Transfer = () => {
     setDestinationAddress,
     getDataTransfer,
     fromNetwork,
+    setFromNetwork,
     toNetwork,
+    setToNetwork,
     selectedToken,
     setSelectedToken,
     setSendAmount,
@@ -359,6 +401,77 @@ const Transfer = () => {
     fromNetwork.networkId,
     toNetwork.networkId,
   );
+
+  const getSourceWalletAddress = (sourceChainId = fromNetwork.networkId) =>
+    sourceChainId === CARDANO_CHAIN_ID
+      ? cardanoAddress || undefined
+      : cosmosChain.address || undefined;
+
+  const buildResumableTransferRecord = (
+    sourceTxHash: string,
+    submittedEstData: EstimateFeeType,
+    createdAt = new Date().toISOString(),
+  ): ResumableTransferRecord => ({
+    version: 1,
+    sourceTxHash,
+    sourceChainId: fromNetwork.networkId || '',
+    destinationChainId: toNetwork.networkId || '',
+    sourceWalletAddress: getSourceWalletAddress(),
+    destinationAddress,
+    sendAmount,
+    estReceiveAmount: submittedEstData.estReceiveAmount,
+    estTime: submittedEstData.estTime,
+    estFee: submittedEstData.estFee,
+    fromNetwork,
+    toNetwork,
+    selectedToken,
+    createdAt,
+  });
+
+  const restoreResumableTransfer = (record: ResumableTransferRecord) => {
+    isRestoringTransferRef.current = true;
+    const restoredFromNetwork = networkItemFromChainId(
+      record.sourceChainId,
+      record.fromNetwork,
+    );
+    const restoredToNetwork = networkItemFromChainId(
+      record.destinationChainId,
+      record.toNetwork,
+    );
+
+    setFromNetwork(restoredFromNetwork);
+    setToNetwork(restoredToNetwork);
+    setSelectedToken(record.selectedToken || {});
+    setSendAmount(record.sendAmount || '');
+    setDestinationAddress(record.destinationAddress || '');
+    setEstData({
+      display: true,
+      canEst: false,
+      msgs: [],
+      estReceiveAmount: record.estReceiveAmount || '',
+      estFee: record.estFee || '----',
+      estTime:
+        record.estTime ||
+        (record.sourceChainId === CARDANO_CHAIN_ID
+          ? CARDANO_TRANSFER_EST_TIME
+          : COSMOS_TRANSFER_EST_TIME),
+    });
+    setLastPrepareFailed(false);
+    setRoutePreview({
+      status: 'ready',
+      chainIds: runtimeRouteChainIds(
+        record.sourceChainId,
+        record.destinationChainId,
+      ),
+      message: 'Resumed transfer tracking from this browser.',
+    });
+    setLastTxHash(record.sourceTxHash);
+    setLastTransferSubmittedAt(record.createdAt);
+    setIsSubmitted(true);
+    window.setTimeout(() => {
+      isRestoringTransferRef.current = false;
+    }, 0);
+  };
 
   const getSourceWalletMismatch = (): string | null => {
     if (!fromNetwork.networkId) return null;
@@ -638,7 +751,9 @@ const Transfer = () => {
           { amount: sendAmount, denom: selectedToken.tokenId! },
           walletUtxos,
         );
-        const unsignedTx = decodeUnsignedCardanoTx(msg[0].value);
+        const unsignedTx = requireUnsignedCardanoTxCborHex(
+          msg[0].unsignedTxCborHex,
+        );
         const estFee = msg[0].feeLovelace;
 
         setRoutePreview({
@@ -702,7 +817,12 @@ const Transfer = () => {
           elapsedMs: Date.now() - startedAt,
           txHash: shortValue(txHash),
         });
+        const submittedAt = new Date().toISOString();
+        persistResumableTransfer(
+          buildResumableTransferRecord(txHash, preparedEstData, submittedAt),
+        );
         setLastTxHash(txHash);
+        setLastTransferSubmittedAt(submittedAt);
         setIsSubmitted(true);
       }
     } catch (e: unknown) {
@@ -756,7 +876,16 @@ const Transfer = () => {
         );
         console.log(tx);
         if (tx && tx.code === 0) {
+          const submittedAt = new Date().toISOString();
+          persistResumableTransfer(
+            buildResumableTransferRecord(
+              tx.transactionHash,
+              estData,
+              submittedAt,
+            ),
+          );
           setLastTxHash(tx.transactionHash);
+          setLastTransferSubmittedAt(submittedAt);
           setIsSubmitted(true);
         }
       }
@@ -862,6 +991,36 @@ const Transfer = () => {
   }, []);
 
   useEffect(() => {
+    if (resumeChecked || isSubmitted) {
+      return;
+    }
+
+    const record = readResumableTransfer();
+    if (!record) {
+      setResumeChecked(true);
+      return;
+    }
+
+    const currentWalletAddress = getSourceWalletAddress(record.sourceChainId);
+    if (
+      record.sourceWalletAddress &&
+      currentWalletAddress &&
+      record.sourceWalletAddress !== currentWalletAddress
+    ) {
+      setResumeChecked(true);
+      return;
+    }
+
+    restoreResumableTransfer(record);
+    setResumeChecked(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardanoAddress, cosmosChain.address, isSubmitted, resumeChecked]);
+
+  useEffect(() => {
+    if (isSubmitted || isRestoringTransferRef.current) {
+      return;
+    }
+
     const onChangeFromNetwork = async () => {
       if (
         !cosmosChain?.isWalletConnected &&
@@ -877,9 +1036,13 @@ const Transfer = () => {
     };
     onChangeFromNetwork();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fromNetwork.networkId, cosmosChain?.isWalletConnected]);
+  }, [fromNetwork.networkId, cosmosChain?.isWalletConnected, isSubmitted]);
 
   useEffect(() => {
+    if (isSubmitted || isRestoringTransferRef.current) {
+      return;
+    }
+
     if (!fromNetwork.networkId || !toNetwork.networkId) {
       setRoutePreview(initRoutePreview);
       return;
@@ -900,9 +1063,13 @@ const Transfer = () => {
             toNetwork.networkId,
           ),
     });
-  }, [fromNetwork.networkId, toNetwork.networkId]);
+  }, [fromNetwork.networkId, toNetwork.networkId, isSubmitted]);
 
   useEffect(() => {
+    if (isSubmitted || isRestoringTransferRef.current) {
+      return;
+    }
+
     setEstData(initEstData);
     const checkEstData = async () => {
       await calculateEst().then(setEstData);
@@ -914,7 +1081,7 @@ const Transfer = () => {
       setLastPrepareFailed(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(getDataTransfer())]);
+  }, [JSON.stringify(getDataTransfer()), isSubmitted]);
 
   const isPreparingTransfer = routePreview.status === 'loading';
   const transferButtonDisabled =
@@ -932,6 +1099,7 @@ const Transfer = () => {
       estFee={estData.estFee}
       estTime={estData.estTime}
       lastTxHash={lastTxHash}
+      submittedAt={lastTransferSubmittedAt}
       resetLastTxData={resetLastTxData}
     />
   ) : (
