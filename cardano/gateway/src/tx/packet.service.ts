@@ -10,8 +10,6 @@ import {
   MsgRecvPacket,
   MsgRecvPacketResponse,
   MsgTimeout,
-  MsgTimeoutRefresh,
-  MsgTimeoutRefreshResponse,
   MsgTimeoutResponse,
   MsgTransfer,
   MsgTransferResponse,
@@ -63,7 +61,6 @@ import {
   SendModulePacketOperator,
   SendPacketOperator,
   TimeoutPacketOperator,
-  TimeoutRefreshOperator,
 } from './dto';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import {
@@ -80,7 +77,6 @@ import {
   UnsignedSendPacketEscrowDto,
   UnsignedTimeoutPacketMintDto,
   UnsignedTimeoutPacketUnescrowDto,
-  UnsignedTimeoutRefreshDto,
 } from '~@/shared/modules/lucid/dtos';
 import { acknowledgementCommitmentFromResponse } from '../shared/helpers/acknowledgement';
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, isTreeAligned } from '../shared/helpers/ibc-state-root';
@@ -1256,76 +1252,6 @@ export class PacketService {
       throw error;
     }
   }
-  /**
-   * Handles a timeout refresh by building and signing a timeout refresh transaction.
-   * This function prepares the timeout refresh data from the MsgTimeoutRefresh request,
-   * builds an unsigned timeout refresh transaction and return it
-   */
-  async timeoutRefresh(data: MsgTimeoutRefresh): Promise<MsgTimeoutRefreshResponse> {
-    try {
-      this.logger.log('TimeoutRefresh is processing');
-
-      const constructedAddress: string = data.signer;
-      if (!constructedAddress) {
-        throw new GrpcInvalidArgumentException('Invalid constructed address: Signer is not valid');
-      }
-      if (!data.channel_id.startsWith(`${CHANNEL_ID_PREFIX}-`)) {
-        throw new GrpcInvalidArgumentException(
-          `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
-        );
-      }
-      // Prepare the timeout refresh operator object
-      const timeoutRefreshOperator: TimeoutRefreshOperator = {
-        channelId: data.channel_id,
-      };
-
-      await this.refreshWalletContext(constructedAddress, 'timeoutRefreshBuilder');
-      // Build and complete the unsigned transaction
-      const unsignedTimeoutRefreshTx: TxBuilder = await this.buildUnsignedTimeoutRefreshTx(
-        timeoutRefreshOperator,
-        constructedAddress,
-      );
-      const { currentSlot, validToSlot, validToTime } = await this.computeTxValidityWindow();
-
-      if (currentSlot > validToSlot) {
-        throw new GrpcInternalException('recv packet failed: tx time invalid');
-      }
-      const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
-        operationName: 'timeoutRefresh',
-        unsignedTx: unsignedTimeoutRefreshTx,
-        validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
-        },
-        wallet: {
-          mode: 'refresh_from_address',
-          address: constructedAddress,
-          context: 'timeoutRefresh',
-        },
-        completeOptions: {
-          localUPLCEval: false,
-          setCollateral: TRANSACTION_SET_COLLATERAL,
-        },
-      });
-
-      this.logger.log('Returning unsigned tx for timeout refresh');
-      const response: MsgTimeoutRefreshResponse = {
-        unsigned_tx: {
-          type_url: '',
-          value: cborHexBytes,
-        },
-      } as unknown as MsgTimeoutRefreshResponse;
-      return response;
-    } catch (error) {
-      console.error(error);
-
-      this.logger.error(`Timeout refresh: ${error}`);
-      if (!(error instanceof RpcException)) {
-        throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
-      } else {
-        throw error;
-      }
-    }
-  }
   async acknowledgementPacket(data: MsgAcknowledgement): Promise<MsgAcknowledgementResponse> {
     try {
       // entypoint fromc controller.
@@ -1391,35 +1317,6 @@ export class PacketService {
       }
     }
   }
-  async buildUnsignedTimeoutRefreshTx(
-    timeoutRefreshOperator: TimeoutRefreshOperator,
-    constructedAddress: string,
-  ): Promise<TxBuilder> {
-    const channelSequence: string = timeoutRefreshOperator.channelId.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
-    // Get the token unit associated with the client
-    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
-    const channelTokenUnit: string = mintChannelPolicyId + channelTokenName;
-    const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
-    // Get channel datum
-    const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
-
-    const encodedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(channelDatum, 'channel');
-    // build spend channel redeemer
-    const spendChannelRedeemer: SpendChannelRedeemer = 'RefreshUtxo';
-    const encodedSpendChannelRedeemer: string = await this.lucidService.encode(
-      spendChannelRedeemer,
-      'spendChannelRedeemer',
-    );
-    const unsignedTimeoutRefreshParams: UnsignedTimeoutRefreshDto = {
-      channelUtxo,
-      encodedSpendChannelRedeemer,
-      encodedChannelDatum,
-      channelTokenUnit,
-      constructedAddress,
-    };
-    return this.lucidService.createUnsignedTimeoutRefreshTx(unsignedTimeoutRefreshParams);
-  }
-
   async buildUnsignedRecvPacketTx(
     recvPacketOperator: RecvPacketOperator,
     constructedAddress: string,

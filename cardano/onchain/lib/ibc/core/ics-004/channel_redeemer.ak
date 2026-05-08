@@ -40,5 +40,4 @@ pub type SpendChannelRedeemer {
   SendPacket { packet: Packet }
   ChanCloseInit
   ChanCloseConfirm { proof_init: MerkleProof, proof_height: Height }
-  RefreshUtxo
 }

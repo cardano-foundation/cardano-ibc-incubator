@@ -387,7 +387,6 @@ async function encodeSpendChannelRedeemer(data, Lucid) {
                 proof_height: HeightSchema,
             }),
         }),
-        Data.Literal('RefreshUtxo'),
     ]);
     return Data.to(data, SpendChannelRedeemerSchema, { canonical: true });
 }

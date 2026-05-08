@@ -486,7 +486,6 @@ async function encodeSpendChannelRedeemer(
         proof_height: HeightSchema,
       }),
     }),
-    Data.Literal('RefreshUtxo'),
   ]);
   return Data.to(data, SpendChannelRedeemerSchema as any, { canonical: true });
 }
