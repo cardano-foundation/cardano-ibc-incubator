@@ -14,7 +14,7 @@ export type IbcPacketSummary = {
   sourceChannel: string;
   destinationPort: string;
   destinationChannel: string;
-  dataHex: string;
+  dataHex?: string;
   acknowledgementHex?: string;
 };
 

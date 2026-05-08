@@ -387,14 +387,22 @@ export function findRuntimeChain(
   );
 }
 
+function runtimeChainId(chainId?: string): string | undefined {
+  if (!chainId) return undefined;
+  return findRuntimeChain(chainId)?.id || chainId;
+}
+
 export function findRuntimeRoute(
   fromChainId?: string,
   toChainId?: string,
 ): RuntimeRouteConfig | undefined {
-  if (!fromChainId || !toChainId) return undefined;
+  const normalizedFromChainId = runtimeChainId(fromChainId);
+  const normalizedToChainId = runtimeChainId(toChainId);
+  if (!normalizedFromChainId || !normalizedToChainId) return undefined;
   return activeRuntimeConfig.routes.find(
     (route) =>
-      route.fromChainId === fromChainId && route.toChainId === toChainId,
+      route.fromChainId === normalizedFromChainId &&
+      route.toChainId === normalizedToChainId,
   );
 }
 
@@ -404,8 +412,14 @@ export function runtimeRouteChainIds(
   plannedChainIds?: string[],
 ): string[] {
   if (plannedChainIds?.length) return plannedChainIds;
-  const route = findRuntimeRoute(fromChainId, toChainId);
-  if (!route) return fromChainId && toChainId ? [fromChainId, toChainId] : [];
+  const normalizedFromChainId = runtimeChainId(fromChainId);
+  const normalizedToChainId = runtimeChainId(toChainId);
+  const route = findRuntimeRoute(normalizedFromChainId, normalizedToChainId);
+  if (!route) {
+    return normalizedFromChainId && normalizedToChainId
+      ? [normalizedFromChainId, normalizedToChainId]
+      : [];
+  }
   return [route.fromChainId, ...route.viaChainIds, route.toChainId];
 }
 
