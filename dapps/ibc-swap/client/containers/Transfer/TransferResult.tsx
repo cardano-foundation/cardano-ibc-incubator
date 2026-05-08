@@ -40,6 +40,7 @@ type TransferResultProps = {
   estTime: string;
   estFee: string;
   lastTxHash: string;
+  submittedAt?: string;
 };
 
 const shortenHash = (hash: string): string =>
@@ -51,6 +52,13 @@ const formatElapsedTime = (seconds: number): string => {
   return minutes > 0
     ? `${minutes}m ${remainingSeconds.toString().padStart(2, '0')}s`
     : `${remainingSeconds}s`;
+};
+
+const getElapsedSecondsSince = (submittedAt?: string): number => {
+  if (!submittedAt) return 0;
+  const submittedAtMs = Date.parse(submittedAt);
+  if (!Number.isFinite(submittedAtMs)) return 0;
+  return Math.max(0, Math.floor((Date.now() - submittedAtMs) / 1000));
 };
 
 const getCardanoExplorerTxUrl = (txHash: string): string | undefined => {
@@ -245,21 +253,35 @@ export const TransferResult = ({
   estTime,
   estFee,
   lastTxHash,
+  submittedAt,
   resetLastTxData,
 }: TransferResultProps) => {
   const { handleReset, fromNetwork, toNetwork, selectedToken, sendAmount } =
     useContext(TransferContext);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(() =>
+    getElapsedSecondsSince(submittedAt),
+  );
   const [transferStatus, setTransferStatus] =
     useState<TransferStatusResponse | null>(null);
   const [transferStatusError, setTransferStatusError] = useState('');
 
   useEffect(() => {
+    if (!submittedAt) {
+      const interval = window.setInterval(() => {
+        setElapsedSeconds((seconds) => seconds + 1);
+      }, 1000);
+      return () => window.clearInterval(interval);
+    }
+
+    const updateElapsedSeconds = () => {
+      setElapsedSeconds(getElapsedSecondsSince(submittedAt));
+    };
+    updateElapsedSeconds();
     const interval = window.setInterval(() => {
-      setElapsedSeconds((seconds) => seconds + 1);
+      updateElapsedSeconds();
     }, 1000);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [submittedAt]);
 
   useEffect(() => {
     const sourceChainId = fromNetwork.networkId;
