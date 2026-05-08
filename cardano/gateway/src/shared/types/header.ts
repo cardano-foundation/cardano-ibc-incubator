@@ -141,23 +141,33 @@ export function convertHeaderToTendermint(header: Header): HeaderMsg {
   const headerTenderMint: HeaderMsg = {
     signed_header: {
       header: {
-        version: undefined,
+        // Replay events must preserve the canonical Tendermint header fields Hermes validates.
+        version: {
+          block: header.signedHeader.header.version.block,
+          app: header.signedHeader.header.version.app,
+        },
         chain_id: Buffer.from(fromHex(header.signedHeader.header.chainId)).toString(),
         height: header.signedHeader.header.height,
         time: {
           seconds: header.signedHeader.header.time / 10n ** 9n,
           nanos: Number(header.signedHeader.header.time % 10n ** 9n),
         },
-        last_block_id: undefined,
-        last_commit_hash: new Uint8Array(),
-        data_hash: new Uint8Array(),
+        last_block_id: {
+          hash: fromHex(header.signedHeader.header.lastBlockId.hash),
+          part_set_header: {
+            total: Number(header.signedHeader.header.lastBlockId.partSetHeader.total),
+            hash: fromHex(header.signedHeader.header.lastBlockId.partSetHeader.hash),
+          },
+        },
+        last_commit_hash: fromHex(header.signedHeader.header.lastCommitHash),
+        data_hash: fromHex(header.signedHeader.header.dataHash),
         validators_hash: fromHex(header.signedHeader.header.validatorsHash),
         next_validators_hash: fromHex(header.signedHeader.header.nextValidatorsHash),
-        consensus_hash: new Uint8Array(),
+        consensus_hash: fromHex(header.signedHeader.header.consensusHash),
         app_hash: fromHex(header.signedHeader.header.appHash),
-        last_results_hash: new Uint8Array(),
-        evidence_hash: new Uint8Array(),
-        proposer_address: new Uint8Array(),
+        last_results_hash: fromHex(header.signedHeader.header.lastResultsHash),
+        evidence_hash: fromHex(header.signedHeader.header.evidenceHash),
+        proposer_address: fromHex(header.signedHeader.header.proposerAddress),
       },
       commit: {
         height: header.signedHeader.commit.height,
