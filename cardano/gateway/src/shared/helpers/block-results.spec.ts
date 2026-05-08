@@ -1,3 +1,6 @@
+import { Any } from '@plus/proto-types/build/google/protobuf/any';
+import { Header as HeaderMsg } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+
 import { ATTRIBUTE_KEY_CLIENT, EVENT_TYPE_CLIENT } from '../../constant';
 import { initializeHeader } from '../types/header';
 import { SpendClientRedeemer } from '../types/client-redeemer';
@@ -12,9 +15,8 @@ function eventAttributeValue(result: any, key: string): string {
 describe('normalizeTxsResultFromClientDatum', () => {
   it('derives replayed update_client consensus height from the submitted header', () => {
     const clientDatum = clientDatumMockBuilder.build();
-    const updateHeader = initializeHeader(
-      headerMockBuilder.withHeight(123n).withCommitHeight(123n).withTrustedHeight(42n, 7n).build(),
-    );
+    const headerMsg = headerMockBuilder.withHeight(123n).withCommitHeight(123n).withTrustedHeight(42n, 7n).build();
+    const updateHeader = initializeHeader(headerMsg);
     const redeemer: SpendClientRedeemer = {
       UpdateClient: {
         msg: {
@@ -28,6 +30,13 @@ describe('normalizeTxsResultFromClientDatum', () => {
     expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.CONSENSUS_HEIGHT)).toBe('7-123');
     expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.HEADER)).not.toBe('');
     expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.CLIENT_MESSAGE_ANY_HEX)).not.toBe('');
+
+    const clientMessageAny = Any.decode(
+      Buffer.from(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.CLIENT_MESSAGE_ANY_HEX), 'hex'),
+    );
+    const emittedHeader = HeaderMsg.decode(clientMessageAny.value);
+    expect(emittedHeader.signed_header.header.version).toEqual({ block: 11n, app: 0n });
+    expect(emittedHeader.signed_header.header.last_block_id.hash).toEqual(headerMsg.signed_header.header.last_block_id.hash);
   });
 
   it('uses frozen height for replayed client_misbehaviour events', () => {
