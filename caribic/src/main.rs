@@ -16,6 +16,7 @@ mod demos;
 mod install;
 mod logger;
 mod process;
+mod route_setup;
 mod setup;
 mod start;
 mod stop;
@@ -93,6 +94,39 @@ enum BenchmarkCommand {
         /// Number of real on-chain benchmark inserts to execute on the local devnet
         #[arg(long, default_value_t = 1)]
         inserts: usize,
+    },
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum TransferRouteChainArg {
+    /// Core Cardano chain currently selected by `caribic start --network`
+    Cardano,
+    /// Injective optional chain
+    Injective,
+    /// Osmosis optional chain
+    Osmosis,
+}
+
+#[derive(Subcommand)]
+enum SetupCommand {
+    /// Create or reuse an IBC token-transfer route without executing a demo transfer
+    Route {
+        /// Source chain for the route
+        #[arg(long = "from", value_enum, default_value_t = TransferRouteChainArg::Cardano)]
+        from: TransferRouteChainArg,
+        /// Expected source network (for Cardano: local or preprod)
+        #[arg(long = "from-network")]
+        from_network: Option<String>,
+        /// Destination chain for the route
+        #[arg(long = "to", alias = "dest", alias = "destination", value_enum)]
+        to: TransferRouteChainArg,
+        /// Destination network (for example: local or testnet)
+        #[arg(
+            long = "to-network",
+            alias = "dest-network",
+            alias = "destination-network"
+        )]
+        to_network: Option<String>,
     },
 }
 
@@ -200,6 +234,11 @@ enum Commands {
         /// Port identifier on chain B
         #[arg(long)]
         b_port: String,
+    },
+    /// Set up reusable bridge state without running a demo transfer
+    Setup {
+        #[command(subcommand)]
+        command: SetupCommand,
     },
     /// Starts a demo preset. Usage: `caribic demo token-swap --chain osmosis --network local`
     Demo {
@@ -382,6 +421,7 @@ async fn main() {
             a_port,
             b_port,
         } => commands::run_create_channel(project_root_path, &a_chain, &b_chain, &a_port, &b_port),
+        Commands::Setup { command } => commands::run_setup(project_root_path, command),
         Commands::Benchmark { command } => match command {
             BenchmarkCommand::DenomRegistry { bucket, inserts } => {
                 commands::run_denom_registry_benchmark(project_root_path, bucket, inserts)
