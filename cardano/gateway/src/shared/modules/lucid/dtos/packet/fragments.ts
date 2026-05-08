@@ -41,6 +41,11 @@ export type WithLegacyTransferModuleUtxo = {
   transferModuleUTxO: UTxO;
 };
 
+export type WithTransferEscrowShard = {
+  transferEscrowUtxo?: UTxO;
+  encodedTransferEscrowDatum?: string;
+};
+
 export type WithChannelSpend = {
   encodedSpendChannelRedeemer: string;
   encodedUpdatedChannelDatum: string;

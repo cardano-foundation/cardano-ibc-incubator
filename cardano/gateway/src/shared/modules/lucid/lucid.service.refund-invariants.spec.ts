@@ -156,4 +156,221 @@ describe('LucidService voucher refund invariants', () => {
     expect(transferOutputCall?.[2]?.lovelace).toBe(transferModuleAssets.lovelace);
     expect(transferOutputCall?.[2]?.lovelace).not.toBe(transferModuleAssets.lovelace - transferAmount);
   });
+
+  it('creates a transfer escrow shard without increasing the module-state UTxO in native sends', () => {
+    const txBuilder = createChainedTxBuilder();
+    const service = createService(txBuilder);
+    const denomToken = 'policy-id.native-token';
+    const encodedTransferEscrowDatum = 'encoded-transfer-escrow-datum';
+    const transferModuleAddress = 'addr_test1transfer_send_escrow';
+    const transferModuleUtxo = {
+      txHash: 'transfer-root-utxo',
+      outputIndex: 0,
+      assets: {
+        lovelace: 5_000_000n,
+        'module-policy.module-token': 1n,
+        'port-policy.port-token': 1n,
+      },
+    } as any;
+
+    service.createUnsignedSendPacketEscrowTx({
+      hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
+      channelUTxO: { txHash: 'channel-utxo', outputIndex: 0, assets: {} } as any,
+      connectionUTxO: { txHash: 'connection-utxo', outputIndex: 0, assets: {} } as any,
+      clientUTxO: { txHash: 'client-utxo', outputIndex: 0, assets: {} } as any,
+      transferModuleUTxO: transferModuleUtxo,
+      encodedTransferEscrowDatum,
+      encodedHostStateRedeemer: 'encoded-host-redeemer',
+      encodedUpdatedHostStateDatum: 'encoded-host-datum',
+      encodedSpendChannelRedeemer: 'encoded-channel-redeemer',
+      encodedSpendTransferModuleRedeemer: 'encoded-transfer-redeemer',
+      encodedUpdatedChannelDatum: 'encoded-channel-datum',
+      channelTokenUnit: 'channel-token-unit',
+      transferAmount: 12n,
+      constructedAddress: 'addr_test1operator',
+      sendPacketPolicyId: 'send-packet-policy-id',
+      channelToken: { policyId: 'channel-policy-id', name: 'channel-token-name' },
+      spendChannelAddress: 'addr_test1channel_send_escrow',
+      transferModuleAddress,
+      denomToken,
+      walletUtxos: [{ txHash: 'wallet-utxo', outputIndex: 0, assets: { [denomToken]: 12n } }] as any,
+    });
+
+    const transferSpendCall = txBuilder.collectFrom.mock.calls.find((call: unknown[]) => {
+      return call[1] === 'encoded-transfer-redeemer';
+    });
+    expect(transferSpendCall?.[0]).toEqual([transferModuleUtxo]);
+
+    const transferOutputs = txBuilder.pay.ToContract.mock.calls.filter((call: unknown[]) => {
+      return call[0] === transferModuleAddress;
+    });
+    expect(transferOutputs).toEqual(
+      expect.arrayContaining([
+        [
+          transferModuleAddress,
+          undefined,
+          transferModuleUtxo.assets,
+        ],
+        [
+          transferModuleAddress,
+          { kind: 'inline', value: encodedTransferEscrowDatum },
+          {
+            [denomToken]: 12n,
+          },
+        ],
+      ]),
+    );
+  });
+
+  it('spends and updates the transfer escrow shard in acknowledgement native-token refunds', () => {
+    const txBuilder = createChainedTxBuilder();
+    const service = createService(txBuilder);
+    const denomToken = 'policy-id.native-token';
+    const encodedTransferEscrowDatum = 'encoded-transfer-escrow-datum';
+    const transferModuleUtxo = {
+      txHash: 'transfer-root-utxo',
+      outputIndex: 0,
+      assets: {
+        lovelace: 5_000_000n,
+        'module-policy.module-token': 1n,
+        'port-policy.port-token': 1n,
+      },
+    } as any;
+    const transferEscrowUtxo = {
+      txHash: 'transfer-escrow-utxo',
+      outputIndex: 1,
+      assets: {
+        lovelace: 2_000_000n,
+        [denomToken]: 42n,
+      },
+      datum: encodedTransferEscrowDatum,
+    } as any;
+
+    service.createUnsignedAckPacketUnescrowTx({
+      hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
+      channelUtxo: { txHash: 'channel-utxo', outputIndex: 0, assets: {} } as any,
+      connectionUtxo: { txHash: 'connection-utxo', outputIndex: 0, assets: {} } as any,
+      clientUtxo: { txHash: 'client-utxo', outputIndex: 0, assets: {} } as any,
+      transferModuleUtxo,
+      transferEscrowUtxo,
+      encodedTransferEscrowDatum,
+      encodedHostStateRedeemer: 'encoded-host-redeemer',
+      encodedUpdatedHostStateDatum: 'encoded-host-datum',
+      encodedSpendChannelRedeemer: 'encoded-channel-redeemer',
+      encodedSpendTransferModuleRedeemer: 'encoded-transfer-redeemer',
+      encodedUpdatedChannelDatum: 'encoded-channel-datum',
+      channelTokenUnit: 'channel-token-unit',
+      transferAmount: 10n,
+      senderAddress: 'addr_test1sender',
+      constructedAddress: 'addr_test1operator',
+      ackPacketPolicyId: 'ack-policy-id',
+      channelToken: { policyId: 'channel-policy-id', name: 'channel-token-name' },
+      verifyProofPolicyId: 'verify-proof-policy-id',
+      encodedVerifyProofRedeemer: 'encoded-verify-proof-redeemer',
+      denomToken,
+    });
+
+    const transferSpendCall = txBuilder.collectFrom.mock.calls.find((call: unknown[]) => {
+      return call[1] === 'encoded-transfer-redeemer';
+    });
+    expect(transferSpendCall?.[0]).toEqual([transferModuleUtxo, transferEscrowUtxo]);
+
+    const transferOutputs = txBuilder.pay.ToContract.mock.calls.filter((call: unknown[]) => {
+      return call[0] === deploymentConfig.modules.transfer.address;
+    });
+    expect(transferOutputs).toEqual(
+      expect.arrayContaining([
+        [
+          deploymentConfig.modules.transfer.address,
+          undefined,
+          transferModuleUtxo.assets,
+        ],
+        [
+          deploymentConfig.modules.transfer.address,
+          { kind: 'inline', value: encodedTransferEscrowDatum },
+          {
+            lovelace: 2_000_000n,
+            [denomToken]: 32n,
+          },
+        ],
+      ]),
+    );
+  });
+
+  it('omits an empty transfer escrow shard in timeout native-token refunds', () => {
+    const txBuilder = createChainedTxBuilder();
+    const service = createService(txBuilder);
+    const denomToken = 'policy-id.native-token';
+    const encodedTransferEscrowDatum = 'encoded-transfer-escrow-datum';
+    const transferModuleAddress = 'addr_test1transfer_timeout_unescrow';
+    const transferModuleUtxo = {
+      txHash: 'transfer-root-utxo',
+      outputIndex: 0,
+      assets: {
+        lovelace: 5_000_000n,
+        'module-policy.module-token': 1n,
+        'port-policy.port-token': 1n,
+      },
+    } as any;
+    const transferEscrowUtxo = {
+      txHash: 'transfer-escrow-utxo',
+      outputIndex: 1,
+      assets: {
+        lovelace: 2_000_000n,
+        [denomToken]: 42n,
+      },
+      datum: encodedTransferEscrowDatum,
+    } as any;
+
+    service.createUnsignedTimeoutPacketUnescrowTx({
+      hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
+      channelUtxo: { txHash: 'channel-utxo', outputIndex: 0, assets: {} } as any,
+      connectionUtxo: { txHash: 'connection-utxo', outputIndex: 0, assets: {} } as any,
+      clientUtxo: { txHash: 'client-utxo', outputIndex: 0, assets: {} } as any,
+      transferModuleUtxo,
+      transferEscrowUtxo,
+      encodedTransferEscrowDatum,
+      encodedHostStateRedeemer: 'encoded-host-redeemer',
+      encodedUpdatedHostStateDatum: 'encoded-host-datum',
+      encodedSpendChannelRedeemer: 'encoded-channel-redeemer',
+      encodedSpendTransferModuleRedeemer: 'encoded-transfer-redeemer',
+      encodedUpdatedChannelDatum: 'encoded-channel-datum',
+      channelTokenUnit: 'channel-token-unit',
+      transferAmount: 42n,
+      senderAddress: 'addr_test1sender',
+      constructedAddress: 'addr_test1operator',
+      timeoutPacketPolicyId: 'timeout-policy-id',
+      channelToken: { policyId: 'channel-policy-id', name: 'channel-token-name' },
+      verifyProofPolicyId: 'verify-proof-policy-id',
+      encodedVerifyProofRedeemer: 'encoded-verify-proof-redeemer',
+      spendChannelAddress: 'addr_test1channel_timeout_unescrow',
+      transferModuleAddress,
+      denomToken,
+    });
+
+    const transferSpendCall = txBuilder.collectFrom.mock.calls.find((call: unknown[]) => {
+      return call[1] === 'encoded-transfer-redeemer';
+    });
+    expect(transferSpendCall?.[0]).toEqual([transferModuleUtxo, transferEscrowUtxo]);
+
+    const transferOutputs = txBuilder.pay.ToContract.mock.calls.filter((call: unknown[]) => {
+      return call[0] === transferModuleAddress;
+    });
+    expect(transferOutputs).toEqual([
+      [
+        transferModuleAddress,
+        undefined,
+        transferModuleUtxo.assets,
+      ],
+    ]);
+    expect(transferOutputs).not.toEqual(
+      expect.arrayContaining([
+        [
+          transferModuleAddress,
+          { kind: 'inline', value: encodedTransferEscrowDatum },
+          expect.anything(),
+        ],
+      ]),
+    );
+  });
 });

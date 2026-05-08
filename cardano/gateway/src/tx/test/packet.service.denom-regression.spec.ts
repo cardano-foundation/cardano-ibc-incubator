@@ -13,23 +13,23 @@ jest.mock('../../shared/types/connection/verify-proof-redeemer', () => ({
   encodeVerifyProofRedeemer: jest.fn(() => 'encoded-verify-proof-redeemer'),
 }));
 
-describe('PacketService denom regression coverage', () => {
-  const existingTraceRegistryProof = {
-    kind: 'existing' as const,
-    traceRegistryDirectoryUtxo: {
-      txHash: 'trace-directory',
-      outputIndex: 0,
-      assets: { tracedir: 1n },
+const existingTraceRegistryProof = {
+  kind: 'existing' as const,
+  traceRegistryDirectoryUtxo: {
+    txHash: 'trace-directory',
+    outputIndex: 0,
+    assets: { tracedir: 1n },
+  },
+  traceRegistryShardWitnessUtxos: [
+    {
+      txHash: 'trace-shard',
+      outputIndex: 1,
+      assets: { traceshard: 1n },
     },
-    traceRegistryShardWitnessUtxos: [
-      {
-        txHash: 'trace-shard',
-        outputIndex: 1,
-        assets: { traceshard: 1n },
-      },
-    ],
-  };
+  ],
+};
 
+describe('PacketService denom regression coverage', () => {
   it('resolves ibc/<hash> to canonical denom and uses burn path packet/module denoms', async () => {
     const loggerMock = {
       log: jest.fn(),
@@ -243,6 +243,7 @@ describe('PacketService denom regression coverage', () => {
           modules: {
             transfer: {
               identifier: 'transfer-module-identifier',
+              address: 'addr_test1transfermodule',
             },
           },
         };
@@ -254,6 +255,16 @@ describe('PacketService denom regression coverage', () => {
       getConnectionTokenUnit: jest.fn().mockReturnValue(['connection-policy-id', 'connection-token-name']),
       getClientTokenUnit: jest.fn().mockReturnValue('client-token-unit'),
       findUtxoByUnit: jest.fn(),
+      findUtxoAt: jest.fn().mockResolvedValue([
+        {
+          txHash: 'transfer-escrow',
+          outputIndex: 0,
+          datum: 'encoded',
+          assets: {
+            lovelace: 10n,
+          },
+        },
+      ]),
       decodeDatum: jest.fn(),
       encode: jest.fn().mockResolvedValue('encoded'),
       credentialToAddress: jest.fn().mockReturnValue('addr_test1senderresolved'),
@@ -420,6 +431,7 @@ describe('PacketService denom regression coverage', () => {
           modules: {
             transfer: {
               identifier: 'transfer-module-identifier',
+              address: 'addr_test1transfermodule',
             },
           },
         };
@@ -431,6 +443,16 @@ describe('PacketService denom regression coverage', () => {
       getConnectionTokenUnit: jest.fn().mockReturnValue(['connection-policy-id', 'connection-token-name']),
       getClientTokenUnit: jest.fn().mockReturnValue('client-token-unit'),
       findUtxoByUnit: jest.fn(),
+      findUtxoAt: jest.fn().mockResolvedValue([
+        {
+          txHash: 'transfer-escrow',
+          outputIndex: 0,
+          datum: 'encoded',
+          assets: {
+            lovelace: 10n,
+          },
+        },
+      ]),
       decodeDatum: jest.fn(),
       encode: jest.fn().mockResolvedValue('encoded'),
       credentialToAddress: jest.fn().mockReturnValue('addr_test1senderresolved'),
@@ -543,6 +565,10 @@ describe('PacketService denom regression coverage', () => {
     expect(lucidServiceMock.createUnsignedAckPacketUnescrowTx).toHaveBeenCalledWith(
       expect.objectContaining({
         denomToken: 'lovelace',
+        transferEscrowUtxo: expect.objectContaining({
+          txHash: 'transfer-escrow',
+        }),
+        encodedTransferEscrowDatum: 'encoded',
       }),
     );
     expect(result.walletSelection).toEqual({
@@ -603,6 +629,16 @@ describe('PacketService denom regression coverage', () => {
       getConnectionTokenUnit: jest.fn().mockReturnValue(['connection-policy-id', 'connection-token-name']),
       getClientTokenUnit: jest.fn().mockReturnValue('client-token-unit'),
       findUtxoByUnit: jest.fn(),
+      findUtxoAt: jest.fn().mockResolvedValue([
+        {
+          txHash: 'transfer-escrow',
+          outputIndex: 0,
+          datum: 'encoded',
+          assets: {
+            lovelace: 10n,
+          },
+        },
+      ]),
       decodeDatum: jest.fn(),
       encode: jest.fn().mockResolvedValue('encoded'),
       credentialToAddress: jest.fn().mockReturnValue('addr_test1receiverresolved'),
@@ -726,6 +762,10 @@ describe('PacketService denom regression coverage', () => {
     expect(lucidServiceMock.createUnsignedRecvPacketUnescrowTx).toHaveBeenCalledWith(
       expect.objectContaining({
         denomToken: 'lovelace',
+        transferEscrowUtxo: expect.objectContaining({
+          txHash: 'transfer-escrow',
+        }),
+        encodedTransferEscrowDatum: 'encoded',
       }),
     );
     expect(lucidServiceMock.createUnsignedRecvPacketMintTx).not.toHaveBeenCalled();

@@ -156,6 +156,8 @@ export type UnsignedSendPacketEscrowTxInput = {
   spendChannelAddress: string;
   transferModuleAddress: string;
   denomToken: string;
+  transferEscrowUtxo?: UTxO;
+  encodedTransferEscrowDatum?: string;
 };
 
 export type SendPacketBuildDependencies = {
@@ -180,6 +182,12 @@ export type SendPacketBuildDependencies = {
       retryDelayMs: number;
     },
   ) => Promise<UTxO[]>;
+  findTransferEscrowShard: (
+    channelId: string,
+    packetDenom: string,
+    denomToken: string,
+    requiredAmount?: bigint,
+  ) => Promise<{ utxo?: UTxO; encodedDatum: string }>;
   createUnsignedSendPacketBurnTx: (
     dto: UnsignedSendPacketBurnTxInput,
   ) => TxBuilder;
@@ -377,6 +385,11 @@ export async function buildUnsignedSendPacketTx(
     walletUtxos,
     deps,
   );
+  const transferEscrowShard = await deps.findTransferEscrowShard(
+    convertStringToHex(sendPacketOperator.sourceChannel),
+    convertStringToHex(packetDenom),
+    denomToken,
+  );
 
   const unsignedTx = deps.createUnsignedSendPacketEscrowTx({
     hostStateUtxo,
@@ -398,6 +411,8 @@ export async function buildUnsignedSendPacketTx(
     channelTokenUnit: context.channelTokenUnit,
     transferModuleAddress: context.deployment.transferModuleAddress,
     denomToken,
+    transferEscrowUtxo: transferEscrowShard.utxo,
+    encodedTransferEscrowDatum: transferEscrowShard.encodedDatum,
     sendPacketPolicyId: context.deployment.sendPacketPolicyId,
     channelToken: context.channelToken,
   });

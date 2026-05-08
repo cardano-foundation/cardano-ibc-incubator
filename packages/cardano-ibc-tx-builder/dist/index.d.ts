@@ -135,6 +135,8 @@ export type UnsignedSendPacketEscrowTxInput = {
     spendChannelAddress: string;
     transferModuleAddress: string;
     denomToken: string;
+    transferEscrowUtxo?: UTxO;
+    encodedTransferEscrowDatum?: string;
 };
 export type SendPacketBuildDependencies = {
     loadContext: (sendPacketOperator: SendPacketOperator) => Promise<LoadedSendPacketContext>;
@@ -147,6 +149,10 @@ export type SendPacketBuildDependencies = {
         maxAttempts: number;
         retryDelayMs: number;
     }) => Promise<UTxO[]>;
+    findTransferEscrowShard: (channelId: string, packetDenom: string, denomToken: string, requiredAmount?: bigint) => Promise<{
+        utxo?: UTxO;
+        encodedDatum: string;
+    }>;
     createUnsignedSendPacketBurnTx: (dto: UnsignedSendPacketBurnTxInput) => TxBuilder;
     createUnsignedSendPacketEscrowTx: (dto: UnsignedSendPacketEscrowTxInput) => TxBuilder;
     invalidArgument: (message: string) => Error;

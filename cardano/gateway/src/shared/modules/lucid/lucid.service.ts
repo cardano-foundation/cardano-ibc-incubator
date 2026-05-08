@@ -84,6 +84,11 @@ import {
   MintVoucherRedeemer,
 } from "@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer";
 import {
+  decodeTransferEscrowDatum,
+  encodeTransferEscrowDatum,
+  TransferEscrowDatum,
+} from "@shared/types/apps/transfer/transfer-escrow-datum";
+import {
   UnsignedAckPacketModuleDto,
   UnsignedAckPacketMintDto,
   UnsignedAckPacketSucceedDto,
@@ -114,6 +119,7 @@ export type CodecType =
   | "handler"
   | "channel"
   | "mockModule"
+  | "transferEscrow"
   | "host_state"
   | "host_state_redeemer"
   | "spendClientRedeemer"
@@ -670,6 +676,11 @@ export class LucidService implements OnModuleInit {
             encodedDatum,
             this.LucidImporter,
           )) as T;
+        case "transferEscrow":
+          return decodeTransferEscrowDatum(
+            encodedDatum,
+            this.LucidImporter,
+          ) as T;
         case "host_state":
           return (await decodeHostStateDatum(
             encodedDatum,
@@ -711,6 +722,11 @@ export class LucidService implements OnModuleInit {
         case "mockModule":
           return await encodeMockModuleDatum(
             data as MockModuleDatum,
+            this.LucidImporter,
+          );
+        case "transferEscrow":
+          return encodeTransferEscrowDatum(
+            data as TransferEscrowDatum,
             this.LucidImporter,
           );
         case "host_state":
@@ -1314,6 +1330,81 @@ export class LucidService implements OnModuleInit {
     return tx.pay.ToContract(moduleAddress, undefined, moduleUtxo.assets);
   }
 
+  private collectTransferModuleInputs(
+    tx: TxBuilder,
+    moduleUtxo: UTxO,
+    encodedSpendTransferModuleRedeemer: string,
+    transferEscrowUtxo?: UTxO,
+  ): TxBuilder {
+    const inputs = transferEscrowUtxo
+      ? [moduleUtxo, transferEscrowUtxo]
+      : [moduleUtxo];
+    return tx.collectFrom(inputs, encodedSpendTransferModuleRedeemer);
+  }
+
+  private payTransferModuleState(
+    tx: TxBuilder,
+    transferModuleAddress: string,
+    moduleUtxo: UTxO,
+  ): TxBuilder {
+    return tx.pay.ToContract(
+      transferModuleAddress,
+      undefined,
+      { ...moduleUtxo.assets },
+    );
+  }
+
+  private requireTransferEscrowDatum(encodedTransferEscrowDatum?: string): string {
+    if (!encodedTransferEscrowDatum) {
+      throw new GrpcInternalException(
+        "Transfer escrow datum is required for sharded escrow updates",
+      );
+    }
+    return encodedTransferEscrowDatum;
+  }
+
+  private requireTransferEscrowUtxo(transferEscrowUtxo?: UTxO): UTxO {
+    if (!transferEscrowUtxo) {
+      throw new GrpcInternalException(
+        "Transfer escrow shard UTxO is required for native unescrow/refund",
+      );
+    }
+    return transferEscrowUtxo;
+  }
+
+  private payTransferEscrowDelta(
+    tx: TxBuilder,
+    transferModuleAddress: string,
+    encodedTransferEscrowDatum: string,
+    transferAmount: bigint,
+    denomToken: string,
+    transferEscrowUtxo?: UTxO,
+  ): TxBuilder {
+    const baseAssets = transferEscrowUtxo?.assets ?? {};
+    const updatedAssets = updateTransferModuleAssets(
+      baseAssets,
+      transferAmount,
+      denomToken,
+    );
+    const targetAmount = updatedAssets[denomToken] ?? 0n;
+    const keepsNonLovelace = Object.keys(updatedAssets).some((unit) =>
+      unit !== "lovelace"
+    );
+
+    if (targetAmount <= 0n && !keepsNonLovelace) {
+      return tx;
+    }
+
+    return tx.pay.ToContract(
+      transferModuleAddress,
+      {
+        kind: "inline",
+        value: encodedTransferEscrowDatum,
+      },
+      updatedAssets,
+    );
+  }
+
   public createUnsignedChannelOpenInitTransaction(
     dto: UnsignedChannelOpenInitDto,
   ): TxBuilder {
@@ -1670,6 +1761,9 @@ export class LucidService implements OnModuleInit {
     dto: UnsignedRecvPacketUnescrowDto,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
+    const transferEscrowUtxo = this.requireTransferEscrowUtxo(
+      dto.transferEscrowUtxo,
+    );
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
       deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
@@ -1689,7 +1783,7 @@ export class LucidService implements OnModuleInit {
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom(
-        [dto.transferModuleUtxo],
+        [dto.transferModuleUtxo, transferEscrowUtxo],
         dto.encodedSpendTransferModuleRedeemer,
       )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -1716,11 +1810,7 @@ export class LucidService implements OnModuleInit {
       .pay.ToContract(
         deploymentConfig.modules.transfer.address,
         undefined,
-        updateTransferModuleAssets(
-          dto.transferModuleUtxo.assets,
-          -dto.transferAmount,
-          dto.denomToken,
-        ),
+        { ...dto.transferModuleUtxo.assets },
       )
       .pay.ToAddress(dto.receiverAddress, {
         [dto.denomToken]: dto.transferAmount,
@@ -1737,6 +1827,15 @@ export class LucidService implements OnModuleInit {
         },
         dto.encodedVerifyProofRedeemer,
       );
+
+    this.payTransferEscrowDelta(
+      tx,
+      deploymentConfig.modules.transfer.address,
+      this.requireTransferEscrowDatum(dto.encodedTransferEscrowDatum),
+      -dto.transferAmount,
+      dto.denomToken,
+      transferEscrowUtxo,
+    );
 
     return tx;
   }
@@ -2104,6 +2203,9 @@ export class LucidService implements OnModuleInit {
     dto: UnsignedAckPacketUnescrowDto,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
+    const transferEscrowUtxo = this.requireTransferEscrowUtxo(
+      dto.transferEscrowUtxo,
+    );
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
       deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
@@ -2123,7 +2225,7 @@ export class LucidService implements OnModuleInit {
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom(
-        [dto.transferModuleUtxo],
+        [dto.transferModuleUtxo, transferEscrowUtxo],
         dto.encodedSpendTransferModuleRedeemer,
       )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -2150,11 +2252,7 @@ export class LucidService implements OnModuleInit {
       .pay.ToContract(
         deploymentConfig.modules.transfer.address,
         undefined,
-        updateTransferModuleAssets(
-          dto.transferModuleUtxo.assets,
-          -dto.transferAmount,
-          dto.denomToken,
-        ),
+        { ...dto.transferModuleUtxo.assets },
       )
       .pay.ToAddress(dto.senderAddress, {
         [dto.denomToken]: dto.transferAmount,
@@ -2171,6 +2269,15 @@ export class LucidService implements OnModuleInit {
         },
         dto.encodedVerifyProofRedeemer,
       );
+
+    this.payTransferEscrowDelta(
+      tx,
+      deploymentConfig.modules.transfer.address,
+      this.requireTransferEscrowDatum(dto.encodedTransferEscrowDatum),
+      -dto.transferAmount,
+      dto.denomToken,
+      transferEscrowUtxo,
+    );
 
     return tx;
   }
@@ -2316,7 +2423,9 @@ export class LucidService implements OnModuleInit {
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
       .collectFrom(
-        [dto.transferModuleUTxO],
+        dto.transferEscrowUtxo
+          ? [dto.transferModuleUTxO, dto.transferEscrowUtxo]
+          : [dto.transferModuleUTxO],
         dto.encodedSpendTransferModuleRedeemer,
       )
       .readFrom([dto.connectionUTxO, dto.clientUTxO])
@@ -2343,11 +2452,7 @@ export class LucidService implements OnModuleInit {
       .pay.ToContract(
         dto.transferModuleAddress,
         undefined,
-        updateTransferModuleAssets(
-          dto.transferModuleUTxO.assets,
-          dto.transferAmount,
-          dto.denomToken,
-        ),
+        { ...dto.transferModuleUTxO.assets },
       )
       .mintAssets(
         {
@@ -2355,6 +2460,15 @@ export class LucidService implements OnModuleInit {
         },
         encodeAuthToken(dto.channelToken, this.LucidImporter),
       );
+
+    this.payTransferEscrowDelta(
+      tx,
+      dto.transferModuleAddress,
+      this.requireTransferEscrowDatum(dto.encodedTransferEscrowDatum),
+      dto.transferAmount,
+      dto.denomToken,
+      dto.transferEscrowUtxo,
+    );
 
     return tx;
   }
@@ -2597,6 +2711,9 @@ export class LucidService implements OnModuleInit {
     dto: UnsignedTimeoutPacketUnescrowDto,
   ): TxBuilder {
     const deploymentConfig = this.configService.get("deployment");
+    const transferEscrowUtxo = this.requireTransferEscrowUtxo(
+      dto.transferEscrowUtxo,
+    );
     const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
       deploymentConfig.hostStateNFT.name;
     const hostStateUtxoWithRawDatum = {
@@ -2615,7 +2732,7 @@ export class LucidService implements OnModuleInit {
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom(
-        [dto.transferModuleUtxo],
+        [dto.transferModuleUtxo, transferEscrowUtxo],
         dto.encodedSpendTransferModuleRedeemer,
       )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -2642,11 +2759,7 @@ export class LucidService implements OnModuleInit {
       .pay.ToContract(
         dto.transferModuleAddress,
         undefined,
-        updateTransferModuleAssets(
-          dto.transferModuleUtxo.assets,
-          -dto.transferAmount,
-          dto.denomToken,
-        ),
+        { ...dto.transferModuleUtxo.assets },
       )
       .pay.ToAddress(dto.senderAddress, {
         [dto.denomToken]: dto.transferAmount,
@@ -2663,6 +2776,15 @@ export class LucidService implements OnModuleInit {
         },
         dto.encodedVerifyProofRedeemer,
       );
+
+    this.payTransferEscrowDelta(
+      tx,
+      dto.transferModuleAddress,
+      this.requireTransferEscrowDatum(dto.encodedTransferEscrowDatum),
+      -dto.transferAmount,
+      dto.denomToken,
+      transferEscrowUtxo,
+    );
 
     return tx;
   }
