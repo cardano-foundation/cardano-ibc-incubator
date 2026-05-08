@@ -37,6 +37,9 @@ describe('normalizeTxsResultFromClientDatum', () => {
     const emittedHeader = HeaderMsg.decode(clientMessageAny.value);
     expect(emittedHeader.signed_header.header.version).toEqual({ block: 11n, app: 0n });
     expect(emittedHeader.signed_header.header.last_block_id.hash).toEqual(headerMsg.signed_header.header.last_block_id.hash);
+    expect(emittedHeader.signed_header.commit.signatures[0].block_id_flag).toBe(
+      Number(headerMsg.signed_header.commit.signatures[0].block_id_flag),
+    );
   });
 
   it('uses frozen height for replayed client_misbehaviour events', () => {
