@@ -84,6 +84,9 @@ type EstimateFeeType = {
   estReceiveAmount: string;
   estTime: string;
   estFee: string;
+  sourceChainId?: string;
+  destinationChainId?: string;
+  destinationAddress?: string;
 };
 
 type RoutePreviewState = {
@@ -723,6 +726,9 @@ const Transfer = () => {
           estReceiveAmount: estReceiveAmount.toString(10),
           estFee: `${estFee.amount} ${estFee.denom.toUpperCase()}`,
           estTime: COSMOS_TRANSFER_EST_TIME,
+          sourceChainId: fromNetwork.networkId,
+          destinationChainId: toNetwork.networkId,
+          destinationAddress,
         };
       } catch (e) {
         const message = getErrorMessage(
@@ -768,6 +774,9 @@ const Transfer = () => {
           estReceiveAmount: estReceiveAmount.toString(10),
           estFee: estFee ? `${formatPrice(estFee)} lovelace` : 'See wallet',
           estTime: CARDANO_TRANSFER_EST_TIME,
+          sourceChainId: fromNetwork.networkId,
+          destinationChainId: toNetwork.networkId,
+          destinationAddress,
         };
       } catch (e) {
         const message = getCardanoBuildErrorMessage(e);
@@ -802,6 +811,25 @@ const Transfer = () => {
     preparedEstData: EstimateFeeType = estData,
   ) => {
     if (!preparedEstData.canEst) {
+      return;
+    }
+    if (
+      preparedEstData.sourceChainId !== fromNetwork.networkId ||
+      preparedEstData.destinationChainId !== toNetwork.networkId ||
+      preparedEstData.destinationAddress !== destinationAddress
+    ) {
+      const message =
+        'Transfer details changed after preparation. Wait for the transfer to prepare again, then retry.';
+      setEstData(initEstData);
+      setRoutePreview({
+        status: 'ready',
+        chainIds: runtimeRouteChainIds(
+          fromNetwork.networkId,
+          toNetwork.networkId,
+        ),
+        message,
+      });
+      toast.error(message, { theme: 'colored', autoClose: 7000 });
       return;
     }
     const startedAt = Date.now();
@@ -1116,6 +1144,7 @@ const Transfer = () => {
           <CustomInput
             title="Destination address"
             placeholder="Enter destination address here..."
+            value={destinationAddress}
             onChange={setDestinationAddress}
             errorMsg={validationAddress}
             disabled={isProcessingTransfer}
