@@ -10,6 +10,7 @@ type CustomInputProps = {
   placeholder: string;
   // eslint-disable-next-line no-unused-vars
   onChange?: (value: string) => void;
+  value?: string;
   errorMsg?: string;
   disabled?: boolean;
 };
@@ -18,13 +19,17 @@ const CustomInput = ({
   title,
   placeholder,
   onChange,
+  value,
   errorMsg,
   disabled,
 }: CustomInputProps) => {
-  const [value, setValue] = useState<string>('');
+  const [internalValue, setInternalValue] = useState<string>('');
+  const inputValue = value ?? internalValue;
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setValue(event.target.value);
+    if (value === undefined) {
+      setInternalValue(event.target.value);
+    }
     onChange?.(event.target.value);
   };
 
@@ -46,7 +51,7 @@ const CustomInput = ({
           fontSize={16}
           fontWeight={400}
           lineHeight="22px"
-          value={value}
+          value={inputValue}
           onChange={handleChange}
           _placeholder={{
             color: COLOR.neutral_2,
