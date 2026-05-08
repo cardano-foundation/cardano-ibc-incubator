@@ -180,8 +180,7 @@ function packetFromAttributes(
     !sourcePort ||
     !sourceChannel ||
     !destinationPort ||
-    !destinationChannel ||
-    !dataHex
+    !destinationChannel
   ) {
     return null;
   }
@@ -193,7 +192,7 @@ function packetFromAttributes(
     sourceChannel,
     destinationPort,
     destinationChannel,
-    dataHex,
+    ...(dataHex ? { dataHex } : {}),
     ...(acknowledgementHex ? { acknowledgementHex } : {}),
   };
 }
@@ -249,8 +248,7 @@ function observedEventFromCardano(
     !sourcePort ||
     !sourceChannel ||
     !destinationPort ||
-    !destinationChannel ||
-    !dataHex
+    !destinationChannel
   ) {
     return null;
   }
@@ -269,7 +267,7 @@ function observedEventFromCardano(
       sourceChannel,
       destinationPort,
       destinationChannel,
-      dataHex,
+      ...(dataHex ? { dataHex } : {}),
       ...(acknowledgementHex ? { acknowledgementHex } : {}),
     },
     acknowledgementHex,
