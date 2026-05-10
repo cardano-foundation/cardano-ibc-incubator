@@ -61,12 +61,13 @@ function createPlannerClient(config) {
     };
     let swapMetadataCache;
     const getPlannerMetadata = async () => {
-        const [channels, entrypointDenomTraces] = await Promise.all([
+        const [channels, entrypointDenomTraces, counterpartyDenomTraces] = await Promise.all([
             fetchAllChannels(ENTRYPOINT_CHAIN_ID, resolvedConfig.entrypointRestEndpoint, resolvedConfig.fetchImpl, {
                 cardanoChainId: resolvedConfig.cardanoChainId,
                 cardanoRestEndpoint: resolvedConfig.cardanoRestEndpoint,
             }),
             fetchAllDenomTraces(resolvedConfig.entrypointRestEndpoint, resolvedConfig.fetchImpl),
+            fetchAllDenomTraces(resolvedConfig.localOsmosisRestEndpoint, resolvedConfig.fetchImpl),
         ]);
         const adjacency = selectCanonicalChannels(channels.adjacency, resolvedConfig.preferredChannels || []);
         return {
@@ -74,6 +75,7 @@ function createPlannerClient(config) {
             channelByRoute: channels.channelByRoute,
             denomTracesByChain: {
                 [ENTRYPOINT_CHAIN_ID]: entrypointDenomTraces,
+                [LOCAL_OSMOSIS_CHAIN_ID]: counterpartyDenomTraces,
             },
         };
     };

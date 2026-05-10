@@ -295,7 +295,7 @@ export function createPlannerClient(
     | undefined;
 
   const getPlannerMetadata = async (): Promise<PlannerMetadata> => {
-    const [channels, entrypointDenomTraces] = await Promise.all([
+    const [channels, entrypointDenomTraces, counterpartyDenomTraces] = await Promise.all([
       fetchAllChannels(
         ENTRYPOINT_CHAIN_ID,
         resolvedConfig.entrypointRestEndpoint,
@@ -307,6 +307,10 @@ export function createPlannerClient(
       ),
       fetchAllDenomTraces(
         resolvedConfig.entrypointRestEndpoint,
+        resolvedConfig.fetchImpl,
+      ),
+      fetchAllDenomTraces(
+        resolvedConfig.localOsmosisRestEndpoint,
         resolvedConfig.fetchImpl,
       ),
     ]);
@@ -321,6 +325,7 @@ export function createPlannerClient(
       channelByRoute: channels.channelByRoute,
       denomTracesByChain: {
         [ENTRYPOINT_CHAIN_ID]: entrypointDenomTraces,
+        [LOCAL_OSMOSIS_CHAIN_ID]: counterpartyDenomTraces,
       },
     };
   };
