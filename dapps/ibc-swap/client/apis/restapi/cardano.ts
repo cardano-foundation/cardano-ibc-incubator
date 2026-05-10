@@ -44,6 +44,10 @@ interface TransferResponseData {
   feeLovelace?: string;
 }
 
+interface SubmitSignedCardanoTxResponse {
+  txHash: string;
+}
+
 export type { CardanoAssetDenomTrace } from '@/types/cardanoTrace';
 
 export interface SwapOptionToken {
@@ -100,6 +104,18 @@ export interface TransferPlanResponse {
     | 'no-outbound-channels'
     | 'no-route-found';
   failureMessage?: string;
+  routeDiagnostics?: {
+    expectedChainPath: string[];
+    missingHops: Array<{
+      fromChainId: string;
+      toChainId: string;
+      reason:
+        | 'no-outbound-channel'
+        | 'no-channel-to-destination'
+        | 'blocked-by-visited-chain';
+      availableDestChainIds: string[];
+    }>;
+  };
 }
 
 export type CheqdIcqQueryKind =
@@ -282,6 +298,25 @@ export async function transfer({
   }
 }
 
+export async function submitSignedCardanoTx(
+  signedTxCbor: string,
+): Promise<string> {
+  try {
+    const response = await axios<SubmitSignedCardanoTxResponse>({
+      method: 'POST',
+      url: '/api/cardano/submit',
+      data: {
+        signed_tx_cbor: signedTxCbor,
+        description: 'IBC transfer signed by browser wallet',
+      },
+    });
+    return response.data.txHash;
+  } catch (error) {
+    const errorMessage = getGatewayErrorMessage(error);
+    throw new Error(errorMessage);
+  }
+}
+
 export async function lookupCardanoAssetDenomTrace(
   assetId: string,
 ): Promise<CardanoAssetDenomTrace | null> {
@@ -374,12 +409,14 @@ export async function planTransferRoute(params: {
   fromChainId: string;
   toChainId: string;
   tokenDenom: string;
+  expectedChainPath?: string[];
 }): Promise<TransferPlanResponse | null> {
   try {
     return await cardanoPlannerClient.planTransferRoute({
       fromChainId: params.fromChainId,
       toChainId: params.toChainId,
       tokenDenom: params.tokenDenom,
+      expectedChainPath: params.expectedChainPath,
     });
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);

@@ -103,6 +103,7 @@ describe('ChannelService.getChannelHealth', () => {
       status: 'blocked',
       pending_packet_commitment_count: '2',
       earliest_pending_packet_sequence: '1',
+      pending_packet_commitment_sequences: ['1', '3'],
       next_sequence_send: '9',
     });
     expect(response.reason).toContain('earliest sequence 1');

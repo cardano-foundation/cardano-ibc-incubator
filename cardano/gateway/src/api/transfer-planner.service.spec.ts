@@ -174,7 +174,7 @@ describe('TransferPlannerService', () => {
     });
   });
 
-  it('fails when multiple open channels exist for the same forward hop', async () => {
+  it('selects the latest live channel when multiple open channels exist for the same forward hop', async () => {
     mockPlannerNetwork({
       entrypointChannels: [
         { channelId: 'channel-0', counterpartyChannelId: 'channel-9', destChainId: 'cardano-devnet' },
@@ -191,12 +191,17 @@ describe('TransferPlannerService', () => {
         toChainId: 'localosmosis',
         tokenDenom: 'lovelace',
       }),
-    ).resolves.toMatchObject({
-      foundRoute: false,
-      mode: null,
-      chains: ['cardano-devnet'],
-      routes: [],
-      failureCode: 'ambiguous-forward-hop',
+    ).resolves.toEqual({
+      foundRoute: true,
+      mode: 'native-forward',
+      chains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
+      routes: ['transfer/channel-9', 'transfer/channel-2'],
+      tokenTrace: {
+        kind: 'native',
+        path: '',
+        baseDenom: 'lovelace',
+        fullDenom: 'lovelace',
+      },
     });
   });
 
