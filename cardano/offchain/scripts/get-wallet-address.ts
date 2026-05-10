@@ -1,8 +1,8 @@
 import {
   installManagedCardanoAuthFetch,
+  resolveManagedKupmiosHeaders,
   resolveManagedKupoUrl,
   resolveManagedOgmiosUrl,
-  resolveManagedKupmiosHeaders,
 } from "../src/http_auth.ts";
 const {
   parseNetwork,
@@ -30,7 +30,9 @@ const chainZeroTime = await querySystemStart(ogmiosUrl);
 const protocolParameters = sanitizeProtocolParameters(
   await queryProtocolParametersCompat(ogmiosUrl),
 );
-const { Kupmios, Lucid, SLOT_CONFIG_NETWORK } = await import("@lucid-evolution/lucid");
+const { Kupmios, Lucid, SLOT_CONFIG_NETWORK } = await import(
+  "@lucid-evolution/lucid"
+);
 const provider = new Kupmios(
   resolveManagedKupoUrl(kupoUrl, kupoApiKey),
   resolveManagedOgmiosUrl(resolveOgmiosHttpUrl(ogmiosUrl), ogmiosApiKey),

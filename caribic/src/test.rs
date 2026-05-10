@@ -218,6 +218,7 @@ fn run_command_streaming(
             label,
             heartbeat_interval: None,
             log_failure_output: true,
+            timeout: None,
         },
         |stream, line| {
             let trimmed = line.trim_end();
@@ -3513,7 +3514,7 @@ fn encode_hex_string(input: &str) -> String {
 }
 
 fn expected_denom_trace_base_denom(base_denom: &str) -> String {
-    if base_denom.len() % 2 == 0 && base_denom.chars().all(|c| c.is_ascii_hexdigit()) {
+    if base_denom.len().is_multiple_of(2) && base_denom.chars().all(|c| c.is_ascii_hexdigit()) {
         base_denom.to_string()
     } else {
         encode_hex_string(base_denom)
@@ -3521,7 +3522,7 @@ fn expected_denom_trace_base_denom(base_denom: &str) -> String {
 }
 
 fn decode_hex_bytes(hex: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return Err(format!("Invalid hex string length: {}", hex.len()).into());
     }
 
@@ -4150,7 +4151,7 @@ fn query_cardano_asset_total(
     token_unit: &str,
 ) -> Result<u64, Box<dyn std::error::Error>> {
     let is_hex = token_unit.chars().all(|c| c.is_ascii_hexdigit());
-    if token_unit.len() < 56 || token_unit.len() % 2 != 0 || !is_hex {
+    if token_unit.len() < 56 || !token_unit.len().is_multiple_of(2) || !is_hex {
         return Err(format!(
             "Invalid Cardano token unit '{}': expected hex string with at least 56 chars",
             token_unit
@@ -4532,6 +4533,7 @@ async fn assert_gateway_denom_trace(
     Err(last_err.unwrap_or_else(|| "Gateway denom-trace query failed".to_string()))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn hermes_ft_transfer(
     project_root: &Path,
     src_chain: &str,
@@ -4824,6 +4826,7 @@ fn dump_test_12_ics20_diagnostics(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn dump_test_10_ics20_diagnostics(
     project_root: &Path,
     cardano_channel_id: &str,

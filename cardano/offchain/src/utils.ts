@@ -1,8 +1,8 @@
 import blueprint from "../../onchain/plutus.json" with { type: "json" };
 import { crypto } from "@std/crypto";
 import {
-  resolveManagedKupoRequestVariants,
   resolveManagedKupoHeader,
+  resolveManagedKupoRequestVariants,
   resolveManagedKupoUrl,
 } from "./http_auth.ts";
 import {
@@ -85,7 +85,8 @@ export const submitTx = async (
   const ADOPTION_TIMEOUT_MS = 30000;
   const ADOPTION_RETRY_DELAY_MS = 5000;
   const COMPLETE_ATTEMPTS = 5;
-  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const sleep = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
   const awaitTxWithTimeout = async (hash: string) => {
     await Promise.race([
       awaitWalletTx(lucid, hash, 1000, ADOPTION_TIMEOUT_MS),
@@ -104,10 +105,7 @@ export const submitTx = async (
   };
 
   console.log("Submitting tx [", txName, "]");
-  const buildTx = async () =>
-    typeof tx === "function"
-      ? await tx()
-      : tx;
+  const buildTx = async () => typeof tx === "function" ? await tx() : tx;
   let completedTx;
   let lastCompletionError: unknown = null;
   for (let attempt = 1; attempt <= COMPLETE_ATTEMPTS; attempt += 1) {
@@ -155,7 +153,7 @@ export const submitTx = async (
   // attempt can succeed on-chain even when Ogmios drops the response before
   // returning the transaction id, so retries must not depend on recovering the
   // hash from the transport response.
-  let txHash: string | null = signedTx.toHash();
+  const txHash = signedTx.toHash();
   console.log("Submitting tx [", txName, "]: tx hash is", txHash);
   let lastError: unknown = null;
 
@@ -374,7 +372,9 @@ export const querySystemStart = async (ogmiosUrl: string) => {
         const timeoutHandle = setTimeout(() => {
           settled = true;
           client.close();
-          rej(new Error("Timed out waiting for queryNetwork/startTime response"));
+          rej(
+            new Error("Timed out waiting for queryNetwork/startTime response"),
+          );
         }, 10000);
 
         client.onopen = () => {
@@ -506,7 +506,9 @@ export const getLiveWalletUtxos = async (
   const walletAddress = await lucid.wallet().address();
   if (lastError) {
     throw new Error(
-      `Wallet ${walletAddress} UTxO query did not stabilize after ${maxAttempts} attempts: ${String(lastError)}`,
+      `Wallet ${walletAddress} UTxO query did not stabilize after ${maxAttempts} attempts: ${
+        String(lastError)
+      }`,
     );
   }
   throw new Error(

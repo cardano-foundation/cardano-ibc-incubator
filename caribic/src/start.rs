@@ -3442,14 +3442,15 @@ fn run_hermes_command_with_progress_and_timeout(
     args: &[&str],
     timeout: Option<Duration>,
 ) -> Result<Output, Box<dyn std::error::Error>> {
-    HermesCli::new(hermes_binary)
-        .output_with_progress_and_timeout(
-            None,
-            args,
-            Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS),
-            timeout,
-        )
-        .map_err(Into::into)
+    let hermes = HermesCli::new(hermes_binary);
+    let heartbeat_interval = Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS);
+    match timeout {
+        Some(timeout) => {
+            hermes.output_with_progress_and_timeout(None, args, heartbeat_interval, Some(timeout))
+        }
+        None => hermes.output_with_progress(None, args, heartbeat_interval),
+    }
+    .map_err(Into::into)
 }
 
 /// Resolves the Hermes binary from the relayer build output and fails if missing.
@@ -4802,10 +4803,18 @@ fn check_gateway_service_readiness() -> (bool, String) {
         );
     }
 
-    (
-        true,
-        "Container running and gRPC port 5001 accessible".to_string(),
-    )
+    let (ready, readiness_status) = check_gateway_http_readiness();
+    if ready {
+        (
+            true,
+            format!(
+                "Container running, gRPC port 5001 accessible, {}",
+                readiness_status
+            ),
+        )
+    } else {
+        (false, readiness_status)
+    }
 }
 
 fn check_dapp_service_readiness() -> (bool, String) {

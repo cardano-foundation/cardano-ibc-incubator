@@ -25,7 +25,7 @@ const kupoMatchesUrl = kupoUrl
   ? resolveManagedKupoUrl(kupoUrl, kupoApiKey)
   : undefined;
 // Kupmios issues HTTP JSON-RPC POSTs, so Demeter Ogmios must use the
-// authenticated HTTP host rather than a header-authenticated base host.
+// authenticated HTTP host rather than the websocket endpoint or header-auth base host.
 const ogmiosProviderUrl = ogmiosUrl
   ? resolveManagedOgmiosUrl(resolveOgmiosHttpUrl(ogmiosUrl), ogmiosApiKey)
   : undefined;
@@ -86,7 +86,7 @@ const {
 } = await import(
   "@lucid-evolution/lucid"
 );
-const { applySingleCborEncoding } = await import("npm:@lucid-evolution/utils");
+const { applySingleCborEncoding } = await import("@lucid-evolution/utils");
 const { createDeployment } = await import("./src/deployment.ts");
 const { KUPMIOS_ENV } = await import("./src/constants.ts");
 

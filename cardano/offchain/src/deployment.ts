@@ -17,11 +17,10 @@ import {
 import {
   awaitWalletTx,
   DeploymentTemplate,
-  awaitWalletTx,
-  getLiveWalletUtxos,
   formatTimestamp,
   generateIdentifierTokenName,
   generateTokenName,
+  getLiveWalletUtxos,
   isRetryableOgmiosTransportError,
   readValidator,
   submitTx,
@@ -818,7 +817,8 @@ async function createReferenceUtxos(
       for (let attempt = 1; attempt <= 5; attempt += 1) {
         try {
           [newWalletUTxOs, derivedOutputs, signedTx] = await (async () => {
-            const [walletUTxOs, outputs, txSignBuilder] = await buildReferenceBatchTx().chain();
+            const [walletUTxOs, outputs, txSignBuilder] =
+              await buildReferenceBatchTx().chain();
             return [
               walletUTxOs,
               outputs,
@@ -870,11 +870,11 @@ async function createReferenceUtxos(
         continue;
       }
       if (!newWalletUTxOs || !derivedOutputs || !signedTx) {
-        throw lastBuildError ?? new Error("Failed to build reference batch transaction");
+        throw lastBuildError ??
+          new Error("Failed to build reference batch transaction");
       }
 
       const txHash = signedTx.toHash();
-      let lastSubmitError: unknown;
       for (let attempt = 1; attempt <= 6; attempt++) {
         try {
           const submittedHash = await signedTx.submit();
@@ -884,7 +884,6 @@ async function createReferenceUtxos(
             );
           }
         } catch (error) {
-          lastSubmitError = error;
           console.warn(
             `createReferenceUtxos submit retry ${attempt}/6 after error:`,
             error,
@@ -1198,7 +1197,9 @@ const deployTransferModule = async (
           ),
           {
             kind: "inline",
-            value: Data.to(updatedHandlerDatum, HandlerDatum, { canonical: true }),
+            value: Data.to(updatedHandlerDatum, HandlerDatum, {
+              canonical: true,
+            }),
           },
           {
             [handlerTokenUnit]: 1n,
@@ -1331,7 +1332,9 @@ const deployGenericModule = async (
           ),
           {
             kind: "inline",
-            value: Data.to(updatedHandlerDatum, HandlerDatum, { canonical: true }),
+            value: Data.to(updatedHandlerDatum, HandlerDatum, {
+              canonical: true,
+            }),
           },
           {
             [handlerTokenUnit]: 1n,

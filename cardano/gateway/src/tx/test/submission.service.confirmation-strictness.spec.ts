@@ -23,6 +23,10 @@ describe('SubmissionService confirmation strictness regressions', () => {
   let ibcTreeCacheServiceMock: {
     saveAliases: jest.Mock;
   };
+  let historyServiceMock: {
+    findTxByHash: jest.Mock;
+  };
+
   beforeEach(() => {
     lucidServiceMock = {
       LucidImporter: {},
@@ -64,6 +68,7 @@ describe('SubmissionService confirmation strictness regressions', () => {
     ibcTreeCacheServiceMock = {
       saveAliases: jest.fn().mockResolvedValue(undefined),
     };
+    historyServiceMock = { findTxByHash: jest.fn() };
 
     service = new SubmissionService(
       lucidServiceMock as any,
@@ -71,12 +76,13 @@ describe('SubmissionService confirmation strictness regressions', () => {
       txEventsServiceMock as any,
       ibcTreePendingUpdatesServiceMock as any,
       ibcTreeCacheServiceMock as any,
+      historyServiceMock as any,
     );
   });
 
-  it('fails hard when confirmation polling times out', async () => {
-    await expect((service as any).waitForConfirmation('tx-timeout', 0)).rejects.toThrow(
-      'confirmation timeout',
+  it('fails hard when history indexing confirmation times out', async () => {
+    await expect((service as any).waitForIndexedConfirmation('tx-timeout', 0)).rejects.toThrow(
+      'history indexing timeout',
     );
   });
 
@@ -91,15 +97,15 @@ describe('SubmissionService confirmation strictness regressions', () => {
   });
 
   it('does not return submit success when confirmation status is unknown', async () => {
-    jest.spyOn(service as any, 'capturePreSubmitPoint').mockResolvedValueOnce('origin');
     jest.spyOn(service as any, 'submitToCardano').mockResolvedValueOnce('tx-hash-abc');
-    jest.spyOn(service as any, 'waitForConfirmation').mockRejectedValueOnce(new Error('not confirmed'));
+    jest.spyOn(service as any, 'waitForIndexedConfirmation').mockRejectedValueOnce(new Error('not confirmed'));
 
     await expect(
       service.submitSignedTransaction({
         signed_tx_cbor: 'deadbeef',
       } as any),
     ).rejects.toThrow('not confirmed');
+    expect(historyServiceMock.findTxByHash).not.toHaveBeenCalled();
   });
 
   it('persists confirmed IBC tree snapshots by current id, root, and block height', async () => {

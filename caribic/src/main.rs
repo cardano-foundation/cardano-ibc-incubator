@@ -43,6 +43,8 @@ enum StartTarget {
     Entrypoint,
     /// Starts only the Gateway service
     Gateway,
+    /// Starts only the IBC Swap dapp
+    Dapp,
     /// Starts only the Hermes relayer
     Relayer,
     /// Starts only the Mithril services

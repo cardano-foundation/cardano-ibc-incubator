@@ -40,6 +40,7 @@ describe('SubmissionService pending update strictness', () => {
     };
     const txEventsServiceMock = {};
     const ibcTreeCacheServiceMock = { saveAliases: jest.fn() };
+    const historyServiceMock = { findTxByHash: jest.fn() };
 
     service = new SubmissionService(
       lucidServiceMock as any,
@@ -47,6 +48,7 @@ describe('SubmissionService pending update strictness', () => {
       txEventsServiceMock as any,
       ibcTreePendingUpdatesServiceMock as any,
       ibcTreeCacheServiceMock as any,
+      historyServiceMock as any,
     );
   });
 
