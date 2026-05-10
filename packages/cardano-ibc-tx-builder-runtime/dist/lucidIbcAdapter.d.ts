@@ -80,6 +80,7 @@ export declare class LucidIbcAdapter {
     getClientTokenUnit(clientId: string): string;
     getConnectionTokenUnit(connectionId: bigint): [string, string];
     getChannelTokenUnit(channelId: bigint): [string, string];
+    private payTransferEscrowDelta;
     createUnsignedSendPacketEscrowTx(dto: any): TxBuilder;
     createUnsignedSendPacketBurnTx(dto: any): TxBuilder;
     private generateTokenName;

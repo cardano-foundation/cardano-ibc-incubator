@@ -6,9 +6,10 @@ const js_sha3_1 = require("js-sha3");
 const CHANNEL_TOKEN_PREFIX = '6368616e6e656c'; // fromText('channel')
 const CLIENT_PREFIX = '6962635f636c69656e74'; // fromText('ibc_client')
 const CONNECTION_TOKEN_PREFIX = '636f6e6e656374696f6e'; // fromText('connection')
-const DECODABLE_DATUM_TYPES = ['client', 'connection', 'channel', 'host_state'];
+const DECODABLE_DATUM_TYPES = ['client', 'connection', 'channel', 'transferEscrow', 'host_state'];
 const ENCODABLE_DATUM_TYPES = [
     'channel',
+    'transferEscrow',
     'host_state',
     'host_state_redeemer',
     'spendChannelRedeemer',
@@ -336,6 +337,22 @@ async function encodeChannelDatum(channelDatum, Lucid) {
 }
 function unknownCodecTypeError(operation, type, supportedTypes) {
     return new Error(`Unknown datum type during ${operation}: ${type}. Supported ${operation} types: ${supportedTypes.join(', ')}`);
+}
+function encodeTransferEscrowDatum(transferEscrowDatum, Lucid) {
+    const { Data } = Lucid;
+    const TransferEscrowDatumSchema = Data.Object({
+        channel_id: Data.Bytes(),
+        denom: Data.Bytes(),
+    });
+    return Data.to(transferEscrowDatum, TransferEscrowDatumSchema, { canonical: true });
+}
+function decodeTransferEscrowDatum(encoded, Lucid) {
+    const { Data } = Lucid;
+    const TransferEscrowDatumSchema = Data.Object({
+        channel_id: Data.Bytes(),
+        denom: Data.Bytes(),
+    });
+    return Data.from(encoded, TransferEscrowDatumSchema);
 }
 async function encodeHostStateRedeemer(data, Lucid) {
     const { Data } = Lucid;
@@ -851,6 +868,8 @@ class LucidIbcAdapter {
                 return (await decodeConnectionDatum(encodedDatum, this.LucidImporter));
             case 'channel':
                 return (await decodeChannelDatum(encodedDatum, this.LucidImporter));
+            case 'transferEscrow':
+                return decodeTransferEscrowDatum(encodedDatum, this.LucidImporter);
             case 'host_state':
                 return (await decodeHostStateDatum(encodedDatum, this.LucidImporter));
             default:
@@ -861,6 +880,8 @@ class LucidIbcAdapter {
         switch (type) {
             case 'channel':
                 return encodeChannelDatum(data, this.LucidImporter);
+            case 'transferEscrow':
+                return encodeTransferEscrowDatum(data, this.LucidImporter);
             case 'host_state':
                 return encodeHostStateDatum(data, this.LucidImporter);
             case 'host_state_redeemer':
@@ -890,6 +911,18 @@ class LucidIbcAdapter {
         const channelTokenName = this.generateTokenName(this.deployment.hostStateNFT, CHANNEL_TOKEN_PREFIX, channelId);
         return [mintChannelPolicyId, channelTokenName];
     }
+    payTransferEscrowDelta(tx, transferModuleAddress, encodedTransferEscrowDatum, transferAmount, denomToken, transferEscrowUtxo) {
+        if (!encodedTransferEscrowDatum) {
+            throw new Error('Transfer escrow datum is required for sharded escrow updates');
+        }
+        const updatedAssets = updateTransferModuleAssets(transferEscrowUtxo?.assets ?? {}, transferAmount, denomToken);
+        const targetAmount = updatedAssets[denomToken] ?? 0n;
+        const keepsNonLovelace = Object.keys(updatedAssets).some((unit) => unit !== 'lovelace');
+        if (targetAmount <= 0n && !keepsNonLovelace) {
+            return tx;
+        }
+        return tx.pay.ToContract(transferModuleAddress, { kind: 'inline', value: encodedTransferEscrowDatum }, updatedAssets);
+    }
     createUnsignedSendPacketEscrowTx(dto) {
         const hostStateAddress = this.deployment.validators.hostStateStt.address;
         if (!hostStateAddress) {
@@ -913,12 +946,15 @@ class LucidIbcAdapter {
         ])
             .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
             .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
-            .collectFrom([dto.transferModuleUTxO], dto.encodedSpendTransferModuleRedeemer)
+            .collectFrom(dto.transferEscrowUtxo
+            ? [dto.transferModuleUTxO, dto.transferEscrowUtxo]
+            : [dto.transferModuleUTxO], dto.encodedSpendTransferModuleRedeemer)
             .readFrom([dto.connectionUTxO, dto.clientUTxO])
             .pay.ToContract(hostStateAddress, { kind: 'inline', value: dto.encodedUpdatedHostStateDatum }, { [hostStateNFT]: 1n })
             .pay.ToContract(dto.spendChannelAddress, { kind: 'inline', value: dto.encodedUpdatedChannelDatum }, { [dto.channelTokenUnit]: 1n })
-            .pay.ToContract(dto.transferModuleAddress, undefined, updateTransferModuleAssets(dto.transferModuleUTxO.assets, dto.transferAmount, dto.denomToken))
+            .pay.ToContract(dto.transferModuleAddress, undefined, { ...dto.transferModuleUTxO.assets })
             .mintAssets({ [dto.sendPacketPolicyId]: 1n }, encodeAuthToken(dto.channelToken, this.LucidImporter));
+        this.payTransferEscrowDelta(tx, dto.transferModuleAddress, dto.encodedTransferEscrowDatum, dto.transferAmount, dto.denomToken, dto.transferEscrowUtxo);
         return tx;
     }
     createUnsignedSendPacketBurnTx(dto) {

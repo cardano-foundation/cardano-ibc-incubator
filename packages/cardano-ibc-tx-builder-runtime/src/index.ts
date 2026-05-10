@@ -1046,6 +1046,10 @@ function utxoRef(utxo: Pick<UTxO, 'txHash' | 'outputIndex'>): string {
   return `${utxo.txHash}#${utxo.outputIndex}`;
 }
 
+function escrowShardHasOnlyDenom(utxo: UTxO, denomToken: string): boolean {
+  return Object.keys(utxo.assets ?? {}).every((unit) => unit === 'lovelace' || unit === denomToken);
+}
+
 async function ensureTreeAlignedForRoot(context: BuilderContext, onChainRoot: string): Promise<void> {
   if (!isTreeAligned(onChainRoot)) {
     context.logger.warn(`IBC tree root mismatch for local tx builder runtime, aligning to ${onChainRoot.slice(0, 16)}...`);
@@ -1270,6 +1274,39 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
       }
       return context.lucidService.findUtxoAtWithUnit(address, unit);
     };
+    const findTransferEscrowShard = async (
+      channelId: string,
+      packetDenom: string,
+      denomToken: string,
+      requiredAmount?: bigint,
+    ) => {
+      const encodedDatum = await context.lucidService.encode({ channel_id: channelId, denom: packetDenom }, 'transferEscrow');
+      let utxos: UTxO[] = [];
+      try {
+        utxos = await context.lucidService.findUtxoAt(context.deployment.modules.transfer.address);
+      } catch {
+        utxos = [];
+      }
+
+      const candidates = utxos
+        .filter((utxo) => utxo.datum === encodedDatum)
+        .filter((utxo) => escrowShardHasOnlyDenom(utxo, denomToken))
+        .filter((utxo) => requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
+        .sort((a, b) => {
+          const aAmount = a.assets[denomToken] ?? 0n;
+          const bAmount = b.assets[denomToken] ?? 0n;
+          if (aAmount === bAmount) {
+            const txHashCompare = a.txHash.localeCompare(b.txHash);
+            return txHashCompare !== 0 ? txHashCompare : a.outputIndex - b.outputIndex;
+          }
+          return aAmount > bAmount ? -1 : 1;
+        });
+
+      return {
+        utxo: candidates[0],
+        encodedDatum,
+      };
+    };
 
     const initialWalletUtxos = await timed(logger, scope, 'load initial wallet UTxOs', () => getWalletUtxos(sendPacketOperator.signer, LOOKUP_RETRY_OPTIONS));
     if (initialWalletUtxos.length === 0) {
@@ -1346,6 +1383,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
         encode: (value, kind) => context.lucidService.encode(value, kind as never),
         findUtxoAtWithUnit: findWalletUtxoAtWithUnit,
         tryFindUtxosAt: getWalletUtxos,
+        findTransferEscrowShard,
         createUnsignedSendPacketBurnTx: (dto) => context.lucidService.createUnsignedSendPacketBurnTx(dto as never),
         createUnsignedSendPacketEscrowTx: (dto) => context.lucidService.createUnsignedSendPacketEscrowTx(dto as never),
         invalidArgument: (message) => new Error(message),
