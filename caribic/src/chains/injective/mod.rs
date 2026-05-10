@@ -233,7 +233,6 @@ impl ChainAdapter for InjectiveChainAdapter {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct InjectiveChainOptions {
     stateful: Option<bool>,
-    snapshot_url: Option<String>,
 }
 
 impl InjectiveChainOptions {
@@ -245,25 +244,9 @@ impl InjectiveChainOptions {
                 "stateful" => {
                     options.stateful = Some(parse_bool_flag("stateful", raw_value)?);
                 }
-                "snapshot-url" => {
-                    options.snapshot_url = Some(raw_value.clone());
-                }
-                // Backward compatibility for older commands that still pass trust-rpc-url.
-                "trust-rpc-url" => {
-                    if let Some(snapshot_url) = &options.snapshot_url {
-                        if snapshot_url != raw_value {
-                            return Err(
-                                "Conflicting Injective values for snapshot-url and trust-rpc-url"
-                                    .to_string(),
-                            );
-                        }
-                    } else {
-                        options.snapshot_url = Some(raw_value.clone());
-                    }
-                }
                 _ => {
                     return Err(format!(
-                        "Unsupported Injective flag '{}'. Allowed options: stateful, snapshot-url",
+                        "Unsupported Injective flag '{}'. Allowed options: stateful",
                         flag_name
                     ));
                 }
@@ -275,10 +258,6 @@ impl InjectiveChainOptions {
 
     fn stateful_or(&self, default_value: bool) -> bool {
         self.stateful.unwrap_or(default_value)
-    }
-
-    fn snapshot_url(&self) -> Option<&str> {
-        self.snapshot_url.as_deref()
     }
 }
 

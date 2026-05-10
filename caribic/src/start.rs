@@ -119,6 +119,17 @@ fn managed_cardano_network_running(cardano_dir: &Path) -> bool {
         .unwrap_or(false)
 }
 
+fn gateway_env_path_from_cardano_dir(cardano_dir: &Path) -> PathBuf {
+    cardano_dir.join("../../cardano/gateway/.env")
+}
+
+fn preprod_uses_local_kupo_runtime(
+    gateway_env_path: &Path,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    Ok(crate::setup::resolve_preprod_kupo_mode(gateway_env_path)?
+        == crate::setup::PreprodKupoMode::Local)
+}
+
 fn managed_cardano_runtime_services_running(
     cardano_dir: &Path,
     network: config::CoreCardanoNetwork,
@@ -152,7 +163,11 @@ fn managed_cardano_runtime_services_running(
         required_services.push("yaci-store-postgres");
         required_services.push("yaci-store");
     }
-    if configuration.services.kupo && matches!(network, config::CoreCardanoNetwork::Local) {
+    let gateway_env_path = gateway_env_path_from_cardano_dir(cardano_dir);
+    let use_local_kupo = !matches!(network, config::CoreCardanoNetwork::Preprod)
+        || preprod_uses_local_kupo_runtime(gateway_env_path.as_path()).unwrap_or(false);
+
+    if configuration.services.kupo && use_local_kupo {
         required_services.push("kupo");
     }
     if configuration.services.ogmios && matches!(network, config::CoreCardanoNetwork::Local) {
