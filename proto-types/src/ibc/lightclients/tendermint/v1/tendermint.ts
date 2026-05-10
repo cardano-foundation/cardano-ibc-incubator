@@ -20,6 +20,9 @@ export const protobufPackage = "ibc.lightclients.tendermint.v1";
 /**
  * ClientState from Tendermint tracks the current validator set, latest height,
  * and a possible frozen height.
+ * @name ClientState
+ * @package ibc.lightclients.tendermint.v1
+ * @see proto type: ibc.lightclients.tendermint.v1.ClientState
  */
 export interface ClientState {
   chain_id: string;
@@ -29,15 +32,25 @@ export interface ClientState {
    * submitted headers are valid for upgrade
    */
   trusting_period: Duration;
-  /** duration of the staking unbonding period */
+  /**
+   * duration of the staking unbonding period
+   */
   unbonding_period: Duration;
-  /** defines how much new (untrusted) header's Time can drift into the future. */
+  /**
+   * defines how much new (untrusted) header's Time can drift into the future.
+   */
   max_clock_drift: Duration;
-  /** Block height when the client was frozen due to a misbehaviour */
+  /**
+   * Block height when the client was frozen due to a misbehaviour
+   */
   frozen_height: Height;
-  /** Latest height the client was updated to */
+  /**
+   * Latest height the client was updated to
+   */
   latest_height: Height;
-  /** Proof specifications used in verifying counterparty state */
+  /**
+   * Proof specifications used in verifying counterparty state
+   */
   proof_specs: ProofSpec[];
   /**
    * Path at which next upgraded client will be committed.
@@ -49,31 +62,47 @@ export interface ClientState {
    * "upgradedIBCState"}`
    */
   upgrade_path: string[];
-  /** allow_update_after_expiry is deprecated */
-  /** @deprecated */
+  /**
+   * allow_update_after_expiry is deprecated
+   * @deprecated
+   */
   allow_update_after_expiry: boolean;
-  /** allow_update_after_misbehaviour is deprecated */
-  /** @deprecated */
+  /**
+   * allow_update_after_misbehaviour is deprecated
+   * @deprecated
+   */
   allow_update_after_misbehaviour: boolean;
 }
-/** ConsensusState defines the consensus state from Tendermint. */
+/**
+ * ConsensusState defines the consensus state from Tendermint.
+ * @name ConsensusState
+ * @package ibc.lightclients.tendermint.v1
+ * @see proto type: ibc.lightclients.tendermint.v1.ConsensusState
+ */
 export interface ConsensusState {
   /**
    * timestamp that corresponds to the block height in which the ConsensusState
    * was stored.
    */
   timestamp: Timestamp;
-  /** commitment root (i.e app hash) */
+  /**
+   * commitment root (i.e app hash)
+   */
   root: MerkleRoot;
   next_validators_hash: Uint8Array;
 }
 /**
  * Misbehaviour is a wrapper over two conflicting Headers
  * that implements Misbehaviour interface expected by ICS-02
+ * @name Misbehaviour
+ * @package ibc.lightclients.tendermint.v1
+ * @see proto type: ibc.lightclients.tendermint.v1.Misbehaviour
  */
 export interface Misbehaviour {
-  /** ClientID is deprecated */
-  /** @deprecated */
+  /**
+   * ClientID is deprecated
+   * @deprecated
+   */
   client_id: string;
   header1?: Header;
   header2?: Header;
@@ -91,6 +120,9 @@ export interface Misbehaviour {
  * current time in order to correctly verify, and the TrustedValidators must
  * hash to TrustedConsensusState.NextValidatorsHash since that is the last
  * trusted validator set at the TrustedHeight.
+ * @name Header
+ * @package ibc.lightclients.tendermint.v1
+ * @see proto type: ibc.lightclients.tendermint.v1.Header
  */
 export interface Header {
   signed_header?: SignedHeader;
@@ -101,6 +133,9 @@ export interface Header {
 /**
  * Fraction defines the protobuf message type for tmmath.Fraction that only
  * supports positive values.
+ * @name Fraction
+ * @package ibc.lightclients.tendermint.v1
+ * @see proto type: ibc.lightclients.tendermint.v1.Fraction
  */
 export interface Fraction {
   numerator: bigint;
@@ -121,6 +156,13 @@ function createBaseClientState(): ClientState {
     allow_update_after_misbehaviour: false,
   };
 }
+/**
+ * ClientState from Tendermint tracks the current validator set, latest height,
+ * and a possible frozen height.
+ * @name ClientState
+ * @package ibc.lightclients.tendermint.v1
+ * @see proto type: ibc.lightclients.tendermint.v1.ClientState
+ */
 export const ClientState = {
   typeUrl: "/ibc.lightclients.tendermint.v1.ClientState",
   encode(message: ClientState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -293,6 +335,12 @@ function createBaseConsensusState(): ConsensusState {
     next_validators_hash: new Uint8Array(),
   };
 }
+/**
+ * ConsensusState defines the consensus state from Tendermint.
+ * @name ConsensusState
+ * @package ibc.lightclients.tendermint.v1
+ * @see proto type: ibc.lightclients.tendermint.v1.ConsensusState
+ */
 export const ConsensusState = {
   typeUrl: "/ibc.lightclients.tendermint.v1.ConsensusState",
   encode(message: ConsensusState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -367,6 +415,13 @@ function createBaseMisbehaviour(): Misbehaviour {
     header2: undefined,
   };
 }
+/**
+ * Misbehaviour is a wrapper over two conflicting Headers
+ * that implements Misbehaviour interface expected by ICS-02
+ * @name Misbehaviour
+ * @package ibc.lightclients.tendermint.v1
+ * @see proto type: ibc.lightclients.tendermint.v1.Misbehaviour
+ */
 export const Misbehaviour = {
   typeUrl: "/ibc.lightclients.tendermint.v1.Misbehaviour",
   encode(message: Misbehaviour, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -440,6 +495,23 @@ function createBaseHeader(): Header {
     trusted_validators: undefined,
   };
 }
+/**
+ * Header defines the Tendermint client consensus Header.
+ * It encapsulates all the information necessary to update from a trusted
+ * Tendermint ConsensusState. The inclusion of TrustedHeight and
+ * TrustedValidators allows this update to process correctly, so long as the
+ * ConsensusState for the TrustedHeight exists, this removes race conditions
+ * among relayers The SignedHeader and ValidatorSet are the new untrusted update
+ * fields for the client. The TrustedHeight is the height of a stored
+ * ConsensusState on the client that will be used to verify the new untrusted
+ * header. The Trusted ConsensusState must be within the unbonding period of
+ * current time in order to correctly verify, and the TrustedValidators must
+ * hash to TrustedConsensusState.NextValidatorsHash since that is the last
+ * trusted validator set at the TrustedHeight.
+ * @name Header
+ * @package ibc.lightclients.tendermint.v1
+ * @see proto type: ibc.lightclients.tendermint.v1.Header
+ */
 export const Header = {
   typeUrl: "/ibc.lightclients.tendermint.v1.Header",
   encode(message: Header, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -529,6 +601,13 @@ function createBaseFraction(): Fraction {
     denominator: BigInt(0),
   };
 }
+/**
+ * Fraction defines the protobuf message type for tmmath.Fraction that only
+ * supports positive values.
+ * @name Fraction
+ * @package ibc.lightclients.tendermint.v1
+ * @see proto type: ibc.lightclients.tendermint.v1.Fraction
+ */
 export const Fraction = {
   typeUrl: "/ibc.lightclients.tendermint.v1.Fraction",
   encode(message: Fraction, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

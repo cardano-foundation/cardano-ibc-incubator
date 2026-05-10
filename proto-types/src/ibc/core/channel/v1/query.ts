@@ -6,307 +6,543 @@ import { Any } from "../../../../google/protobuf/any";
 import { BinaryReader, BinaryWriter } from "../../../../binary";
 import { isSet, DeepPartial, Exact, bytesFromBase64, base64FromBytes, Rpc } from "../../../../helpers";
 export const protobufPackage = "ibc.core.channel.v1";
-/** QueryChannelRequest is the request type for the Query/Channel RPC method */
+/**
+ * QueryChannelRequest is the request type for the Query/Channel RPC method
+ * @name QueryChannelRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelRequest
+ */
 export interface QueryChannelRequest {
-  /** port unique identifier */
+  /**
+   * port unique identifier
+   */
   port_id: string;
-  /** channel unique identifier */
+  /**
+   * channel unique identifier
+   */
   channel_id: string;
 }
 /**
  * QueryChannelResponse is the response type for the Query/Channel RPC method.
  * Besides the Channel end, it includes a proof and the height from which the
  * proof was retrieved.
+ * @name QueryChannelResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelResponse
  */
 export interface QueryChannelResponse {
-  /** channel associated with the request identifiers */
+  /**
+   * channel associated with the request identifiers
+   */
   channel?: Channel;
-  /** merkle proof of existence */
+  /**
+   * merkle proof of existence
+   */
   proof: Uint8Array;
-  /** height at which the proof was retrieved */
+  /**
+   * height at which the proof was retrieved
+   */
   proof_height: Height;
 }
-/** QueryChannelsRequest is the request type for the Query/Channels RPC method */
+/**
+ * QueryChannelsRequest is the request type for the Query/Channels RPC method
+ * @name QueryChannelsRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelsRequest
+ */
 export interface QueryChannelsRequest {
-  /** pagination request */
+  /**
+   * pagination request
+   */
   pagination?: PageRequest;
 }
-/** QueryChannelsResponse is the response type for the Query/Channels RPC method. */
+/**
+ * QueryChannelsResponse is the response type for the Query/Channels RPC method.
+ * @name QueryChannelsResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelsResponse
+ */
 export interface QueryChannelsResponse {
-  /** list of stored channels of the chain. */
+  /**
+   * list of stored channels of the chain.
+   */
   channels: IdentifiedChannel[];
-  /** pagination response */
+  /**
+   * pagination response
+   */
   pagination?: PageResponse;
-  /** query block height */
+  /**
+   * query block height
+   */
   height: Height;
 }
 /**
  * QueryConnectionChannelsRequest is the request type for the
  * Query/QueryConnectionChannels RPC method
+ * @name QueryConnectionChannelsRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryConnectionChannelsRequest
  */
 export interface QueryConnectionChannelsRequest {
-  /** connection unique identifier */
+  /**
+   * connection unique identifier
+   */
   connection: string;
-  /** pagination request */
+  /**
+   * pagination request
+   */
   pagination?: PageRequest;
 }
 /**
  * QueryConnectionChannelsResponse is the Response type for the
  * Query/QueryConnectionChannels RPC method
+ * @name QueryConnectionChannelsResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryConnectionChannelsResponse
  */
 export interface QueryConnectionChannelsResponse {
-  /** list of channels associated with a connection. */
+  /**
+   * list of channels associated with a connection.
+   */
   channels: IdentifiedChannel[];
-  /** pagination response */
+  /**
+   * pagination response
+   */
   pagination?: PageResponse;
-  /** query block height */
+  /**
+   * query block height
+   */
   height: Height;
 }
 /**
  * QueryChannelClientStateRequest is the request type for the Query/ClientState
  * RPC method
+ * @name QueryChannelClientStateRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelClientStateRequest
  */
 export interface QueryChannelClientStateRequest {
-  /** port unique identifier */
+  /**
+   * port unique identifier
+   */
   port_id: string;
-  /** channel unique identifier */
+  /**
+   * channel unique identifier
+   */
   channel_id: string;
 }
 /**
  * QueryChannelClientStateResponse is the Response type for the
  * Query/QueryChannelClientState RPC method
+ * @name QueryChannelClientStateResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelClientStateResponse
  */
 export interface QueryChannelClientStateResponse {
-  /** client state associated with the channel */
+  /**
+   * client state associated with the channel
+   */
   identified_client_state?: IdentifiedClientState;
-  /** merkle proof of existence */
+  /**
+   * merkle proof of existence
+   */
   proof: Uint8Array;
-  /** height at which the proof was retrieved */
+  /**
+   * height at which the proof was retrieved
+   */
   proof_height: Height;
 }
 /**
  * QueryChannelConsensusStateRequest is the request type for the
  * Query/ConsensusState RPC method
+ * @name QueryChannelConsensusStateRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelConsensusStateRequest
  */
 export interface QueryChannelConsensusStateRequest {
-  /** port unique identifier */
+  /**
+   * port unique identifier
+   */
   port_id: string;
-  /** channel unique identifier */
+  /**
+   * channel unique identifier
+   */
   channel_id: string;
-  /** revision number of the consensus state */
+  /**
+   * revision number of the consensus state
+   */
   revision_number: bigint;
-  /** revision height of the consensus state */
+  /**
+   * revision height of the consensus state
+   */
   revision_height: bigint;
 }
 /**
  * QueryChannelClientStateResponse is the Response type for the
  * Query/QueryChannelClientState RPC method
+ * @name QueryChannelConsensusStateResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelConsensusStateResponse
  */
 export interface QueryChannelConsensusStateResponse {
-  /** consensus state associated with the channel */
+  /**
+   * consensus state associated with the channel
+   */
   consensus_state?: Any;
-  /** client ID associated with the consensus state */
+  /**
+   * client ID associated with the consensus state
+   */
   client_id: string;
-  /** merkle proof of existence */
+  /**
+   * merkle proof of existence
+   */
   proof: Uint8Array;
-  /** height at which the proof was retrieved */
+  /**
+   * height at which the proof was retrieved
+   */
   proof_height: Height;
 }
 /**
  * QueryPacketCommitmentRequest is the request type for the
  * Query/PacketCommitment RPC method
+ * @name QueryPacketCommitmentRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketCommitmentRequest
  */
 export interface QueryPacketCommitmentRequest {
-  /** port unique identifier */
+  /**
+   * port unique identifier
+   */
   port_id: string;
-  /** channel unique identifier */
+  /**
+   * channel unique identifier
+   */
   channel_id: string;
-  /** packet sequence */
+  /**
+   * packet sequence
+   */
   sequence: bigint;
 }
 /**
  * QueryPacketCommitmentResponse defines the client query response for a packet
  * which also includes a proof and the height from which the proof was
  * retrieved
+ * @name QueryPacketCommitmentResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketCommitmentResponse
  */
 export interface QueryPacketCommitmentResponse {
-  /** packet associated with the request fields */
+  /**
+   * packet associated with the request fields
+   */
   commitment: Uint8Array;
-  /** merkle proof of existence */
+  /**
+   * merkle proof of existence
+   */
   proof: Uint8Array;
-  /** height at which the proof was retrieved */
+  /**
+   * height at which the proof was retrieved
+   */
   proof_height: Height;
 }
 /**
  * QueryPacketCommitmentsRequest is the request type for the
  * Query/QueryPacketCommitments RPC method
+ * @name QueryPacketCommitmentsRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketCommitmentsRequest
  */
 export interface QueryPacketCommitmentsRequest {
-  /** port unique identifier */
+  /**
+   * port unique identifier
+   */
   port_id: string;
-  /** channel unique identifier */
+  /**
+   * channel unique identifier
+   */
   channel_id: string;
-  /** pagination request */
+  /**
+   * pagination request
+   */
   pagination?: PageRequest;
 }
 /**
  * QueryPacketCommitmentsResponse is the request type for the
  * Query/QueryPacketCommitments RPC method
+ * @name QueryPacketCommitmentsResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketCommitmentsResponse
  */
 export interface QueryPacketCommitmentsResponse {
   commitments: PacketState[];
-  /** pagination response */
+  /**
+   * pagination response
+   */
   pagination?: PageResponse;
-  /** query block height */
+  /**
+   * query block height
+   */
   height: Height;
 }
 /**
  * QueryPacketReceiptRequest is the request type for the
  * Query/PacketReceipt RPC method
+ * @name QueryPacketReceiptRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketReceiptRequest
  */
 export interface QueryPacketReceiptRequest {
-  /** port unique identifier */
+  /**
+   * port unique identifier
+   */
   port_id: string;
-  /** channel unique identifier */
+  /**
+   * channel unique identifier
+   */
   channel_id: string;
-  /** packet sequence */
+  /**
+   * packet sequence
+   */
   sequence: bigint;
 }
 /**
  * QueryPacketReceiptResponse defines the client query response for a packet
  * receipt which also includes a proof, and the height from which the proof was
  * retrieved
+ * @name QueryPacketReceiptResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketReceiptResponse
  */
 export interface QueryPacketReceiptResponse {
-  /** success flag for if receipt exists */
+  /**
+   * success flag for if receipt exists
+   */
   received: boolean;
-  /** merkle proof of existence */
+  /**
+   * merkle proof of existence
+   */
   proof: Uint8Array;
-  /** height at which the proof was retrieved */
+  /**
+   * height at which the proof was retrieved
+   */
   proof_height: Height;
 }
 /**
  * QueryPacketAcknowledgementRequest is the request type for the
  * Query/PacketAcknowledgement RPC method
+ * @name QueryPacketAcknowledgementRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketAcknowledgementRequest
  */
 export interface QueryPacketAcknowledgementRequest {
-  /** port unique identifier */
+  /**
+   * port unique identifier
+   */
   port_id: string;
-  /** channel unique identifier */
+  /**
+   * channel unique identifier
+   */
   channel_id: string;
-  /** packet sequence */
+  /**
+   * packet sequence
+   */
   sequence: bigint;
 }
 /**
  * QueryPacketAcknowledgementResponse defines the client query response for a
  * packet which also includes a proof and the height from which the
  * proof was retrieved
+ * @name QueryPacketAcknowledgementResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketAcknowledgementResponse
  */
 export interface QueryPacketAcknowledgementResponse {
-  /** packet associated with the request fields */
+  /**
+   * packet associated with the request fields
+   */
   acknowledgement: Uint8Array;
-  /** merkle proof of existence */
+  /**
+   * merkle proof of existence
+   */
   proof: Uint8Array;
-  /** height at which the proof was retrieved */
+  /**
+   * height at which the proof was retrieved
+   */
   proof_height: Height;
 }
 /**
  * QueryPacketAcknowledgementsRequest is the request type for the
  * Query/QueryPacketCommitments RPC method
+ * @name QueryPacketAcknowledgementsRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketAcknowledgementsRequest
  */
 export interface QueryPacketAcknowledgementsRequest {
-  /** port unique identifier */
+  /**
+   * port unique identifier
+   */
   port_id: string;
-  /** channel unique identifier */
+  /**
+   * channel unique identifier
+   */
   channel_id: string;
-  /** pagination request */
+  /**
+   * pagination request
+   */
   pagination?: PageRequest;
-  /** list of packet sequences */
+  /**
+   * list of packet sequences
+   */
   packet_commitment_sequences: bigint[];
 }
 /**
  * QueryPacketAcknowledgemetsResponse is the request type for the
  * Query/QueryPacketAcknowledgements RPC method
+ * @name QueryPacketAcknowledgementsResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketAcknowledgementsResponse
  */
 export interface QueryPacketAcknowledgementsResponse {
   acknowledgements: PacketState[];
-  /** pagination response */
+  /**
+   * pagination response
+   */
   pagination?: PageResponse;
-  /** query block height */
+  /**
+   * query block height
+   */
   height: Height;
 }
 /**
  * QueryUnreceivedPacketsRequest is the request type for the
  * Query/UnreceivedPackets RPC method
+ * @name QueryUnreceivedPacketsRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryUnreceivedPacketsRequest
  */
 export interface QueryUnreceivedPacketsRequest {
-  /** port unique identifier */
+  /**
+   * port unique identifier
+   */
   port_id: string;
-  /** channel unique identifier */
+  /**
+   * channel unique identifier
+   */
   channel_id: string;
-  /** list of packet sequences */
+  /**
+   * list of packet sequences
+   */
   packet_commitment_sequences: bigint[];
 }
 /**
  * QueryUnreceivedPacketsResponse is the response type for the
  * Query/UnreceivedPacketCommitments RPC method
+ * @name QueryUnreceivedPacketsResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryUnreceivedPacketsResponse
  */
 export interface QueryUnreceivedPacketsResponse {
-  /** list of unreceived packet sequences */
+  /**
+   * list of unreceived packet sequences
+   */
   sequences: bigint[];
-  /** query block height */
+  /**
+   * query block height
+   */
   height: Height;
 }
 /**
  * QueryUnreceivedAcks is the request type for the
  * Query/UnreceivedAcks RPC method
+ * @name QueryUnreceivedAcksRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryUnreceivedAcksRequest
  */
 export interface QueryUnreceivedAcksRequest {
-  /** port unique identifier */
+  /**
+   * port unique identifier
+   */
   port_id: string;
-  /** channel unique identifier */
+  /**
+   * channel unique identifier
+   */
   channel_id: string;
-  /** list of acknowledgement sequences */
+  /**
+   * list of acknowledgement sequences
+   */
   packet_ack_sequences: bigint[];
 }
 /**
  * QueryUnreceivedAcksResponse is the response type for the
  * Query/UnreceivedAcks RPC method
+ * @name QueryUnreceivedAcksResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryUnreceivedAcksResponse
  */
 export interface QueryUnreceivedAcksResponse {
-  /** list of unreceived acknowledgement sequences */
+  /**
+   * list of unreceived acknowledgement sequences
+   */
   sequences: bigint[];
-  /** query block height */
+  /**
+   * query block height
+   */
   height: Height;
 }
 /**
  * QueryNextSequenceReceiveRequest is the request type for the
  * Query/QueryNextSequenceReceiveRequest RPC method
+ * @name QueryNextSequenceReceiveRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryNextSequenceReceiveRequest
  */
 export interface QueryNextSequenceReceiveRequest {
-  /** port unique identifier */
+  /**
+   * port unique identifier
+   */
   port_id: string;
-  /** channel unique identifier */
+  /**
+   * channel unique identifier
+   */
   channel_id: string;
 }
 /**
  * QuerySequenceResponse is the request type for the
  * Query/QueryNextSequenceReceiveResponse RPC method
+ * @name QueryNextSequenceReceiveResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryNextSequenceReceiveResponse
  */
 export interface QueryNextSequenceReceiveResponse {
-  /** next sequence receive number */
+  /**
+   * next sequence receive number
+   */
   next_sequence_receive: bigint;
-  /** merkle proof of existence */
+  /**
+   * merkle proof of existence
+   */
   proof: Uint8Array;
-  /** height at which the proof was retrieved */
+  /**
+   * height at which the proof was retrieved
+   */
   proof_height: Height;
 }
+/**
+ * @name QueryProofUnreceivedPacketsRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryProofUnreceivedPacketsRequest
+ */
 export interface QueryProofUnreceivedPacketsRequest {
   channel_id: string;
   port_id: string;
   sequence: bigint;
   revision_height: bigint;
 }
+/**
+ * @name QueryProofUnreceivedPacketsResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryProofUnreceivedPacketsResponse
+ */
 export interface QueryProofUnreceivedPacketsResponse {
   proof: Uint8Array;
   proof_height: Height;
@@ -317,6 +553,12 @@ function createBaseQueryChannelRequest(): QueryChannelRequest {
     channel_id: "",
   };
 }
+/**
+ * QueryChannelRequest is the request type for the Query/Channel RPC method
+ * @name QueryChannelRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelRequest
+ */
 export const QueryChannelRequest = {
   typeUrl: "/ibc.core.channel.v1.QueryChannelRequest",
   encode(message: QueryChannelRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -374,6 +616,14 @@ function createBaseQueryChannelResponse(): QueryChannelResponse {
     proof_height: Height.fromPartial({}),
   };
 }
+/**
+ * QueryChannelResponse is the response type for the Query/Channel RPC method.
+ * Besides the Channel end, it includes a proof and the height from which the
+ * proof was retrieved.
+ * @name QueryChannelResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelResponse
+ */
 export const QueryChannelResponse = {
   typeUrl: "/ibc.core.channel.v1.QueryChannelResponse",
   encode(message: QueryChannelResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -445,6 +695,12 @@ function createBaseQueryChannelsRequest(): QueryChannelsRequest {
     pagination: undefined,
   };
 }
+/**
+ * QueryChannelsRequest is the request type for the Query/Channels RPC method
+ * @name QueryChannelsRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelsRequest
+ */
 export const QueryChannelsRequest = {
   typeUrl: "/ibc.core.channel.v1.QueryChannelsRequest",
   encode(message: QueryChannelsRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -496,6 +752,12 @@ function createBaseQueryChannelsResponse(): QueryChannelsResponse {
     height: Height.fromPartial({}),
   };
 }
+/**
+ * QueryChannelsResponse is the response type for the Query/Channels RPC method.
+ * @name QueryChannelsResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelsResponse
+ */
 export const QueryChannelsResponse = {
   typeUrl: "/ibc.core.channel.v1.QueryChannelsResponse",
   encode(message: QueryChannelsResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -571,6 +833,13 @@ function createBaseQueryConnectionChannelsRequest(): QueryConnectionChannelsRequ
     pagination: undefined,
   };
 }
+/**
+ * QueryConnectionChannelsRequest is the request type for the
+ * Query/QueryConnectionChannels RPC method
+ * @name QueryConnectionChannelsRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryConnectionChannelsRequest
+ */
 export const QueryConnectionChannelsRequest = {
   typeUrl: "/ibc.core.channel.v1.QueryConnectionChannelsRequest",
   encode(
@@ -636,6 +905,13 @@ function createBaseQueryConnectionChannelsResponse(): QueryConnectionChannelsRes
     height: Height.fromPartial({}),
   };
 }
+/**
+ * QueryConnectionChannelsResponse is the Response type for the
+ * Query/QueryConnectionChannels RPC method
+ * @name QueryConnectionChannelsResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryConnectionChannelsResponse
+ */
 export const QueryConnectionChannelsResponse = {
   typeUrl: "/ibc.core.channel.v1.QueryConnectionChannelsResponse",
   encode(
@@ -716,6 +992,13 @@ function createBaseQueryChannelClientStateRequest(): QueryChannelClientStateRequ
     channel_id: "",
   };
 }
+/**
+ * QueryChannelClientStateRequest is the request type for the Query/ClientState
+ * RPC method
+ * @name QueryChannelClientStateRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelClientStateRequest
+ */
 export const QueryChannelClientStateRequest = {
   typeUrl: "/ibc.core.channel.v1.QueryChannelClientStateRequest",
   encode(
@@ -778,6 +1061,13 @@ function createBaseQueryChannelClientStateResponse(): QueryChannelClientStateRes
     proof_height: Height.fromPartial({}),
   };
 }
+/**
+ * QueryChannelClientStateResponse is the Response type for the
+ * Query/QueryChannelClientState RPC method
+ * @name QueryChannelClientStateResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelClientStateResponse
+ */
 export const QueryChannelClientStateResponse = {
   typeUrl: "/ibc.core.channel.v1.QueryChannelClientStateResponse",
   encode(
@@ -860,6 +1150,13 @@ function createBaseQueryChannelConsensusStateRequest(): QueryChannelConsensusSta
     revision_height: BigInt(0),
   };
 }
+/**
+ * QueryChannelConsensusStateRequest is the request type for the
+ * Query/ConsensusState RPC method
+ * @name QueryChannelConsensusStateRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelConsensusStateRequest
+ */
 export const QueryChannelConsensusStateRequest = {
   typeUrl: "/ibc.core.channel.v1.QueryChannelConsensusStateRequest",
   encode(
@@ -947,6 +1244,13 @@ function createBaseQueryChannelConsensusStateResponse(): QueryChannelConsensusSt
     proof_height: Height.fromPartial({}),
   };
 }
+/**
+ * QueryChannelClientStateResponse is the Response type for the
+ * Query/QueryChannelClientState RPC method
+ * @name QueryChannelConsensusStateResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryChannelConsensusStateResponse
+ */
 export const QueryChannelConsensusStateResponse = {
   typeUrl: "/ibc.core.channel.v1.QueryChannelConsensusStateResponse",
   encode(
@@ -1034,6 +1338,13 @@ function createBaseQueryPacketCommitmentRequest(): QueryPacketCommitmentRequest 
     sequence: BigInt(0),
   };
 }
+/**
+ * QueryPacketCommitmentRequest is the request type for the
+ * Query/PacketCommitment RPC method
+ * @name QueryPacketCommitmentRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketCommitmentRequest
+ */
 export const QueryPacketCommitmentRequest = {
   typeUrl: "/ibc.core.channel.v1.QueryPacketCommitmentRequest",
   encode(message: QueryPacketCommitmentRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1104,6 +1415,14 @@ function createBaseQueryPacketCommitmentResponse(): QueryPacketCommitmentRespons
     proof_height: Height.fromPartial({}),
   };
 }
+/**
+ * QueryPacketCommitmentResponse defines the client query response for a packet
+ * which also includes a proof and the height from which the proof was
+ * retrieved
+ * @name QueryPacketCommitmentResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketCommitmentResponse
+ */
 export const QueryPacketCommitmentResponse = {
   typeUrl: "/ibc.core.channel.v1.QueryPacketCommitmentResponse",
   encode(message: QueryPacketCommitmentResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1179,6 +1498,13 @@ function createBaseQueryPacketCommitmentsRequest(): QueryPacketCommitmentsReques
     pagination: undefined,
   };
 }
+/**
+ * QueryPacketCommitmentsRequest is the request type for the
+ * Query/QueryPacketCommitments RPC method
+ * @name QueryPacketCommitmentsRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketCommitmentsRequest
+ */
 export const QueryPacketCommitmentsRequest = {
   typeUrl: "/ibc.core.channel.v1.QueryPacketCommitmentsRequest",
   encode(message: QueryPacketCommitmentsRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1250,6 +1576,13 @@ function createBaseQueryPacketCommitmentsResponse(): QueryPacketCommitmentsRespo
     height: Height.fromPartial({}),
   };
 }
+/**
+ * QueryPacketCommitmentsResponse is the request type for the
+ * Query/QueryPacketCommitments RPC method
+ * @name QueryPacketCommitmentsResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketCommitmentsResponse
+ */
 export const QueryPacketCommitmentsResponse = {
   typeUrl: "/ibc.core.channel.v1.QueryPacketCommitmentsResponse",
   encode(
@@ -1331,6 +1664,13 @@ function createBaseQueryPacketReceiptRequest(): QueryPacketReceiptRequest {
     sequence: BigInt(0),
   };
 }
+/**
+ * QueryPacketReceiptRequest is the request type for the
+ * Query/PacketReceipt RPC method
+ * @name QueryPacketReceiptRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketReceiptRequest
+ */
 export const QueryPacketReceiptRequest = {
   typeUrl: "/ibc.core.channel.v1.QueryPacketReceiptRequest",
   encode(message: QueryPacketReceiptRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1401,6 +1741,14 @@ function createBaseQueryPacketReceiptResponse(): QueryPacketReceiptResponse {
     proof_height: Height.fromPartial({}),
   };
 }
+/**
+ * QueryPacketReceiptResponse defines the client query response for a packet
+ * receipt which also includes a proof, and the height from which the proof was
+ * retrieved
+ * @name QueryPacketReceiptResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketReceiptResponse
+ */
 export const QueryPacketReceiptResponse = {
   typeUrl: "/ibc.core.channel.v1.QueryPacketReceiptResponse",
   encode(message: QueryPacketReceiptResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1473,6 +1821,13 @@ function createBaseQueryPacketAcknowledgementRequest(): QueryPacketAcknowledgeme
     sequence: BigInt(0),
   };
 }
+/**
+ * QueryPacketAcknowledgementRequest is the request type for the
+ * Query/PacketAcknowledgement RPC method
+ * @name QueryPacketAcknowledgementRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketAcknowledgementRequest
+ */
 export const QueryPacketAcknowledgementRequest = {
   typeUrl: "/ibc.core.channel.v1.QueryPacketAcknowledgementRequest",
   encode(
@@ -1546,6 +1901,14 @@ function createBaseQueryPacketAcknowledgementResponse(): QueryPacketAcknowledgem
     proof_height: Height.fromPartial({}),
   };
 }
+/**
+ * QueryPacketAcknowledgementResponse defines the client query response for a
+ * packet which also includes a proof and the height from which the
+ * proof was retrieved
+ * @name QueryPacketAcknowledgementResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketAcknowledgementResponse
+ */
 export const QueryPacketAcknowledgementResponse = {
   typeUrl: "/ibc.core.channel.v1.QueryPacketAcknowledgementResponse",
   encode(
@@ -1625,6 +1988,13 @@ function createBaseQueryPacketAcknowledgementsRequest(): QueryPacketAcknowledgem
     packet_commitment_sequences: [],
   };
 }
+/**
+ * QueryPacketAcknowledgementsRequest is the request type for the
+ * Query/QueryPacketCommitments RPC method
+ * @name QueryPacketAcknowledgementsRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketAcknowledgementsRequest
+ */
 export const QueryPacketAcknowledgementsRequest = {
   typeUrl: "/ibc.core.channel.v1.QueryPacketAcknowledgementsRequest",
   encode(
@@ -1727,6 +2097,13 @@ function createBaseQueryPacketAcknowledgementsResponse(): QueryPacketAcknowledge
     height: Height.fromPartial({}),
   };
 }
+/**
+ * QueryPacketAcknowledgemetsResponse is the request type for the
+ * Query/QueryPacketAcknowledgements RPC method
+ * @name QueryPacketAcknowledgementsResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryPacketAcknowledgementsResponse
+ */
 export const QueryPacketAcknowledgementsResponse = {
   typeUrl: "/ibc.core.channel.v1.QueryPacketAcknowledgementsResponse",
   encode(
@@ -1808,6 +2185,13 @@ function createBaseQueryUnreceivedPacketsRequest(): QueryUnreceivedPacketsReques
     packet_commitment_sequences: [],
   };
 }
+/**
+ * QueryUnreceivedPacketsRequest is the request type for the
+ * Query/UnreceivedPackets RPC method
+ * @name QueryUnreceivedPacketsRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryUnreceivedPacketsRequest
+ */
 export const QueryUnreceivedPacketsRequest = {
   typeUrl: "/ibc.core.channel.v1.QueryUnreceivedPacketsRequest",
   encode(message: QueryUnreceivedPacketsRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1894,6 +2278,13 @@ function createBaseQueryUnreceivedPacketsResponse(): QueryUnreceivedPacketsRespo
     height: Height.fromPartial({}),
   };
 }
+/**
+ * QueryUnreceivedPacketsResponse is the response type for the
+ * Query/UnreceivedPacketCommitments RPC method
+ * @name QueryUnreceivedPacketsResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryUnreceivedPacketsResponse
+ */
 export const QueryUnreceivedPacketsResponse = {
   typeUrl: "/ibc.core.channel.v1.QueryUnreceivedPacketsResponse",
   encode(
@@ -1972,6 +2363,13 @@ function createBaseQueryUnreceivedAcksRequest(): QueryUnreceivedAcksRequest {
     packet_ack_sequences: [],
   };
 }
+/**
+ * QueryUnreceivedAcks is the request type for the
+ * Query/UnreceivedAcks RPC method
+ * @name QueryUnreceivedAcksRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryUnreceivedAcksRequest
+ */
 export const QueryUnreceivedAcksRequest = {
   typeUrl: "/ibc.core.channel.v1.QueryUnreceivedAcksRequest",
   encode(message: QueryUnreceivedAcksRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -2053,6 +2451,13 @@ function createBaseQueryUnreceivedAcksResponse(): QueryUnreceivedAcksResponse {
     height: Height.fromPartial({}),
   };
 }
+/**
+ * QueryUnreceivedAcksResponse is the response type for the
+ * Query/UnreceivedAcks RPC method
+ * @name QueryUnreceivedAcksResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryUnreceivedAcksResponse
+ */
 export const QueryUnreceivedAcksResponse = {
   typeUrl: "/ibc.core.channel.v1.QueryUnreceivedAcksResponse",
   encode(message: QueryUnreceivedAcksResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -2127,6 +2532,13 @@ function createBaseQueryNextSequenceReceiveRequest(): QueryNextSequenceReceiveRe
     channel_id: "",
   };
 }
+/**
+ * QueryNextSequenceReceiveRequest is the request type for the
+ * Query/QueryNextSequenceReceiveRequest RPC method
+ * @name QueryNextSequenceReceiveRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryNextSequenceReceiveRequest
+ */
 export const QueryNextSequenceReceiveRequest = {
   typeUrl: "/ibc.core.channel.v1.QueryNextSequenceReceiveRequest",
   encode(
@@ -2189,6 +2601,13 @@ function createBaseQueryNextSequenceReceiveResponse(): QueryNextSequenceReceiveR
     proof_height: Height.fromPartial({}),
   };
 }
+/**
+ * QuerySequenceResponse is the request type for the
+ * Query/QueryNextSequenceReceiveResponse RPC method
+ * @name QueryNextSequenceReceiveResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryNextSequenceReceiveResponse
+ */
 export const QueryNextSequenceReceiveResponse = {
   typeUrl: "/ibc.core.channel.v1.QueryNextSequenceReceiveResponse",
   encode(
@@ -2269,6 +2688,11 @@ function createBaseQueryProofUnreceivedPacketsRequest(): QueryProofUnreceivedPac
     revision_height: BigInt(0),
   };
 }
+/**
+ * @name QueryProofUnreceivedPacketsRequest
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryProofUnreceivedPacketsRequest
+ */
 export const QueryProofUnreceivedPacketsRequest = {
   typeUrl: "/ibc.core.channel.v1.QueryProofUnreceivedPacketsRequest",
   encode(
@@ -2353,6 +2777,11 @@ function createBaseQueryProofUnreceivedPacketsResponse(): QueryProofUnreceivedPa
     proof_height: Height.fromPartial({}),
   };
 }
+/**
+ * @name QueryProofUnreceivedPacketsResponse
+ * @package ibc.core.channel.v1
+ * @see proto type: ibc.core.channel.v1.QueryProofUnreceivedPacketsResponse
+ */
 export const QueryProofUnreceivedPacketsResponse = {
   typeUrl: "/ibc.core.channel.v1.QueryProofUnreceivedPacketsResponse",
   encode(
@@ -2584,3 +3013,6 @@ export class QueryClientImpl implements Query {
     return promise.then((data) => QueryProofUnreceivedPacketsResponse.decode(new BinaryReader(data)));
   }
 }
+export const createClientImpl = (rpc: Rpc) => {
+  return new QueryClientImpl(rpc);
+};

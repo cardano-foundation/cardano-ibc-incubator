@@ -3,28 +3,62 @@ import { Height } from "../../client/v1/client";
 import { BinaryReader, BinaryWriter } from "../../../../binary";
 import { isSet, DeepPartial, Exact } from "../../../../helpers";
 export const protobufPackage = "ibc.core.types.v1";
+/**
+ * @name EventAttribute
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.EventAttribute
+ */
 export interface EventAttribute {
   key: string;
   value: string;
   index: boolean;
 }
+/**
+ * @name Event
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.Event
+ */
 export interface Event {
   type: string;
   event_attribute: EventAttribute[];
 }
+/**
+ * @name ResponseDeliverTx
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.ResponseDeliverTx
+ */
 export interface ResponseDeliverTx {
   code: number;
   events: Event[];
 }
+/**
+ * @name ResultBlockResults
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.ResultBlockResults
+ */
 export interface ResultBlockResults {
-  /** height at which the proof was retrieved */
+  /**
+   * height at which the proof was retrieved
+   */
   height?: Height;
-  /** txs result in blocks */
+  /**
+   * txs result in blocks
+   */
   txs_results: ResponseDeliverTx[];
 }
+/**
+ * @name BlockInfo
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.BlockInfo
+ */
 export interface BlockInfo {
   height: bigint;
 }
+/**
+ * @name ResultBlockSearch
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.ResultBlockSearch
+ */
 export interface ResultBlockSearch {
   block_id: bigint;
   block?: BlockInfo;
@@ -36,6 +70,11 @@ function createBaseEventAttribute(): EventAttribute {
     index: false,
   };
 }
+/**
+ * @name EventAttribute
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.EventAttribute
+ */
 export const EventAttribute = {
   typeUrl: "/ibc.core.types.v1.EventAttribute",
   encode(message: EventAttribute, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -101,6 +140,11 @@ function createBaseEvent(): Event {
     event_attribute: [],
   };
 }
+/**
+ * @name Event
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.Event
+ */
 export const Event = {
   typeUrl: "/ibc.core.types.v1.Event",
   encode(message: Event, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -162,6 +206,11 @@ function createBaseResponseDeliverTx(): ResponseDeliverTx {
     events: [],
   };
 }
+/**
+ * @name ResponseDeliverTx
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.ResponseDeliverTx
+ */
 export const ResponseDeliverTx = {
   typeUrl: "/ibc.core.types.v1.ResponseDeliverTx",
   encode(message: ResponseDeliverTx, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -222,6 +271,11 @@ function createBaseResultBlockResults(): ResultBlockResults {
     txs_results: [],
   };
 }
+/**
+ * @name ResultBlockResults
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.ResultBlockResults
+ */
 export const ResultBlockResults = {
   typeUrl: "/ibc.core.types.v1.ResultBlockResults",
   encode(message: ResultBlockResults, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -284,6 +338,11 @@ function createBaseBlockInfo(): BlockInfo {
     height: BigInt(0),
   };
 }
+/**
+ * @name BlockInfo
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.BlockInfo
+ */
 export const BlockInfo = {
   typeUrl: "/ibc.core.types.v1.BlockInfo",
   encode(message: BlockInfo, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -333,6 +392,11 @@ function createBaseResultBlockSearch(): ResultBlockSearch {
     block: undefined,
   };
 }
+/**
+ * @name ResultBlockSearch
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.ResultBlockSearch
+ */
 export const ResultBlockSearch = {
   typeUrl: "/ibc.core.types.v1.ResultBlockSearch",
   encode(message: ResultBlockSearch, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

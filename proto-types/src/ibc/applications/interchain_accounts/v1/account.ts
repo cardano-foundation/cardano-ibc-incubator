@@ -3,7 +3,12 @@ import { BaseAccount } from "../../../../cosmos/auth/v1beta1/auth";
 import { BinaryReader, BinaryWriter } from "../../../../binary";
 import { isSet, DeepPartial, Exact } from "../../../../helpers";
 export const protobufPackage = "ibc.applications.interchain_accounts.v1";
-/** An InterchainAccount is defined as a BaseAccount & the address of the account owner on the controller chain */
+/**
+ * An InterchainAccount is defined as a BaseAccount & the address of the account owner on the controller chain
+ * @name InterchainAccount
+ * @package ibc.applications.interchain_accounts.v1
+ * @see proto type: ibc.applications.interchain_accounts.v1.InterchainAccount
+ */
 export interface InterchainAccount {
   base_account?: BaseAccount;
   account_owner: string;
@@ -14,6 +19,12 @@ function createBaseInterchainAccount(): InterchainAccount {
     account_owner: "",
   };
 }
+/**
+ * An InterchainAccount is defined as a BaseAccount & the address of the account owner on the controller chain
+ * @name InterchainAccount
+ * @package ibc.applications.interchain_accounts.v1
+ * @see proto type: ibc.applications.interchain_accounts.v1.InterchainAccount
+ */
 export const InterchainAccount = {
   typeUrl: "/ibc.applications.interchain_accounts.v1.InterchainAccount",
   encode(message: InterchainAccount, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

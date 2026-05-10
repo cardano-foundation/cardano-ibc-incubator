@@ -5,11 +5,18 @@ export const protobufPackage = "ibc.applications.interchain_accounts.host.v1";
 /**
  * Params defines the set of on-chain interchain accounts parameters.
  * The following parameters may be used to disable the host submodule.
+ * @name Params
+ * @package ibc.applications.interchain_accounts.host.v1
+ * @see proto type: ibc.applications.interchain_accounts.host.v1.Params
  */
 export interface Params {
-  /** host_enabled enables or disables the host submodule. */
+  /**
+   * host_enabled enables or disables the host submodule.
+   */
   host_enabled: boolean;
-  /** allow_messages defines a list of sdk message typeURLs allowed to be executed on a host chain. */
+  /**
+   * allow_messages defines a list of sdk message typeURLs allowed to be executed on a host chain.
+   */
   allow_messages: string[];
 }
 function createBaseParams(): Params {
@@ -18,6 +25,13 @@ function createBaseParams(): Params {
     allow_messages: [],
   };
 }
+/**
+ * Params defines the set of on-chain interchain accounts parameters.
+ * The following parameters may be used to disable the host submodule.
+ * @name Params
+ * @package ibc.applications.interchain_accounts.host.v1
+ * @see proto type: ibc.applications.interchain_accounts.host.v1.Params
+ */
 export const Params = {
   typeUrl: "/ibc.applications.interchain_accounts.host.v1.Params",
   encode(message: Params, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

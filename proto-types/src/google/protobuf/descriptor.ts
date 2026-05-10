@@ -31,6 +31,7 @@ export enum FieldDescriptorProto_Type {
    * treat group fields as unknown fields.
    */
   TYPE_GROUP = 10,
+  /** TYPE_MESSAGE - Length-delimited aggregate. */
   TYPE_MESSAGE = 11,
   /** TYPE_BYTES - New in version 2. */
   TYPE_BYTES = 12,
@@ -188,12 +189,9 @@ export function fieldDescriptorProto_LabelToJSON(object: FieldDescriptorProto_La
 }
 /** Generated classes can be optimized for speed or code size. */
 export enum FileOptions_OptimizeMode {
-  /**
-   * SPEED - Generate complete code for parsing, serialization,
-   * etc.
-   */
+  /** SPEED - Generate complete code for parsing, serialization, */
   SPEED = 1,
-  /** CODE_SIZE - Use ReflectionOps to implement these methods. */
+  /** CODE_SIZE - etc. */
   CODE_SIZE = 2,
   /** LITE_RUNTIME - Generate code using MessageLite and the lite runtime. */
   LITE_RUNTIME = 3,
@@ -351,25 +349,44 @@ export function methodOptions_IdempotencyLevelToJSON(object: MethodOptions_Idemp
 /**
  * The protocol compiler can output a FileDescriptorSet containing the .proto
  * files it parses.
+ * @name FileDescriptorSet
+ * @package google.protobuf
+ * @see proto type: google.protobuf.FileDescriptorSet
  */
 export interface FileDescriptorSet {
   file: FileDescriptorProto[];
 }
-/** Describes a complete .proto file. */
+/**
+ * Describes a complete .proto file.
+ * @name FileDescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.FileDescriptorProto
+ */
 export interface FileDescriptorProto {
-  /** file name, relative to root of source tree */
+  /**
+   * file name, relative to root of source tree
+   */
   name: string;
+  /**
+   * e.g. "foo", "foo.bar", etc.
+   */
   package: string;
-  /** Names of files imported by this file. */
+  /**
+   * Names of files imported by this file.
+   */
   dependency: string[];
-  /** Indexes of the public imported files in the dependency list above. */
+  /**
+   * Indexes of the public imported files in the dependency list above.
+   */
   public_dependency: number[];
   /**
    * Indexes of the weak imported files in the dependency list.
    * For Google-internal migration only. Do not use.
    */
   weak_dependency: number[];
-  /** All top-level definitions in this file. */
+  /**
+   * All top-level definitions in this file.
+   */
   message_type: DescriptorProto[];
   enum_type: EnumDescriptorProto[];
   service: ServiceDescriptorProto[];
@@ -388,7 +405,12 @@ export interface FileDescriptorProto {
    */
   syntax: string;
 }
-/** Describes a message type. */
+/**
+ * Describes a message type.
+ * @name DescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.DescriptorProto
+ */
 export interface DescriptorProto {
   name: string;
   field: FieldDescriptorProto[];
@@ -405,10 +427,19 @@ export interface DescriptorProto {
    */
   reserved_name: string[];
 }
+/**
+ * @name DescriptorProto_ExtensionRange
+ * @package google.protobuf
+ * @see proto type: google.protobuf.ExtensionRange
+ */
 export interface DescriptorProto_ExtensionRange {
-  /** Inclusive. */
+  /**
+   * Inclusive.
+   */
   start: number;
-  /** Exclusive. */
+  /**
+   * Exclusive.
+   */
   end: number;
   options?: ExtensionRangeOptions;
 }
@@ -416,18 +447,37 @@ export interface DescriptorProto_ExtensionRange {
  * Range of reserved tag numbers. Reserved tag numbers may not be used by
  * fields or extension ranges in the same message. Reserved ranges may
  * not overlap.
+ * @name DescriptorProto_ReservedRange
+ * @package google.protobuf
+ * @see proto type: google.protobuf.ReservedRange
  */
 export interface DescriptorProto_ReservedRange {
-  /** Inclusive. */
+  /**
+   * Inclusive.
+   */
   start: number;
-  /** Exclusive. */
+  /**
+   * Exclusive.
+   */
   end: number;
 }
+/**
+ * @name ExtensionRangeOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.ExtensionRangeOptions
+ */
 export interface ExtensionRangeOptions {
-  /** The parser stores options it doesn't recognize here. See above. */
+  /**
+   * The parser stores options it doesn't recognize here. See above.
+   */
   uninterpreted_option: UninterpretedOption[];
 }
-/** Describes a field within a message. */
+/**
+ * Describes a field within a message.
+ * @name FieldDescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.FieldDescriptorProto
+ */
 export interface FieldDescriptorProto {
   name: string;
   number: number;
@@ -472,12 +522,22 @@ export interface FieldDescriptorProto {
   json_name: string;
   options?: FieldOptions;
 }
-/** Describes a oneof. */
+/**
+ * Describes a oneof.
+ * @name OneofDescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.OneofDescriptorProto
+ */
 export interface OneofDescriptorProto {
   name: string;
   options?: OneofOptions;
 }
-/** Describes an enum type. */
+/**
+ * Describes an enum type.
+ * @name EnumDescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.EnumDescriptorProto
+ */
 export interface EnumDescriptorProto {
   name: string;
   value: EnumValueDescriptorProto[];
@@ -501,26 +561,48 @@ export interface EnumDescriptorProto {
  * Note that this is distinct from DescriptorProto.ReservedRange in that it
  * is inclusive such that it can appropriately represent the entire int32
  * domain.
+ * @name EnumDescriptorProto_EnumReservedRange
+ * @package google.protobuf
+ * @see proto type: google.protobuf.EnumReservedRange
  */
 export interface EnumDescriptorProto_EnumReservedRange {
-  /** Inclusive. */
+  /**
+   * Inclusive.
+   */
   start: number;
-  /** Inclusive. */
+  /**
+   * Inclusive.
+   */
   end: number;
 }
-/** Describes a value within an enum. */
+/**
+ * Describes a value within an enum.
+ * @name EnumValueDescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.EnumValueDescriptorProto
+ */
 export interface EnumValueDescriptorProto {
   name: string;
   number: number;
   options?: EnumValueOptions;
 }
-/** Describes a service. */
+/**
+ * Describes a service.
+ * @name ServiceDescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.ServiceDescriptorProto
+ */
 export interface ServiceDescriptorProto {
   name: string;
   method: MethodDescriptorProto[];
   options?: ServiceOptions;
 }
-/** Describes a method of a service. */
+/**
+ * Describes a method of a service.
+ * @name MethodDescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.MethodDescriptorProto
+ */
 export interface MethodDescriptorProto {
   name: string;
   /**
@@ -530,11 +612,20 @@ export interface MethodDescriptorProto {
   input_type: string;
   output_type: string;
   options?: MethodOptions;
-  /** Identifies if client streams multiple client messages */
+  /**
+   * Identifies if client streams multiple client messages
+   */
   client_streaming: boolean;
-  /** Identifies if server streams multiple server messages */
+  /**
+   * Identifies if server streams multiple server messages
+   */
   server_streaming: boolean;
 }
+/**
+ * @name FileOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.FileOptions
+ */
 export interface FileOptions {
   /**
    * Sets the Java package where classes generated from this .proto will be
@@ -560,8 +651,10 @@ export interface FileOptions {
    * top-level extensions defined in the file.
    */
   java_multiple_files: boolean;
-  /** This option does nothing. */
-  /** @deprecated */
+  /**
+   * This option does nothing.
+   * @deprecated
+   */
   java_generate_equals_and_hash: boolean;
   /**
    * If set true, then the Java2 code generator will generate code that
@@ -614,7 +707,9 @@ export interface FileOptions {
    * generated classes from this .proto. There is no default.
    */
   objc_class_prefix: string;
-  /** Namespace for generated classes; defaults to the package. */
+  /**
+   * Namespace for generated classes; defaults to the package.
+   */
   csharp_namespace: string;
   /**
    * By default Swift generators will take the proto package and CamelCase it
@@ -652,6 +747,11 @@ export interface FileOptions {
    */
   uninterpreted_option: UninterpretedOption[];
 }
+/**
+ * @name MessageOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.MessageOptions
+ */
 export interface MessageOptions {
   /**
    * Set true to use the old proto1 MessageSet wire format for extensions.
@@ -711,9 +811,16 @@ export interface MessageOptions {
    * parser.
    */
   map_entry: boolean;
-  /** The parser stores options it doesn't recognize here. See above. */
+  /**
+   * The parser stores options it doesn't recognize here. See above.
+   */
   uninterpreted_option: UninterpretedOption[];
 }
+/**
+ * @name FieldOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.FieldOptions
+ */
 export interface FieldOptions {
   /**
    * The ctype option instructs the C++ code generator to use a different
@@ -782,15 +889,31 @@ export interface FieldOptions {
    * is a formalization for deprecating fields.
    */
   deprecated: boolean;
-  /** For Google-internal migration only. Do not use. */
+  /**
+   * For Google-internal migration only. Do not use.
+   */
   weak: boolean;
-  /** The parser stores options it doesn't recognize here. See above. */
+  /**
+   * The parser stores options it doesn't recognize here. See above.
+   */
   uninterpreted_option: UninterpretedOption[];
 }
+/**
+ * @name OneofOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.OneofOptions
+ */
 export interface OneofOptions {
-  /** The parser stores options it doesn't recognize here. See above. */
+  /**
+   * The parser stores options it doesn't recognize here. See above.
+   */
   uninterpreted_option: UninterpretedOption[];
 }
+/**
+ * @name EnumOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.EnumOptions
+ */
 export interface EnumOptions {
   /**
    * Set this option to true to allow mapping different tag names to the same
@@ -804,9 +927,16 @@ export interface EnumOptions {
    * is a formalization for deprecating enums.
    */
   deprecated: boolean;
-  /** The parser stores options it doesn't recognize here. See above. */
+  /**
+   * The parser stores options it doesn't recognize here. See above.
+   */
   uninterpreted_option: UninterpretedOption[];
 }
+/**
+ * @name EnumValueOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.EnumValueOptions
+ */
 export interface EnumValueOptions {
   /**
    * Is this enum value deprecated?
@@ -815,9 +945,16 @@ export interface EnumValueOptions {
    * this is a formalization for deprecating enum values.
    */
   deprecated: boolean;
-  /** The parser stores options it doesn't recognize here. See above. */
+  /**
+   * The parser stores options it doesn't recognize here. See above.
+   */
   uninterpreted_option: UninterpretedOption[];
 }
+/**
+ * @name ServiceOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.ServiceOptions
+ */
 export interface ServiceOptions {
   /**
    * Is this service deprecated?
@@ -826,9 +963,16 @@ export interface ServiceOptions {
    * this is a formalization for deprecating services.
    */
   deprecated: boolean;
-  /** The parser stores options it doesn't recognize here. See above. */
+  /**
+   * The parser stores options it doesn't recognize here. See above.
+   */
   uninterpreted_option: UninterpretedOption[];
 }
+/**
+ * @name MethodOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.MethodOptions
+ */
 export interface MethodOptions {
   /**
    * Is this method deprecated?
@@ -838,7 +982,9 @@ export interface MethodOptions {
    */
   deprecated: boolean;
   idempotency_level: MethodOptions_IdempotencyLevel;
-  /** The parser stores options it doesn't recognize here. See above. */
+  /**
+   * The parser stores options it doesn't recognize here. See above.
+   */
   uninterpreted_option: UninterpretedOption[];
 }
 /**
@@ -848,6 +994,9 @@ export interface MethodOptions {
  * options protos in descriptor objects (e.g. returned by Descriptor::options(),
  * or produced by Descriptor::CopyTo()) will never have UninterpretedOptions
  * in them.
+ * @name UninterpretedOption
+ * @package google.protobuf
+ * @see proto type: google.protobuf.UninterpretedOption
  */
 export interface UninterpretedOption {
   name: UninterpretedOption_NamePart[];
@@ -868,6 +1017,9 @@ export interface UninterpretedOption {
  * extension (denoted with parentheses in options specs in .proto files).
  * E.g.,{ ["foo", false], ["bar.baz", true], ["qux", false] } represents
  * "foo.(bar.baz).qux".
+ * @name UninterpretedOption_NamePart
+ * @package google.protobuf
+ * @see proto type: google.protobuf.NamePart
  */
 export interface UninterpretedOption_NamePart {
   name_part: string;
@@ -876,6 +1028,9 @@ export interface UninterpretedOption_NamePart {
 /**
  * Encapsulates information about the original source file from which a
  * FileDescriptorProto was generated.
+ * @name SourceCodeInfo
+ * @package google.protobuf
+ * @see proto type: google.protobuf.SourceCodeInfo
  */
 export interface SourceCodeInfo {
   /**
@@ -925,6 +1080,11 @@ export interface SourceCodeInfo {
    */
   location: SourceCodeInfo_Location[];
 }
+/**
+ * @name SourceCodeInfo_Location
+ * @package google.protobuf
+ * @see proto type: google.protobuf.Location
+ */
 export interface SourceCodeInfo_Location {
   /**
    * Identifies which part of the FileDescriptorProto was defined at this
@@ -1017,6 +1177,9 @@ export interface SourceCodeInfo_Location {
  * Describes the relationship between generated code and its original source
  * file. A GeneratedCodeInfo message is associated with only one generated
  * source file, but may contain references to different source .proto files.
+ * @name GeneratedCodeInfo
+ * @package google.protobuf
+ * @see proto type: google.protobuf.GeneratedCodeInfo
  */
 export interface GeneratedCodeInfo {
   /**
@@ -1025,13 +1188,20 @@ export interface GeneratedCodeInfo {
    */
   annotation: GeneratedCodeInfo_Annotation[];
 }
+/**
+ * @name GeneratedCodeInfo_Annotation
+ * @package google.protobuf
+ * @see proto type: google.protobuf.Annotation
+ */
 export interface GeneratedCodeInfo_Annotation {
   /**
    * Identifies the element in the original source .proto file. This field
    * is formatted the same as SourceCodeInfo.Location.path.
    */
   path: number[];
-  /** Identifies the filesystem path to the original source .proto. */
+  /**
+   * Identifies the filesystem path to the original source .proto.
+   */
   source_file: string;
   /**
    * Identifies the starting offset in bytes in the generated code
@@ -1050,6 +1220,13 @@ function createBaseFileDescriptorSet(): FileDescriptorSet {
     file: [],
   };
 }
+/**
+ * The protocol compiler can output a FileDescriptorSet containing the .proto
+ * files it parses.
+ * @name FileDescriptorSet
+ * @package google.protobuf
+ * @see proto type: google.protobuf.FileDescriptorSet
+ */
 export const FileDescriptorSet = {
   typeUrl: "/google.protobuf.FileDescriptorSet",
   encode(message: FileDescriptorSet, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1111,6 +1288,12 @@ function createBaseFileDescriptorProto(): FileDescriptorProto {
     syntax: "",
   };
 }
+/**
+ * Describes a complete .proto file.
+ * @name FileDescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.FileDescriptorProto
+ */
 export const FileDescriptorProto = {
   typeUrl: "/google.protobuf.FileDescriptorProto",
   encode(message: FileDescriptorProto, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1326,6 +1509,12 @@ function createBaseDescriptorProto(): DescriptorProto {
     reserved_name: [],
   };
 }
+/**
+ * Describes a message type.
+ * @name DescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.DescriptorProto
+ */
 export const DescriptorProto = {
   typeUrl: "/google.protobuf.DescriptorProto",
   encode(message: DescriptorProto, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1506,6 +1695,11 @@ function createBaseDescriptorProto_ExtensionRange(): DescriptorProto_ExtensionRa
     options: undefined,
   };
 }
+/**
+ * @name DescriptorProto_ExtensionRange
+ * @package google.protobuf
+ * @see proto type: google.protobuf.ExtensionRange
+ */
 export const DescriptorProto_ExtensionRange = {
   typeUrl: "/google.protobuf.ExtensionRange",
   encode(
@@ -1579,6 +1773,14 @@ function createBaseDescriptorProto_ReservedRange(): DescriptorProto_ReservedRang
     end: 0,
   };
 }
+/**
+ * Range of reserved tag numbers. Reserved tag numbers may not be used by
+ * fields or extension ranges in the same message. Reserved ranges may
+ * not overlap.
+ * @name DescriptorProto_ReservedRange
+ * @package google.protobuf
+ * @see proto type: google.protobuf.ReservedRange
+ */
 export const DescriptorProto_ReservedRange = {
   typeUrl: "/google.protobuf.ReservedRange",
   encode(message: DescriptorProto_ReservedRange, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1636,6 +1838,11 @@ function createBaseExtensionRangeOptions(): ExtensionRangeOptions {
     uninterpreted_option: [],
   };
 }
+/**
+ * @name ExtensionRangeOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.ExtensionRangeOptions
+ */
 export const ExtensionRangeOptions = {
   typeUrl: "/google.protobuf.ExtensionRangeOptions",
   encode(message: ExtensionRangeOptions, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1699,6 +1906,12 @@ function createBaseFieldDescriptorProto(): FieldDescriptorProto {
     options: undefined,
   };
 }
+/**
+ * Describes a field within a message.
+ * @name FieldDescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.FieldDescriptorProto
+ */
 export const FieldDescriptorProto = {
   typeUrl: "/google.protobuf.FieldDescriptorProto",
   encode(message: FieldDescriptorProto, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1830,6 +2043,12 @@ function createBaseOneofDescriptorProto(): OneofDescriptorProto {
     options: undefined,
   };
 }
+/**
+ * Describes a oneof.
+ * @name OneofDescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.OneofDescriptorProto
+ */
 export const OneofDescriptorProto = {
   typeUrl: "/google.protobuf.OneofDescriptorProto",
   encode(message: OneofDescriptorProto, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1892,6 +2111,12 @@ function createBaseEnumDescriptorProto(): EnumDescriptorProto {
     reserved_name: [],
   };
 }
+/**
+ * Describes an enum type.
+ * @name EnumDescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.EnumDescriptorProto
+ */
 export const EnumDescriptorProto = {
   typeUrl: "/google.protobuf.EnumDescriptorProto",
   encode(message: EnumDescriptorProto, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1998,6 +2223,17 @@ function createBaseEnumDescriptorProto_EnumReservedRange(): EnumDescriptorProto_
     end: 0,
   };
 }
+/**
+ * Range of reserved numeric values. Reserved values may not be used by
+ * entries in the same enum. Reserved ranges may not overlap.
+ *
+ * Note that this is distinct from DescriptorProto.ReservedRange in that it
+ * is inclusive such that it can appropriately represent the entire int32
+ * domain.
+ * @name EnumDescriptorProto_EnumReservedRange
+ * @package google.protobuf
+ * @see proto type: google.protobuf.EnumReservedRange
+ */
 export const EnumDescriptorProto_EnumReservedRange = {
   typeUrl: "/google.protobuf.EnumReservedRange",
   encode(
@@ -2060,6 +2296,12 @@ function createBaseEnumValueDescriptorProto(): EnumValueDescriptorProto {
     options: undefined,
   };
 }
+/**
+ * Describes a value within an enum.
+ * @name EnumValueDescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.EnumValueDescriptorProto
+ */
 export const EnumValueDescriptorProto = {
   typeUrl: "/google.protobuf.EnumValueDescriptorProto",
   encode(message: EnumValueDescriptorProto, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -2131,6 +2373,12 @@ function createBaseServiceDescriptorProto(): ServiceDescriptorProto {
     options: undefined,
   };
 }
+/**
+ * Describes a service.
+ * @name ServiceDescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.ServiceDescriptorProto
+ */
 export const ServiceDescriptorProto = {
   typeUrl: "/google.protobuf.ServiceDescriptorProto",
   encode(message: ServiceDescriptorProto, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -2208,6 +2456,12 @@ function createBaseMethodDescriptorProto(): MethodDescriptorProto {
     server_streaming: false,
   };
 }
+/**
+ * Describes a method of a service.
+ * @name MethodDescriptorProto
+ * @package google.protobuf
+ * @see proto type: google.protobuf.MethodDescriptorProto
+ */
 export const MethodDescriptorProto = {
   typeUrl: "/google.protobuf.MethodDescriptorProto",
   encode(message: MethodDescriptorProto, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -2322,6 +2576,11 @@ function createBaseFileOptions(): FileOptions {
     uninterpreted_option: [],
   };
 }
+/**
+ * @name FileOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.FileOptions
+ */
 export const FileOptions = {
   typeUrl: "/google.protobuf.FileOptions",
   encode(message: FileOptions, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -2569,6 +2828,11 @@ function createBaseMessageOptions(): MessageOptions {
     uninterpreted_option: [],
   };
 }
+/**
+ * @name MessageOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.MessageOptions
+ */
 export const MessageOptions = {
   typeUrl: "/google.protobuf.MessageOptions",
   encode(message: MessageOptions, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -2669,6 +2933,11 @@ function createBaseFieldOptions(): FieldOptions {
     uninterpreted_option: [],
   };
 }
+/**
+ * @name FieldOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.FieldOptions
+ */
 export const FieldOptions = {
   typeUrl: "/google.protobuf.FieldOptions",
   encode(message: FieldOptions, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -2777,6 +3046,11 @@ function createBaseOneofOptions(): OneofOptions {
     uninterpreted_option: [],
   };
 }
+/**
+ * @name OneofOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.OneofOptions
+ */
 export const OneofOptions = {
   typeUrl: "/google.protobuf.OneofOptions",
   encode(message: OneofOptions, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -2833,6 +3107,11 @@ function createBaseEnumOptions(): EnumOptions {
     uninterpreted_option: [],
   };
 }
+/**
+ * @name EnumOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.EnumOptions
+ */
 export const EnumOptions = {
   typeUrl: "/google.protobuf.EnumOptions",
   encode(message: EnumOptions, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -2906,6 +3185,11 @@ function createBaseEnumValueOptions(): EnumValueOptions {
     uninterpreted_option: [],
   };
 }
+/**
+ * @name EnumValueOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.EnumValueOptions
+ */
 export const EnumValueOptions = {
   typeUrl: "/google.protobuf.EnumValueOptions",
   encode(message: EnumValueOptions, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -2970,6 +3254,11 @@ function createBaseServiceOptions(): ServiceOptions {
     uninterpreted_option: [],
   };
 }
+/**
+ * @name ServiceOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.ServiceOptions
+ */
 export const ServiceOptions = {
   typeUrl: "/google.protobuf.ServiceOptions",
   encode(message: ServiceOptions, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -3035,6 +3324,11 @@ function createBaseMethodOptions(): MethodOptions {
     uninterpreted_option: [],
   };
 }
+/**
+ * @name MethodOptions
+ * @package google.protobuf
+ * @see proto type: google.protobuf.MethodOptions
+ */
 export const MethodOptions = {
   typeUrl: "/google.protobuf.MethodOptions",
   encode(message: MethodOptions, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -3115,6 +3409,17 @@ function createBaseUninterpretedOption(): UninterpretedOption {
     aggregate_value: "",
   };
 }
+/**
+ * A message representing a option the parser does not recognize. This only
+ * appears in options protos created by the compiler::Parser class.
+ * DescriptorPool resolves these when building Descriptor objects. Therefore,
+ * options protos in descriptor objects (e.g. returned by Descriptor::options(),
+ * or produced by Descriptor::CopyTo()) will never have UninterpretedOptions
+ * in them.
+ * @name UninterpretedOption
+ * @package google.protobuf
+ * @see proto type: google.protobuf.UninterpretedOption
+ */
 export const UninterpretedOption = {
   typeUrl: "/google.protobuf.UninterpretedOption",
   encode(message: UninterpretedOption, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -3232,6 +3537,16 @@ function createBaseUninterpretedOption_NamePart(): UninterpretedOption_NamePart 
     is_extension: false,
   };
 }
+/**
+ * The name of the uninterpreted option.  Each string represents a segment in
+ * a dot-separated name.  is_extension is true iff a segment represents an
+ * extension (denoted with parentheses in options specs in .proto files).
+ * E.g.,{ ["foo", false], ["bar.baz", true], ["qux", false] } represents
+ * "foo.(bar.baz).qux".
+ * @name UninterpretedOption_NamePart
+ * @package google.protobuf
+ * @see proto type: google.protobuf.NamePart
+ */
 export const UninterpretedOption_NamePart = {
   typeUrl: "/google.protobuf.NamePart",
   encode(message: UninterpretedOption_NamePart, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -3289,6 +3604,13 @@ function createBaseSourceCodeInfo(): SourceCodeInfo {
     location: [],
   };
 }
+/**
+ * Encapsulates information about the original source file from which a
+ * FileDescriptorProto was generated.
+ * @name SourceCodeInfo
+ * @package google.protobuf
+ * @see proto type: google.protobuf.SourceCodeInfo
+ */
 export const SourceCodeInfo = {
   typeUrl: "/google.protobuf.SourceCodeInfo",
   encode(message: SourceCodeInfo, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -3344,6 +3666,11 @@ function createBaseSourceCodeInfo_Location(): SourceCodeInfo_Location {
     leading_detached_comments: [],
   };
 }
+/**
+ * @name SourceCodeInfo_Location
+ * @package google.protobuf
+ * @see proto type: google.protobuf.Location
+ */
 export const SourceCodeInfo_Location = {
   typeUrl: "/google.protobuf.Location",
   encode(message: SourceCodeInfo_Location, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -3457,6 +3784,14 @@ function createBaseGeneratedCodeInfo(): GeneratedCodeInfo {
     annotation: [],
   };
 }
+/**
+ * Describes the relationship between generated code and its original source
+ * file. A GeneratedCodeInfo message is associated with only one generated
+ * source file, but may contain references to different source .proto files.
+ * @name GeneratedCodeInfo
+ * @package google.protobuf
+ * @see proto type: google.protobuf.GeneratedCodeInfo
+ */
 export const GeneratedCodeInfo = {
   typeUrl: "/google.protobuf.GeneratedCodeInfo",
   encode(message: GeneratedCodeInfo, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -3513,6 +3848,11 @@ function createBaseGeneratedCodeInfo_Annotation(): GeneratedCodeInfo_Annotation 
     end: 0,
   };
 }
+/**
+ * @name GeneratedCodeInfo_Annotation
+ * @package google.protobuf
+ * @see proto type: google.protobuf.Annotation
+ */
 export const GeneratedCodeInfo_Annotation = {
   typeUrl: "/google.protobuf.Annotation",
   encode(message: GeneratedCodeInfo_Annotation, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

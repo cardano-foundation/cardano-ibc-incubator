@@ -2,13 +2,24 @@
 import { BinaryReader, BinaryWriter } from "../../../../binary";
 import { isSet, bytesFromBase64, base64FromBytes, DeepPartial, Exact } from "../../../../helpers";
 export const protobufPackage = "ibc.applications.fee.v1";
-/** IncentivizedAcknowledgement is the acknowledgement format to be used by applications wrapped in the fee middleware */
+/**
+ * IncentivizedAcknowledgement is the acknowledgement format to be used by applications wrapped in the fee middleware
+ * @name IncentivizedAcknowledgement
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.IncentivizedAcknowledgement
+ */
 export interface IncentivizedAcknowledgement {
-  /** the underlying app acknowledgement bytes */
+  /**
+   * the underlying app acknowledgement bytes
+   */
   app_acknowledgement: Uint8Array;
-  /** the relayer address which submits the recv packet message */
+  /**
+   * the relayer address which submits the recv packet message
+   */
   forward_relayer_address: string;
-  /** success flag of the base application callback */
+  /**
+   * success flag of the base application callback
+   */
   underlying_app_success: boolean;
 }
 function createBaseIncentivizedAcknowledgement(): IncentivizedAcknowledgement {
@@ -18,6 +29,12 @@ function createBaseIncentivizedAcknowledgement(): IncentivizedAcknowledgement {
     underlying_app_success: false,
   };
 }
+/**
+ * IncentivizedAcknowledgement is the acknowledgement format to be used by applications wrapped in the fee middleware
+ * @name IncentivizedAcknowledgement
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.IncentivizedAcknowledgement
+ */
 export const IncentivizedAcknowledgement = {
   typeUrl: "/ibc.applications.fee.v1.IncentivizedAcknowledgement",
   encode(message: IncentivizedAcknowledgement, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

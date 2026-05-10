@@ -5,15 +5,20 @@ export const protobufPackage = "ibc.applications.transfer.v1";
 /**
  * DenomTrace contains the base denomination for ICS20 fungible tokens and the
  * source tracing information path.
+ * @name DenomTrace
+ * @package ibc.applications.transfer.v1
+ * @see proto type: ibc.applications.transfer.v1.DenomTrace
+ * @deprecated
  */
-/** @deprecated */
 export interface DenomTrace {
   /**
    * path defines the chain of port/channel identifiers used for tracing the
    * source of the fungible token.
    */
   path: string;
-  /** base denomination of the relayed fungible token. */
+  /**
+   * base denomination of the relayed fungible token.
+   */
   base_denom: string;
 }
 function createBaseDenomTrace(): DenomTrace {
@@ -22,6 +27,14 @@ function createBaseDenomTrace(): DenomTrace {
     base_denom: "",
   };
 }
+/**
+ * DenomTrace contains the base denomination for ICS20 fungible tokens and the
+ * source tracing information path.
+ * @name DenomTrace
+ * @package ibc.applications.transfer.v1
+ * @see proto type: ibc.applications.transfer.v1.DenomTrace
+ * @deprecated
+ */
 export const DenomTrace = {
   typeUrl: "/ibc.applications.transfer.v1.DenomTrace",
   encode(message: DenomTrace, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

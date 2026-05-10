@@ -8,6 +8,9 @@ export const protobufPackage = "ibc.core.connection.v1";
 /**
  * MsgConnectionOpenInit defines the msg sent by an account on Chain A to
  * initialize a connection with Chain B.
+ * @name MsgConnectionOpenInit
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenInit
  */
 export interface MsgConnectionOpenInit {
   client_id: string;
@@ -19,6 +22,9 @@ export interface MsgConnectionOpenInit {
 /**
  * MsgConnectionOpenInitResponse defines the Msg/ConnectionOpenInit response
  * type.
+ * @name MsgConnectionOpenInitResponse
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenInitResponse
  */
 export interface MsgConnectionOpenInitResponse {
   unsigned_tx?: Any;
@@ -26,11 +32,16 @@ export interface MsgConnectionOpenInitResponse {
 /**
  * MsgConnectionOpenTry defines a msg sent by a Relayer to try to open a
  * connection on Chain B.
+ * @name MsgConnectionOpenTry
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenTry
  */
 export interface MsgConnectionOpenTry {
   client_id: string;
-  /** Deprecated: this field is unused. Crossing hellos are no longer supported in core IBC. */
-  /** @deprecated */
+  /**
+   * Deprecated: this field is unused. Crossing hellos are no longer supported in core IBC.
+   * @deprecated
+   */
   previous_connection_id: string;
   client_state?: Any;
   counterparty: Counterparty;
@@ -42,22 +53,36 @@ export interface MsgConnectionOpenTry {
    * INIT`
    */
   proof_init: Uint8Array;
-  /** proof of client state included in message */
+  /**
+   * proof of client state included in message
+   */
   proof_client: Uint8Array;
-  /** proof of client consensus state */
+  /**
+   * proof of client consensus state
+   */
   proof_consensus: Uint8Array;
   consensus_height: Height;
   signer: string;
-  /** optional proof data for host state machines that are unable to introspect their own consensus state */
+  /**
+   * optional proof data for host state machines that are unable to introspect their own consensus state
+   */
   host_consensus_state_proof: Uint8Array;
 }
-/** MsgConnectionOpenTryResponse defines the Msg/ConnectionOpenTry response type. */
+/**
+ * MsgConnectionOpenTryResponse defines the Msg/ConnectionOpenTry response type.
+ * @name MsgConnectionOpenTryResponse
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenTryResponse
+ */
 export interface MsgConnectionOpenTryResponse {
   unsigned_tx?: Any;
 }
 /**
  * MsgConnectionOpenAck defines a msg sent by a Relayer to Chain A to
  * acknowledge the change of connection state to TRYOPEN on Chain B.
+ * @name MsgConnectionOpenAck
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenAck
  */
 export interface MsgConnectionOpenAck {
   connection_id: string;
@@ -70,26 +95,42 @@ export interface MsgConnectionOpenAck {
    * TRYOPEN`
    */
   proof_try: Uint8Array;
-  /** proof of client state included in message */
+  /**
+   * proof of client state included in message
+   */
   proof_client: Uint8Array;
-  /** proof of client consensus state */
+  /**
+   * proof of client consensus state
+   */
   proof_consensus: Uint8Array;
   consensus_height: Height;
   signer: string;
-  /** optional proof data for host state machines that are unable to introspect their own consensus state */
+  /**
+   * optional proof data for host state machines that are unable to introspect their own consensus state
+   */
   host_consensus_state_proof: Uint8Array;
 }
-/** MsgConnectionOpenAckResponse defines the Msg/ConnectionOpenAck response type. */
+/**
+ * MsgConnectionOpenAckResponse defines the Msg/ConnectionOpenAck response type.
+ * @name MsgConnectionOpenAckResponse
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenAckResponse
+ */
 export interface MsgConnectionOpenAckResponse {
   unsigned_tx?: Any;
 }
 /**
  * MsgConnectionOpenConfirm defines a msg sent by a Relayer to Chain B to
  * acknowledge the change of connection state to OPEN on Chain A.
+ * @name MsgConnectionOpenConfirm
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenConfirm
  */
 export interface MsgConnectionOpenConfirm {
   connection_id: string;
-  /** proof for the change of the connection state on Chain A: `INIT -> OPEN` */
+  /**
+   * proof for the change of the connection state on Chain A: `INIT -> OPEN`
+   */
   proof_ack: Uint8Array;
   proof_height: Height;
   signer: string;
@@ -97,6 +138,9 @@ export interface MsgConnectionOpenConfirm {
 /**
  * MsgConnectionOpenConfirmResponse defines the Msg/ConnectionOpenConfirm
  * response type.
+ * @name MsgConnectionOpenConfirmResponse
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenConfirmResponse
  */
 export interface MsgConnectionOpenConfirmResponse {
   unsigned_tx?: Any;
@@ -110,6 +154,13 @@ function createBaseMsgConnectionOpenInit(): MsgConnectionOpenInit {
     signer: "",
   };
 }
+/**
+ * MsgConnectionOpenInit defines the msg sent by an account on Chain A to
+ * initialize a connection with Chain B.
+ * @name MsgConnectionOpenInit
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenInit
+ */
 export const MsgConnectionOpenInit = {
   typeUrl: "/ibc.core.connection.v1.MsgConnectionOpenInit",
   encode(message: MsgConnectionOpenInit, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -200,6 +251,13 @@ function createBaseMsgConnectionOpenInitResponse(): MsgConnectionOpenInitRespons
     unsigned_tx: undefined,
   };
 }
+/**
+ * MsgConnectionOpenInitResponse defines the Msg/ConnectionOpenInit response
+ * type.
+ * @name MsgConnectionOpenInitResponse
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenInitResponse
+ */
 export const MsgConnectionOpenInitResponse = {
   typeUrl: "/ibc.core.connection.v1.MsgConnectionOpenInitResponse",
   encode(message: MsgConnectionOpenInitResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -263,6 +321,13 @@ function createBaseMsgConnectionOpenTry(): MsgConnectionOpenTry {
     host_consensus_state_proof: new Uint8Array(),
   };
 }
+/**
+ * MsgConnectionOpenTry defines a msg sent by a Relayer to try to open a
+ * connection on Chain B.
+ * @name MsgConnectionOpenTry
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenTry
+ */
 export const MsgConnectionOpenTry = {
   typeUrl: "/ibc.core.connection.v1.MsgConnectionOpenTry",
   encode(message: MsgConnectionOpenTry, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -455,6 +520,12 @@ function createBaseMsgConnectionOpenTryResponse(): MsgConnectionOpenTryResponse 
     unsigned_tx: undefined,
   };
 }
+/**
+ * MsgConnectionOpenTryResponse defines the Msg/ConnectionOpenTry response type.
+ * @name MsgConnectionOpenTryResponse
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenTryResponse
+ */
 export const MsgConnectionOpenTryResponse = {
   typeUrl: "/ibc.core.connection.v1.MsgConnectionOpenTryResponse",
   encode(message: MsgConnectionOpenTryResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -516,6 +587,13 @@ function createBaseMsgConnectionOpenAck(): MsgConnectionOpenAck {
     host_consensus_state_proof: new Uint8Array(),
   };
 }
+/**
+ * MsgConnectionOpenAck defines a msg sent by a Relayer to Chain A to
+ * acknowledge the change of connection state to TRYOPEN on Chain B.
+ * @name MsgConnectionOpenAck
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenAck
+ */
 export const MsgConnectionOpenAck = {
   typeUrl: "/ibc.core.connection.v1.MsgConnectionOpenAck",
   encode(message: MsgConnectionOpenAck, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -681,6 +759,12 @@ function createBaseMsgConnectionOpenAckResponse(): MsgConnectionOpenAckResponse 
     unsigned_tx: undefined,
   };
 }
+/**
+ * MsgConnectionOpenAckResponse defines the Msg/ConnectionOpenAck response type.
+ * @name MsgConnectionOpenAckResponse
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenAckResponse
+ */
 export const MsgConnectionOpenAckResponse = {
   typeUrl: "/ibc.core.connection.v1.MsgConnectionOpenAckResponse",
   encode(message: MsgConnectionOpenAckResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -735,6 +819,13 @@ function createBaseMsgConnectionOpenConfirm(): MsgConnectionOpenConfirm {
     signer: "",
   };
 }
+/**
+ * MsgConnectionOpenConfirm defines a msg sent by a Relayer to Chain B to
+ * acknowledge the change of connection state to OPEN on Chain A.
+ * @name MsgConnectionOpenConfirm
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenConfirm
+ */
 export const MsgConnectionOpenConfirm = {
   typeUrl: "/ibc.core.connection.v1.MsgConnectionOpenConfirm",
   encode(message: MsgConnectionOpenConfirm, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -816,6 +907,13 @@ function createBaseMsgConnectionOpenConfirmResponse(): MsgConnectionOpenConfirmR
     unsigned_tx: undefined,
   };
 }
+/**
+ * MsgConnectionOpenConfirmResponse defines the Msg/ConnectionOpenConfirm
+ * response type.
+ * @name MsgConnectionOpenConfirmResponse
+ * @package ibc.core.connection.v1
+ * @see proto type: ibc.core.connection.v1.MsgConnectionOpenConfirmResponse
+ */
 export const MsgConnectionOpenConfirmResponse = {
   typeUrl: "/ibc.core.connection.v1.MsgConnectionOpenConfirmResponse",
   encode(
@@ -909,3 +1007,6 @@ export class MsgClientImpl implements Msg {
     return promise.then((data) => MsgConnectionOpenConfirmResponse.decode(new BinaryReader(data)));
   }
 }
+export const createClientImpl = (rpc: Rpc) => {
+  return new MsgClientImpl(rpc);
+};

@@ -4,34 +4,72 @@ import { PacketId } from "../../../core/channel/v1/channel";
 import { BinaryReader, BinaryWriter } from "../../../../binary";
 import { DeepPartial, Exact, isSet } from "../../../../helpers";
 export const protobufPackage = "ibc.applications.fee.v1";
-/** Fee defines the ICS29 receive, acknowledgement and timeout fees */
+/**
+ * Fee defines the ICS29 receive, acknowledgement and timeout fees
+ * @name Fee
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.Fee
+ */
 export interface Fee {
-  /** the packet receive fee */
+  /**
+   * the packet receive fee
+   */
   recv_fee: Coin[];
-  /** the packet acknowledgement fee */
+  /**
+   * the packet acknowledgement fee
+   */
   ack_fee: Coin[];
-  /** the packet timeout fee */
+  /**
+   * the packet timeout fee
+   */
   timeout_fee: Coin[];
 }
-/** PacketFee contains ICS29 relayer fees, refund address and optional list of permitted relayers */
+/**
+ * PacketFee contains ICS29 relayer fees, refund address and optional list of permitted relayers
+ * @name PacketFee
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.PacketFee
+ */
 export interface PacketFee {
-  /** fee encapsulates the recv, ack and timeout fees associated with an IBC packet */
+  /**
+   * fee encapsulates the recv, ack and timeout fees associated with an IBC packet
+   */
   fee: Fee;
-  /** the refund address for unspent fees */
+  /**
+   * the refund address for unspent fees
+   */
   refund_address: string;
-  /** optional list of relayers permitted to receive fees */
+  /**
+   * optional list of relayers permitted to receive fees
+   */
   relayers: string[];
 }
-/** PacketFees contains a list of type PacketFee */
+/**
+ * PacketFees contains a list of type PacketFee
+ * @name PacketFees
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.PacketFees
+ */
 export interface PacketFees {
-  /** list of packet fees */
+  /**
+   * list of packet fees
+   */
   packet_fees: PacketFee[];
 }
-/** IdentifiedPacketFees contains a list of type PacketFee and associated PacketId */
+/**
+ * IdentifiedPacketFees contains a list of type PacketFee and associated PacketId
+ * @name IdentifiedPacketFees
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.IdentifiedPacketFees
+ */
 export interface IdentifiedPacketFees {
-  /** unique packet identifier comprised of the channel ID, port ID and sequence */
+  /**
+   * unique packet identifier comprised of the channel ID, port ID and sequence
+   */
   packet_id: PacketId;
-  /** list of packet fees */
+  /**
+   * list of packet fees
+   */
   packet_fees: PacketFee[];
 }
 function createBaseFee(): Fee {
@@ -41,6 +79,12 @@ function createBaseFee(): Fee {
     timeout_fee: [],
   };
 }
+/**
+ * Fee defines the ICS29 receive, acknowledgement and timeout fees
+ * @name Fee
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.Fee
+ */
 export const Fee = {
   typeUrl: "/ibc.applications.fee.v1.Fee",
   encode(message: Fee, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -120,6 +164,12 @@ function createBasePacketFee(): PacketFee {
     relayers: [],
   };
 }
+/**
+ * PacketFee contains ICS29 relayer fees, refund address and optional list of permitted relayers
+ * @name PacketFee
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.PacketFee
+ */
 export const PacketFee = {
   typeUrl: "/ibc.applications.fee.v1.PacketFee",
   encode(message: PacketFee, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -190,6 +240,12 @@ function createBasePacketFees(): PacketFees {
     packet_fees: [],
   };
 }
+/**
+ * PacketFees contains a list of type PacketFee
+ * @name PacketFees
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.PacketFees
+ */
 export const PacketFees = {
   typeUrl: "/ibc.applications.fee.v1.PacketFees",
   encode(message: PacketFees, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -242,6 +298,12 @@ function createBaseIdentifiedPacketFees(): IdentifiedPacketFees {
     packet_fees: [],
   };
 }
+/**
+ * IdentifiedPacketFees contains a list of type PacketFee and associated PacketId
+ * @name IdentifiedPacketFees
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.IdentifiedPacketFees
+ */
 export const IdentifiedPacketFees = {
   typeUrl: "/ibc.applications.fee.v1.IdentifiedPacketFees",
   encode(message: IdentifiedPacketFees, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

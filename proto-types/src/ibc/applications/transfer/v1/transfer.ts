@@ -7,6 +7,9 @@ export const protobufPackage = "ibc.applications.transfer.v1";
  * NOTE: To prevent a single token from being transferred, set the
  * TransfersEnabled parameter to true and then set the bank module's SendEnabled
  * parameter for the denomination to false.
+ * @name Params
+ * @package ibc.applications.transfer.v1
+ * @see proto type: ibc.applications.transfer.v1.Params
  */
 export interface Params {
   /**
@@ -26,6 +29,15 @@ function createBaseParams(): Params {
     receive_enabled: false,
   };
 }
+/**
+ * Params defines the set of IBC transfer parameters.
+ * NOTE: To prevent a single token from being transferred, set the
+ * TransfersEnabled parameter to true and then set the bank module's SendEnabled
+ * parameter for the denomination to false.
+ * @name Params
+ * @package ibc.applications.transfer.v1
+ * @see proto type: ibc.applications.transfer.v1.Params
+ */
 export const Params = {
   typeUrl: "/ibc.applications.transfer.v1.Params",
   encode(message: Params, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
