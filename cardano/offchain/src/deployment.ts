@@ -103,8 +103,10 @@ const leafHash = async (valueHex: string): Promise<string> => {
   return sha256Hex(concatBytes(new Uint8Array([0]), hexToBytes(valueHash)));
 };
 
-const innerHash = async (left: string, right: string): Promise<string> => {
-  if (left === EMPTY_HASH && right === EMPTY_HASH) return EMPTY_HASH;
+const innerHash = (left: string, right: string): Promise<string> => {
+  if (left === EMPTY_HASH && right === EMPTY_HASH) {
+    return Promise.resolve(EMPTY_HASH);
+  }
   return sha256Hex(
     concatBytes(new Uint8Array([1]), hexToBytes(left), hexToBytes(right)),
   );

@@ -1,7 +1,7 @@
 import { type Data } from '@lucid-evolution/lucid';
 import { ClientMessage } from './msgs/client-message';
 
-export type MintClientRedeemer = 'MintClient';
+type MintClientRedeemer = 'MintClient';
 
 export type SpendClientRedeemer =
   | 'Other'

@@ -1,12 +1,5 @@
 type LucidData = typeof import('@lucid-evolution/lucid').Data;
 
-export function createAuthTokenSchema(Data: LucidData) {
-  return Data.Object({
-    policyId: Data.Bytes(),
-    name: Data.Bytes(),
-  });
-}
-
 export function createHeightSchema(Data: LucidData) {
   return Data.Object({
     revisionNumber: Data.Integer(),
