@@ -242,6 +242,10 @@ jobs:
       - name: Check formatting
         run: aiken fmt --check
 
+      - name: Check fuzz imports stay in tests
+        working-directory: .
+        run: scripts/ci/check-aiken-fuzz-imports.sh
+
       - name: Check and test
         run: aiken check
 
