@@ -100,6 +100,26 @@ export const KUPMIOS_URL =
   firstNonEmpty(process.env.NEXT_PUBLIC_KUPMIOS_URL) ||
   'http://localhost:1442,http://localhost:1337';
 
+const KUPMIOS_KUPO_API_KEY = serverFirstNonEmpty(
+  process.env.IBC_SWAP_KUPO_API_KEY,
+  process.env.KUPO_API_KEY,
+);
+
+const KUPMIOS_OGMIOS_API_KEY = serverFirstNonEmpty(
+  process.env.IBC_SWAP_OGMIOS_API_KEY,
+  process.env.OGMIOS_API_KEY,
+);
+
+const authHeader = (apiKey?: string): Record<string, string> | undefined =>
+  apiKey ? { 'dmtr-api-key': apiKey } : undefined;
+
+export const KUPMIOS_AUTH_HEADERS = serverFirstNonEmpty(KUPMIOS_URL)
+  ? {
+      kupoHeader: authHeader(KUPMIOS_KUPO_API_KEY),
+      ogmiosHeader: authHeader(KUPMIOS_OGMIOS_API_KEY),
+    }
+  : undefined;
+
 export const CROSSCHAIN_SWAP_ADDRESS = firstNonEmpty(
   process.env.NEXT_PUBLIC_CROSSCHAIN_SWAP_ADDRESS,
 );

@@ -44,6 +44,13 @@ function defaultLogger(scope) {
         error: (...args) => console.error(`[${scope}]`, ...args),
     };
 }
+function startTimer() {
+    return process.hrtime.bigint();
+}
+function elapsedMs(start) {
+    const elapsed = Number(process.hrtime.bigint() - start) / 1_000_000;
+    return `${Math.round(elapsed)}ms`;
+}
 function normalizeCardanoNetwork(network) {
     const normalized = network.trim().toLowerCase();
     switch (normalized) {
@@ -61,18 +68,24 @@ function normalizeCardanoNetwork(network) {
             throw new Error(`Unsupported Cardano network "${network}" in bridge manifest. Expected one of ${LUCID_NETWORKS.join(', ')}.`);
     }
 }
+async function timed(logger, scope, label, operation) {
+    const startedAt = startTimer();
+    try {
+        const result = await operation();
+        logger.log(`${scope} ${label} completed in ${elapsedMs(startedAt)}`);
+        return result;
+    }
+    catch (error) {
+        logger.error(`${scope} ${label} failed in ${elapsedMs(startedAt)}`, error);
+        throw error;
+    }
+}
 function describeFetchFailure(error) {
-    const cause = error instanceof Error
-        ? error.cause
-        : undefined;
-    const causeRecord = typeof cause === 'object' && cause !== null
-        ? cause
-        : undefined;
+    const cause = error instanceof Error ? error.cause : undefined;
+    const causeRecord = typeof cause === 'object' && cause !== null ? cause : undefined;
     const code = typeof causeRecord?.code === 'string' ? causeRecord.code : undefined;
     const address = typeof causeRecord?.address === 'string' ? causeRecord.address : undefined;
-    const port = typeof causeRecord?.port === 'string' || typeof causeRecord?.port === 'number'
-        ? String(causeRecord.port)
-        : undefined;
+    const port = typeof causeRecord?.port === 'string' || typeof causeRecord?.port === 'number' ? String(causeRecord.port) : undefined;
     const causeMessage = cause instanceof Error ? cause.message : undefined;
     if (code && address && port) {
         return `${code} while connecting to ${address}:${port}`;
@@ -195,6 +208,37 @@ function splitKupmiosUrl(kupmiosUrl) {
         throw new Error('kupmiosUrl must be "<kupoEndpoint>,<ogmiosEndpoint>"');
     }
     return { kupoEndpoint, ogmiosEndpoint };
+}
+function isDemeterHost(hostname) {
+    return hostname.endsWith('.dmtr.host') || hostname.endsWith('.demeter.run');
+}
+function normalizeDemeterOgmiosEndpoint(ogmiosEndpoint, headers) {
+    const apiKey = headers?.ogmiosHeader?.['dmtr-api-key']?.trim();
+    if (!apiKey) {
+        return { ogmiosEndpoint, headers };
+    }
+    try {
+        const parsed = new URL(ogmiosEndpoint);
+        if (!isDemeterHost(parsed.hostname)) {
+            return { ogmiosEndpoint, headers };
+        }
+        if (!parsed.host.startsWith(`${apiKey}.`)) {
+            parsed.host = `${apiKey}.${parsed.host}`;
+        }
+        const nextHeaders = { ...headers };
+        // Demeter Ogmios uses host-based auth for HTTP JSON-RPC; the same key as a
+        // header can leave POST requests waiting until the provider timeout.
+        delete nextHeaders.ogmiosHeader;
+        return {
+            ogmiosEndpoint: parsed.toString().replace(/\/$/, ''),
+            headers: nextHeaders.kupoHeader || nextHeaders.ogmiosHeader
+                ? nextHeaders
+                : undefined,
+        };
+    }
+    catch {
+        return { ogmiosEndpoint, headers };
+    }
 }
 function parseRequiredString(value, fieldName) {
     if (typeof value !== 'string' || value.trim().length === 0) {
@@ -325,9 +369,9 @@ function appendBuffer(left, right) {
     result.set(right, left.length);
     return result;
 }
-function ogmiosRequest(ogmiosUrl, methodName, args) {
+function ogmiosRequest(ogmiosUrl, methodName, args, headers) {
     return new Promise(async (resolve, reject) => {
-        const client = new ws_1.default(ogmiosUrl);
+        const client = new ws_1.default(ogmiosUrl, headers ? { headers } : undefined);
         const cleanup = () => {
             if (client.readyState === ws_1.default.OPEN || client.readyState === ws_1.default.CONNECTING) {
                 client.close();
@@ -362,12 +406,12 @@ function ogmiosRequest(ogmiosUrl, methodName, args) {
         });
     });
 }
-async function querySystemStart(ogmiosUrl) {
-    const systemStart = await ogmiosRequest(ogmiosUrl, 'queryNetwork/startTime', {});
+async function querySystemStart(ogmiosUrl, headers) {
+    const systemStart = await ogmiosRequest(ogmiosUrl, 'queryNetwork/startTime', {}, headers);
     return Date.parse(systemStart);
 }
-async function queryNetworkTipPoint(ogmiosUrl) {
-    const result = await ogmiosRequest(ogmiosUrl, 'queryNetwork/tip', {});
+async function queryNetworkTipPoint(ogmiosUrl, headers) {
+    const result = await ogmiosRequest(ogmiosUrl, 'queryNetwork/tip', {}, headers);
     if (result === 'origin') {
         return 'origin';
     }
@@ -378,6 +422,42 @@ async function queryNetworkTipPoint(ogmiosUrl) {
         slot: result.slot,
         id: result.id,
     };
+}
+async function submitSignedTxCbor(ogmiosUrl, signedTxCbor, headers, fetchImpl) {
+    const response = await fetchImpl(ogmiosUrl, {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+            ...(headers ?? {}),
+        },
+        body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'submitTransaction',
+            params: {
+                transaction: { cbor: signedTxCbor },
+            },
+            id: null,
+        }),
+    });
+    const responseText = await response.text();
+    let payload;
+    try {
+        payload = responseText ? JSON.parse(responseText) : null;
+    }
+    catch {
+        payload = null;
+    }
+    if (!response.ok) {
+        throw new Error(`Ogmios submitTransaction failed (${response.status} ${response.statusText}): ${responseText.slice(0, 1000)}`);
+    }
+    if (payload?.error) {
+        throw new Error(`Ogmios submitTransaction rejected: ${payload.error.message ?? JSON.stringify(payload.error)}`);
+    }
+    const txHash = payload?.result?.transaction?.id;
+    if (typeof txHash !== 'string' || txHash.trim().length === 0) {
+        throw new Error(`Ogmios submitTransaction returned an invalid response: ${responseText.slice(0, 1000)}`);
+    }
+    return txHash;
 }
 function toSafeCostModelInteger(value) {
     let parsedValue;
@@ -490,14 +570,14 @@ async function retryWithBackoff(operation) {
     }
     throw new Error('Kupmios protocol parameters fetch failed');
 }
-async function createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork) {
-    const Lucid = await eval(`import('@lucid-evolution/lucid')`);
-    const provider = new Lucid.Kupmios(kupoEndpoint, ogmiosEndpoint);
-    const protocolParameters = sanitizeProtocolParameters(await retryWithBackoff(() => provider.getProtocolParameters()));
-    const lucid = await Lucid.Lucid(provider, cardanoNetwork, {
+async function createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork, logger, headers) {
+    const Lucid = await timed(logger, '[context]', 'import lucid', () => eval(`import('@lucid-evolution/lucid')`));
+    const provider = new Lucid.Kupmios(kupoEndpoint, ogmiosEndpoint, headers);
+    const protocolParameters = sanitizeProtocolParameters(await timed(logger, '[context]', 'fetch protocol parameters', () => retryWithBackoff(() => provider.getProtocolParameters())));
+    const lucid = await timed(logger, '[context]', 'create lucid runtime', () => Lucid.Lucid(provider, cardanoNetwork, {
         presetProtocolParameters: protocolParameters,
-    });
-    const chainZeroTime = await querySystemStart(ogmiosEndpoint);
+    }));
+    const chainZeroTime = await timed(logger, '[context]', 'query system start', () => querySystemStart(ogmiosEndpoint, headers?.ogmiosHeader));
     const slotConfig = Lucid.SLOT_CONFIG_NETWORK?.[cardanoNetwork];
     if (!slotConfig) {
         throw new Error(`Lucid does not expose a slot configuration for Cardano network ${cardanoNetwork}`);
@@ -555,7 +635,7 @@ function dedupeUtxos(utxos) {
     const seen = new Map();
     const orderedKeys = [];
     for (const utxo of utxos) {
-        const key = `${utxo.txHash}#${utxo.outputIndex}`;
+        const key = utxoRef(utxo);
         if (!seen.has(key)) {
             orderedKeys.push(key);
         }
@@ -563,32 +643,11 @@ function dedupeUtxos(utxos) {
     }
     return orderedKeys.map((key) => seen.get(key)).filter(Boolean);
 }
+function utxoRef(utxo) {
+    return `${utxo.txHash}#${utxo.outputIndex}`;
+}
 function escrowShardHasOnlyDenom(utxo, denomToken) {
     return Object.keys(utxo.assets ?? {}).every((unit) => unit === 'lovelace' || unit === denomToken);
-}
-async function findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount) {
-    const encodedDatum = await context.lucidService.encode({ channel_id: channelId, denom: packetDenom }, 'transferEscrow');
-    let utxos = [];
-    try {
-        utxos = await context.lucidService.findUtxoAt(context.deployment.modules.transfer.address);
-    }
-    catch {
-        utxos = [];
-    }
-    const candidates = utxos
-        .filter((utxo) => utxo.datum === encodedDatum)
-        .filter((utxo) => escrowShardHasOnlyDenom(utxo, denomToken))
-        .filter((utxo) => requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
-        .sort((a, b) => {
-        const aAmount = a.assets[denomToken] ?? 0n;
-        const bAmount = b.assets[denomToken] ?? 0n;
-        if (aAmount === bAmount) {
-            const txHashCompare = a.txHash.localeCompare(b.txHash);
-            return txHashCompare !== 0 ? txHashCompare : a.outputIndex - b.outputIndex;
-        }
-        return aAmount > bAmount ? -1 : 1;
-    });
-    return { utxo: candidates[0], encodedDatum };
 }
 async function ensureTreeAlignedForRoot(context, onChainRoot) {
     if (!(0, ibcStateRoot_1.isTreeAligned)(onChainRoot)) {
@@ -634,7 +693,7 @@ async function buildHostStateUpdateForHandlePacket(context, inputChannelDatum, o
     };
 }
 async function computeTxValidityWindow(context) {
-    const tip = await queryNetworkTipPoint(context.ogmiosEndpoint);
+    const tip = await queryNetworkTipPoint(context.ogmiosEndpoint, context.kupmiosHeaders?.ogmiosHeader);
     const currentSlot = tip === 'origin' ? 0 : tip.slot;
     const ttlSlots = Math.max(1, Math.ceil(TRANSACTION_TIME_TO_LIVE / 1000));
     const validToSlot = currentSlot + ttlSlots;
@@ -670,16 +729,20 @@ function createTxBuilderRuntime(config) {
     const logger = config.logger ?? defaultLogger('txBuilderRuntime');
     let cachedContextPromise = null;
     const transferBuildQueue = new AsyncMutex();
+    let transferBuildCounter = 0;
     const traceRegistryClient = (0, trace_registry_1.createTraceRegistryClient)({
         bridgeManifestUrl: config.bridgeManifestUrl,
         kupmiosUrl: config.kupmiosUrl,
+        kupmiosHeaders: config.kupmiosHeaders,
         fetchImpl: config.fetchImpl,
     });
     async function getBridgeManifest() {
         const fetchImpl = config.fetchImpl ?? fetch;
         let response;
         try {
-            response = await fetchImpl(config.bridgeManifestUrl, { cache: 'no-store' });
+            response = await fetchImpl(config.bridgeManifestUrl, {
+                cache: 'no-store',
+            });
         }
         catch (error) {
             throw new Error(`Failed to load bridge manifest from ${config.bridgeManifestUrl}: ${describeFetchFailure(error)}`, { cause: error });
@@ -690,23 +753,27 @@ function createTxBuilderRuntime(config) {
         return response.json();
     }
     async function createContext() {
-        const manifest = await getBridgeManifest();
+        const contextStartedAt = startTimer();
+        logger.log('[context] initializing shared Cardano tx-builder runtime context');
+        const manifest = await timed(logger, '[context]', 'load bridge manifest', getBridgeManifest);
         const { deployment, bridgeManifest } = normalizeBridgeManifest(manifest);
-        const { kupoEndpoint, ogmiosEndpoint } = splitKupmiosUrl(config.kupmiosUrl);
+        const { kupoEndpoint, ogmiosEndpoint: rawOgmiosEndpoint } = splitKupmiosUrl(config.kupmiosUrl);
+        const { ogmiosEndpoint, headers: kupmiosHeaders } = normalizeDemeterOgmiosEndpoint(rawOgmiosEndpoint, config.kupmiosHeaders);
         const cardanoNetwork = normalizeCardanoNetwork(bridgeManifest.cardano.network);
-        const { lucidImporter, lucid } = await createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork);
+        const { lucidImporter, lucid } = await createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork, logger, kupmiosHeaders);
         const lucidService = new lucidIbcAdapter_1.LucidIbcAdapter(lucidImporter, lucid, deployment);
-        await lucidService.onModuleInit();
+        await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
         const kupoService = new RuntimeKupoService(lucidService, deployment);
         (0, ibcStateRoot_1.initTreeServices)(kupoService, lucidService);
-        await (0, ibcStateRoot_1.rebuildTreeFromChain)(kupoService, lucidService);
-        logger.log('Initialized shared Cardano tx-builder runtime context');
+        await timed(logger, '[context]', 'rebuild IBC state tree', () => (0, ibcStateRoot_1.rebuildTreeFromChain)(kupoService, lucidService));
+        logger.log(`[context] initialized shared Cardano tx-builder runtime context in ${elapsedMs(contextStartedAt)}`);
         return {
             deployment,
             lucidService,
             logger,
             cardanoNetwork,
             ogmiosEndpoint,
+            kupmiosHeaders,
             traceRegistryClient,
         };
     }
@@ -721,71 +788,122 @@ function createTxBuilderRuntime(config) {
     }
     async function buildUnsignedTransfer(body) {
         // Lucid wallet selection and IBC tree state are shared by the runtime context.
-        return transferBuildQueue.runExclusive(() => buildUnsignedTransferUnsafe(body));
+        const buildId = ++transferBuildCounter;
+        const scope = `[transfer:${buildId}]`;
+        return transferBuildQueue.runExclusive(() => buildUnsignedTransferUnsafe(body, scope));
     }
-    async function buildUnsignedTransferUnsafe(body) {
-        const context = await getContext();
+    async function buildUnsignedTransferUnsafe(body, scope) {
+        const buildStartedAt = startTimer();
+        logger.log(`${scope} preparing unsigned Cardano transfer`);
+        const context = await timed(logger, scope, 'get runtime context', getContext);
         const sendPacketOperator = parseSendPacketOperator(body);
         const providedWalletUtxos = parseWalletUtxos(body.wallet_utxos);
-        const getWalletUtxos = async (address, options) => dedupeUtxos([
-            ...providedWalletUtxos,
-            ...(await context.lucidService.tryFindUtxosAt(address, options)),
-        ]);
+        logger.log(`${scope} parsed request for ${sendPacketOperator.signer}; provided wallet UTxOs=${providedWalletUtxos.length}`);
+        const getWalletUtxos = async (address, options) => {
+            const providedWalletUtxosForAddress = dedupeUtxos(providedWalletUtxos.filter((utxo) => utxo.address === address));
+            const providerWalletUtxos = await timed(logger, scope, `provider wallet UTxO lookup for ${address}`, () => context.lucidService.tryFindUtxosAt(address, options));
+            if (providedWalletUtxosForAddress.length > 0) {
+                const providerRefs = new Set(providerWalletUtxos.map(utxoRef));
+                // Browser wallet UTxOs are hints; keep only refs still live according to the node.
+                const liveProvidedWalletUtxos = providedWalletUtxosForAddress.filter((utxo) => providerRefs.has(utxoRef(utxo)));
+                const staleProvidedCount = providedWalletUtxosForAddress.length - liveProvidedWalletUtxos.length;
+                const mergedWalletUtxos = dedupeUtxos([...liveProvidedWalletUtxos, ...providerWalletUtxos]);
+                logger.log(`${scope} wallet UTxO live validation for ${address}: provided=${providedWalletUtxosForAddress.length}, stale_provided=${staleProvidedCount}, provider=${providerWalletUtxos.length}, merged=${mergedWalletUtxos.length}`);
+                return mergedWalletUtxos;
+            }
+            logger.log(`${scope} wallet UTxO lookup for ${address}: provider=${providerWalletUtxos.length}`);
+            return providerWalletUtxos;
+        };
         const findWalletUtxoAtWithUnit = async (address, unit) => {
-            const providedMatch = providedWalletUtxos.find((utxo) => Object.prototype.hasOwnProperty.call(utxo.assets, unit));
-            if (providedMatch) {
-                return providedMatch;
+            const liveWalletUtxos = await getWalletUtxos(address, LOOKUP_RETRY_OPTIONS);
+            const liveMatch = liveWalletUtxos.find((utxo) => Object.prototype.hasOwnProperty.call(utxo.assets, unit));
+            if (liveMatch) {
+                return liveMatch;
             }
             return context.lucidService.findUtxoAtWithUnit(address, unit);
         };
-        const initialWalletUtxos = await getWalletUtxos(sendPacketOperator.signer, LOOKUP_RETRY_OPTIONS);
+        const findTransferEscrowShard = async (channelId, packetDenom, denomToken, requiredAmount) => {
+            const encodedDatum = await context.lucidService.encode({ channel_id: channelId, denom: packetDenom }, 'transferEscrow');
+            let utxos = [];
+            try {
+                utxos = await context.lucidService.findUtxoAt(context.deployment.modules.transfer.address);
+            }
+            catch {
+                utxos = [];
+            }
+            const candidates = utxos
+                .filter((utxo) => utxo.datum === encodedDatum)
+                .filter((utxo) => escrowShardHasOnlyDenom(utxo, denomToken))
+                .filter((utxo) => requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
+                .sort((a, b) => {
+                const aAmount = a.assets[denomToken] ?? 0n;
+                const bAmount = b.assets[denomToken] ?? 0n;
+                if (aAmount === bAmount) {
+                    const txHashCompare = a.txHash.localeCompare(b.txHash);
+                    return txHashCompare !== 0 ? txHashCompare : a.outputIndex - b.outputIndex;
+                }
+                return aAmount > bAmount ? -1 : 1;
+            });
+            return {
+                utxo: candidates[0],
+                encodedDatum,
+            };
+        };
+        const initialWalletUtxos = await timed(logger, scope, 'load initial wallet UTxOs', () => getWalletUtxos(sendPacketOperator.signer, LOOKUP_RETRY_OPTIONS));
         if (initialWalletUtxos.length === 0) {
             throw new Error(`sendPacketBuilder failed: no spendable UTxOs found for ${sendPacketOperator.signer}`);
         }
+        logger.log(`${scope} initial wallet UTxOs selected=${initialWalletUtxos.length}`);
         context.lucidService.selectWalletFromAddress(sendPacketOperator.signer, initialWalletUtxos);
-        const { unsignedTx, walletOverride } = await (0, tx_builder_1.buildUnsignedSendPacketTx)(sendPacketOperator, {
+        const { unsignedTx, walletOverride } = await timed(logger, scope, 'build send_packet tx skeleton', () => (0, tx_builder_1.buildUnsignedSendPacketTx)(sendPacketOperator, {
             loadContext: async (operator) => {
-                const channelSequence = operator.sourceChannel.replace('channel-', '');
-                const [mintChannelPolicyId, channelTokenName] = context.lucidService.getChannelTokenUnit(BigInt(channelSequence));
-                const channelTokenUnit = mintChannelPolicyId + channelTokenName;
-                const channelUtxo = await context.lucidService.findUtxoByUnit(channelTokenUnit);
-                const channelDatum = await context.lucidService.decodeDatum(channelUtxo.datum, 'channel');
-                const [mintConnectionPolicyId, connectionTokenName] = context.lucidService.getConnectionTokenUnit(parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])));
-                const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
-                const connectionUtxo = await context.lucidService.findUtxoByUnit(connectionTokenUnit);
-                const connectionDatum = await context.lucidService.decodeDatum(connectionUtxo.datum, 'connection');
-                const clientTokenUnit = context.lucidService.getClientTokenUnit(parseClientSequence(convertHex2String(connectionDatum.state.client_id)).toString());
-                const clientUtxo = await context.lucidService.findUtxoByUnit(clientTokenUnit);
-                const transferModuleIdentifier = context.deployment.modules.transfer.identifier;
-                const transferModuleUtxo = await context.lucidService.findUtxoByUnit(transferModuleIdentifier);
-                const deployment = context.deployment;
-                const spendChannelAddress = deployment.validators.spendChannel.address;
-                if (!spendChannelAddress) {
-                    throw new Error('Spend channel script address is missing from deployment config');
+                const loadContextStartedAt = startTimer();
+                try {
+                    const channelSequence = operator.sourceChannel.replace('channel-', '');
+                    const [mintChannelPolicyId, channelTokenName] = context.lucidService.getChannelTokenUnit(BigInt(channelSequence));
+                    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
+                    const channelUtxo = await timed(logger, scope, 'load channel UTxO', () => context.lucidService.findUtxoByUnit(channelTokenUnit));
+                    const channelDatum = await timed(logger, scope, 'decode channel datum', () => context.lucidService.decodeDatum(channelUtxo.datum, 'channel'));
+                    const [mintConnectionPolicyId, connectionTokenName] = context.lucidService.getConnectionTokenUnit(parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])));
+                    const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
+                    const connectionUtxo = await timed(logger, scope, 'load connection UTxO', () => context.lucidService.findUtxoByUnit(connectionTokenUnit));
+                    const connectionDatum = await timed(logger, scope, 'decode connection datum', () => context.lucidService.decodeDatum(connectionUtxo.datum, 'connection'));
+                    const clientTokenUnit = context.lucidService.getClientTokenUnit(parseClientSequence(convertHex2String(connectionDatum.state.client_id)).toString());
+                    const clientUtxo = await timed(logger, scope, 'load client UTxO', () => context.lucidService.findUtxoByUnit(clientTokenUnit));
+                    const transferModuleIdentifier = context.deployment.modules.transfer.identifier;
+                    const transferModuleUtxo = await timed(logger, scope, 'load transfer module UTxO', () => context.lucidService.findUtxoByUnit(transferModuleIdentifier));
+                    const deployment = context.deployment;
+                    const spendChannelAddress = deployment.validators.spendChannel.address;
+                    if (!spendChannelAddress) {
+                        throw new Error('Spend channel script address is missing from deployment config');
+                    }
+                    return {
+                        channelUtxo,
+                        channelDatum,
+                        connectionUtxo,
+                        connectionDatum,
+                        clientUtxo,
+                        transferModuleUtxo,
+                        channelTokenUnit,
+                        channelToken: {
+                            policyId: mintChannelPolicyId,
+                            name: channelTokenName,
+                        },
+                        deployment: {
+                            sendPacketPolicyId: deployment.validators.spendChannel.refValidator.send_packet.scriptHash,
+                            mintVoucherScriptHash: deployment.validators.mintVoucher.scriptHash,
+                            spendChannelAddress,
+                            transferModuleAddress: deployment.modules.transfer.address,
+                        },
+                    };
                 }
-                return {
-                    channelUtxo,
-                    channelDatum,
-                    connectionUtxo,
-                    connectionDatum,
-                    clientUtxo,
-                    transferModuleUtxo,
-                    channelTokenUnit,
-                    channelToken: {
-                        policyId: mintChannelPolicyId,
-                        name: channelTokenName,
-                    },
-                    deployment: {
-                        sendPacketPolicyId: deployment.validators.spendChannel.refValidator.send_packet.scriptHash,
-                        mintVoucherScriptHash: deployment.validators.mintVoucher.scriptHash,
-                        spendChannelAddress,
-                        transferModuleAddress: deployment.modules.transfer.address,
-                    },
-                };
+                finally {
+                    logger.log(`${scope} load builder context completed in ${elapsedMs(loadContextStartedAt)}`);
+                }
             },
-            buildHostStateUpdate: (inputChannelDatum, outputChannelDatum, channelIdForRoot) => buildHostStateUpdateForHandlePacket(context, inputChannelDatum, outputChannelDatum, channelIdForRoot),
+            buildHostStateUpdate: (inputChannelDatum, outputChannelDatum, channelIdForRoot) => timed(logger, scope, 'build host-state update', () => buildHostStateUpdateForHandlePacket(context, inputChannelDatum, outputChannelDatum, channelIdForRoot)),
             resolveIbcDenomHash: async (denomHash) => {
-                const match = await context.traceRegistryClient.lookupIbcDenomTrace(denomHash);
+                const match = await timed(logger, scope, `resolve denom hash ${denomHash}`, () => context.traceRegistryClient.lookupIbcDenomTrace(denomHash));
                 if (!match) {
                     return null;
                 }
@@ -798,32 +916,35 @@ function createTxBuilderRuntime(config) {
             encode: (value, kind) => context.lucidService.encode(value, kind),
             findUtxoAtWithUnit: findWalletUtxoAtWithUnit,
             tryFindUtxosAt: getWalletUtxos,
-            findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) => findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount),
+            findTransferEscrowShard,
             createUnsignedSendPacketBurnTx: (dto) => context.lucidService.createUnsignedSendPacketBurnTx(dto),
             createUnsignedSendPacketEscrowTx: (dto) => context.lucidService.createUnsignedSendPacketEscrowTx(dto),
             invalidArgument: (message) => new Error(message),
             internalError: (message) => new Error(message),
-        });
+        }));
         if (!walletOverride) {
             throw new Error('sendPacket failed: wallet override context was not produced');
         }
-        const { currentSlot, validToSlot, validToTime } = await computeTxValidityWindow(context);
+        const { currentSlot, validToSlot, validToTime } = await timed(logger, scope, 'compute validity window', () => computeTxValidityWindow(context));
         if (currentSlot > validToSlot) {
             throw new Error('sendPacket failed: tx time invalid');
         }
         const walletScopeId = context.lucidService.beginWalletSelectionScope();
         try {
-            const refreshedUtxos = await getWalletUtxos(walletOverride.address, LOOKUP_RETRY_OPTIONS);
-            const mergedUtxos = dedupeUtxos([...(walletOverride.utxos ?? []), ...refreshedUtxos]);
-            const utxosToUse = mergedUtxos.length > 0 ? mergedUtxos : walletOverride.utxos;
+            const refreshedUtxos = await timed(logger, scope, 'refresh wallet UTxOs before completion', () => getWalletUtxos(walletOverride.address, LOOKUP_RETRY_OPTIONS));
+            const overrideUtxos = walletOverride.utxos ?? [];
+            const mergedUtxos = dedupeUtxos([...overrideUtxos, ...refreshedUtxos]);
+            const utxosToUse = mergedUtxos.length > 0 ? mergedUtxos : overrideUtxos;
+            logger.log(`${scope} completion wallet UTxOs: override=${overrideUtxos.length}, refreshed=${refreshedUtxos.length}, using=${utxosToUse.length}`);
             context.lucidService.selectWalletFromAddress(walletOverride.address, utxosToUse);
             context.lucidService.assertWalletSelectionScopeSatisfied(walletScopeId, 'sendPacket');
-            const completedUnsignedTx = await unsignedTx.validTo(validToTime).complete({
-                localUPLCEval: false,
+            const completedUnsignedTx = await timed(logger, scope, 'complete unsigned tx', () => unsignedTx.validTo(validToTime).complete({
+                localUPLCEval: true,
                 setCollateral: TRANSACTION_SET_COLLATERAL,
-            });
+            }));
             const unsignedTxCbor = completedUnsignedTx.toCBOR();
             const feeLovelace = completedUnsignedTx.toTransaction().body().fee().toString();
+            logger.log(`${scope} prepared unsigned Cardano transfer in ${elapsedMs(buildStartedAt)}`);
             return {
                 result: 0,
                 unsignedTx: {
@@ -837,7 +958,25 @@ function createTxBuilderRuntime(config) {
             context.lucidService.endWalletSelectionScope(walletScopeId);
         }
     }
+    async function submitSignedTransaction(body) {
+        const submitId = ++transferBuildCounter;
+        const scope = `[submit:${submitId}]`;
+        const submitStartedAt = startTimer();
+        const signedTxCbor = parseRequiredString(body.signed_tx_cbor, 'signed_tx_cbor');
+        const description = typeof body.description === 'string' && body.description.trim()
+            ? body.description.trim()
+            : 'Cardano signed transaction';
+        if (!/^[0-9a-f]+$/i.test(signedTxCbor) || signedTxCbor.length % 2 !== 0) {
+            throw new Error('Invalid argument: "signed_tx_cbor" must be even-length hex CBOR');
+        }
+        logger.log(`${scope} submitting ${description}; signedTxLength=${signedTxCbor.length}`);
+        const context = await timed(logger, scope, 'get runtime context', getContext);
+        const txHash = await timed(logger, scope, 'submit signed transaction via Ogmios', () => submitSignedTxCbor(context.ogmiosEndpoint, signedTxCbor, context.kupmiosHeaders?.ogmiosHeader, config.fetchImpl ?? fetch));
+        logger.log(`${scope} submitted signed Cardano transaction ${txHash} in ${elapsedMs(submitStartedAt)}`);
+        return { txHash };
+    }
     return {
         buildUnsignedTransfer,
+        submitSignedTransaction,
     };
 }

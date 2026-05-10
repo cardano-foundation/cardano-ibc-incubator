@@ -4,18 +4,16 @@
 
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Asset } from '@meshsdk/common';
-import { WalletContext } from '@meshsdk/react';
+import { useWallet, WalletContext } from '@meshsdk/react';
 import { toast } from 'react-toastify';
 import { useSafeCardanoAddress } from '@/hooks/useSafeCardanoAddress';
 import {
   CARDANO_WALLET_LOCKED_MESSAGE,
   CARDANO_WALLET_LOCKED_TOAST_ID,
+  forgetStoredCardanoWallet,
   isCardanoWalletLockedError,
 } from '@/utils/cardanoWalletStatus';
-import {
-  logCardanoWalletDebug,
-  logCardanoWalletError,
-} from '@/utils/cardanoWalletDebug';
+import { logCardanoWalletDebug } from '@/utils/cardanoWalletDebug';
 
 const hexToText = (hex: string): string => {
   if (!hex || hex.length % 2 !== 0) {
@@ -44,6 +42,7 @@ export const useCardanoChain = () => {
   const [assets, setAssets] = useState<Asset[]>();
   const { hasConnectedWallet, connectedWalletName, connectedWalletInstance } =
     useContext(WalletContext);
+  const { disconnect: disconnectCardanoWallet } = useWallet();
   const cardanoAddress = useSafeCardanoAddress();
 
   const getAssets = useCallback(async (): Promise<Asset[]> => {
@@ -86,19 +85,15 @@ export const useCardanoChain = () => {
         .catch((error) => {
           if (cancelled) return;
 
-          logCardanoWalletError('balance:getBalance:error', error, {
-            walletName: connectedWalletName,
-          });
-
+          setAssets(undefined);
           if (isCardanoWalletLockedError(error)) {
+            forgetStoredCardanoWallet();
+            disconnectCardanoWallet();
             toast.error(CARDANO_WALLET_LOCKED_MESSAGE, {
               theme: 'colored',
               toastId: CARDANO_WALLET_LOCKED_TOAST_ID,
             });
-            return;
           }
-
-          setAssets(undefined);
         });
 
       return () => {
@@ -107,7 +102,13 @@ export const useCardanoChain = () => {
     }
     setAssets(undefined);
     return undefined;
-  }, [cardanoAddress, connectedWalletName, getAssets, hasConnectedWallet]);
+  }, [
+    cardanoAddress,
+    connectedWalletName,
+    disconnectCardanoWallet,
+    getAssets,
+    hasConnectedWallet,
+  ]);
 
   const sortAssetsByQuantity = useCallback((assetList: Asset[]): Asset[] => {
     return assetList.sort((assetA, assetB) => {

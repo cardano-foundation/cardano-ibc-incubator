@@ -4,12 +4,14 @@ import {
 } from '@cardano-ibc/trace-registry';
 import {
   CARDANO_BRIDGE_MANIFEST_URL,
+  KUPMIOS_AUTH_HEADERS,
   KUPMIOS_URL,
 } from '@/configs/runtime';
 
 const traceRegistryClient = createTraceRegistryClient({
   bridgeManifestUrl: CARDANO_BRIDGE_MANIFEST_URL,
   kupmiosUrl: KUPMIOS_URL,
+  kupmiosHeaders: KUPMIOS_AUTH_HEADERS,
 });
 
 export async function lookupCardanoAssetDenomTraceFromRegistry(

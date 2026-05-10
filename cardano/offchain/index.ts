@@ -24,9 +24,8 @@ const kupoAuthUrl = kupoUrl ? resolveManagedKupoAuthUrl(kupoUrl) : undefined;
 const kupoMatchesUrl = kupoUrl
   ? resolveManagedKupoUrl(kupoUrl, kupoApiKey)
   : undefined;
-// Kupmios still issues plain HTTP POSTs for some internal provider calls, so it
-// must target a header-authenticated Ogmios base host instead of the auth-subdomain
-// websocket endpoint that we use for custom JSON-RPC calls.
+// Kupmios issues HTTP JSON-RPC POSTs, so Demeter Ogmios must use the
+// authenticated HTTP host rather than the websocket endpoint or header-auth base host.
 const ogmiosProviderUrl = ogmiosUrl
   ? resolveManagedOgmiosUrl(resolveOgmiosHttpUrl(ogmiosUrl), ogmiosApiKey)
   : undefined;
@@ -553,10 +552,11 @@ try {
       `Using extended Kupmios submit timeout: ${kupmiosSubmitTimeoutMs}ms`,
     );
   }
-  SLOT_CONFIG_NETWORK.Preview.zeroTime = chainZeroTime;
+  const cardanoNetwork = parseNetwork(cardanoNetworkMagic);
+  SLOT_CONFIG_NETWORK[cardanoNetwork].zeroTime = chainZeroTime;
   const lucid = await Lucid(
     provider,
-    parseNetwork(cardanoNetworkMagic),
+    cardanoNetwork,
     {
       presetProtocolParameters: protocolParameters,
     } as any,

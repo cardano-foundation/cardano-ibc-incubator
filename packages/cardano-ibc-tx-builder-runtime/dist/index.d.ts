@@ -33,18 +33,31 @@ type LocalUnsignedTransferResponse = {
     };
     feeLovelace: string;
 };
+type SubmitSignedTransactionApiRequestBody = {
+    signed_tx_cbor?: unknown;
+    description?: unknown;
+};
+type LocalSubmitSignedTransactionResponse = {
+    txHash: string;
+};
 type RuntimeLogger = {
     log: (...args: unknown[]) => void;
     warn: (...args: unknown[]) => void;
     error: (...args: unknown[]) => void;
 };
+type KupmiosAuthHeaders = {
+    kupoHeader?: Record<string, string>;
+    ogmiosHeader?: Record<string, string>;
+};
 type BuilderRuntimeConfig = {
     bridgeManifestUrl: string;
     kupmiosUrl: string;
+    kupmiosHeaders?: KupmiosAuthHeaders;
     fetchImpl?: typeof fetch;
     logger?: RuntimeLogger;
 };
 export declare function createTxBuilderRuntime(config: BuilderRuntimeConfig): {
     buildUnsignedTransfer: (body: TransferApiRequestBody) => Promise<LocalUnsignedTransferResponse>;
+    submitSignedTransaction: (body: SubmitSignedTransactionApiRequestBody) => Promise<LocalSubmitSignedTransactionResponse>;
 };
-export type { BuilderRuntimeConfig, LocalUnsignedTransferResponse, TransferApiRequestBody, };
+export type { BuilderRuntimeConfig, LocalSubmitSignedTransactionResponse, LocalUnsignedTransferResponse, SubmitSignedTransactionApiRequestBody, TransferApiRequestBody, };

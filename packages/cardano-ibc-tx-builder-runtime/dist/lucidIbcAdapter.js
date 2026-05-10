@@ -3,9 +3,19 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.LucidIbcAdapter = void 0;
 const lucid_1 = require("@lucid-evolution/lucid");
 const js_sha3_1 = require("js-sha3");
-const CHANNEL_TOKEN_PREFIX = 'channel';
-const CLIENT_PREFIX = 'client';
-const CONNECTION_TOKEN_PREFIX = 'connection';
+const CHANNEL_TOKEN_PREFIX = '6368616e6e656c'; // fromText('channel')
+const CLIENT_PREFIX = '6962635f636c69656e74'; // fromText('ibc_client')
+const CONNECTION_TOKEN_PREFIX = '636f6e6e656374696f6e'; // fromText('connection')
+const DECODABLE_DATUM_TYPES = ['client', 'connection', 'channel', 'transferEscrow', 'host_state'];
+const ENCODABLE_DATUM_TYPES = [
+    'channel',
+    'transferEscrow',
+    'host_state',
+    'host_state_redeemer',
+    'spendChannelRedeemer',
+    'iBCModuleRedeemer',
+    'mintVoucherRedeemer',
+];
 function updateTransferModuleAssets(assets, transferAmount, denom) {
     const updatedAssets = {
         ...assets,
@@ -18,24 +28,6 @@ function updateTransferModuleAssets(assets, transferAmount, denom) {
     }
     return updatedAssets;
 }
-function payTransferEscrowDelta(tx, transferModuleAddress, encodedTransferEscrowDatum, transferAmount, denomToken, transferEscrowUtxo) {
-    const baseAssets = transferEscrowUtxo?.assets ?? {};
-    const updatedAssets = updateTransferModuleAssets(baseAssets, transferAmount, denomToken);
-    const targetAmount = updatedAssets[denomToken] ?? 0n;
-    const keepsNonLovelace = Object.keys(updatedAssets).some((unit) => unit !== 'lovelace');
-    if (targetAmount <= 0n && !keepsNonLovelace) {
-        return tx;
-    }
-    return tx.pay.ToContract(transferModuleAddress, { kind: 'inline', value: encodedTransferEscrowDatum }, updatedAssets);
-}
-function encodeTransferEscrowDatum(data, Lucid) {
-    const { Data } = Lucid;
-    const TransferEscrowDatumSchema = Data.Object({
-        channel_id: Data.Bytes(),
-        denom: Data.Bytes(),
-    });
-    return Data.to(data, TransferEscrowDatumSchema, { canonical: true });
-}
 function encodeAuthToken(token, Lucid) {
     const { Data } = Lucid;
     const AuthTokenSchema = Data.Object({
@@ -43,6 +35,9 @@ function encodeAuthToken(token, Lucid) {
         name: Data.Bytes(),
     });
     return Data.to(token, AuthTokenSchema, { canonical: true });
+}
+function hashSha3_256Hex(data) {
+    return (0, js_sha3_1.sha3_256)(Buffer.from(data, 'hex'));
 }
 async function encodeHostStateDatum(hostStateDatum, Lucid) {
     const { Data } = Lucid;
@@ -223,6 +218,141 @@ async function decodeChannelDatum(encoded, Lucid) {
         token: AuthTokenSchema,
     });
     return Data.from(encoded, ChannelDatumSchema);
+}
+async function encodeChannelDatum(channelDatum, Lucid) {
+    const CML = Lucid.CML;
+    if (!CML) {
+        const { Data } = Lucid;
+        const StateSchema = Data.Enum([
+            Data.Literal('Uninitialized'),
+            Data.Literal('Init'),
+            Data.Literal('TryOpen'),
+            Data.Literal('Open'),
+            Data.Literal('Close'),
+        ]);
+        const OrderSchema = Data.Enum([
+            Data.Literal('None'),
+            Data.Literal('Unordered'),
+            Data.Literal('Ordered'),
+        ]);
+        const ChannelCounterpartySchema = Data.Object({
+            port_id: Data.Bytes(),
+            channel_id: Data.Bytes(),
+        });
+        const ChannelSchema = Data.Object({
+            state: StateSchema,
+            ordering: OrderSchema,
+            counterparty: ChannelCounterpartySchema,
+            connection_hops: Data.Array(Data.Bytes()),
+            version: Data.Bytes(),
+        });
+        const ChannelDatumStateSchema = Data.Object({
+            channel: ChannelSchema,
+            next_sequence_send: Data.Integer(),
+            next_sequence_recv: Data.Integer(),
+            next_sequence_ack: Data.Integer(),
+            packet_commitment: Data.Map(Data.Integer(), Data.Bytes()),
+            packet_receipt: Data.Map(Data.Integer(), Data.Bytes()),
+            packet_acknowledgement: Data.Map(Data.Integer(), Data.Bytes()),
+        });
+        const AuthTokenSchema = Data.Object({
+            policyId: Data.Bytes(),
+            name: Data.Bytes(),
+        });
+        const ChannelDatumSchema = Data.Object({
+            state: ChannelDatumStateSchema,
+            port: Data.Bytes(),
+            token: AuthTokenSchema,
+        });
+        return Data.to(channelDatum, ChannelDatumSchema);
+    }
+    const bytesData = (hex) => CML.PlutusData.new_bytes(Buffer.from(hex, 'hex'));
+    const intData = (value) => CML.PlutusData.new_integer(CML.BigInteger.from_str(value.toString()));
+    const listData = (items) => {
+        const list = CML.PlutusDataList.new();
+        for (const item of items) {
+            list.add(item);
+        }
+        return list;
+    };
+    const constrData = (index, fields) => CML.PlutusData.new_constr_plutus_data(CML.ConstrPlutusData.new(BigInt(index), listData(fields)));
+    const mapData = (entries) => {
+        const map = CML.PlutusMap.new();
+        for (const [key, value] of entries.entries()) {
+            map.set(intData(key), bytesData(value));
+        }
+        return CML.PlutusData.new_map(map);
+    };
+    const channelStateIndex = {
+        Uninitialized: 0,
+        Init: 1,
+        TryOpen: 2,
+        Open: 3,
+        Close: 4,
+    };
+    const channelOrderIndex = {
+        None: 0,
+        Unordered: 1,
+        Ordered: 2,
+    };
+    const stateIndex = channelStateIndex[channelDatum.state.channel.state];
+    const orderIndex = channelOrderIndex[channelDatum.state.channel.ordering];
+    if (stateIndex === undefined || orderIndex === undefined) {
+        throw new Error(`Invalid channel datum state/order: state=${String(channelDatum.state.channel.state)}, order=${String(channelDatum.state.channel.ordering)}`);
+    }
+    const counterpartyData = constrData(0, [
+        bytesData(channelDatum.state.channel.counterparty.port_id),
+        bytesData(channelDatum.state.channel.counterparty.channel_id),
+    ]);
+    const connectionHops = CML.PlutusDataList.new();
+    for (const hop of channelDatum.state.channel.connection_hops) {
+        connectionHops.add(bytesData(hop));
+    }
+    const channelData = constrData(0, [
+        constrData(stateIndex, []),
+        constrData(orderIndex, []),
+        counterpartyData,
+        CML.PlutusData.new_list(connectionHops),
+        bytesData(channelDatum.state.channel.version),
+    ]);
+    const stateData = constrData(0, [
+        channelData,
+        intData(channelDatum.state.next_sequence_send),
+        intData(channelDatum.state.next_sequence_recv),
+        intData(channelDatum.state.next_sequence_ack),
+        mapData(channelDatum.state.packet_commitment),
+        mapData(channelDatum.state.packet_receipt),
+        mapData(channelDatum.state.packet_acknowledgement),
+    ]);
+    const tokenData = constrData(0, [
+        bytesData(channelDatum.token.policyId),
+        bytesData(channelDatum.token.name),
+    ]);
+    const channelDatumData = constrData(0, [
+        stateData,
+        bytesData(channelDatum.port),
+        tokenData,
+    ]);
+    return channelDatumData.to_cbor_hex();
+}
+function unknownCodecTypeError(operation, type, supportedTypes) {
+    return new Error(`Unknown datum type during ${operation}: ${type}. Supported ${operation} types: ${supportedTypes.join(', ')}`);
+}
+function encodeTransferEscrowDatum(transferEscrowDatum, Lucid) {
+    const { Data } = Lucid;
+    const TransferEscrowDatumSchema = Data.Object({
+        channel_id: Data.Bytes(),
+        denom: Data.Bytes(),
+    });
+    return Data.to(transferEscrowDatum, TransferEscrowDatumSchema, { canonical: true });
+}
+function decodeTransferEscrowDatum(encoded, Lucid) {
+    const { Data } = Lucid;
+    const TransferEscrowDatumSchema = Data.Object({
+        channel_id: Data.Bytes(),
+        denom: Data.Bytes(),
+    });
+    return Data.from(encoded, TransferEscrowDatumSchema);
 }
 async function encodeHostStateRedeemer(data, Lucid) {
     const { Data } = Lucid;
@@ -405,6 +535,7 @@ async function encodeSpendChannelRedeemer(data, Lucid) {
                 proof_height: HeightSchema,
             }),
         }),
+        Data.Literal('RefreshUtxo'),
     ]);
     return Data.to(data, SpendChannelRedeemerSchema, { canonical: true });
 }
@@ -737,18 +868,22 @@ class LucidIbcAdapter {
                 return (await decodeConnectionDatum(encodedDatum, this.LucidImporter));
             case 'channel':
                 return (await decodeChannelDatum(encodedDatum, this.LucidImporter));
+            case 'transferEscrow':
+                return decodeTransferEscrowDatum(encodedDatum, this.LucidImporter);
             case 'host_state':
                 return (await decodeHostStateDatum(encodedDatum, this.LucidImporter));
             default:
-                throw new Error(`Unknown datum type: ${type}`);
+                throw unknownCodecTypeError('decode', type, DECODABLE_DATUM_TYPES);
         }
     }
     async encode(data, type) {
         switch (type) {
-            case 'host_state':
-                return encodeHostStateDatum(data, this.LucidImporter);
+            case 'channel':
+                return encodeChannelDatum(data, this.LucidImporter);
             case 'transferEscrow':
                 return encodeTransferEscrowDatum(data, this.LucidImporter);
+            case 'host_state':
+                return encodeHostStateDatum(data, this.LucidImporter);
             case 'host_state_redeemer':
                 return encodeHostStateRedeemer(data, this.LucidImporter);
             case 'spendChannelRedeemer':
@@ -758,7 +893,7 @@ class LucidIbcAdapter {
             case 'mintVoucherRedeemer':
                 return encodeMintVoucherRedeemer(data, this.LucidImporter);
             default:
-                throw new Error(`Unknown datum type: ${type}`);
+                throw unknownCodecTypeError('encode', type, ENCODABLE_DATUM_TYPES);
         }
     }
     getClientTokenUnit(clientId) {
@@ -775,6 +910,18 @@ class LucidIbcAdapter {
         const mintChannelPolicyId = this.deployment.validators.mintChannelStt.scriptHash;
         const channelTokenName = this.generateTokenName(this.deployment.hostStateNFT, CHANNEL_TOKEN_PREFIX, channelId);
         return [mintChannelPolicyId, channelTokenName];
+    }
+    payTransferEscrowDelta(tx, transferModuleAddress, encodedTransferEscrowDatum, transferAmount, denomToken, transferEscrowUtxo) {
+        if (!encodedTransferEscrowDatum) {
+            throw new Error('Transfer escrow datum is required for sharded escrow updates');
+        }
+        const updatedAssets = updateTransferModuleAssets(transferEscrowUtxo?.assets ?? {}, transferAmount, denomToken);
+        const targetAmount = updatedAssets[denomToken] ?? 0n;
+        const keepsNonLovelace = Object.keys(updatedAssets).some((unit) => unit !== 'lovelace');
+        if (targetAmount <= 0n && !keepsNonLovelace) {
+            return tx;
+        }
+        return tx.pay.ToContract(transferModuleAddress, { kind: 'inline', value: encodedTransferEscrowDatum }, updatedAssets);
     }
     createUnsignedSendPacketEscrowTx(dto) {
         const hostStateAddress = this.deployment.validators.hostStateStt.address;
@@ -807,10 +954,7 @@ class LucidIbcAdapter {
             .pay.ToContract(dto.spendChannelAddress, { kind: 'inline', value: dto.encodedUpdatedChannelDatum }, { [dto.channelTokenUnit]: 1n })
             .pay.ToContract(dto.transferModuleAddress, undefined, { ...dto.transferModuleUTxO.assets })
             .mintAssets({ [dto.sendPacketPolicyId]: 1n }, encodeAuthToken(dto.channelToken, this.LucidImporter));
-        if (!dto.encodedTransferEscrowDatum) {
-            throw new Error('Transfer escrow datum is required for sharded escrow updates');
-        }
-        payTransferEscrowDelta(tx, dto.transferModuleAddress, dto.encodedTransferEscrowDatum, dto.transferAmount, dto.denomToken, dto.transferEscrowUtxo);
+        this.payTransferEscrowDelta(tx, dto.transferModuleAddress, dto.encodedTransferEscrowDatum, dto.transferAmount, dto.denomToken, dto.transferEscrowUtxo);
         return tx;
     }
     createUnsignedSendPacketBurnTx(dto) {
@@ -860,8 +1004,8 @@ class LucidIbcAdapter {
         if (postfixHex.length > 16) {
             throw new Error('postfix size > 8 bytes');
         }
-        const baseTokenPart = (0, js_sha3_1.sha3_256)(baseToken.policyId + baseToken.name).slice(0, 40);
-        const prefixPart = (0, js_sha3_1.sha3_256)(prefix).slice(0, 8);
+        const baseTokenPart = hashSha3_256Hex(baseToken.policyId + baseToken.name).slice(0, 40);
+        const prefixPart = hashSha3_256Hex(prefix).slice(0, 8);
         return `${baseTokenPart}${prefixPart}${postfixHex}`;
     }
 }
