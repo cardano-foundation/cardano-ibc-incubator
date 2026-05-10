@@ -29,12 +29,38 @@ const PREPROD_ENVIRONMENT_BASE_URL: &str =
 const YACI_SYNC_START_SLOT_KEY: &str = "YACI_SYNC_START_SLOT";
 const YACI_SYNC_START_BLOCKHASH_KEY: &str = "YACI_SYNC_START_BLOCKHASH";
 const YACI_SYNC_START_BLOCK_NO_KEY: &str = "YACI_SYNC_START_BLOCK_NO";
+const PREPROD_KUPO_MODE_KEY: &str = "PREPROD_KUPO_MODE";
 
 #[derive(Debug, Clone)]
 pub struct YaciSyncCheckpoint {
     pub slot: String,
     pub block_hash: String,
     pub block_no: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct PreprodKupoOgmiosTarget {
+    kupo_host: String,
+    kupo_port: String,
+    since: String,
+    proxy_upstream_host: String,
+    proxy_upstream_port: String,
+    proxy_api_key: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreprodKupoMode {
+    Local,
+    Remote,
+}
+
+impl PreprodKupoMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::Remote => "remote",
+        }
+    }
 }
 
 pub fn local_cardano_spo_count(with_mithril: bool, network: config::CoreCardanoNetwork) -> usize {
@@ -320,27 +346,6 @@ pub fn write_cardano_runtime_selection(
             unreachable!("preprod checkpoint was resolved above")
         }
     };
-    let yaci_sync_start_slot = yaci_checkpoint
-        .as_ref()
-        .map(|checkpoint| checkpoint.slot.as_str())
-        .unwrap_or("0");
-    let yaci_sync_start_blockhash = yaci_checkpoint
-        .as_ref()
-        .map(|checkpoint| checkpoint.block_hash.as_str())
-        .unwrap_or("");
-    let yaci_store_postgres_volume = match (network, yaci_checkpoint.as_ref()) {
-        (config::CoreCardanoNetwork::Local, _) => {
-            "cardano_yaci_store_postgres_local_data".to_string()
-        }
-        (config::CoreCardanoNetwork::Preprod, Some(checkpoint)) => format!(
-            "cardano_yaci_store_postgres_preprod_{}_{}",
-            checkpoint.slot,
-            &checkpoint.block_hash[..12]
-        ),
-        (config::CoreCardanoNetwork::Preprod, None) => {
-            unreachable!("preprod checkpoint was resolved above")
-        }
-    };
     let preprod_kupo_target = match network {
         config::CoreCardanoNetwork::Local => None,
         config::CoreCardanoNetwork::Preprod => {
@@ -383,7 +388,7 @@ pub fn write_cardano_runtime_selection(
         .unwrap_or_default();
 
     let env_contents = format!(
-        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_SOCKET_PATH={socket_path}\nCARDANO_NODE_SOCKET_PATH={socket_path}\nCARDANO_CHAIN_HOST={chain_host}\nCARDANO_CHAIN_PORT={chain_port}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\nCARDANO_LOCAL_SPO_COUNT={local_spo_count}\nYACI_SYNC_START_SLOT={yaci_sync_start_slot}\nYACI_SYNC_START_BLOCKHASH={yaci_sync_start_blockhash}\nYACI_STORE_POSTGRES_VOLUME={yaci_store_postgres_volume}\n",
+        "CARDANO_RUNTIME_NETWORK={network}\nCARDANO_RUNTIME_DIR={runtime_dir}\nCARDANO_NODE_CONFIG_FILE={config_file}\nCARDANO_TOPOLOGY_FILE=topology.json\nCARDANO_BLOCK_PRODUCER={block_producer}\nCARDANO_NODE_IMAGE={node_image}\nCARDANO_SOCKET_PATH={socket_path}\nCARDANO_NODE_SOCKET_PATH={socket_path}\nCARDANO_CHAIN_HOST={chain_host}\nCARDANO_CHAIN_PORT={chain_port}\nCARDANO_CHAIN_NETWORK_MAGIC={network_magic}\nCARDANO_LOCAL_SPO_COUNT={local_spo_count}\nYACI_SYNC_START_SLOT={yaci_sync_start_slot}\nYACI_SYNC_START_BLOCKHASH={yaci_sync_start_blockhash}\nYACI_STORE_POSTGRES_VOLUME={yaci_store_postgres_volume}\nKUPO_BLOCKCHAIN_SOURCE={kupo_blockchain_source}\nKUPO_OGMIOS_HOST={kupo_ogmios_host}\nKUPO_OGMIOS_PORT={kupo_ogmios_port}\nKUPO_SINCE={kupo_since}\nOGMIOS_PROXY_UPSTREAM_HOST={ogmios_proxy_upstream_host}\nOGMIOS_PROXY_UPSTREAM_PORT={ogmios_proxy_upstream_port}\nOGMIOS_PROXY_API_KEY={ogmios_proxy_api_key}\n",
         network = network.as_str(),
     );
 
@@ -1942,20 +1947,6 @@ fn write_gateway_env_for_network(
                 set_or_append_env_var(&gateway_env, YACI_SYNC_START_BLOCK_NO_KEY, block_no)?;
             }
 
-            if let Some(kupo_endpoint) = resolve_preprod_live_endpoint(
-                &gateway_env,
-                YACI_SYNC_START_SLOT_KEY,
-                yaci_checkpoint.slot.as_str(),
-            )?;
-            set_or_append_env_var(
-                &gateway_env,
-                YACI_SYNC_START_BLOCKHASH_KEY,
-                yaci_checkpoint.block_hash.as_str(),
-            )?;
-            if let Some(block_no) = yaci_checkpoint.block_no.as_deref() {
-                set_or_append_env_var(&gateway_env, YACI_SYNC_START_BLOCK_NO_KEY, block_no)?;
-            }
-
             let runtime_kupo_endpoint = match preprod_kupo_mode {
                 PreprodKupoMode::Remote => {
                     let kupo_endpoint = resolve_preprod_remote_kupo_endpoint(&gateway_env)?;
@@ -1971,13 +1962,6 @@ fn write_gateway_env_for_network(
             )?;
             if let Some(kupo_api_key) = runtime_kupo_api_key.as_deref() {
                 set_or_append_env_var(&gateway_env, "KUPO_API_KEY", kupo_api_key)?;
-            }
-            if let Some(kupo_api_key) = resolve_preprod_live_endpoint(
-                &gateway_env,
-                "KUPO_API_KEY",
-                &["CARIBIC_KUPO_API_KEY", "KUPO_API_KEY"],
-            )? {
-                set_or_append_env_var(&gateway_env, "KUPO_API_KEY", kupo_api_key.as_str())?;
             }
 
             if let Some(ogmios_endpoint) = resolve_preprod_live_endpoint(

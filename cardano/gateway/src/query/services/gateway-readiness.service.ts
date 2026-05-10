@@ -13,7 +13,7 @@ type GatewayReadinessReason =
   | 'waiting_for_stability'
   | 'history_status_unknown';
 
-export type GatewayHistoryReadinessStatus = {
+type GatewayHistoryReadinessStatus = {
   backend: 'yaci';
   reason: GatewayReadinessReason;
   latestIndexedBlock: string | null;
@@ -24,7 +24,7 @@ export type GatewayHistoryReadinessStatus = {
   message: string;
 };
 
-export type GatewayReadinessStatus = {
+type GatewayReadinessStatus = {
   status: 'ready' | 'not_ready';
   reason: GatewayReadinessReason;
   lightClientMode: GatewayLightClientMode;

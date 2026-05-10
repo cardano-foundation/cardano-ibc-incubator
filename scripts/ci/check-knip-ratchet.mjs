@@ -65,7 +65,6 @@ const allowed = new Set([
   'gateway:src/shared/helpers/ibc-state-root.ts:types:UpdateClientStateRootResult',
   'gateway:src/shared/helpers/ics23-merkle-tree.ts:types:ICS23InnerOp',
   'gateway:src/shared/helpers/ics23-merkle-tree.ts:types:ICS23LeafOp',
-  'gateway:src/shared/helpers/managed-cardano-endpoints.ts:exports:resolveManagedKupoEndpoint',
   'gateway:src/shared/helpers/merkle-proof.ts:exports:initializeExistenceProof',
   'gateway:src/shared/helpers/merkle-proof.ts:exports:initializeNonExistProof',
   'gateway:src/shared/helpers/module-port.ts:exports:normalizeGatewayPortId',
