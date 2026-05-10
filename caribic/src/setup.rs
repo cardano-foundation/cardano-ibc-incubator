@@ -1942,20 +1942,6 @@ fn write_gateway_env_for_network(
                 set_or_append_env_var(&gateway_env, YACI_SYNC_START_BLOCK_NO_KEY, block_no)?;
             }
 
-            if let Some(kupo_endpoint) = resolve_preprod_live_endpoint(
-                &gateway_env,
-                YACI_SYNC_START_SLOT_KEY,
-                yaci_checkpoint.slot.as_str(),
-            )?;
-            set_or_append_env_var(
-                &gateway_env,
-                YACI_SYNC_START_BLOCKHASH_KEY,
-                yaci_checkpoint.block_hash.as_str(),
-            )?;
-            if let Some(block_no) = yaci_checkpoint.block_no.as_deref() {
-                set_or_append_env_var(&gateway_env, YACI_SYNC_START_BLOCK_NO_KEY, block_no)?;
-            }
-
             let runtime_kupo_endpoint = match preprod_kupo_mode {
                 PreprodKupoMode::Remote => {
                     let kupo_endpoint = resolve_preprod_remote_kupo_endpoint(&gateway_env)?;
@@ -1971,13 +1957,6 @@ fn write_gateway_env_for_network(
             )?;
             if let Some(kupo_api_key) = runtime_kupo_api_key.as_deref() {
                 set_or_append_env_var(&gateway_env, "KUPO_API_KEY", kupo_api_key)?;
-            }
-            if let Some(kupo_api_key) = resolve_preprod_live_endpoint(
-                &gateway_env,
-                "KUPO_API_KEY",
-                &["CARIBIC_KUPO_API_KEY", "KUPO_API_KEY"],
-            )? {
-                set_or_append_env_var(&gateway_env, "KUPO_API_KEY", kupo_api_key.as_str())?;
             }
 
             if let Some(ogmios_endpoint) = resolve_preprod_live_endpoint(

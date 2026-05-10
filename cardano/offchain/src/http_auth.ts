@@ -29,7 +29,11 @@ function resolveServiceAuthRule(
   return resolveDmtrRule(rawUrl, apiKey, urlEnvName === "KUPO_URL");
 }
 
-function resolveDmtrRule(rawUrl: string, apiKey: string, _isKupoRule: boolean): ServiceAuthRule | null {
+function resolveDmtrRule(
+  rawUrl: string,
+  apiKey: string,
+  _isKupoRule: boolean,
+): ServiceAuthRule | null {
   try {
     const parsedUrl = new URL(rawUrl);
     const isAuthenticatedHost = parsedUrl.host.startsWith(`${apiKey}.`);
@@ -116,7 +120,10 @@ export function resolveManagedKupoRequestVariants(
   return variants;
 }
 
-export function resolveManagedOgmiosUrl(rawUrl: string, apiKey?: string): string {
+export function resolveManagedOgmiosUrl(
+  rawUrl: string,
+  apiKey?: string,
+): string {
   if (!apiKey) {
     return rawUrl.replace(/\/$/, "");
   }
@@ -186,12 +193,11 @@ export function installManagedCardanoAuthFetch(): void {
 
   const originalFetch = globalThis.fetch.bind(globalThis);
   globalThis.fetch = ((input: Request | URL | string, init?: RequestInit) => {
-    const requestUrl =
-      typeof input === "string"
-        ? input
-        : input instanceof URL
-          ? input.toString()
-          : input.url;
+    const requestUrl = typeof input === "string"
+      ? input
+      : input instanceof URL
+      ? input.toString()
+      : input.url;
 
     let parsedUrl: URL;
     try {
@@ -209,7 +215,9 @@ export function installManagedCardanoAuthFetch(): void {
       input instanceof Request ? input.headers : undefined,
     );
     if (init?.headers) {
-      new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+      new Headers(init.headers).forEach((value, key) =>
+        headers.set(key, value)
+      );
     }
 
     if (authRule.attachHeader && !headers.has("dmtr-api-key")) {
@@ -217,16 +225,18 @@ export function installManagedCardanoAuthFetch(): void {
     }
 
     if (input instanceof Request) {
-      return originalFetch(new Request(parsedUrl.toString(), {
-        method: input.method,
-        headers,
-        body: init?.body ?? input.body,
-        redirect: input.redirect,
-        integrity: input.integrity,
-        keepalive: input.keepalive,
-        mode: input.mode,
-        signal: init?.signal ?? input.signal,
-      }));
+      return originalFetch(
+        new Request(parsedUrl.toString(), {
+          method: input.method,
+          headers,
+          body: init?.body ?? input.body,
+          redirect: input.redirect,
+          integrity: input.integrity,
+          keepalive: input.keepalive,
+          mode: input.mode,
+          signal: init?.signal ?? input.signal,
+        }),
+      );
     }
 
     return originalFetch(parsedUrl.toString(), { ...init, headers });
