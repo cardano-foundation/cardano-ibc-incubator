@@ -482,7 +482,7 @@ async fn refresh_gateway_epoch_nonce_for_stability(project_root: &Path) -> Resul
         .map_err(|error| format!("Failed to build Gateway HTTP client: {}", error))?;
     let gateway_healthy = wait_for_service_health(
         &http_client,
-        "http://127.0.0.1:8000/health",
+        "http://127.0.0.1:8000/health/ready",
         30,
         Duration::from_secs(2),
     )
@@ -490,7 +490,7 @@ async fn refresh_gateway_epoch_nonce_for_stability(project_root: &Path) -> Resul
 
     if !gateway_healthy {
         return Err(
-            "Gateway did not become healthy after epoch nonce refresh/recreate".to_string(),
+            "Gateway did not become proof-ready after epoch nonce refresh/recreate".to_string(),
         );
     }
 

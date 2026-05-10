@@ -49,6 +49,55 @@ type OgmiosSession = {
   request<T>(methodname: string, args?: unknown): Promise<T>;
 };
 
+const STAKE_DISTRIBUTION_WEIGHT_SCALE = 1_000_000_000_000n;
+const OGMIOS_TRANSIENT_MAX_ATTEMPTS = 10;
+const OGMIOS_TRANSIENT_BASE_DELAY_MS = 500;
+const OGMIOS_TRANSIENT_MAX_DELAY_MS = 5_000;
+const TRANSIENT_OGMIOS_ERROR_MARKERS = [
+  'unexpected server response: 401',
+  'unauthorized',
+  'http 401',
+  'econnreset',
+  'econnrefused',
+  'etimedout',
+  'socket hang up',
+  'network timeout',
+  'failed to fetch',
+  'temporarily unavailable',
+];
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isTransientOgmiosError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  return TRANSIENT_OGMIOS_ERROR_MARKERS.some((marker) => normalized.includes(marker));
+};
+
+const retryOgmiosOperation = async <T>(operationName: string, operation: () => Promise<T>): Promise<T> => {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= OGMIOS_TRANSIENT_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!isTransientOgmiosError(error) || attempt === OGMIOS_TRANSIENT_MAX_ATTEMPTS) {
+        throw error;
+      }
+
+      const delayMs = Math.min(
+        OGMIOS_TRANSIENT_MAX_DELAY_MS,
+        OGMIOS_TRANSIENT_BASE_DELAY_MS * 2 ** (attempt - 1),
+      );
+      // Bounded retry for managed-endpoint transport/auth races; deterministic failure after the budget.
+      await sleep(delayMs);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(`Ogmios operation ${operationName} failed`);
+};
+
 const openOgmiosConnection = async (ogmiosUrl: string): Promise<WebSocket> => {
   const resolvedUrl =
     resolveManagedOgmiosWsEndpoint(ogmiosUrl, process.env.OGMIOS_API_KEY) ?? ogmiosUrl;
@@ -151,22 +200,16 @@ const parseStakeFraction = (value: unknown): { numerator: bigint; denominator: b
   return { numerator, denominator };
 };
 
-const gcd = (a: bigint, b: bigint): bigint => {
-  let x = a < 0n ? -a : a;
-  let y = b < 0n ? -b : b;
-  while (y !== 0n) {
-    const next = x % y;
-    x = y;
-    y = next;
-  }
-  return x;
-};
-
-const lcm = (a: bigint, b: bigint): bigint => {
-  if (a === 0n || b === 0n) {
+const stakeFractionToWeight = (numerator: bigint, denominator: bigint): bigint => {
+  if (numerator === 0n) {
     return 0n;
   }
-  return (a / gcd(a, b)) * b;
+  if (numerator > denominator) {
+    throw new Error('Ogmios returned an invalid live stake fraction');
+  }
+
+  const rounded = (numerator * STAKE_DISTRIBUTION_WEIGHT_SCALE + denominator / 2n) / denominator;
+  return rounded > 0n ? rounded : 1n;
 };
 
 const parseStakePoolId = (poolId: string): string => {
@@ -205,12 +248,10 @@ const parseStakeDistributionRows = (
     return [];
   }
 
-  const commonDenominator = rows.reduce((acc, row) => lcm(acc, row.denominator), 1n);
-
   return rows
     .map((row) => ({
       poolId: row.poolId,
-      stake: row.numerator * (commonDenominator / row.denominator),
+      stake: stakeFractionToWeight(row.numerator, row.denominator),
       vrfKeyHash: row.vrfKeyHash,
     }))
     .filter((row) => row.stake > 0n);
@@ -275,14 +316,16 @@ const createOgmiosSession = async (ogmiosUrl: string): Promise<{ client: WebSock
 };
 
 const ogmiosRequest = async <T>(ogmiosUrl: string, methodname: string, args: unknown): Promise<T> => {
-  const { client, session } = await createOgmiosSession(ogmiosUrl);
-  try {
-    return await session.request<T>(methodname, args);
-  } finally {
-    if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) {
-      client.close();
+  return retryOgmiosOperation(methodname, async () => {
+    const { client, session } = await createOgmiosSession(ogmiosUrl);
+    try {
+      return await session.request<T>(methodname, args);
+    } finally {
+      if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) {
+        client.close();
+      }
     }
-  }
+  });
 };
 
 const normalizeLedgerPoint = (point: OgmiosLedgerPoint): { slot: number; id: string } => {
@@ -304,24 +347,26 @@ const withAcquiredLedgerState = async <T>(
   point: OgmiosLedgerPoint,
   callback: (session: OgmiosSession) => Promise<T>,
 ): Promise<T> => {
-  const { client, session } = await createOgmiosSession(ogmiosUrl);
+  return retryOgmiosOperation('acquireLedgerState', async () => {
+    const { client, session } = await createOgmiosSession(ogmiosUrl);
 
-  try {
-    await session.request('acquireLedgerState', { point: normalizeLedgerPoint(point) });
-    return await callback(session);
-  } finally {
     try {
-      if (client.readyState === WebSocket.OPEN) {
-        await session.request('releaseLedgerState', {});
+      await session.request('acquireLedgerState', { point: normalizeLedgerPoint(point) });
+      return await callback(session);
+    } finally {
+      try {
+        if (client.readyState === WebSocket.OPEN) {
+          await session.request('releaseLedgerState', {});
+        }
+      } catch {
+        // Best-effort cleanup only.
       }
-    } catch {
-      // Best-effort cleanup only.
-    }
 
-    if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) {
-      client.close();
+      if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) {
+        client.close();
+      }
     }
-  }
+  });
 };
 
 const queryEpochContextAtPoint = async (

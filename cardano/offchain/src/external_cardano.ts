@@ -1,5 +1,6 @@
-const MAX_SAFE_COST_MODEL_VALUE = Number.MAX_SAFE_INTEGER;
 import WebSocket, { type RawData } from "ws";
+
+const MAX_SAFE_COST_MODEL_VALUE = Number.MAX_SAFE_INTEGER;
 
 export function parseNetwork(networkMagic: string) {
   switch (networkMagic) {

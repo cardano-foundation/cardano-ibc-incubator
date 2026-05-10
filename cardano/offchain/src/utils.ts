@@ -153,7 +153,7 @@ export const submitTx = async (
   // attempt can succeed on-chain even when Ogmios drops the response before
   // returning the transaction id, so retries must not depend on recovering the
   // hash from the transport response.
-  const txHash: string | null = signedTx.toHash();
+  const txHash = signedTx.toHash();
   console.log("Submitting tx [", txName, "]: tx hash is", txHash);
   let lastError: unknown = null;
 

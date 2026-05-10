@@ -895,11 +895,46 @@ async function createReferenceUtxos(
           lucid.overrideUTxOs(newWalletUTxOs);
           break;
         } catch (error) {
-          if (attempt === 6) {
+          lastBuildError = error;
+          if (
+            batch.validators.length > 1 &&
+            isLikelyReferenceBatchTooLarge(error)
+          ) {
+            // The coarse size estimate can still under-shoot once fees/change are
+            // fully materialized, so split and retry instead of failing the whole deploy.
+            const midpoint = Math.ceil(batch.validators.length / 2);
+            console.warn(
+              `Reference batch ${batch.startIndex + 1}-${
+                batch.startIndex + batch.validators.length
+              } exceeded the transaction size budget; splitting into batches of ${midpoint} and ${
+                batch.validators.length - midpoint
+              }.`,
+            );
+            pendingBatches.unshift(
+              {
+                validators: batch.validators.slice(midpoint),
+                startIndex: batch.startIndex + midpoint,
+              },
+              {
+                validators: batch.validators.slice(0, midpoint),
+                startIndex: batch.startIndex,
+              },
+            );
+            splitBatch = true;
+            break;
+          }
+          if (!isRetryableOgmiosTransportError(error) || attempt === 5) {
             throw error;
           }
           await new Promise((resolve) => setTimeout(resolve, 2000));
         }
+      }
+      if (splitBatch) {
+        continue;
+      }
+      if (!newWalletUTxOs || !derivedOutputs || !signedTx) {
+        throw lastBuildError ??
+          new Error("Failed to build reference batch transaction");
       }
 
       console.log(
