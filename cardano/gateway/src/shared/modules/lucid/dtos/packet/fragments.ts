@@ -24,8 +24,8 @@ export type WithLegacyChannelContext = {
   clientUTxO: UTxO;
 };
 
-export type WithTransferModuleUtxo = {
-  transferModuleUtxo: UTxO;
+export type WithTransferModuleReferenceUtxo = {
+  transferModuleReferenceUtxo?: UTxO;
 };
 
 export type WithMockModuleUtxo = {
@@ -37,13 +37,10 @@ export type WithModuleContext = {
   moduleUtxo: UTxO;
 };
 
-export type WithLegacyTransferModuleUtxo = {
-  transferModuleUTxO: UTxO;
-};
-
 export type WithTransferEscrowShard = {
   transferEscrowUtxo?: UTxO;
   encodedTransferEscrowDatum?: string;
+  transferEscrowShardTokenUnit?: string;
 };
 
 export type WithChannelSpend = {
@@ -66,6 +63,10 @@ export type WithModuleSpend = {
 
 export type WithMintVoucherRedeemer = {
   encodedMintVoucherRedeemer: string;
+};
+
+export type WithMintTransferEscrowShardRedeemer = {
+  encodedMintTransferEscrowShardRedeemer?: string;
 };
 
 export type WithVoucherMetadataOutput = {

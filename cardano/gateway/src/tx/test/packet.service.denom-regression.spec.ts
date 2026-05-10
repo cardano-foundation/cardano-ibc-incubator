@@ -54,6 +54,9 @@ describe('PacketService denom regression coverage', () => {
             mintVoucher: {
               scriptHash: 'mint-voucher-policy-id',
             },
+            mintPort: {
+              scriptHash: 'mint-port-policy-id',
+            },
             voucherMetadata: {
               address: 'addr_test1vouchermetadata',
             },
@@ -235,6 +238,9 @@ describe('PacketService denom regression coverage', () => {
             },
             mintVoucher: {
               scriptHash: 'mint-voucher-policy-id',
+            },
+            mintPort: {
+              scriptHash: 'mint-port-policy-id',
             },
             voucherMetadata: {
               address: 'addr_test1vouchermetadata',
@@ -424,6 +430,9 @@ describe('PacketService denom regression coverage', () => {
             mintVoucher: {
               scriptHash: 'mint-voucher-policy-id',
             },
+            mintPort: {
+              scriptHash: 'mint-port-policy-id',
+            },
             voucherMetadata: {
               address: 'addr_test1vouchermetadata',
             },
@@ -529,7 +538,15 @@ describe('PacketService denom regression coverage', () => {
       .mockResolvedValueOnce({ txHash: 'channel', outputIndex: 0, datum: 'channel-datum', assets: {} })
       .mockResolvedValueOnce({ txHash: 'connection', outputIndex: 0, datum: 'connection-datum', assets: {} })
       .mockResolvedValueOnce({ txHash: 'client', outputIndex: 0, datum: 'client-datum', assets: {} })
-      .mockResolvedValueOnce({ txHash: 'transfer', outputIndex: 0, datum: 'transfer-datum', assets: {} });
+      .mockImplementationOnce(async (shardTokenUnit: string) => ({
+        txHash: 'transfer-escrow',
+        outputIndex: 0,
+        datum: 'encoded',
+        assets: {
+          lovelace: 10n,
+          [shardTokenUnit]: 1n,
+        },
+      }));
     lucidServiceMock.decodeDatum.mockImplementation((_datum: string, type: string) => {
       if (type === 'channel') return channelDatum;
       if (type === 'connection') return connectionDatum;
@@ -609,6 +626,9 @@ describe('PacketService denom regression coverage', () => {
             },
             mintVoucher: {
               scriptHash: 'mint-voucher-policy-id',
+            },
+            mintPort: {
+              scriptHash: 'mint-port-policy-id',
             },
             voucherMetadata: {
               address: 'addr_test1vouchermetadata',
@@ -712,21 +732,19 @@ describe('PacketService denom regression coverage', () => {
         consensusStates: new Map([[proofHeight, { timestamp: 0n, root: { hash: 'consensus-root' } }]]),
       },
     };
-    const transferModuleUtxo = {
-      txHash: 'transfer',
-      outputIndex: 0,
-      address: 'addr_test1transfermodule',
-      datum: 'transfer-datum',
-      assets: {
-        lovelace: 3_000_000n,
-      },
-    };
-
     lucidServiceMock.findUtxoByUnit
       .mockResolvedValueOnce({ txHash: 'channel', outputIndex: 0, datum: 'channel-datum', assets: {} })
       .mockResolvedValueOnce({ txHash: 'connection', outputIndex: 0, datum: 'connection-datum', assets: {} })
       .mockResolvedValueOnce({ txHash: 'client', outputIndex: 0, datum: 'client-datum', assets: {} })
-      .mockResolvedValueOnce(transferModuleUtxo);
+      .mockImplementationOnce(async (shardTokenUnit: string) => ({
+        txHash: 'transfer-escrow',
+        outputIndex: 0,
+        datum: 'encoded',
+        assets: {
+          lovelace: 10n,
+          [shardTokenUnit]: 1n,
+        },
+      }));
     lucidServiceMock.decodeDatum.mockImplementation((_datum: string, type: string) => {
       if (type === 'channel') return channelDatum;
       if (type === 'connection') return connectionDatum;

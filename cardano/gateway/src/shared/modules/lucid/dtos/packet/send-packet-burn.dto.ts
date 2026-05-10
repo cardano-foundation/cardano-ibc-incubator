@@ -4,18 +4,14 @@ import {
   WithConstructedAddress,
   WithHostStateUpdate,
   WithLegacyChannelContext,
-  WithLegacyTransferModuleUtxo,
   WithMintVoucherRedeemer,
   WithPacketPolicyAndChannelToken,
   WithTransferAmount,
-  WithTransferModuleSpend,
 } from './fragments';
 
 export type UnsignedSendPacketBurnDto = WithHostStateUpdate &
   WithLegacyChannelContext &
-  WithLegacyTransferModuleUtxo &
   WithChannelSpend &
-  WithTransferModuleSpend &
   WithMintVoucherRedeemer &
   WithTransferAmount &
   WithConstructedAddress &

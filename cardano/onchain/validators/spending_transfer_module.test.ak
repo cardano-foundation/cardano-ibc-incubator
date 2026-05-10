@@ -9,6 +9,7 @@ use cardano/transaction.{
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, RefundVoucher,
 }
+use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
@@ -339,6 +340,8 @@ fn transfer_escrow_input(
   denom: ByteArray,
   amount: Int,
 ) -> Input {
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(channel_id, denom)
   Input {
     output_reference: OutputReference {
       transaction_id: #"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -346,7 +349,8 @@ fn transfer_escrow_input(
     },
     output: Output {
       address: module_output.address,
-      value: from_asset(ada_policy_id, ada_asset_name, amount),
+      value: from_asset(ada_policy_id, ada_asset_name, amount)
+        |> add("mock port token policy_id", shard_token_name, 1),
       datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
       reference_script: None,
     },
@@ -359,9 +363,12 @@ fn transfer_escrow_output(
   denom: ByteArray,
   amount: Int,
 ) -> Output {
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(channel_id, denom)
   Output {
     address: module_output.address,
-    value: from_asset(ada_policy_id, ada_asset_name, amount),
+    value: from_asset(ada_policy_id, ada_asset_name, amount)
+      |> add("mock port token policy_id", shard_token_name, 1),
     datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
     reference_script: None,
   }
@@ -670,6 +677,7 @@ test on_recv_packet_mint_voucher_succeed() {
       packet_source_channel: packet.source_channel,
       packet_dest_port: packet.destination_port,
       packet_dest_channel: packet.destination_channel,
+      data: ftpd,
     }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
@@ -745,6 +753,8 @@ test on_recv_packet_unescrow_succeed() {
       "6c6f76656c616365",
       transfer_amount,
     )
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(mock.channel_id, "6c6f76656c616365")
   let inputs =
     [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
 
@@ -787,7 +797,13 @@ test on_recv_packet_unescrow_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      redeemers,
+      mint: from_asset(mock.port_token.policy_id, shard_token_name, -1),
+    }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -890,6 +906,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
       packet_source_channel: packet.source_channel,
       packet_dest_port: packet.destination_port,
       packet_dest_channel: packet.destination_channel,
+      data: ftpd,
     }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
@@ -936,6 +953,8 @@ test transfer_escrow_succeed() {
 
   // lovelace
   let denom = "6c6f76656c616365"
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(mock.channel_id, denom)
 
   //==========================arrange outputs=========================
   let escrow_output =
@@ -983,7 +1002,13 @@ test transfer_escrow_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      redeemers,
+      mint: from_asset(mock.port_token.policy_id, shard_token_name, 1),
+    }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -1049,6 +1074,7 @@ test transfer_burn_voucher_succeed() {
     BurnVoucher {
       packet_source_port: packet.source_port,
       packet_source_channel: packet.source_channel,
+      data: ftpd,
     }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
@@ -1128,6 +1154,8 @@ test on_timeout_packet_mint_voucher_succeed() {
     RefundVoucher {
       packet_source_port: packet.source_port,
       packet_source_channel: packet.source_channel,
+      data: ftpd,
+      acknowledgement: None,
     }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
@@ -1203,6 +1231,8 @@ test on_timeout_packet_unescrow_succeed() {
       denom,
       transfer_amount,
     )
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(source_channel, denom)
   let inputs =
     [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
 
@@ -1239,7 +1269,13 @@ test on_timeout_packet_unescrow_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      redeemers,
+      mint: from_asset(mock.port_token.policy_id, shard_token_name, -1),
+    }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -1399,6 +1435,8 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
     RefundVoucher {
       packet_source_port: packet.source_port,
       packet_source_channel: packet.source_channel,
+      data: ftpd,
+      acknowledgement: Some(acknowledgement),
     }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
@@ -1470,6 +1508,8 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
       denom,
       transfer_amount,
     )
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(source_channel, denom)
   let inputs =
     [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
 
@@ -1517,7 +1557,13 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      redeemers,
+      mint: from_asset(mock.port_token.policy_id, shard_token_name, -1),
+    }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 

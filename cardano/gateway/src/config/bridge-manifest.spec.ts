@@ -56,6 +56,7 @@ function buildHandlerJsonDeployment() {
       mintConnectionStt: buildValidator('mintConnectionStt'),
       mintChannelStt: buildValidator('mintChannelStt'),
       mintVoucher: buildValidator('mintVoucher'),
+      mintPort: buildValidator('mintPort'),
       voucherMetadata: {
         address: 'voucher-metadata-address',
       },

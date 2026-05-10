@@ -3,20 +3,20 @@ import {
   WithChannelSpend,
   WithConstructedAddress,
   WithHostStateUpdate,
+  WithMintTransferEscrowShardRedeemer,
   WithPacketPolicyAndChannelToken,
   WithTransferAmount,
   WithTransferEscrowShard,
   WithTransferModuleSpend,
-  WithTransferModuleUtxo,
   WithVerifyProof,
 } from './fragments';
 
 export type UnsignedRecvPacketUnescrowDto = WithHostStateUpdate &
   WithChannelContext &
-  WithTransferModuleUtxo &
   WithChannelSpend &
   WithTransferModuleSpend &
   WithTransferEscrowShard &
+  WithMintTransferEscrowShardRedeemer &
   WithTransferAmount &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'recvPacketPolicyId'> &

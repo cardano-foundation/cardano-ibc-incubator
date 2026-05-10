@@ -71,12 +71,13 @@ export type LoadedSendPacketContext = {
   connectionUtxo: UTxO;
   connectionDatum: ConnectionDatumLike;
   clientUtxo: UTxO;
-  transferModuleUtxo: UTxO;
+  transferModuleReferenceUtxo: UTxO;
   channelTokenUnit: string;
   channelToken: AuthToken;
   deployment: {
     sendPacketPolicyId: string;
     mintVoucherScriptHash: string;
+    mintPortPolicyId: string;
     spendChannelAddress: string;
     transferModuleAddress: string;
   };
@@ -116,11 +117,9 @@ export type UnsignedSendPacketBurnTxInput = {
   channelUTxO: UTxO;
   connectionUTxO: UTxO;
   clientUTxO: UTxO;
-  transferModuleUTxO: UTxO;
   encodedSpendChannelRedeemer: string;
   encodedUpdatedChannelDatum: string;
   channelTokenUnit: string;
-  encodedSpendTransferModuleRedeemer: string;
   encodedMintVoucherRedeemer: string;
   transferAmount: bigint;
   constructedAddress: string;
@@ -141,11 +140,12 @@ export type UnsignedSendPacketEscrowTxInput = {
   channelUTxO: UTxO;
   connectionUTxO: UTxO;
   clientUTxO: UTxO;
-  transferModuleUTxO: UTxO;
+  transferModuleReferenceUtxo?: UTxO;
   encodedSpendChannelRedeemer: string;
   encodedUpdatedChannelDatum: string;
   channelTokenUnit: string;
   encodedSpendTransferModuleRedeemer: string;
+  encodedMintTransferEscrowShardRedeemer?: string;
   transferAmount: bigint;
   constructedAddress: string;
   sendPacketPolicyId: string;
@@ -158,6 +158,7 @@ export type UnsignedSendPacketEscrowTxInput = {
   denomToken: string;
   transferEscrowUtxo?: UTxO;
   encodedTransferEscrowDatum?: string;
+  transferEscrowShardTokenUnit?: string;
 };
 
 export type SendPacketBuildDependencies = {
@@ -187,7 +188,7 @@ export type SendPacketBuildDependencies = {
     packetDenom: string,
     denomToken: string,
     requiredAmount?: bigint,
-  ) => Promise<{ utxo?: UTxO; encodedDatum: string }>;
+  ) => Promise<{ utxo?: UTxO; encodedDatum: string; shardTokenUnit: string }>;
   createUnsignedSendPacketBurnTx: (
     dto: UnsignedSendPacketBurnTxInput,
   ) => TxBuilder;
@@ -240,6 +241,13 @@ export async function buildUnsignedSendPacketTx(
     timeout_height: sendPacketOperator.timeoutHeight,
     timeout_timestamp: sendPacketOperator.timeoutTimestamp,
   };
+  const fungibleTokenPacketData = {
+    denom: convertStringToHex(packetDenom),
+    amount: convertStringToHex(sendPacketOperator.token.amount.toString()),
+    sender: convertStringToHex(sendPacketOperator.sender),
+    receiver: convertStringToHex(sendPacketOperator.receiver),
+    memo: convertStringToHex(sendPacketOperator.memo),
+  };
 
   const encodedSpendChannelRedeemer = await deps.encode(
     {
@@ -258,15 +266,7 @@ export async function buildUnsignedSendPacketTx(
             {
               Transfer: {
                 channel_id: convertStringToHex(sendPacketOperator.sourceChannel),
-                data: {
-                  denom: convertStringToHex(packetDenom),
-                  amount: convertStringToHex(
-                    sendPacketOperator.token.amount.toString(),
-                  ),
-                  sender: convertStringToHex(sendPacketOperator.sender),
-                  receiver: convertStringToHex(sendPacketOperator.receiver),
-                  memo: convertStringToHex(sendPacketOperator.memo),
-                },
+                data: fungibleTokenPacketData,
               },
             },
           ],
@@ -307,6 +307,7 @@ export async function buildUnsignedSendPacketTx(
         BurnVoucher: {
           packet_source_port: packet.source_port,
           packet_source_channel: packet.source_channel,
+          data: fungibleTokenPacketData,
         },
       },
       'mintVoucherRedeemer',
@@ -334,14 +335,12 @@ export async function buildUnsignedSendPacketTx(
       channelUTxO: context.channelUtxo,
       connectionUTxO: context.connectionUtxo,
       clientUTxO: context.clientUtxo,
-      transferModuleUTxO: context.transferModuleUtxo,
       senderVoucherTokenUtxo,
       walletUtxos,
       encodedHostStateRedeemer,
       encodedUpdatedHostStateDatum,
       encodedMintVoucherRedeemer,
       encodedSpendChannelRedeemer,
-      encodedSpendTransferModuleRedeemer,
       encodedUpdatedChannelDatum: await deps.encode(updatedChannelDatum, 'channel'),
       transferAmount: sendPacketOperator.token.amount,
       senderAddress,
@@ -396,11 +395,25 @@ export async function buildUnsignedSendPacketTx(
     channelUTxO: context.channelUtxo,
     connectionUTxO: context.connectionUtxo,
     clientUTxO: context.clientUtxo,
-    transferModuleUTxO: context.transferModuleUtxo,
+    transferModuleReferenceUtxo: transferEscrowShard.utxo
+      ? undefined
+      : context.transferModuleReferenceUtxo,
     encodedHostStateRedeemer,
     encodedUpdatedHostStateDatum,
     encodedSpendChannelRedeemer,
     encodedSpendTransferModuleRedeemer,
+    encodedMintTransferEscrowShardRedeemer: transferEscrowShard.utxo
+      ? undefined
+      : await deps.encode(
+          {
+            CreateEscrowShard: {
+              channel_id: convertStringToHex(sendPacketOperator.sourceChannel),
+              denom: convertStringToHex(packetDenom),
+              data: fungibleTokenPacketData,
+            },
+          },
+          'mintPortRedeemer',
+        ),
     encodedUpdatedChannelDatum: await deps.encode(updatedChannelDatum, 'channel'),
     transferAmount: sendPacketOperator.token.amount,
     senderAddress,
@@ -413,6 +426,7 @@ export async function buildUnsignedSendPacketTx(
     denomToken,
     transferEscrowUtxo: transferEscrowShard.utxo,
     encodedTransferEscrowDatum: transferEscrowShard.encodedDatum,
+    transferEscrowShardTokenUnit: transferEscrowShard.shardTokenUnit,
     sendPacketPolicyId: context.deployment.sendPacketPolicyId,
     channelToken: context.channelToken,
   });

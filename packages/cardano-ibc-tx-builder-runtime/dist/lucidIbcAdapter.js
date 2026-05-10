@@ -15,6 +15,7 @@ const ENCODABLE_DATUM_TYPES = [
     'spendChannelRedeemer',
     'iBCModuleRedeemer',
     'mintVoucherRedeemer',
+    'mintPortRedeemer',
 ];
 function updateTransferModuleAssets(assets, transferAmount, denom) {
     const updatedAssets = {
@@ -624,6 +625,13 @@ async function encodeIbcModuleRedeemer(data, Lucid) {
 }
 function encodeMintVoucherRedeemer(data, Lucid) {
     const { Data } = Lucid;
+    const FungibleTokenPacketDatumSchema = Data.Object({
+        denom: Data.Bytes(),
+        amount: Data.Bytes(),
+        sender: Data.Bytes(),
+        receiver: Data.Bytes(),
+        memo: Data.Bytes(),
+    });
     const MintVoucherRedeemerSchema = Data.Enum([
         Data.Object({
             MintVoucher: Data.Object({
@@ -631,22 +639,71 @@ function encodeMintVoucherRedeemer(data, Lucid) {
                 packet_source_channel: Data.Bytes(),
                 packet_dest_port: Data.Bytes(),
                 packet_dest_channel: Data.Bytes(),
+                data: FungibleTokenPacketDatumSchema,
             }),
         }),
         Data.Object({
             BurnVoucher: Data.Object({
                 packet_source_port: Data.Bytes(),
                 packet_source_channel: Data.Bytes(),
+                data: FungibleTokenPacketDatumSchema,
             }),
         }),
         Data.Object({
             RefundVoucher: Data.Object({
                 packet_source_port: Data.Bytes(),
                 packet_source_channel: Data.Bytes(),
+                data: FungibleTokenPacketDatumSchema,
+                acknowledgement: Data.Nullable(Data.Object({
+                    response: Data.Enum([
+                        Data.Object({
+                            AcknowledgementResult: Data.Object({ result: Data.Bytes() }),
+                        }),
+                        Data.Object({
+                            AcknowledgementError: Data.Object({ err: Data.Bytes() }),
+                        }),
+                    ]),
+                })),
             }),
         }),
     ]);
     return Data.to(data, MintVoucherRedeemerSchema, { canonical: true });
+}
+function encodeMintPortRedeemer(data, Lucid) {
+    const { Data } = Lucid;
+    const FungibleTokenPacketDatumSchema = Data.Object({
+        denom: Data.Bytes(),
+        amount: Data.Bytes(),
+        sender: Data.Bytes(),
+        receiver: Data.Bytes(),
+        memo: Data.Bytes(),
+    });
+    const MintPortRedeemerSchema = Data.Enum([
+        Data.Object({
+            BindPort: Data.Object({
+                handler_token: Data.Object({
+                    policy_id: Data.Bytes(),
+                    name: Data.Bytes(),
+                }),
+                spend_module_script_hash: Data.Bytes(),
+                port_number: Data.Integer(),
+            }),
+        }),
+        Data.Object({
+            CreateEscrowShard: Data.Object({
+                channel_id: Data.Bytes(),
+                denom: Data.Bytes(),
+                data: FungibleTokenPacketDatumSchema,
+            }),
+        }),
+        Data.Object({
+            BurnEscrowShard: Data.Object({
+                channel_id: Data.Bytes(),
+                denom: Data.Bytes(),
+            }),
+        }),
+    ]);
+    return Data.to(data, MintPortRedeemerSchema, { canonical: true });
 }
 class LucidIbcAdapter {
     lucid;
@@ -672,6 +729,7 @@ class LucidIbcAdapter {
             sendPacket: this.deployment.validators.spendChannel.refValidator.send_packet.refUtxo,
             hostStateStt: this.deployment.validators.hostStateStt.refUtxo,
             mintVoucher: this.deployment.validators.mintVoucher.refUtxo,
+            mintPort: this.deployment.validators.mintPort.refUtxo,
         };
         const entries = await Promise.all(Object.entries(outRefs).map(async ([label, outRef]) => {
             const utxo = await this.resolveReferenceScriptUtxo(label, outRef);
@@ -892,6 +950,8 @@ class LucidIbcAdapter {
                 return encodeIbcModuleRedeemer(data, this.LucidImporter);
             case 'mintVoucherRedeemer':
                 return encodeMintVoucherRedeemer(data, this.LucidImporter);
+            case 'mintPortRedeemer':
+                return encodeMintPortRedeemer(data, this.LucidImporter);
             default:
                 throw unknownCodecTypeError('encode', type, ENCODABLE_DATUM_TYPES);
         }
@@ -911,11 +971,14 @@ class LucidIbcAdapter {
         const channelTokenName = this.generateTokenName(this.deployment.hostStateNFT, CHANNEL_TOKEN_PREFIX, channelId);
         return [mintChannelPolicyId, channelTokenName];
     }
-    payTransferEscrowDelta(tx, transferModuleAddress, encodedTransferEscrowDatum, transferAmount, denomToken, transferEscrowUtxo) {
+    payTransferEscrowDelta(tx, transferModuleAddress, encodedTransferEscrowDatum, transferAmount, denomToken, transferEscrowUtxo, transferEscrowShardTokenUnit) {
         if (!encodedTransferEscrowDatum) {
             throw new Error('Transfer escrow datum is required for sharded escrow updates');
         }
         const updatedAssets = updateTransferModuleAssets(transferEscrowUtxo?.assets ?? {}, transferAmount, denomToken);
+        if (transferEscrowShardTokenUnit && !transferEscrowUtxo) {
+            updatedAssets[transferEscrowShardTokenUnit] = (updatedAssets[transferEscrowShardTokenUnit] ?? 0n) + 1n;
+        }
         const targetAmount = updatedAssets[denomToken] ?? 0n;
         const keepsNonLovelace = Object.keys(updatedAssets).some((unit) => unit !== 'lovelace');
         if (targetAmount <= 0n && !keepsNonLovelace) {
@@ -941,34 +1004,40 @@ class LucidIbcAdapter {
         tx.readFrom([
             this.referenceScripts.spendChannel,
             this.referenceScripts.spendTransferModule,
+            this.referenceScripts.mintPort,
             this.referenceScripts.sendPacket,
             this.referenceScripts.hostStateStt,
         ])
             .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
             .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
-            .collectFrom(dto.transferEscrowUtxo
-            ? [dto.transferModuleUTxO, dto.transferEscrowUtxo]
-            : [dto.transferModuleUTxO], dto.encodedSpendTransferModuleRedeemer)
             .readFrom([dto.connectionUTxO, dto.clientUTxO])
             .pay.ToContract(hostStateAddress, { kind: 'inline', value: dto.encodedUpdatedHostStateDatum }, { [hostStateNFT]: 1n })
             .pay.ToContract(dto.spendChannelAddress, { kind: 'inline', value: dto.encodedUpdatedChannelDatum }, { [dto.channelTokenUnit]: 1n })
-            .pay.ToContract(dto.transferModuleAddress, undefined, { ...dto.transferModuleUTxO.assets })
             .mintAssets({ [dto.sendPacketPolicyId]: 1n }, encodeAuthToken(dto.channelToken, this.LucidImporter));
-        this.payTransferEscrowDelta(tx, dto.transferModuleAddress, dto.encodedTransferEscrowDatum, dto.transferAmount, dto.denomToken, dto.transferEscrowUtxo);
+        if (dto.transferEscrowUtxo) {
+            tx.collectFrom([dto.transferEscrowUtxo], dto.encodedSpendTransferModuleRedeemer);
+        }
+        else {
+            if (!dto.transferModuleReferenceUtxo ||
+                !dto.transferEscrowShardTokenUnit ||
+                !dto.encodedMintTransferEscrowShardRedeemer) {
+                throw new Error('Transfer module reference UTxO, shard token, and shard mint redeemer are required to create an escrow shard');
+            }
+            tx
+                .readFrom([dto.transferModuleReferenceUtxo])
+                .mintAssets({ [dto.transferEscrowShardTokenUnit]: 1n }, dto.encodedMintTransferEscrowShardRedeemer);
+        }
+        this.payTransferEscrowDelta(tx, dto.transferModuleAddress, dto.encodedTransferEscrowDatum, dto.transferAmount, dto.denomToken, dto.transferEscrowUtxo, dto.transferEscrowShardTokenUnit);
         return tx;
     }
     createUnsignedSendPacketBurnTx(dto) {
         const hostStateAddress = this.deployment.validators.hostStateStt.address;
         const spendChannelAddress = this.deployment.validators.spendChannel.address;
-        const transferModuleAddress = this.deployment.modules.transfer.address;
         if (!hostStateAddress) {
             throw new Error('Host state script address is missing from deployment config');
         }
         if (!spendChannelAddress) {
             throw new Error('Spend channel script address is missing from deployment config');
-        }
-        if (!transferModuleAddress) {
-            throw new Error('Transfer module address is missing from deployment config');
         }
         const hostStateNFT = this.deployment.hostStateNFT.policyId + this.deployment.hostStateNFT.name;
         const hostStateUtxoWithRawDatum = {
@@ -979,20 +1048,17 @@ class LucidIbcAdapter {
         const tx = this.lucid.newTx();
         tx.readFrom([
             this.referenceScripts.spendChannel,
-            this.referenceScripts.spendTransferModule,
             this.referenceScripts.mintVoucher,
             this.referenceScripts.sendPacket,
             this.referenceScripts.hostStateStt,
         ])
             .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
             .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
-            .collectFrom([dto.transferModuleUTxO], dto.encodedSpendTransferModuleRedeemer)
             .collectFrom([dto.senderVoucherTokenUtxo])
             .readFrom([dto.connectionUTxO, dto.clientUTxO])
             .mintAssets({ [dto.voucherTokenUnit]: -BigInt(dto.transferAmount) }, dto.encodedMintVoucherRedeemer)
             .pay.ToContract(hostStateAddress, { kind: 'inline', value: dto.encodedUpdatedHostStateDatum }, { [hostStateNFT]: 1n })
             .pay.ToContract(spendChannelAddress, { kind: 'inline', value: dto.encodedUpdatedChannelDatum }, { [dto.channelTokenUnit]: 1n })
-            .pay.ToContract(transferModuleAddress, undefined, { ...dto.transferModuleUTxO.assets })
             .mintAssets({ [dto.sendPacketPolicyId]: 1n }, encodeAuthToken(dto.channelToken, this.LucidImporter));
         return tx;
     }

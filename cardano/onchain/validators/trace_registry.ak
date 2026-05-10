@@ -26,7 +26,6 @@
 //   bucket and insert into a fresh active shard in the same transaction
 use aiken/collection/dict
 use aiken/collection/list
-use aiken/crypto
 use aiken/fuzz
 use aiken/primitive/bytearray
 use cardano/address.{from_script}

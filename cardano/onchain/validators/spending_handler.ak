@@ -12,7 +12,7 @@ use ibc/core/ics_003_connection_semantics/connection_redeemer.{
 use ibc/core/ics_004/channel_redeemer.{
   ChanOpenInit, ChanOpenTry, MintChannelRedeemer,
 }
-use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
+use ibc/core/ics_005/port_redeemer.{BindPort, MintPortRedeemer}
 use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
 use ibc/core/ics_025_handler_interface/handler_redeemer.{
   CreateClient, HandlerBindPort, HandlerChanOpenInit, HandlerChanOpenTry,
@@ -194,7 +194,7 @@ fn validate_bind_port(
 
   expect mint_port_redeemer: MintPortRedeemer = mint_port_redeemer
 
-  let MintPortRedeemer { handler_token: port_handler_token, port_number, .. } =
+  expect BindPort { handler_token: port_handler_token, port_number, .. } =
     mint_port_redeemer
 
   expect port_handler_token == handler_token

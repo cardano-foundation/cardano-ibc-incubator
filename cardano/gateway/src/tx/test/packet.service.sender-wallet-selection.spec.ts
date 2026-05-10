@@ -42,6 +42,9 @@ describe('PacketService sender wallet selection for escrow', () => {
             mintVoucher: {
               scriptHash: 'mint-voucher-policy-id',
             },
+            mintPort: {
+              scriptHash: 'mint-port-policy-id',
+            },
           },
           modules: {
             transfer: {

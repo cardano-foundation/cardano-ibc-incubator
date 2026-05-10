@@ -30,6 +30,10 @@ type DeploymentConfig = {
             refUtxo: RefUtxo;
             scriptHash: string;
         };
+        mintPort: {
+            refUtxo: RefUtxo;
+            scriptHash: string;
+        };
         mintConnectionStt: {
             scriptHash: string;
         };
@@ -46,7 +50,7 @@ type DeploymentConfig = {
         };
     };
 };
-export type CodecType = 'client' | 'connection' | 'channel' | 'transferEscrow' | 'host_state' | 'host_state_redeemer' | 'spendChannelRedeemer' | 'iBCModuleRedeemer' | 'mintVoucherRedeemer';
+export type CodecType = 'client' | 'connection' | 'channel' | 'transferEscrow' | 'host_state' | 'host_state_redeemer' | 'spendChannelRedeemer' | 'iBCModuleRedeemer' | 'mintVoucherRedeemer' | 'mintPortRedeemer';
 export declare class LucidIbcAdapter {
     private readonly lucid;
     private readonly deployment;

@@ -131,7 +131,51 @@ export type CodecType =
   | "mintChannelRedeemer"
   | "spendChannelRedeemer"
   | "iBCModuleRedeemer"
-  | "mintVoucherRedeemer";
+  | "mintVoucherRedeemer"
+  | "mintPortRedeemer";
+
+function encodeMintPortRedeemer(
+  data: unknown,
+  Lucid: typeof import("@lucid-evolution/lucid"),
+): string {
+  const { Data } = Lucid;
+  const FungibleTokenPacketDatumSchema = Data.Object({
+    denom: Data.Bytes(),
+    amount: Data.Bytes(),
+    sender: Data.Bytes(),
+    receiver: Data.Bytes(),
+    memo: Data.Bytes(),
+  });
+  const MintPortRedeemerSchema = Data.Enum([
+    Data.Object({
+      BindPort: Data.Object({
+        handler_token: Data.Object({
+          policy_id: Data.Bytes(),
+          name: Data.Bytes(),
+        }),
+        spend_module_script_hash: Data.Bytes(),
+        port_number: Data.Integer(),
+      }),
+    }),
+    Data.Object({
+      CreateEscrowShard: Data.Object({
+        channel_id: Data.Bytes(),
+        denom: Data.Bytes(),
+        data: FungibleTokenPacketDatumSchema,
+      }),
+    }),
+    Data.Object({
+      BurnEscrowShard: Data.Object({
+        channel_id: Data.Bytes(),
+        denom: Data.Bytes(),
+      }),
+    }),
+  ]);
+
+  return Data.to(data as never, MintPortRedeemerSchema as never, {
+    canonical: true,
+  });
+}
 
 type ReferenceScripts = {
   spendHandler: UTxO;
@@ -156,6 +200,7 @@ type ReferenceScripts = {
   sendPacket: UTxO;
   timeoutPacket: UTxO;
   mintVoucher: UTxO;
+  mintPort: UTxO;
 };
 
 @Injectable()
@@ -192,6 +237,7 @@ export class LucidService implements OnModuleInit {
       mintClient: deploymentConfig.validators.mintClientStt.refUtxo,
       mintConnection: deploymentConfig.validators.mintConnectionStt.refUtxo,
       mintVoucher: deploymentConfig.validators.mintVoucher.refUtxo,
+      mintPort: deploymentConfig.validators.mintPort.refUtxo,
       verifyProof: deploymentConfig.validators.verifyProof.refUtxo,
       hostStateStt: deploymentConfig.validators.hostStateStt.refUtxo,
       channelOpenAck:
@@ -860,6 +906,8 @@ export class LucidService implements OnModuleInit {
             data as MintVoucherRedeemer,
             this.LucidImporter,
           );
+        case "mintPortRedeemer":
+          return encodeMintPortRedeemer(data, this.LucidImporter);
         default:
           throw new Error(`Unknown datum type: ${type}`);
       }
@@ -1343,30 +1391,6 @@ export class LucidService implements OnModuleInit {
     return tx.pay.ToContract(moduleAddress, undefined, moduleUtxo.assets);
   }
 
-  private collectTransferModuleInputs(
-    tx: TxBuilder,
-    moduleUtxo: UTxO,
-    encodedSpendTransferModuleRedeemer: string,
-    transferEscrowUtxo?: UTxO,
-  ): TxBuilder {
-    const inputs = transferEscrowUtxo
-      ? [moduleUtxo, transferEscrowUtxo]
-      : [moduleUtxo];
-    return tx.collectFrom(inputs, encodedSpendTransferModuleRedeemer);
-  }
-
-  private payTransferModuleState(
-    tx: TxBuilder,
-    transferModuleAddress: string,
-    moduleUtxo: UTxO,
-  ): TxBuilder {
-    return tx.pay.ToContract(
-      transferModuleAddress,
-      undefined,
-      { ...moduleUtxo.assets },
-    );
-  }
-
   private requireTransferEscrowDatum(encodedTransferEscrowDatum?: string): string {
     if (!encodedTransferEscrowDatum) {
       throw new GrpcInternalException(
@@ -1392,6 +1416,8 @@ export class LucidService implements OnModuleInit {
     transferAmount: bigint,
     denomToken: string,
     transferEscrowUtxo?: UTxO,
+    transferEscrowShardTokenUnit?: string,
+    burnTransferEscrowShard = false,
   ): TxBuilder {
     const baseAssets = transferEscrowUtxo?.assets ?? {};
     const updatedAssets = updateTransferModuleAssets(
@@ -1399,6 +1425,13 @@ export class LucidService implements OnModuleInit {
       transferAmount,
       denomToken,
     );
+    if (transferEscrowShardTokenUnit && !transferEscrowUtxo) {
+      updatedAssets[transferEscrowShardTokenUnit] =
+        (updatedAssets[transferEscrowShardTokenUnit] ?? 0n) + 1n;
+    }
+    if (transferEscrowShardTokenUnit && burnTransferEscrowShard) {
+      delete updatedAssets[transferEscrowShardTokenUnit];
+    }
     const targetAmount = updatedAssets[denomToken] ?? 0n;
     const keepsNonLovelace = Object.keys(updatedAssets).some((unit) =>
       unit !== "lovelace"
@@ -1789,6 +1822,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
+      this.referenceScripts.mintPort,
       this.referenceScripts.receivePacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
@@ -1796,7 +1830,7 @@ export class LucidService implements OnModuleInit {
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom(
-        [dto.transferModuleUtxo, transferEscrowUtxo],
+        [transferEscrowUtxo],
         dto.encodedSpendTransferModuleRedeemer,
       )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -1819,11 +1853,6 @@ export class LucidService implements OnModuleInit {
         {
           [dto.channelTokenUnit]: 1n,
         },
-      )
-      .pay.ToContract(
-        deploymentConfig.modules.transfer.address,
-        undefined,
-        { ...dto.transferModuleUtxo.assets },
       )
       .pay.ToAddress(dto.receiverAddress, {
         [dto.denomToken]: dto.transferAmount,
@@ -1848,7 +1877,21 @@ export class LucidService implements OnModuleInit {
       -dto.transferAmount,
       dto.denomToken,
       transferEscrowUtxo,
+      dto.transferEscrowShardTokenUnit,
+      !!dto.encodedMintTransferEscrowShardRedeemer,
     );
+
+    if (dto.encodedMintTransferEscrowShardRedeemer) {
+      if (!dto.transferEscrowShardTokenUnit) {
+        throw new GrpcInternalException(
+          "Transfer escrow shard token unit is required for shard NFT burn",
+        );
+      }
+      tx.mintAssets(
+        { [dto.transferEscrowShardTokenUnit]: -1n },
+        dto.encodedMintTransferEscrowShardRedeemer,
+      );
+    }
 
     return tx;
   }
@@ -1997,7 +2040,6 @@ export class LucidService implements OnModuleInit {
       };
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.referenceScripts.spendTransferModule,
       this.referenceScripts.mintVoucher,
       this.referenceScripts.receivePacket,
       this.referenceScripts.verifyProof,
@@ -2009,10 +2051,6 @@ export class LucidService implements OnModuleInit {
     tx
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom(
-        [dto.transferModuleUtxo],
-        dto.encodedSpendTransferModuleRedeemer,
-      )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
       .mintAssets(
         mintVoucherAssets,
@@ -2038,9 +2076,6 @@ export class LucidService implements OnModuleInit {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(deploymentConfig.modules.transfer.address, undefined, {
-        ...dto.transferModuleUtxo.assets,
-      })
       .pay.ToAddress(dto.receiverAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
       })
@@ -2096,7 +2131,6 @@ export class LucidService implements OnModuleInit {
     const tx: TxBuilder = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.referenceScripts.spendTransferModule,
       // minting 1
       this.referenceScripts.ackPacket,
       // minting 2
@@ -2105,10 +2139,6 @@ export class LucidService implements OnModuleInit {
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom(
-        [dto.transferModuleUtxo],
-        dto.encodedSpendTransferModuleRedeemer,
-      )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
@@ -2130,9 +2160,6 @@ export class LucidService implements OnModuleInit {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(deploymentConfig.modules.transfer.address, undefined, {
-        ...dto.transferModuleUtxo.assets,
-      })
       .mintAssets(
         {
           [dto.ackPacketPolicyId]: 1n,
@@ -2231,6 +2258,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
+      this.referenceScripts.mintPort,
       this.referenceScripts.ackPacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
@@ -2238,7 +2266,7 @@ export class LucidService implements OnModuleInit {
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom(
-        [dto.transferModuleUtxo, transferEscrowUtxo],
+        [transferEscrowUtxo],
         dto.encodedSpendTransferModuleRedeemer,
       )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -2261,11 +2289,6 @@ export class LucidService implements OnModuleInit {
         {
           [dto.channelTokenUnit]: 1n,
         },
-      )
-      .pay.ToContract(
-        deploymentConfig.modules.transfer.address,
-        undefined,
-        { ...dto.transferModuleUtxo.assets },
       )
       .pay.ToAddress(dto.senderAddress, {
         [dto.denomToken]: dto.transferAmount,
@@ -2290,7 +2313,21 @@ export class LucidService implements OnModuleInit {
       -dto.transferAmount,
       dto.denomToken,
       transferEscrowUtxo,
+      dto.transferEscrowShardTokenUnit,
+      !!dto.encodedMintTransferEscrowShardRedeemer,
     );
+
+    if (dto.encodedMintTransferEscrowShardRedeemer) {
+      if (!dto.transferEscrowShardTokenUnit) {
+        throw new GrpcInternalException(
+          "Transfer escrow shard token unit is required for shard NFT burn",
+        );
+      }
+      tx.mintAssets(
+        { [dto.transferEscrowShardTokenUnit]: -1n },
+        dto.encodedMintTransferEscrowShardRedeemer,
+      );
+    }
 
     return tx;
   }
@@ -2319,7 +2356,6 @@ export class LucidService implements OnModuleInit {
       };
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.referenceScripts.spendTransferModule,
       this.referenceScripts.mintVoucher,
       this.referenceScripts.ackPacket,
       this.referenceScripts.verifyProof,
@@ -2331,10 +2367,6 @@ export class LucidService implements OnModuleInit {
     tx
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom(
-        [dto.transferModuleUtxo],
-        dto.encodedSpendTransferModuleRedeemer,
-      )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
       .mintAssets(
         mintVoucherAssets,
@@ -2360,14 +2392,6 @@ export class LucidService implements OnModuleInit {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(deploymentConfig.modules.transfer.address, undefined, {
-        // Voucher refund in acknowledgement error flow must keep transfer module value unchanged.
-        // The on-chain transfer module validator checks this branch with assets.zero delta.
-        // Subtracting assets from transfer module here breaks that invariant and the spend is rejected.
-        // We also intentionally do not interpret packet denom as a Cardano asset unit in this path.
-        // Voucher denoms are IBC traces and are not valid ledger asset unit keys.
-        ...dto.transferModuleUtxo.assets,
-      })
       .pay.ToAddress(dto.senderAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
       })
@@ -2430,17 +2454,12 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
+      this.referenceScripts.mintPort,
       this.referenceScripts.sendPacket,
       this.referenceScripts.hostStateStt,
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
-      .collectFrom(
-        dto.transferEscrowUtxo
-          ? [dto.transferModuleUTxO, dto.transferEscrowUtxo]
-          : [dto.transferModuleUTxO],
-        dto.encodedSpendTransferModuleRedeemer,
-      )
       .readFrom([dto.connectionUTxO, dto.clientUTxO])
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
@@ -2462,17 +2481,35 @@ export class LucidService implements OnModuleInit {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(
-        dto.transferModuleAddress,
-        undefined,
-        { ...dto.transferModuleUTxO.assets },
-      )
       .mintAssets(
         {
           [dto.sendPacketPolicyId]: 1n,
         },
         encodeAuthToken(dto.channelToken, this.LucidImporter),
       );
+
+    if (dto.transferEscrowUtxo) {
+      tx.collectFrom(
+        [dto.transferEscrowUtxo],
+        dto.encodedSpendTransferModuleRedeemer,
+      );
+    } else {
+      if (
+        !dto.transferModuleReferenceUtxo ||
+        !dto.transferEscrowShardTokenUnit ||
+        !dto.encodedMintTransferEscrowShardRedeemer
+      ) {
+        throw new GrpcInternalException(
+          "Transfer module reference UTxO, shard token, and shard mint redeemer are required to create an escrow shard",
+        );
+      }
+      tx
+        .readFrom([dto.transferModuleReferenceUtxo])
+        .mintAssets(
+          { [dto.transferEscrowShardTokenUnit]: 1n },
+          dto.encodedMintTransferEscrowShardRedeemer,
+        );
+    }
 
     this.payTransferEscrowDelta(
       tx,
@@ -2481,6 +2518,7 @@ export class LucidService implements OnModuleInit {
       dto.transferAmount,
       dto.denomToken,
       dto.transferEscrowUtxo,
+      dto.transferEscrowShardTokenUnit,
     );
 
     return tx;
@@ -2555,17 +2593,12 @@ export class LucidService implements OnModuleInit {
     const tx = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.referenceScripts.spendTransferModule,
       this.referenceScripts.mintVoucher,
       this.referenceScripts.sendPacket,
       this.referenceScripts.hostStateStt,
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
-      .collectFrom(
-        [dto.transferModuleUTxO],
-        dto.encodedSpendTransferModuleRedeemer,
-      )
       .collectFrom([dto.senderVoucherTokenUtxo])
       .readFrom([dto.connectionUTxO, dto.clientUTxO])
       .mintAssets(
@@ -2594,11 +2627,6 @@ export class LucidService implements OnModuleInit {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(deploymentConfig.modules.transfer.address, undefined, {
-        // Burn path: vouchers are retired locally and should not be accumulated
-        // into the transfer module UTxO.
-        ...dto.transferModuleUTxO.assets,
-      })
       .mintAssets(
         {
           [dto.sendPacketPolicyId]: 1n,
@@ -2633,7 +2661,6 @@ export class LucidService implements OnModuleInit {
       };
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.referenceScripts.spendTransferModule,
       this.referenceScripts.mintVoucher,
       this.referenceScripts.timeoutPacket,
       this.referenceScripts.verifyProof,
@@ -2645,10 +2672,6 @@ export class LucidService implements OnModuleInit {
     tx
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
-      .collectFrom(
-        [dto.transferModuleUtxo],
-        dto.encodedSpendTransferModuleRedeemer,
-      )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
       .mintAssets(
         mintVoucherAssets,
@@ -2674,13 +2697,6 @@ export class LucidService implements OnModuleInit {
           [dto.channelTokenUnit]: 1n,
         },
       )
-      .pay.ToContract(dto.transferModuleAddress, undefined, {
-        // Voucher refund in timeout flow must keep transfer module value unchanged.
-        // The validator enforces zero delta for transfer module value in refund voucher paths.
-        // transferAmount is token quantity from packet data and must never be treated as lovelace.
-        // Subtracting lovelace here can underfund the output and violates on-chain refund rules.
-        ...dto.transferModuleUtxo.assets,
-      })
       .pay.ToAddress(dto.senderAddress, {
         [dto.voucherTokenUnit]: dto.transferAmount,
       })
@@ -2738,6 +2754,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
+      this.referenceScripts.mintPort,
       this.referenceScripts.timeoutPacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
@@ -2745,7 +2762,7 @@ export class LucidService implements OnModuleInit {
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
       .collectFrom(
-        [dto.transferModuleUtxo, transferEscrowUtxo],
+        [transferEscrowUtxo],
         dto.encodedSpendTransferModuleRedeemer,
       )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
@@ -2768,11 +2785,6 @@ export class LucidService implements OnModuleInit {
         {
           [dto.channelTokenUnit]: 1n,
         },
-      )
-      .pay.ToContract(
-        dto.transferModuleAddress,
-        undefined,
-        { ...dto.transferModuleUtxo.assets },
       )
       .pay.ToAddress(dto.senderAddress, {
         [dto.denomToken]: dto.transferAmount,
@@ -2797,7 +2809,21 @@ export class LucidService implements OnModuleInit {
       -dto.transferAmount,
       dto.denomToken,
       transferEscrowUtxo,
+      dto.transferEscrowShardTokenUnit,
+      !!dto.encodedMintTransferEscrowShardRedeemer,
     );
+
+    if (dto.encodedMintTransferEscrowShardRedeemer) {
+      if (!dto.transferEscrowShardTokenUnit) {
+        throw new GrpcInternalException(
+          "Transfer escrow shard token unit is required for shard NFT burn",
+        );
+      }
+      tx.mintAssets(
+        { [dto.transferEscrowShardTokenUnit]: -1n },
+        dto.encodedMintTransferEscrowShardRedeemer,
+      );
+    }
 
     return tx;
   }

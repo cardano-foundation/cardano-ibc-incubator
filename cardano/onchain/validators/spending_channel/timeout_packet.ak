@@ -26,7 +26,6 @@ use ibc/core/ics_004/types/keys as chan_keys_mod
 use ibc/core/ics_004/types/order as chan_order_mod
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_004/types/state as chan_state_mod
-use ibc/core/ics_005/types/ibc_module_redeemer.{Callback, OnTimeoutPacket}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/validator_utils
@@ -34,7 +33,7 @@ use ibc/utils/validator_utils
 validator timeout_packet(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
-  port_minting_policy_id: PolicyId,
+  _port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
 ) {
   // Timeout packet handling mints the channel auth token for this transition.
@@ -55,6 +54,7 @@ validator timeout_packet(
     let (datum, channel_redeemer, spent_output) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)
 
+    // Timeout is checked here; refund effects are transfer-app witnesses.
     expect [updated_output] =
       list.filter(
         outputs,
@@ -170,19 +170,6 @@ validator timeout_packet(
         _ -> False
       }
 
-    let ibc_module_redeemer =
-      validator_utils.extract_module_redeemer(
-        inputs,
-        redeemers,
-        datum.token.name,
-        port_minting_policy_id,
-        datum.port_id,
-      )
-    expect Callback(ibc_module_callback) = ibc_module_redeemer
-    expect OnTimeoutPacket { channel_id: module_chan_id, .. } =
-      ibc_module_callback
-    trace @"timeout_packet: ibc module callback is valid"
-
     and {
       channel_token == datum.token,
       auth.contain_auth_token(updated_output, datum.token),
@@ -190,7 +177,6 @@ validator timeout_packet(
       valid_timestamp,
       channel_datum_mod.validate_timeout_packet(datum, updated_datum, packet),
       commitment == packet_mod.commit_packet(packet),
-      module_chan_id == channel_id,
       valid_packet_timeout,
     }
   }

@@ -4,19 +4,21 @@ import {
   WithConstructedAddress,
   WithHostStateUpdate,
   WithLegacyChannelContext,
-  WithLegacyTransferModuleUtxo,
+  WithMintTransferEscrowShardRedeemer,
   WithPacketPolicyAndChannelToken,
   WithTransferAmount,
   WithTransferEscrowShard,
   WithTransferModuleSpend,
+  WithTransferModuleReferenceUtxo,
 } from './fragments';
 
 export type UnsignedSendPacketEscrowDto = WithHostStateUpdate &
   WithLegacyChannelContext &
-  WithLegacyTransferModuleUtxo &
   WithChannelSpend &
   WithTransferModuleSpend &
   WithTransferEscrowShard &
+  WithMintTransferEscrowShardRedeemer &
+  WithTransferModuleReferenceUtxo &
   WithTransferAmount &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'sendPacketPolicyId'> & {

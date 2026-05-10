@@ -16,24 +16,27 @@ use ibc/apps/transfer/trace_registry.{
   Directory, InsertTrace, RolloverInsertTrace, Shard, TraceRegistryDatum,
   TraceRegistryDirectoryBucket, TraceRegistryRedeemer, bucket_index_for_hash,
 }
-use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_metadata as voucher_metadata_datum
 use ibc/auth.{AuthToken}
-use ibc/core/ics_004/types/acknowledgement_response.{AcknowledgementError}
-use ibc/core/ics_005/types/ibc_module_redeemer.{
-  Callback, IBCModuleRedeemer, OnAcknowledgementPacket, OnRecvPacket,
-  OnTimeoutPacket, Operator, TransferModuleData, TransferModuleOperator,
+use ibc/core/ics_004/channel_redeemer.{
+  AcknowledgePacket, RecvPacket, SendPacket, SpendChannelRedeemer, TimeoutPacket,
 }
+use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
+use ibc/core/ics_004/types/acknowledgement_response.{AcknowledgementError}
+use ibc/core/ics_004/types/keys as channel_keys
+use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
 validator mint_voucher(
-  module_token: AuthToken,
+  _module_token: AuthToken,
   directory_auth_token: AuthToken,
   voucher_metadata_script_hash: crypto.ScriptHash,
+  channel_minting_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
 ) {
   mint(
     redeemer: MintVoucherRedeemer,
@@ -49,15 +52,29 @@ validator mint_voucher(
         packet_source_channel,
         packet_dest_port,
         packet_dest_channel,
+        data,
       } -> {
         trace @"mint_voucher: MintVoucher branch"
 
-        expect Callback(ibc_module_callback) =
-          extract_module_redeemer(inputs, redeemers, module_token)
-        expect OnRecvPacket { data, .. } = ibc_module_callback
-        expect TransferModuleData(data) = data
+        // Validate the voucher mint against the spent RecvPacket channel UTxO.
+        expect fungible_token_packet_data.validate_basic(data)
+        expect Some(channel_redeemer) =
+          extract_channel_redeemer(
+            inputs,
+            redeemers,
+            channel_minting_policy_id,
+            host_state_nft_policy_id,
+            packet_dest_channel,
+          )
+        expect RecvPacket { packet, .. } = channel_redeemer
+        expect packet.source_port == packet_source_port
+        expect packet.source_channel == packet_source_channel
+        expect packet.destination_port == packet_dest_port
+        expect packet.destination_channel == packet_dest_channel
+        expect fungible_token_packet_data.get_bytes(data) == packet.data
         trace @"mint_voucher: module redeemer is valid"
 
+        // Non-source receives mint vouchers; source receives unescrow natively.
         let valid_receiver =
           !transfer_coin.receiver_chain_is_source(
             packet_source_port,
@@ -71,6 +88,7 @@ validator mint_voucher(
         let prefixed_denom = bytearray.concat(source_prefix, data.denom)
         let voucher_denom_hash =
           voucher_asset_name.voucher_denom_hash(prefixed_denom)
+        // User and reference tokens share the same denom hash.
         let user_token_name =
           voucher_asset_name.voucher_user_token_name_from_denom_hash(
             voucher_denom_hash,
@@ -89,6 +107,7 @@ validator mint_voucher(
             prefixed_denom,
           )
 
+        // Positive voucher mints require an exact trace-registry witness.
         expect Some(transfer_amount) = int.from_utf8(data.amount)
 
         let minted_tokens = tokens(mint, voucher_minting_policy_id)
@@ -143,15 +162,26 @@ validator mint_voucher(
           )?,
         }
       }
-      BurnVoucher { packet_source_port, packet_source_channel } -> {
+      BurnVoucher { packet_source_port, packet_source_channel, data } -> {
         trace @"mint_voucher: MintVoucher branch"
 
-        expect Operator(ibc_module_operator) =
-          extract_module_redeemer(inputs, redeemers, module_token)
-        expect TransferModuleOperator(ibc_module_operator) = ibc_module_operator
-        expect Transfer { data, .. } = ibc_module_operator
+        // Validate the voucher burn against the spent SendPacket channel UTxO.
+        expect fungible_token_packet_data.validate_basic(data)
+        expect Some(channel_redeemer) =
+          extract_channel_redeemer(
+            inputs,
+            redeemers,
+            channel_minting_policy_id,
+            host_state_nft_policy_id,
+            packet_source_channel,
+          )
+        expect SendPacket { packet } = channel_redeemer
+        expect packet.source_port == packet_source_port
+        expect packet.source_channel == packet_source_channel
+        expect fungible_token_packet_data.get_bytes(data) == packet.data
         trace @"mint_voucher: module redeemer is valid"
 
+        // Source-chain sends escrow natively instead of burning vouchers.
         let valid_sender =
           !transfer_coin.sender_chain_is_source(
             packet_source_port,
@@ -174,24 +204,46 @@ validator mint_voucher(
           valid_minted_tokens,
         }
       }
-      RefundVoucher { packet_source_port, packet_source_channel } -> {
+      RefundVoucher {
+        packet_source_port,
+        packet_source_channel,
+        data,
+        acknowledgement,
+      } -> {
         trace @"mint_voucher: RefundVoucher branch"
 
-        expect Callback(ibc_module_callback) =
-          extract_module_redeemer(inputs, redeemers, module_token)
-        let data =
-          when ibc_module_callback is {
-            OnTimeoutPacket { data, .. } -> data
-            OnAcknowledgementPacket { acknowledgement, data, .. } ->
-              when acknowledgement.response is {
-                AcknowledgementError { .. } -> data
-                _ -> fail
-              }
-            _ -> fail
+        // Voucher refunds are authorized by timeout or ack-error channel spends.
+        expect fungible_token_packet_data.validate_basic(data)
+        expect Some(channel_redeemer) =
+          extract_channel_redeemer(
+            inputs,
+            redeemers,
+            channel_minting_policy_id,
+            host_state_nft_policy_id,
+            packet_source_channel,
+          )
+        when channel_redeemer is {
+          TimeoutPacket { packet, .. } -> {
+            // Timeout refunds have no acknowledgement.
+            expect acknowledgement == None
+            expect packet.source_port == packet_source_port
+            expect packet.source_channel == packet_source_channel
+            expect fungible_token_packet_data.get_bytes(data) == packet.data
           }
-        expect TransferModuleData(data) = data
+          AcknowledgePacket { packet, acknowledgement: channel_ack, .. } -> {
+            // Ack-error refunds must match the channel acknowledgement bytes.
+            expect Some(ack) = acknowledgement
+            expect AcknowledgementError { .. } = ack.response
+            expect acknowledgement_mod.marshal_json(ack) == channel_ack
+            expect packet.source_port == packet_source_port
+            expect packet.source_channel == packet_source_channel
+            expect fungible_token_packet_data.get_bytes(data) == packet.data
+          }
+          _ -> fail
+        }
         trace @"mint_voucher: module redeemer is valid"
 
+        // Native sends refund from escrow instead of minting vouchers.
         let valid_sender =
           !transfer_coin.sender_chain_is_source(
             packet_source_port,
@@ -204,6 +256,7 @@ validator mint_voucher(
 
         let voucher_denom_hash =
           voucher_asset_name.voucher_denom_hash(data.denom)
+        // Refunds re-mint the same fully traced voucher denom.
         let user_token_name =
           voucher_asset_name.voucher_user_token_name_from_denom_hash(
             voucher_denom_hash,
@@ -222,6 +275,7 @@ validator mint_voucher(
             data.denom,
           )
 
+        // Refund mints use the same trace-registry witness rule.
         let minted_tokens = tokens(mint, voucher_minting_policy_id)
         let valid_minted_tokens =
           positive_voucher_mint_matches(
@@ -306,24 +360,42 @@ type TraceRegistryCompleteness {
   FirstSeenMapping
 }
 
-fn extract_module_redeemer(
+fn extract_channel_redeemer(
   inputs: List<Input>,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
-  module_token: AuthToken,
-) -> IBCModuleRedeemer {
-  expect Some(module_input) =
+  channel_minting_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
+  channel_id: ByteArray,
+) -> Option<SpendChannelRedeemer> {
+  expect channel_keys.is_valid_channel_id(channel_id)
+
+  // Reconstruct the channel auth token from the public channel id.
+  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
+  let host_state_nft =
+    AuthToken {
+      policy_id: host_state_nft_policy_id,
+      name: host_state_token_name,
+    }
+  let channel_token_name =
+    auth.generate_token_name(
+      host_state_nft,
+      channel_keys.channel_prefix,
+      channel_sequence,
+    )
+  let channel_token =
+    AuthToken { policy_id: channel_minting_policy_id, name: channel_token_name }
+  expect Some(channel_input) =
     list.find(
       inputs,
-      fn(input) { input.output |> auth.contain_auth_token(module_token) },
+      fn(input) { input.output |> auth.contain_auth_token(channel_token) },
     )
 
-  // validate spend channel redeemer
-  expect Some(spend_module_redeemer) =
-    pairs.get_first(redeemers, Spend(module_input.output_reference))
+  expect Some(spend_channel_redeemer) =
+    pairs.get_first(redeemers, Spend(channel_input.output_reference))
+  expect spend_channel_redeemer: SpendChannelRedeemer = spend_channel_redeemer
 
-  expect spend_module_redeemer: IBCModuleRedeemer = spend_module_redeemer
-
-  spend_module_redeemer
+  // Branches pattern-match this typed packet witness.
+  Some(spend_channel_redeemer)
 }
 
 // Every positive voucher mint must prove registry completeness in the same tx.
@@ -409,6 +481,7 @@ fn matching_registry_update_present(
       name: directory_bucket.active_shard_name,
     }
 
+  // First-seen mappings spend the active shard and reference archived shards.
   when
     list.find(
       inputs,
@@ -480,6 +553,7 @@ fn existing_registry_mapping_present(
       directory_bucket.archived_shard_names,
     )
 
+  // Existing mappings require a complete, unambiguous bucket witness.
   if !bucket_shard_reference_inputs_are_complete(
     reference_inputs,
     shard_names,

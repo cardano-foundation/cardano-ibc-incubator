@@ -74,6 +74,7 @@ export type DeploymentConfig = {
     mintConnectionStt: DeploymentValidator;
     mintChannelStt: DeploymentValidator;
     mintVoucher: DeploymentValidator;
+    mintPort: DeploymentValidator;
     voucherMetadata?: DeploymentVoucherMetadata;
   };
   modules: {
@@ -168,6 +169,7 @@ export type BridgeManifest = {
     mint_connection_stt: BridgeManifestValidator;
     mint_channel_stt: BridgeManifestValidator;
     mint_voucher: BridgeManifestValidator;
+    mint_port: BridgeManifestValidator;
     // The runtime only needs the target script address for the immutable
     // CIP-68 metadata output. We intentionally do not expose ref_utxo or
     // script_hash here because they are not consumed after deployment.
@@ -588,6 +590,7 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
       mintConnectionStt: requireDeploymentValidator(validators.mintConnectionStt, 'validators.mintConnectionStt'),
       mintChannelStt: requireDeploymentValidator(validators.mintChannelStt, 'validators.mintChannelStt'),
       mintVoucher: requireDeploymentValidator(validators.mintVoucher, 'validators.mintVoucher'),
+      mintPort: requireDeploymentValidator(validators.mintPort, 'validators.mintPort'),
       ...(validators.voucherMetadata
         ? { voucherMetadata: requireDeploymentVoucherMetadata(validators.voucherMetadata, 'validators.voucherMetadata') }
         : {}),
@@ -644,6 +647,7 @@ export function normalizeHandlerJsonDeploymentConfig(
         mint_connection_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintConnectionStt),
         mint_channel_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintChannelStt),
         mint_voucher: deploymentValidatorToManifest(normalizedDeployment.validators.mintVoucher),
+        mint_port: deploymentValidatorToManifest(normalizedDeployment.validators.mintPort),
         ...(normalizedDeployment.validators.voucherMetadata
           ? {
               voucher_metadata: deploymentVoucherMetadataToManifest(normalizedDeployment.validators.voucherMetadata),
@@ -702,6 +706,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       mint_connection_stt: requireManifestValidator(validators.mint_connection_stt, 'validators.mint_connection_stt'),
       mint_channel_stt: requireManifestValidator(validators.mint_channel_stt, 'validators.mint_channel_stt'),
       mint_voucher: requireManifestValidator(validators.mint_voucher, 'validators.mint_voucher'),
+      mint_port: requireManifestValidator(validators.mint_port, 'validators.mint_port'),
       ...(validators.voucher_metadata
         ? { voucher_metadata: requireManifestVoucherMetadata(validators.voucher_metadata, 'validators.voucher_metadata') }
         : {}),
@@ -749,6 +754,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
         mintConnectionStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_connection_stt),
         mintChannelStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_channel_stt),
         mintVoucher: manifestValidatorToDeployment(bridgeManifest.validators.mint_voucher),
+        mintPort: manifestValidatorToDeployment(bridgeManifest.validators.mint_port),
         ...(bridgeManifest.validators.voucher_metadata
           ? {
               voucherMetadata: manifestVoucherMetadataToDeployment(bridgeManifest.validators.voucher_metadata),

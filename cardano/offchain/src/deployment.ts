@@ -525,6 +525,13 @@ export const createDeployment = async (
         address: "",
         refUtxo: refUtxosInfo[mintVoucher.policyId],
       },
+      mintPort: {
+        title: "minting_port.mint_port.mint",
+        script: mintPortValidator.script,
+        scriptHash: mintPortPolicyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintPortPolicyId],
+      },
       voucherMetadata: {
         address: voucherMetadata.address,
       },
@@ -1081,10 +1088,20 @@ const deployTransferModule = async (
       identifierToken,
       traceRegistryDirectoryAuthToken,
       voucherMetadataScriptHash,
+      mintChannelPolicyId,
+      hostStateNFT.policy_id,
     ],
-    Data.Tuple([AuthTokenSchema, AuthTokenSchema, Data.Bytes()]) as unknown as [
+    Data.Tuple([
+      AuthTokenSchema,
+      AuthTokenSchema,
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+    ]) as unknown as [
       AuthToken,
       AuthToken,
+      string,
+      string,
       string,
     ],
   );
@@ -1161,9 +1178,11 @@ const deployTransferModule = async (
   const spendHandlerRedeemer: HandlerOperator = "HandlerBindPort";
 
   const mintPortRedeemer: MintPortRedeemer = {
-    handler_token: handlerToken,
-    spend_module_script_hash: spendTransferModuleScriptHash,
-    port_number: portNumber,
+    BindPort: {
+      handler_token: handlerToken,
+      spend_module_script_hash: spendTransferModuleScriptHash,
+      port_number: portNumber,
+    },
   };
 
   await submitTx(
@@ -1296,9 +1315,11 @@ const deployGenericModule = async (
   const spendHandlerRedeemer: HandlerOperator = "HandlerBindPort";
 
   const mintPortRedeemer: MintPortRedeemer = {
-    handler_token: handlerToken,
-    spend_module_script_hash: spendModuleScriptHash,
-    port_number: portNumber,
+    BindPort: {
+      handler_token: handlerToken,
+      spend_module_script_hash: spendModuleScriptHash,
+      port_number: portNumber,
+    },
   };
 
   await submitTx(

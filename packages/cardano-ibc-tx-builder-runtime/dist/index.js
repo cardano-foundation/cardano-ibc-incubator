@@ -7,6 +7,7 @@ exports.createTxBuilderRuntime = createTxBuilderRuntime;
 const crypto_1 = __importDefault(require("crypto"));
 const tx_builder_1 = require("@cardano-ibc/tx-builder");
 const trace_registry_1 = require("@cardano-ibc/trace-registry");
+const blake2b_1 = require("@noble/hashes/blake2b");
 const ws_1 = __importDefault(require("ws"));
 const ibcStateRoot_1 = require("./ibcStateRoot");
 const lucidIbcAdapter_1 = require("./lucidIbcAdapter");
@@ -181,6 +182,7 @@ function normalizeBridgeManifest(manifest) {
                 mintConnectionStt: mapValidator(manifest.validators.mint_connection_stt),
                 mintChannelStt: mapValidator(manifest.validators.mint_channel_stt),
                 mintVoucher: mapValidator(manifest.validators.mint_voucher),
+                mintPort: mapValidator(manifest.validators.mint_port),
             },
             modules: {
                 handler: manifest.modules.handler,
@@ -646,8 +648,31 @@ function dedupeUtxos(utxos) {
 function utxoRef(utxo) {
     return `${utxo.txHash}#${utxo.outputIndex}`;
 }
-function escrowShardHasOnlyDenom(utxo, denomToken) {
-    return Object.keys(utxo.assets ?? {}).every((unit) => unit === 'lovelace' || unit === denomToken);
+function transferEscrowShardTokenName(channelId, packetDenom) {
+    return Buffer.from((0, blake2b_1.blake2b)(Buffer.concat([
+        Buffer.from('transfer-escrow', 'utf8'),
+        Buffer.from(channelId, 'hex'),
+        Buffer.from(packetDenom, 'hex'),
+    ]), { dkLen: 28 })).toString('hex');
+}
+async function findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount) {
+    const encodedDatum = await context.lucidService.encode({ channel_id: channelId, denom: packetDenom }, 'transferEscrow');
+    const shardTokenUnit = context.deployment.validators.mintPort.scriptHash +
+        transferEscrowShardTokenName(channelId, packetDenom);
+    let utxo;
+    try {
+        utxo = await context.lucidService.findUtxoByUnit(shardTokenUnit);
+    }
+    catch {
+        utxo = undefined;
+    }
+    const canonicalUtxo = utxo?.datum === encodedDatum &&
+        (utxo.assets[shardTokenUnit] ?? 0n) === 1n &&
+        Object.keys(utxo.assets ?? {}).every((unit) => unit === 'lovelace' || unit === denomToken || unit === shardTokenUnit) &&
+        (requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
+        ? utxo
+        : undefined;
+    return { utxo: canonicalUtxo, encodedDatum, shardTokenUnit };
 }
 async function ensureTreeAlignedForRoot(context, onChainRoot) {
     if (!(0, ibcStateRoot_1.isTreeAligned)(onChainRoot)) {
@@ -822,33 +847,6 @@ function createTxBuilderRuntime(config) {
             }
             return context.lucidService.findUtxoAtWithUnit(address, unit);
         };
-        const findTransferEscrowShard = async (channelId, packetDenom, denomToken, requiredAmount) => {
-            const encodedDatum = await context.lucidService.encode({ channel_id: channelId, denom: packetDenom }, 'transferEscrow');
-            let utxos = [];
-            try {
-                utxos = await context.lucidService.findUtxoAt(context.deployment.modules.transfer.address);
-            }
-            catch {
-                utxos = [];
-            }
-            const candidates = utxos
-                .filter((utxo) => utxo.datum === encodedDatum)
-                .filter((utxo) => escrowShardHasOnlyDenom(utxo, denomToken))
-                .filter((utxo) => requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
-                .sort((a, b) => {
-                const aAmount = a.assets[denomToken] ?? 0n;
-                const bAmount = b.assets[denomToken] ?? 0n;
-                if (aAmount === bAmount) {
-                    const txHashCompare = a.txHash.localeCompare(b.txHash);
-                    return txHashCompare !== 0 ? txHashCompare : a.outputIndex - b.outputIndex;
-                }
-                return aAmount > bAmount ? -1 : 1;
-            });
-            return {
-                utxo: candidates[0],
-                encodedDatum,
-            };
-        };
         const initialWalletUtxos = await timed(logger, scope, 'load initial wallet UTxOs', () => getWalletUtxos(sendPacketOperator.signer, LOOKUP_RETRY_OPTIONS));
         if (initialWalletUtxos.length === 0) {
             throw new Error(`sendPacketBuilder failed: no spendable UTxOs found for ${sendPacketOperator.signer}`);
@@ -871,7 +869,7 @@ function createTxBuilderRuntime(config) {
                     const clientTokenUnit = context.lucidService.getClientTokenUnit(parseClientSequence(convertHex2String(connectionDatum.state.client_id)).toString());
                     const clientUtxo = await timed(logger, scope, 'load client UTxO', () => context.lucidService.findUtxoByUnit(clientTokenUnit));
                     const transferModuleIdentifier = context.deployment.modules.transfer.identifier;
-                    const transferModuleUtxo = await timed(logger, scope, 'load transfer module UTxO', () => context.lucidService.findUtxoByUnit(transferModuleIdentifier));
+                    const transferModuleReferenceUtxo = await timed(logger, scope, 'load transfer module reference UTxO', () => context.lucidService.findUtxoByUnit(transferModuleIdentifier));
                     const deployment = context.deployment;
                     const spendChannelAddress = deployment.validators.spendChannel.address;
                     if (!spendChannelAddress) {
@@ -883,7 +881,7 @@ function createTxBuilderRuntime(config) {
                         connectionUtxo,
                         connectionDatum,
                         clientUtxo,
-                        transferModuleUtxo,
+                        transferModuleReferenceUtxo,
                         channelTokenUnit,
                         channelToken: {
                             policyId: mintChannelPolicyId,
@@ -892,6 +890,7 @@ function createTxBuilderRuntime(config) {
                         deployment: {
                             sendPacketPolicyId: deployment.validators.spendChannel.refValidator.send_packet.scriptHash,
                             mintVoucherScriptHash: deployment.validators.mintVoucher.scriptHash,
+                            mintPortPolicyId: deployment.validators.mintPort.scriptHash,
                             spendChannelAddress,
                             transferModuleAddress: deployment.modules.transfer.address,
                         },
@@ -916,7 +915,7 @@ function createTxBuilderRuntime(config) {
             encode: (value, kind) => context.lucidService.encode(value, kind),
             findUtxoAtWithUnit: findWalletUtxoAtWithUnit,
             tryFindUtxosAt: getWalletUtxos,
-            findTransferEscrowShard,
+            findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) => timed(logger, scope, 'find transfer escrow shard', () => findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount)),
             createUnsignedSendPacketBurnTx: (dto) => context.lucidService.createUnsignedSendPacketBurnTx(dto),
             createUnsignedSendPacketEscrowTx: (dto) => context.lucidService.createUnsignedSendPacketEscrowTx(dto),
             invalidArgument: (message) => new Error(message),
