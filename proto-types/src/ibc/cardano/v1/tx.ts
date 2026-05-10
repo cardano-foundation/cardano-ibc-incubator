@@ -2,31 +2,59 @@
 import { BinaryReader, BinaryWriter } from "../../../binary";
 import { isSet, DeepPartial, Exact } from "../../../helpers";
 export const protobufPackage = "ibc.cardano.v1";
-/** SubmitSignedTxRequest contains a signed Cardano transaction in CBOR format. */
+/**
+ * SubmitSignedTxRequest contains a signed Cardano transaction in CBOR format.
+ * @name SubmitSignedTxRequest
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.SubmitSignedTxRequest
+ */
 export interface SubmitSignedTxRequest {
   /**
    * Signed transaction in CBOR hex format.
    * This is the completed, signed Cardano transaction ready for submission.
    */
   signed_tx_cbor: string;
-  /** Optional description for logging/debugging. */
+  /**
+   * Optional description for logging/debugging.
+   */
   description: string;
 }
-/** SubmitSignedTxResponse contains the result of submitting a signed transaction. */
+/**
+ * SubmitSignedTxResponse contains the result of submitting a signed transaction.
+ * @name SubmitSignedTxResponse
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.SubmitSignedTxResponse
+ */
 export interface SubmitSignedTxResponse {
-  /** Transaction hash (Blake2b-256 hash of the signed transaction). */
+  /**
+   * Transaction hash (Blake2b-256 hash of the signed transaction).
+   */
   tx_hash: string;
-  /** Block height at which the transaction was confirmed (if available). */
+  /**
+   * Block height at which the transaction was confirmed (if available).
+   */
   height: string;
-  /** Raw transaction events (for IBC event parsing). */
+  /**
+   * Raw transaction events (for IBC event parsing).
+   */
   events: Event[];
 }
-/** Event represents a transaction event with type and attributes. */
+/**
+ * Event represents a transaction event with type and attributes.
+ * @name Event
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.Event
+ */
 export interface Event {
   type: string;
   attributes: EventAttribute[];
 }
-/** EventAttribute represents a key-value pair in an event. */
+/**
+ * EventAttribute represents a key-value pair in an event.
+ * @name EventAttribute
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.EventAttribute
+ */
 export interface EventAttribute {
   key: string;
   value: string;
@@ -37,6 +65,12 @@ function createBaseSubmitSignedTxRequest(): SubmitSignedTxRequest {
     description: "",
   };
 }
+/**
+ * SubmitSignedTxRequest contains a signed Cardano transaction in CBOR format.
+ * @name SubmitSignedTxRequest
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.SubmitSignedTxRequest
+ */
 export const SubmitSignedTxRequest = {
   typeUrl: "/ibc.cardano.v1.SubmitSignedTxRequest",
   encode(message: SubmitSignedTxRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -94,6 +128,12 @@ function createBaseSubmitSignedTxResponse(): SubmitSignedTxResponse {
     events: [],
   };
 }
+/**
+ * SubmitSignedTxResponse contains the result of submitting a signed transaction.
+ * @name SubmitSignedTxResponse
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.SubmitSignedTxResponse
+ */
 export const SubmitSignedTxResponse = {
   typeUrl: "/ibc.cardano.v1.SubmitSignedTxResponse",
   encode(message: SubmitSignedTxResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -163,6 +203,12 @@ function createBaseEvent(): Event {
     attributes: [],
   };
 }
+/**
+ * Event represents a transaction event with type and attributes.
+ * @name Event
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.Event
+ */
 export const Event = {
   typeUrl: "/ibc.cardano.v1.Event",
   encode(message: Event, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -224,6 +270,12 @@ function createBaseEventAttribute(): EventAttribute {
     value: "",
   };
 }
+/**
+ * EventAttribute represents a key-value pair in an event.
+ * @name EventAttribute
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.EventAttribute
+ */
 export const EventAttribute = {
   typeUrl: "/ibc.cardano.v1.EventAttribute",
   encode(message: EventAttribute, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

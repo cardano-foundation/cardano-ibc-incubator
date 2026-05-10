@@ -5,13 +5,24 @@ import { GenesisState as GenesisState3 } from "../../channel/v1/genesis";
 import { BinaryReader, BinaryWriter } from "../../../../binary";
 import { isSet, DeepPartial, Exact } from "../../../../helpers";
 export const protobufPackage = "ibc.core.types.v1";
-/** GenesisState defines the ibc module's genesis state. */
+/**
+ * GenesisState defines the ibc module's genesis state.
+ * @name GenesisState
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.GenesisState
+ */
 export interface GenesisState {
-  /** ICS002 - Clients genesis state */
+  /**
+   * ICS002 - Clients genesis state
+   */
   client_genesis: GenesisState1;
-  /** ICS003 - Connections genesis state */
+  /**
+   * ICS003 - Connections genesis state
+   */
   connection_genesis: GenesisState2;
-  /** ICS004 - Channel genesis state */
+  /**
+   * ICS004 - Channel genesis state
+   */
   channel_genesis: GenesisState3;
 }
 function createBaseGenesisState(): GenesisState {
@@ -21,6 +32,12 @@ function createBaseGenesisState(): GenesisState {
     channel_genesis: GenesisState3.fromPartial({}),
   };
 }
+/**
+ * GenesisState defines the ibc module's genesis state.
+ * @name GenesisState
+ * @package ibc.core.types.v1
+ * @see proto type: ibc.core.types.v1.GenesisState
+ */
 export const GenesisState = {
   typeUrl: "/ibc.core.types.v1.GenesisState",
   encode(message: GenesisState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

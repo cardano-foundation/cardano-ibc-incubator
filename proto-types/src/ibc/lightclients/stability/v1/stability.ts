@@ -3,10 +3,20 @@ import { Duration } from "../../../../google/protobuf/duration";
 import { BinaryReader, BinaryWriter } from "../../../../binary";
 import { isSet, DeepPartial, Exact, bytesFromBase64, base64FromBytes } from "../../../../helpers";
 export const protobufPackage = "ibc.lightclients.stability.v1";
+/**
+ * @name Height
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.Height
+ */
 export interface Height {
   revision_number: bigint;
   revision_height: bigint;
 }
+/**
+ * @name HeuristicParams
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.HeuristicParams
+ */
 export interface HeuristicParams {
   threshold_depth: bigint;
   threshold_unique_pools: bigint;
@@ -15,11 +25,21 @@ export interface HeuristicParams {
   pools_weight_bps: bigint;
   stake_weight_bps: bigint;
 }
+/**
+ * @name StakeDistributionEntry
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.StakeDistributionEntry
+ */
 export interface StakeDistributionEntry {
   pool_id: string;
   stake: bigint;
   vrf_key_hash: Uint8Array;
 }
+/**
+ * @name EpochContext
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.EpochContext
+ */
 export interface EpochContext {
   epoch: bigint;
   stake_distribution: StakeDistributionEntry[];
@@ -28,6 +48,11 @@ export interface EpochContext {
   epoch_start_slot: bigint;
   epoch_end_slot_exclusive: bigint;
 }
+/**
+ * @name ClientState
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.ClientState
+ */
 export interface ClientState {
   chain_id: string;
   latest_height?: Height;
@@ -47,6 +72,11 @@ export interface ClientState {
   slot_length_ns: bigint;
   epoch_contexts: EpochContext[];
 }
+/**
+ * @name ConsensusState
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.ConsensusState
+ */
 export interface ConsensusState {
   timestamp: bigint;
   ibc_state_root: Uint8Array;
@@ -56,12 +86,24 @@ export interface ConsensusState {
   unique_stake_bps: bigint;
   security_score_bps: bigint;
 }
+/**
+ * @name Misbehaviour
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.Misbehaviour
+ */
 export interface Misbehaviour {
-  /** @deprecated */
+  /**
+   * @deprecated
+   */
   client_id: string;
   stability_header1?: StabilityHeader;
   stability_header2?: StabilityHeader;
 }
+/**
+ * @name StabilityBlock
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.StabilityBlock
+ */
 export interface StabilityBlock {
   height?: Height;
   slot: bigint;
@@ -70,6 +112,11 @@ export interface StabilityBlock {
   timestamp: bigint;
   block_cbor: Uint8Array;
 }
+/**
+ * @name StabilityHeader
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.StabilityHeader
+ */
 export interface StabilityHeader {
   trusted_height?: Height;
   anchor_block?: StabilityBlock;
@@ -85,6 +132,11 @@ function createBaseHeight(): Height {
     revision_height: BigInt(0),
   };
 }
+/**
+ * @name Height
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.Height
+ */
 export const Height = {
   typeUrl: "/ibc.lightclients.stability.v1.Height",
   encode(message: Height, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -151,6 +203,11 @@ function createBaseHeuristicParams(): HeuristicParams {
     stake_weight_bps: BigInt(0),
   };
 }
+/**
+ * @name HeuristicParams
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.HeuristicParams
+ */
 export const HeuristicParams = {
   typeUrl: "/ibc.lightclients.stability.v1.HeuristicParams",
   encode(message: HeuristicParams, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -264,6 +321,11 @@ function createBaseStakeDistributionEntry(): StakeDistributionEntry {
     vrf_key_hash: new Uint8Array(),
   };
 }
+/**
+ * @name StakeDistributionEntry
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.StakeDistributionEntry
+ */
 export const StakeDistributionEntry = {
   typeUrl: "/ibc.lightclients.stability.v1.StakeDistributionEntry",
   encode(message: StakeDistributionEntry, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -338,6 +400,11 @@ function createBaseEpochContext(): EpochContext {
     epoch_end_slot_exclusive: BigInt(0),
   };
 }
+/**
+ * @name EpochContext
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.EpochContext
+ */
 export const EpochContext = {
   typeUrl: "/ibc.lightclients.stability.v1.EpochContext",
   encode(message: EpochContext, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -469,6 +536,11 @@ function createBaseClientState(): ClientState {
     epoch_contexts: [],
   };
 }
+/**
+ * @name ClientState
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.ClientState
+ */
 export const ClientState = {
   typeUrl: "/ibc.lightclients.stability.v1.ClientState",
   encode(message: ClientState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -740,6 +812,11 @@ function createBaseConsensusState(): ConsensusState {
     security_score_bps: BigInt(0),
   };
 }
+/**
+ * @name ConsensusState
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.ConsensusState
+ */
 export const ConsensusState = {
   typeUrl: "/ibc.lightclients.stability.v1.ConsensusState",
   encode(message: ConsensusState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -861,6 +938,11 @@ function createBaseMisbehaviour(): Misbehaviour {
     stability_header2: undefined,
   };
 }
+/**
+ * @name Misbehaviour
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.Misbehaviour
+ */
 export const Misbehaviour = {
   typeUrl: "/ibc.lightclients.stability.v1.Misbehaviour",
   encode(message: Misbehaviour, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -942,6 +1024,11 @@ function createBaseStabilityBlock(): StabilityBlock {
     block_cbor: new Uint8Array(),
   };
 }
+/**
+ * @name StabilityBlock
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.StabilityBlock
+ */
 export const StabilityBlock = {
   typeUrl: "/ibc.lightclients.stability.v1.StabilityBlock",
   encode(message: StabilityBlock, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1050,6 +1137,11 @@ function createBaseStabilityHeader(): StabilityHeader {
     new_epoch_context: undefined,
   };
 }
+/**
+ * @name StabilityHeader
+ * @package ibc.lightclients.stability.v1
+ * @see proto type: ibc.lightclients.stability.v1.StabilityHeader
+ */
 export const StabilityHeader = {
   typeUrl: "/ibc.lightclients.stability.v1.StabilityHeader",
   encode(message: StabilityHeader, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

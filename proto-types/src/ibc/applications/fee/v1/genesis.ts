@@ -4,52 +4,105 @@ import { PacketId } from "../../../core/channel/v1/channel";
 import { BinaryReader, BinaryWriter } from "../../../../binary";
 import { DeepPartial, Exact, isSet } from "../../../../helpers";
 export const protobufPackage = "ibc.applications.fee.v1";
-/** GenesisState defines the ICS29 fee middleware genesis state */
+/**
+ * GenesisState defines the ICS29 fee middleware genesis state
+ * @name GenesisState
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.GenesisState
+ */
 export interface GenesisState {
-  /** list of identified packet fees */
+  /**
+   * list of identified packet fees
+   */
   identified_fees: IdentifiedPacketFees[];
-  /** list of fee enabled channels */
+  /**
+   * list of fee enabled channels
+   */
   fee_enabled_channels: FeeEnabledChannel[];
-  /** list of registered payees */
+  /**
+   * list of registered payees
+   */
   registered_payees: RegisteredPayee[];
-  /** list of registered counterparty payees */
+  /**
+   * list of registered counterparty payees
+   */
   registered_counterparty_payees: RegisteredCounterpartyPayee[];
-  /** list of forward relayer addresses */
+  /**
+   * list of forward relayer addresses
+   */
   forward_relayers: ForwardRelayerAddress[];
 }
-/** FeeEnabledChannel contains the PortID & ChannelID for a fee enabled channel */
+/**
+ * FeeEnabledChannel contains the PortID & ChannelID for a fee enabled channel
+ * @name FeeEnabledChannel
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.FeeEnabledChannel
+ */
 export interface FeeEnabledChannel {
-  /** unique port identifier */
+  /**
+   * unique port identifier
+   */
   port_id: string;
-  /** unique channel identifier */
+  /**
+   * unique channel identifier
+   */
   channel_id: string;
 }
-/** RegisteredPayee contains the relayer address and payee address for a specific channel */
+/**
+ * RegisteredPayee contains the relayer address and payee address for a specific channel
+ * @name RegisteredPayee
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.RegisteredPayee
+ */
 export interface RegisteredPayee {
-  /** unique channel identifier */
+  /**
+   * unique channel identifier
+   */
   channel_id: string;
-  /** the relayer address */
+  /**
+   * the relayer address
+   */
   relayer: string;
-  /** the payee address */
+  /**
+   * the payee address
+   */
   payee: string;
 }
 /**
  * RegisteredCounterpartyPayee contains the relayer address and counterparty payee address for a specific channel (used
  * for recv fee distribution)
+ * @name RegisteredCounterpartyPayee
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.RegisteredCounterpartyPayee
  */
 export interface RegisteredCounterpartyPayee {
-  /** unique channel identifier */
+  /**
+   * unique channel identifier
+   */
   channel_id: string;
-  /** the relayer address */
+  /**
+   * the relayer address
+   */
   relayer: string;
-  /** the counterparty payee address */
+  /**
+   * the counterparty payee address
+   */
   counterparty_payee: string;
 }
-/** ForwardRelayerAddress contains the forward relayer address and PacketId used for async acknowledgements */
+/**
+ * ForwardRelayerAddress contains the forward relayer address and PacketId used for async acknowledgements
+ * @name ForwardRelayerAddress
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.ForwardRelayerAddress
+ */
 export interface ForwardRelayerAddress {
-  /** the forward relayer address */
+  /**
+   * the forward relayer address
+   */
   address: string;
-  /** unique packet identifer comprised of the channel ID, port ID and sequence */
+  /**
+   * unique packet identifer comprised of the channel ID, port ID and sequence
+   */
   packet_id: PacketId;
 }
 function createBaseGenesisState(): GenesisState {
@@ -61,6 +114,12 @@ function createBaseGenesisState(): GenesisState {
     forward_relayers: [],
   };
 }
+/**
+ * GenesisState defines the ICS29 fee middleware genesis state
+ * @name GenesisState
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.GenesisState
+ */
 export const GenesisState = {
   typeUrl: "/ibc.applications.fee.v1.GenesisState",
   encode(message: GenesisState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -186,6 +245,12 @@ function createBaseFeeEnabledChannel(): FeeEnabledChannel {
     channel_id: "",
   };
 }
+/**
+ * FeeEnabledChannel contains the PortID & ChannelID for a fee enabled channel
+ * @name FeeEnabledChannel
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.FeeEnabledChannel
+ */
 export const FeeEnabledChannel = {
   typeUrl: "/ibc.applications.fee.v1.FeeEnabledChannel",
   encode(message: FeeEnabledChannel, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -243,6 +308,12 @@ function createBaseRegisteredPayee(): RegisteredPayee {
     payee: "",
   };
 }
+/**
+ * RegisteredPayee contains the relayer address and payee address for a specific channel
+ * @name RegisteredPayee
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.RegisteredPayee
+ */
 export const RegisteredPayee = {
   typeUrl: "/ibc.applications.fee.v1.RegisteredPayee",
   encode(message: RegisteredPayee, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -309,6 +380,13 @@ function createBaseRegisteredCounterpartyPayee(): RegisteredCounterpartyPayee {
     counterparty_payee: "",
   };
 }
+/**
+ * RegisteredCounterpartyPayee contains the relayer address and counterparty payee address for a specific channel (used
+ * for recv fee distribution)
+ * @name RegisteredCounterpartyPayee
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.RegisteredCounterpartyPayee
+ */
 export const RegisteredCounterpartyPayee = {
   typeUrl: "/ibc.applications.fee.v1.RegisteredCounterpartyPayee",
   encode(message: RegisteredCounterpartyPayee, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -376,6 +454,12 @@ function createBaseForwardRelayerAddress(): ForwardRelayerAddress {
     packet_id: PacketId.fromPartial({}),
   };
 }
+/**
+ * ForwardRelayerAddress contains the forward relayer address and PacketId used for async acknowledgements
+ * @name ForwardRelayerAddress
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.ForwardRelayerAddress
+ */
 export const ForwardRelayerAddress = {
   typeUrl: "/ibc.applications.fee.v1.ForwardRelayerAddress",
   encode(message: ForwardRelayerAddress, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

@@ -2,21 +2,44 @@
 import { BinaryReader, BinaryWriter } from "../../../../binary";
 import { isSet, DeepPartial, Exact } from "../../../../helpers";
 export const protobufPackage = "ibc.applications.transfer.v1";
-/** Token defines a struct which represents a token to be transferred. */
+/**
+ * Token defines a struct which represents a token to be transferred.
+ * @name Token
+ * @package ibc.applications.transfer.v1
+ * @see proto type: ibc.applications.transfer.v1.Token
+ */
 export interface Token {
-  /** the token denomination */
+  /**
+   * the token denomination
+   */
   denom: Denom;
-  /** the token amount to be transferred */
+  /**
+   * the token amount to be transferred
+   */
   amount: string;
 }
-/** Denom holds the base denom of a Token and a trace of the chains it was sent through. */
+/**
+ * Denom holds the base denom of a Token and a trace of the chains it was sent through.
+ * @name Denom
+ * @package ibc.applications.transfer.v1
+ * @see proto type: ibc.applications.transfer.v1.Denom
+ */
 export interface Denom {
-  /** the base token denomination */
+  /**
+   * the base token denomination
+   */
   base: string;
-  /** the trace of the token */
+  /**
+   * the trace of the token
+   */
   trace: Hop[];
 }
-/** Hop defines a port ID, channel ID pair specifying a unique "hop" in a trace */
+/**
+ * Hop defines a port ID, channel ID pair specifying a unique "hop" in a trace
+ * @name Hop
+ * @package ibc.applications.transfer.v1
+ * @see proto type: ibc.applications.transfer.v1.Hop
+ */
 export interface Hop {
   port_id: string;
   channel_id: string;
@@ -27,6 +50,12 @@ function createBaseToken(): Token {
     amount: "",
   };
 }
+/**
+ * Token defines a struct which represents a token to be transferred.
+ * @name Token
+ * @package ibc.applications.transfer.v1
+ * @see proto type: ibc.applications.transfer.v1.Token
+ */
 export const Token = {
   typeUrl: "/ibc.applications.transfer.v1.Token",
   encode(message: Token, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -85,6 +114,12 @@ function createBaseDenom(): Denom {
     trace: [],
   };
 }
+/**
+ * Denom holds the base denom of a Token and a trace of the chains it was sent through.
+ * @name Denom
+ * @package ibc.applications.transfer.v1
+ * @see proto type: ibc.applications.transfer.v1.Denom
+ */
 export const Denom = {
   typeUrl: "/ibc.applications.transfer.v1.Denom",
   encode(message: Denom, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -145,6 +180,12 @@ function createBaseHop(): Hop {
     channel_id: "",
   };
 }
+/**
+ * Hop defines a port ID, channel ID pair specifying a unique "hop" in a trace
+ * @name Hop
+ * @package ibc.applications.transfer.v1
+ * @see proto type: ibc.applications.transfer.v1.Hop
+ */
 export const Hop = {
   typeUrl: "/ibc.applications.transfer.v1.Hop",
   encode(message: Hop, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

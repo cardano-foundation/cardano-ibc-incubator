@@ -7,123 +7,275 @@ import { FeeEnabledChannel } from "./genesis";
 import { BinaryReader, BinaryWriter } from "../../../../binary";
 import { isSet, DeepPartial, Exact, Rpc } from "../../../../helpers";
 export const protobufPackage = "ibc.applications.fee.v1";
-/** QueryIncentivizedPacketsRequest defines the request type for the IncentivizedPackets rpc */
+/**
+ * QueryIncentivizedPacketsRequest defines the request type for the IncentivizedPackets rpc
+ * @name QueryIncentivizedPacketsRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryIncentivizedPacketsRequest
+ */
 export interface QueryIncentivizedPacketsRequest {
-  /** pagination defines an optional pagination for the request. */
+  /**
+   * pagination defines an optional pagination for the request.
+   */
   pagination?: PageRequest;
-  /** block height at which to query */
+  /**
+   * block height at which to query
+   */
   query_height: bigint;
 }
-/** QueryIncentivizedPacketsResponse defines the response type for the IncentivizedPackets rpc */
+/**
+ * QueryIncentivizedPacketsResponse defines the response type for the IncentivizedPackets rpc
+ * @name QueryIncentivizedPacketsResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryIncentivizedPacketsResponse
+ */
 export interface QueryIncentivizedPacketsResponse {
-  /** list of identified fees for incentivized packets */
+  /**
+   * list of identified fees for incentivized packets
+   */
   incentivized_packets: IdentifiedPacketFees[];
 }
-/** QueryIncentivizedPacketRequest defines the request type for the IncentivizedPacket rpc */
+/**
+ * QueryIncentivizedPacketRequest defines the request type for the IncentivizedPacket rpc
+ * @name QueryIncentivizedPacketRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryIncentivizedPacketRequest
+ */
 export interface QueryIncentivizedPacketRequest {
-  /** unique packet identifier comprised of channel ID, port ID and sequence */
+  /**
+   * unique packet identifier comprised of channel ID, port ID and sequence
+   */
   packet_id: PacketId;
-  /** block height at which to query */
+  /**
+   * block height at which to query
+   */
   query_height: bigint;
 }
-/** QueryIncentivizedPacketsResponse defines the response type for the IncentivizedPacket rpc */
+/**
+ * QueryIncentivizedPacketsResponse defines the response type for the IncentivizedPacket rpc
+ * @name QueryIncentivizedPacketResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryIncentivizedPacketResponse
+ */
 export interface QueryIncentivizedPacketResponse {
-  /** the identified fees for the incentivized packet */
+  /**
+   * the identified fees for the incentivized packet
+   */
   incentivized_packet: IdentifiedPacketFees;
 }
 /**
  * QueryIncentivizedPacketsForChannelRequest defines the request type for querying for all incentivized packets
  * for a specific channel
+ * @name QueryIncentivizedPacketsForChannelRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryIncentivizedPacketsForChannelRequest
  */
 export interface QueryIncentivizedPacketsForChannelRequest {
-  /** pagination defines an optional pagination for the request. */
+  /**
+   * pagination defines an optional pagination for the request.
+   */
   pagination?: PageRequest;
   port_id: string;
   channel_id: string;
-  /** Height to query at */
+  /**
+   * Height to query at
+   */
   query_height: bigint;
 }
-/** QueryIncentivizedPacketsResponse defines the response type for the incentivized packets RPC */
+/**
+ * QueryIncentivizedPacketsResponse defines the response type for the incentivized packets RPC
+ * @name QueryIncentivizedPacketsForChannelResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryIncentivizedPacketsForChannelResponse
+ */
 export interface QueryIncentivizedPacketsForChannelResponse {
-  /** Map of all incentivized_packets */
+  /**
+   * Map of all incentivized_packets
+   */
   incentivized_packets: IdentifiedPacketFees[];
 }
-/** QueryTotalRecvFeesRequest defines the request type for the TotalRecvFees rpc */
+/**
+ * QueryTotalRecvFeesRequest defines the request type for the TotalRecvFees rpc
+ * @name QueryTotalRecvFeesRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryTotalRecvFeesRequest
+ */
 export interface QueryTotalRecvFeesRequest {
-  /** the packet identifier for the associated fees */
+  /**
+   * the packet identifier for the associated fees
+   */
   packet_id: PacketId;
 }
-/** QueryTotalRecvFeesResponse defines the response type for the TotalRecvFees rpc */
+/**
+ * QueryTotalRecvFeesResponse defines the response type for the TotalRecvFees rpc
+ * @name QueryTotalRecvFeesResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryTotalRecvFeesResponse
+ */
 export interface QueryTotalRecvFeesResponse {
-  /** the total packet receive fees */
+  /**
+   * the total packet receive fees
+   */
   recv_fees: Coin[];
 }
-/** QueryTotalAckFeesRequest defines the request type for the TotalAckFees rpc */
+/**
+ * QueryTotalAckFeesRequest defines the request type for the TotalAckFees rpc
+ * @name QueryTotalAckFeesRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryTotalAckFeesRequest
+ */
 export interface QueryTotalAckFeesRequest {
-  /** the packet identifier for the associated fees */
+  /**
+   * the packet identifier for the associated fees
+   */
   packet_id: PacketId;
 }
-/** QueryTotalAckFeesResponse defines the response type for the TotalAckFees rpc */
+/**
+ * QueryTotalAckFeesResponse defines the response type for the TotalAckFees rpc
+ * @name QueryTotalAckFeesResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryTotalAckFeesResponse
+ */
 export interface QueryTotalAckFeesResponse {
-  /** the total packet acknowledgement fees */
+  /**
+   * the total packet acknowledgement fees
+   */
   ack_fees: Coin[];
 }
-/** QueryTotalTimeoutFeesRequest defines the request type for the TotalTimeoutFees rpc */
+/**
+ * QueryTotalTimeoutFeesRequest defines the request type for the TotalTimeoutFees rpc
+ * @name QueryTotalTimeoutFeesRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryTotalTimeoutFeesRequest
+ */
 export interface QueryTotalTimeoutFeesRequest {
-  /** the packet identifier for the associated fees */
+  /**
+   * the packet identifier for the associated fees
+   */
   packet_id: PacketId;
 }
-/** QueryTotalTimeoutFeesResponse defines the response type for the TotalTimeoutFees rpc */
+/**
+ * QueryTotalTimeoutFeesResponse defines the response type for the TotalTimeoutFees rpc
+ * @name QueryTotalTimeoutFeesResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryTotalTimeoutFeesResponse
+ */
 export interface QueryTotalTimeoutFeesResponse {
-  /** the total packet timeout fees */
+  /**
+   * the total packet timeout fees
+   */
   timeout_fees: Coin[];
 }
-/** QueryPayeeRequest defines the request type for the Payee rpc */
+/**
+ * QueryPayeeRequest defines the request type for the Payee rpc
+ * @name QueryPayeeRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryPayeeRequest
+ */
 export interface QueryPayeeRequest {
-  /** unique channel identifier */
+  /**
+   * unique channel identifier
+   */
   channel_id: string;
-  /** the relayer address to which the distribution address is registered */
+  /**
+   * the relayer address to which the distribution address is registered
+   */
   relayer: string;
 }
-/** QueryPayeeResponse defines the response type for the Payee rpc */
+/**
+ * QueryPayeeResponse defines the response type for the Payee rpc
+ * @name QueryPayeeResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryPayeeResponse
+ */
 export interface QueryPayeeResponse {
-  /** the payee address to which packet fees are paid out */
+  /**
+   * the payee address to which packet fees are paid out
+   */
   payee_address: string;
 }
-/** QueryCounterpartyPayeeRequest defines the request type for the CounterpartyPayee rpc */
+/**
+ * QueryCounterpartyPayeeRequest defines the request type for the CounterpartyPayee rpc
+ * @name QueryCounterpartyPayeeRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryCounterpartyPayeeRequest
+ */
 export interface QueryCounterpartyPayeeRequest {
-  /** unique channel identifier */
+  /**
+   * unique channel identifier
+   */
   channel_id: string;
-  /** the relayer address to which the counterparty is registered */
+  /**
+   * the relayer address to which the counterparty is registered
+   */
   relayer: string;
 }
-/** QueryCounterpartyPayeeResponse defines the response type for the CounterpartyPayee rpc */
+/**
+ * QueryCounterpartyPayeeResponse defines the response type for the CounterpartyPayee rpc
+ * @name QueryCounterpartyPayeeResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryCounterpartyPayeeResponse
+ */
 export interface QueryCounterpartyPayeeResponse {
-  /** the counterparty payee address used to compensate forward relaying */
+  /**
+   * the counterparty payee address used to compensate forward relaying
+   */
   counterparty_payee: string;
 }
-/** QueryFeeEnabledChannelsRequest defines the request type for the FeeEnabledChannels rpc */
+/**
+ * QueryFeeEnabledChannelsRequest defines the request type for the FeeEnabledChannels rpc
+ * @name QueryFeeEnabledChannelsRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryFeeEnabledChannelsRequest
+ */
 export interface QueryFeeEnabledChannelsRequest {
-  /** pagination defines an optional pagination for the request. */
+  /**
+   * pagination defines an optional pagination for the request.
+   */
   pagination?: PageRequest;
-  /** block height at which to query */
+  /**
+   * block height at which to query
+   */
   query_height: bigint;
 }
-/** QueryFeeEnabledChannelsResponse defines the response type for the FeeEnabledChannels rpc */
+/**
+ * QueryFeeEnabledChannelsResponse defines the response type for the FeeEnabledChannels rpc
+ * @name QueryFeeEnabledChannelsResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryFeeEnabledChannelsResponse
+ */
 export interface QueryFeeEnabledChannelsResponse {
-  /** list of fee enabled channels */
+  /**
+   * list of fee enabled channels
+   */
   fee_enabled_channels: FeeEnabledChannel[];
 }
-/** QueryFeeEnabledChannelRequest defines the request type for the FeeEnabledChannel rpc */
+/**
+ * QueryFeeEnabledChannelRequest defines the request type for the FeeEnabledChannel rpc
+ * @name QueryFeeEnabledChannelRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryFeeEnabledChannelRequest
+ */
 export interface QueryFeeEnabledChannelRequest {
-  /** unique port identifier */
+  /**
+   * unique port identifier
+   */
   port_id: string;
-  /** unique channel identifier */
+  /**
+   * unique channel identifier
+   */
   channel_id: string;
 }
-/** QueryFeeEnabledChannelResponse defines the response type for the FeeEnabledChannel rpc */
+/**
+ * QueryFeeEnabledChannelResponse defines the response type for the FeeEnabledChannel rpc
+ * @name QueryFeeEnabledChannelResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryFeeEnabledChannelResponse
+ */
 export interface QueryFeeEnabledChannelResponse {
-  /** boolean flag representing the fee enabled channel status */
+  /**
+   * boolean flag representing the fee enabled channel status
+   */
   fee_enabled: boolean;
 }
 function createBaseQueryIncentivizedPacketsRequest(): QueryIncentivizedPacketsRequest {
@@ -132,6 +284,12 @@ function createBaseQueryIncentivizedPacketsRequest(): QueryIncentivizedPacketsRe
     query_height: BigInt(0),
   };
 }
+/**
+ * QueryIncentivizedPacketsRequest defines the request type for the IncentivizedPackets rpc
+ * @name QueryIncentivizedPacketsRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryIncentivizedPacketsRequest
+ */
 export const QueryIncentivizedPacketsRequest = {
   typeUrl: "/ibc.applications.fee.v1.QueryIncentivizedPacketsRequest",
   encode(
@@ -197,6 +355,12 @@ function createBaseQueryIncentivizedPacketsResponse(): QueryIncentivizedPacketsR
     incentivized_packets: [],
   };
 }
+/**
+ * QueryIncentivizedPacketsResponse defines the response type for the IncentivizedPackets rpc
+ * @name QueryIncentivizedPacketsResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryIncentivizedPacketsResponse
+ */
 export const QueryIncentivizedPacketsResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryIncentivizedPacketsResponse",
   encode(
@@ -259,6 +423,12 @@ function createBaseQueryIncentivizedPacketRequest(): QueryIncentivizedPacketRequ
     query_height: BigInt(0),
   };
 }
+/**
+ * QueryIncentivizedPacketRequest defines the request type for the IncentivizedPacket rpc
+ * @name QueryIncentivizedPacketRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryIncentivizedPacketRequest
+ */
 export const QueryIncentivizedPacketRequest = {
   typeUrl: "/ibc.applications.fee.v1.QueryIncentivizedPacketRequest",
   encode(
@@ -324,6 +494,12 @@ function createBaseQueryIncentivizedPacketResponse(): QueryIncentivizedPacketRes
     incentivized_packet: IdentifiedPacketFees.fromPartial({}),
   };
 }
+/**
+ * QueryIncentivizedPacketsResponse defines the response type for the IncentivizedPacket rpc
+ * @name QueryIncentivizedPacketResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryIncentivizedPacketResponse
+ */
 export const QueryIncentivizedPacketResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryIncentivizedPacketResponse",
   encode(
@@ -384,6 +560,13 @@ function createBaseQueryIncentivizedPacketsForChannelRequest(): QueryIncentivize
     query_height: BigInt(0),
   };
 }
+/**
+ * QueryIncentivizedPacketsForChannelRequest defines the request type for querying for all incentivized packets
+ * for a specific channel
+ * @name QueryIncentivizedPacketsForChannelRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryIncentivizedPacketsForChannelRequest
+ */
 export const QueryIncentivizedPacketsForChannelRequest = {
   typeUrl: "/ibc.applications.fee.v1.QueryIncentivizedPacketsForChannelRequest",
   encode(
@@ -467,6 +650,12 @@ function createBaseQueryIncentivizedPacketsForChannelResponse(): QueryIncentiviz
     incentivized_packets: [],
   };
 }
+/**
+ * QueryIncentivizedPacketsResponse defines the response type for the incentivized packets RPC
+ * @name QueryIncentivizedPacketsForChannelResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryIncentivizedPacketsForChannelResponse
+ */
 export const QueryIncentivizedPacketsForChannelResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryIncentivizedPacketsForChannelResponse",
   encode(
@@ -528,6 +717,12 @@ function createBaseQueryTotalRecvFeesRequest(): QueryTotalRecvFeesRequest {
     packet_id: PacketId.fromPartial({}),
   };
 }
+/**
+ * QueryTotalRecvFeesRequest defines the request type for the TotalRecvFees rpc
+ * @name QueryTotalRecvFeesRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryTotalRecvFeesRequest
+ */
 export const QueryTotalRecvFeesRequest = {
   typeUrl: "/ibc.applications.fee.v1.QueryTotalRecvFeesRequest",
   encode(message: QueryTotalRecvFeesRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -579,6 +774,12 @@ function createBaseQueryTotalRecvFeesResponse(): QueryTotalRecvFeesResponse {
     recv_fees: [],
   };
 }
+/**
+ * QueryTotalRecvFeesResponse defines the response type for the TotalRecvFees rpc
+ * @name QueryTotalRecvFeesResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryTotalRecvFeesResponse
+ */
 export const QueryTotalRecvFeesResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryTotalRecvFeesResponse",
   encode(message: QueryTotalRecvFeesResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -631,6 +832,12 @@ function createBaseQueryTotalAckFeesRequest(): QueryTotalAckFeesRequest {
     packet_id: PacketId.fromPartial({}),
   };
 }
+/**
+ * QueryTotalAckFeesRequest defines the request type for the TotalAckFees rpc
+ * @name QueryTotalAckFeesRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryTotalAckFeesRequest
+ */
 export const QueryTotalAckFeesRequest = {
   typeUrl: "/ibc.applications.fee.v1.QueryTotalAckFeesRequest",
   encode(message: QueryTotalAckFeesRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -682,6 +889,12 @@ function createBaseQueryTotalAckFeesResponse(): QueryTotalAckFeesResponse {
     ack_fees: [],
   };
 }
+/**
+ * QueryTotalAckFeesResponse defines the response type for the TotalAckFees rpc
+ * @name QueryTotalAckFeesResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryTotalAckFeesResponse
+ */
 export const QueryTotalAckFeesResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryTotalAckFeesResponse",
   encode(message: QueryTotalAckFeesResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -734,6 +947,12 @@ function createBaseQueryTotalTimeoutFeesRequest(): QueryTotalTimeoutFeesRequest 
     packet_id: PacketId.fromPartial({}),
   };
 }
+/**
+ * QueryTotalTimeoutFeesRequest defines the request type for the TotalTimeoutFees rpc
+ * @name QueryTotalTimeoutFeesRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryTotalTimeoutFeesRequest
+ */
 export const QueryTotalTimeoutFeesRequest = {
   typeUrl: "/ibc.applications.fee.v1.QueryTotalTimeoutFeesRequest",
   encode(message: QueryTotalTimeoutFeesRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -785,6 +1004,12 @@ function createBaseQueryTotalTimeoutFeesResponse(): QueryTotalTimeoutFeesRespons
     timeout_fees: [],
   };
 }
+/**
+ * QueryTotalTimeoutFeesResponse defines the response type for the TotalTimeoutFees rpc
+ * @name QueryTotalTimeoutFeesResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryTotalTimeoutFeesResponse
+ */
 export const QueryTotalTimeoutFeesResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryTotalTimeoutFeesResponse",
   encode(message: QueryTotalTimeoutFeesResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -839,6 +1064,12 @@ function createBaseQueryPayeeRequest(): QueryPayeeRequest {
     relayer: "",
   };
 }
+/**
+ * QueryPayeeRequest defines the request type for the Payee rpc
+ * @name QueryPayeeRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryPayeeRequest
+ */
 export const QueryPayeeRequest = {
   typeUrl: "/ibc.applications.fee.v1.QueryPayeeRequest",
   encode(message: QueryPayeeRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -894,6 +1125,12 @@ function createBaseQueryPayeeResponse(): QueryPayeeResponse {
     payee_address: "",
   };
 }
+/**
+ * QueryPayeeResponse defines the response type for the Payee rpc
+ * @name QueryPayeeResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryPayeeResponse
+ */
 export const QueryPayeeResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryPayeeResponse",
   encode(message: QueryPayeeResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -941,6 +1178,12 @@ function createBaseQueryCounterpartyPayeeRequest(): QueryCounterpartyPayeeReques
     relayer: "",
   };
 }
+/**
+ * QueryCounterpartyPayeeRequest defines the request type for the CounterpartyPayee rpc
+ * @name QueryCounterpartyPayeeRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryCounterpartyPayeeRequest
+ */
 export const QueryCounterpartyPayeeRequest = {
   typeUrl: "/ibc.applications.fee.v1.QueryCounterpartyPayeeRequest",
   encode(message: QueryCounterpartyPayeeRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -998,6 +1241,12 @@ function createBaseQueryCounterpartyPayeeResponse(): QueryCounterpartyPayeeRespo
     counterparty_payee: "",
   };
 }
+/**
+ * QueryCounterpartyPayeeResponse defines the response type for the CounterpartyPayee rpc
+ * @name QueryCounterpartyPayeeResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryCounterpartyPayeeResponse
+ */
 export const QueryCounterpartyPayeeResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryCounterpartyPayeeResponse",
   encode(
@@ -1050,6 +1299,12 @@ function createBaseQueryFeeEnabledChannelsRequest(): QueryFeeEnabledChannelsRequ
     query_height: BigInt(0),
   };
 }
+/**
+ * QueryFeeEnabledChannelsRequest defines the request type for the FeeEnabledChannels rpc
+ * @name QueryFeeEnabledChannelsRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryFeeEnabledChannelsRequest
+ */
 export const QueryFeeEnabledChannelsRequest = {
   typeUrl: "/ibc.applications.fee.v1.QueryFeeEnabledChannelsRequest",
   encode(
@@ -1115,6 +1370,12 @@ function createBaseQueryFeeEnabledChannelsResponse(): QueryFeeEnabledChannelsRes
     fee_enabled_channels: [],
   };
 }
+/**
+ * QueryFeeEnabledChannelsResponse defines the response type for the FeeEnabledChannels rpc
+ * @name QueryFeeEnabledChannelsResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryFeeEnabledChannelsResponse
+ */
 export const QueryFeeEnabledChannelsResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryFeeEnabledChannelsResponse",
   encode(
@@ -1175,6 +1436,12 @@ function createBaseQueryFeeEnabledChannelRequest(): QueryFeeEnabledChannelReques
     channel_id: "",
   };
 }
+/**
+ * QueryFeeEnabledChannelRequest defines the request type for the FeeEnabledChannel rpc
+ * @name QueryFeeEnabledChannelRequest
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryFeeEnabledChannelRequest
+ */
 export const QueryFeeEnabledChannelRequest = {
   typeUrl: "/ibc.applications.fee.v1.QueryFeeEnabledChannelRequest",
   encode(message: QueryFeeEnabledChannelRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1232,6 +1499,12 @@ function createBaseQueryFeeEnabledChannelResponse(): QueryFeeEnabledChannelRespo
     fee_enabled: false,
   };
 }
+/**
+ * QueryFeeEnabledChannelResponse defines the response type for the FeeEnabledChannel rpc
+ * @name QueryFeeEnabledChannelResponse
+ * @package ibc.applications.fee.v1
+ * @see proto type: ibc.applications.fee.v1.QueryFeeEnabledChannelResponse
+ */
 export const QueryFeeEnabledChannelResponse = {
   typeUrl: "/ibc.applications.fee.v1.QueryFeeEnabledChannelResponse",
   encode(
@@ -1371,3 +1644,6 @@ export class QueryClientImpl implements Query {
     return promise.then((data) => QueryFeeEnabledChannelResponse.decode(new BinaryReader(data)));
   }
 }
+export const createClientImpl = (rpc: Rpc) => {
+  return new QueryClientImpl(rpc);
+};

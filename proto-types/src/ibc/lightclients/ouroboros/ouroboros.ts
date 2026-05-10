@@ -2,52 +2,109 @@
 import { BinaryReader, BinaryWriter } from "../../../binary";
 import { isSet, DeepPartial, Exact } from "../../../helpers";
 export const protobufPackage = "ibc.clients.cardano.v1";
+/**
+ * @name TokenConfigs
+ * @package ibc.clients.cardano.v1
+ * @see proto type: ibc.clients.cardano.v1.TokenConfigs
+ */
 export interface TokenConfigs {
-  /** IBC handler token uint (policyID + name), in hex format */
+  /**
+   * IBC handler token uint (policyID + name), in hex format
+   */
   handler_token_unit: string;
-  /** IBC client token policyID, in hex format */
+  /**
+   * IBC client token policyID, in hex format
+   */
   client_policy_id: string;
-  /** IBC connection token policyID, in hex format */
+  /**
+   * IBC connection token policyID, in hex format
+   */
   connection_policy_id: string;
-  /** IBC channel token policyID, in hex format */
+  /**
+   * IBC channel token policyID, in hex format
+   */
   channel_policy_id: string;
 }
+/**
+ * @name Height
+ * @package ibc.clients.cardano.v1
+ * @see proto type: ibc.clients.cardano.v1.Height
+ */
 export interface Height {
-  /** the revision that the client is currently on */
+  /**
+   * the revision that the client is currently on
+   */
   revision_number: bigint;
-  /** the height within the given revision */
+  /**
+   * the height within the given revision
+   */
   revision_height: bigint;
 }
-/** ConsensusState defines the consensus state from Tendermint. */
+/**
+ * ConsensusState defines the consensus state from Tendermint.
+ * @name ConsensusState
+ * @package ibc.clients.cardano.v1
+ * @see proto type: ibc.clients.cardano.v1.ConsensusState
+ */
 export interface ConsensusState {
   /**
    * timestamp that corresponds to the block height in which the ConsensusState
    * was stored. Will be Chain start time + slot
    */
   timestamp: bigint;
-  /** Slot at consensus height */
+  /**
+   * Slot at consensus height
+   */
   slot: bigint;
 }
+/**
+ * @name Validator
+ * @package ibc.clients.cardano.v1
+ * @see proto type: ibc.clients.cardano.v1.Validator
+ */
 export interface Validator {
-  /** vrf key hash of pool operator */
+  /**
+   * vrf key hash of pool operator
+   */
   vrf_key_hash: string;
-  /** pool id of operator */
+  /**
+   * pool id of operator
+   */
   pool_id: string;
 }
+/**
+ * @name BlockData
+ * @package ibc.clients.cardano.v1
+ * @see proto type: ibc.clients.cardano.v1.BlockData
+ */
 export interface BlockData {
-  /** Block number */
+  /**
+   * Block number
+   */
   height?: Height;
-  /** Slot number */
+  /**
+   * Slot number
+   */
   slot: bigint;
-  /** Block hash */
+  /**
+   * Block hash
+   */
   hash: string;
-  /** Hash of previous block */
+  /**
+   * Hash of previous block
+   */
   prev_hash: string;
-  /** Epoch number */
+  /**
+   * Epoch number
+   */
   epoch_no: bigint;
-  /** Hex string of block header to cbor */
+  /**
+   * Hex string of block header to cbor
+   */
   header_cbor: string;
-  /** Hex string of block txs to cbor */
+  /**
+   * Hex string of block txs to cbor
+   */
   body_cbor: string;
   /**
    * Hex string of current epoch's epoch nonce, calculated at the start of each epoch,
@@ -55,41 +112,81 @@ export interface BlockData {
    * Used to construct vrf value, also to verify slot leader is valid
    */
   epoch_nonce: string;
-  /** Time stamp of current block */
+  /**
+   * Time stamp of current block
+   */
   timestamp: bigint;
-  /** Chain id */
+  /**
+   * Chain id
+   */
   chain_id: string;
 }
+/**
+ * @name ClientState
+ * @package ibc.clients.cardano.v1
+ * @see proto type: ibc.clients.cardano.v1.ClientState
+ */
 export interface ClientState {
-  /** Chain id */
+  /**
+   * Chain id
+   */
   chain_id: string;
-  /** Latest height the client was updated to */
+  /**
+   * Latest height the client was updated to
+   */
   latest_height?: Height;
-  /** Block height when the client was frozen due to a misbehaviour */
+  /**
+   * Block height when the client was frozen due to a misbehaviour
+   */
   frozen_height?: Height;
-  /** To support finality, this state will be mark as finality after `valid_after` slots, default 0, unit: slot */
+  /**
+   * To support finality, this state will be mark as finality after `valid_after` slots, default 0, unit: slot
+   */
   valid_after: bigint;
-  /** Time when chain start */
+  /**
+   * Time when chain start
+   */
   genesis_time: bigint;
-  /** Epoch number of current chain state */
+  /**
+   * Epoch number of current chain state
+   */
   current_epoch: bigint;
-  /** Number of slots of this current epoch */
+  /**
+   * Number of slots of this current epoch
+   */
   epoch_length: bigint;
-  /** Number of slots of per KES period */
+  /**
+   * Number of slots of per KES period
+   */
   slot_per_kes_period: bigint;
-  /** Current epoch validator set */
+  /**
+   * Current epoch validator set
+   */
   current_validator_set: Validator[];
-  /** Next epoch validator set */
+  /**
+   * Next epoch validator set
+   */
   next_validator_set: Validator[];
   trusting_period: bigint;
-  /** Path at which next upgraded client will be committed. */
+  /**
+   * Path at which next upgraded client will be committed.
+   */
   upgrade_path: string[];
-  /** IBC related auth token policy configs */
+  /**
+   * IBC related auth token policy configs
+   */
   token_configs?: TokenConfigs;
 }
+/**
+ * @name Misbehaviour
+ * @package ibc.clients.cardano.v1
+ * @see proto type: ibc.clients.cardano.v1.Misbehaviour
+ */
 export interface Misbehaviour {
-  /** ClientID is deprecated */
-  /** @deprecated */
+  /**
+   * ClientID is deprecated
+   * @deprecated
+   */
   client_id: string;
   block_data1?: BlockData;
   block_data2?: BlockData;
@@ -102,6 +199,11 @@ function createBaseTokenConfigs(): TokenConfigs {
     channel_policy_id: "",
   };
 }
+/**
+ * @name TokenConfigs
+ * @package ibc.clients.cardano.v1
+ * @see proto type: ibc.clients.cardano.v1.TokenConfigs
+ */
 export const TokenConfigs = {
   typeUrl: "/ibc.clients.cardano.v1.TokenConfigs",
   encode(message: TokenConfigs, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -176,6 +278,11 @@ function createBaseHeight(): Height {
     revision_height: BigInt(0),
   };
 }
+/**
+ * @name Height
+ * @package ibc.clients.cardano.v1
+ * @see proto type: ibc.clients.cardano.v1.Height
+ */
 export const Height = {
   typeUrl: "/ibc.clients.cardano.v1.Height",
   encode(message: Height, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -238,6 +345,12 @@ function createBaseConsensusState(): ConsensusState {
     slot: BigInt(0),
   };
 }
+/**
+ * ConsensusState defines the consensus state from Tendermint.
+ * @name ConsensusState
+ * @package ibc.clients.cardano.v1
+ * @see proto type: ibc.clients.cardano.v1.ConsensusState
+ */
 export const ConsensusState = {
   typeUrl: "/ibc.clients.cardano.v1.ConsensusState",
   encode(message: ConsensusState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -298,6 +411,11 @@ function createBaseValidator(): Validator {
     pool_id: "",
   };
 }
+/**
+ * @name Validator
+ * @package ibc.clients.cardano.v1
+ * @see proto type: ibc.clients.cardano.v1.Validator
+ */
 export const Validator = {
   typeUrl: "/ibc.clients.cardano.v1.Validator",
   encode(message: Validator, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -362,6 +480,11 @@ function createBaseBlockData(): BlockData {
     chain_id: "",
   };
 }
+/**
+ * @name BlockData
+ * @package ibc.clients.cardano.v1
+ * @see proto type: ibc.clients.cardano.v1.BlockData
+ */
 export const BlockData = {
   typeUrl: "/ibc.clients.cardano.v1.BlockData",
   encode(message: BlockData, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -509,6 +632,11 @@ function createBaseClientState(): ClientState {
     token_configs: undefined,
   };
 }
+/**
+ * @name ClientState
+ * @package ibc.clients.cardano.v1
+ * @see proto type: ibc.clients.cardano.v1.ClientState
+ */
 export const ClientState = {
   typeUrl: "/ibc.clients.cardano.v1.ClientState",
   encode(message: ClientState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -707,6 +835,11 @@ function createBaseMisbehaviour(): Misbehaviour {
     block_data2: undefined,
   };
 }
+/**
+ * @name Misbehaviour
+ * @package ibc.clients.cardano.v1
+ * @see proto type: ibc.clients.cardano.v1.Misbehaviour
+ */
 export const Misbehaviour = {
   typeUrl: "/ibc.clients.cardano.v1.Misbehaviour",
   encode(message: Misbehaviour, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

@@ -7,31 +7,52 @@ export const protobufPackage = "ibc.core.client.v1";
 /**
  * IdentifiedClientState defines a client state with an additional client
  * identifier field.
+ * @name IdentifiedClientState
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.IdentifiedClientState
  */
 export interface IdentifiedClientState {
-  /** client identifier */
+  /**
+   * client identifier
+   */
   client_id: string;
-  /** client state */
+  /**
+   * client state
+   */
   client_state?: Any;
 }
 /**
  * ConsensusStateWithHeight defines a consensus state with an additional height
  * field.
+ * @name ConsensusStateWithHeight
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.ConsensusStateWithHeight
  */
 export interface ConsensusStateWithHeight {
-  /** consensus state height */
+  /**
+   * consensus state height
+   */
   height: Height;
-  /** consensus state */
+  /**
+   * consensus state
+   */
   consensus_state?: Any;
 }
 /**
  * ClientConsensusStates defines all the stored consensus states for a given
  * client.
+ * @name ClientConsensusStates
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.ClientConsensusStates
  */
 export interface ClientConsensusStates {
-  /** client identifier */
+  /**
+   * client identifier
+   */
   client_id: string;
-  /** consensus states and their heights associated with the client */
+  /**
+   * consensus states and their heights associated with the client
+   */
   consensus_states: ConsensusStateWithHeight[];
 }
 /**
@@ -39,13 +60,22 @@ export interface ClientConsensusStates {
  * client's latest consensus state is copied over to the subject client. The proposal
  * handler may fail if the subject and the substitute do not match in client and
  * chain parameters (with exception to latest height, frozen height, and chain-id).
+ * @name ClientUpdateProposal
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.ClientUpdateProposal
  */
 export interface ClientUpdateProposal {
-  /** the title of the update proposal */
+  /**
+   * the title of the update proposal
+   */
   title: string;
-  /** the description of the proposal */
+  /**
+   * the description of the proposal
+   */
   description: string;
-  /** the client identifier for the client to be updated if the proposal passes */
+  /**
+   * the client identifier for the client to be updated if the proposal passes
+   */
   subject_client_id: string;
   /**
    * the substitute client identifier for the client standing in for the subject
@@ -56,6 +86,9 @@ export interface ClientUpdateProposal {
 /**
  * UpgradeProposal is a gov Content type for initiating an IBC breaking
  * upgrade.
+ * @name UpgradeProposal
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.UpgradeProposal
  */
 export interface UpgradeProposal {
   title: string;
@@ -82,16 +115,30 @@ export interface UpgradeProposal {
  * breaking changes In these cases, the RevisionNumber is incremented so that
  * height continues to be monitonically increasing even as the RevisionHeight
  * gets reset
+ * @name Height
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.Height
  */
 export interface Height {
-  /** the revision that the client is currently on */
+  /**
+   * the revision that the client is currently on
+   */
   revision_number: bigint;
-  /** the height within the given revision */
+  /**
+   * the height within the given revision
+   */
   revision_height: bigint;
 }
-/** Params defines the set of IBC light client parameters. */
+/**
+ * Params defines the set of IBC light client parameters.
+ * @name Params
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.Params
+ */
 export interface Params {
-  /** allowed_clients defines the list of allowed client state types. */
+  /**
+   * allowed_clients defines the list of allowed client state types.
+   */
   allowed_clients: string[];
 }
 function createBaseIdentifiedClientState(): IdentifiedClientState {
@@ -100,6 +147,13 @@ function createBaseIdentifiedClientState(): IdentifiedClientState {
     client_state: undefined,
   };
 }
+/**
+ * IdentifiedClientState defines a client state with an additional client
+ * identifier field.
+ * @name IdentifiedClientState
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.IdentifiedClientState
+ */
 export const IdentifiedClientState = {
   typeUrl: "/ibc.core.client.v1.IdentifiedClientState",
   encode(message: IdentifiedClientState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -159,6 +213,13 @@ function createBaseConsensusStateWithHeight(): ConsensusStateWithHeight {
     consensus_state: undefined,
   };
 }
+/**
+ * ConsensusStateWithHeight defines a consensus state with an additional height
+ * field.
+ * @name ConsensusStateWithHeight
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.ConsensusStateWithHeight
+ */
 export const ConsensusStateWithHeight = {
   typeUrl: "/ibc.core.client.v1.ConsensusStateWithHeight",
   encode(message: ConsensusStateWithHeight, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -222,6 +283,13 @@ function createBaseClientConsensusStates(): ClientConsensusStates {
     consensus_states: [],
   };
 }
+/**
+ * ClientConsensusStates defines all the stored consensus states for a given
+ * client.
+ * @name ClientConsensusStates
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.ClientConsensusStates
+ */
 export const ClientConsensusStates = {
   typeUrl: "/ibc.core.client.v1.ClientConsensusStates",
   encode(message: ClientConsensusStates, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -288,6 +356,15 @@ function createBaseClientUpdateProposal(): ClientUpdateProposal {
     substitute_client_id: "",
   };
 }
+/**
+ * ClientUpdateProposal is a governance proposal. If it passes, the substitute
+ * client's latest consensus state is copied over to the subject client. The proposal
+ * handler may fail if the subject and the substitute do not match in client and
+ * chain parameters (with exception to latest height, frozen height, and chain-id).
+ * @name ClientUpdateProposal
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.ClientUpdateProposal
+ */
 export const ClientUpdateProposal = {
   typeUrl: "/ibc.core.client.v1.ClientUpdateProposal",
   encode(message: ClientUpdateProposal, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -364,6 +441,13 @@ function createBaseUpgradeProposal(): UpgradeProposal {
     upgraded_client_state: undefined,
   };
 }
+/**
+ * UpgradeProposal is a gov Content type for initiating an IBC breaking
+ * upgrade.
+ * @name UpgradeProposal
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.UpgradeProposal
+ */
 export const UpgradeProposal = {
   typeUrl: "/ibc.core.client.v1.UpgradeProposal",
   encode(message: UpgradeProposal, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -446,6 +530,21 @@ function createBaseHeight(): Height {
     revision_height: BigInt(0),
   };
 }
+/**
+ * Height is a monotonically increasing data type
+ * that can be compared against another Height for the purposes of updating and
+ * freezing clients
+ *
+ * Normally the RevisionHeight is incremented at each height while keeping
+ * RevisionNumber the same. However some consensus algorithms may choose to
+ * reset the height in certain conditions e.g. hard forks, state-machine
+ * breaking changes In these cases, the RevisionNumber is incremented so that
+ * height continues to be monitonically increasing even as the RevisionHeight
+ * gets reset
+ * @name Height
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.Height
+ */
 export const Height = {
   typeUrl: "/ibc.core.client.v1.Height",
   encode(message: Height, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -507,6 +606,12 @@ function createBaseParams(): Params {
     allowed_clients: [],
   };
 }
+/**
+ * Params defines the set of IBC light client parameters.
+ * @name Params
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.Params
+ */
 export const Params = {
   typeUrl: "/ibc.core.client.v1.Params",
   encode(message: Params, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

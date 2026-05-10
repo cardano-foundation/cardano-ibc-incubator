@@ -60,9 +60,13 @@ telescope({
   outPath: outPath,
   options: {
     logLevel: 0,
+    useInterchainJs: false,
     useSDKTypes: false,
     tsDisable: {
       disableAll: false,
+    },
+    helperFunctions: {
+      enabled: false,
     },
     eslintDisable: {
       disableAll: true,
@@ -122,6 +126,8 @@ telescope({
       typingsFormat: {
         useDeepPartial: true,
         useExact: true,
+        toJsonUnknown: true,
+        useTelescopeGeneratedType: false,
         timestamp: "timestamp",
         duration: "duration",
         customTypes: {

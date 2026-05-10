@@ -68,11 +68,18 @@ export function protocolMessagePartKeyToJSON(object: ProtocolMessagePartKey): st
  * Currently, the height of the certificate corresponds to the immutable file number in Cardano node
  * However, it is possible to have two certificates on the same immutable file.
  * This needs to be fixed in the future by using something unique like block height.
+ * @name Height
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.Height
  */
 export interface Height {
-  /** the revision that the client is currently on */
+  /**
+   * the revision that the client is currently on
+   */
   revision_number: bigint;
-  /** the height within the given revision */
+  /**
+   * the height within the given revision
+   */
   revision_height: bigint;
 }
 /**
@@ -80,19 +87,32 @@ export interface Height {
  * Currently, this message includes protocol parameters.
  * However, these protocol parameters might be removed in the future,
  * as they can change across different epochs in Mithril.
+ * @name ClientState
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.ClientState
  */
 export interface ClientState {
-  /** Chain id */
+  /**
+   * Chain id
+   */
   chain_id: string;
-  /** Latest height the client was updated to */
+  /**
+   * Latest height the client was updated to
+   */
   latest_height?: Height;
-  /** Block height when the client was frozen due to a misbehaviour */
+  /**
+   * Block height when the client was frozen due to a misbehaviour
+   */
   frozen_height?: Height;
-  /** Epoch number of current chain state */
+  /**
+   * Epoch number of current chain state
+   */
   current_epoch: bigint;
   trusting_period: Duration;
   protocol_parameters?: MithrilProtocolParameters;
-  /** Path at which next upgraded client will be committed. */
+  /**
+   * Path at which next upgraded client will be committed.
+   */
   upgrade_path: string[];
   /**
    * HostState NFT identification on the Cardano chain.
@@ -113,6 +133,9 @@ export interface ClientState {
  * The ibc_state_root field contains the ICS-23 Merkle root extracted from the Handler UTXO datum
  * at the certified height. This root commits to all IBC state (clients, connections, channels, packets)
  * and is used for VerifyMembership/VerifyNonMembership proof verification.
+ * @name ConsensusState
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.ConsensusState
  */
 export interface ConsensusState {
   timestamp: bigint;
@@ -127,15 +150,27 @@ export interface ConsensusState {
    */
   ibc_state_root: Uint8Array;
 }
-/** Misbehavior represents a conflict between two headers. */
+/**
+ * Misbehavior represents a conflict between two headers.
+ * @name Misbehaviour
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.Misbehaviour
+ */
 export interface Misbehaviour {
-  /** ClientID is deprecated */
-  /** @deprecated */
+  /**
+   * ClientID is deprecated
+   * @deprecated
+   */
   client_id: string;
   mithril_header1?: MithrilHeader;
   mithril_header2?: MithrilHeader;
 }
-/** Mithril Header */
+/**
+ * Mithril Header
+ * @name MithrilHeader
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.MithrilHeader
+ */
 export interface MithrilHeader {
   mithril_stake_distribution?: MithrilStakeDistribution;
   mithril_stake_distribution_certificate?: MithrilCertificate;
@@ -168,7 +203,12 @@ export interface MithrilHeader {
   host_state_tx_output_index: number;
   host_state_tx_proof: Uint8Array;
 }
-/** Mithril Stake Distribution */
+/**
+ * Mithril Stake Distribution
+ * @name MithrilStakeDistribution
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.MithrilStakeDistribution
+ */
 export interface MithrilStakeDistribution {
   epoch: bigint;
   signers_with_stake: SignerWithStake[];
@@ -177,7 +217,12 @@ export interface MithrilStakeDistribution {
   created_at: bigint;
   protocol_parameter?: MithrilProtocolParameters;
 }
-/** Cardano Transaction Snapshot */
+/**
+ * Cardano Transaction Snapshot
+ * @name CardanoTransactionSnapshot
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.CardanoTransactionSnapshot
+ */
 export interface CardanoTransactionSnapshot {
   merkle_root: string;
   epoch: bigint;
@@ -186,7 +231,12 @@ export interface CardanoTransactionSnapshot {
   certificate_hash: string;
   created_at: string;
 }
-/** Mithril Certificate */
+/**
+ * Mithril Certificate
+ * @name MithrilCertificate
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.MithrilCertificate
+ */
 export interface MithrilCertificate {
   hash: string;
   previous_hash: string;
@@ -199,7 +249,12 @@ export interface MithrilCertificate {
   multi_signature: string;
   genesis_signature: string;
 }
-/** Certificate Metadata */
+/**
+ * Certificate Metadata
+ * @name CertificateMetadata
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.CertificateMetadata
+ */
 export interface CertificateMetadata {
   network: string;
   protocol_version: string;
@@ -208,54 +263,110 @@ export interface CertificateMetadata {
   sealed_at: string;
   signers: SignerWithStake[];
 }
-/** Signer With Stake */
+/**
+ * Signer With Stake
+ * @name SignerWithStake
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.SignerWithStake
+ */
 export interface SignerWithStake {
   party_id: string;
   stake: bigint;
 }
-/** Protocol Message */
+/**
+ * Protocol Message
+ * @name ProtocolMessage
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.ProtocolMessage
+ */
 export interface ProtocolMessage {
   message_parts: MessagePart[];
 }
-/** Message Part */
+/**
+ * Message Part
+ * @name MessagePart
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.MessagePart
+ */
 export interface MessagePart {
   protocol_message_part_key: ProtocolMessagePartKey;
   protocol_message_part_value: string;
 }
-/** Mithril Protocol Parameters */
+/**
+ * Mithril Protocol Parameters
+ * @name MithrilProtocolParameters
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.MithrilProtocolParameters
+ */
 export interface MithrilProtocolParameters {
-  /** Quorum parameter */
+  /**
+   * Quorum parameter
+   */
   k: bigint;
-  /** Security parameter (number of lotteries) */
+  /**
+   * Security parameter (number of lotteries)
+   */
   m: bigint;
-  /** f in phi(w) = 1 - (1 - f)^w, where w is the stake of a participant */
+  /**
+   * f in phi(w) = 1 - (1 - f)^w, where w is the stake of a participant
+   */
   phi_f: Fraction;
 }
-/** ProtocolGenesisSignature wraps a cryptographic signature. */
+/**
+ * ProtocolGenesisSignature wraps a cryptographic signature.
+ * @name ProtocolGenesisSignature
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.ProtocolGenesisSignature
+ */
 export interface ProtocolGenesisSignature {
   signature: Uint8Array;
 }
-/** An entity type associated with the signature. */
+/**
+ * An entity type associated with the signature.
+ * @name SignedEntityType
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.SignedEntityType
+ */
 export interface SignedEntityType {
   mithril_stake_distribution?: MithrilStakeDistribution;
   cardano_stake_distribution?: CardanoStakeDistribution;
   cardano_immutable_files_full?: CardanoImmutableFilesFull;
   cardano_transactions?: CardanoTransactions;
 }
-/** Cardano stake distribution */
+/**
+ * Cardano stake distribution
+ * @name CardanoStakeDistribution
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.CardanoStakeDistribution
+ */
 export interface CardanoStakeDistribution {
   epoch: bigint;
 }
-/** Cardano immutable files full */
+/**
+ * Cardano immutable files full
+ * @name CardanoImmutableFilesFull
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.CardanoImmutableFilesFull
+ */
 export interface CardanoImmutableFilesFull {
   beacon?: CardanoDbBeacon;
 }
-/** Cardano transactions */
+/**
+ * Cardano transactions
+ * @name CardanoTransactions
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.CardanoTransactions
+ */
 export interface CardanoTransactions {
   epoch: bigint;
   block_number: bigint;
 }
-/** Cardano db beacon */
+/**
+ * Cardano db beacon
+ * @name CardanoDbBeacon
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.CardanoDbBeacon
+ */
 export interface CardanoDbBeacon {
   network: string;
   epoch: bigint;
@@ -264,6 +375,9 @@ export interface CardanoDbBeacon {
 /**
  * Fraction defines the protobuf message type for tmmath.Fraction that only
  * supports positive values.
+ * @name Fraction
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.Fraction
  */
 export interface Fraction {
   numerator: bigint;
@@ -275,6 +389,14 @@ function createBaseHeight(): Height {
     revision_height: BigInt(0),
   };
 }
+/**
+ * Currently, the height of the certificate corresponds to the immutable file number in Cardano node
+ * However, it is possible to have two certificates on the same immutable file.
+ * This needs to be fixed in the future by using something unique like block height.
+ * @name Height
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.Height
+ */
 export const Height = {
   typeUrl: "/ibc.lightclients.mithril.v1.Height",
   encode(message: Height, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -344,6 +466,15 @@ function createBaseClientState(): ClientState {
     host_state_nft_token_name: new Uint8Array(),
   };
 }
+/**
+ * MithrilClientState represents the client state in the Mithril system.
+ * Currently, this message includes protocol parameters.
+ * However, these protocol parameters might be removed in the future,
+ * as they can change across different epochs in Mithril.
+ * @name ClientState
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.ClientState
+ */
 export const ClientState = {
   typeUrl: "/ibc.lightclients.mithril.v1.ClientState",
   encode(message: ClientState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -498,6 +629,18 @@ function createBaseConsensusState(): ConsensusState {
     ibc_state_root: new Uint8Array(),
   };
 }
+/**
+ * MithrilConsensusState represents the consensus state in the Mithril system.
+ * This message stores the latest transaction snapshot hash and the first certificate hash of the latest epoch.
+ * These are used to verify the latest transaction snapshot.
+ *
+ * The ibc_state_root field contains the ICS-23 Merkle root extracted from the Handler UTXO datum
+ * at the certified height. This root commits to all IBC state (clients, connections, channels, packets)
+ * and is used for VerifyMembership/VerifyNonMembership proof verification.
+ * @name ConsensusState
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.ConsensusState
+ */
 export const ConsensusState = {
   typeUrl: "/ibc.lightclients.mithril.v1.ConsensusState",
   encode(message: ConsensusState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -588,6 +731,12 @@ function createBaseMisbehaviour(): Misbehaviour {
     mithril_header2: undefined,
   };
 }
+/**
+ * Misbehavior represents a conflict between two headers.
+ * @name Misbehaviour
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.Misbehaviour
+ */
 export const Misbehaviour = {
   typeUrl: "/ibc.lightclients.mithril.v1.Misbehaviour",
   encode(message: Misbehaviour, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -670,6 +819,12 @@ function createBaseMithrilHeader(): MithrilHeader {
     host_state_tx_proof: new Uint8Array(),
   };
 }
+/**
+ * Mithril Header
+ * @name MithrilHeader
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.MithrilHeader
+ */
 export const MithrilHeader = {
   typeUrl: "/ibc.lightclients.mithril.v1.MithrilHeader",
   encode(message: MithrilHeader, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -862,6 +1017,12 @@ function createBaseMithrilStakeDistribution(): MithrilStakeDistribution {
     protocol_parameter: undefined,
   };
 }
+/**
+ * Mithril Stake Distribution
+ * @name MithrilStakeDistribution
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.MithrilStakeDistribution
+ */
 export const MithrilStakeDistribution = {
   typeUrl: "/ibc.lightclients.mithril.v1.MithrilStakeDistribution",
   encode(message: MithrilStakeDistribution, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -977,6 +1138,12 @@ function createBaseCardanoTransactionSnapshot(): CardanoTransactionSnapshot {
     created_at: "",
   };
 }
+/**
+ * Cardano Transaction Snapshot
+ * @name CardanoTransactionSnapshot
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.CardanoTransactionSnapshot
+ */
 export const CardanoTransactionSnapshot = {
   typeUrl: "/ibc.lightclients.mithril.v1.CardanoTransactionSnapshot",
   encode(message: CardanoTransactionSnapshot, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1083,6 +1250,12 @@ function createBaseMithrilCertificate(): MithrilCertificate {
     genesis_signature: "",
   };
 }
+/**
+ * Mithril Certificate
+ * @name MithrilCertificate
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.MithrilCertificate
+ */
 export const MithrilCertificate = {
   typeUrl: "/ibc.lightclients.mithril.v1.MithrilCertificate",
   encode(message: MithrilCertificate, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1234,6 +1407,12 @@ function createBaseCertificateMetadata(): CertificateMetadata {
     signers: [],
   };
 }
+/**
+ * Certificate Metadata
+ * @name CertificateMetadata
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.CertificateMetadata
+ */
 export const CertificateMetadata = {
   typeUrl: "/ibc.lightclients.mithril.v1.CertificateMetadata",
   encode(message: CertificateMetadata, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1337,6 +1516,12 @@ function createBaseSignerWithStake(): SignerWithStake {
     stake: BigInt(0),
   };
 }
+/**
+ * Signer With Stake
+ * @name SignerWithStake
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.SignerWithStake
+ */
 export const SignerWithStake = {
   typeUrl: "/ibc.lightclients.mithril.v1.SignerWithStake",
   encode(message: SignerWithStake, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1394,6 +1579,12 @@ function createBaseProtocolMessage(): ProtocolMessage {
     message_parts: [],
   };
 }
+/**
+ * Protocol Message
+ * @name ProtocolMessage
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.ProtocolMessage
+ */
 export const ProtocolMessage = {
   typeUrl: "/ibc.lightclients.mithril.v1.ProtocolMessage",
   encode(message: ProtocolMessage, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1446,6 +1637,12 @@ function createBaseMessagePart(): MessagePart {
     protocol_message_part_value: "",
   };
 }
+/**
+ * Message Part
+ * @name MessagePart
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.MessagePart
+ */
 export const MessagePart = {
   typeUrl: "/ibc.lightclients.mithril.v1.MessagePart",
   encode(message: MessagePart, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1507,6 +1704,12 @@ function createBaseMithrilProtocolParameters(): MithrilProtocolParameters {
     phi_f: Fraction.fromPartial({}),
   };
 }
+/**
+ * Mithril Protocol Parameters
+ * @name MithrilProtocolParameters
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.MithrilProtocolParameters
+ */
 export const MithrilProtocolParameters = {
   typeUrl: "/ibc.lightclients.mithril.v1.MithrilProtocolParameters",
   encode(message: MithrilProtocolParameters, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1579,6 +1782,12 @@ function createBaseProtocolGenesisSignature(): ProtocolGenesisSignature {
     signature: new Uint8Array(),
   };
 }
+/**
+ * ProtocolGenesisSignature wraps a cryptographic signature.
+ * @name ProtocolGenesisSignature
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.ProtocolGenesisSignature
+ */
 export const ProtocolGenesisSignature = {
   typeUrl: "/ibc.lightclients.mithril.v1.ProtocolGenesisSignature",
   encode(message: ProtocolGenesisSignature, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1633,6 +1842,12 @@ function createBaseSignedEntityType(): SignedEntityType {
     cardano_transactions: undefined,
   };
 }
+/**
+ * An entity type associated with the signature.
+ * @name SignedEntityType
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.SignedEntityType
+ */
 export const SignedEntityType = {
   typeUrl: "/ibc.lightclients.mithril.v1.SignedEntityType",
   encode(message: SignedEntityType, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1741,6 +1956,12 @@ function createBaseCardanoStakeDistribution(): CardanoStakeDistribution {
     epoch: BigInt(0),
   };
 }
+/**
+ * Cardano stake distribution
+ * @name CardanoStakeDistribution
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.CardanoStakeDistribution
+ */
 export const CardanoStakeDistribution = {
   typeUrl: "/ibc.lightclients.mithril.v1.CardanoStakeDistribution",
   encode(message: CardanoStakeDistribution, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1791,6 +2012,12 @@ function createBaseCardanoImmutableFilesFull(): CardanoImmutableFilesFull {
     beacon: undefined,
   };
 }
+/**
+ * Cardano immutable files full
+ * @name CardanoImmutableFilesFull
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.CardanoImmutableFilesFull
+ */
 export const CardanoImmutableFilesFull = {
   typeUrl: "/ibc.lightclients.mithril.v1.CardanoImmutableFilesFull",
   encode(message: CardanoImmutableFilesFull, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1843,6 +2070,12 @@ function createBaseCardanoTransactions(): CardanoTransactions {
     block_number: BigInt(0),
   };
 }
+/**
+ * Cardano transactions
+ * @name CardanoTransactions
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.CardanoTransactions
+ */
 export const CardanoTransactions = {
   typeUrl: "/ibc.lightclients.mithril.v1.CardanoTransactions",
   encode(message: CardanoTransactions, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1904,6 +2137,12 @@ function createBaseCardanoDbBeacon(): CardanoDbBeacon {
     immutable_file_number: BigInt(0),
   };
 }
+/**
+ * Cardano db beacon
+ * @name CardanoDbBeacon
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.CardanoDbBeacon
+ */
 export const CardanoDbBeacon = {
   typeUrl: "/ibc.lightclients.mithril.v1.CardanoDbBeacon",
   encode(message: CardanoDbBeacon, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -1975,6 +2214,13 @@ function createBaseFraction(): Fraction {
     denominator: BigInt(0),
   };
 }
+/**
+ * Fraction defines the protobuf message type for tmmath.Fraction that only
+ * supports positive values.
+ * @name Fraction
+ * @package ibc.lightclients.mithril.v1
+ * @see proto type: ibc.lightclients.mithril.v1.Fraction
+ */
 export const Fraction = {
   typeUrl: "/ibc.lightclients.mithril.v1.Fraction",
   encode(message: Fraction, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

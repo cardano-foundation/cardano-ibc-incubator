@@ -4,19 +4,34 @@ import { Params as Params2 } from "../../host/v1/host";
 import { BinaryReader, BinaryWriter } from "../../../../../binary";
 import { isSet, DeepPartial, Exact } from "../../../../../helpers";
 export const protobufPackage = "ibc.applications.interchain_accounts.genesis.v1";
-/** GenesisState defines the interchain accounts genesis state */
+/**
+ * GenesisState defines the interchain accounts genesis state
+ * @name GenesisState
+ * @package ibc.applications.interchain_accounts.genesis.v1
+ * @see proto type: ibc.applications.interchain_accounts.genesis.v1.GenesisState
+ */
 export interface GenesisState {
   controller_genesis_state: ControllerGenesisState;
   host_genesis_state: HostGenesisState;
 }
-/** ControllerGenesisState defines the interchain accounts controller genesis state */
+/**
+ * ControllerGenesisState defines the interchain accounts controller genesis state
+ * @name ControllerGenesisState
+ * @package ibc.applications.interchain_accounts.genesis.v1
+ * @see proto type: ibc.applications.interchain_accounts.genesis.v1.ControllerGenesisState
+ */
 export interface ControllerGenesisState {
   active_channels: ActiveChannel[];
   interchain_accounts: RegisteredInterchainAccount[];
   ports: string[];
   params: Params1;
 }
-/** HostGenesisState defines the interchain accounts host genesis state */
+/**
+ * HostGenesisState defines the interchain accounts host genesis state
+ * @name HostGenesisState
+ * @package ibc.applications.interchain_accounts.genesis.v1
+ * @see proto type: ibc.applications.interchain_accounts.genesis.v1.HostGenesisState
+ */
 export interface HostGenesisState {
   active_channels: ActiveChannel[];
   interchain_accounts: RegisteredInterchainAccount[];
@@ -26,6 +41,9 @@ export interface HostGenesisState {
 /**
  * ActiveChannel contains a connection ID, port ID and associated active channel ID, as well as a boolean flag to
  * indicate if the channel is middleware enabled
+ * @name ActiveChannel
+ * @package ibc.applications.interchain_accounts.genesis.v1
+ * @see proto type: ibc.applications.interchain_accounts.genesis.v1.ActiveChannel
  */
 export interface ActiveChannel {
   connection_id: string;
@@ -33,7 +51,12 @@ export interface ActiveChannel {
   channel_id: string;
   is_middleware_enabled: boolean;
 }
-/** RegisteredInterchainAccount contains a connection ID, port ID and associated interchain account address */
+/**
+ * RegisteredInterchainAccount contains a connection ID, port ID and associated interchain account address
+ * @name RegisteredInterchainAccount
+ * @package ibc.applications.interchain_accounts.genesis.v1
+ * @see proto type: ibc.applications.interchain_accounts.genesis.v1.RegisteredInterchainAccount
+ */
 export interface RegisteredInterchainAccount {
   connection_id: string;
   port_id: string;
@@ -45,6 +68,12 @@ function createBaseGenesisState(): GenesisState {
     host_genesis_state: HostGenesisState.fromPartial({}),
   };
 }
+/**
+ * GenesisState defines the interchain accounts genesis state
+ * @name GenesisState
+ * @package ibc.applications.interchain_accounts.genesis.v1
+ * @see proto type: ibc.applications.interchain_accounts.genesis.v1.GenesisState
+ */
 export const GenesisState = {
   typeUrl: "/ibc.applications.interchain_accounts.genesis.v1.GenesisState",
   encode(message: GenesisState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -115,6 +144,12 @@ function createBaseControllerGenesisState(): ControllerGenesisState {
     params: Params1.fromPartial({}),
   };
 }
+/**
+ * ControllerGenesisState defines the interchain accounts controller genesis state
+ * @name ControllerGenesisState
+ * @package ibc.applications.interchain_accounts.genesis.v1
+ * @see proto type: ibc.applications.interchain_accounts.genesis.v1.ControllerGenesisState
+ */
 export const ControllerGenesisState = {
   typeUrl: "/ibc.applications.interchain_accounts.genesis.v1.ControllerGenesisState",
   encode(message: ControllerGenesisState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -213,6 +248,12 @@ function createBaseHostGenesisState(): HostGenesisState {
     params: Params2.fromPartial({}),
   };
 }
+/**
+ * HostGenesisState defines the interchain accounts host genesis state
+ * @name HostGenesisState
+ * @package ibc.applications.interchain_accounts.genesis.v1
+ * @see proto type: ibc.applications.interchain_accounts.genesis.v1.HostGenesisState
+ */
 export const HostGenesisState = {
   typeUrl: "/ibc.applications.interchain_accounts.genesis.v1.HostGenesisState",
   encode(message: HostGenesisState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -307,6 +348,13 @@ function createBaseActiveChannel(): ActiveChannel {
     is_middleware_enabled: false,
   };
 }
+/**
+ * ActiveChannel contains a connection ID, port ID and associated active channel ID, as well as a boolean flag to
+ * indicate if the channel is middleware enabled
+ * @name ActiveChannel
+ * @package ibc.applications.interchain_accounts.genesis.v1
+ * @see proto type: ibc.applications.interchain_accounts.genesis.v1.ActiveChannel
+ */
 export const ActiveChannel = {
   typeUrl: "/ibc.applications.interchain_accounts.genesis.v1.ActiveChannel",
   encode(message: ActiveChannel, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -384,6 +432,12 @@ function createBaseRegisteredInterchainAccount(): RegisteredInterchainAccount {
     account_address: "",
   };
 }
+/**
+ * RegisteredInterchainAccount contains a connection ID, port ID and associated interchain account address
+ * @name RegisteredInterchainAccount
+ * @package ibc.applications.interchain_accounts.genesis.v1
+ * @see proto type: ibc.applications.interchain_accounts.genesis.v1.RegisteredInterchainAccount
+ */
 export const RegisteredInterchainAccount = {
   typeUrl: "/ibc.applications.interchain_accounts.genesis.v1.RegisteredInterchainAccount",
   encode(message: RegisteredInterchainAccount, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

@@ -6,17 +6,30 @@ export const protobufPackage = "ibc.applications.transfer.v1";
  * FungibleTokenPacketData defines a struct for the packet payload
  * See FungibleTokenPacketData spec:
  * https://github.com/cosmos/ibc/tree/master/spec/app/ics-020-fungible-token-transfer#data-structures
+ * @name FungibleTokenPacketData
+ * @package ibc.applications.transfer.v1
+ * @see proto type: ibc.applications.transfer.v1.FungibleTokenPacketData
  */
 export interface FungibleTokenPacketData {
-  /** the token denomination to be transferred */
+  /**
+   * the token denomination to be transferred
+   */
   denom: string;
-  /** the token amount to be transferred */
+  /**
+   * the token amount to be transferred
+   */
   amount: string;
-  /** the sender address */
+  /**
+   * the sender address
+   */
   sender: string;
-  /** the recipient address on the destination chain */
+  /**
+   * the recipient address on the destination chain
+   */
   receiver: string;
-  /** optional memo */
+  /**
+   * optional memo
+   */
   memo: string;
 }
 function createBaseFungibleTokenPacketData(): FungibleTokenPacketData {
@@ -28,6 +41,14 @@ function createBaseFungibleTokenPacketData(): FungibleTokenPacketData {
     memo: "",
   };
 }
+/**
+ * FungibleTokenPacketData defines a struct for the packet payload
+ * See FungibleTokenPacketData spec:
+ * https://github.com/cosmos/ibc/tree/master/spec/app/ics-020-fungible-token-transfer#data-structures
+ * @name FungibleTokenPacketData
+ * @package ibc.applications.transfer.v1
+ * @see proto type: ibc.applications.transfer.v1.FungibleTokenPacketData
+ */
 export const FungibleTokenPacketData = {
   typeUrl: "/ibc.applications.transfer.v1.FungibleTokenPacketData",
   encode(message: FungibleTokenPacketData, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

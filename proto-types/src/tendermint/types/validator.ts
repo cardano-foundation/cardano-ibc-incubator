@@ -3,17 +3,32 @@ import { PublicKey } from "../crypto/keys";
 import { BinaryReader, BinaryWriter } from "../../binary";
 import { isSet, DeepPartial, Exact, bytesFromBase64, base64FromBytes } from "../../helpers";
 export const protobufPackage = "tendermint.types";
+/**
+ * @name ValidatorSet
+ * @package tendermint.types
+ * @see proto type: tendermint.types.ValidatorSet
+ */
 export interface ValidatorSet {
   validators: Validator[];
   proposer?: Validator;
   total_voting_power: bigint;
 }
+/**
+ * @name Validator
+ * @package tendermint.types
+ * @see proto type: tendermint.types.Validator
+ */
 export interface Validator {
   address: Uint8Array;
   pub_key: PublicKey;
   voting_power: bigint;
   proposer_priority: bigint;
 }
+/**
+ * @name SimpleValidator
+ * @package tendermint.types
+ * @see proto type: tendermint.types.SimpleValidator
+ */
 export interface SimpleValidator {
   pub_key?: PublicKey;
   voting_power: bigint;
@@ -25,6 +40,11 @@ function createBaseValidatorSet(): ValidatorSet {
     total_voting_power: BigInt(0),
   };
 }
+/**
+ * @name ValidatorSet
+ * @package tendermint.types
+ * @see proto type: tendermint.types.ValidatorSet
+ */
 export const ValidatorSet = {
   typeUrl: "/tendermint.types.ValidatorSet",
   encode(message: ValidatorSet, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -104,6 +124,11 @@ function createBaseValidator(): Validator {
     proposer_priority: BigInt(0),
   };
 }
+/**
+ * @name Validator
+ * @package tendermint.types
+ * @see proto type: tendermint.types.Validator
+ */
 export const Validator = {
   typeUrl: "/tendermint.types.Validator",
   encode(message: Validator, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -187,6 +212,11 @@ function createBaseSimpleValidator(): SimpleValidator {
     voting_power: BigInt(0),
   };
 }
+/**
+ * @name SimpleValidator
+ * @package tendermint.types
+ * @see proto type: tendermint.types.SimpleValidator
+ */
 export const SimpleValidator = {
   typeUrl: "/tendermint.types.SimpleValidator",
   encode(message: SimpleValidator, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {

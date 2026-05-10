@@ -3,19 +3,33 @@ import { Any } from "../../../../google/protobuf/any";
 import { BinaryReader, BinaryWriter } from "../../../../binary";
 import { isSet, DeepPartial, Exact, bytesFromBase64, base64FromBytes, Rpc } from "../../../../helpers";
 export const protobufPackage = "ibc.core.client.v1";
-/** MsgCreateClient defines a message to create an IBC client */
+/**
+ * MsgCreateClient defines a message to create an IBC client
+ * @name MsgCreateClient
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgCreateClient
+ */
 export interface MsgCreateClient {
-  /** light client state */
+  /**
+   * light client state
+   */
   client_state?: Any;
   /**
    * consensus state associated with the client that corresponds to a given
    * height.
    */
   consensus_state?: Any;
-  /** signer address */
+  /**
+   * signer address
+   */
   signer: string;
 }
-/** MsgCreateClientResponse defines the Msg/CreateClient response type. */
+/**
+ * MsgCreateClientResponse defines the Msg/CreateClient response type.
+ * @name MsgCreateClientResponse
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgCreateClientResponse
+ */
 export interface MsgCreateClientResponse {
   unsigned_tx?: Any;
   client_id: string;
@@ -23,61 +37,105 @@ export interface MsgCreateClientResponse {
 /**
  * MsgUpdateClient defines an sdk.Msg to update a IBC client state using
  * the given client message.
+ * @name MsgUpdateClient
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgUpdateClient
  */
 export interface MsgUpdateClient {
-  /** client unique identifier */
+  /**
+   * client unique identifier
+   */
   client_id: string;
-  /** client message to update the light client */
+  /**
+   * client message to update the light client
+   */
   client_message?: Any;
-  /** signer address */
+  /**
+   * signer address
+   */
   signer: string;
 }
-/** MsgUpdateClientResponse defines the Msg/UpdateClient response type. */
+/**
+ * MsgUpdateClientResponse defines the Msg/UpdateClient response type.
+ * @name MsgUpdateClientResponse
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgUpdateClientResponse
+ */
 export interface MsgUpdateClientResponse {
   unsigned_tx?: Any;
 }
 /**
  * MsgUpgradeClient defines an sdk.Msg to upgrade an IBC client to a new client
  * state
+ * @name MsgUpgradeClient
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgUpgradeClient
  */
 export interface MsgUpgradeClient {
-  /** client unique identifier */
+  /**
+   * client unique identifier
+   */
   client_id: string;
-  /** upgraded client state */
+  /**
+   * upgraded client state
+   */
   client_state?: Any;
   /**
    * upgraded consensus state, only contains enough information to serve as a
    * basis of trust in update logic
    */
   consensus_state?: Any;
-  /** proof that old chain committed to new client */
+  /**
+   * proof that old chain committed to new client
+   */
   proof_upgrade_client: Uint8Array;
-  /** proof that old chain committed to new consensus state */
+  /**
+   * proof that old chain committed to new consensus state
+   */
   proof_upgrade_consensus_state: Uint8Array;
-  /** signer address */
+  /**
+   * signer address
+   */
   signer: string;
 }
-/** MsgUpgradeClientResponse defines the Msg/UpgradeClient response type. */
+/**
+ * MsgUpgradeClientResponse defines the Msg/UpgradeClient response type.
+ * @name MsgUpgradeClientResponse
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgUpgradeClientResponse
+ */
 export interface MsgUpgradeClientResponse {}
 /**
  * MsgSubmitMisbehaviour defines an sdk.Msg type that submits Evidence for
  * light client misbehaviour.
  * Warning: DEPRECATED
+ * @name MsgSubmitMisbehaviour
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgSubmitMisbehaviour
  */
 export interface MsgSubmitMisbehaviour {
-  /** client unique identifier */
-  /** @deprecated */
+  /**
+   * client unique identifier
+   * @deprecated
+   */
   client_id: string;
-  /** misbehaviour used for freezing the light client */
-  /** @deprecated */
+  /**
+   * misbehaviour used for freezing the light client
+   * @deprecated
+   */
   misbehaviour?: Any;
-  /** signer address */
-  /** @deprecated */
+  /**
+   * signer address
+   * @deprecated
+   */
   signer: string;
 }
 /**
  * MsgSubmitMisbehaviourResponse defines the Msg/SubmitMisbehaviour response
  * type.
+ * @name MsgSubmitMisbehaviourResponse
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgSubmitMisbehaviourResponse
  */
 export interface MsgSubmitMisbehaviourResponse {}
 function createBaseMsgCreateClient(): MsgCreateClient {
@@ -87,6 +145,12 @@ function createBaseMsgCreateClient(): MsgCreateClient {
     signer: "",
   };
 }
+/**
+ * MsgCreateClient defines a message to create an IBC client
+ * @name MsgCreateClient
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgCreateClient
+ */
 export const MsgCreateClient = {
   typeUrl: "/ibc.core.client.v1.MsgCreateClient",
   encode(message: MsgCreateClient, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -158,6 +222,12 @@ function createBaseMsgCreateClientResponse(): MsgCreateClientResponse {
     client_id: "",
   };
 }
+/**
+ * MsgCreateClientResponse defines the Msg/CreateClient response type.
+ * @name MsgCreateClientResponse
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgCreateClientResponse
+ */
 export const MsgCreateClientResponse = {
   typeUrl: "/ibc.core.client.v1.MsgCreateClientResponse",
   encode(message: MsgCreateClientResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -218,6 +288,13 @@ function createBaseMsgUpdateClient(): MsgUpdateClient {
     signer: "",
   };
 }
+/**
+ * MsgUpdateClient defines an sdk.Msg to update a IBC client state using
+ * the given client message.
+ * @name MsgUpdateClient
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgUpdateClient
+ */
 export const MsgUpdateClient = {
   typeUrl: "/ibc.core.client.v1.MsgUpdateClient",
   encode(message: MsgUpdateClient, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -285,6 +362,12 @@ function createBaseMsgUpdateClientResponse(): MsgUpdateClientResponse {
     unsigned_tx: undefined,
   };
 }
+/**
+ * MsgUpdateClientResponse defines the Msg/UpdateClient response type.
+ * @name MsgUpdateClientResponse
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgUpdateClientResponse
+ */
 export const MsgUpdateClientResponse = {
   typeUrl: "/ibc.core.client.v1.MsgUpdateClientResponse",
   encode(message: MsgUpdateClientResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -339,6 +422,13 @@ function createBaseMsgUpgradeClient(): MsgUpgradeClient {
     signer: "",
   };
 }
+/**
+ * MsgUpgradeClient defines an sdk.Msg to upgrade an IBC client to a new client
+ * state
+ * @name MsgUpgradeClient
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgUpgradeClient
+ */
 export const MsgUpgradeClient = {
   typeUrl: "/ibc.core.client.v1.MsgUpgradeClient",
   encode(message: MsgUpgradeClient, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -444,6 +534,12 @@ export const MsgUpgradeClient = {
 function createBaseMsgUpgradeClientResponse(): MsgUpgradeClientResponse {
   return {};
 }
+/**
+ * MsgUpgradeClientResponse defines the Msg/UpgradeClient response type.
+ * @name MsgUpgradeClientResponse
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgUpgradeClientResponse
+ */
 export const MsgUpgradeClientResponse = {
   typeUrl: "/ibc.core.client.v1.MsgUpgradeClientResponse",
   encode(_: MsgUpgradeClientResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -483,6 +579,14 @@ function createBaseMsgSubmitMisbehaviour(): MsgSubmitMisbehaviour {
     signer: "",
   };
 }
+/**
+ * MsgSubmitMisbehaviour defines an sdk.Msg type that submits Evidence for
+ * light client misbehaviour.
+ * Warning: DEPRECATED
+ * @name MsgSubmitMisbehaviour
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgSubmitMisbehaviour
+ */
 export const MsgSubmitMisbehaviour = {
   typeUrl: "/ibc.core.client.v1.MsgSubmitMisbehaviour",
   encode(message: MsgSubmitMisbehaviour, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -548,6 +652,13 @@ export const MsgSubmitMisbehaviour = {
 function createBaseMsgSubmitMisbehaviourResponse(): MsgSubmitMisbehaviourResponse {
   return {};
 }
+/**
+ * MsgSubmitMisbehaviourResponse defines the Msg/SubmitMisbehaviour response
+ * type.
+ * @name MsgSubmitMisbehaviourResponse
+ * @package ibc.core.client.v1
+ * @see proto type: ibc.core.client.v1.MsgSubmitMisbehaviourResponse
+ */
 export const MsgSubmitMisbehaviourResponse = {
   typeUrl: "/ibc.core.client.v1.MsgSubmitMisbehaviourResponse",
   encode(_: MsgSubmitMisbehaviourResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
@@ -623,3 +734,6 @@ export class MsgClientImpl implements Msg {
     return promise.then((data) => MsgSubmitMisbehaviourResponse.decode(new BinaryReader(data)));
   }
 }
+export const createClientImpl = (rpc: Rpc) => {
+  return new MsgClientImpl(rpc);
+};
