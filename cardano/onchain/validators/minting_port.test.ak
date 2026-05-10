@@ -8,27 +8,21 @@ use cardano/transaction.{
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
-use ibc/core/ics_025_handler_interface/handler.{HandlerState}
-use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
-use ibc/core/ics_025_handler_interface/handler_redeemer.{HandlerBindPort}
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/core/ics_025_handler_interface/host_state_redeemer.{BindPort}
 use ibc/utils/string as string_utils
 use minting_port
 
 type MockData {
-  handler_token: AuthToken,
   host_state_nft_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
   spend_module_script_hash: Hash<Blake2b_224, Script>,
-  handler_input: Input,
+  host_state_input: Input,
   port_number: Int,
   port_token: AuthToken,
 }
 
 fn setup() -> MockData {
-  let handler_token =
-    AuthToken { policy_id: "mock handler policy_id", name: "mock name" }
-
   let host_state_nft_policy_id = "mock host_state_nft_policy_id"
 
   let port_minting_policy_id = "mock port_minting_policy_id"
@@ -37,31 +31,19 @@ fn setup() -> MockData {
 
   let spend_module_script_hash = "mock spend_module_script_hash"
 
-  let spend_handler_output_reference =
+  let host_state_output_reference =
     OutputReference {
       transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
       output_index: 0,
     }
 
-  let handler_datum =
-    HandlerDatum {
-      state: HandlerState {
-        next_client_sequence: 0,
-        next_connection_sequence: 0,
-        next_channel_sequence: 0,
-        bound_port: [],
-        ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
-      },
-      token: handler_token,
-    }
-
-  let handler_input =
+  let host_state_input =
     Input {
-      output_reference: spend_handler_output_reference,
+      output_reference: host_state_output_reference,
       output: Output {
-        address: from_script("mock handler script hash"),
-        value: from_asset(handler_token.policy_id, handler_token.name, 1),
-        datum: InlineDatum(handler_datum),
+        address: from_script("mock host state script hash"),
+        value: from_asset(host_state_nft_policy_id, host_state_token_name, 1),
+        datum: InlineDatum(Void),
         reference_script: None,
       },
     }
@@ -80,11 +62,10 @@ fn setup() -> MockData {
     AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
 
   MockData {
-    handler_token,
     host_state_nft_policy_id,
     port_minting_policy_id,
     spend_module_script_hash,
-    handler_input,
+    host_state_input,
     port_number,
     port_token,
   }
@@ -96,13 +77,12 @@ test mint_port_succeed() {
   //==============================arrange redeemer============================
   let redeemer: Redeemer =
     MintPortRedeemer {
-      handler_token: mock.handler_token,
       spend_module_script_hash: mock.spend_module_script_hash,
       port_number: mock.port_number,
     }
 
   //===============================arrange inputs===============================
-  let inputs = [mock.handler_input]
+  let inputs = [mock.host_state_input]
 
   //==============================arrange outputs==============================
   let module_output =
@@ -117,17 +97,17 @@ test mint_port_succeed() {
   let mint = from_asset(mock.port_token.policy_id, mock.port_token.name, 1)
 
   //==============================arrange redeemers==============================
-  let handler_redeemer: Redeemer = HandlerBindPort
+  let host_state_redeemer: Redeemer =
+    BindPort { port: mock.port_number, port_siblings: [] }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
-      Pair(Spend(mock.handler_input.output_reference), handler_redeemer),
+      Pair(Spend(mock.host_state_input.output_reference), host_state_redeemer),
       Pair(Mint(mock.port_minting_policy_id), redeemer),
     ]
 
   let redeemer =
     MintPortRedeemer {
-      handler_token: mock.handler_token,
       spend_module_script_hash: mock.spend_module_script_hash,
       port_number: mock.port_number,
     }

@@ -1,7 +1,7 @@
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/interval.{Finite}
-use aiken/option.{and_then, map}
+use aiken/option.{map}
 use aiken/primitive/bytearray
 use cardano/assets.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of,
@@ -19,8 +19,6 @@ use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{SpendChannelRedeemer}
 use ibc/core/ics_005/types/ibc_module_redeemer.{IBCModuleRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
-use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
-use ibc/core/ics_025_handler_interface/handler_redeemer.{HandlerOperator}
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 
 type PosixTime =
@@ -77,39 +75,6 @@ pub fn get_tx_valid_from(validity_range: ValidityRange) -> PosixTime {
   } else {
     fail @"Lower bound is not inclusive"
   }
-}
-
-pub fn validate_handler_redeemer(
-  inputs: List<Input>,
-  redeemers: Pairs<ScriptPurpose, Redeemer>,
-  handler_token: AuthToken,
-  expected_redeemer: HandlerOperator,
-) -> HandlerDatum {
-  expect Some(handler_datum) =
-    list.find(
-      inputs,
-      fn(input) { input.output |> auth.contain_auth_token(handler_token) },
-    )
-      |> and_then(
-          fn(handler_input) {
-            pairs.get_first(redeemers, Spend(handler_input.output_reference))
-              |> map(
-                  fn(spent_handler_redeemer) {
-                    expect handler_operator: HandlerOperator =
-                      spent_handler_redeemer
-                    if handler_operator == expected_redeemer {
-                      let handler_output = handler_input.output
-                      expect handler_datum: HandlerDatum =
-                        get_inline_datum(handler_output)
-                      handler_datum
-                    } else {
-                      fail @"Handler is not matching"
-                    }
-                  },
-                )
-          },
-        )
-  handler_datum
 }
 
 pub fn extract_module_redeemer(
@@ -202,12 +167,12 @@ pub fn validate_referred_connection(
 pub fn validate_mint(
   mint: Value,
   minting_policy_id: PolicyId,
-  handler_token: AuthToken,
+  base_token: AuthToken,
   token_name_prefix: ByteArray,
   sequence: ByteArray,
 ) -> AuthToken {
   let token_name =
-    auth.generate_token_name(handler_token, token_name_prefix, sequence)
+    auth.generate_token_name(base_token, token_name_prefix, sequence)
 
   let token = AuthToken { policy_id: minting_policy_id, name: token_name }
 

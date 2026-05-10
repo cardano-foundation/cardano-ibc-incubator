@@ -1,4 +1,3 @@
-export const HANDLER_TOKEN_NAME = "68616e646c6572"; // fromText("handler")
 export const CLIENT_PREFIX = "6962635f636c69656e74"; // fromText("ibc_client")
 export const CONNECTION_PREFIX = "636f6e6e656374696f6e"; // fromText("connection")
 export const CHANNEL_PREFIX = "6368616e6e656c"; // fromText("channel")
@@ -21,7 +20,7 @@ export const TRACE_REGISTRY_SHARD_COUNT = 16;
 export const TRACE_REGISTRY_DIRECTORY_NONCE_COUNT = 1;
 export const TRANSFER_MODULE_NONCE_COUNT = 1;
 export const GENERIC_MODULE_NONCE_COUNT = 2;
-export const RESERVED_DEPLOYMENT_NONCE_COUNT = 2 +
+export const RESERVED_DEPLOYMENT_NONCE_COUNT = 1 +
   TRANSFER_MODULE_NONCE_COUNT +
   GENERIC_MODULE_NONCE_COUNT +
   TRACE_REGISTRY_SHARD_COUNT +

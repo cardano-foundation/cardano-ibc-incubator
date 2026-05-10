@@ -18,11 +18,9 @@ import {
   MsgChannelOpenTry,
   MsgChannelOpenTryResponse,
 } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
-import { HandlerDatum } from 'src/shared/types/handler-datum';
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
 import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
-import { HandlerOperator } from 'src/shared/types/handler-operator';
 import { MintChannelRedeemer, SpendChannelRedeemer } from 'src/shared/types/channel/channel-redeemer';
 import { ConfigService } from '@nestjs/config';
 import { AuthToken } from 'src/shared/types/auth-token';
@@ -537,14 +535,6 @@ export class ChannelService {
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing witnesses.
     await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
 
-    const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
-    const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
-    if (handlerDatum.state.next_channel_sequence !== hostStateDatum.state.next_channel_sequence) {
-      throw new GrpcInternalException(
-        `Handler/HostState channel sequence mismatch: handler=${handlerDatum.state.next_channel_sequence}, hostState=${hostStateDatum.state.next_channel_sequence}`,
-      );
-    }
-
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(channelOpenInitOperator.connectionId),
     );
@@ -559,20 +549,11 @@ export class ChannelService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionClientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const spendHandlerRedeemer: HandlerOperator = 'HandlerChanOpenInit';
-    const encodedSpendHandlerRedeemer: string = await this.lucidService.encode<HandlerOperator>(
-      spendHandlerRedeemer,
-      'handlerOperator',
-    );
 
     // Derive the new channel identifier from the HostState sequence.
     const channelSequence = hostStateDatum.state.next_channel_sequence;
     const channelId = `channel-${channelSequence}`;
-    const mintChannelRedeemer: MintChannelRedeemer = {
-      ChanOpenInit: {
-        handler_token: this.configService.get('deployment').handlerAuthToken,
-      },
-    };
+    const mintChannelRedeemer: MintChannelRedeemer = 'ChanOpenInit';
     const channelIdHex = convertString2Hex(CHANNEL_ID_PREFIX + '-' + channelSequence);
 
     const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(channelSequence);
@@ -618,15 +599,6 @@ export class ChannelService {
       channelDatum,
     );
 
-    const updatedHandlerDatum: HandlerDatum = {
-      ...handlerDatum,
-      state: {
-        ...handlerDatum.state,
-        next_channel_sequence: hostStateDatum.state.next_channel_sequence + 1n,
-        ibc_state_root: newRoot,
-      },
-    };
-
     const updatedHostStateDatum: HostStateDatum = {
       ...hostStateDatum,
       state: {
@@ -651,7 +623,6 @@ export class ChannelService {
       'mintChannelRedeemer',
     );
     const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
-    const encodedUpdatedHandlerDatum: string = await this.lucidService.encode(updatedHandlerDatum, 'handler');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     const encodedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(channelDatum, 'channel');
     const moduleConfig = this.getModuleConfig(channelOpenInitOperator.port_id);
@@ -672,16 +643,13 @@ export class ChannelService {
     const unsignedChannelOpenInitParams: UnsignedChannelOpenInitDto = {
       hostStateUtxo,
       encodedHostStateRedeemer,
-      handlerUtxo,
       connectionUtxo,
       clientUtxo,
       moduleKey: moduleConfig.key,
       moduleUtxo,
       encodedSpendModuleRedeemer,
-      encodedSpendHandlerRedeemer,
       encodedMintChannelRedeemer,
       channelTokenUnit,
-      encodedUpdatedHandlerDatum,
       encodedUpdatedHostStateDatum,
       encodedChannelDatum,
       constructedAddress,
@@ -712,14 +680,6 @@ export class ChannelService {
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing witnesses.
     await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
 
-    const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
-    const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
-    if (handlerDatum.state.next_channel_sequence !== hostStateDatum.state.next_channel_sequence) {
-      throw new GrpcInternalException(
-        `Handler/HostState channel sequence mismatch: handler=${handlerDatum.state.next_channel_sequence}, hostState=${hostStateDatum.state.next_channel_sequence}`,
-      );
-    }
-
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(channelOpenTryOperator.connectionId),
     );
@@ -734,18 +694,12 @@ export class ChannelService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionClientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
-    const spendHandlerRedeemer: HandlerOperator = 'HandlerChanOpenTry';
-    const encodedSpendHandlerRedeemer: string = await this.lucidService.encode<HandlerOperator>(
-      spendHandlerRedeemer,
-      'handlerOperator',
-    );
 
     // Derive the new channel identifier from the HostState sequence.
     const channelSequence = hostStateDatum.state.next_channel_sequence;
     const channelId = `channel-${channelSequence}`;
     const mintChannelRedeemer: MintChannelRedeemer = {
       ChanOpenTry: {
-        handler_token: this.configService.get('deployment').handlerAuthToken,
         counterparty_version: convertString2Hex(channelOpenTryOperator.counterpartyVersion),
         //TODO
         proof_init: channelOpenTryOperator.proofInit,
@@ -791,15 +745,6 @@ export class ChannelService {
         channelDatum,
       );
 
-    const updatedHandlerDatum: HandlerDatum = {
-      ...handlerDatum,
-      state: {
-        ...handlerDatum.state,
-        next_channel_sequence: hostStateDatum.state.next_channel_sequence + 1n,
-        ibc_state_root: newRoot,
-      },
-    };
-
     const updatedHostStateDatum: HostStateDatum = {
       ...hostStateDatum,
       state: {
@@ -825,7 +770,6 @@ export class ChannelService {
       'mintChannelRedeemer',
     );
     const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
-    const encodedUpdatedHandlerDatum: string = await this.lucidService.encode(updatedHandlerDatum, 'handler');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     const encodedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(channelDatum, 'channel');
     const moduleConfig = this.getModuleConfig(channelOpenTryOperator.port_id);
@@ -846,17 +790,14 @@ export class ChannelService {
     );
     return this.lucidService.createUnsignedChannelOpenTryTransaction({
       moduleKey: moduleConfig.key,
-      handlerUtxo,
       hostStateUtxo,
       encodedHostStateRedeemer,
       connectionUtxo,
       clientUtxo,
       moduleUtxo,
       encodedSpendModuleRedeemer,
-      encodedSpendHandlerRedeemer,
       encodedMintChannelRedeemer,
       channelTokenUnit,
-      encodedUpdatedHandlerDatum,
       encodedUpdatedHostStateDatum,
       encodedChannelDatum,
     });

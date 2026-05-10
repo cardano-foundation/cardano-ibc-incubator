@@ -21,11 +21,9 @@ import {
   CLIENT_ID_PREFIX,
   CLIENT_PREFIX,
   EVENT_TYPE_CLIENT,
-  HANDLER_TOKEN_NAME,
   MAX_CONSENSUS_STATE_SIZE,
 } from 'src/constant';
 import { ClientDatum, encodeClientStateValue, encodeConsensusStateValue } from 'src/shared/types/client-datum';
-import { MintClientOperator } from 'src/shared/types/mint-client-operator';
 import { SpendClientRedeemer } from 'src/shared/types/client-redeemer';
 import { Height } from 'src/shared/types/height';
 import { isExpired } from '@shared/helpers/client-state';
@@ -728,11 +726,7 @@ export class ClientService {
     consensusState: ConsensusState,
     constructedAddress: string,
   ): Promise<{ unsignedTx: TxBuilder; clientId: bigint; pendingTreeUpdate: PendingTreeUpdate }> {
-    // STT Architecture: Query the HostState UTXO via its unique NFT
-    // the NFT serves as a linear threading token -
-    // the UTXO set can only contain exactly one unspent output with this NFT at any given slot,
-    // which eliminates race conditions and indexing ambiguities that would otherwise require
-    // sophisticated conflict resolution when multiple Handler UTXOs could theoretically coexist.
+    // The HostState NFT identifies the single coordinator UTxO for this update.
     const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
 
     this.logger.log(`[DEBUG] HostState UTXO: ${hostStateUtxo.txHash}#${hostStateUtxo.outputIndex}`);
@@ -816,14 +810,7 @@ export class ClientService {
         name: clientTokenName,
       },
     };
-    // STT architecture: MintClientRedeemer is just the handler auth token
-    const handlerToken = this.configService.get('deployment').handlerAuthToken;
-    const mintClientRedeemer = {
-      handler_auth_token: {
-        policy_id: handlerToken.policyId,
-        name: handlerToken.name,
-      },
-    };
+    const mintClientRedeemer = 'MintClient';
     const clientAuthTokenUnit = mintClientScriptHash + clientTokenName;
 
     // STT redeemer: Explicitly specify the operation type
@@ -884,16 +871,5 @@ export class ClientService {
       CLIENT_PREFIX,
       hostStateDatum.state.next_client_sequence,
     );
-  }
-
-  private createMintClientOperator(): MintClientOperator {
-    return {
-      MintNewClient: {
-        handlerAuthToken: {
-          name: HANDLER_TOKEN_NAME,
-          policyId: this.configService.get('deployment').handlerAuthToken.policyId,
-        },
-      },
-    };
   }
 }

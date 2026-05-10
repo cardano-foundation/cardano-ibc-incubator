@@ -84,10 +84,8 @@ type DeploymentTraceRegistry = {
 type DeploymentConfig = {
   deployedAt: string;
   hostStateNFT: AuthToken;
-  handlerAuthToken: AuthToken;
   validators: {
     hostStateStt: DeploymentValidator;
-    spendHandler: DeploymentValidator;
     spendClient: DeploymentValidator;
     spendConnection: DeploymentValidator;
     spendChannel: DeploymentSpendChannelValidator;
@@ -101,7 +99,6 @@ type DeploymentConfig = {
     mintVoucher: DeploymentValidator;
   };
   modules: {
-    handler: DeploymentModule;
     transfer: DeploymentModule;
     mock?: DeploymentModule;
   };
@@ -117,17 +114,8 @@ type BridgeManifest = {
     policy_id: string;
     token_name: string;
   };
-  handler_auth_token: {
-    policy_id: string;
-    token_name: string;
-  };
   validators: {
     host_state_stt: {
-      script_hash: string;
-      address: string;
-      ref_utxo: { tx_hash: string; output_index: number };
-    };
-    spend_handler: {
       script_hash: string;
       address: string;
       ref_utxo: { tx_hash: string; output_index: number };
@@ -223,7 +211,6 @@ type BridgeManifest = {
     };
   };
   modules: {
-    handler: { identifier: string; address: string };
     transfer: { identifier: string; address: string };
     mock?: { identifier: string; address: string };
   };
@@ -427,13 +414,8 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
         policyId: manifest.host_state_nft.policy_id,
         name: manifest.host_state_nft.token_name,
       },
-      handlerAuthToken: {
-        policyId: manifest.handler_auth_token.policy_id,
-        name: manifest.handler_auth_token.token_name,
-      },
       validators: {
         hostStateStt: mapValidator(manifest.validators.host_state_stt),
-        spendHandler: mapValidator(manifest.validators.spend_handler),
         spendClient: mapValidator(manifest.validators.spend_client),
         spendConnection: mapValidator(manifest.validators.spend_connection),
         spendChannel: {
@@ -487,7 +469,6 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
         mintVoucher: mapValidator(manifest.validators.mint_voucher),
       },
       modules: {
-        handler: manifest.modules.handler,
         transfer: manifest.modules.transfer,
         ...(manifest.modules.mock ? { mock: manifest.modules.mock } : {}),
       },
