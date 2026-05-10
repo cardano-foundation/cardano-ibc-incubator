@@ -157,7 +157,7 @@ func (cs ClientState) Validate() error {
 		return errorsmod.Wrapf(ErrInvalidProtocolParamaters, "protocol parameters must not be nil")
 	}
 	if err := validateProtocolParameters(cs.ProtocolParameters); err != nil {
-		return errorsmod.Wrapf(ErrInvalidProtocolParamaters, err.Error())
+		return errorsmod.Wrap(ErrInvalidProtocolParamaters, err.Error())
 	}
 
 	// UpgradePath may be empty, but if it isn't, each key must be non-empty
