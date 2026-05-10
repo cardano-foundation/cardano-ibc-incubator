@@ -315,6 +315,14 @@ pub fn configure_hermes_for_testnet_demo(
     hermes::configure_hermes_for_testnet_demo(project_root_path, injective_dir)
 }
 
+/// Ensures Hermes has the Injective testnet chain block required for preprod multi-hop routing.
+pub fn ensure_testnet_chain_in_hermes_config(
+    project_root_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let injective_dir = workspace_dir(project_root_path);
+    hermes::ensure_testnet_chain_in_hermes_config(project_root_path, injective_dir.as_path())
+}
+
 /// Returns the Injective testnet chain id used by Caribic.
 pub fn testnet_chain_id() -> &'static str {
     config::TESTNET_CHAIN_ID
