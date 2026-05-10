@@ -66,7 +66,7 @@ pub fn validate_basic(mr_proof: MerkleProof) -> Bool {
 
 pub fn apply_prefix(prefix: MerklePrefix, path: MerklePath) -> MerklePath {
   expect !merkle_prefix.empty(prefix)
-  new_merkle_path(list.concat([prefix.key_prefix], path.key_path))
+  new_merkle_path([prefix.key_prefix, ..path.key_path])
 }
 
 /// verify_membership() verifies the membership of a merkle proof against the given root, path, and value.
