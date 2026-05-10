@@ -10,8 +10,8 @@ use crate::{
     start::{
         build_aiken_validators_if_needed, build_hermes_if_needed, deploy_contracts,
         deploy_preprod_bridge, start_cosmos_entrypoint_chain,
-        start_cosmos_entrypoint_chain_services, start_gateway, start_hermes_daemon, start_mithril,
-        start_relayer, wait_for_cosmos_entrypoint_chain_ready,
+        start_cosmos_entrypoint_chain_services, start_dapp, start_gateway, start_hermes_daemon,
+        start_mithril, start_relayer, wait_for_cosmos_entrypoint_chain_ready,
     },
     utils::{prompt_runtime_deployer_sk, query_balance},
     StartTarget, StopTarget,
@@ -183,6 +183,14 @@ pub async fn run_start(
         match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
             Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
             Err(error) => return Err(format!("ERROR: Failed to start gateway: {}", error)),
+        };
+        return Ok(());
+    }
+
+    if target == Some(StartTarget::Dapp) {
+        match start_dapp(project_root_path, clean, core_cardano_network) {
+            Ok(_) => logger::log("PASS: IBC Swap dapp started"),
+            Err(error) => return Err(format!("ERROR: Failed to start IBC Swap dapp: {}", error)),
         };
         return Ok(());
     }

@@ -37,6 +37,14 @@ const HERMES_PROGRESS_LOG_INTERVAL_SECS: u64 = 30;
 const HERMES_PID_FILE_NAME: &str = "hermes.pid";
 const HERMES_STARTUP_CHECK_ATTEMPTS: u32 = 5;
 const HERMES_STARTUP_CHECK_INTERVAL_MILLIS: u64 = 1000;
+const CARDANO_PREPROD_CHAIN_ID: &str = "cardano-preprod";
+const INJECTIVE_TESTNET_CHAIN_ID: &str = "injective-888";
+const GATEWAY_HTTP_READINESS_ATTEMPTS: u32 = 4;
+const GATEWAY_HTTP_READINESS_RETRY_INTERVAL_MILLIS: u64 = 5000;
+const IBC_SWAP_DAPP_SERVICE: &str = "ibc-swap-client";
+const IBC_SWAP_DAPP_DEFAULT_HOST_PORT: u16 = 3000;
+const IBC_SWAP_DAPP_READINESS_ATTEMPTS: u32 = 60;
+const IBC_SWAP_DAPP_READINESS_INTERVAL_MILLIS: u64 = 2000;
 const YACI_HEALTH_CHECK_ATTEMPTS: u32 = 36;
 const YACI_HEALTH_CHECK_INTERVAL_MILLIS: u64 = 5000;
 static RELAYER_REMOTE_TIP_CHECK_ONCE: Once = Once::new();
@@ -103,12 +111,137 @@ pub(crate) fn is_hermes_daemon_command(command: &str, expected_binary_path: Opti
     normalized_command.contains("hermes") && normalized_command.ends_with(" start")
 }
 
+fn hermes_config_chain_ids(config: &str) -> Vec<String> {
+    let mut chain_ids = Vec::new();
+    let mut in_chain_block = false;
+
+    for raw_line in config.lines() {
+        let line = raw_line.trim();
+
+        if line == "[[chains]]" {
+            in_chain_block = true;
+            continue;
+        }
+
+        if line.starts_with("[[") {
+            in_chain_block = false;
+            continue;
+        }
+
+        if !in_chain_block {
+            continue;
+        }
+
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+
+        if key.trim() != "id" {
+            continue;
+        }
+
+        let chain_id = value.trim().trim_matches('"').trim_matches('\'').trim();
+        if !chain_id.is_empty() {
+            chain_ids.push(chain_id.to_owned());
+        }
+    }
+
+    chain_ids
+}
+
+fn validate_preprod_hermes_route_coverage(
+    hermes_config: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = fs::read_to_string(hermes_config).map_err(|error| {
+        format!(
+            "Failed to read Hermes config '{}': {}",
+            hermes_config.display(),
+            error
+        )
+    })?;
+    let chain_ids = hermes_config_chain_ids(&config);
+
+    if !chain_ids.iter().any(|id| id == CARDANO_PREPROD_CHAIN_ID) {
+        return Ok(());
+    }
+
+    let required_chain_ids = [ENTRYPOINT_CHAIN_ID, INJECTIVE_TESTNET_CHAIN_ID];
+    let missing_chain_ids: Vec<&str> = required_chain_ids
+        .iter()
+        .copied()
+        .filter(|required| !chain_ids.iter().any(|id| id == required))
+        .collect();
+
+    if missing_chain_ids.is_empty() {
+        return Ok(());
+    }
+
+    let found_chain_ids = if chain_ids.is_empty() {
+        "none".to_owned()
+    } else {
+        chain_ids.join(", ")
+    };
+
+    // Preprod swaps are multi-hop; a Cardano-only Hermes config can strand funds on Entrypoint.
+    Err(format!(
+        "Invalid Hermes route for Cardano preprod swaps.\n\
+         Found chains: {}\n\
+         Missing chains: {}\n\
+         Required route: {} -> {} -> {}\n\
+         Configure the complete Injective testnet route before starting Hermes.",
+        found_chain_ids,
+        missing_chain_ids.join(", "),
+        CARDANO_PREPROD_CHAIN_ID,
+        ENTRYPOINT_CHAIN_ID,
+        INJECTIVE_TESTNET_CHAIN_ID
+    )
+    .into())
+}
+
 /// Get environment variables for Docker Compose, including UID/GID
 /// - macOS: Uses 0:0 (root) for compatibility
 /// - Linux: Uses actual user UID/GID
 fn get_docker_env_vars() -> Vec<(&'static str, String)> {
     let (uid, gid) = get_user_ids();
     vec![("UID", uid), ("GID", gid)]
+}
+
+fn ibc_swap_cardano_chain_id(network: config::CoreCardanoNetwork) -> &'static str {
+    match network {
+        config::CoreCardanoNetwork::Local => "42",
+        config::CoreCardanoNetwork::Preprod => "1",
+    }
+}
+
+fn ibc_swap_cardano_ibc_chain_id(network: config::CoreCardanoNetwork) -> &'static str {
+    match network {
+        config::CoreCardanoNetwork::Local => "cardano-devnet",
+        config::CoreCardanoNetwork::Preprod => "cardano-preprod",
+    }
+}
+
+fn ibc_swap_mode(network: config::CoreCardanoNetwork) -> &'static str {
+    match network {
+        config::CoreCardanoNetwork::Local => "local",
+        config::CoreCardanoNetwork::Preprod => "testnet",
+    }
+}
+
+fn ibc_swap_host_port() -> Result<u16, String> {
+    match std::env::var("IBC_SWAP_HOST_PORT") {
+        Ok(value) if !value.trim().is_empty() => value.trim().parse::<u16>().map_err(|_| {
+            format!(
+                "IBC_SWAP_HOST_PORT must be a numeric host port, got '{}'",
+                value.trim()
+            )
+        }),
+        _ => Ok(IBC_SWAP_DAPP_DEFAULT_HOST_PORT),
+    }
+}
+
+pub(crate) fn ibc_swap_dapp_url() -> String {
+    let port = ibc_swap_host_port().unwrap_or(IBC_SWAP_DAPP_DEFAULT_HOST_PORT);
+    format!("http://localhost:{port}")
 }
 
 fn managed_cardano_network_running(cardano_dir: &Path) -> bool {
@@ -123,11 +256,70 @@ fn gateway_env_path_from_cardano_dir(cardano_dir: &Path) -> PathBuf {
     cardano_dir.join("../../cardano/gateway/.env")
 }
 
+fn read_preprod_runtime_kupo_endpoint(gateway_env_path: &Path) -> Option<String> {
+    crate::setup::read_gateway_env_value(gateway_env_path, "GATEWAY_RUNTIME_KUPO_ENDPOINT")
+        .ok()
+        .flatten()
+        .or_else(|| {
+            crate::setup::read_gateway_env_value(gateway_env_path, "KUPO_ENDPOINT")
+                .ok()
+                .flatten()
+        })
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 fn preprod_uses_local_kupo_runtime(
     gateway_env_path: &Path,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     Ok(crate::setup::resolve_preprod_kupo_mode(gateway_env_path)?
         == crate::setup::PreprodKupoMode::Local)
+}
+
+fn read_preprod_remote_kupmios_url(
+    gateway_env_path: &Path,
+) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    if preprod_uses_local_kupo_runtime(gateway_env_path)? {
+        return Ok(None);
+    }
+
+    let kupo_endpoint = read_preprod_runtime_kupo_endpoint(gateway_env_path).ok_or(
+        "PREPROD_KUPO_MODE=remote requires GATEWAY_RUNTIME_KUPO_ENDPOINT or KUPO_ENDPOINT",
+    )?;
+    let ogmios_endpoint =
+        crate::setup::read_gateway_env_value(gateway_env_path, "OGMIOS_ENDPOINT")?
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .ok_or("PREPROD_KUPO_MODE=remote requires OGMIOS_ENDPOINT")?;
+
+    Ok(Some(format!("{kupo_endpoint},{ogmios_endpoint}")))
+}
+
+fn read_preprod_remote_kupmios_api_keys(
+    gateway_env_path: &Path,
+) -> Result<Option<(String, String)>, Box<dyn std::error::Error>> {
+    if preprod_uses_local_kupo_runtime(gateway_env_path)? {
+        return Ok(None);
+    }
+
+    let kupo_api_key =
+        crate::setup::read_gateway_env_value(gateway_env_path, "GATEWAY_RUNTIME_KUPO_API_KEY")?
+            .or_else(|| {
+                crate::setup::read_gateway_env_value(gateway_env_path, "KUPO_API_KEY")
+                    .ok()
+                    .flatten()
+            })
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .ok_or(
+                "PREPROD_KUPO_MODE=remote requires GATEWAY_RUNTIME_KUPO_API_KEY or KUPO_API_KEY",
+            )?;
+    let ogmios_api_key = crate::setup::read_gateway_env_value(gateway_env_path, "OGMIOS_API_KEY")?
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or("PREPROD_KUPO_MODE=remote requires OGMIOS_API_KEY")?;
+
+    Ok(Some((kupo_api_key, ogmios_api_key)))
 }
 
 fn managed_cardano_runtime_services_running(
@@ -254,11 +446,11 @@ pub fn start_relayer(
         format!("id = '{}'", cardano_chain_id).as_str(),
     )
     .map_err(|e| format!("Failed to update Hermes Cardano chain id: {}", e))?;
-    if cardano_chain_id == "cardano-devnet" {
-        // Local Cardano relaying uses Mithril-certified heights instead of the live tip.
-        // That certified view can lag the chain by minutes, so local Hermes clients need
-        // a much larger timestamp tolerance when validating EntryPoint headers against
-        // the latest Cardano header they can actually certify.
+    if cardano_chain_id == "cardano-devnet" || cardano_chain_id == "cardano-preprod" {
+        // Cardano relaying uses the gateway's accepted stability/Mithril view instead
+        // of the live tip. That certified view can lag the chain by minutes, so Hermes
+        // clients need a larger timestamp tolerance when validating EntryPoint headers
+        // against the latest Cardano header they can actually certify.
         replace_text_in_file(
             hermes_config_path.as_path(),
             "clock_drift = '5s'",
@@ -1230,6 +1422,7 @@ fn wait_for_local_offchain_wallet_utxos(
                 "--allow-net",
                 "--allow-env",
                 "--allow-read",
+                "--allow-run",
                 "--allow-ffi",
                 "scripts/check-wallet-utxos.ts",
             ],
@@ -2915,6 +3108,228 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     Ok(())
 }
 
+pub fn start_dapp(
+    project_root_path: &Path,
+    clean: bool,
+    core_cardano_network: config::CoreCardanoNetwork,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let dapps_dir = project_root_path.join("dapps");
+    if !dapps_dir.join("docker-compose.yml").exists() {
+        return Err("Missing dapps/docker-compose.yml; cannot start IBC Swap dapp".into());
+    }
+
+    let optional_progress_bar = match logger::get_verbosity() {
+        logger::Verbosity::Verbose => None,
+        _ => Some(ProgressBar::new_spinner()),
+    };
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.enable_steady_tick(Duration::from_millis(100));
+        progress_bar.set_style(
+            ProgressStyle::with_template("{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}")
+                .unwrap()
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+        );
+        progress_bar.set_prefix("Starting IBC Swap dapp ...".to_owned());
+    } else {
+        log("Starting IBC Swap dapp ...");
+    }
+
+    if clean {
+        log_or_show_progress(
+            "Removing existing IBC Swap dapp container",
+            &optional_progress_bar,
+        );
+        run_dapp_compose_command(
+            dapps_dir.as_path(),
+            &["compose", "rm", "-f", "-s", IBC_SWAP_DAPP_SERVICE],
+            core_cardano_network,
+        )?;
+    }
+
+    log_or_show_progress(
+        "Building and starting IBC Swap dapp container",
+        &optional_progress_bar,
+    );
+    run_dapp_compose_command(
+        dapps_dir.as_path(),
+        &["compose", "up", "-d", "--build", IBC_SWAP_DAPP_SERVICE],
+        core_cardano_network,
+    )?;
+
+    let mut dapp_ready = false;
+    let mut last_status = "IBC Swap dapp readiness checks have not completed yet".to_string();
+
+    for attempt in 0..IBC_SWAP_DAPP_READINESS_ATTEMPTS {
+        let (ready, status) = check_dapp_service_readiness();
+        last_status = status;
+        if ready {
+            dapp_ready = true;
+            break;
+        }
+
+        if attempt + 1 < IBC_SWAP_DAPP_READINESS_ATTEMPTS {
+            thread::sleep(Duration::from_millis(
+                IBC_SWAP_DAPP_READINESS_INTERVAL_MILLIS,
+            ));
+            log_or_show_progress(
+                &format!(
+                    "Waiting for IBC Swap dapp readiness... ({}/{})",
+                    attempt + 1,
+                    IBC_SWAP_DAPP_READINESS_ATTEMPTS
+                ),
+                &optional_progress_bar,
+            );
+        }
+    }
+
+    if !dapp_ready {
+        dump_dapp_startup_logs(dapps_dir.as_path(), &optional_progress_bar);
+        if let Some(progress_bar) = &optional_progress_bar {
+            progress_bar.finish_and_clear();
+        }
+        return Err(format!(
+            "IBC Swap dapp did not become ready in time: {}",
+            last_status
+        )
+        .into());
+    }
+
+    log_or_show_progress(
+        &format!("IBC Swap dapp is ready at {}", ibc_swap_dapp_url()),
+        &optional_progress_bar,
+    );
+
+    if let Some(progress_bar) = &optional_progress_bar {
+        progress_bar.finish_and_clear();
+    }
+
+    Ok(())
+}
+
+fn run_dapp_compose_command(
+    dapps_dir: &Path,
+    args: &[&str],
+    core_cardano_network: config::CoreCardanoNetwork,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cardano_chain_id = std::env::var("IBC_SWAP_CARDANO_CHAIN_ID")
+        .unwrap_or_else(|_| ibc_swap_cardano_chain_id(core_cardano_network).to_string());
+    let cardano_ibc_chain_id = std::env::var("IBC_SWAP_CARDANO_IBC_CHAIN_ID")
+        .unwrap_or_else(|_| ibc_swap_cardano_ibc_chain_id(core_cardano_network).to_string());
+    let dapp_mode = std::env::var("IBC_SWAP_MODE")
+        .unwrap_or_else(|_| ibc_swap_mode(core_cardano_network).to_string());
+    let mut command = Command::new("docker");
+    command
+        .current_dir(dapps_dir)
+        .env("IBC_SWAP_MODE", dapp_mode)
+        .env("IBC_SWAP_CARDANO_CHAIN_ID", cardano_chain_id)
+        .env("IBC_SWAP_CARDANO_IBC_CHAIN_ID", cardano_ibc_chain_id);
+
+    if core_cardano_network == config::CoreCardanoNetwork::Preprod {
+        let project_root_path = dapps_dir
+            .parent()
+            .ok_or("Failed to derive project root from dapps directory")?;
+        let gateway_env_path = project_root_path
+            .join("cardano")
+            .join("gateway")
+            .join(".env");
+        if let Some(kupmios_url) = read_preprod_remote_kupmios_url(gateway_env_path.as_path())? {
+            command
+                .env("IBC_SWAP_KUPMIOS_URL", kupmios_url.as_str())
+                .env("IBC_SWAP_KUPMIOS_INTERNAL_URL", kupmios_url.as_str());
+        }
+        if let Some((kupo_api_key, ogmios_api_key)) =
+            read_preprod_remote_kupmios_api_keys(gateway_env_path.as_path())?
+        {
+            command
+                .env("IBC_SWAP_KUPO_API_KEY", kupo_api_key)
+                .env("IBC_SWAP_OGMIOS_API_KEY", ogmios_api_key);
+        }
+    }
+
+    let output = command.args(args).output()?;
+
+    let command_label = format!("docker {}", args.join(" "));
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let combined = match (stdout.is_empty(), stderr.is_empty()) {
+        (false, false) => format!("{}\n{}", stdout, stderr),
+        (false, true) => stdout,
+        (true, false) => stderr,
+        (true, true) => String::new(),
+    };
+
+    if output.status.success() {
+        if !combined.is_empty() {
+            verbose(&format!("{} output:\n{}", command_label, combined));
+        }
+        return Ok(());
+    }
+
+    let details = if combined.is_empty() {
+        "no output".to_string()
+    } else {
+        combined
+    };
+    Err(format!(
+        "{} exited with status {}: {}",
+        command_label,
+        output.status.code().unwrap_or(-1),
+        details
+    )
+    .into())
+}
+
+fn dump_dapp_startup_logs(dapps_dir: &Path, optional_progress_bar: &Option<ProgressBar>) {
+    log_or_print_progress(
+        "IBC Swap dapp did not become ready in time. Collecting startup diagnostics",
+        optional_progress_bar,
+    );
+
+    let compose_ps = run_command_capture(Command::new("docker").current_dir(dapps_dir).args([
+        "compose",
+        "ps",
+        IBC_SWAP_DAPP_SERVICE,
+    ]));
+    match compose_ps {
+        Ok(output) if !output.trim().is_empty() => {
+            log_or_print_progress("IBC Swap dapp compose status", optional_progress_bar);
+            logger::log(output.as_str());
+        }
+        Ok(_) => {}
+        Err(error) => {
+            log_or_print_progress(
+                &format!("WARN: Failed to collect dapp compose status: {}", error),
+                optional_progress_bar,
+            );
+        }
+    }
+
+    let compose_logs = run_command_capture(Command::new("docker").current_dir(dapps_dir).args([
+        "compose",
+        "logs",
+        "--tail",
+        "200",
+        IBC_SWAP_DAPP_SERVICE,
+    ]));
+    match compose_logs {
+        Ok(output) if !output.trim().is_empty() => {
+            log_or_print_progress(
+                "IBC Swap dapp compose logs (last 200 lines)",
+                optional_progress_bar,
+            );
+            logger::log(output.as_str());
+        }
+        Ok(_) => {}
+        Err(error) => {
+            log_or_print_progress(
+                &format!("WARN: Failed to collect dapp compose logs: {}", error),
+                optional_progress_bar,
+            );
+        }
+    }
+}
+
 fn dump_gateway_startup_logs(gateway_dir: &Path, optional_progress_bar: &Option<ProgressBar>) {
     log_or_print_progress(
         "Gateway gRPC did not become ready in time. Collecting startup diagnostics",
@@ -3019,13 +3434,23 @@ fn run_hermes_command_with_progress(
     hermes_binary: &Path,
     args: &[&str],
 ) -> Result<Output, Box<dyn std::error::Error>> {
-    HermesCli::new(hermes_binary)
-        .output_with_progress(
-            None,
-            args,
-            Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS),
-        )
-        .map_err(Into::into)
+    run_hermes_command_with_progress_and_timeout(hermes_binary, args, None)
+}
+
+fn run_hermes_command_with_progress_and_timeout(
+    hermes_binary: &Path,
+    args: &[&str],
+    timeout: Option<Duration>,
+) -> Result<Output, Box<dyn std::error::Error>> {
+    let hermes = HermesCli::new(hermes_binary);
+    let heartbeat_interval = Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS);
+    match timeout {
+        Some(timeout) => {
+            hermes.output_with_progress_and_timeout(None, args, heartbeat_interval, Some(timeout))
+        }
+        None => hermes.output_with_progress(None, args, heartbeat_interval),
+    }
+    .map_err(Into::into)
 }
 
 /// Resolves the Hermes binary from the relayer build output and fails if missing.
@@ -3080,6 +3505,39 @@ pub fn run_hermes_command(args: &[&str]) -> Result<Output, Box<dyn std::error::E
     Ok(output)
 }
 
+pub fn run_hermes_command_with_timeout(
+    args: &[&str],
+    timeout: Duration,
+) -> Result<Output, Box<dyn std::error::Error>> {
+    let hermes_binary = require_relayer_hermes_binary()?;
+    let started_at = Instant::now();
+    logger::verbose(&format!(
+        "Running Hermes command with timeout={}s: {} {}",
+        timeout.as_secs(),
+        hermes_binary.display(),
+        args.join(" ")
+    ));
+
+    let output = run_hermes_command_with_progress_and_timeout(&hermes_binary, args, Some(timeout))?;
+
+    let elapsed = started_at.elapsed();
+    if elapsed >= Duration::from_secs(HERMES_PROGRESS_LOG_INTERVAL_SECS) {
+        log(&format!(
+            "Hermes timed command completed in {}s: {}",
+            elapsed.as_secs(),
+            args.join(" ")
+        ));
+    }
+
+    logger::verbose(&format!(
+        "Hermes timed command completed in {:.2}s (success={})",
+        elapsed.as_secs_f32(),
+        output.status.success()
+    ));
+
+    Ok(output)
+}
+
 /// Start Hermes daemon in the background
 pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
@@ -3106,6 +3564,8 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
     let hermes_config = home_path.join(".hermes/config.toml");
     let hermes_err_log = hermes_log.with_extension("err");
     let expected_binary_str = hermes_binary.to_str();
+
+    validate_preprod_hermes_route_coverage(&hermes_config)?;
 
     if let Some(existing_pid) = read_hermes_pid_file() {
         if is_process_alive(existing_pid)
@@ -3605,6 +4065,7 @@ pub fn hermes_create_channel(
 #[derive(Copy, Clone)]
 enum CoreHealthCheckType {
     Gateway,
+    Dapp,
     CardanoNode,
     Postgres,
     Yaci,
@@ -3618,6 +4079,7 @@ enum CoreHealthCheckType {
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CoreServiceId {
     Gateway,
+    Dapp,
     Cardano,
     Postgres,
     Yaci,
@@ -3632,6 +4094,7 @@ impl CoreServiceId {
     pub(crate) fn name(self) -> &'static str {
         match self {
             CoreServiceId::Gateway => "gateway",
+            CoreServiceId::Dapp => "dapp",
             CoreServiceId::Cardano => "cardano",
             CoreServiceId::Postgres => "postgres",
             CoreServiceId::Yaci => "yaci",
@@ -3646,6 +4109,7 @@ impl CoreServiceId {
     fn label(self) -> &'static str {
         match self {
             CoreServiceId::Gateway => "Gateway (NestJS gRPC Server)",
+            CoreServiceId::Dapp => "IBC Swap dapp (Next.js UI)",
             CoreServiceId::Cardano => "Cardano chain access",
             CoreServiceId::Postgres => "PostgreSQL (Gateway app db)",
             CoreServiceId::Yaci => "Yaci Store",
@@ -3660,6 +4124,7 @@ impl CoreServiceId {
     fn check_type(self) -> CoreHealthCheckType {
         match self {
             CoreServiceId::Gateway => CoreHealthCheckType::Gateway,
+            CoreServiceId::Dapp => CoreHealthCheckType::Dapp,
             CoreServiceId::Cardano => CoreHealthCheckType::CardanoNode,
             CoreServiceId::Postgres => CoreHealthCheckType::Postgres,
             CoreServiceId::Yaci => CoreHealthCheckType::Yaci,
@@ -3738,8 +4203,9 @@ impl HealthTarget {
     }
 }
 
-const CORE_SERVICE_IDS: [CoreServiceId; 9] = [
+const CORE_SERVICE_IDS: [CoreServiceId; 10] = [
     CoreServiceId::Gateway,
+    CoreServiceId::Dapp,
     CoreServiceId::Cardano,
     CoreServiceId::Postgres,
     CoreServiceId::Yaci,
@@ -3822,6 +4288,7 @@ fn run_core_health_check(
     if context.core_cardano_network == config::CoreCardanoNetwork::Preprod {
         return match check_type {
             CoreHealthCheckType::Gateway => check_gateway_service_readiness(),
+            CoreHealthCheckType::Dapp => check_dapp_service_readiness(),
             CoreHealthCheckType::CardanoNode => check_container_only("cardano-node"),
             CoreHealthCheckType::Postgres => check_postgres_service(),
             CoreHealthCheckType::Yaci => check_container_with_optional_port(
@@ -3876,6 +4343,7 @@ fn run_core_health_check(
 
     match check_type {
         CoreHealthCheckType::Gateway => check_gateway_service_readiness(),
+        CoreHealthCheckType::Dapp => check_dapp_service_readiness(),
         CoreHealthCheckType::CardanoNode => check_container_only("cardano-node"),
         CoreHealthCheckType::Postgres => check_postgres_service(),
         CoreHealthCheckType::Yaci => check_container_with_optional_port(
@@ -4238,7 +4706,7 @@ fn summarize_text(body: &str) -> String {
     }
 }
 
-fn check_gateway_http_readiness() -> (bool, String) {
+fn check_gateway_http_readiness_once() -> (bool, String) {
     let output = Command::new("curl")
         .args([
             "-sS",
@@ -4303,6 +4771,26 @@ fn check_gateway_http_readiness() -> (bool, String) {
     }
 }
 
+fn check_gateway_http_readiness() -> (bool, String) {
+    let mut last_status = "Gateway proof readiness endpoint did not complete".to_string();
+
+    for attempt in 0..GATEWAY_HTTP_READINESS_ATTEMPTS {
+        let (ready, status) = check_gateway_http_readiness_once();
+        if ready {
+            return (true, status);
+        }
+
+        last_status = status;
+        if attempt + 1 < GATEWAY_HTTP_READINESS_ATTEMPTS {
+            thread::sleep(Duration::from_millis(
+                GATEWAY_HTTP_READINESS_RETRY_INTERVAL_MILLIS,
+            ));
+        }
+    }
+
+    (false, last_status)
+}
+
 fn check_gateway_service_readiness() -> (bool, String) {
     if docker_running_container_name("gateway-app").is_none() {
         return (false, "Container not running".to_string());
@@ -4326,6 +4814,40 @@ fn check_gateway_service_readiness() -> (bool, String) {
         )
     } else {
         (false, readiness_status)
+    }
+}
+
+fn check_dapp_service_readiness() -> (bool, String) {
+    if docker_running_container_name(IBC_SWAP_DAPP_SERVICE).is_none() {
+        return (false, "Container not running".to_string());
+    }
+
+    let port = match ibc_swap_host_port() {
+        Ok(port) => port,
+        Err(error) => return (false, error),
+    };
+
+    if !is_port_accessible(port) {
+        return (
+            false,
+            format!("Container running but port {} not ready", port),
+        );
+    }
+
+    let url = format!("http://127.0.0.1:{port}");
+    if endpoint_responds(url.as_str()) {
+        (
+            true,
+            format!("Next.js UI reachable at {}", ibc_swap_dapp_url()),
+        )
+    } else {
+        (
+            false,
+            format!(
+                "Port {} is accessible but {} did not return a successful HTTP response",
+                port, url
+            ),
+        )
     }
 }
 

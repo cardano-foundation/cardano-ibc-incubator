@@ -347,6 +347,7 @@ pub fn execute_script(
             label: script_name,
             heartbeat_interval: None,
             log_failure_output: false,
+            timeout: None,
         },
         |_, line| logger::info(line),
     )
