@@ -215,7 +215,9 @@ describe('PacketService denom regression coverage', () => {
       transferModuleCall?.[0]?.Operator?.[0]?.TransferModuleOperator?.[0]?.Transfer?.data?.denom;
     expect(transferModuleDenomHex).toBe(convertString2Hex(canonicalDenom));
   });
+});
 
+describe('PacketService acknowledgement and recv denom regression coverage', () => {
   it('uses the labeled blake2b_224 voucher token name for acknowledgement-error refund voucher minting', async () => {
     const loggerMock = {
       log: jest.fn(),

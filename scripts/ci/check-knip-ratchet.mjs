@@ -48,7 +48,6 @@ const allowed = new Set([
   'gateway:src/shared/helpers/hex.ts:exports:errInvalidByte',
   'gateway:src/shared/helpers/hex.ts:exports:errLength',
   'gateway:src/shared/helpers/hex.ts:exports:fromText',
-  'gateway:src/shared/helpers/hex.ts:exports:hashBlake2b224',
   'gateway:src/shared/helpers/hex.ts:exports:toHexString',
   'gateway:src/shared/helpers/hex.ts:exports:toText',
   'gateway:src/shared/helpers/ibc-state-root.ts:exports:computeRootWithChannelUpdate',
