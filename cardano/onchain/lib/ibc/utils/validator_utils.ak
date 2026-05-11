@@ -183,6 +183,8 @@ pub fn validate_mint(
   }
 }
 
+/// Finds the single updated state output for a spent state UTxO.
+/// The output must stay at the same validator address and carry the same auth token.
 pub fn find_unique_continuation_output(
   spent_output: Output,
   outputs: List<Output>,
