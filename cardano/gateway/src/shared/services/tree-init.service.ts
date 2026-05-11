@@ -82,8 +82,8 @@ export class TreeInitService implements OnModuleInit {
       this.logger.error(`   Gateway cannot start without valid tree state`);
       this.logger.error(`   Please verify:`);
       this.logger.error(`   - Kupo is running and indexing`);
-      this.logger.error(`   - Handler UTXO exists on-chain`);
-      this.logger.error(`   - Kupo has indexed from Handler deployment block`);
+      this.logger.error(`   - HostState UTXO exists on-chain`);
+      this.logger.error(`   - Kupo has indexed from the HostState deployment block`);
 
       // Throw error to prevent Gateway from starting with invalid state
       throw new Error(`Tree initialization failed: ${error.message}`);

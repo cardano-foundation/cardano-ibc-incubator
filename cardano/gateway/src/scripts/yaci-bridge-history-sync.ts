@@ -352,7 +352,6 @@ function deriveBridgeProjectionFilter(bridgeConfig: LoadedBridgeConfig): BridgeP
 
   const relevantPolicies = uniqueSorted([
     deployment.hostStateNFT.policyId,
-    deployment.handlerAuthToken.policyId,
     deployment.validators.mintClientStt.scriptHash,
     deployment.validators.mintConnectionStt.scriptHash,
     deployment.validators.mintChannelStt.scriptHash,

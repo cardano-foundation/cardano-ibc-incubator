@@ -1,7 +1,6 @@
 import { ensureDir } from "@std/fs";
 import {
   Constr,
-  credentialToAddress,
   Data,
   fromText,
   LucidEvolution,
@@ -11,7 +10,6 @@ import {
   ScriptHash,
   type SpendingValidator,
   UTxO,
-  validatorToAddress,
   validatorToScriptHash,
 } from "@lucid-evolution/lucid";
 import {
@@ -28,7 +26,6 @@ import {
 import {
   DEPLOYMENT_NONCE_SPLIT_AMOUNT,
   EMULATOR_ENV,
-  HANDLER_TOKEN_NAME,
   ICQ_MODULE_PORT,
   MOCK_MODULE_PORT,
   PORT_PREFIX,
@@ -40,9 +37,8 @@ import {
 import {
   AuthToken,
   AuthTokenSchema,
-  HandlerDatum,
-  HandlerOperator,
   HostStateDatum,
+  HostStateRedeemer,
   MintPortRedeemer,
   OutputReference,
   OutputReferenceSchema,
@@ -67,6 +63,169 @@ const encodeRawDatum = (value: unknown): string =>
   // runtime encoding is correct and validated by the on-chain tests.
   Data.to(value as never, undefined as never, { canonical: true });
 
+const MERKLE_DEPTH_BITS = 64;
+const EMPTY_HASH = "00".repeat(32);
+
+const concatBytes = (...parts: Uint8Array[]): Uint8Array => {
+  const length = parts.reduce((sum, part) => sum + part.length, 0);
+  const result = new Uint8Array(length);
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
+};
+
+const hexToBytes = (hex: string): Uint8Array => {
+  if (hex.length % 2 !== 0) throw new Error(`Invalid hex length ${hex.length}`);
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return bytes;
+};
+
+const bytesToHex = (bytes: Uint8Array): string =>
+  Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+
+const sha256Hex = async (bytes: Uint8Array): Promise<string> => {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    bytes as unknown as BufferSource,
+  );
+  return bytesToHex(new Uint8Array(digest));
+};
+
+const leafHash = async (valueHex: string): Promise<string> => {
+  if (valueHex.length === 0) return EMPTY_HASH;
+  const valueHash = await sha256Hex(hexToBytes(valueHex));
+  return sha256Hex(concatBytes(new Uint8Array([0]), hexToBytes(valueHash)));
+};
+
+const innerHash = (left: string, right: string): Promise<string> => {
+  if (left === EMPTY_HASH && right === EMPTY_HASH) {
+    return Promise.resolve(EMPTY_HASH);
+  }
+  return sha256Hex(
+    concatBytes(new Uint8Array([1]), hexToBytes(left), hexToBytes(right)),
+  );
+};
+
+const keyIndex64 = async (key: string): Promise<bigint> => {
+  const hash = await sha256Hex(new TextEncoder().encode(key));
+  return BigInt(`0x${hash.slice(0, 16)}`);
+};
+
+class DeploymentIbcTree {
+  private leaves = new Map<string, string>();
+  private root = EMPTY_HASH;
+  private dirty = true;
+  private nodesByHeight: Array<Map<bigint, string>> = [];
+
+  set(key: string, valueHex: string): void {
+    if (valueHex.length === 0) {
+      this.leaves.delete(key);
+    } else {
+      this.leaves.set(key, valueHex);
+    }
+    this.dirty = true;
+  }
+
+  async getRoot(): Promise<string> {
+    await this.rebuildIfNeeded();
+    return this.root;
+  }
+
+  async getSiblings(key: string): Promise<string[]> {
+    await this.rebuildIfNeeded();
+    const siblings: string[] = [];
+    let index = await keyIndex64(key);
+
+    for (let height = 0; height < MERKLE_DEPTH_BITS; height++) {
+      const siblingIndex = index ^ 1n;
+      siblings.push(this.nodesByHeight[height].get(siblingIndex) ?? EMPTY_HASH);
+      index >>= 1n;
+    }
+
+    return siblings;
+  }
+
+  private async rebuildIfNeeded(): Promise<void> {
+    if (!this.dirty) return;
+
+    const nodesByHeight = Array.from(
+      { length: MERKLE_DEPTH_BITS + 1 },
+      () => new Map<bigint, string>(),
+    );
+
+    for (const [key, value] of this.leaves.entries()) {
+      nodesByHeight[0].set(await keyIndex64(key), await leafHash(value));
+    }
+
+    for (let height = 0; height < MERKLE_DEPTH_BITS; height++) {
+      const currentLevel = nodesByHeight[height];
+      const parentLevel = nodesByHeight[height + 1];
+      const parentIndexes = new Set<bigint>();
+
+      for (const index of currentLevel.keys()) {
+        parentIndexes.add(index >> 1n);
+      }
+
+      for (const parentIndex of parentIndexes) {
+        const left = currentLevel.get(parentIndex << 1n) ?? EMPTY_HASH;
+        const right = currentLevel.get((parentIndex << 1n) | 1n) ?? EMPTY_HASH;
+        const parentHash = await innerHash(left, right);
+        if (parentHash !== EMPTY_HASH) parentLevel.set(parentIndex, parentHash);
+      }
+    }
+
+    this.nodesByHeight = nodesByHeight;
+    this.root = nodesByHeight[MERKLE_DEPTH_BITS].get(0n) ?? EMPTY_HASH;
+    this.dirty = false;
+  }
+}
+
+const portCommitmentKey = (portNumber: bigint): string =>
+  `ports/port-${portNumber.toString()}`;
+
+const buildBindPortHostStateUpdate = async (
+  currentDatum: HostStateDatum,
+  portNumber: bigint,
+  tree: DeploymentIbcTree,
+): Promise<{
+  redeemer: HostStateRedeemer;
+  datum: HostStateDatum;
+  commit: () => void;
+}> => {
+  const portKey = portCommitmentKey(portNumber);
+  const portSiblings = await tree.getSiblings(portKey);
+  const portValue = Data.to(portNumber as never, Data.Integer() as never, {
+    canonical: true,
+  });
+  tree.set(portKey, portValue);
+  const newRoot = await tree.getRoot();
+  const updatedDatum: HostStateDatum = {
+    ...currentDatum,
+    state: {
+      ...currentDatum.state,
+      version: currentDatum.state.version + 1n,
+      ibc_state_root: newRoot,
+      bound_port: sortPortNumbers([
+        ...currentDatum.state.bound_port,
+        portNumber,
+      ]),
+      last_update_time: BigInt(Date.now()),
+    },
+  };
+
+  return {
+    redeemer: { BindPort: { port: portNumber, port_siblings: portSiblings } },
+    datum: updatedDatum,
+    commit: () => {},
+  };
+};
+
 export const createDeployment = async (
   lucid: LucidEvolution,
   mode?: string,
@@ -74,23 +233,8 @@ export const createDeployment = async (
   console.log("Create deployment info");
   const referredValidators: Script[] = [];
 
-  // ---------------------------------------------------------------------------
-  // HostState NFT policy id is a required parameter for several validators.
-  //
-  // It depends on an `OutputReference`, so we must pick that upfront and use the
-  // same reference later when minting the NFT (otherwise the policy id changes).
-  //
-  // Important: this output reference is not just "data baked into a script".
-  // The corresponding UTxO must also be spent in the minting transaction.
-  //
-  // We also mint the Handler auth token using a separate "nonce UTxO" to ensure
-  // uniqueness. Therefore we need *two distinct* wallet UTxOs available:
-  // - one reserved for the HostState NFT mint (and for parameterizing the policy id),
-  // - one reserved for the Handler token mint.
-  //
-  // If we accidentally reuse the same nonce UTxO for both mints, the first mint
-  // will spend it and the second mint will fail with "unknown UTxO references".
-  // ---------------------------------------------------------------------------
+  // The HostState NFT policy id depends on this nonce output reference, so the
+  // same UTxO must later be spent by the mint transaction.
   let signerUtxos = await getLiveWalletUtxos(lucid);
   if (signerUtxos.length < 1) throw new Error("No UTXO found.");
 
@@ -139,7 +283,6 @@ export const createDeployment = async (
     );
   }
   const [
-    handlerNonceUtxo,
     hostStateNonceUtxo,
     transferModuleNonceUtxo,
     ...remainingNonceUtxos
@@ -194,13 +337,8 @@ export const createDeployment = async (
     ]);
   referredValidators.push(spendClientValidator);
 
-  // ---------------------------------------------------------------------------
-  // STT minting policies are the canonical source of client/connection/channel auth tokens.
-  //
-  // They derive token names from the HostState NFT (not the Handler auth token), which
-  // lets on-chain validators deterministically derive related token names from any
-  // other token name and prevents "short / human-readable" token-name mismatches.
-  // ---------------------------------------------------------------------------
+  // STT minting policies derive client/connection/channel token names from the
+  // HostState NFT, keeping object-token authorization tied to the canonical mutex.
 
   // Load mint client STT validator (parameterized by spend_client_script_hash, host_state_nft_policy_id)
   const [mintClientSttValidator, mintClientSttPolicyId] = await readValidator(
@@ -299,29 +437,6 @@ export const createDeployment = async (
   );
   referredValidators.push(mintChannelSttValidator);
 
-  // load spend handler validator
-  const [spendHandlerValidator, spendHandlerScriptHash, spendHandlerAddress] =
-    await readValidator("spending_handler.spend_handler.spend", lucid, [
-      mintClientSttPolicyId,
-      mintConnectionSttPolicyId,
-      mintChannelSttPolicyId,
-      mintPortPolicyId,
-    ]);
-  referredValidators.push(spendHandlerValidator);
-
-  // deploy handler
-  const [mintHandlerPolicyId, handlerTokenName] = await deployHandler(
-    lucid,
-    spendHandlerScriptHash,
-    handlerNonceUtxo,
-  );
-
-  const handlerToken: AuthToken = {
-    policy_id: mintHandlerPolicyId,
-    name: handlerTokenName,
-  };
-  const handlerTokenUnit = mintHandlerPolicyId + handlerTokenName;
-
   // Deploy HostState (STT Architecture)
   const {
     hostStateStt,
@@ -337,6 +452,7 @@ export const createDeployment = async (
     spendingChannel.base.hash,
   );
   referredValidators.push(hostStateStt.validator);
+  const hostStateTree = new DeploymentIbcTree();
 
   // load mint identifier validator
   const [mintIdentifierValidator] = await readValidator(
@@ -365,8 +481,8 @@ export const createDeployment = async (
     spendTransferModule,
   } = await deployTransferModule(
     lucid,
-    handlerToken,
-    spendHandlerValidator,
+    hostStateStt,
+    hostStateTree,
     mintPortValidator,
     mintIdentifierValidator,
     mintChannelSttPolicyId,
@@ -403,8 +519,8 @@ export const createDeployment = async (
     spendModule: spendMockModule,
   } = await deployGenericModule(
     lucid,
-    handlerToken,
-    spendHandlerValidator,
+    hostStateStt,
+    hostStateTree,
     mintPortValidator,
     mintIdentifierValidator,
     MOCK_MODULE_PORT,
@@ -419,8 +535,8 @@ export const createDeployment = async (
     spendModule: spendIcqModule,
   } = await deployGenericModule(
     lucid,
-    handlerToken,
-    spendHandlerValidator,
+    hostStateStt,
+    hostStateTree,
     mintPortValidator,
     mintIdentifierValidator,
     ICQ_MODULE_PORT,
@@ -461,13 +577,6 @@ export const createDeployment = async (
   const deploymentInfo: DeploymentTemplate = {
     deployedAt,
     validators: {
-      spendHandler: {
-        title: "spending_handler.spend_handler.spend",
-        script: spendHandlerValidator.script,
-        scriptHash: spendHandlerScriptHash,
-        address: spendHandlerAddress,
-        refUtxo: refUtxosInfo[spendHandlerScriptHash],
-      },
       spendClient: {
         title: "spending_client.spend_client.spend",
         script: spendClientValidator.script,
@@ -576,10 +685,6 @@ export const createDeployment = async (
         refUtxo: refUtxosInfo[mintChannelSttPolicyId],
       },
     },
-    handlerAuthToken: {
-      policyId: handlerToken.policy_id,
-      name: handlerToken.name,
-    },
     hostStateNFT: {
       policyId: hostStateNFT.policy_id,
       name: hostStateNFT.name,
@@ -593,10 +698,6 @@ export const createDeployment = async (
       },
     },
     modules: {
-      handler: {
-        identifier: handlerTokenUnit,
-        address: spendHandlerAddress,
-      },
       transfer: {
         identifier: transferModuleIdentifier,
         address: spendTransferModule.address,
@@ -961,93 +1062,14 @@ async function createReferenceUtxos(
   }
 }
 
-const deployHandler = async (
-  lucid: LucidEvolution,
-  spendHandlerScriptHash: ScriptHash,
-  nonceUtxo: UTxO,
-) => {
-  console.log("Create Handler");
-
-  // load nonce UTXO
-  const NONCE_UTXO = nonceUtxo;
-
-  // load mint handler validator
-  const outputReference: OutputReference = {
-    transaction_id: NONCE_UTXO.txHash,
-    output_index: BigInt(NONCE_UTXO.outputIndex),
-  };
-
-  const [mintHandlerValidator, mintHandlerPolicyId] = await readValidator(
-    "minting_handler.mint_handler.mint",
-    lucid,
-    [outputReference, spendHandlerScriptHash],
-    Data.Tuple([OutputReferenceSchema, Data.Bytes()]) as unknown as [
-      OutputReference,
-      string,
-    ],
-  );
-
-  const handlerTokenUnit = mintHandlerPolicyId + HANDLER_TOKEN_NAME;
-
-  // create handler datum
-  // ibc_state_root initialized to empty tree root (32 bytes of 0x00)
-  // This root will be updated with each IBC state change to reflect the current ICS-23 Merkle commitment
-  const EMPTY_TREE_ROOT =
-    "0000000000000000000000000000000000000000000000000000000000000000";
-
-  const initHandlerDatum: HandlerDatum = {
-    state: {
-      next_client_sequence: 0n,
-      next_connection_sequence: 0n,
-      next_channel_sequence: 0n,
-      bound_port: [],
-      ibc_state_root: EMPTY_TREE_ROOT,
-    },
-    token: { name: HANDLER_TOKEN_NAME, policy_id: mintHandlerPolicyId },
-  };
-
-  const spendHandlerAddress = credentialToAddress(
-    lucid.config().network || "Custom",
-    {
-      type: "Script",
-      hash: spendHandlerScriptHash,
-    },
-  );
-
-  // create and send tx create handler
-  await submitTx(
-    () =>
-      lucid
-        .newTx()
-        .collectFrom([NONCE_UTXO], Data.void())
-        .attach.MintingPolicy(mintHandlerValidator)
-        .mintAssets(
-          {
-            [handlerTokenUnit]: 1n,
-          },
-          Data.void(),
-        )
-        .pay.ToContract(
-          spendHandlerAddress,
-          {
-            kind: "inline",
-            value: Data.to(initHandlerDatum, HandlerDatum, { canonical: true }),
-          },
-          {
-            [handlerTokenUnit]: 1n,
-          },
-        ),
-    lucid,
-    "Mint Handler",
-  );
-
-  return [mintHandlerPolicyId, HANDLER_TOKEN_NAME];
-};
-
 const deployTransferModule = async (
   lucid: LucidEvolution,
-  handlerToken: AuthToken,
-  spendHandlerValidator: SpendingValidator,
+  hostStateStt: {
+    validator: SpendingValidator;
+    scriptHash: ScriptHash;
+    address: string;
+  },
+  hostStateTree: DeploymentIbcTree,
   mintPortValidator: MintingPolicy,
   mintIdentifierValidator: MintingPolicy,
   mintChannelPolicyId: string,
@@ -1113,7 +1135,6 @@ const deployTransferModule = async (
     "spending_transfer_module.spend_transfer_module.spend",
     lucid,
     [
-      handlerToken,
       portToken,
       identifierToken,
       portId,
@@ -1124,13 +1145,11 @@ const deployTransferModule = async (
     Data.Tuple([
       AuthTokenSchema,
       AuthTokenSchema,
-      AuthTokenSchema,
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
     ]) as unknown as [
-      AuthToken,
       AuthToken,
       AuthToken,
       string,
@@ -1140,28 +1159,16 @@ const deployTransferModule = async (
     ],
   );
 
-  const handlerTokenUnit = handlerToken.policy_id + handlerToken.name;
-  const handlerUtxo = await lucid.utxoByUnit(handlerTokenUnit);
-
-  const currentHandlerDatum = Data.from(handlerUtxo.datum!, HandlerDatum);
-  const updatedHandlerDatum: HandlerDatum = {
-    ...currentHandlerDatum,
-    state: {
-      ...currentHandlerDatum.state,
-      // On-chain validation sorts bound ports numerically. Using JS default
-      // `toSorted()` here is wrong for bigint values because it sorts
-      // lexicographically as strings, which breaks after binding port 100 and
-      // then trying to bind 99 or 101.
-      bound_port: sortPortNumbers([
-        ...currentHandlerDatum.state.bound_port,
-        portNumber,
-      ]),
-    },
-  };
-  const spendHandlerRedeemer: HandlerOperator = "HandlerBindPort";
+  const hostStateUnit = hostStateNFT.policy_id + hostStateNFT.name;
+  const hostStateUtxo = await lucid.utxoByUnit(hostStateUnit);
+  const currentHostStateDatum = Data.from(hostStateUtxo.datum!, HostStateDatum);
+  const hostStateUpdate = await buildBindPortHostStateUpdate(
+    currentHostStateDatum,
+    portNumber,
+    hostStateTree,
+  );
 
   const mintPortRedeemer: MintPortRedeemer = {
-    handler_token: handlerToken,
     spend_module_script_hash: spendTransferModuleScriptHash,
     port_number: portNumber,
   };
@@ -1172,10 +1179,12 @@ const deployTransferModule = async (
         .newTx()
         .collectFrom([nonceUtxo], Data.void())
         .collectFrom(
-          [handlerUtxo],
-          Data.to(spendHandlerRedeemer, HandlerOperator, { canonical: true }),
+          [hostStateUtxo],
+          Data.to(hostStateUpdate.redeemer, HostStateRedeemer, {
+            canonical: true,
+          }),
         )
-        .attach.SpendingValidator(spendHandlerValidator)
+        .attach.SpendingValidator(hostStateStt.validator)
         .attach.MintingPolicy(mintPortValidator)
         .mintAssets(
           {
@@ -1191,18 +1200,15 @@ const deployTransferModule = async (
           Data.to(outputReference, OutputReference, { canonical: true }),
         )
         .pay.ToContract(
-          validatorToAddress(
-            lucid.config().network || "Custom",
-            spendHandlerValidator,
-          ),
+          hostStateStt.address,
           {
             kind: "inline",
-            value: Data.to(updatedHandlerDatum, HandlerDatum, {
+            value: Data.to(hostStateUpdate.datum, HostStateDatum, {
               canonical: true,
             }),
           },
           {
-            [handlerTokenUnit]: 1n,
+            [hostStateUnit]: 1n,
           },
         )
         .pay.ToAddress(
@@ -1215,6 +1221,7 @@ const deployTransferModule = async (
     lucid,
     "Mint Transfer Module",
   );
+  hostStateUpdate.commit();
 
   return {
     identifierTokenUnit,
@@ -1235,8 +1242,12 @@ const deployTransferModule = async (
 
 const deployGenericModule = async (
   lucid: LucidEvolution,
-  handlerToken: AuthToken,
-  spendHandlerValidator: SpendingValidator,
+  hostStateStt: {
+    validator: SpendingValidator;
+    scriptHash: ScriptHash;
+    address: string;
+  },
+  hostStateTree: DeploymentIbcTree,
   mintPortValidator: MintingPolicy,
   mintIdentifierValidator: MintingPolicy,
   portNumber: bigint,
@@ -1279,24 +1290,16 @@ const deployGenericModule = async (
     lucid,
   );
 
-  const handlerTokenUnit = handlerToken.policy_id + handlerToken.name;
-  const handlerUtxo = await lucid.utxoByUnit(handlerTokenUnit);
-
-  const currentHandlerDatum = Data.from(handlerUtxo.datum!, HandlerDatum);
-  const updatedHandlerDatum: HandlerDatum = {
-    ...currentHandlerDatum,
-    state: {
-      ...currentHandlerDatum.state,
-      bound_port: sortPortNumbers([
-        ...currentHandlerDatum.state.bound_port,
-        portNumber,
-      ]),
-    },
-  };
-  const spendHandlerRedeemer: HandlerOperator = "HandlerBindPort";
+  const hostStateUnit = hostStateNFT.policy_id + hostStateNFT.name;
+  const hostStateUtxo = await lucid.utxoByUnit(hostStateUnit);
+  const currentHostStateDatum = Data.from(hostStateUtxo.datum!, HostStateDatum);
+  const hostStateUpdate = await buildBindPortHostStateUpdate(
+    currentHostStateDatum,
+    portNumber,
+    hostStateTree,
+  );
 
   const mintPortRedeemer: MintPortRedeemer = {
-    handler_token: handlerToken,
     spend_module_script_hash: spendModuleScriptHash,
     port_number: portNumber,
   };
@@ -1307,10 +1310,12 @@ const deployGenericModule = async (
         .newTx()
         .collectFrom([nonceUtxo], Data.void())
         .collectFrom(
-          [handlerUtxo],
-          Data.to(spendHandlerRedeemer, HandlerOperator, { canonical: true }),
+          [hostStateUtxo],
+          Data.to(hostStateUpdate.redeemer, HostStateRedeemer, {
+            canonical: true,
+          }),
         )
-        .attach.SpendingValidator(spendHandlerValidator)
+        .attach.SpendingValidator(hostStateStt.validator)
         .attach.MintingPolicy(mintPortValidator)
         .mintAssets(
           {
@@ -1326,18 +1331,15 @@ const deployGenericModule = async (
           Data.to(outputReference, OutputReference, { canonical: true }),
         )
         .pay.ToContract(
-          validatorToAddress(
-            lucid.config().network || "Custom",
-            spendHandlerValidator,
-          ),
+          hostStateStt.address,
           {
             kind: "inline",
-            value: Data.to(updatedHandlerDatum, HandlerDatum, {
+            value: Data.to(hostStateUpdate.datum, HostStateDatum, {
               canonical: true,
             }),
           },
           {
-            [handlerTokenUnit]: 1n,
+            [hostStateUnit]: 1n,
           },
         )
         .pay.ToAddress(
@@ -1350,6 +1352,7 @@ const deployGenericModule = async (
     lucid,
     `Mint ${portIdText} Module`,
   );
+  hostStateUpdate.commit();
 
   return {
     identifierTokenUnit,

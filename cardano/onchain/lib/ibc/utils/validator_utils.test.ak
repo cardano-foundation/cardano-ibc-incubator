@@ -31,11 +31,6 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
-use ibc/core/ics_025_handler_interface/handler.{HandlerState}
-use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
-use ibc/core/ics_025_handler_interface/handler_redeemer.{
-  CreateClient, HandlerConnOpenInit, HandlerOperator,
-}
 use ibc/utils/validator_utils
 
 const hash_sample =
@@ -186,14 +181,14 @@ test test_validate_mint_succeed() {
   let token_name_prefix = #"6368616e6e656c"
   let sequence = "0"
 
-  let handler_token =
+  let base_token =
     AuthToken {
       policy_id: mock_minting_policy_id,
       name: mock_minting_token_name,
     }
   //get token name
   let token_name =
-    auth.generate_token_name(handler_token, token_name_prefix, sequence)
+    auth.generate_token_name(base_token, token_name_prefix, sequence)
   let mint =
     from_asset(
       policy_id: mock_minting_policy_id,
@@ -205,12 +200,12 @@ test test_validate_mint_succeed() {
     validator_utils.validate_mint(
       mint,
       mock_minting_policy_id,
-      handler_token,
+      base_token,
       token_name_prefix,
       sequence,
     )
   // Assert that the result is as expected
-  result == AuthToken { ..handler_token, name: token_name }
+  result == AuthToken { ..base_token, name: token_name }
 }
 
 test test_validate_mint_fail_when_mint_value_not_contains_auth_token() fail {
@@ -221,14 +216,14 @@ test test_validate_mint_fail_when_mint_value_not_contains_auth_token() fail {
   let token_name_prefix = #"6368616e6e656c"
   let sequence = "0"
 
-  let handler_token =
+  let base_token =
     AuthToken {
       policy_id: mock_minting_policy_id,
       name: mock_minting_token_name,
     }
   //get token name
   let token_name =
-    auth.generate_token_name(handler_token, token_name_prefix, sequence)
+    auth.generate_token_name(base_token, token_name_prefix, sequence)
   let mint =
     from_asset(
       policy_id: mock_minting_policy_id,
@@ -240,12 +235,12 @@ test test_validate_mint_fail_when_mint_value_not_contains_auth_token() fail {
     validator_utils.validate_mint(
       mint,
       mock_minting_policy_id,
-      handler_token,
+      base_token,
       token_name_prefix,
       sequence,
     )
   // Assert that the result is as expected
-  result == AuthToken { ..handler_token, name: token_name }
+  result == AuthToken { ..base_token, name: token_name }
 }
 
 //==============================extract_module_redeemer===============================
@@ -495,163 +490,6 @@ test extract_token_unit_fail_if_unit_length_invalid_too_short() fail {
   let too_short_unit = #"a0028f350aaabe0545fdcb56b039bfb08e4bb4d8c4d7c3c7d481c2"
 
   let result = validator_utils.extract_token_unit(too_short_unit)
-  result == result
-}
-
-//===================================validate_handler_redeemer==========================
-fn setup_validate_handler_redeemer() -> (
-  List<Input>,
-  Pairs<ScriptPurpose, Redeemer>,
-  AuthToken,
-  HandlerOperator,
-  HandlerDatum,
-) {
-  let handler_token =
-    AuthToken { policy_id: "mock policy_id", name: "mock name" }
-
-  let out_ref =
-    OutputReference {
-      transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
-      output_index: 0,
-    }
-
-  let handler_datum =
-    HandlerDatum {
-      state: HandlerState {
-        next_client_sequence: 0,
-        next_connection_sequence: 0,
-        next_channel_sequence: 0,
-        bound_port: [],
-        ibc_state_root: #"0000000000000000000000000000000000000000000000000000000000000000",
-      },
-      token: handler_token,
-    }
-
-  let handler_output =
-    Output {
-      address: from_script("mock script hash"),
-      value: from_asset(handler_token.policy_id, handler_token.name, 1),
-      datum: InlineDatum(handler_datum),
-      reference_script: None,
-    }
-
-  let handler_input =
-    Input { output_reference: out_ref, output: handler_output }
-
-  let handler_redeemer: Redeemer = CreateClient
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [Pair(Spend(out_ref), handler_redeemer)]
-
-  expect handler_redeemer: HandlerOperator = handler_redeemer
-
-  ([handler_input], redeemers, handler_token, handler_redeemer, handler_datum)
-}
-
-test validate_handler_redeemer_succeed() {
-  let (inputs, redeemers, handler_token, handler_redeemer, handler_datum) =
-    setup_validate_handler_redeemer()
-
-  validator_utils.validate_handler_redeemer(
-    inputs,
-    redeemers,
-    handler_token,
-    handler_redeemer,
-  ) == handler_datum
-}
-
-test validate_handler_redeemer_fail_inputs_not_contain_handler_input() fail {
-  let (_inputs, redeemers, handler_token, handler_redeemer, _handler_datum) =
-    setup_validate_handler_redeemer()
-
-  let inputs = []
-
-  let result =
-    validator_utils.validate_handler_redeemer(
-      inputs,
-      redeemers,
-      handler_token,
-      handler_redeemer,
-    )
-  result == result
-}
-
-test validate_handler_redeemer_fail_redeemers_not_contain_handler_redeemer() fail {
-  let (inputs, _redeemers, handler_token, handler_redeemer, _handler_datum) =
-    setup_validate_handler_redeemer()
-
-  let redeemers = []
-
-  let result =
-    validator_utils.validate_handler_redeemer(
-      inputs,
-      redeemers,
-      handler_token,
-      handler_redeemer,
-    )
-  result == result
-}
-
-test validate_handler_redeemer_fail_found_redeemer_is_not_handler_operator() fail {
-  let (inputs, _redeemers, handler_token, handler_redeemer, _handler_datum) =
-    setup_validate_handler_redeemer()
-
-  let invalid_handler_redeemer: Redeemer = HandlerConnOpenInit
-  expect [handler_input, ..] = inputs
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [Pair(Spend(handler_input.output_reference), invalid_handler_redeemer)]
-
-  let result =
-    validator_utils.validate_handler_redeemer(
-      inputs,
-      redeemers,
-      handler_token,
-      handler_redeemer,
-    )
-  result == result
-}
-
-test validate_handler_redeemer_fail_found_redeemer_is_not_expected_operator() fail {
-  let (inputs, _redeemers, handler_token, handler_redeemer, _handler_datum) =
-    setup_validate_handler_redeemer()
-
-  let invalid_handler_redeemer: Redeemer = HandlerConnOpenInit
-
-  expect [handler_input, ..] = inputs
-
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [Pair(Spend(handler_input.output_reference), invalid_handler_redeemer)]
-
-  let result =
-    validator_utils.validate_handler_redeemer(
-      inputs,
-      redeemers,
-      handler_token,
-      handler_redeemer,
-    )
-  result == result
-}
-
-test validate_handler_redeemer_fail_handler_datum_is_invalid() fail {
-  let (inputs, redeemers, handler_token, handler_redeemer, _handler_datum) =
-    setup_validate_handler_redeemer()
-
-  expect [handler_input, ..] = inputs
-
-  let handler_input =
-    Input {
-      ..handler_input,
-      output: Output { ..handler_input.output, datum: InlineDatum(Void) },
-    }
-
-  let result =
-    validator_utils.validate_handler_redeemer(
-      [handler_input],
-      redeemers,
-      handler_token,
-      handler_redeemer,
-    )
   result == result
 }
 

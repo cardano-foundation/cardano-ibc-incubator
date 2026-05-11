@@ -3,19 +3,7 @@ import { PostgresConnectionOptions } from 'typeorm/driver/postgres/PostgresConne
 
 type DeploymentConfig = {
   validators: {
-    spendHandler: {
-      title: string;
-      script: string;
-      scriptHash: string;
-      address: string;
-    };
     spendClient: {
-      title: string;
-      script: string;
-      scriptHash: string;
-      address: string;
-    };
-    mintHandlerValidator: {
       title: string;
       script: string;
       scriptHash: string;
@@ -55,10 +43,6 @@ type DeploymentConfig = {
   nonceUtxo: {
     txHash: string;
     outputIndex: number;
-  };
-  handlerAuthToken: {
-    policyId: string;
-    name: string;
   };
 };
 

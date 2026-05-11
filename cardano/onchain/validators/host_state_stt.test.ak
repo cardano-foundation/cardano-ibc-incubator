@@ -11,6 +11,9 @@ use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
   HostState, HostStateDatum, empty_ibc_state_root, host_state_token_name,
 }
+use ibc/core/ics_025_handler_interface/host_state_redeemer.{
+  BindPort, HostStateRedeemer,
+}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 
 // Build a list with `count` copies of `value`.
@@ -118,8 +121,7 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
   // -------------------------------------------------------------------------
   // Act: evaluate the HostState STT validator for BindPort.
   // -------------------------------------------------------------------------
-  let redeemer: host_state_stt.HostStateRedeemer =
-    host_state_stt.BindPort { port, port_siblings }
+  let redeemer: HostStateRedeemer = BindPort { port, port_siblings }
 
   let transaction =
     Transaction { ..placeholder, inputs: [host_input], outputs: [host_output] }
@@ -200,8 +202,7 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
       reference_script: None,
     }
 
-  let redeemer: host_state_stt.HostStateRedeemer =
-    host_state_stt.BindPort { port, port_siblings }
+  let redeemer: HostStateRedeemer = BindPort { port, port_siblings }
 
   let transaction =
     Transaction { ..placeholder, inputs: [host_input], outputs: [host_output] }
@@ -303,8 +304,7 @@ test host_state_cannot_move_nft_to_different_address() fail {
       reference_script: None,
     }
 
-  let redeemer: host_state_stt.HostStateRedeemer =
-    host_state_stt.BindPort { port, port_siblings }
+  let redeemer: HostStateRedeemer = BindPort { port, port_siblings }
 
   let transaction =
     Transaction { ..placeholder, inputs: [host_input], outputs: [host_output] }
@@ -399,8 +399,7 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
 
   // Pass an empty witness list. The validator expects exactly `merkle_depth_bits`
   // hashes, so this must fail.
-  let redeemer: host_state_stt.HostStateRedeemer =
-    host_state_stt.BindPort { port, port_siblings: [] }
+  let redeemer: HostStateRedeemer = BindPort { port, port_siblings: [] }
 
   let transaction =
     Transaction { ..placeholder, inputs: [host_input], outputs: [host_output] }
@@ -461,8 +460,7 @@ test host_state_bind_port_fails_if_output_missing() fail {
       ibc_state_commitment.merkle_depth_bits,
     )
 
-  let redeemer: host_state_stt.HostStateRedeemer =
-    host_state_stt.BindPort { port, port_siblings }
+  let redeemer: HostStateRedeemer = BindPort { port, port_siblings }
 
   // No HostState output is produced, so the STT validator must fail.
   let transaction =

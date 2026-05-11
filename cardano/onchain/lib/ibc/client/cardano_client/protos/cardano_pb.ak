@@ -54,15 +54,22 @@ pub fn marshal_for_any_client_state(
 ) -> (Int, ByteArray) {
   let AnyCardanoClientState { type_url, value } = accs
   (0, #"")
-    |> add_and_concat(encode_bytearray(type_url, 10))
-    |> add_and_concat(nest_record(marshal_for_client_state(value), 0x12))
+    |> add_and_concat(
+        encode_bytearray(type_url, bytes.field_1_length_delimited),
+      )
+    |> add_and_concat(
+        nest_record(
+          marshal_for_client_state(value),
+          bytes.field_2_length_delimited,
+        ),
+      )
 }
 
 pub fn marshal_for_height(height: CardanoHeight) -> (Int, ByteArray) {
   let CardanoHeight { revision_number, revision_height } = height
   (0, #"")
-    |> add_and_concat(encode_int(revision_number, 8))
-    |> add_and_concat(encode_int(revision_height, 0x10))
+    |> add_and_concat(encode_int(revision_number, bytes.field_1_varint))
+    |> add_and_concat(encode_int(revision_height, bytes.field_2_varint))
 }
 
 pub fn marshal_for_consensus_state(
@@ -70,15 +77,19 @@ pub fn marshal_for_consensus_state(
 ) -> (Int, ByteArray) {
   let CardanoConsensusState { timestamp, slot } = consensus_state
   (0, #"")
-    |> add_and_concat(encode_int(timestamp, 8))
-    |> add_and_concat(encode_int(slot, 0x10))
+    |> add_and_concat(encode_int(timestamp, bytes.field_1_varint))
+    |> add_and_concat(encode_int(slot, bytes.field_2_varint))
 }
 
 pub fn marshal_for_validator(validator_: CardanoValidator) -> (Int, ByteArray) {
   let CardanoValidator { vrf_key_hash, pool_id } = validator_
   (0, #"")
-    |> size_and_concat(encode_bytearray(vrf_key_hash, 10))
-    |> size_and_concat(encode_bytearray(pool_id, 0x12))
+    |> size_and_concat(
+        encode_bytearray(vrf_key_hash, bytes.field_1_length_delimited),
+      )
+    |> size_and_concat(
+        encode_bytearray(pool_id, bytes.field_2_length_delimited),
+      )
 }
 
 pub fn marshal_for_token_configs(
@@ -91,10 +102,18 @@ pub fn marshal_for_token_configs(
     channel_policy_id,
   } = token_configs
   (0, #"")
-    |> size_and_concat(encode_bytearray(handler_token_unit, 10))
-    |> size_and_concat(encode_bytearray(client_policy_id, 0x12))
-    |> size_and_concat(encode_bytearray(connection_policy_id, 0x1a))
-    |> size_and_concat(encode_bytearray(channel_policy_id, 0x22))
+    |> size_and_concat(
+        encode_bytearray(handler_token_unit, bytes.field_1_length_delimited),
+      )
+    |> size_and_concat(
+        encode_bytearray(client_policy_id, bytes.field_2_length_delimited),
+      )
+    |> size_and_concat(
+        encode_bytearray(connection_policy_id, bytes.field_3_length_delimited),
+      )
+    |> size_and_concat(
+        encode_bytearray(channel_policy_id, bytes.field_4_length_delimited),
+      )
 }
 
 pub fn marshal_for_client_state(
@@ -116,19 +135,41 @@ pub fn marshal_for_client_state(
     token_configs,
   } = client_state
   (0, #"")
-    |> size_and_concat(encode_bytearray(chain_id, 10))
-    |> add_and_concat(nest_record(marshal_for_height(latest_height), 0x12))
-    |> add_and_concat(nest_record(marshal_for_height(frozen_height), 0x1a))
-    |> add_and_concat(encode_int(valid_after, 0x20))
-    |> add_and_concat(encode_int(genesis_time, 0x28))
-    |> add_and_concat(encode_int(current_epoch, 0x30))
-    |> add_and_concat(encode_int(epoch_length, 0x38))
-    |> add_and_concat(encode_int(slot_per_kes_period, 0x40))
-    |> add_and_concat(
-        reduce(current_validator_set, marshal_for_validator, 0x4a),
+    |> size_and_concat(
+        encode_bytearray(chain_id, bytes.field_1_length_delimited),
       )
-    |> add_and_concat(reduce(next_validator_set, marshal_for_validator, 0x52))
-    |> add_and_concat(encode_int(trusting_period, 0x58))
+    |> add_and_concat(
+        nest_record(
+          marshal_for_height(latest_height),
+          bytes.field_2_length_delimited,
+        ),
+      )
+    |> add_and_concat(
+        nest_record(
+          marshal_for_height(frozen_height),
+          bytes.field_3_length_delimited,
+        ),
+      )
+    |> add_and_concat(encode_int(valid_after, bytes.field_4_varint))
+    |> add_and_concat(encode_int(genesis_time, bytes.field_5_varint))
+    |> add_and_concat(encode_int(current_epoch, bytes.field_6_varint))
+    |> add_and_concat(encode_int(epoch_length, bytes.field_7_varint))
+    |> add_and_concat(encode_int(slot_per_kes_period, bytes.field_8_varint))
+    |> add_and_concat(
+        reduce(
+          current_validator_set,
+          marshal_for_validator,
+          bytes.field_9_length_delimited,
+        ),
+      )
+    |> add_and_concat(
+        reduce(
+          next_validator_set,
+          marshal_for_validator,
+          bytes.field_10_length_delimited,
+        ),
+      )
+    |> add_and_concat(encode_int(trusting_period, bytes.field_11_varint))
     |> add_and_concat(
         list.reduce(
           upgrade_path,
@@ -139,12 +180,15 @@ pub fn marshal_for_client_state(
               l
                 |> encode_length_varint()
                 |> concat(path)
-                |> push(0x62)
+                |> push(bytes.field_12_length_delimited)
             (size + sov(l) + l + 1, concat(bz1, bz2))
           },
         ),
       )
     |> add_and_concat(
-        nest_record(marshal_for_token_configs(token_configs), 0x6a),
+        nest_record(
+          marshal_for_token_configs(token_configs),
+          bytes.field_13_length_delimited,
+        ),
       )
 }

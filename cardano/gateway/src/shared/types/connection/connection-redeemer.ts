@@ -1,8 +1,6 @@
-import { AuthToken } from '../auth-token';
 import { Height } from '../height';
 import { MerkleProof } from '../isc-23/merkle';
 import {
-  createAuthTokenSchema,
   createHeightSchema,
   createIcs23MerkleProofSchema,
 } from '../schema-fragments';
@@ -10,14 +8,9 @@ import {
 type LucidData = typeof import('@lucid-evolution/lucid').Data;
 
 export type MintConnectionRedeemer =
-  | {
-      ConnOpenInit: {
-        handler_auth_token: AuthToken;
-      };
-    }
+  | 'ConnOpenInit'
   | {
       ConnOpenTry: {
-        handler_auth_token: AuthToken;
         client_state: string;
         proof_init: MerkleProof;
         proof_client: MerkleProof;
@@ -42,19 +35,13 @@ export type SpendConnectionRedeemer =
     };
 
 function buildMintConnectionRedeemerSchema(Data: LucidData) {
-  const AuthTokenSchema = createAuthTokenSchema(Data);
   const HeightSchema = createHeightSchema(Data);
   const { MerkleProofSchema } = createIcs23MerkleProofSchema(Data);
 
   return Data.Enum([
-    Data.Object({
-      ConnOpenInit: Data.Object({
-        handler_auth_token: AuthTokenSchema,
-      }),
-    }),
+    Data.Literal('ConnOpenInit'),
     Data.Object({
       ConnOpenTry: Data.Object({
-        handler_auth_token: AuthTokenSchema,
         client_state: Data.Bytes(),
         proof_init: MerkleProofSchema,
         proof_client: MerkleProofSchema,

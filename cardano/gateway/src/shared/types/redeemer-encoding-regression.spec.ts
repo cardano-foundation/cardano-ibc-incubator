@@ -24,7 +24,6 @@ describe('Redeemer encoding regression', () => {
     const encoded = await encodeMintChannelRedeemer(
       {
         ChanOpenTry: {
-          handler_token: { policyId: 'aa', name: 'bb' },
           counterparty_version: '6962632d7631',
           proof_init: EMPTY_PROOF as any,
           proof_height: HEIGHT,
@@ -33,7 +32,7 @@ describe('Redeemer encoding regression', () => {
       Lucid,
     );
 
-    expect(encoded).toBe('d87a84d8798241aa41bb466962632d7631d8798180d87982000b');
+    expect(encoded).toBe('d87a83466962632d7631d8798180d87982000b');
   });
 
   it('keeps SpendChannel redeemer encoding stable', async () => {
@@ -56,7 +55,6 @@ describe('Redeemer encoding regression', () => {
     const encoded = await encodeMintConnectionRedeemer(
       {
         ConnOpenTry: {
-          handler_auth_token: { policyId: 'aa', name: 'bb' },
           client_state: MITHRIL_CLIENT_STATE_HEX,
           proof_init: EMPTY_PROOF as any,
           proof_client: EMPTY_PROOF as any,
@@ -67,7 +65,7 @@ describe('Redeemer encoding regression', () => {
     );
 
     expect(encoded).toBe(
-      'd87a85d8798241aa41bb44aabbccddd8798180d8798180d87982000b',
+      'd87a8444aabbccddd8798180d8798180d87982000b',
     );
   });
 

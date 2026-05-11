@@ -64,7 +64,6 @@ message BridgeManifest {
   string deployed_at = 8;
   BridgeManifestCardanoInfo cardano = 3;
   BridgeManifestAuthToken host_state_nft = 4;
-  BridgeManifestAuthToken handler_auth_token = 5;
   BridgeManifestValidators validators = 6;
   BridgeManifestModules modules = 7;
 }
@@ -116,7 +115,6 @@ message BridgeManifestSpendChannelValidator {
 
 message BridgeManifestValidators {
   BridgeManifestValidator host_state_stt = 1;
-  BridgeManifestValidator spend_handler = 2;
   BridgeManifestValidator spend_client = 3;
   BridgeManifestValidator spend_connection = 4;
   BridgeManifestSpendChannelValidator spend_channel = 5;
@@ -134,7 +132,6 @@ message BridgeManifestModule {
 }
 
 message BridgeManifestModules {
-  BridgeManifestModule handler = 1;
   BridgeManifestModule transfer = 2;
   BridgeManifestModule mock = 3;
 }

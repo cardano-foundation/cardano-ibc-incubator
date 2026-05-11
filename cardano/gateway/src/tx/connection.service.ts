@@ -18,8 +18,6 @@ import {
 } from '@plus/proto-types/build/ibc/core/connection/v1/tx';
 import { RpcException } from '@nestjs/microservices';
 import { CLIENT_ID_PREFIX, CONNECTION_ID_PREFIX, DEFAULT_MERKLE_PREFIX } from 'src/constant';
-import { HandlerDatum } from 'src/shared/types/handler-datum';
-import { HandlerOperator } from 'src/shared/types/handler-operator';
 import { AuthToken } from 'src/shared/types/auth-token';
 import { ConnectionDatum, encodeConnectionEndValue } from 'src/shared/types/connection/connection-datum';
 import { State } from 'src/shared/types/connection/state';
@@ -705,17 +703,12 @@ export class ConnectionService {
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
     await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
     
-    const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
-    const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionOpenInitOperator.clientId);
     // Find the UTXO for the client token
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
     this.logger.log(
       `[DEBUG] ConnOpenInit hostState seq=${hostStateDatum.state.next_connection_sequence}, root=${hostStateDatum.state.ibc_state_root.slice(0, 20)}...`,
-    );
-    this.logger.log(
-      `[DEBUG] ConnOpenInit handler seq=${handlerDatum.state.next_connection_sequence}, root=${handlerDatum.state.ibc_state_root.slice(0, 20)}...`,
     );
     this.logger.log(
       `[DEBUG] ConnOpenInit client token unit=${clientTokenUnit}, client utxo=${clientUtxo.txHash}#${clientUtxo.outputIndex}`,
@@ -726,14 +719,6 @@ export class ConnectionService {
     // Derive the new connection identifier from the HostState sequence.
     const connectionId = `connection-${hostStateDatum.state.next_connection_sequence}`;
 
-    const updatedHandlerDatum: HandlerDatum = {
-      ...handlerDatum,
-      state: {
-        ...handlerDatum.state,
-        next_connection_sequence: hostStateDatum.state.next_connection_sequence + 1n,
-      },
-    };
-    const spendHandlerRedeemer: HandlerOperator = 'HandlerConnOpenInit';
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       hostStateDatum.state.next_connection_sequence,
     );
@@ -772,9 +757,6 @@ export class ConnectionService {
       connectionEndValue,
     );
 
-    // Update both Handler and HostState roots to the new committed root.
-    updatedHandlerDatum.state.ibc_state_root = newRoot;
-
     const updatedHostStateDatum: HostStateDatum = {
       ...hostStateDatum,
       state: {
@@ -789,11 +771,7 @@ export class ConnectionService {
       state: connectionEnd,
       token: connToken,
     };
-    const mintConnectionRedeemer: MintConnectionRedeemer = {
-      ConnOpenInit: {
-        handler_auth_token: this.configService.get('deployment').handlerAuthToken,
-      },
-    };
+    const mintConnectionRedeemer: MintConnectionRedeemer = 'ConnOpenInit';
     const encodedMintConnectionRedeemer: string = await this.lucidService.encode<MintConnectionRedeemer>(
       mintConnectionRedeemer,
       'mintConnectionRedeemer',
@@ -805,24 +783,13 @@ export class ConnectionService {
     };
     const encodedHostStateRedeemer = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
 
-    const encodedSpendHandlerRedeemer: string = await this.lucidService.encode<HandlerOperator>(
-      spendHandlerRedeemer,
-      'handlerOperator',
-    );
-    const encodedUpdatedHandlerDatum: string = await this.lucidService.encode(updatedHandlerDatum, 'handler');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     const encodedConnectionDatum: string = await this.lucidService.encode<ConnectionDatum>(
       connectionDatum,
       'connection',
     );
     this.logger.log(
-      `[DEBUG] ConnOpenInit encoded spendHandlerRedeemer: ${encodedSpendHandlerRedeemer.substring(0, 120)}...`,
-    );
-    this.logger.log(
       `[DEBUG] ConnOpenInit encoded mintConnectionRedeemer: ${encodedMintConnectionRedeemer.substring(0, 120)}...`,
-    );
-    this.logger.log(
-      `[DEBUG] ConnOpenInit encoded handler datum (trunc): ${encodedUpdatedHandlerDatum.substring(0, 120)}...`,
     );
     this.logger.log(
       `[DEBUG] ConnOpenInit encoded host state datum (trunc): ${encodedUpdatedHostStateDatum.substring(0, 120)}...`,
@@ -831,14 +798,11 @@ export class ConnectionService {
       `[DEBUG] ConnOpenInit encoded connection datum (trunc): ${encodedConnectionDatum.substring(0, 120)}...`,
     );
     const unsignedTx = this.lucidService.createUnsignedConnectionOpenInitTransaction(
-      handlerUtxo,
       hostStateUtxo,
       encodedHostStateRedeemer,
-      encodedSpendHandlerRedeemer,
       connectionTokenUnit,
       clientUtxo,
       encodedMintConnectionRedeemer,
-      encodedUpdatedHandlerDatum,
       encodedUpdatedHostStateDatum,
       encodedConnectionDatum,
       constructedAddress,
@@ -860,8 +824,6 @@ export class ConnectionService {
     // Ensure the in-memory Merkle tree is aligned with on-chain state before computing new root
     await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
     
-    const handlerUtxo: UTxO = await this.lucidService.findUtxoAtHandlerAuthToken();
-    const handlerDatum: HandlerDatum = await this.lucidService.decodeDatum<HandlerDatum>(handlerUtxo.datum!, 'handler');
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionOpenTryOperator.clientId);
     // Find the UTXO for the client token
@@ -870,15 +832,6 @@ export class ConnectionService {
     // Derive the new connection identifier from the HostState sequence.
     const connectionId = `connection-${hostStateDatum.state.next_connection_sequence}`;
     
-    // Retrieve the current client datum from the UTXO
-    const updatedHandlerDatum: HandlerDatum = {
-      ...handlerDatum,
-      state: {
-        ...handlerDatum.state,
-        next_connection_sequence: hostStateDatum.state.next_connection_sequence + 1n,
-      },
-    };
-    const spendHandlerRedeemer: HandlerOperator = 'HandlerConnOpenTry';
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       hostStateDatum.state.next_connection_sequence,
     );
@@ -907,8 +860,6 @@ export class ConnectionService {
       connectionEndValue,
     );
 
-    updatedHandlerDatum.state.ibc_state_root = newRoot;
-
     const updatedHostStateDatum: HostStateDatum = {
       ...hostStateDatum,
       state: {
@@ -925,7 +876,6 @@ export class ConnectionService {
     };
     const mintConnectionRedeemer: MintConnectionRedeemer = {
       ConnOpenTry: {
-        handler_auth_token: this.configService.get('deployment').handlerAuthToken,
         client_state: connectionOpenTryOperator.counterpartyClientState,
         proof_init: connectionOpenTryOperator.proofInit,
         proof_client: connectionOpenTryOperator.proofClient,
@@ -942,25 +892,17 @@ export class ConnectionService {
       mintConnectionRedeemer,
       'mintConnectionRedeemer',
     );
-    const encodedSpendHandlerRedeemer: string = await this.lucidService.encode<HandlerOperator>(
-      spendHandlerRedeemer,
-      'handlerOperator',
-    );
-    const encodedUpdatedHandlerDatum: string = await this.lucidService.encode(updatedHandlerDatum, 'handler');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     const encodedConnectionDatum: string = await this.lucidService.encode<ConnectionDatum>(
       connectionDatum,
       'connection',
     );
     const unsignedTx = this.lucidService.createUnsignedConnectionOpenTryTransaction(
-      handlerUtxo,
       hostStateUtxo,
       encodedHostStateRedeemer,
-      encodedSpendHandlerRedeemer,
       connectionTokenUnit,
       clientUtxo,
       encodedMintConnectionRedeemer,
-      encodedUpdatedHandlerDatum,
       encodedUpdatedHostStateDatum,
       encodedConnectionDatum,
       constructedAddress,

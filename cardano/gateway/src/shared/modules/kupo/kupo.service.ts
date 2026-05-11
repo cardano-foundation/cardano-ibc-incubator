@@ -27,7 +27,6 @@ export class KupoService {
   private readonly clientTokenPrefix: string;
   private readonly connectionTokenPrefix: string;
   private readonly channelTokenPrefix: string;
-  private readonly handlerAddress: string;
   private readonly clientAddress: string;
   private readonly connectionAddress: string;
   private readonly channelAddress: string;
@@ -45,7 +44,6 @@ export class KupoService {
     this.channelTokenPrefix = deployment.validators.mintChannelStt.scriptHash;
     
     // Initialize addresses
-    this.handlerAddress = deployment.validators.spendHandler.address;
     this.clientAddress = deployment.validators.spendClient.address;
     this.connectionAddress = deployment.validators.spendConnection.address;
     this.channelAddress = deployment.validators.spendChannel.address;
