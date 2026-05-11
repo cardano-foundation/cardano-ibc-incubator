@@ -222,7 +222,7 @@ pub fn validate_token_remain(
 ) -> Output {
   expect [updated_output] =
     if list.is_empty(tokens) {
-      // Some legacy callers compare the whole non-ADA value and do not pass a state token.
+      // With no token list, the helper can only select by address and compare the whole non-ADA value.
       list.filter(
         outputs,
         fn(output) { output.address == spent_output.address },
