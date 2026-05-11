@@ -26,9 +26,8 @@
 //   bucket and insert into a fresh active shard in the same transaction
 use aiken/collection/dict
 use aiken/collection/list
-use aiken/crypto
 use aiken/primitive/bytearray
-use cardano/assets.{PolicyId, Value, quantity_of}
+use cardano/assets.{PolicyId, quantity_of}
 use cardano/transaction.{Input, Output, OutputReference, Transaction}
 use ibc/apps/transfer/trace_registry.{
   AdvanceDirectory, Directory, InsertTrace, RolloverInsertTrace, Shard,

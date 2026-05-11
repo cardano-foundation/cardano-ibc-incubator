@@ -1,7 +1,7 @@
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
 use cardano/transaction.{
-  Mint, Output, OutputReference, Redeemer, ScriptPurpose, Transaction,
+  Mint, OutputReference, Redeemer, ScriptPurpose, Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{

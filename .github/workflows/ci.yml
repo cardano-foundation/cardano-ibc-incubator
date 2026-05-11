@@ -247,7 +247,7 @@ jobs:
         run: scripts/ci/check-aiken-fuzz-imports.sh
 
       - name: Check and test
-        run: aiken check
+        run: aiken check --deny
 
   generated-artifacts:
     name: Generated Artifacts
@@ -277,7 +277,7 @@ jobs:
 
       - name: Regenerate Aiken blueprint
         working-directory: cardano/onchain
-        run: aiken build
+        run: aiken build --deny
 
       - name: Check generated artifacts
         run: scripts/ci/check-generated-artifacts-clean.sh

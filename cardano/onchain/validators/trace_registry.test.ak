@@ -1,10 +1,10 @@
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, Value, add, from_asset}
+use cardano/assets.{PolicyId, add, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, placeholder,
 }
 use ibc/apps/transfer/trace_registry.{
-  Directory, InsertTrace, RolloverInsertTrace, Shard, TraceRegistryDatum,
+  Directory, InsertTrace, Shard, TraceRegistryDatum,
   TraceRegistryDirectoryBucket, TraceRegistryDirectoryDatum, TraceRegistryEntry,
   TraceRegistryRedeemer, TraceRegistryShardDatum, bucket_index_for_hash,
 }

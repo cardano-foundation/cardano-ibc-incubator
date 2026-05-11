@@ -26,20 +26,12 @@ fn test_voucher_policy_id() -> PolicyId {
   "voucher mint policy"
 }
 
-fn test_benchmark_voucher_policy_id() -> PolicyId {
-  "benchmark voucher mint policy"
-}
-
 fn test_disabled_benchmark_voucher_policy_id() -> PolicyId {
   ""
 }
 
 fn test_registry_address() {
   from_script("trace registry script hash")
-}
-
-fn test_other_registry_address() {
-  from_script("different trace registry script hash")
 }
 
 fn test_output_ref(index: Int) -> OutputReference {
@@ -106,18 +98,6 @@ fn test_directory_input(
   }
 }
 
-fn test_non_registry_reference_input(output_index: Int) -> Input {
-  Input {
-    output_reference: test_output_ref(output_index),
-    output: Output {
-      address: test_registry_address(),
-      value: assets.from_lovelace(2_000_000),
-      datum: InlineDatum(Void),
-      reference_script: None,
-    },
-  }
-}
-
 fn test_expected_entry(full_denom: ByteArray) -> TraceRegistryEntry {
   TraceRegistryEntry {
     voucher_hash: voucher_asset_name.voucher_denom_hash(full_denom),
@@ -136,25 +116,6 @@ fn run_trace_registry_spend(
     test_directory_auth_token(),
     test_voucher_policy_id(),
     test_disabled_benchmark_voucher_policy_id(),
-    Some(datum),
-    redeemer,
-    spent_output_ref,
-    transaction,
-  )
-}
-
-fn run_trace_registry_spend_with_benchmark(
-  datum: TraceRegistryDatum,
-  redeemer: TraceRegistryRedeemer,
-  spent_output_ref: OutputReference,
-  transaction: Transaction,
-  benchmark_policy_id: PolicyId,
-) -> Bool {
-  trace_registry_validator.spend_trace_registry.spend(
-    test_shard_policy_id(),
-    test_directory_auth_token(),
-    test_voucher_policy_id(),
-    benchmark_policy_id,
     Some(datum),
     redeemer,
     spent_output_ref,
