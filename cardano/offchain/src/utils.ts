@@ -517,7 +517,6 @@ export const getLiveWalletUtxos = async (
 };
 
 type Validator =
-  | "spendHandler"
   | "spendClient"
   | "spendConnection"
   | "spendChannel"
@@ -533,20 +532,13 @@ type Validator =
   | "mintConnectionStt"
   | "mintChannelStt";
 
-type Module = "handler" | "transfer" | "mock" | "icq";
+type Module = "transfer" | "mock" | "icq";
 
 type Tokens = "mock";
 
 export type DeploymentTemplate = {
   deployedAt: string;
   validators: {
-    spendHandler: {
-      title: string;
-      script: string;
-      scriptHash: string;
-      address: string;
-      refUtxo: UTxO;
-    };
     spendClient: {
       title: string;
       script: string;
@@ -655,10 +647,6 @@ export type DeploymentTemplate = {
       address: string;
       refUtxo: UTxO;
     };
-  };
-  handlerAuthToken: {
-    policyId: string;
-    name: string;
   };
   hostStateNFT?: {
     policyId: string;

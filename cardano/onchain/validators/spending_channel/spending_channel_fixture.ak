@@ -46,7 +46,7 @@ pub type MockData {
   channel_id: ByteArray,
   channel_sequence: ByteArray,
   channel_token: AuthToken,
-  handler_token: AuthToken,
+  base_token: AuthToken,
   connection_id: ByteArray,
   connection_input: Input,
   client_input: Input,
@@ -56,10 +56,10 @@ pub type MockData {
 }
 
 pub fn setup() -> MockData {
-  let handler_token =
+  let base_token =
     AuthToken {
-      name: "mock handler token name",
-      policy_id: "mock handler token policy_id",
+      name: "mock base token name",
+      policy_id: "mock base token policy_id",
     }
 
   //========================Channel============================
@@ -69,7 +69,7 @@ pub fn setup() -> MockData {
 
   let channel_token_name =
     auth.generate_token_name(
-      handler_token,
+      base_token,
       chan_keys_mod.channel_prefix,
       channel_sequence,
     )
@@ -105,7 +105,7 @@ pub fn setup() -> MockData {
 
   let connection_token_name =
     auth.generate_token_name(
-      handler_token,
+      base_token,
       conn_keys_mod.connection_prefix,
       connection_sequence,
     )
@@ -205,7 +205,7 @@ pub fn setup() -> MockData {
 
   let client_token_name =
     auth.generate_token_name(
-      handler_token,
+      base_token,
       client_keys_mod.client_prefix,
       client_sequence,
     )
@@ -251,11 +251,7 @@ pub fn setup() -> MockData {
   let port_id = "port-1"
   let port_number = port_keys_mod.parse_port_id_number(port_id)
   let port_token_name =
-    auth.generate_token_name(
-      handler_token,
-      port_keys_mod.port_prefix,
-      port_number,
-    )
+    auth.generate_token_name(base_token, port_keys_mod.port_prefix, port_number)
   let port_token =
     AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
 
@@ -291,7 +287,7 @@ pub fn setup() -> MockData {
     channel_id,
     channel_sequence,
     channel_token,
-    handler_token,
+    base_token,
     connection_id,
     connection_input,
     client_input,

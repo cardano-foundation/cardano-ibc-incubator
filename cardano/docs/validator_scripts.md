@@ -9,10 +9,10 @@ Validator scripts is written in Aiken - a modern programming language and toolch
 ## Components
 
 Validators scripts are located in `validators/` directory and implement the following specifications of IBC:
-- [ICS-25 Handler Interface](https://github.com/cosmos/ibc/tree/main/spec/core/ics-025-handler-interface): `minting_handler.mint_handler`, `spending_handler.spend_handler`.
-- [ICS-02 Client Semantics](https://github.com/cosmos/ibc/tree/main/spec/core/ics-002-client-semantics): `minting_client.mint_client`, `spending_client.spend_client`.
-- [ICS-03 Connection Semantics](https://github.com/cosmos/ibc/tree/main/spec/core/ics-003-connection-semantics): `minting_connection.mint_connection`, `spending_connection.spend_connection`.
-- [ICS-04 Channel & Packet Semantics](https://github.com/cosmos/ibc/tree/main/spec/core/ics-004-channel-and-packet-semantics): `minting_channel.mint_channel`, `spending_channel.spend_channel`, all validators in `spending_channel/` directory.
+- [ICS-25 Handler Interface](https://github.com/cosmos/ibc/tree/main/spec/core/ics-025-handler-interface): `host_state_stt.host_state_stt`, `host_state_nft.host_state_nft`.
+- [ICS-02 Client Semantics](https://github.com/cosmos/ibc/tree/main/spec/core/ics-002-client-semantics): `minting_client_stt.mint_client_stt`, `spending_client.spend_client`.
+- [ICS-03 Connection Semantics](https://github.com/cosmos/ibc/tree/main/spec/core/ics-003-connection-semantics): `minting_connection_stt.mint_connection_stt`, `spending_connection.spend_connection`.
+- [ICS-04 Channel & Packet Semantics](https://github.com/cosmos/ibc/tree/main/spec/core/ics-004-channel-and-packet-semantics): `minting_channel_stt.mint_channel_stt`, `spending_channel.spend_channel`, all validators in `spending_channel/` directory.
 - [ICS-05 Port Allocation](https://github.com/cosmos/ibc/tree/main/spec/core/ics-005-port-allocation): `minting_port.mint_port`.
 - [ICS-23 Vector Commitments](https://github.com/cosmos/ibc/blob/main/spec/core/ics-023-vector-commitments): `verifying_proof.verify_proof`.
 - [ICS-20 Fungible Token Transfer](https://github.com/cosmos/ibc/tree/main/spec/app/ics-020-fungible-token-transfer): `spending_transfer_module.spend_transfer_module`, `minting_voucher.mint_voucher`.
@@ -43,11 +43,14 @@ Since we have separated validator scripts into multiple smaller ones, they often
 
 ```mermaid
 graph TD;
-    MINT_CHANNEL(minting_handler.mint_handler)-.->SPEND_CHANNEL(spending_handler.spend_handler);
+    HOST_STATE(host_state_stt.host_state_stt)-.->MINT_CLIENT(minting_client_stt.mint_client_stt);
+    HOST_STATE-.->MINT_CONN(minting_connection_stt.mint_connection_stt);
+    HOST_STATE-.->MINT_CHAN(minting_channel_stt.mint_channel_stt);
+    HOST_STATE-.->MINT_PORT(minting_port.mint_port);
 
-    SPEND_CHANNEL-.->MINT_CLIENT(minting_client.mint_client);
-    SPEND_CHANNEL-.->MINT_CONN(minting_connection.mint_connection);
-    SPEND_CHANNEL-.->MINT_CHAN(minting_channel.mint_channel);
+    SPEND_CHANNEL-.->MINT_CLIENT;
+    SPEND_CHANNEL-.->MINT_CONN;
+    SPEND_CHANNEL-.->MINT_CHAN;
     SPEND_CHANNEL-.->MINT_PORT(minting_port.mint_port);
 
     MINT_CLIENT-.->SPEND_CLIENT(spending_client.spend_client);
@@ -75,8 +78,8 @@ graph TD;
 
 ## Deploying
 
-Cardano does not have the concept of deploying validator scripts, so what we actually mean by deploying here is the creation of essential UTXOs to operate our system. More specifically, we will create UTXOs for the IBC Handler, modules and reference scripts. The Handler is needed to manage metadata of IBC like object IDs and ports. Module UTXOs contain IBC applications states. Other UTXOs have the role of holding validators in reference scripts fields, which helps us reduce transaction size and cost as mentioned [before](#reference-scripts).
+Cardano does not have the concept of deploying validator scripts, so what we actually mean by deploying here is the creation of essential UTXOs to operate our system. More specifically, we will create the canonical HostState UTXO, module UTXOs and reference scripts. HostState stores IBC object sequences, bound ports and the commitment root. Module UTXOs contain IBC application state. Other UTXOs hold validators in reference script fields, which helps reduce transaction size and cost as mentioned [before](#reference-scripts).
 
-In the section about [dependencies between scripts](#dependencies-between-validator-scripts), we saw that some scripts need to know about others. The technique we use here is passing the script hashes of dependent scripts to the validator parameters of the needed ones. These parameters are only set off-chain and will become a part of the bytecode of the scripts instead of being stored as states on-chain. This leads to another requirement that validator scripts need to be initialized in a specific order, particularly in a bottom-up order from our dependencies graph, starting with scripts that do not have any dependencies to the handler that needs to know all about other scripts.
+In the section about [dependencies between scripts](#dependencies-between-validator-scripts), we saw that some scripts need to know about others. The technique we use here is passing the script hashes of dependent scripts to the validator parameters of the needed ones. These parameters are only set off-chain and will become a part of the bytecode of the scripts instead of being stored as states on-chain. This leads to another requirement that validator scripts need to be initialized in a specific order, particularly in a bottom-up order from our dependencies graph.
 
 As you can see, the deploying process is quite complex and hard to do manually. To make the deploying experience better, we wrote a script to automate this process. This [script](https://github.com/cardano-foundation/cardano-ibc-incubator/blob/draft/aiken-contract-docs/cardano/src/deploy.ts) will read the `plutus.json` file generated by Aiken, initialize validator scripts, create required UTXOs for the system, and store all the needed information in a file called `handler.json`.

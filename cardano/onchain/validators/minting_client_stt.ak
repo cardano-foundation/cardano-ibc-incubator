@@ -1,9 +1,12 @@
 // IBC Client Minting Validator - STT Architecture
 
 use aiken/collection/list
+use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use cardano/assets.{PolicyId, quantity_of}
-use cardano/transaction.{InlineDatum, Input, Transaction}
+use cardano/transaction.{
+  InlineDatum, Input, Redeemer, ScriptPurpose, Spend, Transaction,
+}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
 use ibc/client/ics_007_tendermint_client/client_redeemer.{MintClientRedeemer}
@@ -12,6 +15,9 @@ use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_002_client_semantics/types/keys.{client_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
   HostStateDatum, host_state_token_name,
+}
+use ibc/core/ics_025_handler_interface/host_state_redeemer.{
+  CreateClient, HostStateRedeemer,
 }
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
@@ -30,6 +36,22 @@ fn find_host_state_input(
   )
 }
 
+fn spent_host_state_for_create_client(
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  host_state_input: Input,
+) -> Bool {
+  expect Some(spend_redeemer) =
+    pairs.get_first(redeemers, Spend(host_state_input.output_reference))
+  expect host_redeemer: HostStateRedeemer = spend_redeemer
+
+  // The mint is authorized by the same HostState spend that increments
+  // next_client_sequence and commits the new client paths.
+  when host_redeemer is {
+    CreateClient { .. } -> True
+    _ -> False
+  }
+}
+
 validator mint_client_stt(
   spend_client_script_hash: Hash<Blake2b_224, Script>,
   host_state_nft_policy_id: PolicyId,
@@ -39,7 +61,8 @@ validator mint_client_stt(
     client_mint_policy_id: PolicyId,
     transaction: Transaction,
   ) {
-    let Transaction { inputs, outputs, mint, validity_range, .. } = transaction
+    let Transaction { inputs, outputs, mint, validity_range, redeemers, .. } =
+      transaction
 
     expect Some(host_state_input) =
       find_host_state_input(inputs, host_state_nft_policy_id)
@@ -83,6 +106,7 @@ validator mint_client_stt(
       (client_output |> auth.contains_only_auth_tokens([client_token]))?,
       valid_output_datum?,
       is_state_active?,
+      spent_host_state_for_create_client(redeemers, host_state_input)?,
     }
   }
 

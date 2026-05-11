@@ -26,7 +26,6 @@ const deploymentConfig = {
     name: 'host-state-name',
   },
   validators: {
-    spendHandler: buildValidator('spend-handler', 0),
     spendClient: buildValidator('spend-client', 1),
     spendConnection: buildValidator('spend-connection', 2),
     spendChannel: {

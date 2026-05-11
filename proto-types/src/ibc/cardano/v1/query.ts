@@ -79,7 +79,6 @@ export interface BridgeManifest {
   deployed_at: string;
   cardano?: BridgeManifestCardanoInfo;
   host_state_nft?: BridgeManifestAuthToken;
-  handler_auth_token?: BridgeManifestAuthToken;
   validators?: BridgeManifestValidators;
   modules?: BridgeManifestModules;
 }
@@ -163,7 +162,6 @@ export interface BridgeManifestSpendChannelValidator {
  */
 export interface BridgeManifestValidators {
   host_state_stt?: BridgeManifestValidator;
-  spend_handler?: BridgeManifestValidator;
   spend_client?: BridgeManifestValidator;
   spend_connection?: BridgeManifestValidator;
   spend_channel?: BridgeManifestSpendChannelValidator;
@@ -189,7 +187,6 @@ export interface BridgeManifestModule {
  * @see proto type: ibc.cardano.v1.BridgeManifestModules
  */
 export interface BridgeManifestModules {
-  handler?: BridgeManifestModule;
   transfer?: BridgeManifestModule;
   mock?: BridgeManifestModule;
 }
@@ -501,7 +498,6 @@ function createBaseBridgeManifest(): BridgeManifest {
     deployed_at: "",
     cardano: undefined,
     host_state_nft: undefined,
-    handler_auth_token: undefined,
     validators: undefined,
     modules: undefined,
   };
@@ -528,9 +524,6 @@ export const BridgeManifest = {
     }
     if (message.host_state_nft !== undefined) {
       BridgeManifestAuthToken.encode(message.host_state_nft, writer.uint32(34).fork()).ldelim();
-    }
-    if (message.handler_auth_token !== undefined) {
-      BridgeManifestAuthToken.encode(message.handler_auth_token, writer.uint32(42).fork()).ldelim();
     }
     if (message.validators !== undefined) {
       BridgeManifestValidators.encode(message.validators, writer.uint32(50).fork()).ldelim();
@@ -562,9 +555,6 @@ export const BridgeManifest = {
         case 4:
           message.host_state_nft = BridgeManifestAuthToken.decode(reader, reader.uint32());
           break;
-        case 5:
-          message.handler_auth_token = BridgeManifestAuthToken.decode(reader, reader.uint32());
-          break;
         case 6:
           message.validators = BridgeManifestValidators.decode(reader, reader.uint32());
           break;
@@ -586,8 +576,6 @@ export const BridgeManifest = {
     if (isSet(object.cardano)) obj.cardano = BridgeManifestCardanoInfo.fromJSON(object.cardano);
     if (isSet(object.host_state_nft))
       obj.host_state_nft = BridgeManifestAuthToken.fromJSON(object.host_state_nft);
-    if (isSet(object.handler_auth_token))
-      obj.handler_auth_token = BridgeManifestAuthToken.fromJSON(object.handler_auth_token);
     if (isSet(object.validators)) obj.validators = BridgeManifestValidators.fromJSON(object.validators);
     if (isSet(object.modules)) obj.modules = BridgeManifestModules.fromJSON(object.modules);
     return obj;
@@ -602,10 +590,6 @@ export const BridgeManifest = {
     message.host_state_nft !== undefined &&
       (obj.host_state_nft = message.host_state_nft
         ? BridgeManifestAuthToken.toJSON(message.host_state_nft)
-        : undefined);
-    message.handler_auth_token !== undefined &&
-      (obj.handler_auth_token = message.handler_auth_token
-        ? BridgeManifestAuthToken.toJSON(message.handler_auth_token)
         : undefined);
     message.validators !== undefined &&
       (obj.validators = message.validators ? BridgeManifestValidators.toJSON(message.validators) : undefined);
@@ -623,9 +607,6 @@ export const BridgeManifest = {
     }
     if (object.host_state_nft !== undefined && object.host_state_nft !== null) {
       message.host_state_nft = BridgeManifestAuthToken.fromPartial(object.host_state_nft);
-    }
-    if (object.handler_auth_token !== undefined && object.handler_auth_token !== null) {
-      message.handler_auth_token = BridgeManifestAuthToken.fromPartial(object.handler_auth_token);
     }
     if (object.validators !== undefined && object.validators !== null) {
       message.validators = BridgeManifestValidators.fromPartial(object.validators);
@@ -1254,7 +1235,6 @@ export const BridgeManifestSpendChannelValidator = {
 function createBaseBridgeManifestValidators(): BridgeManifestValidators {
   return {
     host_state_stt: undefined,
-    spend_handler: undefined,
     spend_client: undefined,
     spend_connection: undefined,
     spend_channel: undefined,
@@ -1276,9 +1256,6 @@ export const BridgeManifestValidators = {
   encode(message: BridgeManifestValidators, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.host_state_stt !== undefined) {
       BridgeManifestValidator.encode(message.host_state_stt, writer.uint32(10).fork()).ldelim();
-    }
-    if (message.spend_handler !== undefined) {
-      BridgeManifestValidator.encode(message.spend_handler, writer.uint32(18).fork()).ldelim();
     }
     if (message.spend_client !== undefined) {
       BridgeManifestValidator.encode(message.spend_client, writer.uint32(26).fork()).ldelim();
@@ -1319,9 +1296,6 @@ export const BridgeManifestValidators = {
         case 1:
           message.host_state_stt = BridgeManifestValidator.decode(reader, reader.uint32());
           break;
-        case 2:
-          message.spend_handler = BridgeManifestValidator.decode(reader, reader.uint32());
-          break;
         case 3:
           message.spend_client = BridgeManifestValidator.decode(reader, reader.uint32());
           break;
@@ -1360,8 +1334,6 @@ export const BridgeManifestValidators = {
     const obj = createBaseBridgeManifestValidators();
     if (isSet(object.host_state_stt))
       obj.host_state_stt = BridgeManifestValidator.fromJSON(object.host_state_stt);
-    if (isSet(object.spend_handler))
-      obj.spend_handler = BridgeManifestValidator.fromJSON(object.spend_handler);
     if (isSet(object.spend_client)) obj.spend_client = BridgeManifestValidator.fromJSON(object.spend_client);
     if (isSet(object.spend_connection))
       obj.spend_connection = BridgeManifestValidator.fromJSON(object.spend_connection);
@@ -1384,10 +1356,6 @@ export const BridgeManifestValidators = {
     message.host_state_stt !== undefined &&
       (obj.host_state_stt = message.host_state_stt
         ? BridgeManifestValidator.toJSON(message.host_state_stt)
-        : undefined);
-    message.spend_handler !== undefined &&
-      (obj.spend_handler = message.spend_handler
-        ? BridgeManifestValidator.toJSON(message.spend_handler)
         : undefined);
     message.spend_client !== undefined &&
       (obj.spend_client = message.spend_client
@@ -1433,9 +1401,6 @@ export const BridgeManifestValidators = {
     const message = createBaseBridgeManifestValidators();
     if (object.host_state_stt !== undefined && object.host_state_stt !== null) {
       message.host_state_stt = BridgeManifestValidator.fromPartial(object.host_state_stt);
-    }
-    if (object.spend_handler !== undefined && object.spend_handler !== null) {
-      message.spend_handler = BridgeManifestValidator.fromPartial(object.spend_handler);
     }
     if (object.spend_client !== undefined && object.spend_client !== null) {
       message.spend_client = BridgeManifestValidator.fromPartial(object.spend_client);
@@ -1530,7 +1495,6 @@ export const BridgeManifestModule = {
 };
 function createBaseBridgeManifestModules(): BridgeManifestModules {
   return {
-    handler: undefined,
     transfer: undefined,
     mock: undefined,
   };
@@ -1543,9 +1507,6 @@ function createBaseBridgeManifestModules(): BridgeManifestModules {
 export const BridgeManifestModules = {
   typeUrl: "/ibc.cardano.v1.BridgeManifestModules",
   encode(message: BridgeManifestModules, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
-    if (message.handler !== undefined) {
-      BridgeManifestModule.encode(message.handler, writer.uint32(10).fork()).ldelim();
-    }
     if (message.transfer !== undefined) {
       BridgeManifestModule.encode(message.transfer, writer.uint32(18).fork()).ldelim();
     }
@@ -1561,9 +1522,6 @@ export const BridgeManifestModules = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
-        case 1:
-          message.handler = BridgeManifestModule.decode(reader, reader.uint32());
-          break;
         case 2:
           message.transfer = BridgeManifestModule.decode(reader, reader.uint32());
           break;
@@ -1579,15 +1537,12 @@ export const BridgeManifestModules = {
   },
   fromJSON(object: any): BridgeManifestModules {
     const obj = createBaseBridgeManifestModules();
-    if (isSet(object.handler)) obj.handler = BridgeManifestModule.fromJSON(object.handler);
     if (isSet(object.transfer)) obj.transfer = BridgeManifestModule.fromJSON(object.transfer);
     if (isSet(object.mock)) obj.mock = BridgeManifestModule.fromJSON(object.mock);
     return obj;
   },
   toJSON(message: BridgeManifestModules): unknown {
     const obj: any = {};
-    message.handler !== undefined &&
-      (obj.handler = message.handler ? BridgeManifestModule.toJSON(message.handler) : undefined);
     message.transfer !== undefined &&
       (obj.transfer = message.transfer ? BridgeManifestModule.toJSON(message.transfer) : undefined);
     message.mock !== undefined &&
@@ -1596,9 +1551,6 @@ export const BridgeManifestModules = {
   },
   fromPartial<I extends Exact<DeepPartial<BridgeManifestModules>, I>>(object: I): BridgeManifestModules {
     const message = createBaseBridgeManifestModules();
-    if (object.handler !== undefined && object.handler !== null) {
-      message.handler = BridgeManifestModule.fromPartial(object.handler);
-    }
     if (object.transfer !== undefined && object.transfer !== null) {
       message.transfer = BridgeManifestModule.fromPartial(object.transfer);
     }

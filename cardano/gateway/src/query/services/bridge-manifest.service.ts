@@ -36,7 +36,6 @@ export class BridgeManifestService {
         validators: {
           ...manifest.validators,
           host_state_stt: this.toGrpcValidator(manifest.validators.host_state_stt),
-          spend_handler: this.toGrpcValidator(manifest.validators.spend_handler),
           spend_client: this.toGrpcValidator(manifest.validators.spend_client),
           spend_connection: this.toGrpcValidator(manifest.validators.spend_connection),
           spend_channel: {

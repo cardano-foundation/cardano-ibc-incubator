@@ -1,9 +1,7 @@
-import { AuthToken } from '../auth-token';
 import { Height } from '../height';
 import { Packet } from './packet';
 import { MerkleProof } from '../isc-23/merkle';
 import {
-  createAuthTokenSchema,
   createHeightSchema,
   createIcs23MerkleProofSchema,
   createPacketSchema,
@@ -12,14 +10,9 @@ import {
 type LucidData = typeof import('@lucid-evolution/lucid').Data;
 
 export type MintChannelRedeemer =
-  | {
-      ChanOpenInit: {
-        handler_token: AuthToken;
-      };
-    }
+  | 'ChanOpenInit'
   | {
       ChanOpenTry: {
-        handler_token: AuthToken;
         counterparty_version: string;
         proof_init: MerkleProof;
         proof_height: Height;
@@ -77,19 +70,13 @@ export type SpendChannelRedeemer =
     };
 
 function buildMintChannelRedeemerSchema(Data: LucidData) {
-  const AuthTokenSchema = createAuthTokenSchema(Data);
   const HeightSchema = createHeightSchema(Data);
   const { MerkleProofSchema } = createIcs23MerkleProofSchema(Data);
 
   return Data.Enum([
-    Data.Object({
-      ChanOpenInit: Data.Object({
-        handler_token: AuthTokenSchema,
-      }),
-    }),
+    Data.Literal('ChanOpenInit'),
     Data.Object({
       ChanOpenTry: Data.Object({
-        handler_token: AuthTokenSchema,
         counterparty_version: Data.Bytes(),
         proof_init: MerkleProofSchema,
         proof_height: HeightSchema,

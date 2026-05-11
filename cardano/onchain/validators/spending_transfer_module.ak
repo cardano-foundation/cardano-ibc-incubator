@@ -47,7 +47,6 @@ type TransferModuleSpend {
 }
 
 validator spend_transfer_module(
-  handler_token: AuthToken,
   port_token: AuthToken,
   module_token: AuthToken,
   port_id: ByteArray,
@@ -101,9 +100,8 @@ validator spend_transfer_module(
 
     when redeemer is {
       Callback(cb) ->
-        handler_callback(
+        module_callback(
           cb,
-          handler_token,
           host_state_nft,
           spent_output_ref,
           transaction,
@@ -113,7 +111,7 @@ validator spend_transfer_module(
           voucher_minting_policy_id,
         )
       Operator(op) ->
-        handler_operator(
+        module_operator(
           op,
           host_state_nft,
           spent_output_ref,
@@ -430,9 +428,8 @@ fn validate_module_escrow_transition(
   }
 }
 
-fn handler_callback(
+fn module_callback(
   cb: IBCModuleCallback,
-  handler_token: AuthToken,
   host_state_nft: AuthToken,
   spent_output_ref: OutputReference,
   transaction: Transaction,
@@ -452,7 +449,6 @@ fn handler_callback(
         validate_channel_open_init(
           redeemers,
           channel_minting_policy_id,
-          handler_token,
           host_state_nft,
           outputs,
           port_id,
@@ -477,7 +473,6 @@ fn handler_callback(
         validate_channel_open_try(
           redeemers,
           channel_minting_policy_id,
-          handler_token,
           host_state_nft,
           outputs,
           port_id,
@@ -791,7 +786,7 @@ fn handler_callback(
   }
 }
 
-fn handler_operator(
+fn module_operator(
   op: IBCModuleOperator,
   host_state_nft: AuthToken,
   spent_output_ref: OutputReference,
@@ -890,7 +885,6 @@ fn handler_operator(
 fn validate_channel_open_init(
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
-  handler_token: AuthToken,
   host_state_nft: AuthToken,
   outputs: List<Output>,
   port_id: ByteArray,
@@ -900,9 +894,7 @@ fn validate_channel_open_init(
   expect Some(mint_channel_redeemer) =
     pairs.get_first(redeemers, Mint(channel_minting_policy_id))
   expect mint_channel_redeemer: MintChannelRedeemer = mint_channel_redeemer
-  expect ChanOpenInit { handler_token: chan_handler_token } =
-    mint_channel_redeemer
-  expect chan_handler_token == handler_token
+  expect ChanOpenInit = mint_channel_redeemer
 
   // validate and extract channel outputs
   expect channel_keys.is_valid_channel_id(channel_id)
@@ -936,7 +928,6 @@ fn validate_channel_open_init(
 fn validate_channel_open_try(
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   channel_minting_policy_id: PolicyId,
-  handler_token: AuthToken,
   host_state_nft: AuthToken,
   outputs: List<Output>,
   port_id: ByteArray,
@@ -946,12 +937,7 @@ fn validate_channel_open_try(
   expect Some(mint_channel_redeemer) =
     pairs.get_first(redeemers, Mint(channel_minting_policy_id))
   expect mint_channel_redeemer: MintChannelRedeemer = mint_channel_redeemer
-  expect ChanOpenTry {
-    handler_token: chan_handler_token,
-    counterparty_version,
-    ..
-  } = mint_channel_redeemer
-  expect chan_handler_token == handler_token
+  expect ChanOpenTry { counterparty_version, .. } = mint_channel_redeemer
 
   // validate and extract channel outputs
   expect channel_keys.is_valid_channel_id(channel_id)
