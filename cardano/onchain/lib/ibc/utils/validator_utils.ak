@@ -5,7 +5,6 @@ use aiken/option.{map}
 use aiken/primitive/bytearray
 use cardano/assets.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of,
-  without_lovelace,
 }
 use cardano/transaction.{
   InlineDatum, Input, Output, Redeemer, ScriptPurpose, Spend, ValidityRange,
@@ -202,9 +201,7 @@ pub fn validate_token_remain(
 
   let is_remain =
     if list.is_empty(tokens) {
-      without_lovelace(spent_output.value) == without_lovelace(
-        updated_output.value,
-      )
+      assets.match_assets(spent_output.value, updated_output.value)
     } else {
       list.all(
         tokens,
@@ -247,11 +244,11 @@ pub fn require_host_state_thread(
     list.filter(
       inputs,
       fn(input) {
-        quantity_of(
+        assets.has_nft(
           input.output.value,
           host_state_nft_policy_id,
           host_state_token_name,
-        ) == 1
+        )
       },
     )
 
@@ -259,11 +256,11 @@ pub fn require_host_state_thread(
     list.filter(
       outputs,
       fn(output) {
-        quantity_of(
+        assets.has_nft(
           output.value,
           host_state_nft_policy_id,
           host_state_token_name,
-        ) == 1
+        )
       },
     )
 

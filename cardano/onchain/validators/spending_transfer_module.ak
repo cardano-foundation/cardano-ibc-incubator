@@ -222,9 +222,7 @@ fn validate_output_amount(
   trace @"expected_lovelace_output": expected_lovelace_output
   and {
     (lovelace_output - expected_lovelace_output >= 0)?,
-    (assets.without_lovelace(output.value) == assets.without_lovelace(
-      expected_output,
-    ))?,
+    assets.match_assets(output.value, expected_output)?,
   }
 }
 
@@ -275,7 +273,7 @@ fn escrow_value_is_single_asset(
         escrowed_quantity,
       )
     }
-  assets.without_lovelace(output.value) == expected_non_lovelace
+  assets.match_assets(output.value, expected_non_lovelace)
 }
 
 fn validate_created_escrow_shard(

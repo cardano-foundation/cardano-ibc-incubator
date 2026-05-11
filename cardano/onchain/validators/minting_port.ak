@@ -1,7 +1,7 @@
 use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
-use cardano/assets.{PolicyId, quantity_of}
+use cardano/assets.{PolicyId}
 use cardano/transaction.{Input, NoDatum, Output, Spend, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
@@ -32,7 +32,7 @@ fn find_host_state_input(
   list.find(
     inputs,
     fn(input) {
-      quantity_of(input.output.value, nft_policy, host_state_token_name) == 1
+      assets.has_nft(input.output.value, nft_policy, host_state_token_name)
     },
   )
 }

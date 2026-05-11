@@ -5,7 +5,7 @@ use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/primitive/bytearray
-use cardano/assets.{AssetName, PolicyId, quantity_of}
+use cardano/assets.{AssetName, PolicyId}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction,
 }
@@ -46,9 +46,7 @@ fn find_host_state_input(
   list.find(
     inputs,
     fn(input) {
-      let quantity =
-        quantity_of(input.output.value, nft_policy, host_state_token_name)
-      quantity == 1
+      assets.has_nft(input.output.value, nft_policy, host_state_token_name)
     },
   )
 }
@@ -63,9 +61,7 @@ fn find_host_state_output(
   list.find(
     outputs,
     fn(output) {
-      let quantity =
-        quantity_of(output.value, nft_policy, host_state_token_name)
-      quantity == 1
+      assets.has_nft(output.value, nft_policy, host_state_token_name)
     },
   )
 }
@@ -81,7 +77,7 @@ fn find_input_with_auth_token(
   list.find(
     inputs,
     fn(input) {
-      quantity_of(input.output.value, token.policy_id, token.name) == 1
+      assets.has_nft(input.output.value, token.policy_id, token.name)
     },
   )
 }
@@ -968,9 +964,7 @@ validator host_state_stt(
       list.count(
         outputs,
         fn(output) {
-          let quantity =
-            quantity_of(output.value, nft_policy, host_state_token_name)
-          quantity == 1
+          assets.has_nft(output.value, nft_policy, host_state_token_name)
         },
       )
     expect nft_output_count == 1
