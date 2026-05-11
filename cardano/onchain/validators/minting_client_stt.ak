@@ -3,7 +3,7 @@
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
-use cardano/assets.{PolicyId, quantity_of}
+use cardano/assets.{PolicyId}
 use cardano/transaction.{
   InlineDatum, Input, Redeemer, ScriptPurpose, Spend, Transaction,
 }
@@ -29,9 +29,7 @@ fn find_host_state_input(
   list.find(
     inputs,
     fn(input) {
-      let quantity =
-        quantity_of(input.output.value, nft_policy, host_state_token_name)
-      quantity == 1
+      assets.has_nft(input.output.value, nft_policy, host_state_token_name)
     },
   )
 }

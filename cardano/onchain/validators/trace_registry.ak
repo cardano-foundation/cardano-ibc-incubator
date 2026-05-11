@@ -336,7 +336,7 @@ fn validate_rollover_insert_trace(
       voucher_minting_policy_id,
       benchmark_voucher_minting_policy_id,
     ),
-    quantity_of(mint, shard_nft_policy_id, new_active_shard_name) == 1,
+    assets.has_nft(mint, shard_nft_policy_id, new_active_shard_name),
     list.find(
       old_datum.entries,
       fn(entry) { entry.voucher_hash == voucher_hash },
@@ -460,7 +460,7 @@ fn validate_advance_directory(
       voucher_minting_policy_id,
       benchmark_voucher_minting_policy_id,
     ),
-    quantity_of(mint, shard_nft_policy_id, new_active_shard_name) == 1,
+    assets.has_nft(mint, shard_nft_policy_id, new_active_shard_name),
     directory_rollover_matches(
       old_directory,
       updated_directory,

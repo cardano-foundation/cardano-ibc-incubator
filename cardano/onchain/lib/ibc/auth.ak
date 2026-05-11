@@ -2,7 +2,7 @@ use aiken/collection/dict
 use aiken/collection/list
 use aiken/crypto
 use aiken/primitive/bytearray
-use cardano/assets.{AssetName, PolicyId, Value, quantity_of, tokens, zero}
+use cardano/assets.{AssetName, PolicyId, Value, tokens, zero}
 use cardano/transaction.{Output}
 
 pub type AuthToken {
@@ -11,7 +11,7 @@ pub type AuthToken {
 }
 
 pub fn contain_auth_token(output: Output, token: AuthToken) -> Bool {
-  quantity_of(output.value, token.policy_id, token.name) == 1
+  assets.has_nft(output.value, token.policy_id, token.name)
 }
 
 pub fn contains_only_auth_tokens(
@@ -28,7 +28,7 @@ pub fn contains_only_auth_tokens(
         assets.from_asset(token.policy_id, token.name, 1) |> assets.merge(acc)
       },
     )
-  assets.without_lovelace(output.value) == expected_value
+  assets.match_assets(output.value, expected_value)
 }
 
 pub fn mint_auth_token(mint: Value, token: AuthToken) -> Bool {
