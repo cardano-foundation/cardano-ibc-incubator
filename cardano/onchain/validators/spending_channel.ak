@@ -83,7 +83,7 @@ validator spend_channel(
 
         expect redeemer: AuthToken = redeemer
         and {
-          // Closing this channel should only remove this channel token, not monopolize the script address.
+          // Closing this channel removes this channel token; other channel outputs may still share the address.
           validator_utils.no_output_contains_auth_token(outputs, datum.token),
           redeemer == datum.token,
         }

@@ -188,8 +188,8 @@ pub fn find_unique_continuation_output(
   outputs: List<Output>,
   token: AuthToken,
 ) -> Output {
-  // A state continuation is identified by both its validator address and its auth token.
-  // This keeps unrelated state UTxOs at the same script address from blocking each other.
+  // The updated state output is identified by both its validator address and auth token.
+  // This allows unrelated state UTxOs to share the same script address safely.
   expect auth.contain_auth_token(spent_output, token)?
 
   expect [updated_output] =
@@ -209,7 +209,7 @@ pub fn no_output_contains_auth_token(
   outputs: List<Output>,
   token: AuthToken,
 ) -> Bool {
-  // Close/delete transitions remove this state token; unrelated outputs may still share the address.
+  // Close/delete transitions remove this state token; other state outputs may still share the address.
   !list.any(outputs, fn(output) { auth.contain_auth_token(output, token) })
 }
 
@@ -220,7 +220,7 @@ pub fn validate_token_remain(
 ) -> Output {
   expect [updated_output] =
     if list.is_empty(tokens) {
-      // Some legacy callers compare the whole non-ADA value and have no token identity to select on.
+      // Some legacy callers compare the whole non-ADA value and do not pass a state token.
       list.filter(
         outputs,
         fn(output) { output.address == spent_output.address },
