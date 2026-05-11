@@ -6,5 +6,7 @@ pub fn marshal_for_merkle_prefix(
 ) -> (Int, ByteArray) {
   let MerklePrefix { key_prefix } = merkle_prefix
   (0, #[])
-    |> size_and_concat(encode_bytearray(key_prefix, 10))
+    |> size_and_concat(
+        encode_bytearray(key_prefix, bytes.field_1_length_delimited),
+      )
 }

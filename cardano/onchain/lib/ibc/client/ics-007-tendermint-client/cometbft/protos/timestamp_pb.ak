@@ -18,8 +18,8 @@ pub type Timestamp {
 pub fn marshal_for_timestamp(ts: Timestamp) -> (Int, ByteArray) {
   let Timestamp { seconds, nanos } = ts
   (0, #[])
-    |> add_and_concat(encode_int(seconds, 8))
-    |> add_and_concat(encode_int(nanos, 0x10))
+    |> add_and_concat(encode_int(seconds, bytes.field_1_varint))
+    |> add_and_concat(encode_int(nanos, bytes.field_2_varint))
 }
 
 pub fn timestamp_proto(t: Time) -> Option<Timestamp> {
