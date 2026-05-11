@@ -1,9 +1,7 @@
-use aiken/builtin.{
-  add_integer as add, divide_integer as div, if_then_else as ite,
-}
+use aiken/builtin.{add_integer as add, if_then_else as ite}
 use aiken/collection/list
 use aiken/primitive/bytearray.{concat, from_int_little_endian, length, push}
-use ibc/utils/bits.{len64}
+use ibc/utils/bits
 use ibc/utils/int.{Int64, uint64}
 
 fn inner_read_uvarint(bz: ByteArray, index: Int) -> (Int, Int) {
@@ -43,28 +41,143 @@ pub fn has_prefix(s: ByteArray, prefix: ByteArray) -> Bool {
   bytearray.take(s, bytearray.length(prefix)) == prefix
 }
 
+const varint_1_byte_limit = 128
+
+const varint_2_byte_limit = 16384
+
+const varint_3_byte_limit = 2097152
+
+const varint_4_byte_limit = 268435456
+
+const varint_5_byte_limit = 34359738368
+
+const varint_6_byte_limit = 4398046511104
+
+const varint_7_byte_limit = 562949953421312
+
+const varint_8_byte_limit = 72057594037927936
+
+const varint_9_byte_limit = 9223372036854775808
+
+fn continuation_byte(v: Int64) -> Int {
+  v % 128 + 128
+}
+
+fn encode_varint_1(v: Int64) -> ByteArray {
+  push(#[], v)
+}
+
+fn encode_varint_2(v: Int64) -> ByteArray {
+  v / 128
+    |> encode_varint_1()
+    |> push(continuation_byte(v))
+}
+
+fn encode_varint_3(v: Int64) -> ByteArray {
+  v / 128
+    |> encode_varint_2()
+    |> push(continuation_byte(v))
+}
+
+fn encode_varint_4(v: Int64) -> ByteArray {
+  v / 128
+    |> encode_varint_3()
+    |> push(continuation_byte(v))
+}
+
+fn encode_varint_5(v: Int64) -> ByteArray {
+  v / 128
+    |> encode_varint_4()
+    |> push(continuation_byte(v))
+}
+
+fn encode_varint_6(v: Int64) -> ByteArray {
+  v / 128
+    |> encode_varint_5()
+    |> push(continuation_byte(v))
+}
+
+fn encode_varint_7(v: Int64) -> ByteArray {
+  v / 128
+    |> encode_varint_6()
+    |> push(continuation_byte(v))
+}
+
+fn encode_varint_8(v: Int64) -> ByteArray {
+  v / 128
+    |> encode_varint_7()
+    |> push(continuation_byte(v))
+}
+
+fn encode_varint_9(v: Int64) -> ByteArray {
+  v / 128
+    |> encode_varint_8()
+    |> push(continuation_byte(v))
+}
+
+fn encode_varint_10(v: Int64) -> ByteArray {
+  v / 128
+    |> encode_varint_9()
+    |> push(continuation_byte(v))
+}
+
 pub fn encode_varint(v: Int64) -> ByteArray {
-  ite(
-    v >= 128,
-    v / 128
-      |> encode_varint()
-      |> push(v % 128 + 128),
-    #[] |> push(v),
-  )
+  if v < varint_1_byte_limit {
+    encode_varint_1(v)
+  } else if v < varint_2_byte_limit {
+    encode_varint_2(v)
+  } else if v < varint_3_byte_limit {
+    encode_varint_3(v)
+  } else if v < varint_4_byte_limit {
+    encode_varint_4(v)
+  } else if v < varint_5_byte_limit {
+    encode_varint_5(v)
+  } else if v < varint_6_byte_limit {
+    encode_varint_6(v)
+  } else if v < varint_7_byte_limit {
+    encode_varint_7(v)
+  } else if v < varint_8_byte_limit {
+    encode_varint_8(v)
+  } else if v < varint_9_byte_limit {
+    encode_varint_9(v)
+  } else {
+    encode_varint_10(v)
+  }
 }
 
 pub fn encode_length_varint(v: Int64) -> ByteArray {
-  if v < 128 {
-    push(#[], v)
+  if v < varint_1_byte_limit {
+    encode_varint_1(v)
   } else {
     // implies x < 16384 always
-    push(#[], v / 128)
-      |> push(v % 128 + 128)
+    encode_varint_2(v)
   }
 }
 
 pub fn sov(x: Int64) -> Int {
-  x |> len64() |> add(6) |> div(7)
+  if x < 0 {
+    10
+  } else if x < varint_1_byte_limit {
+    1
+  } else if x < varint_2_byte_limit {
+    2
+  } else if x < varint_3_byte_limit {
+    3
+  } else if x < varint_4_byte_limit {
+    4
+  } else if x < varint_5_byte_limit {
+    5
+  } else if x < varint_6_byte_limit {
+    6
+  } else if x < varint_7_byte_limit {
+    7
+  } else if x < varint_8_byte_limit {
+    8
+  } else if x < varint_9_byte_limit {
+    9
+  } else {
+    10
+  }
 }
 
 pub fn sov_length(x: Int64) -> Int {
