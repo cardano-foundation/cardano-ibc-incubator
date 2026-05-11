@@ -23,7 +23,6 @@ describe('QueryController (modern)', () => {
       queryClientState: jest.fn(),
       queryClientStates: jest.fn(),
       queryConsensusState: jest.fn(),
-      queryBlockData: jest.fn(),
       latestHeight: jest.fn(),
       queryNewClient: jest.fn(),
       queryBlockResults: jest.fn(),

@@ -18,9 +18,7 @@ Your blockchain in development can be configured with `config.yml`.
 
 This chain tracks Cardano via a custom IBC light client (client type `08-cardano`) using protobuf types under `ibc.lightclients.mithril.v1` (see `cosmos/entrypoint/proto/ibc/lightclients/mithril/v1/mithril.proto`).
 
-In the repo’s standard developer workflow, Hermes drives client creation/updates and handshake/packet relaying end-to-end via the Gateway and Cardano devnet. For that reason, we do not keep static JSON fixtures for Mithril client creation in this folder, since the values are deployment-specific (for example, the HostState NFT identifiers and the certified HostState transaction evidence).
-
-Legacy Ouroboros/Cardano client JSON examples are kept under `cosmos/entrypoint/exampleCall/legacy-ouroboros/` for reference only and are not part of the production flow.
+In the repo’s standard developer workflow, Hermes drives client creation/updates and handshake/packet relaying end-to-end via the Gateway and Cardano devnet. For that reason, we do not keep static JSON fixtures for Cardano client creation in this folder, since the values are deployment-specific (for example, the HostState NFT identifiers and the certified HostState transaction evidence).
 
 ## Debug with vs code
 
