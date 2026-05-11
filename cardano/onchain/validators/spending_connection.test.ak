@@ -41,6 +41,7 @@ use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
+use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
 use ibc/utils/test_utils
 use ibc/utils/validator_utils
 use spending_connection
@@ -259,6 +260,12 @@ fn build_input(datum: Data, token: AuthToken) -> Input {
   input
 }
 
+fn host_state_update_connection_redeemer() -> Redeemer {
+  let redeemer: Redeemer =
+    host_state_redeemer.UpdateConnection { connection_siblings: [] }
+  redeemer
+}
+
 test conn_open_ack_succeed() {
   let mock = setup()
 
@@ -437,6 +444,10 @@ test conn_open_ack_succeed() {
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
       Pair(Spend(conn_input.output_reference), connection_redeemer),
+      Pair(
+        Spend(mock.host_state_input.output_reference),
+        host_state_update_connection_redeemer(),
+      ),
       Pair(Mint(mock.verify_proof_policy_id), verify_proof_redeemer),
     ]
 

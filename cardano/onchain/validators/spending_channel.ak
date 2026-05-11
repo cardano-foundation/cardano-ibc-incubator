@@ -33,12 +33,14 @@ validator spend_channel(
     let spent_output = spent_input.output
     when redeemer is {
       ChanOpenAck { .. } -> {
-        // Channel handshake updates must be committed into the HostState root in the same transaction.
+        // Handshake channel changes use the channel-root HostState branch.
         expect _ =
-          validator_utils.require_host_state_thread(
+          validator_utils.require_host_state_redeemer(
             inputs,
             outputs,
+            redeemers,
             host_state_nft_policy_id,
+            validator_utils.ExpectUpdateChannel,
           )
 
         expect Some(redeemer) =
@@ -52,12 +54,14 @@ validator spend_channel(
       }
 
       ChanOpenConfirm { .. } -> {
-        // Channel handshake updates must be committed into the HostState root in the same transaction.
+        // Handshake channel changes use the channel-root HostState branch.
         expect _ =
-          validator_utils.require_host_state_thread(
+          validator_utils.require_host_state_redeemer(
             inputs,
             outputs,
+            redeemers,
             host_state_nft_policy_id,
+            validator_utils.ExpectUpdateChannel,
           )
 
         expect Some(redeemer) =
@@ -70,12 +74,14 @@ validator spend_channel(
         redeemer == datum.token
       }
       ChanCloseInit -> {
-        // Channel state changes must be committed into the HostState root in the same transaction.
+        // Channel close changes use the channel-root HostState branch.
         expect _ =
-          validator_utils.require_host_state_thread(
+          validator_utils.require_host_state_redeemer(
             inputs,
             outputs,
+            redeemers,
             host_state_nft_policy_id,
+            validator_utils.ExpectUpdateChannel,
           )
 
         expect Some(redeemer) =
@@ -89,12 +95,14 @@ validator spend_channel(
         }
       }
       ChanCloseConfirm { .. } -> {
-        // Channel state changes must be committed into the HostState root in the same transaction.
+        // Channel close changes use the channel-root HostState branch.
         expect _ =
-          validator_utils.require_host_state_thread(
+          validator_utils.require_host_state_redeemer(
             inputs,
             outputs,
+            redeemers,
             host_state_nft_policy_id,
+            validator_utils.ExpectUpdateChannel,
           )
 
         expect Some(redeemer) =
@@ -105,12 +113,14 @@ validator spend_channel(
         redeemer == datum.token
       }
       RecvPacket { .. } -> {
-        // Packet processing changes channel/packet state, so it must be committed into HostState.
+        // Packet effects must use the packet-root HostState branch.
         expect _ =
-          validator_utils.require_host_state_thread(
+          validator_utils.require_host_state_redeemer(
             inputs,
             outputs,
+            redeemers,
             host_state_nft_policy_id,
+            validator_utils.ExpectHandlePacket,
           )
 
         expect Some(redeemer) =
@@ -121,12 +131,14 @@ validator spend_channel(
         redeemer == datum.token
       }
       SendPacket { .. } -> {
-        // Packet processing changes channel/packet state, so it must be committed into HostState.
+        // Packet effects must use the packet-root HostState branch.
         expect _ =
-          validator_utils.require_host_state_thread(
+          validator_utils.require_host_state_redeemer(
             inputs,
             outputs,
+            redeemers,
             host_state_nft_policy_id,
+            validator_utils.ExpectHandlePacket,
           )
 
         expect Some(redeemer) =
@@ -137,12 +149,14 @@ validator spend_channel(
         redeemer == datum.token
       }
       TimeoutPacket { .. } -> {
-        // Packet processing changes channel/packet state, so it must be committed into HostState.
+        // Packet effects must use the packet-root HostState branch.
         expect _ =
-          validator_utils.require_host_state_thread(
+          validator_utils.require_host_state_redeemer(
             inputs,
             outputs,
+            redeemers,
             host_state_nft_policy_id,
+            validator_utils.ExpectHandlePacket,
           )
 
         expect Some(redeemer) =
@@ -153,12 +167,14 @@ validator spend_channel(
         redeemer == datum.token
       }
       AcknowledgePacket { .. } -> {
-        // Packet processing changes channel/packet state, so it must be committed into HostState.
+        // Packet effects must use the packet-root HostState branch.
         expect _ =
-          validator_utils.require_host_state_thread(
+          validator_utils.require_host_state_redeemer(
             inputs,
             outputs,
+            redeemers,
             host_state_nft_policy_id,
+            validator_utils.ExpectHandlePacket,
           )
 
         expect Some(redeemer) =

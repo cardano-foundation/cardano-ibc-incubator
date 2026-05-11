@@ -2,7 +2,8 @@ use aiken/interval
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Transaction,
+  InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
+  Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -29,6 +30,7 @@ use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase}
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_023_vector_commitments/merkle
+use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
 use spending_client
 
 type MockData {
@@ -113,6 +115,19 @@ fn update_client_input_datum(client_datum: ClientDatum, input: Input) -> Input {
     }
 
   client_input
+}
+
+fn host_state_update_client_redeemers(
+  host_state_input: Input,
+) -> Pairs<ScriptPurpose, Redeemer> {
+  let redeemer: Redeemer =
+    host_state_redeemer.UpdateClient {
+      client_state_siblings: [],
+      consensus_state_siblings: [],
+      removed_consensus_state_siblings: [],
+    }
+
+  [Pair(Spend(host_state_input.output_reference), redeemer)]
 }
 
 test update_client_misbehaviour_conflict_header() {
@@ -342,7 +357,13 @@ test update_client_misbehaviour_conflict_header() {
     )
 
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, validity_range }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      validity_range,
+      redeemers: host_state_update_client_redeemers(mock.host_state_input),
+    }
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
@@ -577,7 +598,13 @@ test update_client_misbehaviour_monotonic_time_violation() {
     )
 
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, validity_range }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      validity_range,
+      redeemers: host_state_update_client_redeemers(mock.host_state_input),
+    }
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
@@ -803,7 +830,13 @@ test update_client_verify_adjacent_succeed() {
     )
 
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, validity_range }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      validity_range,
+      redeemers: host_state_update_client_redeemers(mock.host_state_input),
+    }
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
@@ -1026,7 +1059,13 @@ test update_client_verify_adjacent_fails_without_host_state_co_spend() fail {
     )
 
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, validity_range }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      validity_range,
+      redeemers: host_state_update_client_redeemers(mock.host_state_input),
+    }
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
@@ -1252,7 +1291,13 @@ test update_client_verify_non_adjacent_succeed() {
     )
 
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, validity_range }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      validity_range,
+      redeemers: host_state_update_client_redeemers(mock.host_state_input),
+    }
 
   spending_client.spend_client.spend(
     mock.host_state_nft_policy_id,
