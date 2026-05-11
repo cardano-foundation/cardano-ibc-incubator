@@ -49,8 +49,15 @@ pub fn marshal_for_any_client_state(
 ) -> (Int, ByteArray) {
   let AnyMithrilClientState { type_url, value } = amcs
   (0, #"")
-    |> add_and_concat(encode_bytearray(type_url, 10))
-    |> add_and_concat(nest_record(marshal_for_client_state(value), 0x12))
+    |> add_and_concat(
+        encode_bytearray(type_url, bytes.field_1_length_delimited),
+      )
+    |> add_and_concat(
+        nest_record(
+          marshal_for_client_state(value),
+          bytes.field_2_length_delimited,
+        ),
+      )
 }
 
 pub fn marshal_for_client_state(
@@ -68,8 +75,15 @@ pub fn marshal_for_client_state(
     host_state_nft_token_name,
   } = client_state
   (0, #"")
-    |> size_and_concat(encode_bytearray(chain_id, 10))
-    |> add_and_concat(nest_record(marshal_for_height(latest_height), 0x12))
+    |> size_and_concat(
+        encode_bytearray(chain_id, bytes.field_1_length_delimited),
+      )
+    |> add_and_concat(
+        nest_record(
+          marshal_for_height(latest_height),
+          bytes.field_2_length_delimited,
+        ),
+      )
     // `frozen_height` is unset on the Cosmos chain until the client is actually frozen.
     // When it is unset, the on-chain stored bytes omit the entire field (proto3 presence).
     //
@@ -79,15 +93,24 @@ pub fn marshal_for_client_state(
         if frozen_height.revision_number == 0 && frozen_height.revision_height == 0 {
           (0, #"")
         } else {
-          nest_record(marshal_for_height(frozen_height), 0x1a)
+          nest_record(
+            marshal_for_height(frozen_height),
+            bytes.field_3_length_delimited,
+          )
         },
       )
-    |> add_and_concat(encode_int(current_epoch, 0x20))
+    |> add_and_concat(encode_int(current_epoch, bytes.field_4_varint))
     |> add_and_concat(
-        nest_record(marshal_for_duration(duration_proto(trusting_period)), 0x2a),
+        nest_record(
+          marshal_for_duration(duration_proto(trusting_period)),
+          bytes.field_5_length_delimited,
+        ),
       )
     |> add_and_concat(
-        nest_record(marshal_for_protocol_parameters(protocol_parameters), 0x32),
+        nest_record(
+          marshal_for_protocol_parameters(protocol_parameters),
+          bytes.field_6_length_delimited,
+        ),
       )
     |> add_and_concat(
         list.reduce(
@@ -99,20 +122,30 @@ pub fn marshal_for_client_state(
               l
                 |> encode_length_varint()
                 |> concat(path)
-                |> push(0x3a)
+                |> push(bytes.field_7_length_delimited)
             (size + sov(l) + l + 1, concat(bz1, bz2))
           },
         ),
       )
-    |> size_and_concat(encode_bytearray(host_state_nft_policy_id, 0x42))
-    |> size_and_concat(encode_bytearray(host_state_nft_token_name, 0x4a))
+    |> size_and_concat(
+        encode_bytearray(
+          host_state_nft_policy_id,
+          bytes.field_8_length_delimited,
+        ),
+      )
+    |> size_and_concat(
+        encode_bytearray(
+          host_state_nft_token_name,
+          bytes.field_9_length_delimited,
+        ),
+      )
 }
 
 pub fn marshal_for_height(height: CardanoHeight) -> (Int, ByteArray) {
   let CardanoHeight { revision_number, revision_height } = height
   (0, #"")
-    |> add_and_concat(encode_int(revision_number, 8))
-    |> add_and_concat(encode_int(revision_height, 0x10))
+    |> add_and_concat(encode_int(revision_number, bytes.field_1_varint))
+    |> add_and_concat(encode_int(revision_height, bytes.field_2_varint))
 }
 
 pub fn marshal_for_protocol_parameters(
@@ -120,9 +153,11 @@ pub fn marshal_for_protocol_parameters(
 ) -> (Int, ByteArray) {
   let MithrilProtocolParameters { k, m, phi_f } = pp
   (0, #"")
-    |> add_and_concat(encode_int(k, 8))
-    |> add_and_concat(encode_int(m, 0x10))
-    |> add_and_concat(nest_record(marshal_for_fraction(phi_f), 0x1a))
+    |> add_and_concat(encode_int(k, bytes.field_1_varint))
+    |> add_and_concat(encode_int(m, bytes.field_2_varint))
+    |> add_and_concat(
+        nest_record(marshal_for_fraction(phi_f), bytes.field_3_length_delimited),
+      )
 }
 
 pub fn duration_proto(duration: Int) -> MithrilDuration {
@@ -135,13 +170,13 @@ pub fn duration_proto(duration: Int) -> MithrilDuration {
 pub fn marshal_for_duration(duration: MithrilDuration) -> (Int, ByteArray) {
   let MithrilDuration { seconds, nanos } = duration
   (0, #"")
-    |> add_and_concat(encode_int(seconds, 8))
-    |> add_and_concat(encode_int(nanos, 0x10))
+    |> add_and_concat(encode_int(seconds, bytes.field_1_varint))
+    |> add_and_concat(encode_int(nanos, bytes.field_2_varint))
 }
 
 pub fn marshal_for_fraction(fraction: Fraction) -> (Int, ByteArray) {
   let Fraction { numerator, denominator } = fraction
   (0, #"")
-    |> add_and_concat(encode_int(numerator, 8))
-    |> add_and_concat(encode_int(denominator, 0x10))
+    |> add_and_concat(encode_int(numerator, bytes.field_1_varint))
+    |> add_and_concat(encode_int(denominator, bytes.field_2_varint))
 }

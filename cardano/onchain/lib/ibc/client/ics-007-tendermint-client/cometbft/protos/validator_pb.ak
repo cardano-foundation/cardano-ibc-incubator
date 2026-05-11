@@ -15,6 +15,11 @@ pub type SimpleValidator {
 pub fn marshal_for_simple_validator(sv: SimpleValidator) -> (Int, ByteArray) {
   let SimpleValidator { pub_key, voting_power } = sv
   (0, #"")
-    |> add_and_concat(nest_record(marshal_for_public_key(pub_key), 10))
-    |> add_and_concat(encode_int(voting_power, 0x10))
+    |> add_and_concat(
+        nest_record(
+          marshal_for_public_key(pub_key),
+          bytes.field_1_length_delimited,
+        ),
+      )
+    |> add_and_concat(encode_int(voting_power, bytes.field_2_varint))
 }

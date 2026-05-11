@@ -133,12 +133,12 @@ pub fn hash(h: TmHeader) -> ByteArray {
               |> length()
               |> encode_varint()
               |> concat(chain_id)
-              |> push(10),
+              |> push(bytes.field_1_length_delimited),
           ),
           ite(
             height == 0,
             #[],
-            height |> uint64() |> encode_varint() |> push(8),
+            height |> uint64() |> encode_varint() |> push(bytes.field_1_varint),
           ),
           pbt,
           bzbi,
@@ -149,7 +149,7 @@ pub fn hash(h: TmHeader) -> ByteArray {
               |> length()
               |> encode_varint()
               |> concat(last_commit_hash)
-              |> push(10),
+              |> push(bytes.field_1_length_delimited),
           ),
           ite(
             length(data_hash) == 0,
@@ -158,7 +158,7 @@ pub fn hash(h: TmHeader) -> ByteArray {
               |> length()
               |> encode_varint()
               |> concat(data_hash)
-              |> push(10),
+              |> push(bytes.field_1_length_delimited),
           ),
           ite(
             length(validators_hash) == 0,
@@ -167,7 +167,7 @@ pub fn hash(h: TmHeader) -> ByteArray {
               |> length()
               |> encode_varint()
               |> concat(validators_hash)
-              |> push(10),
+              |> push(bytes.field_1_length_delimited),
           ),
           ite(
             length(next_validators_hash) == 0,
@@ -176,7 +176,7 @@ pub fn hash(h: TmHeader) -> ByteArray {
               |> length()
               |> encode_varint()
               |> concat(next_validators_hash)
-              |> push(10),
+              |> push(bytes.field_1_length_delimited),
           ),
           ite(
             length(consensus_hash) == 0,
@@ -185,7 +185,7 @@ pub fn hash(h: TmHeader) -> ByteArray {
               |> length()
               |> encode_varint()
               |> concat(consensus_hash)
-              |> push(10),
+              |> push(bytes.field_1_length_delimited),
           ),
           ite(
             length(app_hash) == 0,
@@ -194,7 +194,7 @@ pub fn hash(h: TmHeader) -> ByteArray {
               |> length()
               |> encode_varint()
               |> concat(app_hash)
-              |> push(10),
+              |> push(bytes.field_1_length_delimited),
           ),
           ite(
             length(last_results_hash) == 0,
@@ -203,7 +203,7 @@ pub fn hash(h: TmHeader) -> ByteArray {
               |> length()
               |> encode_varint()
               |> concat(last_results_hash)
-              |> push(10),
+              |> push(bytes.field_1_length_delimited),
           ),
           ite(
             length(evidence_hash) == 0,
@@ -212,7 +212,7 @@ pub fn hash(h: TmHeader) -> ByteArray {
               |> length()
               |> encode_varint()
               |> concat(evidence_hash)
-              |> push(10),
+              |> push(bytes.field_1_length_delimited),
           ),
           ite(
             length(proposer_address) == 0,
@@ -221,7 +221,7 @@ pub fn hash(h: TmHeader) -> ByteArray {
               |> length()
               |> encode_varint()
               |> concat(proposer_address)
-              |> push(10),
+              |> push(bytes.field_1_length_delimited),
           ),
         ],
       )

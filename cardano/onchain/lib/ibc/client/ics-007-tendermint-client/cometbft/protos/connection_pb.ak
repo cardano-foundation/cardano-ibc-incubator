@@ -36,7 +36,8 @@ pub fn marshal_for_connection_end(connection_end: ConnectionEnd) -> ByteArray {
   #[]
     |> concat(
         {
-          let (_, bz) = encode_bytearray(client_id, 10)
+          let (_, bz) =
+            encode_bytearray(client_id, bytes.field_1_length_delimited)
           bz
         },
       )
@@ -51,7 +52,7 @@ pub fn marshal_for_connection_end(connection_end: ConnectionEnd) -> ByteArray {
                   size
                     |> encode_length_varint()
                     |> concat(bz2)
-                    |> push(0x12),
+                    |> push(bytes.field_2_length_delimited),
                 )
           },
         ),
@@ -64,7 +65,7 @@ pub fn marshal_for_connection_end(connection_end: ConnectionEnd) -> ByteArray {
             #[],
             int_state
               |> encode_varint()
-              |> push(0x18),
+              |> push(bytes.field_3_varint),
           )
         },
       )
@@ -74,7 +75,7 @@ pub fn marshal_for_connection_end(connection_end: ConnectionEnd) -> ByteArray {
           size
             |> encode_length_varint()
             |> concat(bz)
-            |> push(0x22)
+            |> push(bytes.field_4_length_delimited)
         },
       )
     |> concat(
@@ -83,7 +84,7 @@ pub fn marshal_for_connection_end(connection_end: ConnectionEnd) -> ByteArray {
           #[],
           delay_period
             |> encode_varint()
-            |> push(0x28),
+            |> push(bytes.field_5_varint),
         ),
       )
 }
@@ -100,7 +101,9 @@ pub fn state_to_int32(state: State) -> Int32 {
 pub fn marshal_for_version(version: Version) -> (Int, ByteArray) {
   let Version { identifier, features } = version
   (0, #[])
-    |> size_and_concat(encode_bytearray(identifier, 10))
+    |> size_and_concat(
+        encode_bytearray(identifier, bytes.field_1_length_delimited),
+      )
     |> add_and_concat(
         list.reduce(
           features,
@@ -111,7 +114,7 @@ pub fn marshal_for_version(version: Version) -> (Int, ByteArray) {
               l
                 |> encode_length_varint()
                 |> concat(feature)
-                |> push(0x12)
+                |> push(bytes.field_2_length_delimited)
             (size + sov_length(l) + l + 1, concat(bz1, bz2))
           },
         ),
@@ -121,8 +124,12 @@ pub fn marshal_for_version(version: Version) -> (Int, ByteArray) {
 pub fn marshal_for_counterparty(counterparty: Counterparty) -> (Int, ByteArray) {
   let Counterparty { client_id, connection_id, prefix } = counterparty
   (0, #[])
-    |> size_and_concat(encode_bytearray(client_id, 10))
-    |> size_and_concat(encode_bytearray(connection_id, 0x12))
+    |> size_and_concat(
+        encode_bytearray(client_id, bytes.field_1_length_delimited),
+      )
+    |> size_and_concat(
+        encode_bytearray(connection_id, bytes.field_2_length_delimited),
+      )
     |> add_and_concat(
         {
           let (size, bz1) = marshal_for_merkle_prefix(prefix)
@@ -130,7 +137,7 @@ pub fn marshal_for_counterparty(counterparty: Counterparty) -> (Int, ByteArray) 
             size
               |> encode_length_varint()
               |> concat(bz1)
-              |> push(0x1a)
+              |> push(bytes.field_3_length_delimited)
           (sov_length(size) + size + 1, bz2)
         },
       )

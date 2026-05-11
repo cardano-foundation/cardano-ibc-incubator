@@ -6,6 +6,55 @@ use aiken/primitive/bytearray.{concat, from_int_little_endian, length, push}
 use ibc/utils/bits.{len64}
 use ibc/utils/int.{Int64, uint64}
 
+// Protobuf field keys: (field_number << 3) | wire_type.
+pub const field_1_varint = 0x8
+
+pub const field_1_fixed64 = 0x9
+
+pub const field_1_length_delimited = 0xa
+
+pub const field_2_varint = 0x10
+
+pub const field_2_fixed64 = 0x11
+
+pub const field_2_length_delimited = 0x12
+
+pub const field_3_varint = 0x18
+
+pub const field_3_fixed64 = 0x19
+
+pub const field_3_length_delimited = 0x1a
+
+pub const field_4_varint = 0x20
+
+pub const field_4_length_delimited = 0x22
+
+pub const field_5_varint = 0x28
+
+pub const field_5_length_delimited = 0x2a
+
+pub const field_6_varint = 0x30
+
+pub const field_6_length_delimited = 0x32
+
+pub const field_7_varint = 0x38
+
+pub const field_7_length_delimited = 0x3a
+
+pub const field_8_varint = 0x40
+
+pub const field_8_length_delimited = 0x42
+
+pub const field_9_length_delimited = 0x4a
+
+pub const field_10_length_delimited = 0x52
+
+pub const field_11_varint = 0x58
+
+pub const field_12_length_delimited = 0x62
+
+pub const field_13_length_delimited = 0x6a
+
 fn inner_read_uvarint(bz: ByteArray, index: Int) -> (Int, Int) {
   let cur_bz = builtin.index_bytearray(bz, index)
 

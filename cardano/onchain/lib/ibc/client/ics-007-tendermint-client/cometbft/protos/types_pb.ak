@@ -8,6 +8,6 @@ pub type Consensus {
 pub fn marshal_for_consensus(consensus: Consensus) -> (Int, ByteArray) {
   let Consensus { block, app } = consensus
   (0, #"")
-    |> add_and_concat(encode_int(block, 8))
-    |> add_and_concat(encode_int(app, 0x10))
+    |> add_and_concat(encode_int(block, bytes.field_1_varint))
+    |> add_and_concat(encode_int(app, bytes.field_2_varint))
 }
