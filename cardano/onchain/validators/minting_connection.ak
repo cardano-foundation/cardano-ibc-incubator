@@ -55,8 +55,7 @@ validator mint_connection(
     } = transaction
 
     expect [connection_output] =
-      outputs
-        |> transaction.find_script_outputs(spend_connection_script_hash)
+      transaction.find_script_outputs(outputs, spend_connection_script_hash)
     expect connection_output_datum: ConnectionDatum =
       validator_utils.get_inline_datum(connection_output)
     trace @"mint_connection: found connection output"

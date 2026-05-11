@@ -64,8 +64,7 @@ validator mint_connection_stt(
     let connection_id_sequence = host_state_datum.state.next_connection_sequence
 
     expect [connection_output] =
-      outputs
-        |> transaction.find_script_outputs(spend_connection_script_hash)
+      transaction.find_script_outputs(outputs, spend_connection_script_hash)
     expect connection_output_datum: ConnectionDatum =
       validator_utils.get_inline_datum(connection_output)
 
@@ -105,8 +104,8 @@ validator mint_connection_stt(
 
     and {
       client_state_active?,
-      (mint |> auth.mint_auth_token(connection_token))?,
-      (connection_output |> auth.contains_only_auth_tokens([connection_token]))?,
+      auth.mint_auth_token(mint, connection_token)?,
+      auth.contains_only_auth_tokens(connection_output, [connection_token])?,
       is_conn_open_init_valid(connection_output_datum, connection_token)?,
     }
   }

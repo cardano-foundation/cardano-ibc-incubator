@@ -32,12 +32,10 @@ validator mint_client(spend_client_script_hash: Hash<Blake2b_224, Script>) {
     //========================valid input=======================
     // input contains handler auth token
     expect Some(handler_input) =
-      inputs
-        |> list.find(
-            fn(input) {
-              input.output |> auth.contain_auth_token(handler_auth_token)
-            },
-          )
+      list.find(
+        inputs,
+        fn(input) { auth.contain_auth_token(input.output, handler_auth_token) },
+      )
 
     // spent handler redeemer is CreateClient operator
     expect Some(spent_handler_redeemer) =
@@ -60,8 +58,7 @@ validator mint_client(spend_client_script_hash: Hash<Blake2b_224, Script>) {
 
     //========================valid output========================
     expect [client_output] =
-      outputs
-        |> transaction.find_script_outputs(spend_client_script_hash)
+      transaction.find_script_outputs(outputs, spend_client_script_hash)
 
     // client utxo datum created valid
     expect client_output_datum: ClientDatum =
@@ -81,8 +78,8 @@ validator mint_client(spend_client_script_hash: Hash<Blake2b_224, Script>) {
       ) == Active
 
     and {
-      (mint |> auth.mint_auth_token(client_token))?,
-      (client_output |> auth.contains_only_auth_tokens([client_token]))?,
+      auth.mint_auth_token(mint, client_token)?,
+      auth.contains_only_auth_tokens(client_output, [client_token])?,
       valid_output_datum?,
       is_state_active?,
     }

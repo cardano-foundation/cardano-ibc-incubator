@@ -62,8 +62,7 @@ validator mint_channel_stt(
     let channel_id_sequence = host_state_datum.state.next_channel_sequence
 
     expect [channel_output] =
-      outputs
-        |> transaction.find_script_outputs(spend_channel_script_hash)
+      transaction.find_script_outputs(outputs, spend_channel_script_hash)
     expect channel_output_datum: ChannelDatum =
       validator_utils.get_inline_datum(channel_output)
 
@@ -113,8 +112,8 @@ validator mint_channel_stt(
 
     and {
       client_state_active?,
-      (mint |> auth.mint_auth_token(channel_token))?,
-      (channel_output |> auth.contains_only_auth_tokens([channel_token]))?,
+      auth.mint_auth_token(mint, channel_token)?,
+      auth.contains_only_auth_tokens(channel_output, [channel_token])?,
       validate_chan_open_init(channel_output_datum, channel_token)?,
     }
   }

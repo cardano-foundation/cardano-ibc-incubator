@@ -61,8 +61,7 @@ validator mint_client_stt(
       AuthToken { policy_id: client_mint_policy_id, name: client_token_name }
 
     expect [client_output] =
-      outputs
-        |> transaction.find_script_outputs(spend_client_script_hash)
+      transaction.find_script_outputs(outputs, spend_client_script_hash)
 
     expect client_output_datum: ClientDatum =
       validator_utils.get_inline_datum(client_output)
@@ -79,8 +78,8 @@ validator mint_client_stt(
       ) == Active
 
     and {
-      (mint |> auth.mint_auth_token(client_token))?,
-      (client_output |> auth.contains_only_auth_tokens([client_token]))?,
+      auth.mint_auth_token(mint, client_token)?,
+      auth.contains_only_auth_tokens(client_output, [client_token])?,
       valid_output_datum?,
       is_state_active?,
     }

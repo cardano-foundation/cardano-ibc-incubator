@@ -43,7 +43,7 @@ validator mint_port(host_state_nft_policy_id: PolicyId) {
     expect Some(handler_input) =
       list.find(
         inputs,
-        fn(input) { input.output |> auth.contain_auth_token(handler_token) },
+        fn(input) { auth.contain_auth_token(input.output, handler_token) },
       )
     // spent handler redeemer is HandlerBindPort operator
     expect Some(spent_handler_redeemer) =
@@ -67,15 +67,14 @@ validator mint_port(host_state_nft_policy_id: PolicyId) {
     let port_token =
       AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
     expect [module_output] =
-      outputs
-        |> transaction.find_script_outputs(spend_module_script_hash)
+      transaction.find_script_outputs(outputs, spend_module_script_hash)
 
     trace @"mint_port: transfer module output datum": module_output.datum
     expect NoDatum = module_output.datum
     and {
       valid_handler_operator?,
       auth.mint_auth_token(mint, port_token)?,
-      (module_output |> auth.contain_auth_token(port_token))?,
+      auth.contain_auth_token(module_output, port_token)?,
       valid_number_of_ports(module_output, port_minting_policy_id)?,
     }
   }

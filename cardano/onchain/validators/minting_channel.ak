@@ -63,8 +63,7 @@ validator mint_channel(
     } = transaction
 
     expect [channel_output] =
-      outputs
-        |> transaction.find_script_outputs(spend_channel_script_hash)
+      transaction.find_script_outputs(outputs, spend_channel_script_hash)
     expect channel_output_datum: ChannelDatum =
       validator_utils.get_inline_datum(channel_output)
     trace @"mint_channel: found channel output"

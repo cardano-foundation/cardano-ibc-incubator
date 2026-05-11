@@ -40,12 +40,14 @@ validator spend_handler(
     //========================valid input=======================
     // input contains handler token
     expect Some(datum) = datum
-    expect spent_output |> auth.contain_auth_token(datum.token)
+    expect auth.contain_auth_token(spent_output, datum.token)
 
     //========================valid output=======================
     expect [updated_output] =
-      outputs
-        |> list.filter(fn(output) { output.address == spent_output.address })
+      list.filter(
+        outputs,
+        fn(output) { output.address == spent_output.address },
+      )
 
     // output contains handler token
     // output datum is updated correctly
@@ -103,7 +105,7 @@ validator spend_handler(
       }
     and {
       valid_redeemer,
-      updated_output |> auth.contains_only_auth_tokens([datum.token]),
+      auth.contains_only_auth_tokens(updated_output, [datum.token]),
     }
   }
 

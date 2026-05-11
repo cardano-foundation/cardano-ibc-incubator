@@ -193,5 +193,5 @@ fn extract_output_datum(output: Output) -> ChannelDatum {
 }
 
 fn validate_output_datum(address: Address, outputs: List<Output>) {
-  find_updated_output(address, outputs) |> extract_output_datum()
+  extract_output_datum(find_updated_output(address, outputs))
 }
