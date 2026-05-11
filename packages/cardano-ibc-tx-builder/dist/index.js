@@ -30,6 +30,13 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
         timeout_height: sendPacketOperator.timeoutHeight,
         timeout_timestamp: sendPacketOperator.timeoutTimestamp,
     };
+    const fungibleTokenPacketData = {
+        denom: convertStringToHex(packetDenom),
+        amount: convertStringToHex(sendPacketOperator.token.amount.toString()),
+        sender: convertStringToHex(sendPacketOperator.sender),
+        receiver: convertStringToHex(sendPacketOperator.receiver),
+        memo: convertStringToHex(sendPacketOperator.memo),
+    };
     const encodedSpendChannelRedeemer = await deps.encode({
         SendPacket: {
             packet,
@@ -42,13 +49,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
                     {
                         Transfer: {
                             channel_id: convertStringToHex(sendPacketOperator.sourceChannel),
-                            data: {
-                                denom: convertStringToHex(packetDenom),
-                                amount: convertStringToHex(sendPacketOperator.token.amount.toString()),
-                                sender: convertStringToHex(sendPacketOperator.sender),
-                                receiver: convertStringToHex(sendPacketOperator.receiver),
-                                memo: convertStringToHex(sendPacketOperator.memo),
-                            },
+                            data: fungibleTokenPacketData,
                         },
                     },
                 ],
@@ -69,6 +70,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
             BurnVoucher: {
                 packet_source_port: packet.source_port,
                 packet_source_channel: packet.source_channel,
+                data: fungibleTokenPacketData,
             },
         }, 'mintVoucherRedeemer');
         const voucherTokenUnit = context.deployment.mintVoucherScriptHash +
@@ -85,14 +87,12 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
             channelUTxO: context.channelUtxo,
             connectionUTxO: context.connectionUtxo,
             clientUTxO: context.clientUtxo,
-            transferModuleUTxO: context.transferModuleUtxo,
             senderVoucherTokenUtxo,
             walletUtxos,
             encodedHostStateRedeemer,
             encodedUpdatedHostStateDatum,
             encodedMintVoucherRedeemer,
             encodedSpendChannelRedeemer,
-            encodedSpendTransferModuleRedeemer,
             encodedUpdatedChannelDatum: await deps.encode(updatedChannelDatum, 'channel'),
             transferAmount: sendPacketOperator.token.amount,
             senderAddress,
@@ -129,11 +129,22 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
         channelUTxO: context.channelUtxo,
         connectionUTxO: context.connectionUtxo,
         clientUTxO: context.clientUtxo,
-        transferModuleUTxO: context.transferModuleUtxo,
+        transferModuleReferenceUtxo: transferEscrowShard.utxo
+            ? undefined
+            : context.transferModuleReferenceUtxo,
         encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum,
         encodedSpendChannelRedeemer,
         encodedSpendTransferModuleRedeemer,
+        encodedMintTransferEscrowShardRedeemer: transferEscrowShard.utxo
+            ? undefined
+            : await deps.encode({
+                CreateEscrowShard: {
+                    channel_id: convertStringToHex(sendPacketOperator.sourceChannel),
+                    denom: convertStringToHex(packetDenom),
+                    data: fungibleTokenPacketData,
+                },
+            }, 'transferEscrowShardRedeemer'),
         encodedUpdatedChannelDatum: await deps.encode(updatedChannelDatum, 'channel'),
         transferAmount: sendPacketOperator.token.amount,
         senderAddress,
@@ -146,6 +157,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
         denomToken,
         transferEscrowUtxo: transferEscrowShard.utxo,
         encodedTransferEscrowDatum: transferEscrowShard.encodedDatum,
+        transferEscrowShardTokenUnit: transferEscrowShard.shardTokenUnit,
         sendPacketPolicyId: context.deployment.sendPacketPolicyId,
         channelToken: context.channelToken,
     });

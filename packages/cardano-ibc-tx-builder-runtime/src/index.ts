@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import type { LucidEvolution, Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import { buildUnsignedSendPacketTx, type SendPacketOperator } from '@cardano-ibc/tx-builder';
 import { createTraceRegistryClient } from '@cardano-ibc/trace-registry';
+import { blake2b } from '@noble/hashes/blake2b';
 import WebSocket from 'ws';
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, initTreeServices, isTreeAligned, rebuildTreeFromChain } from './ibcStateRoot';
 import { LucidIbcAdapter } from './lucidIbcAdapter';
@@ -97,6 +98,8 @@ type DeploymentConfig = {
     mintConnectionStt: DeploymentValidator;
     mintChannelStt: DeploymentValidator;
     mintVoucher: DeploymentValidator;
+    mintTransferEscrowShard: DeploymentValidator;
+    mintPort: DeploymentValidator;
   };
   modules: {
     transfer: DeploymentModule;
@@ -205,6 +208,16 @@ type BridgeManifest = {
       ref_utxo: { tx_hash: string; output_index: number };
     };
     mint_voucher: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
+    mint_transfer_escrow_shard: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
+    mint_port: {
       script_hash: string;
       address: string;
       ref_utxo: { tx_hash: string; output_index: number };
@@ -467,6 +480,8 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
         mintConnectionStt: mapValidator(manifest.validators.mint_connection_stt),
         mintChannelStt: mapValidator(manifest.validators.mint_channel_stt),
         mintVoucher: mapValidator(manifest.validators.mint_voucher),
+        mintTransferEscrowShard: mapValidator(manifest.validators.mint_transfer_escrow_shard),
+        mintPort: mapValidator(manifest.validators.mint_port),
       },
       modules: {
         transfer: manifest.modules.transfer,
@@ -1027,8 +1042,51 @@ function utxoRef(utxo: Pick<UTxO, 'txHash' | 'outputIndex'>): string {
   return `${utxo.txHash}#${utxo.outputIndex}`;
 }
 
-function escrowShardHasOnlyDenom(utxo: UTxO, denomToken: string): boolean {
-  return Object.keys(utxo.assets ?? {}).every((unit) => unit === 'lovelace' || unit === denomToken);
+function transferEscrowShardTokenName(channelId: string, packetDenom: string): string {
+  return Buffer.from(
+    blake2b(
+      Buffer.concat([
+        Buffer.from('transfer-escrow', 'utf8'),
+        Buffer.from(channelId, 'hex'),
+        Buffer.from(packetDenom, 'hex'),
+      ]),
+      { dkLen: 28 },
+    ),
+  ).toString('hex');
+}
+
+async function findTransferEscrowShard(
+  context: BuilderContext,
+  channelId: string,
+  packetDenom: string,
+  denomToken: string,
+  requiredAmount?: bigint,
+): Promise<{ utxo?: UTxO; encodedDatum: string; shardTokenUnit: string }> {
+  const encodedDatum = await context.lucidService.encode(
+    { channel_id: channelId, denom: packetDenom },
+    'transferEscrow',
+  );
+  const shardTokenUnit =
+    context.deployment.validators.mintTransferEscrowShard.scriptHash +
+    transferEscrowShardTokenName(channelId, packetDenom);
+  let utxo: UTxO | undefined;
+  try {
+    utxo = await context.lucidService.findUtxoByUnit(shardTokenUnit);
+  } catch {
+    utxo = undefined;
+  }
+
+  const canonicalUtxo =
+    utxo?.datum === encodedDatum &&
+    (utxo.assets[shardTokenUnit] ?? 0n) === 1n &&
+    Object.keys(utxo.assets ?? {}).every((unit) =>
+      unit === 'lovelace' || unit === denomToken || unit === shardTokenUnit
+    ) &&
+    (requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
+      ? utxo
+      : undefined;
+
+  return { utxo: canonicalUtxo, encodedDatum, shardTokenUnit };
 }
 
 async function ensureTreeAlignedForRoot(context: BuilderContext, onChainRoot: string): Promise<void> {
@@ -1255,40 +1313,6 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
       }
       return context.lucidService.findUtxoAtWithUnit(address, unit);
     };
-    const findTransferEscrowShard = async (
-      channelId: string,
-      packetDenom: string,
-      denomToken: string,
-      requiredAmount?: bigint,
-    ) => {
-      const encodedDatum = await context.lucidService.encode({ channel_id: channelId, denom: packetDenom }, 'transferEscrow');
-      let utxos: UTxO[] = [];
-      try {
-        utxos = await context.lucidService.findUtxoAt(context.deployment.modules.transfer.address);
-      } catch {
-        utxos = [];
-      }
-
-      const candidates = utxos
-        .filter((utxo) => utxo.datum === encodedDatum)
-        .filter((utxo) => escrowShardHasOnlyDenom(utxo, denomToken))
-        .filter((utxo) => requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
-        .sort((a, b) => {
-          const aAmount = a.assets[denomToken] ?? 0n;
-          const bAmount = b.assets[denomToken] ?? 0n;
-          if (aAmount === bAmount) {
-            const txHashCompare = a.txHash.localeCompare(b.txHash);
-            return txHashCompare !== 0 ? txHashCompare : a.outputIndex - b.outputIndex;
-          }
-          return aAmount > bAmount ? -1 : 1;
-        });
-
-      return {
-        utxo: candidates[0],
-        encodedDatum,
-      };
-    };
-
     const initialWalletUtxos = await timed(logger, scope, 'load initial wallet UTxOs', () => getWalletUtxos(sendPacketOperator.signer, LOOKUP_RETRY_OPTIONS));
     if (initialWalletUtxos.length === 0) {
       throw new Error(`sendPacketBuilder failed: no spendable UTxOs found for ${sendPacketOperator.signer}`);
@@ -1317,7 +1341,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
             const clientTokenUnit = context.lucidService.getClientTokenUnit(parseClientSequence(convertHex2String(connectionDatum.state.client_id)).toString());
             const clientUtxo = await timed(logger, scope, 'load client UTxO', () => context.lucidService.findUtxoByUnit(clientTokenUnit));
             const transferModuleIdentifier = context.deployment.modules.transfer.identifier;
-            const transferModuleUtxo = await timed(logger, scope, 'load transfer module UTxO', () => context.lucidService.findUtxoByUnit(transferModuleIdentifier));
+            const transferModuleReferenceUtxo = await timed(logger, scope, 'load transfer module reference UTxO', () => context.lucidService.findUtxoByUnit(transferModuleIdentifier));
             const deployment = context.deployment;
             const spendChannelAddress = deployment.validators.spendChannel.address;
             if (!spendChannelAddress) {
@@ -1330,7 +1354,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
               connectionUtxo,
               connectionDatum,
               clientUtxo,
-              transferModuleUtxo,
+              transferModuleReferenceUtxo,
               channelTokenUnit,
               channelToken: {
                 policyId: mintChannelPolicyId,
@@ -1339,6 +1363,8 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
               deployment: {
                 sendPacketPolicyId: deployment.validators.spendChannel.refValidator.send_packet.scriptHash,
                 mintVoucherScriptHash: deployment.validators.mintVoucher.scriptHash,
+                transferEscrowShardPolicyId:
+                  deployment.validators.mintTransferEscrowShard.scriptHash,
                 spendChannelAddress,
                 transferModuleAddress: deployment.modules.transfer.address,
               },
@@ -1364,7 +1390,10 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
         encode: (value, kind) => context.lucidService.encode(value, kind as never),
         findUtxoAtWithUnit: findWalletUtxoAtWithUnit,
         tryFindUtxosAt: getWalletUtxos,
-        findTransferEscrowShard,
+        findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) =>
+          timed(logger, scope, 'find transfer escrow shard', () =>
+            findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount),
+          ),
         createUnsignedSendPacketBurnTx: (dto) => context.lucidService.createUnsignedSendPacketBurnTx(dto as never),
         createUnsignedSendPacketEscrowTx: (dto) => context.lucidService.createUnsignedSendPacketEscrowTx(dto as never),
         invalidArgument: (message) => new Error(message),

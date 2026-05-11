@@ -51,11 +51,13 @@ const deploymentConfig = {
     mintClientStt: buildValidator('mint-client', 16),
     mintConnectionStt: buildValidator('mint-connection', 17),
     mintVoucher: buildValidator('mint-voucher', 18),
+    mintTransferEscrowShard: buildValidator('mint-transfer-escrow-shard', 19),
+    mintPort: buildValidator('mint-port', 20),
     verifyProof: {
-      ...buildValidator('verify-proof', 19),
+      ...buildValidator('verify-proof', 21),
       scriptHash: 'verify-proof-policy-id',
     },
-    hostStateStt: buildValidator('host-state', 20),
+    hostStateStt: buildValidator('host-state', 22),
   },
   modules: {
     mock: {

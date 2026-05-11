@@ -17,13 +17,12 @@ use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/keys as chan_keys_mod
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_004/types/state as chan_state_mod
-use ibc/core/ics_005/types/ibc_module_redeemer.{Operator}
 use ibc/utils/validator_utils
 
 validator send_packet(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
-  port_minting_policy_id: PolicyId,
+  _port_minting_policy_id: PolicyId,
 ) {
   spend(
     _datum: Option<Data>,
@@ -43,6 +42,7 @@ validator send_packet(
     let (datum, channel_redeemer, spent_output) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)
 
+    // Channel state is checked here; transfer asset effects are separate app witnesses.
     let updated_output =
       validator_utils.find_unique_continuation_output(
         spent_output,
@@ -126,16 +126,6 @@ validator send_packet(
 
     trace @"send_packet: channel_datum is updated valid"
 
-    let ibc_module_redeemer =
-      validator_utils.extract_module_redeemer(
-        inputs,
-        redeemers,
-        datum.token.name,
-        port_minting_policy_id,
-        datum.port_id,
-      )
-    expect Operator(_) = ibc_module_redeemer
-    trace @"send_packet: tx spends module utxo"
     and {
       (channel_token == datum.token)?,
       auth.contain_auth_token(updated_output, datum.token)?,
@@ -166,6 +156,7 @@ validator send_packet(
     let (datum, channel_redeemer, spent_output) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)
 
+    // Packet commitment minting keeps channel and transfer asset checks separate.
     let updated_output =
       validator_utils.find_unique_continuation_output(
         spent_output,
@@ -248,17 +239,6 @@ validator send_packet(
     let commitment = packet_mod.commit_packet(packet)
 
     trace @"send_packet: channel_datum is updated valid"
-
-    let ibc_module_redeemer =
-      validator_utils.extract_module_redeemer(
-        inputs,
-        redeemers,
-        datum.token.name,
-        port_minting_policy_id,
-        datum.port_id,
-      )
-    expect Operator(_) = ibc_module_redeemer
-    trace @"send_packet: tx spends module utxo"
 
     and {
       (channel_token == datum.token)?,

@@ -56,12 +56,13 @@ export type LoadedSendPacketContext = {
     connectionUtxo: UTxO;
     connectionDatum: ConnectionDatumLike;
     clientUtxo: UTxO;
-    transferModuleUtxo: UTxO;
+    transferModuleReferenceUtxo: UTxO;
     channelTokenUnit: string;
     channelToken: AuthToken;
     deployment: {
         sendPacketPolicyId: string;
         mintVoucherScriptHash: string;
+        transferEscrowShardPolicyId: string;
         spendChannelAddress: string;
         transferModuleAddress: string;
     };
@@ -96,11 +97,9 @@ export type UnsignedSendPacketBurnTxInput = {
     channelUTxO: UTxO;
     connectionUTxO: UTxO;
     clientUTxO: UTxO;
-    transferModuleUTxO: UTxO;
     encodedSpendChannelRedeemer: string;
     encodedUpdatedChannelDatum: string;
     channelTokenUnit: string;
-    encodedSpendTransferModuleRedeemer: string;
     encodedMintVoucherRedeemer: string;
     transferAmount: bigint;
     constructedAddress: string;
@@ -120,11 +119,12 @@ export type UnsignedSendPacketEscrowTxInput = {
     channelUTxO: UTxO;
     connectionUTxO: UTxO;
     clientUTxO: UTxO;
-    transferModuleUTxO: UTxO;
+    transferModuleReferenceUtxo?: UTxO;
     encodedSpendChannelRedeemer: string;
     encodedUpdatedChannelDatum: string;
     channelTokenUnit: string;
     encodedSpendTransferModuleRedeemer: string;
+    encodedMintTransferEscrowShardRedeemer?: string;
     transferAmount: bigint;
     constructedAddress: string;
     sendPacketPolicyId: string;
@@ -137,6 +137,7 @@ export type UnsignedSendPacketEscrowTxInput = {
     denomToken: string;
     transferEscrowUtxo?: UTxO;
     encodedTransferEscrowDatum?: string;
+    transferEscrowShardTokenUnit?: string;
 };
 export type SendPacketBuildDependencies = {
     loadContext: (sendPacketOperator: SendPacketOperator) => Promise<LoadedSendPacketContext>;
@@ -152,6 +153,7 @@ export type SendPacketBuildDependencies = {
     findTransferEscrowShard: (channelId: string, packetDenom: string, denomToken: string, requiredAmount?: bigint) => Promise<{
         utxo?: UTxO;
         encodedDatum: string;
+        shardTokenUnit: string;
     }>;
     createUnsignedSendPacketBurnTx: (dto: UnsignedSendPacketBurnTxInput) => TxBuilder;
     createUnsignedSendPacketEscrowTx: (dto: UnsignedSendPacketEscrowTxInput) => TxBuilder;

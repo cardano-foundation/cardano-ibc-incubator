@@ -37,7 +37,7 @@ import { RpcException } from '@nestjs/microservices';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
 import { TransferEscrowDatum } from '@shared/types/apps/transfer/transfer-escrow-datum';
 import { mapLovelaceDenom, normalizeDenomTokenTransfer, sumLovelaceFromUtxos } from './helper/helper';
-import { convertHex2String, convertString2Hex, hashSHA256 } from '../shared/helpers/hex';
+import { convertHex2String, convertString2Hex, hashBlake2b224, hashSHA256 } from '../shared/helpers/hex';
 import { MintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
 import { commitPacket } from '../shared/helpers/commitment';
 import { ClientDatum } from '@shared/types/client-datum';
@@ -1374,9 +1374,6 @@ export class PacketService {
         `PacketReceivedException: Packet with sequence ${recvPacketOperator.packetSequence} has recieved`,
       );
     }
-    const transferModuleIdentifier = this.getTransferModuleIdentifier();
-    // Get mock module utxo
-    const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
     // channel id
     const channelId = convertString2Hex(recvPacketOperator.channelId);
     // Init packet
@@ -1653,13 +1650,24 @@ export class PacketService {
                 `Insufficient escrowed amount for ${denomToken}: have ${escrowedAmount}, need ${transferAmount}`,
               );
             }
+            const emptiesEscrowShard = escrowedAmount === transferAmount;
+            const encodedMintTransferEscrowShardRedeemer = emptiesEscrowShard
+              ? await this.lucidService.encode(
+                  {
+                    BurnEscrowShard: {
+                      channel_id: channelId,
+                      denom: convertString2Hex(unescrowDenom),
+                    },
+                  },
+                  'transferEscrowShardRedeemer',
+                )
+              : undefined;
 
             const unsignedRecvPacketUnescrowParams: UnsignedRecvPacketUnescrowDto = {
               hostStateUtxo,
               channelUtxo,
               connectionUtxo,
               clientUtxo,
-              transferModuleUtxo,
               transferEscrowUtxo: transferEscrowShard.utxo,
 
               encodedHostStateRedeemer,
@@ -1667,6 +1675,8 @@ export class PacketService {
               encodedSpendChannelRedeemer,
               encodedSpendTransferModuleRedeemer,
               encodedTransferEscrowDatum: transferEscrowShard.encodedDatum,
+              transferEscrowShardTokenUnit: transferEscrowShard.shardTokenUnit,
+              encodedMintTransferEscrowShardRedeemer,
               channelTokenUnit,
               encodedUpdatedChannelDatum,
               transferAmount,
@@ -1684,14 +1694,12 @@ export class PacketService {
               spendInputs: [
                 { label: 'host_state', utxo: hostStateUtxo },
                 { label: 'channel', utxo: channelUtxo },
-                { label: 'transfer_module', utxo: transferModuleUtxo },
                 ...(transferEscrowShard.utxo
                   ? [{ label: 'transfer_escrow', utxo: transferEscrowShard.utxo }]
                   : []),
               ],
               channelOutputAddress: deploymentConfig.validators.spendChannel.address,
               hostStateOutputAddress: deploymentConfig.validators.hostStateStt.address,
-              transferModuleInputAddress: transferModuleUtxo.address,
               transferModuleOutputAddress: deploymentConfig.modules.transfer.address,
               updatedChannelDatumHex: encodedUpdatedChannelDatum,
               recvPacketPolicyId,
@@ -1717,6 +1725,7 @@ export class PacketService {
                 packet_source_channel: packet.source_channel,
                 packet_dest_port: packet.destination_port,
                 packet_dest_channel: packet.destination_channel,
+                data: fTokenPacketData,
               },
             };
             const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
@@ -1764,12 +1773,10 @@ export class PacketService {
               channelUtxo,
               connectionUtxo,
               clientUtxo,
-              transferModuleUtxo,
 
               encodedHostStateRedeemer,
               encodedUpdatedHostStateDatum,
               encodedSpendChannelRedeemer,
-              encodedSpendTransferModuleRedeemer,
               encodedMintVoucherRedeemer,
               encodedUpdatedChannelDatum,
 
@@ -1806,12 +1813,9 @@ export class PacketService {
                     ...this.getTraceRegistrySpendInputs(initialUpdate),
                     { label: 'host_state', utxo: hostStateUtxo },
                     { label: 'channel', utxo: channelUtxo },
-                    { label: 'transfer_module', utxo: transferModuleUtxo },
                   ],
                   channelOutputAddress: deploymentConfig.validators.spendChannel.address,
                   hostStateOutputAddress: deploymentConfig.validators.hostStateStt.address,
-                  transferModuleInputAddress: transferModuleUtxo.address,
-                  transferModuleOutputAddress: deploymentConfig.modules.transfer.address,
                   updatedChannelDatumHex: encodedUpdatedChannelDatum,
                   recvPacketPolicyId,
                   verifyProofPolicyId,
@@ -1834,12 +1838,9 @@ export class PacketService {
                 ...this.getTraceRegistrySpendInputs(traceRegistryUpdate),
                 { label: 'host_state', utxo: hostStateUtxo },
                 { label: 'channel', utxo: channelUtxo },
-                { label: 'transfer_module', utxo: transferModuleUtxo },
               ],
               channelOutputAddress: deploymentConfig.validators.spendChannel.address,
               hostStateOutputAddress: deploymentConfig.validators.hostStateStt.address,
-              transferModuleInputAddress: transferModuleUtxo.address,
-              transferModuleOutputAddress: deploymentConfig.modules.transfer.address,
               updatedChannelDatumHex: encodedUpdatedChannelDatum,
               recvPacketPolicyId,
               verifyProofPolicyId,
@@ -1987,7 +1988,8 @@ export class PacketService {
       },
     };
 
-    const { transferModuleUtxo, transferModuleAddress, spendChannelAddress } = await this.getTransferModuleDetails();
+    const transferModuleAddress = this.getTransferModuleAddress();
+    const spendChannelAddress = this.getSpendChannelAddress();
     const transferAmount = BigInt(timeoutPacketOperator.fungibleTokenPacketData.amount);
     const senderPublicKeyHash = timeoutPacketOperator.fungibleTokenPacketData.sender;
     const denom = mapLovelaceDenom(timeoutPacketOperator.fungibleTokenPacketData.denom, 'packet_to_asset');
@@ -2101,11 +2103,22 @@ export class PacketService {
           `Insufficient escrowed amount for ${denomToken}: have ${escrowedAmount}, need ${transferAmount}`,
         );
       }
+      const emptiesEscrowShard = escrowedAmount === transferAmount;
+      const encodedMintTransferEscrowShardRedeemer = emptiesEscrowShard
+        ? await this.lucidService.encode(
+            {
+              BurnEscrowShard: {
+                channel_id: packet.source_channel,
+                denom: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.denom),
+              },
+            },
+            'transferEscrowShardRedeemer',
+          )
+        : undefined;
 
       const unsignedSendPacketParams: UnsignedTimeoutPacketUnescrowDto = {
         hostStateUtxo: hostStateUtxo,
         channelUtxo: channelUtxo,
-        transferModuleUtxo: transferModuleUtxo,
         transferEscrowUtxo: transferEscrowShard.utxo,
         connectionUtxo: connectionUtxo,
         clientUtxo: clientUtxo,
@@ -2115,6 +2128,8 @@ export class PacketService {
         encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
         encodedSpendTransferModuleRedeemer: encodedSpendTransferModuleRedeemer,
         encodedTransferEscrowDatum: transferEscrowShard.encodedDatum,
+        transferEscrowShardTokenUnit: transferEscrowShard.shardTokenUnit,
+        encodedMintTransferEscrowShardRedeemer,
         encodedUpdatedChannelDatum: encodedUpdatedChannelDatum,
 
         transferAmount: transferAmount,
@@ -2140,6 +2155,14 @@ export class PacketService {
       RefundVoucher: {
         packet_source_port: packet.source_port,
         packet_source_channel: packet.source_channel,
+        data: {
+          denom: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.denom),
+          amount: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.amount.toString()),
+          sender: convertString2Hex(senderPublicKeyHash),
+          receiver: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.receiver),
+          memo: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.memo),
+        },
+        acknowledgement: null,
       },
     };
     const fullDenomPath = denom;
@@ -2154,14 +2177,12 @@ export class PacketService {
     ): UnsignedTimeoutPacketMintDto => ({
       hostStateUtxo: hostStateUtxo,
       channelUtxo: channelUtxo,
-      transferModuleUtxo: transferModuleUtxo,
       connectionUtxo: connectionUtxo,
       clientUtxo: clientUtxo,
 
       encodedHostStateRedeemer: encodedHostStateRedeemer,
       encodedUpdatedHostStateDatum: encodedUpdatedHostStateDatum,
       encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
-      encodedSpendTransferModuleRedeemer: encodedSpendTransferModuleRedeemer,
       encodedMintVoucherRedeemer: encodedMintVoucherRedeemer,
       encodedUpdatedChannelDatum: encodedUpdatedChannelDatum,
 
@@ -2170,7 +2191,6 @@ export class PacketService {
 
       spendChannelAddress: spendChannelAddress,
       channelTokenUnit: channelTokenUnit,
-      transferModuleAddress: transferModuleAddress,
       voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
       voucherReferenceTokenUnit: voucherMintDetails.voucherReferenceTokenUnit,
       voucherMetadataAddress: voucherMintDetails.voucherMetadataAddress,
@@ -2252,7 +2272,7 @@ export class PacketService {
             clientTokenUnit,
           );
           const transferModuleIdentifier = this.getTransferModuleIdentifier();
-          const transferModuleUtxo = await this.lucidService.findUtxoByUnit(
+          const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(
             transferModuleIdentifier,
           );
           const deploymentConfig = this.configService.get('deployment');
@@ -2263,7 +2283,7 @@ export class PacketService {
             connectionUtxo,
             connectionDatum,
             clientUtxo,
-            transferModuleUtxo,
+            transferModuleReferenceUtxo,
             channelTokenUnit,
             channelToken: {
               policyId: mintChannelPolicyId,
@@ -2275,6 +2295,8 @@ export class PacketService {
                   .send_packet.scriptHash,
               mintVoucherScriptHash:
                 deploymentConfig.validators.mintVoucher.scriptHash,
+              transferEscrowShardPolicyId:
+                deploymentConfig.validators.mintTransferEscrowShard.scriptHash,
               spendChannelAddress:
                 deploymentConfig.validators.spendChannel.address,
               transferModuleAddress:
@@ -2672,8 +2694,6 @@ export class PacketService {
       };
     }
 
-    const transferModuleIdentifier = this.getTransferModuleIdentifier();
-    const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
     const fungibleTokenPacketData: FungibleTokenPacketDatum = JSON.parse(
       convertHex2String(ackPacketOperator.packetData),
     );
@@ -2687,14 +2707,6 @@ export class PacketService {
     const acknowledgementResult = this.extractAcknowledgementResult(acknowledgementResponse);
     if (acknowledgementResult) {
       // build update channel datum
-      const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
-        createTransferModuleRedeemer(channelId, fTokenPacketData, {
-          AcknowledgementResult: {
-            result: convertString2Hex(acknowledgementResult),
-          },
-        }),
-        'iBCModuleRedeemer',
-      );
       const updatedChannelDatum: ChannelDatum = {
         ...channelDatum,
         state: {
@@ -2713,11 +2725,9 @@ export class PacketService {
         channelUtxo,
         connectionUtxo,
         clientUtxo,
-        transferModuleUtxo,
         encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum,
         encodedSpendChannelRedeemer,
-        encodedSpendTransferModuleRedeemer,
         channelTokenUnit,
         encodedUpdatedChannelDatum,
         constructedAddress,
@@ -2784,6 +2794,18 @@ export class PacketService {
           `Insufficient escrowed amount for ${denomToken}: have ${escrowedAmount}, need ${transferAmount}`,
         );
       }
+      const emptiesEscrowShard = escrowedAmount === transferAmount;
+      const encodedMintTransferEscrowShardRedeemer = emptiesEscrowShard
+        ? await this.lucidService.encode(
+            {
+              BurnEscrowShard: {
+                channel_id: channelId,
+                denom: fTokenPacketData.denom,
+              },
+            },
+            'transferEscrowShardRedeemer',
+          )
+        : undefined;
       // build update channel datum
       const updatedChannelDatum: ChannelDatum = {
         ...channelDatum,
@@ -2803,7 +2825,6 @@ export class PacketService {
         channelUtxo,
         connectionUtxo,
         clientUtxo,
-        transferModuleUtxo,
         transferEscrowUtxo: transferEscrowShard.utxo,
 
         encodedHostStateRedeemer,
@@ -2811,6 +2832,8 @@ export class PacketService {
         encodedSpendChannelRedeemer,
         encodedSpendTransferModuleRedeemer,
         encodedTransferEscrowDatum: transferEscrowShard.encodedDatum,
+        transferEscrowShardTokenUnit: transferEscrowShard.shardTokenUnit,
+        encodedMintTransferEscrowShardRedeemer,
         channelTokenUnit,
         encodedUpdatedChannelDatum,
         transferAmount,
@@ -2841,6 +2864,14 @@ export class PacketService {
       RefundVoucher: {
         packet_source_port: packet.source_port,
         packet_source_channel: packet.source_channel,
+        data: fTokenPacketData,
+        acknowledgement: {
+          response: {
+            AcknowledgementError: {
+              err: convertString2Hex(acknowledgementError),
+            },
+          },
+        },
       },
     };
     const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
@@ -2876,12 +2907,10 @@ export class PacketService {
       channelUtxo,
       connectionUtxo,
       clientUtxo,
-      transferModuleUtxo,
 
       encodedHostStateRedeemer,
       encodedUpdatedHostStateDatum,
       encodedSpendChannelRedeemer,
-      encodedSpendTransferModuleRedeemer,
       encodedMintVoucherRedeemer,
       encodedUpdatedChannelDatum,
 
@@ -3194,9 +3223,27 @@ export class PacketService {
       'transferEscrow',
     );
   }
-  private escrowShardHasOnlyDenom(utxo: UTxO, denomToken: string): boolean {
-    return Object.keys(utxo.assets ?? {}).every((unit) =>
-      unit === LOVELACE || unit === denomToken
+  private getTransferEscrowShardTokenName(channelId: string, packetDenom: string): string {
+    return hashBlake2b224(
+      convertString2Hex('transfer-escrow') + channelId + packetDenom,
+    );
+  }
+  private getTransferEscrowShardTokenUnit(channelId: string, packetDenom: string): string {
+    return (
+      this.configService.get('deployment').validators.mintTransferEscrowShard.scriptHash +
+      this.getTransferEscrowShardTokenName(channelId, packetDenom)
+    );
+  }
+  private escrowShardHasCanonicalAssets(
+    utxo: UTxO,
+    denomToken: string,
+    shardTokenUnit: string,
+  ): boolean {
+    return (
+      (utxo.assets?.[shardTokenUnit] ?? 0n) === 1n &&
+      Object.keys(utxo.assets ?? {}).every((unit) =>
+        unit === LOVELACE || unit === denomToken || unit === shardTokenUnit
+      )
     );
   }
   private async findTransferEscrowShard(
@@ -3204,46 +3251,30 @@ export class PacketService {
     packetDenom: string,
     denomToken: string,
     requiredAmount?: bigint,
-  ): Promise<{ utxo?: UTxO; encodedDatum: string }> {
+  ): Promise<{ utxo?: UTxO; encodedDatum: string; shardTokenUnit: string }> {
     const encodedDatum = await this.encodeTransferEscrowDatum(channelId, packetDenom);
-    let utxos: UTxO[] = [];
+    const shardTokenUnit = this.getTransferEscrowShardTokenUnit(channelId, packetDenom);
+    let utxo: UTxO | undefined;
     try {
-      utxos = await this.lucidService.findUtxoAt(this.getTransferModuleAddress());
+      utxo = await this.lucidService.findUtxoByUnit(shardTokenUnit);
     } catch {
-      utxos = [];
+      utxo = undefined;
     }
 
-    const candidates = utxos
-      .filter((utxo) => utxo.datum === encodedDatum)
-      .filter((utxo) => this.escrowShardHasOnlyDenom(utxo, denomToken))
-      .filter((utxo) => requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
-      .sort((a, b) => {
-        const aAmount = a.assets[denomToken] ?? 0n;
-        const bAmount = b.assets[denomToken] ?? 0n;
-        if (aAmount === bAmount) {
-          const txHashCompare = a.txHash.localeCompare(b.txHash);
-          return txHashCompare !== 0 ? txHashCompare : a.outputIndex - b.outputIndex;
-        }
-        return aAmount > bAmount ? -1 : 1;
-      });
+    const canonicalUtxo =
+      utxo?.datum === encodedDatum &&
+      this.escrowShardHasCanonicalAssets(utxo, denomToken, shardTokenUnit) &&
+      (requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
+        ? utxo
+        : undefined;
 
     return {
-      utxo: candidates[0],
+      utxo: canonicalUtxo,
       encodedDatum,
+      shardTokenUnit,
     };
   }
   private getTransferModuleIdentifier(): string {
     return this.configService.get('deployment').modules.transfer.identifier;
-  }
-  private async getTransferModuleDetails(): Promise<{
-    transferModuleUtxo: UTxO;
-    transferModuleAddress: string;
-    spendChannelAddress: string;
-  }> {
-    const transferModuleIdentifier = this.getTransferModuleIdentifier();
-    const transferModuleUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
-    const transferModuleAddress = this.getTransferModuleAddress();
-    const spendChannelAddress = this.getSpendChannelAddress();
-    return { transferModuleUtxo, transferModuleAddress, spendChannelAddress };
   }
 }

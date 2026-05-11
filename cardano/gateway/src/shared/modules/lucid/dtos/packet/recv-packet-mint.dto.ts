@@ -9,8 +9,6 @@ import {
   WithOptionalTraceRegistryUpdate,
   WithPacketPolicyAndChannelToken,
   WithTransferAmount,
-  WithTransferModuleSpend,
-  WithTransferModuleUtxo,
   WithVoucherMetadataOutput,
   WithVerifyProof,
 } from './fragments';
@@ -32,9 +30,7 @@ export type UnsignedRecvPacketModuleDto = WithHostStateUpdate &
 
 export type UnsignedRecvPacketMintDto = WithHostStateUpdate &
   WithChannelContext &
-  WithTransferModuleUtxo &
   WithChannelSpend &
-  WithTransferModuleSpend &
   WithMintVoucherRedeemer &
   WithVoucherMetadataOutput &
   WithOptionalTraceRegistryUpdate &

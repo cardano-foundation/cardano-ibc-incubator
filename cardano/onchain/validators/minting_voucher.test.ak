@@ -21,11 +21,19 @@ use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_metadata
 use ibc/auth.{AuthToken}
+use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/core/ics_004/channel_redeemer.{
+  AcknowledgePacket, RecvPacket, SendPacket, TimeoutPacket,
+}
 use ibc/core/ics_004/types/acknowledgement
+use ibc/core/ics_004/types/keys as channel_keys
+use ibc/core/ics_004/types/packet.{Packet}
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, OnAcknowledgementPacket, OnRecvPacket, OnTimeoutPacket, Operator,
   TransferModuleData, TransferModuleOperator,
 }
+use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
+use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/utils/string as string_utils
 use minting_voucher
 
@@ -34,6 +42,8 @@ type MockData {
   directory_auth_token: AuthToken,
   voucher_minting_policy_id: PolicyId,
   voucher_metadata_script_hash: crypto.ScriptHash,
+  channel_minting_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
   module_input: Input,
 }
 
@@ -63,8 +73,65 @@ fn prepare_mock_data() -> MockData {
     },
     voucher_minting_policy_id: "mint voucher policy id",
     voucher_metadata_script_hash: "voucher metadata script hash",
+    channel_minting_policy_id: "mint channel policy id",
+    host_state_nft_policy_id: "host state nft policy id",
     module_input,
   }
+}
+
+fn make_channel_input(
+  channel_minting_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
+  channel_id: ByteArray,
+) -> Input {
+  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
+  let host_state_nft =
+    AuthToken {
+      policy_id: host_state_nft_policy_id,
+      name: host_state_token_name,
+    }
+  let channel_token_name =
+    auth.generate_token_name(
+      host_state_nft,
+      channel_keys.channel_prefix,
+      channel_sequence,
+    )
+
+  Input {
+    output_reference: OutputReference {
+      transaction_id: #"47b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
+      output_index: 3,
+    },
+    output: Output {
+      address: from_script("channel script hash"),
+      value: from_asset(channel_minting_policy_id, channel_token_name, 1),
+      datum: NoDatum,
+      reference_script: None,
+    },
+  }
+}
+
+fn make_packet(
+  source_port: ByteArray,
+  source_channel: ByteArray,
+  destination_port: ByteArray,
+  destination_channel: ByteArray,
+  data: ByteArray,
+) -> Packet {
+  Packet {
+    sequence: 1,
+    source_port,
+    source_channel,
+    destination_port,
+    destination_channel,
+    data,
+    timeout_height: Height { revision_number: 1, revision_height: 1 },
+    timeout_timestamp: 0,
+  }
+}
+
+fn mock_proof() -> MerkleProof {
+  MerkleProof { proofs: [] }
 }
 
 fn make_directory_input(
@@ -212,14 +279,6 @@ test test_mint_voucher() {
   let packet_dest_port = "port-99"
   let packet_dest_channel = "channel-99"
 
-  let mint_voucher_redeemer =
-    MintVoucher {
-      packet_source_port,
-      packet_source_channel,
-      packet_dest_port,
-      packet_dest_channel,
-    }
-
   let transfer_amount = 100
 
   let receiver =
@@ -232,6 +291,15 @@ test test_mint_voucher() {
       sender: "cosmos sender address",
       receiver,
       memo: "",
+    }
+
+  let mint_voucher_redeemer =
+    MintVoucher {
+      packet_source_port,
+      packet_source_channel,
+      packet_dest_port,
+      packet_dest_channel,
+      data: ftpd,
     }
 
   let packet_data = TransferModuleData(ftpd)
@@ -273,8 +341,27 @@ test test_mint_voucher() {
       active_shard_name,
       bucket_index,
     )
+  let channel_input =
+    make_channel_input(
+      mock_data.channel_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
+      packet_dest_channel,
+    )
+  let channel_redeemer =
+    RecvPacket {
+      packet: make_packet(
+        packet_source_port,
+        packet_source_channel,
+        packet_dest_port,
+        packet_dest_channel,
+        fungible_token_packet_data.get_bytes(ftpd),
+      ),
+      proof_commitment: mock_proof(),
+      proof_height: Height { revision_number: 1, revision_height: 1 },
+    }
   let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
   let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
+  let spend_channel_redeemer_in_data: Redeemer = channel_redeemer
   let trace_registry_redeemer_in_data: Redeemer =
     InsertTrace { voucher_hash: voucher_denom_hash, full_denom: prefixed_denom }
 
@@ -284,6 +371,10 @@ test test_mint_voucher() {
       Pair(
         Spend(mock_data.module_input.output_reference),
         spend_module_redeemer_in_data,
+      ),
+      Pair(
+        Spend(channel_input.output_reference),
+        spend_channel_redeemer_in_data,
       ),
       Pair(
         Spend(active_shard_input.output_reference),
@@ -325,7 +416,7 @@ test test_mint_voucher() {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: [mock_data.module_input, active_shard_input],
+      inputs: [mock_data.module_input, channel_input, active_shard_input],
       reference_inputs: [directory_input],
       outputs: [voucher_output, metadata_output],
       redeemers,
@@ -336,6 +427,8 @@ test test_mint_voucher() {
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
+    mock_data.channel_minting_policy_id,
+    mock_data.host_state_nft_policy_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -350,14 +443,6 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
   let packet_dest_port = "port-99"
   let packet_dest_channel = "channel-99"
 
-  let mint_voucher_redeemer =
-    MintVoucher {
-      packet_source_port,
-      packet_source_channel,
-      packet_dest_port,
-      packet_dest_channel,
-    }
-
   let transfer_amount = 100
 
   let receiver =
@@ -370,6 +455,15 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
       sender: "cosmos sender address",
       receiver,
       memo: "",
+    }
+
+  let mint_voucher_redeemer =
+    MintVoucher {
+      packet_source_port,
+      packet_source_channel,
+      packet_dest_port,
+      packet_dest_channel,
+      data: ftpd,
     }
 
   let packet_data = TransferModuleData(ftpd)
@@ -411,8 +505,27 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
       active_shard_name,
       bucket_index,
     )
+  let channel_input =
+    make_channel_input(
+      mock_data.channel_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
+      packet_dest_channel,
+    )
+  let channel_redeemer =
+    RecvPacket {
+      packet: make_packet(
+        packet_source_port,
+        packet_source_channel,
+        packet_dest_port,
+        packet_dest_channel,
+        fungible_token_packet_data.get_bytes(ftpd),
+      ),
+      proof_commitment: mock_proof(),
+      proof_height: Height { revision_number: 1, revision_height: 1 },
+    }
   let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
   let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
+  let spend_channel_redeemer_in_data: Redeemer = channel_redeemer
   let trace_registry_redeemer_in_data: Redeemer =
     InsertTrace { voucher_hash: voucher_denom_hash, full_denom: prefixed_denom }
 
@@ -422,6 +535,10 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
       Pair(
         Spend(mock_data.module_input.output_reference),
         spend_module_redeemer_in_data,
+      ),
+      Pair(
+        Spend(channel_input.output_reference),
+        spend_channel_redeemer_in_data,
       ),
       Pair(
         Spend(active_shard_input.output_reference),
@@ -463,7 +580,7 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: [mock_data.module_input, active_shard_input],
+      inputs: [mock_data.module_input, channel_input, active_shard_input],
       reference_inputs: [directory_input],
       outputs: [voucher_output, metadata_output],
       redeemers,
@@ -474,6 +591,8 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
+    mock_data.channel_minting_policy_id,
+    mock_data.host_state_nft_policy_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -488,14 +607,6 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
   let packet_dest_port = "port-99"
   let packet_dest_channel = "channel-99"
 
-  let mint_voucher_redeemer =
-    MintVoucher {
-      packet_source_port,
-      packet_source_channel,
-      packet_dest_port,
-      packet_dest_channel,
-    }
-
   let transfer_amount = 100
   let receiver =
     #"3532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232"
@@ -509,6 +620,15 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
       memo: "",
     }
 
+  let mint_voucher_redeemer =
+    MintVoucher {
+      packet_source_port,
+      packet_source_channel,
+      packet_dest_port,
+      packet_dest_channel,
+      data: ftpd,
+    }
+
   let source_prefix =
     transfer_coin.get_denom_prefix(packet_dest_port, packet_dest_channel)
   let prefixed_denom = bytearray.concat(source_prefix, ftpd.denom)
@@ -516,7 +636,26 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
 
   let mint =
     from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
+  let channel_input =
+    make_channel_input(
+      mock_data.channel_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
+      packet_dest_channel,
+    )
+  let channel_redeemer =
+    RecvPacket {
+      packet: make_packet(
+        packet_source_port,
+        packet_source_channel,
+        packet_dest_port,
+        packet_dest_channel,
+        fungible_token_packet_data.get_bytes(ftpd),
+      ),
+      proof_commitment: mock_proof(),
+      proof_height: Height { revision_number: 1, revision_height: 1 },
+    }
   let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
+  let spend_channel_redeemer_in_data: Redeemer = channel_redeemer
   let spend_module_redeemer_in_data: Redeemer =
     Callback(
       OnRecvPacket {
@@ -532,7 +671,7 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: [mock_data.module_input],
+      inputs: [mock_data.module_input, channel_input],
       outputs: [
         Output {
           address: from_verification_key(receiver_public_key_hash),
@@ -550,6 +689,10 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
           Spend(mock_data.module_input.output_reference),
           spend_module_redeemer_in_data,
         ),
+        Pair(
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer_in_data,
+        ),
       ],
       mint,
     }
@@ -558,6 +701,8 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
+    mock_data.channel_minting_policy_id,
+    mock_data.host_state_nft_policy_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -569,9 +714,6 @@ test test_burn_voucher() {
 
   let packet_source_port = "port-99"
   let packet_source_channel = "channel-99"
-
-  let mint_voucher_redeemer =
-    BurnVoucher { packet_source_port, packet_source_channel }
 
   let transfer_amount = 100
 
@@ -588,21 +730,41 @@ test test_burn_voucher() {
       memo: "",
     }
 
+  let mint_voucher_redeemer =
+    BurnVoucher { packet_source_port, packet_source_channel, data: packet_data }
+
   let spend_module_redeemer =
     Operator(
       TransferModuleOperator(
         Transfer { channel_id: packet_source_channel, data: packet_data },
       ),
     )
+  let channel_input =
+    make_channel_input(
+      mock_data.channel_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
+      packet_source_channel,
+    )
+  let channel_redeemer =
+    SendPacket {
+      packet: make_packet(
+        packet_source_port,
+        packet_source_channel,
+        "transfer",
+        "channel-1",
+        fungible_token_packet_data.get_bytes(packet_data),
+      ),
+    }
   let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
   let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
+  let spend_channel_redeemer_in_data: Redeemer = channel_redeemer
 
   let token_name = voucher_asset_name.voucher_user_token_name(packet_data.denom)
 
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: [mock_data.module_input],
+      inputs: [mock_data.module_input, channel_input],
       redeemers: [
         Pair(
           Mint(mock_data.voucher_minting_policy_id),
@@ -611,6 +773,10 @@ test test_burn_voucher() {
         Pair(
           Spend(mock_data.module_input.output_reference),
           spend_module_redeemer_in_data,
+        ),
+        Pair(
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer_in_data,
         ),
       ],
       mint: from_asset(
@@ -624,6 +790,8 @@ test test_burn_voucher() {
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
+    mock_data.channel_minting_policy_id,
+    mock_data.host_state_nft_policy_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -680,7 +848,12 @@ test test_refund_voucher() {
   let mint =
     from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
   let mint_voucher_redeemer =
-    RefundVoucher { packet_source_port, packet_source_channel }
+    RefundVoucher {
+      packet_source_port,
+      packet_source_channel,
+      data: ftpd,
+      acknowledgement: None,
+    }
   let spend_module_redeemer =
     Callback(
       OnTimeoutPacket {
@@ -688,13 +861,33 @@ test test_refund_voucher() {
         data: TransferModuleData(ftpd),
       },
     )
+  let channel_input =
+    make_channel_input(
+      mock_data.channel_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
+      packet_source_channel,
+    )
+  let channel_redeemer =
+    TimeoutPacket {
+      packet: make_packet(
+        packet_source_port,
+        packet_source_channel,
+        "transfer",
+        "channel-1",
+        fungible_token_packet_data.get_bytes(ftpd),
+      ),
+      proof_unreceived: mock_proof(),
+      proof_height: Height { revision_number: 1, revision_height: 1 },
+      next_sequence_recv: 1,
+    }
   let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
   let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
+  let spend_channel_redeemer_in_data: Redeemer = channel_redeemer
 
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: [mock_data.module_input],
+      inputs: [mock_data.module_input, channel_input],
       reference_inputs: [directory_input, shard_reference_input],
       outputs: [
         Output {
@@ -713,6 +906,10 @@ test test_refund_voucher() {
           Spend(mock_data.module_input.output_reference),
           spend_module_redeemer_in_data,
         ),
+        Pair(
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer_in_data,
+        ),
       ],
       mint,
     }
@@ -721,6 +918,8 @@ test test_refund_voucher() {
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
+    mock_data.channel_minting_policy_id,
+    mock_data.host_state_nft_policy_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -789,7 +988,12 @@ test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail 
   let mint =
     from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
   let mint_voucher_redeemer =
-    RefundVoucher { packet_source_port, packet_source_channel }
+    RefundVoucher {
+      packet_source_port,
+      packet_source_channel,
+      data: ftpd,
+      acknowledgement: None,
+    }
   let spend_module_redeemer =
     Callback(
       OnTimeoutPacket {
@@ -797,13 +1001,33 @@ test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail 
         data: TransferModuleData(ftpd),
       },
     )
+  let channel_input =
+    make_channel_input(
+      mock_data.channel_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
+      packet_source_channel,
+    )
+  let channel_redeemer =
+    TimeoutPacket {
+      packet: make_packet(
+        packet_source_port,
+        packet_source_channel,
+        "transfer",
+        "channel-1",
+        fungible_token_packet_data.get_bytes(ftpd),
+      ),
+      proof_unreceived: mock_proof(),
+      proof_height: Height { revision_number: 1, revision_height: 1 },
+      next_sequence_recv: 1,
+    }
   let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
   let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
+  let spend_channel_redeemer_in_data: Redeemer = channel_redeemer
 
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: [mock_data.module_input],
+      inputs: [mock_data.module_input, channel_input],
       reference_inputs: [
         directory_input, active_shard_reference_input,
         archived_duplicate_reference_input,
@@ -825,6 +1049,10 @@ test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail 
           Spend(mock_data.module_input.output_reference),
           spend_module_redeemer_in_data,
         ),
+        Pair(
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer_in_data,
+        ),
       ],
       mint,
     }
@@ -833,6 +1061,8 @@ test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail 
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
+    mock_data.channel_minting_policy_id,
+    mock_data.host_state_nft_policy_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -890,23 +1120,49 @@ test test_refund_voucher_fail() fail {
 
   let mint =
     from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
+  let success_ack = acknowledgement.new_result_acknowledgement(#[1])
   let mint_voucher_redeemer =
-    RefundVoucher { packet_source_port, packet_source_channel }
+    RefundVoucher {
+      packet_source_port,
+      packet_source_channel,
+      data: ftpd,
+      acknowledgement: Some(success_ack),
+    }
   let spend_module_redeemer =
     Callback(
       OnAcknowledgementPacket {
         channel_id: packet_dest_channel,
-        acknowledgement: acknowledgement.new_result_acknowledgement(#[1]),
+        acknowledgement: success_ack,
         data: TransferModuleData(ftpd),
       },
     )
+  let channel_input =
+    make_channel_input(
+      mock_data.channel_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
+      packet_source_channel,
+    )
+  let channel_redeemer =
+    AcknowledgePacket {
+      packet: make_packet(
+        packet_source_port,
+        packet_source_channel,
+        "transfer",
+        packet_dest_channel,
+        fungible_token_packet_data.get_bytes(ftpd),
+      ),
+      acknowledgement: acknowledgement.marshal_json(success_ack),
+      proof_acked: mock_proof(),
+      proof_height: Height { revision_number: 1, revision_height: 1 },
+    }
   let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
   let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
+  let spend_channel_redeemer_in_data: Redeemer = channel_redeemer
 
   let transaction =
     Transaction {
       ..transaction.placeholder,
-      inputs: [mock_data.module_input],
+      inputs: [mock_data.module_input, channel_input],
       reference_inputs: [directory_input, shard_reference_input],
       outputs: [
         Output {
@@ -925,6 +1181,10 @@ test test_refund_voucher_fail() fail {
           Spend(mock_data.module_input.output_reference),
           spend_module_redeemer_in_data,
         ),
+        Pair(
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer_in_data,
+        ),
       ],
       mint,
     }
@@ -933,6 +1193,8 @@ test test_refund_voucher_fail() fail {
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
+    mock_data.channel_minting_policy_id,
+    mock_data.host_state_nft_policy_id,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
