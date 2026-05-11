@@ -1,4 +1,3 @@
-use aiken/collection/list
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
 use cardano/transaction.{
@@ -67,10 +66,11 @@ validator spend_connection(
     expect auth.contain_auth_token(spent_output, datum.token)
     trace @"spend_connection: input contains auth token"
 
-    expect [updated_output] =
-      list.filter(
+    let updated_output =
+      validator_utils.find_unique_continuation_output(
+        spent_output,
         outputs,
-        fn(output) { output.address == spent_output.address },
+        datum.token,
       )
     expect updated_datum: ConnectionDatum =
       validator_utils.get_inline_datum(updated_output)

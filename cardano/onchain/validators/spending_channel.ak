@@ -1,6 +1,4 @@
-use aiken/collection/list
 use aiken/collection/pairs
-use cardano/address.{Address}
 use cardano/assets.{PolicyId}
 use cardano/transaction.{Input, Mint, Output, OutputReference, Transaction}
 use ibc/auth.{AuthToken}
@@ -48,7 +46,7 @@ validator spend_channel(
 
         expect redeemer: AuthToken = redeemer
 
-        expect _ = validate_output_datum(spent_output.address, outputs)
+        expect _ = validate_output_datum(spent_output, outputs, datum.token)
 
         redeemer == datum.token
       }
@@ -67,7 +65,7 @@ validator spend_channel(
 
         expect redeemer: AuthToken = redeemer
 
-        expect _ = validate_output_datum(spent_output.address, outputs)
+        expect _ = validate_output_datum(spent_output, outputs, datum.token)
 
         redeemer == datum.token
       }
@@ -85,7 +83,7 @@ validator spend_channel(
 
         expect redeemer: AuthToken = redeemer
         and {
-          no_output_for_address(spent_output.address, outputs),
+          validator_utils.no_output_contains_auth_token(outputs, datum.token),
           redeemer == datum.token,
         }
       }
@@ -118,7 +116,7 @@ validator spend_channel(
           pairs.get_first(redeemers, Mint(recv_packet_policy_id))
 
         expect redeemer: AuthToken = redeemer
-        expect _ = validate_output_datum(spent_output.address, outputs)
+        expect _ = validate_output_datum(spent_output, outputs, datum.token)
         redeemer == datum.token
       }
       SendPacket { .. } -> {
@@ -134,7 +132,7 @@ validator spend_channel(
           pairs.get_first(redeemers, Mint(send_packet_policy_id))
 
         expect redeemer: AuthToken = redeemer
-        expect _ = validate_output_datum(spent_output.address, outputs)
+        expect _ = validate_output_datum(spent_output, outputs, datum.token)
         redeemer == datum.token
       }
       TimeoutPacket { .. } -> {
@@ -150,7 +148,7 @@ validator spend_channel(
           pairs.get_first(redeemers, Mint(timeout_packet_policy_id))
 
         expect redeemer: AuthToken = redeemer
-        expect _ = validate_output_datum(spent_output.address, outputs)
+        expect _ = validate_output_datum(spent_output, outputs, datum.token)
         redeemer == datum.token
       }
       AcknowledgePacket { .. } -> {
@@ -166,7 +164,7 @@ validator spend_channel(
           pairs.get_first(redeemers, Mint(acknowledge_packet_policy_id))
 
         expect redeemer: AuthToken = redeemer
-        expect _ = validate_output_datum(spent_output.address, outputs)
+        expect _ = validate_output_datum(spent_output, outputs, datum.token)
         redeemer == datum.token
       }
     }
@@ -177,21 +175,16 @@ validator spend_channel(
   }
 }
 
-fn find_updated_output(address: Address, outputs: List<Output>) -> Output {
-  expect [updated_output] =
-    list.filter(outputs, fn(output) { output.address == address })
-  updated_output
-}
-
-fn no_output_for_address(address: Address, outputs: List<Output>) -> Bool {
-  list.is_empty(list.filter(outputs, fn(output) { output.address == address }))
-}
-
 fn extract_output_datum(output: Output) -> ChannelDatum {
   expect datum: ChannelDatum = validator_utils.get_inline_datum(output)
   datum
 }
 
-fn validate_output_datum(address: Address, outputs: List<Output>) {
-  extract_output_datum(find_updated_output(address, outputs))
+fn validate_output_datum(
+  spent_output: Output,
+  outputs: List<Output>,
+  token: AuthToken,
+) {
+  validator_utils.find_unique_continuation_output(spent_output, outputs, token)
+    |> extract_output_datum()
 }

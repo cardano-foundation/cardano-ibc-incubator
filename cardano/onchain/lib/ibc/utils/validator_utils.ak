@@ -183,13 +183,31 @@ pub fn validate_mint(
   }
 }
 
-pub fn find_matching_output(
+pub fn find_unique_continuation_output(
   spent_output: Output,
   outputs: List<Output>,
+  token: AuthToken,
 ) -> Output {
+  expect auth.contain_auth_token(spent_output, token)?
+
   expect [updated_output] =
-    list.filter(outputs, fn(output) { output.address == spent_output.address })
+    list.filter(
+      outputs,
+      fn(output) {
+        output.address == spent_output.address && auth.contain_auth_token(
+          output,
+          token,
+        )
+      },
+    )
   updated_output
+}
+
+pub fn no_output_contains_auth_token(
+  outputs: List<Output>,
+  token: AuthToken,
+) -> Bool {
+  !list.any(outputs, fn(output) { auth.contain_auth_token(output, token) })
 }
 
 pub fn validate_token_remain(
@@ -198,7 +216,22 @@ pub fn validate_token_remain(
   tokens: List<AuthToken>,
 ) -> Output {
   expect [updated_output] =
-    list.filter(outputs, fn(output) { output.address == spent_output.address })
+    if list.is_empty(tokens) {
+      list.filter(
+        outputs,
+        fn(output) { output.address == spent_output.address },
+      )
+    } else {
+      list.filter(
+        outputs,
+        fn(output) {
+          output.address == spent_output.address && list.all(
+            tokens,
+            fn(token) { auth.contain_auth_token(output, token) },
+          )
+        },
+      )
+    }
 
   let is_remain =
     if list.is_empty(tokens) {
