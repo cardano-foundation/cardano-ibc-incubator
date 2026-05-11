@@ -39,15 +39,17 @@ validator spend_client(host_state_nft_policy_id: PolicyId) {
     //========================valid input=======================
     // input contains client token
     expect Some(datum) = datum
-    expect spent_output |> auth.contain_auth_token(datum.token)
+    expect auth.contain_auth_token(spent_output, datum.token)
 
     //========================valid output=======================
     expect [updated_output] =
-      outputs
-        |> list.filter(fn(output) { output.address == spent_output.address })
+      list.filter(
+        outputs,
+        fn(output) { output.address == spent_output.address },
+      )
 
     // output contains client token
-    expect updated_output |> auth.contains_only_auth_tokens([datum.token])
+    expect auth.contains_only_auth_tokens(updated_output, [datum.token])
 
     // TODO: add verify header
     // output datum is updated correctly

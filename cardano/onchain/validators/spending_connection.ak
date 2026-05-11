@@ -64,7 +64,7 @@ validator spend_connection(
 
     expect Some(datum) = datum
 
-    expect spent_output |> auth.contain_auth_token(datum.token)
+    expect auth.contain_auth_token(spent_output, datum.token)
     trace @"spend_connection: input contains auth token"
 
     expect [updated_output] =
