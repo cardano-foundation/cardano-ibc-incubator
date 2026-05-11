@@ -1,4 +1,3 @@
-use aiken/collection/list
 use cardano/assets.{PolicyId}
 use cardano/transaction.{Input, Output, OutputReference, Transaction}
 use ibc/auth
@@ -42,10 +41,11 @@ validator spend_client(host_state_nft_policy_id: PolicyId) {
     expect auth.contain_auth_token(spent_output, datum.token)
 
     //========================valid output=======================
-    expect [updated_output] =
-      list.filter(
+    let updated_output =
+      validator_utils.find_unique_continuation_output(
+        spent_output,
         outputs,
-        fn(output) { output.address == spent_output.address },
+        datum.token,
       )
 
     // output contains client token

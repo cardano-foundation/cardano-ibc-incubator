@@ -183,13 +183,36 @@ pub fn validate_mint(
   }
 }
 
-pub fn find_matching_output(
+/// Finds the single updated state output for a spent state UTxO.
+/// The output must stay at the same validator address and carry the same auth token.
+pub fn find_unique_continuation_output(
   spent_output: Output,
   outputs: List<Output>,
+  token: AuthToken,
 ) -> Output {
+  // The updated state output is identified by both its validator address and auth token.
+  // This allows unrelated state UTxOs to share the same script address safely.
+  expect auth.contain_auth_token(spent_output, token)?
+
   expect [updated_output] =
-    list.filter(outputs, fn(output) { output.address == spent_output.address })
+    list.filter(
+      outputs,
+      fn(output) {
+        output.address == spent_output.address && auth.contain_auth_token(
+          output,
+          token,
+        )
+      },
+    )
   updated_output
+}
+
+pub fn no_output_contains_auth_token(
+  outputs: List<Output>,
+  token: AuthToken,
+) -> Bool {
+  // Close/delete transitions remove this state token; other state outputs may still share the address.
+  !list.any(outputs, fn(output) { auth.contain_auth_token(output, token) })
 }
 
 pub fn validate_token_remain(
@@ -198,7 +221,24 @@ pub fn validate_token_remain(
   tokens: List<AuthToken>,
 ) -> Output {
   expect [updated_output] =
-    list.filter(outputs, fn(output) { output.address == spent_output.address })
+    if list.is_empty(tokens) {
+      // With no token list, the helper can only select by address and compare the whole non-ADA value.
+      list.filter(
+        outputs,
+        fn(output) { output.address == spent_output.address },
+      )
+    } else {
+      // Prefer token-scoped selection when the caller knows which state tokens must remain.
+      list.filter(
+        outputs,
+        fn(output) {
+          output.address == spent_output.address && list.all(
+            tokens,
+            fn(token) { auth.contain_auth_token(output, token) },
+          )
+        },
+      )
+    }
 
   let is_remain =
     if list.is_empty(tokens) {

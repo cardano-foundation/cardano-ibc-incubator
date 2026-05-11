@@ -437,6 +437,22 @@ test validate_token_remain_succeed() {
   validator_utils.validate_token_remain(spent_output, outputs, tokens) == updated_output
 }
 
+test validate_token_remain_selects_token_continuation_when_address_is_reused() {
+  let (spent_output, _outputs, tokens, updated_output) =
+    setup_validate_token_remain()
+  let unrelated_output =
+    Output {
+      ..updated_output,
+      value: from_asset("unrelated policy", "unrelated name", 1),
+    }
+
+  validator_utils.validate_token_remain(
+    spent_output,
+    [unrelated_output, updated_output],
+    tokens,
+  ) == updated_output
+}
+
 test validate_token_remain_succeed_if_required_tokens_is_empty() {
   let (spent_output, outputs, _tokens, updated_output) =
     setup_validate_token_remain()
@@ -454,6 +470,84 @@ test validate_token_remain_fail_if_token_not_remained() fail {
   let result =
     validator_utils.validate_token_remain(spent_output, [output], tokens)
   result == result
+}
+
+//=========================find_unique_continuation_output=========================
+fn setup_find_unique_continuation_output() -> (Output, Output, AuthToken) {
+  let token = AuthToken { policy_id: "mock policy_id", name: "mock name" }
+  let spent_output =
+    Output {
+      address: from_script("mock script hash"),
+      value: from_asset(token.policy_id, token.name, 1),
+      datum: InlineDatum(Void),
+      reference_script: None,
+    }
+  let updated_output = Output { ..spent_output, datum: InlineDatum(42) }
+
+  (spent_output, updated_output, token)
+}
+
+test find_unique_continuation_output_uses_address_and_token() {
+  let (spent_output, updated_output, token) =
+    setup_find_unique_continuation_output()
+  let unrelated_output =
+    Output {
+      ..updated_output,
+      value: from_asset("unrelated policy", "unrelated name", 1),
+    }
+  let moved_token_output =
+    Output { ..updated_output, address: from_script("other script hash") }
+
+  validator_utils.find_unique_continuation_output(
+    spent_output,
+    [unrelated_output, moved_token_output, updated_output],
+    token,
+  ) == updated_output
+}
+
+test find_unique_continuation_output_rejects_duplicate_token_continuations() fail {
+  let (spent_output, updated_output, token) =
+    setup_find_unique_continuation_output()
+  let duplicate_output = Output { ..updated_output, datum: InlineDatum(43) }
+
+  validator_utils.find_unique_continuation_output(
+    spent_output,
+    [updated_output, duplicate_output],
+    token,
+  ) == updated_output
+}
+
+test find_unique_continuation_output_rejects_token_moved_to_other_address() fail {
+  let (spent_output, updated_output, token) =
+    setup_find_unique_continuation_output()
+  let moved_token_output =
+    Output { ..updated_output, address: from_script("other script hash") }
+
+  validator_utils.find_unique_continuation_output(
+    spent_output,
+    [moved_token_output],
+    token,
+  ) == moved_token_output
+}
+
+test no_output_contains_auth_token_checks_all_addresses() {
+  let (_spent_output, updated_output, token) =
+    setup_find_unique_continuation_output()
+  let unrelated_output =
+    Output {
+      ..updated_output,
+      value: from_asset("unrelated policy", "unrelated name", 1),
+    }
+  let moved_token_output =
+    Output { ..updated_output, address: from_script("other script hash") }
+
+  and {
+    validator_utils.no_output_contains_auth_token([unrelated_output], token),
+    !validator_utils.no_output_contains_auth_token(
+      [unrelated_output, moved_token_output],
+      token,
+    ),
+  }
 }
 
 //=====================================extract_token_unit===================================
