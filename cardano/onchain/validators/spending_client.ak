@@ -1,5 +1,5 @@
 use cardano/assets.{PolicyId}
-use cardano/transaction.{Input, Output, OutputReference, Transaction}
+use cardano/transaction.{Input, OutputReference, Transaction}
 use ibc/auth
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -22,14 +22,17 @@ validator spend_client(host_state_nft_policy_id: PolicyId) {
     spent_output_ref: OutputReference,
     transaction: Transaction,
   ) {
-    let Transaction { outputs, inputs, validity_range, .. } = transaction
+    let Transaction { outputs, inputs, validity_range, redeemers, .. } =
+      transaction
 
-    // Any client state update must be committed into the HostState root in the same transaction.
+    // Client updates must use the matching HostState root verifier branch.
     expect _ =
-      validator_utils.require_host_state_thread(
+      validator_utils.require_host_state_redeemer(
         inputs,
         outputs,
+        redeemers,
         host_state_nft_policy_id,
+        validator_utils.ExpectUpdateClient,
       )
 
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)

@@ -15,7 +15,7 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/keys as conn_id_keys
-use ibc/core/ics_004/channel_datum.{ChannelDatum}
+use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
 use ibc/core/ics_004/types/keys as chan_id_keys
 use ibc/core/ics_005/types/keys as port_id_keys
 use ibc/core/ics_024_host_requirements/channel_keys as host_channel_keys
@@ -651,6 +651,16 @@ fn validate_update_channel_root(
   expect channel_input_datum: ChannelDatum =
     validator_utils.get_inline_datum(channel_input.output)
 
+  // UpdateChannel only commits the channel end key; packet and sequence fields
+  // must be handled by HandlePacket.
+  expect channel_input_datum.port_id == channel_output_datum.port_id
+  expect channel_input_datum.token == channel_output_datum.token
+  expect
+    packet_state_unchanged(
+      channel_input_datum.state,
+      channel_output_datum.state,
+    )?
+
   // Commitment values.
   //
   // We commit the CBOR serialization of the on-chain `Channel`.
@@ -668,6 +678,20 @@ fn validate_update_channel_root(
     )
 
   root_after_channel == new_datum.state.ibc_state_root
+}
+
+fn packet_state_unchanged(
+  input_state: ChannelDatumState,
+  output_state: ChannelDatumState,
+) -> Bool {
+  and {
+    input_state.next_sequence_send == output_state.next_sequence_send,
+    input_state.next_sequence_recv == output_state.next_sequence_recv,
+    input_state.next_sequence_ack == output_state.next_sequence_ack,
+    input_state.packet_commitment == output_state.packet_commitment,
+    input_state.packet_receipt == output_state.packet_receipt,
+    input_state.packet_acknowledgement == output_state.packet_acknowledgement,
+  }
 }
 
 /// Enforce that `ibc_state_root` is updated correctly for packet lifecycle operations.
@@ -716,6 +740,15 @@ fn validate_handle_packet_root(
 
   expect channel_input_datum: ChannelDatum =
     validator_utils.get_inline_datum(channel_input.output)
+
+  expect channel_input_datum.port_id == channel_output_datum.port_id
+  expect channel_input_datum.token == channel_output_datum.token
+  // HandlePacket is reserved for packet/sequence effects, not channel-only updates.
+  expect
+    !packet_state_unchanged(
+      channel_input_datum.state,
+      channel_output_datum.state,
+    )
 
   // Commitment keys (ICS-24 paths).
   let channel_key = host_channel_keys.channel_path(port_id, channel_id)

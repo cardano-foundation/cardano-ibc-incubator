@@ -50,12 +50,14 @@ validator spend_connection(
       ..
     } = transaction
 
-    // Any connection state update must be committed into the HostState root in the same transaction.
+    // Connection handshakes must use the matching HostState root verifier branch.
     expect _ =
-      validator_utils.require_host_state_thread(
+      validator_utils.require_host_state_redeemer(
         inputs,
         outputs,
+        redeemers,
         host_state_nft_policy_id,
+        validator_utils.ExpectUpdateConnection,
       )
 
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)

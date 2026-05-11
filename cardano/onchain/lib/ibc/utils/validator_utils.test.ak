@@ -31,6 +31,8 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
+use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
 use ibc/utils/validator_utils
 
 const hash_sample =
@@ -548,6 +550,76 @@ test no_output_contains_auth_token_checks_all_addresses() {
       token,
     ),
   }
+}
+
+//=========================require_host_state_redeemer=========================
+fn setup_require_host_state_redeemer() -> (PolicyId, Input, Output) {
+  let nft_policy_id: PolicyId = "mock host state nft policy id"
+  let host_output =
+    Output {
+      address: from_script("mock host_state script hash"),
+      value: from_asset(nft_policy_id, host_state_token_name, 1),
+      datum: InlineDatum(Void),
+      reference_script: None,
+    }
+  let host_input =
+    Input {
+      output_reference: OutputReference {
+        transaction_id: hash_sample,
+        output_index: 7,
+      },
+      output: host_output,
+    }
+
+  (nft_policy_id, host_input, host_output)
+}
+
+fn host_state_handle_packet_redeemer() -> Redeemer {
+  let redeemer: Redeemer =
+    host_state_redeemer.HandlePacket {
+      channel_siblings: [],
+      next_sequence_send_siblings: [],
+      next_sequence_recv_siblings: [],
+      next_sequence_ack_siblings: [],
+      packet_commitment_siblings: [],
+      packet_receipt_siblings: [],
+      packet_acknowledgement_siblings: [],
+    }
+  redeemer
+}
+
+test require_host_state_redeemer_accepts_expected_variant() {
+  let (nft_policy_id, host_input, host_output) =
+    setup_require_host_state_redeemer()
+
+  validator_utils.require_host_state_redeemer(
+    [host_input],
+    [host_output],
+    [
+      Pair(
+        Spend(host_input.output_reference),
+        host_state_handle_packet_redeemer(),
+      ),
+    ],
+    nft_policy_id,
+    validator_utils.ExpectHandlePacket,
+  ) == (host_input, host_output)
+}
+
+test require_host_state_redeemer_rejects_wrong_variant() fail {
+  let (nft_policy_id, host_input, host_output) =
+    setup_require_host_state_redeemer()
+
+  let wrong_redeemer: Redeemer =
+    host_state_redeemer.UpdateChannel { channel_siblings: [] }
+
+  validator_utils.require_host_state_redeemer(
+    [host_input],
+    [host_output],
+    [Pair(Spend(host_input.output_reference), wrong_redeemer)],
+    nft_policy_id,
+    validator_utils.ExpectHandlePacket,
+  ) == (host_input, host_output)
 }
 
 //=====================================extract_token_unit===================================

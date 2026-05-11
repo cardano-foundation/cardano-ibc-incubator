@@ -46,6 +46,7 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
+use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
 use ibc/utils/validator_utils
 use spending_channel
 
@@ -373,6 +374,26 @@ fn build_channel_input(
   channel_input
 }
 
+fn host_state_update_channel_redeemer() -> Redeemer {
+  let redeemer: Redeemer =
+    host_state_redeemer.UpdateChannel { channel_siblings: [] }
+  redeemer
+}
+
+fn host_state_handle_packet_redeemer() -> Redeemer {
+  let redeemer: Redeemer =
+    host_state_redeemer.HandlePacket {
+      channel_siblings: [],
+      next_sequence_send_siblings: [],
+      next_sequence_recv_siblings: [],
+      next_sequence_ack_siblings: [],
+      packet_commitment_siblings: [],
+      packet_receipt_siblings: [],
+      packet_acknowledgement_siblings: [],
+    }
+  redeemer
+}
+
 fn update_client(
   height: Height,
   consensus_state: ConsensusState,
@@ -623,6 +644,10 @@ test chan_open_ack_succeed() {
     [
       Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
       Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(
+        Spend(mock_data.host_state_input.output_reference),
+        host_state_update_channel_redeemer(),
+      ),
       Pair(Mint(mock_data.chan_open_ack_policy_id), chan_open_ack_redeemer),
     ]
 
@@ -836,6 +861,10 @@ test chan_open_confirm_succeed() {
     [
       Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
       Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(
+        Spend(mock_data.host_state_input.output_reference),
+        host_state_update_channel_redeemer(),
+      ),
       Pair(
         Mint(mock_data.chan_open_confirm_policy_id),
         chan_open_confirm_redeemer,
@@ -1079,6 +1108,10 @@ test recv_packet_succeed() {
     [
       Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
       Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(
+        Spend(mock_data.host_state_input.output_reference),
+        host_state_handle_packet_redeemer(),
+      ),
       Pair(Mint(mock_data.recv_packet_policy_id), recv_packet_redeemer),
     ]
 
@@ -1200,6 +1233,10 @@ test send_packet_succeed() {
     [
       Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
       Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(
+        Spend(mock_data.host_state_input.output_reference),
+        host_state_handle_packet_redeemer(),
+      ),
       Pair(Mint(mock_data.send_packet_policy_id), send_packet_redeemer),
     ]
 
@@ -1458,6 +1495,10 @@ test timeout_packet_succeed() {
     [
       Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
       Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
+      Pair(
+        Spend(mock_data.host_state_input.output_reference),
+        host_state_handle_packet_redeemer(),
+      ),
       Pair(Mint(mock_data.timeout_packet_policy_id), timeout_packet_redeemer),
     ]
 
@@ -1708,6 +1749,10 @@ test acknowledge_packet_succeed() {
       Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
       Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
       Pair(
+        Spend(mock_data.host_state_input.output_reference),
+        host_state_handle_packet_redeemer(),
+      ),
+      Pair(
         Mint(mock_data.acknowledge_packet_policy_id),
         acknowledge_packet_redeemer,
       ),
@@ -1789,7 +1834,13 @@ test chan_close_init_succeed() {
   let chan_close_init_redeemer: Redeemer = fake_data.channel_token
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [Pair(Mint(fake_data.chan_close_init_policy_id), chan_close_init_redeemer)]
+    [
+      Pair(
+        Spend(fake_data.host_state_input.output_reference),
+        host_state_update_channel_redeemer(),
+      ),
+      Pair(Mint(fake_data.chan_close_init_policy_id), chan_close_init_redeemer),
+    ]
 
   //==========================arrange context=========================
   let transaction =
@@ -1921,6 +1972,10 @@ test chan_close_confirm_succeed() {
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
+      Pair(
+        Spend(fake_data.host_state_input.output_reference),
+        host_state_update_channel_redeemer(),
+      ),
       Pair(
         Mint(fake_data.chan_close_confirm_policy_id),
         chan_close_init_redeemer,
