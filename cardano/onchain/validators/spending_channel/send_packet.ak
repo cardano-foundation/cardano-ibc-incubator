@@ -1,5 +1,5 @@
 use cardano/assets.{PolicyId}
-use cardano/transaction.{Output, OutputReference, Transaction}
+use cardano/transaction.{OutputReference, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
