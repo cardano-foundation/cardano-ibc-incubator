@@ -1,6 +1,8 @@
 import { type Data } from '@lucid-evolution/lucid';
 import { ClientMessage } from './msgs/client-message';
 
+type MintClientRedeemer = 'MintClient';
+
 export type SpendClientRedeemer =
   | 'Other'
   | {
@@ -8,6 +10,16 @@ export type SpendClientRedeemer =
         msg: ClientMessage;
       };
     };
+
+export function decodeMintClientRedeemer(
+  mintClientRedeemer: string,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+): MintClientRedeemer {
+  const { Data } = Lucid;
+  const MintClientRedeemerSchema = Data.Enum([Data.Literal('MintClient')]);
+  return Data.from(mintClientRedeemer, MintClientRedeemerSchema as unknown as MintClientRedeemer);
+}
+
 export async function encodeSpendClientRedeemer(
   spendClientRedeemer: SpendClientRedeemer,
   Lucid: typeof import('@lucid-evolution/lucid'),

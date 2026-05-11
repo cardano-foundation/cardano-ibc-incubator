@@ -1,11 +1,10 @@
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/interval.{Finite}
-use aiken/option.{and_then, map}
+use aiken/option.{map}
 use aiken/primitive/bytearray
 use cardano/assets.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of,
-  without_lovelace,
 }
 use cardano/transaction.{
   InlineDatum, Input, Output, Redeemer, ScriptPurpose, Spend, ValidityRange,
@@ -19,8 +18,6 @@ use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{SpendChannelRedeemer}
 use ibc/core/ics_005/types/ibc_module_redeemer.{IBCModuleRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
-use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
-use ibc/core/ics_025_handler_interface/handler_redeemer.{HandlerOperator}
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 
 type PosixTime =
@@ -77,39 +74,6 @@ pub fn get_tx_valid_from(validity_range: ValidityRange) -> PosixTime {
   } else {
     fail @"Lower bound is not inclusive"
   }
-}
-
-pub fn validate_handler_redeemer(
-  inputs: List<Input>,
-  redeemers: Pairs<ScriptPurpose, Redeemer>,
-  handler_token: AuthToken,
-  expected_redeemer: HandlerOperator,
-) -> HandlerDatum {
-  expect Some(handler_datum) =
-    list.find(
-      inputs,
-      fn(input) { input.output |> auth.contain_auth_token(handler_token) },
-    )
-      |> and_then(
-          fn(handler_input) {
-            pairs.get_first(redeemers, Spend(handler_input.output_reference))
-              |> map(
-                  fn(spent_handler_redeemer) {
-                    expect handler_operator: HandlerOperator =
-                      spent_handler_redeemer
-                    if handler_operator == expected_redeemer {
-                      let handler_output = handler_input.output
-                      expect handler_datum: HandlerDatum =
-                        get_inline_datum(handler_output)
-                      handler_datum
-                    } else {
-                      fail @"Handler is not matching"
-                    }
-                  },
-                )
-          },
-        )
-  handler_datum
 }
 
 pub fn extract_module_redeemer(
@@ -202,12 +166,12 @@ pub fn validate_referred_connection(
 pub fn validate_mint(
   mint: Value,
   minting_policy_id: PolicyId,
-  handler_token: AuthToken,
+  base_token: AuthToken,
   token_name_prefix: ByteArray,
   sequence: ByteArray,
 ) -> AuthToken {
   let token_name =
-    auth.generate_token_name(handler_token, token_name_prefix, sequence)
+    auth.generate_token_name(base_token, token_name_prefix, sequence)
 
   let token = AuthToken { policy_id: minting_policy_id, name: token_name }
 
@@ -218,13 +182,36 @@ pub fn validate_mint(
   }
 }
 
-pub fn find_matching_output(
+/// Finds the single updated state output for a spent state UTxO.
+/// The output must stay at the same validator address and carry the same auth token.
+pub fn find_unique_continuation_output(
   spent_output: Output,
   outputs: List<Output>,
+  token: AuthToken,
 ) -> Output {
+  // The updated state output is identified by both its validator address and auth token.
+  // This allows unrelated state UTxOs to share the same script address safely.
+  expect auth.contain_auth_token(spent_output, token)?
+
   expect [updated_output] =
-    list.filter(outputs, fn(output) { output.address == spent_output.address })
+    list.filter(
+      outputs,
+      fn(output) {
+        output.address == spent_output.address && auth.contain_auth_token(
+          output,
+          token,
+        )
+      },
+    )
   updated_output
+}
+
+pub fn no_output_contains_auth_token(
+  outputs: List<Output>,
+  token: AuthToken,
+) -> Bool {
+  // Close/delete transitions remove this state token; other state outputs may still share the address.
+  !list.any(outputs, fn(output) { auth.contain_auth_token(output, token) })
 }
 
 pub fn validate_token_remain(
@@ -233,13 +220,28 @@ pub fn validate_token_remain(
   tokens: List<AuthToken>,
 ) -> Output {
   expect [updated_output] =
-    list.filter(outputs, fn(output) { output.address == spent_output.address })
+    if list.is_empty(tokens) {
+      // With no token list, the helper can only select by address and compare the whole non-ADA value.
+      list.filter(
+        outputs,
+        fn(output) { output.address == spent_output.address },
+      )
+    } else {
+      // Prefer token-scoped selection when the caller knows which state tokens must remain.
+      list.filter(
+        outputs,
+        fn(output) {
+          output.address == spent_output.address && list.all(
+            tokens,
+            fn(token) { auth.contain_auth_token(output, token) },
+          )
+        },
+      )
+    }
 
   let is_remain =
     if list.is_empty(tokens) {
-      without_lovelace(spent_output.value) == without_lovelace(
-        updated_output.value,
-      )
+      assets.match_assets(spent_output.value, updated_output.value)
     } else {
       list.all(
         tokens,
@@ -282,11 +284,11 @@ pub fn require_host_state_thread(
     list.filter(
       inputs,
       fn(input) {
-        quantity_of(
+        assets.has_nft(
           input.output.value,
           host_state_nft_policy_id,
           host_state_token_name,
-        ) == 1
+        )
       },
     )
 
@@ -294,11 +296,11 @@ pub fn require_host_state_thread(
     list.filter(
       outputs,
       fn(output) {
-        quantity_of(
+        assets.has_nft(
           output.value,
           host_state_nft_policy_id,
           host_state_token_name,
-        ) == 1
+        )
       },
     )
 

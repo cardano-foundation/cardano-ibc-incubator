@@ -124,13 +124,8 @@ function normalizeBridgeManifest(manifest) {
                 policyId: manifest.host_state_nft.policy_id,
                 name: manifest.host_state_nft.token_name,
             },
-            handlerAuthToken: {
-                policyId: manifest.handler_auth_token.policy_id,
-                name: manifest.handler_auth_token.token_name,
-            },
             validators: {
                 hostStateStt: mapValidator(manifest.validators.host_state_stt),
-                spendHandler: mapValidator(manifest.validators.spend_handler),
                 spendClient: mapValidator(manifest.validators.spend_client),
                 spendConnection: mapValidator(manifest.validators.spend_connection),
                 spendChannel: {
@@ -186,7 +181,6 @@ function normalizeBridgeManifest(manifest) {
                 mintPort: mapValidator(manifest.validators.mint_port),
             },
             modules: {
-                handler: manifest.modules.handler,
                 transfer: manifest.modules.transfer,
                 ...(manifest.modules.mock ? { mock: manifest.modules.mock } : {}),
             },

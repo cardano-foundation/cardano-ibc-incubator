@@ -140,8 +140,8 @@ const dbServiceMock = {
       assetsPolicy: 'f5b0e1400241a68edcc0fb6c17e088e751346a4b8eef24349ce370db',
     },
   ],
-  findUtxoClientOrAuthHandler: [],
-  findUtxoClientOrAuthHandlerTrusted: [
+  findClientUtxosByBlockNo: [],
+  findClientUtxosByBlockNoTrusted: [
     {
       address: 'addr_test1wr80fuxta0y3k48zsvnxpypamg3q25s3f3qrf4wded2x6vssv3xnc',
       txHash: '578bf43270d7ba581afb09489ddbf866da7ad40dd3fb535236c2b2efcc8a706e',

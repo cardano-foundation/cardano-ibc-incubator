@@ -68,10 +68,6 @@ service Query {
   rpc NewClient(QueryNewClientRequest) returns (QueryNewClientResponse) {
     option (google.api.http).get = "/ibc/core/client/v1/new_client";
   }
-
-  rpc BlockData(QueryBlockDataRequest) returns (QueryBlockDataResponse) {
-    option (google.api.http).get = "/ibc/core/client/v1/block_data"; 
-  }
 }
 
 message QueryLatestHeightRequest {
@@ -235,14 +231,4 @@ message QueryNewClientResponse {
   google.protobuf.Any client_state = 1;
   // consensus state associated with the request identifier
   google.protobuf.Any consensus_state = 2;
-}
-
-message QueryBlockDataRequest {
-  // Block number to query
-  uint64 height =1;
-}
-
-message QueryBlockDataResponse {
-  // block data associated with the request identifier
-  google.protobuf.Any block_data = 1;
 }

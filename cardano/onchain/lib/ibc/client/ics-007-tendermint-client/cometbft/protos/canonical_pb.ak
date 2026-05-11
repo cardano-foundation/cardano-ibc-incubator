@@ -37,16 +37,19 @@ pub fn marshal_for_part_set_header(
   let CanonicalPartSetHeader { total, hash } = psh
   // total |> uint64() |> sov() |> add(1)
   (0, #[])
-    |> add_and_concat(encode_int(total, 8))
-    |> size_and_concat(encode_bytearray(hash, 0x12))
+    |> add_and_concat(encode_int(total, bytes.field_1_varint))
+    |> size_and_concat(encode_bytearray(hash, bytes.field_2_length_delimited))
 }
 
 pub fn marshal_for_block_id(block_id: CanonicalBlockID) -> (Int, ByteArray) {
   let CanonicalBlockID { hash, part_set_header } = block_id
   (0, #"")
-    |> size_and_concat(encode_bytearray(hash, 10))
+    |> size_and_concat(encode_bytearray(hash, bytes.field_1_length_delimited))
     |> add_and_concat(
-        nest_record(marshal_for_part_set_header(part_set_header), 0x12),
+        nest_record(
+          marshal_for_part_set_header(part_set_header),
+          bytes.field_2_length_delimited,
+        ),
       )
 }
 
@@ -54,17 +57,26 @@ pub fn marshal_for_vote(vote: CanonicalVote) -> (Int, ByteArray) {
   let CanonicalVote { v_type, height, round, block_id, timestamp, chain_id } =
     vote
   (0, #[])
-    |> add_and_concat(encode_int(v_type, 8))
-    |> add_and_concat(encode_int_little_endian(height, 0x11, 9))
-    |> add_and_concat(encode_int_little_endian(round, 0x19, 9))
-    |> add_and_concat(nest_record(marshal_for_block_id(block_id), 0x22))
+    |> add_and_concat(encode_int(v_type, bytes.field_1_varint))
+    |> add_and_concat(
+        encode_int_little_endian(height, bytes.field_2_fixed64, 9),
+      )
+    |> add_and_concat(encode_int_little_endian(round, bytes.field_3_fixed64, 9))
+    |> add_and_concat(
+        nest_record(
+          marshal_for_block_id(block_id),
+          bytes.field_4_length_delimited,
+        ),
+      )
     |> add_and_concat(
         {
           expect Some(ts) = timestamp_proto(timestamp)
-          nest_record(marshal_for_timestamp(ts), 0x2a)
+          nest_record(marshal_for_timestamp(ts), bytes.field_5_length_delimited)
         },
       )
-    |> size_and_concat(encode_bytearray(chain_id, 0x32))
+    |> size_and_concat(
+        encode_bytearray(chain_id, bytes.field_6_length_delimited),
+      )
 }
 
 pub fn marshal_delimited_for_vote(vote: CanonicalVote) {

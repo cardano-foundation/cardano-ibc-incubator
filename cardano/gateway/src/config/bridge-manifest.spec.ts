@@ -26,13 +26,8 @@ function buildHandlerJsonDeployment() {
       policyId: 'host-policy',
       name: 'host-token',
     },
-    handlerAuthToken: {
-      policyId: 'handler-policy',
-      name: 'handler-token',
-    },
     validators: {
       hostStateStt: buildValidator('hostStateStt'),
-      spendHandler: buildValidator('spendHandler'),
       spendClient: buildValidator('spendClient'),
       spendConnection: buildValidator('spendConnection'),
       spendChannel: {
@@ -63,10 +58,6 @@ function buildHandlerJsonDeployment() {
       },
     },
     modules: {
-      handler: {
-        identifier: 'handler-id',
-        address: 'handler-address',
-      },
       transfer: {
         identifier: 'transfer-id',
         address: 'transfer-address',
@@ -107,10 +98,6 @@ describe('bridge manifest normalization', () => {
       host_state_nft: {
         policy_id: 'host-policy',
         token_name: 'host-token',
-      },
-      handler_auth_token: {
-        policy_id: 'handler-policy',
-        token_name: 'handler-token',
       },
     });
     expect(loaded.deployment.validators.voucherMetadata).toEqual({

@@ -1,4 +1,3 @@
-use aiken/collection/list
 use cardano/assets.{PolicyId}
 use cardano/transaction.{Output, OutputReference, Transaction}
 use ibc/auth.{AuthToken}
@@ -42,10 +41,11 @@ validator chan_close_init(
     let (datum, channel_redeemer, spent_output) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)
 
-    expect [updated_output] =
-      list.filter(
+    let updated_output =
+      validator_utils.find_unique_continuation_output(
+        spent_output,
         outputs,
-        fn(output) { output.address == spent_output.address },
+        datum.token,
       )
     expect updated_datum: ChannelDatum =
       validator_utils.get_inline_datum(updated_output)

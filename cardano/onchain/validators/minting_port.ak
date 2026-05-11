@@ -2,16 +2,14 @@ use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
-use cardano/transaction.{
-  Input, NoDatum, Output, Redeemer, ScriptPurpose, Spend, Transaction,
-}
+use cardano/transaction.{Input, NoDatum, Output, Spend, Transaction}
 use ibc/auth.{AuthToken}
-use ibc/core/ics_005/port_redeemer.{BindPort, MintPortRedeemer}
+use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
-use ibc/core/ics_025_handler_interface/handler_redeemer.{
-  HandlerBindPort, HandlerOperator,
-}
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/core/ics_025_handler_interface/host_state_redeemer.{
+  BindPort, HostStateRedeemer,
+}
 use ibc/utils/string as string_utils
 
 // Introduced to prevent high spending costs or potentially prevent tx from being executed.
@@ -27,6 +25,18 @@ fn valid_number_of_ports(
   number_of_ports <= max_number_of_ports
 }
 
+fn find_host_state_input(
+  inputs: List<Input>,
+  nft_policy: PolicyId,
+) -> Option<Input> {
+  list.find(
+    inputs,
+    fn(input) {
+      assets.has_nft(input.output.value, nft_policy, host_state_token_name)
+    },
+  )
+}
+
 validator mint_port(host_state_nft_policy_id: PolicyId) {
   mint(
     redeemer: MintPortRedeemer,
@@ -36,76 +46,48 @@ validator mint_port(host_state_nft_policy_id: PolicyId) {
     let Transaction { inputs, outputs, mint, redeemers, .. } = transaction
     trace @"mint_port: extracted context data"
 
+    let MintPortRedeemer { spend_module_script_hash, port_number } = redeemer
+
+    expect Some(host_state_input) =
+      find_host_state_input(inputs, host_state_nft_policy_id)
+    expect Some(spent_host_state_redeemer) =
+      pairs.get_first(redeemers, Spend(host_state_input.output_reference))
+    expect host_state_redeemer: HostStateRedeemer = spent_host_state_redeemer
+    let valid_host_state_operator =
+      when host_state_redeemer is {
+        BindPort { port, .. } -> port == port_number
+        _ -> False
+      }
+
+    // Port tokens are referenced across IBC transactions that only have access to the
+    // channel auth token name. Channel auth tokens are derived from the HostState NFT.
+    //
+    // To make the port-token name derivable from the channel-token name, the port-token
+    // name must also be derived from the same HostState NFT base.
     let host_state_nft =
       AuthToken {
         policy_id: host_state_nft_policy_id,
         name: host_state_token_name,
       }
+    let port_token_name =
+      string_utils.int_to_string(port_number)
+        |> auth.generate_token_name(host_state_nft, port_keys.port_prefix, _)
+    let port_token =
+      AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
+    expect [module_output] =
+      transaction.find_script_outputs(outputs, spend_module_script_hash)
 
-    // Module setup mints ordinary transfer port auth tokens.
-    let BindPort { handler_token, spend_module_script_hash, port_number } =
-      redeemer
-
-    validate_bind_port(
-      inputs,
-      outputs,
-      mint,
-      redeemers,
-      port_minting_policy_id,
-      host_state_nft,
-      handler_token,
-      spend_module_script_hash,
-      port_number,
-    )
+    trace @"mint_port: transfer module output datum": module_output.datum
+    expect NoDatum = module_output.datum
+    and {
+      valid_host_state_operator?,
+      auth.mint_auth_token(mint, port_token)?,
+      auth.contain_auth_token(module_output, port_token)?,
+      valid_number_of_ports(module_output, port_minting_policy_id)?,
+    }
   }
 
   else(_) {
     fail
-  }
-}
-
-fn validate_bind_port(
-  inputs: List<Input>,
-  outputs: List<Output>,
-  mint,
-  redeemers: Pairs<ScriptPurpose, Redeemer>,
-  port_minting_policy_id: PolicyId,
-  host_state_nft: AuthToken,
-  handler_token: AuthToken,
-  spend_module_script_hash,
-  port_number: Int,
-) -> Bool {
-  expect Some(handler_input) =
-    list.find(
-      inputs,
-      fn(input) { input.output |> auth.contain_auth_token(handler_token) },
-    )
-  // spent handler redeemer is HandlerBindPort operator
-  expect Some(spent_handler_redeemer) =
-    pairs.get_first(redeemers, Spend(handler_input.output_reference))
-  expect handler_operator: HandlerOperator = spent_handler_redeemer
-  let valid_handler_operator = handler_operator == HandlerBindPort
-
-  // Port tokens are referenced across IBC transactions that only have access to the
-  // channel auth token name. Channel auth tokens are derived from the HostState NFT.
-  //
-  // To make the port-token name derivable from the channel-token name, the port-token
-  // name must also be derived from the same HostState NFT base.
-  let port_token_name =
-    string_utils.int_to_string(port_number)
-      |> auth.generate_token_name(host_state_nft, port_keys.port_prefix, _)
-  let port_token =
-    AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
-  expect [module_output] =
-    outputs
-      |> transaction.find_script_outputs(spend_module_script_hash)
-
-  trace @"mint_port: transfer module output datum": module_output.datum
-  expect NoDatum = module_output.datum
-  and {
-    valid_handler_operator?,
-    auth.mint_auth_token(mint, port_token)?,
-    (module_output |> auth.contain_auth_token(port_token))?,
-    valid_number_of_ports(module_output, port_minting_policy_id)?,
   }
 }

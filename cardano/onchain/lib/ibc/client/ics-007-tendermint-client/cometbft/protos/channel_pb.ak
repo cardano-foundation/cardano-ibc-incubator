@@ -59,8 +59,12 @@ pub fn order_to_int32(order: Order) -> Int32 {
 pub fn marshal_for_counterparty(counterparty: Counterparty) {
   let Counterparty { port_id, channel_id } = counterparty
   (0, #"")
-    |> size_and_concat(encode_bytearray(port_id, 10))
-    |> size_and_concat(encode_bytearray(channel_id, 0x12))
+    |> size_and_concat(
+        encode_bytearray(port_id, bytes.field_1_length_delimited),
+      )
+    |> size_and_concat(
+        encode_bytearray(channel_id, bytes.field_2_length_delimited),
+      )
 }
 
 pub fn marshal_for_channel(channel: Channel) -> (Int, ByteArray) {
@@ -73,9 +77,16 @@ pub fn marshal_for_channel(channel: Channel) -> (Int, ByteArray) {
     upgrade_sequence,
   } = channel
   (0, #"")
-    |> add_and_concat(encode_int(state_to_int32(state), 8))
-    |> add_and_concat(encode_int(order_to_int32(ordering), 0x10))
-    |> add_and_concat(nest_record(marshal_for_counterparty(counterparty), 0x1a))
+    |> add_and_concat(encode_int(state_to_int32(state), bytes.field_1_varint))
+    |> add_and_concat(
+        encode_int(order_to_int32(ordering), bytes.field_2_varint),
+      )
+    |> add_and_concat(
+        nest_record(
+          marshal_for_counterparty(counterparty),
+          bytes.field_3_length_delimited,
+        ),
+      )
     |> add_and_concat(
         list.reduce(
           connection_hops,
@@ -86,11 +97,13 @@ pub fn marshal_for_channel(channel: Channel) -> (Int, ByteArray) {
               l
                 |> encode_length_varint()
                 |> concat(connection_hop)
-                |> push(0x22)
+                |> push(bytes.field_4_length_delimited)
             (size + sov(l) + l + 1, concat(bz1, bz2))
           },
         ),
       )
-    |> size_and_concat(encode_bytearray(version, 0x2a))
-    |> add_and_concat(encode_int(upgrade_sequence, 0x30))
+    |> size_and_concat(
+        encode_bytearray(version, bytes.field_5_length_delimited),
+      )
+    |> add_and_concat(encode_int(upgrade_sequence, bytes.field_6_varint))
 }

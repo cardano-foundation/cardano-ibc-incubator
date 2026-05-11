@@ -46,7 +46,6 @@ import {
   TM_HASH_SIZE,
 } from './block';
 
-export const HANDLER_TOKEN_NAME = '68616e646c6572'; // fromText("handler")
 export const CLIENT_PREFIX = '6962635f636c69656e74'; // fromText("ibc_client")
 export const CONNECTION_TOKEN_PREFIX = '636f6e6e656374696f6e'; // fromText("connection")
 export const CHANNEL_TOKEN_PREFIX = '6368616e6e656c'; // fromText("channel")

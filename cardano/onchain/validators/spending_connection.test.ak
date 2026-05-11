@@ -54,7 +54,7 @@ type MockData {
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
   connection_id: ByteArray,
   connection_token: AuthToken,
-  handler_token: AuthToken,
+  base_token: AuthToken,
   client_id: ByteArray,
   client_input: Input,
   validity_range: ValidityRange,
@@ -82,10 +82,10 @@ fn setup() -> MockData {
       output: host_state_output,
     }
 
-  let handler_token =
+  let base_token =
     AuthToken {
-      name: "mock handler token name",
-      policy_id: "mock handler token policy_id",
+      name: "mock base token name",
+      policy_id: "mock base token policy_id",
     }
 
   //========================Client============================
@@ -160,7 +160,7 @@ fn setup() -> MockData {
 
   let client_token_name =
     auth.generate_token_name(
-      handler_token,
+      base_token,
       client_keys_mod.client_prefix,
       client_sequence,
     )
@@ -206,7 +206,7 @@ fn setup() -> MockData {
     conn_keys.parse_connection_id_sequence(connection_id)
   let connection_token_name =
     auth.generate_token_name(
-      handler_token,
+      base_token,
       conn_keys.connection_prefix,
       connection_sequence,
     )
@@ -225,7 +225,7 @@ fn setup() -> MockData {
     spend_connection_script_hash: "mock spend_connection_script_hash",
     connection_id,
     connection_token,
-    handler_token,
+    base_token,
     client_id,
     client_input,
     validity_range,

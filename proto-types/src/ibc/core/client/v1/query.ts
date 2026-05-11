@@ -311,28 +311,6 @@ export interface QueryNewClientResponse {
    */
   consensus_state?: Any;
 }
-/**
- * @name QueryBlockDataRequest
- * @package ibc.core.client.v1
- * @see proto type: ibc.core.client.v1.QueryBlockDataRequest
- */
-export interface QueryBlockDataRequest {
-  /**
-   * Block number to query
-   */
-  height: bigint;
-}
-/**
- * @name QueryBlockDataResponse
- * @package ibc.core.client.v1
- * @see proto type: ibc.core.client.v1.QueryBlockDataResponse
- */
-export interface QueryBlockDataResponse {
-  /**
-   * block data associated with the request identifier
-   */
-  block_data?: Any;
-}
 function createBaseQueryLatestHeightRequest(): QueryLatestHeightRequest {
   return {};
 }
@@ -1707,113 +1685,6 @@ export const QueryNewClientResponse = {
     return message;
   },
 };
-function createBaseQueryBlockDataRequest(): QueryBlockDataRequest {
-  return {
-    height: BigInt(0),
-  };
-}
-/**
- * @name QueryBlockDataRequest
- * @package ibc.core.client.v1
- * @see proto type: ibc.core.client.v1.QueryBlockDataRequest
- */
-export const QueryBlockDataRequest = {
-  typeUrl: "/ibc.core.client.v1.QueryBlockDataRequest",
-  encode(message: QueryBlockDataRequest, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
-    if (message.height !== BigInt(0)) {
-      writer.uint32(8).uint64(message.height);
-    }
-    return writer;
-  },
-  decode(input: BinaryReader | Uint8Array, length?: number): QueryBlockDataRequest {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseQueryBlockDataRequest();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1:
-          message.height = reader.uint64();
-          break;
-        default:
-          reader.skipType(tag & 7);
-          break;
-      }
-    }
-    return message;
-  },
-  fromJSON(object: any): QueryBlockDataRequest {
-    const obj = createBaseQueryBlockDataRequest();
-    if (isSet(object.height)) obj.height = BigInt(object.height.toString());
-    return obj;
-  },
-  toJSON(message: QueryBlockDataRequest): unknown {
-    const obj: any = {};
-    message.height !== undefined && (obj.height = (message.height || BigInt(0)).toString());
-    return obj;
-  },
-  fromPartial<I extends Exact<DeepPartial<QueryBlockDataRequest>, I>>(object: I): QueryBlockDataRequest {
-    const message = createBaseQueryBlockDataRequest();
-    if (object.height !== undefined && object.height !== null) {
-      message.height = BigInt(object.height.toString());
-    }
-    return message;
-  },
-};
-function createBaseQueryBlockDataResponse(): QueryBlockDataResponse {
-  return {
-    block_data: undefined,
-  };
-}
-/**
- * @name QueryBlockDataResponse
- * @package ibc.core.client.v1
- * @see proto type: ibc.core.client.v1.QueryBlockDataResponse
- */
-export const QueryBlockDataResponse = {
-  typeUrl: "/ibc.core.client.v1.QueryBlockDataResponse",
-  encode(message: QueryBlockDataResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
-    if (message.block_data !== undefined) {
-      Any.encode(message.block_data, writer.uint32(10).fork()).ldelim();
-    }
-    return writer;
-  },
-  decode(input: BinaryReader | Uint8Array, length?: number): QueryBlockDataResponse {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseQueryBlockDataResponse();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1:
-          message.block_data = Any.decode(reader, reader.uint32());
-          break;
-        default:
-          reader.skipType(tag & 7);
-          break;
-      }
-    }
-    return message;
-  },
-  fromJSON(object: any): QueryBlockDataResponse {
-    const obj = createBaseQueryBlockDataResponse();
-    if (isSet(object.block_data)) obj.block_data = Any.fromJSON(object.block_data);
-    return obj;
-  },
-  toJSON(message: QueryBlockDataResponse): unknown {
-    const obj: any = {};
-    message.block_data !== undefined &&
-      (obj.block_data = message.block_data ? Any.toJSON(message.block_data) : undefined);
-    return obj;
-  },
-  fromPartial<I extends Exact<DeepPartial<QueryBlockDataResponse>, I>>(object: I): QueryBlockDataResponse {
-    const message = createBaseQueryBlockDataResponse();
-    if (object.block_data !== undefined && object.block_data !== null) {
-      message.block_data = Any.fromPartial(object.block_data);
-    }
-    return message;
-  },
-};
 /** Query provides defines the gRPC querier service */
 export interface Query {
   /** ClientState queries an IBC light client. */
@@ -1846,7 +1717,6 @@ export interface Query {
   ): Promise<QueryUpgradedConsensusStateResponse>;
   LatestHeight(request?: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse>;
   NewClient(request: QueryNewClientRequest): Promise<QueryNewClientResponse>;
-  BlockData(request: QueryBlockDataRequest): Promise<QueryBlockDataResponse>;
 }
 export class QueryClientImpl implements Query {
   private readonly rpc: Rpc;
@@ -1863,7 +1733,6 @@ export class QueryClientImpl implements Query {
     this.UpgradedConsensusState = this.UpgradedConsensusState.bind(this);
     this.LatestHeight = this.LatestHeight.bind(this);
     this.NewClient = this.NewClient.bind(this);
-    this.BlockData = this.BlockData.bind(this);
   }
   ClientState(request: QueryClientStateRequest): Promise<QueryClientStateResponse> {
     const data = QueryClientStateRequest.encode(request).finish();
@@ -1929,11 +1798,6 @@ export class QueryClientImpl implements Query {
     const data = QueryNewClientRequest.encode(request).finish();
     const promise = this.rpc.request("ibc.core.client.v1.Query", "NewClient", data);
     return promise.then((data) => QueryNewClientResponse.decode(new BinaryReader(data)));
-  }
-  BlockData(request: QueryBlockDataRequest): Promise<QueryBlockDataResponse> {
-    const data = QueryBlockDataRequest.encode(request).finish();
-    const promise = this.rpc.request("ibc.core.client.v1.Query", "BlockData", data);
-    return promise.then((data) => QueryBlockDataResponse.decode(new BinaryReader(data)));
   }
 }
 export const createClientImpl = (rpc: Rpc) => {

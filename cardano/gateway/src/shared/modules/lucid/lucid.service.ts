@@ -18,11 +18,6 @@ import {
   TRANSACTION_TIME_TO_LIVE,
 } from "../../../config/constant.config";
 import {
-  decodeHandlerDatum,
-  encodeHandlerDatum,
-  HandlerDatum,
-} from "../../types/handler-datum";
-import {
   decodeHostStateDatum,
   encodeHostStateDatum,
   HostStateDatum,
@@ -31,14 +26,6 @@ import {
   GrpcInternalException,
   GrpcNotFoundException,
 } from "~@/exception/grpc_exceptions";
-import {
-  encodeMintClientOperator,
-  MintClientOperator,
-} from "../../types/mint-client-operator";
-import {
-  encodeHandlerOperator,
-  HandlerOperator,
-} from "../../types/handler-operator";
 import { ClientDatum, encodeClientDatum } from "../../types/client-datum";
 import { decodeClientDatum } from "../../types/client-datum";
 import {
@@ -116,16 +103,13 @@ import { computeLedgerAnchoredValidityWindow } from "../../helpers/time";
 export type CodecType =
   | "client"
   | "connection"
-  | "handler"
   | "channel"
   | "mockModule"
   | "transferEscrow"
   | "host_state"
   | "host_state_redeemer"
   | "spendClientRedeemer"
-  | "mintClientOperator"
   | "mintClientRedeemer"
-  | "handlerOperator"
   | "mintConnectionRedeemer"
   | "spendConnectionRedeemer"
   | "mintChannelRedeemer"
@@ -192,7 +176,6 @@ function encodeTransferEscrowShardRedeemer(
 }
 
 type ReferenceScripts = {
-  spendHandler: UTxO;
   spendChannel: UTxO;
   spendTraceRegistry?: UTxO;
   mintChannel: UTxO;
@@ -238,7 +221,6 @@ export class LucidService implements OnModuleInit {
   ) {
     const deploymentConfig = this.configService.get("deployment");
     this.referenceScriptOutRefs = {
-      spendHandler: deploymentConfig.validators.spendHandler.refUtxo,
       spendConnection: deploymentConfig.validators.spendConnection.refUtxo,
       spendChannel: deploymentConfig.validators.spendChannel.refUtxo,
       spendTraceRegistry: deploymentConfig.validators.spendTraceRegistry
@@ -573,30 +555,6 @@ export class LucidService implements OnModuleInit {
     this.explicitWalletSelectionAddress = null;
   }
 
-  public async findUtxoAtHandlerAuthToken(): Promise<UTxO> {
-    const { address: addressOrCredential } =
-      this.configService.get("deployment").validators.spendHandler;
-    const handlerAuthTokenConfig =
-      this.configService.get("deployment").handlerAuthToken;
-    const handlerAuthToken = handlerAuthTokenConfig.policyId +
-      handlerAuthTokenConfig.name;
-    const handlerUtxos = await this.lucid.utxosAt(addressOrCredential);
-    if (handlerUtxos.length === 0) {
-      throw new GrpcNotFoundException(
-        `Unable to find UTxO at  ${addressOrCredential}`,
-      );
-    }
-    const handlerUtxo = handlerUtxos.find((utxo) =>
-      utxo.assets.hasOwnProperty(handlerAuthToken)
-    );
-    if (!handlerUtxo) {
-      throw new GrpcNotFoundException(
-        `Unable to find Handler UTxO at ${handlerAuthToken}`,
-      );
-    }
-    return handlerUtxo;
-  }
-
   /**
    * Find the HostState UTXO by its unique NFT (STT Architecture)
    *
@@ -644,12 +602,6 @@ export class LucidService implements OnModuleInit {
     return getAddressDetails(address).paymentCredential;
   }
   // ========================== helper ==========================
-  public getHandlerTokenUnit(): string {
-    return (
-      this.configService.get("deployment").handlerAuthToken.policyId +
-      this.configService.get("deployment").handlerAuthToken.name
-    );
-  }
   public getClientPolicyId(): string {
     return this.configService.get("deployment").validators.mintClientStt
       .scriptHash;
@@ -737,11 +689,6 @@ export class LucidService implements OnModuleInit {
             encodedDatum,
             this.LucidImporter,
           )) as T;
-        case "handler":
-          return (await decodeHandlerDatum(
-            encodedDatum,
-            this.LucidImporter,
-          )) as T;
         case "channel":
           return (await decodeChannelDatum(
             encodedDatum,
@@ -785,11 +732,6 @@ export class LucidService implements OnModuleInit {
             data as ConnectionDatum,
             this.LucidImporter,
           );
-        case "handler":
-          return await encodeHandlerDatum(
-            data as HandlerDatum,
-            this.LucidImporter,
-          );
         case "channel":
           return await encodeChannelDatum(
             data as ChannelDatum,
@@ -812,7 +754,7 @@ export class LucidService implements OnModuleInit {
           );
         case "host_state_redeemer": {
           const { Data: LucidData } = this.LucidImporter;
-          // Must match the HostStateRedeemer ADT in host_state_stt.ak
+          // Must match the on-chain HostStateRedeemer ADT.
           const SiblingHashesSchema = LucidData.Array(LucidData.Bytes());
           const SiblingHashesListSchema = LucidData.Array(SiblingHashesSchema);
           const CreateClientSchema = LucidData.Object({
@@ -869,30 +811,15 @@ export class LucidService implements OnModuleInit {
             data as SpendClientRedeemer,
             this.LucidImporter,
           );
-        case "mintClientOperator":
-          return await encodeMintClientOperator(
-            data as MintClientOperator,
-            this.LucidImporter,
-          );
         case "mintClientRedeemer": {
-          // MintClientRedeemer is { handler_auth_token: AuthToken }
           const { Data } = this.LucidImporter;
-          const AuthTokenSchema = Data.Object({
-            policy_id: Data.Bytes(),
-            name: Data.Bytes(),
-          });
-          const MintClientRedeemerSchema = Data.Object({
-            handler_auth_token: AuthTokenSchema,
-          });
-          return Data.to(data as any, MintClientRedeemerSchema, {
+          const MintClientRedeemerSchema = Data.Enum([
+            Data.Literal("MintClient"),
+          ]);
+          return Data.to(data as any, MintClientRedeemerSchema as any, {
             canonical: true,
           });
         }
-        case "handlerOperator":
-          return await encodeHandlerOperator(
-            data as HandlerOperator,
-            this.LucidImporter,
-          );
         case "mintConnectionRedeemer":
           return await encodeMintConnectionRedeemer(
             data as MintConnectionRedeemer,
@@ -1121,14 +1048,11 @@ export class LucidService implements OnModuleInit {
     return tx;
   }
   public createUnsignedConnectionOpenInitTransaction(
-    handlerUtxo: UTxO,
     hostStateUtxo: UTxO,
     encodedHostStateRedeemer: string,
-    encodedSpendHandlerRedeemer: string,
     connectionTokenUnit: string,
     clientUtxo: UTxO,
     encodedMintConnectionRedeemer: string,
-    encodedUpdatedHandlerDatum: string,
     encodedUpdatedHostStateDatum: string,
     encodedConnectionDatum: string,
     _constructedAddress: string,
@@ -1144,12 +1068,10 @@ export class LucidService implements OnModuleInit {
     };
 
     tx.readFrom([
-      this.referenceScripts.spendHandler,
       this.referenceScripts.mintConnection,
       this.referenceScripts.hostStateStt,
     ])
       .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
-      .collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
       .mintAssets(
         {
           [connectionTokenUnit]: 1n,
@@ -1170,13 +1092,6 @@ export class LucidService implements OnModuleInit {
       encodedUpdatedHostStateDatum,
       {
         [hostStateNFT]: 1n,
-      },
-    );
-    addPayToContract(
-      deploymentConfig.validators.spendHandler.address,
-      encodedUpdatedHandlerDatum,
-      {
-        [this.getHandlerTokenUnit()]: 1n,
       },
     );
     addPayToContract(
@@ -1189,14 +1104,11 @@ export class LucidService implements OnModuleInit {
     return tx;
   }
   public createUnsignedConnectionOpenTryTransaction(
-    handlerUtxo: UTxO,
     hostStateUtxo: UTxO,
     encodedHostStateRedeemer: string,
-    encodedSpendHandlerRedeemer: string,
     connectionTokenUnit: string,
     clientUtxo: UTxO,
     encodedMintConnectionRedeemer: string,
-    encodedUpdatedHandlerDatum: string,
     encodedUpdatedHostStateDatum: string,
     encodedConnectionDatum: string,
     _constructedAddress: string,
@@ -1212,12 +1124,10 @@ export class LucidService implements OnModuleInit {
     };
 
     tx.readFrom([
-      this.referenceScripts.spendHandler,
       this.referenceScripts.mintConnection,
       this.referenceScripts.hostStateStt,
     ])
       .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
-      .collectFrom([handlerUtxo], encodedSpendHandlerRedeemer)
       .mintAssets(
         {
           [connectionTokenUnit]: 1n,
@@ -1238,13 +1148,6 @@ export class LucidService implements OnModuleInit {
       encodedUpdatedHostStateDatum,
       {
         [hostStateNFT]: 1n,
-      },
-    );
-    addPayToContract(
-      deploymentConfig.validators.spendHandler.address,
-      encodedUpdatedHandlerDatum,
-      {
-        [this.getHandlerTokenUnit()]: 1n,
       },
     );
     addPayToContract(
@@ -1484,13 +1387,11 @@ export class LucidService implements OnModuleInit {
     };
 
     tx.readFrom([
-      this.referenceScripts.spendHandler,
       this.referenceScripts.mintChannel,
       this.getModuleReferenceScript(dto.moduleKey),
       this.referenceScripts.hostStateStt,
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
-      .collectFrom([dto.handlerUtxo], dto.encodedSpendHandlerRedeemer)
       .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
       .mintAssets(
         {
@@ -1503,11 +1404,6 @@ export class LucidService implements OnModuleInit {
         deploymentConfig.validators.hostStateStt.address,
         { kind: "inline", value: dto.encodedUpdatedHostStateDatum },
         { [hostStateNFT]: 1n },
-      )
-      .pay.ToContract(
-        deploymentConfig.validators.spendHandler.address,
-        { kind: "inline", value: dto.encodedUpdatedHandlerDatum },
-        { [this.getHandlerTokenUnit()]: 1n },
       )
       .pay.ToContract(
         deploymentConfig.validators.spendChannel.address,
@@ -1534,10 +1430,8 @@ export class LucidService implements OnModuleInit {
     };
 
     tx.collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
-      .collectFrom([dto.handlerUtxo], dto.encodedSpendHandlerRedeemer)
       .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
       .readFrom([
-        this.referenceScripts.spendHandler,
         this.referenceScripts.mintChannel,
         this.getModuleReferenceScript(dto.moduleKey),
         this.referenceScripts.hostStateStt,
@@ -1561,13 +1455,6 @@ export class LucidService implements OnModuleInit {
       dto.encodedUpdatedHostStateDatum,
       {
         [hostStateNFT]: 1n,
-      },
-    );
-    addPayToContract(
-      deploymentConfig.validators.spendHandler.address,
-      dto.encodedUpdatedHandlerDatum,
-      {
-        [this.getHandlerTokenUnit()]: 1n,
       },
     );
     addPayToContract(

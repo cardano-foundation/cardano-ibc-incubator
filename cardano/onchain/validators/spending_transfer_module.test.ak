@@ -48,7 +48,7 @@ type MockData {
   host_state_nft_policy_id: PolicyId,
   host_state_input: Input,
   host_state_output: Output,
-  handler_token: AuthToken,
+  base_token: AuthToken,
   port_token: AuthToken,
   module_token: AuthToken,
   port_id: ByteArray,
@@ -88,10 +88,10 @@ fn setup() -> MockData {
       output: host_state_output,
     }
 
-  let handler_token =
+  let base_token =
     AuthToken {
-      policy_id: "mock handler token policy_id",
-      name: "mock handler token name",
+      policy_id: "mock base token policy_id",
+      name: "mock base token name",
     }
 
   let port_token =
@@ -318,7 +318,7 @@ fn setup() -> MockData {
     host_state_nft_policy_id,
     host_state_input,
     host_state_output,
-    handler_token,
+    base_token,
     port_token,
     module_token,
     port_id,
@@ -424,8 +424,7 @@ test on_chan_open_init_succeed() {
   let module_redeemer: Redeemer =
     Callback(OnChanOpenInit { channel_id: mock.channel_id })
 
-  let channel_redeemer: Redeemer =
-    ChanOpenInit { handler_token: mock.handler_token }
+  let channel_redeemer: Redeemer = ChanOpenInit
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
@@ -440,7 +439,6 @@ test on_chan_open_init_succeed() {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -465,8 +463,7 @@ test on_chan_open_init_fails_without_host_state_co_spend() fail {
   let module_redeemer: Redeemer =
     Callback(OnChanOpenInit { channel_id: mock.channel_id })
 
-  let channel_redeemer: Redeemer =
-    ChanOpenInit { handler_token: mock.handler_token }
+  let channel_redeemer: Redeemer = ChanOpenInit
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
@@ -480,7 +477,6 @@ test on_chan_open_init_fails_without_host_state_co_spend() fail {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -511,7 +507,6 @@ test on_chan_open_try_succeed() {
 
   let channel_redeemer: Redeemer =
     ChanOpenTry {
-      handler_token: mock.handler_token,
       counterparty_version: transfer_module_keys.version,
       proof_init: mock.proof,
       proof_height: mock.proof_height,
@@ -530,7 +525,6 @@ test on_chan_open_try_succeed() {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -579,7 +573,6 @@ test on_chan_open_ack_succeed() {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -624,7 +617,6 @@ test on_chan_open_confirm_succeed() {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -705,7 +697,6 @@ test on_recv_packet_mint_voucher_succeed() {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -825,7 +816,6 @@ test on_recv_packet_unescrow_succeed() {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -942,7 +932,6 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -1038,7 +1027,6 @@ test transfer_escrow_succeed() {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -1117,7 +1105,6 @@ test transfer_burn_voucher_succeed() {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -1199,7 +1186,6 @@ test on_timeout_packet_mint_voucher_succeed() {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -1313,7 +1299,6 @@ test on_timeout_packet_unescrow_succeed() {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -1396,7 +1381,6 @@ test on_acknowledgement_packet_result_succeed() {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -1488,7 +1472,6 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -1609,7 +1592,6 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    mock.handler_token,
     mock.port_token,
     mock.module_token,
     mock.port_id,
@@ -1648,7 +1630,6 @@ test on_chan_close_init_given_any_input_returns_false() {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    fake_data.handler_token,
     fake_data.port_token,
     fake_data.module_token,
     fake_data.port_id,
@@ -1687,7 +1668,6 @@ test on_chan_close_confirm_given_any_input_returns_false() {
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   spending_transfer_module.spend_transfer_module.spend(
-    fake_data.handler_token,
     fake_data.port_token,
     fake_data.module_token,
     fake_data.port_id,

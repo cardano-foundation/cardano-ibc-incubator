@@ -1,23 +1,11 @@
 use aiken/cbor
-// IBC Host State - Single Token Thread (STT) Validator
-//
-// This validator enforces the Single Token Thread pattern for IBC host state:
-// 1. Exactly ONE UTXO with the IBC Host State NFT exists at any time
-// 2. State updates MUST spend the old UTXO and create a new one with the same NFT
-// 3. Version MUST increment monotonically (forward-only progression)
-// 4. State transitions MUST be valid for the operation type
-//
-// Security properties:
-// - Canonical state: Only one valid state exists at any height
-// - No rollback: Version monotonicity prevents replaying old state
-// - Type safety: Redeemer specifies operation, validator checks validity
-// - Auditability: NFT provides complete state history
+// HostState is the single coordinator UTxO for IBC object creation and root updates.
 
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/primitive/bytearray
-use cardano/assets.{AssetName, PolicyId, quantity_of}
+use cardano/assets.{AssetName, PolicyId}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction,
 }
@@ -40,94 +28,13 @@ use ibc/core/ics_025_handler_interface/host_state.{
   validate_create_channel, validate_create_client, validate_create_connection,
   validate_update_only_root,
 }
+use ibc/core/ics_025_handler_interface/host_state_redeemer.{
+  BindPort, CreateChannel, CreateClient, CreateConnection, HandlePacket,
+  HostStateRedeemer, UpdateChannel, UpdateClient, UpdateConnection,
+}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
-
-/// Redeemer for HostState STT operations
-pub type HostStateRedeemer {
-  /// Create a new IBC client
-  CreateClient {
-    // Sibling hashes for the `clients/{id}/clientState` key update.
-    client_state_siblings: List<ByteArray>,
-    // Sibling hashes for the `clients/{id}/consensusStates/{height}` key update.
-    consensus_state_siblings: List<ByteArray>,
-  }
-  /// Create a new IBC connection
-  CreateConnection {
-    // Sibling hashes for the `connections/{id}` key update.
-    connection_siblings: List<ByteArray>,
-  }
-  /// Create a new IBC channel
-  CreateChannel {
-    // Sibling hashes for the `channelEnds/ports/{portId}/channels/{channelId}` key update.
-    channel_siblings: List<ByteArray>,
-    // Sibling hashes for the `nextSequenceSend/ports/{portId}/channels/{channelId}` key update.
-    next_sequence_send_siblings: List<ByteArray>,
-    // Sibling hashes for the `nextSequenceRecv/ports/{portId}/channels/{channelId}` key update.
-    next_sequence_recv_siblings: List<ByteArray>,
-    // Sibling hashes for the `nextSequenceAck/ports/{portId}/channels/{channelId}` key update.
-    next_sequence_ack_siblings: List<ByteArray>,
-  }
-  /// Bind a port.
-  ///
-  /// This adds a committed `ports/{portId}` entry to the HostState root.
-  /// The `portId` format is `port-{n}` (see `ics-005/types/keys.ak`).
-  BindPort {
-    port: Int,
-    // Sibling hashes for the `ports/{portId}` key update.
-    port_siblings: List<ByteArray>,
-  }
-  /// Update client state (consensus update, misbehaviour, upgrade)
-  UpdateClient {
-    // Sibling hashes for the `clients/{clientId}/clientState` key update.
-    client_state_siblings: List<ByteArray>,
-    // Sibling hashes for the `clients/{clientId}/consensusStates/{height}` key update.
-    //
-    // This is only used when the UpdateClient transition adds a new consensus state.
-    // For updates that do not add a consensus state (e.g., misbehaviour), this should
-    // be an empty list.
-    consensus_state_siblings: List<ByteArray>,
-    // Sibling hashes for consensus state deletions.
-    //
-    // The spend_client validator may prune or expire old consensus states.
-    // Each removed consensus state is a deletion in the commitment tree.
-    //
-    // This is a list-of-lists:
-    // - outer list: one entry per removed consensus state (in input order)
-    // - inner list: the `merkle_depth_bits` sibling hashes for that key update
-    removed_consensus_state_siblings: List<List<ByteArray>>,
-  }
-  /// Update connection state (handshake continuation)
-  UpdateConnection {
-    // Sibling hashes for the `connections/{id}` key update.
-    connection_siblings: List<ByteArray>,
-  }
-  /// Update channel state (handshake continuation)
-  UpdateChannel {
-    // Sibling hashes for the `channelEnds/ports/{portId}/channels/{channelId}` key update.
-    channel_siblings: List<ByteArray>,
-  }
-  /// Send/receive/ack/timeout IBC packets
-  HandlePacket {
-    // Sibling hashes for the `channelEnds/ports/{portId}/channels/{channelId}` key update.
-    //
-    // Most packet operations do not change the channel end, but ordered timeouts do.
-    channel_siblings: List<ByteArray>,
-    // Sibling hashes for the `nextSequenceSend/ports/{portId}/channels/{channelId}` key update.
-    next_sequence_send_siblings: List<ByteArray>,
-    // Sibling hashes for the `nextSequenceRecv/ports/{portId}/channels/{channelId}` key update.
-    next_sequence_recv_siblings: List<ByteArray>,
-    // Sibling hashes for the `nextSequenceAck/ports/{portId}/channels/{channelId}` key update.
-    next_sequence_ack_siblings: List<ByteArray>,
-    // Sibling hashes for the `commitments/ports/{portId}/channels/{channelId}/sequences/{sequence}` key update.
-    packet_commitment_siblings: List<ByteArray>,
-    // Sibling hashes for the `receipts/ports/{portId}/channels/{channelId}/sequences/{sequence}` key update.
-    packet_receipt_siblings: List<ByteArray>,
-    // Sibling hashes for the `acks/ports/{portId}/channels/{channelId}/sequences/{sequence}` key update.
-    packet_acknowledgement_siblings: List<ByteArray>,
-  }
-}
 
 /// Find the HostState UTXO input being spent
 /// 
@@ -139,9 +46,7 @@ fn find_host_state_input(
   list.find(
     inputs,
     fn(input) {
-      let quantity =
-        quantity_of(input.output.value, nft_policy, host_state_token_name)
-      quantity == 1
+      assets.has_nft(input.output.value, nft_policy, host_state_token_name)
     },
   )
 }
@@ -156,9 +61,7 @@ fn find_host_state_output(
   list.find(
     outputs,
     fn(output) {
-      let quantity =
-        quantity_of(output.value, nft_policy, host_state_token_name)
-      quantity == 1
+      assets.has_nft(output.value, nft_policy, host_state_token_name)
     },
   )
 }
@@ -174,7 +77,7 @@ fn find_input_with_auth_token(
   list.find(
     inputs,
     fn(input) {
-      quantity_of(input.output.value, token.policy_id, token.name) == 1
+      assets.has_nft(input.output.value, token.policy_id, token.name)
     },
   )
 }
@@ -1061,9 +964,7 @@ validator host_state_stt(
       list.count(
         outputs,
         fn(output) {
-          let quantity =
-            quantity_of(output.value, nft_policy, host_state_token_name)
-          quantity == 1
+          assets.has_nft(output.value, nft_policy, host_state_token_name)
         },
       )
     expect nft_output_count == 1

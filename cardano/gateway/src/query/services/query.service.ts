@@ -35,7 +35,6 @@ import { IdentifiedClientState } from '@plus/proto-types/build/ibc/core/client/v
 import { LucidService } from '@shared/modules/lucid/lucid.service';
 import { KupoService } from '@shared/modules/kupo/kupo.service';
 import { ConfigService } from '@nestjs/config';
-import { decodeHandlerDatum, HandlerDatum } from '@shared/types/handler-datum';
 import { decodeHostStateDatum, HostStateDatum } from '@shared/types/host-state-datum';
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
 import { normalizeConsensusStateFromDatum } from '@shared/helpers/consensus-state';
@@ -100,7 +99,7 @@ import {
 } from '../../shared/types/connection/connection-redeemer';
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
 import { Packet } from '@shared/types/channel/packet';
-import { decodeSpendClientRedeemer } from '@shared/types/client-redeemer';
+import { decodeMintClientRedeemer, decodeSpendClientRedeemer } from '@shared/types/client-redeemer';
 import { validQueryClientStateParam, validQueryConsensusStateParam } from '../helpers/client.validate';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
@@ -606,25 +605,7 @@ export class QueryService {
     );
   }
 
-  private async getHandlerDatum(): Promise<HandlerDatum> {
-    // The handler UTxO is the root of the on-chain IBC state machine on Cardano.
-    // It tracks the next client/connection/channel sequences and lets us derive
-    // the auth token names for child UTxOs deterministically.
-    const handlerAuthToken = this.configService.get('deployment').handlerAuthToken;
-    const handlerAuthTokenUnit = handlerAuthToken.policyId + handlerAuthToken.name;
-    const handlerUtxo = await this.lucidService.findUtxoByUnit(handlerAuthTokenUnit);
-    return decodeHandlerDatum(handlerUtxo.datum, this.lucidService.LucidImporter);
-  }
-
   private async getHostStateDatum(): Promise<HostStateDatum> {
-    // Cardano client identifiers are minted from the host-state sequence, not the
-    // handler sequence. Batch enumeration therefore has to use host state as the
-    // authoritative bound when reconstructing the existing client ids.
-    //
-    // This is intentionally different from `getHandlerDatum()`: the handler tracks
-    // top-level IBC bookkeeping, but CreateClient increments `hostState.next_client_sequence`.
-    // If we scan against the handler sequence here, single-client queries can succeed
-    // while the batch query incorrectly returns an empty list.
     const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
     return decodeHostStateDatum(hostStateUtxo.datum, this.lucidService.LucidImporter);
   }
@@ -873,12 +854,12 @@ export class QueryService {
         ).filter((txsResult): txsResult is ResponseDeliverTx => txsResult !== null && txsResult !== undefined);
 
         // client state + consensus state
-        const authOrClientUTxos = await this.historyService.findUtxoClientOrAuthHandler(parseInt(blockNo.toString()));
-        const txsAuthOrClientsResults = await this._parseEventClient(authOrClientUTxos);
+        const clientUtxos = await this.historyService.findClientUtxosByBlockNo(parseInt(blockNo.toString()));
+        const txsClientResults = await this._parseEventClient(clientUtxos);
 
         // register/unregister event spo
         const spoEvents = await this._querySpoEvents(BigInt(blockNo));
-        const eventInBlock = [...txsAuthOrClientsResults, ...txsResults, ...spoEvents];
+        const eventInBlock = [...txsClientResults, ...txsResults, ...spoEvents];
         totalEventResults.push(...eventInBlock);
       }
 
@@ -1195,15 +1176,12 @@ export class QueryService {
     const deploymentConfig = this.configService.get('deployment');
     const mintClientScriptHash = deploymentConfig.validators.mintClientStt.scriptHash;
     const spendClientAddress = deploymentConfig.validators.spendClient.address;
-    const handlerAuthToken = deploymentConfig.handlerAuthToken;
     const tokenBase = deploymentConfig.hostStateNFT;
-    const hasHandlerUtxo = utxos.find((utxo) => utxo.assetsPolicy === handlerAuthToken.policyId);
 
     const txsResults = await Promise.all(
       utxos
         .filter((utxo) => [mintClientScriptHash].includes(utxo.assetsPolicy))
         .map(async (clientUtxo) => {
-          const eventClient = hasHandlerUtxo ? EVENT_TYPE_CLIENT.CREATE_CLIENT : EVENT_TYPE_CLIENT.UPDATE_CLIENT;
           const clientId = getIdByTokenName(clientUtxo.assetsName, tokenBase, CLIENT_PREFIX);
           let clientDatum: ClientDatum;
           try {
@@ -1213,6 +1191,18 @@ export class QueryService {
           }
 
           const redeemers = await this.getTransactionRedeemers(clientUtxo.txHash);
+          const hasMintClientRedeemer = redeemers
+            .filter((redeemer) => redeemer.type === REDEEMER_TYPE.MINT)
+            .some((redeemer) => {
+              try {
+                return decodeMintClientRedeemer(redeemer.data, this.lucidService.LucidImporter) === 'MintClient';
+              } catch {
+                return false;
+              }
+            });
+          const eventClient = hasMintClientRedeemer
+            ? EVENT_TYPE_CLIENT.CREATE_CLIENT
+            : EVENT_TYPE_CLIENT.UPDATE_CLIENT;
           const spendClientRedeemer = redeemers.find((e) => e.type == 'spend');
           let spendClientRedeemerData = null;
           if (spendClientRedeemer) {
@@ -1538,11 +1528,11 @@ export class QueryService {
     this.logger.log(`found tx for hash = ${request.hash}`, 'queryTransactionByHash');
 
     // get create_client events from tx
-    const authOrClientUTxos = await this.historyService.findUtxoClientOrAuthHandler(tx.height);
+    const clientUtxos = await this.historyService.findClientUtxosByBlockNo(tx.height);
     let createClientEvent = null;
-    if (authOrClientUTxos.length) {
-      const txsAuthOrClientsResults = await this._parseEventClient(authOrClientUTxos);
-      createClientEvent = txsAuthOrClientsResults.find((e) => e.events[0].type === EVENT_TYPE_CLIENT.CREATE_CLIENT);
+    if (clientUtxos.length) {
+      const txsClientResults = await this._parseEventClient(clientUtxos);
+      createClientEvent = txsClientResults.find((e) => e.events[0].type === EVENT_TYPE_CLIENT.CREATE_CLIENT);
     }
 
     this.logger.log(

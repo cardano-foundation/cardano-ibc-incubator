@@ -324,9 +324,8 @@ export class YaciHistoryService implements HistoryService {
     };
   }
 
-  async findUtxoClientOrAuthHandler(height: number): Promise<UtxoDto[]> {
+  async findClientUtxosByBlockNo(height: number): Promise<UtxoDto[]> {
     const deploymentConfig = this.configService.get('deployment');
-    const handlerAuthToken = deploymentConfig.handlerAuthToken;
     const mintClientScriptHash = deploymentConfig.validators.mintClientStt.scriptHash;
     const tokenBase = deploymentConfig.hostStateNFT;
     const clientTokenNamePrefix = this.lucidService.generateTokenName(tokenBase, CLIENT_PREFIX, 0n).slice(0, 40);
@@ -345,15 +344,12 @@ export class YaciHistoryService implements HistoryService {
         block_id
       FROM bridge_utxo_history
       WHERE block_no = $1
-        AND (
-          assets_policy = $2
-          OR (assets_policy = $3 AND lower(assets_name) LIKE lower($4))
-        )
+        AND assets_policy = $2
+        AND lower(assets_name) LIKE lower($3)
       ORDER BY COALESCE(tx_index, 0) ASC, output_index ASC
     `;
     const rows = await this.entityManager.query(query, [
       height,
-      handlerAuthToken.policyId,
       mintClientScriptHash,
       `${clientTokenNamePrefix}%`,
     ]);
