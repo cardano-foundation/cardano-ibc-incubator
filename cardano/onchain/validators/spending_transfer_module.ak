@@ -54,6 +54,7 @@ validator spend_transfer_module(
   port_token: AuthToken,
   module_token: AuthToken,
   port_id: ByteArray,
+  transfer_escrow_shard_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
   host_state_nft_policy_id: PolicyId,
@@ -90,7 +91,11 @@ validator spend_transfer_module(
           has_module_state_tokens(spent_output, port_token, module_token)
         EscrowShard { datum, .. } ->
           // Datum-only escrow UTxOs are not canonical.
-          escrow_shard_has_nft(spent_output, datum, port_token.policy_id)
+          escrow_shard_has_nft(
+            spent_output,
+            datum,
+            transfer_escrow_shard_policy_id,
+          )
       }
 
     // Channel auth tokens are minted by `mint_channel_stt` using the HostState NFT
@@ -112,7 +117,7 @@ validator spend_transfer_module(
           transaction,
           spend,
           port_id,
-          port_token.policy_id,
+          transfer_escrow_shard_policy_id,
           channel_minting_policy_id,
           voucher_minting_policy_id,
         )
@@ -123,7 +128,7 @@ validator spend_transfer_module(
           spent_output_ref,
           transaction,
           spend,
-          port_token.policy_id,
+          transfer_escrow_shard_policy_id,
           channel_minting_policy_id,
           voucher_minting_policy_id,
         )

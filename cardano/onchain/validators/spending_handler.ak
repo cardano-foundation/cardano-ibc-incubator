@@ -194,7 +194,7 @@ fn validate_bind_port(
 
   expect mint_port_redeemer: MintPortRedeemer = mint_port_redeemer
 
-  expect BindPort { handler_token: port_handler_token, port_number, .. } =
+  let BindPort { handler_token: port_handler_token, port_number, .. } =
     mint_port_redeemer
 
   expect port_handler_token == handler_token

@@ -144,7 +144,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
                     denom: convertStringToHex(packetDenom),
                     data: fungibleTokenPacketData,
                 },
-            }, 'mintPortRedeemer'),
+            }, 'transferEscrowShardRedeemer'),
         encodedUpdatedChannelDatum: await deps.encode(updatedChannelDatum, 'channel'),
         transferAmount: sendPacketOperator.token.amount,
         senderAddress,

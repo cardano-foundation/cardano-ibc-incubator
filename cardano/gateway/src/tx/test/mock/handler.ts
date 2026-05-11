@@ -154,6 +154,16 @@ const configHandler = {
         },
       },
     },
+    mintTransferEscrowShard: {
+      title: 'minting_transfer_escrow_shard.mint_transfer_escrow_shard',
+      script: '',
+      scriptHash: 'mint-transfer-escrow-shard-policy-id',
+      address: '',
+      refUtxo: {
+        txHash: 'ref-mint-transfer-escrow-shard',
+        outputIndex: 0,
+      },
+    },
     mintPort: {
       title: 'minting_port.mint_port',
       script:

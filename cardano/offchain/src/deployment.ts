@@ -360,6 +360,7 @@ export const createDeployment = async (
 
   const {
     identifierTokenUnit: transferModuleIdentifier,
+    mintTransferEscrowShard,
     mintVoucher,
     voucherMetadata,
     spendTransferModule,
@@ -376,6 +377,7 @@ export const createDeployment = async (
     transferModuleNonceUtxo,
   );
   referredValidators.push(
+    mintTransferEscrowShard.validator,
     mintVoucher.validator,
     spendTransferModule.validator,
   );
@@ -524,6 +526,13 @@ export const createDeployment = async (
         scriptHash: mintVoucher.policyId,
         address: "",
         refUtxo: refUtxosInfo[mintVoucher.policyId],
+      },
+      mintTransferEscrowShard: {
+        title: "minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint",
+        script: mintTransferEscrowShard.validator.script,
+        scriptHash: mintTransferEscrowShard.policyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintTransferEscrowShard.policyId],
       },
       mintPort: {
         title: "minting_port.mint_port.mint",
@@ -1123,6 +1132,16 @@ const deployTransferModule = async (
   };
 
   const [
+    mintTransferEscrowShardValidator,
+    mintTransferEscrowShardPolicyId,
+  ] = await readValidator(
+    "minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint",
+    lucid,
+    [portToken],
+    Data.Tuple([AuthTokenSchema]) as unknown as [AuthToken],
+  );
+
+  const [
     spendTransferModuleValidator,
     spendTransferModuleScriptHash,
     spendTransferModuleAddress,
@@ -1134,6 +1153,7 @@ const deployTransferModule = async (
       portToken,
       identifierToken,
       portId,
+      mintTransferEscrowShardPolicyId,
       mintChannelPolicyId,
       mintVoucherPolicyId,
       hostStateNFT.policy_id,
@@ -1146,10 +1166,12 @@ const deployTransferModule = async (
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
+      Data.Bytes(),
     ]) as unknown as [
       AuthToken,
       AuthToken,
       AuthToken,
+      string,
       string,
       string,
       string,
@@ -1240,6 +1262,10 @@ const deployTransferModule = async (
     mintVoucher: {
       validator: mintVoucherValidator,
       policyId: mintVoucherPolicyId,
+    },
+    mintTransferEscrowShard: {
+      validator: mintTransferEscrowShardValidator,
+      policyId: mintTransferEscrowShardPolicyId,
     },
     voucherMetadata: {
       address: voucherMetadataAddress,

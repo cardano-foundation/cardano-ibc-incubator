@@ -1659,7 +1659,7 @@ export class PacketService {
                       denom: convertString2Hex(unescrowDenom),
                     },
                   },
-                  'mintPortRedeemer',
+                  'transferEscrowShardRedeemer',
                 )
               : undefined;
 
@@ -2112,7 +2112,7 @@ export class PacketService {
                 denom: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.denom),
               },
             },
-            'mintPortRedeemer',
+            'transferEscrowShardRedeemer',
           )
         : undefined;
 
@@ -2295,8 +2295,8 @@ export class PacketService {
                   .send_packet.scriptHash,
               mintVoucherScriptHash:
                 deploymentConfig.validators.mintVoucher.scriptHash,
-              mintPortPolicyId:
-                deploymentConfig.validators.mintPort.scriptHash,
+              transferEscrowShardPolicyId:
+                deploymentConfig.validators.mintTransferEscrowShard.scriptHash,
               spendChannelAddress:
                 deploymentConfig.validators.spendChannel.address,
               transferModuleAddress:
@@ -2803,7 +2803,7 @@ export class PacketService {
                 denom: fTokenPacketData.denom,
               },
             },
-            'mintPortRedeemer',
+            'transferEscrowShardRedeemer',
           )
         : undefined;
       // build update channel datum
@@ -3230,7 +3230,7 @@ export class PacketService {
   }
   private getTransferEscrowShardTokenUnit(channelId: string, packetDenom: string): string {
     return (
-      this.configService.get('deployment').validators.mintPort.scriptHash +
+      this.configService.get('deployment').validators.mintTransferEscrowShard.scriptHash +
       this.getTransferEscrowShardTokenName(channelId, packetDenom)
     );
   }

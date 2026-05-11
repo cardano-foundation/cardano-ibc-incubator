@@ -525,7 +525,9 @@ type Validator =
   | "spendTraceRegistry"
   | "spendTransferModule"
   | "mintIdentifier"
+  | "mintTransferEscrowShard"
   | "mintVoucher"
+  | "mintPort"
   | "voucherMetadata"
   | "verifyProof"
   | "hostStateStt"
@@ -601,6 +603,20 @@ export type DeploymentTemplate = {
       refUtxo: UTxO;
     };
     mintVoucher: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintTransferEscrowShard: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintPort: {
       title: string;
       script: string;
       scriptHash: string;

@@ -5,7 +5,7 @@ use cardano/transaction.{
   ScriptPurpose, Spend, Transaction,
 }
 use ibc/auth.{AuthToken}
-use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
+use ibc/core/ics_005/port_redeemer.{BindPort}
 use ibc/core/ics_025_handler_interface/handler.{HandlerState}
 use ibc/core/ics_025_handler_interface/handler_datum.{HandlerDatum}
 use ibc/core/ics_025_handler_interface/handler_redeemer.{HandlerBindPort}
@@ -62,7 +62,7 @@ test bind_port_succeeds() {
     }
 
   let mint_port_redeemer: Redeemer =
-    MintPortRedeemer {
+    BindPort {
       handler_token,
       spend_module_script_hash: "mock module script hash",
       port_number: 100,
@@ -168,7 +168,7 @@ test bind_transfer_port_succeeds_with_deployment_shape() {
 
   let spend_handler_redeemer: Redeemer = HandlerBindPort
   let mint_port_redeemer: Redeemer =
-    MintPortRedeemer {
+    BindPort {
       handler_token,
       spend_module_script_hash: transfer_module_script_hash,
       port_number: 100,

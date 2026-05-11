@@ -100,6 +100,7 @@ type DeploymentConfig = {
     mintConnectionStt: DeploymentValidator;
     mintChannelStt: DeploymentValidator;
     mintVoucher: DeploymentValidator;
+    mintTransferEscrowShard: DeploymentValidator;
     mintPort: DeploymentValidator;
   };
   modules: {
@@ -219,6 +220,11 @@ type BridgeManifest = {
       ref_utxo: { tx_hash: string; output_index: number };
     };
     mint_voucher: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
+    mint_transfer_escrow_shard: {
       script_hash: string;
       address: string;
       ref_utxo: { tx_hash: string; output_index: number };
@@ -492,6 +498,7 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
         mintConnectionStt: mapValidator(manifest.validators.mint_connection_stt),
         mintChannelStt: mapValidator(manifest.validators.mint_channel_stt),
         mintVoucher: mapValidator(manifest.validators.mint_voucher),
+        mintTransferEscrowShard: mapValidator(manifest.validators.mint_transfer_escrow_shard),
         mintPort: mapValidator(manifest.validators.mint_port),
       },
       modules: {
@@ -1079,7 +1086,7 @@ async function findTransferEscrowShard(
     'transferEscrow',
   );
   const shardTokenUnit =
-    context.deployment.validators.mintPort.scriptHash +
+    context.deployment.validators.mintTransferEscrowShard.scriptHash +
     transferEscrowShardTokenName(channelId, packetDenom);
   let utxo: UTxO | undefined;
   try {
@@ -1375,7 +1382,8 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
               deployment: {
                 sendPacketPolicyId: deployment.validators.spendChannel.refValidator.send_packet.scriptHash,
                 mintVoucherScriptHash: deployment.validators.mintVoucher.scriptHash,
-                mintPortPolicyId: deployment.validators.mintPort.scriptHash,
+                transferEscrowShardPolicyId:
+                  deployment.validators.mintTransferEscrowShard.scriptHash,
                 spendChannelAddress,
                 transferModuleAddress: deployment.modules.transfer.address,
               },

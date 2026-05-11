@@ -25,6 +25,9 @@ const deploymentConfig = {
     mintPort: {
       address: 'addr_test1mintport',
     },
+    mintTransferEscrowShard: {
+      address: 'addr_test1transferescrowshard',
+    },
   },
   modules: {
     transfer: {
@@ -63,6 +66,10 @@ const createService = (txBuilder: ChainableTxBuilder): any => {
     verifyProof: { txHash: 'ref-verify-proof', outputIndex: 5 },
     hostStateStt: { txHash: 'ref-host-state', outputIndex: 6 },
     mintPort: { txHash: 'ref-mint-port', outputIndex: 7 },
+    mintTransferEscrowShard: {
+      txHash: 'ref-mint-transfer-escrow-shard',
+      outputIndex: 8,
+    },
   };
   service.LucidImporter = {
     Data: {

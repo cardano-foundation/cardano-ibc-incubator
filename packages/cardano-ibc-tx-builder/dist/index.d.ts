@@ -62,7 +62,7 @@ export type LoadedSendPacketContext = {
     deployment: {
         sendPacketPolicyId: string;
         mintVoucherScriptHash: string;
-        mintPortPolicyId: string;
+        transferEscrowShardPolicyId: string;
         spendChannelAddress: string;
         transferModuleAddress: string;
     };

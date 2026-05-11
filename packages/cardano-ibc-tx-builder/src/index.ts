@@ -77,7 +77,7 @@ export type LoadedSendPacketContext = {
   deployment: {
     sendPacketPolicyId: string;
     mintVoucherScriptHash: string;
-    mintPortPolicyId: string;
+    transferEscrowShardPolicyId: string;
     spendChannelAddress: string;
     transferModuleAddress: string;
   };
@@ -412,7 +412,7 @@ export async function buildUnsignedSendPacketTx(
               data: fungibleTokenPacketData,
             },
           },
-          'mintPortRedeemer',
+          'transferEscrowShardRedeemer',
         ),
     encodedUpdatedChannelDatum: await deps.encode(updatedChannelDatum, 'channel'),
     transferAmount: sendPacketOperator.token.amount,

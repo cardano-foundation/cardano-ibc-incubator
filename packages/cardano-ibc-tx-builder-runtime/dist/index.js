@@ -182,6 +182,7 @@ function normalizeBridgeManifest(manifest) {
                 mintConnectionStt: mapValidator(manifest.validators.mint_connection_stt),
                 mintChannelStt: mapValidator(manifest.validators.mint_channel_stt),
                 mintVoucher: mapValidator(manifest.validators.mint_voucher),
+                mintTransferEscrowShard: mapValidator(manifest.validators.mint_transfer_escrow_shard),
                 mintPort: mapValidator(manifest.validators.mint_port),
             },
             modules: {
@@ -657,7 +658,7 @@ function transferEscrowShardTokenName(channelId, packetDenom) {
 }
 async function findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount) {
     const encodedDatum = await context.lucidService.encode({ channel_id: channelId, denom: packetDenom }, 'transferEscrow');
-    const shardTokenUnit = context.deployment.validators.mintPort.scriptHash +
+    const shardTokenUnit = context.deployment.validators.mintTransferEscrowShard.scriptHash +
         transferEscrowShardTokenName(channelId, packetDenom);
     let utxo;
     try {
@@ -890,7 +891,7 @@ function createTxBuilderRuntime(config) {
                         deployment: {
                             sendPacketPolicyId: deployment.validators.spendChannel.refValidator.send_packet.scriptHash,
                             mintVoucherScriptHash: deployment.validators.mintVoucher.scriptHash,
-                            mintPortPolicyId: deployment.validators.mintPort.scriptHash,
+                            transferEscrowShardPolicyId: deployment.validators.mintTransferEscrowShard.scriptHash,
                             spendChannelAddress,
                             transferModuleAddress: deployment.modules.transfer.address,
                         },

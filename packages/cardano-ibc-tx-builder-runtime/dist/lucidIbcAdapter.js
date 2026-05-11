@@ -16,6 +16,7 @@ const ENCODABLE_DATUM_TYPES = [
     'iBCModuleRedeemer',
     'mintVoucherRedeemer',
     'mintPortRedeemer',
+    'transferEscrowShardRedeemer',
 ];
 function updateTransferModuleAssets(assets, transferAmount, denom) {
     const updatedAssets = {
@@ -671,13 +672,6 @@ function encodeMintVoucherRedeemer(data, Lucid) {
 }
 function encodeMintPortRedeemer(data, Lucid) {
     const { Data } = Lucid;
-    const FungibleTokenPacketDatumSchema = Data.Object({
-        denom: Data.Bytes(),
-        amount: Data.Bytes(),
-        sender: Data.Bytes(),
-        receiver: Data.Bytes(),
-        memo: Data.Bytes(),
-    });
     const MintPortRedeemerSchema = Data.Enum([
         Data.Object({
             BindPort: Data.Object({
@@ -689,6 +683,19 @@ function encodeMintPortRedeemer(data, Lucid) {
                 port_number: Data.Integer(),
             }),
         }),
+    ]);
+    return Data.to(data, MintPortRedeemerSchema, { canonical: true });
+}
+function encodeTransferEscrowShardRedeemer(data, Lucid) {
+    const { Data } = Lucid;
+    const FungibleTokenPacketDatumSchema = Data.Object({
+        denom: Data.Bytes(),
+        amount: Data.Bytes(),
+        sender: Data.Bytes(),
+        receiver: Data.Bytes(),
+        memo: Data.Bytes(),
+    });
+    const TransferEscrowShardRedeemerSchema = Data.Enum([
         Data.Object({
             CreateEscrowShard: Data.Object({
                 channel_id: Data.Bytes(),
@@ -703,7 +710,7 @@ function encodeMintPortRedeemer(data, Lucid) {
             }),
         }),
     ]);
-    return Data.to(data, MintPortRedeemerSchema, { canonical: true });
+    return Data.to(data, TransferEscrowShardRedeemerSchema, { canonical: true });
 }
 class LucidIbcAdapter {
     lucid;
@@ -730,6 +737,7 @@ class LucidIbcAdapter {
             hostStateStt: this.deployment.validators.hostStateStt.refUtxo,
             mintVoucher: this.deployment.validators.mintVoucher.refUtxo,
             mintPort: this.deployment.validators.mintPort.refUtxo,
+            mintTransferEscrowShard: this.deployment.validators.mintTransferEscrowShard.refUtxo,
         };
         const entries = await Promise.all(Object.entries(outRefs).map(async ([label, outRef]) => {
             const utxo = await this.resolveReferenceScriptUtxo(label, outRef);
@@ -952,6 +960,8 @@ class LucidIbcAdapter {
                 return encodeMintVoucherRedeemer(data, this.LucidImporter);
             case 'mintPortRedeemer':
                 return encodeMintPortRedeemer(data, this.LucidImporter);
+            case 'transferEscrowShardRedeemer':
+                return encodeTransferEscrowShardRedeemer(data, this.LucidImporter);
             default:
                 throw unknownCodecTypeError('encode', type, ENCODABLE_DATUM_TYPES);
         }
@@ -1004,7 +1014,7 @@ class LucidIbcAdapter {
         tx.readFrom([
             this.referenceScripts.spendChannel,
             this.referenceScripts.spendTransferModule,
-            this.referenceScripts.mintPort,
+            this.referenceScripts.mintTransferEscrowShard,
             this.referenceScripts.sendPacket,
             this.referenceScripts.hostStateStt,
         ])

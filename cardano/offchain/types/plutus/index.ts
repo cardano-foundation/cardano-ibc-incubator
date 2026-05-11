@@ -4,5 +4,6 @@ export * from "./HostState.ts";
 export * from "./HandlerOperator.ts";
 export * from "./AuthToken.ts";
 export * from "./MintPortRedeemer.ts";
+export * from "./TransferEscrowShardRedeemer.ts";
 export * from "./OutputReference.ts";
 export * from "./TraceRegistry.ts";

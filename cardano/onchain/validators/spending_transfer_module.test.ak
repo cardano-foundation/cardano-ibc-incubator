@@ -52,6 +52,7 @@ type MockData {
   port_token: AuthToken,
   module_token: AuthToken,
   port_id: ByteArray,
+  transfer_escrow_shard_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
   channel_id: ByteArray,
@@ -106,6 +107,8 @@ fn setup() -> MockData {
     }
 
   let port_id = "port-1"
+
+  let transfer_escrow_shard_policy_id = "mock transfer escrow shard policy id"
 
   let channel_minting_policy_id = "mock channel minting policy id"
 
@@ -319,6 +322,7 @@ fn setup() -> MockData {
     port_token,
     module_token,
     port_id,
+    transfer_escrow_shard_policy_id,
     channel_minting_policy_id,
     voucher_minting_policy_id,
     channel_id,
@@ -336,6 +340,7 @@ fn setup() -> MockData {
 fn transfer_escrow_input(
   output_index: Int,
   module_output: Output,
+  transfer_escrow_shard_policy_id: PolicyId,
   channel_id: ByteArray,
   denom: ByteArray,
   amount: Int,
@@ -350,7 +355,7 @@ fn transfer_escrow_input(
     output: Output {
       address: module_output.address,
       value: from_asset(ada_policy_id, ada_asset_name, amount)
-        |> add("mock port token policy_id", shard_token_name, 1),
+        |> add(transfer_escrow_shard_policy_id, shard_token_name, 1),
       datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
       reference_script: None,
     },
@@ -359,6 +364,7 @@ fn transfer_escrow_input(
 
 fn transfer_escrow_output(
   module_output: Output,
+  transfer_escrow_shard_policy_id: PolicyId,
   channel_id: ByteArray,
   denom: ByteArray,
   amount: Int,
@@ -368,7 +374,7 @@ fn transfer_escrow_output(
   Output {
     address: module_output.address,
     value: from_asset(ada_policy_id, ada_asset_name, amount)
-      |> add("mock port token policy_id", shard_token_name, 1),
+      |> add(transfer_escrow_shard_policy_id, shard_token_name, 1),
     datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
     reference_script: None,
   }
@@ -438,6 +444,7 @@ test on_chan_open_init_succeed() {
     mock.port_token,
     mock.module_token,
     mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
@@ -477,6 +484,7 @@ test on_chan_open_init_fails_without_host_state_co_spend() fail {
     mock.port_token,
     mock.module_token,
     mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
@@ -526,6 +534,7 @@ test on_chan_open_try_succeed() {
     mock.port_token,
     mock.module_token,
     mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
@@ -574,6 +583,7 @@ test on_chan_open_ack_succeed() {
     mock.port_token,
     mock.module_token,
     mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
@@ -618,6 +628,7 @@ test on_chan_open_confirm_succeed() {
     mock.port_token,
     mock.module_token,
     mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
@@ -698,6 +709,7 @@ test on_recv_packet_mint_voucher_succeed() {
     mock.port_token,
     mock.module_token,
     mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
@@ -749,6 +761,7 @@ test on_recv_packet_unescrow_succeed() {
     transfer_escrow_input(
       1,
       mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
       mock.channel_id,
       "6c6f76656c616365",
       transfer_amount,
@@ -802,7 +815,11 @@ test on_recv_packet_unescrow_succeed() {
       inputs,
       outputs,
       redeemers,
-      mint: from_asset(mock.port_token.policy_id, shard_token_name, -1),
+      mint: from_asset(
+        mock.transfer_escrow_shard_policy_id,
+        shard_token_name,
+        -1,
+      ),
     }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
@@ -812,6 +829,7 @@ test on_recv_packet_unescrow_succeed() {
     mock.port_token,
     mock.module_token,
     mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
@@ -863,6 +881,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
     transfer_escrow_input(
       1,
       mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
       mock.channel_id,
       "6c6f76656c616365",
       transfer_amount,
@@ -927,6 +946,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
     mock.port_token,
     mock.module_token,
     mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
@@ -960,6 +980,7 @@ test transfer_escrow_succeed() {
   let escrow_output =
     transfer_escrow_output(
       mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
       mock.channel_id,
       denom,
       transfer_amount,
@@ -1007,7 +1028,11 @@ test transfer_escrow_succeed() {
       inputs,
       outputs,
       redeemers,
-      mint: from_asset(mock.port_token.policy_id, shard_token_name, 1),
+      mint: from_asset(
+        mock.transfer_escrow_shard_policy_id,
+        shard_token_name,
+        1,
+      ),
     }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
@@ -1017,6 +1042,7 @@ test transfer_escrow_succeed() {
     mock.port_token,
     mock.module_token,
     mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
@@ -1095,6 +1121,7 @@ test transfer_burn_voucher_succeed() {
     mock.port_token,
     mock.module_token,
     mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
@@ -1176,6 +1203,7 @@ test on_timeout_packet_mint_voucher_succeed() {
     mock.port_token,
     mock.module_token,
     mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
@@ -1227,6 +1255,7 @@ test on_timeout_packet_unescrow_succeed() {
     transfer_escrow_input(
       1,
       mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
       source_channel,
       denom,
       transfer_amount,
@@ -1274,7 +1303,11 @@ test on_timeout_packet_unescrow_succeed() {
       inputs,
       outputs,
       redeemers,
-      mint: from_asset(mock.port_token.policy_id, shard_token_name, -1),
+      mint: from_asset(
+        mock.transfer_escrow_shard_policy_id,
+        shard_token_name,
+        -1,
+      ),
     }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
@@ -1284,6 +1317,7 @@ test on_timeout_packet_unescrow_succeed() {
     mock.port_token,
     mock.module_token,
     mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
@@ -1366,6 +1400,7 @@ test on_acknowledgement_packet_result_succeed() {
     mock.port_token,
     mock.module_token,
     mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
@@ -1457,6 +1492,7 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
     mock.port_token,
     mock.module_token,
     mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
@@ -1504,6 +1540,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
     transfer_escrow_input(
       1,
       mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
       source_channel,
       denom,
       transfer_amount,
@@ -1562,7 +1599,11 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
       inputs,
       outputs,
       redeemers,
-      mint: from_asset(mock.port_token.policy_id, shard_token_name, -1),
+      mint: from_asset(
+        mock.transfer_escrow_shard_policy_id,
+        shard_token_name,
+        -1,
+      ),
     }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
@@ -1572,6 +1613,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
     mock.port_token,
     mock.module_token,
     mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
@@ -1610,6 +1652,7 @@ test on_chan_close_init_given_any_input_returns_false() {
     fake_data.port_token,
     fake_data.module_token,
     fake_data.port_id,
+    fake_data.transfer_escrow_shard_policy_id,
     fake_data.channel_minting_policy_id,
     fake_data.voucher_minting_policy_id,
     fake_data.host_state_nft_policy_id,
@@ -1648,6 +1691,7 @@ test on_chan_close_confirm_given_any_input_returns_false() {
     fake_data.port_token,
     fake_data.module_token,
     fake_data.port_id,
+    fake_data.transfer_escrow_shard_policy_id,
     fake_data.channel_minting_policy_id,
     fake_data.voucher_minting_policy_id,
     fake_data.host_state_nft_policy_id,

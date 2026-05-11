@@ -132,20 +132,14 @@ export type CodecType =
   | "spendChannelRedeemer"
   | "iBCModuleRedeemer"
   | "mintVoucherRedeemer"
-  | "mintPortRedeemer";
+  | "mintPortRedeemer"
+  | "transferEscrowShardRedeemer";
 
 function encodeMintPortRedeemer(
   data: unknown,
   Lucid: typeof import("@lucid-evolution/lucid"),
 ): string {
   const { Data } = Lucid;
-  const FungibleTokenPacketDatumSchema = Data.Object({
-    denom: Data.Bytes(),
-    amount: Data.Bytes(),
-    sender: Data.Bytes(),
-    receiver: Data.Bytes(),
-    memo: Data.Bytes(),
-  });
   const MintPortRedeemerSchema = Data.Enum([
     Data.Object({
       BindPort: Data.Object({
@@ -157,6 +151,26 @@ function encodeMintPortRedeemer(
         port_number: Data.Integer(),
       }),
     }),
+  ]);
+
+  return Data.to(data as never, MintPortRedeemerSchema as never, {
+    canonical: true,
+  });
+}
+
+function encodeTransferEscrowShardRedeemer(
+  data: unknown,
+  Lucid: typeof import("@lucid-evolution/lucid"),
+): string {
+  const { Data } = Lucid;
+  const FungibleTokenPacketDatumSchema = Data.Object({
+    denom: Data.Bytes(),
+    amount: Data.Bytes(),
+    sender: Data.Bytes(),
+    receiver: Data.Bytes(),
+    memo: Data.Bytes(),
+  });
+  const TransferEscrowShardRedeemerSchema = Data.Enum([
     Data.Object({
       CreateEscrowShard: Data.Object({
         channel_id: Data.Bytes(),
@@ -172,7 +186,7 @@ function encodeMintPortRedeemer(
     }),
   ]);
 
-  return Data.to(data as never, MintPortRedeemerSchema as never, {
+  return Data.to(data as never, TransferEscrowShardRedeemerSchema as never, {
     canonical: true,
   });
 }
@@ -201,6 +215,7 @@ type ReferenceScripts = {
   timeoutPacket: UTxO;
   mintVoucher: UTxO;
   mintPort: UTxO;
+  mintTransferEscrowShard: UTxO;
 };
 
 @Injectable()
@@ -238,6 +253,8 @@ export class LucidService implements OnModuleInit {
       mintConnection: deploymentConfig.validators.mintConnectionStt.refUtxo,
       mintVoucher: deploymentConfig.validators.mintVoucher.refUtxo,
       mintPort: deploymentConfig.validators.mintPort.refUtxo,
+      mintTransferEscrowShard:
+        deploymentConfig.validators.mintTransferEscrowShard.refUtxo,
       verifyProof: deploymentConfig.validators.verifyProof.refUtxo,
       hostStateStt: deploymentConfig.validators.hostStateStt.refUtxo,
       channelOpenAck:
@@ -908,6 +925,8 @@ export class LucidService implements OnModuleInit {
           );
         case "mintPortRedeemer":
           return encodeMintPortRedeemer(data, this.LucidImporter);
+        case "transferEscrowShardRedeemer":
+          return encodeTransferEscrowShardRedeemer(data, this.LucidImporter);
         default:
           throw new Error(`Unknown datum type: ${type}`);
       }
@@ -1822,7 +1841,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
-      this.referenceScripts.mintPort,
+      this.referenceScripts.mintTransferEscrowShard,
       this.referenceScripts.receivePacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
@@ -2258,7 +2277,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
-      this.referenceScripts.mintPort,
+      this.referenceScripts.mintTransferEscrowShard,
       this.referenceScripts.ackPacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
@@ -2454,7 +2473,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
-      this.referenceScripts.mintPort,
+      this.referenceScripts.mintTransferEscrowShard,
       this.referenceScripts.sendPacket,
       this.referenceScripts.hostStateStt,
     ])
@@ -2754,7 +2773,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
-      this.referenceScripts.mintPort,
+      this.referenceScripts.mintTransferEscrowShard,
       this.referenceScripts.timeoutPacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
