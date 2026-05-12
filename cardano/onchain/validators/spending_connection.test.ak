@@ -17,11 +17,7 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
-  BatchVerifyMembership, VerifyMembershipParams,
-}
-use ibc/client/mithril_client/protos/mithril_pb.{
-  AnyMithrilClientState, CardanoHeight, Fraction, MithrilClientState,
-  MithrilProtocolParameters,
+  VerifyMembership,
 }
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
@@ -39,7 +35,6 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
-use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
 use ibc/utils/test_utils
@@ -329,42 +324,9 @@ test conn_open_ack_succeed() {
   let validity_range = mock.validity_range
 
   //========================arrange redeemers=======================
-  let counterparty_client_state =
-    MithrilClientState {
-      chain_id: "42",
-      latest_height: CardanoHeight { revision_number: 0, revision_height: 1 },
-      frozen_height: CardanoHeight { revision_number: 0, revision_height: 0 },
-      current_epoch: 1,
-      trusting_period: 1,
-      protocol_parameters: MithrilProtocolParameters {
-        k: 0,
-        m: 0,
-        phi_f: Fraction { numerator: 0, denominator: 1 },
-      },
-      upgrade_path: [],
-      host_state_nft_policy_id: mock.host_state_nft_policy_id,
-      host_state_nft_token_name: "ibc_host_state",
-    }
-
   let proof_try = MerkleProof { proofs: [] }
 
-  let proof_client = MerkleProof { proofs: [] }
-
-  let counterparty_client_state_bz =
-    mithril_pb.marshal_for_any_client_state(
-      AnyMithrilClientState {
-        type_url: "/ibc.lightclients.mithril.v1.ClientState",
-        value: counterparty_client_state,
-      },
-    ).2nd
-
-  let connection_redeemer: Redeemer =
-    ConnOpenAck {
-      counterparty_client_state: counterparty_client_state_bz,
-      proof_try,
-      proof_client,
-      proof_height,
-    }
+  let connection_redeemer: Redeemer = ConnOpenAck
 
   expect client_datum: ClientDatum =
     validator_utils.get_inline_datum(client_input.output)
@@ -380,14 +342,6 @@ test conn_open_ack_succeed() {
       connection.counterparty.prefix,
       merkle.new_merkle_path(
         [connection_keys.connection_path(connection.counterparty.connection_id)],
-      ),
-    )
-
-  let client_merkle_path =
-    merkle.apply_prefix(
-      connection.counterparty.prefix,
-      merkle.new_merkle_path(
-        [client_keys.full_client_state_path(connection.counterparty.client_id)],
       ),
     )
 
@@ -416,30 +370,16 @@ test conn_open_ack_succeed() {
     pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   let verify_proof_redeemer: Redeemer =
-    BatchVerifyMembership(
-      [
-        VerifyMembershipParams {
-          cs: client_datum_state.client_state,
-          cons_state: consensus_state,
-          height: proof_height,
-          delay_time_period: time_delay,
-          delay_block_period: block_delay,
-          proof: proof_try,
-          path: conn_merkle_path,
-          value: expected_connection_bz,
-        },
-        VerifyMembershipParams {
-          cs: client_datum_state.client_state,
-          cons_state: consensus_state,
-          height: proof_height,
-          delay_time_period: time_delay,
-          delay_block_period: block_delay,
-          proof: proof_client,
-          path: client_merkle_path,
-          value: counterparty_client_state_bz,
-        },
-      ],
-    )
+    VerifyMembership {
+      cs: client_datum_state.client_state,
+      cons_state: consensus_state,
+      height: proof_height,
+      delay_time_period: time_delay,
+      delay_block_period: block_delay,
+      proof: proof_try,
+      path: conn_merkle_path,
+      value: expected_connection_bz,
+    }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
@@ -535,41 +475,8 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
 
   let validity_range = mock.validity_range
 
-  let counterparty_client_state =
-    MithrilClientState {
-      chain_id: "42",
-      latest_height: CardanoHeight { revision_number: 0, revision_height: 1 },
-      frozen_height: CardanoHeight { revision_number: 0, revision_height: 0 },
-      current_epoch: 1,
-      trusting_period: 1,
-      protocol_parameters: MithrilProtocolParameters {
-        k: 0,
-        m: 0,
-        phi_f: Fraction { numerator: 0, denominator: 1 },
-      },
-      upgrade_path: [],
-      host_state_nft_policy_id: mock.host_state_nft_policy_id,
-      host_state_nft_token_name: "ibc_host_state",
-    }
-
   let proof_try = MerkleProof { proofs: [] }
-  let proof_client = MerkleProof { proofs: [] }
-
-  let counterparty_client_state_bz =
-    mithril_pb.marshal_for_any_client_state(
-      AnyMithrilClientState {
-        type_url: "/ibc.lightclients.mithril.v1.ClientState",
-        value: counterparty_client_state,
-      },
-    ).2nd
-
-  let connection_redeemer: Redeemer =
-    ConnOpenAck {
-      counterparty_client_state: counterparty_client_state_bz,
-      proof_try,
-      proof_client,
-      proof_height,
-    }
+  let connection_redeemer: Redeemer = ConnOpenAck
 
   expect client_datum: ClientDatum =
     validator_utils.get_inline_datum(client_input.output)
@@ -585,14 +492,6 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
       connection.counterparty.prefix,
       merkle.new_merkle_path(
         [connection_keys.connection_path(connection.counterparty.connection_id)],
-      ),
-    )
-
-  let client_merkle_path =
-    merkle.apply_prefix(
-      connection.counterparty.prefix,
-      merkle.new_merkle_path(
-        [client_keys.full_client_state_path(connection.counterparty.client_id)],
       ),
     )
 
@@ -621,30 +520,16 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
     pairs.get_first(client_datum_state.consensus_states, proof_height)
 
   let verify_proof_redeemer: Redeemer =
-    BatchVerifyMembership(
-      [
-        VerifyMembershipParams {
-          cs: client_datum_state.client_state,
-          cons_state: consensus_state,
-          height: proof_height,
-          delay_time_period: time_delay,
-          delay_block_period: block_delay,
-          proof: proof_try,
-          path: conn_merkle_path,
-          value: expected_connection_bz,
-        },
-        VerifyMembershipParams {
-          cs: client_datum_state.client_state,
-          cons_state: consensus_state,
-          height: proof_height,
-          delay_time_period: time_delay,
-          delay_block_period: block_delay,
-          proof: proof_client,
-          path: client_merkle_path,
-          value: counterparty_client_state_bz,
-        },
-      ],
-    )
+    VerifyMembership {
+      cs: client_datum_state.client_state,
+      cons_state: consensus_state,
+      height: proof_height,
+      delay_time_period: time_delay,
+      delay_block_period: block_delay,
+      proof: proof_try,
+      path: conn_merkle_path,
+      value: expected_connection_bz,
+    }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [

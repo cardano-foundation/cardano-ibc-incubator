@@ -12,11 +12,6 @@ pub type MintConnectionRedeemer {
 }
 
 pub type SpendConnectionRedeemer {
-  ConnOpenAck {
-    counterparty_client_state: ByteArray,
-    proof_try: MerkleProof,
-    proof_client: MerkleProof,
-    proof_height: Height,
-  }
+  ConnOpenAck
   ConnOpenConfirm { proof_ack: MerkleProof, proof_height: Height }
 }

@@ -5,7 +5,6 @@ import { ClientState } from '../types/client-state-types';
 import { convertHex2String, convertString2Hex } from './hex';
 import { convertToProofType } from './proof_types';
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
-import { KEY_CLIENT_PREFIX, KEY_CLIENT_STATE } from '~@/constant';
 
 export function normalizeClientStateFromDatum(clientState: ClientState): ClientStateTendermint {
   const clientStateTendermint: ClientStateTendermint = {
@@ -207,8 +206,4 @@ export function validateClientState(clientState: ClientState): GrpcInvalidArgume
 export function isExpired(cs: ClientState, latestTimestamp: bigint, now: bigint): boolean {
   const expirationTime = latestTimestamp + cs.trustingPeriod;
   return expirationTime < now;
-}
-
-export function clientStatePath(clientId: string): string {
-  return `${KEY_CLIENT_PREFIX}/${clientId}/${KEY_CLIENT_STATE}`;
 }
