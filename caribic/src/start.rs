@@ -2177,12 +2177,9 @@ pub fn start_local_cardano_services(
         && configuration.services.kupo
         && !use_local_kupo
     {
-        execute_script(
-            cardano_dir,
-            "docker",
-            vec!["compose", "stop", "kupo", "ogmios-proxy"],
-            None,
-        )?;
+        // Remote-Kupo preprod mode must not try to manage local proxy services that
+        // are only present in local-Kupo compose setups.
+        execute_script(cardano_dir, "docker", vec!["compose", "stop", "kupo"], None)?;
     }
 
     let docker_env = get_docker_env_vars();
