@@ -293,9 +293,21 @@ export const createDeployment = async (
   // Keep collateral-sized UTxOs available for Lucid's Plutus collateral
   // selection. Nonce inputs only need unique output references, so prefer
   // smaller ADA-only UTxOs and let fee coin selection use non-reserved inputs.
+  const initialCollateralHoldbackUtxos = selectDeploymentCollateralHoldback(
+    signerUtxos,
+  );
+  if (initialCollateralHoldbackUtxos.length === 0) {
+    throw new Error(
+      `Wallet does not have enough live ADA-only collateral to deploy (need ${DEPLOYMENT_COLLATERAL_LOVELACE.toString()} lovelace).`,
+    );
+  }
+  const initialCollateralHoldbackRefs = new Set(
+    initialCollateralHoldbackUtxos.map(utxoRefKey),
+  );
   const reservedNonceUtxos = selectDeploymentNonceUtxos(
     signerUtxos,
     RESERVED_DEPLOYMENT_NONCE_COUNT,
+    initialCollateralHoldbackRefs,
   );
   if (reservedNonceUtxos.length < RESERVED_DEPLOYMENT_NONCE_COUNT) {
     throw new Error(
@@ -308,18 +320,38 @@ export const createDeployment = async (
     ...remainingNonceUtxos
   ] = reservedNonceUtxos;
   const reservedNonceRefs = new Set(reservedNonceUtxos.map(utxoRefKey));
-  const setSpendableWalletUtxos = async (minCount = 1) => {
-    const spendableUtxos = (await getLiveWalletUtxos(lucid)).filter((utxo) =>
+  let reservedDeploymentRefs = new Set<string>(reservedNonceRefs);
+  const setSpendableWalletUtxos = async (
+    minCount = 1,
+  ): Promise<Set<string>> => {
+    const liveUtxos = await getLiveWalletUtxos(lucid);
+    const spendableUtxos = liveUtxos.filter((utxo) =>
       !reservedNonceRefs.has(utxoRefKey(utxo))
     );
-    if (spendableUtxos.length < minCount) {
+    const currentCollateralHoldbackUtxos = selectDeploymentCollateralHoldback(
+      spendableUtxos,
+    );
+    if (currentCollateralHoldbackUtxos.length === 0) {
       throw new Error(
-        `Wallet only has ${spendableUtxos.length} non-reserved live UTxO(s); need ${minCount}.`,
+        `Wallet does not have enough live non-nonce collateral to deploy (need ${DEPLOYMENT_COLLATERAL_LOVELACE.toString()} lovelace).`,
+      );
+    }
+    const currentCollateralHoldbackRefs = new Set(
+      currentCollateralHoldbackUtxos.map(utxoRefKey),
+    );
+    const nonCollateralSpendableCount =
+      spendableUtxos.filter((utxo) =>
+        !currentCollateralHoldbackRefs.has(utxoRefKey(utxo))
+      ).length;
+    if (nonCollateralSpendableCount < minCount) {
+      throw new Error(
+        `Wallet only has ${nonCollateralSpendableCount} non-reserved, non-collateral live UTxO(s); need ${minCount}.`,
       );
     }
     lucid.overrideUTxOs(spendableUtxos);
+    return new Set([...reservedNonceRefs, ...currentCollateralHoldbackRefs]);
   };
-  await setSpendableWalletUtxos();
+  reservedDeploymentRefs = await setSpendableWalletUtxos();
   const traceRegistryNonceUtxos = remainingNonceUtxos.slice(
     0,
     TRACE_REGISTRY_SHARD_COUNT + TRACE_REGISTRY_DIRECTORY_NONCE_COUNT,
@@ -499,11 +531,13 @@ export const createDeployment = async (
   );
   referredValidators.push(mintIdentifierValidator);
 
+  reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   const bootstrapRefUtxosInfo = await createReferenceUtxos(
     lucid,
     [hostStateStt.validator, mintPortValidator, mintIdentifierValidator],
-    reservedNonceRefs,
+    reservedDeploymentRefs,
   );
+  reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   const bootstrapReferenceScripts: BootstrapReferenceScripts = {
     hostStateStt: requireReferenceUtxo(
       bootstrapRefUtxosInfo,
@@ -555,6 +589,7 @@ export const createDeployment = async (
     transferModuleNonceUtxo,
     bootstrapReferenceScripts,
   );
+  reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   referredValidators.push(
     mintTransferEscrowShard.validator,
     mintVoucher.validator,
@@ -575,6 +610,7 @@ export const createDeployment = async (
     traceRegistryBenchmarkVoucher?.policyId ?? "",
     traceRegistryNonceUtxos,
   );
+  reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   // Bootstrap the registry with the bridge so voucher mints can rely on an
   // on-chain reverse mapping from the first deployment onward.
   referredValidators.push(traceRegistry.base.validator);
@@ -594,6 +630,7 @@ export const createDeployment = async (
     mockModuleNonceUtxo,
     bootstrapReferenceScripts,
   );
+  reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   referredValidators.push(spendMockModule.validator);
 
   const {
@@ -611,6 +648,7 @@ export const createDeployment = async (
     icqModuleNonceUtxo,
     bootstrapReferenceScripts,
   );
+  reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   referredValidators.push(spendIcqModule.validator);
 
   // Only publish the runtime/bootstrap reference surface eagerly.
@@ -625,9 +663,10 @@ export const createDeployment = async (
     ...await createReferenceUtxos(
       lucid,
       remainingReferredValidators,
-      reservedNonceRefs,
+      reservedDeploymentRefs,
     ),
   };
+  await setSpendableWalletUtxos(0);
 
   const [mockTokenPolicyId, mockTokenName] = await mintMockToken(lucid);
 
@@ -895,19 +934,13 @@ const selectDeploymentCollateralHoldback = (utxos: UTxO[]): UTxO[] => {
 const selectDeploymentNonceUtxos = (
   utxos: UTxO[],
   count: number,
+  collateralHoldbackRefs = new Set<string>(),
 ): UTxO[] => {
-  const collateralHoldbackRefs = new Set(
-    selectDeploymentCollateralHoldback(utxos).map(utxoRefKey),
-  );
   const nonceCandidates = sortNonceCandidateUtxos(
     utxos.filter((utxo) => !collateralHoldbackRefs.has(utxoRefKey(utxo))),
   );
 
-  if (nonceCandidates.length >= count) {
-    return nonceCandidates.slice(0, count);
-  }
-
-  return sortNonceCandidateUtxos(utxos).slice(0, count);
+  return nonceCandidates.slice(0, count);
 };
 
 const requireReferenceUtxo = (
