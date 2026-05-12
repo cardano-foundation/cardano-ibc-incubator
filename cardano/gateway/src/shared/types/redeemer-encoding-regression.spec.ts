@@ -71,20 +71,11 @@ describe('Redeemer encoding regression', () => {
 
   it('keeps SpendConnection redeemer encoding stable', async () => {
     const encoded = await encodeSpendConnectionRedeemer(
-      {
-        ConnOpenAck: {
-          counterparty_client_state: MITHRIL_CLIENT_STATE_HEX,
-          proof_try: EMPTY_PROOF as any,
-          proof_client: EMPTY_PROOF as any,
-          proof_height: HEIGHT,
-        },
-      },
+      'ConnOpenAck',
       Lucid,
     );
 
-    expect(encoded).toBe(
-      'd8798444aabbccddd8798180d8798180d87982000b',
-    );
+    expect(encoded).toBe('d87980');
   });
 
   it('keeps VerifyProof redeemer encoding stable', () => {
