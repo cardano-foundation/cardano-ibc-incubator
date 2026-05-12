@@ -5,6 +5,7 @@ import {
   resolveManagedKupoRequestVariants,
   resolveManagedKupoUrl,
 } from "./http_auth.ts";
+import { queryOgmiosJsonRpc } from "./external_cardano.ts";
 import {
   Address,
   applyParamsToScript,
@@ -33,6 +34,7 @@ const RETRYABLE_OGMIOS_TRANSPORT_MARKERS = [
 
 const DEFAULT_MAX_TX_SIZE = 16_384;
 const TX_SIZE_WARNING_HEADROOM_BYTES = 750;
+const WALLET_UTXO_OGMIOS_BATCH_SIZE = 50;
 
 export const isRetryableOgmiosTransportError = (error: unknown): boolean => {
   const errorText = error instanceof Error
@@ -497,9 +499,50 @@ export const filterLiveUtxos = async (
   const liveRefs = new Set(
     currentWalletUtxos.map((utxo) => `${utxo.txHash}#${utxo.outputIndex}`),
   );
-  return utxos.filter((utxo) =>
+  const kupoVisibleUtxos = utxos.filter((utxo) =>
     liveRefs.has(`${utxo.txHash}#${utxo.outputIndex}`)
   );
+  return await filterNodeVisibleWalletUtxos(kupoVisibleUtxos);
+};
+
+const utxoRefKey = (utxo: UTxO): string => `${utxo.txHash}#${utxo.outputIndex}`;
+
+const filterNodeVisibleWalletUtxos = async (utxos: UTxO[]): Promise<UTxO[]> => {
+  const ogmiosUrl = Deno.env.get("OGMIOS_URL")?.trim();
+  if (!ogmiosUrl || utxos.length === 0) {
+    return utxos;
+  }
+
+  const visibleRefs = new Set<string>();
+  for (
+    let index = 0;
+    index < utxos.length;
+    index += WALLET_UTXO_OGMIOS_BATCH_SIZE
+  ) {
+    const batch = utxos.slice(index, index + WALLET_UTXO_OGMIOS_BATCH_SIZE);
+    const { result } = await queryOgmiosJsonRpc(
+      ogmiosUrl,
+      "queryLedgerState/utxo",
+      {
+        outputReferences: batch.map((utxo) => ({
+          transaction: { id: utxo.txHash },
+          index: utxo.outputIndex,
+        })),
+      },
+      20_000,
+      3,
+    );
+
+    for (const output of result ?? []) {
+      const txId = output?.transaction?.id;
+      const outputIndex = output?.index;
+      if (txId !== undefined && outputIndex !== undefined) {
+        visibleRefs.add(`${txId}#${outputIndex}`);
+      }
+    }
+  }
+
+  return utxos.filter((utxo) => visibleRefs.has(utxoRefKey(utxo)));
 };
 
 export const getLiveWalletUtxos = async (
