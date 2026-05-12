@@ -757,6 +757,7 @@ export const createDeployment = async (
 const REFERENCE_UTXO_TX_OVERHEAD_BYTES = 4_000;
 const REFERENCE_UTXO_OUTPUT_OVERHEAD_BYTES = 200;
 const REFERENCE_UTXO_SAFE_TX_HEADROOM_BYTES = 1_000;
+const REFERENCE_UTXO_SINGLE_TX_HEADROOM_BYTES = 750;
 
 type ReferenceValidatorBatch = {
   validators: Script[];
@@ -782,6 +783,9 @@ const referenceTxPayloadBudget = (maxTxSize: number): number =>
     1,
     referenceTxSafeMaxSize(maxTxSize) - REFERENCE_UTXO_TX_OVERHEAD_BYTES,
   );
+
+const referenceSingleValidatorBudget = (maxTxSize: number): number =>
+  Math.max(1, maxTxSize - REFERENCE_UTXO_SINGLE_TX_HEADROOM_BYTES);
 
 export const buildReferenceValidatorBatches = (
   validators: Script[],
@@ -842,7 +846,7 @@ export const buildReferenceValidatorSizeReport = (
   validators: Script[],
   maxTxSize: number,
 ): ReferenceValidatorSizeReportEntry[] => {
-  const payloadBudget = referenceTxPayloadBudget(maxTxSize);
+  const singleValidatorBudget = referenceSingleValidatorBudget(maxTxSize);
   return validators
     .map((validator, index) => {
       const scriptBytes = validator.script.length / 2;
@@ -854,7 +858,7 @@ export const buildReferenceValidatorSizeReport = (
         scriptHash: validatorReportHash(validator),
         scriptBytes,
         estimatedReferenceOutputBytes,
-        oversized: estimatedReferenceOutputBytes > payloadBudget,
+        oversized: estimatedReferenceOutputBytes > singleValidatorBudget,
       };
     })
     .sort((left, right) =>
@@ -869,13 +873,15 @@ const logReferenceValidatorSizeReport = (
   const report = buildReferenceValidatorSizeReport(validators, maxTxSize);
   const safeMaxTxSize = referenceTxSafeMaxSize(maxTxSize);
   const payloadBudget = referenceTxPayloadBudget(maxTxSize);
+  const singleValidatorBudget = referenceSingleValidatorBudget(maxTxSize);
 
   console.log(
     "Reference validator size preflight:",
     `${validators.length} validators,`,
     `maxTxSize=${maxTxSize},`,
     `safeTxBudget=${safeMaxTxSize},`,
-    `estimatedPayloadBudget=${payloadBudget}`,
+    `estimatedBatchPayloadBudget=${payloadBudget},`,
+    `estimatedSingleValidatorBudget=${singleValidatorBudget}`,
   );
   for (const entry of report) {
     console.log(
@@ -898,7 +904,7 @@ const assertReferenceValidatorsFit = (
     return;
   }
 
-  const payloadBudget = referenceTxPayloadBudget(maxTxSize);
+  const singleValidatorBudget = referenceSingleValidatorBudget(maxTxSize);
   const details = oversized
     .map((entry) =>
       `#${
@@ -907,7 +913,7 @@ const assertReferenceValidatorsFit = (
     )
     .join("\n");
   throw new Error(
-    `Reference script deployment preflight failed: ${oversized.length} validator(s) exceed the safe single-transaction payload budget (${payloadBudget} bytes after deployment overhead/headroom).\n${details}\nBuild production validators with silent traces or split/refactor the oversized validator before deployment.`,
+    `Reference script deployment preflight failed: ${oversized.length} validator(s) exceed the safe single-reference-transaction budget (${singleValidatorBudget} bytes after signing headroom).\n${details}\nBuild production validators with silent traces or split/refactor the oversized validator before deployment.`,
   );
 };
 
