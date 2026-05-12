@@ -31,6 +31,9 @@ const RETRYABLE_OGMIOS_TRANSPORT_MARKERS = [
   "Unexpected server response: 401",
 ];
 
+const DEFAULT_MAX_TX_SIZE = 16_384;
+const TX_SIZE_WARNING_HEADROOM_BYTES = 750;
+
 export const isRetryableOgmiosTransportError = (error: unknown): boolean => {
   const errorText = error instanceof Error
     ? `${error.message}\n${error.stack ?? ""}`
@@ -133,21 +136,45 @@ export const submitTx = async (
   if (!completedTx) {
     throw lastCompletionError ?? new Error(`Failed to complete tx '${txName}'`);
   }
+  const maxTxSize = lucid.config().protocolParameters?.maxTxSize ??
+    DEFAULT_MAX_TX_SIZE;
+  const completedTxBytes = completedTx.toCBOR().length / 2;
+  if (completedTxBytes > maxTxSize) {
+    throw new Error(
+      `Transaction '${txName}' is ${completedTxBytes} bytes before signing, above maxTxSize ${maxTxSize}. Refusing to submit an oversized transaction.`,
+    );
+  }
+  if (completedTxBytes > maxTxSize - TX_SIZE_WARNING_HEADROOM_BYTES) {
+    console.warn(
+      `Submitting tx [ ${txName} ]: unsigned size ${completedTxBytes} bytes is within ${TX_SIZE_WARNING_HEADROOM_BYTES} bytes of maxTxSize ${maxTxSize}`,
+    );
+  }
   if (logSize) {
     console.log(
       "Submitting tx [",
       txName,
       "]: size in bytes",
-      completedTx.toCBOR().length / 2,
+      completedTxBytes,
     );
   }
   console.log("Submitting tx [", txName, "]: signing ...");
   const signedTx = await completedTx.sign.withWallet().complete();
+  const signedTxBytes = signedTx.toCBOR().length / 2;
+  if (signedTxBytes > maxTxSize) {
+    throw new Error(
+      `Transaction '${txName}' is ${signedTxBytes} bytes after signing, above maxTxSize ${maxTxSize}. Refusing to submit an oversized transaction.`,
+    );
+  }
+  if (signedTxBytes > maxTxSize - TX_SIZE_WARNING_HEADROOM_BYTES) {
+    console.warn(
+      `Submitting tx [ ${txName} ]: signed size ${signedTxBytes} bytes is within ${TX_SIZE_WARNING_HEADROOM_BYTES} bytes of maxTxSize ${maxTxSize}`,
+    );
+  }
   console.log(
     "Submitting tx [",
     txName,
     "]: signed tx size in bytes",
-    signedTx.toCBOR().length / 2,
+    signedTxBytes,
   );
   // Treat the signed body hash as the canonical tx identity up front. A submit
   // attempt can succeed on-chain even when Ogmios drops the response before

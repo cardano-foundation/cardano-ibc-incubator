@@ -436,6 +436,11 @@ export const createDeployment = async (
     ],
   );
   referredValidators.push(mintChannelSttValidator);
+  assertDeploymentReferenceValidatorsFit(
+    lucid,
+    referredValidators,
+    "initial validator preflight",
+  );
 
   // Deploy HostState (STT Architecture)
   const {
@@ -751,6 +756,7 @@ export const createDeployment = async (
 
 const REFERENCE_UTXO_TX_OVERHEAD_BYTES = 4_000;
 const REFERENCE_UTXO_OUTPUT_OVERHEAD_BYTES = 200;
+const REFERENCE_UTXO_SAFE_TX_HEADROOM_BYTES = 1_000;
 
 type ReferenceValidatorBatch = {
   validators: Script[];
@@ -760,6 +766,23 @@ type ReferenceValidatorBatch = {
 const estimateReferenceValidatorSize = (validator: Script): number =>
   validator.script.length / 2 + REFERENCE_UTXO_OUTPUT_OVERHEAD_BYTES;
 
+const validatorReportHash = (validator: Script): string => {
+  try {
+    return validatorToScriptHash(validator);
+  } catch {
+    return "<unavailable>";
+  }
+};
+
+const referenceTxSafeMaxSize = (maxTxSize: number): number =>
+  Math.max(1, maxTxSize - REFERENCE_UTXO_SAFE_TX_HEADROOM_BYTES);
+
+const referenceTxPayloadBudget = (maxTxSize: number): number =>
+  Math.max(
+    1,
+    referenceTxSafeMaxSize(maxTxSize) - REFERENCE_UTXO_TX_OVERHEAD_BYTES,
+  );
+
 export const buildReferenceValidatorBatches = (
   validators: Script[],
   maxTxSize: number,
@@ -767,10 +790,7 @@ export const buildReferenceValidatorBatches = (
   const batches: ReferenceValidatorBatch[] = [];
   // Keep a small fixed overhead aside so we batch optimistically up front
   // without relying on the full Lucid builder for every split decision.
-  const payloadBudget = Math.max(
-    1,
-    maxTxSize - REFERENCE_UTXO_TX_OVERHEAD_BYTES,
-  );
+  const payloadBudget = referenceTxPayloadBudget(maxTxSize);
 
   let currentBatch: Script[] = [];
   let currentBatchBytes = 0;
@@ -808,6 +828,101 @@ export const buildReferenceValidatorBatches = (
   }
 
   return batches;
+};
+
+export type ReferenceValidatorSizeReportEntry = {
+  index: number;
+  scriptHash: string;
+  scriptBytes: number;
+  estimatedReferenceOutputBytes: number;
+  oversized: boolean;
+};
+
+export const buildReferenceValidatorSizeReport = (
+  validators: Script[],
+  maxTxSize: number,
+): ReferenceValidatorSizeReportEntry[] => {
+  const payloadBudget = referenceTxPayloadBudget(maxTxSize);
+  return validators
+    .map((validator, index) => {
+      const scriptBytes = validator.script.length / 2;
+      const estimatedReferenceOutputBytes = estimateReferenceValidatorSize(
+        validator,
+      );
+      return {
+        index,
+        scriptHash: validatorReportHash(validator),
+        scriptBytes,
+        estimatedReferenceOutputBytes,
+        oversized: estimatedReferenceOutputBytes > payloadBudget,
+      };
+    })
+    .sort((left, right) =>
+      right.estimatedReferenceOutputBytes - left.estimatedReferenceOutputBytes
+    );
+};
+
+const logReferenceValidatorSizeReport = (
+  validators: Script[],
+  maxTxSize: number,
+) => {
+  const report = buildReferenceValidatorSizeReport(validators, maxTxSize);
+  const safeMaxTxSize = referenceTxSafeMaxSize(maxTxSize);
+  const payloadBudget = referenceTxPayloadBudget(maxTxSize);
+
+  console.log(
+    "Reference validator size preflight:",
+    `${validators.length} validators,`,
+    `maxTxSize=${maxTxSize},`,
+    `safeTxBudget=${safeMaxTxSize},`,
+    `estimatedPayloadBudget=${payloadBudget}`,
+  );
+  for (const entry of report) {
+    console.log(
+      `  #${entry.index + 1}`,
+      entry.scriptHash,
+      `script=${entry.scriptBytes}`,
+      `estimatedRefOutput=${entry.estimatedReferenceOutputBytes}`,
+      entry.oversized ? "OVERSIZED" : "",
+    );
+  }
+};
+
+const assertReferenceValidatorsFit = (
+  validators: Script[],
+  maxTxSize: number,
+) => {
+  const oversized = buildReferenceValidatorSizeReport(validators, maxTxSize)
+    .filter((entry) => entry.oversized);
+  if (oversized.length === 0) {
+    return;
+  }
+
+  const payloadBudget = referenceTxPayloadBudget(maxTxSize);
+  const details = oversized
+    .map((entry) =>
+      `#${
+        entry.index + 1
+      } ${entry.scriptHash}: script=${entry.scriptBytes} bytes, estimated reference output=${entry.estimatedReferenceOutputBytes} bytes`
+    )
+    .join("\n");
+  throw new Error(
+    `Reference script deployment preflight failed: ${oversized.length} validator(s) exceed the safe single-transaction payload budget (${payloadBudget} bytes after deployment overhead/headroom).\n${details}\nBuild production validators with silent traces or split/refactor the oversized validator before deployment.`,
+  );
+};
+
+const assertDeploymentReferenceValidatorsFit = (
+  lucid: LucidEvolution,
+  validators: Script[],
+  label: string,
+) => {
+  const maxTxSize = lucid.config().protocolParameters?.maxTxSize ?? 16_384;
+  try {
+    assertReferenceValidatorsFit(validators, maxTxSize);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`${label}: ${detail}`);
+  }
 };
 
 const isLikelyReferenceBatchTooLarge = (error: unknown) => {
@@ -883,10 +998,14 @@ async function createReferenceUtxos(
     );
 
     const maxTxSize = lucid.config().protocolParameters?.maxTxSize ?? 16_384;
+    logReferenceValidatorSizeReport(referredValidators, maxTxSize);
+    assertReferenceValidatorsFit(referredValidators, maxTxSize);
+
     const initialBatches = buildReferenceValidatorBatches(
       referredValidators,
       maxTxSize,
     );
+    const safeMaxTxSize = referenceTxSafeMaxSize(maxTxSize);
 
     console.log(
       "Submitting",
@@ -942,6 +1061,42 @@ async function createReferenceUtxos(
               await txSignBuilder.sign.withWallet().complete(),
             ] as const;
           })();
+          const signedBytes = signedTx.toCBOR().length / 2;
+          if (
+            batch.validators.length > 1 &&
+            signedBytes > safeMaxTxSize
+          ) {
+            const midpoint = Math.ceil(batch.validators.length / 2);
+            console.warn(
+              `Reference batch ${batch.startIndex + 1}-${
+                batch.startIndex + batch.validators.length
+              } completed at ${signedBytes} bytes, above safe budget ${safeMaxTxSize}; splitting into batches of ${midpoint} and ${
+                batch.validators.length - midpoint
+              }.`,
+            );
+            pendingBatches.unshift(
+              {
+                validators: batch.validators.slice(midpoint),
+                startIndex: batch.startIndex + midpoint,
+              },
+              {
+                validators: batch.validators.slice(0, midpoint),
+                startIndex: batch.startIndex,
+              },
+            );
+            splitBatch = true;
+            break;
+          }
+          if (signedBytes > maxTxSize) {
+            const hashes = batch.validators
+              .map((validator) => validatorToScriptHash(validator))
+              .join(", ");
+            throw new Error(
+              `Reference batch ${batch.startIndex + 1}-${
+                batch.startIndex + batch.validators.length
+              } completed at ${signedBytes} bytes, above maxTxSize ${maxTxSize}. Validators: ${hashes}`,
+            );
+          }
           lastBuildError = null;
           break;
         } catch (error) {
@@ -1211,6 +1366,15 @@ const deployTransferModule = async (
     spend_module_script_hash: spendTransferModuleScriptHash,
     port_number: portNumber,
   };
+  assertDeploymentReferenceValidatorsFit(
+    lucid,
+    [
+      mintVoucherValidator,
+      mintTransferEscrowShardValidator,
+      spendTransferModuleValidator,
+    ],
+    "transfer module validator preflight",
+  );
 
   await submitTx(
     () =>
@@ -1346,6 +1510,11 @@ const deployGenericModule = async (
     spend_module_script_hash: spendModuleScriptHash,
     port_number: portNumber,
   };
+  assertDeploymentReferenceValidatorsFit(
+    lucid,
+    [spendModuleValidator],
+    `${portIdText} module validator preflight`,
+  );
 
   await submitTx(
     () =>
@@ -1456,6 +1625,11 @@ const deployTraceRegistry = async (
       string,
       string,
     ],
+  );
+  assertDeploymentReferenceValidatorsFit(
+    lucid,
+    [validator],
+    "trace registry validator preflight",
   );
 
   const shards: Array<{ index: bigint; token: AuthToken }> = [];
@@ -1746,6 +1920,11 @@ const deployHostState = async (
   const encodedDatum = Data.to(initHostStateDatum, HostStateDatum, {
     canonical: true,
   });
+  assertDeploymentReferenceValidatorsFit(
+    lucid,
+    [hostStateSttValidator],
+    "host state validator preflight",
+  );
 
   await submitTx(
     () =>
