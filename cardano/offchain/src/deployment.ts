@@ -833,6 +833,14 @@ const filterReservedWalletUtxos = (
     ? utxos
     : utxos.filter((utxo) => !reservedRefs.has(utxoRefKey(utxo)));
 
+const mergeWalletUtxos = (utxos: UTxO[]): UTxO[] => {
+  const byRef = new Map<string, UTxO>();
+  for (const utxo of utxos) {
+    byRef.set(utxoRefKey(utxo), utxo);
+  }
+  return [...byRef.values()];
+};
+
 const requireReferenceUtxo = (
   refUtxos: ReferenceUtxoMap,
   scriptHash: string,
@@ -1118,6 +1126,34 @@ async function createReferenceUtxos(
     const result: { [x: string]: UTxO } = {};
 
     const pendingBatches = [...initialBatches];
+    const spentReferenceBatchRefs = new Set<string>();
+    const refreshReferenceWalletState = async (
+      localWalletUtxos: UTxO[] = [],
+    ) => {
+      // Clear Lucid's override before querying the provider, then merge provider
+      // state with locally chained change outputs. This preserves unselected wallet
+      // UTxOs without allowing stale Kupo responses to reuse known-spent inputs.
+      lucid.overrideUTxOs([]);
+      let liveWalletUtxos: UTxO[] = [];
+      try {
+        liveWalletUtxos = await getLiveWalletUtxos(lucid);
+      } catch (error) {
+        console.warn(
+          "createReferenceUtxos could not refresh provider wallet UTxOs; using local chained wallet state:",
+          error,
+        );
+      }
+      const safeLiveWalletUtxos = liveWalletUtxos.filter((utxo) =>
+        !spentReferenceBatchRefs.has(utxoRefKey(utxo))
+      );
+      lucid.overrideUTxOs(
+        filterReservedWalletUtxos(
+          mergeWalletUtxos([...safeLiveWalletUtxos, ...localWalletUtxos]),
+          reservedWalletRefs,
+        ),
+      );
+    };
+    await refreshReferenceWalletState();
 
     while (pendingBatches.length > 0) {
       // We still submit sequentially because each successful batch updates the
@@ -1148,13 +1184,18 @@ async function createReferenceUtxos(
       let newWalletUTxOs: UTxO[] | undefined;
       let derivedOutputs: UTxO[] | undefined;
       let signedTx;
+      let consumedWalletInputs: UTxO[] = [];
       let splitBatch = false;
       let lastBuildError: unknown = null;
       for (let attempt = 1; attempt <= 5; attempt += 1) {
         try {
           [newWalletUTxOs, derivedOutputs, signedTx] = await (async () => {
-            const [walletUTxOs, outputs, txSignBuilder] =
-              await buildReferenceBatchTx().chain();
+            const txBuilder = buildReferenceBatchTx();
+            const [walletUTxOs, outputs, txSignBuilder] = await txBuilder
+              .chain();
+            consumedWalletInputs = (txBuilder as unknown as {
+              rawConfig: () => { consumedInputs?: UTxO[] };
+            }).rawConfig().consumedInputs ?? [];
             return [
               walletUTxOs,
               outputs,
@@ -1273,11 +1314,10 @@ async function createReferenceUtxos(
             1000,
             REFERENCE_UTXO_ADOPTION_TIMEOUT_MS,
           );
-          // Kupo can lag just after submission; keep Lucid's locally chained
-          // wallet state so the next reference batch does not reuse spent inputs.
-          lucid.overrideUTxOs(
-            filterReservedWalletUtxos(newWalletUTxOs, reservedWalletRefs),
-          );
+          for (const consumedInput of consumedWalletInputs) {
+            spentReferenceBatchRefs.add(utxoRefKey(consumedInput));
+          }
+          await refreshReferenceWalletState(newWalletUTxOs);
           break;
         } catch (error) {
           lastBuildError = error;
