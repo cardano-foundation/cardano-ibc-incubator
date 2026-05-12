@@ -270,32 +270,34 @@ export const awaitWalletTx = async (
         for (const [name, value] of Object.entries(variant.headers ?? {})) {
           args.push("-H", `${name}: ${value}`);
         }
-        args.push(
-          `${variant.baseUrl}/matches/${walletAddress}?unspent`,
-          "-w",
-          "\n%{http_code}",
-        );
+        const matchPredicates = [`*@${txHash}`, walletAddress];
+        for (const predicate of matchPredicates) {
+          const output = await new Deno.Command("/usr/bin/curl", {
+            args: [
+              ...args,
+              `${variant.baseUrl}/matches/${predicate}?unspent`,
+              "-w",
+              "\n%{http_code}",
+            ],
+            stdout: "piped",
+            stderr: "piped",
+          }).output();
 
-        const output = await new Deno.Command("/usr/bin/curl", {
-          args,
-          stdout: "piped",
-          stderr: "piped",
-        }).output();
-
-        if (output.success) {
-          const stdout = new TextDecoder().decode(output.stdout);
-          const separator = stdout.lastIndexOf("\n");
-          const body = separator >= 0 ? stdout.slice(0, separator) : stdout;
-          const statusText = separator >= 0
-            ? stdout.slice(separator + 1).trim()
-            : "500";
-          const status = Number.parseInt(statusText, 10) || 500;
-          if (status >= 200 && status < 300) {
-            const matches = JSON.parse(body) as Array<{
-              transaction_id?: string;
-            }>;
-            if (matches.some((match) => match.transaction_id === txHash)) {
-              return;
+          if (output.success) {
+            const stdout = new TextDecoder().decode(output.stdout);
+            const separator = stdout.lastIndexOf("\n");
+            const body = separator >= 0 ? stdout.slice(0, separator) : stdout;
+            const statusText = separator >= 0
+              ? stdout.slice(separator + 1).trim()
+              : "500";
+            const status = Number.parseInt(statusText, 10) || 500;
+            if (status >= 200 && status < 300) {
+              const matches = JSON.parse(body) as Array<{
+                transaction_id?: string;
+              }>;
+              if (matches.some((match) => match.transaction_id === txHash)) {
+                return;
+              }
             }
           }
         }
