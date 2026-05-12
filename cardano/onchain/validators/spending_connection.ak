@@ -236,7 +236,6 @@ fn validate_conn_open_ack_proof(
         // Avoid relying on derived equality for `MerklePath`/`List<ByteArray>` inside
         // the redeemer match. For IBC on Cosmos, proofs are always built for a 2-level
         // path (store prefix + key), so we assert the shape and compare element-wise.
-
         expect [item0_prefix, item0_key] = path.key_path
         expect [exp0_prefix, exp0_key] = conn_merkle_path.key_path
 
