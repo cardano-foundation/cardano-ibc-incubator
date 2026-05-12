@@ -59,6 +59,30 @@ const buildOutputReference = (utxo: UTxO): OutputReference => ({
 
 const utxoRefKey = (utxo: UTxO): string => `${utxo.txHash}#${utxo.outputIndex}`;
 
+const utxoLovelace = (utxo: UTxO): bigint => utxo.assets.lovelace ?? 0n;
+
+const isAdaOnlyUtxo = (utxo: UTxO): boolean =>
+  Object.keys(utxo.assets).every((unit) => unit === "lovelace");
+
+const sortUtxosByLovelaceDesc = (utxos: UTxO[]): UTxO[] =>
+  [...utxos].sort((a, b) => {
+    const aLovelace = utxoLovelace(a);
+    const bLovelace = utxoLovelace(b);
+    if (aLovelace === bLovelace) return 0;
+    return aLovelace < bLovelace ? 1 : -1;
+  });
+
+const sortNonceCandidateUtxos = (utxos: UTxO[]): UTxO[] =>
+  [...utxos].sort((a, b) => {
+    const aAdaOnly = isAdaOnlyUtxo(a);
+    const bAdaOnly = isAdaOnlyUtxo(b);
+    if (aAdaOnly !== bAdaOnly) return aAdaOnly ? -1 : 1;
+    const aLovelace = utxoLovelace(a);
+    const bLovelace = utxoLovelace(b);
+    if (aLovelace === bLovelace) return 0;
+    return aLovelace < bLovelace ? -1 : 1;
+  });
+
 const encodeRawDatum = (value: unknown): string =>
   // Lucid's generic `Data.to` typings are schema-oriented, so manually
   // constructed nested `Constr` values need a small cast even though the
@@ -266,17 +290,11 @@ export const createDeployment = async (
     );
   }
 
-  // Prefer large UTxOs for these nonce inputs so Lucid doesn't need to auto-select
-  // additional wallet inputs, which could accidentally spend the other nonce.
-  const sortedUtxos = [...signerUtxos].sort((a, b) => {
-    const aLovelace = a.assets.lovelace ?? 0n;
-    const bLovelace = b.assets.lovelace ?? 0n;
-    if (aLovelace === bLovelace) return 0;
-    return aLovelace < bLovelace ? 1 : -1;
-  });
-
-  const reservedNonceUtxos = sortedUtxos.slice(
-    0,
+  // Keep collateral-sized UTxOs available for Lucid's Plutus collateral
+  // selection. Nonce inputs only need unique output references, so prefer
+  // smaller ADA-only UTxOs and let fee coin selection use non-reserved inputs.
+  const reservedNonceUtxos = selectDeploymentNonceUtxos(
+    signerUtxos,
     RESERVED_DEPLOYMENT_NONCE_COUNT,
   );
   if (reservedNonceUtxos.length < RESERVED_DEPLOYMENT_NONCE_COUNT) {
@@ -811,6 +829,8 @@ const REFERENCE_UTXO_SINGLE_TX_HEADROOM_BYTES = 750;
 const REFERENCE_UTXO_ADOPTION_ATTEMPTS = 6;
 const REFERENCE_UTXO_ADOPTION_TIMEOUT_MS = 60_000;
 const REFERENCE_UTXO_ADOPTION_RETRY_DELAY_MS = 5_000;
+const DEPLOYMENT_COLLATERAL_LOVELACE = 5_000_000n;
+const DEPLOYMENT_MAX_COLLATERAL_INPUTS = 3;
 
 type ReferenceValidatorBatch = {
   validators: Script[];
@@ -839,6 +859,55 @@ const mergeWalletUtxos = (utxos: UTxO[]): UTxO[] => {
     byRef.set(utxoRefKey(utxo), utxo);
   }
   return [...byRef.values()];
+};
+
+const selectDeploymentCollateralHoldback = (utxos: UTxO[]): UTxO[] => {
+  const candidateGroups = [
+    sortUtxosByLovelaceDesc(utxos.filter(isAdaOnlyUtxo)),
+    sortUtxosByLovelaceDesc(utxos),
+  ];
+
+  for (const candidates of candidateGroups) {
+    const singleCollateral = candidates.find((utxo) =>
+      utxoLovelace(utxo) >= DEPLOYMENT_COLLATERAL_LOVELACE
+    );
+    if (singleCollateral) {
+      return [singleCollateral];
+    }
+
+    const selected: UTxO[] = [];
+    let selectedLovelace = 0n;
+    for (const utxo of candidates) {
+      selected.push(utxo);
+      selectedLovelace += utxoLovelace(utxo);
+      if (selectedLovelace >= DEPLOYMENT_COLLATERAL_LOVELACE) {
+        return selected;
+      }
+      if (selected.length >= DEPLOYMENT_MAX_COLLATERAL_INPUTS) {
+        break;
+      }
+    }
+  }
+
+  return [];
+};
+
+const selectDeploymentNonceUtxos = (
+  utxos: UTxO[],
+  count: number,
+): UTxO[] => {
+  const collateralHoldbackRefs = new Set(
+    selectDeploymentCollateralHoldback(utxos).map(utxoRefKey),
+  );
+  const nonceCandidates = sortNonceCandidateUtxos(
+    utxos.filter((utxo) => !collateralHoldbackRefs.has(utxoRefKey(utxo))),
+  );
+
+  if (nonceCandidates.length >= count) {
+    return nonceCandidates.slice(0, count);
+  }
+
+  return sortNonceCandidateUtxos(utxos).slice(0, count);
 };
 
 const requireReferenceUtxo = (
