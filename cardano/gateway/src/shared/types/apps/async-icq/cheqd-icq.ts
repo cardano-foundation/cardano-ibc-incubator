@@ -303,7 +303,7 @@ export function encodeCheqdProtoMessage(typeName: string, payload: Record<string
 export function decodeCheqdProtoMessage(typeName: string, bytes: Uint8Array): Record<string, unknown> {
   const messageType = getCheqdMessageType(typeName);
   const decoded = messageType.decode(bytes);
-  return messageType.toObject(decoded, {
+  const decodedObject = messageType.toObject(decoded, {
     longs: String,
     enums: String,
     bytes: String,
@@ -311,6 +311,36 @@ export function decodeCheqdProtoMessage(typeName: string, bytes: Uint8Array): Re
     objects: true,
     defaults: false,
   }) as Record<string, unknown>;
+  restoreCheqdDidDefaults(typeName, decodedObject);
+  return decodedObject;
+}
+
+function restoreCheqdDidDefaults(typeName: string, decodedObject: Record<string, unknown>): void {
+  if (typeName === 'cheqd.did.v2.QueryDidDocResponse' || typeName === 'cheqd.did.v2.QueryDidDocVersionResponse') {
+    const value = decodedObject.value;
+    if (isRecord(value)) {
+      restoreCheqdDidMetadataDefaults(value.metadata);
+    }
+    return;
+  }
+
+  if (typeName === 'cheqd.did.v2.QueryAllDidDocVersionsMetadataResponse') {
+    const versions = decodedObject.versions;
+    if (Array.isArray(versions)) {
+      versions.forEach(restoreCheqdDidMetadataDefaults);
+    }
+  }
+}
+
+function restoreCheqdDidMetadataDefaults(metadata: unknown): void {
+  if (isRecord(metadata) && !('deactivated' in metadata)) {
+    // Proto3 omits false bools when defaults are disabled; cheqd DID metadata defaults to active.
+    metadata.deactivated = false;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function buildSingleRequestPacket(queryKey: CheqdQueryKey, payload: Record<string, unknown>): {
