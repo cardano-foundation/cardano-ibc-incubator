@@ -808,6 +808,9 @@ const REFERENCE_UTXO_TX_OVERHEAD_BYTES = 4_000;
 const REFERENCE_UTXO_OUTPUT_OVERHEAD_BYTES = 200;
 const REFERENCE_UTXO_SAFE_TX_HEADROOM_BYTES = 1_000;
 const REFERENCE_UTXO_SINGLE_TX_HEADROOM_BYTES = 750;
+const REFERENCE_UTXO_ADOPTION_ATTEMPTS = 6;
+const REFERENCE_UTXO_ADOPTION_TIMEOUT_MS = 60_000;
+const REFERENCE_UTXO_ADOPTION_RETRY_DELAY_MS = 5_000;
 
 type ReferenceValidatorBatch = {
   validators: Script[];
@@ -864,6 +867,18 @@ const referenceTxPayloadBudget = (maxTxSize: number): number =>
 
 const referenceSingleValidatorBudget = (maxTxSize: number): number =>
   Math.max(1, maxTxSize - REFERENCE_UTXO_SINGLE_TX_HEADROOM_BYTES);
+
+const isReferenceUtxoAdoptionTimeout = (error: unknown): boolean => {
+  const errorText = error instanceof Error
+    ? `${error.message}\n${error.stack ?? ""}`
+    : String(error);
+
+  return errorText.includes("Timed out waiting for wallet visibility of tx");
+};
+
+const isRetryableReferenceUtxoAdoptionError = (error: unknown): boolean =>
+  isRetryableOgmiosTransportError(error) ||
+  isReferenceUtxoAdoptionTimeout(error);
 
 export const buildReferenceValidatorBatches = (
   validators: Script[],
@@ -1232,7 +1247,11 @@ async function createReferenceUtxos(
       }
 
       const txHash = signedTx.toHash();
-      for (let attempt = 1; attempt <= 6; attempt++) {
+      for (
+        let attempt = 1;
+        attempt <= REFERENCE_UTXO_ADOPTION_ATTEMPTS;
+        attempt++
+      ) {
         try {
           const submittedHash = await signedTx.submit();
           if (submittedHash !== txHash) {
@@ -1242,13 +1261,18 @@ async function createReferenceUtxos(
           }
         } catch (error) {
           console.warn(
-            `createReferenceUtxos submit retry ${attempt}/6 after error:`,
+            `createReferenceUtxos submit retry ${attempt}/${REFERENCE_UTXO_ADOPTION_ATTEMPTS} after error:`,
             error,
           );
         }
 
         try {
-          await awaitWalletTx(lucid, txHash, 1000, 60000);
+          await awaitWalletTx(
+            lucid,
+            txHash,
+            1000,
+            REFERENCE_UTXO_ADOPTION_TIMEOUT_MS,
+          );
           // Kupo can lag just after submission; keep Lucid's locally chained
           // wallet state so the next reference batch does not reuse spent inputs.
           lucid.overrideUTxOs(
@@ -1284,10 +1308,19 @@ async function createReferenceUtxos(
             splitBatch = true;
             break;
           }
-          if (!isRetryableOgmiosTransportError(error) || attempt === 5) {
+          if (
+            !isRetryableReferenceUtxoAdoptionError(error) ||
+            attempt === REFERENCE_UTXO_ADOPTION_ATTEMPTS
+          ) {
             throw error;
           }
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+          console.warn(
+            `createReferenceUtxos adoption retry ${attempt}/${REFERENCE_UTXO_ADOPTION_ATTEMPTS} after error:`,
+            error,
+          );
+          await new Promise((resolve) =>
+            setTimeout(resolve, REFERENCE_UTXO_ADOPTION_RETRY_DELAY_MS)
+          );
         }
       }
       if (splitBatch) {
