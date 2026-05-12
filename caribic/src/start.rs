@@ -763,30 +763,14 @@ pub fn build_hermes_if_needed(relayer_path: &Path) -> Result<(), Box<dyn std::er
 
 pub fn build_aiken_validators_if_needed(
     project_root_path: &Path,
-    clean: bool,
+    _clean: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
-    let plutus_json_path = project_root_path.join("cardano").join("plutus.json");
-
-    // When not running with `--clean`, avoid rebuilding validators if we already have a compiled
-    // `plutus.json`. This is the common path during iterative development, and it lets us overlap
-    // startup with other work without doing redundant compilation.
-    //
-    // In verbose mode we intentionally rebuild so Aiken trace flags are applied.
-    if plutus_json_path.exists() && !clean && !is_verbose {
-        return Ok(());
-    }
-
-    let build_args = if is_verbose {
-        vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
-    } else {
-        vec!["build"]
-    };
-
+    // Always rebuild deployment validators with silent traces so a stale debug
+    // `plutus.json` cannot bloat reference-script transactions.
     execute_script(
         project_root_path.join("cardano").join("onchain").as_path(),
         "aiken",
-        build_args,
+        Vec::from(["build", "--trace-level", "silent"]),
         None,
     )?;
 
@@ -1135,7 +1119,7 @@ pub async fn start_local_cardano_network(
 
 pub async fn deploy_contracts(
     project_root_path: &Path,
-    clean: bool,
+    _clean: bool,
     validators_already_built: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let profile = config::cardano_network_profile(config::CoreCardanoNetwork::Local);
@@ -1165,8 +1149,6 @@ pub async fn deploy_contracts(
         log("Deploying IBC contracts ...");
     }
 
-    let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
-
     if validators_already_built {
         log_or_show_progress(
             &format!(
@@ -1175,43 +1157,22 @@ pub async fn deploy_contracts(
             ),
             &optional_progress_bar,
         );
-    } else if !project_root_path
-        .join("cardano")
-        .join("plutus.json")
-        .as_path()
-        .exists()
-        || clean
-        || is_verbose
-    {
-        log_or_show_progress(
-            &format!(
-                "{} Building Aiken validators",
-                style("Step 1/3").bold().dim()
-            ),
-            &optional_progress_bar,
-        );
-
-        // Verbose trace builds embed Aiken trace data in validators and can exceed Cardano tx size limits when deployed as reference scripts.
-        let build_args = if is_verbose {
-            vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
-        } else {
-            vec!["build"]
-        };
-
-        execute_script(
-            project_root_path.join("cardano").join("onchain").as_path(),
-            "aiken",
-            build_args,
-            None,
-        )?;
     } else {
         log_or_show_progress(
             &format!(
-                "{} Aiken validators already built",
+                "{} Building Aiken validators with silent traces",
                 style("Step 1/3").bold().dim()
             ),
             &optional_progress_bar,
         );
+
+        // Deployment artifacts must not inherit verbose Aiken traces from a local debug build.
+        execute_script(
+            project_root_path.join("cardano").join("onchain").as_path(),
+            "aiken",
+            Vec::from(["build", "--trace-level", "silent"]),
+            None,
+        )?;
     }
 
     log_or_show_progress(
@@ -1711,8 +1672,6 @@ pub async fn deploy_preprod_bridge(
         }
     }
 
-    let is_verbose = logger::get_verbosity() == logger::Verbosity::Verbose;
-
     if validators_already_built {
         log_or_show_progress(
             &format!(
@@ -1721,41 +1680,22 @@ pub async fn deploy_preprod_bridge(
             ),
             &optional_progress_bar,
         );
-    } else if !project_root_path
-        .join("cardano")
-        .join("plutus.json")
-        .as_path()
-        .exists()
-        || is_verbose
-    {
-        log_or_show_progress(
-            &format!(
-                "{} Building Aiken validators",
-                style("Step 1/3").bold().dim()
-            ),
-            &optional_progress_bar,
-        );
-
-        let build_args = if is_verbose {
-            vec!["build", "--trace-filter", "all", "--trace-level", "verbose"]
-        } else {
-            vec!["build"]
-        };
-
-        execute_script(
-            project_root_path.join("cardano").join("onchain").as_path(),
-            "aiken",
-            build_args,
-            None,
-        )?;
     } else {
         log_or_show_progress(
             &format!(
-                "{} Aiken validators already built",
+                "{} Building Aiken validators with silent traces",
                 style("Step 1/3").bold().dim()
             ),
             &optional_progress_bar,
         );
+
+        // Deployment artifacts must not inherit verbose Aiken traces from a local debug build.
+        execute_script(
+            project_root_path.join("cardano").join("onchain").as_path(),
+            "aiken",
+            Vec::from(["build", "--trace-level", "silent"]),
+            None,
+        )?;
     }
 
     let (ogmios_url, kupo_url) =
