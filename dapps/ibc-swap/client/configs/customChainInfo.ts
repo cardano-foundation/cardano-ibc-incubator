@@ -1,14 +1,10 @@
-import { CARDANO_MAINNET_MAGIC } from '@/constants';
-import {
-  CARDANO_CHAIN_ID,
-  CARDANO_IBC_CHAIN_ID,
-  ENTRYPOINT_REST_ENDPOINT,
-  ENTRYPOINT_RPC_ENDPOINT,
-  LOCAL_OSMOSIS_REST_ENDPOINT,
-  LOCAL_OSMOSIS_RPC_ENDPOINT,
-} from '@/configs/runtime';
 import { AssetList } from '@chain-registry/types';
-import DefaultCardanoNetworkIcon from '@/assets/icons/cardano.svg';
+import {
+  activeRuntimeConfig,
+  cosmosRuntimeChains,
+  selectableRuntimeChains,
+  type RuntimeChainConfig,
+} from '@/configs/runtimeConfig';
 
 type CustomChain = {
   chain_name: string;
@@ -56,206 +52,135 @@ type CustomChain = {
   keywords?: string[];
 };
 
-const ENTRYPOINT_CHAIN_ID = 'entrypoint';
-
-const entrypointChainConfig: CustomChain = {
-  chain_name: ENTRYPOINT_CHAIN_ID,
-  chain_type: 'cosmos',
-  status: 'active',
-  network_type: 'testnet',
-  pretty_name: 'Entrypoint chain Localnet',
-  chain_id: ENTRYPOINT_CHAIN_ID,
-  bech32_prefix: 'cosmos',
-  slip44: 118,
-  fees: {
-    fee_tokens: [
-      {
-        denom: 'stake',
-        fixed_min_gas_price: 0.0,
-        low_gas_price: 0.0,
-        average_gas_price: 0.0,
-        high_gas_price: 0.0,
-      },
-    ],
-  },
-  staking: {
-    staking_tokens: [
-      {
-        denom: 'token',
-      },
-      {
-        denom: 'stake',
-      },
-    ],
-  },
-  apis: {
-    rpc: [
-      {
-        address: ENTRYPOINT_RPC_ENDPOINT,
-        provider: 'local',
-      },
-    ],
-    rest: [
-      {
-        address: ENTRYPOINT_REST_ENDPOINT,
-        provider: 'local',
-      },
-    ],
-  },
-  key_algos: ['secp256k1'],
-  codebase: {
-    ics_enabled: ['ibc-go'],
-  },
-};
-
-const entrypointChainAssetList: AssetList = {
-  chain_name: ENTRYPOINT_CHAIN_ID,
-  assets: [
-    {
-      description: 'Registered denom token for entrypoint chain testing',
-      denom_units: [
-        {
-          denom: 'token',
-          exponent: 0,
-          aliases: [],
-        },
-      ],
-      base: 'token',
-      display: 'token',
-      name: 'token',
-      symbol: 'token',
-    },
-    {
-      description: 'Registered denom token for entrypoint chain testing',
-      denom_units: [
-        {
-          denom: 'stake',
-          exponent: 0,
-          aliases: [],
-        },
-      ],
-      base: 'stake',
-      display: 'stake',
-      name: 'stake',
-      symbol: 'stake',
-    },
-  ],
-};
-
-const localOsmosisChainConfig: CustomChain = {
-  chain_name: 'localosmosis',
-  chain_type: 'cosmos',
-  status: 'active',
-  network_type: 'testnet',
-  pretty_name: 'Local Osmosis',
-  chain_id: 'localosmosis',
-  bech32_prefix: 'osmo',
-  slip44: 118,
-  fees: {
-    fee_tokens: [
-      {
-        denom: 'uosmo',
-        fixed_min_gas_price: 0.0025,
-        low_gas_price: 0.0025,
-        average_gas_price: 0.025,
-        high_gas_price: 0.04,
-      },
-    ],
-  },
-  staking: {
-    staking_tokens: [
-      {
-        denom: 'uosmo',
-      },
-      {
-        denom: 'osmo',
-      },
-    ],
-  },
-  apis: {
-    rpc: [
-      {
-        address: LOCAL_OSMOSIS_RPC_ENDPOINT,
-      },
-    ],
-    rest: [
-      {
-        address: LOCAL_OSMOSIS_REST_ENDPOINT,
-      },
-    ],
-  },
+const toCustomChain = (chain: RuntimeChainConfig): CustomChain => ({
+  chain_name: chain.id,
+  chain_type: chain.kind === 'cosmos' ? 'cosmos' : 'unknown',
+  status: chain.disabledReason ? 'inactive' : 'active',
+  network_type: chain.networkType,
+  pretty_name: chain.prettyName,
+  chain_id: chain.id,
+  ibc_chain_id: chain.ibcChainId,
+  bech32_prefix: chain.bech32Prefix,
+  slip44: chain.slip44,
+  fees: chain.feeDenom
+    ? {
+        fee_tokens: [
+          {
+            denom: chain.feeDenom,
+            fixed_min_gas_price: chain.fixedMinGasPrice ?? 0.0025,
+            low_gas_price: chain.fixedMinGasPrice ?? 0.0025,
+            average_gas_price: chain.fixedMinGasPrice ?? 0.0025,
+            high_gas_price: chain.fixedMinGasPrice ?? 0.0025,
+          },
+        ],
+      }
+    : undefined,
+  staking: chain.assets?.length
+    ? {
+        staking_tokens: chain.assets.map((asset) => ({
+          denom: asset.base,
+        })),
+      }
+    : undefined,
+  apis:
+    chain.rpcEndpoint || chain.restEndpoint
+      ? {
+          rpc: chain.rpcEndpoint
+            ? [
+                {
+                  address: chain.rpcEndpoint,
+                  provider: 'runtime-config',
+                },
+              ]
+            : undefined,
+          rest: chain.restEndpoint
+            ? [
+                {
+                  address: chain.restEndpoint,
+                  provider: 'runtime-config',
+                },
+              ]
+            : undefined,
+        }
+      : undefined,
+  key_algos: chain.keyAlgos,
+  codebase:
+    chain.kind === 'cosmos'
+      ? {
+          ics_enabled: ['ibc-go'],
+        }
+      : undefined,
   logo_URIs: {
-    svg: 'https://app.osmosis.zone/tokens/generated/osmo.svg',
+    svg: chain.logoUri,
   },
-  keywords: ['ibc-go'], // Assuming features map to keywords
-};
+  keywords: chain.kind === 'cosmos' ? ['ibc-go'] : undefined,
+});
 
-const localOsmosisAssetList: AssetList = {
-  chain_name: 'localosmosis',
-  assets: [
-    {
-      description: 'Registered denom uosmo for localosmosis testing',
+const toAssetList = (chain: RuntimeChainConfig): AssetList | null => {
+  if (!chain.assets?.length) return null;
+
+  return {
+    chain_name: chain.id,
+    assets: chain.assets.map((asset) => ({
+      description: asset.description,
       denom_units: [
         {
-          denom: 'uosmo',
+          denom: asset.base,
           exponent: 0,
           aliases: [],
         },
+        ...(asset.exponent > 0
+          ? [
+              {
+                denom: asset.display,
+                exponent: asset.exponent,
+                aliases: [],
+              },
+            ]
+          : []),
       ],
-      base: 'uosmo',
-      display: 'uosmo',
-      name: 'uosmo',
-      symbol: 'uosmo',
-    },
-    {
-      description: 'Registered denom uosmo for localosmosis testing',
-      denom_units: [
-        {
-          denom: 'osmo',
-          exponent: 6,
-          aliases: [],
-        },
-      ],
-      base: 'osmo',
-      display: 'osmo',
-      name: 'osmo',
-      symbol: 'osmo',
-    },
-  ],
+      base: asset.base,
+      display: asset.display,
+      name: asset.name,
+      symbol: asset.symbol,
+    })),
+  };
 };
 
-export const customChains: CustomChain[] = [
-  entrypointChainConfig,
-  localOsmosisChainConfig,
-];
+export const customChains: CustomChain[] =
+  cosmosRuntimeChains.map(toCustomChain);
 
-const isCardanoMainnet = CARDANO_CHAIN_ID === CARDANO_MAINNET_MAGIC;
+export const customChainassets: AssetList[] = cosmosRuntimeChains
+  .map(toAssetList)
+  .filter((assetList): assetList is AssetList => assetList !== null);
 
-const cardanoChain: CustomChain = {
-  chain_name: 'cardano',
-  chain_type: 'unknown',
-  status: 'active',
-  network_type: isCardanoMainnet ? 'mainnet' : 'devnet',
-  pretty_name: 'Cardano',
-  chain_id: CARDANO_CHAIN_ID,
-  ibc_chain_id: CARDANO_IBC_CHAIN_ID,
-  bech32_prefix: isCardanoMainnet ? 'addr' : 'addr_test',
-  slip44: 1815,
-  logo_URIs: {
-    svg: DefaultCardanoNetworkIcon.src,
-  },
-};
+export const allChains: CustomChain[] =
+  activeRuntimeConfig.chains.map(toCustomChain);
+
+export const selectableChains: CustomChain[] =
+  selectableRuntimeChains.map(toCustomChain);
 
 export const chainsRestEndpoints: { [key: string]: string } =
-  customChains.reduce((acc: { [key: string]: string }, chain) => {
-    const { apis, chain_id: chainId } = chain;
-    const [restEndpoint] = apis?.rest!;
-    acc[chainId] = restEndpoint.address!;
+  cosmosRuntimeChains.reduce((acc: { [key: string]: string }, chain) => {
+    if (chain.restEndpoint) {
+      acc[chain.id] = chain.restEndpoint;
+    }
     return acc;
   }, {});
 
-export const allChains: any[] = [...customChains, cardanoChain];
-export const customChainassets: AssetList[] = [
-  entrypointChainAssetList,
-  localOsmosisAssetList,
-];
+export const cosmosEndpointOptions = {
+  endpoints: cosmosRuntimeChains.reduce(
+    (
+      acc: Record<string, { isLazy: boolean; rpc?: string[]; rest?: string[] }>,
+      chain,
+    ) => {
+      acc[chain.id] = {
+        isLazy: true,
+        rpc: chain.rpcEndpoint ? [chain.rpcEndpoint] : undefined,
+        rest: chain.restEndpoint ? [chain.restEndpoint] : undefined,
+      };
+      return acc;
+    },
+    {},
+  ),
+};
