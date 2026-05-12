@@ -293,9 +293,12 @@ export async function queryOgmiosJsonRpc(
               if (payload.error) {
                 const errorCode = payload.error.code ?? "unknown";
                 const errorMessage = payload.error.message ?? messageText;
+                const errorData = payload.error.data === undefined
+                  ? ""
+                  : ` data=${JSON.stringify(payload.error.data)}`;
                 reject(
                   new Error(
-                    `${method} JSON-RPC error ${errorCode}: ${errorMessage}`,
+                    `${method} JSON-RPC error ${errorCode}: ${errorMessage}${errorData}`,
                   ),
                 );
                 return;
