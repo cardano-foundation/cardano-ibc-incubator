@@ -4,11 +4,13 @@ import { CardanoWallet, useWallet } from '@meshsdk/react';
 import React, { useState } from 'react';
 import * as CSL from '@emurgo/cardano-serialization-lib-browser';
 import { getPublicKeyHashFromAddress } from '@/utils/address';
+import { CARDANO_CHAIN_ID } from '@/configs/runtime';
+import { TxHashLink } from '@/components/TxHashLink';
 
 const SendToken = () => {
   const { connected, wallet } = useWallet();
   const [formData, setFormData] = useState({ address: '', amount: '' });
-  const [transactioSuccessMsg, setTransactionSuccessMsg] = useState('');
+  const [transactionSuccessTxHash, setTransactionSuccessTxHash] = useState('');
   async function handleSendToken() {
     const { address, amount } = formData;
     const tx = new Transaction({ initiator: wallet }).sendLovelace(
@@ -28,9 +30,7 @@ const SendToken = () => {
 
     if (txHash) {
       setFormData({ ...formData, address: '', amount: '' });
-      setTransactionSuccessMsg(
-        `Send token successfully. Transaction Hash: ${txHash}`,
-      );
+      setTransactionSuccessTxHash(txHash);
     }
   }
 
@@ -79,7 +79,15 @@ const SendToken = () => {
           >
             Send token
           </button>
-          {transactioSuccessMsg && <p>{transactioSuccessMsg}</p>}
+          {transactionSuccessTxHash && (
+            <p>
+              Send token successfully. Transaction Hash:{' '}
+              <TxHashLink
+                chainId={CARDANO_CHAIN_ID}
+                txHash={transactionSuccessTxHash}
+              />
+            </p>
+          )}
         </div>
       )}
     </>

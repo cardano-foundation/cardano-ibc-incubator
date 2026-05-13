@@ -20,6 +20,8 @@ import { toast } from 'react-toastify';
 import { useWallet } from '@meshsdk/react';
 import { COLOR } from '@/styles/color';
 import { useSafeCardanoAddress } from '@/hooks/useSafeCardanoAddress';
+import { TxHashLink } from '@/components/TxHashLink';
+import { CARDANO_CHAIN_ID } from '@/configs/runtime';
 import {
   buildCheqdIcqTx,
   type CheqdIcqBuildParams,
@@ -668,7 +670,11 @@ export default function QueriesContainer() {
                       Tx Hash
                     </Text>
                     <Text marginTop={2} fontFamily="mono" fontSize="sm">
-                      {lastTxHash || 'No query submitted yet'}
+                      <TxHashLink
+                        chainId={CARDANO_CHAIN_ID}
+                        txHash={lastTxHash}
+                        fallbackText="No query submitted yet"
+                      />
                     </Text>
                   </Box>
                   <Box rounded="2xl" background={COLOR.neutral_5} padding={4}>

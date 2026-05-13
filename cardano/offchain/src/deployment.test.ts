@@ -44,17 +44,32 @@ Deno.test("buildReferenceValidatorBatches keeps an oversized validator in its ow
   );
 });
 
-Deno.test("buildReferenceValidatorSizeReport flags oversized single validators", () => {
+Deno.test("buildReferenceValidatorSizeReport allows single validators that exceed the batch budget", () => {
   const validators = [
-    makeValidator(900),
+    makeValidator(1_200),
     makeValidator(100),
   ];
 
   const report = buildReferenceValidatorSizeReport(validators, 5_600);
 
   assertEquals(report[0].index, 0);
-  assertEquals(report[0].scriptBytes, 900);
-  assertEquals(report[0].estimatedReferenceOutputBytes, 1_100);
+  assertEquals(report[0].scriptBytes, 1_200);
+  assertEquals(report[0].estimatedReferenceOutputBytes, 1_400);
+  assertEquals(report[0].oversized, false);
+  assertEquals(report[1].oversized, false);
+});
+
+Deno.test("buildReferenceValidatorSizeReport flags validators that cannot fit alone", () => {
+  const validators = [
+    makeValidator(5_000),
+    makeValidator(100),
+  ];
+
+  const report = buildReferenceValidatorSizeReport(validators, 5_600);
+
+  assertEquals(report[0].index, 0);
+  assertEquals(report[0].scriptBytes, 5_000);
+  assertEquals(report[0].estimatedReferenceOutputBytes, 5_200);
   assertEquals(report[0].oversized, true);
   assertEquals(report[1].oversized, false);
 });

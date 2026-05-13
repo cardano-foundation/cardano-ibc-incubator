@@ -22,17 +22,16 @@ validator spend_client(host_state_nft_policy_id: PolicyId) {
     spent_output_ref: OutputReference,
     transaction: Transaction,
   ) {
-    let Transaction { outputs, inputs, validity_range, redeemers, .. } =
-      transaction
+    let Transaction { outputs, inputs, validity_range, .. } = transaction
 
-    // Client updates must use the matching HostState root verifier branch.
+    // Any client state update must be committed into the HostState root in the
+    // same transaction. HostState validates its own redeemer branch, so the
+    // client validator only needs to require the canonical HostState thread.
     expect _ =
-      validator_utils.require_host_state_redeemer(
+      validator_utils.require_host_state_thread(
         inputs,
         outputs,
-        redeemers,
         host_state_nft_policy_id,
-        validator_utils.ExpectUpdateClient,
       )
 
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)

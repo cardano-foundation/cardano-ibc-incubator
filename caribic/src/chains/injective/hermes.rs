@@ -490,7 +490,7 @@ fn profile_for_chain(
             clock_drift: "20s",
             max_block_time: "10s",
             trusting_period: "10days",
-            memo_prefix: Some("Caribic"),
+            memo_prefix: Some("Cardano IBC Relayer"),
             trust_threshold: HermesTrustThreshold {
                 numerator: "1",
                 denominator: "3",
@@ -526,7 +526,7 @@ fn profile_for_chain(
             clock_drift: "20s",
             max_block_time: "10s",
             trusting_period: "10days",
-            memo_prefix: Some("Caribic"),
+            memo_prefix: Some("Cardano IBC Relayer"),
             trust_threshold: HermesTrustThreshold {
                 numerator: "1",
                 denominator: "3",

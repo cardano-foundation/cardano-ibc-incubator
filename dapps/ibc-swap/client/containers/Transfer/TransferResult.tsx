@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useContext, useEffect, useState } from 'react';
 import Image from 'next/image';
 
@@ -7,17 +8,15 @@ import RightArrowIcon from '@/assets/icons/Arrow-right.svg';
 import TimerIcon from '@/assets/icons/timer.svg';
 import TransferContext from '@/contexts/TransferContext';
 import { formatTokenSymbol } from '@/utils/string';
-import {
-  CARDANO_CHAIN_ID,
-  IBC_SWAP_MODE,
-  MAINNET_CARDANO_CHAIN_ID,
-  PREPROD_CARDANO_CHAIN_ID,
-} from '@/configs/runtime';
+import { IBC_SWAP_MODE } from '@/configs/runtime';
 import {
   runtimeChainLabel,
   runtimeRouteChainIds,
 } from '@/configs/runtimeConfig';
+import { TxHashLink } from '@/components/TxHashLink';
+import { getExplorerTxUrl } from '@/utils/txExplorer';
 import type {
+  TransferLifecyclePhase,
   TransferPacketHop,
   TransferStatusResponse,
 } from '@/types/transferStatus';
@@ -43,9 +42,6 @@ type TransferResultProps = {
   submittedAt?: string;
 };
 
-const shortenHash = (hash: string): string =>
-  hash.length > 18 ? `${hash.slice(0, 10)}...${hash.slice(-8)}` : hash;
-
 const formatElapsedTime = (seconds: number): string => {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
@@ -61,16 +57,10 @@ const getElapsedSecondsSince = (submittedAt?: string): number => {
   return Math.max(0, Math.floor((Date.now() - submittedAtMs) / 1000));
 };
 
-const getCardanoExplorerTxUrl = (txHash: string): string | undefined => {
-  if (!txHash) return undefined;
-  if (CARDANO_CHAIN_ID === PREPROD_CARDANO_CHAIN_ID) {
-    return `https://preprod.cexplorer.io/tx/${txHash}`;
-  }
-  if (CARDANO_CHAIN_ID === MAINNET_CARDANO_CHAIN_ID) {
-    return `https://cexplorer.io/tx/${txHash}`;
-  }
-  return undefined;
-};
+const isTerminalTransferStatus = (status?: TransferLifecyclePhase): boolean =>
+  status === 'acknowledge_packet_observed' ||
+  status === 'timeout_observed' ||
+  status === 'failed';
 
 const getStepMarkerColor = (status: 'complete' | 'active' | 'pending') => {
   if (status === 'complete') return COLOR.success;
@@ -80,9 +70,6 @@ const getStepMarkerColor = (status: 'complete' | 'active' | 'pending') => {
 
 type ProgressStepStatus = 'complete' | 'active' | 'pending';
 
-const getShortTxHash = (txHash?: string): string =>
-  txHash ? shortenHash(txHash) : 'transaction pending';
-
 const stepStatus = (complete: boolean, active: boolean): ProgressStepStatus => {
   if (complete) return 'complete';
   if (active) return 'active';
@@ -91,7 +78,7 @@ const stepStatus = (complete: boolean, active: boolean): ProgressStepStatus => {
 
 type HopProgressStep = {
   title: string;
-  description: string;
+  description: ReactNode;
   status: ProgressStepStatus;
 };
 
@@ -110,8 +97,15 @@ const getPacketLabel = (packetHop?: TransferPacketHop): string =>
     ? `${packetHop.packet.sourceChannel}/${packetHop.packet.sequence}`
     : 'not emitted yet';
 
-const getEventTxLabel = (txHash?: string): string =>
-  txHash ? ` in tx ${getShortTxHash(txHash)}` : '';
+const getEventTxLabel = (chainId?: string, txHash?: string): ReactNode =>
+  txHash ? (
+    <>
+      {' '}
+      in tx <TxHashLink chainId={chainId} txHash={txHash} />
+    </>
+  ) : (
+    ''
+  );
 
 // Convert packet milestones into stable copy for the compact per-hop progress UI.
 const formatPacketSequenceList = (sequences: string[]): string =>
@@ -151,28 +145,38 @@ const buildRouteHopProgress = (params: {
   else if (previousPacketHop?.recv)
     statusLabel = `Waiting for ${sourceLabel} forwarding`;
 
-  let sendDescription = `This hop can start after the previous hop reaches ${sourceLabel}.`;
+  let sendDescription: ReactNode = `This hop can start after the previous hop reaches ${sourceLabel}.`;
   let sendStatus = stepStatus(false, false);
   if (packetHop?.send) {
-    sendDescription = `${sourceLabel} emitted send_packet ${packetLabel}${getEventTxLabel(
-      packetHop.send.txHash,
-    )}.`;
+    sendDescription = (
+      <>
+        {sourceLabel} emitted send_packet {packetLabel}
+        {getEventTxLabel(packetHop.send.chainId, packetHop.send.txHash)}.
+      </>
+    );
     sendStatus = 'complete';
   } else if (index === 0 && sourceTxHash) {
-    sendDescription = `Wallet returned source tx ${shortenHash(
-      sourceTxHash,
-    )}. Waiting for bridge history to index its IBC send_packet.`;
+    sendDescription = (
+      <>
+        Wallet returned source tx{' '}
+        <TxHashLink chainId={sourceChainId} txHash={sourceTxHash} />. Waiting
+        for bridge history to index its IBC send_packet.
+      </>
+    );
     sendStatus = 'active';
   } else if (previousPacketHop?.recv) {
     sendDescription = `${sourceLabel} received the previous hop. Waiting for the forwarded send_packet for ${destinationLabel}.`;
     sendStatus = 'active';
   }
 
-  let receiveDescription = `No packet exists yet for ${destinationLabel}.`;
+  let receiveDescription: ReactNode = `No packet exists yet for ${destinationLabel}.`;
   if (packetHop?.recv) {
-    receiveDescription = `${destinationLabel} observed recv_packet ${packetLabel}${getEventTxLabel(
-      packetHop.recv.txHash,
-    )}.`;
+    receiveDescription = (
+      <>
+        {destinationLabel} observed recv_packet {packetLabel}
+        {getEventTxLabel(packetHop.recv.chainId, packetHop.recv.txHash)}.
+      </>
+    );
   } else if (packetHop?.blockedByPriorPackets) {
     const blockedSequences = formatPacketSequenceList(
       packetHop.blockedByPriorPackets.pendingPacketSequencesBeforeCurrent,
@@ -182,30 +186,47 @@ const buildRouteHopProgress = (params: {
     receiveDescription = `Waiting for a relayer to deliver packet ${packetLabel} to ${destinationLabel}.`;
   }
 
-  let acknowledgementDescription = `Waiting for recv_packet before ${destinationLabel} can acknowledge this hop.`;
+  let acknowledgementDescription: ReactNode = `Waiting for recv_packet before ${destinationLabel} can acknowledge this hop.`;
   if (packetHop?.writeAcknowledgement) {
-    acknowledgementDescription = `${destinationLabel} wrote the IBC acknowledgement${getEventTxLabel(
-      packetHop.writeAcknowledgement.txHash,
-    )}.`;
+    acknowledgementDescription = (
+      <>
+        {destinationLabel} wrote the IBC acknowledgement
+        {getEventTxLabel(
+          packetHop.writeAcknowledgement.chainId,
+          packetHop.writeAcknowledgement.txHash,
+        )}
+        .
+      </>
+    );
   } else if (packetHop?.recv) {
     acknowledgementDescription = `Waiting for ${destinationLabel} to process the packet and write an acknowledgement.`;
   }
 
-  let sourceAckDescription = `Waiting for acknowledgement relay back to ${sourceLabel}.`;
+  let sourceAckDescription: ReactNode = `Waiting for acknowledgement relay back to ${sourceLabel}.`;
   if (packetHop?.timeout) {
-    sourceAckDescription = `${sourceLabel} observed timeout_packet ${packetLabel}${getEventTxLabel(
-      packetHop.timeout.txHash,
-    )}.`;
+    sourceAckDescription = (
+      <>
+        {sourceLabel} observed timeout_packet {packetLabel}
+        {getEventTxLabel(packetHop.timeout.chainId, packetHop.timeout.txHash)}.
+      </>
+    );
   } else if (packetHop?.acknowledge) {
-    sourceAckDescription = `${sourceLabel} observed acknowledge_packet ${packetLabel}${getEventTxLabel(
-      packetHop.acknowledge.txHash,
-    )}.`;
+    sourceAckDescription = (
+      <>
+        {sourceLabel} observed acknowledge_packet {packetLabel}
+        {getEventTxLabel(
+          packetHop.acknowledge.chainId,
+          packetHop.acknowledge.txHash,
+        )}
+        .
+      </>
+    );
   } else if (!packetHop?.writeAcknowledgement) {
     sourceAckDescription = `Waiting for destination acknowledgement before it can return to ${sourceLabel}.`;
   }
 
   const status = stepStatus(
-    Boolean(packetHop?.acknowledge),
+    Boolean(packetHop?.acknowledge || packetHop?.timeout),
     Boolean(packetHop || sourceTxHash || previousPacketHop?.recv),
   );
 
@@ -264,8 +285,11 @@ export const TransferResult = ({
   const [transferStatus, setTransferStatus] =
     useState<TransferStatusResponse | null>(null);
   const [transferStatusError, setTransferStatusError] = useState('');
+  const transferTerminal = isTerminalTransferStatus(transferStatus?.status);
 
   useEffect(() => {
+    if (transferTerminal) return undefined;
+
     if (!submittedAt) {
       const interval = window.setInterval(() => {
         setElapsedSeconds((seconds) => seconds + 1);
@@ -281,7 +305,7 @@ export const TransferResult = ({
       updateElapsedSeconds();
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [submittedAt]);
+  }, [submittedAt, transferTerminal]);
 
   useEffect(() => {
     const sourceChainId = fromNetwork.networkId;
@@ -306,6 +330,9 @@ export const TransferResult = ({
       if (!cancelled) {
         setTransferStatus(data);
         setTransferStatusError('');
+        if (isTerminalTransferStatus(data.status)) {
+          cancelled = true;
+        }
       }
     };
 
@@ -320,6 +347,11 @@ export const TransferResult = ({
     });
 
     const interval = window.setInterval(() => {
+      if (cancelled) {
+        window.clearInterval(interval);
+        return;
+      }
+
       fetchTransferStatus().catch((error) => {
         if (!cancelled) {
           setTransferStatusError(
@@ -343,10 +375,7 @@ export const TransferResult = ({
     : runtimeRouteChainIds(fromNetwork.networkId, toNetwork.networkId);
   const routeLabels = routeChainIds.map(runtimeChainLabel);
 
-  const sourceExplorerUrl =
-    fromNetwork.networkId === CARDANO_CHAIN_ID
-      ? getCardanoExplorerTxUrl(lastTxHash)
-      : undefined;
+  const sourceExplorerUrl = getExplorerTxUrl(fromNetwork.networkId, lastTxHash);
 
   const packets = transferStatus?.packets || [];
   // Render every route edge even before its packet is indexed so stalled hops remain visible.
@@ -673,7 +702,10 @@ export const TransferResult = ({
                 Source transaction
               </Text>
               <Text fontSize={12} color={COLOR.neutral_1} wordBreak="break-all">
-                {lastTxHash}
+                <TxHashLink
+                  chainId={fromNetwork.networkId}
+                  txHash={lastTxHash}
+                />
               </Text>
             </Box>
           )}

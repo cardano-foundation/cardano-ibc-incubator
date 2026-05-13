@@ -7,6 +7,9 @@ import RightArrowIcon from '@/assets/icons/Arrow-right.svg';
 import TimerIcon from '@/assets/icons/timer.svg';
 import { formatTokenSymbol } from '@/utils/string';
 import SwapContext from '@/contexts/SwapContext';
+import { CARDANO_CHAIN_ID } from '@/configs/runtime';
+import { TxHashLink } from '@/components/TxHashLink';
+import { getExplorerTxUrl } from '@/utils/txExplorer';
 
 import {
   StyledSwitchNetwork,
@@ -31,11 +34,11 @@ export const SwapResult = ({
   setIsSubmitted,
   minimumReceived,
   estFee,
-  // eslint-disable-next-line no-unused-vars
   lastTxHash,
   resetLastTxData,
 }: TransferResultProps) => {
   const { swapData, handleResetData } = useContext(SwapContext);
+  const sourceExplorerUrl = getExplorerTxUrl(CARDANO_CHAIN_ID, lastTxHash);
 
   const handleBackToSwap = () => {
     resetLastTxData();
@@ -166,6 +169,23 @@ export const SwapResult = ({
               </Text>
             </Box>
           </StyledTransferCalculatorBox>
+          {lastTxHash && (
+            <Box
+              display="inline-grid"
+              gap="6px"
+              p="12px"
+              borderRadius="10px"
+              background="#0E0E124D"
+              border="1px solid #FFFFFF0D"
+            >
+              <Text fontSize={12} fontWeight={700} color={COLOR.neutral_3}>
+                Source transaction
+              </Text>
+              <Text fontSize={12} color={COLOR.neutral_1} wordBreak="break-all">
+                <TxHashLink chainId={CARDANO_CHAIN_ID} txHash={lastTxHash} />
+              </Text>
+            </Box>
+          )}
           <Box display="inline-grid" w="100%" gap={2}>
             <StyledTransferDetailButton
               bg={COLOR.primary}
@@ -174,8 +194,20 @@ export const SwapResult = ({
                 bg: COLOR.primary,
               }}
               color={COLOR.neutral_1}
+              isDisabled={!sourceExplorerUrl}
+              onClick={() => {
+                if (sourceExplorerUrl) {
+                  window.open(
+                    sourceExplorerUrl,
+                    '_blank',
+                    'noopener,noreferrer',
+                  );
+                }
+              }}
             >
-              View Transaction Status
+              {sourceExplorerUrl
+                ? 'View Source Transaction'
+                : 'Source Explorer Unavailable'}
             </StyledTransferDetailButton>
             <StyledTransferDetailButton
               bg={COLOR.neutral_6}

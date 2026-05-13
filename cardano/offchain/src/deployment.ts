@@ -57,6 +57,32 @@ const buildOutputReference = (utxo: UTxO): OutputReference => ({
   output_index: BigInt(utxo.outputIndex),
 });
 
+const utxoRefKey = (utxo: UTxO): string => `${utxo.txHash}#${utxo.outputIndex}`;
+
+const utxoLovelace = (utxo: UTxO): bigint => utxo.assets.lovelace ?? 0n;
+
+const isAdaOnlyUtxo = (utxo: UTxO): boolean =>
+  Object.keys(utxo.assets).every((unit) => unit === "lovelace");
+
+const sortUtxosByLovelaceDesc = (utxos: UTxO[]): UTxO[] =>
+  [...utxos].sort((a, b) => {
+    const aLovelace = utxoLovelace(a);
+    const bLovelace = utxoLovelace(b);
+    if (aLovelace === bLovelace) return 0;
+    return aLovelace < bLovelace ? 1 : -1;
+  });
+
+const sortNonceCandidateUtxos = (utxos: UTxO[]): UTxO[] =>
+  [...utxos].sort((a, b) => {
+    const aAdaOnly = isAdaOnlyUtxo(a);
+    const bAdaOnly = isAdaOnlyUtxo(b);
+    if (aAdaOnly !== bAdaOnly) return aAdaOnly ? -1 : 1;
+    const aLovelace = utxoLovelace(a);
+    const bLovelace = utxoLovelace(b);
+    if (aLovelace === bLovelace) return 0;
+    return aLovelace < bLovelace ? -1 : 1;
+  });
+
 const encodeRawDatum = (value: unknown): string =>
   // Lucid's generic `Data.to` typings are schema-oriented, so manually
   // constructed nested `Constr` values need a small cast even though the
@@ -264,18 +290,24 @@ export const createDeployment = async (
     );
   }
 
-  // Prefer large UTxOs for these nonce inputs so Lucid doesn't need to auto-select
-  // additional wallet inputs, which could accidentally spend the other nonce.
-  const sortedUtxos = [...signerUtxos].sort((a, b) => {
-    const aLovelace = a.assets.lovelace ?? 0n;
-    const bLovelace = b.assets.lovelace ?? 0n;
-    if (aLovelace === bLovelace) return 0;
-    return aLovelace < bLovelace ? 1 : -1;
-  });
-
-  const reservedNonceUtxos = sortedUtxos.slice(
-    0,
+  // Keep collateral-sized UTxOs available for Lucid's Plutus collateral
+  // selection. Nonce inputs only need unique output references, so prefer
+  // smaller ADA-only UTxOs and let fee coin selection use non-reserved inputs.
+  const initialCollateralHoldbackUtxos = selectDeploymentCollateralHoldback(
+    signerUtxos,
+  );
+  if (initialCollateralHoldbackUtxos.length === 0) {
+    throw new Error(
+      `Wallet does not have enough live ADA-only collateral to deploy (need ${DEPLOYMENT_COLLATERAL_LOVELACE.toString()} lovelace).`,
+    );
+  }
+  const initialCollateralHoldbackRefs = new Set(
+    initialCollateralHoldbackUtxos.map(utxoRefKey),
+  );
+  const reservedNonceUtxos = selectDeploymentNonceUtxos(
+    signerUtxos,
     RESERVED_DEPLOYMENT_NONCE_COUNT,
+    initialCollateralHoldbackRefs,
   );
   if (reservedNonceUtxos.length < RESERVED_DEPLOYMENT_NONCE_COUNT) {
     throw new Error(
@@ -287,6 +319,39 @@ export const createDeployment = async (
     transferModuleNonceUtxo,
     ...remainingNonceUtxos
   ] = reservedNonceUtxos;
+  const reservedNonceRefs = new Set(reservedNonceUtxos.map(utxoRefKey));
+  let reservedDeploymentRefs = new Set<string>(reservedNonceRefs);
+  const setSpendableWalletUtxos = async (
+    minCount = 1,
+  ): Promise<Set<string>> => {
+    const liveUtxos = await getLiveWalletUtxos(lucid);
+    const spendableUtxos = liveUtxos.filter((utxo) =>
+      !reservedNonceRefs.has(utxoRefKey(utxo))
+    );
+    const currentCollateralHoldbackUtxos = selectDeploymentCollateralHoldback(
+      spendableUtxos,
+    );
+    if (currentCollateralHoldbackUtxos.length === 0) {
+      throw new Error(
+        `Wallet does not have enough live non-nonce collateral to deploy (need ${DEPLOYMENT_COLLATERAL_LOVELACE.toString()} lovelace).`,
+      );
+    }
+    const currentCollateralHoldbackRefs = new Set(
+      currentCollateralHoldbackUtxos.map(utxoRefKey),
+    );
+    const nonCollateralSpendableCount =
+      spendableUtxos.filter((utxo) =>
+        !currentCollateralHoldbackRefs.has(utxoRefKey(utxo))
+      ).length;
+    if (nonCollateralSpendableCount < minCount) {
+      throw new Error(
+        `Wallet only has ${nonCollateralSpendableCount} non-reserved, non-collateral live UTxO(s); need ${minCount}.`,
+      );
+    }
+    lucid.overrideUTxOs(spendableUtxos);
+    return new Set([...reservedNonceRefs, ...currentCollateralHoldbackRefs]);
+  };
+  reservedDeploymentRefs = await setSpendableWalletUtxos();
   const traceRegistryNonceUtxos = remainingNonceUtxos.slice(
     0,
     TRACE_REGISTRY_SHARD_COUNT + TRACE_REGISTRY_DIRECTORY_NONCE_COUNT,
@@ -465,6 +530,32 @@ export const createDeployment = async (
     lucid,
   );
   referredValidators.push(mintIdentifierValidator);
+
+  reservedDeploymentRefs = await setSpendableWalletUtxos(0);
+  const bootstrapRefUtxosInfo = await createReferenceUtxos(
+    lucid,
+    [hostStateStt.validator, mintPortValidator, mintIdentifierValidator],
+    reservedDeploymentRefs,
+  );
+  reservedDeploymentRefs = await setSpendableWalletUtxos(0);
+  const bootstrapReferenceScripts: BootstrapReferenceScripts = {
+    hostStateStt: requireReferenceUtxo(
+      bootstrapRefUtxosInfo,
+      hostStateStt.scriptHash,
+      "HostState STT",
+    ),
+    mintPort: requireReferenceUtxo(
+      bootstrapRefUtxosInfo,
+      mintPortPolicyId,
+      "mint-port",
+    ),
+    mintIdentifier: requireReferenceUtxo(
+      bootstrapRefUtxosInfo,
+      validatorToScriptHash(mintIdentifierValidator),
+      "mint-identifier",
+    ),
+  };
+
   const traceRegistryDirectoryNonce =
     traceRegistryNonceUtxos[TRACE_REGISTRY_SHARD_COUNT];
   if (!traceRegistryDirectoryNonce) {
@@ -496,7 +587,9 @@ export const createDeployment = async (
     hostStateNFT,
     traceRegistryDirectoryAuthToken,
     transferModuleNonceUtxo,
+    bootstrapReferenceScripts,
   );
+  reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   referredValidators.push(
     mintTransferEscrowShard.validator,
     mintVoucher.validator,
@@ -517,6 +610,7 @@ export const createDeployment = async (
     traceRegistryBenchmarkVoucher?.policyId ?? "",
     traceRegistryNonceUtxos,
   );
+  reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   // Bootstrap the registry with the bridge so voucher mints can rely on an
   // on-chain reverse mapping from the first deployment onward.
   referredValidators.push(traceRegistry.base.validator);
@@ -534,7 +628,9 @@ export const createDeployment = async (
     "mock",
     hostStateNFT,
     mockModuleNonceUtxo,
+    bootstrapReferenceScripts,
   );
+  reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   referredValidators.push(spendMockModule.validator);
 
   const {
@@ -550,16 +646,27 @@ export const createDeployment = async (
     "icqhost",
     hostStateNFT,
     icqModuleNonceUtxo,
+    bootstrapReferenceScripts,
   );
+  reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   referredValidators.push(spendIcqModule.validator);
 
   // Only publish the runtime/bootstrap reference surface eagerly.
   // Deployment-only mint scripts still participate in bootstrap transactions,
   // but they do not need standalone public reference UTxOs once the bridge is live.
-  const refUtxosInfo = await createReferenceUtxos(
-    lucid,
-    referredValidators,
+  const bootstrapRefHashes = new Set(Object.keys(bootstrapRefUtxosInfo));
+  const remainingReferredValidators = referredValidators.filter((validator) =>
+    !bootstrapRefHashes.has(validatorToScriptHash(validator))
   );
+  const refUtxosInfo = {
+    ...bootstrapRefUtxosInfo,
+    ...await createReferenceUtxos(
+      lucid,
+      remainingReferredValidators,
+      reservedDeploymentRefs,
+    ),
+  };
+  await setSpendableWalletUtxos(0);
 
   const [mockTokenPolicyId, mockTokenName] = await mintMockToken(lucid);
 
@@ -757,10 +864,95 @@ export const createDeployment = async (
 const REFERENCE_UTXO_TX_OVERHEAD_BYTES = 4_000;
 const REFERENCE_UTXO_OUTPUT_OVERHEAD_BYTES = 200;
 const REFERENCE_UTXO_SAFE_TX_HEADROOM_BYTES = 1_000;
+const REFERENCE_UTXO_SINGLE_TX_HEADROOM_BYTES = 750;
+const REFERENCE_UTXO_ADOPTION_ATTEMPTS = 6;
+const REFERENCE_UTXO_ADOPTION_TIMEOUT_MS = 60_000;
+const REFERENCE_UTXO_ADOPTION_RETRY_DELAY_MS = 5_000;
+const DEPLOYMENT_COLLATERAL_LOVELACE = 5_000_000n;
+const DEPLOYMENT_MAX_COLLATERAL_INPUTS = 3;
 
 type ReferenceValidatorBatch = {
   validators: Script[];
   startIndex: number;
+};
+
+type ReferenceUtxoMap = Record<string, UTxO>;
+
+type BootstrapReferenceScripts = {
+  hostStateStt: UTxO;
+  mintIdentifier: UTxO;
+  mintPort: UTxO;
+};
+
+const filterReservedWalletUtxos = (
+  utxos: UTxO[],
+  reservedRefs: Set<string>,
+): UTxO[] =>
+  reservedRefs.size === 0
+    ? utxos
+    : utxos.filter((utxo) => !reservedRefs.has(utxoRefKey(utxo)));
+
+const mergeWalletUtxos = (utxos: UTxO[]): UTxO[] => {
+  const byRef = new Map<string, UTxO>();
+  for (const utxo of utxos) {
+    byRef.set(utxoRefKey(utxo), utxo);
+  }
+  return [...byRef.values()];
+};
+
+const selectDeploymentCollateralHoldback = (utxos: UTxO[]): UTxO[] => {
+  const candidateGroups = [
+    sortUtxosByLovelaceDesc(utxos.filter(isAdaOnlyUtxo)),
+    sortUtxosByLovelaceDesc(utxos),
+  ];
+
+  for (const candidates of candidateGroups) {
+    const singleCollateral = candidates.find((utxo) =>
+      utxoLovelace(utxo) >= DEPLOYMENT_COLLATERAL_LOVELACE
+    );
+    if (singleCollateral) {
+      return [singleCollateral];
+    }
+
+    const selected: UTxO[] = [];
+    let selectedLovelace = 0n;
+    for (const utxo of candidates) {
+      selected.push(utxo);
+      selectedLovelace += utxoLovelace(utxo);
+      if (selectedLovelace >= DEPLOYMENT_COLLATERAL_LOVELACE) {
+        return selected;
+      }
+      if (selected.length >= DEPLOYMENT_MAX_COLLATERAL_INPUTS) {
+        break;
+      }
+    }
+  }
+
+  return [];
+};
+
+const selectDeploymentNonceUtxos = (
+  utxos: UTxO[],
+  count: number,
+  collateralHoldbackRefs = new Set<string>(),
+): UTxO[] => {
+  const nonceCandidates = sortNonceCandidateUtxos(
+    utxos.filter((utxo) => !collateralHoldbackRefs.has(utxoRefKey(utxo))),
+  );
+
+  return nonceCandidates.slice(0, count);
+};
+
+const requireReferenceUtxo = (
+  refUtxos: ReferenceUtxoMap,
+  scriptHash: string,
+  label: string,
+): UTxO => {
+  const refUtxo = refUtxos[scriptHash];
+  if (!refUtxo) {
+    throw new Error(`Missing ${label} reference UTxO for ${scriptHash}`);
+  }
+  return refUtxo;
 };
 
 const estimateReferenceValidatorSize = (validator: Script): number =>
@@ -782,6 +974,21 @@ const referenceTxPayloadBudget = (maxTxSize: number): number =>
     1,
     referenceTxSafeMaxSize(maxTxSize) - REFERENCE_UTXO_TX_OVERHEAD_BYTES,
   );
+
+const referenceSingleValidatorBudget = (maxTxSize: number): number =>
+  Math.max(1, maxTxSize - REFERENCE_UTXO_SINGLE_TX_HEADROOM_BYTES);
+
+const isReferenceUtxoAdoptionTimeout = (error: unknown): boolean => {
+  const errorText = error instanceof Error
+    ? `${error.message}\n${error.stack ?? ""}`
+    : String(error);
+
+  return errorText.includes("Timed out waiting for wallet visibility of tx");
+};
+
+const isRetryableReferenceUtxoAdoptionError = (error: unknown): boolean =>
+  isRetryableOgmiosTransportError(error) ||
+  isReferenceUtxoAdoptionTimeout(error);
 
 export const buildReferenceValidatorBatches = (
   validators: Script[],
@@ -842,7 +1049,7 @@ export const buildReferenceValidatorSizeReport = (
   validators: Script[],
   maxTxSize: number,
 ): ReferenceValidatorSizeReportEntry[] => {
-  const payloadBudget = referenceTxPayloadBudget(maxTxSize);
+  const singleValidatorBudget = referenceSingleValidatorBudget(maxTxSize);
   return validators
     .map((validator, index) => {
       const scriptBytes = validator.script.length / 2;
@@ -854,7 +1061,7 @@ export const buildReferenceValidatorSizeReport = (
         scriptHash: validatorReportHash(validator),
         scriptBytes,
         estimatedReferenceOutputBytes,
-        oversized: estimatedReferenceOutputBytes > payloadBudget,
+        oversized: estimatedReferenceOutputBytes > singleValidatorBudget,
       };
     })
     .sort((left, right) =>
@@ -869,13 +1076,15 @@ const logReferenceValidatorSizeReport = (
   const report = buildReferenceValidatorSizeReport(validators, maxTxSize);
   const safeMaxTxSize = referenceTxSafeMaxSize(maxTxSize);
   const payloadBudget = referenceTxPayloadBudget(maxTxSize);
+  const singleValidatorBudget = referenceSingleValidatorBudget(maxTxSize);
 
   console.log(
     "Reference validator size preflight:",
     `${validators.length} validators,`,
     `maxTxSize=${maxTxSize},`,
     `safeTxBudget=${safeMaxTxSize},`,
-    `estimatedPayloadBudget=${payloadBudget}`,
+    `estimatedBatchPayloadBudget=${payloadBudget},`,
+    `estimatedSingleValidatorBudget=${singleValidatorBudget}`,
   );
   for (const entry of report) {
     console.log(
@@ -898,7 +1107,7 @@ const assertReferenceValidatorsFit = (
     return;
   }
 
-  const payloadBudget = referenceTxPayloadBudget(maxTxSize);
+  const singleValidatorBudget = referenceSingleValidatorBudget(maxTxSize);
   const details = oversized
     .map((entry) =>
       `#${
@@ -907,7 +1116,7 @@ const assertReferenceValidatorsFit = (
     )
     .join("\n");
   throw new Error(
-    `Reference script deployment preflight failed: ${oversized.length} validator(s) exceed the safe single-transaction payload budget (${payloadBudget} bytes after deployment overhead/headroom).\n${details}\nBuild production validators with silent traces or split/refactor the oversized validator before deployment.`,
+    `Reference script deployment preflight failed: ${oversized.length} validator(s) exceed the safe single-reference-transaction budget (${singleValidatorBudget} bytes after signing headroom).\n${details}\nBuild production validators with silent traces or split/refactor the oversized validator before deployment.`,
   );
 };
 
@@ -988,6 +1197,7 @@ async function mintMockToken(lucid: LucidEvolution) {
 async function createReferenceUtxos(
   lucid: LucidEvolution,
   referredValidators: Script[],
+  reservedWalletRefs = new Set<string>(),
 ) {
   try {
     console.log("Create reference utxos starting ...");
@@ -1018,6 +1228,34 @@ async function createReferenceUtxos(
     const result: { [x: string]: UTxO } = {};
 
     const pendingBatches = [...initialBatches];
+    const spentReferenceBatchRefs = new Set<string>();
+    const refreshReferenceWalletState = async (
+      localWalletUtxos: UTxO[] = [],
+    ) => {
+      // Clear Lucid's override before querying the provider, then merge provider
+      // state with locally chained change outputs. This preserves unselected wallet
+      // UTxOs without allowing stale Kupo responses to reuse known-spent inputs.
+      lucid.overrideUTxOs([]);
+      let liveWalletUtxos: UTxO[] = [];
+      try {
+        liveWalletUtxos = await getLiveWalletUtxos(lucid);
+      } catch (error) {
+        console.warn(
+          "createReferenceUtxos could not refresh provider wallet UTxOs; using local chained wallet state:",
+          error,
+        );
+      }
+      const safeLiveWalletUtxos = liveWalletUtxos.filter((utxo) =>
+        !spentReferenceBatchRefs.has(utxoRefKey(utxo))
+      );
+      lucid.overrideUTxOs(
+        filterReservedWalletUtxos(
+          mergeWalletUtxos([...safeLiveWalletUtxos, ...localWalletUtxos]),
+          reservedWalletRefs,
+        ),
+      );
+    };
+    await refreshReferenceWalletState();
 
     while (pendingBatches.length > 0) {
       // We still submit sequentially because each successful batch updates the
@@ -1048,13 +1286,18 @@ async function createReferenceUtxos(
       let newWalletUTxOs: UTxO[] | undefined;
       let derivedOutputs: UTxO[] | undefined;
       let signedTx;
+      let consumedWalletInputs: UTxO[] = [];
       let splitBatch = false;
       let lastBuildError: unknown = null;
       for (let attempt = 1; attempt <= 5; attempt += 1) {
         try {
           [newWalletUTxOs, derivedOutputs, signedTx] = await (async () => {
-            const [walletUTxOs, outputs, txSignBuilder] =
-              await buildReferenceBatchTx().chain();
+            const txBuilder = buildReferenceBatchTx();
+            const [walletUTxOs, outputs, txSignBuilder] = await txBuilder
+              .chain();
+            consumedWalletInputs = (txBuilder as unknown as {
+              rawConfig: () => { consumedInputs?: UTxO[] };
+            }).rawConfig().consumedInputs ?? [];
             return [
               walletUTxOs,
               outputs,
@@ -1147,7 +1390,11 @@ async function createReferenceUtxos(
       }
 
       const txHash = signedTx.toHash();
-      for (let attempt = 1; attempt <= 6; attempt++) {
+      for (
+        let attempt = 1;
+        attempt <= REFERENCE_UTXO_ADOPTION_ATTEMPTS;
+        attempt++
+      ) {
         try {
           const submittedHash = await signedTx.submit();
           if (submittedHash !== txHash) {
@@ -1157,14 +1404,22 @@ async function createReferenceUtxos(
           }
         } catch (error) {
           console.warn(
-            `createReferenceUtxos submit retry ${attempt}/6 after error:`,
+            `createReferenceUtxos submit retry ${attempt}/${REFERENCE_UTXO_ADOPTION_ATTEMPTS} after error:`,
             error,
           );
         }
 
         try {
-          await awaitWalletTx(lucid, txHash, 1000, 30000);
-          lucid.overrideUTxOs(newWalletUTxOs);
+          await awaitWalletTx(
+            lucid,
+            txHash,
+            1000,
+            REFERENCE_UTXO_ADOPTION_TIMEOUT_MS,
+          );
+          for (const consumedInput of consumedWalletInputs) {
+            spentReferenceBatchRefs.add(utxoRefKey(consumedInput));
+          }
+          await refreshReferenceWalletState(newWalletUTxOs);
           break;
         } catch (error) {
           lastBuildError = error;
@@ -1195,10 +1450,19 @@ async function createReferenceUtxos(
             splitBatch = true;
             break;
           }
-          if (!isRetryableOgmiosTransportError(error) || attempt === 5) {
+          if (
+            !isRetryableReferenceUtxoAdoptionError(error) ||
+            attempt === REFERENCE_UTXO_ADOPTION_ATTEMPTS
+          ) {
             throw error;
           }
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+          console.warn(
+            `createReferenceUtxos adoption retry ${attempt}/${REFERENCE_UTXO_ADOPTION_ATTEMPTS} after error:`,
+            error,
+          );
+          await new Promise((resolve) =>
+            setTimeout(resolve, REFERENCE_UTXO_ADOPTION_RETRY_DELAY_MS)
+          );
         }
       }
       if (splitBatch) {
@@ -1248,6 +1512,7 @@ const deployTransferModule = async (
   hostStateNFT: AuthToken,
   traceRegistryDirectoryAuthToken: AuthToken,
   nonceUtxo: UTxO,
+  bootstrapReferenceScripts: BootstrapReferenceScripts,
 ) => {
   console.log("Create Transfer Module");
 
@@ -1376,54 +1641,54 @@ const deployTransferModule = async (
     "transfer module validator preflight",
   );
 
-  await submitTx(
-    () =>
-      lucid
-        .newTx()
-        .collectFrom([nonceUtxo], Data.void())
-        .collectFrom(
-          [hostStateUtxo],
-          Data.to(hostStateUpdate.redeemer, HostStateRedeemer, {
+  const buildMintTransferModuleTx = () =>
+    lucid
+      .newTx()
+      .readFrom([
+        bootstrapReferenceScripts.hostStateStt,
+        bootstrapReferenceScripts.mintPort,
+        bootstrapReferenceScripts.mintIdentifier,
+      ])
+      .collectFrom([nonceUtxo], Data.void())
+      .collectFrom(
+        [hostStateUtxo],
+        Data.to(hostStateUpdate.redeemer, HostStateRedeemer, {
+          canonical: true,
+        }),
+      )
+      .mintAssets(
+        {
+          [portTokenUnit]: 1n,
+        },
+        Data.to(mintPortRedeemer, MintPortRedeemer, { canonical: true }),
+      )
+      .mintAssets(
+        {
+          [identifierTokenUnit]: 1n,
+        },
+        Data.to(outputReference, OutputReference, { canonical: true }),
+      )
+      .pay.ToContract(
+        hostStateStt.address,
+        {
+          kind: "inline",
+          value: Data.to(hostStateUpdate.datum, HostStateDatum, {
             canonical: true,
           }),
-        )
-        .attach.SpendingValidator(hostStateStt.validator)
-        .attach.MintingPolicy(mintPortValidator)
-        .mintAssets(
-          {
-            [portTokenUnit]: 1n,
-          },
-          Data.to(mintPortRedeemer, MintPortRedeemer, { canonical: true }),
-        )
-        .attach.MintingPolicy(mintIdentifierValidator)
-        .mintAssets(
-          {
-            [identifierTokenUnit]: 1n,
-          },
-          Data.to(outputReference, OutputReference, { canonical: true }),
-        )
-        .pay.ToContract(
-          hostStateStt.address,
-          {
-            kind: "inline",
-            value: Data.to(hostStateUpdate.datum, HostStateDatum, {
-              canonical: true,
-            }),
-          },
-          {
-            [hostStateUnit]: 1n,
-          },
-        )
-        .pay.ToAddress(
-          spendTransferModuleAddress,
-          {
-            [identifierTokenUnit]: 1n,
-            [portTokenUnit]: 1n,
-          },
-        ),
-    lucid,
-    "Mint Transfer Module",
-  );
+        },
+        {
+          [hostStateUnit]: 1n,
+        },
+      )
+      .pay.ToAddress(
+        spendTransferModuleAddress,
+        {
+          [identifierTokenUnit]: 1n,
+          [portTokenUnit]: 1n,
+        },
+      );
+
+  await submitTx(buildMintTransferModuleTx, lucid, "Mint Transfer Module");
   hostStateUpdate.commit();
 
   return {
@@ -1461,6 +1726,7 @@ const deployGenericModule = async (
   portIdText: string,
   hostStateNFT: AuthToken,
   nonceUtxo: UTxO,
+  bootstrapReferenceScripts: BootstrapReferenceScripts,
 ) => {
   console.log("Create Generic Module", portIdText);
 
@@ -1516,54 +1782,54 @@ const deployGenericModule = async (
     `${portIdText} module validator preflight`,
   );
 
-  await submitTx(
-    () =>
-      lucid
-        .newTx()
-        .collectFrom([nonceUtxo], Data.void())
-        .collectFrom(
-          [hostStateUtxo],
-          Data.to(hostStateUpdate.redeemer, HostStateRedeemer, {
+  const buildMintGenericModuleTx = () =>
+    lucid
+      .newTx()
+      .readFrom([
+        bootstrapReferenceScripts.hostStateStt,
+        bootstrapReferenceScripts.mintPort,
+        bootstrapReferenceScripts.mintIdentifier,
+      ])
+      .collectFrom([nonceUtxo], Data.void())
+      .collectFrom(
+        [hostStateUtxo],
+        Data.to(hostStateUpdate.redeemer, HostStateRedeemer, {
+          canonical: true,
+        }),
+      )
+      .mintAssets(
+        {
+          [portTokenUnit]: 1n,
+        },
+        Data.to(mintPortRedeemer, MintPortRedeemer, { canonical: true }),
+      )
+      .mintAssets(
+        {
+          [identifierTokenUnit]: 1n,
+        },
+        Data.to(outputReference, OutputReference, { canonical: true }),
+      )
+      .pay.ToContract(
+        hostStateStt.address,
+        {
+          kind: "inline",
+          value: Data.to(hostStateUpdate.datum, HostStateDatum, {
             canonical: true,
           }),
-        )
-        .attach.SpendingValidator(hostStateStt.validator)
-        .attach.MintingPolicy(mintPortValidator)
-        .mintAssets(
-          {
-            [portTokenUnit]: 1n,
-          },
-          Data.to(mintPortRedeemer, MintPortRedeemer, { canonical: true }),
-        )
-        .attach.MintingPolicy(mintIdentifierValidator)
-        .mintAssets(
-          {
-            [identifierTokenUnit]: 1n,
-          },
-          Data.to(outputReference, OutputReference, { canonical: true }),
-        )
-        .pay.ToContract(
-          hostStateStt.address,
-          {
-            kind: "inline",
-            value: Data.to(hostStateUpdate.datum, HostStateDatum, {
-              canonical: true,
-            }),
-          },
-          {
-            [hostStateUnit]: 1n,
-          },
-        )
-        .pay.ToAddress(
-          spendModuleAddress,
-          {
-            [identifierTokenUnit]: 1n,
-            [portTokenUnit]: 1n,
-          },
-        ),
-    lucid,
-    `Mint ${portIdText} Module`,
-  );
+        },
+        {
+          [hostStateUnit]: 1n,
+        },
+      )
+      .pay.ToAddress(
+        spendModuleAddress,
+        {
+          [identifierTokenUnit]: 1n,
+          [portTokenUnit]: 1n,
+        },
+      );
+
+  await submitTx(buildMintGenericModuleTx, lucid, `Mint ${portIdText} Module`);
   hostStateUpdate.commit();
 
   return {
