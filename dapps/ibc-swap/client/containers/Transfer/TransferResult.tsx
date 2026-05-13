@@ -2,26 +2,19 @@ import type { ReactNode } from 'react';
 import { useContext, useEffect, useState } from 'react';
 import Image from 'next/image';
 
-import { Box, Link, Text } from '@chakra-ui/react';
+import { Box, Text } from '@chakra-ui/react';
 import { COLOR } from '@/styles/color';
 import RightArrowIcon from '@/assets/icons/Arrow-right.svg';
 import TimerIcon from '@/assets/icons/timer.svg';
 import TransferContext from '@/contexts/TransferContext';
 import { formatTokenSymbol } from '@/utils/string';
+import { IBC_SWAP_MODE } from '@/configs/runtime';
 import {
-  CARDANO_IBC_CHAIN_ID,
-  CARDANO_CHAIN_ID,
-  IBC_SWAP_MODE,
-  MAINNET_CARDANO_CHAIN_ID,
-  PREPROD_CARDANO_CHAIN_ID,
-} from '@/configs/runtime';
-import {
-  ENTRYPOINT_CHAIN_ID,
-  INJECTIVE_MAINNET_CHAIN_ID,
-  INJECTIVE_TESTNET_CHAIN_ID,
   runtimeChainLabel,
   runtimeRouteChainIds,
 } from '@/configs/runtimeConfig';
+import { TxHashLink } from '@/components/TxHashLink';
+import { getExplorerTxUrl } from '@/utils/txExplorer';
 import type {
   TransferPacketHop,
   TransferStatusResponse,
@@ -48,9 +41,6 @@ type TransferResultProps = {
   submittedAt?: string;
 };
 
-const shortenHash = (hash: string): string =>
-  hash.length > 18 ? `${hash.slice(0, 10)}...${hash.slice(-8)}` : hash;
-
 const formatElapsedTime = (seconds: number): string => {
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
@@ -66,37 +56,6 @@ const getElapsedSecondsSince = (submittedAt?: string): number => {
   return Math.max(0, Math.floor((Date.now() - submittedAtMs) / 1000));
 };
 
-const getCardanoExplorerTxUrl = (txHash: string): string | undefined => {
-  if (!txHash) return undefined;
-  if (CARDANO_CHAIN_ID === PREPROD_CARDANO_CHAIN_ID) {
-    return `https://preprod.cexplorer.io/tx/${txHash}`;
-  }
-  if (CARDANO_CHAIN_ID === MAINNET_CARDANO_CHAIN_ID) {
-    return `https://cexplorer.io/tx/${txHash}`;
-  }
-  return undefined;
-};
-
-const getExplorerTxUrl = (
-  chainId: string | undefined,
-  txHash: string,
-): string | undefined => {
-  if (!chainId || !txHash) return undefined;
-  if (chainId === CARDANO_CHAIN_ID || chainId === CARDANO_IBC_CHAIN_ID) {
-    return getCardanoExplorerTxUrl(txHash);
-  }
-  if (chainId === INJECTIVE_TESTNET_CHAIN_ID) {
-    return `https://testnet.explorer.injective.network/transaction/${txHash}/`;
-  }
-  if (chainId === INJECTIVE_MAINNET_CHAIN_ID) {
-    return `https://explorer.injective.network/transaction/${txHash}/`;
-  }
-
-  // The local entrypoint chain has no public block explorer.
-  if (chainId === ENTRYPOINT_CHAIN_ID) return undefined;
-  return undefined;
-};
-
 const getStepMarkerColor = (status: 'complete' | 'active' | 'pending') => {
   if (status === 'complete') return COLOR.success;
   if (status === 'active') return COLOR.warning;
@@ -104,43 +63,6 @@ const getStepMarkerColor = (status: 'complete' | 'active' | 'pending') => {
 };
 
 type ProgressStepStatus = 'complete' | 'active' | 'pending';
-
-const getShortTxHash = (txHash?: string): string =>
-  txHash ? shortenHash(txHash) : 'transaction pending';
-
-const TxHashLink = ({
-  chainId,
-  txHash,
-  label = getShortTxHash(txHash),
-}: {
-  chainId?: string;
-  txHash?: string;
-  label?: string;
-}) => {
-  if (!txHash) return <>transaction pending</>;
-
-  const explorerUrl = getExplorerTxUrl(chainId, txHash);
-  if (!explorerUrl) {
-    return (
-      <Box as="span" title={txHash} wordBreak="break-all">
-        {label}
-      </Box>
-    );
-  }
-
-  return (
-    <Link
-      href={explorerUrl}
-      isExternal
-      color={COLOR.info}
-      fontWeight={700}
-      textDecoration="underline"
-      title={txHash}
-    >
-      {label}
-    </Link>
-  );
-};
 
 const stepStatus = (complete: boolean, active: boolean): ProgressStepStatus => {
   if (complete) return 'complete';
@@ -766,7 +688,6 @@ export const TransferResult = ({
                 <TxHashLink
                   chainId={fromNetwork.networkId}
                   txHash={lastTxHash}
-                  label={lastTxHash}
                 />
               </Text>
             </Box>
