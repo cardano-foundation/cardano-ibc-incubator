@@ -396,7 +396,7 @@ describe('ApiController (modern)', () => {
     transferPlannerServiceMock.planTransferRoute.mockResolvedValue({
       foundRoute: true,
       mode: 'unwind',
-      chains: ['localosmosis', 'entrypoint'],
+      chains: ['localosmosis', 'cardano-entrypoint'],
       routes: ['transfer/channel-0'],
       tokenTrace: {
         kind: 'ibc_voucher',
@@ -409,13 +409,13 @@ describe('ApiController (modern)', () => {
     await expect(
       controller.planTransferRoute({
         from_chain_id: 'localosmosis',
-        to_chain_id: 'entrypoint',
+        to_chain_id: 'cardano-entrypoint',
         token_denom: 'ibc/ABC',
       }),
     ).resolves.toEqual({
       foundRoute: true,
       mode: 'unwind',
-      chains: ['localosmosis', 'entrypoint'],
+      chains: ['localosmosis', 'cardano-entrypoint'],
       routes: ['transfer/channel-0'],
       tokenTrace: {
         kind: 'ibc_voucher',
@@ -427,7 +427,7 @@ describe('ApiController (modern)', () => {
 
     expect(transferPlannerServiceMock.planTransferRoute).toHaveBeenCalledWith({
       fromChainId: 'localosmosis',
-      toChainId: 'entrypoint',
+      toChainId: 'cardano-entrypoint',
       tokenDenom: 'ibc/ABC',
     });
   });
@@ -668,7 +668,7 @@ describe('ApiController (modern)', () => {
       outToken: 'uosmo',
       transferRoutes: ['transfer/channel-0'],
       transferBackRoutes: ['transfer/channel-1'],
-      transferChains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
+      transferChains: ['cardano-devnet', 'cardano-entrypoint', 'localosmosis'],
     });
 
     const response = await controller.estimateLocalOsmosisSwap({
@@ -694,7 +694,7 @@ describe('ApiController (modern)', () => {
       outToken: 'uosmo',
       transferRoutes: ['transfer/channel-0'],
       transferBackRoutes: ['transfer/channel-1'],
-      transferChains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
+      transferChains: ['cardano-devnet', 'cardano-entrypoint', 'localosmosis'],
     });
   });
 });

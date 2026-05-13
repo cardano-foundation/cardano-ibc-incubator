@@ -58,7 +58,8 @@ pub struct Config {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Chains {
     pub cardano: CardanoChain,
-    pub entrypoint: EntrypointChain,
+    #[serde(rename = "cardano-entrypoint")]
+    pub cardano_entrypoint: CardanoEntrypointChain,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -68,7 +69,7 @@ pub struct CardanoChain {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct EntrypointChain {
+pub struct CardanoEntrypointChain {
     pub chain_id: String,
     pub message_port_id: String,
 }

@@ -15,15 +15,20 @@ use std::time::{Duration, Instant};
 
 #[cfg(not(test))]
 fn entrypoint_chain_id() -> &'static str {
-    static ENTRYPOINT_CHAIN_ID: OnceLock<String> = OnceLock::new();
-    ENTRYPOINT_CHAIN_ID
-        .get_or_init(|| crate::config::get_config().chains.entrypoint.chain_id)
+    static CARDANO_ENTRYPOINT_CHAIN_ID: OnceLock<String> = OnceLock::new();
+    CARDANO_ENTRYPOINT_CHAIN_ID
+        .get_or_init(|| {
+            crate::config::get_config()
+                .chains
+                .cardano_entrypoint
+                .chain_id
+        })
         .as_str()
 }
 
 #[cfg(test)]
 fn entrypoint_chain_id() -> &'static str {
-    "entrypoint"
+    "cardano-entrypoint"
 }
 
 fn gateway_light_client_mode(project_root: &Path) -> &'static str {
@@ -764,7 +769,7 @@ pub async fn run_integration_tests(
     //   - The light client code (Plutus validators that verify Tendermint headers) was
     //     already deployed to Cardano during `caribic start bridge`. That's infrastructure.
     //   - What we're doing here is creating a client INSTANCE - a piece of on-chain state
-    //     that tracks a specific counterparty chain (the Cosmos Entrypoint chain's chain ID, current
+    //     that tracks a specific counterparty chain (the Cardano Entrypoint chain's chain ID, current
     //     trusted height, validator set hash, etc.) When you call CreateClient that's basically
     //     initializing the first anchor point of trust. Its a state snapshot as opposed to code.
     //
@@ -907,7 +912,7 @@ pub async fn run_integration_tests(
     // Test 6: Update client with new Tendermint headers and verify height advances
     //
     // This is where the Tendermint light client gets exercised. Hermes fetches
-    // new block headers from the Cosmos Entrypoint chain and submits them to update the client
+    // new block headers from the Cardano Entrypoint chain and submits them to update the client
     // on Cardano. The Cardano smart contracts verify the headers are valid (signatures,
     // validator set transitions, etc.) before accepting them.
     //
@@ -926,7 +931,7 @@ pub async fn run_integration_tests(
 
         if let Some(ref cid) = client_id {
             // Wait for new blocks on the Cosmos chain
-            logger::verbose("   Waiting for new blocks on Cosmos Entrypoint chain...");
+            logger::verbose("   Waiting for new blocks on Cardano Entrypoint chain...");
             std::thread::sleep(std::time::Duration::from_secs(5));
 
             match update_client(project_root, cid) {
@@ -1317,7 +1322,7 @@ pub async fn run_integration_tests(
     let mut stake_denom_trace_hash: Option<String> = None;
     if selection.should_run(10) {
         let mut test_10 =
-            TestTimer::start("Test 10: ICS-20 transfer (Entrypoint chain -> Cardano)...");
+            TestTimer::start("Test 10: ICS-20 transfer (Cardano Entrypoint chain -> Cardano)...");
 
         if let Some(cardano_channel_id) = &channel_id {
             let entrypoint_channel_id = resolve_entrypoint_channel_id_with_retries(
@@ -1619,7 +1624,7 @@ pub async fn run_integration_tests(
     //   - Native token balance is restored on Cosmos (minus fees)
     if selection.should_run(11) {
         let mut test_11 =
-            TestTimer::start("Test 11: ICS-20 round-trip (Cardano -> Entrypoint chain)...");
+            TestTimer::start("Test 11: ICS-20 round-trip (Cardano -> Cardano Entrypoint chain)...");
         if transfer_test_passed {
             if let Some(cardano_channel_id) = &channel_id {
                 let entrypoint_channel_id = resolve_entrypoint_channel_id_with_retries(
@@ -1827,7 +1832,7 @@ pub async fn run_integration_tests(
                                     format!("Failed to query Cardano UTxOs: {}", err)
                                 });
                         logger::log(&format!(
-                            "FAIL Test 11: hermes tx ft-transfer failed (took {})\n{}\n\n=== Test 11 diagnostics (Cardano -> Entrypoint chain) ===\ncardano address: {}\nvoucher policy id: {}\ncardano lovelace total: {}\ncardano voucher assets: {:?}\ncardano utxos:\n{}\n\n=== Test 11 transfer attempt errors (most recent last) ===\n{}\n",
+                            "FAIL Test 11: hermes tx ft-transfer failed (took {})\n{}\n\n=== Test 11 diagnostics (Cardano -> Cardano Entrypoint chain) ===\ncardano address: {}\nvoucher policy id: {}\ncardano lovelace total: {}\ncardano voucher assets: {:?}\ncardano utxos:\n{}\n\n=== Test 11 transfer attempt errors (most recent last) ===\n{}\n",
                             format_duration(elapsed),
                             e,
                             cardano_receiver_address,
@@ -1873,7 +1878,7 @@ pub async fn run_integration_tests(
     let mut cardano_native_base_denom: Option<String> = None;
     if selection.should_run(12) {
         let mut test_12 = TestTimer::start(
-            "Test 12: ICS-20 transfer of Cardano native token (Cardano -> Entrypoint chain)...",
+            "Test 12: ICS-20 transfer of Cardano native token (Cardano -> Cardano Entrypoint chain)...",
         );
 
         if let Some(cardano_channel_id) = &channel_id {
@@ -2122,7 +2127,7 @@ pub async fn run_integration_tests(
     //   - Escrowed Cardano native token is released back to the Cardano receiver
     if selection.should_run(13) {
         let mut test_13 = TestTimer::start(
-            "Test 13: ICS-20 round-trip of Cardano native token (Entrypoint chain -> Cardano)...",
+            "Test 13: ICS-20 round-trip of Cardano native token (Cardano Entrypoint chain -> Cardano)...",
         );
         if cardano_native_transfer_passed {
             if let (Some(voucher_denom), Some(entrypoint_channel_id), Some(base_denom)) = (
@@ -2201,7 +2206,7 @@ pub async fn run_integration_tests(
                         if voucher_delta < amount as u128 {
                             let elapsed = test_13.finish();
                             logger::log(&format!(
-                            "FAIL Test 13: Entrypoint chain voucher did not burn as expected (took {}) (before={}, after={}, expected delta >= {})\n",
+                            "FAIL Test 13: Cardano Entrypoint chain voucher did not burn as expected (took {}) (before={}, after={}, expected delta >= {})\n",
                             format_duration(elapsed),
                             entrypoint_voucher_before,
                             entrypoint_voucher_after,
@@ -2294,7 +2299,7 @@ pub async fn run_integration_tests(
                                 Err(e) => {
                                     let elapsed = test_13.finish();
                                     logger::log(&format!(
-                                    "FAIL Test 13: Denom-trace reverse lookup failed for Entrypoint chain voucher denom after burn (took {})\n{}\n",
+                                    "FAIL Test 13: Denom-trace reverse lookup failed for Cardano Entrypoint chain voucher denom after burn (took {})\n{}\n",
                                     format_duration(elapsed),
                                     e
                                 ));
@@ -2534,7 +2539,7 @@ fn run_hermes_health_check(project_root: &Path) -> Result<(), Box<dyn std::error
     }
 
     let combined_output = format!("{}{}", stdout, stderr);
-    for required_chain in ["cardano-devnet", "entrypoint"] {
+    for required_chain in ["cardano-devnet", "cardano-entrypoint"] {
         if !hermes_chain_health_line_present(&combined_output, required_chain) {
             let chain_lines = hermes_chain_health_lines(&combined_output, required_chain);
             let chain_output = if chain_lines.is_empty() {
@@ -3066,7 +3071,7 @@ fn create_test_client(project_root: &Path) -> Result<String, Box<dyn std::error:
         .into());
     }
 
-    logger::verbose("   Running: hermes create client --host-chain cardano-devnet --reference-chain entrypoint (Cosmos Entrypoint chain)");
+    logger::verbose("   Running: hermes create client --host-chain cardano-devnet --reference-chain entrypoint (Cardano Entrypoint chain)");
 
     let command = build_hermes_command(
         project_root,
@@ -3149,7 +3154,7 @@ async fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn s
     // last submitted (OpenInit/OpenTry/OpenAck/OpenConfirm) in `~/.hermes/hermes.log`, then check
     // Gateway logs for the corresponding unsigned-tx build/evaluation errors (Plutus failures,
     // PastHorizon/slot horizon issues, etc).
-    logger::verbose("   Running: hermes create connection --a-chain cardano-devnet --b-chain entrypoint (Cosmos Entrypoint chain)");
+    logger::verbose("   Running: hermes create connection --a-chain cardano-devnet --b-chain entrypoint (Cardano Entrypoint chain)");
 
     let run_connection_handshake =
         |project_root: &Path| -> Result<String, Box<dyn std::error::Error>> {
@@ -3914,15 +3919,17 @@ fn query_entrypoint_denom_trace(hash: &str) -> Result<(String, String), String> 
 
     let denom = json.get("denom").ok_or_else(|| {
         format!(
-            "Entrypoint chain v10 denom response missing denom: {}",
+            "Cardano Entrypoint chain v10 denom response missing denom: {}",
             json
         )
     })?;
 
-    let base_denom = denom
-        .get("base")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| format!("Entrypoint chain v10 denom response missing base: {}", json))?;
+    let base_denom = denom.get("base").and_then(|v| v.as_str()).ok_or_else(|| {
+        format!(
+            "Cardano Entrypoint chain v10 denom response missing base: {}",
+            json
+        )
+    })?;
 
     let trace_path = denom
         .get("trace")
@@ -3933,7 +3940,7 @@ fn query_entrypoint_denom_trace(hash: &str) -> Result<(String, String), String> 
                 .map(|hop| {
                     let port_id = hop.get("port_id").and_then(|v| v.as_str()).ok_or_else(|| {
                         format!(
-                            "Entrypoint chain v10 denom response missing trace.port_id: {}",
+                            "Cardano Entrypoint chain v10 denom response missing trace.port_id: {}",
                             json
                         )
                     })?;
@@ -3942,7 +3949,7 @@ fn query_entrypoint_denom_trace(hash: &str) -> Result<(String, String), String> 
                             .and_then(|v| v.as_str())
                             .ok_or_else(|| {
                                 format!(
-                                "Entrypoint chain v10 denom response missing trace.channel_id: {}",
+                                "Cardano Entrypoint chain v10 denom response missing trace.channel_id: {}",
                                 json
                             )
                             })?;
@@ -3971,7 +3978,7 @@ fn assert_entrypoint_denom_trace(
             Ok((path, base_denom)) => {
                 if path != expected_path || base_denom != expected_base_denom {
                     return Err(format!(
-                        "Entrypoint chain denom-trace mismatch for hash {}: expected path/base_denom {}/{} but got {}/{}",
+                        "Cardano Entrypoint chain denom-trace mismatch for hash {}: expected path/base_denom {}/{} but got {}/{}",
                         hash, expected_path, expected_base_denom, path, base_denom
                     ));
                 }
@@ -3986,7 +3993,7 @@ fn assert_entrypoint_denom_trace(
         }
     }
 
-    Err(last_err.unwrap_or_else(|| "Entrypoint chain denom-trace query failed".to_string()))
+    Err(last_err.unwrap_or_else(|| "Cardano Entrypoint chain denom-trace query failed".to_string()))
 }
 
 fn query_cardano_lovelace_total(
@@ -4805,7 +4812,7 @@ fn dump_test_12_ics20_diagnostics(
     entrypoint_channel_id: &str,
     entrypoint_address: &str,
 ) {
-    logger::log("=== Test 12 diagnostics (ICS-20 Cardano -> Entrypoint chain) ===");
+    logger::log("=== Test 12 diagnostics (ICS-20 Cardano -> Cardano Entrypoint chain) ===");
     logger::log(&format!("cardano-devnet channel: {}", cardano_channel_id));
     logger::log(&format!(
         "entrypoint channel:     {}",
@@ -4837,7 +4844,7 @@ fn dump_test_10_ics20_diagnostics(
     cardano_receiver_address: &str,
     voucher_policy_id: &str,
 ) {
-    logger::log("=== Test 10 diagnostics (ICS-20 Entrypoint chain -> Cardano) ===");
+    logger::log("=== Test 10 diagnostics (ICS-20 Cardano Entrypoint chain -> Cardano) ===");
     logger::log(&format!(
         "entrypoint channel:     {}",
         entrypoint_channel_id
@@ -4927,7 +4934,7 @@ fn dump_test_13_ics20_diagnostics(
     amount: u64,
     cardano_receiver_address: &str,
 ) {
-    logger::log("=== Test 13 diagnostics (ICS-20 Entrypoint chain -> Cardano, Cardano native round-trip return) ===");
+    logger::log("=== Test 13 diagnostics (ICS-20 Cardano Entrypoint chain -> Cardano, Cardano native round-trip return) ===");
     logger::log(&format!(
         "entrypoint channel:     {}",
         entrypoint_channel_id

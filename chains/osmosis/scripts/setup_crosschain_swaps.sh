@@ -350,7 +350,7 @@ echo "deployer address $deployer"
 
 #==================================Setup Hermes=======================================
 HERMES_CARDANO_NAME="cardano-devnet"
-HERMES_ENTRYPOINT_NAME="entrypoint"
+HERMES_ENTRYPOINT_NAME="cardano-entrypoint"
 HERMES_OSMOSIS_NAME="${HERMES_OSMOSIS_NAME:-localosmosis}"
 SENT_AMOUNT_NUM="${CARIBIC_TOKEN_SWAP_AMOUNT:-12345678}"
 HANDLER_JSON="$repo_root/cardano/offchain/deployments/handler.json"

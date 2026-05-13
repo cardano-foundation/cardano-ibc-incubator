@@ -39,8 +39,9 @@ enum StartTarget {
     Network,
     /// Deploys the light client contracts and starts the gateway and relayer
     Bridge,
-    /// Starts the Entrypoint chain (packet-forwarding chain)
-    Entrypoint,
+    /// Starts the Cardano Entrypoint chain (packet-forwarding chain)
+    #[value(alias = "entrypoint")]
+    CardanoEntrypoint,
     /// Starts only the Gateway service
     Gateway,
     /// Starts only the IBC Swap dapp
@@ -59,8 +60,9 @@ enum StopTarget {
     Network,
     /// Tears down the gateway and relayer
     Bridge,
-    /// Stops the Entrypoint chain
-    Entrypoint,
+    /// Stops the Cardano Entrypoint chain
+    #[value(alias = "entrypoint")]
+    CardanoEntrypoint,
     /// Stops the demo services
     Demo,
     /// Stops only the Gateway service

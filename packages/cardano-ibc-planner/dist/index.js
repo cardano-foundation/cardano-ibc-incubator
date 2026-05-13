@@ -34,7 +34,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createPlannerClient = createPlannerClient;
-const ENTRYPOINT_CHAIN_ID = 'entrypoint';
+const CARDANO_ENTRYPOINT_CHAIN_ID = 'cardano-entrypoint';
 const LOCAL_OSMOSIS_CHAIN_ID = 'localosmosis';
 const DEFAULT_PFM_FEE = '0.100000000000000000';
 const LOVELACE = 'lovelace';
@@ -62,7 +62,7 @@ function createPlannerClient(config) {
     let swapMetadataCache;
     const getPlannerMetadata = async () => {
         const [channels, entrypointDenomTraces, counterpartyDenomTraces] = await Promise.all([
-            fetchAllChannels(ENTRYPOINT_CHAIN_ID, resolvedConfig.entrypointRestEndpoint, resolvedConfig.fetchImpl, {
+            fetchAllChannels(CARDANO_ENTRYPOINT_CHAIN_ID, resolvedConfig.entrypointRestEndpoint, resolvedConfig.fetchImpl, {
                 cardanoChainId: resolvedConfig.cardanoChainId,
                 cardanoRestEndpoint: resolvedConfig.cardanoRestEndpoint,
             }),
@@ -74,7 +74,7 @@ function createPlannerClient(config) {
             adjacency,
             channelByRoute: channels.channelByRoute,
             denomTracesByChain: {
-                [ENTRYPOINT_CHAIN_ID]: entrypointDenomTraces,
+                [CARDANO_ENTRYPOINT_CHAIN_ID]: entrypointDenomTraces,
                 [LOCAL_OSMOSIS_CHAIN_ID]: counterpartyDenomTraces,
             },
         };
@@ -628,7 +628,7 @@ async function fetchAllChannels(chainId, restUrl, fetchImpl, options = {}) {
     for (const channel of openChannels) {
         if (cardanoChannels &&
             options.cardanoChainId &&
-            channel.srcChain === ENTRYPOINT_CHAIN_ID &&
+            channel.srcChain === CARDANO_ENTRYPOINT_CHAIN_ID &&
             channel.destChain === options.cardanoChainId &&
             !hasReciprocalCardanoChannel(channel, cardanoChannels)) {
             // Cardano can retain stale channel UTxOs; only route through pairs that point back.
@@ -680,7 +680,7 @@ async function isUsableChannelClient(restUrl, clientState, fetchImpl) {
 }
 async function buildSwapMetadata(config) {
     const [channels, pfmFees, osmosisDenomTraces, routeMap] = await Promise.all([
-        fetchSwapChannels(ENTRYPOINT_CHAIN_ID, config.entrypointRestEndpoint, config.fetchImpl),
+        fetchSwapChannels(CARDANO_ENTRYPOINT_CHAIN_ID, config.entrypointRestEndpoint, config.fetchImpl),
         fetchPfmFees(config),
         fetchAllDenomTraces(config.localOsmosisRestEndpoint, config.fetchImpl),
         fetchCrossChainSwapRouterState(config),
@@ -695,7 +695,7 @@ async function buildSwapMetadata(config) {
 }
 async function fetchPfmFees(config) {
     const endpoints = {
-        [ENTRYPOINT_CHAIN_ID]: config.entrypointRestEndpoint,
+        [CARDANO_ENTRYPOINT_CHAIN_ID]: config.entrypointRestEndpoint,
         [LOCAL_OSMOSIS_CHAIN_ID]: config.localOsmosisRestEndpoint,
     };
     const fees = await Promise.all(Object.entries(endpoints).map(async ([chainId, restUrl]) => ({

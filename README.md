@@ -34,7 +34,7 @@ The implementation adheres to the [inter-blockchain communication protocol](http
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Local devnet stack | Active | Managed through `caribic` with Cardano, Entrypoint, Hermes, Kupo, Ogmios, Mithril, and Yaci-backed history services |
+| Local devnet stack | Active | Managed through `caribic` with Cardano, Cardano Entrypoint, Hermes, Kupo, Ogmios, Mithril, and Yaci-backed history services |
 | Core IBC semantics | Active | Implements clients, connections, channels, packets, acknowledgements, and timeouts |
 | ICS-20 transfer path | Active in maintained demo and test flows | Exercised through `caribic demo` and `caribic test` |
 | Historical query backend | Active | Uses `Yaci Store + Bridge Projection` rather than a generic `db-sync` query surface |
@@ -291,7 +291,7 @@ caribic stop
 
 ### Demo: Querying consolidated vessel data from Cardano
 
-The maintained message-exchange flow runs against the native `cosmos/entrypoint` chain and its built-in datasource in `cosmos/entrypoint/datasource`.
+The maintained message-exchange flow runs against the native `cosmos/cardano-entrypoint` chain and its built-in datasource in `cosmos/cardano-entrypoint/datasource`.
 
 Start the local bridge stack first:
 
@@ -305,7 +305,7 @@ Then run the demo:
 caribic --verbose 5 demo message-exchange
 ```
 
-To demonstrate cross-chain queries, a vessel-oracle module is integrated into the local `entrypoint` chain. It simulates vessels sending their positions and requesting a harbor in a trustless and decentralized way. The data is written and consolidated on the Cosmos side, and Cardano then queries the latest consolidated report over async-ICQ.
+To demonstrate cross-chain queries, a vessel-oracle module is integrated into the local `cardano-entrypoint` chain. It simulates vessels sending their positions and requesting a harbor in a trustless and decentralized way. The data is written and consolidated on the Cosmos side, and Cardano then queries the latest consolidated report over async-ICQ.
 
 The demo command prepares Hermes, creates the `icqhost` channel if needed, runs the datasource flow automatically (`report`, `consolidate`), submits the Cardano async-ICQ packet, relays the acknowledgement, and prints the final consolidated report returned to Cardano.
 

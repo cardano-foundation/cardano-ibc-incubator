@@ -167,7 +167,7 @@ pub fn ensure_entrypoint_injective_transfer_channel(
         TRANSFER_PORT_ID,
     )? {
         logger::log(&format!(
-            "PASS: Reusing Entrypoint<->Injective transfer channel ({})",
+            "PASS: Reusing Cardano Entrypoint<->Injective transfer channel ({})",
             existing_open_channel_pair.a_channel_id
         ));
         return Ok(existing_open_channel_pair);
@@ -220,7 +220,7 @@ pub fn ensure_entrypoint_osmosis_transfer_channel(
         TRANSFER_PORT_ID,
     )? {
         logger::log(&format!(
-            "PASS: Reusing Entrypoint<->Osmosis transfer channel ({})",
+            "PASS: Reusing Cardano Entrypoint<->Osmosis transfer channel ({})",
             existing_open_channel_pair.a_channel_id
         ));
         return Ok(existing_open_channel_pair);
@@ -235,7 +235,7 @@ pub fn ensure_entrypoint_osmosis_transfer_channel(
     })?;
     configure_osmosis_hermes_for_demo(osmosis_dir.as_path(), network).map_err(|error| {
         format!(
-            "Failed to configure Hermes for Entrypoint->Osmosis {} route: {}",
+            "Failed to configure Hermes for Cardano Entrypoint->Osmosis {} route: {}",
             network, error
         )
     })?;
@@ -248,7 +248,7 @@ pub fn ensure_entrypoint_osmosis_transfer_channel(
     )?
     .ok_or_else(|| {
         format!(
-            "Hermes configured Entrypoint->Osmosis {}, but no reciprocal open transfer channel is usable.",
+            "Hermes configured Cardano Entrypoint->Osmosis {}, but no reciprocal open transfer channel is usable.",
             network
         )
     })
@@ -276,11 +276,14 @@ fn cardano_message_port_id() -> String {
 }
 
 fn entrypoint_chain_id() -> String {
-    config::get_config().chains.entrypoint.chain_id
+    config::get_config().chains.cardano_entrypoint.chain_id
 }
 
 fn entrypoint_message_port_id() -> String {
-    config::get_config().chains.entrypoint.message_port_id
+    config::get_config()
+        .chains
+        .cardano_entrypoint
+        .message_port_id
 }
 
 fn hermes_output_details(output: &Output) -> String {
@@ -905,7 +908,7 @@ fn create_cardano_entrypoint_transfer_channel_on_connection(
     let entrypoint_chain_id = entrypoint_chain_id();
     let entrypoint_port_id = entrypoint_message_port_id();
     logger::verbose(&format!(
-        "Creating transfer channel on connection {connection_id} (Cardano<->Entrypoint)"
+        "Creating transfer channel on connection {connection_id} (Cardano<->Cardano Entrypoint)"
     ));
     let output = run_hermes_command_with_provider_retry(
         &[
@@ -975,7 +978,7 @@ fn create_cardano_entrypoint_transfer_channel_on_connection(
     }
 
     Err(format!(
-        "Created Cardano<->Entrypoint transfer channel on connection {}, but it did not reach Open/Open on both ends in time (Cardano channel {}).",
+        "Created Cardano<->Cardano Entrypoint transfer channel on connection {}, but it did not reach Open/Open on both ends in time (Cardano channel {}).",
         connection_id, cardano_channel_id
     ))
 }
@@ -983,11 +986,11 @@ fn create_cardano_entrypoint_transfer_channel_on_connection(
 pub fn ensure_cardano_entrypoint_transfer_channel() -> Result<TransferChannelPair, String> {
     let cardano_chain_id = cardano_chain_id();
     let entrypoint_chain_id = entrypoint_chain_id();
-    logger::log("Ensuring Cardano->Entrypoint transfer path exists.");
+    logger::log("Ensuring Cardano->Cardano Entrypoint transfer path exists.");
 
     if let Some(existing_open_channel_pair) = query_cardano_entrypoint_channel_pair()? {
         logger::log(&format!(
-            "PASS: Reusing Cardano<->Entrypoint transfer channel ({})",
+            "PASS: Reusing Cardano<->Cardano Entrypoint transfer channel ({})",
             existing_open_channel_pair.a_channel_id
         ));
         return Ok(existing_open_channel_pair);
@@ -995,14 +998,14 @@ pub fn ensure_cardano_entrypoint_transfer_channel() -> Result<TransferChannelPai
 
     if let Some(existing_open_connection_id) = query_cardano_entrypoint_open_connection()? {
         logger::verbose(&format!(
-            "Found existing open Cardano<->Entrypoint connection {}; creating transfer channel on it",
+            "Found existing open Cardano<->Cardano Entrypoint connection {}; creating transfer channel on it",
             existing_open_connection_id
         ));
         let open_channel_pair = create_cardano_entrypoint_transfer_channel_on_connection(
             existing_open_connection_id.as_str(),
         )?;
         logger::log(&format!(
-            "PASS: Created Cardano<->Entrypoint transfer channel ({})",
+            "PASS: Created Cardano<->Cardano Entrypoint transfer channel ({})",
             open_channel_pair.a_channel_id
         ));
         return Ok(open_channel_pair);
@@ -1031,7 +1034,7 @@ pub fn ensure_cardano_entrypoint_transfer_channel() -> Result<TransferChannelPai
         format!("Failed to create client for {entrypoint_chain_id}->{cardano_chain_id}: {error}")
     })?;
 
-    logger::verbose("Creating Cardano<->Entrypoint connection");
+    logger::verbose("Creating Cardano<->Cardano Entrypoint connection");
     let create_connection_output = run_hermes_command_with_provider_retry(
         &[
             "create",
@@ -1060,7 +1063,7 @@ pub fn ensure_cardano_entrypoint_transfer_channel() -> Result<TransferChannelPai
         create_cardano_entrypoint_transfer_channel_on_connection(connection_id.as_str())?;
 
     logger::log(&format!(
-        "PASS: Created Cardano<->Entrypoint transfer channel ({})",
+        "PASS: Created Cardano<->Cardano Entrypoint transfer channel ({})",
         open_channel_pair.a_channel_id
     ));
     Ok(open_channel_pair)

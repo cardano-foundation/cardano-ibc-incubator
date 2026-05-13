@@ -90,7 +90,7 @@ pub async fn run_start(
     // Determine what to start.
     let start_all = target.is_none() || target == Some(StartTarget::All);
     let start_network = start_all || target == Some(StartTarget::Network);
-    let start_cosmos = start_all || target == Some(StartTarget::Entrypoint);
+    let start_cosmos = start_all || target == Some(StartTarget::CardanoEntrypoint);
     let start_bridge = start_all || target == Some(StartTarget::Bridge);
 
     if !chain_flags.is_empty() {
@@ -329,11 +329,11 @@ pub async fn run_start(
         match start_cosmos_entrypoint_chain(project_root_path.join("cosmos").as_path(), clean).await
         {
             Ok(_) => logger::log(
-                "PASS: Entrypoint chain started (packet-forwarding chain on port 26657)",
+                "PASS: Cardano Entrypoint chain started (packet-forwarding chain on port 26657)",
             ),
             Err(error) => {
                 return Err(format!(
-                    "ERROR: Failed to start Entrypoint chain: {}",
+                    "ERROR: Failed to start Cardano Entrypoint chain: {}",
                     error
                 ))
             }
@@ -478,14 +478,14 @@ pub async fn run_start(
                         return fail_and_stop_started_services(
                             project_root_path,
                             StopTarget::Bridge,
-                            &format!("ERROR: Failed to start Entrypoint chain: {}", error),
+                            &format!("ERROR: Failed to start Cardano Entrypoint chain: {}", error),
                         );
                     }
                     Err(error) => {
                         return fail_and_stop_started_services(
                             project_root_path,
                             StopTarget::Bridge,
-                            &format!("ERROR: Failed to start Entrypoint chain: {}", error),
+                            &format!("ERROR: Failed to start Cardano Entrypoint chain: {}", error),
                         );
                     }
                 }
@@ -493,13 +493,13 @@ pub async fn run_start(
 
             match wait_for_cosmos_entrypoint_chain_ready().await {
                 Ok(_) => logger::log(
-                    "PASS: Entrypoint chain started (packet-forwarding chain on port 26657)",
+                    "PASS: Cardano Entrypoint chain started (packet-forwarding chain on port 26657)",
                 ),
                 Err(error) => {
                     return fail_and_stop_started_services(
                         project_root_path,
                         StopTarget::Bridge,
-                        &format!("ERROR: Failed to start Entrypoint chain: {}", error),
+                        &format!("ERROR: Failed to start Cardano Entrypoint chain: {}", error),
                     );
                 }
             }
@@ -668,7 +668,7 @@ pub async fn run_start(
         logger::log("\nBridge started successfully!");
         if core_cardano_network == config::CoreCardanoNetwork::Local {
             logger::log(
-                "Keys have been automatically configured for cardano-devnet and the Entrypoint chain.",
+                "Keys have been automatically configured for cardano-devnet and the Cardano Entrypoint chain.",
             );
             logger::log("Next steps:");
             logger::log("   1. Check health: caribic health-check");
