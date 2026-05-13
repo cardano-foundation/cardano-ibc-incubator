@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { type AxiosError } from 'axios';
 import { toast } from 'react-toastify';
 import type { CardanoAssetDenomTrace } from '@/types/cardanoTrace';
 import { cardanoPlannerClient } from '@/services/cardanoPlanner';
@@ -227,30 +227,100 @@ const CHEQD_ICQ_ENDPOINTS: Record<CheqdIcqQueryKind, string> = {
     '/api/icq/cheqd/latest-resource-version-metadata',
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  return values.find(
+    (value): value is string =>
+      typeof value === 'string' && value.trim().length > 0,
+  );
+}
+
+function getResponseErrorMessage(data: unknown): string | undefined {
+  if (typeof data === 'string' && data.trim()) {
+    return data;
+  }
+
+  if (!isRecord(data)) {
+    return undefined;
+  }
+
+  const { details } = data;
+  const cause = isRecord(details) ? details.cause : undefined;
+
+  return firstNonEmptyString(
+    data.message,
+    data.error,
+    data.reason,
+    isRecord(details) ? details.message : undefined,
+    isRecord(details) ? details.error : undefined,
+    isRecord(cause) ? cause.message : undefined,
+    isRecord(cause) ? cause.error : undefined,
+  );
+}
+
+function getAxiosRequestTarget(error: AxiosError): string {
+  const method =
+    typeof error.config?.method === 'string'
+      ? error.config.method.toUpperCase()
+      : undefined;
+  const url =
+    typeof error.config?.url === 'string' ? error.config.url : undefined;
+
+  if (method && url) {
+    return `${method} ${url}`;
+  }
+
+  return url || method || 'request';
+}
+
+function getAxiosTimeoutDescription(error: AxiosError): string {
+  const timeout = error.config?.timeout;
+  if (typeof timeout === 'number' && timeout > 0) {
+    return `${Math.round(timeout / 1000)}s`;
+  }
+
+  return 'the configured timeout';
+}
+
 function getGatewayErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
-    const responseData = error.response?.data as
-      | {
-          message?: string;
-          error?: string;
-          exceptionName?: string;
-          type?: string;
-        }
-      | undefined;
-
-    if (
-      typeof responseData?.message === 'string' &&
-      responseData.message.trim()
-    ) {
-      return responseData.message;
+    const responseMessage = getResponseErrorMessage(error.response?.data);
+    if (responseMessage) {
+      return responseMessage;
     }
 
-    if (typeof responseData?.error === 'string' && responseData.error.trim()) {
-      return responseData.error;
+    const requestTarget = getAxiosRequestTarget(error);
+    const rawMessage =
+      typeof error.message === 'string' && error.message.trim()
+        ? error.message
+        : undefined;
+
+    if (!error.response) {
+      if (
+        error.code === 'ECONNABORTED' ||
+        rawMessage?.toLowerCase().includes('timeout')
+      ) {
+        return `Request to ${requestTarget} timed out after ${getAxiosTimeoutDescription(
+          error,
+        )}. The local Cardano transaction builder can be slow while warming up; wait for the dapp container logs to settle and retry.`;
+      }
+
+      return `Request to ${requestTarget} failed before the dapp received a response${
+        rawMessage ? `: ${rawMessage}` : '.'
+      }. The local dapp API may have restarted, crashed, or disconnected while building the transaction. Check the dapp container logs and retry once it is ready.`;
     }
 
-    if (typeof error.message === 'string' && error.message.trim()) {
-      return error.message;
+    if (error.response.status) {
+      return `Request to ${requestTarget} failed with HTTP ${
+        error.response.status
+      }${error.response.statusText ? ` ${error.response.statusText}` : ''}.`;
+    }
+
+    if (rawMessage) {
+      return rawMessage;
     }
   }
 
@@ -293,8 +363,7 @@ export async function transfer({
     return response.data;
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);
-    toast.error(errorMessage, { theme: 'colored' });
-    return { unsignedTx: undefined };
+    throw new Error(errorMessage);
   }
 }
 
