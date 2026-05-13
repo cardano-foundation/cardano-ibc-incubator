@@ -19,7 +19,7 @@ max_tx_size = 209715
 clock_drift = '20s'
 max_block_time = '10s'
 trusting_period = '10days'
-memo_prefix = 'Caribic'
+memo_prefix = 'Cardano IBC Relayer'
 trust_threshold = { numerator = '1', denominator = '3' }
 compat_mode = '0.38'
 
@@ -44,6 +44,6 @@ max_tx_size = 209715
 clock_drift = '20s'
 max_block_time = '10s'
 trusting_period = '10days'
-memo_prefix = 'Caribic'
+memo_prefix = 'Cardano IBC Relayer'
 trust_threshold = { numerator = '1', denominator = '3' }
 compat_mode = '0.38'
