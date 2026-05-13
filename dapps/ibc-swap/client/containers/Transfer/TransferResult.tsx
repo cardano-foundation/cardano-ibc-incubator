@@ -16,6 +16,7 @@ import {
 import { TxHashLink } from '@/components/TxHashLink';
 import { getExplorerTxUrl } from '@/utils/txExplorer';
 import type {
+  TransferLifecyclePhase,
   TransferPacketHop,
   TransferStatusResponse,
 } from '@/types/transferStatus';
@@ -55,6 +56,11 @@ const getElapsedSecondsSince = (submittedAt?: string): number => {
   if (!Number.isFinite(submittedAtMs)) return 0;
   return Math.max(0, Math.floor((Date.now() - submittedAtMs) / 1000));
 };
+
+const isTerminalTransferStatus = (status?: TransferLifecyclePhase): boolean =>
+  status === 'acknowledge_packet_observed' ||
+  status === 'timeout_observed' ||
+  status === 'failed';
 
 const getStepMarkerColor = (status: 'complete' | 'active' | 'pending') => {
   if (status === 'complete') return COLOR.success;
@@ -279,8 +285,11 @@ export const TransferResult = ({
   const [transferStatus, setTransferStatus] =
     useState<TransferStatusResponse | null>(null);
   const [transferStatusError, setTransferStatusError] = useState('');
+  const transferTerminal = isTerminalTransferStatus(transferStatus?.status);
 
   useEffect(() => {
+    if (transferTerminal) return undefined;
+
     if (!submittedAt) {
       const interval = window.setInterval(() => {
         setElapsedSeconds((seconds) => seconds + 1);
@@ -296,7 +305,7 @@ export const TransferResult = ({
       updateElapsedSeconds();
     }, 1000);
     return () => window.clearInterval(interval);
-  }, [submittedAt]);
+  }, [submittedAt, transferTerminal]);
 
   useEffect(() => {
     const sourceChainId = fromNetwork.networkId;
@@ -321,6 +330,9 @@ export const TransferResult = ({
       if (!cancelled) {
         setTransferStatus(data);
         setTransferStatusError('');
+        if (isTerminalTransferStatus(data.status)) {
+          cancelled = true;
+        }
       }
     };
 
@@ -335,6 +347,11 @@ export const TransferResult = ({
     });
 
     const interval = window.setInterval(() => {
+      if (cancelled) {
+        window.clearInterval(interval);
+        return;
+      }
+
       fetchTransferStatus().catch((error) => {
         if (!cancelled) {
           setTransferStatusError(
