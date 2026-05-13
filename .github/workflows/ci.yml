@@ -290,8 +290,8 @@ jobs:
       fail-fast: false
       matrix:
         module:
-          - cosmos/entrypoint
-          - cosmos/entrypoint/datasource
+          - cosmos/cardano-entrypoint
+          - cosmos/cardano-entrypoint/datasource
           - cosmos/ibcclientest
 
     defaults:
@@ -307,8 +307,8 @@ jobs:
         with:
           go-version: "1.24.x"
           cache-dependency-path: |
-            cosmos/entrypoint/go.sum
-            cosmos/entrypoint/datasource/go.sum
+            cosmos/cardano-entrypoint/go.sum
+            cosmos/cardano-entrypoint/datasource/go.sum
             cosmos/ibcclientest/go.sum
 
       - name: Test
