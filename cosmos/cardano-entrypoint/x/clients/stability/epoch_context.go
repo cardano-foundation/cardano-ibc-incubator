@@ -133,6 +133,9 @@ func normalizeEpochContexts(contexts []*EpochContext) ([]*EpochContext, error) {
 		if err := validateEpochContext(ctx); err != nil {
 			return nil, err
 		}
+		if existing := contextByEpoch[ctx.Epoch]; existing != nil && !epochContextsEqual(existing, ctx) {
+			return nil, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "conflicting epoch context for epoch %d", ctx.Epoch)
+		}
 		contextByEpoch[ctx.Epoch] = cloneEpochContext(ctx)
 	}
 
@@ -160,10 +163,28 @@ func (cs ClientState) normalizedEpochContexts() ([]*EpochContext, error) {
 }
 
 func mergeEpochContexts(base []*EpochContext, candidate *EpochContext) ([]*EpochContext, error) {
-	contexts := cloneEpochContexts(base)
-	if candidate != nil {
-		contexts = append(contexts, cloneEpochContext(candidate))
+	contexts, err := normalizeEpochContexts(base)
+	if err != nil {
+		return nil, err
 	}
+	if candidate == nil {
+		return contexts, nil
+	}
+	if err := validateEpochContext(candidate); err != nil {
+		return nil, err
+	}
+
+	// Verification must be able to authenticate a same-epoch header using the
+	// context it carries. CheckForMisbehaviour later freezes if that context
+	// disagrees with the one already stored for the epoch.
+	for i, ctx := range contexts {
+		if ctx != nil && ctx.Epoch == candidate.Epoch {
+			contexts[i] = cloneEpochContext(candidate)
+			return contexts, nil
+		}
+	}
+
+	contexts = append(contexts, cloneEpochContext(candidate))
 	return normalizeEpochContexts(contexts)
 }
 
@@ -183,6 +204,41 @@ func epochContextForSlot(contexts []*EpochContext, slot uint64) *EpochContext {
 		}
 	}
 	return nil
+}
+
+func epochContextsEqual(left, right *EpochContext) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	if left.Epoch != right.Epoch ||
+		left.SlotsPerKesPeriod != right.SlotsPerKesPeriod ||
+		left.EpochStartSlot != right.EpochStartSlot ||
+		left.EpochEndSlotExclusive != right.EpochEndSlotExclusive ||
+		!bytes.Equal(left.EpochNonce, right.EpochNonce) ||
+		len(left.StakeDistribution) != len(right.StakeDistribution) {
+		return false
+	}
+
+	rightByPool := make(map[string]*StakeDistributionEntry, len(right.StakeDistribution))
+	for _, entry := range right.StakeDistribution {
+		if entry == nil {
+			return false
+		}
+		rightByPool[strings.ToLower(entry.PoolId)] = entry
+	}
+
+	for _, leftEntry := range left.StakeDistribution {
+		if leftEntry == nil {
+			return false
+		}
+		rightEntry := rightByPool[strings.ToLower(leftEntry.PoolId)]
+		if rightEntry == nil ||
+			leftEntry.Stake != rightEntry.Stake ||
+			!bytes.Equal(leftEntry.VrfKeyHash, rightEntry.VrfKeyHash) {
+			return false
+		}
+	}
+	return true
 }
 
 func syncLegacyEpochContextFields(cs *ClientState, contexts []*EpochContext, currentEpoch uint64) error {

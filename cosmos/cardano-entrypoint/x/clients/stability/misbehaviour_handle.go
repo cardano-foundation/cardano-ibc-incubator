@@ -12,14 +12,18 @@ import (
 	"github.com/cosmos/ibc-go/v10/modules/core/exported"
 )
 
-func (ClientState) CheckForMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, msg exported.ClientMessage) bool {
+func (cs ClientState) CheckForMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, msg exported.ClientMessage) bool {
 	switch msg := msg.(type) {
 	case *StabilityHeader:
-		return headerConflictsWithStoredConsensus(clientStore, cdc, msg)
+		return headerConflictsWithStoredConsensus(clientStore, cdc, msg) ||
+			cs.headerEpochContextConflictsWithStored(msg)
 	case *Misbehaviour:
 		return headersConflict(msg.StabilityHeader1, msg.StabilityHeader2) ||
+			headersEpochContextConflict(msg.StabilityHeader1, msg.StabilityHeader2) ||
 			headerConflictsWithStoredConsensus(clientStore, cdc, msg.StabilityHeader1) ||
-			headerConflictsWithStoredConsensus(clientStore, cdc, msg.StabilityHeader2)
+			headerConflictsWithStoredConsensus(clientStore, cdc, msg.StabilityHeader2) ||
+			cs.headerEpochContextConflictsWithStored(msg.StabilityHeader1) ||
+			cs.headerEpochContextConflictsWithStored(msg.StabilityHeader2)
 	}
 
 	return false
@@ -33,8 +37,11 @@ func (cs *ClientState) verifyMisbehaviour(_ sdk.Context, clientStore storetypes.
 		return errorsmod.Wrap(err, "verifying StabilityHeader2 in Misbehaviour failed")
 	}
 	if !headersConflict(misbehaviour.StabilityHeader1, misbehaviour.StabilityHeader2) &&
+		!headersEpochContextConflict(misbehaviour.StabilityHeader1, misbehaviour.StabilityHeader2) &&
 		!headerConflictsWithStoredConsensus(clientStore, cdc, misbehaviour.StabilityHeader1) &&
-		!headerConflictsWithStoredConsensus(clientStore, cdc, misbehaviour.StabilityHeader2) {
+		!headerConflictsWithStoredConsensus(clientStore, cdc, misbehaviour.StabilityHeader2) &&
+		!cs.headerEpochContextConflictsWithStored(misbehaviour.StabilityHeader1) &&
+		!cs.headerEpochContextConflictsWithStored(misbehaviour.StabilityHeader2) {
 		return errorsmod.Wrap(clienttypes.ErrInvalidMisbehaviour, "stability headers do not conflict")
 	}
 	return nil
@@ -59,6 +66,29 @@ func headersConflict(header1, header2 *StabilityHeader) bool {
 	}
 
 	return false
+}
+
+func headersEpochContextConflict(header1, header2 *StabilityHeader) bool {
+	if header1 == nil || header2 == nil || header1.NewEpochContext == nil || header2.NewEpochContext == nil {
+		return false
+	}
+	if header1.NewEpochContext.Epoch != header2.NewEpochContext.Epoch {
+		return false
+	}
+	return !epochContextsEqual(header1.NewEpochContext, header2.NewEpochContext)
+}
+
+func (cs ClientState) headerEpochContextConflictsWithStored(header *StabilityHeader) bool {
+	if header == nil || header.NewEpochContext == nil {
+		return false
+	}
+
+	contexts, err := cs.normalizedEpochContexts()
+	if err != nil {
+		return false
+	}
+	stored := epochContextByEpoch(contexts, header.NewEpochContext.Epoch)
+	return stored != nil && !epochContextsEqual(stored, header.NewEpochContext)
 }
 
 func collectHeaderBlocksByHeight(header *StabilityHeader) map[uint64]string {
