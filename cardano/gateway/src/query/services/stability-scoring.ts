@@ -8,10 +8,17 @@ import {
 import { HistoryBlock, HistoryStakeDistributionEntry } from './history.service';
 
 export type StabilityMetrics = {
-  uniquePoolsCount: number;
-  uniqueStakeBps: number;
+  qualifiedUniquePoolsCount: number;
+  qualifiedUniqueStakeBps: number;
   securityScoreBps: number;
 };
+
+export type StabilityScoringOptions = {
+  poolRegistrationCutoffSlot?: bigint;
+};
+
+export const STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS = 1_767_225_600_000_000_000n; // 2026-01-01T00:00:00Z
+const DEFAULT_CARDANO_SLOT_LENGTH_NS = 1_000_000_000n;
 
 export function assertEpochStakeDistributionAvailable(
   epochStakeDistribution: HistoryStakeDistributionEntry[],
@@ -26,8 +33,8 @@ export function assertEpochStakeDistributionAvailable(
     );
   }
 
-  const totalStake = epochStakeDistribution.reduce((sum, entry) => sum + entry.stake, 0n);
-  if (totalStake <= 0n) {
+  const totalActiveStake = epochStakeDistribution.reduce((sum, entry) => sum + entry.stake, 0n);
+  if (totalActiveStake <= 0n) {
     throw new GrpcFailedPreconditionException(
       gatewayGrpcError(
         GATEWAY_GRPC_ERROR_CODE.HISTORY_NOT_READY,
@@ -51,6 +58,21 @@ export function getStabilityHeuristicParams(env: NodeJS.ProcessEnv = process.env
     pools_weight_bps: getBigInt('CARDANO_STABILITY_POOLS_WEIGHT_BPS', 2000n),
     stake_weight_bps: getBigInt('CARDANO_STABILITY_STAKE_WEIGHT_BPS', 6000n),
   };
+}
+
+export function computePoolRegistrationCutoffSlot(
+  anchorBlock: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>,
+  slotLengthNs: bigint = DEFAULT_CARDANO_SLOT_LENGTH_NS,
+): bigint {
+  if (slotLengthNs <= 0n) {
+    throw new Error('Cardano slot length must be greater than zero');
+  }
+  const systemStartUnixNs = anchorBlock.timestampUnixNs - anchorBlock.slotNo * slotLengthNs;
+  if (STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS <= systemStartUnixNs) {
+    return 0n;
+  }
+  const delta = STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS - systemStartUnixNs;
+  return (delta + slotLengthNs - 1n) / slotLengthNs;
 }
 
 export function getStabilityLookaheadDepth(
@@ -85,39 +107,47 @@ export function computeStabilityMetrics(
   descendants: HistoryBlock[],
   epochStakeDistribution: HistoryStakeDistributionEntry[],
   heuristicParams: HeuristicParams,
+  options: StabilityScoringOptions = {},
 ): StabilityMetrics {
   assertEpochStakeDistributionAvailable(epochStakeDistribution, 'stake-weighted stability scoring');
 
-  const uniquePools = new Set<string>();
-  const stakeByPool = new Map(epochStakeDistribution.map((entry) => [entry.poolId, entry.stake]));
-  const totalStake = epochStakeDistribution.reduce((sum, entry) => sum + entry.stake, 0n);
+  const qualifiedUniquePools = new Set<string>();
+  const seenSlotLeaders = new Set<string>();
+  const stakeEntryByPool = new Map(epochStakeDistribution.map((entry) => [entry.poolId, entry]));
+  const totalActiveStake = epochStakeDistribution.reduce((sum, entry) => sum + entry.stake, 0n);
 
-  let uniqueStake = 0n;
+  let qualifiedUniqueStake = 0n;
 
   for (const descendant of descendants) {
-    if (!descendant.slotLeader || uniquePools.has(descendant.slotLeader)) {
+    if (!descendant.slotLeader || seenSlotLeaders.has(descendant.slotLeader)) {
       continue;
     }
 
-    uniquePools.add(descendant.slotLeader);
-    const stake = stakeByPool.get(descendant.slotLeader) || 0n;
-    uniqueStake += stake;
+    seenSlotLeaders.add(descendant.slotLeader);
+    const entry = stakeEntryByPool.get(descendant.slotLeader);
+    if (!poolRegisteredBeforeCutoff(entry, options.poolRegistrationCutoffSlot)) {
+      continue;
+    }
+
+    qualifiedUniquePools.add(descendant.slotLeader);
+    qualifiedUniqueStake += entry.stake;
   }
 
-  const uniqueStakeBps = uniqueStake >= totalStake ? 10_000n : (uniqueStake * 10_000n) / totalStake;
+  const qualifiedUniqueStakeBps =
+    qualifiedUniqueStake >= totalActiveStake ? 10_000n : (qualifiedUniqueStake * 10_000n) / totalActiveStake;
 
   const depthScore = minBps(BigInt(descendants.length), heuristicParams.threshold_depth);
-  const poolsScore = minBps(BigInt(uniquePools.size), heuristicParams.threshold_unique_pools);
-  const stakeScore = minBps(uniqueStakeBps, heuristicParams.threshold_unique_stake_bps);
+  const poolsScore = minBps(BigInt(qualifiedUniquePools.size), heuristicParams.threshold_unique_pools);
+  const qualifiedStakeScore = minBps(qualifiedUniqueStakeBps, heuristicParams.threshold_unique_stake_bps);
   const rawScore =
     (heuristicParams.depth_weight_bps * depthScore +
       heuristicParams.pools_weight_bps * poolsScore +
-      heuristicParams.stake_weight_bps * stakeScore) /
+      heuristicParams.stake_weight_bps * qualifiedStakeScore) /
     10_000n;
 
   return {
-    uniquePoolsCount: uniquePools.size,
-    uniqueStakeBps: Number(uniqueStakeBps),
+    qualifiedUniquePoolsCount: qualifiedUniquePools.size,
+    qualifiedUniqueStakeBps: Number(qualifiedUniqueStakeBps),
     securityScoreBps: Number(rawScore > 10_000n ? 10_000n : rawScore),
   };
 }
@@ -148,11 +178,11 @@ export function getStabilityThresholdFailure(
   if (BigInt(descendantDepth) < heuristicParams.threshold_depth) {
     return `Not found: stability thresholds not met at height ${height} (depth ${descendantDepth} < ${heuristicParams.threshold_depth})`;
   }
-  if (BigInt(metrics.uniquePoolsCount) < heuristicParams.threshold_unique_pools) {
-    return `Not found: stability thresholds not met at height ${height} (unique pools ${metrics.uniquePoolsCount} < ${heuristicParams.threshold_unique_pools})`;
+  if (BigInt(metrics.qualifiedUniquePoolsCount) < heuristicParams.threshold_unique_pools) {
+    return `Not found: stability thresholds not met at height ${height} (qualified unique pools ${metrics.qualifiedUniquePoolsCount} < ${heuristicParams.threshold_unique_pools})`;
   }
-  if (BigInt(metrics.uniqueStakeBps) < heuristicParams.threshold_unique_stake_bps) {
-    return `Not found: stability thresholds not met at height ${height} (unique stake ${metrics.uniqueStakeBps} < ${heuristicParams.threshold_unique_stake_bps})`;
+  if (BigInt(metrics.qualifiedUniqueStakeBps) < heuristicParams.threshold_unique_stake_bps) {
+    return `Not found: stability thresholds not met at height ${height} (qualified unique stake ${metrics.qualifiedUniqueStakeBps} < ${heuristicParams.threshold_unique_stake_bps})`;
   }
 
   return null;
@@ -163,4 +193,20 @@ function minBps(value: bigint, target: bigint): bigint {
     return 10_000n;
   }
   return (value * 10_000n) / target;
+}
+
+function poolRegisteredBeforeCutoff(
+  entry: HistoryStakeDistributionEntry | undefined,
+  poolRegistrationCutoffSlot?: bigint,
+): entry is HistoryStakeDistributionEntry {
+  if (poolRegistrationCutoffSlot === undefined) {
+    throw new Error('Pool registration cutoff slot is required for stake-weighted stability scoring');
+  }
+  if (!entry) {
+    throw new Error('Descendant slot leader missing from epoch stake distribution');
+  }
+  if (!entry.firstRegistrationSlot || entry.firstRegistrationSlot <= 0n) {
+    throw new Error(`First registration slot missing for pool ${entry.poolId}`);
+  }
+  return entry.firstRegistrationSlot < poolRegistrationCutoffSlot;
 }

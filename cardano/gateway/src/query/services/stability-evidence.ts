@@ -19,6 +19,7 @@ import {
   assertEpochStakeDistributionAvailable,
   getStabilityThresholdFailure,
   assertStabilityThresholds,
+  computePoolRegistrationCutoffSlot,
   computeStabilityMetrics,
   getStabilityHeuristicParams,
   getStabilityLookaheadDepth,
@@ -255,7 +256,10 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
       : scoredDescendantBlocks;
 
   let acceptedDescendantBlocks = eligibleDescendantBlocks;
-  let metrics = computeStabilityMetrics(eligibleDescendantBlocks, epochStakeDistribution, heuristicParams);
+  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
+  let metrics = computeStabilityMetrics(eligibleDescendantBlocks, epochStakeDistribution, heuristicParams, {
+    poolRegistrationCutoffSlot,
+  });
 
   const thresholdDepth = Number(heuristicParams.threshold_depth || 0n);
   if (requireThresholds) {
@@ -269,6 +273,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
         candidateDescendantBlocks,
         epochStakeDistribution,
         heuristicParams,
+        { poolRegistrationCutoffSlot },
       );
 
       if (
@@ -497,10 +502,12 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     firstInvalidDescendantIndex >= 0 ? descendantBlocks.slice(0, firstInvalidDescendantIndex) : descendantBlocks;
 
   const acceptedDescendantBlocks = eligibleDescendantBlocks;
+  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
   const metrics = computeStabilityMetrics(
     eligibleDescendantBlocks,
     anchorEpochContext.stakeDistribution,
     heuristicParams,
+    { poolRegistrationCutoffSlot },
   );
 
   if (requireThresholds) {

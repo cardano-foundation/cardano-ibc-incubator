@@ -15,7 +15,7 @@ var (
 	ErrInvalidHeuristicParams     = errorsmod.Register(ModuleName, 11, "invalid heuristic params")
 	ErrInvalidStabilityScore      = errorsmod.Register(ModuleName, 12, "invalid security score")
 	ErrInvalidUniquePools         = errorsmod.Register(ModuleName, 13, "invalid unique pool count")
-	ErrInvalidUniqueStake         = errorsmod.Register(ModuleName, 14, "invalid unique stake basis points")
+	ErrInvalidUniqueStake         = errorsmod.Register(ModuleName, 14, "invalid qualified unique stake basis points")
 	ErrInvalidAcceptedBlock       = errorsmod.Register(ModuleName, 15, "invalid accepted block")
 	ErrInvalidHostStateCommitment = errorsmod.Register(ModuleName, 16, "invalid host state commitment evidence")
 	ErrInvalidTimestamp           = errorsmod.Register(ModuleName, 17, "invalid timestamp")

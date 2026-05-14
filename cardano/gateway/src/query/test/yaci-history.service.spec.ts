@@ -39,7 +39,7 @@ describe('YaciHistoryService', () => {
     };
 
     entityManagerMock = {
-      query: jest.fn(),
+      query: jest.fn().mockResolvedValue([]),
     };
 
     service = new YaciHistoryService(
@@ -54,7 +54,9 @@ describe('YaciHistoryService', () => {
   });
 
   it('sources a full epoch context from Ogmios local state at the block point', async () => {
-    entityManagerMock.query.mockResolvedValueOnce([{ start_slot: '1000' }]).mockResolvedValueOnce([{ start_slot: '1200' }]);
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }]);
     (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
       currentEpoch: 7,
       epochNonce: '11'.repeat(32),
@@ -75,6 +77,7 @@ describe('YaciHistoryService', () => {
           poolId: 'pool1ogmiospool',
           stake: 900n,
           vrfKeyHash: 'aa'.repeat(32),
+          firstRegistrationSlot: null,
         },
       ],
       verificationContext: {
@@ -96,7 +99,9 @@ describe('YaciHistoryService', () => {
   });
 
   it('rejects acquired epoch context when Ogmios resolves a different epoch than the block history', async () => {
-    entityManagerMock.query.mockResolvedValueOnce([{ start_slot: '1000' }]).mockResolvedValueOnce([{ start_slot: '1200' }]);
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }]);
     (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
       currentEpoch: 8,
       epochNonce: '22'.repeat(32),
@@ -120,6 +125,7 @@ describe('YaciHistoryService', () => {
           poolId: 'pool1fallbackpool',
           stake: 1000n,
           vrfKeyHash: 'bb'.repeat(32),
+          firstRegistrationSlot: null,
         },
       ],
     });
@@ -131,6 +137,7 @@ describe('YaciHistoryService', () => {
           poolId: 'pool1fallbackpool',
           stake: 1000n,
           vrfKeyHash: 'bb'.repeat(32),
+          firstRegistrationSlot: null,
         },
       ],
       verificationContext: {
@@ -179,6 +186,7 @@ describe('YaciHistoryService', () => {
           poolId: 'pool1retrypool',
           stake: 123n,
           vrfKeyHash: 'cc'.repeat(32),
+          firstRegistrationSlot: null,
         },
       ],
       verificationContext: {

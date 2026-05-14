@@ -14,6 +14,7 @@ import {
   HistoryEpochContextAtBlock,
   HistoryEpochVerificationContext,
   HistoryService,
+  HistoryStakeDistributionEntry,
   HistoryTxEvidence,
   HistoryTxRedeemer,
 } from './history.service';
@@ -308,12 +309,20 @@ export class YaciHistoryService implements HistoryService {
       );
     }
 
+    const stakeDistribution: HistoryStakeDistributionEntry[] = epochContext.stakeDistribution.map((entry) => ({
+      poolId: normalizePoolId(entry.poolId),
+      stake: entry.stake,
+      vrfKeyHash: normalizeHex(entry.vrfKeyHash),
+    }));
+    const firstRegistrationSlots = await this.findFirstPoolRegistrationSlots(
+      stakeDistribution.map((entry) => entry.poolId),
+    );
+
     return {
       epoch: epochContext.currentEpoch,
-      stakeDistribution: epochContext.stakeDistribution.map((entry) => ({
-        poolId: normalizePoolId(entry.poolId),
-        stake: entry.stake,
-        vrfKeyHash: normalizeHex(entry.vrfKeyHash),
+      stakeDistribution: stakeDistribution.map((entry) => ({
+        ...entry,
+        firstRegistrationSlot: firstRegistrationSlots.get(entry.poolId) ?? null,
       })),
       verificationContext: {
         epochNonce: epochContext.epochNonce,
@@ -376,6 +385,29 @@ export class YaciHistoryService implements HistoryService {
     `;
     const rows = await this.entityManager.query(query, [height]);
     return rows.length > 0;
+  }
+
+  private async findFirstPoolRegistrationSlots(poolIds: string[]): Promise<Map<string, bigint>> {
+    const normalizedPoolIds = Array.from(new Set(poolIds.map((poolId) => normalizePoolId(poolId)).filter(Boolean)));
+    if (normalizedPoolIds.length === 0) {
+      return new Map();
+    }
+
+    const query = `
+      SELECT lower(pool_id) AS pool_id, MIN(slot_no)::text AS first_registration_slot
+      FROM bridge_spo_event_history
+      WHERE event_type = 'register'
+        AND lower(pool_id) = ANY($1::text[])
+        AND slot_no IS NOT NULL
+      GROUP BY lower(pool_id)
+    `;
+    const rows = await this.entityManager.query(query, [normalizedPoolIds.map((poolId) => poolId.toLowerCase())]);
+    return new Map(
+      rows.map((row: { pool_id: string; first_registration_slot: string | number }) => [
+        normalizePoolId(row.pool_id),
+        BigInt(row.first_registration_slot),
+      ]),
+    );
   }
 
   async findTxByHash(hash: string): Promise<TxDto> {

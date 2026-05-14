@@ -31,6 +31,7 @@ message StakeDistributionEntry {
   string pool_id = 1;
   uint64 stake = 2;
   bytes vrf_key_hash = 3;
+  uint64 first_registration_slot = 4;
 }
 
 message EpochContext {

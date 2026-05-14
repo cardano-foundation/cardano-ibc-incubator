@@ -6,6 +6,7 @@ import {
 import { HistoryBlock, HistoryStakeDistributionEntry } from '../services/history.service';
 
 describe('stability-scoring', () => {
+  const poolRegistrationCutoffSlot = 10_000n;
   const makeBlock = (height: number, prevHash: string, slotLeader: string): HistoryBlock => ({
     height,
     hash: `hash-${height}`,
@@ -16,7 +17,7 @@ describe('stability-scoring', () => {
     slotLeader,
   });
 
-  it('computes unique pool stake and score from epoch stake distribution', () => {
+  it('computes qualified pool stake and score from epoch stake distribution', () => {
     const heuristicParams = getStabilityHeuristicParams({
       CARDANO_STABILITY_THRESHOLD_DEPTH: '3',
       CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS: '3',
@@ -32,20 +33,22 @@ describe('stability-scoring', () => {
       makeBlock(103, 'hash-102', 'pool-c'),
     ];
     const epochStakeDistribution: HistoryStakeDistributionEntry[] = [
-      { poolId: 'pool-a', stake: 500n, vrfKeyHash: 'aa'.repeat(32) },
-      { poolId: 'pool-b', stake: 300n, vrfKeyHash: 'bb'.repeat(32) },
-      { poolId: 'pool-c', stake: 200n, vrfKeyHash: 'cc'.repeat(32) },
+      { poolId: 'pool-a', stake: 500n, vrfKeyHash: 'aa'.repeat(32), firstRegistrationSlot: 1n },
+      { poolId: 'pool-b', stake: 300n, vrfKeyHash: 'bb'.repeat(32), firstRegistrationSlot: 1n },
+      { poolId: 'pool-c', stake: 200n, vrfKeyHash: 'cc'.repeat(32), firstRegistrationSlot: 1n },
     ];
 
-    const metrics = computeStabilityMetrics(descendants, epochStakeDistribution, heuristicParams);
+    const metrics = computeStabilityMetrics(descendants, epochStakeDistribution, heuristicParams, {
+      poolRegistrationCutoffSlot,
+    });
 
-    expect(metrics.uniquePoolsCount).toBe(3);
-    expect(metrics.uniqueStakeBps).toBe(10000);
+    expect(metrics.qualifiedUniquePoolsCount).toBe(3);
+    expect(metrics.qualifiedUniqueStakeBps).toBe(10000);
     expect(metrics.securityScoreBps).toBe(10000);
     expect(() => assertStabilityThresholds(metrics, heuristicParams, '100', descendants.length)).not.toThrow();
   });
 
-  it('fails threshold checks when depth and unique stake are too low', () => {
+  it('fails threshold checks when depth and qualified unique stake are too low', () => {
     const heuristicParams = getStabilityHeuristicParams({
       CARDANO_STABILITY_THRESHOLD_DEPTH: '4',
       CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS: '2',
@@ -58,21 +61,23 @@ describe('stability-scoring', () => {
       makeBlock(203, 'hash-202', 'pool-b'),
     ];
     const epochStakeDistribution: HistoryStakeDistributionEntry[] = [
-      { poolId: 'pool-a', stake: 400n, vrfKeyHash: 'aa'.repeat(32) },
-      { poolId: 'pool-b', stake: 200n, vrfKeyHash: 'bb'.repeat(32) },
-      { poolId: 'pool-c', stake: 400n, vrfKeyHash: 'cc'.repeat(32) },
+      { poolId: 'pool-a', stake: 400n, vrfKeyHash: 'aa'.repeat(32), firstRegistrationSlot: 1n },
+      { poolId: 'pool-b', stake: 200n, vrfKeyHash: 'bb'.repeat(32), firstRegistrationSlot: 1n },
+      { poolId: 'pool-c', stake: 400n, vrfKeyHash: 'cc'.repeat(32), firstRegistrationSlot: 1n },
     ];
 
-    const metrics = computeStabilityMetrics(descendants, epochStakeDistribution, heuristicParams);
+    const metrics = computeStabilityMetrics(descendants, epochStakeDistribution, heuristicParams, {
+      poolRegistrationCutoffSlot,
+    });
 
-    expect(metrics.uniquePoolsCount).toBe(2);
-    expect(metrics.uniqueStakeBps).toBe(6000);
+    expect(metrics.qualifiedUniquePoolsCount).toBe(2);
+    expect(metrics.qualifiedUniqueStakeBps).toBe(6000);
     expect(() => assertStabilityThresholds(metrics, heuristicParams, '200', descendants.length)).toThrow(
       'stability thresholds not met',
     );
   });
 
-  it('computes unique stake bps from summed raw stake instead of summing rounded per-pool bps', () => {
+  it('computes qualified unique stake bps from summed raw stake instead of summing rounded per-pool bps', () => {
     const heuristicParams = getStabilityHeuristicParams({
       CARDANO_STABILITY_THRESHOLD_DEPTH: '3',
       CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS: '3',
@@ -88,15 +93,17 @@ describe('stability-scoring', () => {
       makeBlock(403, 'hash-402', 'pool-c'),
     ];
     const epochStakeDistribution: HistoryStakeDistributionEntry[] = [
-      { poolId: 'pool-a', stake: 2n, vrfKeyHash: 'aa'.repeat(32) },
-      { poolId: 'pool-b', stake: 2n, vrfKeyHash: 'bb'.repeat(32) },
-      { poolId: 'pool-c', stake: 2n, vrfKeyHash: 'cc'.repeat(32) },
+      { poolId: 'pool-a', stake: 2n, vrfKeyHash: 'aa'.repeat(32), firstRegistrationSlot: 1n },
+      { poolId: 'pool-b', stake: 2n, vrfKeyHash: 'bb'.repeat(32), firstRegistrationSlot: 1n },
+      { poolId: 'pool-c', stake: 2n, vrfKeyHash: 'cc'.repeat(32), firstRegistrationSlot: 1n },
     ];
 
-    const metrics = computeStabilityMetrics(descendants, epochStakeDistribution, heuristicParams);
+    const metrics = computeStabilityMetrics(descendants, epochStakeDistribution, heuristicParams, {
+      poolRegistrationCutoffSlot,
+    });
 
-    expect(metrics.uniquePoolsCount).toBe(3);
-    expect(metrics.uniqueStakeBps).toBe(10000);
+    expect(metrics.qualifiedUniquePoolsCount).toBe(3);
+    expect(metrics.qualifiedUniqueStakeBps).toBe(10000);
     expect(metrics.securityScoreBps).toBe(10000);
   });
 
@@ -116,5 +123,43 @@ describe('stability-scoring', () => {
     expect(() => computeStabilityMetrics(descendants, [], heuristicParams)).toThrow(
       'Epoch stake distribution unavailable',
     );
+  });
+
+  it('excludes pools first registered after the cutoff while keeping total stake denominator', () => {
+    const heuristicParams = getStabilityHeuristicParams({
+      CARDANO_STABILITY_THRESHOLD_DEPTH: '2',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS: '2',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: '7000',
+    } as NodeJS.ProcessEnv);
+
+    const descendants = [makeBlock(501, 'anchor', 'pool-a'), makeBlock(502, 'hash-501', 'pool-b')];
+    const epochStakeDistribution: HistoryStakeDistributionEntry[] = [
+      { poolId: 'pool-a', stake: 500n, vrfKeyHash: 'aa'.repeat(32), firstRegistrationSlot: 1n },
+      { poolId: 'pool-b', stake: 500n, vrfKeyHash: 'bb'.repeat(32), firstRegistrationSlot: poolRegistrationCutoffSlot },
+    ];
+
+    const metrics = computeStabilityMetrics(descendants, epochStakeDistribution, heuristicParams, {
+      poolRegistrationCutoffSlot,
+    });
+
+    expect(metrics.qualifiedUniquePoolsCount).toBe(1);
+    expect(metrics.qualifiedUniqueStakeBps).toBe(5000);
+  });
+
+  it('fails closed when a producing pool has no first registration slot', () => {
+    const heuristicParams = getStabilityHeuristicParams({
+      CARDANO_STABILITY_THRESHOLD_DEPTH: '1',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS: '1',
+      CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: '1',
+    } as NodeJS.ProcessEnv);
+
+    const descendants = [makeBlock(601, 'anchor', 'pool-a')];
+    const epochStakeDistribution: HistoryStakeDistributionEntry[] = [
+      { poolId: 'pool-a', stake: 1000n, vrfKeyHash: 'aa'.repeat(32) },
+    ];
+
+    expect(() =>
+      computeStabilityMetrics(descendants, epochStakeDistribution, heuristicParams, { poolRegistrationCutoffSlot }),
+    ).toThrow('First registration slot missing');
   });
 });

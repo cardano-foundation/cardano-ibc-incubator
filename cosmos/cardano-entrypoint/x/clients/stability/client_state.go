@@ -103,7 +103,7 @@ func (cs ClientState) Validate() error {
 		return errorsmod.Wrapf(ErrInvalidHeuristicParams, "heuristic params must not be nil")
 	}
 	if cs.HeuristicParams.ThresholdDepth == 0 || cs.HeuristicParams.ThresholdUniquePools == 0 || cs.HeuristicParams.ThresholdUniqueStakeBps == 0 {
-		return errorsmod.Wrapf(ErrInvalidHeuristicParams, "threshold depth, threshold unique pools, and threshold unique stake bps must be greater than zero")
+		return errorsmod.Wrapf(ErrInvalidHeuristicParams, "threshold depth, threshold qualified unique pools, and threshold qualified unique stake bps must be greater than zero")
 	}
 	if cs.HeuristicParams.DepthWeightBps+cs.HeuristicParams.PoolsWeightBps+cs.HeuristicParams.StakeWeightBps != 10_000 {
 		return errorsmod.Wrapf(ErrInvalidHeuristicParams, "heuristic weights must sum to 10000 bps")
