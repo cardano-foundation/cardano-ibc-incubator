@@ -1,6 +1,9 @@
 
 ## Mithril Light Client Design
 
+> [!WARNING]
+> Deprecated and disabled: the Mithril light client and local Mithril setup are not maintained and are intentionally disabled for new deployments. This document is retained only as historical design reference. Current trust assumptions and deployment flows use `08-cardano-stability`; see [Stability-Scored Light Client Design](stability-scored-light-client.md).
+
 Author: Julius Tranquilli,https://github.com/floor-licker
 
 Date: March 10, 2026

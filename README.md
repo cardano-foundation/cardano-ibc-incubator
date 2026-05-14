@@ -6,7 +6,7 @@
 [![Status: Pre-production](https://img.shields.io/badge/Status-Pre--production-orange.svg)](#status)
 [![Docs: Architecture](https://img.shields.io/badge/Docs-Architecture-6b7280.svg)](#architecture)
 
-This is a work-in-progress implementation of IBC v1 for Cardano. It implements a Cardano-native realization of the IBC protocol semantics which allow trustless interop between Cardano and the Cosmos ecosystem. The bridge implements ICS-02 (clients), ICS-03 (connections), ICS-04 (channels and packets), ICS-20 (fungible token transfer), and the proof/path model of ICS-23 and ICS-24, while adapting Cardano to the IBC client model through a custom Mithril light client.
+This is a work-in-progress implementation of IBC v1 for Cardano. It implements a Cardano-native realization of the IBC protocol semantics which allow trustless interop between Cardano and the Cosmos ecosystem. The bridge implements ICS-02 (clients), ICS-03 (connections), ICS-04 (channels and packets), ICS-20 (fungible token transfer), and the proof/path model of ICS-23 and ICS-24, while adapting Cardano to the IBC client model through the experimental `08-cardano-stability` light client.
 
 The implementation adheres to the [inter-blockchain communication protocol](https://github.com/cosmos/ibc) standards.
 
@@ -34,11 +34,12 @@ The implementation adheres to the [inter-blockchain communication protocol](http
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Local devnet stack | Active | Managed through `caribic` with Cardano, Cardano Entrypoint, Hermes, Kupo, Ogmios, Mithril, and Yaci-backed history services |
+| Local devnet stack | Active | Managed through `caribic` with Cardano, Cardano Entrypoint, Hermes, Kupo, Ogmios, and Yaci-backed history services |
 | Core IBC semantics | Active | Implements clients, connections, channels, packets, acknowledgements, and timeouts |
 | ICS-20 transfer path | Active in maintained demo and test flows | Exercised through `caribic demo` and `caribic test` |
 | Historical query backend | Active | Uses `Yaci Store + Bridge Projection` rather than a generic `db-sync` query surface |
 | Public network integrations | Pre-production | Select paths exist for public testnets and external Cardano services, but the operating model is still evolving |
+| Mithril light client and local setup | Deprecated / disabled | Not maintained for new deployments; source is retained only for historical reference and type compatibility |
 | Production deployment | Not recommended | This repository should be treated as pre-production software |
 
 ## Trust Model & Security Considerations
@@ -46,7 +47,9 @@ The implementation adheres to the [inter-blockchain communication protocol](http
 
 There are currently protocol-level constraints that prevent IBC-style state proofs of Cardano, for example UTxO inclusion proofs. A valuable conversation on that topic can be found here: [CIP-0165 (Canonical Ledger State)](https://github.com/cardano-foundation/CIPs/pull/1083).
 
-The Cardano-native approach is to use Mithril in conjunction with a proprietary STT architecture to attain an analogous IBC state machine in Cardano semantics. The strategy for IBC proofs under this architecture is that we use our STT architecture over the IBC host state keyspace to function as an authenticated mutex for IBC host state mutation, and rather than trying to directly prove this on-chain state, we instead use Mithril certificates to prove transaction inclusion, and deduce IBC-state mutation from the transaction outputs of certified transactions.
+The maintained Cardano-native approach uses a proprietary STT architecture plus the experimental `08-cardano-stability` light client to attain an analogous IBC state machine in Cardano semantics. The STT architecture over the IBC host state keyspace functions as an authenticated mutex for IBC host state mutation, while the stability-scored light client authenticates accepted Cardano history through configured settlement heuristics. This model is documented in [Stability-Scored Light Client Design](docs/stability-scored-light-client.md).
+
+The older Mithril light client and local Mithril setup are deprecated, disabled, and not maintained. They remain in the repository only for historical design reference and protobuf/type compatibility.
 
 ## Overview
 This repository is divided into five main directories:
@@ -85,7 +88,7 @@ flowchart LR
     NODE["cardano-node"]
     KUPO["Kupo"]
     DBSYNC["db-sync + Postgres"]
-    MITHRIL["Mithril Snapshot<br/>+ Proof APIs"]
+    HISTORY["Yaci / DB History<br/>+ Stability Witnesses"]
   end
 
   subgraph Relay["Relay and Counterparty"]
@@ -110,12 +113,13 @@ flowchart LR
 
   QUERY -->|"UTxO and datum reads"| KUPO
   QUERY -->|"indexed tx/block queries"| DBSYNC
-  QUERY -->|"snapshot and proof queries"| MITHRIL
+  QUERY -->|"history and witness queries"| HISTORY
   TX -->|"denom trace writes<br/>and updates"| TRACE
   TRACE -->|"persist trace rows"| DBSYNC
 
   NODE -->|"chain indexing feed"| KUPO
   NODE -->|"chain indexing feed"| DBSYNC
+  NODE -->|"chain history feed"| HISTORY
 
   classDef client fill:#e8f1ff,stroke:#2b5cab,color:#0f172a
   classDef gateway fill:#e9f8ee,stroke:#2f7d4a,color:#0b1f14
@@ -126,7 +130,7 @@ flowchart LR
   class UI,UW client
   class TX,QUERY,LUCID,TRACE gateway
   class HOST,CH_SEND,CH_RECV,CH_ACK,CH_TIMEOUT,TRANSFER,VOUCHER onchain
-  class NODE,KUPO,DBSYNC,MITHRIL infra
+  class NODE,KUPO,DBSYNC,HISTORY infra
   class HERMES,COSMOS relay
 ```
 
@@ -134,7 +138,8 @@ Additional architecture diagrams:
 
 - Gateway escrow flow: `cardano/gateway/README.md#sendpacket-escrow-flow`
 - Denom trace lifecycle: `docs/denom-trace-mapping.md`
-- Mithril proof flow: `docs/mithril-light-client.md#mithril-proof-flow-for-relaying`
+- Stability-scored light client: `docs/stability-scored-light-client.md`
+- Deprecated Mithril proof flow: `docs/mithril-light-client.md#mithril-proof-flow-for-relaying`
 - Diagram index: `docs/architecture-overview.md`
 
 ### Relayer Implementation (Hermes)
@@ -172,7 +177,7 @@ The Cardano implementation resides in `relayer/crates/relayer/src/chain/cardano/
 
 The Hermes relayer implements Cardano transaction signing using [Pallas](https://github.com/txpipe/pallas), a pure Rust library for Cardano primitives. The architecture separates concerns between transaction building and signing:
 
-- **Gateway (NestJS/TypeScript)** builds unsigned transactions using [Lucid Evolution](https://github.com/Anastasia-Labs/lucid-evolution) and handles all Cardano-specific domain logic (UTxO querying, fee calculation, Mithril proof generation)
+- **Gateway (NestJS/TypeScript)** builds unsigned transactions using [Lucid Evolution](https://github.com/Anastasia-Labs/lucid-evolution) and handles all Cardano-specific domain logic (UTxO querying, fee calculation, and proof/header preparation)
 - **Hermes Relayer (Rust)** signs pre-built transactions using CIP-1852 key derivation and Ed25519 signatures via the native `CardanoSigningKeyPair` implementation
 
 This separation provides:
@@ -217,43 +222,10 @@ The `chains/cardano/docker-compose.yaml` file includes platform specifications w
 
 ### Running a local Cardano network
 
-To start the Cardano node, Mithril, Ogmios, and Kupo and db-sync locally run:
+To start the Cardano node, Ogmios, Kupo, and Yaci-backed history services locally, run the maintained default stack.
 
-**Mithril note:**
-In local devnet, Caribic starts a local Mithril aggregator and signers so that certificates, transaction snapshots, and inclusion proofs correspond to the local Cardano chain. This is necessary for testing because public Mithril endpoints only certify their own networks and cannot attest to transactions produced by a local devnet.
-When running a local devnet, start Caribic with `caribic start --with-mithril` so the local Mithril aggregator and signers attest to state on your local network.
-
-Mithril transaction snapshots are periodic checkpoints, not one certificate per Cardano block/slot. In this repository, the Mithril "height" used for IBC verification refers to the snapshot `block_number` (Cardano block height), not Cardano slot. The latest certified snapshot height can lag behind the Cardano node tip. The Gateway currently treats the Mithril transaction proof API as "latest snapshot only", so after submitting a HostState update transaction the relayer may need to wait until a newer snapshot includes that transaction before Cosmos-side verification can succeed. The snapshot cadence and stability tradeoffs are controlled by the Mithril config in `chains/mithrils/scripts/docker-compose.yaml`. As a frame of reference, as of March 2026 there is generally a hard Mithril-level constraint on a minimum certificate cadence of 15 blocks, irrespective of configurable values and tip lag. 
-
-**Mithril Configuration Parameters:**
-
-The key Mithril aggregator configs that affect snapshot frequency and IBC latency:
-
-| Config | Description |
-|--------|-------------|
-| `RUN_INTERVAL` | Polling interval (ms) - how often the aggregator checks for new blocks to process. This is NOT the snapshot frequency. |
-| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP` | Snapshot frequency - a new `CardanoTransactions` snapshot is created every N blocks. |
-| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER` | How many blocks behind the chain tip snapshots are created. Provides finality buffer. |
-| `PROTOCOL_PARAMETERS__K` | Mithril protocol security parameter (lottery). |
-| `PROTOCOL_PARAMETERS__M` | Mithril protocol quorum parameter. |
-| `PROTOCOL_PARAMETERS__PHI_F` | Mithril protocol stake threshold parameter. |
-
-**Devnet vs Mainnet Values:**
-
-| Config | Devnet | Mainnet (Jan 2026, per @jpraynaud) |
-|--------|--------|-------------------------------------|
-| `RUN_INTERVAL` | 1000 (1s) | 60000 (60s) |
-| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP` | 5 | 30 |
-| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER` | 15 | 100 |
-| `PROTOCOL_PARAMETERS__K` | 3 | 2422 |
-| `PROTOCOL_PARAMETERS__M` | 50 | 20973 |
-| `PROTOCOL_PARAMETERS__PHI_F` | 0.67 | 0.2 |
-
-Devnet values are configured in `chains/mithrils/scripts/docker-compose.yaml` for fast local iteration.
-
-This means on mainnet you can expect a new `CardanoTransactions` certification approximately every ~10 minutes (~30 blocks), at 100 blocks behin* the chain tip. At this point in time, with the current architecture for IBC relaying, this translates to a minimum ~10 minute latency between a Cardano transaction being included and being provable to the counterparty chain via Mithril.
-
-In production deployments on public Cardano networks, the IBC stack is not intended to run its own Mithril aggregator or signers. Instead, the Gateway and relayer are configured to consume an existing Mithril aggregator endpoint for the target Cardano network; the counterparty chain verifies Mithril certificates and proofs and does not need to trust the aggregator as an authority (it is a data source and availability dependency).
+> [!WARNING]
+> Mithril setup is deprecated, disabled, and not maintained. Do not use `caribic start --with-mithril` or `caribic start mithril` for new deployments. The Mithril sources and compose files remain only for historical reference and compatibility with old types.
 
 Before using the CLI, build and install `caribic` locally:
 
@@ -263,10 +235,10 @@ cargo install --path . --force
 cd ..
 ```
 
-To start the managed local Cardano devnet together with the bridge components and local Mithril services, run:
+To start the managed local Cardano devnet together with the bridge components, run:
 
 ```sh
-caribic start --clean --with-mithril
+caribic start --clean
 ```
 
 If you need to start components separately, use:
@@ -316,7 +288,7 @@ The maintained token-swap entrypoint is `caribic demo token-swap`. It prepares H
 For local Osmosis:
 
 ```sh
-caribic start --clean --with-mithril
+caribic start --clean
 caribic start --chain osmosis --network local
 caribic demo token-swap --chain osmosis --network local
 ```
@@ -324,7 +296,7 @@ caribic demo token-swap --chain osmosis --network local
 For Injective:
 
 ```sh
-caribic start --clean --with-mithril
+caribic start --clean
 caribic start --chain injective --network local
 caribic demo token-swap --chain injective --network local
 ```
@@ -386,7 +358,7 @@ curl -X GET "http://localhost:1317/cosmos/base/tendermint/v1beta1/validatorsets/
 For current end-to-end timeout and packet lifecycle validation, use the maintained integration suite:
 
 ```sh
-caribic start --clean --with-mithril
+caribic start --clean
 caribic --verbose 5 test
 ```
 

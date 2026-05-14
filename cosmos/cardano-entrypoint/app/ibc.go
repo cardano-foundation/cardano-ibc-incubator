@@ -183,7 +183,8 @@ func (app *App) registerIBCModules() {
 
 	clientKeeper.AddRoute(ibctm.ModuleName, &tmLightClientModule)
 	clientKeeper.AddRoute(solomachine.ModuleName, &smLightClientModule)
-	clientKeeper.AddRoute(ibcmithril.ModuleName, &mithrilLightClientModule)
+	// The Mithril client is deprecated and intentionally not routable for new IBC client
+	// operations. Keep its AppModule registered below so historical client types can decode.
 	clientKeeper.AddRoute(ibcstability.ModuleName, &stabilityLightClientModule)
 
 	// register IBC modules
@@ -193,6 +194,7 @@ func (app *App) registerIBCModules() {
 		pfmrouter.NewAppModule(app.PFMRouterKeeper, app.GetSubspace(pfmroutertypes.ModuleName)),
 		icamodule.NewAppModule(&app.ICAControllerKeeper, &app.ICAHostKeeper),
 		ibctm.NewAppModule(tmLightClientModule),
+		// Deprecated Mithril module is retained only for interface/type registration.
 		ibcmithril.NewAppModule(mithrilLightClientModule),
 		ibcstability.NewAppModule(stabilityLightClientModule),
 		solomachine.NewAppModule(smLightClientModule),
@@ -211,9 +213,10 @@ func RegisterIBC(registry cdctypes.InterfaceRegistry) map[string]appmodule.AppMo
 		pfmroutertypes.ModuleName:   pfmrouter.AppModule{},
 		icatypes.ModuleName:         icamodule.AppModule{},
 		ibctm.ModuleName:            ibctm.NewAppModule(ibctm.LightClientModule{}),
-		ibcmithril.ModuleName:       ibcmithril.NewAppModule(ibcmithril.LightClientModule{}),
-		ibcstability.ModuleName:     ibcstability.NewAppModule(ibcstability.LightClientModule{}),
-		solomachine.ModuleName:      solomachine.NewAppModule(solomachine.LightClientModule{}),
+		// Deprecated Mithril module is retained only for interface/type registration.
+		ibcmithril.ModuleName:   ibcmithril.NewAppModule(ibcmithril.LightClientModule{}),
+		ibcstability.ModuleName: ibcstability.NewAppModule(ibcstability.LightClientModule{}),
+		solomachine.ModuleName:  solomachine.NewAppModule(solomachine.LightClientModule{}),
 	}
 
 	for _, module := range modules {

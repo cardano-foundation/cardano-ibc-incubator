@@ -48,7 +48,7 @@ enum StartTarget {
     Dapp,
     /// Starts only the Hermes relayer
     Relayer,
-    /// Starts only the Mithril services
+    /// Deprecated and disabled; retained for historical reference only
     Mithril,
 }
 
@@ -140,14 +140,14 @@ enum Commands {
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, entrypoint, gateway, relayer, mithril
+    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, entrypoint, gateway, relayer
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
         /// Cleans up the local environment before starting the services
         #[arg(long, default_value_t = false)]
         clean: bool,
-        /// Start Mithril services for light client testing (adds 5-10 minute startup time)
+        /// Deprecated and disabled; use the default stake-weighted-stability light-client mode
         #[arg(long, default_value_t = false)]
         with_mithril: bool,
         /// Optional network profile for the managed Cardano runtime (local, preprod)

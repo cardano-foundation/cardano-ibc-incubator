@@ -673,7 +673,7 @@ fn ensure_demo_health_targets_ready(
     }
     if gateway_uses_mithril(project_root_path) {
         message.push_str(
-            "\nStart services first:\n  - caribic start --clean --with-mithril\n  - caribic start <chain> --network <network>",
+            "\nStart services first:\n  - caribic start --clean\n  - caribic start <chain> --network <network>\n\nMithril setup is deprecated and disabled; restart with the maintained default stack.",
         );
     } else {
         message.push_str(
