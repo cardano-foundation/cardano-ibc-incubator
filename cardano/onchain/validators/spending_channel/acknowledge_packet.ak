@@ -30,14 +30,12 @@ use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/validator_utils
 
-// it looks like minting is missing here.
 validator acknowledge_packet(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
   _port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
 ) {
-  //  mint(redeemer: MyMintRedeemer, policy_id: PolicyId, self: Transaction)
   mint(channel_token: AuthToken, policy_id: PolicyId, transaction: Transaction) {
     let Transaction {
       inputs,
