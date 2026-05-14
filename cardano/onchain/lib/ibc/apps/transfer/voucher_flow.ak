@@ -18,6 +18,8 @@ pub fn validate_mint_voucher_packet(
   voucher_minting_policy_id: PolicyId,
   packet: Packet,
 ) -> Bool {
+  // The spending validator checks packet identity; `minting_voucher` enforces
+  // the exact minted amount and trace-registry witness.
   expect Some(mint_voucher_redeemer) =
     pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
   expect mint_voucher_redeemer: MintVoucherRedeemer = mint_voucher_redeemer
@@ -42,6 +44,8 @@ pub fn validate_burn_voucher_packet(
   voucher_minting_policy_id: PolicyId,
   packet: Packet,
 ) -> Bool {
+  // The spending validator checks packet identity; `minting_voucher` enforces
+  // the exact negative mint for the voucher token.
   expect Some(mint_voucher_redeemer) =
     pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
   expect mint_voucher_redeemer: MintVoucherRedeemer = mint_voucher_redeemer

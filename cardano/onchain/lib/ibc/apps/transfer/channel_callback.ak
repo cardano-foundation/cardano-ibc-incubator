@@ -200,6 +200,8 @@ fn channel_auth_token(
   host_state_nft: AuthToken,
   channel_id: ByteArray,
 ) -> AuthToken {
+  // Channel auth tokens are sequence-derived from the HostState NFT, so callback
+  // validation can locate the exact channel UTxO without address-level uniqueness.
   let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
   let channel_token_name =
     auth.generate_token_name(

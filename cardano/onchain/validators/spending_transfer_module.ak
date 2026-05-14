@@ -280,7 +280,8 @@ fn module_callback(
         packet.source_channel,
         data.denom,
       ) {
-        // Source-chain receive unescrows natively.
+        // Receiving on the source chain means the packet is returning escrowed
+        // native value, not creating a voucher representation.
         expect
           transfer_voucher_flow.require_no_voucher_mint(
             redeemers,
@@ -554,7 +555,7 @@ fn module_operator(
         packet.source_channel,
         data.denom,
       ) {
-        // Source-chain send escrows natively.
+        // Sending from the source chain locks native value in escrow.
         expect
           transfer_voucher_flow.require_no_voucher_mint(
             redeemers,
@@ -598,7 +599,7 @@ fn module_operator(
         valid_transfer_amount
       } else {
         let updated_output = transfer_escrow.expect_module_state(spend)
-        // Non-source send burns vouchers.
+        // Sending from a sink chain destroys the voucher representation.
         and {
           transfer_value_delta.validate_output_amount(
             spent_input,

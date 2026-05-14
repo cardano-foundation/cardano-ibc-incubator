@@ -31,7 +31,8 @@ pub fn validate_refund_packet_token(
     packet.source_channel,
     data.denom,
   ) {
-    // Native refund releases escrow back to the sender.
+    // Source-side packets locked native funds, so timeout/ack-error refunds
+    // release escrow back to the original sender address.
     expect None = pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
 
     expect Some(escrowed_token_unit) =
@@ -75,6 +76,8 @@ pub fn validate_refund_packet_token(
       string_utils.hex_string_to_bytes(data.sender)
     let receiver_address = from_verification_key(sender_public_key_hash)
 
+    // Check the sender's balance delta across all outputs at their address; this
+    // avoids relying on a particular output index or a single payout output.
     let prev_receiver_token =
       list.reduce(
         inputs,
@@ -124,7 +127,7 @@ pub fn validate_refund_packet_token(
       correct_receiver_amount?,
     }
   } else {
-    // Voucher refund mints back the user's burned vouchers.
+    // Sink-side packets burned vouchers on send, so refunds remint the voucher.
     expect Some(mint_voucher_redeemer) =
       pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
     expect mint_voucher_redeemer: MintVoucherRedeemer = mint_voucher_redeemer

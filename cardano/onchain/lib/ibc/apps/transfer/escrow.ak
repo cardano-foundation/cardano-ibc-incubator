@@ -31,6 +31,7 @@ fn escrow_output_matches(
   address: Address,
   datum: TransferEscrowDatum,
 ) -> Bool {
+  // Shard successors keep the script address and exact `{channel_id, denom}` datum.
   if output.address != address {
     False
   } else {
@@ -68,6 +69,8 @@ pub fn classify_transfer_module_spend(
   port_token: AuthToken,
   module_token: AuthToken,
 ) -> TransferModuleSpend {
+  // Root state is identified by both module auth tokens; everything else must be
+  // an escrow shard with an inline shard datum.
   if has_module_state_tokens(spent_output, port_token, module_token) {
     // Root state spends must preserve the root token set.
     expect [updated_output] =
@@ -166,7 +169,7 @@ fn validate_created_escrow_shard(
   transfer_amount: Int,
   escrowed_token_unit: ByteArray,
 ) -> Bool {
-  // First native send creates a canonical shard output.
+  // First native send creates a canonical shard and mints exactly one shard NFT.
   expect [created_output] =
     list.filter(
       outputs,
@@ -190,6 +193,7 @@ fn validate_created_escrow_shard(
       escrowed_token_unit,
     )?,
     if escrowed_token_unit == "lovelace" {
+      // Lovelace shards may carry extra ADA for minimum-UTxO requirements.
       created_quantity >= transfer_amount
     } else {
       created_quantity == transfer_amount
@@ -228,6 +232,7 @@ fn validate_escrow_shard_update(
       shard_policy_id,
       escrowed_token_unit,
     )?,
+    // The signed value delta models send as positive and refund/unescrow as negative.
     if expected_escrow_quantity < 0 {
       False
     } else if expected_escrow_quantity == 0 {
@@ -293,7 +298,8 @@ pub fn validate_module_escrow_transition(
 ) -> Bool {
   when spend is {
     ModuleState(updated_output) -> {
-      // Root state may co-spend with shard creation during first native send.
+      // Root spends are lifecycle/setup state; any native packet-side escrow effect
+      // must still be witnessed by the matching shard update or creation.
       let preserved_module_state =
         value_delta.validate_output_amount(
           spent_input,
