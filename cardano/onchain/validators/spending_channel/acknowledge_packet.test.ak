@@ -1,4 +1,5 @@
 use aiken/collection/pairs
+use cardano/assets.{PolicyId, Value, add, from_asset}
 use cardano/transaction.{
   Input, Mint, Redeemer, ScriptPurpose, Spend, Transaction,
 }
@@ -37,7 +38,16 @@ use ibc/utils/validator_utils
 use spending_channel/acknowledge_packet
 use spending_channel/spending_channel_fixture.{MockData, setup}
 
-test succeed_acknowledge_packet() {
+fn operation_marker(policy_id: PolicyId) -> Value {
+  from_asset(policy_id, "", 1)
+}
+
+fn operation_marker_with_junk(policy_id: PolicyId) -> Value {
+  operation_marker(policy_id)
+    |> add(policy_id, "junk", 1)
+}
+
+fn check_acknowledge_packet(transaction_mint: Value) {
   let mock_data = setup()
 
   let packet =
@@ -305,6 +315,7 @@ test succeed_acknowledge_packet() {
       outputs,
       redeemers,
       validity_range,
+      mint: transaction_mint,
     }
 
   acknowledge_packet.acknowledge_packet.mint(
@@ -315,5 +326,21 @@ test succeed_acknowledge_packet() {
     mock_data.channel_token,
     #"",
     transaction,
+  )
+}
+
+test succeed_acknowledge_packet() {
+  let mock_data = setup()
+
+  check_acknowledge_packet(
+    operation_marker(mock_data.acknowledge_packet_policy_id),
+  )
+}
+
+test acknowledge_packet_rejects_extra_operation_marker() fail {
+  let mock_data = setup()
+
+  check_acknowledge_packet(
+    operation_marker_with_junk(mock_data.acknowledge_packet_policy_id),
   )
 }
