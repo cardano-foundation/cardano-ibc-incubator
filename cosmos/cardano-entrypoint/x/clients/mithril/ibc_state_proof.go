@@ -40,8 +40,8 @@ var (
 // `cardano/onchain/lib/ibc/core/ics-025-handler-interface/ibc_state_commitment.ak`.
 //
 // Important details:
-//   - The leaf hash commits to the value only.
-//   - The key is bound by enforcing a deterministic key->path derivation:
+//   - Non-empty leaves commit to both sha256(key) and sha256(value).
+//   - The key also determines the path:
 //     we derive a 64-bit path selector from the first 8 bytes of sha256(key).
 //   - The proof path is always 64 steps (fixed-depth binary tree).
 //
@@ -230,7 +230,7 @@ func computeRootFromProofPath(key []byte, value []byte, path []*ics23.InnerOp) (
 		return nil, fmt.Errorf("unexpected proof path length: %d", len(path))
 	}
 
-	current := leafHash(value)
+	current := leafHash(key, value)
 
 	keyHash := sha256.Sum256(key)
 	index := binary.BigEndian.Uint64(keyHash[0:8])
@@ -280,12 +280,16 @@ func childOrderingFromInnerOp(direction uint64, op *ics23.InnerOp) (left []byte,
 	return op.Prefix[1:], nil, nil
 }
 
-func leafHash(value []byte) []byte {
+func leafHash(key []byte, value []byte) []byte {
 	valueHash := sha256.Sum256(value)
 	if valueHash == emptyValueHash {
 		return emptyHash
 	}
-	leafPreimage := append([]byte{0x00}, valueHash[:]...)
+	keyHash := sha256.Sum256(key)
+	leafPreimage := make([]byte, 0, 1+32+32)
+	leafPreimage = append(leafPreimage, 0x00)
+	leafPreimage = append(leafPreimage, keyHash[:]...)
+	leafPreimage = append(leafPreimage, valueHash[:]...)
 	h := sha256.Sum256(leafPreimage)
 	return h[:]
 }

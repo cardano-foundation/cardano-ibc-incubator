@@ -50,6 +50,17 @@ func TestVerifyIbcStateMembership_JSONProof(t *testing.T) {
 	require.Error(t, VerifyIbcStateMembership(root, []byte("clients/07-tendermint-1/clientState"), value, proofBytes))
 }
 
+func TestLeafHashBindsNonEmptyValueToKey(t *testing.T) {
+	value := []byte{0x01, 0x02, 0x03}
+
+	require.NotEqual(
+		t,
+		leafHash([]byte("clients/07-tendermint-0/clientState"), value),
+		leafHash([]byte("clients/07-tendermint-1/clientState"), value),
+	)
+	require.Equal(t, emptyHash, leafHash([]byte("any-key"), nil))
+}
+
 func TestVerifyIbcStateMembership_RejectsWrongInnerOpOrientation(t *testing.T) {
 	key := []byte("clients/07-tendermint-0/clientState")
 	value := []byte{0x01, 0x02, 0x03}

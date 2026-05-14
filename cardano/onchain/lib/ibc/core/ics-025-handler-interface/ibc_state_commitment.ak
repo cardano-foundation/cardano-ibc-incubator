@@ -22,8 +22,8 @@
 // - SHA-256 is used everywhere.
 // - Keys are hashed with SHA-256 and the first `merkle_depth_bits` bits define
 //   the left/right directions from leaf to root.
-// - Values are hashed first (SHA-256) so leaves commit to fixed-size 32-byte
-//   digests. This avoids ambiguity and keeps costs predictable.
+// - Non-empty leaves commit to both `sha256(key)` and `sha256(value)`, while
+//   empty values remain the all-zero sparse-tree leaf.
 // - The "empty value" is represented by an empty bytearray, which produces a
 //   well-defined default leaf digest via SHA-256.
 
@@ -64,10 +64,11 @@ pub fn value_hash(value: ByteArray) -> ByteArray {
   builtin.sha2_256(value)
 }
 
-/// Hash a leaf from a value digest.
+/// Hash a leaf from a key digest and value digest.
 ///
-/// Leaf hash = sha256(0x00 || value_hash)
-pub fn leaf_hash(value_hash: ByteArray) -> ByteArray {
+/// Non-empty leaf hash = sha256(0x00 || key_hash || value_hash)
+pub fn leaf_hash(key_hash: ByteArray, value_hash: ByteArray) -> ByteArray {
+  expect bytearray.length(key_hash) == hash_size_bytes
   expect bytearray.length(value_hash) == hash_size_bytes
   // Special-case the default / absent value:
   //
@@ -77,7 +78,9 @@ pub fn leaf_hash(value_hash: ByteArray) -> ByteArray {
   if value_hash == empty_value_hash {
     empty_hash
   } else {
-    builtin.append_bytearray(#[0], value_hash) |> builtin.sha2_256()
+    builtin.append_bytearray(#[0], key_hash)
+      |> builtin.append_bytearray(value_hash)
+      |> builtin.sha2_256()
   }
 }
 
@@ -173,10 +176,12 @@ pub fn apply_update(
 ) -> ByteArray {
   expect bytearray.length(old_root) == hash_size_bytes
 
-  let old_leaf = old_value |> value_hash() |> leaf_hash()
+  let key_hash = builtin.sha2_256(key)
+
+  let old_leaf = leaf_hash(key_hash, value_hash(old_value))
   let computed_old_root = compute_root(key, old_leaf, siblings)
   expect computed_old_root == old_root
 
-  let new_leaf = new_value |> value_hash() |> leaf_hash()
+  let new_leaf = leaf_hash(key_hash, value_hash(new_value))
   compute_root(key, new_leaf, siblings)
 }
