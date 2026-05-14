@@ -1,35 +1,26 @@
 use aiken/collection/list
-use aiken/collection/pairs
 use aiken/primitive/bytearray
 use aiken/primitive/int
-use cardano/address.{Address, from_verification_key}
-use cardano/assets.{PolicyId, Value, quantity_of}
-use cardano/transaction.{
-  InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
-  ScriptPurpose, Spend, Transaction,
-}
+use cardano/address.{from_verification_key}
+use cardano/assets.{PolicyId, quantity_of}
+use cardano/transaction.{Input, Output, OutputReference, Transaction}
+use ibc/apps/transfer/channel_callback as transfer_channel_callback
+use ibc/apps/transfer/escrow as transfer_escrow
+use ibc/apps/transfer/escrow.{EscrowShard, ModuleState, TransferModuleSpend}
 use ibc/apps/transfer/ibc_module as transfer_ibc_module
-use ibc/apps/transfer/mint_voucher_redeemer.{
-  BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
-}
-use ibc/apps/transfer/transfer_escrow_shard
+use ibc/apps/transfer/refund as transfer_refund
 use ibc/apps/transfer/transfer_module_redeemer.{OtherTransferOp, Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
-use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
+use ibc/apps/transfer/value_delta as transfer_value_delta
+use ibc/apps/transfer/voucher_flow as transfer_voucher_flow
 use ibc/auth.{AuthToken}
-use ibc/core/ics_004/channel_datum.{
-  ChannelDatum, ChannelDatumState, validate_recv_packet,
-}
+use ibc/core/ics_004/channel_datum.{ChannelDatum, validate_recv_packet}
 use ibc/core/ics_004/channel_redeemer.{
-  AcknowledgePacket, ChanOpenAck, ChanOpenConfirm, ChanOpenInit, ChanOpenTry,
-  MintChannelRedeemer, RecvPacket, SendPacket, SpendChannelRedeemer,
-  TimeoutPacket,
+  AcknowledgePacket, RecvPacket, SendPacket, TimeoutPacket,
 }
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/acknowledgement_response.{AcknowledgementError}
-use ibc/core/ics_004/types/channel.{Channel}
-use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/keys as channel_keys
 use ibc/core/ics_004/types/packet.{Packet}
 use ibc/core/ics_005/types/ibc_module_redeemer.{
@@ -41,13 +32,6 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
-
-type TransferModuleSpend {
-  // Setup/lifecycle spend of the transfer module root.
-  ModuleState(Output)
-  // `None` successor means the shard is emptied and its NFT must burn.
-  EscrowShard { datum: TransferEscrowDatum, updated_output: Option<Output> }
-}
 
 validator spend_transfer_module(
   port_token: AuthToken,
@@ -78,7 +62,7 @@ validator spend_transfer_module(
     let spent_output = spent_input.output
     // Classify whether this spend is root state or a packet escrow shard.
     let spend =
-      classify_transfer_module_spend(
+      transfer_escrow.classify_transfer_module_spend(
         spent_output,
         transaction.outputs,
         port_token,
@@ -87,10 +71,14 @@ validator spend_transfer_module(
     expect
       when spend is {
         ModuleState(_) ->
-          has_module_state_tokens(spent_output, port_token, module_token)
+          transfer_escrow.has_module_state_tokens(
+            spent_output,
+            port_token,
+            module_token,
+          )
         EscrowShard { datum, .. } ->
           // Datum-only escrow UTxOs are not canonical.
-          escrow_shard_has_nft(
+          transfer_escrow.escrow_shard_has_nft(
             spent_output,
             datum,
             transfer_escrow_shard_policy_id,
@@ -138,376 +126,6 @@ validator spend_transfer_module(
   }
 }
 
-fn has_module_state_tokens(
-  output: Output,
-  port_token: AuthToken,
-  module_token: AuthToken,
-) -> Bool {
-  and {
-    auth.contain_auth_token(output, port_token),
-    auth.contain_auth_token(output, module_token),
-  }
-}
-
-fn escrow_output_matches(
-  output: Output,
-  address: Address,
-  datum: TransferEscrowDatum,
-) -> Bool {
-  if output.address != address {
-    False
-  } else {
-    when output.datum is {
-      InlineDatum(data) -> {
-        expect output_datum: TransferEscrowDatum = data
-        output_datum == datum
-      }
-      _ -> False
-    }
-  }
-}
-
-fn find_escrow_output(
-  outputs: List<Output>,
-  spent_output: Output,
-  datum: TransferEscrowDatum,
-) -> Option<Output> {
-  // A shard has at most one successor with the same address and datum.
-  when
-    list.filter(
-      outputs,
-      fn(output) { escrow_output_matches(output, spent_output.address, datum) },
-    )
-  is {
-    [] -> None
-    [updated_output] -> Some(updated_output)
-    _ -> fail @"Multiple matching transfer escrow outputs"
-  }
-}
-
-fn classify_transfer_module_spend(
-  spent_output: Output,
-  outputs: List<Output>,
-  port_token: AuthToken,
-  module_token: AuthToken,
-) -> TransferModuleSpend {
-  if has_module_state_tokens(spent_output, port_token, module_token) {
-    // Root state spends must preserve the root token set.
-    expect [updated_output] =
-      list.filter(
-        outputs,
-        fn(output) { has_module_state_tokens(output, port_token, module_token) },
-      )
-    expect NoDatum = updated_output.datum
-    ModuleState(updated_output)
-  } else {
-    // Non-root transfer spends are escrow shards.
-    expect datum: TransferEscrowDatum =
-      validator_utils.get_inline_datum(spent_output)
-    let updated_output = find_escrow_output(outputs, spent_output, datum)
-    EscrowShard { datum, updated_output }
-  }
-}
-
-// Verifies the expected amount is added/subtracted from the input,
-// preventing dust attack from happening
-fn validate_output_amount(
-  locked_input: Input,
-  output: Output,
-  additional_value: Value,
-) -> Bool {
-  trace @"locked_input.output.values": locked_input.output.value
-  let lovelace_input = assets.lovelace_of(locked_input.output.value)
-  trace @"lovelace_input": lovelace_input
-
-  trace @"additional_value": additional_value
-
-  trace @"output.value": output.value
-  let lovelace_output = assets.lovelace_of(output.value)
-  trace @"lovelace_output": lovelace_output
-
-  let expected_output =
-    locked_input.output.value
-      |> assets.merge(additional_value)
-  trace @"expected_output": expected_output
-
-  let expected_lovelace_output = assets.lovelace_of(expected_output)
-  trace @"expected_lovelace_output": expected_lovelace_output
-  and {
-    (lovelace_output - expected_lovelace_output >= 0)?,
-    assets.match_assets(output.value, expected_output)?,
-  }
-}
-
-fn expect_module_state(spend: TransferModuleSpend) -> Output {
-  expect ModuleState(updated_output) = spend
-  updated_output
-}
-
-fn transfer_escrow_datum(
-  channel_id: ByteArray,
-  denom: ByteArray,
-) -> TransferEscrowDatum {
-  TransferEscrowDatum { channel_id, denom }
-}
-
-fn escrow_shard_token_name(datum: TransferEscrowDatum) -> ByteArray {
-  transfer_escrow_shard.shard_token_name(datum.channel_id, datum.denom)
-}
-
-fn escrow_shard_has_nft(
-  output: Output,
-  datum: TransferEscrowDatum,
-  shard_policy_id: PolicyId,
-) -> Bool {
-  // Shard NFT name is derived from the datum.
-  quantity_of(output.value, shard_policy_id, escrow_shard_token_name(datum)) == 1
-}
-
-fn find_matching_escrow_input(
-  inputs: List<Input>,
-  address: Address,
-  datum: TransferEscrowDatum,
-) -> Option<Input> {
-  when
-    list.filter(
-      inputs,
-      fn(input) { escrow_output_matches(input.output, address, datum) },
-    )
-  is {
-    [] -> None
-    [escrow_input] -> Some(escrow_input)
-    _ -> fail @"Multiple matching transfer escrow inputs"
-  }
-}
-
-fn escrow_value_is_single_asset(
-  output: Output,
-  datum: TransferEscrowDatum,
-  shard_policy_id: PolicyId,
-  escrowed_token_unit: ByteArray,
-) -> Bool {
-  let (escrowed_token_policy_id, escrowed_token_name) =
-    validator_utils.extract_token_unit(escrowed_token_unit)
-  let escrowed_quantity =
-    quantity_of(output.value, escrowed_token_policy_id, escrowed_token_name)
-  let shard_nft_value =
-    assets.from_asset(shard_policy_id, escrow_shard_token_name(datum), 1)
-  let expected_non_lovelace =
-    // Canonical shards contain no unrelated non-lovelace assets.
-    if escrowed_token_unit == "lovelace" {
-      shard_nft_value
-    } else {
-      assets.merge(
-        shard_nft_value,
-        assets.from_asset(
-          escrowed_token_policy_id,
-          escrowed_token_name,
-          escrowed_quantity,
-        ),
-      )
-    }
-  assets.match_assets(output.value, expected_non_lovelace)
-}
-
-fn validate_created_escrow_shard(
-  outputs: List<Output>,
-  address: Address,
-  datum: TransferEscrowDatum,
-  shard_policy_id: PolicyId,
-  mint,
-  transfer_amount: Int,
-  escrowed_token_unit: ByteArray,
-) -> Bool {
-  // First native send creates a canonical shard output.
-  expect [created_output] =
-    list.filter(
-      outputs,
-      fn(output) { escrow_output_matches(output, address, datum) },
-    )
-  let (escrowed_token_policy_id, escrowed_token_name) =
-    validator_utils.extract_token_unit(escrowed_token_unit)
-  let created_quantity =
-    quantity_of(
-      created_output.value,
-      escrowed_token_policy_id,
-      escrowed_token_name,
-    )
-  and {
-    escrow_shard_has_nft(created_output, datum, shard_policy_id)?,
-    quantity_of(mint, shard_policy_id, escrow_shard_token_name(datum)) == 1,
-    escrow_value_is_single_asset(
-      created_output,
-      datum,
-      shard_policy_id,
-      escrowed_token_unit,
-    )?,
-    if escrowed_token_unit == "lovelace" {
-      created_quantity >= transfer_amount
-    } else {
-      created_quantity == transfer_amount
-    },
-  }
-}
-
-fn validate_escrow_shard_update(
-  spent_input: Input,
-  spend: TransferModuleSpend,
-  expected_datum: TransferEscrowDatum,
-  shard_policy_id: PolicyId,
-  mint,
-  expected_value_difference: Value,
-  escrowed_token_unit: ByteArray,
-) -> Bool {
-  expect EscrowShard { datum, updated_output } = spend
-  expect datum == expected_datum
-
-  let (escrowed_token_policy_id, escrowed_token_name) =
-    validator_utils.extract_token_unit(escrowed_token_unit)
-  let expected_output =
-    spent_input.output.value
-      |> assets.merge(expected_value_difference)
-  let expected_escrow_quantity =
-    quantity_of(expected_output, escrowed_token_policy_id, escrowed_token_name)
-  let shard_token_name = escrow_shard_token_name(expected_datum)
-  let shard_mint_quantity = quantity_of(mint, shard_policy_id, shard_token_name)
-
-  and {
-    // Validate shard canonicality before balance arithmetic.
-    escrow_shard_has_nft(spent_input.output, expected_datum, shard_policy_id)?,
-    escrow_value_is_single_asset(
-      spent_input.output,
-      expected_datum,
-      shard_policy_id,
-      escrowed_token_unit,
-    )?,
-    if expected_escrow_quantity < 0 {
-      False
-    } else if expected_escrow_quantity == 0 {
-      // Empty shards have no successor and burn the NFT.
-      when updated_output is {
-        None -> shard_mint_quantity == -1
-        Some(_) -> False
-      }
-    } else {
-      // Non-empty shards keep their NFT and datum.
-      expect Some(output) = updated_output
-      and {
-        shard_mint_quantity == 0,
-        escrow_shard_has_nft(output, expected_datum, shard_policy_id)?,
-        validate_output_amount(spent_input, output, expected_value_difference)?,
-        escrow_value_is_single_asset(
-          output,
-          expected_datum,
-          shard_policy_id,
-          escrowed_token_unit,
-        )?,
-      }
-    },
-  }
-}
-
-fn validate_matching_escrow_input_update(
-  escrow_input: Input,
-  outputs: List<Output>,
-  datum: TransferEscrowDatum,
-  shard_policy_id: PolicyId,
-  mint,
-  expected_value_difference: Value,
-  escrowed_token_unit: ByteArray,
-) -> Bool {
-  let updated_output = find_escrow_output(outputs, escrow_input.output, datum)
-  validate_escrow_shard_update(
-    escrow_input,
-    EscrowShard { datum, updated_output },
-    datum,
-    shard_policy_id,
-    mint,
-    expected_value_difference,
-    escrowed_token_unit,
-  )
-}
-
-fn validate_module_escrow_transition(
-  spent_input: Input,
-  spend: TransferModuleSpend,
-  inputs: List<Input>,
-  outputs: List<Output>,
-  datum: TransferEscrowDatum,
-  shard_policy_id: PolicyId,
-  mint,
-  transfer_amount: Int,
-  expected_value_difference: Value,
-  escrowed_token_unit: ByteArray,
-) -> Bool {
-  when spend is {
-    ModuleState(updated_output) -> {
-      // Root state may co-spend with shard creation during first native send.
-      let preserved_module_state =
-        validate_output_amount(spent_input, updated_output, assets.zero)
-      let matching_escrow_input =
-        find_matching_escrow_input(inputs, spent_input.output.address, datum)
-
-      if transfer_amount > 0 {
-        // Positive native sends update or create the shard.
-        and {
-          preserved_module_state?,
-          when matching_escrow_input is {
-            Some(escrow_input) ->
-              validate_matching_escrow_input_update(
-                escrow_input,
-                outputs,
-                datum,
-                shard_policy_id,
-                mint,
-                expected_value_difference,
-                escrowed_token_unit,
-              )
-            None ->
-              validate_created_escrow_shard(
-                outputs,
-                spent_input.output.address,
-                datum,
-                shard_policy_id,
-                mint,
-                transfer_amount,
-                escrowed_token_unit,
-              )
-          },
-        }
-      } else {
-        // Native refunds/unescrows require an existing shard.
-        when matching_escrow_input is {
-          Some(escrow_input) -> and {
-              preserved_module_state?,
-              validate_matching_escrow_input_update(
-                escrow_input,
-                outputs,
-                datum,
-                shard_policy_id,
-                mint,
-                expected_value_difference,
-                escrowed_token_unit,
-              )?,
-            }
-          None -> False
-        }
-      }
-    }
-    EscrowShard { .. } ->
-      // Shard spend is the native packet witness.
-      validate_escrow_shard_update(
-        spent_input,
-        spend,
-        datum,
-        shard_policy_id,
-        mint,
-        expected_value_difference,
-        escrowed_token_unit,
-      )
-  }
-}
-
 fn module_callback(
   cb: IBCModuleCallback,
   host_state_nft: AuthToken,
@@ -525,9 +143,9 @@ fn module_callback(
 
   when cb is {
     OnChanOpenInit { channel_id } -> {
-      let updated_output = expect_module_state(spend)
+      let updated_output = transfer_escrow.expect_module_state(spend)
       let output_channel =
-        validate_channel_open_init(
+        transfer_channel_callback.validate_channel_open_init(
           redeemers,
           channel_minting_policy_id,
           host_state_nft,
@@ -536,7 +154,11 @@ fn module_callback(
           channel_id,
         )
       and {
-        validate_output_amount(spent_input, updated_output, assets.zero)?,
+        transfer_value_delta.validate_output_amount(
+          spent_input,
+          updated_output,
+          assets.zero,
+        )?,
         transfer_ibc_module.validate_on_chan_open_init(
           output_channel.ordering,
           output_channel.connection_hops,
@@ -549,9 +171,9 @@ fn module_callback(
     }
 
     OnChanOpenTry { channel_id } -> {
-      let updated_output = expect_module_state(spend)
+      let updated_output = transfer_escrow.expect_module_state(spend)
       expect Some((output_channel, counterparty_version)) =
-        validate_channel_open_try(
+        transfer_channel_callback.validate_channel_open_try(
           redeemers,
           channel_minting_policy_id,
           host_state_nft,
@@ -560,7 +182,11 @@ fn module_callback(
           channel_id,
         )
       and {
-        validate_output_amount(spent_input, updated_output, assets.zero)?,
+        transfer_value_delta.validate_output_amount(
+          spent_input,
+          updated_output,
+          assets.zero,
+        )?,
         transfer_ibc_module.validate_on_chan_open_try(
           output_channel.ordering,
           output_channel.connection_hops,
@@ -574,9 +200,9 @@ fn module_callback(
     }
 
     OnChanOpenAck { channel_id } -> {
-      let updated_output = expect_module_state(spend)
+      let updated_output = transfer_escrow.expect_module_state(spend)
       expect Some((output_channel, counterparty_version)) =
-        validate_chan_open_ack(
+        transfer_channel_callback.validate_chan_open_ack(
           inputs,
           redeemers,
           channel_minting_policy_id,
@@ -587,7 +213,11 @@ fn module_callback(
         )
 
       and {
-        validate_output_amount(spent_input, updated_output, assets.zero)?,
+        transfer_value_delta.validate_output_amount(
+          spent_input,
+          updated_output,
+          assets.zero,
+        )?,
         transfer_ibc_module.validate_on_chan_open_ack(
           port_id,
           channel_id,
@@ -598,9 +228,9 @@ fn module_callback(
     }
 
     OnChanOpenConfirm { channel_id } -> {
-      let updated_output = expect_module_state(spend)
+      let updated_output = transfer_escrow.expect_module_state(spend)
       expect Some(_) =
-        validate_chan_open_confirm(
+        transfer_channel_callback.validate_chan_open_confirm(
           inputs,
           redeemers,
           channel_minting_policy_id,
@@ -610,7 +240,11 @@ fn module_callback(
           channel_id,
         )
       and {
-        validate_output_amount(spent_input, updated_output, assets.zero)?,
+        transfer_value_delta.validate_output_amount(
+          spent_input,
+          updated_output,
+          assets.zero,
+        )?,
         transfer_ibc_module.validate_on_chan_open_confirm(port_id, channel_id)?,
       }
     }
@@ -628,7 +262,7 @@ fn module_callback(
       trace @"spend_transfer_module: redeemer data is valid"
 
       expect Some(channel_redeemer) =
-        extract_channel_redeemer(
+        transfer_channel_callback.extract_channel_redeemer(
           inputs,
           redeemers,
           channel_minting_policy_id,
@@ -647,8 +281,11 @@ fn module_callback(
         data.denom,
       ) {
         // Source-chain receive unescrows natively.
-        expect None =
-          pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
+        expect
+          transfer_voucher_flow.require_no_voucher_mint(
+            redeemers,
+            voucher_minting_policy_id,
+          )
 
         let voucher_prefix_len =
           transfer_coin.get_denom_prefix(
@@ -681,12 +318,12 @@ fn module_callback(
 
         // Negative shard delta may burn the NFT when emptied.
         let valid_transfer_amount =
-          validate_module_escrow_transition(
+          transfer_escrow.validate_module_escrow_transition(
             spent_input,
             spend,
             inputs,
             outputs,
-            transfer_escrow_datum(channel_id, unprefixed_denom),
+            transfer_escrow.transfer_escrow_datum(channel_id, unprefixed_denom),
             shard_policy_id,
             mint,
             0 - transfer_amount,
@@ -771,27 +408,21 @@ fn module_callback(
           ) >= transfer_amount)?,
         }
       } else {
-        let updated_output = expect_module_state(spend)
+        let updated_output = transfer_escrow.expect_module_state(spend)
         // Non-source receive mints vouchers.
-        expect Some(mint_voucher_redeemer) =
-          pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
-        expect mint_voucher_redeemer: MintVoucherRedeemer =
-          mint_voucher_redeemer
-        expect MintVoucher {
-          packet_source_port,
-          packet_source_channel,
-          packet_dest_port,
-          packet_dest_channel,
-          ..
-        } = mint_voucher_redeemer
         trace @"mint_voucher: tx mint voucher token"
 
         and {
-          validate_output_amount(spent_input, updated_output, assets.zero)?,
-          (packet_source_port == packet.source_port)?,
-          (packet_source_channel == packet.source_channel)?,
-          (packet_dest_port == packet.destination_port)?,
-          (packet_dest_channel == packet.destination_channel)?,
+          transfer_value_delta.validate_output_amount(
+            spent_input,
+            updated_output,
+            assets.zero,
+          )?,
+          transfer_voucher_flow.validate_mint_voucher_packet(
+            redeemers,
+            voucher_minting_policy_id,
+            packet,
+          )?,
         }
       }
     }
@@ -799,7 +430,7 @@ fn module_callback(
       trace @"spend_transfer_module: Callback.OnTimeoutPacket branch"
 
       expect Some(channel_redeemer) =
-        extract_channel_redeemer(
+        transfer_channel_callback.extract_channel_redeemer(
           inputs,
           redeemers,
           channel_minting_policy_id,
@@ -812,7 +443,7 @@ fn module_callback(
       expect TransferModuleData(data) = data
       // Timeout refunds the sender-side packet effect.
       let valid_refund_packet =
-        validate_refund_packet_token(
+        transfer_refund.validate_refund_packet_token(
           voucher_minting_policy_id,
           inputs,
           outputs,
@@ -834,7 +465,7 @@ fn module_callback(
       trace @"spend_transfer_module: Callback.OnAcknowledgementPacket branch"
 
       expect Some(channel_redeemer) =
-        extract_channel_redeemer(
+        transfer_channel_callback.extract_channel_redeemer(
           inputs,
           redeemers,
           channel_minting_policy_id,
@@ -851,7 +482,7 @@ fn module_callback(
             // Only error acknowledgements trigger transfer refunds.
             fungible_token_packet_data.get_bytes(tf_data) == packet.data,
             acknowledgement_mod.marshal_json(acknowledgement) == channel_ack,
-            validate_refund_packet_token(
+            transfer_refund.validate_refund_packet_token(
               voucher_minting_policy_id,
               inputs,
               outputs,
@@ -865,10 +496,14 @@ fn module_callback(
             ),
           }
         _ -> {
-          let updated_output = expect_module_state(spend)
+          let updated_output = transfer_escrow.expect_module_state(spend)
           // Ack success leaves transfer supply unchanged.
           and {
-            validate_output_amount(spent_input, updated_output, assets.zero)?,
+            transfer_value_delta.validate_output_amount(
+              spent_input,
+              updated_output,
+              assets.zero,
+            )?,
             (fungible_token_packet_data.get_bytes(tf_data) == packet.data)?,
             (acknowledgement_mod.marshal_json(acknowledgement) == channel_ack)?,
           }
@@ -901,7 +536,7 @@ fn module_operator(
       trace @"spend_transfer_module: redeemer data is valid"
 
       expect Some(channel_redeemer) =
-        extract_channel_redeemer(
+        transfer_channel_callback.extract_channel_redeemer(
           inputs,
           redeemers,
           channel_minting_policy_id,
@@ -921,7 +556,10 @@ fn module_operator(
       ) {
         // Source-chain send escrows natively.
         expect
-          pairs.get_first(redeemers, Mint(voucher_minting_policy_id)) == None
+          transfer_voucher_flow.require_no_voucher_mint(
+            redeemers,
+            voucher_minting_policy_id,
+          )
         trace @"spend_transfer_module: tx not mint voucher token"
 
         expect Some(escrowed_token_unit) =
@@ -944,12 +582,12 @@ fn module_operator(
 
         // Positive shard delta creates or updates escrow.
         let valid_transfer_amount =
-          validate_module_escrow_transition(
+          transfer_escrow.validate_module_escrow_transition(
             spent_input,
             spend,
             inputs,
             transaction.outputs,
-            transfer_escrow_datum(channel_id, data.denom),
+            transfer_escrow.transfer_escrow_datum(channel_id, data.denom),
             shard_policy_id,
             mint,
             transfer_amount,
@@ -959,363 +597,23 @@ fn module_operator(
 
         valid_transfer_amount
       } else {
-        let updated_output = expect_module_state(spend)
+        let updated_output = transfer_escrow.expect_module_state(spend)
         // Non-source send burns vouchers.
-        expect Some(mint_voucher_redeemer) =
-          pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
-        expect mint_voucher_redeemer: MintVoucherRedeemer =
-          mint_voucher_redeemer
-        expect BurnVoucher { packet_source_port, packet_source_channel, .. } =
-          mint_voucher_redeemer
         and {
-          validate_output_amount(spent_input, updated_output, assets.zero)?,
-          (packet_source_port == packet.source_port)?,
-          (packet_source_channel == packet.source_channel)?,
+          transfer_value_delta.validate_output_amount(
+            spent_input,
+            updated_output,
+            assets.zero,
+          )?,
+          transfer_voucher_flow.validate_burn_voucher_packet(
+            redeemers,
+            voucher_minting_policy_id,
+            packet,
+          )?,
         }
       }
     }
 
     OtherTransferOp -> False
-  }
-}
-
-fn validate_channel_open_init(
-  redeemers: Pairs<ScriptPurpose, Redeemer>,
-  channel_minting_policy_id: PolicyId,
-  host_state_nft: AuthToken,
-  outputs: List<Output>,
-  port_id: ByteArray,
-  channel_id: ByteArray,
-) -> Channel {
-  // validate mint channel redeemer
-  expect Some(mint_channel_redeemer) =
-    pairs.get_first(redeemers, Mint(channel_minting_policy_id))
-  expect mint_channel_redeemer: MintChannelRedeemer = mint_channel_redeemer
-  expect ChanOpenInit = mint_channel_redeemer
-
-  // validate and extract channel outputs
-  expect channel_keys.is_valid_channel_id(channel_id)
-
-  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
-
-  let channel_token_name =
-    auth.generate_token_name(
-      host_state_nft,
-      channel_keys.channel_prefix,
-      channel_sequence,
-    )
-
-  let channel_token =
-    AuthToken { policy_id: channel_minting_policy_id, name: channel_token_name }
-
-  expect [channel_output] =
-    list.filter(
-      outputs,
-      fn(output) { auth.contain_auth_token(output, channel_token) },
-    )
-
-  expect channel_datum: ChannelDatum =
-    validator_utils.get_inline_datum(channel_output)
-
-  expect channel_datum.port_id == port_id
-
-  channel_datum.state.channel
-}
-
-fn validate_channel_open_try(
-  redeemers: Pairs<ScriptPurpose, Redeemer>,
-  channel_minting_policy_id: PolicyId,
-  host_state_nft: AuthToken,
-  outputs: List<Output>,
-  port_id: ByteArray,
-  channel_id: ByteArray,
-) -> Option<(Channel, ByteArray)> {
-  // validate mint channel redeemer
-  expect Some(mint_channel_redeemer) =
-    pairs.get_first(redeemers, Mint(channel_minting_policy_id))
-  expect mint_channel_redeemer: MintChannelRedeemer = mint_channel_redeemer
-  expect ChanOpenTry { counterparty_version, .. } = mint_channel_redeemer
-
-  // validate and extract channel outputs
-  expect channel_keys.is_valid_channel_id(channel_id)
-
-  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
-  let channel_token_name =
-    auth.generate_token_name(
-      host_state_nft,
-      channel_keys.channel_prefix,
-      channel_sequence,
-    )
-
-  let channel_token =
-    AuthToken { policy_id: channel_minting_policy_id, name: channel_token_name }
-
-  expect [channel_output] =
-    list.filter(
-      outputs,
-      fn(output) { auth.contain_auth_token(output, channel_token) },
-    )
-
-  expect channel_datum: ChannelDatum =
-    validator_utils.get_inline_datum(channel_output)
-
-  expect channel_datum.port_id == port_id
-
-  Some((channel_datum.state.channel, counterparty_version))
-}
-
-fn validate_chan_open_ack(
-  inputs: List<Input>,
-  redeemers: Pairs<ScriptPurpose, Redeemer>,
-  channel_minting_policy_id: PolicyId,
-  host_state_nft: AuthToken,
-  outputs: List<Output>,
-  port_id: ByteArray,
-  channel_id: ByteArray,
-) -> Option<(Channel, ByteArray)> {
-  expect channel_keys.is_valid_channel_id(channel_id)
-
-  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
-  let channel_token_name =
-    auth.generate_token_name(
-      host_state_nft,
-      channel_keys.channel_prefix,
-      channel_sequence,
-    )
-  let channel_token =
-    AuthToken { policy_id: channel_minting_policy_id, name: channel_token_name }
-  expect Some(channel_input) =
-    list.find(
-      inputs,
-      fn(input) { input.output |> auth.contain_auth_token(channel_token) },
-    )
-
-  // validate spend channel redeemer
-  expect Some(spend_channel_redeemer) =
-    pairs.get_first(redeemers, Spend(channel_input.output_reference))
-  expect spend_channel_redeemer: SpendChannelRedeemer = spend_channel_redeemer
-  expect ChanOpenAck { counterparty_version, .. } = spend_channel_redeemer
-
-  // validate and extract channel outputs
-  expect [channel_output] =
-    list.filter(
-      outputs,
-      fn(output) { auth.contain_auth_token(output, channel_token) },
-    )
-
-  expect channel_datum: ChannelDatum =
-    validator_utils.get_inline_datum(channel_output)
-
-  expect channel_datum.port_id == port_id
-
-  Some((channel_datum.state.channel, counterparty_version))
-}
-
-fn validate_chan_open_confirm(
-  inputs: List<Input>,
-  redeemers: Pairs<ScriptPurpose, Redeemer>,
-  channel_minting_policy_id: PolicyId,
-  host_state_nft: AuthToken,
-  outputs: List<Output>,
-  port_id: ByteArray,
-  channel_id: ByteArray,
-) -> Option<Channel> {
-  expect channel_keys.is_valid_channel_id(channel_id)
-
-  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
-  let channel_token_name =
-    auth.generate_token_name(
-      host_state_nft,
-      channel_keys.channel_prefix,
-      channel_sequence,
-    )
-  let channel_token =
-    AuthToken { policy_id: channel_minting_policy_id, name: channel_token_name }
-  expect Some(channel_input) =
-    list.find(
-      inputs,
-      fn(input) { input.output |> auth.contain_auth_token(channel_token) },
-    )
-
-  // validate spend channel redeemer
-  expect Some(spend_channel_redeemer) =
-    pairs.get_first(redeemers, Spend(channel_input.output_reference))
-  expect spend_channel_redeemer: SpendChannelRedeemer = spend_channel_redeemer
-  expect ChanOpenConfirm { .. } = spend_channel_redeemer
-
-  // validate and extract channel outputs
-  expect [channel_output] =
-    list.filter(
-      outputs,
-      fn(output) { auth.contain_auth_token(output, channel_token) },
-    )
-
-  expect channel_datum: ChannelDatum =
-    validator_utils.get_inline_datum(channel_output)
-
-  expect channel_datum.port_id == port_id
-
-  Some(channel_datum.state.channel)
-}
-
-fn extract_channel_redeemer(
-  inputs: List<Input>,
-  redeemers: Pairs<ScriptPurpose, Redeemer>,
-  channel_minting_policy_id: PolicyId,
-  host_state_nft: AuthToken,
-  channel_id: ByteArray,
-) -> Option<SpendChannelRedeemer> {
-  expect channel_keys.is_valid_channel_id(channel_id)
-
-  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
-  let channel_token_name =
-    auth.generate_token_name(
-      host_state_nft,
-      channel_keys.channel_prefix,
-      channel_sequence,
-    )
-  let channel_token =
-    AuthToken { policy_id: channel_minting_policy_id, name: channel_token_name }
-  expect Some(channel_input) =
-    list.find(
-      inputs,
-      fn(input) { input.output |> auth.contain_auth_token(channel_token) },
-    )
-
-  // validate spend channel redeemer
-  expect Some(spend_channel_redeemer) =
-    pairs.get_first(redeemers, Spend(channel_input.output_reference))
-  expect spend_channel_redeemer: SpendChannelRedeemer = spend_channel_redeemer
-
-  Some(spend_channel_redeemer)
-}
-
-fn validate_refund_packet_token(
-  voucher_minting_policy_id: PolicyId,
-  inputs: List<Input>,
-  outputs: List<Output>,
-  redeemers: Pairs<ScriptPurpose, Redeemer>,
-  spent_input: Input,
-  spend: TransferModuleSpend,
-  shard_policy_id: PolicyId,
-  mint,
-  data: FungibleTokenPacketData,
-  packet: Packet,
-) -> Bool {
-  if transfer_coin.sender_chain_is_source(
-    packet.source_port,
-    packet.source_channel,
-    data.denom,
-  ) {
-    // Native refund releases escrow back to the sender.
-    expect None = pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
-
-    expect Some(escrowed_token_unit) =
-      string_utils.hex_string_to_bytes(data.denom)
-    trace @"spend_transfer_module: demon convert to token unit valid"
-
-    let (escrowed_token_policy_id, escrowed_token_name) =
-      validator_utils.extract_token_unit(escrowed_token_unit)
-    trace @"spend_transfer_module: extract escrowed token valid"
-
-    expect Some(transfer_amount) = int.from_utf8(data.amount)
-    trace @"spend_transfer_module: transfer amount is valid"
-
-    trace @"escrowed_token_policy_id": escrowed_token_policy_id
-    trace @"escrowed_token_name": escrowed_token_name
-
-    let expected_escrow_value_difference =
-      assets.from_asset(
-        escrowed_token_policy_id,
-        escrowed_token_name,
-        transfer_amount,
-      )
-        |> assets.negate()
-    // Negative shard delta may burn the NFT when emptied.
-    let correct_transfer_amount =
-      validate_module_escrow_transition(
-        spent_input,
-        spend,
-        inputs,
-        outputs,
-        transfer_escrow_datum(packet.source_channel, data.denom),
-        shard_policy_id,
-        mint,
-        0 - transfer_amount,
-        expected_escrow_value_difference,
-        escrowed_token_unit,
-      )
-
-    trace @"spend_transfer_module (validate_refund_packet_token): unescrowed amount is valid"
-
-    expect Some(sender_public_key_hash) =
-      string_utils.hex_string_to_bytes(data.sender)
-    let receiver_address = from_verification_key(sender_public_key_hash)
-
-    // Lovelace refunds may include extra output ADA.
-    let prev_receiver_token =
-      list.reduce(
-        inputs,
-        0,
-        fn(acc, input) {
-          let output = input.output
-          if output.address == receiver_address {
-            let output_token =
-              quantity_of(
-                output.value,
-                escrowed_token_policy_id,
-                escrowed_token_name,
-              )
-            acc + output_token
-          } else {
-            acc
-          }
-        },
-      )
-    let post_receiver_token =
-      list.reduce(
-        outputs,
-        0,
-        fn(acc, output) {
-          if output.address == receiver_address {
-            let output_token =
-              quantity_of(
-                output.value,
-                escrowed_token_policy_id,
-                escrowed_token_name,
-              )
-            acc + output_token
-          } else {
-            acc
-          }
-        },
-      )
-    let receiver_delta = post_receiver_token - prev_receiver_token
-    let correct_receiver_amount =
-      if escrowed_token_unit == "lovelace" {
-        receiver_delta >= transfer_amount
-      } else {
-        receiver_delta == transfer_amount
-      }
-    and {
-      correct_transfer_amount?,
-      correct_receiver_amount?,
-    }
-  } else {
-    // Voucher refund mints back the user's burned vouchers.
-    expect Some(mint_voucher_redeemer) =
-      pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
-    expect mint_voucher_redeemer: MintVoucherRedeemer = mint_voucher_redeemer
-    expect RefundVoucher { packet_source_port, packet_source_channel, .. } =
-      mint_voucher_redeemer
-    trace @"mint_voucher (validate_refund_packet_token): tx mint voucher token"
-
-    let updated_output = expect_module_state(spend)
-
-    and {
-      validate_output_amount(spent_input, updated_output, assets.zero)?,
-      (packet_source_port == packet.source_port)?,
-      (packet_source_channel == packet.source_channel)?,
-    }
   }
 }
