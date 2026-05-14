@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::{
-    constants::ENTRYPOINT_CHAIN_ID,
+    constants::CARDANO_ENTRYPOINT_CHAIN_ID,
     logger,
     start::{self, run_hermes_command, CoreServiceId, HealthTarget},
     stop::stop_relayer,
@@ -19,14 +19,14 @@ use crate::{
 };
 
 const CARDANO_CHAIN_ID: &str = "cardano-devnet";
-const VESSEL_CHAIN_ID: &str = ENTRYPOINT_CHAIN_ID;
+const VESSEL_CHAIN_ID: &str = CARDANO_ENTRYPOINT_CHAIN_ID;
 const CARDANO_MESSAGE_PORT_ID: &str = "icqhost";
 const VESSEL_MESSAGE_PORT_ID: &str = "icqhost";
 const ASYNC_ICQ_CHANNEL_VERSION: &str = "icq-1";
 const VESSEL_RELAYER_KEY_NAME: &str = "entrypoint-relayer";
 const VESSEL_RELAYER_MNEMONIC: &str = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
-const VESSEL_DEMO_CONTAINER_NAME: &str = "entrypoint-node-prod";
-const VESSEL_KEYRING_CONTAINER_PATH: &str = "/root/.entrypoint-data/node/keyring-test";
+const VESSEL_DEMO_CONTAINER_NAME: &str = "cardano-entrypoint-node-prod";
+const VESSEL_KEYRING_CONTAINER_PATH: &str = "/root/.cardano-entrypoint-data/node/keyring-test";
 const VESSEL_RPC_ADDR: &str = "http://127.0.0.1:26657";
 const VESSEL_GRPC_ADDR: &str = "http://127.0.0.1:9090";
 const DEFAULT_VESSEL_IMO: &str = "9525338";
@@ -85,7 +85,7 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
     ensure_message_exchange_prerequisites(project_root_path)?;
     refresh_gateway_epoch_nonce_for_stability(project_root_path).await?;
 
-    logger::log("PASS: Native Cosmos Entrypoint chain is up and running");
+    logger::log("PASS: Native Cardano Entrypoint chain is up and running");
 
     start::start_relayer(
         project_root_path.join("relayer").as_path(),
@@ -115,7 +115,7 @@ pub async fn run_message_exchange_demo(project_root_path: &Path) -> Result<(), S
         .map_err(|error| format!("ERROR: Failed to start Hermes daemon: {}", error))?;
     logger::log("PASS: Hermes daemon started");
 
-    let datasource_dir = project_root_path.join("cosmos/entrypoint/datasource");
+    let datasource_dir = project_root_path.join("cosmos/cardano-entrypoint/datasource");
     if !datasource_dir.exists() {
         return Err(format!(
             "ERROR: Datasource directory is missing at {}",
@@ -505,7 +505,7 @@ fn message_exchange_targets(project_root: &Path) -> Vec<HealthTarget> {
         HealthTarget::Core(CoreServiceId::Postgres),
         HealthTarget::Core(CoreServiceId::Kupo),
         HealthTarget::Core(CoreServiceId::Ogmios),
-        HealthTarget::Core(CoreServiceId::Entrypoint),
+        HealthTarget::Core(CoreServiceId::CardanoEntrypoint),
     ];
     if gateway_uses_mithril(project_root) {
         targets.push(HealthTarget::Core(CoreServiceId::Mithril));

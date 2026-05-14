@@ -70,7 +70,7 @@ describe('LocalOsmosisSwapPlannerService', () => {
       outToken: 'uion',
       transferRoutes: ['transfer/channel-9', 'transfer/channel-1'],
       transferBackRoutes: ['transfer/channel-1', 'transfer/channel-9'],
-      transferChains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
+      transferChains: ['cardano-devnet', 'cardano-entrypoint', 'localosmosis'],
     });
 
     const request = {
@@ -89,7 +89,7 @@ describe('LocalOsmosisSwapPlannerService', () => {
       outToken: 'uion',
       transferRoutes: ['transfer/channel-9', 'transfer/channel-1'],
       transferBackRoutes: ['transfer/channel-1', 'transfer/channel-9'],
-      transferChains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
+      transferChains: ['cardano-devnet', 'cardano-entrypoint', 'localosmosis'],
     });
     expect(plannerClientServiceMock.getClient).toHaveBeenCalledTimes(1);
     expect(plannerClientMock.estimateLocalOsmosisSwap).toHaveBeenCalledWith(

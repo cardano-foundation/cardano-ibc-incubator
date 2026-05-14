@@ -1,4 +1,4 @@
-use crate::constants::ENTRYPOINT_CHAIN_ID;
+use crate::constants::CARDANO_ENTRYPOINT_CHAIN_ID;
 use crate::logger::{log_or_print_progress, log_or_show_progress, verbose};
 use crate::process::docker::DockerCli;
 use crate::process::hermes::HermesCli;
@@ -32,7 +32,7 @@ use std::sync::Once;
 use std::thread;
 use std::time::{Duration, Instant};
 
-const ENTRYPOINT_CONTAINER_NAME: &str = "entrypoint-node-prod";
+const CARDANO_ENTRYPOINT_CONTAINER_NAME: &str = "cardano-entrypoint-node-prod";
 const HERMES_PROGRESS_LOG_INTERVAL_SECS: u64 = 30;
 const HERMES_PID_FILE_NAME: &str = "hermes.pid";
 const HERMES_STARTUP_CHECK_ATTEMPTS: u32 = 5;
@@ -165,7 +165,7 @@ fn validate_preprod_hermes_route_coverage(
         return Ok(());
     }
 
-    let required_chain_ids = [ENTRYPOINT_CHAIN_ID, INJECTIVE_TESTNET_CHAIN_ID];
+    let required_chain_ids = [CARDANO_ENTRYPOINT_CHAIN_ID, INJECTIVE_TESTNET_CHAIN_ID];
     let missing_chain_ids: Vec<&str> = required_chain_ids
         .iter()
         .copied()
@@ -192,7 +192,7 @@ fn validate_preprod_hermes_route_coverage(
         found_chain_ids,
         missing_chain_ids.join(", "),
         CARDANO_PREPROD_CHAIN_ID,
-        ENTRYPOINT_CHAIN_ID,
+        CARDANO_ENTRYPOINT_CHAIN_ID,
         INJECTIVE_TESTNET_CHAIN_ID
     )
     .into())
@@ -472,13 +472,13 @@ pub fn start_relayer(
     // Auto-configure Hermes keys for both chains
     log_or_show_progress(
         &format!(
-            "Setting up Hermes keys for {} and Cosmos Entrypoint chain",
+            "Setting up Hermes keys for {} and Cardano Entrypoint chain",
             cardano_chain_id
         ),
         &optional_progress_bar,
     );
 
-    // Cosmos Entrypoint chain: Use the pre-funded "relayer" account from the chain config.
+    // Cardano Entrypoint chain: Use the pre-funded "relayer" account from the chain config.
     let entrypoint_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
     let entrypoint_mnemonic_file = std::env::temp_dir().join("entrypoint-mnemonic.txt");
     fs::write(&entrypoint_mnemonic_file, entrypoint_mnemonic)
@@ -490,7 +490,7 @@ pub fn start_relayer(
             "keys",
             "add",
             "--chain",
-            ENTRYPOINT_CHAIN_ID,
+            CARDANO_ENTRYPOINT_CHAIN_ID,
             "--mnemonic-file",
             entrypoint_mnemonic_file.to_str().unwrap(),
             "--overwrite",
@@ -502,7 +502,7 @@ pub fn start_relayer(
     match entrypoint_key_output {
         Ok(output) if output.status.success() => {
             log_or_show_progress(
-                "Added key for Cosmos Entrypoint chain",
+                "Added key for Cardano Entrypoint chain",
                 &optional_progress_bar,
             );
         }
@@ -1875,8 +1875,8 @@ pub fn start_cosmos_entrypoint_chain_services(
     cosmos_dir: &Path,
     clean: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let node_service_name = "entrypoint-node-prod";
-    let init_service_name = "entrypoint-init";
+    let node_service_name = "cardano-entrypoint-node-prod";
+    let init_service_name = "cardano-entrypoint-init";
     let compose_file = "docker-compose.yml";
 
     if clean {
@@ -1941,9 +1941,9 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
                 .unwrap()
                 .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
         );
-        progress_bar.set_prefix("Waiting for Cosmos Entrypoint chain to start".to_owned());
+        progress_bar.set_prefix("Waiting for Cardano Entrypoint chain to start".to_owned());
     } else {
-        log("Waiting for Cosmos Entrypoint chain to start ...");
+        log("Waiting for Cardano Entrypoint chain to start ...");
     }
 
     // Wait for health check with fail-fast error detection
@@ -2007,7 +2007,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
                     }
 
                     verbose(&format!(
-                        "Cosmos Entrypoint RPC is up but chain has not produced blocks yet (retry {})",
+                        "Cardano Entrypoint RPC is up but chain has not produced blocks yet (retry {})",
                         retry + 1
                     ));
                 } else {
@@ -2029,14 +2029,14 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
 
         // Check container health every 5 retries (~50 seconds) to fail fast on unrecoverable errors
         if retry > 0 && retry % 5 == 0 {
-            let container_names = [ENTRYPOINT_CONTAINER_NAME];
+            let container_names = [CARDANO_ENTRYPOINT_CONTAINER_NAME];
             let (diagnostics, should_fail_fast) = diagnose_container_failure(&container_names);
             if should_fail_fast {
                 if let Some(progress_bar) = &optional_progress_bar {
                     progress_bar.finish_and_clear();
                 }
                 return Err(format!(
-                    "Cosmos Entrypoint chain has unrecoverable errors that require developer intervention:{}",
+                    "Cardano Entrypoint chain has unrecoverable errors that require developer intervention:{}",
                     diagnostics
                 )
                 .into());
@@ -2047,7 +2047,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     }
 
     // Final diagnostic check after timeout
-    let container_names = [ENTRYPOINT_CONTAINER_NAME];
+    let container_names = [CARDANO_ENTRYPOINT_CONTAINER_NAME];
     let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
 
     if let Some(progress_bar) = &optional_progress_bar {
@@ -2055,7 +2055,7 @@ pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std:
     }
 
     Err(format!(
-        "Health check on {} failed after {} attempts. The Cosmos Entrypoint chain may have crashed or is not responding.{}",
+        "Health check on {} failed after {} attempts. The Cardano Entrypoint chain may have crashed or is not responding.{}",
         cosmos_status_url,
         max_retries,
         diagnostics
@@ -4010,7 +4010,7 @@ enum CoreHealthCheckType {
     Ogmios,
     Mithril,
     HermesDaemon,
-    Entrypoint,
+    CardanoEntrypoint,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -4024,7 +4024,7 @@ pub(crate) enum CoreServiceId {
     Ogmios,
     Mithril,
     Hermes,
-    Entrypoint,
+    CardanoEntrypoint,
 }
 
 impl CoreServiceId {
@@ -4039,7 +4039,7 @@ impl CoreServiceId {
             CoreServiceId::Ogmios => "ogmios",
             CoreServiceId::Mithril => "mithril",
             CoreServiceId::Hermes => "hermes",
-            CoreServiceId::Entrypoint => "entrypoint",
+            CoreServiceId::CardanoEntrypoint => "cardano-entrypoint",
         }
     }
 
@@ -4054,7 +4054,7 @@ impl CoreServiceId {
             CoreServiceId::Ogmios => "Ogmios (JSON/RPC)",
             CoreServiceId::Mithril => "Mithril (Aggregator + Signers)",
             CoreServiceId::Hermes => "Hermes Relayer Daemon",
-            CoreServiceId::Entrypoint => "Entrypoint chain",
+            CoreServiceId::CardanoEntrypoint => "Cardano Entrypoint chain",
         }
     }
 
@@ -4069,7 +4069,7 @@ impl CoreServiceId {
             CoreServiceId::Ogmios => CoreHealthCheckType::Ogmios,
             CoreServiceId::Mithril => CoreHealthCheckType::Mithril,
             CoreServiceId::Hermes => CoreHealthCheckType::HermesDaemon,
-            CoreServiceId::Entrypoint => CoreHealthCheckType::Entrypoint,
+            CoreServiceId::CardanoEntrypoint => CoreHealthCheckType::CardanoEntrypoint,
         }
     }
 }
@@ -4150,7 +4150,7 @@ const CORE_SERVICE_IDS: [CoreServiceId; 10] = [
     CoreServiceId::Ogmios,
     CoreServiceId::Mithril,
     CoreServiceId::Hermes,
-    CoreServiceId::Entrypoint,
+    CoreServiceId::CardanoEntrypoint,
 ];
 
 #[derive(Clone)]
@@ -4271,7 +4271,7 @@ fn run_core_health_check(
                 context.preprod_mithril_endpoint.as_str(),
             ),
             CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
-            CoreHealthCheckType::Entrypoint => check_rpc_service(
+            CoreHealthCheckType::CardanoEntrypoint => check_rpc_service(
                 config::get_config().health.cosmos_status_url.as_str(),
                 26657,
             ),
@@ -4307,7 +4307,7 @@ fn run_core_health_check(
             context.preprod_mithril_endpoint.as_str(),
         ),
         CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
-        CoreHealthCheckType::Entrypoint => check_rpc_service(
+        CoreHealthCheckType::CardanoEntrypoint => check_rpc_service(
             config::get_config().health.cosmos_status_url.as_str(),
             26657,
         ),

@@ -161,6 +161,6 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace entrypoint => ../../entrypoint
+replace cardano-entrypoint => ../../cardano-entrypoint
 
 replace github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alpha.regen.1

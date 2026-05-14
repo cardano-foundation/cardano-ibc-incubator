@@ -37,7 +37,7 @@ export class PlannerClientService {
         process.env.CARDANO_REST_ENDPOINT,
       entrypointRestEndpoint: this.requireConfig(
         'entrypointRestEndpoint',
-        'ENTRYPOINT_REST_ENDPOINT',
+        'CARDANO_ENTRYPOINT_REST_ENDPOINT',
       ),
       localOsmosisRestEndpoint: this.requireConfig(
         'localOsmosisRestEndpoint',

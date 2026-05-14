@@ -617,7 +617,7 @@ if [ "$INJECTIVE_NETWORK" = "local" ] && [ ! -f "$INJECTIVE_COMPOSE_FILE" ]; the
 fi
 
 CARDANO_CHAIN_ID="${CARDANO_CHAIN_ID:-cardano-devnet}"
-ENTRYPOINT_CHAIN_ID="${ENTRYPOINT_CHAIN_ID:-entrypoint}"
+ENTRYPOINT_CHAIN_ID="${ENTRYPOINT_CHAIN_ID:-cardano-entrypoint}"
 if [ -z "${INJECTIVE_CHAIN_ID:-}" ]; then
   if [ "$INJECTIVE_NETWORK" = "testnet" ]; then
     INJECTIVE_CHAIN_ID="injective-888"

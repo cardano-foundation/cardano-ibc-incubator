@@ -5,7 +5,7 @@ import {
   PREPROD_CARDANO_CHAIN_ID,
 } from '@/configs/runtime';
 import {
-  ENTRYPOINT_CHAIN_ID,
+  CARDANO_ENTRYPOINT_CHAIN_ID,
   findRuntimeChain,
   INJECTIVE_MAINNET_CHAIN_ID,
   INJECTIVE_TESTNET_CHAIN_ID,
@@ -37,8 +37,8 @@ export const getExplorerTxUrl = (
     return `https://explorer.injective.network/transaction/${txHash}/`;
   }
 
-  // The local entrypoint chain has no public block explorer; link to REST tx JSON.
-  if (chainId === ENTRYPOINT_CHAIN_ID) {
+  // The local cardano-entrypoint chain has no public block explorer; link to REST tx JSON.
+  if (chainId === CARDANO_ENTRYPOINT_CHAIN_ID) {
     const restEndpoint = findRuntimeChain(chainId)?.restEndpoint;
     return restEndpoint
       ? `${restEndpoint.replace(/\/$/, '')}/cosmos/tx/v1beta1/txs/${txHash}`

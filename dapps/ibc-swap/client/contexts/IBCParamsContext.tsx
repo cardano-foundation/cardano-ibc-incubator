@@ -15,12 +15,12 @@ import {
 import BigNumber from 'bignumber.js';
 import {
   DEFAULT_PFM_FEE,
-  ENTRYPOINT_CHAIN_ID,
+  CARDANO_ENTRYPOINT_CHAIN_ID,
   OSMOSIS_CHAIN_ID,
 } from '@/constants';
 import { chainsRestEndpoints } from '@/configs/customChainInfo';
 import {
-  ENTRYPOINT_REST_ENDPOINT,
+  CARDANO_ENTRYPOINT_REST_ENDPOINT,
 } from '@/configs/runtime';
 
 type IBCParamsContextType = {
@@ -52,8 +52,8 @@ export const IBCParamsProvider = ({
 
   const fetchRawChannelsMapping = async () => {
     fetchAllChannels(
-      ENTRYPOINT_CHAIN_ID,
-      ENTRYPOINT_REST_ENDPOINT,
+      CARDANO_ENTRYPOINT_CHAIN_ID,
+      CARDANO_ENTRYPOINT_REST_ENDPOINT,
     ).then((res: any) => {
       setRawChannelMappings(res.bestChannel);
     });

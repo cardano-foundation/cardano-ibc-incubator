@@ -5,8 +5,8 @@
       "chain_id": "cardano-devnet",
       "message_port_id": "transfer"
     },
-    "entrypoint": {
-      "chain_id": "entrypoint",
+    "cardano-entrypoint": {
+      "chain_id": "cardano-entrypoint",
       "message_port_id": "transfer"
     }
   },

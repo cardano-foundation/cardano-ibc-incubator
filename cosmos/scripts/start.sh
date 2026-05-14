@@ -21,10 +21,10 @@ while true; do
   response=$(curl -s -o /dev/null -w "%{http_code}" "$rpc_url")
 
   if [[ $response == "200" ]]; then
-    echo >&2 "Entrypoint chain is ready!"
+    echo >&2 "Cardano Entrypoint chain is ready!"
     break
   else
-    echo >&2 "Entrypoint chain is starting. Continue checking..."
+    echo >&2 "Cardano Entrypoint chain is starting. Continue checking..."
     sleep 5
   fi
 done
