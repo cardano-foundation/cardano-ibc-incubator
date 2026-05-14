@@ -792,6 +792,10 @@ pub async fn start_local_cardano_network(
     with_mithril: bool,
     network: config::CoreCardanoNetwork,
 ) -> Result<Option<tokio::task::JoinHandle<Result<(), String>>>, Box<dyn std::error::Error>> {
+    if with_mithril {
+        return Err("Mithril setup is deprecated, disabled, and not maintained. Use the default stake-weighted-stability light-client mode.".into());
+    }
+
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
         _ => Some(ProgressBar::new_spinner()),
@@ -982,48 +986,16 @@ pub async fn start_local_cardano_network(
         }
     }
 
-    // Start Mithril as early as possible (after the Cardano node is reachable, but before we wait
-    // for the Conway era to seed the devnet).
-    //
-    // The slow part of local Mithril boot is not the `docker compose up` itself, it is the epoch-
-    // based waiting for Cardano immutable files + genesis certificate bootstrap. Starting Mithril
-    // here reduces wall-clock time because those waits can overlap with:
-    // - the remaining "wait for Conway" period,
-    // - the devnet seeding transactions,
-    // - Cosmos chain startup, Hermes build, contract deployment, etc.
-    let mut mithril_genesis_handle = None;
-    if with_mithril && network.uses_local_mithril() {
-        let cardano_epoch_on_mithril_start =
-            start_mithril_with_progress(project_root_path, &optional_progress_bar)
-                .await
-                .map_err(|e| format!("Failed to start Mithril services for local devnet: {}", e))?;
-
-        log_or_print_progress(
-            "PASS: Mithril services started (1 aggregator, 2 signers)",
-            &optional_progress_bar,
-        );
-        log_or_print_progress(
-            "Mithril genesis bootstrap started in background (waiting for immutable files and initial certificate chain)",
-            &optional_progress_bar,
-        );
-
-        let project_root_path = project_root_path.to_path_buf();
-        mithril_genesis_handle = Some(tokio::task::spawn_blocking(move || {
-            wait_and_start_mithril_genesis(
-                project_root_path.as_path(),
-                cardano_epoch_on_mithril_start,
-            )
-            .map_err(|e| e.to_string())
-        }));
+    // Local Mithril used to be started here. It is now intentionally disabled
+    // while the historical code remains in-tree for reference.
+    let mithril_genesis_handle = None;
+    let skip_message = if network.uses_local_mithril() {
+        "Mithril services are deprecated and disabled; using stake-weighted-stability light-client mode"
+            .to_string()
     } else {
-        let skip_message = if network.uses_local_mithril() {
-            "Skipping Mithril services (use --with-mithril to enable light client testing)"
-                .to_string()
-        } else {
-            "Using public Mithril release-preprod instead of local Mithril containers".to_string()
-        };
-        log_or_print_progress(skip_message.as_str(), &optional_progress_bar);
-    }
+        "Using managed Cardano preprod history runtime with stake-weighted-stability light-client mode".to_string()
+    };
+    log_or_print_progress(skip_message.as_str(), &optional_progress_bar);
 
     if matches!(network, config::CoreCardanoNetwork::Local) {
         let mut current_era = get_cardano_era(project_root_path)?;
@@ -1093,11 +1065,7 @@ pub async fn start_local_cardano_network(
             cardano_dir.as_path(),
             clean,
             network,
-            if with_mithril {
-                "mithril"
-            } else {
-                "stake-weighted-stability"
-            },
+            "stake-weighted-stability",
         )?;
     }
 
@@ -2287,6 +2255,9 @@ pub async fn ensure_managed_cardano_runtime(
     Ok(())
 }
 
+/// Deprecated and disabled from the maintained CLI path.
+/// Retained only so the historical local Mithril setup remains inspectable.
+#[allow(dead_code)]
 pub async fn start_mithril(project_root_dir: &Path) -> Result<u64, Box<dyn std::error::Error>> {
     let optional_progress_bar = match logger::get_verbosity() {
         logger::Verbosity::Verbose => None,
@@ -2303,6 +2274,7 @@ pub async fn start_mithril(project_root_dir: &Path) -> Result<u64, Box<dyn std::
     Ok(current_cardano_epoch)
 }
 
+#[allow(dead_code)]
 async fn start_mithril_with_progress(
     project_root_dir: &Path,
     optional_progress_bar: &Option<ProgressBar>,
@@ -2433,6 +2405,7 @@ async fn start_mithril_with_progress(
     Ok(current_cardano_epoch)
 }
 
+#[allow(dead_code)]
 pub fn wait_and_start_mithril_genesis(
     project_root_dir: &Path,
     _cardano_epoch_on_mithril_start: u64,
@@ -2728,6 +2701,7 @@ pub fn wait_and_start_mithril_genesis(
     Ok(())
 }
 
+#[allow(dead_code)]
 fn wait_for_cardano_immutable_files(
     cardano_node_dir: &Path,
     timeout: Duration,
@@ -2755,6 +2729,7 @@ fn wait_for_cardano_immutable_files(
     .into())
 }
 
+#[allow(dead_code)]
 fn has_any_immutable_chunk(immutable_dir: &Path) -> bool {
     let Ok(entries) = fs::read_dir(immutable_dir) else {
         return false;
@@ -2766,6 +2741,7 @@ fn has_any_immutable_chunk(immutable_dir: &Path) -> bool {
         .any(|path| path.extension().and_then(|ext| ext.to_str()) == Some("chunk"))
 }
 
+#[allow(dead_code)]
 fn wait_for_mithril_artifact_readiness(
     http_client: &reqwest::blocking::Client,
     aggregator_base_url: &str,

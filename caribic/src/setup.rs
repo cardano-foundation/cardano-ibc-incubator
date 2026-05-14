@@ -120,6 +120,7 @@ pub async fn download_repository(
     }
 }
 
+#[allow(dead_code)]
 pub async fn download_mithril(mithril_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let url = "https://github.com/input-output-hk/mithril/archive/refs/tags/2437.1.zip";
     download_repository(url, mithril_path, "mithril").await

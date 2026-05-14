@@ -210,11 +210,7 @@ fn ensure_message_exchange_prerequisites(project_root_path: &Path) -> Result<(),
     for failure in failures {
         error.push_str(format!("  - {failure}\n").as_str());
     }
-    let recommended_start = if gateway_uses_mithril(project_root_path) {
-        "caribic start --clean --with-mithril"
-    } else {
-        "caribic start --clean"
-    };
+    let recommended_start = "caribic start --clean";
     error.push_str(format!("\nRequired command:\n  - {recommended_start}").as_str());
     Err(error)
 }
@@ -257,11 +253,7 @@ fn ensure_cardano_demo_window(project_root_path: &Path) -> Result<(), String> {
                2. {}\n\
                3. caribic demo message-exchange"
             ,
-            if gateway_uses_mithril(project_root_path) {
-                "caribic start --clean --with-mithril"
-            } else {
-                "caribic start --clean"
-            }
+            "caribic start --clean"
         ));
     }
 

@@ -1,6 +1,9 @@
 
 ## Mithril Light Client Design
 
+> [!WARNING]
+> Deprecated and disabled: the Mithril light client and local Mithril setup are not maintained and are intentionally disabled for new deployments. This document is retained only as historical design reference. Current trust assumptions and deployment flows use `08-cardano-stability`; see [Stability-Scored Light Client Design](stability-scored-light-client.md).
+
 Author: Julius Tranquilli,https://github.com/floor-licker
 
 Date: March 10, 2026
@@ -18,6 +21,43 @@ The true intent of the Mithril project is to bootstrap nodes and allow them to s
 For example, if the aggregator tries to get a certificate signed at a point that is so close to the chain tip that many honest Nodes simply have different views of the ledger, i.e, maybe there’s a fork of 1-3 blocks (which is not all that strange), they would simply compute a different digest than the one they’re being asked to sign by the aggregator, and no certificate could be produced at that height. i.e, what I’m calling “Mithril misses” (like a cache miss) would basically mean that you tried to produce a certificate at a height where most SPOs were genuinely not agreeing on a canonical ledger view. 
 
 In this repo, the Mithril light client is an IBC 02-client implementation that lets a Cosmos chain verify Cardano-side IBC state by anchoring it to Mithril certificates plus Cardano transaction evidence. 
+
+## Historical Local Mithril Operations
+
+> [!NOTE]
+> This section preserves the previous main README operational notes for reference. The local Mithril setup described here is deprecated and disabled in the maintained Caribic startup path.
+
+Historically, the local Cardano devnet stack could be started together with a local Mithril aggregator and signers so that certificates, transaction snapshots, and inclusion proofs corresponded to the local Cardano chain. This was necessary for local Mithril testing because public Mithril endpoints only certify their own networks and cannot attest to transactions produced by a local devnet.
+
+In that setup, Mithril transaction snapshots were periodic checkpoints, not one certificate per Cardano block or slot. In this repository, the Mithril "height" used for IBC verification referred to the snapshot `block_number` (Cardano block height), not the Cardano slot. The latest certified snapshot height could lag behind the Cardano node tip. The Gateway treated the Mithril transaction proof API as "latest snapshot only", so after submitting a HostState update transaction the relayer could need to wait until a newer snapshot included that transaction before Cosmos-side verification could succeed.
+
+The snapshot cadence and stability tradeoffs were controlled by the Mithril config in `chains/mithrils/scripts/docker-compose.yaml`. As a frame of reference, as of March 2026 there was generally a hard Mithril-level constraint on a minimum certificate cadence of 15 blocks, irrespective of configurable values and tip lag.
+
+The key Mithril aggregator configs that affected snapshot frequency and IBC latency were:
+
+| Config | Description |
+|--------|-------------|
+| `RUN_INTERVAL` | Polling interval (ms) - how often the aggregator checks for new blocks to process. This is NOT the snapshot frequency. |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP` | Snapshot frequency - a new `CardanoTransactions` snapshot is created every N blocks. |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER` | How many blocks behind the chain tip snapshots are created. Provides finality buffer. |
+| `PROTOCOL_PARAMETERS__K` | Mithril protocol security parameter (lottery). |
+| `PROTOCOL_PARAMETERS__M` | Mithril protocol quorum parameter. |
+| `PROTOCOL_PARAMETERS__PHI_F` | Mithril protocol stake threshold parameter. |
+
+Historical devnet and mainnet reference values:
+
+| Config | Devnet | Mainnet (Jan 2026, per @jpraynaud) |
+|--------|--------|-------------------------------------|
+| `RUN_INTERVAL` | 1000 (1s) | 60000 (60s) |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP` | 5 | 30 |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER` | 15 | 100 |
+| `PROTOCOL_PARAMETERS__K` | 3 | 2422 |
+| `PROTOCOL_PARAMETERS__M` | 50 | 20973 |
+| `PROTOCOL_PARAMETERS__PHI_F` | 0.67 | 0.2 |
+
+This meant that on mainnet a new `CardanoTransactions` certification could be expected approximately every 10 minutes (around 30 blocks), at 100 blocks behind the chain tip. With the Mithril-based IBC relaying architecture, this translated to a minimum roughly 10 minute latency between a Cardano transaction being included and being provable to the counterparty chain via Mithril.
+
+For production deployments on public Cardano networks, the IBC stack was not intended to run its own Mithril aggregator or signers. Instead, the Gateway and relayer were expected to consume an existing Mithril aggregator endpoint for the target Cardano network; the counterparty chain verified Mithril certificates and proofs and did not need to trust the aggregator as an authority. The aggregator was a data source and availability dependency.
 
 ## ibc-go v10.x.x Design
 
