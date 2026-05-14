@@ -1,10 +1,11 @@
+use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/interval.{Finite}
 use aiken/option.{map}
 use aiken/primitive/bytearray
 use cardano/assets.{
-  AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of,
+  AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of, tokens,
 }
 use cardano/transaction.{
   InlineDatum, Input, Output, Redeemer, ScriptPurpose, Spend, ValidityRange,
@@ -188,6 +189,18 @@ pub fn validate_mint(
   } else {
     fail @"Auth Token Not Minted"
   }
+}
+
+pub fn require_exact_marker_mint(
+  mint: Value,
+  own_policy_id: PolicyId,
+  expected_asset_name: AssetName,
+  expected_quantity: Int,
+) -> Bool {
+  tokens(mint, own_policy_id) == (
+    dict.empty
+      |> dict.insert(expected_asset_name, expected_quantity)
+  )
 }
 
 /// Finds the single updated state output for a spent state UTxO.

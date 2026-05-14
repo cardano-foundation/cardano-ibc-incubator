@@ -78,6 +78,10 @@ type MockData {
   module_input: Input,
 }
 
+fn operation_marker(policy_id: PolicyId) {
+  from_asset(policy_id, "", 1)
+}
+
 fn setup() -> MockData {
   let host_state_nft_policy_id: PolicyId = "mock host state nft policy id"
   let host_state_token_name = "ibc_host_state"
@@ -663,6 +667,7 @@ test chan_open_ack_succeed() {
       outputs,
       redeemers,
       validity_range,
+      mint: operation_marker(mock_data.chan_open_ack_policy_id),
     }
 
   spending_channel.spend_channel.spend(
@@ -882,6 +887,7 @@ test chan_open_confirm_succeed() {
       outputs,
       redeemers,
       validity_range,
+      mint: operation_marker(mock_data.chan_open_confirm_policy_id),
     }
 
   spending_channel.spend_channel.spend(
@@ -1127,6 +1133,7 @@ test recv_packet_succeed() {
       outputs,
       redeemers,
       validity_range,
+      mint: operation_marker(mock_data.recv_packet_policy_id),
     }
 
   spending_channel.spend_channel.spend(
@@ -1251,6 +1258,7 @@ test send_packet_succeed() {
       outputs,
       redeemers,
       validity_range,
+      mint: operation_marker(mock_data.send_packet_policy_id),
     }
 
   spending_channel.spend_channel.spend(
@@ -1519,6 +1527,7 @@ test timeout_packet_succeed() {
       outputs,
       redeemers,
       validity_range,
+      mint: operation_marker(mock_data.timeout_packet_policy_id),
     }
 
   spending_channel.spend_channel.spend(
@@ -1775,6 +1784,7 @@ test acknowledge_packet_succeed() {
       outputs,
       redeemers,
       validity_range,
+      mint: operation_marker(mock_data.acknowledge_packet_policy_id),
     }
 
   spending_channel.spend_channel.spend(
@@ -1849,6 +1859,7 @@ test chan_close_init_succeed() {
       inputs,
       outputs: [fake_data.host_state_output],
       redeemers,
+      mint: operation_marker(fake_data.chan_close_init_policy_id),
     }
 
   let spend_channel_redeemer = ChanCloseInit
@@ -1910,7 +1921,13 @@ test chan_close_init_fails_without_host_state_co_spend() fail {
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [Pair(Mint(fake_data.chan_close_init_policy_id), chan_close_init_redeemer)]
 
-  let transaction = Transaction { ..transaction.placeholder, inputs, redeemers }
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      redeemers,
+      mint: operation_marker(fake_data.chan_close_init_policy_id),
+    }
 
   let spend_channel_redeemer = ChanCloseInit
 
@@ -1989,6 +2006,7 @@ test chan_close_confirm_succeed() {
       inputs,
       outputs: [fake_data.host_state_output],
       redeemers,
+      mint: operation_marker(fake_data.chan_close_confirm_policy_id),
     }
 
   let proof_init = MerkleProof { proofs: [] }

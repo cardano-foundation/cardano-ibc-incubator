@@ -141,15 +141,18 @@ validator send_packet(
     }
   }
 
-  mint(channel_token: AuthToken, _policy_id: PolicyId, transaction: Transaction) {
+  mint(channel_token: AuthToken, policy_id: PolicyId, transaction: Transaction) {
     let Transaction {
       inputs,
+      mint,
       outputs,
       redeemers,
       reference_inputs,
       validity_range,
       ..
     } = transaction
+
+    expect validator_utils.require_exact_marker_mint(mint, policy_id, "", 1)
 
     trace @"send_packet: mint packet"
 
