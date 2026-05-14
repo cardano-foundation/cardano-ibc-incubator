@@ -1,4 +1,5 @@
-use cardano/transaction.{placeholder}
+use cardano/assets.{PolicyId, from_asset}
+use cardano/transaction.{Transaction, placeholder}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState} as client_state_mod
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
@@ -32,6 +33,10 @@ type MockData {
   port_id: ByteArray,
   channel_id: ByteArray,
   proof_height: Height,
+}
+
+fn proof_marker_tx(policy_id: PolicyId) -> Transaction {
+  Transaction { ..placeholder, mint: from_asset(policy_id, "", 1) }
 }
 
 fn setup() -> MockData {
@@ -311,7 +316,7 @@ test verify_non_membership_succeed() {
   verifying_proof.verify_proof.mint(
     redeemer,
     #"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663",
-    placeholder,
+    proof_marker_tx(#"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663"),
   )
 }
 
@@ -472,7 +477,7 @@ test verify_membership_succeed() {
   verifying_proof.verify_proof.mint(
     redeemer,
     #"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663",
-    placeholder,
+    proof_marker_tx(#"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663"),
   )
 }
 
@@ -634,7 +639,7 @@ test batch_verify_membership_succeed() {
   verifying_proof.verify_proof.mint(
     redeemer,
     #"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663",
-    placeholder,
+    proof_marker_tx(#"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663"),
   )
 }
 
@@ -822,6 +827,6 @@ test try_non_mock_data() {
   verifying_proof.verify_proof.mint(
     redeemer,
     #"fab5154f5008ec54a97b7693db78924e4bb9ccdbea2ea7db282bedb2",
-    placeholder,
+    proof_marker_tx(#"fab5154f5008ec54a97b7693db78924e4bb9ccdbea2ea7db282bedb2"),
   )
 }

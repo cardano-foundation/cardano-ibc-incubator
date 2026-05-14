@@ -316,6 +316,7 @@ test succeed_recv_packet() {
       outputs,
       redeemers,
       validity_range,
+      mint: from_asset(mock_data.recv_packet_policy_id, "", 1),
     }
 
   recv_packet.recv_packet.mint(
@@ -400,6 +401,7 @@ test recv_packet_fails_when_channel_is_closed() fail {
       outputs: [channel_output],
       redeemers,
       validity_range: mock_data.validity_range,
+      mint: from_asset(mock_data.recv_packet_policy_id, "", 1),
     }
 
   recv_packet.recv_packet.mint(
@@ -970,6 +972,7 @@ test recv_packet_non_mock_data() {
       outputs,
       redeemers,
       validity_range,
+      mint: from_asset(recv_packet_policy_id, "", 1),
     }
 
   recv_packet.recv_packet.mint(

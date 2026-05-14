@@ -324,7 +324,7 @@ fn check_acknowledge_packet(transaction_mint: Value) {
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
     mock_data.channel_token,
-    #"",
+    mock_data.acknowledge_packet_policy_id,
     transaction,
   )
 }
