@@ -13,11 +13,11 @@ export type StabilityMetrics = {
   securityScoreBps: number;
 };
 
-export type StabilityScoringOptions = {
+type StabilityScoringOptions = {
   poolRegistrationCutoffSlot?: bigint;
 };
 
-export const STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS = 1_767_225_600_000_000_000n; // 2026-01-01T00:00:00Z
+const STABILITY_POOL_REGISTRATION_CUTOFF_UNIX_NS = 1_767_225_600_000_000_000n; // 2026-01-01T00:00:00Z
 const DEFAULT_CARDANO_SLOT_LENGTH_NS = 1_000_000_000n;
 
 export function assertEpochStakeDistributionAvailable(
