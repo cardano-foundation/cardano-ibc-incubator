@@ -30,9 +30,10 @@ func cloneEpochContext(ctx *EpochContext) *EpochContext {
 				continue
 			}
 			cloned.StakeDistribution = append(cloned.StakeDistribution, &StakeDistributionEntry{
-				PoolId:     entry.PoolId,
-				Stake:      entry.Stake,
-				VrfKeyHash: bytes.Clone(entry.VrfKeyHash),
+				PoolId:                entry.PoolId,
+				Stake:                 entry.Stake,
+				VrfKeyHash:            bytes.Clone(entry.VrfKeyHash),
+				FirstRegistrationSlot: entry.FirstRegistrationSlot,
 			})
 		}
 	}
@@ -73,9 +74,10 @@ func cloneStakeDistributionEntries(entries []*StakeDistributionEntry) []*StakeDi
 			continue
 		}
 		cloned = append(cloned, &StakeDistributionEntry{
-			PoolId:     entry.PoolId,
-			Stake:      entry.Stake,
-			VrfKeyHash: bytes.Clone(entry.VrfKeyHash),
+			PoolId:                entry.PoolId,
+			Stake:                 entry.Stake,
+			VrfKeyHash:            bytes.Clone(entry.VrfKeyHash),
+			FirstRegistrationSlot: entry.FirstRegistrationSlot,
 		})
 	}
 	return cloned

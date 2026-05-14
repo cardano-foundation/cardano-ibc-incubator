@@ -40,6 +40,7 @@ export type HistoryStakeDistributionEntry = {
   poolId: string;
   stake: bigint;
   vrfKeyHash: string;
+  firstRegistrationSlot?: bigint | null;
 };
 
 export type HistoryEpochVerificationContext = {

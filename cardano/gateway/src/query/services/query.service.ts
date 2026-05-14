@@ -524,8 +524,8 @@ export class QueryService {
       ibc_state_root: hostStateRootBytes,
       accepted_block_hash: stabilityEvidence.anchorBlock.hash,
       accepted_epoch: BigInt(stabilityEvidence.anchorEpoch),
-      unique_pools_count: BigInt(stabilityEvidence.metrics.uniquePoolsCount),
-      unique_stake_bps: BigInt(stabilityEvidence.metrics.uniqueStakeBps),
+      unique_pools_count: BigInt(stabilityEvidence.metrics.qualifiedUniquePoolsCount),
+      unique_stake_bps: BigInt(stabilityEvidence.metrics.qualifiedUniqueStakeBps),
       security_score_bps: BigInt(stabilityEvidence.metrics.securityScoreBps),
     };
 
@@ -1985,7 +1985,12 @@ export class QueryService {
 
   private toStabilityEpochContext(
     epoch: number,
-    stakeDistribution: Array<{ poolId: string; stake: bigint; vrfKeyHash: string }>,
+    stakeDistribution: Array<{
+      poolId: string;
+      stake: bigint;
+      vrfKeyHash: string;
+      firstRegistrationSlot?: bigint | null;
+    }>,
     verificationContext: {
       epochNonce: string;
       slotsPerKesPeriod: number;
@@ -2000,6 +2005,7 @@ export class QueryService {
           pool_id: entry.poolId,
           stake: this.toProtoUint64(entry.stake, `stake_distribution[${entry.poolId}].stake`),
           vrf_key_hash: Buffer.from(entry.vrfKeyHash, 'hex'),
+          first_registration_slot: entry.firstRegistrationSlot ?? 0n,
         }),
       ),
       epoch_nonce: Buffer.from(verificationContext.epochNonce, 'hex'),

@@ -176,6 +176,84 @@ func TestComputeHeaderSecurityMetricsRejectsEmptyEpochStakeDistribution(t *testi
 	require.ErrorContains(t, err, "stake distribution must not be empty")
 }
 
+func TestComputeHeaderSecurityMetricsExcludesPoolsRegisteredAfterCutoff(t *testing.T) {
+	cs := newStabilityTestClientState()
+	cutoffSlot, err := cs.poolRegistrationCutoffSlotExclusive()
+	require.NoError(t, err)
+	epochContext := &EpochContext{
+		Epoch:                 cs.CurrentEpoch,
+		EpochNonce:            bytes.Repeat([]byte{0x03}, 32),
+		SlotsPerKesPeriod:     cs.SlotsPerKesPeriod,
+		EpochStartSlot:        cs.CurrentEpochStartSlot,
+		EpochEndSlotExclusive: cs.CurrentEpochEndSlotExclusive,
+		StakeDistribution: []*StakeDistributionEntry{
+			{
+				PoolId:                "pool-a",
+				Stake:                 500,
+				VrfKeyHash:            bytes.Repeat([]byte{0x02}, 32),
+				FirstRegistrationSlot: 1,
+			},
+			{
+				PoolId:                "pool-b",
+				Stake:                 500,
+				VrfKeyHash:            bytes.Repeat([]byte{0x04}, 32),
+				FirstRegistrationSlot: cutoffSlot,
+			},
+		},
+	}
+	authenticatedHeader := &authenticatedStabilityHeader{
+		anchorBlock: &authenticatedStabilityBlock{
+			height: 12,
+			hash:   "anchor-12",
+			slot:   120,
+			epoch:  cs.CurrentEpoch,
+		},
+		descendantBlocks: []*authenticatedStabilityBlock{
+			{height: 13, hash: "descendant-13", prevHash: "anchor-12", epoch: cs.CurrentEpoch, slotLeader: "pool-a"},
+			{height: 14, hash: "descendant-14", prevHash: "descendant-13", epoch: cs.CurrentEpoch, slotLeader: "pool-b"},
+		},
+	}
+
+	qualifiedUniquePools, qualifiedUniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
+
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), qualifiedUniquePools)
+	require.Equal(t, uint64(5000), qualifiedUniqueStakeBps)
+}
+
+func TestComputeHeaderSecurityMetricsFailsClosedWhenPoolAgeIsMissing(t *testing.T) {
+	cs := newStabilityTestClientState()
+	epochContext := &EpochContext{
+		Epoch:                 cs.CurrentEpoch,
+		EpochNonce:            bytes.Repeat([]byte{0x03}, 32),
+		SlotsPerKesPeriod:     cs.SlotsPerKesPeriod,
+		EpochStartSlot:        cs.CurrentEpochStartSlot,
+		EpochEndSlotExclusive: cs.CurrentEpochEndSlotExclusive,
+		StakeDistribution: []*StakeDistributionEntry{
+			{
+				PoolId:     "pool-a",
+				Stake:      10_000,
+				VrfKeyHash: bytes.Repeat([]byte{0x02}, 32),
+			},
+		},
+	}
+	authenticatedHeader := &authenticatedStabilityHeader{
+		anchorBlock: &authenticatedStabilityBlock{
+			height: 12,
+			hash:   "anchor-12",
+			slot:   120,
+			epoch:  cs.CurrentEpoch,
+		},
+		descendantBlocks: []*authenticatedStabilityBlock{
+			{height: 13, hash: "descendant-13", prevHash: "anchor-12", epoch: cs.CurrentEpoch, slotLeader: "pool-a"},
+		},
+	}
+
+	_, _, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
+
+	require.ErrorContains(t, err, "first registration slot missing")
+}
+
 func TestVerifyHeaderEpochTransitionAcceptsAdjacentEpochRollover(t *testing.T) {
 	header := &StabilityHeader{
 		NewEpochContext: &EpochContext{Epoch: 8},
@@ -532,9 +610,10 @@ func newStabilityTestClientState() *ClientState {
 		HostStateNftTokenName: []byte("host-state"),
 		EpochStakeDistribution: []*StakeDistributionEntry{
 			{
-				PoolId:     "pool-a",
-				Stake:      10_000,
-				VrfKeyHash: bytes.Repeat([]byte{0x02}, 32),
+				PoolId:                "pool-a",
+				Stake:                 10_000,
+				VrfKeyHash:            bytes.Repeat([]byte{0x02}, 32),
+				FirstRegistrationSlot: 1,
 			},
 		},
 		EpochNonce:                   bytes.Repeat([]byte{0x03}, 32),

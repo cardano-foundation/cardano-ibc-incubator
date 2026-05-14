@@ -2,6 +2,7 @@ package stability
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	errorsmod "cosmossdk.io/errors"
@@ -12,6 +13,8 @@ import (
 	host "github.com/cosmos/ibc-go/v10/modules/core/24-host"
 	"github.com/cosmos/ibc-go/v10/modules/core/exported"
 )
+
+const poolRegistrationCutoffUnixNs uint64 = 1_767_225_600_000_000_000 // 2026-01-01T00:00:00Z
 
 func (cs *ClientState) VerifyClientMessage(
 	ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore,
@@ -128,16 +131,16 @@ func (cs *ClientState) verifyHeaderWithMode(
 		return errorsmod.Wrapf(ErrInvalidStabilityScore, "insufficient descendant depth: got %d, need %d", depth, cs.HeuristicParams.ThresholdDepth)
 	}
 
-	uniquePools, uniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, anchorEpochContext)
+	qualifiedUniquePools, qualifiedUniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, anchorEpochContext)
 	if err != nil {
 		return err
 	}
 
-	if uniquePools < cs.HeuristicParams.ThresholdUniquePools {
-		return errorsmod.Wrapf(ErrInvalidUniquePools, "insufficient unique pools: got %d, need %d", uniquePools, cs.HeuristicParams.ThresholdUniquePools)
+	if qualifiedUniquePools < cs.HeuristicParams.ThresholdUniquePools {
+		return errorsmod.Wrapf(ErrInvalidUniquePools, "insufficient qualified unique pools: got %d, need %d", qualifiedUniquePools, cs.HeuristicParams.ThresholdUniquePools)
 	}
-	if uniqueStakeBps < cs.HeuristicParams.ThresholdUniqueStakeBps {
-		return errorsmod.Wrapf(ErrInvalidUniqueStake, "insufficient unique stake bps: got %d, need %d", uniqueStakeBps, cs.HeuristicParams.ThresholdUniqueStakeBps)
+	if qualifiedUniqueStakeBps < cs.HeuristicParams.ThresholdUniqueStakeBps {
+		return errorsmod.Wrapf(ErrInvalidUniqueStake, "insufficient qualified unique stake bps: got %d, need %d", qualifiedUniqueStakeBps, cs.HeuristicParams.ThresholdUniqueStakeBps)
 	}
 
 	if _, err := cs.ExtractIbcStateRootFromHostStateTx(header); err != nil {
@@ -309,10 +312,10 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 	epochContext *EpochContext,
 ) (uint64, uint64, uint64, error) {
 	seenPools := make(map[string]struct{})
-	uniquePools := uint64(0)
-	uniqueStake := uint64(0)
-	totalStake := uint64(0)
-	stakeByPool := make(map[string]uint64)
+	qualifiedUniquePools := uint64(0)
+	qualifiedUniqueStake := uint64(0)
+	totalActiveStake := uint64(0)
+	stakeByPool := make(map[string]*StakeDistributionEntry)
 
 	if epochContext == nil {
 		return 0, 0, 0, errorsmod.Wrap(ErrInvalidCurrentEpoch, "anchor epoch context must be present")
@@ -326,15 +329,19 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 		if entry == nil {
 			continue
 		}
-		stakeByPool[strings.ToLower(entry.PoolId)] = entry.Stake
-		totalStake += entry.Stake
+		stakeByPool[strings.ToLower(entry.PoolId)] = entry
+		totalActiveStake += entry.Stake
 	}
-	if totalStake == 0 {
+	if totalActiveStake == 0 {
 		return 0, 0, 0, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "epoch %d stake distribution must have positive total stake", epochContext.Epoch)
 	}
 
 	if header == nil || header.anchorBlock == nil {
 		return 0, 0, 0, errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated anchor block missing")
+	}
+	poolRegistrationCutoffSlot, err := cs.poolRegistrationCutoffSlotExclusive()
+	if err != nil {
+		return 0, 0, 0, err
 	}
 
 	anchorEpoch := header.anchorBlock.epoch
@@ -364,8 +371,15 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 		if poolID != "" {
 			if _, exists := seenPools[poolID]; !exists {
 				seenPools[poolID] = struct{}{}
-				uniquePools++
-				uniqueStake += stakeByPool[poolID]
+				entry := stakeByPool[poolID]
+				eligible, err := poolRegisteredBeforeCutoff(poolRegistrationCutoffSlot, entry)
+				if err != nil {
+					return 0, 0, 0, err
+				}
+				if eligible {
+					qualifiedUniquePools++
+					qualifiedUniqueStake += entry.Stake
+				}
 			}
 		}
 
@@ -373,22 +387,57 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 		prevHeight = block.height
 	}
 
-	uniqueStakeBps := uint64(0)
-	uniqueStakeBps = min((uniqueStake*10_000)/totalStake, 10_000)
+	qualifiedUniqueStakeBps := uint64(0)
+	qualifiedUniqueStakeBps = min((qualifiedUniqueStake*10_000)/totalActiveStake, 10_000)
 
-	score := cs.computeSecurityScore(uint64(len(header.descendantBlocks)), uniquePools, uniqueStakeBps)
-	return uniquePools, uniqueStakeBps, score, nil
+	score := cs.computeSecurityScore(uint64(len(header.descendantBlocks)), qualifiedUniquePools, qualifiedUniqueStakeBps)
+	return qualifiedUniquePools, qualifiedUniqueStakeBps, score, nil
 }
 
-func (cs *ClientState) computeSecurityScore(depth, uniquePools, uniqueStakeBps uint64) uint64 {
+func (cs *ClientState) poolRegistrationCutoffSlotExclusive() (uint64, error) {
+	if cs == nil {
+		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "client state missing")
+	}
+	if cs.SystemStartUnixNs == 0 {
+		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "system_start_unix_ns must be greater than zero")
+	}
+	if cs.SlotLengthNs == 0 {
+		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "slot_length_ns must be greater than zero")
+	}
+	if poolRegistrationCutoffUnixNs <= cs.SystemStartUnixNs {
+		return 0, nil
+	}
+
+	delta := poolRegistrationCutoffUnixNs - cs.SystemStartUnixNs
+	if delta > math.MaxUint64-(cs.SlotLengthNs-1) {
+		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "pool registration cutoff slot overflows uint64")
+	}
+	return (delta + cs.SlotLengthNs - 1) / cs.SlotLengthNs, nil
+}
+
+func poolRegisteredBeforeCutoff(cutoffSlotExclusive uint64, entry *StakeDistributionEntry) (bool, error) {
+	if entry == nil {
+		return false, errorsmod.Wrap(ErrInvalidCurrentEpoch, "descendant slot leader missing from epoch stake distribution")
+	}
+	if entry.FirstRegistrationSlot == 0 {
+		return false, errorsmod.Wrapf(
+			ErrInvalidCurrentEpoch,
+			"first registration slot missing for pool %s",
+			entry.PoolId,
+		)
+	}
+	return entry.FirstRegistrationSlot < cutoffSlotExclusive, nil
+}
+
+func (cs *ClientState) computeSecurityScore(depth, qualifiedUniquePools, qualifiedUniqueStakeBps uint64) uint64 {
 	params := cs.HeuristicParams
 	depthScore := minBps(depth, params.ThresholdDepth)
-	poolsScore := minBps(uniquePools, params.ThresholdUniquePools)
-	stakeScore := minBps(uniqueStakeBps, params.ThresholdUniqueStakeBps)
+	poolsScore := minBps(qualifiedUniquePools, params.ThresholdUniquePools)
+	qualifiedStakeScore := minBps(qualifiedUniqueStakeBps, params.ThresholdUniqueStakeBps)
 	return min(
 		(params.DepthWeightBps*depthScore+
 			params.PoolsWeightBps*poolsScore+
-			params.StakeWeightBps*stakeScore)/10_000,
+			params.StakeWeightBps*qualifiedStakeScore)/10_000,
 		10_000,
 	)
 }
@@ -453,7 +502,7 @@ func (cs *ClientState) UpdateState(
 	if err != nil {
 		panic(fmt.Errorf("failed to extract ibc_state_root from verified StabilityHeader: %w", err))
 	}
-	uniquePools, uniqueStakeBps, securityScoreBps, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, anchorEpochContext)
+	qualifiedUniquePools, qualifiedUniqueStakeBps, securityScoreBps, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, anchorEpochContext)
 	if err != nil {
 		panic(fmt.Errorf("failed to recompute stability metrics from verified StabilityHeader: %w", err))
 	}
@@ -464,16 +513,16 @@ func (cs *ClientState) UpdateState(
 		IbcStateRoot:      ibcStateRoot,
 		AcceptedBlockHash: authenticatedHeader.anchorBlock.hash,
 		AcceptedEpoch:     authenticatedHeader.anchorBlock.epoch,
-		UniquePoolsCount:  uniquePools,
-		UniqueStakeBps:    uniqueStakeBps,
+		UniquePoolsCount:  qualifiedUniquePools,
+		UniqueStakeBps:    qualifiedUniqueStakeBps,
 		SecurityScoreBps:  securityScoreBps,
 	}
 
 	setConsensusState(clientStore, cdc, newConsensusState, header.GetHeight())
 	setConsensusMetadata(ctx, clientStore, header.GetHeight())
 	clientStore.Set(StabilityScoreKey(height.RevisionHeight), sdk.Uint64ToBigEndian(securityScoreBps))
-	clientStore.Set(UniquePoolsKey(height.RevisionHeight), sdk.Uint64ToBigEndian(uniquePools))
-	clientStore.Set(UniqueStakeKey(height.RevisionHeight), sdk.Uint64ToBigEndian(uniqueStakeBps))
+	clientStore.Set(UniquePoolsKey(height.RevisionHeight), sdk.Uint64ToBigEndian(qualifiedUniquePools))
+	clientStore.Set(UniqueStakeKey(height.RevisionHeight), sdk.Uint64ToBigEndian(qualifiedUniqueStakeBps))
 	clientStore.Set(AcceptedBlockHashKey(height.RevisionHeight), []byte(authenticatedHeader.anchorBlock.hash))
 
 	keepEpochs := collectReferencedConsensusEpochs(clientStore, cdc)

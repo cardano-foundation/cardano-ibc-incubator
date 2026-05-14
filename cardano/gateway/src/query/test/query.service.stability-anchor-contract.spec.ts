@@ -160,11 +160,11 @@ describe('QueryService stability anchor contract', () => {
       findEpochContextAtBlock: jest.fn().mockResolvedValue({
         epoch: 7,
         stakeDistribution: [
-          { poolId: 'pool-a', stake: 200n, vrfKeyHash: 'aa'.repeat(32) },
-          { poolId: 'pool-b', stake: 200n, vrfKeyHash: 'bb'.repeat(32) },
-          { poolId: 'pool-c', stake: 200n, vrfKeyHash: 'cc'.repeat(32) },
-          { poolId: 'pool-d', stake: 200n, vrfKeyHash: 'dd'.repeat(32) },
-          { poolId: 'pool-e', stake: 200n, vrfKeyHash: 'ee'.repeat(32) },
+          { poolId: 'pool-a', stake: 200n, vrfKeyHash: 'aa'.repeat(32), firstRegistrationSlot: 1n },
+          { poolId: 'pool-b', stake: 200n, vrfKeyHash: 'bb'.repeat(32), firstRegistrationSlot: 1n },
+          { poolId: 'pool-c', stake: 200n, vrfKeyHash: 'cc'.repeat(32), firstRegistrationSlot: 1n },
+          { poolId: 'pool-d', stake: 200n, vrfKeyHash: 'dd'.repeat(32), firstRegistrationSlot: 1n },
+          { poolId: 'pool-e', stake: 200n, vrfKeyHash: 'ee'.repeat(32), firstRegistrationSlot: 1n },
         ],
         verificationContext: {
           epochNonce: '11'.repeat(32),
