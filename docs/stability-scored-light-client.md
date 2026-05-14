@@ -154,6 +154,8 @@ The Gateway:
 
 Client creation still starts from one epoch context, but updates are no longer single-epoch-only. Gateway now supports ordinary `epoch N -> epoch N+1` rollover updates on the same client ID by attaching `new_epoch_context` to the header when the anchor moves into the next epoch. The scored descendant window still remains single-epoch: bridge continuity may span the boundary, but the anchor and scored descendants must all live in the same anchor epoch.
 
+An accepted epoch context is canonical for that epoch. Later headers may repeat the same epoch context, but a different context for an already-known epoch is treated as misbehaviour and freezes the client. This does not make the first accepted epoch context cryptographically authenticated; it changes the failure mode so that contradictory observer views cannot silently replace or coexist with the stored stake context.
+
 ## HostState Root Authentication
 
 Just like the Mithril path, this client is **not** verifying arbitrary Cardano state directly. It is verifying a Cardano IBC-specific commitment architecture centered around the HostState UTxO.

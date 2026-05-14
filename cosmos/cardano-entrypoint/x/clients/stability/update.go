@@ -175,10 +175,14 @@ func verifyHeaderEpochTransition(
 		)
 	case anchorEpoch == trustedEpoch:
 		if header.NewEpochContext != nil {
-			return errorsmod.Wrap(
-				ErrInvalidCurrentEpoch,
-				"new_epoch_context must be absent for same-epoch stability updates",
-			)
+			if header.NewEpochContext.Epoch != anchorEpoch {
+				return errorsmod.Wrapf(
+					ErrInvalidCurrentEpoch,
+					"same-epoch new_epoch_context epoch %d must match accepted epoch %d",
+					header.NewEpochContext.Epoch,
+					anchorEpoch,
+				)
+			}
 		}
 	case anchorEpoch == trustedEpoch+1:
 		if header.NewEpochContext == nil {

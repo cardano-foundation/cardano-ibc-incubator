@@ -198,6 +198,58 @@ func TestVerifyHeaderEpochTransitionAcceptsAdjacentEpochRollover(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestVerifyHeaderEpochTransitionAcceptsMatchingSameEpochContext(t *testing.T) {
+	header := &StabilityHeader{
+		NewEpochContext: &EpochContext{Epoch: 7},
+	}
+	trustedConsensus := &ConsensusState{AcceptedEpoch: 7}
+	authenticatedHeader := &authenticatedStabilityHeader{
+		anchorBlock:      &authenticatedStabilityBlock{epoch: 7},
+		bridgeBlocks:     []*authenticatedStabilityBlock{{epoch: 7}},
+		descendantBlocks: []*authenticatedStabilityBlock{{epoch: 7}},
+	}
+
+	err := verifyHeaderEpochTransition(header, trustedConsensus, authenticatedHeader)
+	require.NoError(t, err)
+}
+
+func TestVerifyHeaderEpochTransitionRejectsMismatchedSameEpochContext(t *testing.T) {
+	header := &StabilityHeader{
+		NewEpochContext: &EpochContext{Epoch: 8},
+	}
+	trustedConsensus := &ConsensusState{AcceptedEpoch: 7}
+	authenticatedHeader := &authenticatedStabilityHeader{
+		anchorBlock:      &authenticatedStabilityBlock{epoch: 7},
+		bridgeBlocks:     []*authenticatedStabilityBlock{{epoch: 7}},
+		descendantBlocks: []*authenticatedStabilityBlock{{epoch: 7}},
+	}
+
+	err := verifyHeaderEpochTransition(header, trustedConsensus, authenticatedHeader)
+	require.ErrorContains(t, err, "same-epoch new_epoch_context epoch 8 must match accepted epoch 7")
+}
+
+func TestNormalizeEpochContextsRejectsConflictingDuplicateEpoch(t *testing.T) {
+	cs := newStabilityTestClientState()
+	first := cloneEpochContext(cs.legacyEpochContext())
+	second := cloneEpochContext(first)
+	second.StakeDistribution[0].Stake++
+
+	_, err := normalizeEpochContexts([]*EpochContext{first, second})
+	require.ErrorContains(t, err, "conflicting epoch context for epoch 7")
+}
+
+func TestMergeEpochContextsAllowsCandidateForStoredEpoch(t *testing.T) {
+	cs := newStabilityTestClientState()
+	stored := cloneEpochContext(cs.legacyEpochContext())
+	candidate := cloneEpochContext(stored)
+	candidate.StakeDistribution[0].Stake++
+
+	contexts, err := mergeEpochContexts([]*EpochContext{stored}, candidate)
+	require.NoError(t, err)
+	require.Len(t, contexts, 1)
+	require.Equal(t, candidate.StakeDistribution[0].Stake, contexts[0].StakeDistribution[0].Stake)
+}
+
 func TestCheckForMisbehaviourDetectsConflictingHeaderAtSameHeight(t *testing.T) {
 	cdc := newStabilityTestCodec()
 	ctx, clientStore := newStabilityTestClientStore(t, "stability-misbehaviour-header")
@@ -210,6 +262,29 @@ func TestCheckForMisbehaviourDetectsConflictingHeaderAtSameHeight(t *testing.T) 
 	header.AnchorBlock.Hash = "different-anchor"
 
 	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
+}
+
+func TestCheckForMisbehaviourDetectsConflictingEpochContext(t *testing.T) {
+	cdc := newStabilityTestCodec()
+	ctx, clientStore := newStabilityTestClientStore(t, "stability-misbehaviour-epoch-context")
+
+	cs := newStabilityTestClientState()
+	header := newVerifiedTestHeader(t)
+	header.NewEpochContext = cloneEpochContext(cs.legacyEpochContext())
+	header.NewEpochContext.StakeDistribution[0].Stake++
+
+	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
+}
+
+func TestCheckForMisbehaviourIgnoresMatchingEpochContext(t *testing.T) {
+	cdc := newStabilityTestCodec()
+	ctx, clientStore := newStabilityTestClientStore(t, "stability-misbehaviour-matching-epoch-context")
+
+	cs := newStabilityTestClientState()
+	header := newVerifiedTestHeader(t)
+	header.NewEpochContext = cloneEpochContext(cs.legacyEpochContext())
+
+	require.False(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
 }
 
 func TestCheckForMisbehaviourDetectsConflictingWindowAgainstStoredConsensus(t *testing.T) {
@@ -231,6 +306,18 @@ func TestCheckForMisbehaviourDetectsConflictingMisbehaviourMessage(t *testing.T)
 	header1 := newVerifiedTestHeader(t)
 	header2 := newVerifiedTestHeader(t)
 	header2.AnchorBlock.Hash = "different-anchor"
+
+	msg := NewMisbehaviour("08-cardano-stability-0", header1, header2)
+	require.True(t, cs.CheckForMisbehaviour(sdk.Context{}, nil, nil, msg))
+}
+
+func TestCheckForMisbehaviourDetectsConflictingEpochContextsInMisbehaviourMessage(t *testing.T) {
+	cs := newStabilityTestClientState()
+	header1 := newVerifiedTestHeader(t)
+	header2 := newVerifiedTestHeader(t)
+	header1.NewEpochContext = cloneEpochContext(cs.legacyEpochContext())
+	header2.NewEpochContext = cloneEpochContext(header1.NewEpochContext)
+	header2.NewEpochContext.StakeDistribution[0].Stake++
 
 	msg := NewMisbehaviour("08-cardano-stability-0", header1, header2)
 	require.True(t, cs.CheckForMisbehaviour(sdk.Context{}, nil, nil, msg))
