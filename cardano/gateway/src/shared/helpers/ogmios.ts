@@ -50,6 +50,8 @@ type OgmiosSession = {
 };
 
 const STAKE_DISTRIBUTION_WEIGHT_SCALE = 1_000_000_000_000n;
+const OGMIOS_OPEN_TIMEOUT_MS = readPositiveIntegerEnv('OGMIOS_OPEN_TIMEOUT_MS', 10_000);
+const OGMIOS_REQUEST_TIMEOUT_MS = readPositiveIntegerEnv('OGMIOS_REQUEST_TIMEOUT_MS', 20_000);
 const OGMIOS_TRANSIENT_MAX_ATTEMPTS = 10;
 const OGMIOS_TRANSIENT_BASE_DELAY_MS = 500;
 const OGMIOS_TRANSIENT_MAX_DELAY_MS = 5_000;
@@ -67,6 +69,16 @@ const TRANSIENT_OGMIOS_ERROR_MARKERS = [
 ];
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+  const value = process.env[name];
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
 
 const isTransientOgmiosError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error);
@@ -107,12 +119,37 @@ const openOgmiosConnection = async (ogmiosUrl: string): Promise<WebSocket> => {
   );
 
   await new Promise<void>((resolve, reject) => {
-    const handleOpen = () => {
+    let settled = false;
+    const timeout = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      client.terminate();
+      reject(new Error(`Ogmios WebSocket connection timed out after ${OGMIOS_OPEN_TIMEOUT_MS}ms`));
+    }, OGMIOS_OPEN_TIMEOUT_MS);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      client.off('open', handleOpen);
       client.off('error', handleError);
+    };
+
+    const handleOpen = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
       resolve();
     };
     const handleError = (error: Error) => {
-      client.off('open', handleOpen);
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
       reject(error);
     };
 
@@ -265,13 +302,27 @@ const createOgmiosSession = async (ogmiosUrl: string): Promise<{ client: WebSock
     request<T>(methodname: string, args: unknown = {}): Promise<T> {
       return new Promise<T>((resolve, reject) => {
         const requestId = `${methodname}-${++nextId}`;
+        let settled = false;
+        const timeout = setTimeout(() => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          cleanup();
+          reject(new Error(`Ogmios request ${methodname} timed out after ${OGMIOS_REQUEST_TIMEOUT_MS}ms`));
+        }, OGMIOS_REQUEST_TIMEOUT_MS);
 
         const cleanup = () => {
+          clearTimeout(timeout);
           client.off('message', handleMessage);
           client.off('error', handleError);
         };
 
         const handleError = (error: Error) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
           cleanup();
           reject(error ?? new Error(`Ogmios request ${methodname} failed`));
         };
@@ -283,6 +334,10 @@ const createOgmiosSession = async (ogmiosUrl: string): Promise<{ client: WebSock
               return;
             }
 
+            if (settled) {
+              return;
+            }
+            settled = true;
             cleanup();
             if (payload?.error) {
               const errorMessage = [payload.error.message, payload.error.data]
@@ -293,6 +348,10 @@ const createOgmiosSession = async (ogmiosUrl: string): Promise<{ client: WebSock
             }
             resolve(payload.result as T);
           } catch (error) {
+            if (settled) {
+              return;
+            }
+            settled = true;
             cleanup();
             reject(error);
           }
@@ -300,14 +359,20 @@ const createOgmiosSession = async (ogmiosUrl: string): Promise<{ client: WebSock
 
         client.on('message', handleMessage);
         client.on('error', handleError);
-        client.send(
-          JSON.stringify({
-            jsonrpc: '2.0',
-            id: requestId,
-            method: methodname,
-            params: args,
-          }),
-        );
+        const payload = JSON.stringify({
+          jsonrpc: '2.0',
+          id: requestId,
+          method: methodname,
+          params: args,
+        });
+        client.send(payload, (error) => {
+          if (!error || settled) {
+            return;
+          }
+          settled = true;
+          cleanup();
+          reject(error);
+        });
       });
     },
   };
@@ -349,17 +414,26 @@ const withAcquiredLedgerState = async <T>(
 ): Promise<T> => {
   return retryOgmiosOperation('acquireLedgerState', async () => {
     const { client, session } = await createOgmiosSession(ogmiosUrl);
+    let acquired = false;
 
     try {
       await session.request('acquireLedgerState', { point: normalizeLedgerPoint(point) });
+      acquired = true;
       return await callback(session);
     } finally {
       try {
-        if (client.readyState === WebSocket.OPEN) {
-          await session.request('releaseLedgerState', {});
+        if (acquired && client.readyState === WebSocket.OPEN) {
+          client.send(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id: `releaseLedgerState-${Date.now()}`,
+              method: 'releaseLedgerState',
+              params: {},
+            }),
+          );
         }
       } catch {
-        // Best-effort cleanup only.
+        // Best-effort cleanup only; closing the short-lived connection also releases the session.
       }
 
       if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) {
@@ -387,8 +461,7 @@ const queryEpochContextAtPoint = async (
       epochNonce = parseEpochNonce(currentNonces);
     } catch (error) {
       const fallback = parseFallbackEpochNonce(epochNonceFallback);
-      const message = error instanceof Error ? error.message : String(error);
-      if (!fallback || !message.includes('unknown query name')) {
+      if (!fallback) {
         throw error;
       }
       epochNonce = fallback;
@@ -424,8 +497,7 @@ const queryCurrentEpochVerificationData = async (
     epochNonce = parseEpochNonce(currentNonces);
   } catch (error) {
     const fallback = parseFallbackEpochNonce(epochNonceFallback);
-    const message = error instanceof Error ? error.message : String(error);
-    if (!fallback || !message.includes('unknown query name')) {
+    if (!fallback) {
       throw error;
     }
     epochNonce = fallback;

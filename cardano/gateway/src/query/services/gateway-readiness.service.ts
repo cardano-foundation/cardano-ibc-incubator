@@ -35,6 +35,24 @@ type GatewayReadinessStatus = {
   history: GatewayHistoryReadinessStatus;
 };
 
+const READINESS_PROOF_CHECK_TIMEOUT_MS = 25_000;
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  return Promise.race([
+    promise.finally(() => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    }),
+    timeoutPromise,
+  ]);
+}
+
 @Injectable()
 export class GatewayReadinessService {
   private readonly logger = new Logger(GatewayReadinessService.name);
@@ -54,16 +72,20 @@ export class GatewayReadinessService {
       const liveHostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
       liveHostStateTxHash = liveHostStateUtxo?.txHash ?? null;
 
-      const proofHeight = await resolveProofHeightForCurrentRoot({
-        logger: this.logger,
-        lucidService: this.lucidService,
-        mithrilService: this.mithrilService,
-        historyService: this.historyService,
-        context: 'health/ready',
-        lightClientMode,
-        maxAttempts: 12,
-        delayMs: 1000,
-      });
+      const proofHeight = await withTimeout(
+        resolveProofHeightForCurrentRoot({
+          logger: this.logger,
+          lucidService: this.lucidService,
+          mithrilService: this.mithrilService,
+          historyService: this.historyService,
+          context: 'health/ready',
+          lightClientMode,
+          maxAttempts: 1,
+          delayMs: 0,
+        }),
+        READINESS_PROOF_CHECK_TIMEOUT_MS,
+        `Gateway proof readiness check timed out after ${READINESS_PROOF_CHECK_TIMEOUT_MS}ms`,
+      );
       const history = await this.buildHistoryReadinessStatus(liveHostStateTxHash, true);
 
       return {
@@ -78,13 +100,17 @@ export class GatewayReadinessService {
     } catch (error) {
       const cause = error instanceof Error ? error.message : String(error);
       const history = await this.buildHistoryReadinessStatus(liveHostStateTxHash, false);
+      const proofCheckTimedOut = cause.includes('Gateway proof readiness check timed out');
       return {
         status: 'not_ready',
         reason: history.reason,
         lightClientMode,
         liveHostStateTxHash,
         proofHeight: null,
-        detail: history.reason === 'history_status_unknown' ? cause : history.message,
+        detail:
+          proofCheckTimedOut || history.reason === 'history_status_unknown'
+            ? `${cause}; ${history.message}`
+            : history.message,
         cause,
         history,
       };

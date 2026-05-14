@@ -21,6 +21,8 @@ import {
   getLiveWalletUtxos,
   isRetryableOgmiosTransportError,
   readValidator,
+  recordDeploymentTx,
+  resetDeploymentCostReport,
   submitTx,
 } from "./utils.ts";
 import {
@@ -123,10 +125,16 @@ const sha256Hex = async (bytes: Uint8Array): Promise<string> => {
   return bytesToHex(new Uint8Array(digest));
 };
 
-const leafHash = async (valueHex: string): Promise<string> => {
+const leafHash = async (keyHash: string, valueHex: string): Promise<string> => {
   if (valueHex.length === 0) return EMPTY_HASH;
   const valueHash = await sha256Hex(hexToBytes(valueHex));
-  return sha256Hex(concatBytes(new Uint8Array([0]), hexToBytes(valueHash)));
+  return sha256Hex(
+    concatBytes(
+      new Uint8Array([0]),
+      hexToBytes(keyHash),
+      hexToBytes(valueHash),
+    ),
+  );
 };
 
 const innerHash = (left: string, right: string): Promise<string> => {
@@ -143,7 +151,7 @@ const keyIndex64 = async (key: string): Promise<bigint> => {
   return BigInt(`0x${hash.slice(0, 16)}`);
 };
 
-class DeploymentIbcTree {
+export class DeploymentIbcTree {
   private leaves = new Map<string, string>();
   private root = EMPTY_HASH;
   private dirty = true;
@@ -186,7 +194,11 @@ class DeploymentIbcTree {
     );
 
     for (const [key, value] of this.leaves.entries()) {
-      nodesByHeight[0].set(await keyIndex64(key), await leafHash(value));
+      const keyHash = await sha256Hex(new TextEncoder().encode(key));
+      nodesByHeight[0].set(
+        BigInt(`0x${keyHash.slice(0, 16)}`),
+        await leafHash(keyHash, value),
+      );
     }
 
     for (let height = 0; height < MERKLE_DEPTH_BITS; height++) {
@@ -258,6 +270,17 @@ export const createDeployment = async (
 ) => {
   console.log("Create deployment info");
   const referredValidators: Script[] = [];
+  const deploymentReportEnabled = mode !== undefined && mode != EMULATOR_ENV;
+  const deploymentWalletAddress = deploymentReportEnabled
+    ? await lucid.wallet().address()
+    : undefined;
+  if (deploymentWalletAddress) {
+    await resetDeploymentCostReport(
+      deploymentWalletAddress,
+      mode,
+      Deno.env.get("CARDANO_NETWORK_MAGIC")?.trim(),
+    );
+  }
 
   // The HostState NFT policy id depends on this nonce output reference, so the
   // same UTxO must later be spent by the mint transaction.
@@ -536,6 +559,7 @@ export const createDeployment = async (
     lucid,
     [hostStateStt.validator, mintPortValidator, mintIdentifierValidator],
     reservedDeploymentRefs,
+    deploymentWalletAddress,
   );
   reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   const bootstrapReferenceScripts: BootstrapReferenceScripts = {
@@ -664,6 +688,7 @@ export const createDeployment = async (
       lucid,
       remainingReferredValidators,
       reservedDeploymentRefs,
+      deploymentWalletAddress,
     ),
   };
   await setSpendableWalletUtxos(0);
@@ -1198,6 +1223,7 @@ async function createReferenceUtxos(
   lucid: LucidEvolution,
   referredValidators: Script[],
   reservedWalletRefs = new Set<string>(),
+  deploymentWalletAddress?: string,
 ) {
   try {
     console.log("Create reference utxos starting ...");
@@ -1471,6 +1497,18 @@ async function createReferenceUtxos(
       if (!newWalletUTxOs || !derivedOutputs || !signedTx) {
         throw lastBuildError ??
           new Error("Failed to build reference batch transaction");
+      }
+
+      if (deploymentWalletAddress) {
+        await recordDeploymentTx(
+          `Reference validators ${batch.startIndex + 1}-${
+            batch.startIndex + batch.validators.length
+          }`,
+          txHash,
+          signedTx,
+          deploymentWalletAddress,
+          signedTx.toCBOR().length / 2,
+        );
       }
 
       console.log(

@@ -1200,9 +1200,7 @@ export class QueryService {
                 return false;
               }
             });
-          const eventClient = hasMintClientRedeemer
-            ? EVENT_TYPE_CLIENT.CREATE_CLIENT
-            : EVENT_TYPE_CLIENT.UPDATE_CLIENT;
+          const eventClient = hasMintClientRedeemer ? EVENT_TYPE_CLIENT.CREATE_CLIENT : EVENT_TYPE_CLIENT.UPDATE_CLIENT;
           const spendClientRedeemer = redeemers.find((e) => e.type == 'spend');
           let spendClientRedeemerData = null;
           if (spendClientRedeemer) {
@@ -2031,9 +2029,7 @@ export class QueryService {
 
   private toProtoUint64(value: bigint, fieldName: string): bigint {
     if (value < 0n || value > MAX_PROTO_UINT64) {
-      throw new GrpcInternalException(
-        `IBC infrastructure error: ${fieldName} is outside protobuf uint64 bounds`,
-      );
+      throw new GrpcInternalException(`IBC infrastructure error: ${fieldName} is outside protobuf uint64 bounds`);
     }
     return value;
   }

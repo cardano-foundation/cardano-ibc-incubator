@@ -1,6 +1,30 @@
 // Unit tests for ICS-23 Merkle Tree implementation
 
+import { sha256 } from 'js-sha256';
 import { ICS23MerkleTree } from './ics23-merkle-tree';
+
+const EMPTY_HASH = Buffer.alloc(32, 0);
+
+function sha256Bytes(data: Buffer): Buffer {
+  return Buffer.from(sha256.array(data));
+}
+
+function expectedSingleLeafRoot(key: string, value: Buffer): string {
+  const keyHash = sha256Bytes(Buffer.from(key, 'utf8'));
+  const valueHash = sha256Bytes(value);
+  let current = sha256Bytes(Buffer.concat([Buffer.from([0x00]), keyHash, valueHash]));
+  let index = BigInt(`0x${keyHash.subarray(0, 8).toString('hex')}`);
+
+  for (let depth = 0; depth < 64; depth += 1) {
+    current =
+      (index & 1n) === 0n
+        ? sha256Bytes(Buffer.concat([Buffer.from([0x01]), current, EMPTY_HASH]))
+        : sha256Bytes(Buffer.concat([Buffer.from([0x01]), EMPTY_HASH, current]));
+    index >>= 1n;
+  }
+
+  return current.toString('hex');
+}
 
 describe('ICS23MerkleTree', () => {
   let tree: ICS23MerkleTree;
@@ -92,10 +116,19 @@ describe('ICS23MerkleTree', () => {
       expect(root1).not.toBe(root2);
     });
 
+    it('should include the key hash in leaf commitments', () => {
+      const key = 'ports/port-100';
+      const value = Buffer.from('1864', 'hex');
+
+      tree.set(key, value);
+
+      expect(tree.getRoot()).toBe(expectedSingleLeafRoot(key, value));
+    });
+
     it('should return to empty root when all keys are deleted', () => {
       tree.set('key1', Buffer.from('value1'));
       tree.set('key2', Buffer.from('value2'));
-      
+
       const nonEmptyRoot = tree.getRoot();
       expect(nonEmptyRoot).not.toBe('0'.repeat(64));
 
@@ -160,7 +193,7 @@ describe('ICS23MerkleTree', () => {
     it('should handle typical IBC client paths', () => {
       const clientId = '07-tendermint-0';
       const path = `clients/${clientId}/clientState`;
-      
+
       tree.set(path, Buffer.from('client-state-data'));
       expect(tree.get(path)).toBeDefined();
     });
@@ -168,7 +201,7 @@ describe('ICS23MerkleTree', () => {
     it('should handle IBC connection paths', () => {
       const connectionId = 'connection-0';
       const path = `connections/${connectionId}`;
-      
+
       tree.set(path, Buffer.from('connection-state-data'));
       expect(tree.get(path)).toBeDefined();
     });
@@ -177,7 +210,7 @@ describe('ICS23MerkleTree', () => {
       const portId = 'transfer';
       const channelId = 'channel-0';
       const path = `channelEnds/ports/${portId}/channels/${channelId}`;
-      
+
       tree.set(path, Buffer.from('channel-state-data'));
       expect(tree.get(path)).toBeDefined();
     });
@@ -198,9 +231,9 @@ describe('ICS23MerkleTree', () => {
     describe('ExistenceProof', () => {
       it('should generate proof for single-leaf tree', () => {
         tree.set('key1', Buffer.from('value1'));
-        
+
         const proof = tree.generateProof('key1');
-        
+
         expect(proof.key).toEqual(Buffer.from('key1', 'utf8'));
         expect(proof.value).toEqual(Buffer.from('value1'));
         expect(proof.leaf.hash).toBe(1); // SHA256 (metadata only)
@@ -211,13 +244,13 @@ describe('ICS23MerkleTree', () => {
         tree.set('key1', Buffer.from('value1'));
         tree.set('key2', Buffer.from('value2'));
         tree.set('key3', Buffer.from('value3'));
-        
+
         const proof = tree.generateProof('key2');
-        
+
         expect(proof.key).toEqual(Buffer.from('key2', 'utf8'));
         expect(proof.value).toEqual(Buffer.from('value2'));
         expect(proof.path).toHaveLength(64); // Fixed-depth proof
-        
+
         // Verify all InnerOps have correct structure
         proof.path.forEach((innerOp) => {
           expect(innerOp.hash).toBe(1); // SHA256
@@ -230,10 +263,10 @@ describe('ICS23MerkleTree', () => {
         tree.set('clients/07-tendermint-0/clientState', Buffer.from('client-data'));
         tree.set('connections/connection-0', Buffer.from('connection-data'));
         tree.set('channelEnds/ports/transfer/channels/channel-0', Buffer.from('channel-data'));
-        
+
         const targetKey = 'connections/connection-0';
         const proof = tree.generateProof(targetKey);
-        
+
         // Use built-in verifyProof method
         const isValid = tree.verifyProof(proof);
         expect(isValid).toBe(true);
@@ -241,26 +274,24 @@ describe('ICS23MerkleTree', () => {
 
       it('should throw error for non-existent key', () => {
         tree.set('key1', Buffer.from('value1'));
-        
+
         expect(() => tree.generateProof('non-existent')).toThrow(
-          /Cannot generate proof: key 'non-existent' not found in tree/
+          /Cannot generate proof: key 'non-existent' not found in tree/,
         );
       });
 
       it('should throw error for empty tree', () => {
-        expect(() => tree.generateProof('any-key')).toThrow(
-          /Cannot generate proof: tree is empty/
-        );
+        expect(() => tree.generateProof('any-key')).toThrow(/Cannot generate proof: tree is empty/);
       });
 
       it('should generate different proofs for different keys', () => {
         tree.set('key1', Buffer.from('value1'));
         tree.set('key2', Buffer.from('value2'));
         tree.set('key3', Buffer.from('value3'));
-        
+
         const proof1 = tree.generateProof('key1');
         const proof2 = tree.generateProof('key2');
-        
+
         expect(proof1.key).not.toEqual(proof2.key);
         expect(proof1.value).not.toEqual(proof2.value);
         // Paths may differ in length or content
@@ -269,13 +300,13 @@ describe('ICS23MerkleTree', () => {
       it('should handle IBC paths correctly', () => {
         const clientPath = 'clients/07-tendermint-0/clientState';
         const connectionPath = 'connections/connection-0';
-        
+
         tree.set(clientPath, Buffer.from('client-state'));
         tree.set(connectionPath, Buffer.from('connection-state'));
-        
+
         const clientProof = tree.generateProof(clientPath);
         const connectionProof = tree.generateProof(connectionPath);
-        
+
         expect(tree.verifyProof(clientProof)).toBe(true);
         expect(tree.verifyProof(connectionProof)).toBe(true);
       });
@@ -285,7 +316,7 @@ describe('ICS23MerkleTree', () => {
         for (let i = 0; i < 10; i++) {
           tree.set(`key${i}`, Buffer.from(`value${i}`));
         }
-        
+
         // Generate and verify proofs for all leaves
         const keys = tree.getKeys();
         keys.forEach((key) => {
@@ -299,10 +330,10 @@ describe('ICS23MerkleTree', () => {
       it('should generate non-existence proof as an "empty value" membership proof', () => {
         tree.set('clients/07-tendermint-0/clientState', Buffer.from('client0'));
         tree.set('clients/07-tendermint-2/clientState', Buffer.from('client2'));
-        
+
         const nonExistentKey = 'clients/07-tendermint-1/clientState';
         const proof = tree.generateNonExistenceProof(nonExistentKey);
-        
+
         expect(proof.key).toEqual(Buffer.from(nonExistentKey, 'utf8'));
         expect(proof.left).not.toBeNull();
         expect(proof.right).toBeNull();
@@ -316,9 +347,9 @@ describe('ICS23MerkleTree', () => {
       it('should generate a valid empty-value proof for a missing key', () => {
         tree.set('key1', Buffer.from('value1'));
         tree.set('key3', Buffer.from('value3'));
-        
+
         const proof = tree.generateNonExistenceProof('key2');
-        
+
         expect(proof.left).not.toBeNull();
         expect(proof.right).toBeNull();
         expect(tree.verifyProof(proof.left!)).toBe(true);
@@ -326,24 +357,24 @@ describe('ICS23MerkleTree', () => {
 
       it('should throw error for existing key', () => {
         tree.set('key1', Buffer.from('value1'));
-        
+
         expect(() => tree.generateNonExistenceProof('key1')).toThrow(
-          /Cannot generate non-existence proof: key 'key1' exists in tree/
+          /Cannot generate non-existence proof: key 'key1' exists in tree/,
         );
       });
 
       it('should throw error for empty tree', () => {
         expect(() => tree.generateNonExistenceProof('any-key')).toThrow(
-          /Cannot generate non-existence proof: tree is empty/
+          /Cannot generate non-existence proof: tree is empty/,
         );
       });
 
       it('should provide a valid empty-value proof even if key is before all stored keys', () => {
         tree.set('key5', Buffer.from('value5'));
         tree.set('key10', Buffer.from('value10'));
-        
+
         const proof = tree.generateNonExistenceProof('key1');
-        
+
         expect(proof.left).not.toBeNull();
         expect(proof.right).toBeNull();
         expect(tree.verifyProof(proof.left!)).toBe(true);
@@ -352,9 +383,9 @@ describe('ICS23MerkleTree', () => {
       it('should provide a valid empty-value proof even if key is after all stored keys', () => {
         tree.set('key1', Buffer.from('value1'));
         tree.set('key5', Buffer.from('value5'));
-        
+
         const proof = tree.generateNonExistenceProof('key9');
-        
+
         expect(proof.left).not.toBeNull();
         expect(proof.right).toBeNull();
         expect(tree.verifyProof(proof.left!)).toBe(true);
@@ -365,37 +396,47 @@ describe('ICS23MerkleTree', () => {
       it('should verify valid proof reconstructs correct root', () => {
         tree.set('clients/07-tendermint-0/clientState', Buffer.from('client-data'));
         tree.set('connections/connection-0', Buffer.from('connection-data'));
-        
+
         const proof = tree.generateProof('connections/connection-0');
         const isValid = tree.verifyProof(proof);
-        
+
         expect(isValid).toBe(true);
       });
 
       it('should detect tampered proof', () => {
         tree.set('key1', Buffer.from('value1'));
         tree.set('key2', Buffer.from('value2'));
-        
+
         const proof = tree.generateProof('key1');
-        
+
         // Tamper with the value
         proof.value = Buffer.from('tampered-value');
-        
+
         const isValid = tree.verifyProof(proof);
         expect(isValid).toBe(false);
+      });
+
+      it('should detect tampered proof key', () => {
+        tree.set('key1', Buffer.from('value1'));
+        tree.set('key2', Buffer.from('value2'));
+
+        const proof = tree.generateProof('key1');
+        proof.key = Buffer.from('key2');
+
+        expect(tree.verifyProof(proof)).toBe(false);
       });
 
       it('should detect tampered inner path', () => {
         tree.set('key1', Buffer.from('value1'));
         tree.set('key2', Buffer.from('value2'));
         tree.set('key3', Buffer.from('value3'));
-        
+
         const proof = tree.generateProof('key2');
-        
+
         // Tamper with an InnerOp if path exists
         if (proof.path.length > 0) {
           proof.path[0].suffix = Buffer.from('tampered-sibling');
-          
+
           const isValid = tree.verifyProof(proof);
           expect(isValid).toBe(false);
         }
@@ -404,16 +445,16 @@ describe('ICS23MerkleTree', () => {
       it('should verify proofs remain valid after tree modifications to other keys', () => {
         tree.set('key1', Buffer.from('value1'));
         tree.set('key2', Buffer.from('value2'));
-        
+
         const proof1 = tree.generateProof('key1');
-        
+
         // Modify tree by adding/removing other keys
         tree.set('key3', Buffer.from('value3'));
-        
+
         // Original proof should now be invalid (root changed)
         const isValid = tree.verifyProof(proof1);
         expect(isValid).toBe(false);
-        
+
         // But a new proof for the same key should be valid
         const newProof1 = tree.generateProof('key1');
         expect(tree.verifyProof(newProof1)).toBe(true);
@@ -424,7 +465,7 @@ describe('ICS23MerkleTree', () => {
       it('should handle keys with special characters', () => {
         const specialKey = 'path/with/slashes/and-dashes_and_underscores';
         tree.set(specialKey, Buffer.from('data'));
-        
+
         const proof = tree.generateProof(specialKey);
         expect(tree.verifyProof(proof)).toBe(true);
       });
@@ -432,7 +473,7 @@ describe('ICS23MerkleTree', () => {
       it('should handle binary values', () => {
         const binaryValue = Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe, 0xfd]);
         tree.set('binary-key', binaryValue);
-        
+
         const proof = tree.generateProof('binary-key');
         expect(proof.value).toEqual(binaryValue);
         expect(tree.verifyProof(proof)).toBe(true);
@@ -454,7 +495,7 @@ describe('ICS23MerkleTree', () => {
       it('should handle large values', () => {
         const largeValue = Buffer.alloc(10000, 0xab);
         tree.set('large-key', largeValue);
-        
+
         const proof = tree.generateProof('large-key');
         expect(proof.value).toEqual(largeValue);
         expect(tree.verifyProof(proof)).toBe(true);
