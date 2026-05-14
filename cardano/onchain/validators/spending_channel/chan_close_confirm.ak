@@ -26,7 +26,7 @@ use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/keys as chan_keys_mod
 use ibc/core/ics_004/types/state as chan_state_mod
-use ibc/core/ics_005/types/ibc_module_redeemer.{Callback, OnChanOpenConfirm}
+use ibc/core/ics_005/types/ibc_module_redeemer.{Callback, OnChanCloseConfirm}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_024_host_requirements/channel_keys
 use ibc/utils/validator_utils
@@ -132,7 +132,7 @@ validator chan_close_confirm(
         port_id,
       )
     expect Callback(ibc_module_callback) = ibc_module_redeemer
-    expect ibc_module_callback == OnChanOpenConfirm { channel_id }
+    expect ibc_module_callback == OnChanCloseConfirm { channel_id }
     trace @"chan_close_confirm: ibc module callback is valid"
 
     and {
