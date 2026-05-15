@@ -30,6 +30,7 @@ const YACI_SYNC_START_SLOT_KEY: &str = "YACI_SYNC_START_SLOT";
 const YACI_SYNC_START_BLOCKHASH_KEY: &str = "YACI_SYNC_START_BLOCKHASH";
 const YACI_SYNC_START_BLOCK_NO_KEY: &str = "YACI_SYNC_START_BLOCK_NO";
 const PREPROD_KUPO_MODE_KEY: &str = "PREPROD_KUPO_MODE";
+const PREPROD_KOIOS_BASE_URL: &str = "https://preprod.koios.rest/api/v1";
 
 #[derive(Debug, Clone)]
 pub struct YaciSyncCheckpoint {
@@ -1990,7 +1991,7 @@ fn write_gateway_env_for_network(
                 "GATEWAY_RUNTIME_KUPO_API_KEY",
                 runtime_kupo_api_key.as_deref().unwrap_or(""),
             )?;
-            set_or_append_env_var(&gateway_env, "CARDANO_EPOCH_NONCE_GENESIS", "\"\"")?;
+            set_or_append_env_var(&gateway_env, "CARDANO_EPOCH_PARAMS_ENDPOINT", PREPROD_KOIOS_BASE_URL)?;
         }
     }
 

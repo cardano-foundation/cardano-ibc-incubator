@@ -23,14 +23,21 @@ describe('YaciHistoryService', () => {
   };
 
   beforeEach(() => {
-    global.fetch = jest.fn();
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => [
+        {
+          nonce: '11'.repeat(32),
+        },
+      ],
+    });
     configServiceMock = {
       get: jest.fn().mockImplementation((key: string) => {
         if (key === 'ogmiosEndpoint') {
           return 'ws://ogmios.local';
         }
-        if (key === 'cardanoEpochNonceGenesis') {
-          return 'aa'.repeat(32);
+        if (key === 'cardanoEpochParamsEndpoint') {
+          return 'https://preprod.koios.rest/api/v1';
         }
         if (key === 'cardanoEpochLength') {
           return 432000;
@@ -101,7 +108,15 @@ describe('YaciHistoryService', () => {
         slot: 1100n,
         hash: 'ab'.repeat(32),
       },
-      'aa'.repeat(32),
+      '11'.repeat(32),
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pathname: '/api/v1/epoch_params',
+      }),
+      expect.objectContaining({
+        headers: { accept: 'application/json' },
+      }),
     );
   });
 
@@ -133,7 +148,7 @@ describe('YaciHistoryService', () => {
       ],
     });
 
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect((global.fetch as jest.Mock).mock.calls.map(([url]) => url.pathname)).not.toContain('/api/v1/pool_updates');
   });
 
   it('caches first registration slots discovered from local Yaci tables', async () => {
@@ -170,36 +185,22 @@ describe('YaciHistoryService', () => {
       expect.stringContaining('INSERT INTO bridge_pool_registration_cache'),
       [JSON.stringify([{ pool_id: 'pool1localpool', first_registration_slot: '77' }]), 'yaci'],
     );
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect((global.fetch as jest.Mock).mock.calls.map(([url]) => url.pathname)).not.toContain('/api/v1/pool_updates');
   });
 
   it('looks up missing first registration slots externally and caches them', async () => {
     configServiceMock.get.mockImplementation((key: string) => {
       if (key === 'ogmiosEndpoint') return 'ws://ogmios.local';
-      if (key === 'cardanoEpochNonceGenesis') return 'aa'.repeat(32);
+      if (key === 'cardanoEpochParamsEndpoint') return 'https://preprod.koios.rest/api/v1';
       if (key === 'cardanoEpochLength') return 432000;
       if (key === 'cardanoPoolRegistrationHistoryEndpoint') return 'https://preprod.koios.rest/api/v1';
       return undefined;
     });
     entityManagerMock.query
-      .mockResolvedValueOnce([{ start_slot: '1000' }])
-      .mockResolvedValueOnce([{ start_slot: '1200' }])
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce(undefined);
-    (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
-      currentEpoch: 7,
-      epochNonce: '11'.repeat(32),
-      slotsPerKesPeriod: 129600,
-      stakeDistribution: [
-        {
-          poolId: 'pool1externalpool',
-          stake: 900n,
-          vrfKeyHash: 'aa'.repeat(32),
-        },
-      ],
-    });
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
       json: async () => [
@@ -212,19 +213,11 @@ describe('YaciHistoryService', () => {
     });
 
     await expect(
-      service.findEpochContextAtBlock({
-        ...block,
+      service.findFirstPoolRegistrationSlots(['pool1externalpool'], {
         slotNo: 100n,
         timestampUnixNs: 900_000_000_000n,
       }),
-    ).resolves.toMatchObject({
-      stakeDistribution: [
-        {
-          poolId: 'pool1externalpool',
-          firstRegistrationSlot: 200n,
-        },
-      ],
-    });
+    ).resolves.toEqual(new Map([['pool1externalpool', 200n]]));
 
     expect(global.fetch).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -254,6 +247,21 @@ describe('YaciHistoryService', () => {
     await expect(service.findEpochContextAtBlock(block)).rejects.toThrow(
       'Ogmios acquired epoch 8 at block 100, expected epoch 7',
     );
+  });
+
+  it('fails hard when epoch params do not provide a valid nonce', async () => {
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }]);
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => [{ nonce: null }],
+    });
+
+    await expect(service.findEpochContextAtBlock(block)).rejects.toThrow(
+      'Cardano epoch params lookup did not return a valid nonce for epoch 7',
+    );
+    expect(queryEpochContextAtPoint).not.toHaveBeenCalled();
   });
 
   it('falls back to configured epoch length when the next epoch start slot is unavailable', async () => {
@@ -346,7 +354,7 @@ describe('YaciHistoryService', () => {
         slot: 1100n,
         hash: 'ab'.repeat(32),
       },
-      'aa'.repeat(32),
+      '11'.repeat(32),
     );
     expect(queryEpochContextAtPoint).toHaveBeenNthCalledWith(
       2,
@@ -355,7 +363,7 @@ describe('YaciHistoryService', () => {
         slot: 1199n,
         hash: 'ef'.repeat(32),
       },
-      'aa'.repeat(32),
+      '11'.repeat(32),
     );
   });
 });

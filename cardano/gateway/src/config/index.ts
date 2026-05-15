@@ -68,7 +68,7 @@ interface Config {
   cardanoLightClientMode: 'mithril' | 'stake-weighted-stability';
   cardanoNetwork: Network;
   cardanoEpochLength: number;
-  cardanoEpochNonceGenesis: string;
+  cardanoEpochParamsEndpoint?: string;
   cardanoPoolRegistrationHistoryEndpoint?: string;
 
   mithrilEndpoint: string;
@@ -104,7 +104,9 @@ export default (): Partial<Config> => {
       process.env.CARDANO_LIGHT_CLIENT_MODE === 'mithril' ? 'mithril' : 'stake-weighted-stability',
     cardanoNetwork: cardanoNetwork,
     cardanoEpochLength: Number(process.env.CARDANO_EPOCH_LENGTH || 432000),
-    cardanoEpochNonceGenesis: process.env.CARDANO_EPOCH_NONCE_GENESIS || '',
+    cardanoEpochParamsEndpoint:
+      process.env.CARDANO_EPOCH_PARAMS_ENDPOINT ||
+      (process.env.CARDANO_NETWORK_MAGIC === '1' ? 'https://preprod.koios.rest/api/v1' : undefined),
     cardanoPoolRegistrationHistoryEndpoint:
       process.env.CARDANO_POOL_REGISTRATION_HISTORY_ENDPOINT ||
       (process.env.CARDANO_NETWORK_MAGIC === '1' ? 'https://preprod.koios.rest/api/v1' : undefined),

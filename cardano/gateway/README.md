@@ -123,6 +123,9 @@ deployment checkpoint. The Gateway first uses `bridge_pool_registration_cache`, 
 the optional `CARDANO_POOL_REGISTRATION_HISTORY_ENDPOINT` for cache misses. Preprod defaults that endpoint to Koios so a
 checkpointed stack can resolve old pool registrations without replaying the full chain history.
 
+Stake-weighted stability uses Koios via `CARDANO_EPOCH_PARAMS_ENDPOINT` for epoch nonces because Demeter Ogmios
+endpoints consistently time out after 20 seconds on `queryLedgerState/nonces`.
+
 ## Installation
 
 ```bash

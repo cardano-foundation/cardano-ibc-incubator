@@ -92,9 +92,14 @@ type KoiosPoolUpdateRow = {
   update_type?: string | null;
 };
 
+type KoiosEpochParamsRow = {
+  nonce?: string | null;
+};
+
 const CARDANO_SLOT_LENGTH_NS = 1_000_000_000n;
 const POOL_REGISTRATION_LOOKUP_BATCH_SIZE = 25;
 const POOL_REGISTRATION_LOOKUP_TIMEOUT_MS = 10_000;
+const EPOCH_PARAMS_LOOKUP_TIMEOUT_MS = 10_000;
 
 @Injectable()
 export class YaciHistoryService implements HistoryService {
@@ -298,6 +303,7 @@ export class YaciHistoryService implements HistoryService {
     if (!ogmiosEndpoint) {
       return null;
     }
+    const epochNonce = await this.fetchEpochNonce(block.epochNo);
 
     const queryEpochContext = async (pointBlock: Pick<HistoryBlock, 'slotNo' | 'hash'>) =>
       queryEpochContextAtPoint(
@@ -306,7 +312,7 @@ export class YaciHistoryService implements HistoryService {
           slot: pointBlock.slotNo,
           hash: pointBlock.hash,
         },
-        this.configService.get<string>('cardanoEpochNonceGenesis'),
+        epochNonce,
       );
 
     let epochContext;
@@ -338,9 +344,8 @@ export class YaciHistoryService implements HistoryService {
       stake: entry.stake,
       vrfKeyHash: normalizeHex(entry.vrfKeyHash),
     }));
-    const firstRegistrationSlots = await this.findFirstPoolRegistrationSlots(
+    const firstRegistrationSlots = await this.findKnownPoolRegistrationSlots(
       stakeDistribution.map((entry) => entry.poolId),
-      block,
     );
 
     return {
@@ -408,10 +413,65 @@ export class YaciHistoryService implements HistoryService {
     return rows.length > 0;
   }
 
-  private async findFirstPoolRegistrationSlots(
+  private async fetchEpochNonce(epoch: number): Promise<string> {
+    const endpoint = this.configService.get<string>('cardanoEpochParamsEndpoint')?.replace(/\/+$/, '');
+    if (!endpoint) {
+      throw new Error(`Cardano epoch params endpoint unavailable for epoch ${epoch}`);
+    }
+
+    const url = new URL(`${endpoint}/epoch_params`);
+    url.searchParams.set('_epoch_no', epoch.toString());
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), EPOCH_PARAMS_LOOKUP_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { accept: 'application/json' },
+      });
+      if (!response.ok) {
+        throw new Error(`Cardano epoch params lookup failed for epoch ${epoch}: HTTP ${response.status}`);
+      }
+
+      const body = await response.json();
+      const row = Array.isArray(body) ? (body[0] as KoiosEpochParamsRow | undefined) : undefined;
+      const nonce = normalizeHex(row?.nonce);
+      if (!/^[0-9a-f]{64}$/.test(nonce)) {
+        throw new Error(`Cardano epoch params lookup did not return a valid nonce for epoch ${epoch}`);
+      }
+      return nonce;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(
+          `Cardano epoch params lookup timed out for epoch ${epoch} after ${EPOCH_PARAMS_LOOKUP_TIMEOUT_MS}ms`,
+        );
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async findFirstPoolRegistrationSlots(
     poolIds: string[],
     referenceBlock: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>,
   ): Promise<Map<string, bigint>> {
+    const mergedSlots = await this.findKnownPoolRegistrationSlots(poolIds);
+    const normalizedPoolIds = Array.from(new Set(poolIds.map((poolId) => normalizePoolId(poolId)).filter(Boolean)));
+    const missingAfterLocal = normalizedPoolIds.filter((poolId) => !mergedSlots.has(poolId));
+    if (missingAfterLocal.length === 0) {
+      return mergedSlots;
+    }
+
+    const externalSlots = await this.lookupExternalPoolRegistrationSlots(missingAfterLocal, referenceBlock);
+    if (externalSlots.size > 0) {
+      await this.cachePoolRegistrationSlots(externalSlots, 'external');
+    }
+
+    return new Map([...mergedSlots, ...externalSlots]);
+  }
+
+  private async findKnownPoolRegistrationSlots(poolIds: string[]): Promise<Map<string, bigint>> {
     const normalizedPoolIds = Array.from(new Set(poolIds.map((poolId) => normalizePoolId(poolId)).filter(Boolean)));
     if (normalizedPoolIds.length === 0) {
       return new Map();
@@ -431,17 +491,7 @@ export class YaciHistoryService implements HistoryService {
     }
 
     const mergedSlots = new Map([...cachedSlots, ...localSlots]);
-    const missingAfterLocal = normalizedPoolIds.filter((poolId) => !mergedSlots.has(poolId));
-    if (missingAfterLocal.length === 0) {
-      return mergedSlots;
-    }
-
-    const externalSlots = await this.lookupExternalPoolRegistrationSlots(missingAfterLocal, referenceBlock);
-    if (externalSlots.size > 0) {
-      await this.cachePoolRegistrationSlots(externalSlots, 'external');
-    }
-
-    return new Map([...mergedSlots, ...externalSlots]);
+    return mergedSlots;
   }
 
   private async ensurePoolRegistrationCacheTable(): Promise<void> {

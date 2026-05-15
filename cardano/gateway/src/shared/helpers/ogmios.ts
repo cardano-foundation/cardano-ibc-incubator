@@ -1,10 +1,6 @@
 import WebSocket from 'ws';
 import { resolveManagedOgmiosWsEndpoint, resolveManagedOgmiosWsOptions } from './managed-cardano-endpoints';
 
-type OgmiosCurrentEpochNonces = {
-  epochNonce?: unknown;
-};
-
 type OgmiosShelleyGenesisConfig = {
   era?: unknown;
   slotsPerKesPeriod?: unknown;
@@ -184,27 +180,14 @@ const parseInteger = (value: unknown, field: string): number => {
   return parsed;
 };
 
-const parseEpochNonce = (nonces: OgmiosCurrentEpochNonces): string => {
-  if (typeof nonces.epochNonce !== 'string') {
+const parseEpochNonce = (epochNonce: unknown): string => {
+  if (typeof epochNonce !== 'string') {
     throw new Error('Ogmios returned an invalid epoch nonce');
   }
 
-  const normalized = normalizeHex(nonces.epochNonce);
+  const normalized = normalizeHex(epochNonce);
   if (!/^[0-9a-f]{64}$/.test(normalized)) {
     throw new Error('Ogmios returned an invalid epoch nonce');
-  }
-
-  return normalized;
-};
-
-const parseFallbackEpochNonce = (fallback?: string): string | null => {
-  if (typeof fallback !== 'string') {
-    return null;
-  }
-
-  const normalized = normalizeHex(fallback);
-  if (!/^[0-9a-f]{64}$/.test(normalized)) {
-    return null;
   }
 
   return normalized;
@@ -446,7 +429,7 @@ const withAcquiredLedgerState = async <T>(
 const queryEpochContextAtPoint = async (
   ogmiosUrl: string,
   point: OgmiosLedgerPoint,
-  epochNonceFallback?: string,
+  epochNonce: string,
 ): Promise<OgmiosEpochContextAtPoint> => {
   return withAcquiredLedgerState(ogmiosUrl, point, async (session) => {
     const currentEpoch = await session.request<unknown>('queryLedgerState/epoch', {});
@@ -454,18 +437,6 @@ const queryEpochContextAtPoint = async (
       'queryNetwork/genesisConfiguration',
       { era: 'shelley' },
     );
-
-    let epochNonce: string;
-    try {
-      const currentNonces = await session.request<OgmiosCurrentEpochNonces>('queryLedgerState/nonces', {});
-      epochNonce = parseEpochNonce(currentNonces);
-    } catch (error) {
-      const fallback = parseFallbackEpochNonce(epochNonceFallback);
-      if (!fallback) {
-        throw error;
-      }
-      epochNonce = fallback;
-    }
 
     const stakePools = await session.request<OgmiosStakePools>('queryLedgerState/stakePools', {});
     const liveStakeDistribution = await session.request<OgmiosLiveStakeDistribution>(
@@ -475,7 +446,7 @@ const queryEpochContextAtPoint = async (
 
     return {
       currentEpoch: parseInteger(currentEpoch, 'epoch'),
-      epochNonce,
+      epochNonce: parseEpochNonce(epochNonce),
       slotsPerKesPeriod: parseShelleyGenesisConfig(shelleyGenesisConfig),
       stakeDistribution: parseStakeDistributionRows(stakePools, liveStakeDistribution),
     };
@@ -484,28 +455,16 @@ const queryEpochContextAtPoint = async (
 
 const queryCurrentEpochVerificationData = async (
   ogmiosUrl: string,
-  epochNonceFallback?: string,
+  epochNonce: string,
 ): Promise<OgmiosCurrentEpochVerificationData> => {
   const [currentEpoch, shelleyGenesisConfig] = await Promise.all([
     ogmiosRequest<unknown>(ogmiosUrl, 'queryLedgerState/epoch', {}),
     ogmiosRequest<OgmiosShelleyGenesisConfig>(ogmiosUrl, 'queryNetwork/genesisConfiguration', { era: 'shelley' }),
   ]);
 
-  let epochNonce: string;
-  try {
-    const currentNonces = await ogmiosRequest<OgmiosCurrentEpochNonces>(ogmiosUrl, 'queryLedgerState/nonces', {});
-    epochNonce = parseEpochNonce(currentNonces);
-  } catch (error) {
-    const fallback = parseFallbackEpochNonce(epochNonceFallback);
-    if (!fallback) {
-      throw error;
-    }
-    epochNonce = fallback;
-  }
-
   return {
     currentEpoch: parseInteger(currentEpoch, 'epoch'),
-    epochNonce,
+    epochNonce: parseEpochNonce(epochNonce),
     slotsPerKesPeriod: parseShelleyGenesisConfig(shelleyGenesisConfig),
   };
 };
