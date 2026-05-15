@@ -1991,7 +1991,11 @@ fn write_gateway_env_for_network(
                 "GATEWAY_RUNTIME_KUPO_API_KEY",
                 runtime_kupo_api_key.as_deref().unwrap_or(""),
             )?;
-            set_or_append_env_var(&gateway_env, "CARDANO_EPOCH_PARAMS_ENDPOINT", PREPROD_KOIOS_BASE_URL)?;
+            set_or_append_env_var(
+                &gateway_env,
+                "CARDANO_EPOCH_PARAMS_ENDPOINT",
+                PREPROD_KOIOS_BASE_URL,
+            )?;
         }
     }
 
