@@ -74,8 +74,32 @@ type EpochStartSlotRow = {
   start_slot: string | number | null;
 };
 
+type PoolRegistrationSlotRow = {
+  pool_id: string;
+  first_registration_slot: string | number;
+};
+
+type CachedPoolRegistrationRow = {
+  pool_id: string;
+  first_registration_slot: string | number | null;
+};
+
+type KoiosPoolUpdateRow = {
+  tx_hash?: string | null;
+  block_time?: string | number | null;
+  pool_id_bech32?: string | null;
+  pool_id_hex?: string | null;
+  update_type?: string | null;
+};
+
+const CARDANO_SLOT_LENGTH_NS = 1_000_000_000n;
+const POOL_REGISTRATION_LOOKUP_BATCH_SIZE = 25;
+const POOL_REGISTRATION_LOOKUP_TIMEOUT_MS = 10_000;
+
 @Injectable()
 export class YaciHistoryService implements HistoryService {
+  private poolRegistrationCacheTableReady = false;
+
   constructor(
     private readonly configService: ConfigService,
     @Inject(LucidService) private readonly lucidService: LucidService,
@@ -316,6 +340,7 @@ export class YaciHistoryService implements HistoryService {
     }));
     const firstRegistrationSlots = await this.findFirstPoolRegistrationSlots(
       stakeDistribution.map((entry) => entry.poolId),
+      block,
     );
 
     return {
@@ -357,11 +382,7 @@ export class YaciHistoryService implements HistoryService {
         AND lower(assets_name) LIKE lower($3)
       ORDER BY COALESCE(tx_index, 0) ASC, output_index ASC
     `;
-    const rows = await this.entityManager.query(query, [
-      height,
-      mintClientScriptHash,
-      `${clientTokenNamePrefix}%`,
-    ]);
+    const rows = await this.entityManager.query(query, [height, mintClientScriptHash, `${clientTokenNamePrefix}%`]);
     return rows.map((row: BridgeUtxoHistoryRow) => this.mapUtxoRow(row));
   }
 
@@ -387,27 +408,224 @@ export class YaciHistoryService implements HistoryService {
     return rows.length > 0;
   }
 
-  private async findFirstPoolRegistrationSlots(poolIds: string[]): Promise<Map<string, bigint>> {
+  private async findFirstPoolRegistrationSlots(
+    poolIds: string[],
+    referenceBlock: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>,
+  ): Promise<Map<string, bigint>> {
     const normalizedPoolIds = Array.from(new Set(poolIds.map((poolId) => normalizePoolId(poolId)).filter(Boolean)));
     if (normalizedPoolIds.length === 0) {
       return new Map();
     }
 
-    const query = `
-      SELECT lower(pool_id) AS pool_id, MIN(slot_no)::text AS first_registration_slot
-      FROM bridge_spo_event_history
-      WHERE event_type = 'register'
-        AND lower(pool_id) = ANY($1::text[])
-        AND slot_no IS NOT NULL
-      GROUP BY lower(pool_id)
-    `;
-    const rows = await this.entityManager.query(query, [normalizedPoolIds.map((poolId) => poolId.toLowerCase())]);
-    return new Map(
-      rows.map((row: { pool_id: string; first_registration_slot: string | number }) => [
-        normalizePoolId(row.pool_id),
-        BigInt(row.first_registration_slot),
-      ]),
+    await this.ensurePoolRegistrationCacheTable();
+
+    const cachedSlots = await this.findCachedPoolRegistrationSlots(normalizedPoolIds);
+    const missingAfterCache = normalizedPoolIds.filter((poolId) => !cachedSlots.has(poolId));
+    if (missingAfterCache.length === 0) {
+      return cachedSlots;
+    }
+
+    const localSlots = await this.findLocalPoolRegistrationSlots(missingAfterCache);
+    if (localSlots.size > 0) {
+      await this.cachePoolRegistrationSlots(localSlots, 'yaci');
+    }
+
+    const mergedSlots = new Map([...cachedSlots, ...localSlots]);
+    const missingAfterLocal = normalizedPoolIds.filter((poolId) => !mergedSlots.has(poolId));
+    if (missingAfterLocal.length === 0) {
+      return mergedSlots;
+    }
+
+    const externalSlots = await this.lookupExternalPoolRegistrationSlots(missingAfterLocal, referenceBlock);
+    if (externalSlots.size > 0) {
+      await this.cachePoolRegistrationSlots(externalSlots, 'external');
+    }
+
+    return new Map([...mergedSlots, ...externalSlots]);
+  }
+
+  private async ensurePoolRegistrationCacheTable(): Promise<void> {
+    if (this.poolRegistrationCacheTableReady) {
+      return;
+    }
+
+    await this.entityManager.query(`
+      CREATE TABLE IF NOT EXISTS bridge_pool_registration_cache (
+        pool_id text PRIMARY KEY,
+        first_registration_slot bigint NOT NULL,
+        source text NOT NULL,
+        source_tx_hash varchar(64),
+        created_at timestamptz NOT NULL DEFAULT now(),
+        updated_at timestamptz NOT NULL DEFAULT now()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_bridge_pool_registration_cache_slot
+        ON bridge_pool_registration_cache(first_registration_slot);
+    `);
+    this.poolRegistrationCacheTableReady = true;
+  }
+
+  private async findCachedPoolRegistrationSlots(poolIds: string[]): Promise<Map<string, bigint>> {
+    const rows = await this.entityManager.query(
+      `
+        SELECT lower(pool_id) AS pool_id, first_registration_slot::text AS first_registration_slot
+        FROM bridge_pool_registration_cache
+        WHERE lower(pool_id) = ANY($1::text[])
+      `,
+      [poolIds.map((poolId) => poolId.toLowerCase())],
     );
+
+    return this.mapPoolRegistrationSlotRows(rows);
+  }
+
+  private async findLocalPoolRegistrationSlots(poolIds: string[]): Promise<Map<string, bigint>> {
+    const query = `
+      WITH registration_slots AS (
+        SELECT lower(pool_id) AS pool_id, slot_no::bigint AS first_registration_slot
+        FROM bridge_spo_event_history
+        WHERE event_type = 'register'
+          AND lower(pool_id) = ANY($1::text[])
+          AND slot_no IS NOT NULL
+        UNION ALL
+        SELECT lower(pool_id) AS pool_id, registration_slot::bigint AS first_registration_slot
+        FROM pool
+        WHERE lower(pool_id) = ANY($1::text[])
+          AND registration_slot IS NOT NULL
+      )
+      SELECT pool_id, MIN(first_registration_slot)::text AS first_registration_slot
+      FROM registration_slots
+      GROUP BY pool_id
+    `;
+    const rows = await this.entityManager.query(query, [poolIds.map((poolId) => poolId.toLowerCase())]);
+    return this.mapPoolRegistrationSlotRows(rows);
+  }
+
+  private mapPoolRegistrationSlotRows(
+    rows: PoolRegistrationSlotRow[] | CachedPoolRegistrationRow[],
+  ): Map<string, bigint> {
+    return new Map(
+      rows
+        .filter((row) => row.first_registration_slot !== null && row.first_registration_slot !== undefined)
+        .map((row) => [normalizePoolId(row.pool_id), BigInt(row.first_registration_slot)]),
+    );
+  }
+
+  private async cachePoolRegistrationSlots(slotsByPoolId: Map<string, bigint>, source: string): Promise<void> {
+    if (slotsByPoolId.size === 0) {
+      return;
+    }
+
+    const rows = Array.from(slotsByPoolId.entries()).map(([poolId, firstRegistrationSlot]) => ({
+      pool_id: poolId,
+      first_registration_slot: firstRegistrationSlot.toString(),
+    }));
+
+    await this.entityManager.query(
+      `
+        INSERT INTO bridge_pool_registration_cache(pool_id, first_registration_slot, source)
+        SELECT row.pool_id, row.first_registration_slot::bigint, $2
+        FROM jsonb_to_recordset($1::jsonb) AS row(pool_id text, first_registration_slot text)
+        ON CONFLICT (pool_id) DO UPDATE SET
+          first_registration_slot = LEAST(
+            bridge_pool_registration_cache.first_registration_slot,
+            EXCLUDED.first_registration_slot
+          ),
+          source = EXCLUDED.source,
+          updated_at = now()
+      `,
+      [JSON.stringify(rows), source],
+    );
+  }
+
+  private async lookupExternalPoolRegistrationSlots(
+    poolIds: string[],
+    referenceBlock: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>,
+  ): Promise<Map<string, bigint>> {
+    const endpoint = this.configService.get<string>('cardanoPoolRegistrationHistoryEndpoint')?.replace(/\/+$/, '');
+    if (!endpoint) {
+      return new Map();
+    }
+
+    const resolvedSlots = new Map<string, bigint>();
+    for (let index = 0; index < poolIds.length; index += POOL_REGISTRATION_LOOKUP_BATCH_SIZE) {
+      const batch = poolIds.slice(index, index + POOL_REGISTRATION_LOOKUP_BATCH_SIZE);
+      const updates = await this.fetchKoiosPoolRegistrationUpdates(endpoint, batch);
+
+      for (const update of updates) {
+        if (update.update_type && update.update_type !== 'registration') {
+          continue;
+        }
+
+        const poolId = normalizePoolId(update.pool_id_bech32 ?? update.pool_id_hex);
+        if (!poolId || !batch.includes(poolId) || update.block_time === null || update.block_time === undefined) {
+          continue;
+        }
+
+        const firstRegistrationSlot = this.trySlotFromUnixSeconds(update.block_time, referenceBlock);
+        if (firstRegistrationSlot === null) {
+          continue;
+        }
+        if (firstRegistrationSlot <= 0n) {
+          continue;
+        }
+        const existingSlot = resolvedSlots.get(poolId);
+        if (existingSlot === undefined || firstRegistrationSlot < existingSlot) {
+          resolvedSlots.set(poolId, firstRegistrationSlot);
+        }
+      }
+    }
+
+    return resolvedSlots;
+  }
+
+  private async fetchKoiosPoolRegistrationUpdates(endpoint: string, poolIds: string[]): Promise<KoiosPoolUpdateRow[]> {
+    const url = new URL(`${endpoint}/pool_updates`);
+    url.searchParams.set('select', 'tx_hash,block_time,pool_id_bech32,pool_id_hex,update_type');
+    url.searchParams.set('pool_id_bech32', `in.(${poolIds.join(',')})`);
+    url.searchParams.set('update_type', 'eq.registration');
+    url.searchParams.set('order', 'block_time.asc');
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), POOL_REGISTRATION_LOOKUP_TIMEOUT_MS);
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: { accept: 'application/json' },
+      });
+      if (!response.ok) {
+        return [];
+      }
+
+      const body = await response.json();
+      return Array.isArray(body) ? (body as KoiosPoolUpdateRow[]) : [];
+    } catch (_error) {
+      return [];
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private trySlotFromUnixSeconds(
+    unixSeconds: string | number,
+    referenceBlock: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>,
+  ): bigint | null {
+    let parsedSeconds: bigint;
+    try {
+      parsedSeconds = BigInt(unixSeconds);
+    } catch (_error) {
+      return null;
+    }
+    if (parsedSeconds < 0n) {
+      return null;
+    }
+
+    const systemStartUnixNs = referenceBlock.timestampUnixNs - referenceBlock.slotNo * CARDANO_SLOT_LENGTH_NS;
+    const unixNs = parsedSeconds * CARDANO_SLOT_LENGTH_NS;
+    if (unixNs <= systemStartUnixNs) {
+      return 0n;
+    }
+
+    return (unixNs - systemStartUnixNs) / CARDANO_SLOT_LENGTH_NS;
   }
 
   async findTxByHash(hash: string): Promise<TxDto> {
