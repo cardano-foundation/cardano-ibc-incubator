@@ -71,5 +71,12 @@ test test_is_zero() {
 }
 
 test test_parse_chain_id() {
-  height.parse_chain_id("ogmosis") == 0
+  let test_cases: List<(ByteArray, Int)> =
+    [
+      ("ogmosis", 0), ("cardano-entrypoint", 0), ("osmosis-1", 1),
+      ("gaia-revision-2", 2), ("chain-", 0),
+    ]
+
+  test_cases
+    |> list.all(fn(case) { height.parse_chain_id(case.1st) == case.2nd })
 }

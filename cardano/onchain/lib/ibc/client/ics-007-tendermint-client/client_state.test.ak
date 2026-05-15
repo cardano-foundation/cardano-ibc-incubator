@@ -201,6 +201,20 @@ test test_validate_fail_invalid_revision_height() fail {
   client_state.validate(cs)
 }
 
+test test_validate_fail_revision_number_mismatches_chain_id() fail {
+  let cs =
+    client_state.new_client_state(
+      "osmosis-1",
+      unchecked_rational.from_int(1),
+      1000,
+      1500,
+      10,
+      Height { revision_number: 0, revision_height: 8 },
+      merkle.get_sdk_specs(),
+    )
+  client_state.validate(cs)
+}
+
 // trusting period not less than unbonding period
 test test_validate_fail_trusting_period_not_less_than_unbonding_period() fail {
   let cs =

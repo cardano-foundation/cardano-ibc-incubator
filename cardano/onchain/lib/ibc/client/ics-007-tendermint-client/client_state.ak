@@ -78,9 +78,10 @@ pub fn validate(cs: ClientState) -> Bool {
   expect cs.max_clock_drift > 0
   // tendermint client's latest height revision height cannot be zero
   expect cs.latest_height.revision_height > 0
+  // latest height must be in the revision identified by the chain id suffix
+  expect cs.latest_height.revision_number == height.parse_chain_id(cs.chain_id)
   // trusting period should be < unbonding period
   expect cs.trusting_period < cs.unbonding_period
-  // TODO: validate latest height revision number must match chain id revision number
   // Proof specs are immutable client parameters, so reject malformed specs once
   // here instead of rechecking static spec validity for every packet proof.
   expect validate_specs(cs.proof_specs)
