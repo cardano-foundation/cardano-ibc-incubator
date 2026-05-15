@@ -56,7 +56,7 @@ export type IBCModuleCallback =
       };
     }
   | {
-      OnChanOpenConfirm: {
+      OnChanCloseConfirm: {
         channel_id: string;
       };
     };
