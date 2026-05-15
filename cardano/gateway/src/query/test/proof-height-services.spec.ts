@@ -15,6 +15,9 @@ import { decodeClientDatum } from '@shared/types/client-datum';
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
 import { normalizeConsensusStateFromDatum } from '@shared/helpers/consensus-state';
 import { getCurrentTree } from '../../shared/helpers/ibc-state-root';
+import { hashSHA256 } from '../../shared/helpers/hex';
+import { decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
+import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
 
 jest.mock('../../shared/types/channel/channel-datum', () => ({
   decodeChannelDatum: jest.fn(),
@@ -46,11 +49,21 @@ jest.mock('../../shared/helpers/ibc-state-root', () => ({
   alignTreeWithChain: jest.fn(async () => ({ root: 'aligned-root' })),
 }));
 
+jest.mock('../../shared/types/channel/channel-redeemer', () => ({
+  decodeSpendChannelRedeemer: jest.fn(),
+}));
+
+jest.mock('../../shared/types/port/ibc_module_redeemer', () => ({
+  decodeIBCModuleRedeemer: jest.fn(),
+}));
+
 const HISTORICAL_HEIGHT = 123n;
 const LATEST_ACCEPTED_HEIGHT = 200n;
 const HISTORICAL_ROOT = 'ab'.repeat(32);
 const CHANNEL_TOKEN_UNIT = 'policychannel-token';
 const CLIENT_TOKEN_UNIT = 'client-auth-token-unit';
+const SUCCESS_ACKNOWLEDGEMENT_HEX = toHex(JSON.stringify({ result: 'AQ==' }));
+const SUCCESS_ACKNOWLEDGEMENT_COMMITMENT = hashSHA256(SUCCESS_ACKNOWLEDGEMENT_HEX);
 
 function toHex(value: string): string {
   return Buffer.from(value, 'utf8').toString('hex');
@@ -150,6 +163,8 @@ function makeDeps() {
       outputIndex: 0,
       datum: 'historical-datum',
     })),
+    findUtxosByPolicyIdAndPrefixTokenName: jest.fn(async () => []),
+    findTransactionEvidenceByHash: jest.fn(async () => null),
   };
   const mithrilService = {
     getCardanoTransactionsSetSnapshot: jest.fn(async () => [
@@ -185,6 +200,8 @@ function makeDeps() {
 describe('proof-bearing services with historical query heights', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (decodeSpendChannelRedeemer as jest.Mock).mockReset();
+    (decodeIBCModuleRedeemer as jest.Mock).mockReset();
     (decodeChannelDatum as jest.Mock).mockResolvedValue(makeChannelDatum());
     (decodeClientDatum as jest.Mock).mockResolvedValue({
       state: {
@@ -270,6 +287,118 @@ describe('proof-bearing services with historical query heights', () => {
     );
     expect(getCurrentTree).not.toHaveBeenCalled();
     expect(response.commitment).toBe('commitment-bytes');
+    expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
+  });
+
+  it('returns canonical JSON acknowledgement bytes for committed transfer success acknowledgements', async () => {
+    const deps = makeDeps();
+    (decodeChannelDatum as jest.Mock).mockResolvedValueOnce(
+      makeChannelDatum({
+        packet_acknowledgement: new Map([[7n, SUCCESS_ACKNOWLEDGEMENT_COMMITMENT]]),
+      }),
+    );
+    const service = new PacketService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      deps.mithrilService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+    );
+
+    const response = await service.queryPacketAcknowledgement(
+      { channel_id: 'channel-0', port_id: 'transfer', sequence: 7n } as any,
+      { queryHeight: HISTORICAL_HEIGHT },
+    );
+
+    expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
+      'acks/ports/transfer/channels/channel-0/sequences/7',
+    );
+    expect(response.acknowledgement).toBe(SUCCESS_ACKNOWLEDGEMENT_HEX);
+    expect(deps.mocks.historyService.findUtxosByPolicyIdAndPrefixTokenName).not.toHaveBeenCalled();
+    expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
+  });
+
+  it('resolves non-standard acknowledgement bytes from the recv-packet module redeemer history', async () => {
+    const deps = makeDeps();
+    const errorAckHex = toHex(JSON.stringify({ error: 'async failed' }));
+    const errorAckCommitment = hashSHA256(errorAckHex);
+    (decodeChannelDatum as jest.Mock).mockResolvedValueOnce(
+      makeChannelDatum({
+        packet_acknowledgement: new Map([[7n, errorAckCommitment]]),
+      }),
+    );
+    deps.mocks.historyService.findUtxosByPolicyIdAndPrefixTokenName.mockResolvedValueOnce([
+      {
+        txHash: 'recv-packet-tx',
+        outputIndex: 0,
+        datum: 'historical-datum',
+        blockNo: Number(HISTORICAL_HEIGHT),
+      },
+    ]);
+    deps.mocks.historyService.findTransactionEvidenceByHash.mockResolvedValueOnce({
+      txHash: 'recv-packet-tx',
+      blockNo: Number(HISTORICAL_HEIGHT),
+      txIndex: 0,
+      txCborHex: '',
+      txBodyCborHex: '',
+      redeemers: [
+        { type: 'spend', data: 'channel-recv-redeemer', index: 0 },
+        { type: 'spend', data: 'module-callback-redeemer', index: 1 },
+      ],
+    });
+    (decodeSpendChannelRedeemer as jest.Mock).mockImplementation((data: string) => {
+      if (data !== 'channel-recv-redeemer') throw new Error('not a channel redeemer');
+      return {
+        RecvPacket: {
+          packet: {
+            sequence: 7n,
+            source_port: toHex('transfer'),
+            source_channel: toHex('channel-7'),
+            destination_port: toHex('transfer'),
+            destination_channel: toHex('channel-0'),
+          },
+        },
+      };
+    });
+    (decodeIBCModuleRedeemer as jest.Mock).mockImplementation((data: string) => {
+      if (data !== 'module-callback-redeemer') throw new Error('not a module redeemer');
+      return {
+        Callback: [
+          {
+            OnRecvPacket: {
+              acknowledgement: {
+                response: {
+                  AcknowledgementError: {
+                    err: toHex('async failed'),
+                  },
+                },
+              },
+            },
+          },
+        ],
+      };
+    });
+    const service = new PacketService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      deps.mithrilService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+    );
+
+    const response = await service.queryPacketAcknowledgement(
+      { channel_id: 'channel-0', port_id: 'transfer', sequence: 7n } as any,
+      { queryHeight: HISTORICAL_HEIGHT },
+    );
+
+    expect(deps.mocks.historyService.findUtxosByPolicyIdAndPrefixTokenName).toHaveBeenCalledWith(
+      'policy',
+      'channel-token',
+    );
+    expect(deps.mocks.historyService.findTransactionEvidenceByHash).toHaveBeenCalledWith('recv-packet-tx');
+    expect(response.acknowledgement).toBe(errorAckHex);
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
 

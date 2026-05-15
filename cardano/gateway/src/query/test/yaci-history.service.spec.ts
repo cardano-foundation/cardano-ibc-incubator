@@ -23,6 +23,7 @@ describe('YaciHistoryService', () => {
   };
 
   beforeEach(() => {
+    global.fetch = jest.fn();
     configServiceMock = {
       get: jest.fn().mockImplementation((key: string) => {
         if (key === 'ogmiosEndpoint') {
@@ -33,6 +34,9 @@ describe('YaciHistoryService', () => {
         }
         if (key === 'cardanoEpochLength') {
           return 432000;
+        }
+        if (key === 'cardanoPoolRegistrationHistoryEndpoint') {
+          return undefined;
         }
         return undefined;
       }),
@@ -51,12 +55,15 @@ describe('YaciHistoryService', () => {
 
   afterEach(() => {
     jest.resetAllMocks();
+    delete (global as typeof globalThis & { fetch?: typeof fetch }).fetch;
   });
 
   it('sources a full epoch context from Ogmios local state at the block point', async () => {
     entityManagerMock.query
       .mockResolvedValueOnce([{ start_slot: '1000' }])
-      .mockResolvedValueOnce([{ start_slot: '1200' }]);
+      .mockResolvedValueOnce([{ start_slot: '1200' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
     (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
       currentEpoch: 7,
       epochNonce: '11'.repeat(32),
@@ -95,6 +102,141 @@ describe('YaciHistoryService', () => {
         hash: 'ab'.repeat(32),
       },
       'aa'.repeat(32),
+    );
+  });
+
+  it('hydrates first registration slots from the cache before local or external lookups', async () => {
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([{ pool_id: 'pool1cachedpool', first_registration_slot: '42' }]);
+    (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
+      currentEpoch: 7,
+      epochNonce: '11'.repeat(32),
+      slotsPerKesPeriod: 129600,
+      stakeDistribution: [
+        {
+          poolId: 'pool1cachedpool',
+          stake: 900n,
+          vrfKeyHash: 'aa'.repeat(32),
+        },
+      ],
+    });
+
+    await expect(service.findEpochContextAtBlock(block)).resolves.toMatchObject({
+      stakeDistribution: [
+        {
+          poolId: 'pool1cachedpool',
+          firstRegistrationSlot: 42n,
+        },
+      ],
+    });
+
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('caches first registration slots discovered from local Yaci tables', async () => {
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ pool_id: 'pool1localpool', first_registration_slot: '77' }])
+      .mockResolvedValueOnce(undefined);
+    (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
+      currentEpoch: 7,
+      epochNonce: '11'.repeat(32),
+      slotsPerKesPeriod: 129600,
+      stakeDistribution: [
+        {
+          poolId: 'pool1localpool',
+          stake: 900n,
+          vrfKeyHash: 'aa'.repeat(32),
+        },
+      ],
+    });
+
+    await expect(service.findEpochContextAtBlock(block)).resolves.toMatchObject({
+      stakeDistribution: [
+        {
+          poolId: 'pool1localpool',
+          firstRegistrationSlot: 77n,
+        },
+      ],
+    });
+
+    expect(entityManagerMock.query).toHaveBeenLastCalledWith(
+      expect.stringContaining('INSERT INTO bridge_pool_registration_cache'),
+      [JSON.stringify([{ pool_id: 'pool1localpool', first_registration_slot: '77' }]), 'yaci'],
+    );
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('looks up missing first registration slots externally and caches them', async () => {
+    configServiceMock.get.mockImplementation((key: string) => {
+      if (key === 'ogmiosEndpoint') return 'ws://ogmios.local';
+      if (key === 'cardanoEpochNonceGenesis') return 'aa'.repeat(32);
+      if (key === 'cardanoEpochLength') return 432000;
+      if (key === 'cardanoPoolRegistrationHistoryEndpoint') return 'https://preprod.koios.rest/api/v1';
+      return undefined;
+    });
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(undefined);
+    (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
+      currentEpoch: 7,
+      epochNonce: '11'.repeat(32),
+      slotsPerKesPeriod: 129600,
+      stakeDistribution: [
+        {
+          poolId: 'pool1externalpool',
+          stake: 900n,
+          vrfKeyHash: 'aa'.repeat(32),
+        },
+      ],
+    });
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => [
+        {
+          pool_id_bech32: 'pool1externalpool',
+          block_time: '1000',
+          update_type: 'registration',
+        },
+      ],
+    });
+
+    await expect(
+      service.findEpochContextAtBlock({
+        ...block,
+        slotNo: 100n,
+        timestampUnixNs: 900_000_000_000n,
+      }),
+    ).resolves.toMatchObject({
+      stakeDistribution: [
+        {
+          poolId: 'pool1externalpool',
+          firstRegistrationSlot: 200n,
+        },
+      ],
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pathname: '/api/v1/pool_updates',
+      }),
+      expect.objectContaining({
+        headers: { accept: 'application/json' },
+      }),
+    );
+    expect(entityManagerMock.query).toHaveBeenLastCalledWith(
+      expect.stringContaining('INSERT INTO bridge_pool_registration_cache'),
+      [JSON.stringify([{ pool_id: 'pool1externalpool', first_registration_slot: '200' }]), 'external'],
     );
   });
 
