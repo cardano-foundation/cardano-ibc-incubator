@@ -26,6 +26,20 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Published Container Image
+
+The Cardano Gateway image is published to GitHub Container Registry after Gateway-relevant changes are merged to `main`.
+
+```bash
+docker pull ghcr.io/cardano-foundation/cardano-ibc-incubator/cardano-gateway:main
+```
+
+Published tags:
+
+- `main`: latest image built from the `main` branch
+- `sha-<commit>`: immutable image for a specific commit
+- `v*`: release tag image when a matching Git tag is pushed
+
 ## SendPacket Escrow Flow
 
 This sequence shows the user-funded escrow transfer path from request to on-chain submission.
