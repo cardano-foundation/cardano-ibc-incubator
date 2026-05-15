@@ -1546,8 +1546,7 @@ export class ChannelService {
     const spendModuleRedeemer: IBCModuleRedeemer = {
       Callback: [
         {
-          // Mirror the current on-chain validator expectation literally.
-          OnChanOpenConfirm: {
+          OnChanCloseConfirm: {
             channel_id: channelId,
           },
         },

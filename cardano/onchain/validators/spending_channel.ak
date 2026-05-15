@@ -109,11 +109,9 @@ validator spend_channel(
             "",
             1,
           )
-        and {
-          // Closing this channel removes this channel token; other channel outputs may still share the address.
-          validator_utils.no_output_contains_auth_token(outputs, datum.token),
-          redeemer == datum.token,
-        }
+        // Close-init keeps the channel thread token on the closed channel datum.
+        expect _ = validate_output_datum(spent_output, outputs, datum.token)
+        redeemer == datum.token
       }
       ChanCloseConfirm { .. } -> {
         // Channel close changes use the channel-root HostState branch.
