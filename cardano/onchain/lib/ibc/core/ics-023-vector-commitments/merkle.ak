@@ -189,6 +189,5 @@ fn validate_verification_args(
     !is_empty_merkle_proof(mr_proof),
     !is_empty_merkle_root(root),
     list.length(specs) == list.length(mr_proof.proofs),
-    list.all(specs, fn(spec) { spec != proofs.null_proof_spec() }),
   }
 }

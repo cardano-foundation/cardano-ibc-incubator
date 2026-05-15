@@ -6,6 +6,7 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/client.{
   Active, Expired, Frozen, Status,
 }
+use ibc/core/ics_023_vector_commitments/ics23/proofs
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleRoot}
 use ibc/utils/time.{Time}
 
@@ -17,7 +18,6 @@ const fifty_one_char_chain_id =
 const empty_chain_id = ""
 
 // Unit tests with success cases for validate function
-// NOTE: Will use not null proof specs for test cases after resolving validate's TODO part
 test test_validate_success() {
   let test_cases: List<ClientState> =
     [
@@ -29,7 +29,7 @@ test test_validate_success() {
         1500,
         10,
         Height { revision_number: 0, revision_height: 8 },
-        [],
+        merkle.get_sdk_specs(),
       ),
       // valid chain id
       client_state.new_client_state(
@@ -39,7 +39,7 @@ test test_validate_success() {
         1500,
         10,
         Height { revision_number: 0, revision_height: 8 },
-        [],
+        merkle.get_sdk_specs(),
       ),
     ]
 
@@ -48,9 +48,7 @@ test test_validate_success() {
 }
 
 // Unit tests with failure cases for validate function
-// TODO: Need unit tests for cases:
-// - invalid revision number
-// - proof specs is null/contains null
+// TODO: Need unit tests for invalid revision number.
 
 // invalid chain id - empty chain id
 test test_validate_fail_empty_chain_id() fail {
@@ -214,6 +212,34 @@ test test_validate_fail_trusting_period_not_less_than_unbonding_period() fail {
       10,
       Height { revision_number: 0, revision_height: 0 },
       [],
+    )
+  client_state.validate(cs)
+}
+
+test test_validate_fail_empty_proof_specs() fail {
+  let cs =
+    client_state.new_client_state(
+      "entrypoint-0",
+      unchecked_rational.from_int(1),
+      1000,
+      1500,
+      10,
+      Height { revision_number: 0, revision_height: 8 },
+      [],
+    )
+  client_state.validate(cs)
+}
+
+test test_validate_fail_null_proof_spec() fail {
+  let cs =
+    client_state.new_client_state(
+      "entrypoint-0",
+      unchecked_rational.from_int(1),
+      1000,
+      1500,
+      10,
+      Height { revision_number: 0, revision_height: 8 },
+      [proofs.null_proof_spec(), proofs.tendermint_spec()],
     )
   client_state.validate(cs)
 }

@@ -11,7 +11,7 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
 use ibc/core/ics_002_client_semantics/types/client.{
   Active, Expired, Frozen, Status,
 }
-use ibc/core/ics_023_vector_commitments/ics23/proofs.{ProofSpec}
+use ibc/core/ics_023_vector_commitments/ics23/proofs.{ProofSpec, validate_specs}
 use ibc/core/ics_023_vector_commitments/merkle.{MerklePath, MerkleProof}
 use ibc/utils/string
 use ibc/utils/time.{Duration, Time}
@@ -80,9 +80,10 @@ pub fn validate(cs: ClientState) -> Bool {
   expect cs.latest_height.revision_height > 0
   // trusting period should be < unbonding period
   expect cs.trusting_period < cs.unbonding_period
-  // TODO: 
-  // validate latest height revision number must match chain id revision number 
-  // validate proof specs
+  // TODO: validate latest height revision number must match chain id revision number
+  // Proof specs are immutable client parameters, so reject malformed specs once
+  // here instead of rechecking static spec validity for every packet proof.
+  expect validate_specs(cs.proof_specs)
   True
 }
 

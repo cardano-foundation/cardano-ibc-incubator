@@ -182,6 +182,13 @@ pub fn tendermint_spec() -> ProofSpec {
   }
 }
 
+/// Tendermint clients only support the canonical Cosmos SDK proof stack.
+/// Once this is checked at client creation, proof verification can trust the
+/// stored specs and only validate each submitted proof against them.
+pub fn validate_specs(specs: List<ProofSpec>) -> Bool {
+  specs == [iavl_spec(), tendermint_spec()]
+}
+
 //TODO: Need to implement over-declares equality
 pub fn spec_equals(p: ProofSpec, spec: ProofSpec) -> Bool {
   p == spec
