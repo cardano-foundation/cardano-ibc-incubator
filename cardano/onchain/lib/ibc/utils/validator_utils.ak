@@ -19,7 +19,9 @@ use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{SpendChannelRedeemer}
 use ibc/core/ics_005/types/ibc_module_redeemer.{IBCModuleRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
-use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/core/ics_025_handler_interface/host_state.{
+  HostStateDatum, host_state_token_name, is_active,
+}
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
 
 pub type ExpectedHostStateRedeemer {
@@ -381,6 +383,16 @@ pub fn require_host_state_redeemer(
   expect host_state_redeemer_matches(host_redeemer, expected)?
 
   (host_input, host_output)
+}
+
+pub fn get_host_state_datum(input: Input) -> HostStateDatum {
+  expect host_state_datum: HostStateDatum = get_inline_datum(input.output)
+  host_state_datum
+}
+
+pub fn require_active_host_state(input: Input) {
+  let host_state_datum = get_host_state_datum(input)
+  expect host_state_datum.shutdown |> is_active
 }
 
 pub fn compare_purpose(_key1: ScriptPurpose, _key2: ScriptPurpose) -> Ordering {

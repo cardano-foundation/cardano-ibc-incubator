@@ -64,4 +64,10 @@ pub type HostStateRedeemer {
     // Sibling hashes for the `acks/ports/{portId}/channels/{channelId}/sequences/{sequence}` key update.
     packet_acknowledgement_siblings: List<ByteArray>,
   }
+  EnterShutdown {
+    // POSIX time in milliseconds after which deployment infrastructure can be
+    // reclaimed by the trusted deployer.
+    grace_period_end: Int,
+  }
+  FinalizeShutdown
 }

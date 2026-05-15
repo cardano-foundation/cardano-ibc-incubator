@@ -47,6 +47,9 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
+use ibc/core/ics_025_handler_interface/host_state.{
+  Active, HostState, HostStateDatum, ShutdownState, empty_ibc_state_root,
+}
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
 use ibc/testing/fuzz_dsl
 use ibc/utils/validator_utils
@@ -84,6 +87,26 @@ fn operation_marker(policy_id: PolicyId) {
   from_asset(policy_id, "", 1)
 }
 
+fn host_state_datum(
+  nft_policy: PolicyId,
+  shutdown: ShutdownState,
+) -> HostStateDatum {
+  HostStateDatum {
+    state: HostState {
+      version: 0,
+      ibc_state_root: empty_ibc_state_root,
+      next_client_sequence: 0,
+      next_connection_sequence: 0,
+      next_channel_sequence: 0,
+      bound_port: [],
+      last_update_time: 0,
+    },
+    nft_policy,
+    deployer: #"00000000000000000000000000000000000000000000000000000000",
+    shutdown,
+  }
+}
+
 fn setup() -> MockData {
   let host_state_nft_policy_id: PolicyId = "mock host state nft policy id"
   let host_state_token_name = "ibc_host_state"
@@ -93,7 +116,7 @@ fn setup() -> MockData {
     Output {
       address: from_script(host_state_script_hash),
       value: from_asset(host_state_nft_policy_id, host_state_token_name, 1),
-      datum: InlineDatum(Void),
+      datum: InlineDatum(host_state_datum(host_state_nft_policy_id, Active)),
       reference_script: None,
     }
 

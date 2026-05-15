@@ -1,5 +1,18 @@
 import { Data } from "@lucid-evolution/lucid";
 
+export const ShutdownStateSchema = Data.Enum([
+  Data.Literal("Active"),
+  Data.Object({
+    ShuttingDown: Data.Object({
+      initiated_at: Data.Integer(),
+      grace_period_end: Data.Integer(),
+    }),
+  }),
+]);
+
+export type ShutdownState = Data.Static<typeof ShutdownStateSchema>;
+export const ShutdownState = ShutdownStateSchema as unknown as ShutdownState;
+
 // HostState - STT Architecture
 //
 // Represents the canonical IBC host state maintained in a single UTXO
@@ -27,6 +40,8 @@ export const HostState = HostStateSchema as unknown as HostState;
 export const HostStateDatumSchema = Data.Object({
   state: HostStateSchema,
   nft_policy: Data.Bytes(), // Policy ID of the IBC Host State NFT
+  deployer: Data.Bytes(),
+  shutdown: ShutdownStateSchema,
 });
 
 export type HostStateDatum = Data.Static<typeof HostStateDatumSchema>;
