@@ -11,6 +11,7 @@ const (
 	EventTypeStabilityHeaderAccepted = "stability_header_accepted"
 	EventTypeStabilityHeaderRejected = "stability_header_rejected"
 	EventTypeStabilityClientFrozen   = "stability_client_frozen"
+	EventTypeStabilityClientUpgraded = "stability_client_upgraded"
 
 	AttributeKeyClientID                = "client_id"
 	AttributeKeyReason                  = "reason"
@@ -28,6 +29,7 @@ const (
 	AttributeKeyThresholdUniquePools    = "threshold_unique_pools"
 	AttributeKeyThresholdUniqueStakeBps = "threshold_unique_stake_bps"
 	AttributeKeyFrozenHeight            = "frozen_height"
+	AttributeKeyUpgradeHeight           = "upgrade_height"
 )
 
 func emitStabilityHeaderAcceptedEvent(
@@ -91,6 +93,26 @@ func emitStabilityClientFrozenEvent(ctx sdk.Context, clientID string, frozenHeig
 			sdk.NewAttribute(AttributeKeyClientID, clientID),
 			sdk.NewAttribute(AttributeKeyFrozenHeight, heightString(frozenHeight)),
 			sdk.NewAttribute(AttributeKeyReason, "misbehaviour"),
+		),
+	)
+}
+
+func emitStabilityClientUpgradedEvent(
+	ctx sdk.Context,
+	clientID string,
+	clientState *ClientState,
+	consensusState *ConsensusState,
+) {
+	if clientState == nil || consensusState == nil {
+		return
+	}
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			EventTypeStabilityClientUpgraded,
+			sdk.NewAttribute(AttributeKeyClientID, clientID),
+			sdk.NewAttribute(AttributeKeyUpgradeHeight, heightString(clientState.LatestHeight)),
+			sdk.NewAttribute(AttributeKeyAcceptedBlockHash, consensusState.AcceptedBlockHash),
+			sdk.NewAttribute(AttributeKeyAcceptedEpoch, strconv.FormatUint(consensusState.AcceptedEpoch, 10)),
 		),
 	)
 }

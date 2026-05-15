@@ -173,5 +173,36 @@ func (l LightClientModule) VerifyUpgradeAndUpdateState(
 	upgradeClientProof []byte,
 	upgradeConsensusStateProof []byte,
 ) error {
-	return errorsmod.Wrap(clienttypes.ErrInvalidUpgradeClient, "cannot upgrade stability-scored client")
+	var newClientState ClientState
+	if err := l.cdc.Unmarshal(newClient, &newClientState); err != nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidClient, err.Error())
+	}
+
+	var newConsensusState ConsensusState
+	if err := l.cdc.Unmarshal(newConsState, &newConsensusState); err != nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, err.Error())
+	}
+
+	clientStore := l.storeProvider.ClientStore(ctx, clientID)
+	clientState, found := getClientState(clientStore, l.cdc)
+	if !found {
+		return errorsmod.Wrap(clienttypes.ErrClientNotFound, clientID)
+	}
+
+	if err := clientState.VerifyUpgradeAndUpdateState(
+		ctx,
+		l.cdc,
+		clientStore,
+		newClient,
+		newConsState,
+		&newClientState,
+		&newConsensusState,
+		upgradeClientProof,
+		upgradeConsensusStateProof,
+	); err != nil {
+		return err
+	}
+
+	emitStabilityClientUpgradedEvent(ctx, clientID, &newClientState, &newConsensusState)
+	return nil
 }
