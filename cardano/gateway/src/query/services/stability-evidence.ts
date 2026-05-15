@@ -192,6 +192,42 @@ function invalidTrustedHeight(trustedHeight: bigint, height: bigint, message: st
   );
 }
 
+async function hydrateDescendantProducerRegistrationSlots(
+  historyService: HistoryService,
+  stakeDistribution: HistoryStakeDistributionEntry[],
+  descendantBlocks: HistoryBlock[],
+  anchorBlock: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>,
+): Promise<HistoryStakeDistributionEntry[]> {
+  const entriesByPoolId = new Map(stakeDistribution.map((entry) => [entry.poolId, entry]));
+  const missingProducerPoolIds = Array.from(
+    new Set(
+      descendantBlocks
+        .map((block) => block.slotLeader)
+        .filter((poolId) => {
+          if (!poolId) {
+            return false;
+          }
+          const entry = entriesByPoolId.get(poolId);
+          return Boolean(entry && (!entry.firstRegistrationSlot || entry.firstRegistrationSlot <= 0n));
+        }),
+    ),
+  );
+
+  if (missingProducerPoolIds.length === 0) {
+    return stakeDistribution;
+  }
+
+  const firstRegistrationSlots = await historyService.findFirstPoolRegistrationSlots(missingProducerPoolIds, anchorBlock);
+  if (firstRegistrationSlots.size === 0) {
+    return stakeDistribution;
+  }
+
+  return stakeDistribution.map((entry) => {
+    const firstRegistrationSlot = firstRegistrationSlots.get(entry.poolId);
+    return firstRegistrationSlot === undefined ? entry : { ...entry, firstRegistrationSlot };
+  });
+}
+
 export async function loadStakeWeightedStabilityEvidenceByHeight({
   historyService,
   height,
@@ -254,10 +290,16 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
     firstInvalidDescendantIndex >= 0
       ? scoredDescendantBlocks.slice(0, firstInvalidDescendantIndex)
       : scoredDescendantBlocks;
+  const hydratedEpochStakeDistribution = await hydrateDescendantProducerRegistrationSlots(
+    historyService,
+    epochStakeDistribution,
+    eligibleDescendantBlocks,
+    anchorBlock,
+  );
 
   let acceptedDescendantBlocks = eligibleDescendantBlocks;
   const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
-  let metrics = computeStabilityMetrics(eligibleDescendantBlocks, epochStakeDistribution, heuristicParams, {
+  let metrics = computeStabilityMetrics(eligibleDescendantBlocks, hydratedEpochStakeDistribution, heuristicParams, {
     poolRegistrationCutoffSlot,
   });
 
@@ -271,7 +313,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
       const candidateDescendantBlocks = eligibleDescendantBlocks.slice(0, prefixLength);
       const candidateMetrics = computeStabilityMetrics(
         candidateDescendantBlocks,
-        epochStakeDistribution,
+        hydratedEpochStakeDistribution,
         heuristicParams,
         { poolRegistrationCutoffSlot },
       );
@@ -322,7 +364,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
     anchorEpoch: anchorBlock.epochNo as EpochNumber,
     anchorBlock,
     descendantBlocks: acceptedDescendantBlocks,
-    epochStakeDistribution,
+    epochStakeDistribution: hydratedEpochStakeDistribution,
     epochVerificationContext,
     heuristicParams,
     metrics,
@@ -500,12 +542,18 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
   );
   const eligibleDescendantBlocks =
     firstInvalidDescendantIndex >= 0 ? descendantBlocks.slice(0, firstInvalidDescendantIndex) : descendantBlocks;
+  const hydratedAnchorStakeDistribution = await hydrateDescendantProducerRegistrationSlots(
+    historyService,
+    anchorEpochContext.stakeDistribution,
+    eligibleDescendantBlocks,
+    anchorBlock,
+  );
 
   const acceptedDescendantBlocks = eligibleDescendantBlocks;
   const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
   const metrics = computeStabilityMetrics(
     eligibleDescendantBlocks,
-    anchorEpochContext.stakeDistribution,
+    hydratedAnchorStakeDistribution,
     heuristicParams,
     { poolRegistrationCutoffSlot },
   );
@@ -527,7 +575,7 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     anchorEpoch: anchorBlock.epochNo as EpochNumber,
     anchorBlock,
     descendantBlocks: acceptedDescendantBlocks,
-    epochStakeDistribution: anchorEpochContext.stakeDistribution,
+    epochStakeDistribution: hydratedAnchorStakeDistribution,
     epochVerificationContext: anchorEpochContext.verificationContext,
     trustedHeight: trustedHeight as CardanoHeight,
     trustedEpoch: trustedBlock.epochNo as EpochNumber,

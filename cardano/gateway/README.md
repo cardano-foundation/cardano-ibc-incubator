@@ -109,6 +109,7 @@ Current bridge history tables include:
 - `bridge_tx_evidence`: tx CBOR, tx body CBOR, decoded redeemers, HostState evidence
 - `bridge_utxo_history`: historical bridge-relevant UTxOs by asset and block
 - `bridge_spo_event_history`: historical SPO register/unregister markers
+- `bridge_pool_registration_cache`: first-registration slots for stake pools used by stability scoring
 
 So the runtime split is:
 
@@ -116,6 +117,14 @@ So the runtime split is:
 - use `Kupo` for current live UTxO state
 - use `Mithril` for certified Cardano state roots / heights
 - use `Yaci` for historical bridge state and tx evidence
+
+Stake-weighted stability also needs a pool-age lookup because active pools can have registered long before a bridge
+deployment checkpoint. The Gateway first uses `bridge_pool_registration_cache`, then local Yaci registration tables, then
+the optional `CARDANO_POOL_REGISTRATION_HISTORY_ENDPOINT` for cache misses. Preprod defaults that endpoint to Koios so a
+checkpointed stack can resolve old pool registrations without replaying the full chain history.
+
+Stake-weighted stability uses Koios via `CARDANO_EPOCH_PARAMS_ENDPOINT` for epoch nonces because Demeter Ogmios
+endpoints consistently time out after 20 seconds on `queryLedgerState/nonces`.
 
 ## Installation
 

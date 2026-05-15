@@ -1531,12 +1531,15 @@ pub async fn deploy_preprod_bridge(
     let gateway_dir = project_root_path.join("cardano/gateway");
     let deployment_dir = offchain_dir.join("deployments");
     let generic_handler_path = deployment_dir.join("handler.json");
+    let generic_cost_report_path = deployment_dir.join("deployment-cost-report.json");
     let preprod_handler_path = PathBuf::from(profile.handler_json_path.clone());
     let preprod_manifest_path = profile
         .bridge_manifest_path
         .clone()
         .map(PathBuf::from)
         .ok_or("Preprod bridge manifest path is not configured")?;
+    let preprod_cost_report_path =
+        preprod_manifest_path.with_file_name("cardano-preprod-deployment-costs.json");
     let network_magic = profile.network_magic.to_string();
     let kupmios_submit_timeout_ms = String::from("120000");
 
@@ -1727,6 +1730,12 @@ pub async fn deploy_preprod_bridge(
         ),
         ("CARDANO_NETWORK_MAGIC", network_magic.as_str()),
         (
+            "DEPLOYMENT_COST_REPORT_PATH",
+            generic_cost_report_path
+                .to_str()
+                .ok_or("Failed to stringify deployment cost report path")?,
+        ),
+        (
             "KUPMIOS_SUBMIT_TIMEOUT_MS",
             kupmios_submit_timeout_ms.as_str(),
         ),
@@ -1794,6 +1803,30 @@ pub async fn deploy_preprod_bridge(
             error
         )
         .into());
+    }
+
+    if generic_cost_report_path.exists() {
+        if let Err(error) = fs::copy(&generic_cost_report_path, &preprod_cost_report_path) {
+            let _ = restore_handler_json(generic_handler_path.as_path(), handler_backup);
+            if let Some(progress_bar) = &optional_progress_bar {
+                progress_bar.finish_and_clear();
+            }
+            return Err(format!(
+                "Failed to publish preprod deployment cost report from {} to {}: {}",
+                generic_cost_report_path.display(),
+                preprod_cost_report_path.display(),
+                error
+            )
+            .into());
+        }
+    } else {
+        log_or_show_progress(
+            &format!(
+                "WARN: Deployment completed without a cost report at {}",
+                generic_cost_report_path.display()
+            ),
+            &optional_progress_bar,
+        );
     }
 
     log_or_show_progress(

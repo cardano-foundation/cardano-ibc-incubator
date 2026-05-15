@@ -68,7 +68,8 @@ interface Config {
   cardanoLightClientMode: 'mithril' | 'stake-weighted-stability';
   cardanoNetwork: Network;
   cardanoEpochLength: number;
-  cardanoEpochNonceGenesis: string;
+  cardanoEpochParamsEndpoint?: string;
+  cardanoPoolRegistrationHistoryEndpoint?: string;
 
   mithrilEndpoint: string;
   mtithrilGenesisVerificationKey: string;
@@ -91,9 +92,7 @@ export default (): Partial<Config> => {
     kupoApiKey: process.env.KUPO_API_KEY,
     yaciStoreEndpoint: process.env.YACI_STORE_ENDPOINT,
     cardanoRestEndpoint: process.env.CARDANO_REST_ENDPOINT,
-    entrypointRestEndpoint:
-      process.env.CARDANO_ENTRYPOINT_REST_ENDPOINT ||
-      process.env.ENTRYPOINT_REST_ENDPOINT,
+    entrypointRestEndpoint: process.env.CARDANO_ENTRYPOINT_REST_ENDPOINT || process.env.ENTRYPOINT_REST_ENDPOINT,
     localOsmosisRestEndpoint: process.env.LOCAL_OSMOSIS_REST_ENDPOINT,
     swapRouterAddress: process.env.SWAP_ROUTER_ADDRESS || '',
 
@@ -102,12 +101,15 @@ export default (): Partial<Config> => {
     cardanoChainNetworkMagic: Number(process.env.CARDANO_CHAIN_NETWORK_MAGIC || 42),
     cardanoChainId: process.env.CARDANO_CHAIN_ID || 'cardano-devnet',
     cardanoLightClientMode:
-      process.env.CARDANO_LIGHT_CLIENT_MODE === 'mithril'
-        ? 'mithril'
-        : 'stake-weighted-stability',
+      process.env.CARDANO_LIGHT_CLIENT_MODE === 'mithril' ? 'mithril' : 'stake-weighted-stability',
     cardanoNetwork: cardanoNetwork,
     cardanoEpochLength: Number(process.env.CARDANO_EPOCH_LENGTH || 432000),
-    cardanoEpochNonceGenesis: process.env.CARDANO_EPOCH_NONCE_GENESIS || '',
+    cardanoEpochParamsEndpoint:
+      process.env.CARDANO_EPOCH_PARAMS_ENDPOINT ||
+      (process.env.CARDANO_NETWORK_MAGIC === '1' ? 'https://preprod.koios.rest/api/v1' : undefined),
+    cardanoPoolRegistrationHistoryEndpoint:
+      process.env.CARDANO_POOL_REGISTRATION_HISTORY_ENDPOINT ||
+      (process.env.CARDANO_NETWORK_MAGIC === '1' ? 'https://preprod.koios.rest/api/v1' : undefined),
 
     mithrilEndpoint: process.env.MITHRIL_ENDPOINT,
     mtithrilGenesisVerificationKey: process.env.MITHRIL_GENESIS_VERIFICATION_KEY,

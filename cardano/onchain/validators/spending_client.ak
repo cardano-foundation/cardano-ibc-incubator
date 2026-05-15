@@ -1,5 +1,7 @@
+use aiken/collection/list
+use aiken/collection/pairs
 use cardano/assets.{PolicyId}
-use cardano/transaction.{Input, OutputReference, Transaction}
+use cardano/transaction.{Input, OutputReference, Spend, Transaction}
 use ibc/auth
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -12,8 +14,22 @@ use ibc/client/ics_007_tendermint_client/misbehaviour_handle as misbehaviour_han
 use ibc/client/ics_007_tendermint_client/msgs.{HeaderCase}
 use ibc/client/ics_007_tendermint_client/update as update_mod
 use ibc/core/ics_002_client_semantics/types/client as client_status_mod
+use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/core/ics_025_handler_interface/host_state_redeemer
 use ibc/utils/tx_time.{TxTime} as tx_time_mod
 use ibc/utils/validator_utils
+
+fn find_host_state_input(
+  inputs: List<Input>,
+  nft_policy: PolicyId,
+) -> Option<Input> {
+  list.find(
+    inputs,
+    fn(input) {
+      assets.has_nft(input.output.value, nft_policy, host_state_token_name)
+    },
+  )
+}
 
 validator spend_client(host_state_nft_policy_id: PolicyId) {
   spend(
@@ -27,14 +43,12 @@ validator spend_client(host_state_nft_policy_id: PolicyId) {
 
     // Any client state update must be committed into the HostState root in the
     // same transaction, using the HostState branch that commits client keys.
-    expect _ =
-      validator_utils.require_host_state_redeemer(
-        inputs,
-        outputs,
-        redeemers,
-        host_state_nft_policy_id,
-        validator_utils.ExpectUpdateClient,
-      )
+    expect Some(host_input) =
+      find_host_state_input(inputs, host_state_nft_policy_id)
+    expect Some(spent_host_state_redeemer) =
+      pairs.get_first(redeemers, Spend(host_input.output_reference))
+    expect host_state_redeemer.UpdateClient { .. }: host_state_redeemer.HostStateRedeemer =
+      spent_host_state_redeemer
 
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     let spent_output = spent_input.output
