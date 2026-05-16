@@ -3,10 +3,10 @@ package app
 import (
 	asyncicqmodule "cardano-entrypoint/x/asyncicq/module"
 	ibcmithril "cardano-entrypoint/x/clients/mithril"
-	ibcstability "cardano-entrypoint/x/clients/stability"
 
 	"cosmossdk.io/core/appmodule"
 	storetypes "cosmossdk.io/store/types"
+	ibcprobabilistic "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -179,13 +179,13 @@ func (app *App) registerIBCModules() {
 	tmLightClientModule := ibctm.NewLightClientModule(app.appCodec, storeProvider)
 	smLightClientModule := solomachine.NewLightClientModule(app.appCodec, storeProvider)
 	mithrilLightClientModule := ibcmithril.NewLightClientModule(app.appCodec, storeProvider)
-	stabilityLightClientModule := ibcstability.NewLightClientModule(app.appCodec, storeProvider)
+	probabilisticLightClientModule := ibcprobabilistic.NewLightClientModule(app.appCodec, storeProvider)
 
 	clientKeeper.AddRoute(ibctm.ModuleName, &tmLightClientModule)
 	clientKeeper.AddRoute(solomachine.ModuleName, &smLightClientModule)
 	// The Mithril client is deprecated and intentionally not routable for new IBC client
 	// operations. Keep its AppModule registered below so historical client types can decode.
-	clientKeeper.AddRoute(ibcstability.ModuleName, &stabilityLightClientModule)
+	clientKeeper.AddRoute(ibcprobabilistic.ModuleName, &probabilisticLightClientModule)
 
 	// register IBC modules
 	if err := app.RegisterModules(
@@ -196,7 +196,7 @@ func (app *App) registerIBCModules() {
 		ibctm.NewAppModule(tmLightClientModule),
 		// Deprecated Mithril module is retained only for interface/type registration.
 		ibcmithril.NewAppModule(mithrilLightClientModule),
-		ibcstability.NewAppModule(stabilityLightClientModule),
+		ibcprobabilistic.NewAppModule(probabilisticLightClientModule),
 		solomachine.NewAppModule(smLightClientModule),
 	); err != nil {
 		panic(err)
@@ -214,9 +214,9 @@ func RegisterIBC(registry cdctypes.InterfaceRegistry) map[string]appmodule.AppMo
 		icatypes.ModuleName:         icamodule.AppModule{},
 		ibctm.ModuleName:            ibctm.NewAppModule(ibctm.LightClientModule{}),
 		// Deprecated Mithril module is retained only for interface/type registration.
-		ibcmithril.ModuleName:   ibcmithril.NewAppModule(ibcmithril.LightClientModule{}),
-		ibcstability.ModuleName: ibcstability.NewAppModule(ibcstability.LightClientModule{}),
-		solomachine.ModuleName:  solomachine.NewAppModule(solomachine.LightClientModule{}),
+		ibcmithril.ModuleName:       ibcmithril.NewAppModule(ibcmithril.LightClientModule{}),
+		ibcprobabilistic.ModuleName: ibcprobabilistic.NewAppModule(ibcprobabilistic.LightClientModule{}),
+		solomachine.ModuleName:      solomachine.NewAppModule(solomachine.LightClientModule{}),
 	}
 
 	for _, module := range modules {

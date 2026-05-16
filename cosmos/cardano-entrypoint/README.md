@@ -16,7 +16,7 @@ Your blockchain in development can be configured with `config.yml`.
 
 ### IBC client type
 
-This chain tracks Cardano via a custom IBC light client (client type `08-cardano`) using protobuf types under `ibc.lightclients.mithril.v1` (see `cosmos/cardano-entrypoint/proto/ibc/lightclients/mithril/v1/mithril.proto`).
+This chain tracks Cardano via the active probabilistic IBC light client (client type `08-cardano-probabilistic`). The deprecated Mithril client type is `08-cardano-mithril` and uses protobuf types under `ibc.lightclients.mithril.v1` (see `cosmos/cardano-entrypoint/proto/ibc/lightclients/mithril/v1/mithril.proto`).
 
 In the repo’s standard developer workflow, Hermes drives client creation/updates and handshake/packet relaying end-to-end via the Gateway and Cardano devnet. For that reason, we do not keep static JSON fixtures for Cardano client creation in this folder, since the values are deployment-specific (for example, the HostState NFT identifiers and the certified HostState transaction evidence).
 

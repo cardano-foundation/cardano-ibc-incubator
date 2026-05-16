@@ -4,4 +4,7 @@ toolchain go1.24.0
 
 use ./cardano-entrypoint
 
-use ./cardano-entrypoint/datasource
+use (
+	./cardano-entrypoint/datasource
+	./cardano-probabilistic-light-client
+)

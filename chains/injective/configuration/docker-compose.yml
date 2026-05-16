@@ -1,6 +1,11 @@
 services:
   injectived:
-    image: ${INJECTIVE_LOCAL_IMAGE:-injectivelabs/injective-core:v1.18.0}
+    image: ${INJECTIVE_LOCAL_IMAGE:-local:injective-cardano-probabilistic}
+    build:
+      context: ../injective-core
+      dockerfile: ../configuration/Dockerfile
+      args:
+        GO_VERSION: "1.23"
     entrypoint: ["/bin/sh", "/injective/scripts/setup_injective_local.sh"]
     environment:
       INJECTIVE_HOME: /root/.injectived

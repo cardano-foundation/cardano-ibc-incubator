@@ -88,7 +88,7 @@ func TestCheckSubstituteAndUpdateStateRejectsMismatchedRecoveryParameters(t *tes
 func TestLightClientModuleVerifyUpgradeAndUpdateStateReturnsUnsupported(t *testing.T) {
 	lightClientModule := LightClientModule{}
 
-	err := lightClientModule.VerifyUpgradeAndUpdateState(sdk.Context{}, "08-cardano-0", nil, nil, nil, nil)
+	err := lightClientModule.VerifyUpgradeAndUpdateState(sdk.Context{}, "08-cardano-mithril-0", nil, nil, nil, nil)
 	require.ErrorIs(t, err, clienttypes.ErrInvalidUpgradeClient)
 	require.ErrorContains(t, err, "cannot upgrade mithril client")
 }
