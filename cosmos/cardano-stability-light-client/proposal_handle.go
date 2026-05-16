@@ -1,0 +1,104 @@
+package stability
+
+import (
+	"bytes"
+	"reflect"
+
+	errorsmod "cosmossdk.io/errors"
+	storetypes "cosmossdk.io/store/types"
+
+	"github.com/cosmos/cosmos-sdk/codec"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	"github.com/cosmos/ibc-go/v10/modules/core/exported"
+)
+
+type recoveryInvariantClientState struct {
+	UpgradePath           []string
+	HostStateNftPolicyId  []byte
+	HostStateNftTokenName []byte
+	HeuristicParams       *HeuristicParams
+	SystemStartUnixNs     uint64
+	SlotLengthNs          uint64
+}
+
+func (cs ClientState) CheckSubstituteAndUpdateState(
+	ctx sdk.Context, cdc codec.BinaryCodec, subjectClientStore,
+	substituteClientStore storetypes.KVStore, substituteClient exported.ClientState,
+) error {
+	substituteClientState, ok := substituteClient.(*ClientState)
+	if !ok {
+		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "expected type %T, got %T", &ClientState{}, substituteClient)
+	}
+	if err := substituteClientState.Validate(); err != nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
+	}
+	if !IsMatchingClientState(cs, *substituteClientState) {
+		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, "subject client state does not match substitute client state")
+	}
+	if substituteClientState.LatestHeight == nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, "substitute client latest height cannot be nil")
+	}
+	height := substituteClientState.LatestHeight
+	consensusState, found := GetConsensusState(substituteClientStore, cdc, height)
+	if !found {
+		return errorsmod.Wrap(clienttypes.ErrConsensusStateNotFound, "unable to retrieve latest consensus state for substitute client")
+	}
+	if err := consensusState.ValidateBasic(); err != nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
+	}
+	processedHeight, found := GetProcessedHeight(substituteClientStore, height)
+	if !found {
+		return errorsmod.Wrap(clienttypes.ErrUpdateClientFailed, "unable to retrieve processed height for substitute client latest height")
+	}
+	processedTime, found := GetProcessedTime(substituteClientStore, height)
+	if !found {
+		return errorsmod.Wrap(clienttypes.ErrUpdateClientFailed, "unable to retrieve processed time for substitute client latest height")
+	}
+	if cs.Status(ctx, subjectClientStore, cdc) == exported.Frozen || cs.FrozenHeight == nil {
+		zeroHeight := ZeroHeight()
+		cs.FrozenHeight = zeroHeight
+	}
+	contexts, err := substituteClientState.normalizedEpochContexts()
+	if err != nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
+	}
+	setConsensusState(subjectClientStore, cdc, consensusState, height)
+	setConsensusMetadataWithValues(subjectClientStore, height, processedHeight, processedTime)
+	cs.LatestHeight = substituteClientState.LatestHeight
+	cs.ChainId = substituteClientState.ChainId
+	cs.TrustingPeriod = substituteClientState.TrustingPeriod
+	if err := syncLegacyEpochContextFields(&cs, contexts, substituteClientState.CurrentEpoch); err != nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
+	}
+	setClientState(subjectClientStore, cdc, &cs)
+	return nil
+}
+
+func IsMatchingClientState(subject, substitute ClientState) bool {
+	return reflect.DeepEqual(
+		recoveryInvariantProjection(subject),
+		recoveryInvariantProjection(substitute),
+	)
+}
+
+func recoveryInvariantProjection(cs ClientState) recoveryInvariantClientState {
+	return recoveryInvariantClientState{
+		UpgradePath:           append([]string(nil), cs.UpgradePath...),
+		HostStateNftPolicyId:  bytes.Clone(cs.HostStateNftPolicyId),
+		HostStateNftTokenName: bytes.Clone(cs.HostStateNftTokenName),
+		HeuristicParams:       cloneHeuristicParams(cs.HeuristicParams),
+		SystemStartUnixNs:     cs.SystemStartUnixNs,
+		SlotLengthNs:          cs.SlotLengthNs,
+	}
+}
+
+func cloneHeuristicParams(params *HeuristicParams) *HeuristicParams {
+	if params == nil {
+		return nil
+	}
+
+	cloned := *params
+	return &cloned
+}
