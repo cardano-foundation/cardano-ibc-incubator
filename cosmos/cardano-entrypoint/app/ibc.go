@@ -3,10 +3,10 @@ package app
 import (
 	asyncicqmodule "cardano-entrypoint/x/asyncicq/module"
 	ibcmithril "cardano-entrypoint/x/clients/mithril"
-	ibcstability "cardano-entrypoint/x/clients/stability"
 
 	"cosmossdk.io/core/appmodule"
 	storetypes "cosmossdk.io/store/types"
+	ibcstability "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-stability-light-client"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"

@@ -28,6 +28,7 @@ require (
 	github.com/ComposableFi/go-merkle-trees v0.0.0-20220505132313-e976260288cc
 	github.com/blinklabs-io/gouroboros v0.89.1
 	github.com/bufbuild/buf v1.34.0
+	github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-stability-light-client v0.1.0
 	github.com/cometbft/cometbft v0.38.17
 	github.com/cosmos/cosmos-db v1.1.1
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5
