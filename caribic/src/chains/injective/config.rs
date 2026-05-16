@@ -20,11 +20,13 @@ pub(super) const LOCAL_GENESIS_ACCOUNT_AMOUNT: &str =
 pub(super) const LOCAL_GENTX_AMOUNT: &str = "50000000000000000000stake";
 
 pub(super) const TESTNET_CHAIN_ID: &str = "injective-888";
-pub(super) const TESTNET_RPC_URL: &str = "https://injective-testnet-rpc.polkachu.com:443";
-pub(super) const TESTNET_GRPC_URL: &str = "http://injective-grpc.polkachu.com:14390";
-pub(super) const TESTNET_GRPC_HOST: &str = "injective-grpc.polkachu.com";
-pub(super) const TESTNET_GRPC_PORT: u16 = 14390;
-pub(super) const TESTNET_STATUS_URL: &str = "https://injective-testnet-rpc.polkachu.com/status";
+pub(super) const TESTNET_RPC_URL: &str = "https://testnet.sentry.tm.injective.network:443";
+pub(super) const TESTNET_WEBSOCKET_URL: &str =
+    "wss://testnet.sentry.tm.injective.network:443/websocket";
+pub(super) const TESTNET_GRPC_URL: &str = "https://testnet.sentry.chain.grpc.injective.network:443";
+pub(super) const TESTNET_GRPC_HOST: &str = "testnet.sentry.chain.grpc.injective.network";
+pub(super) const TESTNET_GRPC_PORT: u16 = 443;
+pub(super) const TESTNET_STATUS_URL: &str = "https://testnet.sentry.tm.injective.network/status";
 pub(super) const TESTNET_HOME_DIR: &str = ".injectived-testnet";
 
 #[derive(Debug, Deserialize)]

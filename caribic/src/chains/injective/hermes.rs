@@ -53,10 +53,7 @@ fn testnet_chain_profile() -> HermesCosmosChainProfile {
         rpc_addr: config::TESTNET_RPC_URL.to_string(),
         grpc_addr: config::TESTNET_GRPC_URL.to_string(),
         event_source: HermesEventSource::Push {
-            url: format!(
-                "{}/websocket",
-                config::TESTNET_RPC_URL.trim_end_matches('/')
-            ),
+            url: config::TESTNET_WEBSOCKET_URL.to_string(),
             batch_delay: "200ms",
         },
         rpc_timeout: "10s",
