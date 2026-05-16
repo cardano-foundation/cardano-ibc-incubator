@@ -282,6 +282,39 @@ jobs:
       - name: Check generated artifacts
         run: scripts/ci/check-generated-artifacts-clean.sh
 
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: cosmos/cardano-probabilistic-light-client
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+          cache-dependency-path: cosmos/cardano-probabilistic-light-client/go.sum
+
+      - name: Test
+        env:
+          GOWORK: off
+        run: go test ./...
+
+      - name: Vet non-generated packages
+        env:
+          GOWORK: off
+        run: |
+          mapfile -t packages < <(go list ./... | grep -v '/api/' || true)
+          if [ "${#packages[@]}" -gt 0 ]; then
+            go vet "${packages[@]}"
+          fi
+
   rust:
     name: Rust
     runs-on: ubuntu-latest

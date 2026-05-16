@@ -299,7 +299,7 @@ pub fn stop_testnet(injective_path: &Path) {
     lifecycle::stop_testnet(injective_path);
 }
 
-/// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Injective.
+/// Configures Hermes keys for direct Cardano↔Injective local routes.
 pub fn configure_hermes_for_demo(
     project_root_path: &Path,
     injective_dir: &Path,
@@ -307,7 +307,7 @@ pub fn configure_hermes_for_demo(
     hermes::configure_hermes_for_demo(project_root_path, injective_dir)
 }
 
-/// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Injective testnet.
+/// Configures Hermes keys for direct Cardano↔Injective testnet routes.
 pub fn configure_hermes_for_testnet_demo(
     project_root_path: &Path,
     injective_dir: &Path,

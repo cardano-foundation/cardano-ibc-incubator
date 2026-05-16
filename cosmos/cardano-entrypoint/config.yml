@@ -71,8 +71,8 @@ genesis:
         clients_metadata: []
         "params":
           "allowed_clients":
-            - "08-cardano"
-            - "08-cardano-stability"
+            - "08-cardano-mithril"
+            - "08-cardano-probabilistic"
             - "07-tendermint"
             - "06-solomachine"
         create_localhost: false

@@ -191,7 +191,7 @@ pub fn sync_workspace_assets(
     lifecycle::sync_workspace_assets(project_root_path, osmosis_dir)
 }
 
-/// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Osmosis.
+/// Configures Hermes keys for direct Cardano↔Osmosis routes.
 pub fn configure_hermes_for_demo(
     osmosis_dir: &Path,
     network: &str,

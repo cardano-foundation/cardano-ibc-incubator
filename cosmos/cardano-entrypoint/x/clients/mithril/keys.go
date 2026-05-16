@@ -5,15 +5,16 @@ import (
 )
 
 const (
-	// ModuleName is the IBC client type for the Cosmos-side Cardano light client.
+	// ModuleName is the IBC client type for the deprecated Mithril-backed
+	// Cardano light client.
 	//
 	// We intentionally use the conventional `{two-digit-ics}-{name}` form used by
 	// ibc-go (e.g. `07-tendermint`, `06-solomachine`) so client identifiers look
-	// like `08-cardano-0`.
+	// like `08-cardano-mithril-0`.
 	//
 	// Note: this string is independent from the protobuf type URLs for the client
 	// state / header, which remain under `ibc.lightclients.mithril.v1.*`.
-	ModuleName                           = "08-cardano"
+	ModuleName                           = "08-cardano-mithril"
 	KeyFirstCertificateInEpochPrefix     = "fcInEpoch"
 	KeyFirstCertificateMsdInEpochPrefix  = "fcMsdInEpoch"
 	KeyFirstCertificateTsInEpochPrefix   = "fcTsInEpoch"

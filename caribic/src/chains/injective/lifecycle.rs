@@ -6,8 +6,9 @@ use serde_json::Value;
 
 use super::config;
 use crate::chains::cosmos_node::resolve_home_relative_path;
-use crate::logger::log;
+use crate::logger::{log, verbose};
 use crate::process::docker::DockerCli;
+use crate::setup::download_repository;
 use crate::utils::{execute_script, wait_for_health_check};
 
 pub(super) async fn prepare_local(
@@ -15,7 +16,9 @@ pub(super) async fn prepare_local(
     injective_dir: &Path,
     stateful: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    ensure_injective_source_available(injective_dir).await?;
     sync_workspace_assets_from_repo(project_root_path, injective_dir)?;
+    patch_cardano_probabilistic_light_client(project_root_path, injective_dir)?;
 
     if !stateful {
         stop_local(injective_dir);
@@ -177,5 +180,53 @@ fn sync_workspace_assets_from_repo(
     )?;
 
     log("PASS: Injective configuration files copied successfully");
+    Ok(())
+}
+
+async fn ensure_injective_source_available(
+    injective_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let source_dir = injective_source_dir(injective_dir);
+    if source_dir.exists() {
+        verbose("Injective source directory already exists");
+        return Ok(());
+    }
+
+    download_repository(
+        config::SOURCE_ZIP_URL,
+        source_dir.as_path(),
+        "injective-core",
+    )
+    .await
+}
+
+fn injective_source_dir(injective_dir: &Path) -> std::path::PathBuf {
+    injective_dir.join("injective-core")
+}
+
+fn patch_cardano_probabilistic_light_client(
+    project_root_path: &Path,
+    injective_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let script_dir = project_root_path.join("chains").join("cosmos");
+    let source_dir = injective_source_dir(injective_dir);
+    let injective_arg = source_dir
+        .to_str()
+        .ok_or("Failed to render Injective source path as UTF-8")?;
+    let repo_arg = project_root_path
+        .to_str()
+        .ok_or("Failed to render project root path as UTF-8")?;
+
+    execute_script(
+        script_dir.as_path(),
+        "sh",
+        Vec::from([
+            "patch_cardano_probabilistic_light_client.sh",
+            injective_arg,
+            repo_arg,
+        ]),
+        None,
+    )?;
+
     Ok(())
 }

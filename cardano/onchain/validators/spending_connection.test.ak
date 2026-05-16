@@ -582,7 +582,7 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
 //         ],
 //         state: connection_state.Open,
 //         counterparty: Counterparty {
-//           client_id: "08-cardano-2",
+//           client_id: "08-cardano-probabilistic-2",
 //           connection_id: "",
 //           prefix: MerklePrefix { key_prefix: "ibc" },
 //         },
@@ -603,7 +603,7 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
 //         ],
 //         state: connection_state.Open,
 //         counterparty: Counterparty {
-//           client_id: "08-cardano-2",
+//           client_id: "08-cardano-probabilistic-2",
 //           connection_id: "connection-2",
 //           prefix: MerklePrefix { key_prefix: "ibc" },
 //         },
