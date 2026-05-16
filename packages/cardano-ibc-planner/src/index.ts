@@ -1,4 +1,4 @@
-const ENTRYPOINT_CHAIN_ID = 'entrypoint';
+const CARDANO_ENTRYPOINT_CHAIN_ID = 'cardano-entrypoint';
 const LOCAL_OSMOSIS_CHAIN_ID = 'localosmosis';
 const DEFAULT_PFM_FEE = '0.100000000000000000';
 const LOVELACE = 'lovelace';
@@ -297,7 +297,7 @@ export function createPlannerClient(
   const getPlannerMetadata = async (): Promise<PlannerMetadata> => {
     const [channels, entrypointDenomTraces, counterpartyDenomTraces] = await Promise.all([
       fetchAllChannels(
-        ENTRYPOINT_CHAIN_ID,
+        CARDANO_ENTRYPOINT_CHAIN_ID,
         resolvedConfig.entrypointRestEndpoint,
         resolvedConfig.fetchImpl,
         {
@@ -324,7 +324,7 @@ export function createPlannerClient(
       adjacency,
       channelByRoute: channels.channelByRoute,
       denomTracesByChain: {
-        [ENTRYPOINT_CHAIN_ID]: entrypointDenomTraces,
+        [CARDANO_ENTRYPOINT_CHAIN_ID]: entrypointDenomTraces,
         [LOCAL_OSMOSIS_CHAIN_ID]: counterpartyDenomTraces,
       },
     };
@@ -1144,7 +1144,7 @@ async function fetchAllChannels(
     if (
       cardanoChannels &&
       options.cardanoChainId &&
-      channel.srcChain === ENTRYPOINT_CHAIN_ID &&
+      channel.srcChain === CARDANO_ENTRYPOINT_CHAIN_ID &&
       channel.destChain === options.cardanoChainId &&
       !hasReciprocalCardanoChannel(channel, cardanoChannels)
     ) {
@@ -1232,7 +1232,7 @@ async function isUsableChannelClient(
 
 async function buildSwapMetadata(config: PlannerConfig): Promise<SwapMetadata> {
   const [channels, pfmFees, osmosisDenomTraces, routeMap] = await Promise.all([
-    fetchSwapChannels(ENTRYPOINT_CHAIN_ID, config.entrypointRestEndpoint, config.fetchImpl),
+    fetchSwapChannels(CARDANO_ENTRYPOINT_CHAIN_ID, config.entrypointRestEndpoint, config.fetchImpl),
     fetchPfmFees(config),
     fetchAllDenomTraces(config.localOsmosisRestEndpoint, config.fetchImpl),
     fetchCrossChainSwapRouterState(config),
@@ -1251,7 +1251,7 @@ async function fetchPfmFees(
   config: PlannerConfig,
 ): Promise<Record<string, bigint>> {
   const endpoints = {
-    [ENTRYPOINT_CHAIN_ID]: config.entrypointRestEndpoint,
+    [CARDANO_ENTRYPOINT_CHAIN_ID]: config.entrypointRestEndpoint,
     [LOCAL_OSMOSIS_CHAIN_ID]: config.localOsmosisRestEndpoint,
   };
 

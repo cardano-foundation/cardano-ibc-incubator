@@ -72,6 +72,14 @@ describe('GatewayReadinessService', () => {
         message: 'Yaci has indexed the current HostState tx at block 1234 and Gateway has accepted it for proof serving.',
       },
     });
+    expect(resolveProofHeightForCurrentRoot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: 'health/ready',
+        lightClientMode: 'stake-weighted-stability',
+        maxAttempts: 1,
+        delayMs: 0,
+      }),
+    );
   });
 
   it('reports not_ready when the current HostState tx is not yet provable from history', async () => {

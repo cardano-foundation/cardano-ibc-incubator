@@ -78,6 +78,10 @@ type MockData {
   module_input: Input,
 }
 
+fn operation_marker(policy_id: PolicyId) {
+  from_asset(policy_id, "", 1)
+}
+
 fn setup() -> MockData {
   let host_state_nft_policy_id: PolicyId = "mock host state nft policy id"
   let host_state_token_name = "ibc_host_state"
@@ -663,6 +667,7 @@ test chan_open_ack_succeed() {
       outputs,
       redeemers,
       validity_range,
+      mint: operation_marker(mock_data.chan_open_ack_policy_id),
     }
 
   spending_channel.spend_channel.spend(
@@ -882,6 +887,7 @@ test chan_open_confirm_succeed() {
       outputs,
       redeemers,
       validity_range,
+      mint: operation_marker(mock_data.chan_open_confirm_policy_id),
     }
 
   spending_channel.spend_channel.spend(
@@ -1127,6 +1133,7 @@ test recv_packet_succeed() {
       outputs,
       redeemers,
       validity_range,
+      mint: operation_marker(mock_data.recv_packet_policy_id),
     }
 
   spending_channel.spend_channel.spend(
@@ -1251,6 +1258,7 @@ test send_packet_succeed() {
       outputs,
       redeemers,
       validity_range,
+      mint: operation_marker(mock_data.send_packet_policy_id),
     }
 
   spending_channel.spend_channel.spend(
@@ -1519,6 +1527,7 @@ test timeout_packet_succeed() {
       outputs,
       redeemers,
       validity_range,
+      mint: operation_marker(mock_data.timeout_packet_policy_id),
     }
 
   spending_channel.spend_channel.spend(
@@ -1775,6 +1784,7 @@ test acknowledge_packet_succeed() {
       outputs,
       redeemers,
       validity_range,
+      mint: operation_marker(mock_data.acknowledge_packet_policy_id),
     }
 
   spending_channel.spend_channel.spend(
@@ -1830,6 +1840,21 @@ test chan_close_init_succeed() {
 
   let inputs = [channel_input, fake_data.host_state_input]
 
+  let output_channel_datum =
+    ChannelDatum {
+      ..input_channel_datum,
+      state: ChannelDatumState {
+        ..input_channel_datum.state,
+        channel: Channel {
+          ..input_channel_datum.state.channel,
+          state: channel_state.Closed,
+        },
+      },
+    }
+
+  let channel_output =
+    build_channel_output(output_channel_datum, fake_data.channel_token)
+
   //========================arrange redeemers=======================
   let chan_close_init_redeemer: Redeemer = fake_data.channel_token
 
@@ -1847,8 +1872,9 @@ test chan_close_init_succeed() {
     Transaction {
       ..transaction.placeholder,
       inputs,
-      outputs: [fake_data.host_state_output],
+      outputs: [channel_output, fake_data.host_state_output],
       redeemers,
+      mint: operation_marker(fake_data.chan_close_init_policy_id),
     }
 
   let spend_channel_redeemer = ChanCloseInit
@@ -1865,6 +1891,76 @@ test chan_close_init_succeed() {
     fake_data.host_state_nft_policy_id,
     Some(input_channel_datum),
     spend_channel_redeemer,
+    channel_input.output_reference,
+    transaction,
+  )
+}
+
+test chan_close_init_fails_without_closed_channel_continuation() fail {
+  let fake_data = setup()
+
+  let input_channel =
+    Channel {
+      state: channel_state.Open,
+      ordering: channel_order.Unordered,
+      counterparty: ChannelCounterparty {
+        port_id: "port-0",
+        channel_id: "channel-0",
+      },
+      connection_hops: [],
+      version: "fake-version",
+    }
+
+  let input_channel_datum =
+    ChannelDatum {
+      state: ChannelDatumState {
+        channel: input_channel,
+        next_sequence_send: 1,
+        next_sequence_recv: 1,
+        next_sequence_ack: 1,
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
+      },
+      port_id: "port-0",
+      token: fake_data.channel_token,
+    }
+
+  let channel_input =
+    build_channel_input(input_channel_datum, fake_data.channel_token)
+
+  let chan_close_init_redeemer: Redeemer = fake_data.channel_token
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(
+        Spend(fake_data.host_state_input.output_reference),
+        host_state_update_channel_redeemer(),
+      ),
+      Pair(Mint(fake_data.chan_close_init_policy_id), chan_close_init_redeemer),
+    ]
+
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [channel_input, fake_data.host_state_input],
+      outputs: [fake_data.host_state_output],
+      redeemers,
+      mint: operation_marker(fake_data.chan_close_init_policy_id),
+    }
+
+  spending_channel.spend_channel.spend(
+    fake_data.chan_open_ack_policy_id,
+    fake_data.chan_open_confirm_policy_id,
+    fake_data.chan_close_init_policy_id,
+    fake_data.chan_close_confirm_policy_id,
+    fake_data.recv_packet_policy_id,
+    fake_data.send_packet_policy_id,
+    fake_data.timeout_packet_policy_id,
+    fake_data.acknowledge_packet_policy_id,
+    fake_data.host_state_nft_policy_id,
+    Some(input_channel_datum),
+    ChanCloseInit,
     channel_input.output_reference,
     transaction,
   )
@@ -1910,7 +2006,13 @@ test chan_close_init_fails_without_host_state_co_spend() fail {
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [Pair(Mint(fake_data.chan_close_init_policy_id), chan_close_init_redeemer)]
 
-  let transaction = Transaction { ..transaction.placeholder, inputs, redeemers }
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      redeemers,
+      mint: operation_marker(fake_data.chan_close_init_policy_id),
+    }
 
   let spend_channel_redeemer = ChanCloseInit
 
@@ -1989,6 +2091,7 @@ test chan_close_confirm_succeed() {
       inputs,
       outputs: [fake_data.host_state_output],
       redeemers,
+      mint: operation_marker(fake_data.chan_close_confirm_policy_id),
     }
 
   let proof_init = MerkleProof { proofs: [] }

@@ -91,16 +91,16 @@ EOF
 }
 
 print_swap_diagnostics() {
-    echo "=== Diagnostics: Cardano->Entrypoint packet pending ==="
+    echo "=== Diagnostics: Cardano->Cardano Entrypoint packet pending ==="
     "$HERMES_BIN" query packet pending --chain "$HERMES_CARDANO_NAME" --port transfer --channel "$cardano_entrypoint_channel_id" || true
 
-    echo "=== Diagnostics: Entrypoint->Cardano packet pending ==="
+    echo "=== Diagnostics: Cardano Entrypoint->Cardano packet pending ==="
     "$HERMES_BIN" query packet pending --chain "$HERMES_ENTRYPOINT_NAME" --port transfer --channel "$entrypoint_cardano_channel_id" || true
 
-    echo "=== Diagnostics: Entrypoint->Osmosis packet pending ==="
+    echo "=== Diagnostics: Cardano Entrypoint->Osmosis packet pending ==="
     "$HERMES_BIN" query packet pending --chain "$HERMES_ENTRYPOINT_NAME" --port transfer --channel "$entrypoint_osmosis_channel_id" || true
 
-    echo "=== Diagnostics: Osmosis->Entrypoint packet pending ==="
+    echo "=== Diagnostics: Osmosis->Cardano Entrypoint packet pending ==="
     "$HERMES_BIN" query packet pending --chain "$HERMES_OSMOSIS_NAME" --port transfer --channel "$osmosis_entrypoint_channel_id" || true
 }
 
@@ -250,7 +250,7 @@ wait_for_swap_settlement() {
 }
 
 HERMES_CARDANO_NAME="cardano-devnet"
-HERMES_ENTRYPOINT_NAME="entrypoint"
+HERMES_ENTRYPOINT_NAME="cardano-entrypoint"
 HERMES_OSMOSIS_NAME="${HERMES_OSMOSIS_NAME:-localosmosis}"
 OSMOSIS_SWAP_RECEIVER="${OSMOSIS_SWAP_RECEIVER:-cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6}"
 OSMOSIS_OUTPUT_DENOM="${OSMOSIS_OUTPUT_DENOM:-uosmo}"
@@ -262,20 +262,20 @@ SENT_AMOUNT="${SENT_AMOUNT_NUM}-${SENT_DENOM}"
 ENTRYPOINT_RECEIVER="pfm"
 
 cardano_entrypoint_channel_id=$(get_latest_transfer_channel_id "$HERMES_CARDANO_NAME" "$HERMES_ENTRYPOINT_NAME")
-check_string_empty "$cardano_entrypoint_channel_id" "Cardano->Entrypoint chain channel not found. Exiting..."
-echo "Cardano->Entrypoint chain channel id: $cardano_entrypoint_channel_id"
+check_string_empty "$cardano_entrypoint_channel_id" "Cardano->Cardano Entrypoint chain channel not found. Exiting..."
+echo "Cardano->Cardano Entrypoint chain channel id: $cardano_entrypoint_channel_id"
 
 entrypoint_cardano_channel_id=$(get_latest_transfer_channel_id "$HERMES_ENTRYPOINT_NAME" "$HERMES_CARDANO_NAME")
-check_string_empty "$entrypoint_cardano_channel_id" "Entrypoint chain->Cardano channel not found. Exiting..."
-echo "Entrypoint chain->Cardano channel id: $entrypoint_cardano_channel_id"
+check_string_empty "$entrypoint_cardano_channel_id" "Cardano Entrypoint chain->Cardano channel not found. Exiting..."
+echo "Cardano Entrypoint chain->Cardano channel id: $entrypoint_cardano_channel_id"
 
 entrypoint_osmosis_channel_id=$(get_latest_transfer_channel_id "$HERMES_ENTRYPOINT_NAME" "$HERMES_OSMOSIS_NAME")
-check_string_empty "$entrypoint_osmosis_channel_id" "Entrypoint chain->Osmosis channel not found. Exiting..."
-echo "Entrypoint chain->Osmosis channel id: $entrypoint_osmosis_channel_id"
+check_string_empty "$entrypoint_osmosis_channel_id" "Cardano Entrypoint chain->Osmosis channel not found. Exiting..."
+echo "Cardano Entrypoint chain->Osmosis channel id: $entrypoint_osmosis_channel_id"
 
 osmosis_entrypoint_channel_id=$(get_latest_transfer_channel_id "$HERMES_OSMOSIS_NAME" "$HERMES_ENTRYPOINT_NAME")
-check_string_empty "$osmosis_entrypoint_channel_id" "Osmosis->Entrypoint chain channel not found. Exiting..."
-echo "Osmosis->Entrypoint chain channel id: $osmosis_entrypoint_channel_id"
+check_string_empty "$osmosis_entrypoint_channel_id" "Osmosis->Cardano Entrypoint chain channel not found. Exiting..."
+echo "Osmosis->Cardano Entrypoint chain channel id: $osmosis_entrypoint_channel_id"
 
 baseline_cardano_entrypoint_seq=$(current_max_commitment_seq "$HERMES_CARDANO_NAME" "$cardano_entrypoint_channel_id")
 baseline_entrypoint_osmosis_seq=$(current_max_commitment_seq "$HERMES_ENTRYPOINT_NAME" "$entrypoint_osmosis_channel_id")

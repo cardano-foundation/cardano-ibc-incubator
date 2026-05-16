@@ -21,13 +21,17 @@ function sha256Bytes(data: Buffer): Buffer {
   return Buffer.from(sha256.array(data));
 }
 
-function leafHash(value: Buffer): Buffer {
+function keyHash(key: string): Buffer {
+  return sha256Bytes(Buffer.from(key, 'utf8'));
+}
+
+function leafHash(key: string, value: Buffer): Buffer {
   // On-chain we treat the empty value as "absent" and map it to the all-zero hash.
   if (value.length === 0) return EMPTY_HASH;
 
-  // leaf = sha256(0x00 || sha256(value))
+  // leaf = sha256(0x00 || sha256(key) || sha256(value))
   const valueHash = sha256Bytes(value);
-  return sha256Bytes(Buffer.concat([Buffer.from([0x00]), valueHash]));
+  return sha256Bytes(Buffer.concat([Buffer.from([0x00]), keyHash(key), valueHash]));
 }
 
 function innerHash(left: Buffer, right: Buffer): Buffer {
@@ -40,8 +44,7 @@ function innerHash(left: Buffer, right: Buffer): Buffer {
 function keyIndex64(key: string): bigint {
   // The on-chain code uses the first 64 bits of `sha256(key)` to define the path.
   // We interpret those 8 bytes as a big-endian unsigned integer.
-  const keyHash = sha256Bytes(Buffer.from(key, 'utf8'));
-  const first8 = keyHash.subarray(0, 8);
+  const first8 = keyHash(key).subarray(0, 8);
   return BigInt(`0x${first8.toString('hex')}`);
 }
 
@@ -277,8 +280,8 @@ export class ICS23MerkleTree {
   verifyProof(proof: ICS23ExistenceProof): boolean {
     this.ensureRebuilt();
 
-    // Leaf hash is based on the value only (the key influences the path, not the leaf digest).
-    let currentHash = leafHash(proof.value);
+    const proofKey = proof.key.toString('utf8');
+    let currentHash = leafHash(proofKey, proof.value);
 
     for (const op of proof.path) {
       if (op.suffix.length > 0) {
@@ -327,13 +330,11 @@ export class ICS23MerkleTree {
 
       const previousKey = indexToKey.get(index);
       if (previousKey && previousKey !== key) {
-        throw new Error(
-          `Merkle key collision at index ${index.toString()}: '${previousKey}' and '${key}'`,
-        );
+        throw new Error(`Merkle key collision at index ${index.toString()}: '${previousKey}' and '${key}'`);
       }
       indexToKey.set(index, key);
 
-      const h = leafHash(value);
+      const h = leafHash(key, value);
       if (!h.equals(EMPTY_HASH)) nodesByHeight[0].set(index, h);
     }
 

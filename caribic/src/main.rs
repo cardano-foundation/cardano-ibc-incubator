@@ -39,15 +39,16 @@ enum StartTarget {
     Network,
     /// Deploys the light client contracts and starts the gateway and relayer
     Bridge,
-    /// Starts the Entrypoint chain (packet-forwarding chain)
-    Entrypoint,
+    /// Starts the Cardano Entrypoint chain (packet-forwarding chain)
+    #[value(alias = "entrypoint")]
+    CardanoEntrypoint,
     /// Starts only the Gateway service
     Gateway,
     /// Starts only the IBC Swap dapp
     Dapp,
     /// Starts only the Hermes relayer
     Relayer,
-    /// Starts only the Mithril services
+    /// Deprecated and disabled; retained for historical reference only
     Mithril,
 }
 
@@ -59,8 +60,9 @@ enum StopTarget {
     Network,
     /// Tears down the gateway and relayer
     Bridge,
-    /// Stops the Entrypoint chain
-    Entrypoint,
+    /// Stops the Cardano Entrypoint chain
+    #[value(alias = "entrypoint")]
+    CardanoEntrypoint,
     /// Stops the demo services
     Demo,
     /// Stops only the Gateway service
@@ -138,14 +140,14 @@ enum Commands {
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, entrypoint, gateway, relayer, mithril
+    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, entrypoint, gateway, relayer
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
         /// Cleans up the local environment before starting the services
         #[arg(long, default_value_t = false)]
         clean: bool,
-        /// Start Mithril services for light client testing (adds 5-10 minute startup time)
+        /// Deprecated and disabled; use the default stake-weighted-stability light-client mode
         #[arg(long, default_value_t = false)]
         with_mithril: bool,
         /// Optional network profile for the managed Cardano runtime (local, preprod)

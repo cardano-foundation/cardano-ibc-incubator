@@ -26,8 +26,8 @@ elsewhere in the local bridge stack (for Mithril).
 
 Default local endpoints target the host-published bridge services:
 
-- Entrypoint RPC: `http://localhost:26657`
-- Entrypoint REST: `http://localhost:1317`
+- Cardano Entrypoint RPC: `http://localhost:26657`
+- Cardano Entrypoint REST: `http://localhost:1317`
 - Osmosis RPC: `http://localhost:26658`
 - Osmosis REST: `http://localhost:1318`
 - Gateway: `http://localhost:8000` as the default bridge-manifest host for the swap UI

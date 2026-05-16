@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-CONTAINER_SERVICE_NAME=entrypoint-node-prod
-CHAIN_ID=entrypoint
+CONTAINER_SERVICE_NAME=cardano-entrypoint-node-prod
+CHAIN_ID=cardano-entrypoint
 SCRIPT_DIR=$(dirname $(realpath $0))
 cd ..
-ENTRYPOINT_DIR=$(pwd)
+CARDANO_ENTRYPOINT_DIR=$(pwd)
 
 if [ "$#" -eq 0 ]; then
   # Set default values
@@ -25,8 +25,8 @@ function cli() {
   ${DOCKER_COMPOSE_CMD} exec ${CONTAINER_SERVICE_NAME} ${@}
 }
 
-function cliEntrypointd() {
-  cli entrypointd ${@}
+function cliCardanoEntrypointd() {
+  cli cardano-entrypointd ${@}
 }
 
 function is_gnu_sed(){
@@ -49,14 +49,14 @@ function sed_i_wrapper(){
 DOCKER_HOME=$(${DOCKER_COMPOSE_CMD} exec ${CONTAINER_SERVICE_NAME} sh -c "echo \$HOME")
 echo $DOCKER_HOME
 
-BALANCE=$(cliEntrypointd q bank balance alice token)
+BALANCE=$(cliCardanoEntrypointd q bank balance alice token)
 echo $BALANCE
 
-cliEntrypointd init $name --chain-id="${CHAIN_ID}" --home="$DOCKER_HOME/.$name"
+cliCardanoEntrypointd init $name --chain-id="${CHAIN_ID}" --home="$DOCKER_HOME/.$name"
 
 cp $SCRIPT_DIR/config.toml $SCRIPT_DIR/$name-config.toml 
 
-seed=$(cli cat $DOCKER_HOME/.entrypoint/config/genesis.json  | jq -r '.app_state.genutil.gen_txs[0].body.memo')
+seed=$(cli cat $DOCKER_HOME/.cardano-entrypoint-data/node/config/genesis.json  | jq -r '.app_state.genutil.gen_txs[0].body.memo')
 
 blockData=$(curl http://localhost:26657/block)
 
@@ -82,20 +82,20 @@ $DOCKER_COMPOSE_CMD cp "$SCRIPT_DIR/app.toml" $CONTAINER_SERVICE_NAME:"$DOCKER_H
 
 rm -f $SCRIPT_DIR/$name-config.toml
 
-cli cp $DOCKER_HOME/.entrypoint/config/genesis.json $DOCKER_HOME/.$name/config/genesis.json
+cli cp $DOCKER_HOME/.cardano-entrypoint-data/node/config/genesis.json $DOCKER_HOME/.$name/config/genesis.json
 
 
 
 timestamp=$(date +%s)
 newKey="${name}-${timestamp}"
 
-cliEntrypointd keys add $newKey
-newKeyAddress=$(cliEntrypointd keys show $newKey -a)
+cliCardanoEntrypointd keys add $newKey
+newKeyAddress=$(cliCardanoEntrypointd keys show $newKey -a)
 echo "newKeyAddress: $newKeyAddress"
 
-cliEntrypointd tx bank send zebra $newKeyAddress 1000001stake -y --chain-id="${CHAIN_ID}"
+cliCardanoEntrypointd tx bank send zebra $newKeyAddress 1000001stake -y --chain-id="${CHAIN_ID}"
 
-pubKeyNode=$(cliEntrypointd tendermint show-validator --home="$DOCKER_HOME/.$name" | jq -r '.key')
+pubKeyNode=$(cliCardanoEntrypointd tendermint show-validator --home="$DOCKER_HOME/.$name" | jq -r '.key')
 
 cat > $SCRIPT_DIR/$name-validator.json << EOF
 {
@@ -116,7 +116,7 @@ $DOCKER_COMPOSE_CMD cp "$SCRIPT_DIR/$name-validator.json" $CONTAINER_SERVICE_NAM
 
 rm -f $SCRIPT_DIR/$name-validator.json
 
-cliEntrypointd tx staking create-validator $DOCKER_HOME/.$name/config/validator.json --from="$newKey" --chain-id="${CHAIN_ID}" -y --home="$DOCKER_HOME/.entrypoint/"
+cliCardanoEntrypointd tx staking create-validator $DOCKER_HOME/.$name/config/validator.json --from="$newKey" --chain-id="${CHAIN_ID}" -y --home="$DOCKER_HOME/.cardano-entrypoint-data/node/"
 
 # Start node and run sync 
-cliEntrypointd start --x-crisis-skip-assert-invariants --home="$DOCKER_HOME/.$name"
+cliCardanoEntrypointd start --x-crisis-skip-assert-invariants --home="$DOCKER_HOME/.$name"

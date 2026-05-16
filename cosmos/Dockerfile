@@ -21,9 +21,9 @@ RUN /usr/local/go/bin/go install github.com/bufbuild/buf/cmd/buf@v1.32.0 \
 RUN bash -c "echo export GOFLAGS='-buildvcs=false' >> $HOME/.bashrc"
 RUN bash -c "source $HOME/.bashrc"
 
-RUN bash -c "mkdir -p /root/entrypoint/workspace/entrypoint"
-COPY "./entrypoint" "/root/entrypoint/workspace/entrypoint"
-WORKDIR "/root/entrypoint/workspace/entrypoint"
+RUN bash -c "mkdir -p /root/cardano-entrypoint/workspace/cardano-entrypoint"
+COPY "./cardano-entrypoint" "/root/cardano-entrypoint/workspace/cardano-entrypoint"
+WORKDIR "/root/cardano-entrypoint/workspace/cardano-entrypoint"
 
 RUN test -x /go/bin/buf && mv /go/bin/buf /go/bin/buf.real
 COPY "./buf-wrapper.sh" "/go/bin/buf"
@@ -40,12 +40,12 @@ RUN for attempt in 1 2 3; do \
 done; \
 exit 1
 
-COPY "./entrypoint.sh" "/entrypoint.sh"
+COPY "./cardano-entrypoint.sh" "/cardano-entrypoint.sh"
 COPY "./chain-state-hash.sh" "/chain-state-hash.sh"
-COPY "./init-entrypoint.sh" "/init-entrypoint.sh"
-COPY "./run-entrypoint.sh" "/run-entrypoint.sh"
-RUN chmod +x /entrypoint.sh /chain-state-hash.sh /init-entrypoint.sh /run-entrypoint.sh
-# RUN bash -c "cd /root/entrypoint/workspace2/entrypoint && DO_NOT_TRACK=1 ignite chain serve"
+COPY "./init-cardano-entrypoint.sh" "/init-cardano-entrypoint.sh"
+COPY "./run-cardano-entrypoint.sh" "/run-cardano-entrypoint.sh"
+RUN chmod +x /cardano-entrypoint.sh /chain-state-hash.sh /init-cardano-entrypoint.sh /run-cardano-entrypoint.sh
+# RUN bash -c "cd /root/cardano-entrypoint/workspace2/entrypoint && DO_NOT_TRACK=1 ignite chain serve"
 
 EXPOSE 26657
 EXPOSE 26656
@@ -54,5 +54,5 @@ EXPOSE 1317
 
 # RUN bash -c "DO_NOT_TRACK=1 GOFLAGS='-buildvcs=false' C_INCLUDE_PATH="/root/.ghcup/ghc/8.10.7/lib/ghc-8.10.7/include:$C_INCLUDE_PATH" ignite chain build -y && ignite chain init -y "
 
-ENTRYPOINT ["/run-entrypoint.sh"]
+ENTRYPOINT ["/run-cardano-entrypoint.sh"]
 CMD ["sh"]

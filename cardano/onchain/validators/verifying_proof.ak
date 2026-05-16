@@ -6,13 +6,22 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   BatchVerifyMembership, VerifyMembership, VerifyMembershipParams,
   VerifyNonMembership, VerifyProofRedeemer,
 }
+use ibc/utils/validator_utils
 
 validator verify_proof {
   mint(
     redeemer: VerifyProofRedeemer,
-    _policy_id: PolicyId,
-    _transaction: Transaction,
+    policy_id: PolicyId,
+    transaction: Transaction,
   ) {
+    expect
+      validator_utils.require_exact_marker_mint(
+        transaction.mint,
+        policy_id,
+        "",
+        1,
+      )
+
     when redeemer is {
       VerifyMembership {
         cs,

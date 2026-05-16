@@ -15,8 +15,8 @@ pub fn run_chains() -> Result<(), String> {
     logger::log("");
 
     logger::log(&format!(
-        "{} (Cosmos Entrypoint)",
-        runtime_config.chains.entrypoint.chain_id
+        "{} (Cardano Entrypoint)",
+        runtime_config.chains.cardano_entrypoint.chain_id
     ));
     logger::log(
         "  - network: local (managed) - Core local Cosmos packet-forwarding chain used by the bridge",

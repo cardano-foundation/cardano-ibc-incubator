@@ -114,6 +114,7 @@ pub fn get_cardano_tip_state(
 }
 
 pub enum CardanoQuery {
+    #[allow(dead_code)]
     Epoch,
     Slot,
     SlotInEpoch,

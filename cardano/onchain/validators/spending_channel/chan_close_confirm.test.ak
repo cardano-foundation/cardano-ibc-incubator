@@ -21,7 +21,9 @@ use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order as chan_order_mod
 use ibc/core/ics_004/types/state as chan_state_mod
-use ibc/core/ics_005/types/ibc_module_redeemer.{Callback, OnChanOpenConfirm}
+use ibc/core/ics_005/types/ibc_module_redeemer.{
+  Callback, OnChanCloseConfirm, OnChanOpenConfirm,
+}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_024_host_requirements/channel_keys
 use ibc/utils/test_utils
@@ -29,7 +31,7 @@ use ibc/utils/validator_utils
 use spending_channel/chan_close_confirm
 use spending_channel/spending_channel_fixture.{MockData, setup}
 
-test chan_close_confirm_succeed() {
+fn check_chan_close_confirm(module_redeemer: Redeemer) {
   let fake_data = setup()
 
   //========================arrange inputs=======================
@@ -113,9 +115,6 @@ test chan_close_confirm_succeed() {
 
   let spend_channel_redeemer: Redeemer =
     ChanCloseConfirm { proof_init, proof_height }
-
-  let module_redeemer: Redeemer =
-    Callback(OnChanOpenConfirm { channel_id: fake_data.channel_id })
 
   expect client_datum: ClientDatum =
     validator_utils.get_inline_datum(client_input.output)
@@ -208,4 +207,22 @@ test chan_close_confirm_succeed() {
     channel_input.output_reference,
     transaction,
   )
+}
+
+test chan_close_confirm_succeed() {
+  let fake_data = setup()
+
+  let module_redeemer: Redeemer =
+    Callback(OnChanCloseConfirm { channel_id: fake_data.channel_id })
+
+  check_chan_close_confirm(module_redeemer)
+}
+
+test chan_close_confirm_rejects_open_confirm_callback() fail {
+  let fake_data = setup()
+
+  let module_redeemer: Redeemer =
+    Callback(OnChanOpenConfirm { channel_id: fake_data.channel_id })
+
+  check_chan_close_confirm(module_redeemer)
 }

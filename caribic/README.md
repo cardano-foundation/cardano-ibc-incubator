@@ -2,6 +2,9 @@
 
 `caribic` is a local CLI used to bootstrap, run, and validate the Cardano <-> IBC bridge demo environment in this repo. For those familiar with Hermes, caribic cli also wraps that interface with equivalent commands that allow manual interaction with the relayer. The expected workflow is that keys would be addded to hermes via caribic, i.e, either you can enter via I/O when prompted, or refer to a mnemonic file as prompted, but there is no need to manually configure hermes. 
 
+> [!WARNING]
+> Mithril setup is deprecated, disabled, and not maintained. `caribic start --with-mithril` and `caribic start mithril` now fail fast; use the default stake-weighted-stability light-client mode.
+
 ## Build and run
 
 From `cardano-ibc-incubator/caribic`:
@@ -31,7 +34,7 @@ Examples:
 
 ```bash
 caribic start
-caribic start --clean --with-mithril
+caribic start --clean
 caribic start bridge
 caribic start entrypoint --clean
 caribic chain start --chain osmosis
@@ -132,10 +135,10 @@ caribic create-channel --a-chain cardano-devnet --b-chain entrypoint --a-port tr
 ### `caribic demo <message-exchange|token-swap>`
 
 Starts a demo setup step on top of already running services.
-`caribic demo token-swap` expects `caribic start --with-mithril` and `caribic chain start --chain osmosis` to have already been run. It then validates required services, prepares Hermes channels, deploys the cross-chain swap contracts, and executes the swap flow end-to-end.
-`caribic demo message-exchange` now runs directly against the native `cosmos/entrypoint` chain and uses the built-in datasource at `cosmos/entrypoint/datasource` (no separate demo chain bootstrap required).
+`caribic demo token-swap` expects the maintained default bridge stack and the selected optional chain to have already been started. It then validates required services, prepares Hermes channels, deploys the cross-chain swap contracts, and executes the swap flow end-to-end.
+`caribic demo message-exchange` now runs directly against the native `cosmos/cardano-entrypoint` chain and uses the built-in datasource at `cosmos/cardano-entrypoint/datasource` (no separate demo chain bootstrap required).
 
-Both demo flows wait for Mithril stake distributions + cardano-transactions artifacts before IBC setup.  
+The deprecated Mithril readiness settings remain in the config only for historical compatibility and are not part of the maintained startup path.
 If your machine is slower, tune retry windows in `caribic/config/default-config.json` (or whichever file you pass via `--config`).
 
 Operator-facing retry/timeout tuning is configurable in one place: `caribic/config/default-config.json` by default.
@@ -177,7 +180,7 @@ If a required key is missing or set to `0`, caribic now fails fast with an expli
 Runs end-to-end integration tests that validate the bridge plumbing from the outside, using Hermes to drive the gRPC Gateway and verifying on-chain effects via the Cardano handler state root. The general workflow to run the tests would be 
 
 ```bash 
-cd caribic && cargo install --path . --force && cd .. && caribic check && caribic install && caribic start --clean --with-mithril
+cd caribic && cargo install --path . --force && cd .. && caribic check && caribic install && caribic start --clean
 ```
 
 then wait for services to boot up, then 
@@ -196,7 +199,7 @@ to make sure all the services are healthy, then
 
 The test suite is ordered and will **skip** later tests if prerequisites are not met (for example if no channel exists, or if a known limitation is hit).
 
-- **Test 1**: validates required services are running (Cardano, Gateway container, Cosmos entrypoint RPC, Mithril endpoints and readiness checks)
+- **Test 1**: validates required services are running (Cardano, Gateway container, Cosmos entrypoint RPC, and maintained bridge dependencies)
 - **Test 2**: runs the Hermes-native `health-check` to confirm Hermes can connect to the Gateway gRPC endpoint and query latest height
 - **Test 3**: reads the handler UTXO and validates an `ibc_state_root` exists and looks sane
 - **Test 4**: `createClient` via Hermes -> Gateway -> Cardano, then checks the `ibc_state_root` changes

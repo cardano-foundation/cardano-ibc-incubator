@@ -8,13 +8,14 @@ function sha256Bytes(data: Buffer): Buffer {
   return Buffer.from(sha256.array(data));
 }
 
-function leafHash(value: Buffer): Buffer {
+function leafHash(key: string, value: Buffer): Buffer {
   if (value.length === 0) {
     return EMPTY_HASH;
   }
 
+  const keyHash = sha256Bytes(Buffer.from(key, 'utf8'));
   const valueHash = sha256Bytes(value);
-  return sha256Bytes(Buffer.concat([Buffer.from([0x00]), valueHash]));
+  return sha256Bytes(Buffer.concat([Buffer.from([0x00]), keyHash, valueHash]));
 }
 
 function innerHash(left: Buffer, right: Buffer): Buffer {
@@ -92,7 +93,7 @@ export class ICS23MerkleTree {
     );
 
     for (const [key, value] of this.leaves.entries()) {
-      nodesByHeight[0].set(keyIndex64(key), leafHash(value));
+      nodesByHeight[0].set(keyIndex64(key), leafHash(key, value));
     }
 
     for (let height = 0; height < MERKLE_DEPTH_BITS; height += 1) {

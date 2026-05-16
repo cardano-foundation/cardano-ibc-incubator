@@ -37,7 +37,7 @@ fn token_swap_core_targets(project_root_path: &Path) -> Vec<HealthTarget> {
         HealthTarget::Core(CoreServiceId::Kupo),
         HealthTarget::Core(CoreServiceId::Ogmios),
         HealthTarget::Core(CoreServiceId::Mithril),
-        HealthTarget::Core(CoreServiceId::Entrypoint),
+        HealthTarget::Core(CoreServiceId::CardanoEntrypoint),
     ];
 
     if matches!(
@@ -98,7 +98,7 @@ fn cardano_handler_json_path() -> String {
 }
 
 fn entrypoint_chain_id() -> String {
-    config::get_config().chains.entrypoint.chain_id
+    config::get_config().chains.cardano_entrypoint.chain_id
 }
 
 /// Runs the full token swap demo and validates required services before execution.
@@ -196,9 +196,9 @@ async fn run_osmosis_token_swap_demo(
                 osmosis_dir.as_path(),
                 network,
                 &format!(
-                    "ERROR: Failed to prepare Cardano->Entrypoint->Osmosis transfer path: {}",
-                    error
-                ),
+                "ERROR: Failed to prepare Cardano->Cardano Entrypoint->Osmosis transfer path: {}",
+                error
+            ),
             )
         }
     };
@@ -240,7 +240,7 @@ async fn run_osmosis_token_swap_demo(
         // First stage script wires Osmosis-side contracts and creates the incoming routing path
         // for Cardano vouchers. We parse its stdout to recover the deployed contract address.
         // The second-stage swap receiver is derived locally from the Entrypoint Hermes key and
-        // the known Osmosis->Entrypoint channel so it always matches the deployed registry.
+        // the known Osmosis->Cardano Entrypoint channel so it always matches the deployed registry.
         let mut setup_env = vec![
             ("CARIBIC_CLEAR_SWAP_PACKETS", "true"),
             (
@@ -406,9 +406,9 @@ async fn run_injective_token_swap_demo(
                 injective_dir.as_path(),
                 network,
                 &format!(
-                    "ERROR: Failed to prepare Cardano->Entrypoint->Injective transfer path: {}",
-                    error
-                ),
+                "ERROR: Failed to prepare Cardano->Cardano Entrypoint->Injective transfer path: {}",
+                error
+            ),
             )
         }
     };
@@ -673,7 +673,7 @@ fn ensure_demo_health_targets_ready(
     }
     if gateway_uses_mithril(project_root_path) {
         message.push_str(
-            "\nStart services first:\n  - caribic start --clean --with-mithril\n  - caribic start <chain> --network <network>",
+            "\nStart services first:\n  - caribic start --clean\n  - caribic start <chain> --network <network>\n\nMithril setup is deprecated and disabled; restart with the maintained default stack.",
         );
     } else {
         message.push_str(

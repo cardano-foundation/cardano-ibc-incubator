@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import { Pool, PoolClient } from 'pg';
 import * as CML from '@dcspark/cardano-multiplatform-lib-nodejs';
 import * as Lucid from '@lucid-evolution/lucid';
+import { bech32 } from 'bech32';
 import { REDEEMER_TYPE } from '../constant';
 import { LoadedBridgeConfig, loadBridgeConfigFromEnv } from '../config/bridge-manifest';
 import { decodeHostStateDatum } from '../shared/types/host-state-datum';
@@ -39,6 +40,8 @@ type YaciAddressUtxoRow = {
 
 type SpoEventRow = {
   tx_hash: string;
+  pool_id?: string | null;
+  slot_no?: string | number | null;
 };
 
 type BridgeTxInsertRow = {
@@ -183,12 +186,33 @@ async function ensureBridgeHistoryTables() {
       event_type text NOT NULL,
       tx_hash varchar(64) NOT NULL,
       block_no bigint NOT NULL,
+      pool_id text,
+      slot_no bigint,
       created_at timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (event_type, tx_hash)
     );
 
+    ALTER TABLE bridge_spo_event_history
+      ADD COLUMN IF NOT EXISTS pool_id text,
+      ADD COLUMN IF NOT EXISTS slot_no bigint;
+
     CREATE INDEX IF NOT EXISTS idx_bridge_spo_event_history_block_no
       ON bridge_spo_event_history(block_no, event_type);
+
+    CREATE INDEX IF NOT EXISTS idx_bridge_spo_event_history_pool_id
+      ON bridge_spo_event_history(pool_id, event_type, slot_no);
+
+    CREATE TABLE IF NOT EXISTS bridge_pool_registration_cache (
+      pool_id text PRIMARY KEY,
+      first_registration_slot bigint NOT NULL,
+      source text NOT NULL,
+      source_tx_hash varchar(64),
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_bridge_pool_registration_cache_slot
+      ON bridge_pool_registration_cache(first_registration_slot);
 
     INSERT INTO bridge_history_sync_state(cursor_name, last_block, last_block_hash)
     VALUES ('default', -1, NULL)
@@ -211,7 +235,19 @@ function normalizeHex(value: string | null | undefined): string | null {
 }
 
 function uniqueSorted(values: Array<string | null | undefined>): string[] {
-  return Array.from(new Set(values.map((value) => normalizeHex(value)).filter((value): value is string => !!value))).sort();
+  return Array.from(
+    new Set(values.map((value) => normalizeHex(value)).filter((value): value is string => !!value)),
+  ).sort();
+}
+
+function normalizePoolId(value: string | null | undefined): string | null {
+  const trimmed = value?.trim().toLowerCase() || '';
+  if (!trimmed) return null;
+  if (trimmed.startsWith('pool1')) return trimmed;
+  if (/^[0-9a-f]{56}$/.test(trimmed)) {
+    return bech32.encode('pool', bech32.toWords(Buffer.from(trimmed, 'hex')));
+  }
+  return trimmed;
 }
 
 function redeemerTagToType(CML: any, tag: number): string {
@@ -441,9 +477,7 @@ async function deriveHostStateEvidence(
 }> {
   const hostStateRow = utxoRows.find(
     (row) =>
-      row.txHash === txHash &&
-      row.assetsPolicy === hostStateToken.policyId &&
-      row.assetsName === hostStateToken.name,
+      row.txHash === txHash && row.assetsPolicy === hostStateToken.policyId && row.assetsName === hostStateToken.name,
   );
 
   if (!hostStateRow) {
@@ -689,32 +723,69 @@ async function reconcileCursor(client: PoolClient) {
 
 async function processBlock(client: PoolClient, hostStateToken: HostStateToken, blockNo: number): Promise<boolean> {
   const poolRegistrations = await client.query<SpoEventRow>(
-    `SELECT tx_hash FROM pool_registration WHERE block = $1 ORDER BY tx_index ASC`,
+    `
+      SELECT pr.tx_hash, pr.pool_id, b.slot AS slot_no
+      FROM pool_registration pr
+      JOIN block b ON b.number = pr.block
+      WHERE pr.block = $1
+      ORDER BY pr.tx_index ASC
+    `,
     [blockNo],
   );
   for (const row of poolRegistrations.rows) {
+    const poolId = normalizePoolId(row.pool_id);
     await client.query(
       `
-        INSERT INTO bridge_spo_event_history(event_type, tx_hash, block_no)
-        VALUES ('register', $1, $2)
-        ON CONFLICT (event_type, tx_hash) DO UPDATE SET block_no = EXCLUDED.block_no
+        INSERT INTO bridge_spo_event_history(event_type, tx_hash, block_no, pool_id, slot_no)
+        VALUES ('register', $1, $2, $3, $4)
+        ON CONFLICT (event_type, tx_hash) DO UPDATE SET
+          block_no = EXCLUDED.block_no,
+          pool_id = EXCLUDED.pool_id,
+          slot_no = EXCLUDED.slot_no
       `,
-      [row.tx_hash.toLowerCase(), blockNo],
+      [row.tx_hash.toLowerCase(), blockNo, poolId, row.slot_no ?? null],
     );
+
+    if (poolId && row.slot_no !== null && row.slot_no !== undefined) {
+      await client.query(
+        `
+          INSERT INTO bridge_pool_registration_cache(pool_id, first_registration_slot, source, source_tx_hash)
+          VALUES ($1, $2, 'yaci_projection', $3)
+          ON CONFLICT (pool_id) DO UPDATE SET
+            first_registration_slot = LEAST(
+              bridge_pool_registration_cache.first_registration_slot,
+              EXCLUDED.first_registration_slot
+            ),
+            source = EXCLUDED.source,
+            source_tx_hash = EXCLUDED.source_tx_hash,
+            updated_at = now()
+        `,
+        [poolId, row.slot_no, row.tx_hash.toLowerCase()],
+      );
+    }
   }
 
   const poolRetirements = await client.query<SpoEventRow>(
-    `SELECT tx_hash FROM pool_retirement WHERE block = $1 ORDER BY tx_index ASC`,
+    `
+      SELECT pr.tx_hash, pr.pool_id, b.slot AS slot_no
+      FROM pool_retirement pr
+      JOIN block b ON b.number = pr.block
+      WHERE pr.block = $1
+      ORDER BY pr.tx_index ASC
+    `,
     [blockNo],
   );
   for (const row of poolRetirements.rows) {
     await client.query(
       `
-        INSERT INTO bridge_spo_event_history(event_type, tx_hash, block_no)
-        VALUES ('unregister', $1, $2)
-        ON CONFLICT (event_type, tx_hash) DO UPDATE SET block_no = EXCLUDED.block_no
+        INSERT INTO bridge_spo_event_history(event_type, tx_hash, block_no, pool_id, slot_no)
+        VALUES ('unregister', $1, $2, $3, $4)
+        ON CONFLICT (event_type, tx_hash) DO UPDATE SET
+          block_no = EXCLUDED.block_no,
+          pool_id = EXCLUDED.pool_id,
+          slot_no = EXCLUDED.slot_no
       `,
-      [row.tx_hash.toLowerCase(), blockNo],
+      [row.tx_hash.toLowerCase(), blockNo, normalizePoolId(row.pool_id), row.slot_no ?? null],
     );
   }
 
@@ -756,9 +827,7 @@ async function processBlock(client: PoolClient, hostStateToken: HostStateToken, 
     for (const txRow of txResult.rows) {
       const txHash = txRow.tx_hash.toLowerCase();
       const txCborRow = txCborByHash.get(txHash);
-      const txSize = txCborRow?.cbor_hex
-        ? Number(txCborRow.cbor_size ?? Math.floor(txCborRow.cbor_hex.length / 2))
-        : 0;
+      const txSize = txCborRow?.cbor_hex ? Number(txCborRow.cbor_size ?? Math.floor(txCborRow.cbor_hex.length / 2)) : 0;
       const txId = await upsertBridgeTx(client, txRow, txSize);
       txIdsByHash.set(txHash, txId);
       txIndexesByHash.set(txHash, Number(txRow.tx_index ?? 0));

@@ -21,7 +21,7 @@ use crate::utils::{
 };
 
 fn entrypoint_chain_id() -> String {
-    config::get_config().chains.entrypoint.chain_id
+    config::get_config().chains.cardano_entrypoint.chain_id
 }
 
 /// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Osmosis.

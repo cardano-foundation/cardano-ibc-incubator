@@ -22,7 +22,7 @@ import {
   QueryNextSequenceReceiveResponse,
 } from '@plus/proto-types/build/ibc/core/channel/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
-import { CHANNEL_ID_PREFIX } from '../../constant';
+import { ACK_RESULT, CHANNEL_ID_PREFIX, CHANNEL_TOKEN_PREFIX, REDEEMER_EMPTY_DATA, REDEEMER_TYPE } from '../../constant';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
 import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
@@ -38,9 +38,8 @@ import {
   validQueryNextSequenceReceiveParam,
 } from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
-import { convertHex2String, toHex } from '../../shared/helpers/hex';
-import { Acknowledgement } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
-import { GrpcInvalidArgumentException, GrpcInternalException } from '~@/exception/grpc_exceptions';
+import { convertHex2String, convertString2Hex, hashSHA256 } from '../../shared/helpers/hex';
+import { GrpcInvalidArgumentException, GrpcInternalException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof, serializeNonExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
@@ -49,6 +48,15 @@ import { HISTORY_SERVICE, HistoryService } from './history.service';
 import { resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from './proof-context';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ProofQueryOptions } from '../helpers/query-height';
+import { decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
+import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
+import {
+  acknowledgementCommitmentFromResponse,
+  acknowledgementHexFromResponse,
+} from '../../shared/helpers/acknowledgement';
+
+const SUCCESS_ACKNOWLEDGEMENT_HEX = convertString2Hex(JSON.stringify({ result: ACK_RESULT }));
+const SUCCESS_ACKNOWLEDGEMENT_COMMITMENT = hashSHA256(SUCCESS_ACKNOWLEDGEMENT_HEX).toLowerCase();
 
 @Injectable()
 export class PacketService {
@@ -134,6 +142,150 @@ export class PacketService {
       : this.findChannelUtxo(channelTokenUnit);
   }
 
+  private packetMatchesAcknowledgementQuery(
+    packet: any,
+    params: {
+      portId: string;
+      channelId: string;
+      sequence: bigint;
+      counterpartyPortId: string;
+      counterpartyChannelId: string;
+    },
+  ): boolean {
+    const packetSequence = BigInt(packet.sequence);
+    const destinationPort = convertHex2String(packet.destination_port);
+    const destinationChannel = convertHex2String(packet.destination_channel);
+    const sourcePort = convertHex2String(packet.source_port);
+    const sourceChannel = convertHex2String(packet.source_channel);
+
+    return (
+      packetSequence === params.sequence &&
+      destinationPort === params.portId &&
+      destinationChannel === `${CHANNEL_ID_PREFIX}-${params.channelId}` &&
+      (!params.counterpartyPortId || sourcePort === params.counterpartyPortId) &&
+      (!params.counterpartyChannelId || sourceChannel === params.counterpartyChannelId)
+    );
+  }
+
+  private findMatchingRecvPacketRedeemer(
+    redeemers: Array<{ type: string; data: string }>,
+    params: {
+      portId: string;
+      channelId: string;
+      sequence: bigint;
+      counterpartyPortId: string;
+      counterpartyChannelId: string;
+    },
+  ): boolean {
+    for (const redeemer of redeemers.filter((candidate) => candidate.type === REDEEMER_TYPE.SPEND)) {
+      try {
+        const channelRedeemer = decodeSpendChannelRedeemer(redeemer.data, this.lucidService.LucidImporter);
+        const packet = (channelRedeemer as any).RecvPacket?.packet;
+        if (packet && this.packetMatchesAcknowledgementQuery(packet, params)) {
+          return true;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return false;
+  }
+
+  private findAcknowledgementHexInModuleRedeemers(
+    redeemers: Array<{ type: string; data: string }>,
+    committedAcknowledgement: string,
+  ): string | null {
+    const normalizedCommitment = committedAcknowledgement.toLowerCase();
+
+    for (const redeemer of redeemers.filter((candidate) => candidate.type === REDEEMER_TYPE.SPEND)) {
+      try {
+        const moduleRedeemer = decodeIBCModuleRedeemer(redeemer.data, this.lucidService.LucidImporter) as any;
+        const callbacks = Array.isArray(moduleRedeemer.Callback) ? moduleRedeemer.Callback : [];
+        for (const callback of callbacks) {
+          const acknowledgementResponse = callback.OnRecvPacket?.acknowledgement?.response;
+          if (!acknowledgementResponse) continue;
+
+          const acknowledgementCommitment = acknowledgementCommitmentFromResponse(acknowledgementResponse).toLowerCase();
+          if (acknowledgementCommitment === normalizedCommitment) {
+            return acknowledgementHexFromResponse(acknowledgementResponse);
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
+  private async findRawAcknowledgementHexFromHistory(params: {
+    channelId: string;
+    portId: string;
+    sequence: bigint;
+    committedAcknowledgement: string;
+    channelDatum: ChannelDatum;
+    proofHeight?: bigint;
+  }): Promise<string | null> {
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(params.channelId));
+    const utxos = await this.historyService.findUtxosByPolicyIdAndPrefixTokenName(
+      mintChannelPolicyId,
+      channelTokenName || CHANNEL_TOKEN_PREFIX,
+    );
+    const counterpartyPortId = convertHex2String(params.channelDatum.state.channel.counterparty.port_id);
+    const counterpartyChannelId = convertHex2String(params.channelDatum.state.channel.counterparty.channel_id);
+    const seenTxs = new Set<string>();
+
+    for (const utxo of utxos) {
+      if (params.proofHeight !== undefined && BigInt(utxo.blockNo) > params.proofHeight) continue;
+      const normalizedTxHash = utxo.txHash.toLowerCase();
+      if (seenTxs.has(normalizedTxHash)) continue;
+      seenTxs.add(normalizedTxHash);
+
+      const evidence = await this.historyService.findTransactionEvidenceByHash(normalizedTxHash);
+      if (!evidence) continue;
+
+      const redeemers = evidence.redeemers.filter((redeemer) => redeemer.data !== REDEEMER_EMPTY_DATA);
+      const recvPacketMatches = this.findMatchingRecvPacketRedeemer(redeemers, {
+        portId: params.portId,
+        channelId: params.channelId,
+        sequence: params.sequence,
+        counterpartyPortId,
+        counterpartyChannelId,
+      });
+      if (!recvPacketMatches) continue;
+
+      const acknowledgementHex = this.findAcknowledgementHexInModuleRedeemers(
+        redeemers,
+        params.committedAcknowledgement,
+      );
+      if (acknowledgementHex) return acknowledgementHex;
+    }
+
+    return null;
+  }
+
+  private async resolveAcknowledgementHex(params: {
+    channelId: string;
+    portId: string;
+    sequence: bigint;
+    committedAcknowledgement: string;
+    channelDatum: ChannelDatum;
+    proofHeight?: bigint;
+  }): Promise<string> {
+    const normalizedCommitment = params.committedAcknowledgement.toLowerCase();
+    if (normalizedCommitment === SUCCESS_ACKNOWLEDGEMENT_COMMITMENT) {
+      return SUCCESS_ACKNOWLEDGEMENT_HEX;
+    }
+
+    const acknowledgementHex = await this.findRawAcknowledgementHexFromHistory(params);
+    if (acknowledgementHex) return acknowledgementHex;
+
+    throw new GrpcInternalException(
+      `IBC acknowledgement bytes for ${params.portId}/channel-${params.channelId}/${params.sequence.toString()} could not be resolved from history; only commitment ${params.committedAcknowledgement} is stored on-chain`,
+    );
+  }
+
   async queryPacketAcknowledgement(
     request: QueryPacketAcknowledgementRequest,
     options: ProofQueryOptions = {},
@@ -144,13 +296,19 @@ export class PacketService {
     const proofContext = await this.getProofContext(options.queryHeight);
     const utxo = await this.getChannelUtxo(channelId, proofContext.historical ? proofContext.proofHeight : undefined);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-    const _packetAcknowledgement =
-      channelDatumDecoded.state.packet_acknowledgement.get(BigInt(sequence)) || JSON.stringify({ result: '01' });
-    const ackData = {
-      result: Buffer.from('01').toString('base64'),
-    } as unknown as Acknowledgement;
+    const packetAcknowledgement = channelDatumDecoded.state.packet_acknowledgement.get(BigInt(sequence));
+    if (!packetAcknowledgement) {
+      throw new GrpcNotFoundException("Not found: 'Packet Acknowledgement' not found");
+    }
+    const acknowledgementHex = await this.resolveAcknowledgementHex({
+      channelId,
+      portId,
+      sequence: BigInt(sequence),
+      committedAcknowledgement: packetAcknowledgement,
+      channelDatum: channelDatumDecoded,
+      proofHeight: proofContext.historical ? proofContext.proofHeight : undefined,
+    });
 
-    // if (!packetAcknowledgement) throw new GrpcNotFoundException("Not found: 'Packet Acknowledgement' not found");
     if (!proofContext.historical) {
       await this.ensureTreeAligned();
     }
@@ -173,7 +331,7 @@ export class PacketService {
     }
 
     const response: QueryPacketAcknowledgementResponse = {
-      acknowledgement: toHex(Acknowledgement.encode(ackData).finish()),
+      acknowledgement: acknowledgementHex,
       proof: ackProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,

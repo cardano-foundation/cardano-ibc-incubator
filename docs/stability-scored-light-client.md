@@ -78,21 +78,23 @@ For those descendants, the client computes:
 
 - descendant depth
 - number of distinct slot leaders / stake pools that produced descendants
-- total unique stake weight of those pools, using a trusted epoch stake snapshot
+- qualified unique stake weight of those pools, using a trusted epoch stake snapshot
+- whether those producing pools were first registered before the protocol cutoff
 
 The block at `H` is accepted only if all configured thresholds are met:
 
 - threshold depth
-- threshold unique pools
-- threshold unique stake basis points
+- threshold qualified unique pools
+- threshold qualified unique stake basis points
+- pool first-registration cutoff
 
 Separately, the client computes a score in basis points for observability and policy:
 
 ```text
 score =
   depth_weight_bps * min(1, depth / threshold_depth) +
-  pools_weight_bps * min(1, unique_pools / threshold_unique_pools) +
-  stake_weight_bps * min(1, unique_stake_bps / threshold_unique_stake_bps)
+  pools_weight_bps * min(1, qualified_unique_pools / threshold_unique_pools) +
+  stake_weight_bps * min(1, qualified_unique_stake_bps / threshold_unique_stake_bps)
 ```
 
 with the weighted result normalized back into a `0..10000` basis-point range.
@@ -108,6 +110,8 @@ In the current implementation, the default thresholds are:
   - `stake_weight_bps = 6000`
 
 These defaults are not special from a consensus perspective, they are just the initial policy the Gateway uses when constructing a new client.
+
+Pool age eligibility is not a tuning parameter. A descendant block producer only counts toward qualified unique pools and qualified unique stake if its first registration slot is before `2026-01-01T00:00:00Z`, meaning the pool started in 2025 or earlier. Total active stake is still the denominator for qualified unique-stake scoring, and missing first-registration data fails closed because the verifier cannot distinguish an old pool from an unknown one.
 
 ### Header
 
@@ -153,6 +157,8 @@ The Gateway:
 7. serializing the stability client state and consensus state
 
 Client creation still starts from one epoch context, but updates are no longer single-epoch-only. Gateway now supports ordinary `epoch N -> epoch N+1` rollover updates on the same client ID by attaching `new_epoch_context` to the header when the anchor moves into the next epoch. The scored descendant window still remains single-epoch: bridge continuity may span the boundary, but the anchor and scored descendants must all live in the same anchor epoch.
+
+An accepted epoch context is canonical for that epoch. Later headers may repeat the same epoch context, but a different context for an already-known epoch is treated as misbehaviour and freezes the client. This does not make the first accepted epoch context cryptographically authenticated; it changes the failure mode so that contradictory observer views cannot silently replace or coexist with the stored stake context.
 
 ## HostState Root Authentication
 

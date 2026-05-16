@@ -1,6 +1,9 @@
 
 ## Mithril Light Client Design
 
+> [!WARNING]
+> Deprecated and disabled: the Mithril light client and local Mithril setup are not maintained and are intentionally disabled for new deployments. This document is retained only as historical design reference. Current trust assumptions and deployment flows use `08-cardano-stability`; see [Stability-Scored Light Client Design](stability-scored-light-client.md).
+
 Author: Julius Tranquilli,https://github.com/floor-licker
 
 Date: March 10, 2026
@@ -9,7 +12,7 @@ Date: March 10, 2026
 
 This document is intended to describe the overall architecture of the Mithril light client as well as why we are using Mithril in the first place.
 
-The Mithril header and certificate formats are defined in the Entrypoint chain protobuf types in the Cosmos workspace, reviewing those shapes helps with overall intuition for this process.
+The Mithril header and certificate formats are defined in the Cardano Entrypoint chain protobuf types in the Cosmos workspace, reviewing those shapes helps with overall intuition for this process.
 
 In avoiding re-stating things that are explained in depth elsewhere, I will say that a Mithril certificate is a cryptographically attested certificate (by Cardano SPOs) which testifies to the state of Cardano at a given checkpoint, for example at block N. Mithril certifies transaction inclusion and **not** UTxO inclusion. The Mithril certificate is not something derived from Cardano consensus the way that Tendermint headers are, rather Mithril is a separate aggregator-signer network that SPOs run alongside their nodes. The integrity of that network of course also relies on the proportion of Cardano stake participating in the network, and if that proportion increases it would in general improve bridge operations, and also make Mithril certifications more meaningful with respect to extrapolations about finality since a greater proportion of stake is agreeing on a given state.
 
@@ -18,6 +21,43 @@ The true intent of the Mithril project is to bootstrap nodes and allow them to s
 For example, if the aggregator tries to get a certificate signed at a point that is so close to the chain tip that many honest Nodes simply have different views of the ledger, i.e, maybe there’s a fork of 1-3 blocks (which is not all that strange), they would simply compute a different digest than the one they’re being asked to sign by the aggregator, and no certificate could be produced at that height. i.e, what I’m calling “Mithril misses” (like a cache miss) would basically mean that you tried to produce a certificate at a height where most SPOs were genuinely not agreeing on a canonical ledger view. 
 
 In this repo, the Mithril light client is an IBC 02-client implementation that lets a Cosmos chain verify Cardano-side IBC state by anchoring it to Mithril certificates plus Cardano transaction evidence. 
+
+## Historical Local Mithril Operations
+
+> [!NOTE]
+> This section preserves the previous main README operational notes for reference. The local Mithril setup described here is deprecated and disabled in the maintained Caribic startup path.
+
+Historically, the local Cardano devnet stack could be started together with a local Mithril aggregator and signers so that certificates, transaction snapshots, and inclusion proofs corresponded to the local Cardano chain. This was necessary for local Mithril testing because public Mithril endpoints only certify their own networks and cannot attest to transactions produced by a local devnet.
+
+In that setup, Mithril transaction snapshots were periodic checkpoints, not one certificate per Cardano block or slot. In this repository, the Mithril "height" used for IBC verification referred to the snapshot `block_number` (Cardano block height), not the Cardano slot. The latest certified snapshot height could lag behind the Cardano node tip. The Gateway treated the Mithril transaction proof API as "latest snapshot only", so after submitting a HostState update transaction the relayer could need to wait until a newer snapshot included that transaction before Cosmos-side verification could succeed.
+
+The snapshot cadence and stability tradeoffs were controlled by the Mithril config in `chains/mithrils/scripts/docker-compose.yaml`. As a frame of reference, as of March 2026 there was generally a hard Mithril-level constraint on a minimum certificate cadence of 15 blocks, irrespective of configurable values and tip lag.
+
+The key Mithril aggregator configs that affected snapshot frequency and IBC latency were:
+
+| Config | Description |
+|--------|-------------|
+| `RUN_INTERVAL` | Polling interval (ms) - how often the aggregator checks for new blocks to process. This is NOT the snapshot frequency. |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP` | Snapshot frequency - a new `CardanoTransactions` snapshot is created every N blocks. |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER` | How many blocks behind the chain tip snapshots are created. Provides finality buffer. |
+| `PROTOCOL_PARAMETERS__K` | Mithril protocol security parameter (lottery). |
+| `PROTOCOL_PARAMETERS__M` | Mithril protocol quorum parameter. |
+| `PROTOCOL_PARAMETERS__PHI_F` | Mithril protocol stake threshold parameter. |
+
+Historical devnet and mainnet reference values:
+
+| Config | Devnet | Mainnet (Jan 2026, per @jpraynaud) |
+|--------|--------|-------------------------------------|
+| `RUN_INTERVAL` | 1000 (1s) | 60000 (60s) |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__STEP` | 5 | 30 |
+| `CARDANO_TRANSACTIONS_SIGNING_CONFIG__SECURITY_PARAMETER` | 15 | 100 |
+| `PROTOCOL_PARAMETERS__K` | 3 | 2422 |
+| `PROTOCOL_PARAMETERS__M` | 50 | 20973 |
+| `PROTOCOL_PARAMETERS__PHI_F` | 0.67 | 0.2 |
+
+This meant that on mainnet a new `CardanoTransactions` certification could be expected approximately every 10 minutes (around 30 blocks), at 100 blocks behind the chain tip. With the Mithril-based IBC relaying architecture, this translated to a minimum roughly 10 minute latency between a Cardano transaction being included and being provable to the counterparty chain via Mithril.
+
+For production deployments on public Cardano networks, the IBC stack was not intended to run its own Mithril aggregator or signers. Instead, the Gateway and relayer were expected to consume an existing Mithril aggregator endpoint for the target Cardano network; the counterparty chain verified Mithril certificates and proofs and did not need to trust the aggregator as an authority. The aggregator was a data source and availability dependency.
 
 ## ibc-go v10.x.x Design
 
@@ -33,7 +73,7 @@ At a high level, the current design is:
 
 In practice that means the v10 adapter layer handles the standard ibc-go light-client entrypoints such as initialization, header verification, misbehaviour handling, state updates, membership / non-membership verification, status queries, recovery, and upgrade handling, while the actual Cardano-specific verification logic still lives in the Mithril `ClientState` methods and helper code.
 
-In this repo, the v10 adapter lives under `cosmos/entrypoint/x/clients/mithril/light_client_module.go`, the recovery logic lives under `cosmos/entrypoint/x/clients/mithril/proposal_handle.go`, and the app-level client registration happens in `cosmos/entrypoint/app/ibc.go`.
+In this repo, the v10 adapter lives under `cosmos/cardano-entrypoint/x/clients/mithril/light_client_module.go`, the recovery logic lives under `cosmos/cardano-entrypoint/x/clients/mithril/proposal_handle.go`, and the app-level client registration happens in `cosmos/cardano-entrypoint/app/ibc.go`.
 
 The core idea is that Mithril does not directly sign the Cardano IBC commitment root, instead Mithril certifies a transaction snapshot that can prove a specific Cardano transaction happened at a given Cardano block number, and that transaction is used to locate and authenticate the HostState UTxO, whose inline datum contains the `ibc_state_root`. Once that root is authenticated and stored in the client’s consensus state for that height, the normal IBC membership and non-membership verification methods can operate against it. 
 So to be clear, it’s not the case that you can “do” the kind of UTxO membership/non-membership proofs we initially endeavoured to do (which are ostensibly not possible at the moment), rather you can get around this by building a system based on transaction inclusion attestation and then cryptographic proofs of the output of those transactions. Inherently we are talking about transactions which operate on Cardano’s on-chain host state as thats where we’ve implemented the underlying validators and STT architecture + spending conditions that allow us to enforce this and operate as we do, that is, the cryptographic guarantees I’m describing are not true for arbitrary Cardano transactions, this is an explicitly designed architecture that relies on the integrity of the validators and HostState UTxO we have deployed on Cardano.
@@ -104,7 +144,7 @@ By contrast, **client upgrade remains unsupported** in the current Mithril desig
 ## Proof Logic
 
 The actual proof logic may be a bit dense if you are not familiar with IBC in general, or at least have a good intuition for Merkle-based cryptography. IBC proofs are generally based around membership and non-membership, i.e,  prove to me that X exists at this place and time, or prove to me that X does not exist at this place in time. This is why we were initially pushing quite hard to find a way to do verifiable UTxO inclusion proofs, because canonically in IBC you are verifying on-chain state, Cosmos even has a KV-store which is inherently merkleized which makes IBC extremely easy, but that is quite an uphill battle on Cardano, especially since it requires a canonical ledger view which is its own challenge referenced elsewhere.
- Membership and non-membership checks take the stored `ibc_state_root` from the consensus state at the requested height and verify a fixed-depth binary Merkle proof of length 64 where the direction at each depth is derived from the first 8 bytes of sha256(key). Leaves commit to the value hash (with empty values mapping to an all-zero leaf), and inner nodes are hashed with a distinct prefix. A major design detail is encoding-bridging: Cardano commits many IBC values as CBOR/Plutus-data bytes, while ibc-go constructs expected values as protobuf bytes, so when a proof carries a committed value that does not byte-match the expected protobuf value, the verifier decodes both into their **semantic** forms for known key families (connections, channels, client states, consensus states, and packet-related keys) and compares meaning rather than raw bytes, while still recomputing the Merkle root using the committed bytes.
+ Membership and non-membership checks take the stored `ibc_state_root` from the consensus state at the requested height and verify a fixed-depth binary Merkle proof of length 64 where the direction at each depth is derived from the first 8 bytes of sha256(key). Non-empty leaves commit to both sha256(key) and sha256(value), while empty values map to an all-zero sparse-tree leaf for absence proofs. Inner nodes are hashed with a distinct prefix. A major design detail is encoding-bridging: Cardano commits many IBC values as CBOR/Plutus-data bytes, while ibc-go constructs expected values as protobuf bytes, so when a proof carries a committed value that does not byte-match the expected protobuf value, the verifier decodes both into their **semantic** forms for known key families (connections, channels, client states, consensus states, and packet-related keys) and compares meaning rather than raw bytes, while still recomputing the Merkle root using the committed bytes.
 
  Regarding the semantic form conversion, the short version is that you are proving membership in a Cardano commitment, and that commitment is over Cardano’s chosen bytes, not Cosmos’s. On Cosmos, the IBC store values are typically protobuf-encoded (and for some keys they are wrapped in a protobuf `Any`). On Cardano, the on-chain commitment scheme is committing to CBOR/Plutus-data style encodings of logically equivalent objects. So if you take the “expected value” bytes produced by ibc-go and naively compare them to the “committed value” bytes proven under the Cardano root, they often will not match byte-for-byte even when they represent the same logical state. It sounds odd but it’s actually the safe way to do it, given the reality that two chains can store the same logical IBC state using different encodings. If you recomputed the root using protobuf bytes instead of the committed bytes, you would not be verifying what Cardano committed to. If you recomputed using committed bytes but skipped the semantic check, you would be accepting “some bytes that hash into the root,” without proving those bytes correspond to the IBC object the Cosmos side expects, which could let a relayer feed you a different encoding that still fits the Merkle root but represents a different meaning. The bridge approach enforces both, the merkle proof must match the authenticated `ibc_state_root`, and for known key spaces the committed bytes must decode to a value that matches the expected IBC object semantics. For unknown key families, it fails closed with an existence proof value mismatch, which is also important: you only get this flexibility where you’ve explicitly implemented the decoding and comparison rules.
 

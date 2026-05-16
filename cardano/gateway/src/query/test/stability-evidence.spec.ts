@@ -94,9 +94,9 @@ describe('stability-evidence', () => {
   ];
 
   const epochStakeDistribution = [
-    { poolId: 'pool-a', stake: 500n, vrfKeyHash: 'aa'.repeat(32) },
-    { poolId: 'pool-b', stake: 300n, vrfKeyHash: 'bb'.repeat(32) },
-    { poolId: 'pool-c', stake: 200n, vrfKeyHash: 'cc'.repeat(32) },
+    { poolId: 'pool-a', stake: 500n, vrfKeyHash: 'aa'.repeat(32), firstRegistrationSlot: 1n },
+    { poolId: 'pool-b', stake: 300n, vrfKeyHash: 'bb'.repeat(32), firstRegistrationSlot: 1n },
+    { poolId: 'pool-c', stake: 200n, vrfKeyHash: 'cc'.repeat(32), firstRegistrationSlot: 1n },
   ];
 
   const epochVerificationContext = {
@@ -165,8 +165,8 @@ describe('stability-evidence', () => {
     expect(evidence.anchorBlock).toEqual(anchorBlock);
     expect(evidence.descendantBlocks).toEqual(descendantBlocks);
     expect(evidence.epochVerificationContext).toEqual(epochVerificationContext);
-    expect(evidence.metrics.uniquePoolsCount).toBe(3);
-    expect(evidence.metrics.uniqueStakeBps).toBe(10000);
+    expect(evidence.metrics.qualifiedUniquePoolsCount).toBe(3);
+    expect(evidence.metrics.qualifiedUniqueStakeBps).toBe(10000);
     expect(evidence.metrics.securityScoreBps).toBe(10000);
   });
 
@@ -181,7 +181,7 @@ describe('stability-evidence', () => {
     expect(historyServiceMock.findTransactionEvidenceByHash).toHaveBeenCalledWith('deadbeef');
     expect(evidence.hostStateTxEvidence.txHash).toBe('deadbeef');
     expect(evidence.anchorHeight).toBe(100n);
-    expect(evidence.metrics.uniquePoolsCount).toBe(3);
+    expect(evidence.metrics.qualifiedUniquePoolsCount).toBe(3);
   });
 
   it('loads bridge blocks for a stability header from trusted height to anchor', async () => {
@@ -312,10 +312,10 @@ describe('stability-evidence', () => {
     historyServiceMock.findEpochContextAtBlock = jest.fn().mockResolvedValue({
       epoch: 7,
       stakeDistribution: [
-        { poolId: 'pool-a', stake: 250n, vrfKeyHash: 'aa'.repeat(32) },
-        { poolId: 'pool-b', stake: 250n, vrfKeyHash: 'bb'.repeat(32) },
-        { poolId: 'pool-c', stake: 250n, vrfKeyHash: 'cc'.repeat(32) },
-        { poolId: 'pool-d', stake: 250n, vrfKeyHash: 'dd'.repeat(32) },
+        { poolId: 'pool-a', stake: 250n, vrfKeyHash: 'aa'.repeat(32), firstRegistrationSlot: 1n },
+        { poolId: 'pool-b', stake: 250n, vrfKeyHash: 'bb'.repeat(32), firstRegistrationSlot: 1n },
+        { poolId: 'pool-c', stake: 250n, vrfKeyHash: 'cc'.repeat(32), firstRegistrationSlot: 1n },
+        { poolId: 'pool-d', stake: 250n, vrfKeyHash: 'dd'.repeat(32), firstRegistrationSlot: 1n },
       ],
       verificationContext: epochVerificationContext,
     });
@@ -330,8 +330,8 @@ describe('stability-evidence', () => {
     expect(historyServiceMock.findDescendantBlocks).toHaveBeenCalledWith(100n, 12);
     expect(evidence.descendantBlocks).toHaveLength(4);
     expect(evidence.descendantBlocks.map((block) => block.height)).toEqual([101, 102, 103, 104]);
-    expect(evidence.metrics.uniquePoolsCount).toBe(4);
-    expect(evidence.metrics.uniqueStakeBps).toBe(10000);
+    expect(evidence.metrics.qualifiedUniquePoolsCount).toBe(4);
+    expect(evidence.metrics.qualifiedUniqueStakeBps).toBe(10000);
   });
 
   it('rejects descendant windows that cross an epoch boundary', async () => {

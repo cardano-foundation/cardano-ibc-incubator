@@ -94,7 +94,7 @@ describe('TransferPlannerService', () => {
     ).resolves.toEqual({
       foundRoute: true,
       mode: 'native-forward',
-      chains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
+      chains: ['cardano-devnet', 'cardano-entrypoint', 'localosmosis'],
       routes: ['transfer/channel-9', 'transfer/channel-1'],
       tokenTrace: {
         kind: 'native',
@@ -131,7 +131,7 @@ describe('TransferPlannerService', () => {
     ).resolves.toEqual({
       foundRoute: true,
       mode: 'unwind',
-      chains: ['localosmosis', 'entrypoint', 'cardano-devnet'],
+      chains: ['localosmosis', 'cardano-entrypoint', 'cardano-devnet'],
       routes: ['transfer/channel-3', 'transfer/channel-0'],
       tokenTrace: {
         kind: 'ibc_voucher',
@@ -194,7 +194,7 @@ describe('TransferPlannerService', () => {
     ).resolves.toEqual({
       foundRoute: true,
       mode: 'native-forward',
-      chains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
+      chains: ['cardano-devnet', 'cardano-entrypoint', 'localosmosis'],
       routes: ['transfer/channel-9', 'transfer/channel-2'],
       tokenTrace: {
         kind: 'native',
@@ -232,7 +232,7 @@ describe('TransferPlannerService', () => {
     ).resolves.toEqual({
       foundRoute: true,
       mode: 'native-forward',
-      chains: ['cardano-devnet', 'entrypoint', 'localosmosis'],
+      chains: ['cardano-devnet', 'cardano-entrypoint', 'localosmosis'],
       routes: ['transfer/channel-9', 'transfer/channel-1'],
       tokenTrace: {
         kind: 'native',

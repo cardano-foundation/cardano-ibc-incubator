@@ -2,6 +2,7 @@ import * as Lucid from '@lucid-evolution/lucid';
 import { encodeMintChannelRedeemer, encodeSpendChannelRedeemer } from './channel/channel-redeemer';
 import { encodeMintConnectionRedeemer, encodeSpendConnectionRedeemer } from './connection/connection-redeemer';
 import { encodeVerifyProofRedeemer } from './connection/verify-proof-redeemer';
+import { encodeIBCModuleRedeemer } from './port/ibc_module_redeemer';
 
 const EMPTY_PROOF = { proofs: [] } as const;
 const HEIGHT = { revisionNumber: 0n, revisionHeight: 11n } as const;
@@ -111,5 +112,22 @@ describe('Redeemer encoding regression', () => {
     expect(encoded).toBe(
       'd87988d879884a656e747279706f696e74d879820103187818f00ad879820000d8798200183280d87983187b41aad8798141bbd87982000b0000d8798180d879818243696263447061746847636f6e74656e74',
     );
+  });
+
+  it('encodes channel close-confirm module callback with the close-confirm constructor', async () => {
+    const encoded = await encodeIBCModuleRedeemer(
+      {
+        Callback: [
+          {
+            OnChanCloseConfirm: {
+              channel_id: '6368616e6e656c2d30',
+            },
+          },
+        ],
+      },
+      Lucid,
+    );
+
+    expect(encoded).toBe('d87981d87e81496368616e6e656c2d30');
   });
 });

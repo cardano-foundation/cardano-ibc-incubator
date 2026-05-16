@@ -31,8 +31,8 @@ import { CustomAppProvider } from '@/contexts';
 import { customChainassets, customChains } from '@/configs/customChainInfo';
 import { CosmosWalletModal } from '@/components/common/Header/CosmosWalletModal';
 import {
-  ENTRYPOINT_REST_ENDPOINT,
-  ENTRYPOINT_RPC_ENDPOINT,
+  CARDANO_ENTRYPOINT_REST_ENDPOINT,
+  CARDANO_ENTRYPOINT_RPC_ENDPOINT,
   LOCAL_OSMOSIS_REST_ENDPOINT,
   LOCAL_OSMOSIS_RPC_ENDPOINT,
 } from '@/configs/runtime';
@@ -135,8 +135,8 @@ const endpointOptions = {
   endpoints: {
     entrypoint: {
       isLazy: true,
-      rpc: [ENTRYPOINT_RPC_ENDPOINT],
-      rest: [ENTRYPOINT_REST_ENDPOINT],
+      rpc: [CARDANO_ENTRYPOINT_RPC_ENDPOINT],
+      rest: [CARDANO_ENTRYPOINT_REST_ENDPOINT],
     },
     localosmosis: {
       isLazy: true,

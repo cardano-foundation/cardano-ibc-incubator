@@ -46,14 +46,16 @@ export const CARDANO_IBC_CHAIN_ID =
 export const isCardanoChainRef = (chainId?: string): boolean =>
   chainId === CARDANO_CHAIN_ID || chainId === CARDANO_IBC_CHAIN_ID;
 
-export const ENTRYPOINT_RPC_ENDPOINT =
+export const CARDANO_ENTRYPOINT_RPC_ENDPOINT =
   firstNonEmpty(
+    process.env.NEXT_PUBLIC_CARDANO_ENTRYPOINT_RPC_ENDPOINT,
     process.env.NEXT_PUBLIC_ENTRYPOINT_RPC_ENDPOINT,
     process.env.NEXT_PUBLIC_SIDECHAIN_RPC_ENDPOINT,
   ) || 'http://localhost:26657';
 
-export const ENTRYPOINT_REST_ENDPOINT =
+export const CARDANO_ENTRYPOINT_REST_ENDPOINT =
   firstNonEmpty(
+    process.env.NEXT_PUBLIC_CARDANO_ENTRYPOINT_REST_ENDPOINT,
     process.env.NEXT_PUBLIC_ENTRYPOINT_REST_ENDPOINT,
     process.env.NEXT_PUBLIC_SIDECHAIN_REST_ENDPOINT,
   ) || 'http://localhost:1317';

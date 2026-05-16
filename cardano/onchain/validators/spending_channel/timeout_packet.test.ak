@@ -1,5 +1,6 @@
 use aiken/collection/pairs
 use aiken/primitive/bytearray.{from_int_big_endian}
+use cardano/assets.{from_asset}
 use cardano/transaction.{
   Input, Mint, Redeemer, ScriptPurpose, Spend, Transaction,
 }
@@ -307,6 +308,7 @@ test succeed_timeout_unordered_packet() {
       outputs,
       redeemers,
       validity_range,
+      mint: from_asset(mock_data.timeout_packet_policy_id, "", 1),
     }
 
   timeout_packet.timeout_packet.mint(
@@ -482,6 +484,7 @@ test succeed_timeout_ordered_packet() {
       outputs,
       redeemers,
       validity_range,
+      mint: from_asset(mock_data.timeout_packet_policy_id, "", 1),
     }
 
   timeout_packet.timeout_packet.mint(

@@ -1,3 +1,6 @@
+# DEPRECATED / DISABLED:
+# The local Mithril setup is not maintained and is no longer started by Caribic.
+# This file is retained only for historical reference.
 services:
   # Devnet-only Mithril infrastructure.
   #

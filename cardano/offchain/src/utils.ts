@@ -35,6 +35,51 @@ const RETRYABLE_OGMIOS_TRANSPORT_MARKERS = [
 const DEFAULT_MAX_TX_SIZE = 16_384;
 const TX_SIZE_WARNING_HEADROOM_BYTES = 750;
 const WALLET_UTXO_OGMIOS_BATCH_SIZE = 50;
+const DEFAULT_DEPLOYMENT_COST_REPORT_PATH =
+  "./deployments/deployment-cost-report.json";
+
+type DeploymentCostTx = {
+  txName: string;
+  txHash: string;
+  feeLovelace: string;
+  unsignedSizeBytes?: number;
+  signedSizeBytes: number;
+  outputCount: number;
+  totalOutputLovelace: string;
+  nonWalletOutputLovelace: string;
+  referenceScriptOutputLovelace: string;
+  observedAt: string;
+};
+
+type DeploymentCostReport = {
+  generatedAt: string;
+  updatedAt: string;
+  mode?: string;
+  networkMagic?: string;
+  deployerAddress: string;
+  txCount: number;
+  totalFeesLovelace: string;
+  totalOutputLovelace: string;
+  totalNonWalletOutputLovelace: string;
+  totalReferenceScriptOutputLovelace: string;
+  transactions: DeploymentCostTx[];
+};
+
+type TxCostSource = {
+  toTransaction: () => {
+    body: () => {
+      fee: () => bigint;
+      outputs: () => {
+        len: () => number;
+        get: (index: number) => {
+          address: () => { to_bech32: () => string };
+          amount: () => { coin: () => bigint };
+          script_ref: () => unknown | undefined;
+        };
+      };
+    };
+  };
+};
 
 export const isRetryableOgmiosTransportError = (error: unknown): boolean => {
   const errorText = error instanceof Error
@@ -44,6 +89,126 @@ export const isRetryableOgmiosTransportError = (error: unknown): boolean => {
   return RETRYABLE_OGMIOS_TRANSPORT_MARKERS.some((marker) =>
     errorText.includes(marker)
   );
+};
+
+const deploymentCostReportPath = (): string =>
+  Deno.env.get("DEPLOYMENT_COST_REPORT_PATH")?.trim() ||
+  DEFAULT_DEPLOYMENT_COST_REPORT_PATH;
+
+const ensureReportParentDir = async (filePath: string): Promise<void> => {
+  const separatorIndex = Math.max(
+    filePath.lastIndexOf("/"),
+    filePath.lastIndexOf("\\"),
+  );
+  if (separatorIndex <= 0) return;
+  await Deno.mkdir(filePath.slice(0, separatorIndex), { recursive: true });
+};
+
+const sumDeploymentCostReport = (transactions: DeploymentCostTx[]) => ({
+  txCount: transactions.length,
+  totalFeesLovelace: transactions
+    .reduce((sum, tx) => sum + BigInt(tx.feeLovelace), 0n)
+    .toString(),
+  totalOutputLovelace: transactions
+    .reduce((sum, tx) => sum + BigInt(tx.totalOutputLovelace), 0n)
+    .toString(),
+  totalNonWalletOutputLovelace: transactions
+    .reduce((sum, tx) => sum + BigInt(tx.nonWalletOutputLovelace), 0n)
+    .toString(),
+  totalReferenceScriptOutputLovelace: transactions
+    .reduce((sum, tx) => sum + BigInt(tx.referenceScriptOutputLovelace), 0n)
+    .toString(),
+});
+
+export const resetDeploymentCostReport = async (
+  deployerAddress: string,
+  mode?: string,
+  networkMagic?: string,
+): Promise<void> => {
+  try {
+    const now = new Date().toISOString();
+    const report: DeploymentCostReport = {
+      generatedAt: now,
+      updatedAt: now,
+      mode,
+      networkMagic,
+      deployerAddress,
+      ...sumDeploymentCostReport([]),
+      transactions: [],
+    };
+    const filePath = deploymentCostReportPath();
+    await ensureReportParentDir(filePath);
+    await Deno.writeTextFile(filePath, `${JSON.stringify(report, null, 2)}\n`);
+  } catch (error) {
+    console.warn("Could not initialize deployment cost report:", error);
+  }
+};
+
+export const recordDeploymentTx = async (
+  txName: string,
+  txHash: string,
+  tx: TxCostSource,
+  walletAddress: string,
+  signedSizeBytes: number,
+  unsignedSizeBytes?: number,
+): Promise<void> => {
+  const filePath = deploymentCostReportPath();
+  try {
+    const reportText = await Deno.readTextFile(filePath).catch((error) => {
+      if (error instanceof Deno.errors.NotFound) {
+        return undefined;
+      }
+      throw error;
+    });
+    if (!reportText) return;
+
+    const body = tx.toTransaction().body();
+    const outputs = body.outputs();
+    let totalOutputLovelace = 0n;
+    let nonWalletOutputLovelace = 0n;
+    let referenceScriptOutputLovelace = 0n;
+    for (let index = 0; index < outputs.len(); index++) {
+      const output = outputs.get(index);
+      const lovelace = output.amount().coin();
+      totalOutputLovelace += lovelace;
+      if (output.address().to_bech32() !== walletAddress) {
+        nonWalletOutputLovelace += lovelace;
+      }
+      if (output.script_ref()) {
+        referenceScriptOutputLovelace += lovelace;
+      }
+    }
+
+    const report = JSON.parse(reportText) as DeploymentCostReport;
+    const transactions = [
+      ...report.transactions.filter((entry) => entry.txHash !== txHash),
+      {
+        txName,
+        txHash,
+        feeLovelace: body.fee().toString(),
+        unsignedSizeBytes,
+        signedSizeBytes,
+        outputCount: outputs.len(),
+        totalOutputLovelace: totalOutputLovelace.toString(),
+        nonWalletOutputLovelace: nonWalletOutputLovelace.toString(),
+        referenceScriptOutputLovelace: referenceScriptOutputLovelace
+          .toString(),
+        observedAt: new Date().toISOString(),
+      },
+    ];
+    const nextReport: DeploymentCostReport = {
+      ...report,
+      updatedAt: new Date().toISOString(),
+      ...sumDeploymentCostReport(transactions),
+      transactions,
+    };
+    await Deno.writeTextFile(
+      filePath,
+      `${JSON.stringify(nextReport, null, 2)}\n`,
+    );
+  } catch (error) {
+    console.warn(`Could not record deployment tx cost for ${txName}:`, error);
+  }
 };
 
 export const readValidator = <T extends unknown[] = Data[]>(
@@ -183,6 +348,7 @@ export const submitTx = async (
   // returning the transaction id, so retries must not depend on recovering the
   // hash from the transport response.
   const txHash = signedTx.toHash();
+  const walletAddress = await lucid.wallet().address();
   console.log("Submitting tx [", txName, "]: tx hash is", txHash);
   let lastError: unknown = null;
 
@@ -214,6 +380,14 @@ export const submitTx = async (
         `]: waiting for adoption (attempt ${attempt}/${ADOPTION_ATTEMPTS}) ...`,
       );
       await awaitTxWithTimeout(txHash);
+      await recordDeploymentTx(
+        txName,
+        txHash,
+        signedTx,
+        walletAddress,
+        signedTxBytes,
+        completedTxBytes,
+      );
       console.log("Submitting tx [", txName, "]: done");
       return txHash;
     } catch (error) {

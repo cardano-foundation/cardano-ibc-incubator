@@ -380,6 +380,64 @@ fn transfer_escrow_output(
   }
 }
 
+fn transfer_native_asset_escrow_input(
+  output_index: Int,
+  module_output: Output,
+  transfer_escrow_shard_policy_id: PolicyId,
+  channel_id: ByteArray,
+  denom: ByteArray,
+  token_policy_id: PolicyId,
+  token_name: ByteArray,
+  amount: Int,
+) -> Input {
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(channel_id, denom)
+  Input {
+    output_reference: OutputReference {
+      transaction_id: #"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      output_index,
+    },
+    output: Output {
+      address: module_output.address,
+      value: from_asset(token_policy_id, token_name, amount)
+        |> add(transfer_escrow_shard_policy_id, shard_token_name, 1),
+      datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
+      reference_script: None,
+    },
+  }
+}
+
+fn transfer_native_asset_escrow_output(
+  module_output: Output,
+  transfer_escrow_shard_policy_id: PolicyId,
+  channel_id: ByteArray,
+  denom: ByteArray,
+  token_policy_id: PolicyId,
+  token_name: ByteArray,
+  amount: Int,
+) -> Output {
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(channel_id, denom)
+  Output {
+    address: module_output.address,
+    value: from_asset(token_policy_id, token_name, amount)
+      |> add(transfer_escrow_shard_policy_id, shard_token_name, 1),
+    datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
+    reference_script: None,
+  }
+}
+
+fn native_asset_denom() -> ByteArray {
+  "61616161"
+    |> bytearray.concat("61616161")
+    |> bytearray.concat("61616161")
+    |> bytearray.concat("61616161")
+    |> bytearray.concat("61616161")
+    |> bytearray.concat("61616161")
+    |> bytearray.concat("61616161")
+    |> bytearray.concat("636f696e")
+}
+
 fn build_packet(
   denom: ByteArray,
   amount: Int,
@@ -1041,6 +1099,170 @@ test transfer_escrow_succeed() {
   )
 }
 
+test transfer_escrow_native_asset_fails_with_short_created_shard() fail {
+  let mock = setup()
+  let transfer_amount = 1234
+  let receiver = mock.cardano_public_key_hash
+  let native_policy_id: PolicyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  let native_token_name = "coin"
+  let denom = native_asset_denom()
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(mock.channel_id, denom)
+
+  let escrow_output =
+    transfer_native_asset_escrow_output(
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      mock.channel_id,
+      denom,
+      native_policy_id,
+      native_token_name,
+      transfer_amount - 1,
+    )
+
+  let (ftpd, packet) =
+    build_packet(
+      denom,
+      transfer_amount,
+      mock.cosmos_address,
+      receiver,
+      "port-0",
+      "channel-0",
+      mock.port_id,
+      mock.channel_id,
+    )
+
+  let module_redeemer: Redeemer =
+    Operator(
+      TransferModuleOperator(
+        Transfer { channel_id: mock.channel_id, data: ftpd },
+      ),
+    )
+  let channel_redeemer: Redeemer = SendPacket { packet }
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
+  let outputs =
+    [
+      mock.module_output,
+      escrow_output,
+      mock.channel_output,
+      mock.host_state_output,
+    ]
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      redeemers,
+      mint: from_asset(
+        mock.transfer_escrow_shard_policy_id,
+        shard_token_name,
+        1,
+      ),
+    }
+
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+  spending_transfer_module.spend_transfer_module.spend(
+    mock.port_token,
+    mock.module_token,
+    mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
+    mock.channel_minting_policy_id,
+    mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
+    None,
+    module_redeemer,
+    mock.module_input.output_reference,
+    transaction,
+  )
+}
+
+test transfer_escrow_native_asset_fails_with_extra_created_shard() fail {
+  let mock = setup()
+  let transfer_amount = 1234
+  let receiver = mock.cardano_public_key_hash
+  let native_policy_id: PolicyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  let native_token_name = "coin"
+  let denom = native_asset_denom()
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(mock.channel_id, denom)
+
+  let escrow_output =
+    transfer_native_asset_escrow_output(
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      mock.channel_id,
+      denom,
+      native_policy_id,
+      native_token_name,
+      transfer_amount + 1,
+    )
+
+  let (ftpd, packet) =
+    build_packet(
+      denom,
+      transfer_amount,
+      mock.cosmos_address,
+      receiver,
+      "port-0",
+      "channel-0",
+      mock.port_id,
+      mock.channel_id,
+    )
+
+  let module_redeemer: Redeemer =
+    Operator(
+      TransferModuleOperator(
+        Transfer { channel_id: mock.channel_id, data: ftpd },
+      ),
+    )
+  let channel_redeemer: Redeemer = SendPacket { packet }
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
+  let outputs =
+    [
+      mock.module_output,
+      escrow_output,
+      mock.channel_output,
+      mock.host_state_output,
+    ]
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      redeemers,
+      mint: from_asset(
+        mock.transfer_escrow_shard_policy_id,
+        shard_token_name,
+        1,
+      ),
+    }
+
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+  spending_transfer_module.spend_transfer_module.spend(
+    mock.port_token,
+    mock.module_token,
+    mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
+    mock.channel_minting_policy_id,
+    mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
+    None,
+    module_redeemer,
+    mock.module_input.output_reference,
+    transaction,
+  )
+}
+
 test transfer_burn_voucher_succeed() {
   let mock = setup()
 
@@ -1298,6 +1520,207 @@ test on_timeout_packet_unescrow_succeed() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
+  spending_transfer_module.spend_transfer_module.spend(
+    mock.port_token,
+    mock.module_token,
+    mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
+    mock.channel_minting_policy_id,
+    mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
+    None,
+    module_redeemer,
+    mock.module_input.output_reference,
+    transaction,
+  )
+}
+
+test on_timeout_packet_native_refund_fails_with_wrong_escrow_delta() fail {
+  let mock = setup()
+  let transfer_amount = 100
+  let remaining_escrow = 50
+  let sender = mock.cardano_public_key_hash
+  let native_policy_id: PolicyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  let native_token_name = "coin"
+  let denom = native_asset_denom()
+
+  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  let receiver_output =
+    Output {
+      address: from_verification_key(sender_public_key_hash),
+      value: from_asset(native_policy_id, native_token_name, transfer_amount),
+      datum: NoDatum,
+      reference_script: None,
+    }
+  let escrow_input =
+    transfer_native_asset_escrow_input(
+      1,
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      "channel-0",
+      denom,
+      native_policy_id,
+      native_token_name,
+      transfer_amount + remaining_escrow,
+    )
+  let escrow_output =
+    transfer_native_asset_escrow_output(
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      "channel-0",
+      denom,
+      native_policy_id,
+      native_token_name,
+      remaining_escrow + 1,
+    )
+  let inputs =
+    [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
+  let outputs =
+    [
+      mock.module_output,
+      escrow_output,
+      mock.channel_output,
+      receiver_output,
+      mock.host_state_output,
+    ]
+  let (ftpd, packet) =
+    build_packet(
+      denom,
+      transfer_amount,
+      sender,
+      mock.cosmos_address,
+      "port-0",
+      "channel-0",
+      mock.port_id,
+      mock.channel_id,
+    )
+  let packet_data = TransferModuleData(ftpd)
+  let module_redeemer: Redeemer =
+    Callback(OnTimeoutPacket { channel_id: mock.channel_id, data: packet_data })
+  let channel_redeemer: Redeemer =
+    TimeoutPacket {
+      packet,
+      proof_unreceived: mock.proof,
+      proof_height: mock.proof_height,
+      next_sequence_recv: 1,
+    }
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
+  let transaction =
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+  spending_transfer_module.spend_transfer_module.spend(
+    mock.port_token,
+    mock.module_token,
+    mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
+    mock.channel_minting_policy_id,
+    mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
+    None,
+    module_redeemer,
+    mock.module_input.output_reference,
+    transaction,
+  )
+}
+
+test on_recv_packet_source_fails_with_short_native_payout() fail {
+  let mock = setup()
+  let transfer_amount = 100
+  let remaining_escrow = 50
+  let receiver = mock.cardano_public_key_hash
+  let native_policy_id: PolicyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  let native_token_name = "coin"
+  let denom = native_asset_denom()
+
+  expect Some(receiver_public_key_hash) =
+    string_utils.hex_string_to_bytes(receiver)
+  let receiver_output =
+    Output {
+      address: from_verification_key(receiver_public_key_hash),
+      value: from_asset(
+        native_policy_id,
+        native_token_name,
+        transfer_amount - 1,
+      ),
+      datum: NoDatum,
+      reference_script: None,
+    }
+  let source_port = "port-0"
+  let source_channel = "channel-0"
+  let prefixed_denom =
+    transfer_coin.get_denom_prefix(source_port, source_channel)
+      |> bytearray.concat(denom)
+  let escrow_input =
+    transfer_native_asset_escrow_input(
+      1,
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      mock.channel_id,
+      denom,
+      native_policy_id,
+      native_token_name,
+      transfer_amount + remaining_escrow,
+    )
+  let escrow_output =
+    transfer_native_asset_escrow_output(
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      mock.channel_id,
+      denom,
+      native_policy_id,
+      native_token_name,
+      remaining_escrow,
+    )
+  let inputs =
+    [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
+  let outputs =
+    [
+      mock.module_output,
+      escrow_output,
+      mock.channel_output,
+      receiver_output,
+      mock.host_state_output,
+    ]
+  let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
+  let (ftpd, packet) =
+    build_packet(
+      prefixed_denom,
+      transfer_amount,
+      mock.cosmos_address,
+      receiver,
+      source_port,
+      source_channel,
+      mock.port_id,
+      mock.channel_id,
+    )
+  let module_redeemer: Redeemer =
+    Callback(
+      OnRecvPacket {
+        channel_id: mock.channel_id,
+        acknowledgement,
+        data: TransferModuleData(ftpd),
+      },
+    )
+  let channel_redeemer: Redeemer =
+    RecvPacket {
+      packet,
+      proof_commitment: mock.proof,
+      proof_height: mock.proof_height,
+    }
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
+  let transaction =
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
   spending_transfer_module.spend_transfer_module.spend(
     mock.port_token,
     mock.module_token,

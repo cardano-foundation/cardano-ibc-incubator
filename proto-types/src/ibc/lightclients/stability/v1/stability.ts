@@ -34,6 +34,7 @@ export interface StakeDistributionEntry {
   pool_id: string;
   stake: bigint;
   vrf_key_hash: Uint8Array;
+  first_registration_slot: bigint;
 }
 /**
  * @name EpochContext
@@ -319,6 +320,7 @@ function createBaseStakeDistributionEntry(): StakeDistributionEntry {
     pool_id: "",
     stake: BigInt(0),
     vrf_key_hash: new Uint8Array(),
+    first_registration_slot: BigInt(0),
   };
 }
 /**
@@ -338,6 +340,9 @@ export const StakeDistributionEntry = {
     if (message.vrf_key_hash.length !== 0) {
       writer.uint32(26).bytes(message.vrf_key_hash);
     }
+    if (message.first_registration_slot !== BigInt(0)) {
+      writer.uint32(32).uint64(message.first_registration_slot);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): StakeDistributionEntry {
@@ -356,6 +361,9 @@ export const StakeDistributionEntry = {
         case 3:
           message.vrf_key_hash = reader.bytes();
           break;
+        case 4:
+          message.first_registration_slot = reader.uint64();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -368,6 +376,8 @@ export const StakeDistributionEntry = {
     if (isSet(object.pool_id)) obj.pool_id = String(object.pool_id);
     if (isSet(object.stake)) obj.stake = BigInt(object.stake.toString());
     if (isSet(object.vrf_key_hash)) obj.vrf_key_hash = bytesFromBase64(object.vrf_key_hash);
+    if (isSet(object.first_registration_slot))
+      obj.first_registration_slot = BigInt(object.first_registration_slot.toString());
     return obj;
   },
   toJSON(message: StakeDistributionEntry): unknown {
@@ -378,6 +388,8 @@ export const StakeDistributionEntry = {
       (obj.vrf_key_hash = base64FromBytes(
         message.vrf_key_hash !== undefined ? message.vrf_key_hash : new Uint8Array(),
       ));
+    message.first_registration_slot !== undefined &&
+      (obj.first_registration_slot = (message.first_registration_slot || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<StakeDistributionEntry>, I>>(object: I): StakeDistributionEntry {
@@ -387,6 +399,9 @@ export const StakeDistributionEntry = {
       message.stake = BigInt(object.stake.toString());
     }
     message.vrf_key_hash = object.vrf_key_hash ?? new Uint8Array();
+    if (object.first_registration_slot !== undefined && object.first_registration_slot !== null) {
+      message.first_registration_slot = BigInt(object.first_registration_slot.toString());
+    }
     return message;
   },
 };

@@ -98,3 +98,7 @@ It should be clear that Mithril certificates are **not** produced on a per-block
 This also introduces a height asymmetry: the proof height that the Cosmos chain can safely accept is the Mithril-certified snapshot height and not a Cardano slot number. If we keep Mithril as the attestation layer in production, we need to ensure the Gateway and relayer treat this consistently as the “proof height”, and we need to ensure our retry and waiting behaviour is driven by observed snapshot progression rather than arbitrary sleep intervals.
 
 A noteworthy CIP in discussing trade-offs of Mithril cadence + lag: https://cips.cardano.org/cip/CIP-0137#mithril-message-diffusion-extra-networking-cost
+
+## Stability Client Epoch Context Trust
+
+The stake-weighted stability client relies on an epoch context containing stake weights, VRF key hashes, nonce, KES settings, and epoch slot bounds, but that context is not yet independently authenticated as the canonical Cardano epoch context. The current mitigation is fail-closed: once an epoch context is accepted for an epoch, a later header carrying a different context for that same epoch is treated as misbehaviour and freezes the client. This does not prevent the first relayer for an epoch from supplying a bad-but-internally-consistent context; it only makes a later contradictory context detectable. In practice, this means the trust model requires at least one honest relayer or observer to keep submitting the real epoch context so that a poisoned first context can trigger misbehaviour rather than remain silent.

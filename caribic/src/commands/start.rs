@@ -11,7 +11,7 @@ use crate::{
         build_aiken_validators_if_needed, build_hermes_if_needed, deploy_contracts,
         deploy_preprod_bridge, start_cosmos_entrypoint_chain,
         start_cosmos_entrypoint_chain_services, start_dapp, start_gateway, start_hermes_daemon,
-        start_mithril, start_relayer, wait_for_cosmos_entrypoint_chain_ready,
+        start_relayer, wait_for_cosmos_entrypoint_chain_ready,
     },
     utils::{prompt_runtime_deployer_sk, query_balance},
     StartTarget, StopTarget,
@@ -19,6 +19,7 @@ use crate::{
 
 const HERMES_BUILD_PROGRESS_LOG_INTERVAL_SECS: u64 = 10;
 const HERMES_BUILD_POLL_INTERVAL_SECS: u64 = 2;
+const MITHRIL_DEPRECATED_ERROR: &str = "ERROR: Mithril setup is deprecated, disabled, and not maintained. Use the default stake-weighted-stability light-client mode. The Mithril source remains in-tree for historical reference only.";
 
 fn ensure_preprod_optional_relayer_routes(
     project_root_path: &Path,
@@ -87,10 +88,14 @@ pub async fn run_start(
     let project_config = config::get_config();
     let project_root_path = Path::new(&project_config.project_root);
 
+    if with_mithril || target == Some(StartTarget::Mithril) {
+        return Err(MITHRIL_DEPRECATED_ERROR.to_string());
+    }
+
     // Determine what to start.
     let start_all = target.is_none() || target == Some(StartTarget::All);
     let start_network = start_all || target == Some(StartTarget::Network);
-    let start_cosmos = start_all || target == Some(StartTarget::Entrypoint);
+    let start_cosmos = start_all || target == Some(StartTarget::CardanoEntrypoint);
     let start_bridge = start_all || target == Some(StartTarget::Bridge);
 
     if !chain_flags.is_empty() {
@@ -102,12 +107,6 @@ pub async fn run_start(
 
     let core_cardano_network = config::CoreCardanoNetwork::parse(network.as_deref())?;
     let core_cardano_profile = config::cardano_network_profile(core_cardano_network);
-
-    if core_cardano_network == config::CoreCardanoNetwork::Preprod && with_mithril {
-        return Err(
-            "ERROR: --with-mithril is not supported with --network preprod. Use public Mithril release-preprod instead.".to_string(),
-        );
-    }
 
     let runtime_deployer_sk = if core_cardano_network != config::CoreCardanoNetwork::Local
         && target_requires_runtime_deployer_sk(target.clone())
@@ -172,11 +171,7 @@ pub async fn run_start(
                 project_root_path.join("chains/cardano").as_path(),
                 clean,
                 core_cardano_network,
-                if with_mithril {
-                    "mithril"
-                } else {
-                    "stake-weighted-stability"
-                },
+                "stake-weighted-stability",
             )
             .map_err(|error| format!("ERROR: Failed to prepare gateway runtime: {}", error))?;
         }
@@ -234,59 +229,11 @@ pub async fn run_start(
         return Ok(());
     }
 
-    if target == Some(StartTarget::Mithril) {
-        if !core_cardano_network.uses_local_mithril() {
-            return Err(
-                "ERROR: Local Mithril containers are not used with --network preprod.".to_string(),
-            );
-        }
-
-        match start_mithril(project_root_path).await {
-            Ok(cardano_epoch_on_mithril_start) => {
-                logger::log("PASS: Mithril services started (1 aggregator, 2 signers)");
-
-                let project_root_path = project_root_path.to_path_buf();
-                let bootstrap_result = tokio::task::spawn_blocking(move || {
-                    crate::start::wait_and_start_mithril_genesis(
-                        project_root_path.as_path(),
-                        cardano_epoch_on_mithril_start,
-                    )
-                    .map_err(|e| e.to_string())
-                })
-                .await;
-
-                match bootstrap_result {
-                    Ok(Ok(())) => logger::log(
-                        "PASS: Mithril genesis bootstrap completed (certificates/artifacts ready)",
-                    ),
-                    Ok(Err(error)) => {
-                        return Err(format!(
-                            "ERROR: Mithril genesis bootstrap failed: {}",
-                            error
-                        ))
-                    }
-                    Err(error) => {
-                        return Err(format!(
-                            "ERROR: Mithril genesis bootstrap task failed: {}",
-                            error
-                        ))
-                    }
-                }
-            }
-            Err(error) => return Err(format!("ERROR: Failed to start Mithril: {}", error)),
-        }
-        logger::log(&format!(
-            "\ncaribic start completed in {}",
-            format_elapsed_duration(start_elapsed_timer.elapsed())
-        ));
-        return Ok(());
-    }
-
     if start_network {
         match crate::start::start_local_cardano_network(
             project_root_path,
             clean,
-            with_mithril && start_all,
+            false,
             core_cardano_network,
         )
         .await
@@ -329,11 +276,11 @@ pub async fn run_start(
         match start_cosmos_entrypoint_chain(project_root_path.join("cosmos").as_path(), clean).await
         {
             Ok(_) => logger::log(
-                "PASS: Entrypoint chain started (packet-forwarding chain on port 26657)",
+                "PASS: Cardano Entrypoint chain started (packet-forwarding chain on port 26657)",
             ),
             Err(error) => {
                 return Err(format!(
-                    "ERROR: Failed to start Entrypoint chain: {}",
+                    "ERROR: Failed to start Cardano Entrypoint chain: {}",
                     error
                 ))
             }
@@ -392,11 +339,7 @@ pub async fn run_start(
                 project_root_path.join("chains/cardano").as_path(),
                 clean,
                 core_cardano_network,
-                if with_mithril {
-                    "mithril"
-                } else {
-                    "stake-weighted-stability"
-                },
+                "stake-weighted-stability",
             )
             .map_err(|error| {
                 format!(
@@ -478,14 +421,14 @@ pub async fn run_start(
                         return fail_and_stop_started_services(
                             project_root_path,
                             StopTarget::Bridge,
-                            &format!("ERROR: Failed to start Entrypoint chain: {}", error),
+                            &format!("ERROR: Failed to start Cardano Entrypoint chain: {}", error),
                         );
                     }
                     Err(error) => {
                         return fail_and_stop_started_services(
                             project_root_path,
                             StopTarget::Bridge,
-                            &format!("ERROR: Failed to start Entrypoint chain: {}", error),
+                            &format!("ERROR: Failed to start Cardano Entrypoint chain: {}", error),
                         );
                     }
                 }
@@ -493,13 +436,13 @@ pub async fn run_start(
 
             match wait_for_cosmos_entrypoint_chain_ready().await {
                 Ok(_) => logger::log(
-                    "PASS: Entrypoint chain started (packet-forwarding chain on port 26657)",
+                    "PASS: Cardano Entrypoint chain started (packet-forwarding chain on port 26657)",
                 ),
                 Err(error) => {
                     return fail_and_stop_started_services(
                         project_root_path,
                         StopTarget::Bridge,
-                        &format!("ERROR: Failed to start Entrypoint chain: {}", error),
+                        &format!("ERROR: Failed to start Cardano Entrypoint chain: {}", error),
                     );
                 }
             }
@@ -668,7 +611,7 @@ pub async fn run_start(
         logger::log("\nBridge started successfully!");
         if core_cardano_network == config::CoreCardanoNetwork::Local {
             logger::log(
-                "Keys have been automatically configured for cardano-devnet and the Entrypoint chain.",
+                "Keys have been automatically configured for cardano-devnet and the Cardano Entrypoint chain.",
             );
             logger::log("Next steps:");
             logger::log("   1. Check health: caribic health-check");

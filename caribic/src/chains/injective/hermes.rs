@@ -80,7 +80,7 @@ fn configure_hermes_for_demo_chain(
     if has_open_transfer_channel(
         hermes_binary.as_path(),
         injective_dir,
-        "entrypoint",
+        "cardano-entrypoint",
         chain_id,
     )? {
         log("PASS: Hermes transfer channel already open for Entrypoint↔Injective");
@@ -95,7 +95,7 @@ fn configure_hermes_for_demo_chain(
     let cosmos_key_result = add_hermes_key(
         injective_dir,
         hermes_binary_str,
-        "entrypoint",
+        "cardano-entrypoint",
         None,
         cosmos_mnemonic_arg.as_str(),
         true,
@@ -154,13 +154,13 @@ fn configure_hermes_for_demo_chain(
         hermes_binary.as_path(),
         injective_dir,
         chain_id,
-        "entrypoint",
+        "cardano-entrypoint",
         None,
     )?;
     let entrypoint_client_id = create_client_with_retry(
         hermes_binary.as_path(),
         injective_dir,
-        "entrypoint",
+        "cardano-entrypoint",
         chain_id,
         Some("86000s"),
     )?;
@@ -172,7 +172,7 @@ fn configure_hermes_for_demo_chain(
             "create",
             "connection",
             "--a-chain",
-            "entrypoint",
+            "cardano-entrypoint",
             "--a-client",
             entrypoint_client_id.as_str(),
             "--b-client",
@@ -197,7 +197,7 @@ fn configure_hermes_for_demo_chain(
             "create",
             "channel",
             "--a-chain",
-            "entrypoint",
+            "cardano-entrypoint",
             "--a-connection",
             connection_id.as_str(),
             "--a-port",

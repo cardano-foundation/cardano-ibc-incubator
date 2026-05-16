@@ -8,12 +8,13 @@ const EMPTY_HASH = Buffer.alloc(HASH_SIZE_BYTES, 0);
 function sha256Bytes(data) {
     return Buffer.from(js_sha256_1.sha256.array(data));
 }
-function leafHash(value) {
+function leafHash(key, value) {
     if (value.length === 0) {
         return EMPTY_HASH;
     }
+    const keyHash = sha256Bytes(Buffer.from(key, 'utf8'));
     const valueHash = sha256Bytes(value);
-    return sha256Bytes(Buffer.concat([Buffer.from([0x00]), valueHash]));
+    return sha256Bytes(Buffer.concat([Buffer.from([0x00]), keyHash, valueHash]));
 }
 function innerHash(left, right) {
     if (left.equals(EMPTY_HASH) && right.equals(EMPTY_HASH)) {
@@ -73,7 +74,7 @@ class ICS23MerkleTree {
         }
         const nodesByHeight = Array.from({ length: MERKLE_DEPTH_BITS + 1 }, () => new Map());
         for (const [key, value] of this.leaves.entries()) {
-            nodesByHeight[0].set(keyIndex64(key), leafHash(value));
+            nodesByHeight[0].set(keyIndex64(key), leafHash(key, value));
         }
         for (let height = 0; height < MERKLE_DEPTH_BITS; height += 1) {
             const currentLevel = nodesByHeight[height];

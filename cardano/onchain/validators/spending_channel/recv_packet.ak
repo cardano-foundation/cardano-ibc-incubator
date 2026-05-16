@@ -36,17 +36,26 @@ validator recv_packet(
 ) {
   mint(
     channel_token: AuthToken,
-    _recv_packet_policy_id: PolicyId,
+    recv_packet_policy_id: PolicyId,
     transaction: Transaction,
   ) {
     let Transaction {
       inputs,
+      mint,
       outputs,
       redeemers,
       reference_inputs,
       validity_range,
       ..
     } = transaction
+
+    expect
+      validator_utils.require_exact_marker_mint(
+        mint,
+        recv_packet_policy_id,
+        "",
+        1,
+      )
 
     let (datum, channel_redeemer, spent_output) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)

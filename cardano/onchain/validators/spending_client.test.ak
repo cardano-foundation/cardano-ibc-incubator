@@ -130,7 +130,18 @@ fn host_state_update_client_redeemers(
   [Pair(Spend(host_state_input.output_reference), redeemer)]
 }
 
-test update_client_misbehaviour_conflict_header() {
+fn host_state_update_connection_redeemers(
+  host_state_input: Input,
+) -> Pairs<ScriptPurpose, Redeemer> {
+  let redeemer: Redeemer =
+    host_state_redeemer.UpdateConnection { connection_siblings: [] }
+
+  [Pair(Spend(host_state_input.output_reference), redeemer)]
+}
+
+fn check_update_client_misbehaviour_conflict_header(
+  host_state_redeemers: Pairs<ScriptPurpose, Redeemer>,
+) {
   let mock = setup()
 
   let signed_header =
@@ -362,7 +373,7 @@ test update_client_misbehaviour_conflict_header() {
       inputs,
       outputs,
       validity_range,
-      redeemers: host_state_update_client_redeemers(mock.host_state_input),
+      redeemers: host_state_redeemers,
     }
 
   spending_client.spend_client.spend(
@@ -371,6 +382,22 @@ test update_client_misbehaviour_conflict_header() {
     redeemer,
     mock.output_reference,
     transaction,
+  )
+}
+
+test update_client_misbehaviour_conflict_header() {
+  let mock = setup()
+
+  check_update_client_misbehaviour_conflict_header(
+    host_state_update_client_redeemers(mock.host_state_input),
+  )
+}
+
+test update_client_rejects_wrong_host_state_redeemer() fail {
+  let mock = setup()
+
+  check_update_client_misbehaviour_conflict_header(
+    host_state_update_connection_redeemers(mock.host_state_input),
   )
 }
 

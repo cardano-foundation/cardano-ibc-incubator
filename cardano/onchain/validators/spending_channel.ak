@@ -26,7 +26,7 @@ validator spend_channel(
     spent_output_ref: OutputReference,
     transaction: Transaction,
   ) {
-    let Transaction { inputs, redeemers, outputs, .. } = transaction
+    let Transaction { inputs, mint, redeemers, outputs, .. } = transaction
 
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     expect Some(datum) = optional_datum
@@ -47,6 +47,13 @@ validator spend_channel(
           pairs.get_first(redeemers, Mint(chan_open_ack_policy_id))
 
         expect redeemer: AuthToken = redeemer
+        expect
+          validator_utils.require_exact_marker_mint(
+            mint,
+            chan_open_ack_policy_id,
+            "",
+            1,
+          )
 
         expect _ = validate_output_datum(spent_output, outputs, datum.token)
 
@@ -68,6 +75,13 @@ validator spend_channel(
           pairs.get_first(redeemers, Mint(chan_open_confirm_policy_id))
 
         expect redeemer: AuthToken = redeemer
+        expect
+          validator_utils.require_exact_marker_mint(
+            mint,
+            chan_open_confirm_policy_id,
+            "",
+            1,
+          )
 
         expect _ = validate_output_datum(spent_output, outputs, datum.token)
 
@@ -88,11 +102,16 @@ validator spend_channel(
           pairs.get_first(redeemers, Mint(chan_close_init_policy_id))
 
         expect redeemer: AuthToken = redeemer
-        and {
-          // Closing this channel removes this channel token; other channel outputs may still share the address.
-          validator_utils.no_output_contains_auth_token(outputs, datum.token),
-          redeemer == datum.token,
-        }
+        expect
+          validator_utils.require_exact_marker_mint(
+            mint,
+            chan_close_init_policy_id,
+            "",
+            1,
+          )
+        // Close-init keeps the channel thread token on the closed channel datum.
+        expect _ = validate_output_datum(spent_output, outputs, datum.token)
+        redeemer == datum.token
       }
       ChanCloseConfirm { .. } -> {
         // Channel close changes use the channel-root HostState branch.
@@ -109,6 +128,13 @@ validator spend_channel(
           pairs.get_first(redeemers, Mint(chan_close_confirm_policy_id))
 
         expect redeemer: AuthToken = redeemer
+        expect
+          validator_utils.require_exact_marker_mint(
+            mint,
+            chan_close_confirm_policy_id,
+            "",
+            1,
+          )
 
         redeemer == datum.token
       }
@@ -127,6 +153,13 @@ validator spend_channel(
           pairs.get_first(redeemers, Mint(recv_packet_policy_id))
 
         expect redeemer: AuthToken = redeemer
+        expect
+          validator_utils.require_exact_marker_mint(
+            mint,
+            recv_packet_policy_id,
+            "",
+            1,
+          )
         expect _ = validate_output_datum(spent_output, outputs, datum.token)
         redeemer == datum.token
       }
@@ -145,6 +178,13 @@ validator spend_channel(
           pairs.get_first(redeemers, Mint(send_packet_policy_id))
 
         expect redeemer: AuthToken = redeemer
+        expect
+          validator_utils.require_exact_marker_mint(
+            mint,
+            send_packet_policy_id,
+            "",
+            1,
+          )
         expect _ = validate_output_datum(spent_output, outputs, datum.token)
         redeemer == datum.token
       }
@@ -163,6 +203,13 @@ validator spend_channel(
           pairs.get_first(redeemers, Mint(timeout_packet_policy_id))
 
         expect redeemer: AuthToken = redeemer
+        expect
+          validator_utils.require_exact_marker_mint(
+            mint,
+            timeout_packet_policy_id,
+            "",
+            1,
+          )
         expect _ = validate_output_datum(spent_output, outputs, datum.token)
         redeemer == datum.token
       }
@@ -181,6 +228,13 @@ validator spend_channel(
           pairs.get_first(redeemers, Mint(acknowledge_packet_policy_id))
 
         expect redeemer: AuthToken = redeemer
+        expect
+          validator_utils.require_exact_marker_mint(
+            mint,
+            acknowledge_packet_policy_id,
+            "",
+            1,
+          )
         expect _ = validate_output_datum(spent_output, outputs, datum.token)
         redeemer == datum.token
       }

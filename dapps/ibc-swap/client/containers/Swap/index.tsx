@@ -326,7 +326,7 @@ const SwapContainer = () => {
               <Box display="flex" justifyContent="space-between">
                 <Heading className="title">Swap Via Local Osmosis</Heading>
                 <Text color={COLOR.neutral_3} mt="8px" mb="12px">
-                  This demo routes Cardano assets through Entrypoint, executes
+                  This demo routes Cardano assets through Cardano Entrypoint, executes
                   the swap on Local Osmosis, and returns the result to Cardano.
                 </Text>
                 <SettingSlippage />

@@ -5,20 +5,24 @@ import UnknownTokenIcon from '@src/assets/images/unknown-token.png';
 
 export const CARDANO_MAINNET_MAGIC = '764824073';
 
-const ENTRYPOINT_CHAIN_ID = 'entrypoint';
+const CARDANO_ENTRYPOINT_CHAIN_ID = 'cardano-entrypoint';
 
 const getEntrypointRpcEndpoint = () =>
-  process.env.REACT_APP_ENTRYPOINT_RPC_ENDPOINT || '';
+  process.env.REACT_APP_CARDANO_ENTRYPOINT_RPC_ENDPOINT ||
+  process.env.REACT_APP_ENTRYPOINT_RPC_ENDPOINT ||
+  '';
 
 const getEntrypointRestEndpoint = () =>
-  process.env.REACT_APP_ENTRYPOINT_REST_ENDPOINT || '';
+  process.env.REACT_APP_CARDANO_ENTRYPOINT_REST_ENDPOINT ||
+  process.env.REACT_APP_ENTRYPOINT_REST_ENDPOINT ||
+  '';
 const entrypointChainConfig: Chain = {
-  chain_name: ENTRYPOINT_CHAIN_ID,
+  chain_name: CARDANO_ENTRYPOINT_CHAIN_ID,
   chain_type: 'cosmos',
   status: 'active',
   network_type: 'testnet',
-  pretty_name: 'Entrypoint chain Localnet',
-  chain_id: ENTRYPOINT_CHAIN_ID,
+  pretty_name: 'Cardano Entrypoint Localnet',
+  chain_id: CARDANO_ENTRYPOINT_CHAIN_ID,
   bech32_prefix: 'cosmos',
   slip44: 118,
   fees: {
@@ -174,10 +178,10 @@ type ChainAssetListLike = {
 };
 
 const entrypointChainAssetList: AssetList = {
-  chain_name: ENTRYPOINT_CHAIN_ID,
+  chain_name: CARDANO_ENTRYPOINT_CHAIN_ID,
   assets: [
     {
-      description: 'Registered denom token for entrypoint chain testing',
+      description: 'Registered denom token for cardano-entrypoint chain testing',
       denom_units: [
         {
           denom: 'token',
@@ -191,7 +195,7 @@ const entrypointChainAssetList: AssetList = {
       symbol: 'token',
     },
     {
-      description: 'Registered denom token for entrypoint chain testing',
+      description: 'Registered denom token for cardano-entrypoint chain testing',
       denom_units: [
         {
           denom: 'stake',

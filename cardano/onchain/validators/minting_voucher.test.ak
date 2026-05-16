@@ -435,6 +435,159 @@ test test_mint_voucher() {
   )
 }
 
+test test_mint_voucher_fails_with_wrong_mint_quantity() fail {
+  let mock_data = prepare_mock_data()
+
+  let packet_source_port = "transfer"
+  let packet_source_channel = "channel-1"
+  let packet_dest_port = "port-99"
+  let packet_dest_channel = "channel-99"
+  let transfer_amount = 100
+  let wrong_amount = transfer_amount - 1
+  let receiver =
+    #"3532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232"
+
+  let ftpd =
+    FungibleTokenPacketData {
+      denom: "ibc/usdt",
+      amount: string.from_int(transfer_amount) |> string.to_bytearray(),
+      sender: "cosmos sender address",
+      receiver,
+      memo: "",
+    }
+  let mint_voucher_redeemer =
+    MintVoucher {
+      packet_source_port,
+      packet_source_channel,
+      packet_dest_port,
+      packet_dest_channel,
+      data: ftpd,
+    }
+  let spend_module_redeemer =
+    Callback(
+      OnRecvPacket {
+        channel_id: packet_dest_channel,
+        acknowledgement: acknowledgement.new_result_acknowledgement(#[1]),
+        data: TransferModuleData(ftpd),
+      },
+    )
+  let purpose = Mint(mock_data.voucher_minting_policy_id)
+
+  let source_prefix =
+    transfer_coin.get_denom_prefix(packet_dest_port, packet_dest_channel)
+  let prefixed_denom = bytearray.concat(source_prefix, ftpd.denom)
+  let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(prefixed_denom)
+  let token_name =
+    voucher_asset_name.voucher_user_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+  let reference_token_name =
+    voucher_asset_name.voucher_reference_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+  let bucket_index = bucket_index_for_hash(voucher_denom_hash)
+  let active_shard_name = "active-shard-0a"
+  let directory_input =
+    make_directory_input(
+      mock_data.directory_auth_token,
+      bucket_index,
+      active_shard_name,
+    )
+  let active_shard_input =
+    make_shard_spend_input(
+      mock_data.directory_auth_token.policy_id,
+      active_shard_name,
+      bucket_index,
+    )
+  let channel_input =
+    make_channel_input(
+      mock_data.channel_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
+      packet_dest_channel,
+    )
+  let channel_redeemer =
+    RecvPacket {
+      packet: make_packet(
+        packet_source_port,
+        packet_source_channel,
+        packet_dest_port,
+        packet_dest_channel,
+        fungible_token_packet_data.get_bytes(ftpd),
+      ),
+      proof_commitment: mock_proof(),
+      proof_height: Height { revision_number: 1, revision_height: 1 },
+    }
+  let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
+  let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
+  let spend_channel_redeemer_in_data: Redeemer = channel_redeemer
+  let trace_registry_redeemer_in_data: Redeemer =
+    InsertTrace { voucher_hash: voucher_denom_hash, full_denom: prefixed_denom }
+
+  let mint =
+    from_asset(mock_data.voucher_minting_policy_id, token_name, wrong_amount)
+      |> assets.add(
+          mock_data.voucher_minting_policy_id,
+          reference_token_name,
+          1,
+        )
+
+  expect Some(receiver_public_key_hash) =
+    string_utils.hex_string_to_bytes(receiver)
+  let voucher_output =
+    Output {
+      address: from_verification_key(receiver_public_key_hash),
+      value: from_asset(
+        mock_data.voucher_minting_policy_id,
+        token_name,
+        wrong_amount,
+      ),
+      datum: NoDatum,
+      reference_script: None,
+    }
+  let metadata_output =
+    make_metadata_output(
+      mock_data.voucher_metadata_script_hash,
+      prefixed_denom,
+      mock_data.voucher_minting_policy_id,
+      token_name,
+      reference_token_name,
+    )
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock_data.module_input, channel_input, active_shard_input],
+      reference_inputs: [directory_input],
+      outputs: [voucher_output, metadata_output],
+      redeemers: [
+        Pair(purpose, mint_voucher_redeemer_in_data),
+        Pair(
+          Spend(mock_data.module_input.output_reference),
+          spend_module_redeemer_in_data,
+        ),
+        Pair(
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer_in_data,
+        ),
+        Pair(
+          Spend(active_shard_input.output_reference),
+          trace_registry_redeemer_in_data,
+        ),
+      ],
+      mint,
+    }
+
+  minting_voucher.mint_voucher.mint(
+    mock_data.module_token,
+    mock_data.directory_auth_token,
+    mock_data.voucher_metadata_script_hash,
+    mock_data.channel_minting_policy_id,
+    mock_data.host_state_nft_policy_id,
+    mint_voucher_redeemer,
+    mock_data.voucher_minting_policy_id,
+    transaction,
+  )
+}
+
 test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
   let mock_data = prepare_mock_data()
 
@@ -798,6 +951,92 @@ test test_burn_voucher() {
   )
 }
 
+test test_burn_voucher_fails_with_wrong_burn_quantity() fail {
+  let mock_data = prepare_mock_data()
+
+  let packet_source_port = "port-99"
+  let packet_source_channel = "channel-99"
+  let transfer_amount = 100
+
+  let source_prefix =
+    transfer_coin.get_denom_prefix(packet_source_port, packet_source_channel)
+  let prefixed_denom = bytearray.concat(source_prefix, "ibc/usdt")
+
+  let packet_data =
+    FungibleTokenPacketData {
+      denom: prefixed_denom,
+      amount: string.from_int(transfer_amount) |> string.to_bytearray(),
+      sender: "cardano sender verification key",
+      receiver: "cosmos address",
+      memo: "",
+    }
+
+  let mint_voucher_redeemer =
+    BurnVoucher { packet_source_port, packet_source_channel, data: packet_data }
+  let spend_module_redeemer =
+    Operator(
+      TransferModuleOperator(
+        Transfer { channel_id: packet_source_channel, data: packet_data },
+      ),
+    )
+  let channel_input =
+    make_channel_input(
+      mock_data.channel_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
+      packet_source_channel,
+    )
+  let channel_redeemer =
+    SendPacket {
+      packet: make_packet(
+        packet_source_port,
+        packet_source_channel,
+        "transfer",
+        "channel-1",
+        fungible_token_packet_data.get_bytes(packet_data),
+      ),
+    }
+  let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
+  let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
+  let spend_channel_redeemer_in_data: Redeemer = channel_redeemer
+  let token_name = voucher_asset_name.voucher_user_token_name(packet_data.denom)
+
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock_data.module_input, channel_input],
+      redeemers: [
+        Pair(
+          Mint(mock_data.voucher_minting_policy_id),
+          mint_voucher_redeemer_in_data,
+        ),
+        Pair(
+          Spend(mock_data.module_input.output_reference),
+          spend_module_redeemer_in_data,
+        ),
+        Pair(
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer_in_data,
+        ),
+      ],
+      mint: from_asset(
+        mock_data.voucher_minting_policy_id,
+        token_name,
+        0 - transfer_amount + 1,
+      ),
+    }
+
+  minting_voucher.mint_voucher.mint(
+    mock_data.module_token,
+    mock_data.directory_auth_token,
+    mock_data.voucher_metadata_script_hash,
+    mock_data.channel_minting_policy_id,
+    mock_data.host_state_nft_policy_id,
+    mint_voucher_redeemer,
+    mock_data.voucher_minting_policy_id,
+    transaction,
+  )
+}
+
 test test_refund_voucher() {
   let mock_data = prepare_mock_data()
 
@@ -912,6 +1151,138 @@ test test_refund_voucher() {
         ),
       ],
       mint,
+    }
+
+  minting_voucher.mint_voucher.mint(
+    mock_data.module_token,
+    mock_data.directory_auth_token,
+    mock_data.voucher_metadata_script_hash,
+    mock_data.channel_minting_policy_id,
+    mock_data.host_state_nft_policy_id,
+    mint_voucher_redeemer,
+    mock_data.voucher_minting_policy_id,
+    transaction,
+  )
+}
+
+test test_refund_voucher_fails_with_wrong_mint_quantity() fail {
+  let mock_data = prepare_mock_data()
+
+  let packet_source_port = "port-99"
+  let packet_source_channel = "channel-99"
+  let transfer_amount = 100
+
+  let source_prefix =
+    transfer_coin.get_denom_prefix(packet_source_port, packet_source_channel)
+  let prefixed_denom = bytearray.concat(source_prefix, "ibc/usdt")
+
+  let sender =
+    #"3532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232"
+
+  let ftpd =
+    FungibleTokenPacketData {
+      denom: prefixed_denom,
+      amount: string.from_int(transfer_amount) |> string.to_bytearray(),
+      sender,
+      receiver: "cosmos address",
+      memo: "",
+    }
+
+  let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(ftpd.denom)
+  let token_name =
+    voucher_asset_name.voucher_user_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+  let bucket_index = bucket_index_for_hash(voucher_denom_hash)
+  let active_shard_name = "active-shard-0f"
+  let directory_input =
+    make_directory_input(
+      mock_data.directory_auth_token,
+      bucket_index,
+      active_shard_name,
+    )
+  let shard_reference_input =
+    make_shard_reference_input(
+      mock_data.directory_auth_token.policy_id,
+      active_shard_name,
+      bucket_index,
+      voucher_denom_hash,
+      ftpd.denom,
+    )
+
+  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+
+  let wrong_mint =
+    from_asset(
+      mock_data.voucher_minting_policy_id,
+      token_name,
+      transfer_amount - 1,
+    )
+  let mint_voucher_redeemer =
+    RefundVoucher {
+      packet_source_port,
+      packet_source_channel,
+      data: ftpd,
+      acknowledgement: None,
+    }
+  let spend_module_redeemer =
+    Callback(
+      OnTimeoutPacket {
+        channel_id: packet_source_channel,
+        data: TransferModuleData(ftpd),
+      },
+    )
+  let channel_input =
+    make_channel_input(
+      mock_data.channel_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
+      packet_source_channel,
+    )
+  let channel_redeemer =
+    TimeoutPacket {
+      packet: make_packet(
+        packet_source_port,
+        packet_source_channel,
+        "transfer",
+        "channel-1",
+        fungible_token_packet_data.get_bytes(ftpd),
+      ),
+      proof_unreceived: mock_proof(),
+      proof_height: Height { revision_number: 1, revision_height: 1 },
+      next_sequence_recv: 1,
+    }
+  let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
+  let spend_module_redeemer_in_data: Redeemer = spend_module_redeemer
+  let spend_channel_redeemer_in_data: Redeemer = channel_redeemer
+
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock_data.module_input, channel_input],
+      reference_inputs: [directory_input, shard_reference_input],
+      outputs: [
+        Output {
+          address: from_verification_key(sender_public_key_hash),
+          value: wrong_mint,
+          datum: NoDatum,
+          reference_script: None,
+        },
+      ],
+      redeemers: [
+        Pair(
+          Mint(mock_data.voucher_minting_policy_id),
+          mint_voucher_redeemer_in_data,
+        ),
+        Pair(
+          Spend(mock_data.module_input.output_reference),
+          spend_module_redeemer_in_data,
+        ),
+        Pair(
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer_in_data,
+        ),
+      ],
+      mint: wrong_mint,
     }
 
   minting_voucher.mint_voucher.mint(

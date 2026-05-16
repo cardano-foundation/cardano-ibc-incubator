@@ -1,3 +1,4 @@
+use cardano/assets.{from_asset}
 use cardano/transaction.{
   Input, Mint, Redeemer, ScriptPurpose, Spend, Transaction,
 }
@@ -294,6 +295,7 @@ test succeed_chan_open_ack() {
       outputs,
       redeemers,
       validity_range,
+      mint: from_asset(mock_data.chan_open_ack_policy_id, "", 1),
     }
 
   chan_open_ack.chan_open_ack.mint(
