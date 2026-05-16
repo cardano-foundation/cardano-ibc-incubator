@@ -4,7 +4,7 @@ package ibc.lightclients.stability.v1;
 import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 
-option go_package = "cardano-entrypoint/x/clients/stability";
+option go_package = "github.com/cardano-foundation/cardano-ibc-incubator/proto-types/ibc/lightclients/stability/v1";
 
 message Height {
   option (gogoproto.goproto_getters) = false;

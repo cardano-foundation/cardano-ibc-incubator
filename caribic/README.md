@@ -36,7 +36,6 @@ Examples:
 caribic start
 caribic start --clean
 caribic start bridge
-caribic start entrypoint --clean
 caribic chain start --chain osmosis
 caribic chain start --chain injective --network local
 caribic chain start --chain injective --network testnet
@@ -59,10 +58,6 @@ Injective startup note:
 - `caribic chain start --chain injective --network mainnet` is intentionally not implemented yet.
 - If `injectived` is missing, caribic prompts to install it from source (`InjectiveFoundation/injective-core`) and runs `make install`.
 
-Entrypoint startup note:
-- `caribic start entrypoint` sets `IGNITE_SKIP_PROTO=1` by default in the container startup path to avoid Ignite regenerating OpenAPI/proto artifacts on every boot.
-- If you intentionally need Ignite proto regeneration, run with `IGNITE_SKIP_PROTO=0 caribic start entrypoint --clean`.
-
 Hermes config note:
 - Hermes reads `~/.hermes/config.toml` when the process starts. Editing that file while Hermes is already running does not apply live.
 - If you change Hermes config manually, restart Hermes (`caribic stop relayer` then `caribic start relayer`).
@@ -72,7 +67,7 @@ Hermes config note:
 
 Stops services. With no target, it behaves like `all`.
 
-- **Targets**: `all`, `network`, `bridge`, `entrypoint`, `demo`, `gateway`, `relayer`, `mithril`
+- **Targets**: `all`, `network`, `bridge`, `demo`, `gateway`, `relayer`, `mithril`
 
 Examples:
 
@@ -117,9 +112,9 @@ Convenience wrapper around Hermes keyring operations.
 
 ```bash
 caribic keys list
-caribic keys add --chain entrypoint --mnemonic-file ./my-mnemonic.txt --overwrite
+caribic keys add --chain localosmosis --mnemonic-file ./my-mnemonic.txt --overwrite
 caribic keys add --chain injective-888 --mnemonic-file ./injective.txt --key-name injective-888-relayer --hd-path "m/44'/60'/0'/0/0" --overwrite
-caribic keys delete --chain entrypoint --key-name relayer
+caribic keys delete --chain localosmosis --key-name relayer
 ```
 
 ### `caribic create-client`, `caribic create-connection`, `caribic create-channel`
@@ -127,16 +122,15 @@ caribic keys delete --chain entrypoint --key-name relayer
 Thin wrappers that run the corresponding Hermes IBC actions using the local Hermes binary/config.
 
 ```bash
-caribic create-client --host-chain cardano-devnet --reference-chain entrypoint
-caribic create-connection --a-chain cardano-devnet --b-chain entrypoint
-caribic create-channel --a-chain cardano-devnet --b-chain entrypoint --a-port transfer --b-port transfer
+caribic create-client --host-chain cardano-devnet --reference-chain localosmosis
+caribic create-connection --a-chain cardano-devnet --b-chain localosmosis
+caribic create-channel --a-chain cardano-devnet --b-chain localosmosis --a-port transfer --b-port transfer
 ```
 
 ### `caribic demo <message-exchange|token-swap>`
 
-Starts a demo setup step on top of already running services.
-`caribic demo token-swap` expects the maintained default bridge stack and the selected optional chain to have already been started. It then validates required services, prepares Hermes channels, deploys the cross-chain swap contracts, and executes the swap flow end-to-end.
-`caribic demo message-exchange` now runs directly against the native `cosmos/cardano-entrypoint` chain and uses the built-in datasource at `cosmos/cardano-entrypoint/datasource` (no separate demo chain bootstrap required).
+Direct-route demo automation is disabled until direct Cardano-to-target IBC routes are implemented.
+`caribic demo token-swap` and `caribic demo message-exchange` fail closed instead of routing through an intermediary chain.
 
 The deprecated Mithril readiness settings remain in the config only for historical compatibility and are not part of the maintained startup path.
 If your machine is slower, tune retry windows in `caribic/config/default-config.json` (or whichever file you pass via `--config`).

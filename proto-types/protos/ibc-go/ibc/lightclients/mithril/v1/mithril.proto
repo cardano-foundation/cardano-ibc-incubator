@@ -4,7 +4,7 @@ package ibc.lightclients.mithril.v1;
 import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 
-option go_package = "cardano-entrypoint/x/clients/mithril";
+option go_package = "github.com/cardano-foundation/cardano-ibc-incubator/proto-types/ibc/lightclients/mithril/v1";
 
 // Currently, the height of the certificate corresponds to the immutable file number in Cardano node
 // However, it is possible to have two certificates on the same immutable file.
