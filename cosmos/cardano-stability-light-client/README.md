@@ -63,5 +63,5 @@ cosmos/cardano-stability-light-client/v0.1.0
 Consumers can then require it with:
 
 ```sh
-go get github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-stability-light-client@cosmos/cardano-stability-light-client/v0.1.0
+go get github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-stability-light-client@v0.1.0
 ```
