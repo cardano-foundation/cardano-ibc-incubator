@@ -15,7 +15,6 @@ pub(super) const LOCAL_HOME_DIR: &str = ".injectived-local";
 pub(super) const LOCAL_VALIDATOR_KEY: &str = "validator";
 pub(super) const LOCAL_VALIDATOR_MNEMONIC_ACCOUNT: &str = "injective-local-validator";
 pub(super) const LOCAL_RELAYER_MNEMONIC_ACCOUNT: &str = "injective-local-relayer";
-pub(super) const ENTRYPOINT_RELAYER_MNEMONIC_ACCOUNT: &str = "entrypoint-relayer";
 pub(super) const LOCAL_GENESIS_ACCOUNT_AMOUNT: &str =
     "100000000000000000000stake,100000000000000000000inj";
 pub(super) const LOCAL_GENTX_AMOUNT: &str = "50000000000000000000stake";
