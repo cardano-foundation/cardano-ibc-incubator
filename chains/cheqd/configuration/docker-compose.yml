@@ -5,7 +5,7 @@ services:
     image: ${CHEQD_LOCAL_IMAGE:-ghcr.io/cheqd/cheqd-node:4.1.6}
     command: ["cheqd-noded", "start", "--home", "/home/cheqd/.cheqdnode"]
     ports:
-      # Keep cheqd off the default Cosmos ports because Entrypoint already owns 26657/1317/9090.
+      # Keep cheqd off the default Cosmos ports used by other local chains.
       - "27256:26656"
       - "27257:26657"
       - "1827:1317"

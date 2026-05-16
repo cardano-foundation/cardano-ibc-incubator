@@ -26,35 +26,6 @@ host = '127.0.0.1'
 port = 3009
 
 [[chains]]
-id = 'cardano-entrypoint'
-type = 'CosmosSdk'
-rpc_addr = 'http://127.0.0.1:26657'
-grpc_addr = 'http://127.0.0.1:9090'
-event_source = { mode = 'push', url = 'ws://127.0.0.1:26657/websocket', batch_delay = '200ms' }
-rpc_timeout = '15s'
-trusted_node = true
-account_prefix = 'cosmos'
-key_name = 'relayer'
-store_prefix = 'ibc'
-gas_price = { price = 0.001, denom = 'stake' }
-gas_multiplier = 1.2
-default_gas = 1000000
-max_gas = 10000000
-max_msg_num = 30
-max_tx_size = 2097152
-clock_drift = '5s'
-max_block_time = '30s'
-trusting_period = '14days'
-trust_threshold = { numerator = '2', denominator = '3' }
-
-# [chains.packet_filter]
-# policy = 'allow'
-# list = [
-#   ['ica*', '*'],
-#   ['transfer', 'channel-0'],
-# ]
-
-[[chains]]
 id = 'localosmosis'
 type = 'CosmosSdk'
 rpc_addr = 'http://127.0.0.1:26658'
