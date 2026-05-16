@@ -1,51 +1,12 @@
-# Cardano IBC Packet-Forwarding Chain
+# Retained Historical Chain Source
 
-This Cosmos SDK chain is used as a dedicated packet-forwarding chain between Cardano and other Cosmos chains. In this repo it lives in `cosmos/cardano-entrypoint/`, and the binary is named `cardano-entrypointd`.
+This Cosmos SDK chain source is retained for historical reference and for any future extraction of useful modules or types.
 
-## Get started
+It is not part of the maintained runtime path:
 
-```sh
-ignite chain serve -y
-```
+- It is not started by `caribic`.
+- It is not a managed service.
+- Product demos and route setup must not route through it.
+- Production integrations should use direct Cardano-to-target-chain clients, connections, and channels.
 
-`serve` command installs dependencies, builds, initializes, and starts your blockchain in development.
-
-### Configure
-
-Your blockchain in development can be configured with `config.yml`.
-
-### IBC client type
-
-This chain tracks Cardano via a custom IBC light client (client type `08-cardano`) using protobuf types under `ibc.lightclients.mithril.v1` (see `cosmos/cardano-entrypoint/proto/ibc/lightclients/mithril/v1/mithril.proto`).
-
-In the repo’s standard developer workflow, Hermes drives client creation/updates and handshake/packet relaying end-to-end via the Gateway and Cardano devnet. For that reason, we do not keep static JSON fixtures for Cardano client creation in this folder, since the values are deployment-specific (for example, the HostState NFT identifiers and the certified HostState transaction evidence).
-
-## Debug with vs code
-
-<https://docs.ignite.com/guide/debug#visual-studio-code>
-
-```sh
-ignite chain debug --server --server-address 127.0.0.1:30500
-```
-
-## Regis a validator
-
-```sh
-This script will connect to your current docker and regis a new validator
-
-Run this to check we only have 1 validator: curl -X GET "http://localhost:1317/cosmos/base/tendermint/v1beta1/validatorsets/latest" -H  "accept: application/json"
-
-Run this to regis new validator: cd scripts/ && ./regis-spo.sh
-
-Run this to check we now have 2 validators: curl -X GET "http://localhost:1317/cosmos/base/tendermint/v1beta1/validatorsets/latest" -H  "accept: application/json"
-
-```
-
-## DeRegis a validator
-
-```sh
-Stop the running script above, then wait for about 100 blocks (~2 mins), then check we only have 1 validator: 
-
-curl -X GET "http://localhost:1317/cosmos/base/tendermint/v1beta1/validatorsets/latest" -H  "accept: application/json"
-
-```
+If a future change revives this code, it needs a fresh security and operations decision that treats it as a real production blockchain, not as a dummy or harmless local component.

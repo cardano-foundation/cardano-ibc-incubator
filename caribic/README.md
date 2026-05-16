@@ -191,21 +191,7 @@ to make sure all the services are healthy, then
 
 ### What it tests
 
-The test suite is ordered and will **skip** later tests if prerequisites are not met (for example if no channel exists, or if a known limitation is hit).
-
-- **Test 1**: validates required services are running (Cardano, Gateway container, Cosmos entrypoint RPC, and maintained bridge dependencies)
-- **Test 2**: runs the Hermes-native `health-check` to confirm Hermes can connect to the Gateway gRPC endpoint and query latest height
-- **Test 3**: reads the handler UTXO and validates an `ibc_state_root` exists and looks sane
-- **Test 4**: `createClient` via Hermes -> Gateway -> Cardano, then checks the `ibc_state_root` changes
-- **Test 5**: queries client state back via Hermes, may skip if the Gateway requires an explicit height parameter
-- **Test 6**: updates the client with new Tendermint headers, may skip if there are no new blocks or if height handling is required
-- **Test 7**: creates an IBC connection, may skip if the Cosmos-side Cardano light client pieces are not available yet
-- **Test 8**: creates an ICS-20 transfer channel, depends on Test 7 establishing a connection
-- **Test 9**: queries Cardano channel proofs at exact historical heights through Gateway and Hermes before token transfers run
-- **Test 10**: ICS-20 transfer from the entrypoint chain to Cardano, relays packets, verifies voucher minting and `ibc_state_root` changes, and captures voucher identity for later checks
-- **Test 11**: round-trip of that voucher back to the entrypoint chain, verifies voucher burn and denom-trace reverse lookup still succeeds
-- **Test 12**: ICS-20 transfer of Cardano native `lovelace` to the entrypoint chain (Cardano escrows, Cosmos mints voucher), verifies denom-trace reverse lookup
-- **Test 13**: round-trip of that voucher back to Cardano (burn + unescrow), verifies `ibc_state_root` changes and balance recovery within a fee budget
+The previous route-chain integration tests have been retired. `caribic test` now reports that direct-route integration coverage must be rebuilt once Cardano-to-target clients, connections, and channels exist.
 
 ### Troubleshooting tips
 
