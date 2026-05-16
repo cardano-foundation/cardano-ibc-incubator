@@ -138,7 +138,7 @@ Additional architecture diagrams:
 
 - Gateway escrow flow: `cardano/gateway/README.md#sendpacket-escrow-flow`
 - Denom trace lifecycle: `docs/denom-trace-mapping.md`
-- Probabilistic-scored light client: `docs/probabilistic-light-client.md`
+- Probabilistic light client: `docs/probabilistic-light-client.md`
 - Deprecated Mithril proof flow: `docs/mithril-light-client.md#mithril-proof-flow-for-relaying`
 - Diagram index: `docs/architecture-overview.md`
 
@@ -251,7 +251,7 @@ caribic start bridge
 ### Testing against Cosmos chains
 
 > [!IMPORTANT]
-> Chains like Cheqd and Osmosis must explicitly support the Cardano light client and allow it via `ibc.core.client.v1.Params.allowed_clients` (e.g., `08-cardano`). If the client type is not registered/allowed on the Cosmos chain, creating the counterparty client will fail and IBC connection/channel handshakes cannot proceed. Also ensure the relayer key on those chains is funded; Cosmos SDK accounts can return `NotFound` until they receive tokens.
+> Cosmos chains must explicitly support the Cardano light client and allow it via `ibc.core.client.v1.Params.allowed_clients` (e.g., `08-cardano-probabilistic`). If the client type is not registered/allowed on the Cosmos chain, creating the counterparty client will fail and IBC connection/channel handshakes cannot proceed. Also ensure the relayer key on those chains is funded; Cosmos SDK accounts can return `NotFound` until they receive tokens.
 
 ### Stopping the services
 

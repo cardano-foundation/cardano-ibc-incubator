@@ -900,7 +900,7 @@ test recv_packet_non_mock_data() {
       ],
       state: Open,
       counterparty: Counterparty {
-        client_id: "08-cardano-0",
+        client_id: "08-cardano-probabilistic-0",
         connection_id: "connection-0",
         prefix: MerklePrefix { key_prefix: "ibc" },
       },

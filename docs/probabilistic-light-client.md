@@ -18,7 +18,7 @@ i.e, If you insist on fast acceptance and do not want to implement native Cardan
 2. trust your own small committee / pinned operators,
 3. or trust a single Gateway / operator.
 
-The "probabilistic-weighted" light client is implemented as client type `08-cardano-probabilistic`. This is as an alternative to the Mithril light client. This model is not a fast finality model or anything of that nature, rather it tries to heuristically attain faster IBC settlement by making certain risk tradeoffs via a heuristic notion of Cardano settlement.The exact parameters and thereby strength of the heuristic are tunable, and some are epoch context dependent.
+The probabilistic light client is implemented as client type `08-cardano-probabilistic`. This is an alternative to the deprecated Mithril light client, whose client type is `08-cardano-mithril`. This model is not a fast finality model or anything of that nature, rather it tries to heuristically attain faster IBC settlement by making certain risk tradeoffs via a heuristic notion of Cardano settlement. The exact parameters and thereby strength of the heuristic are tunable, and some are epoch context dependent.
 
 The Mithril light client was effectively non-viable from a UX perspective. Simple IBC swaps/transfers would currently take hundreds of Cardano blocks under mainnet conditions.
 
@@ -54,7 +54,7 @@ But the security model is still probabilistic and not based around finality. If 
 
 ## Move from Mithril
 
-The Mithril client is currently the main Cardano IBC client in this repo because Mithril provides a portable cryptographic artifact that the counterparty chain can verify on-chain, and it's also an inherently quorum attested mechanism which is useful for our purposes.
+The Mithril client was previously the main Cardano IBC client in this repo because Mithril provides a portable cryptographic artifact that the counterparty chain can verify on-chain, and it's also an inherently quorum attested mechanism which is useful for our purposes.
 
 The downside is latency, Mithril certification lags the Cardano tip and is produced at a cadence that is acceptable for checkpointing and fast bootstrap, but bad for IBC UX.
 

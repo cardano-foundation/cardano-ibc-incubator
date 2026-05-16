@@ -7,7 +7,7 @@ export function parseClientSequence(clientId: string): string {
   //
   // Examples:
   // - `07-tendermint-12`
-  // - `08-cardano-5`
+  // - `08-cardano-probabilistic-5`
   //
   // Historically this code used a Cardano-specific `ibc_client-{sequence}` format.
   // We now accept the canonical IBC client id format used by Hermes and ibc-go.
