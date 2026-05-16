@@ -51,22 +51,6 @@ func cloneEpochContexts(contexts []*EpochContext) []*EpochContext {
 	return cloned
 }
 
-func (cs ClientState) legacyEpochContext() *EpochContext {
-	if len(cs.EpochStakeDistribution) == 0 && len(cs.EpochNonce) == 0 &&
-		cs.SlotsPerKesPeriod == 0 && cs.CurrentEpochStartSlot == 0 && cs.CurrentEpochEndSlotExclusive == 0 {
-		return nil
-	}
-
-	return &EpochContext{
-		Epoch:                 cs.CurrentEpoch,
-		StakeDistribution:     cloneStakeDistributionEntries(cs.EpochStakeDistribution),
-		EpochNonce:            bytes.Clone(cs.EpochNonce),
-		SlotsPerKesPeriod:     cs.SlotsPerKesPeriod,
-		EpochStartSlot:        cs.CurrentEpochStartSlot,
-		EpochEndSlotExclusive: cs.CurrentEpochEndSlotExclusive,
-	}
-}
-
 func cloneStakeDistributionEntries(entries []*StakeDistributionEntry) []*StakeDistributionEntry {
 	cloned := make([]*StakeDistributionEntry, 0, len(entries))
 	for _, entry := range entries {
@@ -155,13 +139,7 @@ func normalizeEpochContexts(contexts []*EpochContext) ([]*EpochContext, error) {
 }
 
 func (cs ClientState) normalizedEpochContexts() ([]*EpochContext, error) {
-	contexts := cloneEpochContexts(cs.EpochContexts)
-	if len(contexts) == 0 {
-		if legacy := cs.legacyEpochContext(); legacy != nil {
-			contexts = append(contexts, legacy)
-		}
-	}
-	return normalizeEpochContexts(contexts)
+	return normalizeEpochContexts(cs.EpochContexts)
 }
 
 func mergeEpochContexts(base []*EpochContext, candidate *EpochContext) ([]*EpochContext, error) {
@@ -200,12 +178,13 @@ func epochContextByEpoch(contexts []*EpochContext, epoch uint64) *EpochContext {
 }
 
 func epochContextForSlot(contexts []*EpochContext, slot uint64) *EpochContext {
+	var match *EpochContext
 	for _, ctx := range contexts {
 		if ctx != nil && slot >= ctx.EpochStartSlot && slot < ctx.EpochEndSlotExclusive {
-			return ctx
+			match = ctx
 		}
 	}
-	return nil
+	return match
 }
 
 func epochContextsEqual(left, right *EpochContext) bool {
@@ -243,7 +222,7 @@ func epochContextsEqual(left, right *EpochContext) bool {
 	return true
 }
 
-func syncLegacyEpochContextFields(cs *ClientState, contexts []*EpochContext, currentEpoch uint64) error {
+func syncCurrentEpochFields(cs *ClientState, contexts []*EpochContext, currentEpoch uint64) error {
 	currentCtx := epochContextByEpoch(contexts, currentEpoch)
 	if currentCtx == nil {
 		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "missing epoch context for current epoch %d", currentEpoch)

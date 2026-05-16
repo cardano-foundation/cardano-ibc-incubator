@@ -59,7 +59,7 @@ func TestZeroCustomFieldsDropsEpochVerificationState(t *testing.T) {
 		makeRecoveryEpochContext(7, 0, 100, 0x07),
 		makeRecoveryEpochContext(8, 100, 200, 0x08),
 	}
-	require.NoError(t, syncLegacyEpochContextFields(clientState, clientState.EpochContexts, 8))
+	require.NoError(t, syncCurrentEpochFields(clientState, clientState.EpochContexts, 8))
 
 	zeroed, ok := clientState.ZeroCustomFields().(*ClientState)
 	require.True(t, ok)
@@ -87,7 +87,7 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 	subject.EpochContexts = []*EpochContext{
 		makeRecoveryEpochContext(7, 0, 100, 0x07),
 	}
-	require.NoError(t, syncLegacyEpochContextFields(subject, subject.EpochContexts, 7))
+	require.NoError(t, syncCurrentEpochFields(subject, subject.EpochContexts, 7))
 	subject.FrozenHeight = NewHeight(0, 5)
 	setClientState(subjectStore, cdc, subject)
 
@@ -100,7 +100,7 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 		makeRecoveryEpochContext(8, 100, 200, 0x08),
 		makeRecoveryEpochContext(9, 200, 300, 0x09),
 	}
-	require.NoError(t, syncLegacyEpochContextFields(substitute, substitute.EpochContexts, 9))
+	require.NoError(t, syncCurrentEpochFields(substitute, substitute.EpochContexts, 9))
 	setClientState(substituteStore, cdc, substitute)
 
 	consensusState := newProbabilisticTestConsensusState("hash-20")
