@@ -10,7 +10,7 @@ class ClientStateTendermintMockBuilder {
   }
   private setDefault(): void {
     this.clientState = {
-      chain_id: 'cardano-entrypoint',
+      chain_id: 'localosmosis',
       trust_level: { numerator: 1n, denominator: 3n },
       trusting_period: { seconds: 86400n, nanos: 0 },
       unbonding_period: { seconds: 1814400n, nanos: 0 },
