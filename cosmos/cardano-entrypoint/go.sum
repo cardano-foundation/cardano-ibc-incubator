@@ -764,8 +764,8 @@ github.com/bytedance/sonic v1.15.1 h1:nJD5PmM0vY7J8CT6MxoqbVAAMhkSmV2HgRAUrrpLoO
 github.com/bytedance/sonic v1.15.1/go.mod h1:mT2NbXunuaEbnZ+mRIX/vYqKISmgEuHFDI4UzmKx2SA=
 github.com/bytedance/sonic/loader v0.5.1 h1:Ygpfa9zwRCCKSlrp5bBP/b/Xzc3VxsAW+5NIYXrOOpI=
 github.com/bytedance/sonic/loader v0.5.1/go.mod h1:AR4NYCk5DdzZizZ5djGqQ92eEhCCcdf5x77udYiSJRo=
-github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-stability-light-client v0.1.0 h1:4uCMpNxSs7jSGvDfqiyqQSzREmXUf/Plb77zCYWx98U=
-github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-stability-light-client v0.1.0/go.mod h1:8c1yGCtk9V0ff27Xi9XuarHUY3B1n75YqYxoBZMw/d4=
+github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client v0.1.0 h1:1TbKM1rT9FgzDOX8HXOPtfAkzEKGLtkgcOLY3SCDGdI=
+github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client v0.1.0/go.mod h1:+BGazKQRpzwhaPt+g3zBL7/xVxca/HXFxzN8Y9gJU/8=
 github.com/casbin/casbin/v2 v2.1.2/go.mod h1:YcPU1XXisHhLzuxH9coDNf2FbKpjGlbCg3n9yuLkIJQ=
 github.com/cenkalti/backoff v2.2.1+incompatible h1:tNowT99t7UNflLxfYYSlKYsBpXdEet03Pg2g16Swow4=
 github.com/cenkalti/backoff v2.2.1+incompatible/go.mod h1:90ReRw6GdpyfrHakVjL/QHaoyV4aDUVVkXQJJJ3NXXM=

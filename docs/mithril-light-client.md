@@ -2,7 +2,7 @@
 ## Mithril Light Client Design
 
 > [!WARNING]
-> Deprecated and disabled: the Mithril light client and local Mithril setup are not maintained and are intentionally disabled for new deployments. This document is retained only as historical design reference. Current trust assumptions and deployment flows use `08-cardano-stability`; see [Stability-Scored Light Client Design](stability-scored-light-client.md).
+> Deprecated and disabled: the Mithril light client and local Mithril setup are not maintained and are intentionally disabled for new deployments. This document is retained only as historical design reference. Current trust assumptions and deployment flows use `08-cardano-probabilistic`; see [Probabilistic-Scored Light Client Design](probabilistic-light-client.md).
 
 Author: Julius Tranquilli,https://github.com/floor-licker
 
@@ -31,7 +31,7 @@ Historically, the local Cardano devnet stack could be started together with a lo
 
 In that setup, Mithril transaction snapshots were periodic checkpoints, not one certificate per Cardano block or slot. In this repository, the Mithril "height" used for IBC verification referred to the snapshot `block_number` (Cardano block height), not the Cardano slot. The latest certified snapshot height could lag behind the Cardano node tip. The Gateway treated the Mithril transaction proof API as "latest snapshot only", so after submitting a HostState update transaction the relayer could need to wait until a newer snapshot included that transaction before Cosmos-side verification could succeed.
 
-The snapshot cadence and stability tradeoffs were controlled by the Mithril config in `chains/mithrils/scripts/docker-compose.yaml`. As a frame of reference, as of March 2026 there was generally a hard Mithril-level constraint on a minimum certificate cadence of 15 blocks, irrespective of configurable values and tip lag.
+The snapshot cadence and probabilistic tradeoffs were controlled by the Mithril config in `chains/mithrils/scripts/docker-compose.yaml`. As a frame of reference, as of March 2026 there was generally a hard Mithril-level constraint on a minimum certificate cadence of 15 blocks, irrespective of configurable values and tip lag.
 
 The key Mithril aggregator configs that affected snapshot frequency and IBC latency were:
 

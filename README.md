@@ -6,7 +6,7 @@
 [![Status: Pre-production](https://img.shields.io/badge/Status-Pre--production-orange.svg)](#status)
 [![Docs: Architecture](https://img.shields.io/badge/Docs-Architecture-6b7280.svg)](#architecture)
 
-This is a work-in-progress implementation of IBC v1 for Cardano. It implements a Cardano-native realization of the IBC protocol semantics which allow trustless interop between Cardano and the Cosmos ecosystem. The bridge implements ICS-02 (clients), ICS-03 (connections), ICS-04 (channels and packets), ICS-20 (fungible token transfer), and the proof/path model of ICS-23 and ICS-24, while adapting Cardano to the IBC client model through the experimental `08-cardano-stability` light client.
+This is a work-in-progress implementation of IBC v1 for Cardano. It implements a Cardano-native realization of the IBC protocol semantics which allow trustless interop between Cardano and the Cosmos ecosystem. The bridge implements ICS-02 (clients), ICS-03 (connections), ICS-04 (channels and packets), ICS-20 (fungible token transfer), and the proof/path model of ICS-23 and ICS-24, while adapting Cardano to the IBC client model through the experimental `08-cardano-probabilistic` light client.
 
 The implementation adheres to the [inter-blockchain communication protocol](https://github.com/cosmos/ibc) standards.
 
@@ -47,7 +47,7 @@ The implementation adheres to the [inter-blockchain communication protocol](http
 
 There are currently protocol-level constraints that prevent IBC-style state proofs of Cardano, for example UTxO inclusion proofs. A valuable conversation on that topic can be found here: [CIP-0165 (Canonical Ledger State)](https://github.com/cardano-foundation/CIPs/pull/1083).
 
-The maintained Cardano-native approach uses a proprietary STT architecture plus the experimental `08-cardano-stability` light client to attain an analogous IBC state machine in Cardano semantics. The STT architecture over the IBC host state keyspace functions as an authenticated mutex for IBC host state mutation, while the stability-scored light client authenticates accepted Cardano history through configured settlement heuristics. This model is documented in [Stability-Scored Light Client Design](docs/stability-scored-light-client.md).
+The maintained Cardano-native approach uses a proprietary STT architecture plus the experimental `08-cardano-probabilistic` light client to attain an analogous IBC state machine in Cardano semantics. The STT architecture over the IBC host state keyspace functions as an authenticated mutex for IBC host state mutation, while the probabilistic-scored light client authenticates accepted Cardano history through configured settlement heuristics. This model is documented in [Probabilistic-Scored Light Client Design](docs/probabilistic-light-client.md).
 
 The older Mithril light client and local Mithril setup are deprecated, disabled, and not maintained. They remain in the repository only for historical design reference and protobuf/type compatibility.
 
@@ -88,7 +88,7 @@ flowchart LR
     NODE["cardano-node"]
     KUPO["Kupo"]
     DBSYNC["db-sync + Postgres"]
-    HISTORY["Yaci / DB History<br/>+ Stability Witnesses"]
+    HISTORY["Yaci / DB History<br/>+ Probabilistic Witnesses"]
   end
 
   subgraph Relay["Relay and Counterparty"]
@@ -138,7 +138,7 @@ Additional architecture diagrams:
 
 - Gateway escrow flow: `cardano/gateway/README.md#sendpacket-escrow-flow`
 - Denom trace lifecycle: `docs/denom-trace-mapping.md`
-- Stability-scored light client: `docs/stability-scored-light-client.md`
+- Probabilistic-scored light client: `docs/probabilistic-light-client.md`
 - Deprecated Mithril proof flow: `docs/mithril-light-client.md#mithril-proof-flow-for-relaying`
 - Diagram index: `docs/architecture-overview.md`
 

@@ -6,5 +6,5 @@ use ./cardano-entrypoint
 
 use (
 	./cardano-entrypoint/datasource
-	./cardano-stability-light-client
+	./cardano-probabilistic-light-client
 )
