@@ -69,6 +69,7 @@ import (
 	_ "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts" // import for side-effects
 	icatypes "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/types"
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	ibcwasmtypes "github.com/cosmos/ibc-go/modules/light-clients/08-wasm/v10/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	"google.golang.org/protobuf/types/known/durationpb"
 	// this line is used by starport scaffolding # stargate/app/moduleImport
@@ -95,6 +96,7 @@ var (
 		ibctransfertypes.ModuleName,
 		icatypes.ModuleName,
 		pfmroutertypes.ModuleName,
+		ibcwasmtypes.ModuleName,
 		feegrant.ModuleName,
 		paramstypes.ModuleName,
 		upgradetypes.ModuleName,
@@ -125,6 +127,7 @@ var (
 		ibctransfertypes.ModuleName,
 		icatypes.ModuleName,
 		pfmroutertypes.ModuleName,
+		ibcwasmtypes.ModuleName,
 		vesseloracletypes.ModuleName,
 		// chain modules
 		// this line is used by starport scaffolding # stargate/app/beginBlockers
@@ -143,6 +146,7 @@ var (
 		ibctransfertypes.ModuleName,
 		icatypes.ModuleName,
 		pfmroutertypes.ModuleName,
+		ibcwasmtypes.ModuleName,
 		vesseloracletypes.ModuleName,
 		// chain modules
 		// this line is used by starport scaffolding # stargate/app/endBlockers
