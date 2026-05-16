@@ -1,6 +1,6 @@
 # Cardano Probabilistic Light Client
 
-This module packages the Cardano probabilistic-scored IBC light client as a standalone Go module.
+This module packages the Cardano probabilistic IBC light client as a standalone Go module.
 
 The client type is:
 

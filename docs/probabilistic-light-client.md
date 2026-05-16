@@ -1,4 +1,4 @@
-## Probabilistic-Scored Light Client Design
+## Probabilistic Light Client Design
 
 Author: Julius Tranquilli, https://github.com/floor-licker
 
@@ -58,7 +58,7 @@ The Mithril client is currently the main Cardano IBC client in this repo because
 
 The downside is latency, Mithril certification lags the Cardano tip and is produced at a cadence that is acceptable for checkpointing and fast bootstrap, but bad for IBC UX.
 
-The probabilistic-scored client explores a different tradeoff:
+The probabilistic client explores a different tradeoff:
 
 - lower latency
 - acceptance based on raw Cardano chain history plus a stake-weighted heuristic

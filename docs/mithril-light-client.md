@@ -2,7 +2,7 @@
 ## Mithril Light Client Design
 
 > [!WARNING]
-> Deprecated and disabled: the Mithril light client and local Mithril setup are not maintained and are intentionally disabled for new deployments. This document is retained only as historical design reference. Current trust assumptions and deployment flows use `08-cardano-probabilistic`; see [Probabilistic-Scored Light Client Design](probabilistic-light-client.md).
+> Deprecated and disabled: the Mithril light client and local Mithril setup are not maintained and are intentionally disabled for new deployments. This document is retained only as historical design reference. Current trust assumptions and deployment flows use `08-cardano-probabilistic`; see [Probabilistic Light Client Design](probabilistic-light-client.md).
 
 Author: Julius Tranquilli,https://github.com/floor-licker
 

@@ -47,7 +47,7 @@ The implementation adheres to the [inter-blockchain communication protocol](http
 
 There are currently protocol-level constraints that prevent IBC-style state proofs of Cardano, for example UTxO inclusion proofs. A valuable conversation on that topic can be found here: [CIP-0165 (Canonical Ledger State)](https://github.com/cardano-foundation/CIPs/pull/1083).
 
-The maintained Cardano-native approach uses a proprietary STT architecture plus the experimental `08-cardano-probabilistic` light client to attain an analogous IBC state machine in Cardano semantics. The STT architecture over the IBC host state keyspace functions as an authenticated mutex for IBC host state mutation, while the probabilistic-scored light client authenticates accepted Cardano history through configured settlement heuristics. This model is documented in [Probabilistic-Scored Light Client Design](docs/probabilistic-light-client.md).
+The maintained Cardano-native approach uses a proprietary STT architecture plus the experimental `08-cardano-probabilistic` light client to attain an analogous IBC state machine in Cardano semantics. The STT architecture over the IBC host state keyspace functions as an authenticated mutex for IBC host state mutation, while the probabilistic light client authenticates accepted Cardano history through configured settlement heuristics. This model is documented in [Probabilistic Light Client Design](docs/probabilistic-light-client.md).
 
 The older Mithril light client and local Mithril setup are deprecated, disabled, and not maintained. They remain in the repository only for historical design reference and protobuf/type compatibility.
 
