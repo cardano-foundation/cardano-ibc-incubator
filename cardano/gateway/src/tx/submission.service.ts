@@ -14,6 +14,8 @@ import {
 } from '../shared/services/ibc-tree-cache.service';
 import { getCurrentTree } from '../shared/helpers/ibc-state-root';
 import { HISTORY_SERVICE, HistoryService } from '../query/services/history.service';
+import { QueryService } from '../query/services/query.service';
+import { GatewayEvent } from './tx-events.service';
 
 @Injectable()
 export class SubmissionService {
@@ -26,6 +28,7 @@ export class SubmissionService {
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
     private readonly ibcTreeCacheService: IbcTreeCacheService,
     @Inject(HISTORY_SERVICE) private readonly historyService: HistoryService,
+    private readonly queryService: QueryService,
   ) {}
 
   /**
@@ -65,9 +68,19 @@ export class SubmissionService {
       // so wait for that backend to index the submitted tx and use its block number.
       const confirmedBlockNo = await this.waitForIndexedConfirmation(txHash);
 
-      await this.applyPendingIbcTreeUpdate(signedTxCbor, txHash, BigInt(confirmedBlockNo));
+      const confirmedRoot = await this.applyPendingIbcTreeUpdate(
+        signedTxCbor,
+        txHash,
+        BigInt(confirmedBlockNo),
+      );
 
-      const events = this.txEventsService.take(txHash) || [];
+      let events =
+        this.txEventsService.take(txHash) ||
+        this.txEventsService.takeByExpectedRoot(confirmedRoot) ||
+        [];
+      if (events.length === 0) {
+        events = await this.findIndexedPacketEvents(txHash);
+      }
       this.logger.log(`[DEBUG] Returning ${events.length} events for tx ${txHash}`);
 
       const response: SubmitSignedTxResponse = {
@@ -87,7 +100,7 @@ export class SubmissionService {
     signedTxCbor: string,
     txHash: string,
     confirmedBlockNo: bigint,
-  ): Promise<void> {
+  ): Promise<string> {
     // Tree updates are registered when building unsigned txs and keyed by tx hash.
     // We only commit them after confirmation, to avoid stale in-memory state if submission fails.
     let pending = this.ibcTreePendingUpdatesService.take(txHash);
@@ -137,7 +150,7 @@ export class SubmissionService {
     pending.commit();
 
     // Persist the updated tree so restarts don't require scanning all IBC UTxOs.
-    if (process.env.IBC_TREE_CACHE_ENABLED === 'false') return;
+    if (process.env.IBC_TREE_CACHE_ENABLED === 'false') return confirmedRoot;
     try {
       await this.ibcTreeCacheService.saveAliases(getCurrentTree(), [
         CURRENT_IBC_TREE_CACHE_ID,
@@ -146,6 +159,24 @@ export class SubmissionService {
       ]);
     } catch (error) {
       this.logger.warn(`Failed to persist IBC tree cache after tx ${txHash}: ${error?.message ?? error}`);
+    }
+
+    return confirmedRoot;
+  }
+
+  private async findIndexedPacketEvents(txHash: string): Promise<GatewayEvent[]> {
+    try {
+      const response = await this.queryService.queryPacketEventsByTxHash(txHash);
+      return response.events.map((event) => ({
+        type: event.type,
+        attributes: Object.entries(event.attributes).map(([key, value]) => ({
+          key,
+          value,
+        })),
+      }));
+    } catch (error) {
+      this.logger.debug(`No indexed packet events found for tx ${txHash}: ${error?.message ?? error}`);
+      return [];
     }
   }
 
