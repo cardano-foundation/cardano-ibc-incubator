@@ -26,7 +26,3 @@ The exact port depends on the target chain's Cosmos SDK, `ibc-go`, CometBFT, and
 6. Wire the app by registering the concrete types with the interface registry and adding the probabilistic light client app module in the target chain's module list, following the local light-client module shape used by that chain.
 7. Ensure the IBC client params allow `08-cardano-probabilistic`; on restricted networks this requires governance or genesis/config changes in addition to the binary change.
 8. Re-run client creation after a binary with this module is deployed. Without that chain upgrade, nodes will continue rejecting `/ibc.lightclients.probabilistic.v1.ClientState` as an unresolved type URL.
-
-## Compatibility Risk
-
-The cryptographic and Cardano proof logic should not need to change for an older `ibc-go` port. The main risk is integration surface drift across SDK and `ibc-go` versions: keeper wiring, module registration, store access, governance params, and client params are different enough that the port should be validated inside the target chain's app build, not only inside this standalone module.
