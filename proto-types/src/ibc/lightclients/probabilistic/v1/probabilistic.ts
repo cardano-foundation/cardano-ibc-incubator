@@ -2,11 +2,11 @@
 import { Duration } from "../../../../google/protobuf/duration";
 import { BinaryReader, BinaryWriter } from "../../../../binary";
 import { isSet, DeepPartial, Exact, bytesFromBase64, base64FromBytes } from "../../../../helpers";
-export const protobufPackage = "ibc.lightclients.stability.v1";
+export const protobufPackage = "ibc.lightclients.probabilistic.v1";
 /**
  * @name Height
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.Height
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.Height
  */
 export interface Height {
   revision_number: bigint;
@@ -14,8 +14,8 @@ export interface Height {
 }
 /**
  * @name HeuristicParams
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.HeuristicParams
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.HeuristicParams
  */
 export interface HeuristicParams {
   threshold_depth: bigint;
@@ -27,8 +27,8 @@ export interface HeuristicParams {
 }
 /**
  * @name StakeDistributionEntry
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.StakeDistributionEntry
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.StakeDistributionEntry
  */
 export interface StakeDistributionEntry {
   pool_id: string;
@@ -38,8 +38,8 @@ export interface StakeDistributionEntry {
 }
 /**
  * @name EpochContext
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.EpochContext
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.EpochContext
  */
 export interface EpochContext {
   epoch: bigint;
@@ -51,8 +51,8 @@ export interface EpochContext {
 }
 /**
  * @name ClientState
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.ClientState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.ClientState
  */
 export interface ClientState {
   chain_id: string;
@@ -75,8 +75,8 @@ export interface ClientState {
 }
 /**
  * @name ConsensusState
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.ConsensusState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.ConsensusState
  */
 export interface ConsensusState {
   timestamp: bigint;
@@ -89,23 +89,23 @@ export interface ConsensusState {
 }
 /**
  * @name Misbehaviour
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.Misbehaviour
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.Misbehaviour
  */
 export interface Misbehaviour {
   /**
    * @deprecated
    */
   client_id: string;
-  stability_header1?: StabilityHeader;
-  stability_header2?: StabilityHeader;
+  probabilistic_header1?: ProbabilisticHeader;
+  probabilistic_header2?: ProbabilisticHeader;
 }
 /**
- * @name StabilityBlock
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.StabilityBlock
+ * @name ProbabilisticBlock
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.ProbabilisticBlock
  */
-export interface StabilityBlock {
+export interface ProbabilisticBlock {
   height?: Height;
   slot: bigint;
   hash: string;
@@ -114,17 +114,17 @@ export interface StabilityBlock {
   block_cbor: Uint8Array;
 }
 /**
- * @name StabilityHeader
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.StabilityHeader
+ * @name ProbabilisticHeader
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.ProbabilisticHeader
  */
-export interface StabilityHeader {
+export interface ProbabilisticHeader {
   trusted_height?: Height;
-  anchor_block?: StabilityBlock;
-  descendant_blocks: StabilityBlock[];
+  anchor_block?: ProbabilisticBlock;
+  descendant_blocks: ProbabilisticBlock[];
   host_state_tx_hash: string;
   host_state_tx_output_index: number;
-  bridge_blocks: StabilityBlock[];
+  bridge_blocks: ProbabilisticBlock[];
   new_epoch_context?: EpochContext;
 }
 function createBaseHeight(): Height {
@@ -135,11 +135,11 @@ function createBaseHeight(): Height {
 }
 /**
  * @name Height
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.Height
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.Height
  */
 export const Height = {
-  typeUrl: "/ibc.lightclients.stability.v1.Height",
+  typeUrl: "/ibc.lightclients.probabilistic.v1.Height",
   encode(message: Height, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.revision_number !== BigInt(0)) {
       writer.uint32(8).uint64(message.revision_number);
@@ -206,11 +206,11 @@ function createBaseHeuristicParams(): HeuristicParams {
 }
 /**
  * @name HeuristicParams
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.HeuristicParams
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.HeuristicParams
  */
 export const HeuristicParams = {
-  typeUrl: "/ibc.lightclients.stability.v1.HeuristicParams",
+  typeUrl: "/ibc.lightclients.probabilistic.v1.HeuristicParams",
   encode(message: HeuristicParams, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.threshold_depth !== BigInt(0)) {
       writer.uint32(32).uint64(message.threshold_depth);
@@ -325,11 +325,11 @@ function createBaseStakeDistributionEntry(): StakeDistributionEntry {
 }
 /**
  * @name StakeDistributionEntry
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.StakeDistributionEntry
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.StakeDistributionEntry
  */
 export const StakeDistributionEntry = {
-  typeUrl: "/ibc.lightclients.stability.v1.StakeDistributionEntry",
+  typeUrl: "/ibc.lightclients.probabilistic.v1.StakeDistributionEntry",
   encode(message: StakeDistributionEntry, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.pool_id !== "") {
       writer.uint32(10).string(message.pool_id);
@@ -417,11 +417,11 @@ function createBaseEpochContext(): EpochContext {
 }
 /**
  * @name EpochContext
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.EpochContext
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.EpochContext
  */
 export const EpochContext = {
-  typeUrl: "/ibc.lightclients.stability.v1.EpochContext",
+  typeUrl: "/ibc.lightclients.probabilistic.v1.EpochContext",
   encode(message: EpochContext, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.epoch !== BigInt(0)) {
       writer.uint32(8).uint64(message.epoch);
@@ -553,11 +553,11 @@ function createBaseClientState(): ClientState {
 }
 /**
  * @name ClientState
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.ClientState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.ClientState
  */
 export const ClientState = {
-  typeUrl: "/ibc.lightclients.stability.v1.ClientState",
+  typeUrl: "/ibc.lightclients.probabilistic.v1.ClientState",
   encode(message: ClientState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.chain_id !== "") {
       writer.uint32(10).string(message.chain_id);
@@ -829,11 +829,11 @@ function createBaseConsensusState(): ConsensusState {
 }
 /**
  * @name ConsensusState
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.ConsensusState
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.ConsensusState
  */
 export const ConsensusState = {
-  typeUrl: "/ibc.lightclients.stability.v1.ConsensusState",
+  typeUrl: "/ibc.lightclients.probabilistic.v1.ConsensusState",
   encode(message: ConsensusState, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.timestamp !== BigInt(0)) {
       writer.uint32(8).uint64(message.timestamp);
@@ -949,26 +949,26 @@ export const ConsensusState = {
 function createBaseMisbehaviour(): Misbehaviour {
   return {
     client_id: "",
-    stability_header1: undefined,
-    stability_header2: undefined,
+    probabilistic_header1: undefined,
+    probabilistic_header2: undefined,
   };
 }
 /**
  * @name Misbehaviour
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.Misbehaviour
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.Misbehaviour
  */
 export const Misbehaviour = {
-  typeUrl: "/ibc.lightclients.stability.v1.Misbehaviour",
+  typeUrl: "/ibc.lightclients.probabilistic.v1.Misbehaviour",
   encode(message: Misbehaviour, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.client_id !== "") {
       writer.uint32(10).string(message.client_id);
     }
-    if (message.stability_header1 !== undefined) {
-      StabilityHeader.encode(message.stability_header1, writer.uint32(18).fork()).ldelim();
+    if (message.probabilistic_header1 !== undefined) {
+      ProbabilisticHeader.encode(message.probabilistic_header1, writer.uint32(18).fork()).ldelim();
     }
-    if (message.stability_header2 !== undefined) {
-      StabilityHeader.encode(message.stability_header2, writer.uint32(26).fork()).ldelim();
+    if (message.probabilistic_header2 !== undefined) {
+      ProbabilisticHeader.encode(message.probabilistic_header2, writer.uint32(26).fork()).ldelim();
     }
     return writer;
   },
@@ -983,10 +983,10 @@ export const Misbehaviour = {
           message.client_id = reader.string();
           break;
         case 2:
-          message.stability_header1 = StabilityHeader.decode(reader, reader.uint32());
+          message.probabilistic_header1 = ProbabilisticHeader.decode(reader, reader.uint32());
           break;
         case 3:
-          message.stability_header2 = StabilityHeader.decode(reader, reader.uint32());
+          message.probabilistic_header2 = ProbabilisticHeader.decode(reader, reader.uint32());
           break;
         default:
           reader.skipType(tag & 7);
@@ -998,38 +998,38 @@ export const Misbehaviour = {
   fromJSON(object: any): Misbehaviour {
     const obj = createBaseMisbehaviour();
     if (isSet(object.client_id)) obj.client_id = String(object.client_id);
-    if (isSet(object.stability_header1))
-      obj.stability_header1 = StabilityHeader.fromJSON(object.stability_header1);
-    if (isSet(object.stability_header2))
-      obj.stability_header2 = StabilityHeader.fromJSON(object.stability_header2);
+    if (isSet(object.probabilistic_header1))
+      obj.probabilistic_header1 = ProbabilisticHeader.fromJSON(object.probabilistic_header1);
+    if (isSet(object.probabilistic_header2))
+      obj.probabilistic_header2 = ProbabilisticHeader.fromJSON(object.probabilistic_header2);
     return obj;
   },
   toJSON(message: Misbehaviour): unknown {
     const obj: any = {};
     message.client_id !== undefined && (obj.client_id = message.client_id);
-    message.stability_header1 !== undefined &&
-      (obj.stability_header1 = message.stability_header1
-        ? StabilityHeader.toJSON(message.stability_header1)
+    message.probabilistic_header1 !== undefined &&
+      (obj.probabilistic_header1 = message.probabilistic_header1
+        ? ProbabilisticHeader.toJSON(message.probabilistic_header1)
         : undefined);
-    message.stability_header2 !== undefined &&
-      (obj.stability_header2 = message.stability_header2
-        ? StabilityHeader.toJSON(message.stability_header2)
+    message.probabilistic_header2 !== undefined &&
+      (obj.probabilistic_header2 = message.probabilistic_header2
+        ? ProbabilisticHeader.toJSON(message.probabilistic_header2)
         : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<Misbehaviour>, I>>(object: I): Misbehaviour {
     const message = createBaseMisbehaviour();
     message.client_id = object.client_id ?? "";
-    if (object.stability_header1 !== undefined && object.stability_header1 !== null) {
-      message.stability_header1 = StabilityHeader.fromPartial(object.stability_header1);
+    if (object.probabilistic_header1 !== undefined && object.probabilistic_header1 !== null) {
+      message.probabilistic_header1 = ProbabilisticHeader.fromPartial(object.probabilistic_header1);
     }
-    if (object.stability_header2 !== undefined && object.stability_header2 !== null) {
-      message.stability_header2 = StabilityHeader.fromPartial(object.stability_header2);
+    if (object.probabilistic_header2 !== undefined && object.probabilistic_header2 !== null) {
+      message.probabilistic_header2 = ProbabilisticHeader.fromPartial(object.probabilistic_header2);
     }
     return message;
   },
 };
-function createBaseStabilityBlock(): StabilityBlock {
+function createBaseProbabilisticBlock(): ProbabilisticBlock {
   return {
     height: undefined,
     slot: BigInt(0),
@@ -1040,13 +1040,13 @@ function createBaseStabilityBlock(): StabilityBlock {
   };
 }
 /**
- * @name StabilityBlock
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.StabilityBlock
+ * @name ProbabilisticBlock
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.ProbabilisticBlock
  */
-export const StabilityBlock = {
-  typeUrl: "/ibc.lightclients.stability.v1.StabilityBlock",
-  encode(message: StabilityBlock, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+export const ProbabilisticBlock = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.ProbabilisticBlock",
+  encode(message: ProbabilisticBlock, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.height !== undefined) {
       Height.encode(message.height, writer.uint32(10).fork()).ldelim();
     }
@@ -1067,10 +1067,10 @@ export const StabilityBlock = {
     }
     return writer;
   },
-  decode(input: BinaryReader | Uint8Array, length?: number): StabilityBlock {
+  decode(input: BinaryReader | Uint8Array, length?: number): ProbabilisticBlock {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseStabilityBlock();
+    const message = createBaseProbabilisticBlock();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -1099,8 +1099,8 @@ export const StabilityBlock = {
     }
     return message;
   },
-  fromJSON(object: any): StabilityBlock {
-    const obj = createBaseStabilityBlock();
+  fromJSON(object: any): ProbabilisticBlock {
+    const obj = createBaseProbabilisticBlock();
     if (isSet(object.height)) obj.height = Height.fromJSON(object.height);
     if (isSet(object.slot)) obj.slot = BigInt(object.slot.toString());
     if (isSet(object.hash)) obj.hash = String(object.hash);
@@ -1109,7 +1109,7 @@ export const StabilityBlock = {
     if (isSet(object.block_cbor)) obj.block_cbor = bytesFromBase64(object.block_cbor);
     return obj;
   },
-  toJSON(message: StabilityBlock): unknown {
+  toJSON(message: ProbabilisticBlock): unknown {
     const obj: any = {};
     message.height !== undefined && (obj.height = message.height ? Height.toJSON(message.height) : undefined);
     message.slot !== undefined && (obj.slot = (message.slot || BigInt(0)).toString());
@@ -1122,8 +1122,8 @@ export const StabilityBlock = {
       ));
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<StabilityBlock>, I>>(object: I): StabilityBlock {
-    const message = createBaseStabilityBlock();
+  fromPartial<I extends Exact<DeepPartial<ProbabilisticBlock>, I>>(object: I): ProbabilisticBlock {
+    const message = createBaseProbabilisticBlock();
     if (object.height !== undefined && object.height !== null) {
       message.height = Height.fromPartial(object.height);
     }
@@ -1141,7 +1141,7 @@ export const StabilityBlock = {
     return message;
   },
 };
-function createBaseStabilityHeader(): StabilityHeader {
+function createBaseProbabilisticHeader(): ProbabilisticHeader {
   return {
     trusted_height: undefined,
     anchor_block: undefined,
@@ -1153,21 +1153,21 @@ function createBaseStabilityHeader(): StabilityHeader {
   };
 }
 /**
- * @name StabilityHeader
- * @package ibc.lightclients.stability.v1
- * @see proto type: ibc.lightclients.stability.v1.StabilityHeader
+ * @name ProbabilisticHeader
+ * @package ibc.lightclients.probabilistic.v1
+ * @see proto type: ibc.lightclients.probabilistic.v1.ProbabilisticHeader
  */
-export const StabilityHeader = {
-  typeUrl: "/ibc.lightclients.stability.v1.StabilityHeader",
-  encode(message: StabilityHeader, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+export const ProbabilisticHeader = {
+  typeUrl: "/ibc.lightclients.probabilistic.v1.ProbabilisticHeader",
+  encode(message: ProbabilisticHeader, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
     if (message.trusted_height !== undefined) {
       Height.encode(message.trusted_height, writer.uint32(10).fork()).ldelim();
     }
     if (message.anchor_block !== undefined) {
-      StabilityBlock.encode(message.anchor_block, writer.uint32(18).fork()).ldelim();
+      ProbabilisticBlock.encode(message.anchor_block, writer.uint32(18).fork()).ldelim();
     }
     for (const v of message.descendant_blocks) {
-      StabilityBlock.encode(v!, writer.uint32(26).fork()).ldelim();
+      ProbabilisticBlock.encode(v!, writer.uint32(26).fork()).ldelim();
     }
     if (message.host_state_tx_hash !== "") {
       writer.uint32(34).string(message.host_state_tx_hash);
@@ -1176,17 +1176,17 @@ export const StabilityHeader = {
       writer.uint32(48).uint32(message.host_state_tx_output_index);
     }
     for (const v of message.bridge_blocks) {
-      StabilityBlock.encode(v!, writer.uint32(82).fork()).ldelim();
+      ProbabilisticBlock.encode(v!, writer.uint32(82).fork()).ldelim();
     }
     if (message.new_epoch_context !== undefined) {
       EpochContext.encode(message.new_epoch_context, writer.uint32(90).fork()).ldelim();
     }
     return writer;
   },
-  decode(input: BinaryReader | Uint8Array, length?: number): StabilityHeader {
+  decode(input: BinaryReader | Uint8Array, length?: number): ProbabilisticHeader {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseStabilityHeader();
+    const message = createBaseProbabilisticHeader();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -1194,10 +1194,10 @@ export const StabilityHeader = {
           message.trusted_height = Height.decode(reader, reader.uint32());
           break;
         case 2:
-          message.anchor_block = StabilityBlock.decode(reader, reader.uint32());
+          message.anchor_block = ProbabilisticBlock.decode(reader, reader.uint32());
           break;
         case 3:
-          message.descendant_blocks.push(StabilityBlock.decode(reader, reader.uint32()));
+          message.descendant_blocks.push(ProbabilisticBlock.decode(reader, reader.uint32()));
           break;
         case 4:
           message.host_state_tx_hash = reader.string();
@@ -1206,7 +1206,7 @@ export const StabilityHeader = {
           message.host_state_tx_output_index = reader.uint32();
           break;
         case 10:
-          message.bridge_blocks.push(StabilityBlock.decode(reader, reader.uint32()));
+          message.bridge_blocks.push(ProbabilisticBlock.decode(reader, reader.uint32()));
           break;
         case 11:
           message.new_epoch_context = EpochContext.decode(reader, reader.uint32());
@@ -1218,30 +1218,30 @@ export const StabilityHeader = {
     }
     return message;
   },
-  fromJSON(object: any): StabilityHeader {
-    const obj = createBaseStabilityHeader();
+  fromJSON(object: any): ProbabilisticHeader {
+    const obj = createBaseProbabilisticHeader();
     if (isSet(object.trusted_height)) obj.trusted_height = Height.fromJSON(object.trusted_height);
-    if (isSet(object.anchor_block)) obj.anchor_block = StabilityBlock.fromJSON(object.anchor_block);
+    if (isSet(object.anchor_block)) obj.anchor_block = ProbabilisticBlock.fromJSON(object.anchor_block);
     if (Array.isArray(object?.descendant_blocks))
-      obj.descendant_blocks = object.descendant_blocks.map((e: any) => StabilityBlock.fromJSON(e));
+      obj.descendant_blocks = object.descendant_blocks.map((e: any) => ProbabilisticBlock.fromJSON(e));
     if (isSet(object.host_state_tx_hash)) obj.host_state_tx_hash = String(object.host_state_tx_hash);
     if (isSet(object.host_state_tx_output_index))
       obj.host_state_tx_output_index = Number(object.host_state_tx_output_index);
     if (Array.isArray(object?.bridge_blocks))
-      obj.bridge_blocks = object.bridge_blocks.map((e: any) => StabilityBlock.fromJSON(e));
+      obj.bridge_blocks = object.bridge_blocks.map((e: any) => ProbabilisticBlock.fromJSON(e));
     if (isSet(object.new_epoch_context))
       obj.new_epoch_context = EpochContext.fromJSON(object.new_epoch_context);
     return obj;
   },
-  toJSON(message: StabilityHeader): unknown {
+  toJSON(message: ProbabilisticHeader): unknown {
     const obj: any = {};
     message.trusted_height !== undefined &&
       (obj.trusted_height = message.trusted_height ? Height.toJSON(message.trusted_height) : undefined);
     message.anchor_block !== undefined &&
-      (obj.anchor_block = message.anchor_block ? StabilityBlock.toJSON(message.anchor_block) : undefined);
+      (obj.anchor_block = message.anchor_block ? ProbabilisticBlock.toJSON(message.anchor_block) : undefined);
     if (message.descendant_blocks) {
       obj.descendant_blocks = message.descendant_blocks.map((e) =>
-        e ? StabilityBlock.toJSON(e) : undefined,
+        e ? ProbabilisticBlock.toJSON(e) : undefined,
       );
     } else {
       obj.descendant_blocks = [];
@@ -1250,7 +1250,7 @@ export const StabilityHeader = {
     message.host_state_tx_output_index !== undefined &&
       (obj.host_state_tx_output_index = Math.round(message.host_state_tx_output_index));
     if (message.bridge_blocks) {
-      obj.bridge_blocks = message.bridge_blocks.map((e) => (e ? StabilityBlock.toJSON(e) : undefined));
+      obj.bridge_blocks = message.bridge_blocks.map((e) => (e ? ProbabilisticBlock.toJSON(e) : undefined));
     } else {
       obj.bridge_blocks = [];
     }
@@ -1260,18 +1260,18 @@ export const StabilityHeader = {
         : undefined);
     return obj;
   },
-  fromPartial<I extends Exact<DeepPartial<StabilityHeader>, I>>(object: I): StabilityHeader {
-    const message = createBaseStabilityHeader();
+  fromPartial<I extends Exact<DeepPartial<ProbabilisticHeader>, I>>(object: I): ProbabilisticHeader {
+    const message = createBaseProbabilisticHeader();
     if (object.trusted_height !== undefined && object.trusted_height !== null) {
       message.trusted_height = Height.fromPartial(object.trusted_height);
     }
     if (object.anchor_block !== undefined && object.anchor_block !== null) {
-      message.anchor_block = StabilityBlock.fromPartial(object.anchor_block);
+      message.anchor_block = ProbabilisticBlock.fromPartial(object.anchor_block);
     }
-    message.descendant_blocks = object.descendant_blocks?.map((e) => StabilityBlock.fromPartial(e)) || [];
+    message.descendant_blocks = object.descendant_blocks?.map((e) => ProbabilisticBlock.fromPartial(e)) || [];
     message.host_state_tx_hash = object.host_state_tx_hash ?? "";
     message.host_state_tx_output_index = object.host_state_tx_output_index ?? 0;
-    message.bridge_blocks = object.bridge_blocks?.map((e) => StabilityBlock.fromPartial(e)) || [];
+    message.bridge_blocks = object.bridge_blocks?.map((e) => ProbabilisticBlock.fromPartial(e)) || [];
     if (object.new_epoch_context !== undefined && object.new_epoch_context !== null) {
       message.new_epoch_context = EpochContext.fromPartial(object.new_epoch_context);
     }
