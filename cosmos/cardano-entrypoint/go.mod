@@ -14,16 +14,16 @@ replace (
 
 require (
 	cosmossdk.io/api v0.9.2
-	cosmossdk.io/client/v2 v2.0.0-beta.5
+	cosmossdk.io/client/v2 v2.0.0-beta.9
 	cosmossdk.io/core v0.11.3
 	cosmossdk.io/depinject v1.2.0
 	cosmossdk.io/errors v1.0.2
 	cosmossdk.io/log v1.6.1
 	cosmossdk.io/store v1.1.2
-	cosmossdk.io/tools/confix v0.1.1
-	cosmossdk.io/x/circuit v0.1.0
-	cosmossdk.io/x/evidence v0.1.1
-	cosmossdk.io/x/feegrant v0.1.1
+	cosmossdk.io/tools/confix v0.1.2
+	cosmossdk.io/x/circuit v0.2.0
+	cosmossdk.io/x/evidence v0.2.0
+	cosmossdk.io/x/feegrant v0.2.0
 	cosmossdk.io/x/upgrade v0.2.0
 	github.com/ComposableFi/go-merkle-trees v0.0.0-20220505132313-e976260288cc
 	github.com/blinklabs-io/gouroboros v0.89.1
@@ -34,6 +34,7 @@ require (
 	github.com/cosmos/cosmos-sdk v0.53.0
 	github.com/cosmos/gogoproto v1.7.0
 	github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v10 v10.0.0
+	github.com/cosmos/ibc-go/modules/light-clients/08-wasm/v10 v10.2.0
 	github.com/cosmos/ibc-go/v10 v10.2.0
 	github.com/cosmos/ics23/go v0.11.0
 	github.com/fxamacker/cbor/v2 v2.7.0
@@ -156,7 +157,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/glog v1.2.5 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
-	github.com/golang/snappy v0.0.5-0.20220116011046-fa5810519dcb // indirect
+	github.com/golang/snappy v0.0.5-0.20231225225746-43d5d4cd4e0e // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/cel-go v0.20.1 // indirect
 	github.com/google/flatbuffers v24.3.25+incompatible // indirect
