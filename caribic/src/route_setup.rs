@@ -20,7 +20,7 @@ use crate::{
             workspace_dir as osmosis_workspace_dir,
         },
     },
-    config, logger,
+    config, logger, setup,
     start::{run_hermes_command, run_hermes_command_with_timeout},
     utils::{parse_tendermint_client_id, parse_tendermint_connection_id},
 };
@@ -107,6 +107,10 @@ pub fn setup_transfer_route(
                 active_cardano_network.as_str()
             ));
         }
+    }
+    if active_cardano_network == config::CoreCardanoNetwork::Local {
+        setup::refresh_local_gateway_epoch_nonce(project_root_path)
+            .map_err(|error| format!("Failed to refresh local Cardano epoch nonce: {}", error))?;
     }
 
     if destination.chain == RouteChain::Cardano {

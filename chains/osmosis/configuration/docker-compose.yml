@@ -20,6 +20,8 @@ services:
       - /osmosis/setup.sh
     command:
       - $STATE
+    environment:
+      CARDANO_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT: ${CARDANO_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT:-18446744073709551615}
     ports:
       - 26658:26657
       - 1318:1317

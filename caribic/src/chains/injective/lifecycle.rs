@@ -59,6 +59,7 @@ pub(super) async fn start_local(
             "-f",
             "configuration/docker-compose.yml",
             "up",
+            "--build",
             "-d",
             "injectived",
         ])?;
