@@ -320,7 +320,7 @@ const RoutePreview = ({ preview }: { preview: RoutePreviewState }) => {
       </Text>
       <Text mt="4px" fontSize="12px" color="#FFFFFF99">
         {preview.message ||
-          'Cardano Entrypoint is route infrastructure and is not user selectable.'}
+          'Direct Cardano-to-target route discovery is not available yet.'}
       </Text>
     </Box>
   );
@@ -621,7 +621,9 @@ const Transfer = () => {
         'source-chain-unavailable': `No discovered IBC transfer channels start from ${fromChainName}.`,
         'destination-chain-unavailable': `No discovered IBC transfer channels reach ${toChainName}.`,
         'no-outbound-channels': `${fromChainName} has no outbound IBC transfer channels.`,
-        'no-route-found': `No IBC transfer route found from ${fromChainName} to ${toChainName}. For this local stack, that path should typically exist via Cardano Entrypoint, so check that the Cardano Entrypoint<->${toChainName} transfer channels were created successfully.`,
+        'no-route-found': `No IBC transfer route found from ${fromChainName} to ${toChainName}.`,
+        'direct-route-unsupported':
+          'Direct Cardano-to-target IBC routes are not implemented yet.',
         'missing-unwind-hop': `Token ${
           selectedToken.tokenName || selectedToken.tokenId
         } must unwind on a specific IBC hop before it can reach ${toChainName}, but that reverse hop is not currently available.`,
@@ -1085,7 +1087,7 @@ const Transfer = () => {
       status: route?.enabled ? 'ready' : 'error',
       chainIds,
       message: route?.enabled
-        ? 'Configured route found. Cardano Entrypoint is route infrastructure.'
+        ? 'Configured route found.'
         : runtimeRouteDisabledReason(
             fromNetwork.networkId,
             toNetwork.networkId,

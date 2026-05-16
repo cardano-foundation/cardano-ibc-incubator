@@ -30,7 +30,7 @@ export type TransferPlanResponse = {
         baseDenom: string;
         fullDenom: string;
     } | null;
-    failureCode?: 'invalid-request' | 'missing-unwind-hop' | 'ambiguous-unwind-hop' | 'no-forward-route' | 'ambiguous-forward-route' | 'ambiguous-forward-hop' | 'channels-not-loaded' | 'source-chain-unavailable' | 'destination-chain-unavailable' | 'no-outbound-channels' | 'no-route-found';
+    failureCode?: 'invalid-request' | 'missing-unwind-hop' | 'ambiguous-unwind-hop' | 'no-forward-route' | 'ambiguous-forward-route' | 'ambiguous-forward-hop' | 'channels-not-loaded' | 'source-chain-unavailable' | 'destination-chain-unavailable' | 'no-outbound-channels' | 'no-route-found' | 'direct-route-unsupported';
     failureMessage?: string;
     routeDiagnostics?: TransferRouteDiagnostics;
 };
@@ -66,7 +66,6 @@ export type SwapEstimateResponse = {
 export type PlannerClientConfig = {
     cardanoChainId: string;
     cardanoRestEndpoint?: string;
-    entrypointRestEndpoint: string;
     localOsmosisRestEndpoint: string;
     swapRouterAddress?: string;
     preferredChannels?: PreferredChannel[];

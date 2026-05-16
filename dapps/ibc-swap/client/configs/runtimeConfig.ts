@@ -4,8 +4,6 @@ import {
   CARDANO_BRIDGE_MANIFEST_URL,
   CARDANO_CHAIN_ID,
   CARDANO_IBC_CHAIN_ID,
-  CARDANO_ENTRYPOINT_REST_ENDPOINT,
-  CARDANO_ENTRYPOINT_RPC_ENDPOINT,
   IBC_SWAP_MODE,
   INJECTIVE_REST_ENDPOINT,
   INJECTIVE_RPC_ENDPOINT,
@@ -63,7 +61,6 @@ export type RuntimeConfig = {
   description: string;
   enabled: boolean;
   disabledReason?: string;
-  entrypointChainId: string;
   defaultCosmosChainId: string;
   cardanoChainId: string;
   cardanoIbcChainId: string;
@@ -80,47 +77,9 @@ export type RuntimeConfig = {
   };
 };
 
-export const CARDANO_ENTRYPOINT_CHAIN_ID = 'cardano-entrypoint';
 export const LOCAL_OSMOSIS_CHAIN_ID = 'localosmosis';
 export const INJECTIVE_TESTNET_CHAIN_ID = 'injective-888';
 export const INJECTIVE_MAINNET_CHAIN_ID = 'injective-1';
-
-const entrypointChain: RuntimeChainConfig = {
-  id: CARDANO_ENTRYPOINT_CHAIN_ID,
-  ibcChainId: CARDANO_ENTRYPOINT_CHAIN_ID,
-  chainName: CARDANO_ENTRYPOINT_CHAIN_ID,
-  kind: 'cosmos',
-  role: 'route-infra',
-  networkType: 'controlled',
-  prettyName: 'Cardano Entrypoint',
-  bech32Prefix: 'cosmos',
-  slip44: 118,
-  logoUri: DefaultCosmosNetworkIcon.src,
-  visibleInSelector: false,
-  rpcEndpoint: CARDANO_ENTRYPOINT_RPC_ENDPOINT,
-  restEndpoint: CARDANO_ENTRYPOINT_REST_ENDPOINT,
-  feeDenom: 'stake',
-  fixedMinGasPrice: 0,
-  keyAlgos: ['secp256k1'],
-  assets: [
-    {
-      description: 'Registered denom token for cardano-entrypoint chain testing',
-      base: 'token',
-      display: 'token',
-      name: 'token',
-      symbol: 'token',
-      exponent: 0,
-    },
-    {
-      description: 'Registered denom stake for cardano-entrypoint chain testing',
-      base: 'stake',
-      display: 'stake',
-      name: 'stake',
-      symbol: 'stake',
-      exponent: 0,
-    },
-  ],
-};
 
 function cardanoPrettyName(): string {
   if (IBC_SWAP_MODE === 'testnet') return 'Cardano Preprod';
@@ -245,7 +204,7 @@ function bidirectionalRoutes(
       id: `${idPrefix}-${chainA}-to-${chainB}`,
       fromChainId: chainA,
       toChainId: chainB,
-      viaChainIds: [CARDANO_ENTRYPOINT_CHAIN_ID],
+      viaChainIds: [],
       label: `${labelA} to ${labelB}`,
       enabled,
       disabledReason,
@@ -254,7 +213,7 @@ function bidirectionalRoutes(
       id: `${idPrefix}-${chainB}-to-${chainA}`,
       fromChainId: chainB,
       toChainId: chainA,
-      viaChainIds: [CARDANO_ENTRYPOINT_CHAIN_ID],
+      viaChainIds: [],
       label: `${labelB} to ${labelA}`,
       enabled,
       disabledReason,
@@ -267,16 +226,15 @@ function buildRuntimeConfig(mode: IbcSwapMode): RuntimeConfig {
     return {
       mode,
       label: 'Testnet',
-      description: 'Cardano preprod plus Injective testnet through Entrypoint.',
+      description: 'Cardano preprod plus Injective testnet direct-route preview.',
       enabled: true,
-      entrypointChainId: CARDANO_ENTRYPOINT_CHAIN_ID,
-      defaultCosmosChainId: CARDANO_ENTRYPOINT_CHAIN_ID,
+      defaultCosmosChainId: INJECTIVE_TESTNET_CHAIN_ID,
       cardanoChainId: CARDANO_CHAIN_ID,
       cardanoIbcChainId: CARDANO_IBC_CHAIN_ID,
       cardanoBridgeManifestUrl: CARDANO_BRIDGE_MANIFEST_URL,
       plannerCounterpartyRestEndpoint: INJECTIVE_REST_ENDPOINT,
       pfmFeeChainIds: [],
-      chains: [entrypointChain, cardanoChain('testnet'), injectiveTestnetChain],
+      chains: [cardanoChain('testnet'), injectiveTestnetChain],
       routes: bidirectionalRoutes(
         'testnet',
         CARDANO_CHAIN_ID,
@@ -303,15 +261,13 @@ function buildRuntimeConfig(mode: IbcSwapMode): RuntimeConfig {
       description: 'Production topology. Disabled until fully configured.',
       enabled: mainnetConfigured,
       disabledReason,
-      entrypointChainId: CARDANO_ENTRYPOINT_CHAIN_ID,
-      defaultCosmosChainId: CARDANO_ENTRYPOINT_CHAIN_ID,
+      defaultCosmosChainId: INJECTIVE_MAINNET_CHAIN_ID,
       cardanoChainId: CARDANO_CHAIN_ID,
       cardanoIbcChainId: CARDANO_IBC_CHAIN_ID,
       cardanoBridgeManifestUrl: CARDANO_BRIDGE_MANIFEST_URL,
       plannerCounterpartyRestEndpoint: INJECTIVE_REST_ENDPOINT,
       pfmFeeChainIds: [],
       chains: [
-        entrypointChain,
         cardanoChain('mainnet'),
         {
           ...injectiveMainnetChain,
@@ -341,17 +297,15 @@ function buildRuntimeConfig(mode: IbcSwapMode): RuntimeConfig {
   return {
     mode,
     label: 'Local',
-    description:
-      'Local Cardano demo stack plus Local Osmosis through Entrypoint.',
+    description: 'Local Cardano demo stack plus Local Osmosis direct-route preview.',
     enabled: true,
-    entrypointChainId: CARDANO_ENTRYPOINT_CHAIN_ID,
-    defaultCosmosChainId: CARDANO_ENTRYPOINT_CHAIN_ID,
+    defaultCosmosChainId: LOCAL_OSMOSIS_CHAIN_ID,
     cardanoChainId: CARDANO_CHAIN_ID,
     cardanoIbcChainId: CARDANO_IBC_CHAIN_ID,
     cardanoBridgeManifestUrl: CARDANO_BRIDGE_MANIFEST_URL,
     plannerCounterpartyRestEndpoint: LOCAL_OSMOSIS_REST_ENDPOINT,
-    pfmFeeChainIds: [CARDANO_ENTRYPOINT_CHAIN_ID],
-    chains: [entrypointChain, cardanoChain('devnet'), localOsmosisChain],
+    pfmFeeChainIds: [],
+    chains: [cardanoChain('devnet'), localOsmosisChain],
     routes: bidirectionalRoutes(
       'local',
       CARDANO_CHAIN_ID,

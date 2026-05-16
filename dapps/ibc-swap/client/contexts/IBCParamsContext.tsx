@@ -8,20 +8,13 @@ import {
   RawChannelMapping,
   ChainToChainChannels,
 } from '@/types/IBCParams';
-import {
-  fetchAllChannels,
-  fetchPacketForwardFee,
-} from '@/services/CommonCosmosServices';
+import { fetchPacketForwardFee } from '@/services/CommonCosmosServices';
 import BigNumber from 'bignumber.js';
 import {
   DEFAULT_PFM_FEE,
-  CARDANO_ENTRYPOINT_CHAIN_ID,
   OSMOSIS_CHAIN_ID,
 } from '@/constants';
 import { chainsRestEndpoints } from '@/configs/customChainInfo';
-import {
-  CARDANO_ENTRYPOINT_REST_ENDPOINT,
-} from '@/configs/runtime';
 
 type IBCParamsContextType = {
   rawChannelMappings: RawChannelMapping[];
@@ -51,12 +44,7 @@ export const IBCParamsProvider = ({
   };
 
   const fetchRawChannelsMapping = async () => {
-    fetchAllChannels(
-      CARDANO_ENTRYPOINT_CHAIN_ID,
-      CARDANO_ENTRYPOINT_REST_ENDPOINT,
-    ).then((res: any) => {
-      setRawChannelMappings(res.bestChannel);
-    });
+    setRawChannelMappings([]);
   };
 
   const updateChainToChainChannels = () => {

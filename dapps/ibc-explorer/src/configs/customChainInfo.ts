@@ -5,70 +5,6 @@ import UnknownTokenIcon from '@src/assets/images/unknown-token.png';
 
 export const CARDANO_MAINNET_MAGIC = '764824073';
 
-const CARDANO_ENTRYPOINT_CHAIN_ID = 'cardano-entrypoint';
-
-const getEntrypointRpcEndpoint = () =>
-  process.env.REACT_APP_CARDANO_ENTRYPOINT_RPC_ENDPOINT ||
-  process.env.REACT_APP_ENTRYPOINT_RPC_ENDPOINT ||
-  '';
-
-const getEntrypointRestEndpoint = () =>
-  process.env.REACT_APP_CARDANO_ENTRYPOINT_REST_ENDPOINT ||
-  process.env.REACT_APP_ENTRYPOINT_REST_ENDPOINT ||
-  '';
-const entrypointChainConfig: Chain = {
-  chain_name: CARDANO_ENTRYPOINT_CHAIN_ID,
-  chain_type: 'cosmos',
-  status: 'active',
-  network_type: 'testnet',
-  pretty_name: 'Cardano Entrypoint Localnet',
-  chain_id: CARDANO_ENTRYPOINT_CHAIN_ID,
-  bech32_prefix: 'cosmos',
-  slip44: 118,
-  fees: {
-    fee_tokens: [
-      {
-        denom: 'stake',
-        fixed_min_gas_price: 0.0,
-        low_gas_price: 0.0,
-        average_gas_price: 0.0,
-        high_gas_price: 0.0,
-      },
-    ],
-  },
-  staking: {
-    staking_tokens: [
-      {
-        denom: 'token',
-      },
-      {
-        denom: 'stake',
-      },
-    ],
-  },
-  apis: {
-    rpc: [
-      {
-        address: getEntrypointRpcEndpoint(),
-        provider: 'local',
-      },
-    ],
-    rest: [
-      {
-        address: getEntrypointRestEndpoint(),
-        provider: 'local',
-      },
-    ],
-  },
-  key_algos: ['secp256k1'],
-  codebase: {
-    ics_enabled: ['ibc-go'],
-  },
-  logo_URIs: {
-    svg: 'https://cosmos.network/presskit/cosmos-brandmark-dynamic-dark.svg',
-  },
-};
-
 const localOsmosisChainConfig: Chain = {
   chain_name: 'localosmosis',
   chain_type: 'cosmos',
@@ -117,10 +53,7 @@ const localOsmosisChainConfig: Chain = {
   keywords: ['ibc-go'], // Assuming features map to keywords
 };
 
-export const customChains: Chain[] = [
-  entrypointChainConfig,
-  localOsmosisChainConfig,
-];
+export const customChains: Chain[] = [localOsmosisChainConfig];
 
 export const isCardanoMainnet =
   process.env.REACT_APP_CARDANO_CHAIN_ID === CARDANO_MAINNET_MAGIC;
@@ -175,40 +108,6 @@ type ChainAssetEntry = {
 type ChainAssetListLike = {
   chain_name: string;
   assets: ChainAssetEntry[];
-};
-
-const entrypointChainAssetList: AssetList = {
-  chain_name: CARDANO_ENTRYPOINT_CHAIN_ID,
-  assets: [
-    {
-      description: 'Registered denom token for cardano-entrypoint chain testing',
-      denom_units: [
-        {
-          denom: 'token',
-          exponent: 0,
-          aliases: [],
-        },
-      ],
-      base: 'token',
-      display: 'token',
-      name: 'token',
-      symbol: 'token',
-    },
-    {
-      description: 'Registered denom token for cardano-entrypoint chain testing',
-      denom_units: [
-        {
-          denom: 'stake',
-          exponent: 0,
-          aliases: [],
-        },
-      ],
-      base: 'stake',
-      display: 'stake',
-      name: 'stake',
-      symbol: 'stake',
-    },
-  ],
 };
 
 const localOsmosisAssetList: AssetList = {
@@ -278,7 +177,6 @@ const cardanoAssetList: AssetList = {
 
 const allAssetsAndChain: ChainAssetListLike[] = [
   ...(assets as unknown as ChainAssetListLike[]),
-  entrypointChainAssetList as ChainAssetListLike,
   localOsmosisAssetList as ChainAssetListLike,
   cardanoAssetList as ChainAssetListLike,
 ];
