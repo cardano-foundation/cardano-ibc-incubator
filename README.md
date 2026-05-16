@@ -25,7 +25,8 @@ The implementation adheres to the [inter-blockchain communication protocol](http
 - [Architecture](#architecture)
 - [Getting Started](#getting-started)
 - [Testing Against Cosmos Chains](#testing-against-cosmos-chains)
-- [Direct Cosmos Routes](#direct-cosmos-routes)
+- [Demo: Direct Cosmos Routes](#demo-direct-cosmos-routes)
+- [Demo: Cross-chain Token Swap](#demo-cross-chain-token-swap)
 - [Additional Resources](#additional-resources)
 - [Contributing](#contributing)
 
@@ -260,16 +261,47 @@ To stop the services:
 caribic stop
 ```
 
-### Direct Cosmos Routes
+### Demo: Direct Cosmos Routes
 
-The previous intermediary-chain demos have been disabled for production safety. Direct Cardano-to-target routes now need explicit target-chain support:
+The previous intermediary-chain topology has been phased out for production safety. Local and public-testnet flows should use direct Cardano-to-target routes instead.
+
+Direct routes require explicit target-chain support:
 
 - The target Cosmos chain must compile and register the Cardano light client module, and allow the relevant client type in IBC client parameters.
 - Cardano must support the target chain client type, usually Tendermint/CometBFT for Cosmos SDK chains.
 - Operators must create direct Cardano clients, connections, and channels for each target chain.
 - ICQ flows require the target chain to enable the relevant ICQ host/query module.
 
-Until those direct integrations are implemented, `caribic demo token-swap`, `caribic demo message-exchange`, and `caribic setup route` fail closed instead of using an intermediary chain.
+The reusable transfer route setup command targets the selected chain directly:
+
+```sh
+caribic setup route --from cardano --to osmosis --to-network local
+caribic setup route --from cardano --to injective --to-network local
+```
+
+## Demo: Cross-chain token swap
+
+The token-swap route setup remains part of `caribic demo token-swap`, but the route it prepares is direct Cardano-to-target rather than Cardano-to-intermediary-to-target. The swap contract execution script still needs to be ported to consume the direct channel ids.
+
+For local Osmosis:
+
+```sh
+caribic start --clean
+caribic chain start --chain osmosis --network local
+caribic setup route --from cardano --to osmosis --to-network local
+caribic demo token-swap --chain osmosis --network local
+```
+
+For local Injective:
+
+```sh
+caribic start --clean
+caribic chain start --chain injective --network local
+caribic setup route --from cardano --to injective --to-network local
+caribic demo token-swap --chain injective --network local
+```
+
+If client creation fails with an unsupported client type, the selected target chain still needs the Cardano light client registered and allowed before direct routing can work.
 
 ## Useful commands for local networks
 

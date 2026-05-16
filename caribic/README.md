@@ -129,8 +129,8 @@ caribic create-channel --a-chain cardano-devnet --b-chain localosmosis --a-port 
 
 ### `caribic demo <message-exchange|token-swap>`
 
-Direct-route demo automation is disabled until direct Cardano-to-target IBC routes are implemented.
-`caribic demo token-swap` and `caribic demo message-exchange` fail closed instead of routing through an intermediary chain.
+`caribic demo token-swap` prepares direct Cardano-to-target transfer routes. The swap execution script still needs to be ported to use direct channel ids instead of the retired intermediary memo topology.
+`caribic demo message-exchange` needs to be reworked per target chain because ICQ/message modules are target-specific.
 
 The deprecated Mithril readiness settings remain in the config only for historical compatibility and are not part of the maintained startup path.
 If your machine is slower, tune retry windows in `caribic/config/default-config.json` (or whichever file you pass via `--config`).
@@ -191,7 +191,7 @@ to make sure all the services are healthy, then
 
 ### What it tests
 
-The previous route-chain integration tests have been retired. `caribic test` now reports that direct-route integration coverage must be rebuilt once Cardano-to-target clients, connections, and channels exist.
+The previous route-chain integration tests have been retired. Direct-route integration coverage should validate Cardano-to-target clients, connections, channels, transfer proofs, voucher mint/burn behavior, and swap-specific application state without using an intermediary chain.
 
 ### Troubleshooting tips
 
