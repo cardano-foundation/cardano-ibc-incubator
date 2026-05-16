@@ -167,6 +167,10 @@ func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientS
 	return nil
 }
 
+func (ClientState) ExportMetadata(storetypes.KVStore) []exported.GenesisMetadata {
+	return nil
+}
+
 func (cs ClientState) GetLatestHeight() exported.Height {
 	if cs.LatestHeight == nil {
 		return clienttypes.ZeroHeight()

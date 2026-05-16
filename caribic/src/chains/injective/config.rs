@@ -3,8 +3,10 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-pub(super) const LOCAL_DOCKER_IMAGE: &str = "injectivelabs/injective-core:v1.18.0";
+pub(super) const LOCAL_DOCKER_IMAGE: &str = "local:injective-cardano-probabilistic";
 pub(super) const LOCAL_CONFIGURATION_FILE: &str = "chains/injective/configuration/config.yml";
+pub(super) const SOURCE_ZIP_URL: &str =
+    "https://github.com/InjectiveFoundation/injective-core/archive/refs/tags/v1.18.0-1770939123.zip";
 
 pub(super) const LOCAL_CHAIN_ID: &str = "injective-777";
 pub(super) const LOCAL_MONIKER: &str = "caribic-injective-local";

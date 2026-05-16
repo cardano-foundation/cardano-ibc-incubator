@@ -10,7 +10,7 @@ use crate::chains::cosmos_node::resolve_home_relative_path;
 use crate::logger::{self, log, log_or_show_progress, verbose};
 use crate::process::docker::DockerCli;
 use crate::setup::download_repository;
-use crate::utils::wait_for_health_check;
+use crate::utils::{execute_script, wait_for_health_check};
 
 pub(super) async fn prepare_local(
     project_root_path: &Path,
@@ -19,6 +19,7 @@ pub(super) async fn prepare_local(
 ) -> Result<(), Box<dyn std::error::Error>> {
     ensure_osmosis_source_available(osmosis_dir).await?;
     sync_workspace_assets_from_repo(project_root_path, osmosis_dir)?;
+    patch_cardano_probabilistic_light_client(project_root_path, osmosis_dir)?;
     copy_local_config_files(osmosis_dir)?;
     verbose("PASS: Osmosis configuration files copied successfully");
 
@@ -220,6 +221,32 @@ fn sync_workspace_assets_from_repo(
         &[configuration_source, scripts_source],
         workspace_root,
         &fs_extra::dir::CopyOptions::new().overwrite(true),
+    )?;
+
+    Ok(())
+}
+
+fn patch_cardano_probabilistic_light_client(
+    project_root_path: &Path,
+    osmosis_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let script_dir = project_root_path.join("chains").join("cosmos");
+    let osmosis_arg = osmosis_dir
+        .to_str()
+        .ok_or("Failed to render Osmosis workspace path as UTF-8")?;
+    let repo_arg = project_root_path
+        .to_str()
+        .ok_or("Failed to render project root path as UTF-8")?;
+
+    execute_script(
+        script_dir.as_path(),
+        "sh",
+        Vec::from([
+            "patch_cardano_probabilistic_light_client.sh",
+            osmosis_arg,
+            repo_arg,
+        ]),
+        None,
     )?;
 
     Ok(())
