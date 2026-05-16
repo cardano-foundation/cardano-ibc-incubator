@@ -1,9 +1,15 @@
 package app
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	ibcwasmkeeper "github.com/cosmos/ibc-go/modules/light-clients/08-wasm/v10/keeper"
+
+	vesseloraclekeeper "entrypoint/x/vesseloracle/keeper"
 
 	"cosmossdk.io/depinject"
 	"cosmossdk.io/log"
@@ -12,7 +18,6 @@ import (
 	evidencekeeper "cosmossdk.io/x/evidence/keeper"
 	feegrantkeeper "cosmossdk.io/x/feegrant/keeper"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
-	vesseloraclekeeper "entrypoint/x/vesseloracle/keeper"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
@@ -107,6 +112,7 @@ type App struct {
 	ICAControllerKeeper icacontrollerkeeper.Keeper
 	ICAHostKeeper       icahostkeeper.Keeper
 	TransferKeeper      ibctransferkeeper.Keeper
+	WasmClientKeeper    ibcwasmkeeper.Keeper
 
 	VesseloracleKeeper        vesseloraclekeeper.Keeper
 
@@ -299,6 +305,15 @@ func New(
 	// Register legacy modules
 	app.registerIBCModules()
 
+	// Register 08-wasm snapshot extension so WASM bytecode is included in state-sync snapshots.
+	if manager := app.SnapshotManager(); manager != nil {
+		if err := manager.RegisterExtensions(
+			ibcwasmkeeper.NewWasmSnapshotter(app.CommitMultiStore(), &app.WasmClientKeeper),
+		); err != nil {
+			panic(fmt.Sprintf("failed to register 08-wasm snapshot extension: %s", err))
+		}
+	}
+
 	// register streaming services
 	if err := app.RegisterStreamingServices(appOpts, app.kvStoreKeys()); err != nil {
 		return nil, err
@@ -335,6 +350,13 @@ func New(
 
 	if err := app.Load(loadLatest); err != nil {
 		return nil, err
+	}
+
+	if loadLatest {
+		ctx := app.NewUncachedContext(true, cmtproto.Header{})
+		if err := app.WasmClientKeeper.InitializePinnedCodes(ctx); err != nil {
+			panic(fmt.Sprintf("failed to initialize 08-wasm pinned codes: %s", err))
+		}
 	}
 
 	return app, nil
