@@ -292,6 +292,7 @@ jobs:
         module:
           - cosmos/cardano-entrypoint
           - cosmos/cardano-entrypoint/datasource
+          - cosmos/cardano-probabilistic-light-client
           - cosmos/ibcclientest
 
     defaults:
@@ -309,6 +310,7 @@ jobs:
           cache-dependency-path: |
             cosmos/cardano-entrypoint/go.sum
             cosmos/cardano-entrypoint/datasource/go.sum
+            cosmos/cardano-probabilistic-light-client/go.sum
             cosmos/ibcclientest/go.sum
 
       - name: Test
