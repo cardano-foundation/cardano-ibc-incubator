@@ -1,16 +1,19 @@
-import { Logger } from '@nestjs/common';
-import { LucidService } from '@shared/modules/lucid/lucid.service';
-import { HostStateDatum } from '../../shared/types/host-state-datum';
-import { GrpcInternalException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
-import { MithrilService } from '../../shared/modules/mithril/mithril.service';
-import { HistoryService } from './history.service';
-import { loadStakeWeightedStabilityEvidenceForTxHash } from './stability-evidence';
-import { ICS23MerkleTree } from '../../shared/helpers/ics23-merkle-tree';
+import { Logger } from "@nestjs/common";
+import { LucidService } from "@shared/modules/lucid/lucid.service";
+import { HostStateDatum } from "../../shared/types/host-state-datum";
 import {
-  IbcTreeCacheService,
+  GrpcInternalException,
+  GrpcNotFoundException,
+} from "~@/exception/grpc_exceptions";
+import { MithrilService } from "../../shared/modules/mithril/mithril.service";
+import { HistoryService } from "./history.service";
+import { loadStakeWeightedStabilityEvidenceForTxHash } from "./stability-evidence";
+import { ICS23MerkleTree } from "../../shared/helpers/ics23-merkle-tree";
+import {
   ibcTreeCacheIdForHeight,
   ibcTreeCacheIdForRoot,
-} from '../../shared/services/ibc-tree-cache.service';
+  IbcTreeCacheService,
+} from "../../shared/services/ibc-tree-cache.service";
 
 type ProofContextDeps = {
   logger: Logger;
@@ -18,7 +21,7 @@ type ProofContextDeps = {
   mithrilService: MithrilService;
   historyService: HistoryService;
   context: string;
-  lightClientMode?: 'mithril' | 'stake-weighted-stability';
+  lightClientMode?: "mithril" | "stake-weighted-stability";
   maxAttempts?: number;
   delayMs?: number;
 };
@@ -30,39 +33,46 @@ type HistoricalProofContextDeps = ProofContextDeps & {
 
 type ProofQueryContext =
   | {
-      historical: false;
-      proofHeight: bigint;
-    }
+    historical: false;
+    proofHeight: bigint;
+  }
   | {
-      historical: true;
-      proofHeight: bigint;
-      root: string;
-      tree: ICS23MerkleTree;
-    };
+    historical: true;
+    proofHeight: bigint;
+    root: string;
+    tree: ICS23MerkleTree;
+  };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function isMissingCurrentLiveHostStateEvidence(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return message.includes('Historical tx evidence unavailable for current live HostState tx');
+  return message.includes(
+    "Historical tx evidence unavailable for current live HostState tx",
+  );
 }
 
 function isPriorEpochPointTooOld(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return message.includes('Target point is too old') || message.includes('Failed to acquire requested point');
+  return message.includes("Target point is too old") ||
+    message.includes("Failed to acquire requested point");
 }
 
 function isCurrentRootFromPriorEpoch(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return message.includes('stake-weighted stability currently supports only current-epoch anchors');
+  return message.includes(
+    "stake-weighted stability currently supports only current-epoch anchors",
+  );
 }
 
 export async function resolveCurrentLiveHostStateTxHeight({
   lucidService,
   historyService,
-}: Pick<ProofContextDeps, 'lucidService' | 'historyService'>): Promise<bigint> {
+}: Pick<ProofContextDeps, "lucidService" | "historyService">): Promise<bigint> {
   const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
-  const txEvidence = await historyService.findTransactionEvidenceByHash(liveHostStateUtxo.txHash);
+  const txEvidence = await historyService.findTransactionEvidenceByHash(
+    liveHostStateUtxo.txHash,
+  );
   if (txEvidence) {
     return BigInt(txEvidence.blockNo);
   }
@@ -85,11 +95,11 @@ export async function resolveProofHeightForCurrentRoot({
   mithrilService,
   historyService,
   context,
-  lightClientMode = 'stake-weighted-stability',
+  lightClientMode = "stake-weighted-stability",
   maxAttempts = 10,
   delayMs = 1500,
 }: ProofContextDeps): Promise<bigint> {
-  if (lightClientMode === 'stake-weighted-stability') {
+  if (lightClientMode === "stake-weighted-stability") {
     return resolveStabilityAcceptedProofHeightForCurrentRoot({
       logger,
       lucidService,
@@ -130,23 +140,31 @@ export async function resolveProofContextForQuery({
     );
   }
 
-  const hostStateUtxo = await deps.historyService.findHostStateUtxoAtOrBeforeBlockNo(requestedHeight);
+  const hostStateUtxo = await deps.historyService
+    .findHostStateUtxoAtOrBeforeBlockNo(requestedHeight);
   if (!hostStateUtxo.datum) {
     throw new GrpcInternalException(
       `Historical HostState UTxO ${hostStateUtxo.txHash}#${hostStateUtxo.outputIndex} at or before height ${requestedHeight.toString()} is missing datum`,
     );
   }
 
-  const hostStateDatum = await deps.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
+  const hostStateDatum = await deps.lucidService.decodeDatum<HostStateDatum>(
+    hostStateUtxo.datum,
+    "host_state",
+  );
   const root = hostStateDatum.state.ibc_state_root.toLowerCase();
 
   const cached =
     (await ibcTreeCacheService.load(ibcTreeCacheIdForRoot(root))) ??
-    (await ibcTreeCacheService.load(ibcTreeCacheIdForHeight(requestedHeight)));
+      (await ibcTreeCacheService.load(
+        ibcTreeCacheIdForHeight(requestedHeight),
+      ));
 
   if (!cached) {
     throw new GrpcNotFoundException(
-      `Not found: no cached IBC state tree for proof height ${requestedHeight.toString()} and root ${root.substring(0, 16)}...`,
+      `Not found: no cached IBC state tree for proof height ${requestedHeight.toString()} and root ${
+        root.substring(0, 16)
+      }...`,
     );
   }
 
@@ -175,10 +193,15 @@ async function resolveCertifiedProofHeightForCurrentRoot({
 }: ProofContextDeps): Promise<bigint> {
   const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
   if (!liveHostStateUtxo?.datum) {
-    throw new GrpcInternalException('IBC infrastructure error: HostState UTxO missing datum');
+    throw new GrpcInternalException(
+      "IBC infrastructure error: HostState UTxO missing datum",
+    );
   }
 
-  const liveHostStateDatum = await lucidService.decodeDatum<HostStateDatum>(liveHostStateUtxo.datum, 'host_state');
+  const liveHostStateDatum = await lucidService.decodeDatum<HostStateDatum>(
+    liveHostStateUtxo.datum,
+    "host_state",
+  );
   const liveRoot = liveHostStateDatum.state.ibc_state_root;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -186,15 +209,18 @@ async function resolveCertifiedProofHeightForCurrentRoot({
     const latestSnapshot = snapshots?.[0];
     if (!latestSnapshot) {
       if (attempt + 1 === maxAttempts) {
-        throw new GrpcInternalException('Mithril transaction snapshots unavailable for proof_height');
+        throw new GrpcInternalException(
+          "Mithril transaction snapshots unavailable for proof_height",
+        );
       }
       await sleep(delayMs);
       continue;
     }
 
-    const certifiedHostStateUtxo = await historyService.findHostStateUtxoAtOrBeforeBlockNo(
-      BigInt(latestSnapshot.block_number),
-    );
+    const certifiedHostStateUtxo = await historyService
+      .findHostStateUtxoAtOrBeforeBlockNo(
+        BigInt(latestSnapshot.block_number),
+      );
 
     const currentRootCertified =
       certifiedHostStateUtxo.txHash === liveHostStateUtxo.txHash &&
@@ -207,7 +233,9 @@ async function resolveCertifiedProofHeightForCurrentRoot({
     if (attempt + 1 < maxAttempts) {
       logger.warn(
         `[${context}] Mithril-certified HostState ${certifiedHostStateUtxo.txHash}#${certifiedHostStateUtxo.outputIndex}` +
-          ` at block ${latestSnapshot.block_number} lags current root ${liveRoot.substring(0, 16)}...` +
+          ` at block ${latestSnapshot.block_number} lags current root ${
+            liveRoot.substring(0, 16)
+          }...` +
           ` (${liveHostStateUtxo.txHash}#${liveHostStateUtxo.outputIndex}); waiting for certification`,
       );
       await sleep(delayMs);
@@ -227,46 +255,67 @@ async function resolveStabilityAcceptedProofHeightForCurrentRoot({
   context,
   maxAttempts = 10,
   delayMs = 1500,
-}: Omit<ProofContextDeps, 'mithrilService' | 'lightClientMode'>): Promise<bigint> {
+}: Omit<ProofContextDeps, "mithrilService" | "lightClientMode">): Promise<
+  bigint
+> {
   const liveHostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
   const liveHostStateTxHeight = await resolveCurrentLiveHostStateTxHeight({
     lucidService,
     historyService,
   });
 
+  let lastStabilityError: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      const stabilityEvidence = await loadStakeWeightedStabilityEvidenceForTxHash({
-        historyService,
-        txHash: liveHostStateUtxo.txHash,
-        logger,
-        missingTxEvidenceMessage: `HostState tx evidence unavailable for proof generation (${context})`,
-        missingAnchorBlockMessage: `Cardano history block for HostState tx ${liveHostStateUtxo.txHash} unavailable for stability proof generation (${context})`,
-      });
+      const stabilityEvidence =
+        await loadStakeWeightedStabilityEvidenceForTxHash({
+          historyService,
+          txHash: liveHostStateUtxo.txHash,
+          logger,
+          missingTxEvidenceMessage:
+            `HostState tx evidence unavailable for proof generation (${context})`,
+          missingAnchorBlockMessage:
+            `Cardano history block for HostState tx ${liveHostStateUtxo.txHash} unavailable for stability proof generation (${context})`,
+        });
       return stabilityEvidence.anchorHeight;
     } catch (error) {
-      if (isPriorEpochPointTooOld(error) || isCurrentRootFromPriorEpoch(error)) {
+      lastStabilityError = error;
+      if (
+        isPriorEpochPointTooOld(error) || isCurrentRootFromPriorEpoch(error)
+      ) {
         logger.warn(
-          `[${context}] ${error instanceof Error ? error.message : String(error)}; live HostState root is still current, reusing its tx height ${liveHostStateTxHeight.toString()} for proof serving`,
+          `[${context}] ${
+            error instanceof Error ? error.message : String(error)
+          }; live HostState root is still current, reusing its tx height ${liveHostStateTxHeight.toString()} for proof serving`,
         );
         return liveHostStateTxHeight;
       }
 
-      if (attempt + 1 < maxAttempts && isMissingCurrentLiveHostStateEvidence(error)) {
-        logger.warn(`[${context}] ${error.message}; waiting for Yaci history to catch up before serving proofs`);
+      if (
+        attempt + 1 < maxAttempts &&
+        isMissingCurrentLiveHostStateEvidence(error)
+      ) {
+        logger.warn(
+          `[${context}] ${error.message}; waiting for Yaci history to catch up before serving proofs`,
+        );
         await sleep(delayMs);
         continue;
       }
 
       if (attempt + 1 < maxAttempts) {
-        logger.warn(`[${context}] ${error.message}; waiting for more stability before serving proofs`);
+        logger.warn(
+          `[${context}] ${error.message}; waiting for more stability before serving proofs`,
+        );
         await sleep(delayMs);
         continue;
       }
     }
   }
 
+  const detail = lastStabilityError instanceof Error
+    ? `: ${lastStabilityError.message}`
+    : "";
   throw new GrpcInternalException(
-    `Current HostState root is not yet stability-accepted for proof generation (${context})`,
+    `Current HostState root is not yet stability-accepted for proof generation (${context})${detail}`,
   );
 }

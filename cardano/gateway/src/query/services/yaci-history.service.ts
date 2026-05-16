@@ -1,14 +1,18 @@
-import { InjectEntityManager } from '@nestjs/typeorm';
-import { Inject, Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { EntityManager } from 'typeorm';
-import { bech32 } from 'bech32';
-import { GrpcNotFoundException } from '~@/exception/grpc_exceptions';
-import { CLIENT_PREFIX } from '../../constant';
-import { queryEpochContextAtPoint } from '../../shared/helpers/ogmios';
-import { LucidService } from '../../shared/modules/lucid/lucid.service';
-import { UtxoDto } from '../dtos/utxo.dto';
-import { TxDto } from '../dtos/tx.dto';
+import { InjectEntityManager } from "@nestjs/typeorm";
+import { Inject, Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { EntityManager } from "typeorm";
+import { bech32 } from "bech32";
+import { GrpcNotFoundException } from "~@/exception/grpc_exceptions";
+import { CLIENT_PREFIX } from "../../constant";
+import {
+  queryCurrentEpochStakeDistribution,
+  queryCurrentEpochVerificationData,
+  queryEpochContextAtPoint,
+} from "../../shared/helpers/ogmios";
+import { LucidService } from "../../shared/modules/lucid/lucid.service";
+import { UtxoDto } from "../dtos/utxo.dto";
+import { TxDto } from "../dtos/tx.dto";
 import {
   HistoryBlock,
   HistoryEpochContextAtBlock,
@@ -17,7 +21,7 @@ import {
   HistoryStakeDistributionEntry,
   HistoryTxEvidence,
   HistoryTxRedeemer,
-} from './history.service';
+} from "./history.service";
 
 type BridgeUtxoHistoryRow = {
   address: string;
@@ -108,10 +112,14 @@ export class YaciHistoryService implements HistoryService {
   constructor(
     private readonly configService: ConfigService,
     @Inject(LucidService) private readonly lucidService: LucidService,
-    @InjectEntityManager('history') private readonly entityManager: EntityManager,
+    @InjectEntityManager("history") private readonly entityManager:
+      EntityManager,
   ) {}
 
-  async findUtxosByPolicyIdAndPrefixTokenName(policyId: string, prefixTokenName: string): Promise<UtxoDto[]> {
+  async findUtxosByPolicyIdAndPrefixTokenName(
+    policyId: string,
+    prefixTokenName: string,
+  ): Promise<UtxoDto[]> {
     const query = `
       SELECT
         address,
@@ -129,7 +137,10 @@ export class YaciHistoryService implements HistoryService {
         AND position(lower($2) in lower(assets_name)) > 0
       ORDER BY block_no DESC, COALESCE(tx_index, 0) DESC, output_index DESC
     `;
-    const rows = await this.entityManager.query(query, [policyId, prefixTokenName]);
+    const rows = await this.entityManager.query(query, [
+      policyId,
+      prefixTokenName,
+    ]);
     return rows.map((row: BridgeUtxoHistoryRow) => this.mapUtxoRow(row));
   }
 
@@ -154,11 +165,16 @@ export class YaciHistoryService implements HistoryService {
     return rows.map((row: BridgeUtxoHistoryRow) => this.mapUtxoRow(row));
   }
 
-  async findUtxoByUnitAtOrBeforeBlockNo(unit: string, height: bigint): Promise<UtxoDto> {
+  async findUtxoByUnitAtOrBeforeBlockNo(
+    unit: string,
+    height: bigint,
+  ): Promise<UtxoDto> {
     const policyId = unit.slice(0, 56).toLowerCase();
     const assetName = unit.slice(56).toLowerCase();
     if (!policyId || !assetName) {
-      throw new GrpcNotFoundException(`Not found: invalid asset unit for historical UTxO lookup`);
+      throw new GrpcNotFoundException(
+        `Not found: invalid asset unit for historical UTxO lookup`,
+      );
     }
 
     const query = `
@@ -180,9 +196,15 @@ export class YaciHistoryService implements HistoryService {
       ORDER BY block_no DESC, COALESCE(tx_index, 0) DESC, output_index DESC
       LIMIT 1
     `;
-    const rows = await this.entityManager.query(query, [height.toString(), policyId, assetName]);
+    const rows = await this.entityManager.query(query, [
+      height.toString(),
+      policyId,
+      assetName,
+    ]);
     if (rows.length <= 0) {
-      throw new GrpcNotFoundException(`Not found: UTxO ${unit} not found at or before height ${height.toString()}`);
+      throw new GrpcNotFoundException(
+        `Not found: UTxO ${unit} not found at or before height ${height.toString()}`,
+      );
     }
 
     return this.mapUtxoRow(rows[0]);
@@ -209,11 +231,17 @@ export class YaciHistoryService implements HistoryService {
       LIMIT 1
     `;
 
-    const deploymentConfig = this.configService.get('deployment');
+    const deploymentConfig = this.configService.get("deployment");
     const hostStateNFT = deploymentConfig.hostStateNFT;
-    const rows = await this.entityManager.query(query, [height.toString(), hostStateNFT.policyId, hostStateNFT.name]);
+    const rows = await this.entityManager.query(query, [
+      height.toString(),
+      hostStateNFT.policyId,
+      hostStateNFT.name,
+    ]);
     if (rows.length <= 0) {
-      throw new GrpcNotFoundException(`Not found: HostState UTxO not found at or before height ${height.toString()}`);
+      throw new GrpcNotFoundException(
+        `Not found: HostState UTxO not found at or before height ${height.toString()}`,
+      );
     }
 
     return this.mapUtxoRow(rows[0]);
@@ -255,7 +283,10 @@ export class YaciHistoryService implements HistoryService {
     return rows[0] ? this.mapHistoryBlockRow(rows[0]) : null;
   }
 
-  async findBridgeBlocks(trustedHeight: bigint, anchorHeight: bigint): Promise<HistoryBlock[]> {
+  async findBridgeBlocks(
+    trustedHeight: bigint,
+    anchorHeight: bigint,
+  ): Promise<HistoryBlock[]> {
     const query = `
       SELECT
         number,
@@ -270,11 +301,17 @@ export class YaciHistoryService implements HistoryService {
         AND number < $2
       ORDER BY number ASC
     `;
-    const rows = await this.entityManager.query(query, [trustedHeight.toString(), anchorHeight.toString()]);
+    const rows = await this.entityManager.query(query, [
+      trustedHeight.toString(),
+      anchorHeight.toString(),
+    ]);
     return rows.map((row: HistoryBlockRow) => this.mapHistoryBlockRow(row));
   }
 
-  async findDescendantBlocks(anchorHeight: bigint, limit: number): Promise<HistoryBlock[]> {
+  async findDescendantBlocks(
+    anchorHeight: bigint,
+    limit: number,
+  ): Promise<HistoryBlock[]> {
     const query = `
       SELECT
         number,
@@ -289,23 +326,30 @@ export class YaciHistoryService implements HistoryService {
       ORDER BY number ASC
       LIMIT $2
     `;
-    const rows = await this.entityManager.query(query, [anchorHeight.toString(), limit]);
+    const rows = await this.entityManager.query(query, [
+      anchorHeight.toString(),
+      limit,
+    ]);
     return rows.map((row: HistoryBlockRow) => this.mapHistoryBlockRow(row));
   }
 
-  async findEpochContextAtBlock(block: HistoryBlock): Promise<HistoryEpochContextAtBlock | null> {
+  async findEpochContextAtBlock(
+    block: HistoryBlock,
+  ): Promise<HistoryEpochContextAtBlock | null> {
     const slotBounds = await this.findEpochSlotBounds(block.epochNo);
     if (!slotBounds) {
       return null;
     }
 
-    const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
+    const ogmiosEndpoint = this.configService.get<string>("ogmiosEndpoint");
     if (!ogmiosEndpoint) {
       return null;
     }
     const epochNonce = await this.fetchEpochNonce(block.epochNo);
 
-    const queryEpochContext = async (pointBlock: Pick<HistoryBlock, 'slotNo' | 'hash'>) =>
+    const queryEpochContext = async (
+      pointBlock: Pick<HistoryBlock, "slotNo" | "hash">,
+    ) =>
       queryEpochContextAtPoint(
         ogmiosEndpoint,
         {
@@ -321,16 +365,40 @@ export class YaciHistoryService implements HistoryService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const fallbackBlock = await this.findLatestBlockInEpoch(block.epochNo);
-      const canRetryWithSameEpochPoint =
-        fallbackBlock &&
+      const canRetryWithSameEpochPoint = fallbackBlock &&
         fallbackBlock.height !== block.height &&
-        (message.includes('Target point is too old') || message.includes('Failed to acquire requested point'));
+        (message.includes("Target point is too old") ||
+          message.includes("Failed to acquire requested point"));
 
       if (!canRetryWithSameEpochPoint) {
+        if (this.canUseLocalStalePointEpochContextFallback(message)) {
+          return this.findLocalStalePointEpochContextFallback(
+            block,
+            slotBounds,
+            ogmiosEndpoint,
+            epochNonce,
+          );
+        }
         throw error;
       }
 
-      epochContext = await queryEpochContext(fallbackBlock);
+      try {
+        epochContext = await queryEpochContext(fallbackBlock);
+      } catch (fallbackError) {
+        const fallbackMessage =
+          fallbackError instanceof Error
+            ? fallbackError.message
+            : String(fallbackError);
+        if (this.canUseLocalStalePointEpochContextFallback(fallbackMessage)) {
+          return this.findLocalStalePointEpochContextFallback(
+            block,
+            slotBounds,
+            ogmiosEndpoint,
+            epochNonce,
+          );
+        }
+        throw fallbackError;
+      }
     }
 
     if (epochContext.currentEpoch !== block.epochNo) {
@@ -339,11 +407,12 @@ export class YaciHistoryService implements HistoryService {
       );
     }
 
-    const stakeDistribution: HistoryStakeDistributionEntry[] = epochContext.stakeDistribution.map((entry) => ({
-      poolId: normalizePoolId(entry.poolId),
-      stake: entry.stake,
-      vrfKeyHash: normalizeHex(entry.vrfKeyHash),
-    }));
+    const stakeDistribution: HistoryStakeDistributionEntry[] = epochContext
+      .stakeDistribution.map((entry) => ({
+        poolId: normalizePoolId(entry.poolId),
+        stake: entry.stake,
+        vrfKeyHash: normalizeHex(entry.vrfKeyHash),
+      }));
     const firstRegistrationSlots = await this.findKnownPoolRegistrationSlots(
       stakeDistribution.map((entry) => entry.poolId),
     );
@@ -363,11 +432,64 @@ export class YaciHistoryService implements HistoryService {
     };
   }
 
+  private canUseLocalStalePointEpochContextFallback(message: string): boolean {
+    return (
+      process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT !==
+        undefined &&
+      (message.includes("Target point is too old") ||
+        message.includes("Failed to acquire requested point"))
+    );
+  }
+
+  private async findLocalStalePointEpochContextFallback(
+    block: HistoryBlock,
+    slotBounds: {
+      currentEpochStartSlot: bigint;
+      currentEpochEndSlotExclusive: bigint;
+    },
+    ogmiosEndpoint: string,
+    epochNonce: string,
+  ): Promise<HistoryEpochContextAtBlock> {
+    const [verificationContext, currentStakeDistribution] = await Promise.all([
+      queryCurrentEpochVerificationData(ogmiosEndpoint, epochNonce),
+      queryCurrentEpochStakeDistribution(ogmiosEndpoint),
+    ]);
+
+    const stakeDistribution: HistoryStakeDistributionEntry[] =
+      currentStakeDistribution.map((entry) => ({
+        poolId: normalizePoolId(entry.poolId),
+        stake: entry.stake,
+        vrfKeyHash: normalizeHex(entry.vrfKeyHash),
+      }));
+    const firstRegistrationSlots = await this.findKnownPoolRegistrationSlots(
+      stakeDistribution.map((entry) => entry.poolId),
+    );
+
+    return {
+      epoch: block.epochNo,
+      stakeDistribution: stakeDistribution.map((entry) => ({
+        ...entry,
+        firstRegistrationSlot: firstRegistrationSlots.get(entry.poolId) ?? null,
+      })),
+      verificationContext: {
+        epochNonce: verificationContext.epochNonce,
+        slotsPerKesPeriod: verificationContext.slotsPerKesPeriod,
+        currentEpochStartSlot: slotBounds.currentEpochStartSlot,
+        currentEpochEndSlotExclusive: slotBounds.currentEpochEndSlotExclusive,
+      },
+    };
+  }
+
   async findClientUtxosByBlockNo(height: number): Promise<UtxoDto[]> {
-    const deploymentConfig = this.configService.get('deployment');
-    const mintClientScriptHash = deploymentConfig.validators.mintClientStt.scriptHash;
+    const deploymentConfig = this.configService.get("deployment");
+    const mintClientScriptHash =
+      deploymentConfig.validators.mintClientStt.scriptHash;
     const tokenBase = deploymentConfig.hostStateNFT;
-    const clientTokenNamePrefix = this.lucidService.generateTokenName(tokenBase, CLIENT_PREFIX, 0n).slice(0, 40);
+    const clientTokenNamePrefix = this.lucidService.generateTokenName(
+      tokenBase,
+      CLIENT_PREFIX,
+      0n,
+    ).slice(0, 40);
 
     const query = `
       SELECT
@@ -387,7 +509,11 @@ export class YaciHistoryService implements HistoryService {
         AND lower(assets_name) LIKE lower($3)
       ORDER BY COALESCE(tx_index, 0) ASC, output_index ASC
     `;
-    const rows = await this.entityManager.query(query, [height, mintClientScriptHash, `${clientTokenNamePrefix}%`]);
+    const rows = await this.entityManager.query(query, [
+      height,
+      mintClientScriptHash,
+      `${clientTokenNamePrefix}%`,
+    ]);
     return rows.map((row: BridgeUtxoHistoryRow) => this.mapUtxoRow(row));
   }
 
@@ -414,34 +540,71 @@ export class YaciHistoryService implements HistoryService {
   }
 
   private async fetchEpochNonce(epoch: number): Promise<string> {
-    const endpoint = this.configService.get<string>('cardanoEpochParamsEndpoint')?.replace(/\/+$/, '');
+    const endpoint = this.configService.get<string>(
+      "cardanoEpochParamsEndpoint",
+    )?.replace(/\/+$/, "");
     if (!endpoint) {
-      throw new Error(`Cardano epoch params endpoint unavailable for epoch ${epoch}`);
+      const localEpochNonceOverride = normalizeHex(
+        process.env.CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE,
+      );
+      if (
+        process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT !==
+          undefined &&
+        /^[0-9a-f]{64}$/.test(localEpochNonceOverride)
+      ) {
+        return localEpochNonceOverride;
+      }
+
+      const genesisNonce = normalizeHex(
+        process.env.CARDANO_EPOCH_NONCE_GENESIS,
+      );
+      if (epoch === 0 && /^[0-9a-f]{64}$/.test(genesisNonce)) {
+        return genesisNonce;
+      }
+      if (
+        process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT !==
+          undefined &&
+        /^[0-9a-f]{64}$/.test(genesisNonce)
+      ) {
+        return genesisNonce;
+      }
+      throw new Error(
+        `Cardano epoch params endpoint unavailable for epoch ${epoch}`,
+      );
     }
 
     const url = new URL(`${endpoint}/epoch_params`);
-    url.searchParams.set('_epoch_no', epoch.toString());
+    url.searchParams.set("_epoch_no", epoch.toString());
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), EPOCH_PARAMS_LOOKUP_TIMEOUT_MS);
+    const timeout = setTimeout(
+      () => controller.abort(),
+      EPOCH_PARAMS_LOOKUP_TIMEOUT_MS,
+    );
     try {
       const response = await fetch(url, {
         signal: controller.signal,
-        headers: { accept: 'application/json' },
+        headers: { accept: "application/json" },
       });
       if (!response.ok) {
-        throw new Error(`Cardano epoch params lookup failed for epoch ${epoch}: HTTP ${response.status}`);
+        throw new Error(
+          `Cardano epoch params lookup failed for epoch ${epoch}: HTTP ${response.status}`,
+        );
       }
 
       const body = await response.json();
-      const row = Array.isArray(body) ? (body[0] as KoiosEpochParamsRow | undefined) : undefined;
+      const row = Array.isArray(body)
+        ? (body[0] as KoiosEpochParamsRow | undefined)
+        : undefined;
       const nonce = normalizeHex(row?.nonce);
       if (!/^[0-9a-f]{64}$/.test(nonce)) {
-        throw new Error(`Cardano epoch params lookup did not return a valid nonce for epoch ${epoch}`);
+        throw new Error(
+          `Cardano epoch params lookup did not return a valid nonce for epoch ${epoch}`,
+        );
       }
       return nonce;
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && error.name === "AbortError") {
         throw new Error(
           `Cardano epoch params lookup timed out for epoch ${epoch} after ${EPOCH_PARAMS_LOOKUP_TIMEOUT_MS}ms`,
         );
@@ -454,40 +617,57 @@ export class YaciHistoryService implements HistoryService {
 
   async findFirstPoolRegistrationSlots(
     poolIds: string[],
-    referenceBlock: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>,
+    referenceBlock: Pick<HistoryBlock, "slotNo" | "timestampUnixNs">,
   ): Promise<Map<string, bigint>> {
     const mergedSlots = await this.findKnownPoolRegistrationSlots(poolIds);
-    const normalizedPoolIds = Array.from(new Set(poolIds.map((poolId) => normalizePoolId(poolId)).filter(Boolean)));
-    const missingAfterLocal = normalizedPoolIds.filter((poolId) => !mergedSlots.has(poolId));
+    const normalizedPoolIds = Array.from(
+      new Set(poolIds.map((poolId) => normalizePoolId(poolId)).filter(Boolean)),
+    );
+    const missingAfterLocal = normalizedPoolIds.filter((poolId) =>
+      !mergedSlots.has(poolId)
+    );
     if (missingAfterLocal.length === 0) {
       return mergedSlots;
     }
 
-    const externalSlots = await this.lookupExternalPoolRegistrationSlots(missingAfterLocal, referenceBlock);
+    const externalSlots = await this.lookupExternalPoolRegistrationSlots(
+      missingAfterLocal,
+      referenceBlock,
+    );
     if (externalSlots.size > 0) {
-      await this.cachePoolRegistrationSlots(externalSlots, 'external');
+      await this.cachePoolRegistrationSlots(externalSlots, "external");
     }
 
     return new Map([...mergedSlots, ...externalSlots]);
   }
 
-  private async findKnownPoolRegistrationSlots(poolIds: string[]): Promise<Map<string, bigint>> {
-    const normalizedPoolIds = Array.from(new Set(poolIds.map((poolId) => normalizePoolId(poolId)).filter(Boolean)));
+  private async findKnownPoolRegistrationSlots(
+    poolIds: string[],
+  ): Promise<Map<string, bigint>> {
+    const normalizedPoolIds = Array.from(
+      new Set(poolIds.map((poolId) => normalizePoolId(poolId)).filter(Boolean)),
+    );
     if (normalizedPoolIds.length === 0) {
       return new Map();
     }
 
     await this.ensurePoolRegistrationCacheTable();
 
-    const cachedSlots = await this.findCachedPoolRegistrationSlots(normalizedPoolIds);
-    const missingAfterCache = normalizedPoolIds.filter((poolId) => !cachedSlots.has(poolId));
+    const cachedSlots = await this.findCachedPoolRegistrationSlots(
+      normalizedPoolIds,
+    );
+    const missingAfterCache = normalizedPoolIds.filter((poolId) =>
+      !cachedSlots.has(poolId)
+    );
     if (missingAfterCache.length === 0) {
       return cachedSlots;
     }
 
-    const localSlots = await this.findLocalPoolRegistrationSlots(missingAfterCache);
+    const localSlots = await this.findLocalPoolRegistrationSlots(
+      missingAfterCache,
+    );
     if (localSlots.size > 0) {
-      await this.cachePoolRegistrationSlots(localSlots, 'yaci');
+      await this.cachePoolRegistrationSlots(localSlots, "yaci");
     }
 
     const mergedSlots = new Map([...cachedSlots, ...localSlots]);
@@ -515,7 +695,9 @@ export class YaciHistoryService implements HistoryService {
     this.poolRegistrationCacheTableReady = true;
   }
 
-  private async findCachedPoolRegistrationSlots(poolIds: string[]): Promise<Map<string, bigint>> {
+  private async findCachedPoolRegistrationSlots(
+    poolIds: string[],
+  ): Promise<Map<string, bigint>> {
     const rows = await this.entityManager.query(
       `
         SELECT lower(pool_id) AS pool_id, first_registration_slot::text AS first_registration_slot
@@ -528,7 +710,9 @@ export class YaciHistoryService implements HistoryService {
     return this.mapPoolRegistrationSlotRows(rows);
   }
 
-  private async findLocalPoolRegistrationSlots(poolIds: string[]): Promise<Map<string, bigint>> {
+  private async findLocalPoolRegistrationSlots(
+    poolIds: string[],
+  ): Promise<Map<string, bigint>> {
     const query = `
       WITH registration_slots AS (
         SELECT lower(pool_id) AS pool_id, slot_no::bigint AS first_registration_slot
@@ -546,7 +730,9 @@ export class YaciHistoryService implements HistoryService {
       FROM registration_slots
       GROUP BY pool_id
     `;
-    const rows = await this.entityManager.query(query, [poolIds.map((poolId) => poolId.toLowerCase())]);
+    const rows = await this.entityManager.query(query, [
+      poolIds.map((poolId) => poolId.toLowerCase()),
+    ]);
     return this.mapPoolRegistrationSlotRows(rows);
   }
 
@@ -555,17 +741,30 @@ export class YaciHistoryService implements HistoryService {
   ): Map<string, bigint> {
     return new Map(
       rows
-        .filter((row) => row.first_registration_slot !== null && row.first_registration_slot !== undefined)
-        .map((row) => [normalizePoolId(row.pool_id), BigInt(row.first_registration_slot)]),
+        .filter((row) =>
+          row.first_registration_slot !== null &&
+          row.first_registration_slot !== undefined
+        )
+        .map((
+          row,
+        ) => [
+          normalizePoolId(row.pool_id),
+          BigInt(row.first_registration_slot),
+        ]),
     );
   }
 
-  private async cachePoolRegistrationSlots(slotsByPoolId: Map<string, bigint>, source: string): Promise<void> {
+  private async cachePoolRegistrationSlots(
+    slotsByPoolId: Map<string, bigint>,
+    source: string,
+  ): Promise<void> {
     if (slotsByPoolId.size === 0) {
       return;
     }
 
-    const rows = Array.from(slotsByPoolId.entries()).map(([poolId, firstRegistrationSlot]) => ({
+    const rows = Array.from(slotsByPoolId.entries()).map((
+      [poolId, firstRegistrationSlot],
+    ) => ({
       pool_id: poolId,
       first_registration_slot: firstRegistrationSlot.toString(),
     }));
@@ -589,29 +788,49 @@ export class YaciHistoryService implements HistoryService {
 
   private async lookupExternalPoolRegistrationSlots(
     poolIds: string[],
-    referenceBlock: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>,
+    referenceBlock: Pick<HistoryBlock, "slotNo" | "timestampUnixNs">,
   ): Promise<Map<string, bigint>> {
-    const endpoint = this.configService.get<string>('cardanoPoolRegistrationHistoryEndpoint')?.replace(/\/+$/, '');
+    const endpoint = this.configService.get<string>(
+      "cardanoPoolRegistrationHistoryEndpoint",
+    )?.replace(/\/+$/, "");
     if (!endpoint) {
       return new Map();
     }
 
     const resolvedSlots = new Map<string, bigint>();
-    for (let index = 0; index < poolIds.length; index += POOL_REGISTRATION_LOOKUP_BATCH_SIZE) {
-      const batch = poolIds.slice(index, index + POOL_REGISTRATION_LOOKUP_BATCH_SIZE);
-      const updates = await this.fetchKoiosPoolRegistrationUpdates(endpoint, batch);
+    for (
+      let index = 0;
+      index < poolIds.length;
+      index += POOL_REGISTRATION_LOOKUP_BATCH_SIZE
+    ) {
+      const batch = poolIds.slice(
+        index,
+        index + POOL_REGISTRATION_LOOKUP_BATCH_SIZE,
+      );
+      const updates = await this.fetchKoiosPoolRegistrationUpdates(
+        endpoint,
+        batch,
+      );
 
       for (const update of updates) {
-        if (update.update_type && update.update_type !== 'registration') {
+        if (update.update_type && update.update_type !== "registration") {
           continue;
         }
 
-        const poolId = normalizePoolId(update.pool_id_bech32 ?? update.pool_id_hex);
-        if (!poolId || !batch.includes(poolId) || update.block_time === null || update.block_time === undefined) {
+        const poolId = normalizePoolId(
+          update.pool_id_bech32 ?? update.pool_id_hex,
+        );
+        if (
+          !poolId || !batch.includes(poolId) || update.block_time === null ||
+          update.block_time === undefined
+        ) {
           continue;
         }
 
-        const firstRegistrationSlot = this.trySlotFromUnixSeconds(update.block_time, referenceBlock);
+        const firstRegistrationSlot = this.trySlotFromUnixSeconds(
+          update.block_time,
+          referenceBlock,
+        );
         if (firstRegistrationSlot === null) {
           continue;
         }
@@ -619,7 +838,9 @@ export class YaciHistoryService implements HistoryService {
           continue;
         }
         const existingSlot = resolvedSlots.get(poolId);
-        if (existingSlot === undefined || firstRegistrationSlot < existingSlot) {
+        if (
+          existingSlot === undefined || firstRegistrationSlot < existingSlot
+        ) {
           resolvedSlots.set(poolId, firstRegistrationSlot);
         }
       }
@@ -628,19 +849,28 @@ export class YaciHistoryService implements HistoryService {
     return resolvedSlots;
   }
 
-  private async fetchKoiosPoolRegistrationUpdates(endpoint: string, poolIds: string[]): Promise<KoiosPoolUpdateRow[]> {
+  private async fetchKoiosPoolRegistrationUpdates(
+    endpoint: string,
+    poolIds: string[],
+  ): Promise<KoiosPoolUpdateRow[]> {
     const url = new URL(`${endpoint}/pool_updates`);
-    url.searchParams.set('select', 'tx_hash,block_time,pool_id_bech32,pool_id_hex,update_type');
-    url.searchParams.set('pool_id_bech32', `in.(${poolIds.join(',')})`);
-    url.searchParams.set('update_type', 'eq.registration');
-    url.searchParams.set('order', 'block_time.asc');
+    url.searchParams.set(
+      "select",
+      "tx_hash,block_time,pool_id_bech32,pool_id_hex,update_type",
+    );
+    url.searchParams.set("pool_id_bech32", `in.(${poolIds.join(",")})`);
+    url.searchParams.set("update_type", "eq.registration");
+    url.searchParams.set("order", "block_time.asc");
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), POOL_REGISTRATION_LOOKUP_TIMEOUT_MS);
+    const timeout = setTimeout(
+      () => controller.abort(),
+      POOL_REGISTRATION_LOOKUP_TIMEOUT_MS,
+    );
     try {
       const response = await fetch(url, {
         signal: controller.signal,
-        headers: { accept: 'application/json' },
+        headers: { accept: "application/json" },
       });
       if (!response.ok) {
         return [];
@@ -657,7 +887,7 @@ export class YaciHistoryService implements HistoryService {
 
   private trySlotFromUnixSeconds(
     unixSeconds: string | number,
-    referenceBlock: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>,
+    referenceBlock: Pick<HistoryBlock, "slotNo" | "timestampUnixNs">,
   ): bigint | null {
     let parsedSeconds: bigint;
     try {
@@ -669,7 +899,8 @@ export class YaciHistoryService implements HistoryService {
       return null;
     }
 
-    const systemStartUnixNs = referenceBlock.timestampUnixNs - referenceBlock.slotNo * CARDANO_SLOT_LENGTH_NS;
+    const systemStartUnixNs = referenceBlock.timestampUnixNs -
+      referenceBlock.slotNo * CARDANO_SLOT_LENGTH_NS;
     const unixNs = parsedSeconds * CARDANO_SLOT_LENGTH_NS;
     if (unixNs <= systemStartUnixNs) {
       return 0n;
@@ -701,7 +932,9 @@ export class YaciHistoryService implements HistoryService {
     return this.mapTxRow(rows[0]);
   }
 
-  async findTransactionEvidenceByHash(hash: string): Promise<HistoryTxEvidence | null> {
+  async findTransactionEvidenceByHash(
+    hash: string,
+  ): Promise<HistoryTxEvidence | null> {
     const query = `
       SELECT
         tx_hash,
@@ -737,7 +970,9 @@ export class YaciHistoryService implements HistoryService {
       assetsName: row.assets_name,
       assetsPolicy: row.assets_policy,
       blockNo: Number(row.block_no),
-      blockId: row.block_id === undefined ? Number(row.block_no) : Number(row.block_id),
+      blockId: row.block_id === undefined
+        ? Number(row.block_no)
+        : Number(row.block_id),
     } as UtxoDto;
   }
 
@@ -756,25 +991,33 @@ export class YaciHistoryService implements HistoryService {
       txHash: row.tx_hash,
       blockNo: Number(row.block_no),
       blockHash: row.block_hash ?? null,
-      slotNo: row.slot_no === undefined || row.slot_no === null ? null : BigInt(row.slot_no),
+      slotNo: row.slot_no === undefined || row.slot_no === null
+        ? null
+        : BigInt(row.slot_no),
       txIndex: Number(row.tx_index),
       txCborHex: row.tx_cbor_hex,
       txBodyCborHex: row.tx_body_cbor_hex,
       redeemers: Array.isArray(row.redeemers_json) ? row.redeemers_json : [],
-      hostStateOutputIndex:
-        row.host_state_output_index === undefined || row.host_state_output_index === null
-          ? null
-          : Number(row.host_state_output_index),
+      hostStateOutputIndex: row.host_state_output_index === undefined ||
+          row.host_state_output_index === null
+        ? null
+        : Number(row.host_state_output_index),
       hostStateDatum: row.host_state_datum ?? null,
       hostStateDatumHash: row.host_state_datum_hash ?? null,
       hostStateRoot: row.host_state_root ?? null,
-      gasFee: row.gas_fee === undefined || row.gas_fee === null ? null : Number(row.gas_fee),
-      txSize: row.tx_size === undefined || row.tx_size === null ? null : Number(row.tx_size),
+      gasFee: row.gas_fee === undefined || row.gas_fee === null
+        ? null
+        : Number(row.gas_fee),
+      txSize: row.tx_size === undefined || row.tx_size === null
+        ? null
+        : Number(row.tx_size),
     };
   }
 
   private mapHistoryBlockRow(row: HistoryBlockRow): HistoryBlock {
-    const blockTimeMs = row.block_time instanceof Date ? row.block_time.valueOf() : Number(row.block_time) * 1_000;
+    const blockTimeMs = row.block_time instanceof Date
+      ? row.block_time.valueOf()
+      : Number(row.block_time) * 1_000;
     return {
       height: Number(row.number),
       hash: row.hash,
@@ -782,11 +1025,13 @@ export class YaciHistoryService implements HistoryService {
       slotNo: BigInt(row.slot),
       epochNo: Number(row.epoch),
       timestampUnixNs: BigInt(blockTimeMs) * 1_000_000n,
-      slotLeader: normalizePoolId(row.slot_leader ?? ''),
+      slotLeader: normalizePoolId(row.slot_leader ?? ""),
     };
   }
 
-  private async findEpochSlotBounds(epoch: number): Promise<HistoryEpochVerificationContext | null> {
+  private async findEpochSlotBounds(
+    epoch: number,
+  ): Promise<HistoryEpochVerificationContext | null> {
     const startSlotQuery = `
       SELECT MIN(slot) AS start_slot
       FROM block
@@ -800,30 +1045,39 @@ export class YaciHistoryService implements HistoryService {
         AND slot >= 0
     `;
 
-    const [startSlotRow] = await this.entityManager.query(startSlotQuery, [epoch]);
+    const [startSlotRow] = await this.entityManager.query(startSlotQuery, [
+      epoch,
+    ]);
     const startSlot = this.parseSlot(startSlotRow);
     if (startSlot === null) {
       return null;
     }
 
-    const [nextEpochStartSlotRow] = await this.entityManager.query(nextEpochStartSlotQuery, [epoch + 1]);
+    const [nextEpochStartSlotRow] = await this.entityManager.query(
+      nextEpochStartSlotQuery,
+      [epoch + 1],
+    );
     const nextEpochStartSlot = this.parseSlot(nextEpochStartSlotRow);
-    const configuredEpochLength = BigInt(this.configService.get<number>('cardanoEpochLength') || 0);
-    const currentEpochEndSlotExclusive =
-      nextEpochStartSlot ?? (configuredEpochLength > 0n ? startSlot + configuredEpochLength : null);
+    const configuredEpochLength = BigInt(
+      this.configService.get<number>("cardanoEpochLength") || 0,
+    );
+    const currentEpochEndSlotExclusive = nextEpochStartSlot ??
+      (configuredEpochLength > 0n ? startSlot + configuredEpochLength : null);
     if (currentEpochEndSlotExclusive === null) {
       return null;
     }
 
     return {
-      epochNonce: '',
+      epochNonce: "",
       slotsPerKesPeriod: 0,
       currentEpochStartSlot: startSlot,
       currentEpochEndSlotExclusive,
     };
   }
 
-  private async findLatestBlockInEpoch(epoch: number): Promise<HistoryBlock | null> {
+  private async findLatestBlockInEpoch(
+    epoch: number,
+  ): Promise<HistoryBlock | null> {
     const query = `
       SELECT
         number,
@@ -856,20 +1110,20 @@ export class YaciHistoryService implements HistoryService {
 }
 
 function normalizeHex(value?: string | null): string {
-  const trimmed = value?.trim().toLowerCase() || '';
-  return trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed;
+  const trimmed = value?.trim().toLowerCase() || "";
+  return trimmed.startsWith("0x") ? trimmed.slice(2) : trimmed;
 }
 
 function normalizePoolId(value?: string | null): string {
-  const trimmed = value?.trim().toLowerCase() || '';
+  const trimmed = value?.trim().toLowerCase() || "";
   if (!trimmed) {
-    return '';
+    return "";
   }
-  if (trimmed.startsWith('pool1')) {
+  if (trimmed.startsWith("pool1")) {
     return trimmed;
   }
   if (/^[0-9a-f]{56}$/.test(trimmed)) {
-    return bech32.encode('pool', bech32.toWords(Buffer.from(trimmed, 'hex')));
+    return bech32.encode("pool", bech32.toWords(Buffer.from(trimmed, "hex")));
   }
   return trimmed;
 }
