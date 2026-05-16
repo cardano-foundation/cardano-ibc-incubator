@@ -10,29 +10,23 @@ clientKeeper.AddRoute(probabilistic.ModuleName, &probabilisticLightClientModule)
 
 and implements `exported.LightClientModule`.
 
-## Injective Target
+## Other Cosmos SDK Targets
 
-The current upstream `InjectiveFoundation/injective-core` `master` branch uses:
+Cosmos SDK chains must compile and register custom IBC light clients in the chain binary. A relayer cannot dynamically install this module on a running chain.
 
-```text
-github.com/cosmos/cosmos-sdk v0.50.13
-github.com/cosmos/ibc-go/v8 v8.6.1
-replace github.com/cosmos/cosmos-sdk => github.com/InjectiveLabs/cosmos-sdk v0.50.13-evm-comet1-inj.3
-replace github.com/cosmos/ibc-go/v8 => github.com/InjectiveLabs/ibc-go/v8 v8.7.0-evm-comet1-inj
-```
-
-Injective `ibc-go/v8` does not use the `exported.LightClientModule` route API. Its light clients implement the legacy `exported.ClientState` methods directly, and the IBC keeper addresses client stores through `ClientKeeper.ClientStore(ctx, clientID)`.
+The exact port depends on the target chain's Cosmos SDK, `ibc-go`, CometBFT, and any fork-specific replacements. Older `ibc-go` versions may not use the `exported.LightClientModule` route API. For example, `ibc-go/v8` light clients implement the legacy `exported.ClientState` methods directly, and the IBC keeper addresses client stores through `ClientKeeper.ClientStore(ctx, clientID)`.
 
 ## Expected Porting Work
 
-1. Create an Injective-compatible branch or module variant targeting `github.com/cosmos/ibc-go/v8` with Injective's `replace` directives.
-2. Remove the `LightClientModule` adapter from the v8 build and expose the legacy `ClientState` implementation directly.
-3. Restore the full `exported.ClientState` surface expected by `ibc-go/v8`, including `GetLatestHeight`, `Status`, `Initialize`, `VerifyMembership`, `VerifyNonMembership`, `VerifyClientMessage`, `CheckForMisbehaviour`, `UpdateState`, `UpdateStateOnMisbehaviour`, `CheckSubstituteAndUpdateState`, `VerifyUpgradeAndUpdateState`, and `ExportMetadata`.
-4. Keep the protobuf package and type URLs aligned with `/ibc.lightclients.probabilistic.v1.*`.
-5. Wire the app by registering the concrete types with the interface registry and adding `probabilistic.NewAppModule()` in the Injective app module list, following the `07-tendermint` module shape in `ibc-go/v8`.
-6. Ensure the IBC client params allow `08-cardano-probabilistic`; on restricted networks this requires governance or genesis/config changes in addition to the binary change.
-7. Re-run client creation against Injective testnet after a binary with this module is deployed. Without that chain upgrade, Injective nodes will continue rejecting `/ibc.lightclients.probabilistic.v1.ClientState` as an unresolved type URL.
+1. Identify the target chain's Cosmos SDK, `ibc-go`, CometBFT, Go, and module replacement versions.
+2. Create a compatibility branch or module variant for that dependency set.
+3. If the target `ibc-go` version does not support `exported.LightClientModule`, remove the `LightClientModule` adapter from that build and expose the legacy `ClientState` implementation directly.
+4. Restore the full `exported.ClientState` surface expected by `ibc-go/v8`, including `GetLatestHeight`, `Status`, `Initialize`, `VerifyMembership`, `VerifyNonMembership`, `VerifyClientMessage`, `CheckForMisbehaviour`, `UpdateState`, `UpdateStateOnMisbehaviour`, `CheckSubstituteAndUpdateState`, `VerifyUpgradeAndUpdateState`, and `ExportMetadata`.
+5. Keep the protobuf package and type URLs aligned with `/ibc.lightclients.probabilistic.v1.*`.
+6. Wire the app by registering the concrete types with the interface registry and adding the probabilistic light client app module in the target chain's module list, following the local light-client module shape used by that chain.
+7. Ensure the IBC client params allow `08-cardano-probabilistic`; on restricted networks this requires governance or genesis/config changes in addition to the binary change.
+8. Re-run client creation after a binary with this module is deployed. Without that chain upgrade, nodes will continue rejecting `/ibc.lightclients.probabilistic.v1.ClientState` as an unresolved type URL.
 
 ## Compatibility Risk
 
-The cryptographic and Cardano proof logic should not need to change for the v8 port. The main risk is integration surface drift between `ibc-go/v10` and Injective's forked `ibc-go/v8`: keeper wiring, module registration, and client params are different enough that the port should be validated inside an Injective app build, not only inside this standalone module.
+The cryptographic and Cardano proof logic should not need to change for an older `ibc-go` port. The main risk is integration surface drift across SDK and `ibc-go` versions: keeper wiring, module registration, store access, governance params, and client params are different enough that the port should be validated inside the target chain's app build, not only inside this standalone module.
