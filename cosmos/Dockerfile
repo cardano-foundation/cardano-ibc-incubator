@@ -1,4 +1,4 @@
-FROM golang:1.23.8 as builder
+FROM golang:1.24.3 as builder
 
 ENV PATH="/root/.ignite/bin:/go/bin:/usr/local/go/bin:${PATH}"
 
