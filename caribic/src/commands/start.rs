@@ -9,9 +9,7 @@ use crate::{
     chains, config, logger,
     start::{
         build_aiken_validators_if_needed, build_hermes_if_needed, deploy_contracts,
-        deploy_preprod_bridge, start_cosmos_entrypoint_chain,
-        start_cosmos_entrypoint_chain_services, start_dapp, start_gateway, start_hermes_daemon,
-        start_relayer, wait_for_cosmos_entrypoint_chain_ready,
+        deploy_preprod_bridge, start_dapp, start_gateway, start_hermes_daemon, start_relayer,
     },
     utils::{prompt_runtime_deployer_sk, query_balance},
     StartTarget, StopTarget,
@@ -95,7 +93,6 @@ pub async fn run_start(
     // Determine what to start.
     let start_all = target.is_none() || target == Some(StartTarget::All);
     let start_network = start_all || target == Some(StartTarget::Network);
-    let start_cosmos = start_all || target == Some(StartTarget::CardanoEntrypoint);
     let start_bridge = start_all || target == Some(StartTarget::Bridge);
 
     if !chain_flags.is_empty() {
@@ -120,19 +117,10 @@ pub async fn run_start(
     };
 
     let mut aiken_build_handle = None;
-    let mut cosmos_entrypoint_chain_start_handle = None;
     let mut hermes_build_handle = None;
     let mut mithril_genesis_handle = None;
 
     if start_all {
-        if start_cosmos {
-            let cosmos_dir = project_root_path.join("cosmos");
-            cosmos_entrypoint_chain_start_handle = Some(tokio::task::spawn_blocking(move || {
-                start_cosmos_entrypoint_chain_services(cosmos_dir.as_path(), clean)
-                    .map_err(|e| e.to_string())
-            }));
-        }
-
         if start_bridge {
             let relayer_dir = project_root_path.join("relayer");
             hermes_build_handle = Some(tokio::task::spawn_blocking(move || {
@@ -272,21 +260,6 @@ pub async fn run_start(
         ));
     }
 
-    if start_cosmos && !start_all {
-        match start_cosmos_entrypoint_chain(project_root_path.join("cosmos").as_path(), clean).await
-        {
-            Ok(_) => logger::log(
-                "PASS: Cardano Entrypoint chain started (packet-forwarding chain on port 26657)",
-            ),
-            Err(error) => {
-                return Err(format!(
-                    "ERROR: Failed to start Cardano Entrypoint chain: {}",
-                    error
-                ))
-            }
-        }
-    }
-
     if start_bridge {
         if core_cardano_network == config::CoreCardanoNetwork::Local {
             let balance = query_balance(
@@ -407,44 +380,6 @@ pub async fn run_start(
                     StopTarget::Bridge,
                     &format!("ERROR: Failed to start gateway: {}", error),
                 )
-            }
-        }
-
-        if start_all && start_cosmos {
-            if let Some(handle) = cosmos_entrypoint_chain_start_handle.take() {
-                logger::log(
-                    "Waiting for Entrypoint startup task to complete (build/init may take a few minutes) ...",
-                );
-                match handle.await {
-                    Ok(Ok(())) => {}
-                    Ok(Err(error)) => {
-                        return fail_and_stop_started_services(
-                            project_root_path,
-                            StopTarget::Bridge,
-                            &format!("ERROR: Failed to start Cardano Entrypoint chain: {}", error),
-                        );
-                    }
-                    Err(error) => {
-                        return fail_and_stop_started_services(
-                            project_root_path,
-                            StopTarget::Bridge,
-                            &format!("ERROR: Failed to start Cardano Entrypoint chain: {}", error),
-                        );
-                    }
-                }
-            }
-
-            match wait_for_cosmos_entrypoint_chain_ready().await {
-                Ok(_) => logger::log(
-                    "PASS: Cardano Entrypoint chain started (packet-forwarding chain on port 26657)",
-                ),
-                Err(error) => {
-                    return fail_and_stop_started_services(
-                        project_root_path,
-                        StopTarget::Bridge,
-                        &format!("ERROR: Failed to start Cardano Entrypoint chain: {}", error),
-                    );
-                }
             }
         }
 
@@ -610,9 +545,7 @@ pub async fn run_start(
 
         logger::log("\nBridge started successfully!");
         if core_cardano_network == config::CoreCardanoNetwork::Local {
-            logger::log(
-                "Keys have been automatically configured for cardano-devnet and the Cardano Entrypoint chain.",
-            );
+            logger::log("Keys have been automatically configured for cardano-devnet.");
             logger::log("Next steps:");
             logger::log("   1. Check health: caribic health-check");
             logger::log("   2. View keys: caribic keys list");

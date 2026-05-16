@@ -58,18 +58,10 @@ pub struct Config {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Chains {
     pub cardano: CardanoChain,
-    #[serde(rename = "cardano-entrypoint")]
-    pub cardano_entrypoint: CardanoEntrypointChain,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct CardanoChain {
-    pub chain_id: String,
-    pub message_port_id: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct CardanoEntrypointChain {
     pub chain_id: String,
     pub message_port_id: String,
 }
@@ -90,9 +82,6 @@ pub struct Mithril {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Health {
-    pub cosmos_status_url: String,
-    pub cosmos_max_retries: u32,
-    pub cosmos_retry_interval_ms: u64,
     pub gateway_max_retries: u32,
     pub gateway_retry_interval_ms: u64,
 }
