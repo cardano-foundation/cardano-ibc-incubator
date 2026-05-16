@@ -97,7 +97,6 @@ var (
 		ibctransfertypes.ModuleName,
 		icatypes.ModuleName,
 		pfmroutertypes.ModuleName,
-		ibcwasmtypes.ModuleName,
 		feegrant.ModuleName,
 		paramstypes.ModuleName,
 		upgradetypes.ModuleName,
@@ -129,7 +128,6 @@ var (
 		ibctransfertypes.ModuleName,
 		icatypes.ModuleName,
 		pfmroutertypes.ModuleName,
-		ibcwasmtypes.ModuleName,
 		vesseloracletypes.ModuleName,
 		ibcwasmtypes.ModuleName,
 		// chain modules
@@ -149,7 +147,6 @@ var (
 		ibctransfertypes.ModuleName,
 		icatypes.ModuleName,
 		pfmroutertypes.ModuleName,
-		ibcwasmtypes.ModuleName,
 		vesseloracletypes.ModuleName,
 		ibcwasmtypes.ModuleName,
 		// chain modules
