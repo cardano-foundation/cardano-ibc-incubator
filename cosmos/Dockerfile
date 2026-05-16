@@ -1,4 +1,4 @@
-FROM golang:1.23.8 as builder
+FROM golang:1.24.0 AS builder
 
 ENV PATH="/root/.ignite/bin:/go/bin:/usr/local/go/bin:${PATH}"
 
@@ -22,6 +22,8 @@ RUN bash -c "echo export GOFLAGS='-buildvcs=false' >> $HOME/.bashrc"
 RUN bash -c "source $HOME/.bashrc"
 
 RUN bash -c "mkdir -p /root/cardano-entrypoint/workspace/cardano-entrypoint"
+COPY "./go.work" "./go.work.sum" "/root/cardano-entrypoint/workspace/"
+COPY "./cardano-probabilistic-light-client" "/root/cardano-entrypoint/workspace/cardano-probabilistic-light-client"
 COPY "./cardano-entrypoint" "/root/cardano-entrypoint/workspace/cardano-entrypoint"
 WORKDIR "/root/cardano-entrypoint/workspace/cardano-entrypoint"
 
