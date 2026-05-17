@@ -16,7 +16,7 @@ Create `.env` files with the following variables:
 | NEXT_PUBLIC_CARDANO_BRIDGE_MANIFEST_URL | URL of the public Cardano bridge manifest                                                                                               | Default: `${NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT}/api/bridge-manifest` |
 | NEXT_PUBLIC_KUPMIOS_URL                 | Url of Kupo and Ogmios instances, should not be use when using NEXT_PUBLIC_BLOCKFROST_PROJECT_ID                                        | Default: "http://localhost:1442,http://localhost:1337"                   |
 | NEXT_PUBLIC_BLOCKFROST_PROJECT_ID       | Blockfrost Project ID, currently only support network preview, should not be use when using NEXT_PUBLIC_KUPMIOS_URL                     | Default: "previewVi2O..."                                                |
-| NEXT_PUBLIC_CROSSCHAIN_SWAP_ADDRESS     | Cross-chain swap address on local Osmosis. This is inactive until direct Cardano-to-Osmosis routes are implemented.                     | Optional                                                                 |
+| NEXT_PUBLIC_CROSSCHAIN_SWAP_ADDRESS     | Cross-chain swap address on local Osmosis for direct Cardano-to-Osmosis swap packets.                                                  | Optional                                                                 |
 | NEXT_PUBLIC_FORWARD_TIMEOUT             | Timeout for packet forwarding                                                                                                           | Default: "60m"                                                           |
 
 Legacy compatibility: `NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT` and `NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT` are still accepted as fallbacks.

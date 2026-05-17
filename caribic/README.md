@@ -129,7 +129,7 @@ caribic create-channel --a-chain cardano-devnet --b-chain localosmosis --a-port 
 
 ### `caribic demo <message-exchange|token-swap>`
 
-`caribic demo token-swap` prepares direct Cardano-to-target transfer routes. The swap execution script still needs to be ported to use direct channel ids instead of the retired intermediary memo topology.
+`caribic demo token-swap` prepares direct Cardano-to-target transfer routes and runs the selected local demo against those direct channel ids.
 `caribic demo message-exchange` needs to be reworked per target chain because ICQ/message modules are target-specific.
 
 The deprecated Mithril readiness settings remain in the config only for historical compatibility and are not part of the maintained startup path.

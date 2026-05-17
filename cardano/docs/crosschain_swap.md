@@ -46,7 +46,7 @@ With a direct channel, packet-forwarding through an intermediary is no longer re
 
 Use `caribic setup route` before running swap demos if you want to validate the direct IBC path independently from swap contract setup. A successful route setup prints the Cardano channel id and the target-chain counterparty channel id.
 
-The old swap execution script encoded the retired intermediary channel ids in its memo and contract setup. That script should be ported to consume the direct channel pair produced by `caribic setup route`.
+The local Osmosis swap script consumes the direct channel pair produced by `caribic setup route`: Cardano sends directly to the Osmosis crosschain-swaps contract, and the contract returns over the direct Osmosis-to-Cardano channel.
 
 If direct setup fails, check:
 

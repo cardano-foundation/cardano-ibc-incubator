@@ -36,7 +36,7 @@ The implementation adheres to the [inter-blockchain communication protocol](http
 | --- | --- | --- |
 | Local devnet stack | Active | Managed through `caribic` with Cardano, Hermes, Kupo, Ogmios, and Yaci-backed history services |
 | Core IBC semantics | Active | Implements clients, connections, channels, packets, acknowledgements, and timeouts |
-| ICS-20 transfer path | Direct-route work required | The former intermediary-chain route has been phased out; direct Cardano-to-target routes must be implemented per chain |
+| ICS-20 transfer path | Active for local direct routes | Local Cardano-to-Osmosis and Cardano-to-Injective routes use direct channels; target chains still need the Cardano light client patched in locally |
 | Historical query backend | Active | Uses `Yaci Store + Bridge Projection` rather than a generic `db-sync` query surface |
 | Public network integrations | Pre-production | Select paths exist for public testnets and external Cardano services, but the operating model is still evolving |
 | Mithril light client and local setup | Deprecated / disabled | Not maintained for new deployments; source is retained only for historical reference and type compatibility |
@@ -281,7 +281,7 @@ caribic setup route --from cardano --to injective --to-network local
 
 ## Demo: Cross-chain token swap
 
-The token-swap route setup remains part of `caribic demo token-swap`, but the route it prepares is direct Cardano-to-target rather than Cardano-to-intermediary-to-target. The swap contract execution script still needs to be ported to consume the direct channel ids.
+`caribic demo token-swap` now uses direct Cardano-to-target channels. The local Osmosis demo provisions the swap pool/contracts and executes a direct Cardano-to-Osmosis wasm-hook swap with a direct return leg. The local Injective demo exercises the direct token-transfer legs used by the swap path.
 
 For local Osmosis:
 
