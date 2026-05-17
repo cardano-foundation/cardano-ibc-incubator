@@ -36,9 +36,6 @@ pub enum HermesEventSource {
         url: String,
         batch_delay: &'static str,
     },
-    Pull {
-        interval: &'static str,
-    },
 }
 
 pub enum HermesAddressType {
@@ -240,12 +237,6 @@ fn render_event_source(event_source: &HermesEventSource) -> String {
             "event_source = {{ mode = 'push', url = '{}', batch_delay = '{}' }}",
             url, batch_delay
         ),
-        HermesEventSource::Pull { interval } => {
-            format!(
-                "event_source = {{ mode = 'pull', interval = '{}' }}",
-                interval
-            )
-        }
     }
 }
 

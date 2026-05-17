@@ -289,16 +289,6 @@ pub fn workspace_dir(project_root: &Path) -> PathBuf {
         .join("injective")
 }
 
-/// Stops local Injective containers if they exist.
-pub fn stop_local(injective_path: &Path) {
-    lifecycle::stop_local(injective_path);
-}
-
-/// Stops Injective testnet container if it exists.
-pub fn stop_testnet(injective_path: &Path) {
-    lifecycle::stop_testnet(injective_path);
-}
-
 /// Configures Hermes keys for direct Cardano↔Injective local routes.
 pub fn configure_hermes_for_demo(
     project_root_path: &Path,
@@ -326,11 +316,6 @@ pub fn ensure_testnet_chain_in_hermes_config(
 /// Returns the Injective testnet chain id used by Caribic.
 pub fn testnet_chain_id() -> &'static str {
     config::TESTNET_CHAIN_ID
-}
-
-/// Returns the Injective testnet RPC status URL used by readiness checks.
-pub fn testnet_status_url() -> &'static str {
-    config::TESTNET_STATUS_URL
 }
 
 /// Returns the Injective local chain id used by Caribic.

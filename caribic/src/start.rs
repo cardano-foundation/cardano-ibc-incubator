@@ -3833,60 +3833,9 @@ pub(crate) enum OptionalChainId {
     Injective,
 }
 
-impl OptionalChainId {
-    pub(crate) fn adapter_id(self) -> &'static str {
-        match self {
-            OptionalChainId::Osmosis => "osmosis",
-            OptionalChainId::Cheqd => "cheqd",
-            OptionalChainId::Injective => "injective",
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(crate) enum OptionalChainNetwork {
-    Local,
-    Testnet,
-    Mainnet,
-}
-
-impl OptionalChainNetwork {
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            OptionalChainNetwork::Local => "local",
-            OptionalChainNetwork::Testnet => "testnet",
-            OptionalChainNetwork::Mainnet => "mainnet",
-        }
-    }
-
-    pub(crate) fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "local" => Some(OptionalChainNetwork::Local),
-            "testnet" => Some(OptionalChainNetwork::Testnet),
-            "mainnet" => Some(OptionalChainNetwork::Mainnet),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum HealthTarget {
     Core(CoreServiceId),
-    CosmosChain {
-        chain: OptionalChainId,
-        network: OptionalChainNetwork,
-    },
-}
-
-impl HealthTarget {
-    pub(crate) fn name(self) -> String {
-        match self {
-            HealthTarget::Core(service) => service.name().to_string(),
-            HealthTarget::CosmosChain { chain, network } => {
-                format!("{} ({})", chain.adapter_id(), network.name())
-            }
-        }
-    }
 }
 
 const CORE_SERVICE_IDS: [CoreServiceId; 9] = [
@@ -4193,34 +4142,6 @@ fn collect_optional_chain_health_statuses(project_root_path: &Path) -> Vec<Healt
     optional_statuses
 }
 
-fn check_optional_chain_network_health(
-    project_root_path: &Path,
-    chain: OptionalChainId,
-    network: OptionalChainNetwork,
-) -> Result<(bool, String), String> {
-    let chain_id = chain.adapter_id();
-    let network_name = network.name();
-    let adapter = chains::get_chain_adapter(chain_id)
-        .ok_or_else(|| format!("Optional chain adapter '{}' is not registered", chain_id))?;
-    let flags = chains::ChainFlags::new();
-    let statuses = adapter
-        .health(project_root_path, network_name, &flags)
-        .map_err(|error| {
-            format!(
-                "Failed to check '{}' health for network '{}': {}",
-                chain_id, network_name, error
-            )
-        })?;
-
-    let summarized = statuses
-        .iter()
-        .map(|status| format!("{}: {}", status.label, status.status))
-        .collect::<Vec<_>>();
-
-    let all_healthy = statuses.iter().all(|status| status.healthy);
-    Ok((all_healthy, summarized.join("; ")))
-}
-
 fn available_health_service_names(project_root_path: &Path, context: &HealthContext) -> String {
     collect_health_statuses(project_root_path, context)
         .into_iter()
@@ -4243,9 +4164,6 @@ pub(crate) fn check_health_target(
 ) -> Result<(bool, String), String> {
     match target {
         HealthTarget::Core(service) => Ok(check_core_service_health(project_root_path, service)),
-        HealthTarget::CosmosChain { chain, network } => {
-            check_optional_chain_network_health(project_root_path, chain, network)
-        }
     }
 }
 
@@ -4331,13 +4249,6 @@ fn docker_running_container_name(name_filter: &str) -> Option<String> {
 
 fn is_port_accessible(port: u16) -> bool {
     SystemChecks::tcp_port_open("localhost", port)
-}
-
-fn endpoint_contains_result(url: &str) -> bool {
-    HttpHealthClient::new(Duration::from_secs(3), Duration::from_secs(8))
-        .ok()
-        .map(|client| client.response_contains(url, "result"))
-        .unwrap_or(false)
 }
 
 fn endpoint_responds(url: &str) -> bool {
@@ -4703,31 +4614,4 @@ fn parse_pid_and_command(line: &str) -> Option<(u32, String)> {
     let pid = pid_str.parse::<u32>().ok()?;
 
     Some((pid, command))
-}
-
-fn check_rpc_service(url: &str, default_port: u16) -> (bool, String) {
-    let port = reqwest::Url::parse(url)
-        .ok()
-        .and_then(|parsed_url| parsed_url.port_or_known_default())
-        .unwrap_or(default_port);
-    let port_label = port.to_string();
-
-    if !is_port_accessible(port) {
-        return (
-            false,
-            format!("Not running (port {} not accessible)", port_label),
-        );
-    }
-
-    if endpoint_contains_result(url) {
-        (true, format!("Running on port {}", port_label))
-    } else {
-        (
-            false,
-            format!(
-                "Port {} is accessible but {} did not return a valid status payload",
-                port_label, url
-            ),
-        )
-    }
 }

@@ -26,6 +26,9 @@ describe('SubmissionService confirmation strictness regressions', () => {
   let historyServiceMock: {
     findTxByHash: jest.Mock;
   };
+  let queryServiceMock: {
+    queryPacketEventsByTxHash: jest.Mock;
+  };
 
   beforeEach(() => {
     lucidServiceMock = {
@@ -69,6 +72,7 @@ describe('SubmissionService confirmation strictness regressions', () => {
       saveAliases: jest.fn().mockResolvedValue(undefined),
     };
     historyServiceMock = { findTxByHash: jest.fn() };
+    queryServiceMock = { queryPacketEventsByTxHash: jest.fn().mockResolvedValue({ events: [] }) };
 
     service = new SubmissionService(
       lucidServiceMock as any,
@@ -77,6 +81,7 @@ describe('SubmissionService confirmation strictness regressions', () => {
       ibcTreePendingUpdatesServiceMock as any,
       ibcTreeCacheServiceMock as any,
       historyServiceMock as any,
+      queryServiceMock as any,
     );
   });
 

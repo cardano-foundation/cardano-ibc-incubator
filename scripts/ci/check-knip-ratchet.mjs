@@ -69,8 +69,6 @@ const allowed = new Set([
   'gateway:src/shared/helpers/module-port.ts:exports:normalizeGatewayPortId',
   'gateway:src/shared/helpers/module-port.ts:types:GatewayModuleConfig',
   'gateway:src/shared/helpers/number.ts:exports:safeAdd',
-  'gateway:src/shared/helpers/ogmios.ts:exports:queryCurrentEpochStakeDistribution',
-  'gateway:src/shared/helpers/ogmios.ts:exports:queryCurrentEpochVerificationData',
   'gateway:src/shared/helpers/ogmios.ts:types:OgmiosCurrentEpochStakeDistributionEntry',
   'gateway:src/shared/helpers/ogmios.ts:types:OgmiosCurrentEpochVerificationData',
   'gateway:src/shared/helpers/ogmios.ts:types:OgmiosEpochContextAtPoint',
