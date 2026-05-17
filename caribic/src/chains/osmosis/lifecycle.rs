@@ -166,17 +166,17 @@ fn copy_local_config_files(osmosis_dir: &Path) -> Result<(), fs_extra::error::Er
     let options = fs_extra::file::CopyOptions::new().overwrite(true);
 
     verbose(&format!(
-        "Copying setup_crosschain_swaps.sh from {} to {}",
+        "Copying run_direct_token_swap.sh from {} to {}",
         osmosis_dir
-            .join("../scripts/setup_crosschain_swaps.sh")
+            .join("../scripts/run_direct_token_swap.sh")
             .display(),
         osmosis_dir
-            .join("scripts/setup_crosschain_swaps.sh")
+            .join("scripts/run_direct_token_swap.sh")
             .display()
     ));
     copy(
-        osmosis_dir.join("../scripts/setup_crosschain_swaps.sh"),
-        osmosis_dir.join("scripts/setup_crosschain_swaps.sh"),
+        osmosis_dir.join("../scripts/run_direct_token_swap.sh"),
+        osmosis_dir.join("scripts/run_direct_token_swap.sh"),
         &options,
     )?;
 
