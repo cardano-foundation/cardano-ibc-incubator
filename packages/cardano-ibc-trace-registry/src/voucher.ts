@@ -229,7 +229,7 @@ export function buildVoucherCip68Metadata(
   );
 
   return {
-    name: presentation.displayName,
+    name: presentation.displaySymbol,
     description: presentation.displayDescription,
     ticker: presentation.displaySymbol,
     version: VOUCHER_METADATA_VERSION,
