@@ -622,8 +622,6 @@ const Transfer = () => {
         'destination-chain-unavailable': `No discovered IBC transfer channels reach ${toChainName}.`,
         'no-outbound-channels': `${fromChainName} has no outbound IBC transfer channels.`,
         'no-route-found': `No IBC transfer route found from ${fromChainName} to ${toChainName}.`,
-        'direct-route-unsupported':
-          'Direct Cardano-to-target IBC routes are not implemented yet.',
         'missing-unwind-hop': `Token ${
           selectedToken.tokenName || selectedToken.tokenId
         } must unwind on a specific IBC hop before it can reach ${toChainName}, but that reverse hop is not currently available.`,

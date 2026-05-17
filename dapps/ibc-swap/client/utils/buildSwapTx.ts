@@ -10,6 +10,11 @@ import { requireUnsignedCardanoTxCborHex } from './buildTransferTx';
 
 const pfmReceiver = 'pfm';
 
+const buildDirectIbcReceiver = (route: string, receiver: string): string => {
+  const [, srcChannel] = route.split('/');
+  return `ibc:${srcChannel}/${requirePaymentKeyHashFromCardanoAddress(receiver)}`;
+};
+
 const buildNextMemo = (transferBackRoutes: string[], receiver: string): any => {
   let result = {};
   const transBackRoutes = transferBackRoutes.reverse().slice(1);
@@ -42,10 +47,12 @@ const buildNextMemo = (transferBackRoutes: string[], receiver: string): any => {
 const buildOsmosisSwapMemo = ({
   tokenOutDenom,
   slippagePercentage,
+  receiver,
   nextMemo,
 }: {
   tokenOutDenom: string;
   slippagePercentage: string;
+  receiver: string;
   nextMemo: any;
 }): any => {
   const result = {
@@ -60,7 +67,7 @@ const buildOsmosisSwapMemo = ({
               window_seconds: 10,
             },
           },
-          receiver: 'cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6',
+          receiver,
           on_failed_delivery: 'do_nothing',
           next_memo: nextMemo,
         },
@@ -104,6 +111,62 @@ const buildForwardMemo = ({
   return JSON.stringify(result);
 };
 
+const buildSwapTransfer = ({
+  transferRoutes,
+  transferBackRoutes,
+  receiver,
+  tokenOutDenom,
+  slippagePercentage,
+}: {
+  transferRoutes: string[];
+  transferBackRoutes: string[];
+  receiver: string;
+  tokenOutDenom: string;
+  slippagePercentage: string;
+}): { sourceRoute: string; packetReceiver: string; memo: string } => {
+  const [sourceRoute, ...restRoutes] = transferRoutes;
+  if (!sourceRoute) {
+    throw new Error('Swap transfer route is missing.');
+  }
+
+  if (restRoutes.length === 0) {
+    const [returnRoute] = transferBackRoutes;
+    if (!returnRoute) {
+      throw new Error('Direct swap return route is missing.');
+    }
+    const osmosisSwapMemo = buildOsmosisSwapMemo({
+      nextMemo: {},
+      receiver: buildDirectIbcReceiver(returnRoute, receiver),
+      tokenOutDenom,
+      slippagePercentage,
+    });
+    return {
+      sourceRoute,
+      packetReceiver: CROSSCHAIN_SWAP_ADDRESS!,
+      memo: JSON.stringify(osmosisSwapMemo),
+    };
+  }
+
+  const nextMemo = buildNextMemo(
+    transferBackRoutes,
+    requirePaymentKeyHashFromCardanoAddress(receiver),
+  );
+  const osmosisSwapMemo = buildOsmosisSwapMemo({
+    nextMemo,
+    receiver: 'cosmos1ycel53a5d9xk89q3vdr7vm839t2vwl08pl6zk6',
+    tokenOutDenom,
+    slippagePercentage,
+  });
+  return {
+    sourceRoute,
+    packetReceiver: pfmReceiver,
+    memo: buildForwardMemo({
+      transferRoutes: restRoutes,
+      osmosisSwapMemo,
+    }),
+  };
+};
+
 interface Token {
   denom: string;
   amount: string;
@@ -134,22 +197,14 @@ export async function unsignedTxSwapFromCardano({
     );
   }
   const currentTimeStamp = BigInt(Date.now()) * BigInt(1000000);
-  // pfm
-  const [route, ...restRoutes] = transferRoutes;
-  const [srcPort, srcChannel] = route.split('/');
-  const nextMemo = buildNextMemo(
+  const { sourceRoute, packetReceiver, memo } = buildSwapTransfer({
+    transferRoutes,
     transferBackRoutes,
-    requirePaymentKeyHashFromCardanoAddress(receiver),
-  );
-  const osmosisSwapMemo = buildOsmosisSwapMemo({
-    nextMemo,
+    receiver,
     tokenOutDenom,
     slippagePercentage,
   });
-  const forwardMemo = buildForwardMemo({
-    transferRoutes: restRoutes,
-    osmosisSwapMemo,
-  });
+  const [srcPort, srcChannel] = sourceRoute.split('/');
   const cardanoTokenTrace = await requireCardanoAssetDenomTrace(tokenIn.denom);
   const sendTokenDenom = cardanoTokenTrace.fullDenom;
   const data = await transfer({
@@ -160,14 +215,14 @@ export async function unsignedTxSwapFromCardano({
       amount: tokenIn.amount,
     },
     sender: requirePaymentKeyHashFromCardanoAddress(sender),
-    receiver: pfmReceiver,
+    receiver: packetReceiver,
     timeoutHeight: {
       revisionNumber: BigInt(0).toString(),
       revisionHeight: BigInt(0).toString(),
     },
     timeoutTimestamp: (currentTimeStamp + BigInt(timeoutTimeOffset)).toString(),
     signer: sender,
-    memo: forwardMemo,
+    memo,
   });
   return [
     {

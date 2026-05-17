@@ -325,10 +325,6 @@ const SwapContainer = () => {
             <StyledSwap>
               <Box display="flex" justifyContent="space-between">
                 <Heading className="title">Swap Via Local Osmosis</Heading>
-                <Text color={COLOR.neutral_3} mt="8px" mb="12px">
-                  Direct Cardano-to-Osmosis swap routing is disabled until direct
-                  IBC routes are implemented.
-                </Text>
                 <SettingSlippage />
               </Box>
               <SelectNetworkModal

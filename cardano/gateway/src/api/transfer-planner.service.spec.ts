@@ -58,7 +58,7 @@ describe('TransferPlannerService', () => {
     });
   });
 
-  it('fails closed for cross-chain routes until direct routes are implemented', async () => {
+  it('fails closed when no direct channel is available', async () => {
     await expect(
       service.planTransferRoute({
         fromChainId: 'cardano-devnet',
@@ -71,7 +71,7 @@ describe('TransferPlannerService', () => {
       chains: ['cardano-devnet', 'localosmosis'],
       routes: [],
       tokenTrace: null,
-      failureCode: 'direct-route-unsupported',
+      failureCode: 'no-route-found',
       routeDiagnostics: {
         expectedChainPath: ['cardano-devnet', 'localosmosis'],
         missingHops: [

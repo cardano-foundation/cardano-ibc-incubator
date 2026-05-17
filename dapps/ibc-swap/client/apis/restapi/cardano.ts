@@ -102,8 +102,7 @@ export interface TransferPlanResponse {
     | 'source-chain-unavailable'
     | 'destination-chain-unavailable'
     | 'no-outbound-channels'
-    | 'no-route-found'
-    | 'direct-route-unsupported';
+    | 'no-route-found';
   failureMessage?: string;
   routeDiagnostics?: {
     expectedChainPath: string[];

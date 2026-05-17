@@ -399,7 +399,7 @@ describe('ApiController (modern)', () => {
       chains: ['localosmosis', 'cardano-devnet'],
       routes: [],
       tokenTrace: null,
-      failureCode: 'direct-route-unsupported',
+      failureCode: 'no-route-found',
     });
 
     await expect(
@@ -414,7 +414,7 @@ describe('ApiController (modern)', () => {
       chains: ['localosmosis', 'cardano-devnet'],
       routes: [],
       tokenTrace: null,
-      failureCode: 'direct-route-unsupported',
+      failureCode: 'no-route-found',
     });
 
     expect(transferPlannerServiceMock.planTransferRoute).toHaveBeenCalledWith({

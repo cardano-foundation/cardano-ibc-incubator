@@ -30,7 +30,7 @@ export type TransferPlanResponse = {
         baseDenom: string;
         fullDenom: string;
     } | null;
-    failureCode?: 'invalid-request' | 'missing-unwind-hop' | 'ambiguous-unwind-hop' | 'no-forward-route' | 'ambiguous-forward-route' | 'ambiguous-forward-hop' | 'channels-not-loaded' | 'source-chain-unavailable' | 'destination-chain-unavailable' | 'no-outbound-channels' | 'no-route-found' | 'direct-route-unsupported';
+    failureCode?: 'invalid-request' | 'missing-unwind-hop' | 'ambiguous-unwind-hop' | 'no-forward-route' | 'ambiguous-forward-route' | 'ambiguous-forward-hop' | 'channels-not-loaded' | 'source-chain-unavailable' | 'destination-chain-unavailable' | 'no-outbound-channels' | 'no-route-found';
     failureMessage?: string;
     routeDiagnostics?: TransferRouteDiagnostics;
 };
