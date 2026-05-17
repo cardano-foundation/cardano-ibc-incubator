@@ -173,8 +173,14 @@ If a required key is missing or set to `0`, caribic now fails fast with an expli
 
 Runs end-to-end integration tests that validate the bridge plumbing from the outside, using Hermes to drive the gRPC Gateway and verifying on-chain effects via the Cardano handler state root. The general workflow to run the tests would be 
 
-```bash 
-cd caribic && cargo install --path . --force && cd .. && caribic check && caribic install && caribic start --clean
+```bash
+cd caribic
+cargo install --path . --force
+cd ..
+caribic check
+caribic install
+caribic start --clean
+caribic chain start --chain osmosis --network local
 ```
 
 then wait for services to boot up, then 
@@ -191,7 +197,21 @@ to make sure all the services are healthy, then
 
 ### What it tests
 
-The previous route-chain integration tests have been retired. Direct-route integration coverage should validate Cardano-to-target clients, connections, channels, transfer proofs, voucher mint/burn behavior, and swap-specific application state without using an intermediary chain.
+The test suite is ordered and will **skip** later tests if prerequisites are not met, for example if no direct channel exists or if a known limitation is hit.
+
+- **Test 1**: validates required services are running, including Cardano, Gateway, Hermes, and the selected local target chain.
+- **Test 2**: runs the Hermes-native `health-check` to confirm Hermes can connect to the Gateway gRPC endpoint and the direct counterparty chain.
+- **Test 3**: reads the handler UTXO and validates an `ibc_state_root` exists and looks sane.
+- **Test 4**: creates a Tendermint client for the target chain on Cardano, then checks that the `ibc_state_root` changes.
+- **Test 5**: queries client state back via Hermes.
+- **Test 6**: updates the Cardano-hosted Tendermint client with new target-chain headers.
+- **Test 7**: creates a direct Cardano-to-target IBC connection.
+- **Test 8**: creates a direct ICS-20 transfer channel.
+- **Test 9**: queries Cardano channel proofs at exact historical heights through Gateway and Hermes before token transfers run.
+- **Test 10**: transfers target-chain tokens to Cardano, relays packets, verifies voucher minting and `ibc_state_root` changes, and captures voucher identity for later checks.
+- **Test 11**: round-trips that voucher back to the target chain, verifies voucher burn and denom-trace reverse lookup still succeeds.
+- **Test 12**: transfers Cardano native `lovelace` to the target chain, verifies Cardano escrow, target-chain voucher minting, and denom-trace reverse lookup.
+- **Test 13**: round-trips that target-chain voucher back to Cardano, verifies burn plus unescrow, and checks balance recovery within a fee budget.
 
 ### Troubleshooting tips
 
