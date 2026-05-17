@@ -1559,16 +1559,26 @@ pub(crate) fn refresh_local_gateway_epoch_nonce(
     let gateway_dir = project_root_path.join("cardano").join("gateway");
     let gateway_env = gateway_dir.join(".env");
     let epoch_nonce = query_epoch_nonce(cardano_dir.as_path(), 42)?;
-    let current = read_gateway_env_value(
+    let current_override = read_gateway_env_value(
         gateway_env.as_path(),
         "CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE",
     )?
     .unwrap_or_default();
-    if current.trim_matches('"') == epoch_nonce {
+    let current_genesis =
+        read_gateway_env_value(gateway_env.as_path(), "CARDANO_EPOCH_NONCE_GENESIS")?
+            .unwrap_or_default();
+    if current_override.trim_matches('"') == epoch_nonce
+        && current_genesis.trim_matches('"') == epoch_nonce
+    {
         return Ok(());
     }
 
     let epoch_nonce_value = format!("\"{}\"", epoch_nonce);
+    set_or_append_env_var(
+        gateway_env.as_path(),
+        "CARDANO_EPOCH_NONCE_GENESIS",
+        epoch_nonce_value.as_str(),
+    )?;
     set_or_append_env_var(
         gateway_env.as_path(),
         "CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE",
