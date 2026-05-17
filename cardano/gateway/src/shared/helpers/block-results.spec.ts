@@ -1,10 +1,13 @@
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { Header as HeaderMsg } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 
-import { ATTRIBUTE_KEY_CLIENT, EVENT_TYPE_CLIENT } from '../../constant';
+import { ACK_RESULT, ATTRIBUTE_KEY_CLIENT, ATTRIBUTE_KEY_PACKET, EVENT_TYPE_CLIENT, EVENT_TYPE_PACKET } from '../../constant';
 import { initializeHeader } from '../types/header';
 import { SpendClientRedeemer } from '../types/client-redeemer';
-import { normalizeTxsResultFromClientDatum } from './block-results';
+import {
+  normalizeTxsResultFromClientDatum,
+  normalizeTxsResultFromRecvPacketSuccessAcknowledgement,
+} from './block-results';
 import headerMockBuilder from '../../tx/test/mock/header';
 import { clientDatumMockBuilder } from '../../tx/test/mock/client-datum';
 
@@ -64,5 +67,40 @@ describe('normalizeTxsResultFromClientDatum', () => {
     expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.CONSENSUS_HEIGHT)).toBe('0-1');
     expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.HEADER)).toBe('');
     expect(eventAttributeValue(result, ATTRIBUTE_KEY_CLIENT.CLIENT_MESSAGE_ANY_HEX)).not.toBe('');
+  });
+});
+
+describe('normalizeTxsResultFromRecvPacketSuccessAcknowledgement', () => {
+  it('emits write_acknowledgement event data for recv paths without module redeemers', () => {
+    const channelDatum = {
+      state: {
+        channel: {
+          ordering: 'Unordered',
+          connection_hops: [Buffer.from('connection-0').toString('hex')],
+        },
+      },
+    } as any;
+    const packet = {
+      sequence: 2n,
+      source_port: Buffer.from('transfer').toString('hex'),
+      source_channel: Buffer.from('channel-0').toString('hex'),
+      destination_port: Buffer.from('transfer').toString('hex'),
+      destination_channel: Buffer.from('channel-0').toString('hex'),
+      data: Buffer.from('{"denom":"uosmo"}').toString('hex'),
+      timeout_height: { revisionNumber: 0n, revisionHeight: 0n },
+      timeout_timestamp: 0n,
+    };
+
+    const result = normalizeTxsResultFromRecvPacketSuccessAcknowledgement({ RecvPacket: { packet } } as any, channelDatum);
+    const event = result.events[0];
+    const attr = (key: string) => event.event_attribute.find((entry) => entry.key === key)?.value;
+
+    expect(event.type).toBe(EVENT_TYPE_PACKET.WRITE_ACKNOWLEDGEMENT);
+    expect(attr(ATTRIBUTE_KEY_PACKET.PACKET_SEQUENCE)).toBe('2');
+    expect(attr(ATTRIBUTE_KEY_PACKET.PACKET_ACK)).toBe(JSON.stringify({ result: ACK_RESULT }));
+    expect(attr(ATTRIBUTE_KEY_PACKET.PACKET_ACK_HEX)).toBe(
+      Buffer.from(JSON.stringify({ result: ACK_RESULT }), 'utf8').toString('hex'),
+    );
+    expect(attr(ATTRIBUTE_KEY_PACKET.PACKET_DATA)).toBe('{"denom":"uosmo"}');
   });
 });

@@ -80,6 +80,7 @@ import {
   normalizeTxsResultFromConnDatum,
   normalizeTxsResultFromChannelRedeemer,
   normalizeTxsResultFromModuleRedeemer,
+  normalizeTxsResultFromRecvPacketSuccessAcknowledgement,
 } from '@shared/helpers/block-results';
 import {
   ResponseDeliverTx,
@@ -1097,6 +1098,7 @@ export class QueryService {
             txsResult.events = packetEvent.events;
             if (spendRedeemer.hasOwnProperty('SendPacket')) break;
 
+            let hasWriteAckEvent = false;
             const moduleRedeemer = redeemers.filter((candidate) => candidate.type === REDEEMER_TYPE.SPEND);
             if (moduleRedeemer.length > 0) {
               for (const candidate of moduleRedeemer) {
@@ -1111,6 +1113,9 @@ export class QueryService {
                     channelDatumDecoded,
                   );
                   txsResult.events.push(...writeAckTxsResult.events);
+                  hasWriteAckEvent ||= writeAckTxsResult.events.some(
+                    (event) => event.type === EVENT_TYPE_PACKET.WRITE_ACKNOWLEDGEMENT,
+                  );
                   break;
                 } catch {
                   continue;
@@ -1133,12 +1138,24 @@ export class QueryService {
                       channelDatumDecoded,
                     );
                     txsResult.events.push(...writeAckTxsResult.events);
+                    hasWriteAckEvent ||= writeAckTxsResult.events.some(
+                      (event) => event.type === EVENT_TYPE_PACKET.WRITE_ACKNOWLEDGEMENT,
+                    );
                     break;
                   } catch {
                     continue;
                   }
                 }
               }
+            }
+
+            const recvPacket = spendRedeemer['RecvPacket']?.packet as Packet | undefined;
+            if (recvPacket && !hasWriteAckEvent && channelDatumDecoded.state.packet_acknowledgement.has(recvPacket.sequence)) {
+              const writeAckTxsResult = normalizeTxsResultFromRecvPacketSuccessAcknowledgement(
+                spendRedeemer,
+                channelDatumDecoded,
+              );
+              txsResult.events.push(...writeAckTxsResult.events);
             }
           }
           if (spendRedeemer.hasOwnProperty('AcknowledgePacket')) {

@@ -10,6 +10,7 @@ import {
   CHANNEL_ID_PREFIX,
   CLIENT_ID_PREFIX,
   ATTRIBUTE_KEY_PACKET,
+  ACK_RESULT,
   EVENT_TYPE_PACKET,
 } from '../../constant';
 import { ChannelDatum } from '../types/channel/channel-datum';
@@ -342,6 +343,85 @@ export function normalizeTxsResultFromModuleRedeemer(
 
   // TODO: handle packet ack
   const packetData: Packet = channelRedeemer['RecvPacket']?.packet as unknown as Packet;
+  return {
+    code: 0,
+    events: [
+      {
+        type: EVENT_TYPE_PACKET.WRITE_ACKNOWLEDGEMENT,
+        event_attribute: [
+          {
+            key: ATTRIBUTE_KEY_PACKET.PACKET_DATA,
+            value: convertHex2String(packetData.data),
+          },
+          {
+            key: ATTRIBUTE_KEY_PACKET.PACKET_ACK,
+            value: packetAck,
+          },
+          {
+            key: ATTRIBUTE_KEY_PACKET.PACKET_DATA_HEX,
+            value: packetData.data,
+          },
+          {
+            key: ATTRIBUTE_KEY_PACKET.PACKET_ACK_HEX,
+            value: packetAckHex,
+          },
+          {
+            key: ATTRIBUTE_KEY_PACKET.PACKET_TIMEOUT_HEIGHT,
+            value: `${packetData.timeout_height.revisionNumber}-${packetData.timeout_height.revisionHeight}`,
+          },
+          {
+            key: ATTRIBUTE_KEY_PACKET.PACKET_TIMEOUT_TIMESTAMP,
+            value: packetData.timeout_timestamp,
+          },
+          {
+            key: ATTRIBUTE_KEY_PACKET.PACKET_SEQUENCE,
+            value: packetData.sequence,
+          },
+          {
+            key: ATTRIBUTE_KEY_PACKET.PACKET_SRC_PORT,
+            value: convertHex2String(packetData.source_port),
+          },
+          {
+            key: ATTRIBUTE_KEY_PACKET.PACKET_SRC_CHANNEL,
+            value: convertHex2String(packetData.source_channel),
+          },
+          {
+            key: ATTRIBUTE_KEY_PACKET.PACKET_DST_PORT,
+            value: convertHex2String(packetData.destination_port),
+          },
+          {
+            key: ATTRIBUTE_KEY_PACKET.PACKET_DST_CHANNEL,
+            value: convertHex2String(packetData.destination_channel),
+          },
+          {
+            key: ATTRIBUTE_KEY_PACKET.PACKET_CHANNEL_ORDERING,
+            value: channelDatum.state.channel.ordering,
+          },
+          {
+            key: ATTRIBUTE_KEY_PACKET.PACKET_CONNECTION,
+            value: convertHex2String(channelDatum.state.channel.connection_hops[0]),
+          },
+        ].map(
+          (attr) =>
+            <EventAttribute>{
+              key: attr.key.toString(),
+              value: attr.value.toString(),
+              index: true,
+            },
+        ),
+      },
+    ] as Event[],
+  } as unknown as ResponseDeliverTx;
+}
+
+export function normalizeTxsResultFromRecvPacketSuccessAcknowledgement(
+  channelRedeemer: SpendChannelRedeemer,
+  channelDatum: ChannelDatum,
+): ResponseDeliverTx {
+  const packetData: Packet = channelRedeemer['RecvPacket']?.packet as unknown as Packet;
+  const packetAck = JSON.stringify({ result: ACK_RESULT });
+  const packetAckHex = toHex(Buffer.from(packetAck, 'utf8'));
+
   return {
     code: 0,
     events: [
