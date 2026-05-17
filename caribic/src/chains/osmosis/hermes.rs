@@ -107,7 +107,7 @@ fn local_chain_profile() -> HermesCosmosChainProfile {
     HermesCosmosChainProfile {
         id: osmosis_config::LOCAL_CHAIN_ID.to_string(),
         rpc_addr: osmosis_config::LOCAL_RPC_URL.to_string(),
-        grpc_addr: "http://127.0.0.1:9096".to_string(),
+        grpc_addr: "http://127.0.0.1:9094".to_string(),
         event_source: HermesEventSource::Push {
             url: "ws://127.0.0.1:26658/websocket".to_string(),
             batch_delay: "200ms",
