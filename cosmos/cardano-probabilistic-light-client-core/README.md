@@ -12,5 +12,5 @@ It intentionally does not register an IBC light client or import `ibc-go`. It ow
 Release tags for this nested module must use the module directory prefix:
 
 ```text
-cosmos/cardano-probabilistic-light-client-core/v0.1.0
+cosmos/cardano-probabilistic-light-client-core/v0.1.1
 ```
