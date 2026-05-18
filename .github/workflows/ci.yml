@@ -283,13 +283,24 @@ jobs:
         run: scripts/ci/check-generated-artifacts-clean.sh
 
   go:
-    name: Go
+    name: Go (${{ matrix.module.name }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - name: ibc-go-v10
+            path: cosmos/cardano-probabilistic-light-client-v10
+          - name: ibc-go-v8
+            path: cosmos/cardano-probabilistic-light-client-v8
+          - name: core
+            path: cosmos/cardano-probabilistic-light-client-core
+
     defaults:
       run:
-        working-directory: cosmos/cardano-probabilistic-light-client
+        working-directory: ${{ matrix.module.path }}
 
     steps:
       - name: Checkout
@@ -299,7 +310,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
-          cache-dependency-path: cosmos/cardano-probabilistic-light-client/go.sum
+          cache-dependency-path: ${{ matrix.module.path }}/go.sum
 
       - name: Test
         env:
@@ -314,6 +325,23 @@ jobs:
           if [ "${#packages[@]}" -gt 0 ]; then
             go vet "${packages[@]}"
           fi
+
+  light-client-parity:
+    name: Light Client Parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check v8/v10 parity
+        run: node scripts/ci/check-light-client-parity.mjs
 
   rust:
     name: Rust

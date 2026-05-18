@@ -48,7 +48,7 @@ run_with_timeout() {
   (
     sleep "$timeout_seconds"
     kill "$cmd_pid" >/dev/null 2>&1 || true
-  ) &
+  ) >/dev/null 2>&1 &
   local watchdog_pid=$!
   wait "$cmd_pid" >/dev/null 2>&1 || true
   kill "$watchdog_pid" >/dev/null 2>&1 || true
