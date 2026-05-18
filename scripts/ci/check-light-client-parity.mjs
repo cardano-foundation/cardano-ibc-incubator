@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
+const coreDir = path.join(root, "cosmos/cardano-probabilistic-light-client-core");
 const v8Dir = path.join(root, "cosmos/cardano-probabilistic-light-client-v8");
 const v10Dir = path.join(root, "cosmos/cardano-probabilistic-light-client-v10");
 
@@ -262,13 +263,17 @@ function assertAdapterBoundaries() {
 }
 
 function assertModuleTargets() {
+  const coreMod = read(path.join(coreDir, "go.mod"));
   const v8Mod = read(path.join(v8Dir, "go.mod"));
   const v10Mod = read(path.join(v10Dir, "go.mod"));
 
   const expected = [
+    [coreMod, "module github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"],
     [v8Mod, "module github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v8"],
+    [v8Mod, "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.0"],
     [v8Mod, "github.com/cosmos/ibc-go/v8 v8.7.0"],
     [v10Mod, "module github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v10"],
+    [v10Mod, "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.0"],
     [v10Mod, "github.com/cosmos/ibc-go/v10 v10.2.0"],
   ];
 
@@ -279,8 +284,59 @@ function assertModuleTargets() {
   }
 }
 
+function assertSharedCoreExtraction() {
+  const coreFiles = [
+    "cardano_block.go",
+    "host_state.go",
+    "ibc_state_proof.go",
+    "cardanodatum/types.go",
+  ];
+  for (const relativePath of coreFiles) {
+    mustExist(path.join(coreDir, relativePath));
+  }
+
+  const adapterFiles = [
+    path.join(v8Dir, "block_authentication.go"),
+    path.join(v10Dir, "block_authentication.go"),
+    path.join(v8Dir, "host_state_commitment.go"),
+    path.join(v10Dir, "host_state_commitment.go"),
+    path.join(v8Dir, "host_state_datum.go"),
+    path.join(v10Dir, "host_state_datum.go"),
+    path.join(v8Dir, "ibc_state_proof.go"),
+    path.join(v10Dir, "ibc_state_proof.go"),
+    path.join(v8Dir, "internal/cardanodatum/types.go"),
+    path.join(v10Dir, "internal/cardanodatum/types.go"),
+  ];
+
+  for (const filePath of adapterFiles) {
+    const content = read(filePath);
+    if (!content.includes("cardano-probabilistic-light-client-core")) {
+      throw new Error(`${path.relative(root, filePath)} must use shared probabilistic light-client core`);
+    }
+  }
+
+  const forbiddenAdapterPatterns = [
+    /\bfunc\s+ComputeRootFromProofPath\b/,
+    /\bfunc\s+leafHash\b/,
+    /\btype\s+jsonMerkleProof\b/,
+    /\btype\s+HostStateDatum\s+struct\b/,
+    /\bfunc\s+DecodeTransactionBody\b/,
+    /\bfunc\s+ExtractIbcStateRootFromTransactionBody\b/,
+  ];
+
+  for (const filePath of adapterFiles) {
+    const content = read(filePath);
+    for (const pattern of forbiddenAdapterPatterns) {
+      if (pattern.test(content)) {
+        throw new Error(`${path.relative(root, filePath)} redefines shared core logic matching ${pattern}`);
+      }
+    }
+  }
+}
+
 try {
   assertModuleTargets();
+  assertSharedCoreExtraction();
   assertFileInventory();
   assertPublicIdentity();
   assertCoreSourceParity();

@@ -33,6 +33,8 @@ github.com/cosmos/ibc-go/v10 v10.2.0
 
 For chains that still use `ibc-go/v8.7`, use the sibling module at `cosmos/cardano-probabilistic-light-client-v8`.
 
+Shared Cardano block, HostState, and commitment-proof logic lives in `cosmos/cardano-probabilistic-light-client-core`; this module only carries the `ibc-go/v10` adapter surface around that shared implementation.
+
 ## Integration
 
 For an `ibc-go/v10` app, import the module and register it with the IBC client keeper:
@@ -60,6 +62,7 @@ Because this is a nested Go module, release tags must be prefixed with the modul
 
 ```text
 cosmos/cardano-probabilistic-light-client-v10/v0.1.0
+cosmos/cardano-probabilistic-light-client-core/v0.1.0
 ```
 
 Consumers can then require it with:

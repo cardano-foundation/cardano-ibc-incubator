@@ -8,6 +8,7 @@ import (
 	errorsmod "cosmossdk.io/errors"
 	"github.com/blinklabs-io/gouroboros/cbor"
 	"github.com/blinklabs-io/gouroboros/ledger"
+	probabilisticcore "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"
 	"golang.org/x/crypto/blake2b"
 )
 
@@ -197,7 +198,7 @@ func (cs *ClientState) verifyNativeProbabilisticBlock(
 		}
 	}()
 
-	headerCborHex, bodyCborHex, vrfKeyBytes, err := buildBlockVerificationArtifacts(decodedBlock)
+	headerCborHex, bodyCborHex, vrfKeyBytes, err := probabilisticcore.BuildBlockVerificationArtifacts(decodedBlock)
 	if err != nil {
 		return "", nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "failed to build %s native verification payload: %v", label, err)
 	}
@@ -220,51 +221,15 @@ func (cs *ClientState) verifyNativeProbabilisticBlock(
 }
 
 func buildBlockVerificationArtifacts(decodedBlock ledger.Block) (string, string, []byte, error) {
-	switch block := decodedBlock.(type) {
-	case *ledger.BabbageBlock:
-		bodyHex, err := encodeNativeVerifiedBlockBodyHex(
-			len(block.TransactionBodies),
-			func(idx int) []byte {
-				return block.TransactionBodies[idx].Cbor()
-			},
-			func(idx int) []byte {
-				return block.TransactionWitnessSets[idx].Cbor()
-			},
-			block.TransactionMetadataSet,
-		)
-		if err != nil {
-			return "", "", nil, err
-		}
-		return hex.EncodeToString(block.Header.Cbor()), bodyHex, bytes.Clone(block.Header.Body.VrfKey), nil
-	case *ledger.ConwayBlock:
-		bodyHex, err := encodeNativeVerifiedBlockBodyHex(
-			len(block.TransactionBodies),
-			func(idx int) []byte {
-				return block.TransactionBodies[idx].Cbor()
-			},
-			func(idx int) []byte {
-				return block.TransactionWitnessSets[idx].Cbor()
-			},
-			block.TransactionMetadataSet,
-		)
-		if err != nil {
-			return "", "", nil, err
-		}
-		return hex.EncodeToString(block.Header.Cbor()), bodyHex, bytes.Clone(block.Header.Body.VrfKey), nil
-	default:
-		return "", "", nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "unsupported block era %T", decodedBlock)
-	}
+	return probabilisticcore.BuildBlockVerificationArtifacts(decodedBlock)
 }
 
 func blockPrevHash(decodedBlock ledger.Block) (string, error) {
-	switch block := decodedBlock.(type) {
-	case *ledger.BabbageBlock:
-		return block.Header.Body.PrevHash.String(), nil
-	case *ledger.ConwayBlock:
-		return block.Header.Body.PrevHash.String(), nil
-	default:
-		return "", errorsmod.Wrapf(ErrInvalidAcceptedBlock, "unsupported block era %T", decodedBlock)
+	prevHash, err := probabilisticcore.BlockPrevHash(decodedBlock)
+	if err != nil {
+		return "", errorsmod.Wrap(ErrInvalidAcceptedBlock, err.Error())
 	}
+	return prevHash, nil
 }
 
 func encodeNativeVerifiedBlockBodyHex(
@@ -273,24 +238,7 @@ func encodeNativeVerifiedBlockBodyHex(
 	witnessCborAt func(int) []byte,
 	transactionMetadataSet map[uint]*cbor.LazyValue,
 ) (string, error) {
-	txsRaw := make([][]string, 0, txCount)
-	for idx := 0; idx < txCount; idx++ {
-		auxHex := ""
-		if transactionMetadataSet != nil && transactionMetadataSet[uint(idx)] != nil {
-			auxHex = hex.EncodeToString(transactionMetadataSet[uint(idx)].Cbor())
-		}
-		txsRaw = append(txsRaw, []string{
-			hex.EncodeToString(bodyCborAt(idx)),
-			hex.EncodeToString(witnessCborAt(idx)),
-			auxHex,
-		})
-	}
-
-	bodyCbor, err := cbor.Encode(txsRaw)
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(bodyCbor), nil
+	return probabilisticcore.EncodeNativeVerifiedBlockBodyHex(txCount, bodyCborAt, witnessCborAt, transactionMetadataSet)
 }
 
 func findStakeDistributionEntryInContext(epochContext *EpochContext, poolID string) (*StakeDistributionEntry, error) {
@@ -345,44 +293,21 @@ func verifyHostStateTxIncludedInAnchorBlock(header *ProbabilisticHeader) error {
 }
 
 func extractHostStateTxBodyCborFromAnchorBlock(header *ProbabilisticHeader) ([]byte, error) {
-	decodedBlock, err := decodeLedgerBlock(header.AnchorBlock.BlockCbor)
+	txBodyCbor, err := probabilisticcore.ExtractHostStateTxBodyCborFromAnchorBlock(header.AnchorBlock.BlockCbor, header.HostStateTxHash)
 	if err != nil {
-		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "failed to decode anchor block: %v", err)
+		return nil, errorsmod.Wrap(ErrInvalidHostStateCommitment, err.Error())
 	}
-
-	for _, tx := range decodedBlock.Transactions() {
-		if strings.EqualFold(tx.Hash(), header.HostStateTxHash) {
-			txBodyCbor, bodyErr := extractTransactionBodyCbor(tx)
-			if bodyErr != nil {
-				return nil, errorsmod.Wrapf(ErrInvalidHostStateCommitment, "failed to decode host state tx body: %v", bodyErr)
-			}
-			return txBodyCbor, nil
-		}
-	}
-
-	return nil, errorsmod.Wrapf(
-		ErrInvalidHostStateCommitment,
-		"host state tx %s not found in authenticated anchor block %s",
-		header.HostStateTxHash,
-		header.AnchorBlock.Hash,
-	)
+	return txBodyCbor, nil
 }
 
 func extractTransactionBodyCbor(tx ledger.Transaction) ([]byte, error) {
-	switch typedTx := tx.(type) {
-	case *ledger.BabbageTransaction:
-		return typedTx.Body.Cbor(), nil
-	case *ledger.ConwayTransaction:
-		return typedTx.Body.Cbor(), nil
-	default:
-		return nil, errorsmod.Wrapf(ErrInvalidHostStateCommitment, "unsupported anchor transaction type %T", tx)
+	txBodyCbor, err := probabilisticcore.ExtractTransactionBodyCbor(tx)
+	if err != nil {
+		return nil, errorsmod.Wrap(ErrInvalidHostStateCommitment, err.Error())
 	}
+	return txBodyCbor, nil
 }
 
 func decodeLedgerBlock(blockCbor []byte) (ledger.Block, error) {
-	blockType, err := ledger.DetermineBlockType(blockCbor)
-	if err != nil {
-		return nil, err
-	}
-	return ledger.NewBlockFromCbor(blockType, blockCbor)
+	return probabilisticcore.DecodeLedgerBlock(blockCbor)
 }

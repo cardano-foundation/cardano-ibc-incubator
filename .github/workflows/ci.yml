@@ -295,6 +295,8 @@ jobs:
             path: cosmos/cardano-probabilistic-light-client-v10
           - name: ibc-go-v8
             path: cosmos/cardano-probabilistic-light-client-v8
+          - name: core
+            path: cosmos/cardano-probabilistic-light-client-core
 
     defaults:
       run:

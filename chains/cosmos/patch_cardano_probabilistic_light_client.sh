@@ -10,6 +10,7 @@ fi
 CHAIN_DIR="$1"
 REPO_ROOT="$2"
 SOURCE_CLIENT_DIR="${REPO_ROOT}/cosmos/cardano-probabilistic-light-client-v8"
+SOURCE_CORE_DIR="${REPO_ROOT}/cosmos/cardano-probabilistic-light-client-core"
 
 if [ ! -f "${CHAIN_DIR}/go.mod" ]; then
   echo "[cardano-light-client-patch] missing go.mod in ${CHAIN_DIR}" >&2
@@ -20,11 +21,20 @@ if [ ! -d "${SOURCE_CLIENT_DIR}" ]; then
   echo "[cardano-light-client-patch] missing source client module at ${SOURCE_CLIENT_DIR}" >&2
   exit 1
 fi
+if [ ! -d "${SOURCE_CORE_DIR}" ]; then
+  echo "[cardano-light-client-patch] missing source client core module at ${SOURCE_CORE_DIR}" >&2
+  exit 1
+fi
 
 MODULE_PATH="$(awk '/^module / { print $2; exit }' "${CHAIN_DIR}/go.mod")"
 SOURCE_MODULE_PATH="$(awk '/^module / { print $2; exit }' "${SOURCE_CLIENT_DIR}/go.mod")"
+SOURCE_CORE_MODULE_PATH="$(awk '/^module / { print $2; exit }' "${SOURCE_CORE_DIR}/go.mod")"
 if [ -z "${SOURCE_MODULE_PATH}" ]; then
   echo "[cardano-light-client-patch] could not detect source module path in ${SOURCE_CLIENT_DIR}/go.mod" >&2
+  exit 1
+fi
+if [ -z "${SOURCE_CORE_MODULE_PATH}" ]; then
+  echo "[cardano-light-client-patch] could not detect source core module path in ${SOURCE_CORE_DIR}/go.mod" >&2
   exit 1
 fi
 IBC_GO_MAJOR="$(awk '/github.com\/cosmos\/ibc-go\/v[0-9]+/ {
@@ -87,8 +97,22 @@ mkdir -p "${CLIENT_DIR}"
 
 find "${CLIENT_DIR}" -type f -name '*_test.go' -delete
 
+mkdir -p "${CLIENT_DIR}/internal/core"
+(
+  cd "${SOURCE_CORE_DIR}"
+  tar \
+    --exclude go.mod \
+    --exclude go.sum \
+    --exclude README.md \
+    -cf - .
+) | (
+  cd "${CLIENT_DIR}/internal/core"
+  tar -xf -
+)
+
 find "${CLIENT_DIR}" -type f -name '*.go' -exec perl -pi -e \
-  "s#${SOURCE_MODULE_PATH}#${CLIENT_IMPORT}#g" {} +
+  "s#${SOURCE_MODULE_PATH}#${CLIENT_IMPORT}#g;
+   s#${SOURCE_CORE_MODULE_PATH}#${CLIENT_IMPORT}/internal/core#g" {} +
 
 if [ "${APP_KIND}" = "osmosis" ]; then
   if ! grep -q "${CLIENT_IMPORT}" "${APP_FILE}"; then
