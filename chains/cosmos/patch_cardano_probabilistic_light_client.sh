@@ -9,7 +9,7 @@ fi
 
 CHAIN_DIR="$1"
 REPO_ROOT="$2"
-SOURCE_CLIENT_DIR="${REPO_ROOT}/cosmos/cardano-probabilistic-light-client-ibc-go-v8"
+SOURCE_CLIENT_DIR="${REPO_ROOT}/cosmos/cardano-probabilistic-light-client-v8"
 
 if [ ! -f "${CHAIN_DIR}/go.mod" ]; then
   echo "[cardano-light-client-patch] missing go.mod in ${CHAIN_DIR}" >&2

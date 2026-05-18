@@ -21,7 +21,7 @@ The protobuf type URLs are:
 ## Module
 
 ```text
-github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-ibc-go-v8
+github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v8
 ```
 
 This module targets:
@@ -31,7 +31,7 @@ github.com/cosmos/cosmos-sdk v0.53.0
 github.com/cosmos/ibc-go/v8 v8.7.0
 ```
 
-For `ibc-go/v10` chains, use the sibling module at `cosmos/cardano-probabilistic-light-client`.
+For `ibc-go/v10` chains, use the sibling module at `cosmos/cardano-probabilistic-light-client-v10`.
 
 ## Integration
 
@@ -39,7 +39,7 @@ For an `ibc-go/v8` app, import the module and register its app module alongside 
 
 ```go
 import (
-	probabilistic "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-ibc-go-v8"
+	probabilistic "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v8"
 )
 
 moduleBasics := module.NewBasicManager(
@@ -62,11 +62,11 @@ The chain's IBC client params must allow `08-cardano-probabilistic`. If the para
 Because this is a nested Go module, release tags must be prefixed with the module directory:
 
 ```text
-cosmos/cardano-probabilistic-light-client-ibc-go-v8/v0.1.0
+cosmos/cardano-probabilistic-light-client-v8/v0.1.0
 ```
 
 Consumers can then require it with:
 
 ```sh
-go get github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-ibc-go-v8@v0.1.0
+go get github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v8@v0.1.0
 ```

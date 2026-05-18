@@ -16,7 +16,7 @@ import (
 	// The Cardano commitment scheme commits to `aiken/cbor.serialise(...)` bytes,
 	// not to protobuf bytes. The light client is responsible for bridging that
 	// encoding difference during verification.
-	cardanodatum "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client/internal/cardanodatum"
+	cardanodatum "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v10/internal/cardanodatum"
 	proto "github.com/cosmos/gogoproto/proto"
 	gogotypes "github.com/cosmos/gogoproto/types"
 	connectiontypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"

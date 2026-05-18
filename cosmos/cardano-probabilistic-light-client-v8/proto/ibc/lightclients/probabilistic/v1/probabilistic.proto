@@ -4,7 +4,7 @@ package ibc.lightclients.probabilistic.v1;
 import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 
-option go_package = "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client;probabilistic";
+option go_package = "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v8;probabilistic";
 
 message Height {
   option (gogoproto.goproto_getters) = false;

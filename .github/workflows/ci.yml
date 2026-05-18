@@ -292,9 +292,9 @@ jobs:
       matrix:
         module:
           - name: ibc-go-v10
-            path: cosmos/cardano-probabilistic-light-client
+            path: cosmos/cardano-probabilistic-light-client-v10
           - name: ibc-go-v8
-            path: cosmos/cardano-probabilistic-light-client-ibc-go-v8
+            path: cosmos/cardano-probabilistic-light-client-v8
 
     defaults:
       run:
