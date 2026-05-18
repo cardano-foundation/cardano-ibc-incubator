@@ -324,6 +324,23 @@ jobs:
             go vet "${packages[@]}"
           fi
 
+  light-client-parity:
+    name: Light Client Parity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check v8/v10 parity
+        run: node scripts/ci/check-light-client-parity.mjs
+
   rust:
     name: Rust
     runs-on: ubuntu-latest
