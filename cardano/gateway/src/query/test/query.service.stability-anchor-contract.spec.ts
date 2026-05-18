@@ -1,10 +1,10 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
-  ClientState as ClientStateStability,
-  ConsensusState as ConsensusStateStability,
-} from '@plus/proto-types/build/ibc/lightclients/stability/v1/stability';
-import { StabilityHeader } from '@plus/proto-types/build/ibc/lightclients/stability/v1/stability';
+  ClientState as ClientStateProbabilistic,
+  ConsensusState as ConsensusStateProbabilistic,
+  ProbabilisticHeader,
+} from '@plus/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic';
 import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';
@@ -248,7 +248,7 @@ describe('QueryService stability anchor contract', () => {
     );
   });
 
-  it('populates legacy epoch mirrors in the initial stability client payload', async () => {
+  it('populates flattened epoch verifier fields in the initial probabilistic client payload', async () => {
     historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
       txHash: 'host-state-tx',
       txId: 1,
@@ -269,8 +269,8 @@ describe('QueryService stability anchor contract', () => {
     });
 
     const response = await service.queryNewClient({ height: 100n } as any);
-    const clientState = ClientStateStability.decode(response.client_state!.value);
-    const consensusState = ConsensusStateStability.decode(response.consensus_state!.value);
+    const clientState = ClientStateProbabilistic.decode(response.client_state!.value);
+    const consensusState = ConsensusStateProbabilistic.decode(response.consensus_state!.value);
 
     expect(clientState.epoch_contexts).toHaveLength(1);
     expect(clientState.epoch_nonce).toHaveLength(32);
@@ -309,7 +309,7 @@ describe('QueryService stability anchor contract', () => {
     ]);
 
     const response = await service.queryIBCHeader({ height: 100n, trusted_height: 100n } as any);
-    const header = StabilityHeader.decode(response.header!.value);
+    const header = ProbabilisticHeader.decode(response.header!.value);
 
     expect(header.trusted_height?.revision_height).toBe(99n);
     expect(header.anchor_block?.height?.revision_height).toBe(100n);

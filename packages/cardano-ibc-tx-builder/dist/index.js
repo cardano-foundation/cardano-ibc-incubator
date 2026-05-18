@@ -204,14 +204,14 @@ function insertSortMapWithNumberKey(inputMap, newKey, newValue) {
 }
 function stringifyIcs20PacketData(packet) {
     const ordered = {};
-    if (packet.denom)
-        ordered.denom = packet.denom;
     if (packet.amount)
         ordered.amount = packet.amount;
-    if (packet.sender)
-        ordered.sender = packet.sender;
+    if (packet.denom)
+        ordered.denom = packet.denom;
     if (packet.receiver)
         ordered.receiver = packet.receiver;
+    if (packet.sender)
+        ordered.sender = packet.sender;
     if (packet.memo)
         ordered.memo = packet.memo;
     return JSON.stringify(ordered);

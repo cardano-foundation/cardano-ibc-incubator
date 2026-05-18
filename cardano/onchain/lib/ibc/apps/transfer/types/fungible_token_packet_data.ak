@@ -47,13 +47,6 @@ pub fn get_bytes(ftpd: FungibleTokenPacketData) -> ByteArray {
   #[]
     |> concat("{")
     |> concat(
-        if length(denom) == 0 {
-          ""
-        } else {
-          get_json("denom", denom) |> concat(",")
-        },
-      )
-    |> concat(
         if length(amount) == 0 {
           ""
         } else {
@@ -61,20 +54,27 @@ pub fn get_bytes(ftpd: FungibleTokenPacketData) -> ByteArray {
         },
       )
     |> concat(
-        if length(sender) == 0 {
+        if length(denom) == 0 {
           ""
         } else {
-          get_json("sender", sender) |> concat(",")
+          get_json("denom", denom) |> concat(",")
         },
       )
     |> concat(
         if length(receiver) == 0 {
           ""
         } else {
+          get_json("receiver", receiver) |> concat(",")
+        },
+      )
+    |> concat(
+        if length(sender) == 0 {
+          ""
+        } else {
           if length(memo) == 0 {
-            get_json("receiver", receiver)
+            get_json("sender", sender)
           } else {
-            get_json("receiver", receiver) |> concat(",")
+            get_json("sender", sender) |> concat(",")
           }
         },
       )

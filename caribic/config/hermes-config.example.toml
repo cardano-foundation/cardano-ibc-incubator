@@ -109,38 +109,3 @@ list = [
   # Do not pin channel-0 here; Hermes must discover the currently open pair.
   ['transfer', '*'],
 ]
-
-
-# PACKET-FORWARDING CHAIN (LOCAL COSMOS) CONFIGURATION
-# This is the Cosmos Entrypoint chain we operate locally to
-# serve as the IBC entrypoint to the broader ecosystem.
-[[chains]]
-id = 'cardano-entrypoint'
-type = 'CosmosSdk'
-rpc_addr = 'http://127.0.0.1:26657'
-grpc_addr = 'http://127.0.0.1:9090'
-rpc_timeout = '10s'
-account_prefix = 'cosmos'
-key_name = 'entrypoint-relayer'
-store_prefix = 'ibc'
-default_gas = 200000
-max_gas = 5000000
-gas_price = { price = 0.025, denom = 'stake' }
-gas_multiplier = 1.1
-max_msg_num = 30
-max_tx_size = 2097152
-clock_drift = '5s'
-max_block_time = '30s'
-trusting_period = '14days'
-
-trust_threshold = { numerator = '2', denominator = '3' }
-event_source = { mode = 'push', url = 'ws://127.0.0.1:26657/websocket', batch_delay = '500ms' }
-
-[chains.packet_filter]
-policy = 'allow'
-list = [
-  ['transfer', '*'],
-]
-
-# Optional: Address type for this chain
-address_type = { derivation = 'cosmos' }

@@ -12,6 +12,7 @@ use indicatif::ProgressBar;
 use reqwest::Url;
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::Duration;
 use std::{fs, path::Path};
@@ -23,6 +24,10 @@ const LOCAL_STABILITY_TARGET_POOL_STAKE_LOVELACE: u64 = 900_000_000_000;
 const LOCAL_STABILITY_THRESHOLD_DEPTH: &str = "10";
 const LOCAL_STABILITY_THRESHOLD_UNIQUE_POOLS: &str = "2";
 const LOCAL_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: &str = "5000";
+const LOCAL_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT: &str = "18446744073709551615";
+const LOCAL_STABILITY_ASSUME_POOL_REGISTRATION_SLOT: &str = "1";
+const LOCAL_CARDANO_EPOCH_LENGTH: &str = "5000";
+const LOCAL_GATEWAY_HEALTH_URL: &str = "http://localhost:8000/health";
 const LOCAL_YACI_STORE_POSTGRES_VOLUME: &str = "cardano_yaci_store_postgres_local_data";
 const PREPROD_ENVIRONMENT_BASE_URL: &str =
     "https://book.world.dev.cardano.org/environments/preprod";
@@ -1516,7 +1521,7 @@ fn get_genesis_hash(era: String, cardano_dir: &Path) -> Result<String, Box<dyn s
     Ok(hash)
 }
 
-fn query_epoch_nonce(
+pub(crate) fn query_epoch_nonce(
     cardano_dir: &Path,
     network_magic: u64,
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -1545,6 +1550,66 @@ fn query_epoch_nonce(
         .ok_or("Failed to extract epoch nonce")?;
 
     Ok(epoch_nonce.trim().to_string())
+}
+
+pub(crate) fn refresh_local_gateway_epoch_nonce(
+    project_root_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cardano_dir = project_root_path.join("chains").join("cardano");
+    let gateway_dir = project_root_path.join("cardano").join("gateway");
+    let gateway_env = gateway_dir.join(".env");
+    let epoch_nonce = query_epoch_nonce(cardano_dir.as_path(), 42)?;
+    let current_override = read_gateway_env_value(
+        gateway_env.as_path(),
+        "CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE",
+    )?
+    .unwrap_or_default();
+    let current_genesis =
+        read_gateway_env_value(gateway_env.as_path(), "CARDANO_EPOCH_NONCE_GENESIS")?
+            .unwrap_or_default();
+    if current_override.trim_matches('"') == epoch_nonce
+        && current_genesis.trim_matches('"') == epoch_nonce
+    {
+        return Ok(());
+    }
+
+    let epoch_nonce_value = format!("\"{}\"", epoch_nonce);
+    set_or_append_env_var(
+        gateway_env.as_path(),
+        "CARDANO_EPOCH_NONCE_GENESIS",
+        epoch_nonce_value.as_str(),
+    )?;
+    set_or_append_env_var(
+        gateway_env.as_path(),
+        "CARDANO_PROBABILISTIC_EPOCH_NONCE_OVERRIDE",
+        epoch_nonce_value.as_str(),
+    )?;
+    log(&format!(
+        "Updated local Gateway probabilistic epoch nonce override to {}",
+        epoch_nonce
+    ));
+
+    DockerCli::new(gateway_dir.as_path()).compose_ok(&["up", "-d", "--force-recreate", "app"])?;
+
+    for _ in 0..60 {
+        let healthy = Command::new("curl")
+            .args(["-fsS", LOCAL_GATEWAY_HEALTH_URL])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if healthy {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_secs(2));
+    }
+
+    Err(format!(
+        "Timed out while waiting for Gateway at {} after refreshing local epoch nonce",
+        LOCAL_GATEWAY_HEALTH_URL
+    )
+    .into())
 }
 
 fn parse_env_file(env_path: &Path) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
@@ -1895,6 +1960,15 @@ fn write_gateway_env_for_network(
                     "CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS",
                     LOCAL_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS,
                 ),
+                (
+                    "CARDANO_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT",
+                    LOCAL_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT,
+                ),
+                (
+                    "CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT",
+                    LOCAL_STABILITY_ASSUME_POOL_REGISTRATION_SLOT,
+                ),
+                ("CARDANO_EPOCH_LENGTH", LOCAL_CARDANO_EPOCH_LENGTH),
             ];
             for (key, value) in local_gateway_defaults {
                 set_or_append_env_var(&gateway_env, key, value)?;

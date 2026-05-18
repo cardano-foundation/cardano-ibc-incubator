@@ -63,14 +63,14 @@ describe('LocalOsmosisSwapPlannerService', () => {
 
   it('delegates swap estimation to the shared planner client', async () => {
     plannerClientMock.estimateLocalOsmosisSwap.mockResolvedValue({
-      message: '',
-      tokenOutAmount: '80',
-      tokenOutTransferBackAmount: '72',
-      tokenSwapAmount: '90',
-      outToken: 'uion',
-      transferRoutes: ['transfer/channel-9', 'transfer/channel-1'],
-      transferBackRoutes: ['transfer/channel-1', 'transfer/channel-9'],
-      transferChains: ['cardano-devnet', 'cardano-entrypoint', 'localosmosis'],
+      message: 'Direct Cardano-to-target IBC routes are not implemented yet.',
+      tokenOutAmount: '0',
+      tokenOutTransferBackAmount: '0',
+      tokenSwapAmount: '0',
+      outToken: null,
+      transferRoutes: [],
+      transferBackRoutes: [],
+      transferChains: [],
     });
 
     const request = {
@@ -82,14 +82,14 @@ describe('LocalOsmosisSwapPlannerService', () => {
     };
 
     await expect(service.estimateSwap(request)).resolves.toEqual({
-      message: '',
-      tokenOutAmount: '80',
-      tokenOutTransferBackAmount: '72',
-      tokenSwapAmount: '90',
-      outToken: 'uion',
-      transferRoutes: ['transfer/channel-9', 'transfer/channel-1'],
-      transferBackRoutes: ['transfer/channel-1', 'transfer/channel-9'],
-      transferChains: ['cardano-devnet', 'cardano-entrypoint', 'localosmosis'],
+      message: 'Direct Cardano-to-target IBC routes are not implemented yet.',
+      tokenOutAmount: '0',
+      tokenOutTransferBackAmount: '0',
+      tokenSwapAmount: '0',
+      outToken: null,
+      transferRoutes: [],
+      transferBackRoutes: [],
+      transferChains: [],
     });
     expect(plannerClientServiceMock.getClient).toHaveBeenCalledTimes(1);
     expect(plannerClientMock.estimateLocalOsmosisSwap).toHaveBeenCalledWith(

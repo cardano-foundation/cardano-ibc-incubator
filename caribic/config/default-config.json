@@ -4,10 +4,6 @@
     "cardano": {
       "chain_id": "cardano-devnet",
       "message_port_id": "transfer"
-    },
-    "cardano-entrypoint": {
-      "chain_id": "cardano-entrypoint",
-      "message_port_id": "transfer"
     }
   },
   "mithril": {
@@ -23,9 +19,6 @@
     "signer_image": "ghcr.io/input-output-hk/mithril-signer:2450.0-c6c7eba"
   },
   "health": {
-    "cosmos_status_url": "http://127.0.0.1:26657/status",
-    "cosmos_max_retries": 60,
-    "cosmos_retry_interval_ms": 10000,
     "gateway_max_retries": 60,
     "gateway_retry_interval_ms": 1000
   },

@@ -2,25 +2,15 @@ use crate::{chains, config, logger};
 
 /// Lists core chains plus optional chain adapters and their supported networks/flags.
 pub fn run_chains() -> Result<(), String> {
-    let runtime_config = config::get_config();
     let adapters = chains::registered_chain_adapters();
 
     logger::log("Supported chains:\n");
 
     logger::log(&format!(
         "{} (Cardano devnet)",
-        runtime_config.chains.cardano.chain_id
+        config::get_config().chains.cardano.chain_id
     ));
     logger::log("  - network: local (managed) - Core local Cardano devnet used by the bridge");
-    logger::log("");
-
-    logger::log(&format!(
-        "{} (Cardano Entrypoint)",
-        runtime_config.chains.cardano_entrypoint.chain_id
-    ));
-    logger::log(
-        "  - network: local (managed) - Core local Cosmos packet-forwarding chain used by the bridge",
-    );
     logger::log("");
 
     if adapters.is_empty() {

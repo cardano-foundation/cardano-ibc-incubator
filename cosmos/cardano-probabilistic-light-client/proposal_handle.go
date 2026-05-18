@@ -69,7 +69,7 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	cs.LatestHeight = substituteClientState.LatestHeight
 	cs.ChainId = substituteClientState.ChainId
 	cs.TrustingPeriod = substituteClientState.TrustingPeriod
-	if err := syncLegacyEpochContextFields(&cs, contexts, substituteClientState.CurrentEpoch); err != nil {
+	if err := syncCurrentEpochFields(&cs, contexts, substituteClientState.CurrentEpoch); err != nil {
 		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
 	}
 	setClientState(subjectClientStore, cdc, &cs)

@@ -29,6 +29,7 @@ import {
 import { ClientDatum, encodeClientDatum } from "../../types/client-datum";
 import { decodeClientDatum } from "../../types/client-datum";
 import {
+  encodeMintClientRedeemer,
   encodeSpendClientRedeemer,
   SpendClientRedeemer,
 } from "../../types/client-redeemer";
@@ -812,13 +813,10 @@ export class LucidService implements OnModuleInit {
             this.LucidImporter,
           );
         case "mintClientRedeemer": {
-          const { Data } = this.LucidImporter;
-          const MintClientRedeemerSchema = Data.Enum([
-            Data.Literal("MintClient"),
-          ]);
-          return Data.to(data as any, MintClientRedeemerSchema as any, {
-            canonical: true,
-          });
+          return await encodeMintClientRedeemer(
+            data as "MintClient",
+            this.LucidImporter,
+          );
         }
         case "mintConnectionRedeemer":
           return await encodeMintConnectionRedeemer(

@@ -36,7 +36,6 @@ Examples:
 caribic start
 caribic start --clean
 caribic start bridge
-caribic start entrypoint --clean
 caribic chain start --chain osmosis
 caribic chain start --chain injective --network local
 caribic chain start --chain injective --network testnet
@@ -59,10 +58,6 @@ Injective startup note:
 - `caribic chain start --chain injective --network mainnet` is intentionally not implemented yet.
 - If `injectived` is missing, caribic prompts to install it from source (`InjectiveFoundation/injective-core`) and runs `make install`.
 
-Entrypoint startup note:
-- `caribic start entrypoint` sets `IGNITE_SKIP_PROTO=1` by default in the container startup path to avoid Ignite regenerating OpenAPI/proto artifacts on every boot.
-- If you intentionally need Ignite proto regeneration, run with `IGNITE_SKIP_PROTO=0 caribic start entrypoint --clean`.
-
 Hermes config note:
 - Hermes reads `~/.hermes/config.toml` when the process starts. Editing that file while Hermes is already running does not apply live.
 - If you change Hermes config manually, restart Hermes (`caribic stop relayer` then `caribic start relayer`).
@@ -72,7 +67,7 @@ Hermes config note:
 
 Stops services. With no target, it behaves like `all`.
 
-- **Targets**: `all`, `network`, `bridge`, `entrypoint`, `demo`, `gateway`, `relayer`, `mithril`
+- **Targets**: `all`, `network`, `bridge`, `demo`, `gateway`, `relayer`, `mithril`
 
 Examples:
 
@@ -117,9 +112,9 @@ Convenience wrapper around Hermes keyring operations.
 
 ```bash
 caribic keys list
-caribic keys add --chain entrypoint --mnemonic-file ./my-mnemonic.txt --overwrite
+caribic keys add --chain localosmosis --mnemonic-file ./my-mnemonic.txt --overwrite
 caribic keys add --chain injective-888 --mnemonic-file ./injective.txt --key-name injective-888-relayer --hd-path "m/44'/60'/0'/0/0" --overwrite
-caribic keys delete --chain entrypoint --key-name relayer
+caribic keys delete --chain localosmosis --key-name relayer
 ```
 
 ### `caribic create-client`, `caribic create-connection`, `caribic create-channel`
@@ -127,16 +122,15 @@ caribic keys delete --chain entrypoint --key-name relayer
 Thin wrappers that run the corresponding Hermes IBC actions using the local Hermes binary/config.
 
 ```bash
-caribic create-client --host-chain cardano-devnet --reference-chain entrypoint
-caribic create-connection --a-chain cardano-devnet --b-chain entrypoint
-caribic create-channel --a-chain cardano-devnet --b-chain entrypoint --a-port transfer --b-port transfer
+caribic create-client --host-chain cardano-devnet --reference-chain localosmosis
+caribic create-connection --a-chain cardano-devnet --b-chain localosmosis
+caribic create-channel --a-chain cardano-devnet --b-chain localosmosis --a-port transfer --b-port transfer
 ```
 
 ### `caribic demo <message-exchange|token-swap>`
 
-Starts a demo setup step on top of already running services.
-`caribic demo token-swap` expects the maintained default bridge stack and the selected optional chain to have already been started. It then validates required services, prepares Hermes channels, deploys the cross-chain swap contracts, and executes the swap flow end-to-end.
-`caribic demo message-exchange` now runs directly against the native `cosmos/cardano-entrypoint` chain and uses the built-in datasource at `cosmos/cardano-entrypoint/datasource` (no separate demo chain bootstrap required).
+`caribic demo token-swap` prepares direct Cardano-to-target transfer routes and runs the selected local demo against those direct channel ids.
+`caribic demo message-exchange` needs to be reworked per target chain because ICQ/message modules are target-specific.
 
 The deprecated Mithril readiness settings remain in the config only for historical compatibility and are not part of the maintained startup path.
 If your machine is slower, tune retry windows in `caribic/config/default-config.json` (or whichever file you pass via `--config`).
@@ -179,8 +173,14 @@ If a required key is missing or set to `0`, caribic now fails fast with an expli
 
 Runs end-to-end integration tests that validate the bridge plumbing from the outside, using Hermes to drive the gRPC Gateway and verifying on-chain effects via the Cardano handler state root. The general workflow to run the tests would be 
 
-```bash 
-cd caribic && cargo install --path . --force && cd .. && caribic check && caribic install && caribic start --clean
+```bash
+cd caribic
+cargo install --path . --force
+cd ..
+caribic check
+caribic install
+caribic start --clean
+caribic chain start --chain osmosis --network local
 ```
 
 then wait for services to boot up, then 
@@ -197,21 +197,21 @@ to make sure all the services are healthy, then
 
 ### What it tests
 
-The test suite is ordered and will **skip** later tests if prerequisites are not met (for example if no channel exists, or if a known limitation is hit).
+The test suite is ordered and will **skip** later tests if prerequisites are not met, for example if no direct channel exists or if a known limitation is hit.
 
-- **Test 1**: validates required services are running (Cardano, Gateway container, Cosmos entrypoint RPC, and maintained bridge dependencies)
-- **Test 2**: runs the Hermes-native `health-check` to confirm Hermes can connect to the Gateway gRPC endpoint and query latest height
-- **Test 3**: reads the handler UTXO and validates an `ibc_state_root` exists and looks sane
-- **Test 4**: `createClient` via Hermes -> Gateway -> Cardano, then checks the `ibc_state_root` changes
-- **Test 5**: queries client state back via Hermes, may skip if the Gateway requires an explicit height parameter
-- **Test 6**: updates the client with new Tendermint headers, may skip if there are no new blocks or if height handling is required
-- **Test 7**: creates an IBC connection, may skip if the Cosmos-side Cardano light client pieces are not available yet
-- **Test 8**: creates an ICS-20 transfer channel, depends on Test 7 establishing a connection
-- **Test 9**: queries Cardano channel proofs at exact historical heights through Gateway and Hermes before token transfers run
-- **Test 10**: ICS-20 transfer from the entrypoint chain to Cardano, relays packets, verifies voucher minting and `ibc_state_root` changes, and captures voucher identity for later checks
-- **Test 11**: round-trip of that voucher back to the entrypoint chain, verifies voucher burn and denom-trace reverse lookup still succeeds
-- **Test 12**: ICS-20 transfer of Cardano native `lovelace` to the entrypoint chain (Cardano escrows, Cosmos mints voucher), verifies denom-trace reverse lookup
-- **Test 13**: round-trip of that voucher back to Cardano (burn + unescrow), verifies `ibc_state_root` changes and balance recovery within a fee budget
+- **Test 1**: validates required services are running, including Cardano, Gateway, Hermes, and the selected local target chain.
+- **Test 2**: runs the Hermes-native `health-check` to confirm Hermes can connect to the Gateway gRPC endpoint and the direct counterparty chain.
+- **Test 3**: reads the handler UTXO and validates an `ibc_state_root` exists and looks sane.
+- **Test 4**: creates a Tendermint client for the target chain on Cardano, then checks that the `ibc_state_root` changes.
+- **Test 5**: queries client state back via Hermes.
+- **Test 6**: updates the Cardano-hosted Tendermint client with new target-chain headers.
+- **Test 7**: creates a direct Cardano-to-target IBC connection.
+- **Test 8**: creates a direct ICS-20 transfer channel.
+- **Test 9**: queries Cardano channel proofs at exact historical heights through Gateway and Hermes before token transfers run.
+- **Test 10**: transfers target-chain tokens to Cardano, relays packets, verifies voucher minting and `ibc_state_root` changes, and captures voucher identity for later checks.
+- **Test 11**: round-trips that voucher back to the target chain, verifies voucher burn and denom-trace reverse lookup still succeeds.
+- **Test 12**: transfers Cardano native `lovelace` to the target chain, verifies Cardano escrow, target-chain voucher minting, and denom-trace reverse lookup.
+- **Test 13**: round-trips that target-chain voucher back to Cardano, verifies burn plus unescrow, and checks balance recovery within a fee budget.
 
 ### Troubleshooting tips
 

@@ -286,18 +286,10 @@ jobs:
     name: Go
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        module:
-          - cosmos/cardano-entrypoint
-          - cosmos/cardano-entrypoint/datasource
-          - cosmos/cardano-probabilistic-light-client
-          - cosmos/ibcclientest
 
     defaults:
       run:
-        working-directory: ${{ matrix.module }}
+        working-directory: cosmos/cardano-probabilistic-light-client
 
     steps:
       - name: Checkout
@@ -307,11 +299,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
-          cache-dependency-path: |
-            cosmos/cardano-entrypoint/go.sum
-            cosmos/cardano-entrypoint/datasource/go.sum
-            cosmos/cardano-probabilistic-light-client/go.sum
-            cosmos/ibcclientest/go.sum
+          cache-dependency-path: cosmos/cardano-probabilistic-light-client/go.sum
 
       - name: Test
         env:

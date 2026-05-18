@@ -41,6 +41,7 @@ describe('TxOperationRunnerService', () => {
     } as any;
     const txEventsService = {
       register: jest.fn(),
+      registerByExpectedRoot: jest.fn(),
     } as any;
     const ibcTreePendingUpdatesService = {
       register: jest.fn(),
@@ -121,6 +122,7 @@ describe('TxOperationRunnerService', () => {
       pendingTreeUpdate,
     );
     expect(txEventsService.register).toHaveBeenCalledWith('txhash-create-client', syntheticEvents);
+    expect(txEventsService.registerByExpectedRoot).toHaveBeenCalledWith('abc123', syntheticEvents);
     expect(result.unsignedTxHash).toBe('txhash-create-client');
     expect(result.unsignedTxCbor).toBe('84a30081825820deadbeef');
     expect(result.unsignedTxBytes).toEqual(new Uint8Array(Buffer.from('84a30081825820deadbeef', 'utf-8')));

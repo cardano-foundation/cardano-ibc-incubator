@@ -191,7 +191,7 @@ pub fn sync_workspace_assets(
     lifecycle::sync_workspace_assets(project_root_path, osmosis_dir)
 }
 
-/// Configures Hermes keys, clients, connection, and channel for Entrypoint↔Osmosis.
+/// Configures Hermes keys for direct Cardano↔Osmosis routes.
 pub fn configure_hermes_for_demo(
     osmosis_dir: &Path,
     network: &str,
@@ -206,26 +206,6 @@ pub fn demo_chain_id(network: &str) -> Result<&'static str, String> {
         CosmosNetworkKind::Mainnet => {
             Err("Osmosis token-swap demo is not implemented for network 'mainnet'.".to_string())
         }
-    }
-}
-
-pub fn demo_node_rpc_url(network: &str) -> Result<&'static str, String> {
-    match CosmosNetworkKind::parse(network)? {
-        CosmosNetworkKind::Local => Ok(config::LOCAL_RPC_URL),
-        CosmosNetworkKind::Testnet => Ok(config::TESTNET_RPC_URL),
-        CosmosNetworkKind::Mainnet => {
-            Err("Osmosis token-swap demo is not implemented for network 'mainnet'.".to_string())
-        }
-    }
-}
-
-pub fn stop_for_network(osmosis_path: &Path, network: &str) -> Result<(), String> {
-    match CosmosNetworkKind::parse(network)? {
-        CosmosNetworkKind::Local => {
-            lifecycle::stop_local(osmosis_path);
-            Ok(())
-        }
-        CosmosNetworkKind::Testnet | CosmosNetworkKind::Mainnet => Ok(()),
     }
 }
 

@@ -1,4 +1,3 @@
-use crate::constants::CARDANO_ENTRYPOINT_CHAIN_ID;
 use crate::logger::{log_or_print_progress, log_or_show_progress, verbose};
 use crate::process::docker::DockerCli;
 use crate::process::hermes::HermesCli;
@@ -32,7 +31,6 @@ use std::sync::Once;
 use std::thread;
 use std::time::{Duration, Instant};
 
-const CARDANO_ENTRYPOINT_CONTAINER_NAME: &str = "cardano-entrypoint-node-prod";
 const HERMES_PROGRESS_LOG_INTERVAL_SECS: u64 = 30;
 const HERMES_PID_FILE_NAME: &str = "hermes.pid";
 const HERMES_STARTUP_CHECK_ATTEMPTS: u32 = 5;
@@ -165,7 +163,7 @@ fn validate_preprod_hermes_route_coverage(
         return Ok(());
     }
 
-    let required_chain_ids = [CARDANO_ENTRYPOINT_CHAIN_ID, INJECTIVE_TESTNET_CHAIN_ID];
+    let required_chain_ids = [INJECTIVE_TESTNET_CHAIN_ID];
     let missing_chain_ids: Vec<&str> = required_chain_ids
         .iter()
         .copied()
@@ -182,18 +180,13 @@ fn validate_preprod_hermes_route_coverage(
         chain_ids.join(", ")
     };
 
-    // Preprod swaps are multi-hop; a Cardano-only Hermes config can strand funds on Entrypoint.
     Err(format!(
         "Invalid Hermes route for Cardano preprod swaps.\n\
          Found chains: {}\n\
          Missing chains: {}\n\
-         Required route: {} -> {} -> {}\n\
-         Configure the complete Injective testnet route before starting Hermes.",
+         Configure the Injective testnet route before starting Hermes.",
         found_chain_ids,
-        missing_chain_ids.join(", "),
-        CARDANO_PREPROD_CHAIN_ID,
-        CARDANO_ENTRYPOINT_CHAIN_ID,
-        INJECTIVE_TESTNET_CHAIN_ID
+        missing_chain_ids.join(", ")
     )
     .into())
 }
@@ -469,56 +462,11 @@ pub fn start_relayer(
         &optional_progress_bar,
     );
 
-    // Auto-configure Hermes keys for both chains
+    // Auto-configure the Cardano Hermes key.
     log_or_show_progress(
-        &format!(
-            "Setting up Hermes keys for {} and Cardano Entrypoint chain",
-            cardano_chain_id
-        ),
+        &format!("Setting up Hermes key for {}", cardano_chain_id),
         &optional_progress_bar,
     );
-
-    // Cardano Entrypoint chain: Use the pre-funded "relayer" account from the chain config.
-    let entrypoint_mnemonic = "engage vote never tired enter brain chat loan coil venture soldier shine awkward keen delay link mass print venue federal ankle valid upgrade balance";
-    let entrypoint_mnemonic_file = std::env::temp_dir().join("entrypoint-mnemonic.txt");
-    fs::write(&entrypoint_mnemonic_file, entrypoint_mnemonic)
-        .map_err(|e| format!("Failed to write entrypoint chain mnemonic: {}", e))?;
-
-    let entrypoint_key_output = HermesCli::new(hermes_binary.as_path()).output(
-        None,
-        &[
-            "keys",
-            "add",
-            "--chain",
-            CARDANO_ENTRYPOINT_CHAIN_ID,
-            "--mnemonic-file",
-            entrypoint_mnemonic_file.to_str().unwrap(),
-            "--overwrite",
-        ],
-    );
-
-    let _ = fs::remove_file(&entrypoint_mnemonic_file);
-
-    match entrypoint_key_output {
-        Ok(output) if output.status.success() => {
-            log_or_show_progress(
-                "Added key for Cardano Entrypoint chain",
-                &optional_progress_bar,
-            );
-        }
-        Ok(output) => {
-            verbose(&format!(
-                "Warning: Failed to add entrypoint chain key: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ));
-        }
-        Err(e) => {
-            verbose(&format!(
-                "Warning: Failed to add entrypoint chain key: {}",
-                e
-            ));
-        }
-    }
 
     // Cardano: Prefer DEPLOYER_SK if explicitly provided, otherwise fall back to the
     // devnet-funded deployer key (`chains/cardano/config/credentials/me.sk`).
@@ -1870,206 +1818,6 @@ pub async fn deploy_preprod_bridge(
     }
 
     Ok(())
-}
-
-pub fn start_cosmos_entrypoint_chain_services(
-    cosmos_dir: &Path,
-    clean: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let node_service_name = "cardano-entrypoint-node-prod";
-    let init_service_name = "cardano-entrypoint-init";
-    let compose_file = "docker-compose.yml";
-
-    if clean {
-        execute_script(
-            cosmos_dir,
-            "docker",
-            Vec::from([
-                "compose",
-                "-f",
-                compose_file,
-                "down",
-                "-v",
-                "--remove-orphans",
-            ]),
-            None,
-        )?;
-        // Both init and steady-state services share the same image. Build the compose project
-        // once instead of targeting the init service specifically. This avoids brittle service
-        // name lookups in the full parallel startup path and keeps clean startup behavior
-        // consistent with the single-target `caribic start entrypoint --clean` flow.
-        execute_script(
-            cosmos_dir,
-            "docker",
-            Vec::from(["compose", "-f", compose_file, "build"]),
-            None,
-        )?;
-    }
-
-    execute_script(
-        cosmos_dir,
-        "docker",
-        Vec::from([
-            "compose",
-            "-f",
-            compose_file,
-            "run",
-            "--rm",
-            init_service_name,
-        ]),
-        None,
-    )?;
-
-    execute_script(
-        cosmos_dir,
-        "docker",
-        Vec::from(["compose", "-f", compose_file, "up", "-d", node_service_name]),
-        None,
-    )?;
-    Ok(())
-}
-
-pub async fn wait_for_cosmos_entrypoint_chain_ready() -> Result<(), Box<dyn std::error::Error>> {
-    let optional_progress_bar = match logger::get_verbosity() {
-        logger::Verbosity::Verbose => None,
-        _ => Some(ProgressBar::new_spinner()),
-    };
-
-    if let Some(progress_bar) = &optional_progress_bar {
-        progress_bar.enable_steady_tick(Duration::from_millis(100));
-        progress_bar.set_style(
-            ProgressStyle::with_template("{prefix:.bold} {spinner} {elapsed_precise}")
-                .unwrap()
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-        );
-        progress_bar.set_prefix("Waiting for Cardano Entrypoint chain to start".to_owned());
-    } else {
-        log("Waiting for Cardano Entrypoint chain to start ...");
-    }
-
-    // Wait for health check with fail-fast error detection
-    // Check container health periodically (every 5 retries ~50 seconds) to detect unrecoverable errors early.
-    // Similar to Cardano network startup, we should fail fast for issues that require developer intervention:
-    // - Command not found errors (missing dependencies like 'ignite')
-    // - Permission errors (requires fixing volume/socket permissions)
-    // - Port conflicts (requires stopping conflicting services)
-    // - Disk space errors (requires freeing up disk space)
-    // Use the chain RPC to detect readiness instead of relying on the (optional) faucet endpoint.
-    // This allows us to keep the faucet non-public while still having a stable readiness signal.
-    let health_config = config::get_config().health;
-    let cosmos_status_url = health_config.cosmos_status_url;
-    let max_retries = health_config.cosmos_max_retries;
-    if max_retries == 0 {
-        return Err(
-            "Invalid config: health.cosmos_max_retries must be > 0 in ~/.caribic/config.json"
-                .into(),
-        );
-    }
-    let interval_ms = health_config.cosmos_retry_interval_ms;
-    if interval_ms == 0 {
-        return Err(
-            "Invalid config: health.cosmos_retry_interval_ms must be > 0 in ~/.caribic/config.json"
-                .into(),
-        );
-    }
-    let client = reqwest::Client::builder().no_proxy().build()?;
-
-    verbose(&format!(
-        "Cosmos readiness polling configured with max_retries={} interval_ms={}",
-        max_retries, interval_ms
-    ));
-
-    for retry in 0..max_retries {
-        let response = client.get(cosmos_status_url.as_str()).send().await;
-
-        match response {
-            Ok(resp) => {
-                let status = resp.status();
-                let body = resp.text().await.unwrap_or_default();
-
-                if status.is_success() {
-                    let latest_height = serde_json::from_str::<Value>(&body)
-                        .ok()
-                        .and_then(|json| {
-                            json["result"]["sync_info"]["latest_block_height"]
-                                .as_str()
-                                .and_then(|s| s.parse::<u64>().ok())
-                                .or_else(|| {
-                                    json["result"]["sync_info"]["latest_block_height"].as_u64()
-                                })
-                        })
-                        .unwrap_or(0);
-
-                    if latest_height > 0 {
-                        if let Some(progress_bar) = &optional_progress_bar {
-                            progress_bar.finish_and_clear();
-                        }
-                        return Ok(());
-                    }
-
-                    verbose(&format!(
-                        "Cardano Entrypoint RPC is up but chain has not produced blocks yet (retry {})",
-                        retry + 1
-                    ));
-                } else {
-                    verbose(&format!(
-                        "Health check {} failed with status: {} on retry {}",
-                        cosmos_status_url,
-                        status,
-                        retry + 1
-                    ));
-                }
-            }
-            Err(e) => verbose(&format!(
-                "Failed to send request to {} on retry {}: {}",
-                cosmos_status_url,
-                retry + 1,
-                e
-            )),
-        }
-
-        // Check container health every 5 retries (~50 seconds) to fail fast on unrecoverable errors
-        if retry > 0 && retry % 5 == 0 {
-            let container_names = [CARDANO_ENTRYPOINT_CONTAINER_NAME];
-            let (diagnostics, should_fail_fast) = diagnose_container_failure(&container_names);
-            if should_fail_fast {
-                if let Some(progress_bar) = &optional_progress_bar {
-                    progress_bar.finish_and_clear();
-                }
-                return Err(format!(
-                    "Cardano Entrypoint chain has unrecoverable errors that require developer intervention:{}",
-                    diagnostics
-                )
-                .into());
-            }
-        }
-
-        tokio::time::sleep(tokio::time::Duration::from_millis(interval_ms)).await;
-    }
-
-    // Final diagnostic check after timeout
-    let container_names = [CARDANO_ENTRYPOINT_CONTAINER_NAME];
-    let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
-
-    if let Some(progress_bar) = &optional_progress_bar {
-        progress_bar.finish_and_clear();
-    }
-
-    Err(format!(
-        "Health check on {} failed after {} attempts. The Cardano Entrypoint chain may have crashed or is not responding.{}",
-        cosmos_status_url,
-        max_retries,
-        diagnostics
-    )
-    .into())
-}
-
-pub async fn start_cosmos_entrypoint_chain(
-    cosmos_dir: &Path,
-    clean: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    start_cosmos_entrypoint_chain_services(cosmos_dir, clean)?;
-    wait_for_cosmos_entrypoint_chain_ready().await
 }
 
 fn ensure_local_spo_services_running(
@@ -4019,7 +3767,6 @@ enum CoreHealthCheckType {
     Ogmios,
     Mithril,
     HermesDaemon,
-    CardanoEntrypoint,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -4033,7 +3780,6 @@ pub(crate) enum CoreServiceId {
     Ogmios,
     Mithril,
     Hermes,
-    CardanoEntrypoint,
 }
 
 impl CoreServiceId {
@@ -4048,7 +3794,6 @@ impl CoreServiceId {
             CoreServiceId::Ogmios => "ogmios",
             CoreServiceId::Mithril => "mithril",
             CoreServiceId::Hermes => "hermes",
-            CoreServiceId::CardanoEntrypoint => "cardano-entrypoint",
         }
     }
 
@@ -4063,7 +3808,6 @@ impl CoreServiceId {
             CoreServiceId::Ogmios => "Ogmios (JSON/RPC)",
             CoreServiceId::Mithril => "Mithril (Aggregator + Signers)",
             CoreServiceId::Hermes => "Hermes Relayer Daemon",
-            CoreServiceId::CardanoEntrypoint => "Cardano Entrypoint chain",
         }
     }
 
@@ -4078,7 +3822,6 @@ impl CoreServiceId {
             CoreServiceId::Ogmios => CoreHealthCheckType::Ogmios,
             CoreServiceId::Mithril => CoreHealthCheckType::Mithril,
             CoreServiceId::Hermes => CoreHealthCheckType::HermesDaemon,
-            CoreServiceId::CardanoEntrypoint => CoreHealthCheckType::CardanoEntrypoint,
         }
     }
 }
@@ -4090,66 +3833,12 @@ pub(crate) enum OptionalChainId {
     Injective,
 }
 
-impl OptionalChainId {
-    pub(crate) fn adapter_id(self) -> &'static str {
-        match self {
-            OptionalChainId::Osmosis => "osmosis",
-            OptionalChainId::Cheqd => "cheqd",
-            OptionalChainId::Injective => "injective",
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(crate) enum OptionalChainNetwork {
-    Local,
-    Testnet,
-    Mainnet,
-}
-
-impl OptionalChainNetwork {
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            OptionalChainNetwork::Local => "local",
-            OptionalChainNetwork::Testnet => "testnet",
-            OptionalChainNetwork::Mainnet => "mainnet",
-        }
-    }
-
-    pub(crate) fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "local" => Some(OptionalChainNetwork::Local),
-            "testnet" => Some(OptionalChainNetwork::Testnet),
-            "mainnet" => Some(OptionalChainNetwork::Mainnet),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub(crate) enum HealthTarget {
     Core(CoreServiceId),
-    // Entrypoint is technically a Cosmos chain, but it is still modeled as a core bridge
-    // service. `CosmosChain` is reserved for non-core Cosmos-family chains such as Osmosis,
-    // cheqd, and Injective that are managed through the optional chain adapters.
-    CosmosChain {
-        chain: OptionalChainId,
-        network: OptionalChainNetwork,
-    },
 }
 
-impl HealthTarget {
-    pub(crate) fn name(self) -> String {
-        match self {
-            HealthTarget::Core(service) => service.name().to_string(),
-            HealthTarget::CosmosChain { chain, network } => {
-                format!("{} ({})", chain.adapter_id(), network.name())
-            }
-        }
-    }
-}
-
-const CORE_SERVICE_IDS: [CoreServiceId; 10] = [
+const CORE_SERVICE_IDS: [CoreServiceId; 9] = [
     CoreServiceId::Gateway,
     CoreServiceId::Dapp,
     CoreServiceId::Cardano,
@@ -4159,7 +3848,6 @@ const CORE_SERVICE_IDS: [CoreServiceId; 10] = [
     CoreServiceId::Ogmios,
     CoreServiceId::Mithril,
     CoreServiceId::Hermes,
-    CoreServiceId::CardanoEntrypoint,
 ];
 
 #[derive(Clone)]
@@ -4280,10 +3968,6 @@ fn run_core_health_check(
                 context.preprod_mithril_endpoint.as_str(),
             ),
             CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
-            CoreHealthCheckType::CardanoEntrypoint => check_rpc_service(
-                config::get_config().health.cosmos_status_url.as_str(),
-                26657,
-            ),
         };
     }
 
@@ -4316,10 +4000,6 @@ fn run_core_health_check(
             context.preprod_mithril_endpoint.as_str(),
         ),
         CoreHealthCheckType::HermesDaemon => check_hermes_daemon_service(),
-        CoreHealthCheckType::CardanoEntrypoint => check_rpc_service(
-            config::get_config().health.cosmos_status_url.as_str(),
-            26657,
-        ),
     }
 }
 
@@ -4462,34 +4142,6 @@ fn collect_optional_chain_health_statuses(project_root_path: &Path) -> Vec<Healt
     optional_statuses
 }
 
-fn check_optional_chain_network_health(
-    project_root_path: &Path,
-    chain: OptionalChainId,
-    network: OptionalChainNetwork,
-) -> Result<(bool, String), String> {
-    let chain_id = chain.adapter_id();
-    let network_name = network.name();
-    let adapter = chains::get_chain_adapter(chain_id)
-        .ok_or_else(|| format!("Optional chain adapter '{}' is not registered", chain_id))?;
-    let flags = chains::ChainFlags::new();
-    let statuses = adapter
-        .health(project_root_path, network_name, &flags)
-        .map_err(|error| {
-            format!(
-                "Failed to check '{}' health for network '{}': {}",
-                chain_id, network_name, error
-            )
-        })?;
-
-    let summarized = statuses
-        .iter()
-        .map(|status| format!("{}: {}", status.label, status.status))
-        .collect::<Vec<_>>();
-
-    let all_healthy = statuses.iter().all(|status| status.healthy);
-    Ok((all_healthy, summarized.join("; ")))
-}
-
 fn available_health_service_names(project_root_path: &Path, context: &HealthContext) -> String {
     collect_health_statuses(project_root_path, context)
         .into_iter()
@@ -4512,9 +4164,6 @@ pub(crate) fn check_health_target(
 ) -> Result<(bool, String), String> {
     match target {
         HealthTarget::Core(service) => Ok(check_core_service_health(project_root_path, service)),
-        HealthTarget::CosmosChain { chain, network } => {
-            check_optional_chain_network_health(project_root_path, chain, network)
-        }
     }
 }
 
@@ -4600,13 +4249,6 @@ fn docker_running_container_name(name_filter: &str) -> Option<String> {
 
 fn is_port_accessible(port: u16) -> bool {
     SystemChecks::tcp_port_open("localhost", port)
-}
-
-fn endpoint_contains_result(url: &str) -> bool {
-    HttpHealthClient::new(Duration::from_secs(3), Duration::from_secs(8))
-        .ok()
-        .map(|client| client.response_contains(url, "result"))
-        .unwrap_or(false)
 }
 
 fn endpoint_responds(url: &str) -> bool {
@@ -4972,31 +4614,4 @@ fn parse_pid_and_command(line: &str) -> Option<(u32, String)> {
     let pid = pid_str.parse::<u32>().ok()?;
 
     Some((pid, command))
-}
-
-fn check_rpc_service(url: &str, default_port: u16) -> (bool, String) {
-    let port = reqwest::Url::parse(url)
-        .ok()
-        .and_then(|parsed_url| parsed_url.port_or_known_default())
-        .unwrap_or(default_port);
-    let port_label = port.to_string();
-
-    if !is_port_accessible(port) {
-        return (
-            false,
-            format!("Not running (port {} not accessible)", port_label),
-        );
-    }
-
-    if endpoint_contains_result(url) {
-        (true, format!("Running on port {}", port_label))
-    } else {
-        (
-            false,
-            format!(
-                "Port {} is accessible but {} did not return a valid status payload",
-                port_label, url
-            ),
-        )
-    }
 }

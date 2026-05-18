@@ -291,12 +291,13 @@ export const createDeployment = async (
   // needs a unique OutputReference nonce. Re-querying "the first wallet UTxO"
   // between sequential mints is fragile on local devnets because the indexer can
   // momentarily lag behind the just-submitted transaction set.
-  if (signerUtxos.length < RESERVED_DEPLOYMENT_NONCE_COUNT) {
+  const deploymentSplitOutputCount = RESERVED_DEPLOYMENT_NONCE_COUNT + 16;
+  if (signerUtxos.length < deploymentSplitOutputCount) {
     const address = await lucid.wallet().address();
     await submitTx(
       () => {
         const splitTx = lucid.newTx().collectFrom(signerUtxos);
-        for (let index = 0; index < RESERVED_DEPLOYMENT_NONCE_COUNT; index++) {
+        for (let index = 0; index < deploymentSplitOutputCount; index++) {
           splitTx.pay.ToAddress(address, {
             lovelace: DEPLOYMENT_NONCE_SPLIT_AMOUNT,
           });
@@ -309,7 +310,7 @@ export const createDeployment = async (
     );
     signerUtxos = await getLiveWalletUtxos(
       lucid,
-      RESERVED_DEPLOYMENT_NONCE_COUNT,
+      deploymentSplitOutputCount,
     );
   }
 

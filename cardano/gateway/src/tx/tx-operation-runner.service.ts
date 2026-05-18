@@ -94,6 +94,9 @@ export class TxOperationRunnerService {
 
     if (plan.syntheticEvents && plan.syntheticEvents.length > 0) {
       this.txEventsService.register(unsignedTxHash, plan.syntheticEvents);
+      if (pendingTreeUpdate?.expectedNewRoot) {
+        this.txEventsService.registerByExpectedRoot(pendingTreeUpdate.expectedNewRoot, plan.syntheticEvents);
+      }
     }
 
     return {

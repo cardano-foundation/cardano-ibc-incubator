@@ -23,13 +23,13 @@ import {
   MithrilHeader,
 } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 import {
-  ClientState as ClientStateStability,
-  ConsensusState as ConsensusStateStability,
-  EpochContext as StabilityEpochContext,
-  StabilityBlock,
-  StabilityHeader,
+  ClientState as ClientStateProbabilistic,
+  ConsensusState as ConsensusStateProbabilistic,
+  EpochContext as ProbabilisticEpochContext,
+  ProbabilisticBlock,
+  ProbabilisticHeader,
   StakeDistributionEntry,
-} from '@plus/proto-types/build/ibc/lightclients/stability/v1/stability';
+} from '@plus/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { IdentifiedClientState } from '@plus/proto-types/build/ibc/core/client/v1/client';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
@@ -80,6 +80,7 @@ import {
   normalizeTxsResultFromConnDatum,
   normalizeTxsResultFromChannelRedeemer,
   normalizeTxsResultFromModuleRedeemer,
+  normalizeTxsResultFromRecvPacketSuccessAcknowledgement,
 } from '@shared/helpers/block-results';
 import {
   ResponseDeliverTx,
@@ -487,7 +488,7 @@ export class QueryService {
       stabilityEvidence.epochVerificationContext,
     );
 
-    const clientStateStability: ClientStateStability = {
+    const clientStateProbabilistic: ClientStateProbabilistic = {
       chain_id: this.configService.get('cardanoChainId'),
       latest_height: {
         revision_number: 0n,
@@ -506,9 +507,8 @@ export class QueryService {
       upgrade_path: [],
       host_state_nft_policy_id: Buffer.from(this.configService.get('deployment').hostStateNFT.policyId, 'hex'),
       host_state_nft_token_name: Buffer.from(this.configService.get('deployment').hostStateNFT.name, 'hex'),
-      // epoch_contexts is the canonical verification source, but initial client
-      // creation still needs the legacy mirrors populated so existing relayer
-      // decoders can validate the payload before the client is stored on-chain.
+      // epoch_contexts is the canonical verification source, but the current
+      // probabilistic payload also carries these flattened fields for verifier input.
       epoch_stake_distribution: currentEpochContext.stake_distribution,
       epoch_nonce: currentEpochContext.epoch_nonce,
       slots_per_kes_period: currentEpochContext.slots_per_kes_period,
@@ -519,7 +519,7 @@ export class QueryService {
       epoch_contexts: [currentEpochContext],
     };
 
-    const consensusStateStability: ConsensusStateStability = {
+    const consensusStateProbabilistic: ConsensusStateProbabilistic = {
       timestamp: stabilityEvidence.anchorBlock.timestampUnixNs,
       ibc_state_root: hostStateRootBytes,
       accepted_block_hash: stabilityEvidence.anchorBlock.hash,
@@ -531,12 +531,12 @@ export class QueryService {
 
     return {
       client_state: {
-        type_url: '/ibc.lightclients.stability.v1.ClientState',
-        value: ClientStateStability.encode(clientStateStability).finish(),
+        type_url: '/ibc.lightclients.probabilistic.v1.ClientState',
+        value: ClientStateProbabilistic.encode(clientStateProbabilistic).finish(),
       },
       consensus_state: {
-        type_url: '/ibc.lightclients.stability.v1.ConsensusState',
-        value: ConsensusStateStability.encode(consensusStateStability).finish(),
+        type_url: '/ibc.lightclients.probabilistic.v1.ConsensusState',
+        value: ConsensusStateProbabilistic.encode(consensusStateProbabilistic).finish(),
       },
     };
   }
@@ -1098,6 +1098,7 @@ export class QueryService {
             txsResult.events = packetEvent.events;
             if (spendRedeemer.hasOwnProperty('SendPacket')) break;
 
+            let hasWriteAckEvent = false;
             const moduleRedeemer = redeemers.filter((candidate) => candidate.type === REDEEMER_TYPE.SPEND);
             if (moduleRedeemer.length > 0) {
               for (const candidate of moduleRedeemer) {
@@ -1112,6 +1113,9 @@ export class QueryService {
                     channelDatumDecoded,
                   );
                   txsResult.events.push(...writeAckTxsResult.events);
+                  hasWriteAckEvent ||= writeAckTxsResult.events.some(
+                    (event) => event.type === EVENT_TYPE_PACKET.WRITE_ACKNOWLEDGEMENT,
+                  );
                   break;
                 } catch {
                   continue;
@@ -1134,12 +1138,24 @@ export class QueryService {
                       channelDatumDecoded,
                     );
                     txsResult.events.push(...writeAckTxsResult.events);
+                    hasWriteAckEvent ||= writeAckTxsResult.events.some(
+                      (event) => event.type === EVENT_TYPE_PACKET.WRITE_ACKNOWLEDGEMENT,
+                    );
                     break;
                   } catch {
                     continue;
                   }
                 }
               }
+            }
+
+            const recvPacket = spendRedeemer['RecvPacket']?.packet as Packet | undefined;
+            if (recvPacket && !hasWriteAckEvent && channelDatumDecoded.state.packet_acknowledgement.has(recvPacket.sequence)) {
+              const writeAckTxsResult = normalizeTxsResultFromRecvPacketSuccessAcknowledgement(
+                spendRedeemer,
+                channelDatumDecoded,
+              );
+              txsResult.events.push(...writeAckTxsResult.events);
             }
           }
           if (spendRedeemer.hasOwnProperty('AcknowledgePacket')) {
@@ -1843,7 +1859,7 @@ export class QueryService {
           )
         : undefined;
 
-    const stabilityHeader: StabilityHeader = {
+    const stabilityHeader: ProbabilisticHeader = {
       trusted_height: {
         revision_number: 0n,
         revision_height: stabilityEvidence.trustedHeight,
@@ -1864,8 +1880,8 @@ export class QueryService {
     };
 
     if (newEpochContext) {
-      const newEpochContextBytes = StabilityEpochContext.encode(newEpochContext).finish().length;
-      const encodedHeaderBytes = StabilityHeader.encode(stabilityHeader).finish().length;
+      const newEpochContextBytes = ProbabilisticEpochContext.encode(newEpochContext).finish().length;
+      const encodedHeaderBytes = ProbabilisticHeader.encode(stabilityHeader).finish().length;
       this.logger.debug(
         `Stability rollover header includes new_epoch_context: trusted_epoch=${stabilityEvidence.trustedEpoch} accepted_epoch=${stabilityEvidence.anchorEpoch} pools=${newEpochContext.stake_distribution.length} new_epoch_context_bytes=${newEpochContextBytes} header_bytes=${encodedHeaderBytes}`,
       );
@@ -1873,8 +1889,8 @@ export class QueryService {
 
     return {
       header: {
-        type_url: '/ibc.lightclients.stability.v1.StabilityHeader',
-        value: StabilityHeader.encode(stabilityHeader).finish(),
+        type_url: '/ibc.lightclients.probabilistic.v1.ProbabilisticHeader',
+        value: ProbabilisticHeader.encode(stabilityHeader).finish(),
       },
     };
   }
@@ -1995,7 +2011,7 @@ export class QueryService {
       currentEpochStartSlot: bigint;
       currentEpochEndSlotExclusive: bigint;
     },
-  ): StabilityEpochContext {
+  ): ProbabilisticEpochContext {
     return {
       epoch: BigInt(epoch),
       stake_distribution: stakeDistribution.map(
@@ -2013,7 +2029,7 @@ export class QueryService {
     };
   }
 
-  private toStabilityBlock(block: HistoryBlock, blockCbor?: Buffer): StabilityBlock {
+  private toStabilityBlock(block: HistoryBlock, blockCbor?: Buffer): ProbabilisticBlock {
     return {
       height: {
         revision_number: 0n,

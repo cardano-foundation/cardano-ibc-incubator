@@ -1,4 +1,4 @@
-#![deny(dead_code, unused_imports, unused_variables)]
+#![deny(unused_imports, unused_variables)]
 
 use std::path::Path;
 use std::path::PathBuf;
@@ -11,7 +11,6 @@ mod chains;
 mod check;
 mod commands;
 mod config;
-mod constants;
 mod demos;
 mod install;
 mod logger;
@@ -33,15 +32,12 @@ enum DemoType {
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StartTarget {
-    /// Starts everything (network + packet-forwarding chain + bridge)
+    /// Starts everything (network + bridge)
     All,
     /// Starts the local Cardano network related services
     Network,
     /// Deploys the light client contracts and starts the gateway and relayer
     Bridge,
-    /// Starts the Cardano Entrypoint chain (packet-forwarding chain)
-    #[value(alias = "entrypoint")]
-    CardanoEntrypoint,
     /// Starts only the Gateway service
     Gateway,
     /// Starts only the IBC Swap dapp
@@ -54,15 +50,12 @@ enum StartTarget {
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StopTarget {
-    /// Stops everything (network + packet-forwarding chain + bridge + demos)
+    /// Stops everything (network + bridge + demos)
     All,
     /// Stops the local Cardano network related services
     Network,
     /// Tears down the gateway and relayer
     Bridge,
-    /// Stops the Cardano Entrypoint chain
-    #[value(alias = "entrypoint")]
-    CardanoEntrypoint,
     /// Stops the demo services
     Demo,
     /// Stops only the Gateway service
@@ -140,7 +133,7 @@ enum Commands {
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, entrypoint, gateway, relayer
+    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, gateway, relayer
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
@@ -157,7 +150,7 @@ enum Commands {
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
     },
-    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, entrypoint, demo, gateway, relayer, mithril
+    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, demo, gateway, relayer, mithril
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
@@ -182,7 +175,7 @@ enum Commands {
     },
     /// Check health of bridge services
     HealthCheck {
-        /// Optional: specific service to check (gateway, cardano, postgres, yaci, kupo, ogmios, mithril, hermes, entrypoint, osmosis, redis, cheqd, injective)
+        /// Optional: specific service to check (gateway, cardano, postgres, yaci, kupo, ogmios, mithril, hermes, osmosis, redis, cheqd, injective)
         #[arg(long)]
         service: Option<String>,
     },

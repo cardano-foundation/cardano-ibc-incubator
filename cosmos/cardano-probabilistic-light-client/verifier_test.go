@@ -308,7 +308,7 @@ func TestVerifyHeaderEpochTransitionRejectsMismatchedSameEpochContext(t *testing
 
 func TestNormalizeEpochContextsRejectsConflictingDuplicateEpoch(t *testing.T) {
 	cs := newProbabilisticTestClientState()
-	first := cloneEpochContext(cs.legacyEpochContext())
+	first := cloneEpochContext(mustCurrentTestEpochContext(t, cs))
 	second := cloneEpochContext(first)
 	second.StakeDistribution[0].Stake++
 
@@ -318,7 +318,7 @@ func TestNormalizeEpochContextsRejectsConflictingDuplicateEpoch(t *testing.T) {
 
 func TestMergeEpochContextsAllowsCandidateForStoredEpoch(t *testing.T) {
 	cs := newProbabilisticTestClientState()
-	stored := cloneEpochContext(cs.legacyEpochContext())
+	stored := cloneEpochContext(mustCurrentTestEpochContext(t, cs))
 	candidate := cloneEpochContext(stored)
 	candidate.StakeDistribution[0].Stake++
 
@@ -348,7 +348,7 @@ func TestCheckForMisbehaviourDetectsConflictingEpochContext(t *testing.T) {
 
 	cs := newProbabilisticTestClientState()
 	header := newVerifiedTestHeader(t)
-	header.NewEpochContext = cloneEpochContext(cs.legacyEpochContext())
+	header.NewEpochContext = cloneEpochContext(mustCurrentTestEpochContext(t, cs))
 	header.NewEpochContext.StakeDistribution[0].Stake++
 
 	require.True(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
@@ -360,7 +360,7 @@ func TestCheckForMisbehaviourIgnoresMatchingEpochContext(t *testing.T) {
 
 	cs := newProbabilisticTestClientState()
 	header := newVerifiedTestHeader(t)
-	header.NewEpochContext = cloneEpochContext(cs.legacyEpochContext())
+	header.NewEpochContext = cloneEpochContext(mustCurrentTestEpochContext(t, cs))
 
 	require.False(t, cs.CheckForMisbehaviour(ctx, cdc, clientStore, header))
 }
@@ -393,7 +393,7 @@ func TestCheckForMisbehaviourDetectsConflictingEpochContextsInMisbehaviourMessag
 	cs := newProbabilisticTestClientState()
 	header1 := newVerifiedTestHeader(t)
 	header2 := newVerifiedTestHeader(t)
-	header1.NewEpochContext = cloneEpochContext(cs.legacyEpochContext())
+	header1.NewEpochContext = cloneEpochContext(mustCurrentTestEpochContext(t, cs))
 	header2.NewEpochContext = cloneEpochContext(header1.NewEpochContext)
 	header2.NewEpochContext.StakeDistribution[0].Stake++
 
@@ -582,7 +582,7 @@ func newProbabilisticTestClientStore(t *testing.T, keyName string) (sdk.Context,
 	require.NoError(t, stateStore.LoadLatestVersion())
 
 	ctx := sdk.NewContext(stateStore, cmtproto.Header{
-		ChainID: "cardano-entrypoint-test",
+		ChainID: "cardano-probabilistic-test",
 		Height:  100,
 		Time:    time.Unix(1_700_000_000, 0),
 	}, false, log.NewNopLogger())
@@ -592,6 +592,15 @@ func newProbabilisticTestClientStore(t *testing.T, keyName string) (sdk.Context,
 
 func newProbabilisticTestClientState() *ClientState {
 	zeroHeight := ZeroHeight()
+	epochStakeDistribution := []*StakeDistributionEntry{
+		{
+			PoolId:                "pool-a",
+			Stake:                 10_000,
+			VrfKeyHash:            bytes.Repeat([]byte{0x02}, 32),
+			FirstRegistrationSlot: 1,
+		},
+	}
+	epochNonce := bytes.Repeat([]byte{0x03}, 32)
 	return &ClientState{
 		ChainId:        "cardano-test",
 		LatestHeight:   &Height{RevisionHeight: 10},
@@ -606,22 +615,25 @@ func newProbabilisticTestClientState() *ClientState {
 			PoolsWeightBps:          2000,
 			StakeWeightBps:          6000,
 		},
-		HostStateNftPolicyId:  bytes.Repeat([]byte{0x01}, 28),
-		HostStateNftTokenName: []byte("host-state"),
-		EpochStakeDistribution: []*StakeDistributionEntry{
-			{
-				PoolId:                "pool-a",
-				Stake:                 10_000,
-				VrfKeyHash:            bytes.Repeat([]byte{0x02}, 32),
-				FirstRegistrationSlot: 1,
-			},
-		},
-		EpochNonce:                   bytes.Repeat([]byte{0x03}, 32),
+		HostStateNftPolicyId:         bytes.Repeat([]byte{0x01}, 28),
+		HostStateNftTokenName:        []byte("host-state"),
+		EpochStakeDistribution:       cloneStakeDistributionEntries(epochStakeDistribution),
+		EpochNonce:                   bytes.Clone(epochNonce),
 		SlotsPerKesPeriod:            129600,
 		CurrentEpochStartSlot:        0,
 		CurrentEpochEndSlotExclusive: 1_000_000,
 		SystemStartUnixNs:            1_700_000_000_000_000_000,
 		SlotLengthNs:                 1_000_000_000,
+		EpochContexts: []*EpochContext{
+			{
+				Epoch:                 7,
+				StakeDistribution:     epochStakeDistribution,
+				EpochNonce:            epochNonce,
+				SlotsPerKesPeriod:     129600,
+				EpochStartSlot:        0,
+				EpochEndSlotExclusive: 1_000_000,
+			},
+		},
 	}
 }
 
@@ -717,4 +729,12 @@ func mustTestEpochContexts(t *testing.T, cs *ClientState) []*EpochContext {
 	contexts, err := cs.normalizedEpochContexts()
 	require.NoError(t, err)
 	return contexts
+}
+
+func mustCurrentTestEpochContext(t *testing.T, cs *ClientState) *EpochContext {
+	t.Helper()
+
+	context := epochContextByEpoch(mustTestEpochContexts(t, cs), cs.CurrentEpoch)
+	require.NotNil(t, context)
+	return context
 }

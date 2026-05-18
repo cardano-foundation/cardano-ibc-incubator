@@ -25,10 +25,6 @@ pub fn run_stop(
 
     match target {
         Some(StopTarget::All) | None => {
-            stop::stop_cosmos(
-                project_root_path.join("cosmos").as_path(),
-                "Cardano Entrypoint chain",
-            );
             stop_all_managed_optional_chain_networks(project_root_path, "osmosis")?;
             stop_all_managed_optional_chain_networks(project_root_path, "cheqd")?;
             stop_all_managed_optional_chain_networks(project_root_path, "injective")?;
@@ -44,18 +40,7 @@ pub fn run_stop(
             network_down(project_root_path);
             logger::log("\nCardano Network stopped successfully");
         }
-        Some(StopTarget::CardanoEntrypoint) => {
-            stop::stop_cosmos(
-                project_root_path.join("cosmos").as_path(),
-                "Cardano Entrypoint chain",
-            );
-            logger::log("\nCardano Entrypoint chain stopped successfully");
-        }
         Some(StopTarget::Demo) => {
-            stop::stop_cosmos(
-                project_root_path.join("cosmos").as_path(),
-                "Cardano Entrypoint chain",
-            );
             stop_all_managed_optional_chain_networks(project_root_path, "osmosis")?;
             stop_all_managed_optional_chain_networks(project_root_path, "cheqd")?;
             stop_all_managed_optional_chain_networks(project_root_path, "injective")?;

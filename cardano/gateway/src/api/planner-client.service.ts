@@ -35,10 +35,6 @@ export class PlannerClientService {
       cardanoRestEndpoint:
         this.configService.get<string>('cardanoRestEndpoint') ||
         process.env.CARDANO_REST_ENDPOINT,
-      entrypointRestEndpoint: this.requireConfig(
-        'entrypointRestEndpoint',
-        'CARDANO_ENTRYPOINT_REST_ENDPOINT',
-      ),
       localOsmosisRestEndpoint: this.requireConfig(
         'localOsmosisRestEndpoint',
         'LOCAL_OSMOSIS_REST_ENDPOINT',

@@ -38,10 +38,6 @@ fn validate_explicit_receiver(receiver: &str) -> Result<(String, Addr), Contract
         });
     };
 
-    let Ok(_) = bech32::decode(&address) else {
-        return Err(ContractError::InvalidReceiver { receiver: receiver.to_string() })
-    };
-
     Ok((channel.to_string(), Addr::unchecked(address)))
 }
 

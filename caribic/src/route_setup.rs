@@ -20,7 +20,7 @@ use crate::{
             workspace_dir as osmosis_workspace_dir,
         },
     },
-    config, logger,
+    config, logger, setup,
     start::{run_hermes_command, run_hermes_command_with_timeout},
     utils::{parse_tendermint_client_id, parse_tendermint_connection_id},
 };
@@ -66,34 +66,23 @@ pub struct TransferChannelPair {
 #[derive(Debug, Clone)]
 pub struct TransferRouteSetup {
     pub cardano_chain_id: String,
-    pub entrypoint_chain_id: String,
     pub destination_chain_id: String,
     pub destination_chain: RouteChain,
     pub destination_network: String,
-    pub cardano_entrypoint_channel_pair: TransferChannelPair,
-    pub entrypoint_destination_channel_pair: TransferChannelPair,
+    pub direct_channel_pair: TransferChannelPair,
 }
 
 impl TransferRouteSetup {
     pub fn summary_lines(&self) -> Vec<String> {
-        vec![
-            format!(
-                "Cardano -> Entrypoint: {}:{} <-> {}:{}",
-                self.cardano_chain_id,
-                self.cardano_entrypoint_channel_pair.a_channel_id,
-                self.entrypoint_chain_id,
-                self.cardano_entrypoint_channel_pair.b_channel_id
-            ),
-            format!(
-                "Entrypoint -> {} {}: {}:{} <-> {}:{}",
-                self.destination_chain.display_name(),
-                self.destination_network,
-                self.entrypoint_chain_id,
-                self.entrypoint_destination_channel_pair.a_channel_id,
-                self.destination_chain_id,
-                self.entrypoint_destination_channel_pair.b_channel_id
-            ),
-        ]
+        vec![format!(
+            "Cardano -> {} {}: {}:{} <-> {}:{}",
+            self.destination_chain.display_name(),
+            self.destination_network,
+            self.cardano_chain_id,
+            self.direct_channel_pair.a_channel_id,
+            self.destination_chain_id,
+            self.direct_channel_pair.b_channel_id
+        )]
     }
 }
 
@@ -119,139 +108,202 @@ pub fn setup_transfer_route(
             ));
         }
     }
+    if active_cardano_network == config::CoreCardanoNetwork::Local {
+        setup::refresh_local_gateway_epoch_nonce(project_root_path)
+            .map_err(|error| format!("Failed to refresh local Cardano epoch nonce: {}", error))?;
+    }
 
-    let cardano_entrypoint_channel_pair = ensure_cardano_entrypoint_transfer_channel()?;
-    let (destination_chain_id, destination_network, entrypoint_destination_channel_pair) =
-        match destination.chain {
-            RouteChain::Injective => {
-                let network = destination.network.as_deref().unwrap_or("local");
-                let pair =
-                    ensure_entrypoint_injective_transfer_channel(project_root_path, network)?;
-                let chain_id = injective_chain_id_for_network(network)?.to_string();
-                (chain_id, network.to_string(), pair)
-            }
-            RouteChain::Osmosis => {
-                let network = destination.network.as_deref().unwrap_or("local");
-                let pair = ensure_entrypoint_osmosis_transfer_channel(project_root_path, network)?;
-                let chain_id = osmosis_demo_chain_id(network)?.to_string();
-                (chain_id, network.to_string(), pair)
-            }
-            RouteChain::Cardano => {
-                return Err(
-                    "Cardano-to-Cardano token-transfer route setup is not supported.".to_string(),
-                )
-            }
-        };
+    if destination.chain == RouteChain::Cardano {
+        return Err("Cardano-to-Cardano token-transfer route setup is not supported.".to_string());
+    }
+
+    let destination_network = destination.network.as_deref().unwrap_or("local");
+    let destination_chain_id =
+        destination_chain_id_for_network(destination.chain, destination_network)?;
+    let direct_channel_pair = ensure_direct_transfer_channel(
+        project_root_path,
+        destination.chain,
+        destination_network,
+        destination_chain_id,
+    )?;
 
     Ok(TransferRouteSetup {
         cardano_chain_id: cardano_chain_id(),
-        entrypoint_chain_id: entrypoint_chain_id(),
-        destination_chain_id,
+        destination_chain_id: destination_chain_id.to_string(),
         destination_chain: destination.chain,
+        destination_network: destination_network.to_string(),
+        direct_channel_pair,
+    })
+}
+
+fn ensure_direct_transfer_channel(
+    project_root_path: &Path,
+    destination_chain: RouteChain,
+    destination_network: &str,
+    destination_chain_id: &str,
+) -> Result<TransferChannelPair, String> {
+    let cardano_chain_id = cardano_chain_id();
+    let cardano_port_id = cardano_message_port_id();
+
+    if let Some(existing_open_channel_pair) = query_open_transfer_channel_pair(
+        cardano_chain_id.as_str(),
+        cardano_port_id.as_str(),
+        destination_chain_id,
+        TRANSFER_PORT_ID,
+    )? {
+        logger::log(&format!(
+            "PASS: Reusing Cardano<->{} transfer channel ({})",
+            destination_chain.display_name(),
+            existing_open_channel_pair.a_channel_id
+        ));
+        return Ok(existing_open_channel_pair);
+    }
+
+    configure_destination_chain_for_hermes(
+        project_root_path,
+        destination_chain,
         destination_network,
-        cardano_entrypoint_channel_pair,
-        entrypoint_destination_channel_pair,
-    })
-}
-
-pub fn ensure_entrypoint_injective_transfer_channel(
-    project_root_path: &Path,
-    network: &str,
-) -> Result<TransferChannelPair, String> {
-    let injective_chain_id = injective_chain_id_for_network(network)?;
-
-    if let Some(existing_open_channel_pair) = query_open_transfer_channel_pair(
-        entrypoint_chain_id().as_str(),
-        TRANSFER_PORT_ID,
-        injective_chain_id,
-        TRANSFER_PORT_ID,
-    )? {
-        logger::log(&format!(
-            "PASS: Reusing Cardano Entrypoint<->Injective transfer channel ({})",
-            existing_open_channel_pair.a_channel_id
-        ));
-        return Ok(existing_open_channel_pair);
-    }
-
-    let injective_dir = injective_workspace_dir(project_root_path);
-    let configure_result = match network {
-        "local" => configure_injective_hermes_for_demo(project_root_path, injective_dir.as_path()),
-        "testnet" => {
-            configure_injective_hermes_for_testnet_demo(project_root_path, injective_dir.as_path())
-        }
-        _ => Err(format!(
-            "Unsupported Injective network '{}' for transfer route setup",
-            network
-        )
-        .into()),
-    };
-
-    configure_result.map_err(|error| {
+    )
+    .map_err(|error| {
         format!(
-            "Failed to configure Hermes for Entrypoint->Injective {} route: {}",
-            network, error
-        )
-    })?;
-
-    query_open_transfer_channel_pair(
-        entrypoint_chain_id().as_str(),
-        TRANSFER_PORT_ID,
-        injective_chain_id,
-        TRANSFER_PORT_ID,
-    )?
-    .ok_or_else(|| {
-        format!(
-            "Hermes configured Entrypoint->Injective {}, but no reciprocal open transfer channel is usable.",
-            network
-        )
-    })
-}
-
-pub fn ensure_entrypoint_osmosis_transfer_channel(
-    project_root_path: &Path,
-    network: &str,
-) -> Result<TransferChannelPair, String> {
-    let osmosis_chain_id = osmosis_demo_chain_id(network)?;
-
-    if let Some(existing_open_channel_pair) = query_open_transfer_channel_pair(
-        entrypoint_chain_id().as_str(),
-        TRANSFER_PORT_ID,
-        osmosis_chain_id,
-        TRANSFER_PORT_ID,
-    )? {
-        logger::log(&format!(
-            "PASS: Reusing Cardano Entrypoint<->Osmosis transfer channel ({})",
-            existing_open_channel_pair.a_channel_id
-        ));
-        return Ok(existing_open_channel_pair);
-    }
-
-    let osmosis_dir = osmosis_workspace_dir(project_root_path);
-    sync_osmosis_workspace_assets(project_root_path, osmosis_dir.as_path()).map_err(|error| {
-        format!(
-            "Failed to refresh Osmosis workspace assets before route setup: {}",
+            "Failed to configure Hermes for direct Cardano->{} {} route: {}",
+            destination_chain.display_name(),
+            destination_network,
             error
         )
     })?;
-    configure_osmosis_hermes_for_demo(osmosis_dir.as_path(), network).map_err(|error| {
+
+    if let Some(existing_open_connection_id) =
+        query_direct_open_connection(cardano_chain_id.as_str(), destination_chain_id)?
+    {
+        logger::verbose(&format!(
+            "Found existing open Cardano<->{} connection {}; creating transfer channel on it",
+            destination_chain.display_name(),
+            existing_open_connection_id
+        ));
+        let open_channel_pair = create_direct_transfer_channel_on_connection(
+            existing_open_connection_id.as_str(),
+            destination_chain_id,
+        )?;
+        logger::log(&format!(
+            "PASS: Created Cardano<->{} transfer channel ({})",
+            destination_chain.display_name(),
+            open_channel_pair.a_channel_id
+        ));
+        return Ok(open_channel_pair);
+    }
+
+    logger::verbose(&format!(
+        "Creating {cardano_chain_id} client with {destination_chain_id} reference"
+    ));
+    let cardano_client_id =
+        create_hermes_client_with_provider_retry(cardano_chain_id.as_str(), destination_chain_id)
+            .map_err(|error| {
+            format!(
+                "Failed to create client for {cardano_chain_id}->{destination_chain_id}: {error}"
+            )
+        })?;
+
+    logger::verbose(&format!(
+        "Creating {destination_chain_id} client with {cardano_chain_id} reference"
+    ));
+    let destination_client_id =
+        create_hermes_client_with_provider_retry(destination_chain_id, cardano_chain_id.as_str())
+            .map_err(|error| {
+                format!(
+                    "Failed to create client for {destination_chain_id}->{cardano_chain_id}: {error}\n\
+                     Make sure {destination_chain_id} compiles and registers the Cardano light client and allows the Cardano client type."
+                )
+            })?;
+
+    logger::verbose(&format!(
+        "Creating Cardano<->{} connection",
+        destination_chain.display_name()
+    ));
+    let create_connection_output = run_hermes_command_with_provider_retry(
+        &[
+            "create",
+            "connection",
+            "--a-chain",
+            cardano_chain_id.as_str(),
+            "--a-client",
+            cardano_client_id.as_str(),
+            "--b-client",
+            destination_client_id.as_str(),
+        ],
+        &format!("create connection {cardano_chain_id}->{destination_chain_id}"),
+    )
+    .map_err(|error| {
         format!(
-            "Failed to configure Hermes for Cardano Entrypoint->Osmosis {} route: {}",
-            network, error
+            "Failed to create Cardano<->{} connection: {error}",
+            destination_chain.display_name()
         )
     })?;
+    let create_connection_stdout =
+        String::from_utf8_lossy(&create_connection_output.stdout).to_string();
+    let connection_id =
+        parse_tendermint_connection_id(&create_connection_stdout).ok_or_else(|| {
+            format!(
+                "Failed to parse Cardano<->{} connection id from Hermes output:\n{}",
+                destination_chain.display_name(),
+                create_connection_stdout
+            )
+        })?;
 
-    query_open_transfer_channel_pair(
-        entrypoint_chain_id().as_str(),
-        TRANSFER_PORT_ID,
-        osmosis_chain_id,
-        TRANSFER_PORT_ID,
-    )?
-    .ok_or_else(|| {
-        format!(
-            "Hermes configured Cardano Entrypoint->Osmosis {}, but no reciprocal open transfer channel is usable.",
-            network
-        )
-    })
+    let open_channel_pair =
+        create_direct_transfer_channel_on_connection(connection_id.as_str(), destination_chain_id)?;
+
+    logger::log(&format!(
+        "PASS: Created Cardano<->{} transfer channel ({})",
+        destination_chain.display_name(),
+        open_channel_pair.a_channel_id
+    ));
+    Ok(open_channel_pair)
+}
+
+fn configure_destination_chain_for_hermes(
+    project_root_path: &Path,
+    destination_chain: RouteChain,
+    destination_network: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match destination_chain {
+        RouteChain::Osmosis => {
+            let osmosis_dir = osmosis_workspace_dir(project_root_path);
+            sync_osmosis_workspace_assets(project_root_path, osmosis_dir.as_path())?;
+            configure_osmosis_hermes_for_demo(osmosis_dir.as_path(), destination_network)
+        }
+        RouteChain::Injective => {
+            let injective_dir = injective_workspace_dir(project_root_path);
+            match destination_network {
+                "local" => {
+                    configure_injective_hermes_for_demo(project_root_path, injective_dir.as_path())
+                }
+                "testnet" => configure_injective_hermes_for_testnet_demo(
+                    project_root_path,
+                    injective_dir.as_path(),
+                ),
+                other => Err(format!(
+                    "Unsupported Injective network '{}' for transfer route setup",
+                    other
+                )
+                .into()),
+            }
+        }
+        RouteChain::Cardano => Err("Cardano destination routes are not supported".into()),
+    }
+}
+
+fn destination_chain_id_for_network(
+    destination_chain: RouteChain,
+    network: &str,
+) -> Result<&'static str, String> {
+    match destination_chain {
+        RouteChain::Injective => injective_chain_id_for_network(network),
+        RouteChain::Osmosis => osmosis_demo_chain_id(network),
+        RouteChain::Cardano => {
+            Err("Cardano-to-Cardano token-transfer route setup is not supported.".to_string())
+        }
+    }
 }
 
 fn injective_chain_id_for_network(network: &str) -> Result<&'static str, String> {
@@ -273,17 +325,6 @@ fn cardano_chain_id() -> String {
 
 fn cardano_message_port_id() -> String {
     config::get_config().chains.cardano.message_port_id
-}
-
-fn entrypoint_chain_id() -> String {
-    config::get_config().chains.cardano_entrypoint.chain_id
-}
-
-fn entrypoint_message_port_id() -> String {
-    config::get_config()
-        .chains
-        .cardano_entrypoint
-        .message_port_id
 }
 
 fn hermes_output_details(output: &Output) -> String {
@@ -391,7 +432,6 @@ fn create_hermes_client_with_provider_retry(
     })
 }
 
-/// Returns a transfer channel id only for entries that belong to transfer port routing.
 fn extract_transfer_channel_id(entry: &Value) -> Option<String> {
     let local_port = entry.get("port_id").and_then(Value::as_str);
     let remote_port = entry
@@ -420,10 +460,6 @@ struct TransferChannelEndStatus {
     remote_port_id: Option<String>,
 }
 
-fn parse_channel_sequence(channel_id: &str) -> Option<u64> {
-    channel_id.strip_prefix("channel-")?.parse::<u64>().ok()
-}
-
 #[derive(Debug, Clone)]
 struct ConnectionEndStatus {
     state: String,
@@ -432,11 +468,19 @@ struct ConnectionEndStatus {
     remote_connection_id: Option<String>,
 }
 
+fn parse_channel_sequence(channel_id: &str) -> Option<u64> {
+    channel_id.strip_prefix("channel-")?.parse::<u64>().ok()
+}
+
 fn parse_connection_sequence(connection_id: &str) -> Option<u64> {
     connection_id
         .strip_prefix("connection-")?
         .parse::<u64>()
         .ok()
+}
+
+fn is_open_transfer_state(state: &str) -> bool {
+    state.eq_ignore_ascii_case("open")
 }
 
 fn query_transfer_channel_end_status(
@@ -489,9 +533,6 @@ fn query_transfer_channel_end_status(
         .filter_map(|entry| entry.get("result"))
         .next_back()
     else {
-        logger::verbose(&format!(
-            "Hermes query channel end returned no result object for chain={chain_id}, channel={channel_id}",
-        ));
         return Ok(None);
     };
 
@@ -501,31 +542,21 @@ fn query_transfer_channel_end_status(
         .unwrap_or_default()
         .to_string();
     if state.is_empty() {
-        logger::verbose(&format!(
-            "Hermes query channel end returned empty state for chain={chain_id}, channel={channel_id}",
-        ));
         return Ok(None);
     }
 
     let remote = result.get("remote");
-    let remote_channel_id = remote
-        .and_then(|remote| remote.get("channel_id"))
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
-    let remote_port_id = remote
-        .and_then(|remote| remote.get("port_id"))
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
-
     Ok(Some(TransferChannelEndStatus {
         state,
-        remote_channel_id,
-        remote_port_id,
+        remote_channel_id: remote
+            .and_then(|remote| remote.get("channel_id"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        remote_port_id: remote
+            .and_then(|remote| remote.get("port_id"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
     }))
-}
-
-fn is_open_transfer_state(state: &str) -> bool {
-    state.eq_ignore_ascii_case("open")
 }
 
 fn extract_transfer_channel_id_for_ports(
@@ -734,9 +765,6 @@ fn query_connection_end_status(
         Err(error) => {
             let message = error.to_string();
             if message.contains("timed out after") {
-                logger::verbose(&format!(
-                    "Hermes query connection end timed out for chain={chain_id}, connection={connection_id}; skipping candidate"
-                ));
                 return Ok(None);
             }
             return Err(message);
@@ -744,10 +772,6 @@ fn query_connection_end_status(
     };
 
     if !output.status.success() {
-        logger::verbose(&format!(
-            "Hermes query connection end failed for chain={chain_id}, connection={connection_id}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
         return Ok(None);
     }
 
@@ -760,9 +784,6 @@ fn query_connection_end_status(
         .filter_map(|entry| entry.get("result"))
         .next_back()
     else {
-        logger::verbose(&format!(
-            "Hermes query connection end returned no result object for chain={chain_id}, connection={connection_id}",
-        ));
         return Ok(None);
     };
 
@@ -772,119 +793,79 @@ fn query_connection_end_status(
         .unwrap_or_default()
         .to_string();
     if state.is_empty() {
-        logger::verbose(&format!(
-            "Hermes query connection end returned empty state for chain={chain_id}, connection={connection_id}",
-        ));
         return Ok(None);
     }
 
-    let client_id = result
-        .get("client_id")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
     let counterparty = result.get("counterparty");
-    let remote_client_id = counterparty
-        .and_then(|value| value.get("client_id"))
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
-    let remote_connection_id = counterparty
-        .and_then(|value| value.get("connection_id"))
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
-
     Ok(Some(ConnectionEndStatus {
         state,
-        client_id,
-        remote_client_id,
-        remote_connection_id,
+        client_id: result
+            .get("client_id")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        remote_client_id: counterparty
+            .and_then(|value| value.get("client_id"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
+        remote_connection_id: counterparty
+            .and_then(|value| value.get("connection_id"))
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned),
     }))
 }
 
-fn is_open_cardano_entrypoint_connection(cardano_connection_id: &str) -> Result<bool, String> {
-    let cardano_chain_id = cardano_chain_id();
-    let entrypoint_chain_id = entrypoint_chain_id();
-    let Some(cardano_end) =
-        query_connection_end_status(cardano_chain_id.as_str(), cardano_connection_id)?
-    else {
+fn is_open_direct_connection(
+    a_chain_id: &str,
+    b_chain_id: &str,
+    a_connection_id: &str,
+) -> Result<bool, String> {
+    let Some(a_end) = query_connection_end_status(a_chain_id, a_connection_id)? else {
         return Ok(false);
     };
-    if !is_open_transfer_state(&cardano_end.state) {
-        logger::verbose(&format!(
-            "Skipping {} connection {cardano_connection_id}: state={} (expected Open)",
-            cardano_chain_id, cardano_end.state
-        ));
+    if !is_open_transfer_state(&a_end.state) {
         return Ok(false);
     }
 
-    let Some(entrypoint_connection_id) = cardano_end.remote_connection_id.as_deref() else {
-        logger::verbose(&format!(
-            "Skipping {} connection {cardano_connection_id}: missing counterparty connection id",
-            cardano_chain_id
-        ));
+    let Some(b_connection_id) = a_end.remote_connection_id.as_deref() else {
         return Ok(false);
     };
-    let Some(entrypoint_end) =
-        query_connection_end_status(entrypoint_chain_id.as_str(), entrypoint_connection_id)?
-    else {
+    let Some(b_end) = query_connection_end_status(b_chain_id, b_connection_id)? else {
         return Ok(false);
     };
-    if !is_open_transfer_state(&entrypoint_end.state) {
-        logger::verbose(&format!(
-            "Skipping {} connection {cardano_connection_id}: entrypoint counterparty {} is {} (expected Open)",
-            cardano_chain_id, entrypoint_connection_id, entrypoint_end.state
-        ));
+    if !is_open_transfer_state(&b_end.state) {
         return Ok(false);
     }
-    if entrypoint_end.remote_connection_id.as_deref() != Some(cardano_connection_id) {
-        logger::verbose(&format!(
-            "Skipping {} connection {cardano_connection_id}: entrypoint counterparty {} does not point back to it",
-            cardano_chain_id, entrypoint_connection_id
-        ));
+    if b_end.remote_connection_id.as_deref() != Some(a_connection_id) {
         return Ok(false);
     }
-    if cardano_end.client_id.is_none()
-        || cardano_end.remote_client_id.is_none()
-        || entrypoint_end.client_id.is_none()
-        || entrypoint_end.remote_client_id.is_none()
+    if a_end.client_id.is_none()
+        || a_end.remote_client_id.is_none()
+        || b_end.client_id.is_none()
+        || b_end.remote_client_id.is_none()
     {
-        logger::verbose(&format!(
-            "Skipping {} connection {cardano_connection_id}: missing client identifiers on one or both ends",
-            cardano_chain_id
-        ));
         return Ok(false);
     }
     Ok(true)
 }
 
-fn query_cardano_entrypoint_open_connection() -> Result<Option<String>, String> {
-    let cardano_chain_id = cardano_chain_id();
-    let candidate_connection_ids = query_connection_ids_for_chain(cardano_chain_id.as_str())?;
+fn query_direct_open_connection(
+    a_chain_id: &str,
+    b_chain_id: &str,
+) -> Result<Option<String>, String> {
+    let candidate_connection_ids = query_connection_ids_for_chain(a_chain_id)?;
     logger::verbose(&format!(
         "Hermes query returned {} {} connection candidates",
         candidate_connection_ids.len(),
-        cardano_chain_id
+        a_chain_id
     ));
 
     for connection_id in candidate_connection_ids {
-        if is_open_cardano_entrypoint_connection(connection_id.as_str())? {
+        if is_open_direct_connection(a_chain_id, b_chain_id, connection_id.as_str())? {
             return Ok(Some(connection_id));
         }
     }
 
     Ok(None)
-}
-
-fn query_cardano_entrypoint_channel_pair() -> Result<Option<TransferChannelPair>, String> {
-    let cardano_chain_id = cardano_chain_id();
-    let cardano_port_id = cardano_message_port_id();
-    let entrypoint_chain_id = entrypoint_chain_id();
-    let entrypoint_port_id = entrypoint_message_port_id();
-    query_open_transfer_channel_pair(
-        cardano_chain_id.as_str(),
-        cardano_port_id.as_str(),
-        entrypoint_chain_id.as_str(),
-        entrypoint_port_id.as_str(),
-    )
 }
 
 fn parse_hermes_channel_id(stdout: &str) -> Option<String> {
@@ -900,15 +881,14 @@ fn parse_hermes_channel_id(stdout: &str) -> Option<String> {
         .next()
 }
 
-fn create_cardano_entrypoint_transfer_channel_on_connection(
+fn create_direct_transfer_channel_on_connection(
     connection_id: &str,
+    destination_chain_id: &str,
 ) -> Result<TransferChannelPair, String> {
     let cardano_chain_id = cardano_chain_id();
     let cardano_port_id = cardano_message_port_id();
-    let entrypoint_chain_id = entrypoint_chain_id();
-    let entrypoint_port_id = entrypoint_message_port_id();
     logger::verbose(&format!(
-        "Creating transfer channel on connection {connection_id} (Cardano<->Cardano Entrypoint)"
+        "Creating transfer channel on connection {connection_id} (Cardano<->{destination_chain_id})"
     ));
     let output = run_hermes_command_with_provider_retry(
         &[
@@ -921,13 +901,13 @@ fn create_cardano_entrypoint_transfer_channel_on_connection(
             "--a-port",
             cardano_port_id.as_str(),
             "--b-port",
-            entrypoint_port_id.as_str(),
+            TRANSFER_PORT_ID,
         ],
-        &format!("create channel {cardano_chain_id}->{entrypoint_chain_id}"),
+        &format!("create channel {cardano_chain_id}->{destination_chain_id}"),
     )
     .map_err(|error| {
         format!(
-            "Failed to create Cardano-Entrypoint transfer channel on connection {}: {}",
+            "Failed to create Cardano-{destination_chain_id} transfer channel on connection {}: {}",
             connection_id, error
         )
     })?;
@@ -948,23 +928,23 @@ fn create_cardano_entrypoint_transfer_channel_on_connection(
             cardano_channel_id.as_str(),
         )? {
             if is_open_transfer_state(cardano_end.state.as_str())
-                && cardano_end.remote_port_id.as_deref() == Some(entrypoint_port_id.as_str())
+                && cardano_end.remote_port_id.as_deref() == Some(TRANSFER_PORT_ID)
             {
-                if let Some(entrypoint_channel_id) = cardano_end.remote_channel_id {
-                    if let Some(entrypoint_end) = query_transfer_channel_end_status(
-                        entrypoint_chain_id.as_str(),
-                        entrypoint_port_id.as_str(),
-                        entrypoint_channel_id.as_str(),
+                if let Some(destination_channel_id) = cardano_end.remote_channel_id {
+                    if let Some(destination_end) = query_transfer_channel_end_status(
+                        destination_chain_id,
+                        TRANSFER_PORT_ID,
+                        destination_channel_id.as_str(),
                     )? {
-                        if is_open_transfer_state(entrypoint_end.state.as_str())
-                            && entrypoint_end.remote_port_id.as_deref()
+                        if is_open_transfer_state(destination_end.state.as_str())
+                            && destination_end.remote_port_id.as_deref()
                                 == Some(cardano_port_id.as_str())
-                            && entrypoint_end.remote_channel_id.as_deref()
+                            && destination_end.remote_channel_id.as_deref()
                                 == Some(cardano_channel_id.as_str())
                         {
                             return Ok(TransferChannelPair {
                                 a_channel_id: cardano_channel_id,
-                                b_channel_id: entrypoint_channel_id,
+                                b_channel_id: destination_channel_id,
                             });
                         }
                     }
@@ -978,93 +958,7 @@ fn create_cardano_entrypoint_transfer_channel_on_connection(
     }
 
     Err(format!(
-        "Created Cardano<->Cardano Entrypoint transfer channel on connection {}, but it did not reach Open/Open on both ends in time (Cardano channel {}).",
+        "Created Cardano<->{destination_chain_id} transfer channel on connection {}, but it did not reach Open/Open on both ends in time (Cardano channel {}).",
         connection_id, cardano_channel_id
     ))
-}
-
-pub fn ensure_cardano_entrypoint_transfer_channel() -> Result<TransferChannelPair, String> {
-    let cardano_chain_id = cardano_chain_id();
-    let entrypoint_chain_id = entrypoint_chain_id();
-    logger::log("Ensuring Cardano->Cardano Entrypoint transfer path exists.");
-
-    if let Some(existing_open_channel_pair) = query_cardano_entrypoint_channel_pair()? {
-        logger::log(&format!(
-            "PASS: Reusing Cardano<->Cardano Entrypoint transfer channel ({})",
-            existing_open_channel_pair.a_channel_id
-        ));
-        return Ok(existing_open_channel_pair);
-    }
-
-    if let Some(existing_open_connection_id) = query_cardano_entrypoint_open_connection()? {
-        logger::verbose(&format!(
-            "Found existing open Cardano<->Cardano Entrypoint connection {}; creating transfer channel on it",
-            existing_open_connection_id
-        ));
-        let open_channel_pair = create_cardano_entrypoint_transfer_channel_on_connection(
-            existing_open_connection_id.as_str(),
-        )?;
-        logger::log(&format!(
-            "PASS: Created Cardano<->Cardano Entrypoint transfer channel ({})",
-            open_channel_pair.a_channel_id
-        ));
-        return Ok(open_channel_pair);
-    }
-
-    logger::verbose(&format!(
-        "Creating {cardano_chain_id} client with {entrypoint_chain_id} reference"
-    ));
-
-    let cardano_client_id = create_hermes_client_with_provider_retry(
-        cardano_chain_id.as_str(),
-        entrypoint_chain_id.as_str(),
-    )
-    .map_err(|error| {
-        format!("Failed to create client for {cardano_chain_id}->{entrypoint_chain_id}: {error}")
-    })?;
-
-    logger::verbose(&format!(
-        "Creating {entrypoint_chain_id} client with {cardano_chain_id} reference"
-    ));
-    let entrypoint_client_id = create_hermes_client_with_provider_retry(
-        entrypoint_chain_id.as_str(),
-        cardano_chain_id.as_str(),
-    )
-    .map_err(|error| {
-        format!("Failed to create client for {entrypoint_chain_id}->{cardano_chain_id}: {error}")
-    })?;
-
-    logger::verbose("Creating Cardano<->Cardano Entrypoint connection");
-    let create_connection_output = run_hermes_command_with_provider_retry(
-        &[
-            "create",
-            "connection",
-            "--a-chain",
-            cardano_chain_id.as_str(),
-            "--a-client",
-            cardano_client_id.as_str(),
-            "--b-client",
-            entrypoint_client_id.as_str(),
-        ],
-        &format!("create connection {cardano_chain_id}->{entrypoint_chain_id}"),
-    )
-    .map_err(|error| format!("Failed to create Cardano-Entrypoint connection: {error}"))?;
-    let create_connection_stdout =
-        String::from_utf8_lossy(&create_connection_output.stdout).to_string();
-    let connection_id =
-        parse_tendermint_connection_id(&create_connection_stdout).ok_or_else(|| {
-            format!(
-                "Failed to parse Cardano-Entrypoint connection id from Hermes output:\n{}",
-                create_connection_stdout
-            )
-        })?;
-
-    let open_channel_pair =
-        create_cardano_entrypoint_transfer_channel_on_connection(connection_id.as_str())?;
-
-    logger::log(&format!(
-        "PASS: Created Cardano<->Cardano Entrypoint transfer channel ({})",
-        open_channel_pair.a_channel_id
-    ));
-    Ok(open_channel_pair)
 }

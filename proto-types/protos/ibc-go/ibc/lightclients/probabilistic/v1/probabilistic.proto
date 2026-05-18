@@ -1,10 +1,10 @@
 syntax = "proto3";
-package ibc.lightclients.stability.v1;
+package ibc.lightclients.probabilistic.v1;
 
 import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 
-option go_package = "cardano-entrypoint/x/clients/stability";
+option go_package = "github.com/cardano-foundation/cardano-ibc-incubator/proto-types/ibc/lightclients/probabilistic/v1";
 
 message Height {
   option (gogoproto.goproto_getters) = false;
@@ -83,11 +83,11 @@ message Misbehaviour {
   option (gogoproto.goproto_getters) = false;
 
   string client_id = 1 [deprecated = true];
-  StabilityHeader stability_header_1 = 2 [(gogoproto.customname) = "StabilityHeader1"];
-  StabilityHeader stability_header_2 = 3 [(gogoproto.customname) = "StabilityHeader2"];
+  ProbabilisticHeader probabilistic_header_1 = 2 [(gogoproto.customname) = "ProbabilisticHeader1"];
+  ProbabilisticHeader probabilistic_header_2 = 3 [(gogoproto.customname) = "ProbabilisticHeader2"];
 }
 
-message StabilityBlock {
+message ProbabilisticBlock {
   option (gogoproto.goproto_getters) = false;
 
   Height height = 1;
@@ -101,16 +101,16 @@ message StabilityBlock {
   bytes block_cbor = 9;
 }
 
-message StabilityHeader {
+message ProbabilisticHeader {
   option (gogoproto.goproto_getters) = false;
 
   Height trusted_height = 1;
-  StabilityBlock anchor_block = 2;
-  repeated StabilityBlock descendant_blocks = 3;
+  ProbabilisticBlock anchor_block = 2;
+  repeated ProbabilisticBlock descendant_blocks = 3;
   string host_state_tx_hash = 4;
   reserved 5;
   uint32 host_state_tx_output_index = 6;
   reserved 7 to 9;
-  repeated StabilityBlock bridge_blocks = 10;
+  repeated ProbabilisticBlock bridge_blocks = 10;
   EpochContext new_epoch_context = 11;
 }

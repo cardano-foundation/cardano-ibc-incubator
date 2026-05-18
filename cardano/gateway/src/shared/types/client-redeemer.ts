@@ -17,7 +17,22 @@ export function decodeMintClientRedeemer(
 ): MintClientRedeemer {
   const { Data } = Lucid;
   const MintClientRedeemerSchema = Data.Enum([Data.Literal('MintClient')]);
-  return Data.from(mintClientRedeemer, MintClientRedeemerSchema as unknown as MintClientRedeemer);
+  Data.from(mintClientRedeemer, MintClientRedeemerSchema as unknown as undefined);
+  return 'MintClient';
+}
+
+export async function encodeMintClientRedeemer(
+  mintClientRedeemer: MintClientRedeemer,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+) {
+  const { Data } = Lucid;
+  const MintClientRedeemerSchema = Data.Enum([Data.Literal('MintClient')]);
+  if (mintClientRedeemer !== 'MintClient') {
+    throw new Error(`Unsupported mint client redeemer: ${String(mintClientRedeemer)}`);
+  }
+  return Data.to(undefined, MintClientRedeemerSchema as unknown as undefined, {
+    canonical: true,
+  });
 }
 
 export async function encodeSpendClientRedeemer(

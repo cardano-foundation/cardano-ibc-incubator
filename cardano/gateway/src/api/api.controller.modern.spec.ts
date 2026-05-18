@@ -394,40 +394,32 @@ describe('ApiController (modern)', () => {
 
   it('delegates transfer route planning to TransferPlannerService', async () => {
     transferPlannerServiceMock.planTransferRoute.mockResolvedValue({
-      foundRoute: true,
-      mode: 'unwind',
-      chains: ['localosmosis', 'cardano-entrypoint'],
-      routes: ['transfer/channel-0'],
-      tokenTrace: {
-        kind: 'ibc_voucher',
-        path: 'transfer/channel-0',
-        baseDenom: 'stake',
-        fullDenom: 'transfer/channel-0/stake',
-      },
+      foundRoute: false,
+      mode: null,
+      chains: ['localosmosis', 'cardano-devnet'],
+      routes: [],
+      tokenTrace: null,
+      failureCode: 'no-route-found',
     });
 
     await expect(
       controller.planTransferRoute({
         from_chain_id: 'localosmosis',
-        to_chain_id: 'cardano-entrypoint',
+        to_chain_id: 'cardano-devnet',
         token_denom: 'ibc/ABC',
       }),
     ).resolves.toEqual({
-      foundRoute: true,
-      mode: 'unwind',
-      chains: ['localosmosis', 'cardano-entrypoint'],
-      routes: ['transfer/channel-0'],
-      tokenTrace: {
-        kind: 'ibc_voucher',
-        path: 'transfer/channel-0',
-        baseDenom: 'stake',
-        fullDenom: 'transfer/channel-0/stake',
-      },
+      foundRoute: false,
+      mode: null,
+      chains: ['localosmosis', 'cardano-devnet'],
+      routes: [],
+      tokenTrace: null,
+      failureCode: 'no-route-found',
     });
 
     expect(transferPlannerServiceMock.planTransferRoute).toHaveBeenCalledWith({
       fromChainId: 'localosmosis',
-      toChainId: 'cardano-entrypoint',
+      toChainId: 'cardano-devnet',
       tokenDenom: 'ibc/ABC',
     });
   });
@@ -661,14 +653,14 @@ describe('ApiController (modern)', () => {
 
   it('delegates local Osmosis swap estimates to LocalOsmosisSwapPlannerService', async () => {
     swapPlannerServiceMock.estimateSwap.mockResolvedValue({
-      message: '',
-      tokenOutAmount: '123',
-      tokenOutTransferBackAmount: '120',
-      tokenSwapAmount: '100',
-      outToken: 'uosmo',
-      transferRoutes: ['transfer/channel-0'],
-      transferBackRoutes: ['transfer/channel-1'],
-      transferChains: ['cardano-devnet', 'cardano-entrypoint', 'localosmosis'],
+      message: 'Direct Cardano-to-target IBC routes are not implemented yet.',
+      tokenOutAmount: '0',
+      tokenOutTransferBackAmount: '0',
+      tokenSwapAmount: '0',
+      outToken: null,
+      transferRoutes: [],
+      transferBackRoutes: [],
+      transferChains: [],
     });
 
     const response = await controller.estimateLocalOsmosisSwap({
@@ -687,14 +679,14 @@ describe('ApiController (modern)', () => {
       tokenOutDenom: 'uosmo',
     });
     expect(response).toEqual({
-      message: '',
-      tokenOutAmount: '123',
-      tokenOutTransferBackAmount: '120',
-      tokenSwapAmount: '100',
-      outToken: 'uosmo',
-      transferRoutes: ['transfer/channel-0'],
-      transferBackRoutes: ['transfer/channel-1'],
-      transferChains: ['cardano-devnet', 'cardano-entrypoint', 'localosmosis'],
+      message: 'Direct Cardano-to-target IBC routes are not implemented yet.',
+      tokenOutAmount: '0',
+      tokenOutTransferBackAmount: '0',
+      tokenSwapAmount: '0',
+      outToken: null,
+      transferRoutes: [],
+      transferBackRoutes: [],
+      transferChains: [],
     });
   });
 });

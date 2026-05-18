@@ -66,32 +66,6 @@ pub fn stop_cardano_network(project_root_path: &Path) {
     }
 }
 
-pub fn stop_cosmos(cosmos_path: &Path, chain_name: &str) {
-    if !cosmos_path.exists() {
-        return;
-    }
-
-    if !has_running_containers(cosmos_path) {
-        log(&format!("{} was not running", chain_name));
-        return;
-    }
-
-    let cosmos_result = execute_script(
-        cosmos_path,
-        "docker",
-        Vec::from(["compose", "-f", "docker-compose.yml", "down"]),
-        None,
-    );
-    match cosmos_result {
-        Ok(_) => {
-            log(&format!("{} stopped successfully", chain_name));
-        }
-        Err(e) => {
-            error(&format!("ERROR: Failed to stop {}: {}", chain_name, e));
-        }
-    }
-}
-
 pub fn stop_relayer(relayer_path: &Path) {
     let expected_binary = relayer_path.join("target/release/hermes");
     let expected_binary_str = expected_binary.to_str();

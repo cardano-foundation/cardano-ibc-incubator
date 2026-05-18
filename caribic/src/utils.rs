@@ -6,6 +6,7 @@ use indicatif::ProgressBar;
 use regex::Regex;
 use reqwest::Client;
 use serde_json::Value;
+use std::error::Error;
 use std::fs::File;
 use std::fs::Permissions;
 use std::io::IsTerminal;
@@ -17,7 +18,6 @@ use std::process::Command;
 use std::thread;
 use std::time::Duration;
 use std::{collections::HashMap, fs};
-use std::{error::Error, process::Output};
 use tokio::io::AsyncWriteExt;
 use zip::read::ZipArchive;
 
@@ -461,22 +461,6 @@ pub fn parse_tendermint_connection_id(output: &str) -> Option<String> {
     let regex = Regex::new(r#"\s*(connection-\d+)"#).ok()?;
     let captures = regex.captures(output)?;
     Some(captures.get(1)?.as_str().to_string())
-}
-
-/// Parses a Tendermint client id from Hermes process output.
-pub fn extract_tendermint_client_id(output: Output) -> Option<String> {
-    if output.status.success() {
-        return parse_tendermint_client_id(String::from_utf8_lossy(&output.stdout).as_ref());
-    }
-    None
-}
-
-/// Parses a Tendermint connection id from Hermes process output.
-pub fn extract_tendermint_connection_id(output: Output) -> Option<String> {
-    if output.status.success() {
-        return parse_tendermint_connection_id(String::from_utf8_lossy(&output.stdout).as_ref());
-    }
-    None
 }
 
 pub fn query_balance(project_root_path: &Path, address: &str) -> u64 {

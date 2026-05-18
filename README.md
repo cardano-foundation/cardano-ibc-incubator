@@ -25,7 +25,7 @@ The implementation adheres to the [inter-blockchain communication protocol](http
 - [Architecture](#architecture)
 - [Getting Started](#getting-started)
 - [Testing Against Cosmos Chains](#testing-against-cosmos-chains)
-- [Demo: Sending a Demo Message from Cosmos to Cardano](#demo-sending-a-demo-message-from-cosmos-to-cardano)
+- [Demo: Direct Cosmos Routes](#demo-direct-cosmos-routes)
 - [Demo: Cross-chain Token Swap](#demo-cross-chain-token-swap)
 - [Additional Resources](#additional-resources)
 - [Contributing](#contributing)
@@ -34,9 +34,9 @@ The implementation adheres to the [inter-blockchain communication protocol](http
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Local devnet stack | Active | Managed through `caribic` with Cardano, Cardano Entrypoint, Hermes, Kupo, Ogmios, and Yaci-backed history services |
+| Local devnet stack | Active | Managed through `caribic` with Cardano, Hermes, Kupo, Ogmios, and Yaci-backed history services |
 | Core IBC semantics | Active | Implements clients, connections, channels, packets, acknowledgements, and timeouts |
-| ICS-20 transfer path | Active in maintained demo and test flows | Exercised through `caribic demo` and `caribic test` |
+| ICS-20 transfer path | Active for local direct routes | Local Cardano-to-Osmosis and Cardano-to-Injective routes use direct channels; target chains still need the Cardano light client patched in locally |
 | Historical query backend | Active | Uses `Yaci Store + Bridge Projection` rather than a generic `db-sync` query surface |
 | Public network integrations | Pre-production | Select paths exist for public testnets and external Cardano services, but the operating model is still evolving |
 | Mithril light client and local setup | Deprecated / disabled | Not maintained for new deployments; source is retained only for historical reference and type compatibility |
@@ -261,47 +261,47 @@ To stop the services:
 caribic stop
 ```
 
-### Demo: Querying consolidated vessel data from Cardano
+### Demo: Direct Cosmos Routes
 
-The maintained message-exchange flow runs against the native `cosmos/cardano-entrypoint` chain and its built-in datasource in `cosmos/cardano-entrypoint/datasource`.
+The previous intermediary-chain topology has been phased out for production safety. Local and public-testnet flows should use direct Cardano-to-target routes instead.
 
-Start the local bridge stack first:
+Direct routes require explicit target-chain support:
+
+- The target Cosmos chain must compile and register the Cardano light client module, and allow the relevant client type in IBC client parameters.
+- Cardano must support the target chain client type, usually Tendermint/CometBFT for Cosmos SDK chains.
+- Operators must create direct Cardano clients, connections, and channels for each target chain.
+- ICQ flows require the target chain to enable the relevant ICQ host/query module.
+
+The reusable transfer route setup command targets the selected chain directly:
 
 ```sh
-caribic start --clean
+caribic setup route --from cardano --to osmosis --to-network local
+caribic setup route --from cardano --to injective --to-network local
 ```
-
-Then run the demo:
-
-```sh
-caribic --verbose 5 demo message-exchange
-```
-
-To demonstrate cross-chain queries, a vessel-oracle module is integrated into the local `cardano-entrypoint` chain. It simulates vessels sending their positions and requesting a harbor in a trustless and decentralized way. The data is written and consolidated on the Cosmos side, and Cardano then queries the latest consolidated report over async-ICQ.
-
-The demo command prepares Hermes, creates the `icqhost` channel if needed, runs the datasource flow automatically (`report`, `consolidate`), submits the Cardano async-ICQ packet, relays the acknowledgement, and prints the final consolidated report returned to Cardano.
 
 ## Demo: Cross-chain token swap
 
-The maintained token-swap entrypoint is `caribic demo token-swap`. It prepares Hermes, creates transfer paths if needed, runs the Osmosis/Injective-side setup scripts, and executes the swap flow end to end. The internal scripts such as `setup_crosschain_swaps.sh` and `swap.sh` are invoked by the demo and are not the recommended operator entrypoint.
+`caribic demo token-swap` now uses direct Cardano-to-target channels. The local Osmosis demo provisions the swap pool/contracts and executes a direct Cardano-to-Osmosis wasm-hook swap with a direct return leg. The local Injective demo exercises the direct token-transfer legs used by the swap path.
 
 For local Osmosis:
 
 ```sh
 caribic start --clean
-caribic start --chain osmosis --network local
+caribic chain start --chain osmosis --network local
+caribic setup route --from cardano --to osmosis --to-network local
 caribic demo token-swap --chain osmosis --network local
 ```
 
-For Injective:
+For local Injective:
 
 ```sh
 caribic start --clean
-caribic start --chain injective --network local
+caribic chain start --chain injective --network local
+caribic setup route --from cardano --to injective --to-network local
 caribic demo token-swap --chain injective --network local
 ```
 
-See `caribic/README.md` for the maintained token-swap prerequisites and supported target networks.
+If client creation fails with an unsupported client type, the selected target chain still needs the Cardano light client registered and allowed before direct routing can work.
 
 ## Useful commands for local networks
 

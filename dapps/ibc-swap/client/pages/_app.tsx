@@ -31,8 +31,6 @@ import { CustomAppProvider } from '@/contexts';
 import { customChainassets, customChains } from '@/configs/customChainInfo';
 import { CosmosWalletModal } from '@/components/common/Header/CosmosWalletModal';
 import {
-  CARDANO_ENTRYPOINT_REST_ENDPOINT,
-  CARDANO_ENTRYPOINT_RPC_ENDPOINT,
   LOCAL_OSMOSIS_REST_ENDPOINT,
   LOCAL_OSMOSIS_RPC_ENDPOINT,
 } from '@/configs/runtime';
@@ -133,11 +131,6 @@ const getGasPrice = (chainId: string): string => {
 
 const endpointOptions = {
   endpoints: {
-    entrypoint: {
-      isLazy: true,
-      rpc: [CARDANO_ENTRYPOINT_RPC_ENDPOINT],
-      rest: [CARDANO_ENTRYPOINT_REST_ENDPOINT],
-    },
     localosmosis: {
       isLazy: true,
       rpc: [LOCAL_OSMOSIS_RPC_ENDPOINT],
