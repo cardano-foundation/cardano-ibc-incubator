@@ -31,6 +31,8 @@ github.com/cosmos/cosmos-sdk v0.53.0
 github.com/cosmos/ibc-go/v10 v10.2.0
 ```
 
+For chains that still use `ibc-go/v8.7`, use the sibling module at `cosmos/cardano-probabilistic-light-client-ibc-go-v8`.
+
 ## Integration
 
 For an `ibc-go/v10` app, import the module and register it with the IBC client keeper:

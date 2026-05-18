@@ -9,7 +9,7 @@ fi
 
 CHAIN_DIR="$1"
 REPO_ROOT="$2"
-SOURCE_CLIENT_DIR="${REPO_ROOT}/cosmos/cardano-probabilistic-light-client"
+SOURCE_CLIENT_DIR="${REPO_ROOT}/cosmos/cardano-probabilistic-light-client-ibc-go-v8"
 
 if [ ! -f "${CHAIN_DIR}/go.mod" ]; then
   echo "[cardano-light-client-patch] missing go.mod in ${CHAIN_DIR}" >&2
@@ -22,6 +22,11 @@ if [ ! -d "${SOURCE_CLIENT_DIR}" ]; then
 fi
 
 MODULE_PATH="$(awk '/^module / { print $2; exit }' "${CHAIN_DIR}/go.mod")"
+SOURCE_MODULE_PATH="$(awk '/^module / { print $2; exit }' "${SOURCE_CLIENT_DIR}/go.mod")"
+if [ -z "${SOURCE_MODULE_PATH}" ]; then
+  echo "[cardano-light-client-patch] could not detect source module path in ${SOURCE_CLIENT_DIR}/go.mod" >&2
+  exit 1
+fi
 IBC_GO_MAJOR="$(awk '/github.com\/cosmos\/ibc-go\/v[0-9]+/ {
   for (i = 1; i <= NF; i++) {
     if ($i ~ /^github.com\/cosmos\/ibc-go\/v[0-9]+$/) {
@@ -62,7 +67,7 @@ esac
 CLIENT_DIR="${CHAIN_DIR}/${CLIENT_REL_DIR}"
 CLIENT_IMPORT="${MODULE_PATH}/${CLIENT_REL_DIR}"
 
-echo "[cardano-light-client-patch] generating ${CLIENT_IMPORT} from canonical probabilistic client"
+echo "[cardano-light-client-patch] generating ${CLIENT_IMPORT} from ibc-go/v8 probabilistic client"
 rm -rf "${CLIENT_DIR}"
 mkdir -p "${CLIENT_DIR}"
 
@@ -80,66 +85,10 @@ mkdir -p "${CLIENT_DIR}"
   tar -xf -
 )
 
-rm -f "${CLIENT_DIR}/light_client_module.go"
 find "${CLIENT_DIR}" -type f -name '*_test.go' -delete
 
 find "${CLIENT_DIR}" -type f -name '*.go' -exec perl -pi -e \
-  's#github.com/cosmos/ibc-go/v10#github.com/cosmos/ibc-go/v8#g;
-   s#commitmenttypesv2 "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types/v2"#commitmenttypes "github.com/cosmos/ibc-go/v8/modules/core/23-commitment/types"#g;
-   s#commitmenttypesv2\.#commitmenttypes.#g' {} +
-
-find "${CLIENT_DIR}" -type f -name '*.go' -exec perl -pi -e \
-  "s#github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client#${CLIENT_IMPORT}#g" {} +
-
-cat > "${CLIENT_DIR}/module.go" <<'GOEOF'
-package probabilistic
-
-import (
-	"encoding/json"
-
-	"github.com/grpc-ecosystem/grpc-gateway/runtime"
-	"github.com/spf13/cobra"
-
-	"cosmossdk.io/core/appmodule"
-
-	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/cosmos/cosmos-sdk/codec"
-	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	"github.com/cosmos/cosmos-sdk/types/module"
-)
-
-var (
-	_ module.AppModuleBasic = (*AppModuleBasic)(nil)
-	_ appmodule.AppModule   = (*AppModule)(nil)
-)
-
-type AppModuleBasic struct{}
-
-func (AppModuleBasic) IsOnePerModuleType()                         {}
-func (AppModuleBasic) IsAppModule()                                {}
-func (AppModuleBasic) Name() string                                { return ModuleName }
-func (AppModule) IsOnePerModuleType()                              {}
-func (AppModule) IsAppModule()                                     {}
-func (AppModuleBasic) RegisterLegacyAminoCodec(*codec.LegacyAmino) {}
-func (AppModuleBasic) RegisterInterfaces(registry codectypes.InterfaceRegistry) {
-	RegisterInterfaces(registry)
-}
-func (AppModuleBasic) DefaultGenesis(cdc codec.JSONCodec) json.RawMessage { return nil }
-func (AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config client.TxEncodingConfig, bz json.RawMessage) error {
-	return nil
-}
-func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *runtime.ServeMux) {}
-func (AppModuleBasic) GetTxCmd() *cobra.Command                                                  { return nil }
-func (AppModuleBasic) GetQueryCmd() *cobra.Command                                               { return nil }
-
-type AppModule struct {
-	AppModuleBasic
-}
-
-func NewAppModule() AppModule {
-	return AppModule{}
-}
-GOEOF
+  "s#${SOURCE_MODULE_PATH}#${CLIENT_IMPORT}#g" {} +
 
 if [ "${APP_KIND}" = "osmosis" ]; then
   if ! grep -q "${CLIENT_IMPORT}" "${APP_FILE}"; then
