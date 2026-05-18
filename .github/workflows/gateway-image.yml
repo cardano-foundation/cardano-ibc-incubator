@@ -14,7 +14,7 @@ on:
       - "proto-types/**"
   push:
     branches: [main]
-    tags: ["v*"]
+    tags: ["v*.*.*"]
     paths:
       - ".dockerignore"
       - ".github/workflows/gateway-image.yml"
@@ -27,7 +27,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 concurrency:
@@ -58,6 +58,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Validate semver tag
+        if: github.ref_type == 'tag'
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "Gateway release tags must use semver format, for example v0.1.0 or v0.1.0-rc.1."
+            exit 1
+          fi
+
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -72,6 +80,7 @@ jobs:
             org.opencontainers.image.description=Gateway service for Cardano IBC relayers
 
       - name: Build and publish image
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -82,3 +91,36 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Create GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          IMAGE_TAG: ${{ github.ref_name }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          notes_file="${RUNNER_TEMP}/gateway-release-notes.md"
+          cat > "${notes_file}" <<EOF
+          Published Cardano Gateway container image:
+
+          - \`${IMAGE_NAME}:${IMAGE_TAG}\`
+          - \`${IMAGE_NAME}@${IMAGE_DIGEST}\`
+
+          Pull with:
+
+          \`\`\`bash
+          docker pull ${IMAGE_NAME}:${IMAGE_TAG}
+          \`\`\`
+          EOF
+
+          if gh release view "${IMAGE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${IMAGE_TAG}" \
+              --title "${IMAGE_TAG}" \
+              --notes-file "${notes_file}"
+          else
+            gh release create "${IMAGE_TAG}" \
+              --verify-tag \
+              --title "${IMAGE_TAG}" \
+              --notes-file "${notes_file}"
+          fi
