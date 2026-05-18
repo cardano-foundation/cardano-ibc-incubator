@@ -270,7 +270,7 @@ function assertModuleTargets() {
   const expected = [
     [coreMod, "module github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"],
     [v8Mod, "module github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v8"],
-    [v8Mod, "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.0"],
+    [v8Mod, "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.1"],
     [v8Mod, "github.com/cosmos/ibc-go/v8 v8.7.0"],
     [v10Mod, "module github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v10"],
     [v10Mod, "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.0"],
