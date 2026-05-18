@@ -62,6 +62,7 @@ describe('YaciHistoryService', () => {
 
   afterEach(() => {
     jest.resetAllMocks();
+    delete process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT;
     delete (global as typeof globalThis & { fetch?: typeof fetch }).fetch;
   });
 
@@ -149,6 +150,46 @@ describe('YaciHistoryService', () => {
     });
 
     expect((global.fetch as jest.Mock).mock.calls.map(([url]) => url.pathname)).not.toContain('/api/v1/pool_updates');
+  });
+
+  it('uses the configured local registration-slot assumption for every unresolved stake pool', async () => {
+    process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT = '1';
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
+      currentEpoch: 7,
+      epochNonce: '11'.repeat(32),
+      slotsPerKesPeriod: 129600,
+      stakeDistribution: [
+        {
+          poolId: 'pool1assumedpoola',
+          stake: 500n,
+          vrfKeyHash: 'aa'.repeat(32),
+        },
+        {
+          poolId: 'pool1assumedpoolb',
+          stake: 400n,
+          vrfKeyHash: 'bb'.repeat(32),
+        },
+      ],
+    });
+
+    await expect(service.findEpochContextAtBlock(block)).resolves.toMatchObject({
+      stakeDistribution: [
+        {
+          poolId: 'pool1assumedpoola',
+          firstRegistrationSlot: 1n,
+        },
+        {
+          poolId: 'pool1assumedpoolb',
+          firstRegistrationSlot: 1n,
+        },
+      ],
+    });
   });
 
   it('caches first registration slots discovered from local Yaci tables', async () => {

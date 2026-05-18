@@ -88,6 +88,12 @@ type CachedPoolRegistrationRow = {
   first_registration_slot: string | number | null;
 };
 
+function getAssumedPoolRegistrationSlot(): bigint | undefined {
+  const configuredSlot =
+    process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT;
+  return configuredSlot ? BigInt(configuredSlot) : undefined;
+}
+
 type KoiosPoolUpdateRow = {
   tx_hash?: string | null;
   block_time?: string | number | null;
@@ -671,6 +677,15 @@ export class YaciHistoryService implements HistoryService {
     }
 
     const mergedSlots = new Map([...cachedSlots, ...localSlots]);
+    const assumedRegistrationSlot = getAssumedPoolRegistrationSlot();
+    if (assumedRegistrationSlot !== undefined) {
+      for (const poolId of normalizedPoolIds) {
+        if (!mergedSlots.has(poolId)) {
+          mergedSlots.set(poolId, assumedRegistrationSlot);
+        }
+      }
+    }
+
     return mergedSlots;
   }
 
