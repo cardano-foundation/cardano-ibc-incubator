@@ -103,7 +103,7 @@ In the current implementation, the finality thresholds are embedded in the light
 
 - `threshold_depth = 24`
 - `threshold_unique_pools = 5`
-- `threshold_unique_stake_bps = 5000`
+- `threshold_unique_stake_bps = 511`
 - weights:
   - `depth_weight_bps = 2000`
   - `pools_weight_bps = 2000`
@@ -141,7 +141,7 @@ Preprod:
 | p99          |         7361 bps |        73.61% |
 | max observed |         7641 bps |        76.41% |
 
-This is a useful sanity check for parameter selection: in the observed mainnet sample, 24 descendant blocks generally represented roughly 500 bps of unique active stake, not 5000 bps. In the observed preprod sample, the same 24-block range usually exceeded 5000 bps because stake was much more concentrated across the producing pools.
+This is a useful sanity check for parameter selection: in the observed mainnet sample, 24 descendant blocks generally represented roughly 511 bps of unique active stake, so the embedded stake threshold is set to that mainnet median. In the observed preprod sample, the same 24-block range usually exceeded 5000 bps because stake was much more concentrated across the producing pools.
 
 It's clear from these diagnostics that Preprod has far fewer active/producing pools, and stake is much more concentrated among the pools that produce blocks. So a short 24-block window samples pools that represent a much larger fraction of total active stake. We can see that in preprod, in approximately 90% of cases, we would reach 5000 bps unique stake well before the 24-block window is over, whereas on mainnet we would be lucky to get **500** unique stake bps in a 24 block window. The observed median was 511 bps. This means if we configure our unique stake threshold to around 511 bps, then about 50% of the time we will reach heuristic settlement ("finality") in 24 blocks ( it will actually be less than 50% of the time as we then need to qualify the unique stake which will increase the timeline further).
 
@@ -217,7 +217,7 @@ The current finality parameters are embedded in the light-client module:
 
 - `threshold_depth = 24`
 - `threshold_unique_pools = 5`
-- `threshold_unique_stake_bps = 5000`
+- `threshold_unique_stake_bps = 511`
 - `depth_weight_bps = 2000`
 - `pools_weight_bps = 2000`
 - `stake_weight_bps = 6000`
