@@ -602,19 +602,11 @@ func newProbabilisticTestClientState() *ClientState {
 	}
 	epochNonce := bytes.Repeat([]byte{0x03}, 32)
 	return &ClientState{
-		ChainId:        "cardano-test",
-		LatestHeight:   &Height{RevisionHeight: 10},
-		FrozenHeight:   zeroHeight,
-		CurrentEpoch:   7,
-		TrustingPeriod: 24 * time.Hour,
-		HeuristicParams: &HeuristicParams{
-			ThresholdDepth:          1,
-			ThresholdUniquePools:    1,
-			ThresholdUniqueStakeBps: 1,
-			DepthWeightBps:          2000,
-			PoolsWeightBps:          2000,
-			StakeWeightBps:          6000,
-		},
+		ChainId:                      "cardano-test",
+		LatestHeight:                 &Height{RevisionHeight: 10},
+		FrozenHeight:                 zeroHeight,
+		CurrentEpoch:                 7,
+		TrustingPeriod:               24 * time.Hour,
 		HostStateNftPolicyId:         bytes.Repeat([]byte{0x01}, 28),
 		HostStateNftTokenName:        []byte("host-state"),
 		EpochStakeDistribution:       cloneStakeDistributionEntries(epochStakeDistribution),

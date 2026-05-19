@@ -1,5 +1,4 @@
-import { Logger } from "@nestjs/common";
-import { HeuristicParams } from "@plus/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic";
+import { Logger } from '@nestjs/common';
 import {
   GATEWAY_GRPC_ERROR_CODE,
   gatewayGrpcError,
@@ -7,34 +6,35 @@ import {
   GrpcInternalException,
   GrpcInvalidArgumentException,
   GrpcNotFoundException,
-} from "~@/exception/grpc_exceptions";
+} from '~@/exception/grpc_exceptions';
 import {
   HistoryBlock,
   HistoryEpochVerificationContext,
   HistoryService,
   HistoryStakeDistributionEntry,
   HistoryTxEvidence,
-} from "./history.service";
+} from './history.service';
 import {
   assertEpochStakeDistributionAvailable,
   assertStabilityThresholds,
   computePoolRegistrationCutoffSlot,
   computeStabilityMetrics,
-  getStabilityHeuristicParams,
+  getStabilityPolicy,
   getStabilityLookaheadDepth,
   getStabilityThresholdFailure,
   scoreDescendantBlocks,
   StabilityMetrics,
-} from "./stability-scoring";
+  StabilityPolicy,
+} from './stability-scoring';
 
 declare const cardanoHeightBrand: unique symbol;
 declare const epochNumberBrand: unique symbol;
 
 export type CardanoHeight = bigint & {
-  readonly [cardanoHeightBrand]: "CardanoHeight";
+  readonly [cardanoHeightBrand]: 'CardanoHeight';
 };
 export type EpochNumber = number & {
-  readonly [epochNumberBrand]: "EpochNumber";
+  readonly [epochNumberBrand]: 'EpochNumber';
 };
 
 export type StakeWeightedStabilityEvidence = {
@@ -44,15 +44,13 @@ export type StakeWeightedStabilityEvidence = {
   descendantBlocks: HistoryBlock[];
   epochStakeDistribution: HistoryStakeDistributionEntry[];
   epochVerificationContext: HistoryEpochVerificationContext;
-  heuristicParams: HeuristicParams;
+  stabilityPolicy: StabilityPolicy;
   metrics: StabilityMetrics;
 };
 
-export type StakeWeightedStabilityTxEvidence =
-  & StakeWeightedStabilityEvidence
-  & {
-    hostStateTxEvidence: HistoryTxEvidence;
-  };
+export type StakeWeightedStabilityTxEvidence = StakeWeightedStabilityEvidence & {
+  hostStateTxEvidence: HistoryTxEvidence;
+};
 
 export type StakeWeightedStabilityHeaderEvidence = {
   anchorHeight: CardanoHeight;
@@ -119,27 +117,16 @@ function assertEpochVerificationContextAvailable(
   context: string,
 ): asserts epochVerificationContext is HistoryEpochVerificationContext {
   if (!epochVerificationContext) {
-    throw new GrpcInternalException(
-      `Epoch verification context unavailable for ${context} in epoch ${epoch}`,
-    );
+    throw new GrpcInternalException(`Epoch verification context unavailable for ${context} in epoch ${epoch}`);
   }
   if (!epochVerificationContext.epochNonce) {
-    throw new GrpcInternalException(
-      `Epoch nonce unavailable for ${context} in epoch ${epoch}`,
-    );
+    throw new GrpcInternalException(`Epoch nonce unavailable for ${context} in epoch ${epoch}`);
   }
   if (epochVerificationContext.slotsPerKesPeriod <= 0) {
-    throw new GrpcInternalException(
-      `Slots-per-KES-period unavailable for ${context} in epoch ${epoch}`,
-    );
+    throw new GrpcInternalException(`Slots-per-KES-period unavailable for ${context} in epoch ${epoch}`);
   }
-  if (
-    epochVerificationContext.currentEpochEndSlotExclusive <=
-      epochVerificationContext.currentEpochStartSlot
-  ) {
-    throw new GrpcInternalException(
-      `Invalid epoch slot bounds for ${context} in epoch ${epoch}`,
-    );
+  if (epochVerificationContext.currentEpochEndSlotExclusive <= epochVerificationContext.currentEpochStartSlot) {
+    throw new GrpcInternalException(`Invalid epoch slot bounds for ${context} in epoch ${epoch}`);
   }
 }
 
@@ -148,9 +135,7 @@ function assertStakeVerificationContextAvailable(
   epoch: number,
   context: string,
 ): void {
-  const missingVrfKey = epochStakeDistribution.find((entry) =>
-    !entry.vrfKeyHash
-  );
+  const missingVrfKey = epochStakeDistribution.find((entry) => !entry.vrfKeyHash);
   if (missingVrfKey) {
     throw new GrpcInternalException(
       `VRF key hash unavailable for pool ${missingVrfKey.poolId} in ${context} for epoch ${epoch}`,
@@ -162,7 +147,7 @@ type LoadStakeWeightedStabilityEvidenceByHeightParams = {
   historyService: HistoryService;
   height: bigint;
   logger?: Logger;
-  heuristicParams?: HeuristicParams;
+  stabilityPolicy?: StabilityPolicy;
   requireThresholds?: boolean;
   requireFullEpochVerificationContext?: boolean;
   missingAnchorBlockMessage?: string;
@@ -172,37 +157,25 @@ type LoadStakeWeightedStabilityEvidenceForTxHashParams = {
   historyService: HistoryService;
   txHash: string;
   logger?: Logger;
-  heuristicParams?: HeuristicParams;
+  stabilityPolicy?: StabilityPolicy;
   requireThresholds?: boolean;
   missingTxEvidenceMessage?: string;
   missingAnchorBlockMessage?: string;
 };
 
-type LoadStakeWeightedStabilityHeaderEvidenceParams =
-  & LoadStakeWeightedStabilityEvidenceByHeightParams
-  & {
-    trustedHeight: bigint;
-  };
+type LoadStakeWeightedStabilityHeaderEvidenceParams = LoadStakeWeightedStabilityEvidenceByHeightParams & {
+  trustedHeight: bigint;
+};
 
-function heightNotFound(
-  height: bigint,
-  message?: string,
-): GrpcNotFoundException {
+function heightNotFound(height: bigint, message?: string): GrpcNotFoundException {
   return new GrpcNotFoundException(
-    gatewayGrpcError(
-      GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_FOUND,
-      message ?? `Height ${height.toString()} not found`,
-      {
-        height: height.toString(),
-      },
-    ),
+    gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_FOUND, message ?? `Height ${height.toString()} not found`, {
+      height: height.toString(),
+    }),
   );
 }
 
-function heightNotAccepted(
-  height: bigint,
-  message: string,
-): GrpcFailedPreconditionException {
+function heightNotAccepted(height: bigint, message: string): GrpcFailedPreconditionException {
   return new GrpcFailedPreconditionException(
     gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_ACCEPTED, message, {
       height: height.toString(),
@@ -211,16 +184,10 @@ function heightNotAccepted(
 }
 
 function historyNotReady(message: string): GrpcFailedPreconditionException {
-  return new GrpcFailedPreconditionException(
-    gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.HISTORY_NOT_READY, message),
-  );
+  return new GrpcFailedPreconditionException(gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.HISTORY_NOT_READY, message));
 }
 
-function invalidTrustedHeight(
-  trustedHeight: bigint,
-  height: bigint,
-  message: string,
-): GrpcInvalidArgumentException {
+function invalidTrustedHeight(trustedHeight: bigint, height: bigint, message: string): GrpcInvalidArgumentException {
   return new GrpcInvalidArgumentException(
     gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.INVALID_TRUSTED_HEIGHT, message, {
       trustedHeight: trustedHeight.toString(),
@@ -233,11 +200,9 @@ async function hydrateDescendantProducerRegistrationSlots(
   historyService: HistoryService,
   stakeDistribution: HistoryStakeDistributionEntry[],
   descendantBlocks: HistoryBlock[],
-  anchorBlock: Pick<HistoryBlock, "slotNo" | "timestampUnixNs">,
+  anchorBlock: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>,
 ): Promise<HistoryStakeDistributionEntry[]> {
-  const entriesByPoolId = new Map(
-    stakeDistribution.map((entry) => [entry.poolId, entry]),
-  );
+  const entriesByPoolId = new Map(stakeDistribution.map((entry) => [entry.poolId, entry]));
   const missingProducerPoolIds = Array.from(
     new Set(
       descendantBlocks
@@ -247,11 +212,7 @@ async function hydrateDescendantProducerRegistrationSlots(
             return false;
           }
           const entry = entriesByPoolId.get(poolId);
-          return Boolean(
-            entry &&
-              (!entry.firstRegistrationSlot ||
-                entry.firstRegistrationSlot <= 0n),
-          );
+          return Boolean(entry && (!entry.firstRegistrationSlot || entry.firstRegistrationSlot <= 0n));
         }),
     ),
   );
@@ -260,28 +221,25 @@ async function hydrateDescendantProducerRegistrationSlots(
     return stakeDistribution;
   }
 
-  const firstRegistrationSlots = await historyService
-    .findFirstPoolRegistrationSlots(missingProducerPoolIds, anchorBlock);
+  const firstRegistrationSlots = await historyService.findFirstPoolRegistrationSlots(
+    missingProducerPoolIds,
+    anchorBlock,
+  );
   const assumedRegistrationSlot = getAssumedPoolRegistrationSlot();
-  if (
-    firstRegistrationSlots.size === 0 && assumedRegistrationSlot === undefined
-  ) {
+  if (firstRegistrationSlots.size === 0 && assumedRegistrationSlot === undefined) {
     return stakeDistribution;
   }
 
   return stakeDistribution.map((entry) => {
-    const firstRegistrationSlot = firstRegistrationSlots.get(entry.poolId) ??
-      assumedRegistrationSlot;
-    return firstRegistrationSlot === undefined ||
-        !missingProducerPoolIds.includes(entry.poolId)
+    const firstRegistrationSlot = firstRegistrationSlots.get(entry.poolId) ?? assumedRegistrationSlot;
+    return firstRegistrationSlot === undefined || !missingProducerPoolIds.includes(entry.poolId)
       ? entry
       : { ...entry, firstRegistrationSlot };
   });
 }
 
 function getAssumedPoolRegistrationSlot(): bigint | undefined {
-  const configuredSlot =
-    process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT;
+  const configuredSlot = process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT;
   return configuredSlot ? BigInt(configuredSlot) : undefined;
 }
 
@@ -289,37 +247,28 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
   historyService,
   height,
   logger,
-  heuristicParams = getStabilityHeuristicParams(),
+  stabilityPolicy = getStabilityPolicy(),
   requireThresholds = true,
   requireFullEpochVerificationContext = true,
   missingAnchorBlockMessage,
-}: LoadStakeWeightedStabilityEvidenceByHeightParams): Promise<
-  StakeWeightedStabilityEvidence
-> {
+}: LoadStakeWeightedStabilityEvidenceByHeightParams): Promise<StakeWeightedStabilityEvidence> {
   const anchorBlock = await historyService.findBlockByHeight(height);
   if (!anchorBlock) {
-    throw heightNotFound(
-      height,
-      missingAnchorBlockMessage ?? `Height ${height.toString()} not found`,
-    );
+    throw heightNotFound(height, missingAnchorBlockMessage ?? `Height ${height.toString()} not found`);
   }
 
   const descendantBlocks = await historyService.findDescendantBlocks(
     BigInt(anchorBlock.height),
-    getStabilityLookaheadDepth(heuristicParams),
+    getStabilityLookaheadDepth(stabilityPolicy),
   );
-  const anchorEpochContext = await historyService.findEpochContextAtBlock(
-    anchorBlock,
-  );
+  const anchorEpochContext = await historyService.findEpochContextAtBlock(anchorBlock);
   if (!anchorEpochContext) {
     throw new GrpcInternalException(
       `Epoch context unavailable for anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
     );
   }
-  const {
-    stakeDistribution: epochStakeDistribution,
-    verificationContext: epochVerificationContext,
-  } = anchorEpochContext;
+  const { stakeDistribution: epochStakeDistribution, verificationContext: epochVerificationContext } =
+    anchorEpochContext;
   assertEpochStakeDistributionAvailable(
     epochStakeDistribution,
     `anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
@@ -346,62 +295,48 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
     epochVerificationContext,
     `Stake-weighted stability anchor block for height ${anchorBlock.height}`,
   );
-  const scoredDescendantBlocks = scoreDescendantBlocks(
-    descendantBlocks,
-    epochStakeDistribution,
-    logger,
-  );
+  const scoredDescendantBlocks = scoreDescendantBlocks(descendantBlocks, epochStakeDistribution, logger);
   const firstInvalidDescendantIndex = findFirstEpochBoundaryViolation(
     scoredDescendantBlocks,
     anchorBlock.epochNo,
     epochVerificationContext,
   );
-  const eligibleDescendantBlocks = firstInvalidDescendantIndex >= 0
-    ? scoredDescendantBlocks.slice(0, firstInvalidDescendantIndex)
-    : scoredDescendantBlocks;
-  const hydratedEpochStakeDistribution =
-    await hydrateDescendantProducerRegistrationSlots(
-      historyService,
-      epochStakeDistribution,
-      eligibleDescendantBlocks,
-      anchorBlock,
-    );
-
-  let acceptedDescendantBlocks = eligibleDescendantBlocks;
-  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(
+  const eligibleDescendantBlocks =
+    firstInvalidDescendantIndex >= 0
+      ? scoredDescendantBlocks.slice(0, firstInvalidDescendantIndex)
+      : scoredDescendantBlocks;
+  const hydratedEpochStakeDistribution = await hydrateDescendantProducerRegistrationSlots(
+    historyService,
+    epochStakeDistribution,
+    eligibleDescendantBlocks,
     anchorBlock,
   );
-  let metrics = computeStabilityMetrics(
-    eligibleDescendantBlocks,
-    hydratedEpochStakeDistribution,
-    heuristicParams,
-    {
-      poolRegistrationCutoffSlot,
-    },
-  );
 
-  const thresholdDepth = Number(heuristicParams.threshold_depth || 0n);
+  let acceptedDescendantBlocks = eligibleDescendantBlocks;
+  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
+  let metrics = computeStabilityMetrics(eligibleDescendantBlocks, hydratedEpochStakeDistribution, stabilityPolicy, {
+    poolRegistrationCutoffSlot,
+  });
+
+  const thresholdDepth = Number(stabilityPolicy.threshold_depth || 0n);
   if (requireThresholds) {
     for (
       let prefixLength = Math.max(thresholdDepth, 1);
       prefixLength <= eligibleDescendantBlocks.length;
       prefixLength += 1
     ) {
-      const candidateDescendantBlocks = eligibleDescendantBlocks.slice(
-        0,
-        prefixLength,
-      );
+      const candidateDescendantBlocks = eligibleDescendantBlocks.slice(0, prefixLength);
       const candidateMetrics = computeStabilityMetrics(
         candidateDescendantBlocks,
         hydratedEpochStakeDistribution,
-        heuristicParams,
+        stabilityPolicy,
         { poolRegistrationCutoffSlot },
       );
 
       if (
         !getStabilityThresholdFailure(
           candidateMetrics,
-          heuristicParams,
+          stabilityPolicy,
           anchorBlock.height.toString(),
           candidateDescendantBlocks.length,
         )
@@ -416,7 +351,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
   if (requireThresholds) {
     const thresholdFailure = getStabilityThresholdFailure(
       metrics,
-      heuristicParams,
+      stabilityPolicy,
       anchorBlock.height.toString(),
       acceptedDescendantBlocks.length,
     );
@@ -432,7 +367,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
 
       assertStabilityThresholds(
         metrics,
-        heuristicParams,
+        stabilityPolicy,
         anchorBlock.height.toString(),
         acceptedDescendantBlocks.length,
       );
@@ -446,7 +381,7 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
     descendantBlocks: acceptedDescendantBlocks,
     epochStakeDistribution: hydratedEpochStakeDistribution,
     epochVerificationContext,
-    heuristicParams,
+    stabilityPolicy,
     metrics,
   };
 }
@@ -455,41 +390,36 @@ export async function loadStakeWeightedStabilityEvidenceForTxHash({
   historyService,
   txHash,
   logger,
-  heuristicParams = getStabilityHeuristicParams(),
+  stabilityPolicy = getStabilityPolicy(),
   requireThresholds = true,
   missingTxEvidenceMessage,
   missingAnchorBlockMessage,
-}: LoadStakeWeightedStabilityEvidenceForTxHashParams): Promise<
-  StakeWeightedStabilityTxEvidence
-> {
+}: LoadStakeWeightedStabilityEvidenceForTxHashParams): Promise<StakeWeightedStabilityTxEvidence> {
   const hostStateTxEvidence =
     (await historyService.findTransactionEvidenceByHash(txHash)) ??
-      (await (async () => {
-        const tx = await historyService.findTxByHash(txHash);
-        if (!tx) {
-          return null;
-        }
-        return {
-          txHash: tx.hash,
-          blockNo: tx.height,
-          txIndex: 0,
-          txCborHex: "",
-          txBodyCborHex: "",
-          redeemers: [],
-        };
-      })());
+    (await (async () => {
+      const tx = await historyService.findTxByHash(txHash);
+      if (!tx) {
+        return null;
+      }
+      return {
+        txHash: tx.hash,
+        blockNo: tx.height,
+        txIndex: 0,
+        txCborHex: '',
+        txBodyCborHex: '',
+        redeemers: [],
+      };
+    })());
   if (!hostStateTxEvidence) {
-    throw new GrpcInternalException(
-      missingTxEvidenceMessage ??
-        `Historical tx evidence unavailable for tx ${txHash}`,
-    );
+    throw new GrpcInternalException(missingTxEvidenceMessage ?? `Historical tx evidence unavailable for tx ${txHash}`);
   }
 
   const evidence = await loadStakeWeightedStabilityEvidenceByHeight({
     historyService,
     height: BigInt(hostStateTxEvidence.blockNo),
     logger,
-    heuristicParams,
+    stabilityPolicy,
     requireThresholds,
     missingAnchorBlockMessage,
   });
@@ -505,12 +435,10 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
   height,
   trustedHeight,
   logger: _logger,
-  heuristicParams = getStabilityHeuristicParams(),
+  stabilityPolicy = getStabilityPolicy(),
   requireThresholds = true,
   missingAnchorBlockMessage,
-}: LoadStakeWeightedStabilityHeaderEvidenceParams): Promise<
-  StakeWeightedStabilityHeaderEvidence
-> {
+}: LoadStakeWeightedStabilityHeaderEvidenceParams): Promise<StakeWeightedStabilityHeaderEvidence> {
   if (trustedHeight <= 0n) {
     throw invalidTrustedHeight(
       trustedHeight,
@@ -537,10 +465,7 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
 
   const anchorBlock = await historyService.findBlockByHeight(height);
   if (!anchorBlock) {
-    throw heightNotFound(
-      height,
-      missingAnchorBlockMessage ?? `Height ${height.toString()} not found`,
-    );
+    throw heightNotFound(height, missingAnchorBlockMessage ?? `Height ${height.toString()} not found`);
   }
 
   if (anchorBlock.epochNo < trustedBlock.epochNo) {
@@ -558,9 +483,7 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     );
   }
 
-  const anchorEpochContext = await historyService.findEpochContextAtBlock(
-    anchorBlock,
-  );
+  const anchorEpochContext = await historyService.findEpochContextAtBlock(anchorBlock);
   if (!anchorEpochContext) {
     throw historyNotReady(
       `Epoch context unavailable for anchor height ${anchorBlock.height} in epoch ${anchorBlock.epochNo}`,
@@ -573,19 +496,17 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     `Stake-weighted stability anchor block for height ${anchorBlock.height}`,
   );
 
-  const trustedEpochContext = trustedBlock.epochNo === anchorBlock.epochNo
-    ? anchorEpochContext
-    : await historyService.findEpochContextAtBlock(trustedBlock);
+  const trustedEpochContext =
+    trustedBlock.epochNo === anchorBlock.epochNo
+      ? anchorEpochContext
+      : await historyService.findEpochContextAtBlock(trustedBlock);
   if (!trustedEpochContext) {
     throw historyNotReady(
       `Epoch context unavailable for trusted height ${trustedBlock.height} in epoch ${trustedBlock.epochNo}`,
     );
   }
 
-  const bridgeBlocks = await historyService.findBridgeBlocks(
-    trustedHeight,
-    height,
-  );
+  const bridgeBlocks = await historyService.findBridgeBlocks(trustedHeight, height);
   const expectedBridgeCount = Number(height - trustedHeight - 1n);
   if (bridgeBlocks.length !== expectedBridgeCount) {
     throw historyNotReady(
@@ -597,9 +518,7 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     const expectedHeight = Number(trustedHeight) + index + 1;
     if (bridgeBlocks[index].height !== expectedHeight) {
       throw historyNotReady(
-        `Non-contiguous stability bridge segment at height ${
-          bridgeBlocks[index].height
-        }; expected ${expectedHeight}`,
+        `Non-contiguous stability bridge segment at height ${bridgeBlocks[index].height}; expected ${expectedHeight}`,
       );
     }
   }
@@ -629,39 +548,32 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
 
   const descendantBlocks = await historyService.findDescendantBlocks(
     BigInt(anchorBlock.height),
-    getStabilityLookaheadDepth(heuristicParams),
+    getStabilityLookaheadDepth(stabilityPolicy),
   );
   const firstInvalidDescendantIndex = findFirstEpochBoundaryViolation(
     descendantBlocks,
     anchorBlock.epochNo,
     epochVerificationContext,
   );
-  const eligibleDescendantBlocks = firstInvalidDescendantIndex >= 0
-    ? descendantBlocks.slice(0, firstInvalidDescendantIndex)
-    : descendantBlocks;
-  const hydratedAnchorStakeDistribution =
-    await hydrateDescendantProducerRegistrationSlots(
-      historyService,
-      anchorEpochContext.stakeDistribution,
-      eligibleDescendantBlocks,
-      anchorBlock,
-    );
-
-  const acceptedDescendantBlocks = eligibleDescendantBlocks;
-  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(
+  const eligibleDescendantBlocks =
+    firstInvalidDescendantIndex >= 0 ? descendantBlocks.slice(0, firstInvalidDescendantIndex) : descendantBlocks;
+  const hydratedAnchorStakeDistribution = await hydrateDescendantProducerRegistrationSlots(
+    historyService,
+    anchorEpochContext.stakeDistribution,
+    eligibleDescendantBlocks,
     anchorBlock,
   );
-  const metrics = computeStabilityMetrics(
-    eligibleDescendantBlocks,
-    hydratedAnchorStakeDistribution,
-    heuristicParams,
-    { poolRegistrationCutoffSlot },
-  );
+
+  const acceptedDescendantBlocks = eligibleDescendantBlocks;
+  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
+  const metrics = computeStabilityMetrics(eligibleDescendantBlocks, hydratedAnchorStakeDistribution, stabilityPolicy, {
+    poolRegistrationCutoffSlot,
+  });
 
   if (requireThresholds) {
     const thresholdFailure = getStabilityThresholdFailure(
       metrics,
-      heuristicParams,
+      stabilityPolicy,
       anchorBlock.height.toString(),
       acceptedDescendantBlocks.length,
     );

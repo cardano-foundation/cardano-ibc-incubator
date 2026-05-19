@@ -15,6 +15,19 @@ import { HistoryService } from '../services/history.service';
 
 const STABILITY_SLOT_ORIGIN_NS = 1_700_000_000_000_000_000n;
 const timestampForSlot = (slot: bigint) => STABILITY_SLOT_ORIGIN_NS + slot * 1_000_000_000n;
+const stabilityDescendantBlocks = Array.from({ length: 24 }, (_, index) => {
+  const height = 101 + index;
+  const slot = 1000n + BigInt(index + 1) * 10n;
+  return {
+    height,
+    hash: `hash-${height}`,
+    prevHash: index === 0 ? 'anchor-hash' : `hash-${height - 1}`,
+    slotNo: slot,
+    epochNo: 7,
+    timestampUnixNs: timestampForSlot(slot),
+    slotLeader: `pool-${String.fromCharCode(97 + (index % 5))}`,
+  };
+});
 
 describe('QueryService stability anchor contract', () => {
   let service: QueryService;
@@ -50,10 +63,6 @@ describe('QueryService stability anchor contract', () => {
   };
 
   beforeEach(() => {
-    process.env.CARDANO_STABILITY_THRESHOLD_DEPTH = '3';
-    process.env.CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS = '3';
-    process.env.CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS = '6000';
-
     loggerMock = {
       log: jest.fn(),
       warn: jest.fn(),
@@ -110,53 +119,7 @@ describe('QueryService stability anchor contract', () => {
           slotLeader: 'pool-a',
         };
       }),
-      findDescendantBlocks: jest.fn().mockResolvedValue([
-        {
-          height: 101,
-          hash: 'hash-101',
-          prevHash: 'anchor-hash',
-          slotNo: 1010n,
-          epochNo: 7,
-          timestampUnixNs: timestampForSlot(1010n),
-          slotLeader: 'pool-a',
-        },
-        {
-          height: 102,
-          hash: 'hash-102',
-          prevHash: 'hash-101',
-          slotNo: 1020n,
-          epochNo: 7,
-          timestampUnixNs: timestampForSlot(1020n),
-          slotLeader: 'pool-b',
-        },
-        {
-          height: 103,
-          hash: 'hash-103',
-          prevHash: 'hash-102',
-          slotNo: 1030n,
-          epochNo: 7,
-          timestampUnixNs: timestampForSlot(1030n),
-          slotLeader: 'pool-c',
-        },
-        {
-          height: 104,
-          hash: 'hash-104',
-          prevHash: 'hash-103',
-          slotNo: 1040n,
-          epochNo: 7,
-          timestampUnixNs: timestampForSlot(1040n),
-          slotLeader: 'pool-d',
-        },
-        {
-          height: 105,
-          hash: 'hash-105',
-          prevHash: 'hash-104',
-          slotNo: 1050n,
-          epochNo: 7,
-          timestampUnixNs: timestampForSlot(1050n),
-          slotLeader: 'pool-e',
-        },
-      ]),
+      findDescendantBlocks: jest.fn().mockResolvedValue(stabilityDescendantBlocks),
       findEpochContextAtBlock: jest.fn().mockResolvedValue({
         epoch: 7,
         stakeDistribution: [
@@ -170,7 +133,7 @@ describe('QueryService stability anchor contract', () => {
           epochNonce: '11'.repeat(32),
           slotsPerKesPeriod: 129600,
           currentEpochStartSlot: 900n,
-          currentEpochEndSlotExclusive: 2000n,
+          currentEpochEndSlotExclusive: 3000n,
         },
       }),
       findBridgeBlocks: jest.fn().mockResolvedValue([
@@ -236,12 +199,6 @@ describe('QueryService stability anchor contract', () => {
     );
   });
 
-  afterEach(() => {
-    delete process.env.CARDANO_STABILITY_THRESHOLD_DEPTH;
-    delete process.env.CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS;
-    delete process.env.CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS;
-  });
-
   it('rejects stability new-client creation when requested anchor height is not a HostState tx block', async () => {
     await expect(service.queryNewClient({ height: 100n } as any)).rejects.toThrow(
       'requested stability anchor height 100 is not a HostState tx block height',
@@ -278,7 +235,7 @@ describe('QueryService stability anchor contract', () => {
     expect(clientState.epoch_stake_distribution).toEqual(clientState.epoch_contexts[0].stake_distribution);
     expect(clientState.slots_per_kes_period).toBe(129600n);
     expect(clientState.current_epoch_start_slot).toBe(900n);
-    expect(clientState.current_epoch_end_slot_exclusive).toBe(2000n);
+    expect(clientState.current_epoch_end_slot_exclusive).toBe(3000n);
     expect(clientState.system_start_unix_ns).toBe(STABILITY_SLOT_ORIGIN_NS);
     expect(clientState.slot_length_ns).toBe(1_000_000_000n);
     expect(consensusState.timestamp).toBe(timestampForSlot(1000n));
@@ -299,14 +256,9 @@ describe('QueryService stability anchor contract', () => {
       index: 0,
     });
     historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
-    miniProtocalsServiceMock.fetchBlocksCbor.mockResolvedValue([
-      Buffer.from('01', 'hex'),
-      Buffer.from('02', 'hex'),
-      Buffer.from('03', 'hex'),
-      Buffer.from('04', 'hex'),
-      Buffer.from('05', 'hex'),
-      Buffer.from('06', 'hex'),
-    ]);
+    miniProtocalsServiceMock.fetchBlocksCbor.mockResolvedValue(
+      Array.from({ length: 25 }, (_, index) => Buffer.from([index + 1])),
+    );
 
     const response = await service.queryIBCHeader({ height: 100n, trusted_height: 100n } as any);
     const header = ProbabilisticHeader.decode(response.header!.value);

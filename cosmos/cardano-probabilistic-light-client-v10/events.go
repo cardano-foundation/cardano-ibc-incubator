@@ -56,9 +56,9 @@ func emitProbabilisticHeaderAcceptedEvent(
 			sdk.NewAttribute(AttributeKeyUniquePoolsCount, strconv.FormatUint(consensusState.UniquePoolsCount, 10)),
 			sdk.NewAttribute(AttributeKeyUniqueStakeBps, strconv.FormatUint(consensusState.UniqueStakeBps, 10)),
 			sdk.NewAttribute(AttributeKeySecurityScoreBps, strconv.FormatUint(consensusState.SecurityScoreBps, 10)),
-			sdk.NewAttribute(AttributeKeyThresholdDepth, strconv.FormatUint(clientState.HeuristicParams.ThresholdDepth, 10)),
-			sdk.NewAttribute(AttributeKeyThresholdUniquePools, strconv.FormatUint(clientState.HeuristicParams.ThresholdUniquePools, 10)),
-			sdk.NewAttribute(AttributeKeyThresholdUniqueStakeBps, strconv.FormatUint(clientState.HeuristicParams.ThresholdUniqueStakeBps, 10)),
+			sdk.NewAttribute(AttributeKeyThresholdDepth, strconv.FormatUint(DefaultThresholdDepth, 10)),
+			sdk.NewAttribute(AttributeKeyThresholdUniquePools, strconv.FormatUint(DefaultThresholdUniquePools, 10)),
+			sdk.NewAttribute(AttributeKeyThresholdUniqueStakeBps, strconv.FormatUint(DefaultThresholdUniqueStakeBps, 10)),
 		),
 	)
 }

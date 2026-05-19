@@ -21,9 +21,6 @@ const CARDANO_RUNTIME_NETWORK_MARKER: &str = ".caribic-network";
 const LOCAL_CARDANO_NODE_IMAGE: &str = "ghcr.io/blinklabs-io/cardano-node:10.1.4-3";
 const LOCAL_STABILITY_SPO_COUNT: usize = 3;
 const LOCAL_STABILITY_TARGET_POOL_STAKE_LOVELACE: u64 = 900_000_000_000;
-const LOCAL_STABILITY_THRESHOLD_DEPTH: &str = "10";
-const LOCAL_STABILITY_THRESHOLD_UNIQUE_POOLS: &str = "2";
-const LOCAL_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: &str = "5000";
 const LOCAL_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT: &str = "18446744073709551615";
 const LOCAL_STABILITY_ASSUME_POOL_REGISTRATION_SLOT: &str = "1";
 const LOCAL_CARDANO_EPOCH_LENGTH: &str = "5000";
@@ -1948,18 +1945,6 @@ fn write_gateway_env_for_network(
                 ("YACI_STORE_ENDPOINT", "http://yaci-store:8080"),
                 ("CARDANO_CHAIN_HOST", "cardano-node"),
                 ("CARDANO_CHAIN_PORT", "3001"),
-                (
-                    "CARDANO_STABILITY_THRESHOLD_DEPTH",
-                    LOCAL_STABILITY_THRESHOLD_DEPTH,
-                ),
-                (
-                    "CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS",
-                    LOCAL_STABILITY_THRESHOLD_UNIQUE_POOLS,
-                ),
-                (
-                    "CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS",
-                    LOCAL_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS,
-                ),
                 (
                     "CARDANO_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT",
                     LOCAL_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT,

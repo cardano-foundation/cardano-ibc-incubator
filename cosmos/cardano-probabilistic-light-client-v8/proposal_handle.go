@@ -18,7 +18,6 @@ type recoveryInvariantClientState struct {
 	UpgradePath           []string
 	HostStateNftPolicyId  []byte
 	HostStateNftTokenName []byte
-	HeuristicParams       *HeuristicParams
 	SystemStartUnixNs     uint64
 	SlotLengthNs          uint64
 }
@@ -88,17 +87,7 @@ func recoveryInvariantProjection(cs ClientState) recoveryInvariantClientState {
 		UpgradePath:           append([]string(nil), cs.UpgradePath...),
 		HostStateNftPolicyId:  bytes.Clone(cs.HostStateNftPolicyId),
 		HostStateNftTokenName: bytes.Clone(cs.HostStateNftTokenName),
-		HeuristicParams:       cloneHeuristicParams(cs.HeuristicParams),
 		SystemStartUnixNs:     cs.SystemStartUnixNs,
 		SlotLengthNs:          cs.SlotLengthNs,
 	}
-}
-
-func cloneHeuristicParams(params *HeuristicParams) *HeuristicParams {
-	if params == nil {
-		return nil
-	}
-
-	cloned := *params
-	return &cloned
 }

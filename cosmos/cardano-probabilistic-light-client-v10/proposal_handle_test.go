@@ -69,7 +69,6 @@ func TestZeroCustomFieldsDropsEpochVerificationState(t *testing.T) {
 	require.Zero(t, zeroed.SlotsPerKesPeriod)
 	require.Zero(t, zeroed.CurrentEpochStartSlot)
 	require.Zero(t, zeroed.CurrentEpochEndSlotExclusive)
-	require.NotNil(t, zeroed.HeuristicParams)
 	require.Equal(t, clientState.SystemStartUnixNs, zeroed.SystemStartUnixNs)
 	require.Equal(t, clientState.SlotLengthNs, zeroed.SlotLengthNs)
 }

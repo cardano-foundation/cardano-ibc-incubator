@@ -4,7 +4,10 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const coreDir = path.join(root, "cosmos/cardano-probabilistic-light-client-core");
+const coreDir = path.join(
+  root,
+  "cosmos/cardano-probabilistic-light-client-core",
+);
 const v8Dir = path.join(root, "cosmos/cardano-probabilistic-light-client-v8");
 const v10Dir = path.join(root, "cosmos/cardano-probabilistic-light-client-v10");
 
@@ -19,6 +22,7 @@ const sharedSourceFiles = [
   "events.go",
   "header.go",
   "height.go",
+  "heuristic_policy.go",
   "host_state_commitment.go",
   "host_state_datum.go",
   "ibc_state_proof.go",
@@ -65,14 +69,26 @@ function normalizeCommon(content) {
       "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v10",
       "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-<IBC_GO_MAJOR>",
     )
-    .replaceAll("github.com/cosmos/ibc-go/v8", "github.com/cosmos/ibc-go/v<IBC_GO_MAJOR>")
-    .replaceAll("github.com/cosmos/ibc-go/v10", "github.com/cosmos/ibc-go/v<IBC_GO_MAJOR>")
+    .replaceAll(
+      "github.com/cosmos/ibc-go/v8",
+      "github.com/cosmos/ibc-go/v<IBC_GO_MAJOR>",
+    )
+    .replaceAll(
+      "github.com/cosmos/ibc-go/v10",
+      "github.com/cosmos/ibc-go/v<IBC_GO_MAJOR>",
+    )
     .replaceAll("commitmenttypesv2", "commitmenttypes")
-    .replaceAll("modules/core/23-commitment/types/v2", "modules/core/23-commitment/types");
+    .replaceAll(
+      "modules/core/23-commitment/types/v2",
+      "modules/core/23-commitment/types",
+    );
 }
 
 function normalizeGo(filePath) {
-  return normalizeCommon(read(filePath));
+  return normalizeCommon(read(filePath)).replace(
+    /var fileDescriptor_[A-Za-z0-9_]+ = \[\]byte\{[\s\S]*?\n}\n/g,
+    "var fileDescriptor_<NORMALIZED> = []byte{\n}\n",
+  );
 }
 
 function normalizeProto(filePath) {
@@ -113,7 +129,9 @@ function assertEqual(label, left, right) {
     return;
   }
 
-  throw new Error(`${label} drifted after normalization:\n${unifiedPreview(left, right)}`);
+  throw new Error(
+    `${label} drifted after normalization:\n${unifiedPreview(left, right)}`,
+  );
 }
 
 function parseConst(content, name) {
@@ -126,7 +144,9 @@ function parseProtoPackage(content) {
 }
 
 function parseMessageNames(content) {
-  return [...content.matchAll(/^message\s+([A-Za-z0-9_]+)\s*\{/gm)].map((match) => match[1]);
+  return [...content.matchAll(/^message\s+([A-Za-z0-9_]+)\s*\{/gm)].map(
+    (match) => match[1],
+  );
 }
 
 function parseProtoFields(content) {
@@ -195,12 +215,27 @@ function listFiles(dir, predicate, base = dir) {
 }
 
 function assertFileInventory() {
-  const relevant = (filePath) => filePath.endsWith(".go") || filePath.endsWith(".proto");
+  const relevant = (filePath) =>
+    filePath.endsWith(".go") || filePath.endsWith(".proto");
   const expectedV8 = [...sharedSourceFiles, "module.go", protoFile].sort();
-  const expectedV10 = [...sharedSourceFiles, "events_test.go", "light_client_module.go", "module.go", protoFile].sort();
+  const expectedV10 = [
+    ...sharedSourceFiles,
+    "events_test.go",
+    "light_client_module.go",
+    "module.go",
+    protoFile,
+  ].sort();
 
-  assertEqual("v8 Go/proto file inventory", stableJson(listFiles(v8Dir, relevant)), stableJson(expectedV8));
-  assertEqual("v10 Go/proto file inventory", stableJson(listFiles(v10Dir, relevant)), stableJson(expectedV10));
+  assertEqual(
+    "v8 Go/proto file inventory",
+    stableJson(listFiles(v8Dir, relevant)),
+    stableJson(expectedV8),
+  );
+  assertEqual(
+    "v10 Go/proto file inventory",
+    stableJson(listFiles(v10Dir, relevant)),
+    stableJson(expectedV10),
+  );
 }
 
 function assertPublicIdentity() {
@@ -209,22 +244,54 @@ function assertPublicIdentity() {
   const v8Proto = read(path.join(v8Dir, protoFile));
   const v10Proto = read(path.join(v10Dir, protoFile));
 
-  assertEqual("ModuleName", parseConst(v8Keys, "ModuleName"), parseConst(v10Keys, "ModuleName"));
-  assertEqual("ModuleName value", parseConst(v8Keys, "ModuleName"), "08-cardano-probabilistic");
-  assertEqual("protobuf package", parseProtoPackage(v8Proto), parseProtoPackage(v10Proto));
-  assertEqual("protobuf package value", parseProtoPackage(v8Proto), "ibc.lightclients.probabilistic.v1");
-  assertEqual("protobuf message names", stableJson(parseMessageNames(v8Proto)), stableJson(parseMessageNames(v10Proto)));
-  assertEqual("protobuf field map", stableJson(parseProtoFields(v8Proto)), stableJson(parseProtoFields(v10Proto)));
+  assertEqual(
+    "ModuleName",
+    parseConst(v8Keys, "ModuleName"),
+    parseConst(v10Keys, "ModuleName"),
+  );
+  assertEqual(
+    "ModuleName value",
+    parseConst(v8Keys, "ModuleName"),
+    "08-cardano-probabilistic",
+  );
+  assertEqual(
+    "protobuf package",
+    parseProtoPackage(v8Proto),
+    parseProtoPackage(v10Proto),
+  );
+  assertEqual(
+    "protobuf package value",
+    parseProtoPackage(v8Proto),
+    "ibc.lightclients.probabilistic.v1",
+  );
+  assertEqual(
+    "protobuf message names",
+    stableJson(parseMessageNames(v8Proto)),
+    stableJson(parseMessageNames(v10Proto)),
+  );
+  assertEqual(
+    "protobuf field map",
+    stableJson(parseProtoFields(v8Proto)),
+    stableJson(parseProtoFields(v10Proto)),
+  );
 
   const v8Generated = read(path.join(v8Dir, "probabilistic.pb.go"));
   const v10Generated = read(path.join(v10Dir, "probabilistic.pb.go"));
   for (const typeUrl of expectedTypeUrls) {
     const messageName = typeUrl.slice(typeUrl.lastIndexOf(".") + 1);
     const protoName = typeUrl.slice(1);
-    if (!v8Generated.includes(`"${protoName}"`) || !v10Generated.includes(`"${protoName}"`)) {
-      throw new Error(`missing expected protobuf name ${protoName} for type URL ${typeUrl} in generated code`);
+    if (
+      !v8Generated.includes(`"${protoName}"`) ||
+      !v10Generated.includes(`"${protoName}"`)
+    ) {
+      throw new Error(
+        `missing expected protobuf name ${protoName} for type URL ${typeUrl} in generated code`,
+      );
     }
-    if (!v8Generated.includes(`type ${messageName} struct`) || !v10Generated.includes(`type ${messageName} struct`)) {
+    if (
+      !v8Generated.includes(`type ${messageName} struct`) ||
+      !v10Generated.includes(`type ${messageName} struct`)
+    ) {
       throw new Error(`missing generated message struct ${messageName}`);
     }
   }
@@ -239,7 +306,11 @@ function assertCoreSourceParity() {
     assertEqual(relativePath, normalizeGo(v8File), normalizeGo(v10File));
   }
 
-  assertEqual(protoFile, normalizeProto(path.join(v8Dir, protoFile)), normalizeProto(path.join(v10Dir, protoFile)));
+  assertEqual(
+    protoFile,
+    normalizeProto(path.join(v8Dir, protoFile)),
+    normalizeProto(path.join(v10Dir, protoFile)),
+  );
 }
 
 function assertAdapterBoundaries() {
@@ -247,18 +318,34 @@ function assertAdapterBoundaries() {
   const v10Module = read(path.join(v10Dir, "module.go"));
 
   if (fs.existsSync(path.join(v8Dir, "light_client_module.go"))) {
-    throw new Error("v8 module must not contain v10-only light_client_module.go");
+    throw new Error(
+      "v8 module must not contain v10-only light_client_module.go",
+    );
   }
   mustExist(path.join(v10Dir, "light_client_module.go"));
 
   if (!/func NewAppModule\(\) AppModule/.test(v8Module)) {
-    throw new Error("v8 AppModule constructor should remain a no-argument ibc-go/v8 app module shim");
+    throw new Error(
+      "v8 AppModule constructor should remain a no-argument ibc-go/v8 app module shim",
+    );
   }
-  if (!/func NewAppModule\(lightClientModule LightClientModule\) AppModule/.test(v10Module)) {
-    throw new Error("v10 AppModule constructor should keep the ibc-go/v10 LightClientModule route");
+  if (
+    !/func NewAppModule\(lightClientModule LightClientModule\) AppModule/.test(
+      v10Module,
+    )
+  ) {
+    throw new Error(
+      "v10 AppModule constructor should keep the ibc-go/v10 LightClientModule route",
+    );
   }
-  if (!/var _ exported\.LightClientModule = \(\*LightClientModule\)\(nil\)/.test(read(path.join(v10Dir, "light_client_module.go")))) {
-    throw new Error("v10 light_client_module.go must implement exported.LightClientModule");
+  if (
+    !/var _ exported\.LightClientModule = \(\*LightClientModule\)\(nil\)/.test(
+      read(path.join(v10Dir, "light_client_module.go")),
+    )
+  ) {
+    throw new Error(
+      "v10 light_client_module.go must implement exported.LightClientModule",
+    );
   }
 }
 
@@ -268,12 +355,27 @@ function assertModuleTargets() {
   const v10Mod = read(path.join(v10Dir, "go.mod"));
 
   const expected = [
-    [coreMod, "module github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core"],
-    [v8Mod, "module github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v8"],
-    [v8Mod, "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.1"],
+    [
+      coreMod,
+      "module github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core",
+    ],
+    [
+      v8Mod,
+      "module github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v8",
+    ],
+    [
+      v8Mod,
+      "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.1",
+    ],
     [v8Mod, "github.com/cosmos/ibc-go/v8 v8.7.0"],
-    [v10Mod, "module github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v10"],
-    [v10Mod, "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.0"],
+    [
+      v10Mod,
+      "module github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-v10",
+    ],
+    [
+      v10Mod,
+      "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.0",
+    ],
     [v10Mod, "github.com/cosmos/ibc-go/v10 v10.2.0"],
   ];
 
@@ -311,7 +413,9 @@ function assertSharedCoreExtraction() {
   for (const filePath of adapterFiles) {
     const content = read(filePath);
     if (!content.includes("cardano-probabilistic-light-client-core")) {
-      throw new Error(`${path.relative(root, filePath)} must use shared probabilistic light-client core`);
+      throw new Error(
+        `${path.relative(root, filePath)} must use shared probabilistic light-client core`,
+      );
     }
   }
 
@@ -328,7 +432,9 @@ function assertSharedCoreExtraction() {
     const content = read(filePath);
     for (const pattern of forbiddenAdapterPatterns) {
       if (pattern.test(content)) {
-        throw new Error(`${path.relative(root, filePath)} redefines shared core logic matching ${pattern}`);
+        throw new Error(
+          `${path.relative(root, filePath)} redefines shared core logic matching ${pattern}`,
+        );
       }
     }
   }

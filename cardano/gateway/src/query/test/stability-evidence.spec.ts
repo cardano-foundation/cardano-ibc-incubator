@@ -6,7 +6,7 @@ import {
   loadStakeWeightedStabilityEvidenceForTxHash,
   loadStakeWeightedStabilityHeaderEvidence,
 } from '../services/stability-evidence';
-import { getStabilityHeuristicParams } from '../services/stability-scoring';
+import { getStabilityPolicy, StabilityPolicy } from '../services/stability-scoring';
 
 async function expectGrpcError(
   promise: Promise<unknown>,
@@ -26,11 +26,15 @@ async function expectGrpcError(
 }
 
 describe('stability-evidence', () => {
-  const heuristicParams = getStabilityHeuristicParams({
-    CARDANO_STABILITY_THRESHOLD_DEPTH: '3',
-    CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS: '3',
-    CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: '7000',
-  } as NodeJS.ProcessEnv);
+  const policy = (overrides: Partial<StabilityPolicy> = {}): StabilityPolicy => ({
+    ...getStabilityPolicy(),
+    ...overrides,
+  });
+  const stabilityPolicy = policy({
+    threshold_depth: 3n,
+    threshold_unique_pools: 3n,
+    threshold_unique_stake_bps: 7000n,
+  });
 
   const anchorBlock = {
     height: 100,
@@ -154,7 +158,7 @@ describe('stability-evidence', () => {
       historyService: historyServiceMock as HistoryService,
       height: 100n,
       logger: { warn: jest.fn() } as unknown as Logger,
-      heuristicParams,
+      stabilityPolicy,
     });
 
     expect(historyServiceMock.findBlockByHeight).toHaveBeenCalledWith(100n);
@@ -175,7 +179,7 @@ describe('stability-evidence', () => {
       historyService: historyServiceMock as HistoryService,
       txHash: 'deadbeef',
       logger: { warn: jest.fn() } as unknown as Logger,
-      heuristicParams,
+      stabilityPolicy,
     });
 
     expect(historyServiceMock.findTransactionEvidenceByHash).toHaveBeenCalledWith('deadbeef');
@@ -190,7 +194,7 @@ describe('stability-evidence', () => {
       trustedHeight: 97n,
       height: 100n,
       logger: { warn: jest.fn() } as unknown as Logger,
-      heuristicParams,
+      stabilityPolicy,
     });
 
     expect(historyServiceMock.findBridgeBlocks).toHaveBeenCalledWith(97n, 100n);
@@ -221,7 +225,7 @@ describe('stability-evidence', () => {
         trustedHeight: 97n,
         height: 100n,
         logger: { warn: jest.fn() } as unknown as Logger,
-        heuristicParams,
+        stabilityPolicy,
       }),
       status.NOT_FOUND,
       'HEIGHT_NOT_FOUND',
@@ -229,11 +233,11 @@ describe('stability-evidence', () => {
   });
 
   it('returns typed failed-precondition status when a stability header height is not accepted', async () => {
-    const strictHeuristicParams = getStabilityHeuristicParams({
-      CARDANO_STABILITY_THRESHOLD_DEPTH: '4',
-      CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS: '4',
-      CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: '9000',
-    } as NodeJS.ProcessEnv);
+    const strictStabilityPolicy = policy({
+      threshold_depth: 4n,
+      threshold_unique_pools: 4n,
+      threshold_unique_stake_bps: 9000n,
+    });
 
     await expectGrpcError(
       loadStakeWeightedStabilityHeaderEvidence({
@@ -241,7 +245,7 @@ describe('stability-evidence', () => {
         trustedHeight: 97n,
         height: 100n,
         logger: { warn: jest.fn() } as unknown as Logger,
-        heuristicParams: strictHeuristicParams,
+        stabilityPolicy: strictStabilityPolicy,
       }),
       status.FAILED_PRECONDITION,
       'HEIGHT_NOT_ACCEPTED',
@@ -255,7 +259,7 @@ describe('stability-evidence', () => {
         trustedHeight: 100n,
         height: 100n,
         logger: { warn: jest.fn() } as unknown as Logger,
-        heuristicParams,
+        stabilityPolicy,
       }),
       status.INVALID_ARGUMENT,
       'INVALID_TRUSTED_HEIGHT',
@@ -274,7 +278,7 @@ describe('stability-evidence', () => {
         trustedHeight: 97n,
         height: 100n,
         logger: { warn: jest.fn() } as unknown as Logger,
-        heuristicParams,
+        stabilityPolicy,
       }),
       status.FAILED_PRECONDITION,
       'HISTORY_NOT_READY',
@@ -282,11 +286,11 @@ describe('stability-evidence', () => {
   });
 
   it('accepts the first descendant prefix that meets thresholds within the lookahead window', async () => {
-    const progressiveHeuristicParams = getStabilityHeuristicParams({
-      CARDANO_STABILITY_THRESHOLD_DEPTH: '3',
-      CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS: '4',
-      CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS: '9000',
-    } as NodeJS.ProcessEnv);
+    const progressiveStabilityPolicy = policy({
+      threshold_depth: 3n,
+      threshold_unique_pools: 4n,
+      threshold_unique_stake_bps: 9000n,
+    });
 
     historyServiceMock.findDescendantBlocks = jest.fn().mockResolvedValue([
       ...descendantBlocks,
@@ -324,7 +328,7 @@ describe('stability-evidence', () => {
       historyService: historyServiceMock as HistoryService,
       height: 100n,
       logger: { warn: jest.fn() } as unknown as Logger,
-      heuristicParams: progressiveHeuristicParams,
+      stabilityPolicy: progressiveStabilityPolicy,
     });
 
     expect(historyServiceMock.findDescendantBlocks).toHaveBeenCalledWith(100n, 12);
@@ -348,7 +352,7 @@ describe('stability-evidence', () => {
         historyService: historyServiceMock as HistoryService,
         height: 100n,
         logger: { warn: jest.fn() } as unknown as Logger,
-        heuristicParams,
+        stabilityPolicy,
       }),
     ).rejects.toThrow('crosses epoch boundary');
   });
@@ -366,7 +370,7 @@ describe('stability-evidence', () => {
         historyService: historyServiceMock as HistoryService,
         height: 100n,
         logger: { warn: jest.fn() } as unknown as Logger,
-        heuristicParams,
+        stabilityPolicy,
       }),
     ).rejects.toThrow('Epoch stake distribution unavailable');
   });
@@ -384,7 +388,7 @@ describe('stability-evidence', () => {
         historyService: historyServiceMock as HistoryService,
         height: 100n,
         logger: { warn: jest.fn() } as unknown as Logger,
-        heuristicParams,
+        stabilityPolicy,
       }),
     ).rejects.toThrow('Epoch verification context unavailable');
   });
@@ -412,7 +416,7 @@ describe('stability-evidence', () => {
         trustedHeight: 97n,
         height: 100n,
         logger: { warn: jest.fn() } as unknown as Logger,
-        heuristicParams,
+        stabilityPolicy,
       }),
     ).rejects.toThrow('supports only adjacent epoch transitions');
   });
@@ -439,7 +443,7 @@ describe('stability-evidence', () => {
       trustedHeight: 97n,
       height: 100n,
       logger: { warn: jest.fn() } as unknown as Logger,
-      heuristicParams,
+      stabilityPolicy,
     });
 
     expect(evidence.anchorHeight).toBe(100n);

@@ -12,7 +12,6 @@ var (
 	ErrDelayPeriodNotPassed       = errorsmod.Register(ModuleName, 8, "packet-specified delay period has not been reached")
 	ErrTrustingPeriodExpired      = errorsmod.Register(ModuleName, 9, "time since latest trusted state has passed the trusting period")
 	ErrInvalidCurrentEpoch        = errorsmod.Register(ModuleName, 10, "invalid current epoch")
-	ErrInvalidHeuristicParams     = errorsmod.Register(ModuleName, 11, "invalid heuristic params")
 	ErrInvalidProbabilisticScore  = errorsmod.Register(ModuleName, 12, "invalid security score")
 	ErrInvalidUniquePools         = errorsmod.Register(ModuleName, 13, "invalid unique pool count")
 	ErrInvalidUniqueStake         = errorsmod.Register(ModuleName, 14, "invalid qualified unique stake basis points")

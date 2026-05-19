@@ -4,14 +4,10 @@ import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { HISTORY_SERVICE, HistoryService } from './history.service';
 import { resolveProofHeightForCurrentRoot } from './proof-context';
-import { getStabilityHeuristicParams } from './stability-scoring';
+import { getStabilityPolicy } from './stability-scoring';
 
 type GatewayLightClientMode = 'mithril' | 'stake-weighted-stability';
-type GatewayReadinessReason =
-  | 'ready'
-  | 'waiting_for_yaci_history'
-  | 'waiting_for_stability'
-  | 'history_status_unknown';
+type GatewayReadinessReason = 'ready' | 'waiting_for_yaci_history' | 'waiting_for_stability' | 'history_status_unknown';
 
 type GatewayHistoryReadinessStatus = {
   backend: 'yaci';
@@ -118,16 +114,14 @@ export class GatewayReadinessService {
   }
 
   private getLightClientMode(): GatewayLightClientMode {
-    return this.configService.get('cardanoLightClientMode') === 'mithril'
-      ? 'mithril'
-      : 'stake-weighted-stability';
+    return this.configService.get('cardanoLightClientMode') === 'mithril' ? 'mithril' : 'stake-weighted-stability';
   }
 
   private async buildHistoryReadinessStatus(
     liveHostStateTxHash: string | null,
     proofReady: boolean,
   ): Promise<GatewayHistoryReadinessStatus> {
-    const requiredDescendantDepth = getStabilityHeuristicParams().threshold_depth.toString();
+    const requiredDescendantDepth = getStabilityPolicy().threshold_depth.toString();
     const baseStatus = {
       backend: 'yaci' as const,
       latestIndexedBlock: null,
@@ -143,7 +137,8 @@ export class GatewayReadinessService {
         return {
           ...baseStatus,
           reason: 'waiting_for_yaci_history',
-          message: 'Yaci history has not indexed any Cardano blocks yet. Keep Yaci running before starting proof-serving flows.',
+          message:
+            'Yaci history has not indexed any Cardano blocks yet. Keep Yaci running before starting proof-serving flows.',
         };
       }
 
