@@ -113,9 +113,11 @@ These defaults are not special from a consensus perspective, but they are consen
 
 Pool age eligibility is not a tuning parameter. A descendant block producer only counts toward qualified unique pools and qualified unique stake if its first registration slot is before `2026-01-01T00:00:00Z`, meaning the pool started in 2025 or earlier. Total active stake is still the denominator for qualified unique-stake scoring, and missing first-registration data fails closed because the verifier cannot distinguish an old pool from an unknown one.
 
-### 24-Block Unique-Stake Diagnostic
+### 24-Block Unique-Stake Diagnostics
 
 A cached 10-day Blockfrost mainnet study over epochs `629` and `630` measured how much unique stake appears in a 24-descendant-block range. The exact eligibility mode was not usable for this diagnostic because first-registration data was incomplete and exact mode intentionally fails closed. The table below is therefore the unfiltered sensitivity view: it shows the active stake represented by unique descendant-producing pools before applying the pool-registration cutoff rule.
+
+Mainnet:
 
 | percentile   | unique stake bps | percent stake |
 | ------------ | ---------------: | ------------: |
@@ -126,7 +128,20 @@ A cached 10-day Blockfrost mainnet study over epochs `629` and `630` measured ho
 | p99          |          633 bps |         6.33% |
 | max observed |          716 bps |         7.16% |
 
-This is a useful sanity check for parameter selection: in the observed sample, 24 descendant blocks generally represented roughly 500 bps of unique active stake, not 5000 bps.
+A two-epoch Blockfrost preprod study over epochs `287` and `288` measured the same 24-descendant-block range. Exact eligibility was available in this sample and matched the unfiltered result.
+
+Preprod:
+
+| percentile   | unique stake bps | percent stake |
+| ------------ | ---------------: | ------------: |
+| p10          |         5594 bps |        55.94% |
+| median       |         6343 bps |        63.43% |
+| p90          |         6995 bps |        69.95% |
+| p95          |         7130 bps |        71.30% |
+| p99          |         7361 bps |        73.61% |
+| max observed |         7641 bps |        76.41% |
+
+This is a useful sanity check for parameter selection: in the observed mainnet sample, 24 descendant blocks generally represented roughly 500 bps of unique active stake, not 5000 bps. In the observed preprod sample, the same 24-block range usually exceeded 5000 bps because stake was much more concentrated across the producing pools.
 
 ### Header
 
