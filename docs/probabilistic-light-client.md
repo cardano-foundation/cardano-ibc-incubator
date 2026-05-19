@@ -115,7 +115,7 @@ Pool age eligibility is not a tuning parameter. A descendant block producer only
 
 ### 24-Block Unique-Stake Diagnostics
 
-A cached 10-day Blockfrost mainnet study over epochs `629` and `630` measured how much unique stake appears in a 24-descendant-block range. The exact eligibility mode was not usable for this diagnostic because first-registration data was incomplete and exact mode intentionally fails closed. The table below is therefore the unfiltered sensitivity view: it shows the active stake represented by unique descendant-producing pools before applying the pool-registration cutoff rule.
+A mainnet study over epochs `629` and `630` measured how much unique stake appears in a 24-descendant-block range.  The table below shows the active stake represented by unique descendant-producing pools before applying the pool-registration cutoff rule.
 
 Mainnet:
 
@@ -128,7 +128,7 @@ Mainnet:
 | p99          |          633 bps |         6.33% |
 | max observed |          716 bps |         7.16% |
 
-A two-epoch Blockfrost preprod study over epochs `287` and `288` measured the same 24-descendant-block range. Exact eligibility was available in this sample and matched the unfiltered result.
+A two-epoch Blockfrost preprod study over epochs `287` and `288` measured the same 24-descendant-block range.
 
 Preprod:
 
@@ -142,6 +142,10 @@ Preprod:
 | max observed |         7641 bps |        76.41% |
 
 This is a useful sanity check for parameter selection: in the observed mainnet sample, 24 descendant blocks generally represented roughly 500 bps of unique active stake, not 5000 bps. In the observed preprod sample, the same 24-block range usually exceeded 5000 bps because stake was much more concentrated across the producing pools.
+
+It's clear from these diagnostics that Preprod has far fewer active/producing pools, and stake is much more concentrated among the pools that produce blocks. So a short 24-block window samples pools that represent a much larger fraction of total active stake. We can see that in preprod, in approximately 90% of cases, we would reach 5000 bps unique stake well before the 24-block window is over, whereas on mainnet we would be lucky to get **500** unique stake bps in a 24 block window. The observed median was 511 bps. This means if we configure our unique stake threshold to around 511 bps, then about 50% of the time we will reach heuristic settlement ("finality") in 24 blocks ( it will actually be less than 50% of the time as we then need to qualify the unique stake which will increase the timeline further).
+
+Also note that this conversation takes place before our **qualified** unique stake application, i.e, we actually only sum unique stake from pools created prior to 2026.
 
 ### Header
 
