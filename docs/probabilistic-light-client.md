@@ -99,19 +99,34 @@ score =
 
 with the weighted result normalized back into a `0..10000` basis-point range.
 
-In the current implementation, the default thresholds are:
+In the current implementation, the finality thresholds are embedded in the light-client module:
 
 - `threshold_depth = 24`
 - `threshold_unique_pools = 5`
-- `threshold_unique_stake_bps = 8000`
+- `threshold_unique_stake_bps = 5000`
 - weights:
   - `depth_weight_bps = 2000`
   - `pools_weight_bps = 2000`
   - `stake_weight_bps = 6000`
 
-These defaults are not special from a consensus perspective, they are just the initial policy the Gateway uses when constructing a new client.
+These defaults are not special from a consensus perspective, but they are consensus-critical for this light client implementation. They are not supplied by the Gateway and are not serialized into `ClientState`.
 
 Pool age eligibility is not a tuning parameter. A descendant block producer only counts toward qualified unique pools and qualified unique stake if its first registration slot is before `2026-01-01T00:00:00Z`, meaning the pool started in 2025 or earlier. Total active stake is still the denominator for qualified unique-stake scoring, and missing first-registration data fails closed because the verifier cannot distinguish an old pool from an unknown one.
+
+### 24-Block Unique-Stake Diagnostic
+
+A cached 10-day Blockfrost mainnet study over epochs `629` and `630` measured how much unique stake appears in a 24-descendant-block range. The exact eligibility mode was not usable for this diagnostic because first-registration data was incomplete and exact mode intentionally fails closed. The table below is therefore the unfiltered sensitivity view: it shows the active stake represented by unique descendant-producing pools before applying the pool-registration cutoff rule.
+
+| percentile   | unique stake bps | percent stake |
+| ------------ | ---------------: | ------------: |
+| p10          |          442 bps |         4.42% |
+| median       |          511 bps |         5.11% |
+| p90          |          580 bps |         5.80% |
+| p95          |          600 bps |         6.00% |
+| p99          |          633 bps |         6.33% |
+| max observed |          716 bps |         7.16% |
+
+This is a useful sanity check for parameter selection: in the observed sample, 24 descendant blocks generally represented roughly 500 bps of unique active stake, not 5000 bps.
 
 ### Header
 
