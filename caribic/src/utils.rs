@@ -140,16 +140,14 @@ pub fn get_cardano_state(
     let cardano_tip_json: Value = serde_json::from_str(&cardano_tip_state)?;
     let epoch_json = cardano_tip_json.get(query.as_str());
     if let Some(epoch) = epoch_json {
-        if epoch.is_i64() {
-            Ok(epoch.as_i64().unwrap() as u64)
-        } else {
-            Err(format!(
+        epoch.as_u64().ok_or_else(|| {
+            format!(
                 "Failed to parse {} from cardano-node: {}",
                 query.as_str(),
                 cardano_tip_state
             )
-            .into())
-        }
+            .into()
+        })
     } else {
         Err(format!(
             "Failed to extract {} from cardano-node: {}",
@@ -178,7 +176,7 @@ pub fn get_cardano_era(project_root_dir: &Path) -> Result<String, Box<dyn std::e
 
 pub fn replace_text_in_file(path: &Path, pattern: &str, replacement: &str) -> io::Result<()> {
     let content = fs::read_to_string(path)?;
-    let re = Regex::new(pattern).unwrap();
+    let re = Regex::new(pattern).map_err(io::Error::other)?;
     let new_content = re.replace(&content, replacement).to_string();
     let mut file = fs::File::create(path)?;
     file.write_all(new_content.as_bytes())?;
@@ -194,9 +192,13 @@ pub fn change_dir_permissions_read_only(dir: &Path, exclude_files: &[&str]) -> s
 
             if path.is_dir() {
                 change_dir_permissions_read_only(&path, exclude_files)?;
-            } else if path.is_file()
-                && !exclude_files.contains(&path.file_name().unwrap().to_str().unwrap())
-            {
+            } else if path.is_file() {
+                let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+                    continue;
+                };
+                if exclude_files.contains(&file_name) {
+                    continue;
+                }
                 verbose(&format!(
                     "Set permissions to read-only for file: {}",
                     path.display()
@@ -438,7 +440,12 @@ pub fn unzip_file(file_path: &Path, destination: &Path) -> Result<(), Box<dyn st
             for entry in fs::read_dir(&root_folder)? {
                 let entry = entry?;
                 let path = entry.path();
-                let file_name = path.file_name().unwrap(); // safe unwrap
+                let file_name = path.file_name().ok_or_else(|| {
+                    io::Error::other(format!(
+                        "Failed to determine file name for extracted path {}",
+                        path.display()
+                    ))
+                })?;
                 let new_path = destination.join(file_name);
                 fs::rename(path, new_path)?;
             }
@@ -463,18 +470,27 @@ pub fn parse_tendermint_connection_id(output: &str) -> Option<String> {
     Some(captures.get(1)?.as_str().to_string())
 }
 
-pub fn query_balance(project_root_path: &Path, address: &str) -> u64 {
+pub fn query_balance(project_root_path: &Path, address: &str) -> Result<u64, String> {
     let balance = CardanoCli::new(project_root_path)
         .query_utxo(address)
-        .expect("Failed to build address")
+        .map_err(|error| format!("Failed to query Cardano balance for {address}: {error}"))?
         .stdout;
 
-    let v: HashMap<String, Value> =
-        serde_json::from_str(String::from_utf8(balance).unwrap().as_str()).unwrap();
+    let balance_json = String::from_utf8(balance)
+        .map_err(|error| format!("Cardano balance output was not valid UTF-8: {error}"))?;
+    let v: HashMap<String, Value> = serde_json::from_str(balance_json.as_str())
+        .map_err(|error| format!("Failed to parse Cardano balance JSON: {error}"))?;
 
-    v.values()
-        .map(|k| k["value"]["lovelace"].as_u64().unwrap())
-        .sum()
+    let mut total = 0_u64;
+    for utxo in v.values() {
+        let lovelace = utxo
+            .pointer("/value/lovelace")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| format!("Cardano balance output is missing lovelace: {utxo}"))?;
+        total = total.saturating_add(lovelace);
+    }
+
+    Ok(total)
 }
 
 /// Check if a Docker container is running and healthy

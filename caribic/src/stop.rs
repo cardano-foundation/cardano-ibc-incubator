@@ -175,6 +175,7 @@ pub fn stop_mithril(mithril_path: &Path) {
     }
 
     let mithril_data_dir = mithril_path.join("data");
+    let mithril_data_dir = mithril_data_dir.to_string_lossy().to_string();
     let mithril_config = config::get_config().mithril;
     let mithril_result = execute_script(
         &mithril_script_path,
@@ -203,7 +204,7 @@ pub fn stop_mithril(mithril_path: &Path) {
                 mithril_config.chain_observer_type.as_str(),
             ),
             ("CARDANO_NODE_DIR", mithril_config.cardano_node_dir.as_str()),
-            ("MITHRIL_DATA_DIR", mithril_data_dir.to_str().unwrap()),
+            ("MITHRIL_DATA_DIR", mithril_data_dir.as_str()),
             (
                 "GENESIS_VERIFICATION_KEY",
                 mithril_config.genesis_verification_key.as_str(),

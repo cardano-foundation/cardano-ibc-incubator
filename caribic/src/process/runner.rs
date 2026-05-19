@@ -189,7 +189,12 @@ where
         }
     }
 
-    let status = status.unwrap_or_else(|| child.wait().expect("child already spawned"));
+    let status = match status {
+        Some(status) => status,
+        None => child
+            .wait()
+            .map_err(|error| format!("Failed to wait for `{}`: {}", command_display, error))?,
+    };
     let _ = stdout_handle.join();
     let _ = stderr_handle.join();
 
@@ -226,7 +231,7 @@ pub fn run_with_spinner(command: &mut Command, start_message: &str) -> Result<Ou
     progress_bar.enable_steady_tick(Duration::from_millis(100));
     progress_bar.set_style(
         ProgressStyle::with_template("{prefix:.bold} {spinner} {wide_msg}")
-            .unwrap()
+            .map_err(|error| format!("Failed to configure progress spinner: {}", error))?
             .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
     );
     progress_bar.set_prefix(start_message.to_owned());

@@ -81,8 +81,8 @@ pub async fn download_repository(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let base_path = path.parent();
 
-    if (base_path.is_none() || !base_path.unwrap().exists()) && base_path.is_some() {
-        fs::create_dir_all(base_path.unwrap()).map_err(|error| {
+    if let Some(base_path) = base_path.filter(|base_path| !base_path.exists()) {
+        fs::create_dir_all(base_path).map_err(|error| {
             format!(
                 "Failed to create directory for {} source code: {}",
                 name, error
@@ -1104,7 +1104,13 @@ pub fn configure_local_cardano_devnet(
             })?;
         } else {
             let options = fs_extra::file::CopyOptions::new().overwrite(true);
-            let destination = devnet_dir.join(source.file_name().unwrap());
+            let file_name = source.file_name().ok_or_else(|| {
+                format!(
+                    "Failed to determine Cardano configuration file name for {}",
+                    source.display()
+                )
+            })?;
+            let destination = devnet_dir.join(file_name);
             copy(source, destination, &options)
                 .map_err(|error| format!("Failed to copy Cardano configuration file: {}", error))?;
         }

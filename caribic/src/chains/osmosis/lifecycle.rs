@@ -49,7 +49,10 @@ pub(super) async fn start_local(osmosis_dir: &Path) -> Result<(), Box<dyn std::e
     };
 
     if let Some(progress_bar) = &optional_progress_bar {
-        progress_bar.set_style(ProgressStyle::with_template("{prefix:.bold} {wide_msg}").unwrap());
+        progress_bar.set_style(
+            ProgressStyle::with_template("{prefix:.bold} {wide_msg}")
+                .map_err(|error| format!("Failed to configure Osmosis progress output: {error}"))?,
+        );
         progress_bar.set_prefix("Starting Osmosis appchain ...".to_owned());
     } else {
         log("Starting Osmosis appchain ...");
