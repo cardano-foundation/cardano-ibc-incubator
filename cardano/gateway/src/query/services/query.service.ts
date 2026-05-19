@@ -503,7 +503,6 @@ export class QueryService {
         seconds: 86_400n,
         nanos: 0,
       },
-      heuristic_params: stabilityEvidence.heuristicParams,
       upgrade_path: [],
       host_state_nft_policy_id: Buffer.from(this.configService.get('deployment').hostStateNFT.policyId, 'hex'),
       host_state_nft_token_name: Buffer.from(this.configService.get('deployment').hostStateNFT.name, 'hex'),

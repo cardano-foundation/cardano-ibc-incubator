@@ -13,19 +13,6 @@ export interface Height {
   revision_height: bigint;
 }
 /**
- * @name HeuristicParams
- * @package ibc.lightclients.probabilistic.v1
- * @see proto type: ibc.lightclients.probabilistic.v1.HeuristicParams
- */
-export interface HeuristicParams {
-  threshold_depth: bigint;
-  threshold_unique_pools: bigint;
-  threshold_unique_stake_bps: bigint;
-  depth_weight_bps: bigint;
-  pools_weight_bps: bigint;
-  stake_weight_bps: bigint;
-}
-/**
  * @name StakeDistributionEntry
  * @package ibc.lightclients.probabilistic.v1
  * @see proto type: ibc.lightclients.probabilistic.v1.StakeDistributionEntry
@@ -60,7 +47,6 @@ export interface ClientState {
   frozen_height?: Height;
   current_epoch: bigint;
   trusting_period: Duration;
-  heuristic_params?: HeuristicParams;
   upgrade_path: string[];
   host_state_nft_policy_id: Uint8Array;
   host_state_nft_token_name: Uint8Array;
@@ -190,127 +176,6 @@ export const Height = {
     }
     if (object.revision_height !== undefined && object.revision_height !== null) {
       message.revision_height = BigInt(object.revision_height.toString());
-    }
-    return message;
-  },
-};
-function createBaseHeuristicParams(): HeuristicParams {
-  return {
-    threshold_depth: BigInt(0),
-    threshold_unique_pools: BigInt(0),
-    threshold_unique_stake_bps: BigInt(0),
-    depth_weight_bps: BigInt(0),
-    pools_weight_bps: BigInt(0),
-    stake_weight_bps: BigInt(0),
-  };
-}
-/**
- * @name HeuristicParams
- * @package ibc.lightclients.probabilistic.v1
- * @see proto type: ibc.lightclients.probabilistic.v1.HeuristicParams
- */
-export const HeuristicParams = {
-  typeUrl: "/ibc.lightclients.probabilistic.v1.HeuristicParams",
-  encode(message: HeuristicParams, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
-    if (message.threshold_depth !== BigInt(0)) {
-      writer.uint32(32).uint64(message.threshold_depth);
-    }
-    if (message.threshold_unique_pools !== BigInt(0)) {
-      writer.uint32(40).uint64(message.threshold_unique_pools);
-    }
-    if (message.threshold_unique_stake_bps !== BigInt(0)) {
-      writer.uint32(48).uint64(message.threshold_unique_stake_bps);
-    }
-    if (message.depth_weight_bps !== BigInt(0)) {
-      writer.uint32(56).uint64(message.depth_weight_bps);
-    }
-    if (message.pools_weight_bps !== BigInt(0)) {
-      writer.uint32(64).uint64(message.pools_weight_bps);
-    }
-    if (message.stake_weight_bps !== BigInt(0)) {
-      writer.uint32(72).uint64(message.stake_weight_bps);
-    }
-    return writer;
-  },
-  decode(input: BinaryReader | Uint8Array, length?: number): HeuristicParams {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseHeuristicParams();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 4:
-          message.threshold_depth = reader.uint64();
-          break;
-        case 5:
-          message.threshold_unique_pools = reader.uint64();
-          break;
-        case 6:
-          message.threshold_unique_stake_bps = reader.uint64();
-          break;
-        case 7:
-          message.depth_weight_bps = reader.uint64();
-          break;
-        case 8:
-          message.pools_weight_bps = reader.uint64();
-          break;
-        case 9:
-          message.stake_weight_bps = reader.uint64();
-          break;
-        default:
-          reader.skipType(tag & 7);
-          break;
-      }
-    }
-    return message;
-  },
-  fromJSON(object: any): HeuristicParams {
-    const obj = createBaseHeuristicParams();
-    if (isSet(object.threshold_depth)) obj.threshold_depth = BigInt(object.threshold_depth.toString());
-    if (isSet(object.threshold_unique_pools))
-      obj.threshold_unique_pools = BigInt(object.threshold_unique_pools.toString());
-    if (isSet(object.threshold_unique_stake_bps))
-      obj.threshold_unique_stake_bps = BigInt(object.threshold_unique_stake_bps.toString());
-    if (isSet(object.depth_weight_bps)) obj.depth_weight_bps = BigInt(object.depth_weight_bps.toString());
-    if (isSet(object.pools_weight_bps)) obj.pools_weight_bps = BigInt(object.pools_weight_bps.toString());
-    if (isSet(object.stake_weight_bps)) obj.stake_weight_bps = BigInt(object.stake_weight_bps.toString());
-    return obj;
-  },
-  toJSON(message: HeuristicParams): unknown {
-    const obj: any = {};
-    message.threshold_depth !== undefined &&
-      (obj.threshold_depth = (message.threshold_depth || BigInt(0)).toString());
-    message.threshold_unique_pools !== undefined &&
-      (obj.threshold_unique_pools = (message.threshold_unique_pools || BigInt(0)).toString());
-    message.threshold_unique_stake_bps !== undefined &&
-      (obj.threshold_unique_stake_bps = (message.threshold_unique_stake_bps || BigInt(0)).toString());
-    message.depth_weight_bps !== undefined &&
-      (obj.depth_weight_bps = (message.depth_weight_bps || BigInt(0)).toString());
-    message.pools_weight_bps !== undefined &&
-      (obj.pools_weight_bps = (message.pools_weight_bps || BigInt(0)).toString());
-    message.stake_weight_bps !== undefined &&
-      (obj.stake_weight_bps = (message.stake_weight_bps || BigInt(0)).toString());
-    return obj;
-  },
-  fromPartial<I extends Exact<DeepPartial<HeuristicParams>, I>>(object: I): HeuristicParams {
-    const message = createBaseHeuristicParams();
-    if (object.threshold_depth !== undefined && object.threshold_depth !== null) {
-      message.threshold_depth = BigInt(object.threshold_depth.toString());
-    }
-    if (object.threshold_unique_pools !== undefined && object.threshold_unique_pools !== null) {
-      message.threshold_unique_pools = BigInt(object.threshold_unique_pools.toString());
-    }
-    if (object.threshold_unique_stake_bps !== undefined && object.threshold_unique_stake_bps !== null) {
-      message.threshold_unique_stake_bps = BigInt(object.threshold_unique_stake_bps.toString());
-    }
-    if (object.depth_weight_bps !== undefined && object.depth_weight_bps !== null) {
-      message.depth_weight_bps = BigInt(object.depth_weight_bps.toString());
-    }
-    if (object.pools_weight_bps !== undefined && object.pools_weight_bps !== null) {
-      message.pools_weight_bps = BigInt(object.pools_weight_bps.toString());
-    }
-    if (object.stake_weight_bps !== undefined && object.stake_weight_bps !== null) {
-      message.stake_weight_bps = BigInt(object.stake_weight_bps.toString());
     }
     return message;
   },
@@ -537,7 +402,6 @@ function createBaseClientState(): ClientState {
     frozen_height: undefined,
     current_epoch: BigInt(0),
     trusting_period: Duration.fromPartial({}),
-    heuristic_params: undefined,
     upgrade_path: [],
     host_state_nft_policy_id: new Uint8Array(),
     host_state_nft_token_name: new Uint8Array(),
@@ -573,9 +437,6 @@ export const ClientState = {
     }
     if (message.trusting_period !== undefined) {
       Duration.encode(message.trusting_period, writer.uint32(42).fork()).ldelim();
-    }
-    if (message.heuristic_params !== undefined) {
-      HeuristicParams.encode(message.heuristic_params, writer.uint32(50).fork()).ldelim();
     }
     for (const v of message.upgrade_path) {
       writer.uint32(58).string(v!);
@@ -634,9 +495,6 @@ export const ClientState = {
         case 5:
           message.trusting_period = Duration.decode(reader, reader.uint32());
           break;
-        case 6:
-          message.heuristic_params = HeuristicParams.decode(reader, reader.uint32());
-          break;
         case 7:
           message.upgrade_path.push(reader.string());
           break;
@@ -684,8 +542,6 @@ export const ClientState = {
     if (isSet(object.frozen_height)) obj.frozen_height = Height.fromJSON(object.frozen_height);
     if (isSet(object.current_epoch)) obj.current_epoch = BigInt(object.current_epoch.toString());
     if (isSet(object.trusting_period)) obj.trusting_period = Duration.fromJSON(object.trusting_period);
-    if (isSet(object.heuristic_params))
-      obj.heuristic_params = HeuristicParams.fromJSON(object.heuristic_params);
     if (Array.isArray(object?.upgrade_path))
       obj.upgrade_path = object.upgrade_path.map((e: any) => String(e));
     if (isSet(object.host_state_nft_policy_id))
@@ -721,10 +577,6 @@ export const ClientState = {
       (obj.current_epoch = (message.current_epoch || BigInt(0)).toString());
     message.trusting_period !== undefined &&
       (obj.trusting_period = message.trusting_period ? Duration.toJSON(message.trusting_period) : undefined);
-    message.heuristic_params !== undefined &&
-      (obj.heuristic_params = message.heuristic_params
-        ? HeuristicParams.toJSON(message.heuristic_params)
-        : undefined);
     if (message.upgrade_path) {
       obj.upgrade_path = message.upgrade_path.map((e) => e);
     } else {
@@ -784,9 +636,6 @@ export const ClientState = {
     }
     if (object.trusting_period !== undefined && object.trusting_period !== null) {
       message.trusting_period = Duration.fromPartial(object.trusting_period);
-    }
-    if (object.heuristic_params !== undefined && object.heuristic_params !== null) {
-      message.heuristic_params = HeuristicParams.fromPartial(object.heuristic_params);
     }
     message.upgrade_path = object.upgrade_path?.map((e) => e) || [];
     message.host_state_nft_policy_id = object.host_state_nft_policy_id ?? new Uint8Array();

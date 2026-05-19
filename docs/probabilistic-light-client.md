@@ -177,15 +177,15 @@ That extracted root becomes the authenticated root in `ConsensusState`, and late
 
 The current probabilistic client reuses some existing Mithril helper logic for HostState datum decoding and ICS-23 proof verification. That is fine architecturally because the proof model is the same, only the trust anchor used to authenticate the root is changing.
 
-## Tuning Parameters
+## Finality Parameters
 
-The current tuning inputs are:
+The current finality parameters are embedded in the light-client module:
 
-- `CARDANO_STABILITY_THRESHOLD_DEPTH`
-- `CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS`
-- `CARDANO_STABILITY_THRESHOLD_UNIQUE_STAKE_BPS`
-- `CARDANO_STABILITY_DEPTH_WEIGHT_BPS`
-- `CARDANO_STABILITY_POOLS_WEIGHT_BPS`
-- `CARDANO_STABILITY_STAKE_WEIGHT_BPS`
+- `threshold_depth = 24`
+- `threshold_unique_pools = 5`
+- `threshold_unique_stake_bps = 5000`
+- `depth_weight_bps = 2000`
+- `pools_weight_bps = 2000`
+- `stake_weight_bps = 6000`
 
-Today these are chosen off-chain by the Gateway environment before `QueryNewClient` is used, and then serialized into the new client’s `ClientState`. After that, normal header updates do not retune them. So in practice, for a given instantiated client, they are immutable unless a new client is created or a future client-upgrade mechanism is introduced.
+They are not supplied by the Gateway and are not serialized into `ClientState`.

@@ -25,18 +25,16 @@ func NewClientState(
 	latestHeight *Height,
 	currentEpoch uint64,
 	trustingPeriod time.Duration,
-	heuristicParams *HeuristicParams,
 	upgradePath []string,
 ) *ClientState {
 	zeroHeight := ZeroHeight()
 	return &ClientState{
-		ChainId:         chainID,
-		LatestHeight:    latestHeight,
-		FrozenHeight:    zeroHeight,
-		CurrentEpoch:    currentEpoch,
-		TrustingPeriod:  trustingPeriod,
-		HeuristicParams: heuristicParams,
-		UpgradePath:     upgradePath,
+		ChainId:        chainID,
+		LatestHeight:   latestHeight,
+		FrozenHeight:   zeroHeight,
+		CurrentEpoch:   currentEpoch,
+		TrustingPeriod: trustingPeriod,
+		UpgradePath:    upgradePath,
 	}
 }
 
@@ -97,15 +95,6 @@ func (cs ClientState) Validate() error {
 	if len(cs.HostStateNftTokenName) == 0 {
 		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "host_state_nft_token_name must not be empty")
 	}
-	if cs.HeuristicParams == nil {
-		return errorsmod.Wrapf(ErrInvalidHeuristicParams, "heuristic params must not be nil")
-	}
-	if cs.HeuristicParams.ThresholdDepth == 0 || cs.HeuristicParams.ThresholdUniquePools == 0 || cs.HeuristicParams.ThresholdUniqueStakeBps == 0 {
-		return errorsmod.Wrapf(ErrInvalidHeuristicParams, "threshold depth, threshold qualified unique pools, and threshold qualified unique stake bps must be greater than zero")
-	}
-	if cs.HeuristicParams.DepthWeightBps+cs.HeuristicParams.PoolsWeightBps+cs.HeuristicParams.StakeWeightBps != 10_000 {
-		return errorsmod.Wrapf(ErrInvalidHeuristicParams, "heuristic weights must sum to 10000 bps")
-	}
 	if cs.SystemStartUnixNs == 0 {
 		return errorsmod.Wrapf(ErrInvalidTimestamp, "system_start_unix_ns must be greater than zero")
 	}
@@ -133,7 +122,6 @@ func (cs ClientState) ZeroCustomFields() exported.ClientState {
 		UpgradePath:           append([]string(nil), cs.UpgradePath...),
 		HostStateNftPolicyId:  append([]byte(nil), cs.HostStateNftPolicyId...),
 		HostStateNftTokenName: append([]byte(nil), cs.HostStateNftTokenName...),
-		HeuristicParams:       cloneHeuristicParams(cs.HeuristicParams),
 		SystemStartUnixNs:     cs.SystemStartUnixNs,
 		SlotLengthNs:          cs.SlotLengthNs,
 	}

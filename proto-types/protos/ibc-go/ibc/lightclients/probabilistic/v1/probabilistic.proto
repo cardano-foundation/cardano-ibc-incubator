@@ -13,18 +13,6 @@ message Height {
   uint64 revision_height = 2;
 }
 
-message HeuristicParams {
-  option (gogoproto.goproto_getters) = false;
-
-  reserved 1 to 3;
-  uint64 threshold_depth = 4;
-  uint64 threshold_unique_pools = 5;
-  uint64 threshold_unique_stake_bps = 6;
-  uint64 depth_weight_bps = 7;
-  uint64 pools_weight_bps = 8;
-  uint64 stake_weight_bps = 9;
-}
-
 message StakeDistributionEntry {
   option (gogoproto.goproto_getters) = false;
 
@@ -48,12 +36,14 @@ message EpochContext {
 message ClientState {
   option (gogoproto.goproto_getters) = false;
 
+  reserved 6;
+  reserved "heuristic_params";
+
   string chain_id = 1;
   Height latest_height = 2;
   Height frozen_height = 3;
   uint64 current_epoch = 4;
   google.protobuf.Duration trusting_period = 5 [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
-  HeuristicParams heuristic_params = 6;
   repeated string upgrade_path = 7;
   bytes host_state_nft_policy_id = 8;
   bytes host_state_nft_token_name = 9;
