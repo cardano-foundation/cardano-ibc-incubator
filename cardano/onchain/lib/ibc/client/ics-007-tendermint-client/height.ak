@@ -1,3 +1,4 @@
+use aiken/primitive/bytearray
 use aiken/primitive/int
 use ibc/utils/string
 
@@ -12,23 +13,36 @@ pub fn new_height(revision_number: Int, revision_height: Int) -> Height {
   Height { revision_number, revision_height }
 }
 
-// TODO: 
-// We need a library to manipulate strings and regex, 
-// so here we temporarily return the revision number as 0
+const dash_char = 45
+
 pub fn parse_chain_id(chain_id: ByteArray) -> Int {
-  let parsed_str = string.split(chain_id, 45)
+  let dash_index = find_last_dash(chain_id, bytearray.length(chain_id), 0, -1)
 
-  when parsed_str is {
-    [_] -> 0
-    _ -> {
-      expect [_, revision_number] = parsed_str
-
-      expect Some(revision_number) = int.from_utf8(revision_number)
-
-      expect revision_number >= 0
-
-      revision_number
+  if dash_index < 0 {
+    0
+  } else {
+    let revision_number = bytearray.drop(chain_id, dash_index + 1)
+    if string.is_uint_string(revision_number) {
+      expect Some(parsed_revision_number) = int.from_utf8(revision_number)
+      parsed_revision_number
+    } else {
+      0
     }
+  }
+}
+
+fn find_last_dash(
+  chain_id: ByteArray,
+  chain_id_length: Int,
+  index: Int,
+  last_dash: Int,
+) -> Int {
+  if index >= chain_id_length {
+    last_dash
+  } else if bytearray.at(chain_id, index) == dash_char {
+    find_last_dash(chain_id, chain_id_length, index + 1, index)
+  } else {
+    find_last_dash(chain_id, chain_id_length, index + 1, last_dash)
   }
 }
 

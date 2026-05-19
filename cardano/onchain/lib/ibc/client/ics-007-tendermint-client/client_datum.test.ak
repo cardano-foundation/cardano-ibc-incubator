@@ -105,7 +105,7 @@ fn get_mock_client_datum(latest_height: Height) -> ClientDatum {
       mock_unbonding_period,
       mock_max_clock_drift,
       latest_height,
-      [],
+      merkle.get_sdk_specs(),
     )
 
   let mock_consensus_states =
@@ -146,7 +146,7 @@ test test_is_initialized_valid_success() {
       mock_unbonding_period,
       mock_max_clock_drift,
       mock_latest_height,
-      [],
+      merkle.get_sdk_specs(),
     )
 
   let mock_consensus_states =
@@ -193,7 +193,7 @@ test test_is_initialized_valid_fail_with_invalid_client_state() fail {
       mock_unbonding_period,
       mock_max_clock_drift,
       mock_latest_height,
-      [],
+      merkle.get_sdk_specs(),
     )
 
   let mock_consensus_states =
@@ -236,7 +236,7 @@ test test_is_initialized_valid_fail_with_invalid_consensus_states() fail {
       mock_unbonding_period,
       mock_max_clock_drift,
       mock_latest_height,
-      [],
+      merkle.get_sdk_specs(),
     )
   let mock_consensus_states = []
   let mock_auth_token =
@@ -267,7 +267,7 @@ test test_is_initialized_valid_fail_with_invalid_datum_token() fail {
       mock_unbonding_period,
       mock_max_clock_drift,
       mock_latest_height,
-      [],
+      merkle.get_sdk_specs(),
     )
   let mock_consensus_states =
     [
