@@ -16,6 +16,7 @@
 
 .env
 node_modules/
+__pycache__/
 
 # Rust
 target/
@@ -67,3 +68,7 @@ run_token_swap.sh
 
 # Internal package build artifacts
 packages/*/dist/
+
+# Local Blockfrost study outputs
+studies/cardano_probabilistic_finality/cache*/
+studies/cardano_probabilistic_finality/out*/
