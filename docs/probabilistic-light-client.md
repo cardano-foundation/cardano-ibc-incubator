@@ -99,19 +99,53 @@ score =
 
 with the weighted result normalized back into a `0..10000` basis-point range.
 
-In the current implementation, the default thresholds are:
+In the current implementation, the finality thresholds are embedded in the light-client module:
 
 - `threshold_depth = 24`
 - `threshold_unique_pools = 5`
-- `threshold_unique_stake_bps = 8000`
+- `threshold_unique_stake_bps = 511`
 - weights:
   - `depth_weight_bps = 2000`
   - `pools_weight_bps = 2000`
   - `stake_weight_bps = 6000`
 
-These defaults are not special from a consensus perspective, they are just the initial policy the Gateway uses when constructing a new client.
+These defaults are not special from a consensus perspective, but they are consensus-critical for this light client implementation. They are not supplied by the Gateway and are not serialized into `ClientState`.
 
 Pool age eligibility is not a tuning parameter. A descendant block producer only counts toward qualified unique pools and qualified unique stake if its first registration slot is before `2026-01-01T00:00:00Z`, meaning the pool started in 2025 or earlier. Total active stake is still the denominator for qualified unique-stake scoring, and missing first-registration data fails closed because the verifier cannot distinguish an old pool from an unknown one.
+
+### 24-Block Unique-Stake Diagnostics
+
+A mainnet study over epochs `629` and `630` measured how much unique stake appears in a 24-descendant-block range.  The table below shows the active stake represented by unique descendant-producing pools before applying the pool-registration cutoff rule.
+
+Mainnet:
+
+| percentile   | unique stake bps | percent stake |
+| ------------ | ---------------: | ------------: |
+| p10          |          442 bps |         4.42% |
+| median       |          511 bps |         5.11% |
+| p90          |          580 bps |         5.80% |
+| p95          |          600 bps |         6.00% |
+| p99          |          633 bps |         6.33% |
+| max observed |          716 bps |         7.16% |
+
+A two-epoch Blockfrost preprod study over epochs `287` and `288` measured the same 24-descendant-block range.
+
+Preprod:
+
+| percentile   | unique stake bps | percent stake |
+| ------------ | ---------------: | ------------: |
+| p10          |         5594 bps |        55.94% |
+| median       |         6343 bps |        63.43% |
+| p90          |         6995 bps |        69.95% |
+| p95          |         7130 bps |        71.30% |
+| p99          |         7361 bps |        73.61% |
+| max observed |         7641 bps |        76.41% |
+
+This is a useful sanity check for parameter selection: in the observed mainnet sample, 24 descendant blocks generally represented roughly 511 bps of unique active stake, so the embedded stake threshold is set to that mainnet median. In the observed preprod sample, the same 24-block range usually exceeded 5000 bps because stake was much more concentrated across the producing pools.
+
+It's clear from these diagnostics that Preprod has far fewer active/producing pools, and stake is much more concentrated among the pools that produce blocks. So a short 24-block window samples pools that represent a much larger fraction of total active stake. We can see that in preprod, in approximately 90% of cases, we would reach 5000 bps unique stake well before the 24-block window is over, whereas on mainnet we would be lucky to get **500** unique stake bps in a 24 block window. The observed median was 511 bps. This means if we configure our unique stake threshold to around 511 bps, then about 50% of the time we will reach heuristic settlement ("finality") in 24 blocks ( it will actually be less than 50% of the time as we then need to qualify the unique stake which will increase the timeline further).
+
+Also note that this conversation takes place before our **qualified** unique stake application, i.e, we actually only sum unique stake from pools created prior to 2026.
 
 ### Header
 
@@ -183,7 +217,7 @@ The current finality parameters are embedded in the light-client module:
 
 - `threshold_depth = 24`
 - `threshold_unique_pools = 5`
-- `threshold_unique_stake_bps = 5000`
+- `threshold_unique_stake_bps = 511`
 - `depth_weight_bps = 2000`
 - `pools_weight_bps = 2000`
 - `stake_weight_bps = 6000`

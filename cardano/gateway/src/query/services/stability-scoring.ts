@@ -24,7 +24,7 @@ export type StabilityPolicy = {
 const LIGHT_CLIENT_STABILITY_POLICY: StabilityPolicy = {
   threshold_depth: 24n,
   threshold_unique_pools: 5n,
-  threshold_unique_stake_bps: 5000n,
+  threshold_unique_stake_bps: 511n,
   depth_weight_bps: 2000n,
   pools_weight_bps: 2000n,
   stake_weight_bps: 6000n,
