@@ -8,6 +8,7 @@
   "scripts": {
     "build": "nest build",
     "benchmark:denom-registry": "ts-node -r tsconfig-paths/register src/scripts/test/denom-registry-benchmark.ts",
+    "check:tx-budgets": "ts-node -r tsconfig-paths/register src/scripts/ci/check-tx-budgets.ts",
     "export:bridge-manifest": "ts-node -r tsconfig-paths/register src/scripts/export-bridge-manifest.ts",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
