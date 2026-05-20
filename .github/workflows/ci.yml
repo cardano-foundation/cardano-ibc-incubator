@@ -249,6 +249,48 @@ jobs:
       - name: Check and test
         run: aiken check --deny
 
+  tx-budgets:
+    name: Cardano Tx Budgets
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cardano/gateway/package-lock.json
+
+      - name: Setup Aiken
+        uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
+
+      - name: Build Aiken blueprint
+        working-directory: cardano/onchain
+        run: aiken build --deny
+
+      - name: Collect Aiken execution units
+        working-directory: cardano/onchain
+        run: aiken check --deny --plain-numbers > ../../aiken-check.json
+
+      - name: Install gateway dependencies
+        run: npm ci --prefix cardano/gateway --legacy-peer-deps
+
+      - name: Check transaction size and ex-unit budgets
+        env:
+          CARDANO_TX_BUDGET_MAX_TX_SIZE: 16384
+          CARDANO_TX_BUDGET_HEADROOM_BYTES: 750
+          CARDANO_TX_BUDGET_MAX_TX_EX_MEM: 140000000
+          CARDANO_TX_BUDGET_MAX_TX_EX_STEPS: 100000000000
+          CARDANO_TX_BUDGET_EX_UNIT_HEADROOM_BPS: 500
+          CARDANO_TX_BUDGET_AIKEN_CHECK_JSON: ../../aiken-check.json
+        run: npm run --prefix cardano/gateway check:tx-budgets
+
   generated-artifacts:
     name: Generated Artifacts
     runs-on: ubuntu-latest
