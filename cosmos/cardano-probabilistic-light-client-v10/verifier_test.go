@@ -221,6 +221,44 @@ func TestComputeHeaderSecurityMetricsExcludesPoolsRegisteredAfterCutoff(t *testi
 	require.Equal(t, uint64(5000), qualifiedUniqueStakeBps)
 }
 
+func TestComputeHeaderSecurityMetricsIgnoresPoolRegistrationCutoffEnv(t *testing.T) {
+	t.Setenv("CARDANO_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT", "2")
+
+	cs := newProbabilisticTestClientState()
+	epochContext := &EpochContext{
+		Epoch:                 cs.CurrentEpoch,
+		EpochNonce:            bytes.Repeat([]byte{0x03}, 32),
+		SlotsPerKesPeriod:     cs.SlotsPerKesPeriod,
+		EpochStartSlot:        cs.CurrentEpochStartSlot,
+		EpochEndSlotExclusive: cs.CurrentEpochEndSlotExclusive,
+		StakeDistribution: []*StakeDistributionEntry{
+			{
+				PoolId:                "pool-a",
+				Stake:                 500,
+				VrfKeyHash:            bytes.Repeat([]byte{0x02}, 32),
+				FirstRegistrationSlot: 3,
+			},
+		},
+	}
+	authenticatedHeader := &authenticatedProbabilisticHeader{
+		anchorBlock: &authenticatedProbabilisticBlock{
+			height: 12,
+			hash:   "anchor-12",
+			slot:   120,
+			epoch:  cs.CurrentEpoch,
+		},
+		descendantBlocks: []*authenticatedProbabilisticBlock{
+			{height: 13, hash: "descendant-13", prevHash: "anchor-12", epoch: cs.CurrentEpoch, slotLeader: "pool-a"},
+		},
+	}
+
+	qualifiedUniquePools, qualifiedUniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
+
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), qualifiedUniquePools)
+	require.Equal(t, uint64(10000), qualifiedUniqueStakeBps)
+}
+
 func TestComputeHeaderSecurityMetricsFailsClosedWhenPoolAgeIsMissing(t *testing.T) {
 	cs := newProbabilisticTestClientState()
 	epochContext := &EpochContext{
