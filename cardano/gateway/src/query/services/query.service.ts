@@ -379,7 +379,7 @@ export class QueryService {
         // This value is a policy choice. For local devnet testing we just need a non-zero period
         // so the client doesn't immediately expire. In production this should be derived from
         // the security assumptions of the Cardano/Mithril verification model.
-        seconds: 86_400n, // 24 hours
+        seconds: BigInt(this.configService.get<number>('cardanoClientTrustingPeriodSeconds') ?? 86_400),
         nanos: 0,
       },
       protocol_parameters: {
@@ -500,7 +500,7 @@ export class QueryService {
       },
       current_epoch: BigInt(stabilityEvidence.anchorEpoch),
       trusting_period: {
-        seconds: 86_400n,
+        seconds: BigInt(this.configService.get<number>('cardanoClientTrustingPeriodSeconds') ?? 86_400),
         nanos: 0,
       },
       upgrade_path: [],

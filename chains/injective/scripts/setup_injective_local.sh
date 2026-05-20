@@ -11,6 +11,7 @@ GENESIS_ACCOUNT_AMOUNT="${INJECTIVE_LOCAL_GENESIS_ACCOUNT_AMOUNT:-10000000000000
 GENTX_AMOUNT="${INJECTIVE_LOCAL_GENTX_AMOUNT:-50000000000000000000stake}"
 MIN_GAS_PRICES="${INJECTIVE_LOCAL_MIN_GAS_PRICES:-0.025inj}"
 BLOCK_MAX_GAS="${INJECTIVE_LOCAL_BLOCK_MAX_GAS:-100000000}"
+LOCAL_GENESIS_TIME="${INJECTIVE_LOCAL_GENESIS_TIME:-2025-12-31T23:59:00Z}"
 
 GENESIS_FILE="${INJECTIVE_HOME}/config/genesis.json"
 APP_TOML_FILE="${INJECTIVE_HOME}/config/app.toml"
@@ -45,9 +46,14 @@ if [ ! -f "${GENESIS_FILE}" ]; then
 
   injectived genesis collect-gentxs --home "${INJECTIVE_HOME}"
   tmp_genesis="$(mktemp)"
-  jq --arg max_gas "${BLOCK_MAX_GAS}" '.consensus.params.block.max_gas = $max_gas' "${GENESIS_FILE}" > "${tmp_genesis}"
+  jq \
+    --arg max_gas "${BLOCK_MAX_GAS}" \
+    --arg genesis_time "${LOCAL_GENESIS_TIME}" \
+    '.consensus.params.block.max_gas = $max_gas | .genesis_time = $genesis_time' \
+    "${GENESIS_FILE}" > "${tmp_genesis}"
   mv "${tmp_genesis}" "${GENESIS_FILE}"
   echo "[injective-local] Set genesis block max_gas to ${BLOCK_MAX_GAS}."
+  echo "[injective-local] Set genesis_time to ${LOCAL_GENESIS_TIME}."
   injectived genesis validate --home "${INJECTIVE_HOME}"
 else
   echo "[injective-local] Reusing existing chain home at ${INJECTIVE_HOME}."

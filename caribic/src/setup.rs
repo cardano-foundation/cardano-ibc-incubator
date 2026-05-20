@@ -1977,6 +1977,7 @@ fn write_gateway_env_for_network(
                     LOCAL_STABILITY_ASSUME_POOL_REGISTRATION_SLOT,
                 ),
                 ("CARDANO_EPOCH_LENGTH", LOCAL_CARDANO_EPOCH_LENGTH),
+                ("CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS", "315360000"),
             ];
             for (key, value) in local_gateway_defaults {
                 set_or_append_env_var(&gateway_env, key, value)?;

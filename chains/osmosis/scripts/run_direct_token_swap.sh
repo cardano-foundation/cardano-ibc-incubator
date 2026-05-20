@@ -76,6 +76,41 @@ run_with_timeout() {
   kill "$watchdog_pid" >/dev/null 2>&1 || true
 }
 
+run_with_gateway_stability_retry() {
+  local timeout_seconds="${1:-600}"
+  local poll_interval="${2:-10}"
+  shift 2
+
+  local start_epoch
+  start_epoch=$(date +%s)
+  local attempt=1
+
+  while true; do
+    local output
+    local status=0
+    output="$("$@" 2>&1)" || status=$?
+    printf '%s\n' "$output"
+
+    if [ "$status" -eq 0 ]; then
+      return 0
+    fi
+
+    if ! printf '%s\n' "$output" | grep -Eq 'HEIGHT_NOT_ACCEPTED|stability-accepted|thresholds not met'; then
+      return "$status"
+    fi
+
+    local elapsed=$(( $(date +%s) - start_epoch ))
+    if [ "$elapsed" -ge "$timeout_seconds" ]; then
+      echo "Timed out after ${timeout_seconds}s waiting for Gateway stability acceptance." >&2
+      return "$status"
+    fi
+
+    echo "Gateway proof root is not stability-accepted yet; retrying transfer command in ${poll_interval}s (attempt ${attempt})."
+    sleep "$poll_interval"
+    attempt=$((attempt + 1))
+  done
+}
+
 current_max_commitment_seq() {
   local chain="$1"
   local channel="$2"
@@ -273,7 +308,7 @@ BASELINE_OSMOSIS_CARDANO_SEQ="$(current_max_commitment_seq "$HERMES_OSMOSIS_NAME
 [ -n "$BASELINE_OSMOSIS_CARDANO_SEQ" ] || BASELINE_OSMOSIS_CARDANO_SEQ=0
 
 echo "Sending Cardano token directly to Osmosis for pool bootstrap..."
-"$HERMES_BIN" tx ft-transfer \
+run_with_gateway_stability_retry 600 10 "$HERMES_BIN" tx ft-transfer \
   --src-chain "$HERMES_CARDANO_NAME" \
   --dst-chain "$HERMES_OSMOSIS_NAME" \
   --src-port transfer \
@@ -359,7 +394,7 @@ BASELINE_OSMOSIS_CARDANO_SEQ="$(current_max_commitment_seq "$HERMES_OSMOSIS_NAME
 [ -n "$BASELINE_OSMOSIS_CARDANO_SEQ" ] || BASELINE_OSMOSIS_CARDANO_SEQ=0
 
 echo "Submitting direct Cardano->Osmosis crosschain swap..."
-"$HERMES_BIN" tx ft-transfer \
+run_with_gateway_stability_retry 600 10 "$HERMES_BIN" tx ft-transfer \
   --src-chain "$HERMES_CARDANO_NAME" \
   --dst-chain "$HERMES_OSMOSIS_NAME" \
   --src-port transfer \
