@@ -542,7 +542,7 @@ export class QueryService {
 
   async latestHeight(request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
     if (this.getLightClientMode() === 'stake-weighted-stability') {
-      return this.latestStabilityHeight();
+      return this.latestCertifiedHeight();
     }
 
     const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
@@ -557,7 +557,7 @@ export class QueryService {
     return latestHeightResponse as unknown as QueryLatestHeightResponse;
   }
 
-  async latestStabilityHeight(): Promise<QueryLatestHeightResponse> {
+  async latestCertifiedHeight(): Promise<QueryLatestHeightResponse> {
     for (let attempt = 0; attempt < STABILITY_LATEST_HEIGHT_MAX_ATTEMPTS; attempt++) {
       try {
         const liveHostStateTxHeight = await resolveCurrentLiveHostStateTxHeight({
@@ -584,7 +584,7 @@ export class QueryService {
           }
 
           this.logger.warn(
-            `[latestStabilityHeight] Unable to reacquire epoch context for live HostState height ${liveHostStateTxHeight.toString()}; reusing that height until a newer HostState tx is available`,
+            `[latestCertifiedHeight] Unable to reacquire epoch context for live HostState height ${liveHostStateTxHeight.toString()}; reusing that height until a newer HostState tx is available`,
           );
           return { height: liveHostStateTxHeight } as QueryLatestHeightResponse;
         }
@@ -594,7 +594,7 @@ export class QueryService {
         }
 
         const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(`[latestStabilityHeight] ${message}; retrying stability latest height query`);
+        this.logger.warn(`[latestCertifiedHeight] ${message}; retrying stability latest height query`);
         await sleep(STABILITY_LATEST_HEIGHT_DELAY_MS);
       }
     }

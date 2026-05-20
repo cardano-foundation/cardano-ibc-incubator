@@ -307,10 +307,54 @@ describe('QueryService stability anchor contract', () => {
       new Error('Failed to acquire requested point. Target point is too old.'),
     );
 
-    await expect(service.latestStabilityHeight()).resolves.toEqual({ height: 1136n });
+    await expect(service.latestCertifiedHeight()).resolves.toEqual({ height: 1136n });
     expect(loggerMock.warn).toHaveBeenCalledWith(
       expect.stringContaining('reusing that height until a newer HostState tx is available'),
     );
+  });
+
+  it('does not return the live HostState tx height as latest stability height when the root was not accepted', async () => {
+    lucidServiceMock.findUtxoAtHostStateNFT.mockResolvedValue({
+      txHash: 'live-host-state-tx',
+      outputIndex: 0,
+      datum: 'datum-cbor',
+    });
+    historyServiceMock.findTransactionEvidenceByHash.mockResolvedValue({
+      txHash: 'live-host-state-tx',
+      blockNo: 1136,
+      txIndex: 0,
+      txCborHex: '',
+      txBodyCborHex: '',
+      redeemers: [],
+    });
+    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
+      txHash: 'live-host-state-tx',
+      txId: 1,
+      outputIndex: 0,
+      address: 'addr_test1...',
+      assetsPolicy: 'a'.repeat(56),
+      assetsName: 'b'.repeat(64),
+      datumHash: 'cd'.repeat(32),
+      datum: 'datum-cbor',
+      blockNo: 1136,
+      blockId: 1136,
+      index: 0,
+    });
+    historyServiceMock.findBlockByHeight.mockResolvedValue({
+      height: 1136,
+      hash: 'hash-1136',
+      prevHash: 'hash-1135',
+      slotNo: 4452n,
+      epochNo: 0,
+      timestampUnixNs: timestampForSlot(4452n),
+      slotLeader: 'pool-a',
+    });
+    historyServiceMock.findDescendantBlocks.mockResolvedValue([]);
+    historyServiceMock.findEpochContextAtBlock.mockRejectedValue(
+      new Error('Failed to acquire requested point. Target point is too old.'),
+    );
+
+    await expect(service.latestCertifiedHeight()).rejects.toThrow(/stability|accepted|epoch context/i);
   });
 
   it('rejects stability header generation when requested anchor height is not a HostState tx block', async () => {
