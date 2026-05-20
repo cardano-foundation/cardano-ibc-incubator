@@ -1,6 +1,5 @@
 import {
   assertStabilityThresholds,
-  computePoolRegistrationCutoffSlot,
   computeStabilityMetrics,
   getStabilityPolicy,
   StabilityPolicy,

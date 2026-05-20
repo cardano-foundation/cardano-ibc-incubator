@@ -2609,17 +2609,10 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     }
 
     let script_args = vec!["compose", "up", "-d", "--build"];
-    if clean {
-        log_or_show_progress(
-            "Building and starting Gateway containers",
-            &optional_progress_bar,
-        );
-    } else {
-        log_or_show_progress(
-            "Building and starting Gateway containers",
-            &optional_progress_bar,
-        );
-    }
+    log_or_show_progress(
+        "Building and starting Gateway containers",
+        &optional_progress_bar,
+    );
 
     execute_script(gateway_dir, "docker", script_args, None)?;
 
