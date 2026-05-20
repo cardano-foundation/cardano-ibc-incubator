@@ -3,14 +3,18 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.AsyncMutex = void 0;
 exports.createTxBuilderRuntime = createTxBuilderRuntime;
 const crypto_1 = __importDefault(require("crypto"));
 const tx_builder_1 = require("@cardano-ibc/tx-builder");
 const trace_registry_1 = require("@cardano-ibc/trace-registry");
 const blake2b_1 = require("@noble/hashes/blake2b");
 const ws_1 = __importDefault(require("ws"));
+const asyncMutex_1 = require("./asyncMutex");
 const ibcStateRoot_1 = require("./ibcStateRoot");
 const lucidIbcAdapter_1 = require("./lucidIbcAdapter");
+var asyncMutex_2 = require("./asyncMutex");
+Object.defineProperty(exports, "AsyncMutex", { enumerable: true, get: function () { return asyncMutex_2.AsyncMutex; } });
 const LOOKUP_RETRY_OPTIONS = {
     maxAttempts: 6,
     retryDelayMs: 1000,
@@ -728,27 +732,10 @@ async function computeTxValidityWindow(context) {
         validToTime,
     };
 }
-class AsyncMutex {
-    tail = Promise.resolve();
-    async runExclusive(operation) {
-        let release;
-        const previous = this.tail;
-        this.tail = new Promise((resolve) => {
-            release = resolve;
-        });
-        await previous;
-        try {
-            return await operation();
-        }
-        finally {
-            release();
-        }
-    }
-}
 function createTxBuilderRuntime(config) {
     const logger = config.logger ?? defaultLogger('txBuilderRuntime');
     let cachedContextPromise = null;
-    const transferBuildQueue = new AsyncMutex();
+    const transferBuildQueue = new asyncMutex_1.AsyncMutex();
     let transferBuildCounter = 0;
     const traceRegistryClient = (0, trace_registry_1.createTraceRegistryClient)({
         bridgeManifestUrl: config.bridgeManifestUrl,

@@ -105,7 +105,7 @@ type BridgeManifest = {
   };
 };
 
-type TraceRegistryEntry = {
+export type TraceRegistryEntry = {
   voucher_hash: string;
   full_denom: string;
 };
@@ -410,6 +410,21 @@ function unresolvedVoucherTraceError(assetId: string, voucherHash: string): Erro
   );
 }
 
+export function assertUniqueTraceRegistryEntries(
+  entries: readonly TraceRegistryEntry[],
+): void {
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    const normalizedHash = entry.voucher_hash.toLowerCase();
+    if (seen.has(normalizedHash)) {
+      throw new Error(
+        `Duplicate trace-registry entries detected for voucher hash ${normalizedHash}`,
+      );
+    }
+    seen.add(normalizedHash);
+  }
+}
+
 function getKupmiosEndpoints(kupmiosUrl: string) {
   const [kupoUrl, ogmiosUrl] = kupmiosUrl.split(',').map((value) => value.trim());
   if (!kupoUrl || !ogmiosUrl) {
@@ -653,11 +668,7 @@ export function createTraceRegistryClient(
       ),
     );
 
-    if (matches.length > 1) {
-      throw new Error(
-        `Duplicate trace-registry entries detected for voucher hash ${normalizedHash}`,
-      );
-    }
+    assertUniqueTraceRegistryEntries(matches);
 
     return matches[0] ?? null;
   }
@@ -707,19 +718,18 @@ export function createTraceRegistryClient(
       ),
     );
 
-    const seen = new Set<string>();
+    assertUniqueTraceRegistryEntries(
+      shardsPerBucket.flatMap((bucketShards) =>
+        bucketShards.flatMap((shard) => shard.datum.entries),
+      ),
+    );
+
     const entries: TraceRegistryEntry[] = [];
 
     for (const bucketShards of shardsPerBucket) {
       for (const shard of bucketShards) {
         for (const entry of shard.datum.entries) {
           const normalizedHash = entry.voucher_hash.toLowerCase();
-          if (seen.has(normalizedHash)) {
-            throw new Error(
-              `Duplicate trace-registry entries detected for voucher hash ${normalizedHash}`,
-            );
-          }
-          seen.add(normalizedHash);
           entries.push({
             voucher_hash: normalizedHash,
             full_denom: entry.full_denom,
