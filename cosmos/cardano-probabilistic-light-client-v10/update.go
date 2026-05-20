@@ -398,6 +398,9 @@ func (cs *ClientState) poolRegistrationCutoffSlotExclusive() (uint64, error) {
 	if cs == nil {
 		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "client state missing")
 	}
+	if cs.PoolRegistrationCutoffSlotExclusive != 0 {
+		return cs.PoolRegistrationCutoffSlotExclusive, nil
+	}
 	if cs.SystemStartUnixNs == 0 {
 		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "system_start_unix_ns must be greater than zero")
 	}

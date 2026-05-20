@@ -117,13 +117,14 @@ func (cs ClientState) Validate() error {
 
 func (cs ClientState) ZeroCustomFields() exported.ClientState {
 	return &ClientState{
-		ChainId:               cs.ChainId,
-		LatestHeight:          cs.LatestHeight,
-		UpgradePath:           append([]string(nil), cs.UpgradePath...),
-		HostStateNftPolicyId:  append([]byte(nil), cs.HostStateNftPolicyId...),
-		HostStateNftTokenName: append([]byte(nil), cs.HostStateNftTokenName...),
-		SystemStartUnixNs:     cs.SystemStartUnixNs,
-		SlotLengthNs:          cs.SlotLengthNs,
+		ChainId:                             cs.ChainId,
+		LatestHeight:                        cs.LatestHeight,
+		UpgradePath:                         append([]string(nil), cs.UpgradePath...),
+		HostStateNftPolicyId:                append([]byte(nil), cs.HostStateNftPolicyId...),
+		HostStateNftTokenName:               append([]byte(nil), cs.HostStateNftTokenName...),
+		SystemStartUnixNs:                   cs.SystemStartUnixNs,
+		SlotLengthNs:                        cs.SlotLengthNs,
+		PoolRegistrationCutoffSlotExclusive: cs.PoolRegistrationCutoffSlotExclusive,
 	}
 }
 

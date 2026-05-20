@@ -59,7 +59,13 @@ pub(super) async fn start_local(osmosis_dir: &Path) -> Result<(), Box<dyn std::e
     }
 
     let status = DockerCli::new(osmosis_dir)
-        .compose_output(&["-f", config::LOCAL_DOCKER_COMPOSE_FILE, "up", "-d"])
+        .compose_output(&[
+            "-f",
+            config::LOCAL_DOCKER_COMPOSE_FILE,
+            "up",
+            "-d",
+            "--build",
+        ])
         .map(|_| String::new())
         .map_err(std::io::Error::other);
 

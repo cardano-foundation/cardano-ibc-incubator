@@ -71,6 +71,7 @@ func TestZeroCustomFieldsDropsEpochVerificationState(t *testing.T) {
 	require.Zero(t, zeroed.CurrentEpochEndSlotExclusive)
 	require.Equal(t, clientState.SystemStartUnixNs, zeroed.SystemStartUnixNs)
 	require.Equal(t, clientState.SlotLengthNs, zeroed.SlotLengthNs)
+	require.Equal(t, clientState.PoolRegistrationCutoffSlotExclusive, zeroed.PoolRegistrationCutoffSlotExclusive)
 }
 
 func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T) {

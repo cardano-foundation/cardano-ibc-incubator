@@ -55,6 +55,7 @@ message ClientState {
   uint64 system_start_unix_ns = 15;
   uint64 slot_length_ns = 16;
   repeated EpochContext epoch_contexts = 17;
+  uint64 pool_registration_cutoff_slot_exclusive = 18;
 }
 
 message ConsensusState {

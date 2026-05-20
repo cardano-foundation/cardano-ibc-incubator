@@ -131,6 +131,7 @@ import {
   loadStakeWeightedStabilityEvidenceByHeight,
   loadStakeWeightedStabilityHeaderEvidence,
 } from './stability-evidence';
+import { computePoolRegistrationCutoffSlot } from './stability-scoring';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ProofQueryOptions } from '../helpers/query-height';
 
@@ -516,6 +517,7 @@ export class QueryService {
       system_start_unix_ns: stabilitySlotTiming.systemStartUnixNs,
       slot_length_ns: stabilitySlotTiming.slotLengthNs,
       epoch_contexts: [currentEpochContext],
+      pool_registration_cutoff_slot_exclusive: computePoolRegistrationCutoffSlot(stabilityEvidence.anchorBlock),
     };
 
     const consensusStateProbabilistic: ConsensusStateProbabilistic = {

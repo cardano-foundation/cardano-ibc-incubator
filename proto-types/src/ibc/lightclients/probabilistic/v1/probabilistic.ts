@@ -58,6 +58,7 @@ export interface ClientState {
   system_start_unix_ns: bigint;
   slot_length_ns: bigint;
   epoch_contexts: EpochContext[];
+  pool_registration_cutoff_slot_exclusive: bigint;
 }
 /**
  * @name ConsensusState
@@ -413,6 +414,7 @@ function createBaseClientState(): ClientState {
     system_start_unix_ns: BigInt(0),
     slot_length_ns: BigInt(0),
     epoch_contexts: [],
+    pool_registration_cutoff_slot_exclusive: BigInt(0),
   };
 }
 /**
@@ -471,6 +473,9 @@ export const ClientState = {
     for (const v of message.epoch_contexts) {
       EpochContext.encode(v!, writer.uint32(138).fork()).ldelim();
     }
+    if (message.pool_registration_cutoff_slot_exclusive !== BigInt(0)) {
+      writer.uint32(144).uint64(message.pool_registration_cutoff_slot_exclusive);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ClientState {
@@ -528,6 +533,9 @@ export const ClientState = {
         case 17:
           message.epoch_contexts.push(EpochContext.decode(reader, reader.uint32()));
           break;
+        case 18:
+          message.pool_registration_cutoff_slot_exclusive = reader.uint64();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -564,6 +572,10 @@ export const ClientState = {
     if (isSet(object.slot_length_ns)) obj.slot_length_ns = BigInt(object.slot_length_ns.toString());
     if (Array.isArray(object?.epoch_contexts))
       obj.epoch_contexts = object.epoch_contexts.map((e: any) => EpochContext.fromJSON(e));
+    if (isSet(object.pool_registration_cutoff_slot_exclusive))
+      obj.pool_registration_cutoff_slot_exclusive = BigInt(
+        object.pool_registration_cutoff_slot_exclusive.toString(),
+      );
     return obj;
   },
   toJSON(message: ClientState): unknown {
@@ -620,6 +632,10 @@ export const ClientState = {
     } else {
       obj.epoch_contexts = [];
     }
+    message.pool_registration_cutoff_slot_exclusive !== undefined &&
+      (obj.pool_registration_cutoff_slot_exclusive = (
+        message.pool_registration_cutoff_slot_exclusive || BigInt(0)
+      ).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -662,6 +678,14 @@ export const ClientState = {
       message.slot_length_ns = BigInt(object.slot_length_ns.toString());
     }
     message.epoch_contexts = object.epoch_contexts?.map((e) => EpochContext.fromPartial(e)) || [];
+    if (
+      object.pool_registration_cutoff_slot_exclusive !== undefined &&
+      object.pool_registration_cutoff_slot_exclusive !== null
+    ) {
+      message.pool_registration_cutoff_slot_exclusive = BigInt(
+        object.pool_registration_cutoff_slot_exclusive.toString(),
+      );
+    }
     return message;
   },
 };

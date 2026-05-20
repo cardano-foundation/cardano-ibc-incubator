@@ -2593,15 +2593,17 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
         execute_script(gateway_dir, "docker", Vec::from(["compose", "stop"]), None)?;
     }
 
-    let mut script_args = vec!["compose", "up", "-d"];
+    let script_args = vec!["compose", "up", "-d", "--build"];
     if clean {
-        script_args.push("--build");
         log_or_show_progress(
             "Building and starting Gateway containers",
             &optional_progress_bar,
         );
     } else {
-        log_or_show_progress("Starting Gateway containers", &optional_progress_bar);
+        log_or_show_progress(
+            "Building and starting Gateway containers",
+            &optional_progress_bar,
+        );
     }
 
     execute_script(gateway_dir, "docker", script_args, None)?;

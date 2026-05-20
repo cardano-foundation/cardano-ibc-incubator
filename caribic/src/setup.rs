@@ -1595,7 +1595,13 @@ pub(crate) fn refresh_local_gateway_epoch_nonce(
         epoch_nonce
     ));
 
-    DockerCli::new(gateway_dir.as_path()).compose_ok(&["up", "-d", "--force-recreate", "app"])?;
+    DockerCli::new(gateway_dir.as_path()).compose_ok(&[
+        "up",
+        "-d",
+        "--build",
+        "--force-recreate",
+        "app",
+    ])?;
 
     for _ in 0..60 {
         let healthy = Command::new("curl")
