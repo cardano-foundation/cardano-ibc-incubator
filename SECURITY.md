@@ -14,7 +14,7 @@ To ensure that the security vulnerability is properly addressed, we request that
 
 2. **Privately disclose the vulnerability**: Please do not disclose the vulnerability publicly before we have had an opportunity to investigate and address the issue. We appreciate your discretion.
 
-3. **Contact us directly**: Send an email to our team at security@cardanofoudnation.org with the subject line: "[Cardano Foundation Explorer] Security Vulnerability Report"
+3. **Contact us directly**: Send an email to our team at security@cardanofoundation.org with the subject line: "[Cardano Foundation Explorer] Security Vulnerability Report"
 
 4. **Provide detailed information**: In your report, please include detailed information about the vulnerability, including steps to reproduce it and any potential impact.
 
