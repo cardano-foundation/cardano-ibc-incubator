@@ -170,22 +170,26 @@ jobs:
         run: |
           npm ci --prefix packages/cardano-ibc-planner
           npm run --prefix packages/cardano-ibc-planner build
+          npm test --prefix packages/cardano-ibc-planner
 
       - name: Build tx builder
         run: |
           npm ci --prefix packages/cardano-ibc-tx-builder --legacy-peer-deps
           npm run --prefix packages/cardano-ibc-tx-builder build
+          npm test --prefix packages/cardano-ibc-tx-builder
           npm prune --omit=dev --prefix packages/cardano-ibc-tx-builder
 
       - name: Build trace registry
         run: |
           npm ci --prefix packages/cardano-ibc-trace-registry --legacy-peer-deps
           npm run --prefix packages/cardano-ibc-trace-registry build
+          npm test --prefix packages/cardano-ibc-trace-registry
 
       - name: Build tx builder runtime
         run: |
           npm ci --prefix packages/cardano-ibc-tx-builder-runtime --legacy-peer-deps
           npm run --prefix packages/cardano-ibc-tx-builder-runtime build
+          npm test --prefix packages/cardano-ibc-tx-builder-runtime
 
   deno-offchain:
     name: Cardano Offchain Deno

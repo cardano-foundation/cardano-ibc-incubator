@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.LucidIbcAdapter = void 0;
 const lucid_1 = require("@lucid-evolution/lucid");
 const js_sha3_1 = require("js-sha3");
+const acknowledgementCodec_1 = require("./acknowledgementCodec");
 const CHANNEL_TOKEN_PREFIX = '6368616e6e656c'; // fromText('channel')
 const CLIENT_PREFIX = '6962635f636c69656e74'; // fromText('ibc_client')
 const CONNECTION_TOKEN_PREFIX = '636f6e6e656374696f6e'; // fromText('connection')
@@ -550,21 +551,7 @@ async function encodeIbcModuleRedeemer(data, Lucid) {
         receiver: Data.Bytes(),
         memo: Data.Bytes(),
     });
-    const AcknowledgementResponseSchema = Data.Enum([
-        Data.Object({
-            AcknowledgementResult: Data.Object({
-                result: Data.Bytes(),
-            }),
-        }),
-        Data.Object({
-            AcknowledgementError: Data.Object({
-                err: Data.Bytes(),
-            }),
-        }),
-    ]);
-    const AcknowledgementSchema = Data.Object({
-        response: AcknowledgementResponseSchema,
-    });
+    const AcknowledgementSchema = (0, acknowledgementCodec_1.acknowledgementSchema)(Lucid);
     const IBCModulePacketData = Data.Enum([
         Data.Object({
             TransferModuleData: Data.Tuple([FungibleTokenPacketDatumSchema]),
@@ -655,16 +642,7 @@ function encodeMintVoucherRedeemer(data, Lucid) {
                 packet_source_port: Data.Bytes(),
                 packet_source_channel: Data.Bytes(),
                 data: FungibleTokenPacketDatumSchema,
-                acknowledgement: Data.Nullable(Data.Object({
-                    response: Data.Enum([
-                        Data.Object({
-                            AcknowledgementResult: Data.Object({ result: Data.Bytes() }),
-                        }),
-                        Data.Object({
-                            AcknowledgementError: Data.Object({ err: Data.Bytes() }),
-                        }),
-                    ]),
-                })),
+                acknowledgement: Data.Nullable((0, acknowledgementCodec_1.acknowledgementSchema)(Lucid)),
             }),
         }),
     ]);
