@@ -201,16 +201,6 @@ describe('stability-scoring', () => {
     expect(metrics.qualifiedUniqueStakeBps).toBe(5000);
   });
 
-  it('allows local devnets to override the pool registration cutoff slot', () => {
-    const anchorBlock = makeBlock(701, 'anchor', 'pool-a');
-
-    expect(
-      computePoolRegistrationCutoffSlot(anchorBlock, 1_000_000_000n, {
-        CARDANO_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT: '18446744073709551615',
-      } as NodeJS.ProcessEnv),
-    ).toBe(18446744073709551615n);
-  });
-
   it('fails closed when a producing pool has no first registration slot', () => {
     const stabilityPolicy = policy({
       threshold_depth: 1n,

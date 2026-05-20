@@ -15,12 +15,11 @@ import (
 )
 
 type recoveryInvariantClientState struct {
-	UpgradePath                         []string
-	HostStateNftPolicyId                []byte
-	HostStateNftTokenName               []byte
-	SystemStartUnixNs                   uint64
-	SlotLengthNs                        uint64
-	PoolRegistrationCutoffSlotExclusive uint64
+	UpgradePath           []string
+	HostStateNftPolicyId  []byte
+	HostStateNftTokenName []byte
+	SystemStartUnixNs     uint64
+	SlotLengthNs          uint64
 }
 
 func (cs ClientState) CheckSubstituteAndUpdateState(
@@ -85,11 +84,10 @@ func IsMatchingClientState(subject, substitute ClientState) bool {
 
 func recoveryInvariantProjection(cs ClientState) recoveryInvariantClientState {
 	return recoveryInvariantClientState{
-		UpgradePath:                         append([]string(nil), cs.UpgradePath...),
-		HostStateNftPolicyId:                bytes.Clone(cs.HostStateNftPolicyId),
-		HostStateNftTokenName:               bytes.Clone(cs.HostStateNftTokenName),
-		SystemStartUnixNs:                   cs.SystemStartUnixNs,
-		SlotLengthNs:                        cs.SlotLengthNs,
-		PoolRegistrationCutoffSlotExclusive: cs.PoolRegistrationCutoffSlotExclusive,
+		UpgradePath:           append([]string(nil), cs.UpgradePath...),
+		HostStateNftPolicyId:  bytes.Clone(cs.HostStateNftPolicyId),
+		HostStateNftTokenName: bytes.Clone(cs.HostStateNftTokenName),
+		SystemStartUnixNs:     cs.SystemStartUnixNs,
+		SlotLengthNs:          cs.SlotLengthNs,
 	}
 }

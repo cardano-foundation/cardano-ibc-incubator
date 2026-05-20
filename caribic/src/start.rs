@@ -37,6 +37,7 @@ const IBC_SWAP_DAPP_READINESS_ATTEMPTS: u32 = 60;
 const IBC_SWAP_DAPP_READINESS_INTERVAL_MILLIS: u64 = 2000;
 const YACI_HEALTH_CHECK_ATTEMPTS: u32 = 36;
 const YACI_HEALTH_CHECK_INTERVAL_MILLIS: u64 = 5000;
+const LOCAL_CARDANO_NODE_CLOCK_IMAGE: &str = "cardano-node-local-clock:10.1.4-3";
 static RELAYER_REMOTE_TIP_CHECK_ONCE: Once = Once::new();
 
 mod hermes;
@@ -1805,6 +1806,20 @@ pub fn start_local_cardano_services(
         docker_env.iter().map(|(k, v)| (*k, v.as_str())).collect();
 
     if matches!(network, config::CoreCardanoNetwork::Local) {
+        execute_script(
+            cardano_dir,
+            "docker",
+            vec![
+                "build",
+                "-f",
+                "Dockerfile.local-clock",
+                "-t",
+                LOCAL_CARDANO_NODE_CLOCK_IMAGE,
+                ".",
+            ],
+            None,
+        )?;
+
         // Docker Desktop can race bind-mount creation for ./devnet/db on a clean restart if Ogmios
         // starts at the same time as cardano-node. Precreate the runtime paths and bring the node
         // up first so follow-up services see a stable database directory.

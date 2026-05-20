@@ -14,7 +14,6 @@ import { DenomTraceService } from '../services/denom-trace.service';
 import { HistoryService } from '../services/history.service';
 
 const STABILITY_SLOT_ORIGIN_NS = 1_700_000_000_000_000_000n;
-const STABILITY_POOL_REGISTRATION_CUTOFF_SLOT = 67_225_600n;
 const timestampForSlot = (slot: bigint) => STABILITY_SLOT_ORIGIN_NS + slot * 1_000_000_000n;
 const stabilityDescendantBlocks = Array.from({ length: 24 }, (_, index) => {
   const height = 101 + index;
@@ -239,7 +238,6 @@ describe('QueryService stability anchor contract', () => {
     expect(clientState.current_epoch_end_slot_exclusive).toBe(3000n);
     expect(clientState.system_start_unix_ns).toBe(STABILITY_SLOT_ORIGIN_NS);
     expect(clientState.slot_length_ns).toBe(1_000_000_000n);
-    expect(clientState.pool_registration_cutoff_slot_exclusive).toBe(STABILITY_POOL_REGISTRATION_CUTOFF_SLOT);
     expect(consensusState.timestamp).toBe(timestampForSlot(1000n));
   });
 

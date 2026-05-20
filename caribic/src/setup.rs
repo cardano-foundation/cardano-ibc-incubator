@@ -5,7 +5,7 @@ use crate::utils::{
     change_dir_permissions_read_only, delete_file, download_file, replace_text_in_file, unzip_file,
     IndicatorMessage,
 };
-use chrono::{SecondsFormat, Utc};
+use chrono::Utc;
 use console::style;
 use fs_extra::{copy_items, file::copy};
 use indicatif::ProgressBar;
@@ -18,12 +18,14 @@ use std::time::Duration;
 use std::{fs, path::Path};
 
 const CARDANO_RUNTIME_NETWORK_MARKER: &str = ".caribic-network";
-const LOCAL_CARDANO_NODE_IMAGE: &str = "ghcr.io/blinklabs-io/cardano-node:10.1.4-3";
+const LOCAL_CARDANO_NODE_IMAGE: &str = "cardano-node-local-clock:10.1.4-3";
 const LOCAL_STABILITY_SPO_COUNT: usize = 5;
 const LOCAL_STABILITY_TARGET_POOL_STAKE_LOVELACE: u64 = 900_000_000_000;
-const LOCAL_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT: &str = "18446744073709551615";
 const LOCAL_STABILITY_ASSUME_POOL_REGISTRATION_SLOT: &str = "1";
 const LOCAL_CARDANO_EPOCH_LENGTH: &str = "5000";
+const LOCAL_CARDANO_SYSTEM_START: &str = "2025-12-31T23:59:00Z";
+const LOCAL_CARDANO_START_TIME_SECONDS: i64 = 1_767_225_540;
+const LOCAL_CARDANO_SLOTS_PER_KES_PERIOD: &str = "31536000";
 const LOCAL_GATEWAY_HEALTH_URL: &str = "http://localhost:8000/health";
 const LOCAL_YACI_STORE_POSTGRES_VOLUME: &str = "cardano_yaci_store_postgres_local_data";
 const PREPROD_ENVIRONMENT_BASE_URL: &str =
@@ -1122,20 +1124,30 @@ pub fn configure_local_cardano_devnet(
     let genesis_byron_path = devnet_dir.join("genesis-byron.json");
     let genesis_shelley_path = devnet_dir.join("genesis-shelley.json");
 
-    let start_time = Utc::now();
-
     replace_text_in_file(
         &genesis_byron_path,
         r#""startTime": \d*"#,
-        &format!(r#""startTime": {}"#, start_time.timestamp()),
+        &format!(r#""startTime": {}"#, LOCAL_CARDANO_START_TIME_SECONDS),
     )?;
 
     replace_text_in_file(
         &genesis_shelley_path,
         r#""systemStart": ".*""#,
+        &format!(r#""systemStart": "{}""#, LOCAL_CARDANO_SYSTEM_START),
+    )?;
+
+    replace_text_in_file(
+        &genesis_shelley_path,
+        r#""epochLength": \d+"#,
+        &format!(r#""epochLength": {}"#, LOCAL_CARDANO_EPOCH_LENGTH),
+    )?;
+
+    replace_text_in_file(
+        &genesis_shelley_path,
+        r#""slotsPerKESPeriod": \d+"#,
         &format!(
-            r#""systemStart": "{}""#,
-            start_time.to_rfc3339_opts(SecondsFormat::Secs, true)
+            r#""slotsPerKESPeriod": {}"#,
+            LOCAL_CARDANO_SLOTS_PER_KES_PERIOD
         ),
     )?;
 
@@ -1960,10 +1972,6 @@ fn write_gateway_env_for_network(
                 ("YACI_STORE_ENDPOINT", "http://yaci-store:8080"),
                 ("CARDANO_CHAIN_HOST", "cardano-node"),
                 ("CARDANO_CHAIN_PORT", "3001"),
-                (
-                    "CARDANO_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT",
-                    LOCAL_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT,
-                ),
                 (
                     "CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT",
                     LOCAL_STABILITY_ASSUME_POOL_REGISTRATION_SLOT,

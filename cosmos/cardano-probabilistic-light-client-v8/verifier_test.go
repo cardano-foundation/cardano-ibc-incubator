@@ -234,7 +234,7 @@ func TestComputeHeaderSecurityMetricsIgnoresPoolRegistrationCutoffEnv(t *testing
 		StakeDistribution: []*StakeDistributionEntry{
 			{
 				PoolId:                "pool-a",
-				Stake:                 500,
+				Stake:                 10_000,
 				VrfKeyHash:            bytes.Repeat([]byte{0x02}, 32),
 				FirstRegistrationSlot: 3,
 			},
@@ -257,51 +257,6 @@ func TestComputeHeaderSecurityMetricsIgnoresPoolRegistrationCutoffEnv(t *testing
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), qualifiedUniquePools)
 	require.Equal(t, uint64(10000), qualifiedUniqueStakeBps)
-}
-
-func TestComputeHeaderSecurityMetricsUsesClientStatePoolRegistrationCutoff(t *testing.T) {
-	cs := newProbabilisticTestClientState()
-	cs.SystemStartUnixNs = 1_800_000_000_000_000_000
-	cs.PoolRegistrationCutoffSlotExclusive = 10
-	epochContext := &EpochContext{
-		Epoch:                 cs.CurrentEpoch,
-		EpochNonce:            bytes.Repeat([]byte{0x03}, 32),
-		SlotsPerKesPeriod:     cs.SlotsPerKesPeriod,
-		EpochStartSlot:        cs.CurrentEpochStartSlot,
-		EpochEndSlotExclusive: cs.CurrentEpochEndSlotExclusive,
-		StakeDistribution: []*StakeDistributionEntry{
-			{
-				PoolId:                "pool-a",
-				Stake:                 500,
-				VrfKeyHash:            bytes.Repeat([]byte{0x02}, 32),
-				FirstRegistrationSlot: 9,
-			},
-			{
-				PoolId:                "pool-b",
-				Stake:                 500,
-				VrfKeyHash:            bytes.Repeat([]byte{0x04}, 32),
-				FirstRegistrationSlot: 10,
-			},
-		},
-	}
-	authenticatedHeader := &authenticatedProbabilisticHeader{
-		anchorBlock: &authenticatedProbabilisticBlock{
-			height: 12,
-			hash:   "anchor-12",
-			slot:   120,
-			epoch:  cs.CurrentEpoch,
-		},
-		descendantBlocks: []*authenticatedProbabilisticBlock{
-			{height: 13, hash: "descendant-13", prevHash: "anchor-12", epoch: cs.CurrentEpoch, slotLeader: "pool-a"},
-			{height: 14, hash: "descendant-14", prevHash: "descendant-13", epoch: cs.CurrentEpoch, slotLeader: "pool-b"},
-		},
-	}
-
-	qualifiedUniquePools, qualifiedUniqueStakeBps, _, err := cs.computeHeaderSecurityMetrics(authenticatedHeader, epochContext)
-
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), qualifiedUniquePools)
-	require.Equal(t, uint64(5000), qualifiedUniqueStakeBps)
 }
 
 func TestComputeHeaderSecurityMetricsFailsClosedWhenPoolAgeIsMissing(t *testing.T) {
