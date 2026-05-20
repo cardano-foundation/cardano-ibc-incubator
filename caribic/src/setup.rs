@@ -19,7 +19,7 @@ use std::{fs, path::Path};
 
 const CARDANO_RUNTIME_NETWORK_MARKER: &str = ".caribic-network";
 const LOCAL_CARDANO_NODE_IMAGE: &str = "ghcr.io/blinklabs-io/cardano-node:10.1.4-3";
-const LOCAL_STABILITY_SPO_COUNT: usize = 3;
+const LOCAL_STABILITY_SPO_COUNT: usize = 5;
 const LOCAL_STABILITY_TARGET_POOL_STAKE_LOVELACE: u64 = 900_000_000_000;
 const LOCAL_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT: &str = "18446744073709551615";
 const LOCAL_STABILITY_ASSUME_POOL_REGISTRATION_SLOT: &str = "1";
@@ -723,13 +723,13 @@ fn remove_local_yaci_postgres_volume() -> Result<(), Box<dyn std::error::Error>>
     .into())
 }
 
-fn local_spo_ipv4(index: usize) -> &'static str {
-    match index {
-        1 => "172.29.0.11",
-        2 => "172.29.0.12",
-        3 => "172.29.0.13",
-        _ => "172.29.0.254",
+fn local_spo_ipv4(index: usize) -> Result<String, Box<dyn std::error::Error>> {
+    if !(1..=243).contains(&index) {
+        return Err(
+            format!("Local SPO index is outside supported Docker subnet range: {index}").into(),
+        );
     }
+    Ok(format!("172.29.0.{}", 10 + index))
 }
 
 fn local_spo_port(index: usize) -> u16 {
@@ -745,21 +745,24 @@ fn local_spo_topology_filename(index: usize) -> String {
     }
 }
 
-fn build_local_spo_topology(index: usize, total_spo_count: usize) -> Value {
+fn build_local_spo_topology(
+    index: usize,
+    total_spo_count: usize,
+) -> Result<Value, Box<dyn std::error::Error>> {
     let producers: Vec<Value> = (1..=total_spo_count)
         .filter(|candidate| *candidate != index)
         .map(|candidate| {
-            json!({
-                "addr": local_spo_ipv4(candidate),
+            Ok(json!({
+                "addr": local_spo_ipv4(candidate)?,
                 "port": local_spo_port(candidate),
                 "valency": 1,
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
 
-    json!({
+    Ok(json!({
         "Producers": producers
-    })
+    }))
 }
 
 fn write_local_multi_spo_topology_files(
@@ -770,7 +773,7 @@ fn write_local_multi_spo_topology_files(
         let topology_path = devnet_dir.join(local_spo_topology_filename(index));
         fs::write(
             &topology_path,
-            serde_json::to_string_pretty(&build_local_spo_topology(index, total_spo_count))
+            serde_json::to_string_pretty(&build_local_spo_topology(index, total_spo_count)?)
                 .map_err(|error| format!("Failed to serialize local SPO topology: {}", error))?,
         )
         .map_err(|error| {

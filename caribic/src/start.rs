@@ -696,25 +696,26 @@ pub async fn start_local_cardano_network(
             verbose("Cardano services started successfully");
         } else {
             let container_names = if local_spo_count > 1 {
-                vec![
-                    "cardano-node",
-                    "cardano-node-spo2",
-                    "cardano-node-spo3",
-                    "cardano-cardano-node-ogmios-1",
-                    "cardano-postgres-1",
-                    "cardano-yaci-store-postgres-1",
-                    "cardano-yaci-store-1",
-                ]
+                let mut names = vec!["cardano-node".to_string()];
+                names.extend((2..=local_spo_count).map(|index| format!("cardano-node-spo{index}")));
+                names.extend([
+                    "cardano-cardano-node-ogmios-1".to_string(),
+                    "cardano-postgres-1".to_string(),
+                    "cardano-yaci-store-postgres-1".to_string(),
+                    "cardano-yaci-store-1".to_string(),
+                ]);
+                names
             } else {
                 vec![
-                    "cardano-node",
-                    "cardano-cardano-node-ogmios-1",
-                    "cardano-postgres-1",
-                    "cardano-yaci-store-postgres-1",
-                    "cardano-yaci-store-1",
+                    "cardano-node".to_string(),
+                    "cardano-cardano-node-ogmios-1".to_string(),
+                    "cardano-postgres-1".to_string(),
+                    "cardano-yaci-store-postgres-1".to_string(),
+                    "cardano-yaci-store-1".to_string(),
                 ]
             };
-            let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_names);
+            let container_refs: Vec<&str> = container_names.iter().map(String::as_str).collect();
+            let (diagnostics, _should_fail_fast) = diagnose_container_failure(&container_refs);
             return Err(format!(
                 "Failed to start Cardano services - Ogmios health check failed after 100 seconds{}",
                 diagnostics
