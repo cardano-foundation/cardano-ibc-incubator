@@ -3,8 +3,6 @@ package probabilistic
 import (
 	"fmt"
 	"math"
-	"os"
-	"strconv"
 	"strings"
 
 	errorsmod "cosmossdk.io/errors"
@@ -397,14 +395,6 @@ func (cs *ClientState) computeHeaderSecurityMetrics(
 }
 
 func (cs *ClientState) poolRegistrationCutoffSlotExclusive() (uint64, error) {
-	if configuredCutoffSlot := os.Getenv("CARDANO_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT"); configuredCutoffSlot != "" {
-		cutoffSlot, err := strconv.ParseUint(configuredCutoffSlot, 10, 64)
-		if err != nil {
-			return 0, errorsmod.Wrapf(ErrInvalidTimestamp, "invalid CARDANO_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT %q", configuredCutoffSlot)
-		}
-		return cutoffSlot, nil
-	}
-
 	if cs == nil {
 		return 0, errorsmod.Wrap(ErrInvalidTimestamp, "client state missing")
 	}
