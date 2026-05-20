@@ -199,12 +199,7 @@ describe('PacketService denom regression coverage', () => {
     expect(spendChannelCall).toBeDefined();
     const packetDataHex = spendChannelCall?.[0]?.SendPacket?.packet?.data as string;
     expect(convertHex2String(packetDataHex)).toBe(
-      JSON.stringify({
-        amount: '10',
-        denom: canonicalDenom,
-        receiver: 'cosmos1receiver',
-        sender: senderAddress,
-      }),
+      `{"denom":"${canonicalDenom}","amount":"10","sender":"${senderAddress}","receiver":"cosmos1receiver"}`,
     );
     const packetData = JSON.parse(convertHex2String(packetDataHex));
     expect(packetData.denom).toBe(canonicalDenom);
