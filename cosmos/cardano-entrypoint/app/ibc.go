@@ -3,7 +3,6 @@ package app
 import (
 	asyncicqmodule "cardano-entrypoint/x/asyncicq/module"
 	ibcmithril "cardano-entrypoint/x/clients/mithril"
-	ibcstability "cardano-entrypoint/x/clients/stability"
 	"path/filepath"
 
 	"cosmossdk.io/core/appmodule"
@@ -200,7 +199,6 @@ func (app *App) registerIBCModules() {
 	smLightClientModule := solomachine.NewLightClientModule(app.appCodec, storeProvider)
 	mithrilLightClientModule := ibcmithril.NewLightClientModule(app.appCodec, storeProvider)
 	probabilisticLightClientModule := ibcprobabilistic.NewLightClientModule(app.appCodec, storeProvider)
-	stabilityLightClientModule := ibcstability.NewLightClientModule(app.appCodec, storeProvider)
 	wasmLightClientModule := ibcwasm.NewLightClientModule(app.WasmClientKeeper, storeProvider)
 	
 	clientKeeper.AddRoute(ibctm.ModuleName, &tmLightClientModule)
@@ -208,7 +206,6 @@ func (app *App) registerIBCModules() {
 	// The Mithril client is deprecated and intentionally not routable for new IBC client
 	// operations. Keep its AppModule registered below so historical client types can decode.
 	clientKeeper.AddRoute(ibcprobabilistic.ModuleName, &probabilisticLightClientModule)
-	clientKeeper.AddRoute(ibcstability.ModuleName, &stabilityLightClientModule)
 	clientKeeper.AddRoute(ibcwasmtypes.ModuleName, &wasmLightClientModule)
 
 	// register IBC modules
@@ -239,10 +236,9 @@ func RegisterIBC(registry cdctypes.InterfaceRegistry) map[string]appmodule.AppMo
 		icatypes.ModuleName:         icamodule.AppModule{},
 		ibctm.ModuleName:            ibctm.NewAppModule(ibctm.LightClientModule{}),
 		// Deprecated Mithril module is retained only for interface/type registration.
-		ibcmithril.ModuleName:       ibcmithril.NewAppModule(ibcmithril.LightClientModule{}),
 		ibcprobabilistic.ModuleName: ibcprobabilistic.NewAppModule(ibcprobabilistic.LightClientModule{}),
-		solomachine.ModuleName:      solomachine.NewAppModule(solomachine.LightClientModule{}),
-		ibcstability.ModuleName: ibcstability.NewAppModule(ibcstability.LightClientModule{}),
+		ibcmithril.ModuleName:   ibcmithril.NewAppModule(ibcmithril.LightClientModule{}),
+		solomachine.ModuleName:  solomachine.NewAppModule(solomachine.LightClientModule{}),
 		ibcwasmtypes.ModuleName:     ibcwasm.NewAppModule(ibcwasmkeeper.Keeper{}),
 	}
 

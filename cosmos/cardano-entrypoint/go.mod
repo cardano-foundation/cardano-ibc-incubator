@@ -126,6 +126,7 @@ require (
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.1 // indirect
 	github.com/bytedance/sonic/loader v0.5.1 // indirect
+	github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core v0.1.0 // indirect
 	github.com/catenacyber/perfsprint v0.8.2 // indirect
 	github.com/ccojocar/zxcvbn-go v1.0.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
