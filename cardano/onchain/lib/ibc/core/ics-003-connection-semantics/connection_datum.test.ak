@@ -14,7 +14,7 @@ const mock_counterparty_client_id = "counterparty_client_id"
 
 const mock_key_prefix = "prefix"
 
-const mock_delay_period = 100
+const mock_delay_period = 0
 
 const mock_policy_id = #"786a02f742015903c6c6fd852552d272912f4740e1584761"
 

@@ -99,6 +99,8 @@ describe('Redeemer encoding regression', () => {
             root: { hash: 'bb' },
           },
           height: HEIGHT,
+          processed_time: 0n,
+          processed_height: 0n,
           delay_time_period: 0n,
           delay_block_period: 0n,
           proof: EMPTY_PROOF as any,
@@ -110,7 +112,7 @@ describe('Redeemer encoding regression', () => {
     );
 
     expect(encoded).toBe(
-      'd87988d879884a656e747279706f696e74d879820103187818f00ad879820000d8798200183280d87983187b41aad8798141bbd87982000b0000d8798180d879818243696263447061746847636f6e74656e74',
+      'd8798ad879884a656e747279706f696e74d879820103187818f00ad879820000d8798200183280d87983187b41aad8798141bbd87982000b00000000d8798180d879818243696263447061746847636f6e74656e74',
     );
   });
 

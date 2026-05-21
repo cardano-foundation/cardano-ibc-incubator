@@ -51,7 +51,7 @@ import {
   validateAndFormatTimeoutPacketParams,
 } from './helper/packet.validate';
 import { encodeVerifyProofRedeemer, VerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
-import { getBlockDelay } from '../shared/helpers/verify';
+import { getBlockDelay, getHeightMapValue } from '../shared/helpers/verify';
 import { packetAcknowledgementPath, packetCommitmentPath, packetReceiptPath } from '../shared/helpers/packet-keys';
 import { Order as ChannelOrder } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
 import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
@@ -1426,11 +1426,18 @@ export class PacketService {
       );
     }
     const consensusState = consensusEntry[1];
+    const processedTime = getHeightMapValue(clientDatum.state.processedTimes, consensusEntry[0]);
+    const processedHeight = getHeightMapValue(clientDatum.state.processedHeights, consensusEntry[0]);
+    if (processedTime == null || processedHeight == null) {
+      throw new GrpcInternalException(`Missing processed delay metadata at proof height revisionNumber/revisionHeight`);
+    }
     const verifyProofRedeemer: VerifyProofRedeemer = {
       VerifyMembership: {
         cs: clientDatum.state.clientState,
         cons_state: consensusState,
         height: recvPacketOperator.proofHeight,
+        processed_time: processedTime,
+        processed_height: processedHeight,
         delay_time_period: connectionDatum.state.delay_period,
         delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
         proof: recvPacketOperator.proofCommitment,
@@ -2054,11 +2061,18 @@ export class PacketService {
       );
     }
     const consensusState = consensusEntry[1];
+    const processedTime = getHeightMapValue(clientDatum.state.processedTimes, consensusEntry[0]);
+    const processedHeight = getHeightMapValue(clientDatum.state.processedHeights, consensusEntry[0]);
+    if (processedTime == null || processedHeight == null) {
+      throw new GrpcInternalException(`Missing processed delay metadata at proof height revisionNumber/revisionHeight`);
+    }
     const verifyProofRedeemer: VerifyProofRedeemer = {
       VerifyNonMembership: {
         cs: clientDatum.state.clientState,
         cons_state: consensusState,
         height: timeoutPacketOperator.proofHeight,
+        processed_time: processedTime,
+        processed_height: processedHeight,
         delay_time_period: connectionDatum.state.delay_period,
         delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
         proof: timeoutPacketOperator.proofUnreceived,
@@ -2614,11 +2628,18 @@ export class PacketService {
       );
     }
     const consensusState = consensusEntry[1];
+    const processedTime = getHeightMapValue(clientDatum.state.processedTimes, consensusEntry[0]);
+    const processedHeight = getHeightMapValue(clientDatum.state.processedHeights, consensusEntry[0]);
+    if (processedTime == null || processedHeight == null) {
+      throw new GrpcInternalException(`Missing processed delay metadata at proof height revisionNumber/revisionHeight`);
+    }
     const verifyProofRedeemer: VerifyProofRedeemer = {
       VerifyMembership: {
         cs: clientDatum.state.clientState,
         cons_state: consensusState,
         height: ackPacketOperator.proofHeight,
+        processed_time: processedTime,
+        processed_height: processedHeight,
         delay_time_period: connectionDatum.state.delay_period,
         delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
         proof: ackPacketOperator.proofAcked,

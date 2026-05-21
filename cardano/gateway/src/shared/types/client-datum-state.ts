@@ -5,4 +5,6 @@ import { Height } from './height';
 export type ClientDatumState = {
   clientState: ClientState;
   consensusStates: Map<Height, ConsensusState>;
+  processedTimes: Map<Height, bigint>;
+  processedHeights: Map<Height, bigint>;
 };

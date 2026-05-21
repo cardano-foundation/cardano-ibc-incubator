@@ -87,12 +87,17 @@ class ClientDatumMockBuilder {
             },
           ],
         ]),
+        processedTimes: new Map(),
+        processedHeights: new Map(),
       },
       token: {
         policyId: 'd8eb6002f13ddcedc0eaea14c1de735ef8bcbd406994e92f8719a78e',
         name: 'ce52cefc337632623d13194c25eb90c346d13c6cf2c9db6436',
       },
     };
+    const consensusHeights = Array.from(this.clientDatum.state.consensusStates.keys());
+    this.clientDatum.state.processedTimes = new Map(consensusHeights.map((height) => [height, 0n]));
+    this.clientDatum.state.processedHeights = new Map(consensusHeights.map((height) => [height, 0n]));
   }
   withChainId(chainId: string): ClientDatumMockBuilder {
     this.clientDatum.state.clientState.chainId = chainId;

@@ -75,6 +75,11 @@ pub fn update_client(
           Pair(height, consensus_state),
           ..client_datum.state.consensus_states
         ],
+        processed_times: [Pair(height, 0), ..client_datum.state.processed_times],
+        processed_heights: [
+          Pair(height, 0),
+          ..client_datum.state.processed_heights
+        ],
       },
     }
 
