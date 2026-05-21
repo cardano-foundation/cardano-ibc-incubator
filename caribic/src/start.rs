@@ -2681,7 +2681,7 @@ fn ensure_gateway_dependencies(
     );
 
     let lockfile_present = gateway_dir.join("package-lock.json").exists();
-    
+
     let install_args: Vec<&str> = if lockfile_present {
         vec!["ci", "--legacy-peer-deps"]
     } else {
