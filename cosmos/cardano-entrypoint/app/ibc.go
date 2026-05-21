@@ -40,6 +40,8 @@ import (
 	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 	solomachine "github.com/cosmos/ibc-go/v10/modules/light-clients/06-solomachine"
 	ibctm "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+	ibcapi "github.com/cosmos/ibc-go/v10/modules/core/api"
+	transferv2 "github.com/cosmos/ibc-go/v10/modules/apps/transfer/v2"
 	// this line is used by starport scaffolding # ibc/app/import
 )
 
@@ -135,6 +137,9 @@ func (app *App) registerIBCModules() {
 		pfmrouterkeeper.DefaultForwardTransferPacketTimeoutTimestamp,
 	)
 
+	// IBC v2 transfer stack. No callbacks middleware wrapper — see import block.
+	var ibcv2TransferStack ibcapi.IBCModule = transferv2.NewIBCModule(app.TransferKeeper)
+
 	// Create interchain account keepers
 	app.ICAHostKeeper = icahostkeeper.NewKeeper(
 		app.appCodec,
@@ -178,6 +183,10 @@ func (app *App) registerIBCModules() {
 	// this line is used by starport scaffolding # ibc/app/module
 
 	app.IBCKeeper.SetRouter(ibcRouter)
+
+	ibcRouterV2 := ibcapi.NewRouter()
+	ibcRouterV2.AddRoute(ibctransfertypes.PortID, ibcv2TransferStack)
+	app.IBCKeeper.SetRouterV2(ibcRouterV2)
 
 	wasmConfig := ibcwasmtypes.WasmConfig{
 		DataDir:               filepath.Join(DefaultNodeHome, "ibc_08-wasm_client_data"),

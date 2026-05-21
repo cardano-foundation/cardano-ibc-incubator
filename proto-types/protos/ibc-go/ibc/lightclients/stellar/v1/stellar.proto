@@ -1,0 +1,79 @@
+syntax = "proto3";
+package ibc.lightclients.stellar.v1;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/cardano-foundation/cardano-ibc-incubator/proto-types/ibc/lightclients/stellar/v1";
+
+// Height for the Stellar client. revision_number is always 0 (Stellar has no
+// chain-id-encoded revision); revision_height carries the ledger sequence number.
+message Height {
+  option (gogoproto.goproto_getters) = false;
+
+  uint64 revision_number = 1;
+  uint64 revision_height = 2;
+}
+
+// One validator signature on an SCP statement. Stage 1 carries exactly one envelope
+// (the nomination leader from scp_value.ext.signed). Stage 2 carries the full FBA
+// quorum from archive-fetched checkpoints. See
+// docs/stellar-ibc/07-proof-availability-and-smt.md.
+message ScpEnvelope {
+  option (gogoproto.goproto_getters) = false;
+
+  // 32-byte Ed25519 public key of the signing validator.
+  bytes node_id = 1;
+  // XDR-encoded SCPStatement.
+  bytes statement_xdr = 2;
+  // Ed25519 signature over statement_xdr.
+  bytes signature = 3;
+}
+
+message ClientState {
+  option (gogoproto.goproto_getters) = false;
+
+  string chain_id = 1;
+  Height latest_height = 2;
+  Height frozen_height = 3;
+  // 32-byte Ed25519 public keys of the validators the client trusts to sign SCP
+  // EXTERNALIZE statements. Stage 1: one nomination leader. Stage 2: full quorum.
+  repeated bytes trusted_validators = 4;
+  // ICS-23 proof spec(s) for the gateway's fixed-depth-64 binary SMT. See
+  // docs/stellar-ibc/08-ics23-proof-generation-for-ibcv2.md.
+  repeated bytes proof_specs = 5;
+}
+
+message ConsensusState {
+  option (gogoproto.goproto_getters) = false;
+
+  // Unix seconds, per ICS-2 §getTimestamp().
+  uint64 timestamp = 1;
+  // 32-byte LedgerHeader hash — chain linkage via LedgerHeader.previous_ledger_hash.
+  bytes ledger_hash = 2;
+  // 32-byte SMT root (the value verifyMembership proves against).
+  bytes root = 3;
+}
+
+message StellarHeader {
+  option (gogoproto.goproto_getters) = false;
+
+  // Stellar ledger sequence number.
+  uint64 ledger_seq = 1;
+  // XDR-encoded LedgerHeader fetched via Soroban RPC `getLedger`.
+  bytes ledger_header_xdr = 2;
+  // 32-byte SMT root computed by the gateway for this ledger sequence.
+  bytes ibc_state_root = 3;
+  // One envelope (Stage 1) or full quorum (Stage 2). See ScpEnvelope.
+  repeated ScpEnvelope scp_envelopes = 4;
+  // Trusted height this header is validated from (the height of the trusted
+  // ConsensusState used by the ValidityPredicate).
+  Height trusted_height = 5;
+}
+
+message Misbehaviour {
+  option (gogoproto.goproto_getters) = false;
+
+  string client_id = 1 [deprecated = true];
+  StellarHeader header_1 = 2 [(gogoproto.customname) = "Header1"];
+  StellarHeader header_2 = 3 [(gogoproto.customname) = "Header2"];
+}
