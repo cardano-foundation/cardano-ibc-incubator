@@ -129,6 +129,14 @@ fn get_mock_client_datum(latest_height: Height) -> ClientDatum {
     state: ClientDatumState {
       client_state: mock_client_state,
       consensus_states: mock_consensus_states,
+      processed_times: list.map(
+        mock_consensus_states,
+        fn(pair) { Pair(pair.1st, 0) },
+      ),
+      processed_heights: list.map(
+        mock_consensus_states,
+        fn(pair) { Pair(pair.1st, 0) },
+      ),
     },
     token: mock_auth_token,
   }
@@ -171,6 +179,14 @@ test test_is_initialized_valid_success() {
       state: ClientDatumState {
         client_state: mock_client_state,
         consensus_states: mock_consensus_states,
+        processed_times: list.map(
+          mock_consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          mock_consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
       },
       token: mock_auth_token,
     }
@@ -218,6 +234,14 @@ test test_is_initialized_valid_fail_with_invalid_client_state() fail {
       state: ClientDatumState {
         client_state: mock_client_state,
         consensus_states: mock_consensus_states,
+        processed_times: list.map(
+          mock_consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          mock_consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
       },
       token: mock_auth_token,
     }
@@ -249,6 +273,14 @@ test test_is_initialized_valid_fail_with_invalid_consensus_states() fail {
       state: ClientDatumState {
         client_state: mock_client_state,
         consensus_states: mock_consensus_states,
+        processed_times: list.map(
+          mock_consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          mock_consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
       },
       token: mock_auth_token,
     }
@@ -295,6 +327,14 @@ test test_is_initialized_valid_fail_with_invalid_datum_token() fail {
       state: ClientDatumState {
         client_state: mock_client_state,
         consensus_states: mock_consensus_states,
+        processed_times: list.map(
+          mock_consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          mock_consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
       },
       token: mock_invalid_auth_token,
     }
@@ -326,6 +366,26 @@ test test_update_state_succeed_01() {
           ),
           ..mock_client_datum.state.consensus_states
         ],
+        processed_times: list.map(
+          [
+            Pair(
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+            ),
+            ..mock_client_datum.state.consensus_states
+          ],
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          [
+            Pair(
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+            ),
+            ..mock_client_datum.state.consensus_states
+          ],
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
         client_state: ClientState {
           ..mock_client_datum.state.client_state,
           latest_height: mock_header_latest_height,
@@ -364,6 +424,26 @@ test test_update_state_succeed_02() {
           ),
           ..mock_client_datum.state.consensus_states
         ],
+        processed_times: list.map(
+          [
+            Pair(
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+            ),
+            ..mock_client_datum.state.consensus_states
+          ],
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          [
+            Pair(
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+            ),
+            ..mock_client_datum.state.consensus_states
+          ],
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
       },
     }
   client_datum.update_state(
@@ -401,6 +481,26 @@ test test_update_state_succeed_03() {
           ),
           ..mock_client_datum.state.consensus_states
         ],
+        processed_times: list.map(
+          [
+            Pair(
+              Height { revision_number: 0, revision_height: 88 },
+              pruned_cons_state,
+            ),
+            ..mock_client_datum.state.consensus_states
+          ],
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          [
+            Pair(
+              Height { revision_number: 0, revision_height: 88 },
+              pruned_cons_state,
+            ),
+            ..mock_client_datum.state.consensus_states
+          ],
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
       },
     }
   let tx_valid_from =
@@ -433,6 +533,31 @@ test test_update_state_succeed_03() {
       state: ClientDatumState {
         ..mock_client_datum.state,
         consensus_states: expected_cons_state,
+        processed_times: list.map(
+          expected_cons_state,
+          fn(pair) {
+            if pair.1st == header.get_height(mock_header) {
+              Pair(pair.1st, tx_valid_from * 1_000_000)
+            } else {
+              Pair(pair.1st, 0)
+            }
+          },
+        ),
+        processed_heights: list.map(
+          expected_cons_state,
+          fn(pair) {
+            if pair.1st == header.get_height(mock_header) {
+              Pair(
+                pair.1st,
+                client_datum.processed_height_from_time(
+                  tx_valid_from * 1_000_000,
+                ),
+              )
+            } else {
+              Pair(pair.1st, 0)
+            }
+          },
+        ),
       },
     }
   client_datum.update_state(
@@ -464,6 +589,26 @@ test test_update_state_return_false_01() {
           ),
           ..mock_client_datum.state.consensus_states
         ],
+        processed_times: list.map(
+          [
+            Pair(
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+            ),
+            ..mock_client_datum.state.consensus_states
+          ],
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          [
+            Pair(
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+            ),
+            ..mock_client_datum.state.consensus_states
+          ],
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
         client_state: ClientState {
           ..mock_client_datum.state.client_state,
           latest_height: mock_header_latest_height,
@@ -500,6 +645,26 @@ test test_update_state_return_false_02() {
           ),
           ..mock_client_datum.state.consensus_states
         ],
+        processed_times: list.map(
+          [
+            Pair(
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+            ),
+            ..mock_client_datum.state.consensus_states
+          ],
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          [
+            Pair(
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+            ),
+            ..mock_client_datum.state.consensus_states
+          ],
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
       },
     }
   !client_datum.update_state(
@@ -530,6 +695,26 @@ test test_update_state_fail_when_input_consensus_state_contain_header_height_key
           ),
           ..mock_client_datum.state.consensus_states
         ],
+        processed_times: list.map(
+          [
+            Pair(
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+            ),
+            ..mock_client_datum.state.consensus_states
+          ],
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          [
+            Pair(
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+            ),
+            ..mock_client_datum.state.consensus_states
+          ],
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
       },
     }
   let output_client_datum =
@@ -544,6 +729,26 @@ test test_update_state_fail_when_input_consensus_state_contain_header_height_key
           ),
           ..mock_client_datum.state.consensus_states
         ],
+        processed_times: list.map(
+          [
+            Pair(
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+            ),
+            ..mock_client_datum.state.consensus_states
+          ],
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          [
+            Pair(
+              header.get_height(mock_header),
+              header.consensus_state(mock_header),
+            ),
+            ..mock_client_datum.state.consensus_states
+          ],
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
       },
     }
   client_datum.update_state(

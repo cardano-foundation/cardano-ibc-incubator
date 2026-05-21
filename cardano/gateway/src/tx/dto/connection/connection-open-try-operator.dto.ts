@@ -7,6 +7,7 @@ export type ConnectionOpenTryOperator = {
   clientId: string;
   counterparty: Counterparty;
   versions: Version[];
+  delayPeriod: bigint;
   counterpartyClientState: string;
   proofInit: MerkleProof;
   proofClient: MerkleProof;

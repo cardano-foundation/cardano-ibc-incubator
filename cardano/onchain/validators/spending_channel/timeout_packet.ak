@@ -226,11 +226,17 @@ fn validate_timeout_unordered_packet_proof(
     )
   expect Some(consensus_state) =
     pairs.get_first(client_datum_state.consensus_states, proof_height)
+  expect Some(processed_time) =
+    pairs.get_first(client_datum_state.processed_times, proof_height)
+  expect Some(processed_height) =
+    pairs.get_first(client_datum_state.processed_heights, proof_height)
 
   verify_proof_redeemer == VerifyNonMembership {
     cs: client_datum_state.client_state,
     cons_state: consensus_state,
     height: proof_height,
+    processed_time,
+    processed_height,
     delay_time_period: time_delay,
     delay_block_period: block_delay,
     proof,
@@ -269,11 +275,17 @@ fn validate_timeout_ordered_packet_proof(
     )
   expect Some(consensus_state) =
     pairs.get_first(client_datum_state.consensus_states, proof_height)
+  expect Some(processed_time) =
+    pairs.get_first(client_datum_state.processed_times, proof_height)
+  expect Some(processed_height) =
+    pairs.get_first(client_datum_state.processed_heights, proof_height)
 
   verify_proof_redeemer == VerifyMembership {
     cs: client_datum_state.client_state,
     cons_state: consensus_state,
     height: proof_height,
+    processed_time,
+    processed_height,
     delay_time_period: time_delay,
     delay_block_period: block_delay,
     proof,

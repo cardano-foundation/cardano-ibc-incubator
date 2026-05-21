@@ -269,6 +269,8 @@ fn setup() -> MockData {
       state: ClientDatumState {
         client_state,
         consensus_states: [Pair(proof_height, cons_state)],
+        processed_times: [Pair(proof_height, 0)],
+        processed_heights: [Pair(proof_height, 0)],
       },
       token: client_token,
     }
@@ -427,6 +429,11 @@ fn update_client(
         consensus_states: [
           Pair(height, consensus_state),
           ..client_datum.state.consensus_states
+        ],
+        processed_times: [Pair(height, 0), ..client_datum.state.processed_times],
+        processed_heights: [
+          Pair(height, 0),
+          ..client_datum.state.processed_heights
         ],
       },
     }

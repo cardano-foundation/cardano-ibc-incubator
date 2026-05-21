@@ -5,4 +5,5 @@ export type ConnectionOpenInitOperator = {
   clientId: string;
   counterparty: Counterparty;
   versions: Version[];
+  delayPeriod: bigint;
 };

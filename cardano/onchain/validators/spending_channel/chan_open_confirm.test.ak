@@ -255,6 +255,8 @@ test succeed_chan_open_confirm() {
       cs: client_datum.state.client_state,
       cons_state,
       height: proof_height,
+      processed_time: 0,
+      processed_height: 0,
       delay_time_period: time_delay,
       delay_block_period: block_delay,
       proof: proof_ack,

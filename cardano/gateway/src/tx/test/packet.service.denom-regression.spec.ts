@@ -348,6 +348,8 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
           latestHeight: { revisionNumber: 0n, revisionHeight: 44n },
         },
         consensusStates: new Map([[proofHeight, { timestamp: 0n, root: { hash: 'consensus-root' } }]]),
+        processedTimes: new Map([[proofHeight, 0n]]),
+        processedHeights: new Map([[proofHeight, 0n]]),
       },
     };
 
@@ -542,6 +544,8 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
           latestHeight: { revisionNumber: 0n, revisionHeight: 44n },
         },
         consensusStates: new Map([[proofHeight, { timestamp: 0n, root: { hash: 'consensus-root' } }]]),
+        processedTimes: new Map([[proofHeight, 0n]]),
+        processedHeights: new Map([[proofHeight, 0n]]),
       },
     };
 
@@ -744,6 +748,8 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
           latestHeight: { revisionNumber: 0n, revisionHeight: 44n },
         },
         consensusStates: new Map([[proofHeight, { timestamp: 0n, root: { hash: 'consensus-root' } }]]),
+        processedTimes: new Map([[proofHeight, 0n]]),
+        processedHeights: new Map([[proofHeight, 0n]]),
       },
     };
     lucidServiceMock.findUtxoByUnit

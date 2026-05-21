@@ -157,6 +157,10 @@ pub fn verify_membership(
   cs: ClientState,
   cons_state: ConsensusState,
   height: Height,
+  processed_time: Int,
+  processed_height: Int,
+  current_time: Int,
+  current_height: Int,
   delay_time_period: Int,
   delay_block_period: Int,
   proof: MerkleProof,
@@ -165,7 +169,14 @@ pub fn verify_membership(
 ) -> Bool {
   expect height.compare(get_latest_height(cs), height) != Less
   expect
-    verify_delay_period_passed(height, delay_time_period, delay_block_period)
+    verify_delay_period_passed(
+      processed_time,
+      processed_height,
+      current_time,
+      current_height,
+      delay_time_period,
+      delay_block_period,
+    )
   merkle.verify_membership(proof, cs.proof_specs, cons_state.root, path, value)
 }
 
@@ -173,6 +184,10 @@ pub fn verify_non_membership(
   cs: ClientState,
   cons_state: ConsensusState,
   height: Height,
+  processed_time: Int,
+  processed_height: Int,
+  current_time: Int,
+  current_height: Int,
   delay_time_period: Int,
   delay_block_period: Int,
   proof: MerkleProof,
@@ -180,14 +195,29 @@ pub fn verify_non_membership(
 ) -> Bool {
   expect height.compare(get_latest_height(cs), height) != Less
   expect
-    verify_delay_period_passed(height, delay_time_period, delay_block_period)
+    verify_delay_period_passed(
+      processed_time,
+      processed_height,
+      current_time,
+      current_height,
+      delay_time_period,
+      delay_block_period,
+    )
   merkle.verify_non_membership(proof, cs.proof_specs, cons_state.root, path)
 }
 
 fn verify_delay_period_passed(
-  _proof_height: Height,
-  _delay_time_period: Int,
-  _delay_block_period: Int,
+  processed_time: Int,
+  processed_height: Int,
+  current_time: Int,
+  current_height: Int,
+  delay_time_period: Int,
+  delay_block_period: Int,
 ) -> Bool {
-  True
+  and {
+    delay_time_period >= 0,
+    delay_block_period >= 0,
+    current_time >= processed_time + delay_time_period,
+    current_height >= processed_height + delay_block_period,
+  }
 }
