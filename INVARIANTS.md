@@ -343,8 +343,12 @@ Covered by `contract.transfer.native_send.escrow_increases_exactly`,
 `contract.transfer.native_ack.no_refund`, and
 `contract.transfer.recv_source.unescrows_exactly`.
 
-The native-token accounting properties construct exact escrow shard inputs and
-outputs for an existing native asset shard. They prove these invariants:
+The native-token accounting properties now have two layers. The helper-level
+properties check exact value deltas for small focused accounting fixtures. The
+validator-level properties build full `spending_transfer_module` transactions
+with the channel redeemer, module callback or operator redeemer, HostState
+co-spend, operation-specific voucher or escrow-shard redeemer, and escrow shard
+inputs/outputs where the transition requires them. They prove these invariants:
 
 - A native send must increase the matching escrow shard by exactly the transfer
   amount.
@@ -361,8 +365,12 @@ Covered by `contract.transfer.voucher_send.burns_exactly`,
 `contract.transfer.voucher_error_ack.remints_exactly`, and
 `contract.transfer.recv_sink.mints_voucher_exactly`.
 
-The voucher accounting properties build near-valid voucher packet flows and
-check the exact voucher-policy mint value. They prove these invariants:
+The voucher accounting properties also have two layers. The helper-level
+properties check exact voucher-policy mint or burn values. The validator-level
+properties build full `spending_transfer_module` transactions for voucher send,
+sink-chain receive, and error acknowledgement refund paths, including the
+channel packet redeemer, module redeemer, HostState co-spend, and voucher policy
+redeemer expected by the module validator. They prove these invariants:
 
 - Sending vouchers from a sink chain must burn exactly the packet amount.
 - Error acknowledgements for sink-chain voucher sends must remint exactly the
@@ -381,7 +389,10 @@ Covered by `contract.transfer.invalid_extra_voucher_mint_rejected`,
 `contract.transfer.invalid_receiver_address_rejected`.
 
 The mutation properties add one malicious difference to otherwise near-valid
-accounting fixtures. They prove these invariants:
+accounting fixtures. The full validator-level mutations currently cover wrong
+send escrow deltas and wrong native-token timeout refund amounts; the remaining
+mutation labels are helper-level accounting checks. Together, they prove these
+invariants:
 
 - A transaction that mints any extra voucher-policy asset beyond the expected
   voucher amount is rejected.
@@ -758,7 +769,6 @@ coverage for:
 - full end-to-end connection handshake validator contexts,
 - full end-to-end channel handshake validator contexts,
 - full end-to-end packet lifecycle validator contexts,
-- full end-to-end transfer accounting validator contexts,
 - full end-to-end voucher metadata validator contexts,
 - misbehaviour freezing.
 

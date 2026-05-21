@@ -1,3 +1,4 @@
+use aiken/fuzz
 use aiken/primitive/bytearray
 use aiken/primitive/string
 use cardano/address.{from_script, from_verification_key}
@@ -39,6 +40,7 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, LeafOp,
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
+use ibc/testing/fuzz_dsl
 use ibc/utils/string as string_utils
 use spending_transfer_module
 
@@ -466,6 +468,663 @@ fn build_packet(
     }
 
   (ftpd, packet)
+}
+
+fn run_transfer_module_transition(
+  mock: MockData,
+  transaction: Transaction,
+  module_redeemer: IBCModuleRedeemer,
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
+  fuzz_dsl.protocol_tx_from_transaction(
+    fuzz_dsl.model("transfer", "module"),
+    fuzz_dsl.model("transfer", "module.after"),
+    mutation,
+    transaction,
+  )
+    |> fuzz_dsl.with_protocol_validator_check(
+        "spending_transfer_module",
+        spending_transfer_module.spend_transfer_module.spend(
+          mock.port_token,
+          mock.module_token,
+          mock.port_id,
+          mock.transfer_escrow_shard_policy_id,
+          mock.channel_minting_policy_id,
+          mock.voucher_minting_policy_id,
+          mock.host_state_nft_policy_id,
+          None,
+          module_redeemer,
+          mock.module_input.output_reference,
+          transaction,
+        ),
+      )
+}
+
+fn native_send_escrow_fixture(
+  escrow_amount: Int,
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
+  let mock = setup()
+  let transfer_amount = 1234
+  let receiver = mock.cardano_public_key_hash
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
+  let source_port = "port-0"
+  let source_channel = "channel-0"
+  let denom = "6c6f76656c616365"
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(mock.channel_id, denom)
+  let escrow_output =
+    transfer_escrow_output(
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      mock.channel_id,
+      denom,
+      escrow_amount,
+    )
+  let outputs =
+    [
+      mock.module_output,
+      escrow_output,
+      mock.channel_output,
+      mock.host_state_output,
+    ]
+  let (ftpd, packet) =
+    build_packet(
+      denom,
+      transfer_amount,
+      mock.cosmos_address,
+      receiver,
+      source_port,
+      source_channel,
+      mock.port_id,
+      mock.channel_id,
+    )
+  let module_redeemer: Redeemer =
+    Operator(
+      TransferModuleOperator(
+        Transfer { channel_id: mock.channel_id, data: ftpd },
+      ),
+    )
+  let channel_redeemer: Redeemer = SendPacket { packet }
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      redeemers,
+      mint: from_asset(
+        mock.transfer_escrow_shard_policy_id,
+        shard_token_name,
+        1,
+      ),
+    }
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+
+  run_transfer_module_transition(mock, transaction, module_redeemer, mutation)
+}
+
+fn recv_source_unescrow_fixture(
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
+  let mock = setup()
+  let transfer_amount = 1234
+  let receiver = mock.cardano_public_key_hash
+  expect Some(receiver_public_key_hash) =
+    string_utils.hex_string_to_bytes(receiver)
+  let receiver_output =
+    Output {
+      address: from_verification_key(receiver_public_key_hash),
+      value: from_asset(ada_policy_id, ada_asset_name, transfer_amount),
+      datum: NoDatum,
+      reference_script: None,
+    }
+  let outputs =
+    [
+      mock.module_output,
+      mock.channel_output,
+      receiver_output,
+      mock.host_state_output,
+    ]
+  let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
+  let source_port = "port-0"
+  let source_channel = "channel-0"
+  let denom =
+    transfer_coin.get_denom_prefix(source_port, source_channel)
+      |> bytearray.concat("6c6f76656c616365")
+  let escrow_input =
+    transfer_escrow_input(
+      1,
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      mock.channel_id,
+      "6c6f76656c616365",
+      transfer_amount,
+    )
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(mock.channel_id, "6c6f76656c616365")
+  let inputs =
+    [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
+  let (ftpd, packet) =
+    build_packet(
+      denom,
+      transfer_amount,
+      mock.cosmos_address,
+      receiver,
+      source_port,
+      source_channel,
+      mock.port_id,
+      mock.channel_id,
+    )
+  let module_redeemer: Redeemer =
+    Callback(
+      OnRecvPacket {
+        channel_id: mock.channel_id,
+        acknowledgement,
+        data: TransferModuleData(ftpd),
+      },
+    )
+  let channel_redeemer: Redeemer =
+    RecvPacket {
+      packet,
+      proof_commitment: mock.proof,
+      proof_height: mock.proof_height,
+    }
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      redeemers,
+      mint: from_asset(
+        mock.transfer_escrow_shard_policy_id,
+        shard_token_name,
+        -1,
+      ),
+    }
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+
+  run_transfer_module_transition(mock, transaction, module_redeemer, mutation)
+}
+
+fn timeout_unescrow_fixture(
+  refund_amount: Int,
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
+  let mock = setup()
+  let transfer_amount = 1234
+  let sender = mock.cardano_public_key_hash
+  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  let receiver_output =
+    Output {
+      address: from_verification_key(sender_public_key_hash),
+      value: from_asset(
+        ada_policy_id,
+        ada_asset_name,
+        refund_amount + 1_000_000,
+      ),
+      datum: NoDatum,
+      reference_script: None,
+    }
+  let outputs =
+    [
+      mock.module_output,
+      mock.channel_output,
+      receiver_output,
+      mock.host_state_output,
+    ]
+  let source_port = "port-0"
+  let source_channel = "channel-0"
+  let denom = "6c6f76656c616365"
+  let escrow_input =
+    transfer_escrow_input(
+      1,
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      source_channel,
+      denom,
+      transfer_amount,
+    )
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(source_channel, denom)
+  let inputs =
+    [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
+  let (ftpd, packet) =
+    build_packet(
+      denom,
+      transfer_amount,
+      sender,
+      mock.cosmos_address,
+      source_port,
+      source_channel,
+      mock.port_id,
+      mock.channel_id,
+    )
+  let module_redeemer: Redeemer =
+    Callback(
+      OnTimeoutPacket {
+        channel_id: mock.channel_id,
+        data: TransferModuleData(ftpd),
+      },
+    )
+  let channel_redeemer: Redeemer =
+    TimeoutPacket {
+      packet,
+      proof_unreceived: mock.proof,
+      proof_height: mock.proof_height,
+      next_sequence_recv: 1,
+    }
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      redeemers,
+      mint: from_asset(
+        mock.transfer_escrow_shard_policy_id,
+        shard_token_name,
+        -1,
+      ),
+    }
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+
+  run_transfer_module_transition(mock, transaction, module_redeemer, mutation)
+}
+
+fn native_asset_timeout_fixture(
+  receiver_amount: Int,
+  remaining_escrow_amount: Int,
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
+  let mock = setup()
+  let transfer_amount = 100
+  let input_escrow_amount = 150
+  let sender = mock.cardano_public_key_hash
+  let native_policy_id: PolicyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  let native_token_name = "coin"
+  let denom = native_asset_denom()
+  expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
+  let receiver_output =
+    Output {
+      address: from_verification_key(sender_public_key_hash),
+      value: from_asset(native_policy_id, native_token_name, receiver_amount),
+      datum: NoDatum,
+      reference_script: None,
+    }
+  let escrow_input =
+    transfer_native_asset_escrow_input(
+      1,
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      "channel-0",
+      denom,
+      native_policy_id,
+      native_token_name,
+      input_escrow_amount,
+    )
+  let escrow_output =
+    transfer_native_asset_escrow_output(
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      "channel-0",
+      denom,
+      native_policy_id,
+      native_token_name,
+      remaining_escrow_amount,
+    )
+  let inputs =
+    [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
+  let outputs =
+    [
+      mock.module_output,
+      escrow_output,
+      mock.channel_output,
+      receiver_output,
+      mock.host_state_output,
+    ]
+  let (ftpd, packet) =
+    build_packet(
+      denom,
+      transfer_amount,
+      sender,
+      mock.cosmos_address,
+      "port-0",
+      "channel-0",
+      mock.port_id,
+      mock.channel_id,
+    )
+  let module_redeemer: Redeemer =
+    Callback(
+      OnTimeoutPacket {
+        channel_id: mock.channel_id,
+        data: TransferModuleData(ftpd),
+      },
+    )
+  let channel_redeemer: Redeemer =
+    TimeoutPacket {
+      packet,
+      proof_unreceived: mock.proof,
+      proof_height: mock.proof_height,
+      next_sequence_recv: 1,
+    }
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
+  let transaction =
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+
+  run_transfer_module_transition(mock, transaction, module_redeemer, mutation)
+}
+
+fn ack_success_fixture(
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
+  let mock = setup()
+  let receiver = mock.cardano_public_key_hash
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
+  let source_port = mock.port_id
+  let source_channel = mock.channel_id
+  let denom =
+    transfer_coin.get_denom_prefix(source_port, source_channel)
+      |> bytearray.concat("atom")
+  let (ftpd, packet) =
+    build_packet(
+      denom,
+      1234,
+      mock.cosmos_address,
+      receiver,
+      source_port,
+      source_channel,
+      "port-0",
+      "channel-0",
+    )
+  let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
+  let module_redeemer: Redeemer =
+    Callback(
+      OnAcknowledgementPacket {
+        channel_id: mock.channel_id,
+        acknowledgement,
+        data: TransferModuleData(ftpd),
+      },
+    )
+  let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
+  let channel_redeemer: Redeemer =
+    AcknowledgePacket {
+      packet,
+      acknowledgement: bz_ack,
+      proof_acked: mock.proof,
+      proof_height: mock.proof_height,
+    }
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
+  let transaction =
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+
+  run_transfer_module_transition(mock, transaction, module_redeemer, mutation)
+}
+
+fn voucher_send_burn_fixture(
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
+  let mock = setup()
+  let transfer_amount = 1234
+  let receiver = mock.cardano_public_key_hash
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
+  let source_port = mock.port_id
+  let source_channel = mock.channel_id
+  let denom =
+    transfer_coin.get_denom_prefix(source_port, source_channel)
+      |> bytearray.concat("atom")
+  let (ftpd, packet) =
+    build_packet(
+      denom,
+      transfer_amount,
+      mock.cosmos_address,
+      receiver,
+      source_port,
+      source_channel,
+      "port-0",
+      "channel-0",
+    )
+  let module_redeemer: Redeemer =
+    Operator(
+      TransferModuleOperator(
+        Transfer { channel_id: mock.channel_id, data: ftpd },
+      ),
+    )
+  let channel_redeemer: Redeemer = SendPacket { packet }
+  let mint_voucher_redeemer: Redeemer =
+    BurnVoucher {
+      packet_source_port: packet.source_port,
+      packet_source_channel: packet.source_channel,
+      data: ftpd,
+    }
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+      Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
+    ]
+  let transaction =
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+
+  run_transfer_module_transition(mock, transaction, module_redeemer, mutation)
+}
+
+fn voucher_recv_sink_fixture(
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
+  let mock = setup()
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
+  let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
+  let (ftpd, packet) =
+    build_packet(
+      "atom",
+      1234,
+      mock.cosmos_address,
+      mock.cardano_public_key_hash,
+      "port-0",
+      "channel-0",
+      mock.port_id,
+      mock.channel_id,
+    )
+  let module_redeemer: Redeemer =
+    Callback(
+      OnRecvPacket {
+        channel_id: mock.channel_id,
+        acknowledgement,
+        data: TransferModuleData(ftpd),
+      },
+    )
+  let channel_redeemer: Redeemer =
+    RecvPacket {
+      packet,
+      proof_commitment: mock.proof,
+      proof_height: mock.proof_height,
+    }
+  let mint_voucher_redeemer: Redeemer =
+    MintVoucher {
+      packet_source_port: packet.source_port,
+      packet_source_channel: packet.source_channel,
+      packet_dest_port: packet.destination_port,
+      packet_dest_channel: packet.destination_channel,
+      data: ftpd,
+    }
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+      Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
+    ]
+  let transaction =
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+
+  run_transfer_module_transition(mock, transaction, module_redeemer, mutation)
+}
+
+fn voucher_error_ack_refund_fixture(
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
+  let mock = setup()
+  let receiver = mock.cardano_public_key_hash
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
+  let source_port = mock.port_id
+  let source_channel = mock.channel_id
+  let denom =
+    transfer_coin.get_denom_prefix(source_port, source_channel)
+      |> bytearray.concat("atom")
+  let (ftpd, packet) =
+    build_packet(
+      denom,
+      1234,
+      mock.cosmos_address,
+      receiver,
+      source_port,
+      source_channel,
+      "port-0",
+      "channel-0",
+    )
+  let acknowledgement = acknowledgement_mod.new_error_acknowledgement("")
+  let module_redeemer: Redeemer =
+    Callback(
+      OnAcknowledgementPacket {
+        channel_id: mock.channel_id,
+        acknowledgement,
+        data: TransferModuleData(ftpd),
+      },
+    )
+  let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
+  let channel_redeemer: Redeemer =
+    AcknowledgePacket {
+      packet,
+      acknowledgement: bz_ack,
+      proof_acked: mock.proof,
+      proof_height: mock.proof_height,
+    }
+  let mint_voucher_redeemer: Redeemer =
+    RefundVoucher {
+      packet_source_port: packet.source_port,
+      packet_source_channel: packet.source_channel,
+      data: ftpd,
+      acknowledgement: Some(acknowledgement),
+    }
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+      Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
+    ]
+  let transaction =
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+
+  run_transfer_module_transition(mock, transaction, module_redeemer, mutation)
+}
+
+test prop_transfer_module_native_send_escrow_increases_exactly(
+  _seed via fuzz.int(),
+) {
+  fuzz.label(@"contract.transfer.native_send.escrow_increases_exactly")
+
+  native_send_escrow_fixture(1234, fuzz_dsl.no_mutation())
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_transfer_module_native_send_rejects_wrong_escrow_delta(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(@"contract.transfer.invalid_wrong_escrow_delta_rejected")
+
+  native_send_escrow_fixture(1233, fuzz_dsl.mutation("wrong_escrow_delta"))
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_transfer_module_recv_source_unescrows_exactly(_seed via fuzz.int()) {
+  fuzz.label(@"contract.transfer.recv_source.unescrows_exactly")
+
+  recv_source_unescrow_fixture(fuzz_dsl.no_mutation())
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_transfer_module_native_timeout_refunds_exactly(_seed via fuzz.int()) {
+  fuzz.label(@"contract.transfer.native_timeout.refund_exactly")
+
+  timeout_unescrow_fixture(1234, fuzz_dsl.no_mutation())
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_transfer_module_native_timeout_rejects_wrong_refund_amount(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(@"contract.transfer.invalid_wrong_native_refund_amount_rejected")
+
+  native_asset_timeout_fixture(
+    99,
+    50,
+    fuzz_dsl.mutation("wrong_native_refund_amount"),
+  )
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_transfer_module_native_ack_has_no_refund(_seed via fuzz.int()) {
+  fuzz.label(@"contract.transfer.native_ack.no_refund")
+
+  ack_success_fixture(fuzz_dsl.no_mutation())
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_transfer_module_voucher_send_burns_exactly(_seed via fuzz.int()) {
+  fuzz.label(@"contract.transfer.voucher_send.burns_exactly")
+
+  voucher_send_burn_fixture(fuzz_dsl.no_mutation())
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_transfer_module_recv_sink_mints_voucher_exactly(_seed via fuzz.int()) {
+  fuzz.label(@"contract.transfer.recv_sink.mints_voucher_exactly")
+
+  voucher_recv_sink_fixture(fuzz_dsl.no_mutation())
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_transfer_module_voucher_error_ack_remints_exactly(
+  _seed via fuzz.int(),
+) {
+  fuzz.label(@"contract.transfer.voucher_error_ack.remints_exactly")
+
+  voucher_error_ack_refund_fixture(fuzz_dsl.no_mutation())
+    |> fuzz_dsl.assert_protocol_valid
 }
 
 test on_chan_open_init_succeed() {
