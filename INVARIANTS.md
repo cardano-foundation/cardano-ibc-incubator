@@ -184,17 +184,21 @@ Covered by `unit.conn.open_try.valid`,
 `contract.conn.open_try.invalid_wrong_counterparty_client_state`, and
 `contract.conn.open_try.invalid_wrong_host_redeemer`.
 
-The valid property exercises the pure connection datum transition for a
-TryOpen connection. The proof and HostState contract properties model the
-redeemer-shape checks enforced by the minting connection validator. Together
-they prove these invariants:
+The valid unit property exercises the pure connection datum transition for a
+TryOpen connection. The wrong-counterparty-client-state property now builds a
+near-valid ConnOpenTry transaction and runs the connection minting validator,
+HostState CreateConnection validator, and connection datum transition against
+the same fixture before mutating only the counterparty client-state proof
+value. The remaining proof-shape and HostState-redeemer properties are
+smoke/regression checks for narrow redeemer gates. Together they prove these
+invariants:
 
 - A ConnOpenTry output datum must be in `TryOpen` state and carry the minted
   connection token.
 - ConnOpenTry proof authorization must include both the counterparty
   connection proof and the counterparty client-state proof.
 - The counterparty client-state bytes in the proof redeemer must match the
-  requested counterparty client state.
+  requested counterparty client state in the actual ConnOpenTry minting gate.
 - Minting a connection token for ConnOpenTry must be coupled to the
   `CreateConnection` HostState redeemer branch.
 

@@ -44,18 +44,6 @@ fn test_membership(height: Height, value: ByteArray) -> VerifyMembershipParams {
   }
 }
 
-fn conn_open_try_expected_proof(
-  height: Height,
-  counterparty_client_state: ByteArray,
-) -> VerifyProofRedeemer {
-  BatchVerifyMembership(
-    [
-      test_membership(height, "connection-end"),
-      test_membership(height, counterparty_client_state),
-    ],
-  )
-}
-
 fn has_connection_and_client_proofs(redeemer: VerifyProofRedeemer) -> Bool {
   when redeemer is {
     BatchVerifyMembership([_, _]) -> True
@@ -92,26 +80,6 @@ test prop_conn_open_try_rejects_missing_client_proof(_seed via fuzz.int()) {
     "missing_client_proof",
     "has_connection_and_client_proofs",
     has_connection_and_client_proofs(malformed_redeemer),
-  )
-    |> fuzz_dsl.assert_rejected
-}
-
-test prop_conn_open_try_rejects_wrong_counterparty_client_state(
-  _seed via fuzz.int(),
-) {
-  fuzz.label(@"contract.conn.open_try.invalid_wrong_counterparty_client_state")
-
-  let height = test_height(10)
-  let expected_redeemer = conn_open_try_expected_proof(height, "client-state")
-  let wrong_redeemer =
-    conn_open_try_expected_proof(height, "wrong-client-state")
-
-  fuzz_dsl.mutated_check(
-    "conn",
-    "open_try",
-    "wrong_counterparty_client_state",
-    "conn_open_try_expected_proof",
-    wrong_redeemer == expected_redeemer,
   )
     |> fuzz_dsl.assert_rejected
 }
