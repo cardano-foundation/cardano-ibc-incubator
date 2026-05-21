@@ -268,6 +268,8 @@ function verifyProofRedeemer(proofBytes: number, valueBytes = 128): string {
         cs: CLIENT_STATE,
         cons_state: CONSENSUS_STATE,
         height: HEIGHT,
+        processed_time: 0n,
+        processed_height: 0n,
         delay_time_period: 0n,
         delay_block_period: 0n,
         proof: proofPayload(proofBytes) as never,

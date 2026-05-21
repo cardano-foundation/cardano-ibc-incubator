@@ -726,6 +726,14 @@ fn setup_validate_referred_client() -> (
       state: ClientDatumState {
         client_state: mock_client_state,
         consensus_states: mock_consensus_states,
+        processed_times: list.map(
+          mock_consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          mock_consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
       },
       token: client_token,
     }

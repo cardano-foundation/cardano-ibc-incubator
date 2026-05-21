@@ -1,3 +1,4 @@
+use aiken/collection/list
 use aiken/interval
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
@@ -40,6 +41,12 @@ type MockData {
   client_token: AuthToken,
   output_reference: OutputReference,
   input: Input,
+}
+
+fn processed_time_for_update(header: Header, client_state: ClientState) -> Int {
+  (
+    ( header.signed_header.header.time - client_state.max_clock_drift ) / 1_000_000 + 1000
+  ) * 1_000_000
 }
 
 fn setup() -> MockData {
@@ -330,7 +337,18 @@ fn check_update_client_misbehaviour_conflict_header(
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState { client_state, consensus_states },
+      state: ClientDatumState {
+        client_state,
+        consensus_states,
+        processed_times: list.map(
+          consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+      },
       token: mock.client_token,
     }
 
@@ -587,7 +605,18 @@ test update_client_misbehaviour_monotonic_time_violation() {
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState { client_state, consensus_states },
+      state: ClientDatumState {
+        client_state,
+        consensus_states,
+        processed_times: list.map(
+          consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+      },
       token: mock.client_token,
     }
 
@@ -814,7 +843,18 @@ test update_client_verify_adjacent_succeed() {
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState { client_state, consensus_states },
+      state: ClientDatumState {
+        client_state,
+        consensus_states,
+        processed_times: list.map(
+          consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+      },
       token: mock.client_token,
     }
 
@@ -839,6 +879,20 @@ test update_client_verify_adjacent_succeed() {
           Pair(
             header_mod.get_height(header),
             header_mod.consensus_state(header),
+          ),
+        ],
+        processed_times: [
+          Pair(
+            header_mod.get_height(header),
+            processed_time_for_update(header, client_datum.state.client_state),
+          ),
+        ],
+        processed_heights: [
+          Pair(
+            header_mod.get_height(header),
+            client_datum_mod.processed_height_from_time(
+              processed_time_for_update(header, client_datum.state.client_state),
+            ),
           ),
         ],
       },
@@ -1045,7 +1099,18 @@ test update_client_verify_adjacent_fails_without_host_state_co_spend() fail {
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState { client_state, consensus_states },
+      state: ClientDatumState {
+        client_state,
+        consensus_states,
+        processed_times: list.map(
+          consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+      },
       token: mock.client_token,
     }
 
@@ -1068,6 +1133,20 @@ test update_client_verify_adjacent_fails_without_host_state_co_spend() fail {
           Pair(
             header_mod.get_height(header),
             header_mod.consensus_state(header),
+          ),
+        ],
+        processed_times: [
+          Pair(
+            header_mod.get_height(header),
+            processed_time_for_update(header, client_datum.state.client_state),
+          ),
+        ],
+        processed_heights: [
+          Pair(
+            header_mod.get_height(header),
+            client_datum_mod.processed_height_from_time(
+              processed_time_for_update(header, client_datum.state.client_state),
+            ),
           ),
         ],
       },
@@ -1275,7 +1354,18 @@ test update_client_verify_non_adjacent_succeed() {
 
   let client_datum =
     ClientDatum {
-      state: ClientDatumState { client_state, consensus_states },
+      state: ClientDatumState {
+        client_state,
+        consensus_states,
+        processed_times: list.map(
+          consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+        processed_heights: list.map(
+          consensus_states,
+          fn(pair) { Pair(pair.1st, 0) },
+        ),
+      },
       token: mock.client_token,
     }
 
@@ -1300,6 +1390,20 @@ test update_client_verify_non_adjacent_succeed() {
           Pair(
             header_mod.get_height(header),
             header_mod.consensus_state(header),
+          ),
+        ],
+        processed_times: [
+          Pair(
+            header_mod.get_height(header),
+            processed_time_for_update(header, client_datum.state.client_state),
+          ),
+        ],
+        processed_heights: [
+          Pair(
+            header_mod.get_height(header),
+            client_datum_mod.processed_height_from_time(
+              processed_time_for_update(header, client_datum.state.client_state),
+            ),
           ),
         ],
       },

@@ -286,6 +286,8 @@ fn check_acknowledge_packet(transaction_mint: Value) {
       cs: client_datum_state.client_state,
       cons_state: consensus_state,
       height: proof_height,
+      processed_time: 0,
+      processed_height: 0,
       delay_time_period: time_delay,
       delay_block_period: block_delay,
       proof: proof_acked,

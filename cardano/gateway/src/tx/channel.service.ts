@@ -41,7 +41,7 @@ import {
   validateAndFormatChannelCloseInitParams,
 } from './helper/channel.validate';
 import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '~@/shared/types/connection/verify-proof-redeemer';
-import { getBlockDelay } from '~@/shared/helpers/verify';
+import { getBlockDelay, getHeightMapValue } from '~@/shared/helpers/verify';
 import { channelPath } from '~@/shared/helpers/channel';
 import {
   Channel as CardanoChannel,
@@ -945,6 +945,11 @@ export class ChannelService {
       );
     }
     const consensusState = consensusEntry[1];
+    const processedTime = getHeightMapValue(clientDatum.state.processedTimes, consensusEntry[0]);
+    const processedHeight = getHeightMapValue(clientDatum.state.processedHeights, consensusEntry[0]);
+    if (processedTime == null || processedHeight == null) {
+      throw new GrpcInternalException(`Missing processed delay metadata at proof height revisionNumber/revisionHeight`);
+    }
 
     const cardanoChannelEnd: CardanoChannel = {
       state: CardanoChannelState.STATE_TRYOPEN,
@@ -965,6 +970,8 @@ export class ChannelService {
         cs: clientDatum.state.clientState,
         cons_state: consensusState,
         height: channelOpenAckOperator.proofHeight,
+        processed_time: processedTime,
+        processed_height: processedHeight,
         delay_time_period: connectionDatum.state.delay_period,
         delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
         proof: channelOpenAckOperator.proofTry,
@@ -1162,6 +1169,11 @@ export class ChannelService {
       );
     }
     const consensusState = consensusEntry[1];
+    const processedTime = getHeightMapValue(clientDatum.state.processedTimes, consensusEntry[0]);
+    const processedHeight = getHeightMapValue(clientDatum.state.processedHeights, consensusEntry[0]);
+    if (processedTime == null || processedHeight == null) {
+      throw new GrpcInternalException(`Missing processed delay metadata at proof height revisionNumber/revisionHeight`);
+    }
     // The membership proof commits to the counterparty's view of this channel,
     // which is now expected to be fully Open after our confirm step.
     const cardanoChannelEnd: CardanoChannel = {
@@ -1179,6 +1191,8 @@ export class ChannelService {
         cs: clientDatum.state.clientState,
         cons_state: consensusState,
         height: channelOpenConfirmOperator.proofHeight,
+        processed_time: processedTime,
+        processed_height: processedHeight,
         delay_time_period: connectionDatum.state.delay_period,
         delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
         proof: channelOpenConfirmOperator.proofAck,
@@ -1503,6 +1517,11 @@ export class ChannelService {
       );
     }
     const consensusState = consensusEntry[1];
+    const processedTime = getHeightMapValue(clientDatum.state.processedTimes, consensusEntry[0]);
+    const processedHeight = getHeightMapValue(clientDatum.state.processedHeights, consensusEntry[0]);
+    if (processedTime == null || processedHeight == null) {
+      throw new GrpcInternalException(`Missing processed delay metadata at proof height revisionNumber/revisionHeight`);
+    }
     const cardanoChannelEnd: CardanoChannel = {
       state: CardanoChannelState.STATE_CLOSED,
       ordering: orderFromJSON(ORDER_MAPPING_CHANNEL[channelDatum.state.channel.ordering]),
@@ -1518,6 +1537,8 @@ export class ChannelService {
         cs: clientDatum.state.clientState,
         cons_state: consensusState,
         height: channelCloseConfirmOperator.proofHeight,
+        processed_time: processedTime,
+        processed_height: processedHeight,
         delay_time_period: connectionDatum.state.delay_period,
         delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
         proof: channelCloseConfirmOperator.proofInit,
