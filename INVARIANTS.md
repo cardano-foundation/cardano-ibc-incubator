@@ -77,7 +77,9 @@ The fuzz suite currently covers:
 - transfer module accounting checks in
   `cardano/onchain/lib/ibc/apps/transfer/transfer_accounting_contract.test.ak`;
 - voucher metadata checks in
-  `cardano/onchain/lib/ibc/apps/transfer/voucher_metadata_contract.test.ak`;
+  `cardano/onchain/lib/ibc/apps/transfer/voucher_metadata_contract.test.ak`
+  and validator-level first-seen mint checks in
+  `cardano/onchain/validators/minting_voucher.test.ak`;
 - verifying-proof membership, non-membership, and batch checks in
   `cardano/onchain/validators/verifying_proof_contract.test.ak`;
 - HostState root-transition checks in
@@ -417,10 +419,14 @@ Covered by `contract.voucher.first_mint.valid_metadata`,
 `contract.voucher.first_mint.invalid_wrong_policy`, and
 `contract.voucher.first_mint.invalid_wrong_reference_asset`.
 
-The first-mint metadata properties compare candidate metadata against the same
-canonical `voucher_metadata.build_datum` value used by the minting validator.
-Each invalid property mutates one metadata or reference-asset component. They
-prove these invariants:
+The first-mint metadata properties now have two layers. The small library tests
+compare candidate metadata against the same canonical
+`voucher_metadata.build_datum` value used by the minting validator. The
+validator-level properties build a first-seen voucher mint transaction with a
+matching trace-registry shard update, channel callback, reference NFT output,
+and CIP-68 metadata datum, then run the real `minting_voucher` policy. Each
+invalid validator property mutates one metadata or reference-asset component.
+They prove these invariants:
 
 - The display `name` must be derived from the base denomination.
 - The display `ticker` must be derived from the base denomination.
