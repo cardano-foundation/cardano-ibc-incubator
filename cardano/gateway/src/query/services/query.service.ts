@@ -170,6 +170,15 @@ const MAX_PROTO_UINT64 = (1n << 64n) - 1n;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function isNonRetryableStabilityLatestHeightError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('Target point is too old') ||
+    message.includes('Failed to acquire requested point') ||
+    message.includes('stake-weighted stability currently supports only current-epoch anchors')
+  );
+}
+
 @Injectable()
 export class QueryService {
   private readonly txRedeemerCache = new Map<string, Promise<ParsedTxRedeemer[]>>();
@@ -564,31 +573,23 @@ export class QueryService {
           lucidService: this.lucidService,
           historyService: this.historyService,
         });
-        try {
-          const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(liveHostStateTxHeight);
-          const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
-            historyService: this.historyService,
-            height: BigInt(hostStateUtxo.blockNo),
-            logger: this.logger,
-            missingAnchorBlockMessage: `Cardano history block for HostState tx ${hostStateUtxo.txHash} unavailable for stability latest height`,
-          });
+        const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(liveHostStateTxHeight);
+        const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
+          historyService: this.historyService,
+          height: BigInt(hostStateUtxo.blockNo),
+          logger: this.logger,
+          missingAnchorBlockMessage: `Cardano history block for HostState tx ${hostStateUtxo.txHash} unavailable for stability latest height`,
+        });
 
-          return { height: stabilityEvidence.anchorHeight } as QueryLatestHeightResponse;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          const canReuseLiveHostStateHeight =
-            message.includes('Target point is too old') || message.includes('Failed to acquire requested point');
-
-          if (!canReuseLiveHostStateHeight) {
-            throw error;
-          }
-
-          this.logger.warn(
-            `[latestCertifiedHeight] Unable to reacquire epoch context for live HostState height ${liveHostStateTxHeight.toString()}; reusing that height until a newer HostState tx is available`,
-          );
-          return { height: liveHostStateTxHeight } as QueryLatestHeightResponse;
-        }
+        return { height: stabilityEvidence.anchorHeight } as QueryLatestHeightResponse;
       } catch (error) {
+        if (isNonRetryableStabilityLatestHeightError(error)) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new GrpcInternalException(
+            `Current HostState root is not yet stability-accepted for latest height: ${message}`,
+          );
+        }
+
         if (attempt + 1 === STABILITY_LATEST_HEIGHT_MAX_ATTEMPTS) {
           throw error;
         }
