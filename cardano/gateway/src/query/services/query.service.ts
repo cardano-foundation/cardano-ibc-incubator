@@ -170,6 +170,15 @@ const MAX_PROTO_UINT64 = (1n << 64n) - 1n;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+function isNonRetryableStabilityLatestHeightError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    message.includes('Target point is too old') ||
+    message.includes('Failed to acquire requested point') ||
+    message.includes('stake-weighted stability currently supports only current-epoch anchors')
+  );
+}
+
 @Injectable()
 export class QueryService {
   private readonly txRedeemerCache = new Map<string, Promise<ParsedTxRedeemer[]>>();
@@ -542,7 +551,7 @@ export class QueryService {
 
   async latestHeight(request: QueryLatestHeightRequest): Promise<QueryLatestHeightResponse> {
     if (this.getLightClientMode() === 'stake-weighted-stability') {
-      return this.latestStabilityHeight();
+      return this.latestCertifiedHeight();
     }
 
     const listSnapshots = await this.mithrilService.getCardanoTransactionsSetSnapshot();
@@ -557,44 +566,36 @@ export class QueryService {
     return latestHeightResponse as unknown as QueryLatestHeightResponse;
   }
 
-  async latestStabilityHeight(): Promise<QueryLatestHeightResponse> {
+  async latestCertifiedHeight(): Promise<QueryLatestHeightResponse> {
     for (let attempt = 0; attempt < STABILITY_LATEST_HEIGHT_MAX_ATTEMPTS; attempt++) {
       try {
         const liveHostStateTxHeight = await resolveCurrentLiveHostStateTxHeight({
           lucidService: this.lucidService,
           historyService: this.historyService,
         });
-        try {
-          const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(liveHostStateTxHeight);
-          const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
-            historyService: this.historyService,
-            height: BigInt(hostStateUtxo.blockNo),
-            logger: this.logger,
-            missingAnchorBlockMessage: `Cardano history block for HostState tx ${hostStateUtxo.txHash} unavailable for stability latest height`,
-          });
+        const hostStateUtxo = await this.historyService.findHostStateUtxoAtOrBeforeBlockNo(liveHostStateTxHeight);
+        const stabilityEvidence = await loadStakeWeightedStabilityEvidenceByHeight({
+          historyService: this.historyService,
+          height: BigInt(hostStateUtxo.blockNo),
+          logger: this.logger,
+          missingAnchorBlockMessage: `Cardano history block for HostState tx ${hostStateUtxo.txHash} unavailable for stability latest height`,
+        });
 
-          return { height: stabilityEvidence.anchorHeight } as QueryLatestHeightResponse;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          const canReuseLiveHostStateHeight =
-            message.includes('Target point is too old') || message.includes('Failed to acquire requested point');
-
-          if (!canReuseLiveHostStateHeight) {
-            throw error;
-          }
-
-          this.logger.warn(
-            `[latestStabilityHeight] Unable to reacquire epoch context for live HostState height ${liveHostStateTxHeight.toString()}; reusing that height until a newer HostState tx is available`,
-          );
-          return { height: liveHostStateTxHeight } as QueryLatestHeightResponse;
-        }
+        return { height: stabilityEvidence.anchorHeight } as QueryLatestHeightResponse;
       } catch (error) {
+        if (isNonRetryableStabilityLatestHeightError(error)) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new GrpcInternalException(
+            `Current HostState root is not yet stability-accepted for latest height: ${message}`,
+          );
+        }
+
         if (attempt + 1 === STABILITY_LATEST_HEIGHT_MAX_ATTEMPTS) {
           throw error;
         }
 
         const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(`[latestStabilityHeight] ${message}; retrying stability latest height query`);
+        this.logger.warn(`[latestCertifiedHeight] ${message}; retrying stability latest height query`);
         await sleep(STABILITY_LATEST_HEIGHT_DELAY_MS);
       }
     }

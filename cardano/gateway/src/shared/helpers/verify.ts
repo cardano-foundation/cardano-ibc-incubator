@@ -13,3 +13,21 @@ export function getBlockDelay(timeDelay: bigint): bigint {
   const remainder = timeDelay % expectedTimePerBlock;
   return remainder === 0n ? quotient : quotient + 1n;
 }
+
+export function getProcessedHeight(processedTimeNs: bigint): bigint {
+  const expectedTimePerBlock = BigInt(MAX_EXPECTED_TIME_PER_BLOCK);
+  if (expectedTimePerBlock <= 0n) return 0n;
+  return processedTimeNs / expectedTimePerBlock;
+}
+
+export function getHeightMapValue<T>(
+  map: Map<{ revisionNumber: bigint; revisionHeight: bigint }, T>,
+  height: { revisionNumber: bigint; revisionHeight: bigint },
+): T | undefined {
+  for (const [key, value] of map.entries()) {
+    if (key.revisionNumber === height.revisionNumber && key.revisionHeight === height.revisionHeight) {
+      return value;
+    }
+  }
+  return undefined;
+}

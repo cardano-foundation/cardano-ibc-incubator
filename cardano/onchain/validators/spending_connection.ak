@@ -224,6 +224,8 @@ fn validate_conn_open_ack_proof(
         cs,
         cons_state,
         height,
+        processed_time: redeemer_processed_time,
+        processed_height: redeemer_processed_height,
         delay_time_period,
         delay_block_period,
         proof: _proof,
@@ -232,6 +234,10 @@ fn validate_conn_open_ack_proof(
       } -> {
         expect Some(expected_consensus_state) =
           pairs.get_first(client_datum_state.consensus_states, height)
+        expect Some(processed_time) =
+          pairs.get_first(client_datum_state.processed_times, height)
+        expect Some(processed_height) =
+          pairs.get_first(client_datum_state.processed_heights, height)
 
         // Avoid relying on derived equality for `MerklePath`/`List<ByteArray>` inside
         // the redeemer match. For IBC on Cosmos, proofs are always built for a 2-level
@@ -249,6 +255,8 @@ fn validate_conn_open_ack_proof(
           cons_state == expected_consensus_state,
           delay_time_period == time_delay,
           delay_block_period == block_delay,
+          redeemer_processed_time == processed_time,
+          redeemer_processed_height == processed_height,
           ok0_path,
           value == expected_connection_bz,
         }
@@ -302,6 +310,10 @@ fn validate_conn_open_confirm_proof(
 
   expect Some(consensus_state) =
     pairs.get_first(client_datum_state.consensus_states, proof_height)
+  expect Some(processed_time) =
+    pairs.get_first(client_datum_state.processed_times, proof_height)
+  expect Some(processed_height) =
+    pairs.get_first(client_datum_state.processed_heights, proof_height)
 
   expect Some(verify_proof_redeemer) =
     pairs.get_first(redeemers, Mint(verify_proof_policy_id))
@@ -311,6 +323,8 @@ fn validate_conn_open_confirm_proof(
     cs: client_datum_state.client_state,
     cons_state: consensus_state,
     height: proof_height,
+    processed_time,
+    processed_height,
     delay_time_period: time_delay,
     delay_block_period: block_delay,
     proof: proof_ack,

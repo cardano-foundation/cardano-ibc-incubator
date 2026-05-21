@@ -50,6 +50,7 @@ import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
 import { Any } from '@plus/proto-types/build/google/protobuf/any';
 import { toHex } from '../shared/helpers/hex';
 import type { GatewayEvent } from './tx-events.service';
+import { getHeightMapValue, getProcessedHeight } from '../shared/helpers/verify';
 
 @Injectable()
 export class ClientService {
@@ -171,15 +172,16 @@ export class ClientService {
       this.logger.log('Create client is processing', 'createClient');
       const { constructedAddress, clientState, consensusState } = validateAndFormatCreateClientParams(data);
       await this.refreshWalletContext(constructedAddress, 'createClientBuilder');
+      const { validFromTime: validFromTimestamp, validToTime: validToTimestamp } =
+        await this.computeTxValidityWindow(60_000);
+      const txValidFromNs = BigInt(validFromTimestamp) * 1_000_000n;
       // Build unsigned create client transaction
       const { unsignedTx: unsignedCreateClientTx, clientId, pendingTreeUpdate } = await this.buildUnsignedCreateClientTx(
         clientState,
         consensusState,
         constructedAddress,
+        txValidFromNs,
       );
-
-      const { validFromTime: validFromTimestamp, validToTime: validToTimestamp } =
-        await this.computeTxValidityWindow(60_000);
 
       this.logger.log(`[DEBUG] Setting validity: validFrom=${new Date(validFromTimestamp).toISOString()}, validTo=${new Date(validToTimestamp).toISOString()}`);
 
@@ -599,11 +601,29 @@ export class ClientService {
     }
 
     const newConsStates = new Map(currentConsStateInArray);
+    const newProcessedTimes = new Map(
+      currentConsStateInArray.map(([height]) => [
+        height,
+        height.revisionHeight === newHeight.revisionHeight && height.revisionNumber === newHeight.revisionNumber
+          ? updateClientOperator.txValidFrom
+          : getHeightMapValue(currentClientDatumState.processedTimes, height) ?? 0n,
+      ]),
+    );
+    const newProcessedHeights = new Map(
+      currentConsStateInArray.map(([height]) => [
+        height,
+        height.revisionHeight === newHeight.revisionHeight && height.revisionNumber === newHeight.revisionNumber
+          ? getProcessedHeight(updateClientOperator.txValidFrom)
+          : getHeightMapValue(currentClientDatumState.processedHeights, height) ?? 0n,
+      ]),
+    );
     const newClientDatum: ClientDatum = {
       ...updateClientOperator.clientDatum,
       state: {
         clientState: newClientState,
         consensusStates: newConsStates,
+        processedTimes: newProcessedTimes,
+        processedHeights: newProcessedHeights,
       },
     };
 
@@ -725,6 +745,7 @@ export class ClientService {
     clientState: ClientState,
     consensusState: ConsensusState,
     constructedAddress: string,
+    txValidFromNs: bigint,
   ): Promise<{ unsignedTx: TxBuilder; clientId: bigint; pendingTreeUpdate: PendingTreeUpdate }> {
     // The HostState NFT identifies the single coordinator UTxO for this update.
     const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
@@ -799,6 +820,8 @@ export class ClientService {
     const clientDatumState: ClientDatumState = {
       clientState: clientState,
       consensusStates: new Map([[clientState.latestHeight, consensusState]]),
+      processedTimes: new Map([[clientState.latestHeight, txValidFromNs]]),
+      processedHeights: new Map([[clientState.latestHeight, getProcessedHeight(txValidFromNs)]]),
     };
 
     const clientTokenName = this.generateClientTokenName(hostStateDatum);

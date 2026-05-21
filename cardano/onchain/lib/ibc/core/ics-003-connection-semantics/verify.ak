@@ -32,11 +32,19 @@ pub fn verify_connection_state(
     )
   expect Some(consensus_state) =
     pairs.get_first(client_datum_state.consensus_states, proof_height)
+  expect Some(processed_time) =
+    pairs.get_first(client_datum_state.processed_times, proof_height)
+  expect Some(processed_height) =
+    pairs.get_first(client_datum_state.processed_heights, proof_height)
 
   client_state.verify_membership(
     client_datum_state.client_state,
     consensus_state,
     proof_height,
+    processed_time,
+    processed_height,
+    processed_time,
+    processed_height,
     0,
     0,
     proof,
@@ -64,11 +72,19 @@ pub fn verify_client_state(
 
   expect Some(consensus_state) =
     pairs.get_first(client_datum_state.consensus_states, proof_height)
+  expect Some(processed_time) =
+    pairs.get_first(client_datum_state.processed_times, proof_height)
+  expect Some(processed_height) =
+    pairs.get_first(client_datum_state.processed_heights, proof_height)
 
   client_state.verify_membership(
     client_datum_state.client_state,
     consensus_state,
     proof_height,
+    processed_time,
+    processed_height,
+    processed_time,
+    processed_height,
     0,
     0,
     proof,
@@ -94,11 +110,19 @@ pub fn verify_channel_state(
 
   expect Some(consensus_state) =
     pairs.get_first(client_datum_state.consensus_states, proof_height)
+  expect Some(processed_time) =
+    pairs.get_first(client_datum_state.processed_times, proof_height)
+  expect Some(processed_height) =
+    pairs.get_first(client_datum_state.processed_heights, proof_height)
 
   client_state.verify_membership(
     client_datum_state.client_state,
     consensus_state,
     proof_height,
+    processed_time,
+    processed_height,
+    processed_time,
+    processed_height,
     0,
     0,
     proof,
@@ -129,11 +153,19 @@ pub fn verify_packet_commitment(
 
   expect Some(consensus_state) =
     pairs.get_first(client_datum_state.consensus_states, proof_height)
+  expect Some(processed_time) =
+    pairs.get_first(client_datum_state.processed_times, proof_height)
+  expect Some(processed_height) =
+    pairs.get_first(client_datum_state.processed_heights, proof_height)
 
   client_state.verify_membership(
     client_datum_state.client_state,
     consensus_state,
     proof_height,
+    processed_time,
+    processed_height,
+    processed_time + time_delay,
+    processed_height + block_delay,
     time_delay,
     block_delay,
     proof,
@@ -164,6 +196,10 @@ pub fn verify_packet_acknowledgement(
 
   expect Some(consensus_state) =
     pairs.get_first(client_datum_state.consensus_states, proof_height)
+  expect Some(processed_time) =
+    pairs.get_first(client_datum_state.processed_times, proof_height)
+  expect Some(processed_height) =
+    pairs.get_first(client_datum_state.processed_heights, proof_height)
 
   let commit_ack = acknowledgement_mod.commit_acknowledgement(acknowledgement)
 
@@ -171,6 +207,10 @@ pub fn verify_packet_acknowledgement(
     client_datum_state.client_state,
     consensus_state,
     proof_height,
+    processed_time,
+    processed_height,
+    processed_time + time_delay,
+    processed_height + block_delay,
     time_delay,
     block_delay,
     proof,
@@ -200,11 +240,19 @@ pub fn verify_packet_receipt_absence(
 
   expect Some(consensus_state) =
     pairs.get_first(client_datum_state.consensus_states, proof_height)
+  expect Some(processed_time) =
+    pairs.get_first(client_datum_state.processed_times, proof_height)
+  expect Some(processed_height) =
+    pairs.get_first(client_datum_state.processed_heights, proof_height)
 
   client_state.verify_non_membership(
     client_datum_state.client_state,
     consensus_state,
     proof_height,
+    processed_time,
+    processed_height,
+    processed_time + time_delay,
+    processed_height + block_delay,
     time_delay,
     block_delay,
     proof,
@@ -240,11 +288,19 @@ pub fn verify_next_sequence_recv(
 
   expect Some(consensus_state) =
     pairs.get_first(client_datum_state.consensus_states, proof_height)
+  expect Some(processed_time) =
+    pairs.get_first(client_datum_state.processed_times, proof_height)
+  expect Some(processed_height) =
+    pairs.get_first(client_datum_state.processed_heights, proof_height)
 
   client_state.verify_membership(
     client_datum_state.client_state,
     consensus_state,
     proof_height,
+    processed_time,
+    processed_height,
+    processed_time + time_delay,
+    processed_height + block_delay,
     time_delay,
     block_delay,
     proof,

@@ -35,7 +35,7 @@ import {
   validateAndFormatConnectionOpenTryParams,
 } from './helper/connection.validate';
 import { VerifyProofRedeemer, encodeVerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
-import { getBlockDelay } from '../shared/helpers/verify';
+import { getBlockDelay, getHeightMapValue } from '../shared/helpers/verify';
 import { connectionPath } from '../shared/helpers/connection';
 import { 
 	  computeRootWithCreateConnectionUpdate as computeRootWithCreateConnectionUpdateHelper,
@@ -740,7 +740,7 @@ export class ConnectionService {
       // not the internal NFT/token prefix used by the STT auth tokens.
       client_id: convertString2Hex(`${CLIENT_ID_PREFIX}-${connectionOpenInitOperator.clientId}`),
       counterparty: connectionOpenInitOperator.counterparty,
-      delay_period: 0n,
+      delay_period: connectionOpenInitOperator.delayPeriod,
       versions: connectionOpenInitOperator.versions,
       state: State.Init,
     };
@@ -843,7 +843,7 @@ export class ConnectionService {
       // See the note in `connectionOpenInit`: this must be the canonical IBC client identifier.
       client_id: convertString2Hex(`${CLIENT_ID_PREFIX}-${connectionOpenTryOperator.clientId}`),
       counterparty: connectionOpenTryOperator.counterparty,
-      delay_period: 0n,
+      delay_period: connectionOpenTryOperator.delayPeriod,
       versions: connectionOpenTryOperator.versions,
       state: State.TryOpen,
     };
@@ -1088,6 +1088,13 @@ export class ConnectionService {
       );
     }
     const consensusState = consensusEntry[1];
+    const processedTime = getHeightMapValue(clientDatum.state.processedTimes, connectionOpenAckOperator.proofHeight);
+    const processedHeight = getHeightMapValue(clientDatum.state.processedHeights, connectionOpenAckOperator.proofHeight);
+    if (processedTime == null || processedHeight == null) {
+      throw new GrpcInternalException(
+        `Missing processed delay metadata at proof height ${connectionOpenAckOperator.proofHeight.revisionNumber}/${connectionOpenAckOperator.proofHeight.revisionHeight}`,
+      );
+    }
     const cardanoConnectionEnd: ConnectionEnd = {
       client_id: convertHex2String(connectionDatum.state.counterparty.client_id),
       versions: connectionDatum.state.versions.map((version) => ({
@@ -1147,6 +1154,8 @@ export class ConnectionService {
         cs: clientDatum.state.clientState,
         cons_state: consensusState,
         height: connectionOpenAckOperator.proofHeight,
+        processed_time: processedTime,
+        processed_height: processedHeight,
         delay_time_period: updatedConnectionDatum.state.delay_period,
         delay_block_period: delayBlockPeriod,
         proof: connectionOpenAckOperator.proofTry,

@@ -51,6 +51,56 @@ Though at the time of writing it is unclear how to quantify the implications for
 
 # Asymmetries and Architectural Considerations
 
+## Unimplemented / Not Supported
+
+The following IBC features are not currently supported by the Cardano bridge path.
+
+### Channel Upgrades
+
+Existing channels should be treated as fixed once established. If channel parameters need to change, the practical path is to open a new channel and migrate application routing to that new channel rather than attempting an in-place channel upgrade handshake.
+
+Channel upgradability was released in ibc-go v8.1.0. Channel upgradability allows IBC channels to upgrade and leverage new features without having to coordinate a network upgrade or open a new channel and thereby forego token fungibility.
+
+By enabling this feature, chains can:
+
+1. Add fee middleware on existing channels to incentivize IBC relayers.
+2. Adopt ICS-20 v2 (planned for later this year).
+3. Migrate from ordered Interchain Accounts (ICA) channels to unordered ones.
+4. Change connection hops if the application stack allows it.
+5. Prune stale acknowledgements and packet receipts to reduce disk overhead.
+
+Read more about channel upgradeability here: https://ibcprotocol.dev/blog/introducing-ibc-channel-upgradability
+
+This may be a target for further development. 
+
+### ICS-29 Fee Middleware
+
+The Cardano relayer endpoint does not implement the fee middleware queries needed to discover incentivized packets, and counterparty payee registration is not implemented as a meaningful Cardano operation. This means relayer incentives cannot currently rely on the standard ICS-29 packet fee flow for Cardano-connected channels. Operators should assume fees and relayer compensation need to be handled outside of ICS-29 until explicit support is added.
+
+This may be a target for further development.
+
+### Host Consensus State Query
+
+Cardano host consensus state queries are not implemented. The relayer endpoint cannot currently answer the standard host consensus state query for Cardano in the way it can for a conventional Cosmos SDK chain. This is a consequence of the same underlying asymmetry discussed elsewhere. Cardano does not expose Tendermint-style per-height consensus states with an `app_hash`. The bridge instead authenticates Cardano IBC state through the Cardano HostState commitment and the relevant Cardano light-client evidence. Any workflow requiring a generic host consensus state query should be treated as unsupported for Cardano today.
+
+This is not currently a target for further development.
+
+### Balance Query
+
+Balance queries through the Hermes Cardano chain endpoint are not implemented. This does not mean Cardano balances are unknowable, since balances can still be inspected through Cardano-specific tooling, Gateway functionality, or local test tooling where available. The unsupported part is the generic relayer balance query interface for Cardano.
+
+As a practical example, commands such as relayer wallet balance checks should not be expected to work uniformly for Cardano the way they do for Cosmos SDK chains. Operational scripts should use Cardano-specific balance inspection paths instead.
+
+### ICS-31 Cross-Chain Queries
+
+ICS-31 cross-chain queries are a work in progress for Cardano, but will need to be implemented on a per-chain basis. Much of the basic infrastructure exists for cross-chain queries with Cheqd, but still must be tested and validated, particularly in light of the entrypoint chain deprecation.
+
+### Client Upgrade
+
+Standard IBC client upgrade is not currently supported for the Cardano light client. The probabilistic Cardano light clients reject `VerifyUpgradeAndUpdateState`.
+
+This may be a target for further development.
+
 ## Denom Display in Wallets + CIP-26 Token Metadata Registry
 
 There are substantial issues with using the current canonical approach of displaying custom data in Cardano wallets as token names. In our case the token name of an IBC voucher on Cardano is the hash of the denom. We have to do this so that we have something of deterministic length, and denom length is unbounded, so it’s not an option to make the human-readable denom the assetName. 

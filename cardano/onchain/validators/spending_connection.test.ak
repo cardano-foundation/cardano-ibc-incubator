@@ -173,6 +173,8 @@ fn setup() -> MockData {
       state: ClientDatumState {
         client_state,
         consensus_states: [Pair(proof_height, cons_state)],
+        processed_times: [Pair(proof_height, 0)],
+        processed_heights: [Pair(proof_height, 0)],
       },
       token: client_token,
     }
@@ -374,6 +376,8 @@ test conn_open_ack_succeed() {
       cs: client_datum_state.client_state,
       cons_state: consensus_state,
       height: proof_height,
+      processed_time: 0,
+      processed_height: 0,
       delay_time_period: time_delay,
       delay_block_period: block_delay,
       proof: proof_try,
@@ -524,6 +528,8 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
       cs: client_datum_state.client_state,
       cons_state: consensus_state,
       height: proof_height,
+      processed_time: 0,
+      processed_height: 0,
       delay_time_period: time_delay,
       delay_block_period: block_delay,
       proof: proof_try,

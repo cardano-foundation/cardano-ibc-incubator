@@ -222,6 +222,8 @@ pub fn setup() -> MockData {
       state: ClientDatumState {
         client_state,
         consensus_states: [Pair(proof_height, cons_state)],
+        processed_times: [Pair(proof_height, 0)],
+        processed_heights: [Pair(proof_height, 0)],
       },
       token: client_token,
     }

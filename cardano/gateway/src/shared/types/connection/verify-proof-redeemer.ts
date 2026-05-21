@@ -17,6 +17,8 @@ export type VerifyProofRedeemer =
         cs: ClientState;
         cons_state: ConsensusState;
         height: Height;
+        processed_time: bigint;
+        processed_height: bigint;
         delay_time_period: bigint;
         delay_block_period: bigint;
         proof: MerkleProof;
@@ -29,6 +31,8 @@ export type VerifyProofRedeemer =
         cs: ClientState;
         cons_state: ConsensusState;
         height: Height;
+        processed_time: bigint;
+        processed_height: bigint;
         delay_time_period: bigint;
         delay_block_period: bigint;
         proof: MerkleProof;
@@ -55,6 +59,8 @@ export function encodeVerifyProofRedeemer(
     cs: ClientStateSchema,
     cons_state: ConsensusStateSchema,
     height: HeightSchema,
+    processed_time: Data.Integer(),
+    processed_height: Data.Integer(),
     delay_time_period: Data.Integer(),
     delay_block_period: Data.Integer(),
     proof: MerkleProofSchema,
@@ -68,6 +74,8 @@ export function encodeVerifyProofRedeemer(
         cs: ClientStateSchema,
         cons_state: ConsensusStateSchema,
         height: HeightSchema,
+        processed_time: Data.Integer(),
+        processed_height: Data.Integer(),
         delay_time_period: Data.Integer(),
         delay_block_period: Data.Integer(),
         proof: MerkleProofSchema,
@@ -80,6 +88,8 @@ export function encodeVerifyProofRedeemer(
         cs: ClientStateSchema,
         cons_state: ConsensusStateSchema,
         height: HeightSchema,
+        processed_time: Data.Integer(),
+        processed_height: Data.Integer(),
         delay_time_period: Data.Integer(),
         delay_block_period: Data.Integer(),
         proof: MerkleProofSchema,
