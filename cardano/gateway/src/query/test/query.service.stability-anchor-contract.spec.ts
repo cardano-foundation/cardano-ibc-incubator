@@ -267,10 +267,11 @@ describe('QueryService stability anchor contract', () => {
     expect(header.anchor_block?.height?.revision_height).toBe(100n);
   });
 
-  it('reuses the live HostState tx height when the current epoch context point is too old', async () => {
+  it('does not return the live HostState tx height as latest stability height when the root was not accepted', async () => {
     lucidServiceMock.findUtxoAtHostStateNFT.mockResolvedValue({
       txHash: 'live-host-state-tx',
       outputIndex: 0,
+      datum: 'datum-cbor',
     });
     historyServiceMock.findTransactionEvidenceByHash.mockResolvedValue({
       txHash: 'live-host-state-tx',
@@ -307,10 +308,7 @@ describe('QueryService stability anchor contract', () => {
       new Error('Failed to acquire requested point. Target point is too old.'),
     );
 
-    await expect(service.latestStabilityHeight()).resolves.toEqual({ height: 1136n });
-    expect(loggerMock.warn).toHaveBeenCalledWith(
-      expect.stringContaining('reusing that height until a newer HostState tx is available'),
-    );
+    await expect(service.latestCertifiedHeight()).rejects.toThrow(/stability|accepted|epoch context/i);
   });
 
   it('rejects stability header generation when requested anchor height is not a HostState tx block', async () => {
