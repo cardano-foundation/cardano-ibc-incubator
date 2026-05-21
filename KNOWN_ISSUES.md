@@ -51,6 +51,46 @@ Though at the time of writing it is unclear how to quantify the implications for
 
 # Asymmetries and Architectural Considerations
 
+## Unimplemented / Not Supported
+
+The following features are not currently supported by the Cardano bridge path. In several cases Hermes or Cosmos SDK chains support the feature generally, but the Cardano endpoint, Gateway, on-chain validators, or Cardano light-client integration do not yet expose the corresponding functionality.
+
+### Channel Upgrades
+
+IBC channel upgrades are not implemented for Cardano channels. Existing channels should be treated as fixed once established. If channel parameters need to change, the practical path is to open a new channel and migrate application routing to that new channel rather than attempting an in-place channel upgrade handshake.
+
+This is especially relevant for production planning because channel upgrades are the standard IBC mechanism for changing channel ordering, version metadata, or app-level channel features without creating a fresh channel. The Cardano bridge should not assume that this operational path is available today.
+
+### ICS-29 Fee Middleware
+
+ICS-29 fee middleware is not supported for the Cardano bridge path. The Cardano relayer endpoint does not implement the fee middleware queries needed to discover incentivized packets, and counterparty payee registration is not implemented as a meaningful Cardano operation.
+
+This means relayer incentives cannot currently rely on the standard ICS-29 packet fee flow for Cardano-connected channels. Operators should assume fees and relayer compensation need to be handled outside of ICS-29 until explicit support is added.
+
+### Host Consensus State Query
+
+Cardano host consensus state queries are not implemented. The relayer endpoint cannot currently answer the standard host consensus state query for Cardano in the way it can for a conventional Cosmos SDK chain.
+
+This is a consequence of the same underlying asymmetry discussed elsewhere in this document: Cardano does not expose Tendermint-style per-height consensus states with an `app_hash`. The bridge instead authenticates Cardano IBC state through the Cardano HostState commitment and the relevant Cardano light-client evidence. Any workflow requiring a generic host consensus state query should be treated as unsupported for Cardano today.
+
+### Balance Query
+
+Balance queries through the Hermes Cardano chain endpoint are not implemented. This does not mean Cardano balances are unknowable, since balances can still be inspected through Cardano-specific tooling, Gateway functionality, or local test tooling where available. The unsupported part is the generic relayer balance query interface for Cardano.
+
+As a practical example, commands such as relayer wallet balance checks should not be expected to work uniformly for Cardano the way they do for Cosmos SDK chains. Operational scripts should use Cardano-specific balance inspection paths instead.
+
+### ICS-31 Cross-Chain Queries
+
+ICS-31 cross-chain queries are not supported for Cardano. The Cardano relayer endpoint does not implement the cross-chain query interface, so Cardano should not currently be treated as an ICS-31 query host or query target through this bridge.
+
+Supporting this would require more than a relayer command wrapper. The bridge would need a clear Cardano-side query model, proof model, and response verification path that fits the HostState commitment architecture.
+
+### Client Upgrade
+
+Standard IBC client upgrade is not supported for the Cardano light clients in this repository. The probabilistic Cardano light clients reject `VerifyUpgradeAndUpdateState`, and the historical Mithril design documentation also treats standard client upgrade as unsupported.
+
+This is distinct from client recovery. A frozen or expired client may be recoverable only if a safe recovery mechanism exists for that client type, such as a trusted substitute-client flow. A standard IBC client upgrade should not be assumed to be available for changing Cardano light-client parameters, code, or verification semantics in place.
+
 ## Denom Display in Wallets + CIP-26 Token Metadata Registry
 
 There are substantial issues with using the current canonical approach of displaying custom data in Cardano wallets as token names. In our case the token name of an IBC voucher on Cardano is the hash of the denom. We have to do this so that we have something of deterministic length, and denom length is unbounded, so it’s not an option to make the human-readable denom the assetName. 
