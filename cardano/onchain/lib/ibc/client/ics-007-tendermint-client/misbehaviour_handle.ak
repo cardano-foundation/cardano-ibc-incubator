@@ -13,6 +13,7 @@ use ibc/client/ics_007_tendermint_client/msgs.{
 }
 use ibc/client/ics_007_tendermint_client/store
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
+use ibc/core/ics_002_client_semantics/types/keys as client_keys
 use ibc/utils/tx_time.{TxTime} as tx_time_mod
 
 // check_for_misbehaviour() detects duplicate height misbehaviour and BFT time violation misbehaviour
@@ -65,7 +66,8 @@ pub fn check_for_misbehaviour(
         }
       }
 
-    MisbehaviourCase(misbehaviour) ->
+    MisbehaviourCase(misbehaviour) -> {
+      expect client_keys.is_valid_client_id(misbehaviour.client_id)
       // Compare timestamps by height order so reversed headers cannot fake a time violation.
       when
         height_mod.compare(
@@ -83,6 +85,7 @@ pub fn check_for_misbehaviour(
         Less ->
           misbehaviour.header2.signed_header.header.time <= misbehaviour.header1.signed_header.header.time
       }
+    }
   }
 }
 

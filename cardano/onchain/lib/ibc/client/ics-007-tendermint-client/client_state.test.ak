@@ -1,4 +1,5 @@
 use aiken/collection/list
+use aiken/fuzz
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
@@ -8,6 +9,7 @@ use ibc/core/ics_002_client_semantics/types/client.{
 }
 use ibc/core/ics_023_vector_commitments/ics23/proofs
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleRoot}
+use ibc/testing/fuzz_dsl
 use ibc/utils/time.{Time}
 
 const fifty_char_chain_id = "12345678901234567890123456789012345678901234567890"
@@ -16,6 +18,47 @@ const fifty_one_char_chain_id =
   "123456789012345678901234567890123456789012345678901"
 
 const empty_chain_id = ""
+
+test prop_client_frozen_rejects_update(seed via fuzz.int()) {
+  fuzz.label(@"unit.client.frozen.rejects_update")
+
+  let offset =
+    if seed < 0 {
+      -seed % 30
+    } else {
+      seed % 30
+    }
+  let latest_height = Height { revision_number: 0, revision_height: 1 + offset }
+  let frozen_height = Height { revision_number: 0, revision_height: 1 }
+  let cs =
+    client_state.new_client_state(
+      "localosmosis-0",
+      unchecked_rational.from_int(1),
+      1000,
+      1500,
+      10,
+      latest_height,
+      merkle.get_sdk_specs(),
+    )
+  let cs = ClientState { ..cs, frozen_height }
+  let consensus_state =
+    ConsensusState {
+      timestamp: 100,
+      next_validators_hash: #"a4a054a554354a85a54a054a554354a854a054a554a054a554a054a554a054a5",
+      root: MerkleRoot {
+        hash: #"92dad9443e4dd6d70a7f11872101ebff87e21798e4fbb26fa4bf590eb440e71b",
+      },
+    }
+
+  fuzz_dsl.mutated_check(
+    "client",
+    "frozen_update",
+    "frozen_client",
+    "client_state.status",
+    client_state.status(cs, 101, [Pair(latest_height, consensus_state)]) != Frozen,
+  )
+    |> fuzz_dsl.assert_rejected
+}
 
 // Unit tests with success cases for validate function
 test test_validate_success() {

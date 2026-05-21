@@ -1,4 +1,5 @@
 use aiken/collection/list
+use aiken/fuzz
 use aiken/interval
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
@@ -1434,6 +1435,48 @@ test update_client_verify_non_adjacent_succeed() {
     mock.host_state_nft_policy_id,
     Some(client_datum),
     redeemer,
+    mock.output_reference,
+    transaction,
+  )
+}
+
+test prop_client_update_rejects_wrong_host_redeemer(_seed via fuzz.int()) fail {
+  fuzz.label(@"contract.client.update.invalid_wrong_host_redeemer")
+
+  let mock = setup()
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock.input, mock.host_state_input],
+      outputs: [mock.host_state_output],
+      redeemers: host_state_update_connection_redeemers(mock.host_state_input),
+    }
+
+  spending_client.spend_client.spend(
+    mock.host_state_nft_policy_id,
+    None,
+    UpdateClient { msg: HeaderCase(header_mod.null_header()) },
+    mock.output_reference,
+    transaction,
+  )
+}
+
+test prop_client_update_rejects_missing_host_state(_seed via fuzz.int()) fail {
+  fuzz.label(@"contract.client.update.invalid_missing_host_state")
+
+  let mock = setup()
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock.input],
+      outputs: [],
+      redeemers: [],
+    }
+
+  spending_client.spend_client.spend(
+    mock.host_state_nft_policy_id,
+    None,
+    UpdateClient { msg: HeaderCase(header_mod.null_header()) },
     mock.output_reference,
     transaction,
   )

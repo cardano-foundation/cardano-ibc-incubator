@@ -1,4 +1,5 @@
 use aiken/collection/list
+use aiken/fuzz
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -17,6 +18,7 @@ use ibc/client/ics_007_tendermint_client/header.{Header}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_023_vector_commitments/merkle
+use ibc/testing/fuzz_dsl
 
 const mock_chain_id = "localosmosis-0"
 
@@ -140,6 +142,169 @@ fn get_mock_client_datum(latest_height: Height) -> ClientDatum {
     },
     token: mock_auth_token,
   }
+}
+
+fn positive_seed(seed: Int) -> Int {
+  if seed < 0 {
+    -seed
+  } else {
+    seed
+  }
+}
+
+fn fuzz_height(seed: Int, offset: Int) -> Height {
+  Height {
+    revision_number: 0,
+    revision_height: positive_seed(seed % 30) + offset,
+  }
+}
+
+test prop_client_update_accepts_adjacent(seed via fuzz.int()) {
+  fuzz.label(@"unit.client.update.valid_adjacent")
+
+  let input_height = fuzz_height(seed, 2)
+  let header_height =
+    Height { ..input_height, revision_height: input_height.revision_height + 1 }
+  let input_client_datum = get_mock_client_datum(input_height)
+  let mock_header = get_mock_header(header_height)
+  let output_client_datum =
+    ClientDatum {
+      ..input_client_datum,
+      state: ClientDatumState {
+        client_state: ClientState {
+          ..input_client_datum.state.client_state,
+          latest_height: header_height,
+        },
+        consensus_states: [
+          Pair(
+            header.get_height(mock_header),
+            header.consensus_state(mock_header),
+          ),
+          ..input_client_datum.state.consensus_states
+        ],
+        processed_times: [
+          Pair(header_height, 0),
+          ..input_client_datum.state.processed_times
+        ],
+        processed_heights: [
+          Pair(header_height, 0),
+          ..input_client_datum.state.processed_heights
+        ],
+      },
+    }
+
+  fuzz_dsl.valid_check(
+    "client",
+    "update",
+    "client_datum.update_state",
+    client_datum.update_state(
+      input_client_datum,
+      output_client_datum,
+      mock_header,
+      0,
+    ),
+  )
+    |> fuzz_dsl.assert_valid
+}
+
+test prop_client_update_accepts_non_adjacent(seed via fuzz.int()) {
+  fuzz.label(@"unit.client.update.valid_non_adjacent")
+
+  let input_height = fuzz_height(seed, 1)
+  let header_height =
+    Height { ..input_height, revision_height: input_height.revision_height + 2 }
+  let input_client_datum = get_mock_client_datum(input_height)
+  let mock_header = get_mock_header(header_height)
+  let output_client_datum =
+    ClientDatum {
+      ..input_client_datum,
+      state: ClientDatumState {
+        client_state: ClientState {
+          ..input_client_datum.state.client_state,
+          latest_height: header_height,
+        },
+        consensus_states: [
+          Pair(
+            header.get_height(mock_header),
+            header.consensus_state(mock_header),
+          ),
+          ..input_client_datum.state.consensus_states
+        ],
+        processed_times: [
+          Pair(header_height, 0),
+          ..input_client_datum.state.processed_times
+        ],
+        processed_heights: [
+          Pair(header_height, 0),
+          ..input_client_datum.state.processed_heights
+        ],
+      },
+    }
+
+  fuzz_dsl.valid_check(
+    "client",
+    "update",
+    "client_datum.update_state",
+    client_datum.update_state(
+      input_client_datum,
+      output_client_datum,
+      mock_header,
+      0,
+    ),
+  )
+    |> fuzz_dsl.assert_valid
+}
+
+test prop_client_update_rejects_wrong_consensus_state(seed via fuzz.int()) {
+  fuzz.label(@"unit.client.update.invalid_wrong_consensus_state")
+
+  let input_height = fuzz_height(seed, 2)
+  let header_height =
+    Height { ..input_height, revision_height: input_height.revision_height + 1 }
+  let input_client_datum = get_mock_client_datum(input_height)
+  let mock_header = get_mock_header(header_height)
+  let wrong_consensus_state =
+    ConsensusState {
+      timestamp: header.consensus_state(mock_header).timestamp + 1,
+      next_validators_hash: expected_next_validators_hash,
+      root: merkle.new_merkle_root(expected_app_hash),
+    }
+  let output_client_datum =
+    ClientDatum {
+      ..input_client_datum,
+      state: ClientDatumState {
+        client_state: ClientState {
+          ..input_client_datum.state.client_state,
+          latest_height: header_height,
+        },
+        consensus_states: [
+          Pair(header.get_height(mock_header), wrong_consensus_state),
+          ..input_client_datum.state.consensus_states
+        ],
+        processed_times: [
+          Pair(header_height, 0),
+          ..input_client_datum.state.processed_times
+        ],
+        processed_heights: [
+          Pair(header_height, 0),
+          ..input_client_datum.state.processed_heights
+        ],
+      },
+    }
+
+  fuzz_dsl.mutated_check(
+    "client",
+    "update",
+    "wrong_consensus_state",
+    "client_datum.update_state",
+    client_datum.update_state(
+      input_client_datum,
+      output_client_datum,
+      mock_header,
+      0,
+    ),
+  )
+    |> fuzz_dsl.assert_rejected
 }
 
 // Unit test with success case for is_initialized_valid function

@@ -81,26 +81,28 @@ validator verify_proof {
           path,
         )
 
-      BatchVerifyMembership(items) ->
-        list.all(
-          items,
-          fn(i) {
-            client_state_mod.verify_membership(
-              i.cs,
-              i.cons_state,
-              i.height,
-              i.processed_time,
-              i.processed_height,
-              current_time,
-              current_height,
-              i.delay_time_period,
-              i.delay_block_period,
-              i.proof,
-              i.path,
-              i.value,
-            )
-          },
-        )
+      BatchVerifyMembership(items) -> and {
+          !list.is_empty(items),
+          list.all(
+            items,
+            fn(i) {
+              client_state_mod.verify_membership(
+                i.cs,
+                i.cons_state,
+                i.height,
+                i.processed_time,
+                i.processed_height,
+                current_time,
+                current_height,
+                i.delay_time_period,
+                i.delay_block_period,
+                i.proof,
+                i.path,
+                i.value,
+              )
+            },
+          ),
+        }
 
       _ -> False
     }
