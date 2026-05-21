@@ -1932,6 +1932,7 @@ fn write_gateway_env_for_network(
 
     match network {
         config::CoreCardanoNetwork::Local => {
+            let local_stability_threshold_unique_pools = LOCAL_STABILITY_SPO_COUNT.to_string();
             let local_gateway_defaults = [
                 ("HISTORY_DB_HOST", "yaci-store-postgres"),
                 ("HISTORY_DB_PORT", "5432"),
@@ -1954,6 +1955,10 @@ fn write_gateway_env_for_network(
                     LOCAL_STABILITY_ASSUME_POOL_REGISTRATION_SLOT,
                 ),
                 ("CARDANO_EPOCH_LENGTH", LOCAL_CARDANO_EPOCH_LENGTH),
+                (
+                    "STABILITY_THRESHOLD_UNIQUE_POOLS",
+                    local_stability_threshold_unique_pools.as_str(),
+                ),
             ];
             for (key, value) in local_gateway_defaults {
                 set_or_append_env_var(&gateway_env, key, value)?;

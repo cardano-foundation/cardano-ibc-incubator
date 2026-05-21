@@ -21,9 +21,29 @@ export type StabilityPolicy = {
   stake_weight_bps: bigint;
 };
 
+function parsePositiveBigIntEnv(name: string, fallback: bigint): bigint {
+  const raw = process.env[name];
+
+  if (raw === undefined || raw.trim() === '') {
+    return fallback;
+  }
+
+  try {
+    const parsed = BigInt(raw.trim());
+
+    if (parsed <= 0n) {
+      return fallback;
+    }
+
+    return parsed;
+  } catch {
+    return fallback;
+  }
+}
+
 const LIGHT_CLIENT_STABILITY_POLICY: StabilityPolicy = {
   threshold_depth: 24n,
-  threshold_unique_pools: 5n,
+  threshold_unique_pools: parsePositiveBigIntEnv('STABILITY_THRESHOLD_UNIQUE_POOLS', 5n),
   threshold_unique_stake_bps: 511n,
   depth_weight_bps: 2000n,
   pools_weight_bps: 2000n,
