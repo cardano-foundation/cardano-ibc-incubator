@@ -3,6 +3,8 @@ package app
 import (
 	asyncicqmodule "cardano-entrypoint/x/asyncicq/module"
 	ibcmithril "cardano-entrypoint/x/clients/mithril"
+	ibcstability "cardano-entrypoint/x/clients/stability"
+	"path/filepath"
 
 	"cosmossdk.io/core/appmodule"
 	storetypes "cosmossdk.io/store/types"
@@ -16,6 +18,9 @@ import (
 	pfmrouter "github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v10/packetforward"
 	pfmrouterkeeper "github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v10/packetforward/keeper"
 	pfmroutertypes "github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v10/packetforward/types"
+	ibcwasm "github.com/cosmos/ibc-go/modules/light-clients/08-wasm/v10"
+	ibcwasmkeeper "github.com/cosmos/ibc-go/modules/light-clients/08-wasm/v10/keeper"
+	ibcwasmtypes "github.com/cosmos/ibc-go/modules/light-clients/08-wasm/v10/types"
 	icamodule "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts"
 	icacontroller "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/controller"
 	icacontrollerkeeper "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/controller/keeper"
@@ -53,6 +58,7 @@ func (app *App) registerIBCModules() {
 		storetypes.NewKVStoreKey(pfmroutertypes.StoreKey),
 		storetypes.NewKVStoreKey(icahosttypes.StoreKey),
 		storetypes.NewKVStoreKey(icacontrollertypes.StoreKey),
+		storetypes.NewKVStoreKey(ibcwasmtypes.StoreKey),
 		storetypes.NewTransientStoreKey(paramstypes.TStoreKey),
 	); err != nil {
 		panic(err)
@@ -174,18 +180,36 @@ func (app *App) registerIBCModules() {
 
 	app.IBCKeeper.SetRouter(ibcRouter)
 
+	wasmConfig := ibcwasmtypes.WasmConfig{
+		DataDir:               filepath.Join(DefaultNodeHome, "ibc_08-wasm_client_data"),
+		SupportedCapabilities: []string{"iterator"},
+		ContractDebugMode:     false,
+	}
+	app.WasmClientKeeper = ibcwasmkeeper.NewKeeperWithConfig(
+		app.appCodec,
+		runtime.NewKVStoreService(app.GetKey(ibcwasmtypes.StoreKey)),
+		app.IBCKeeper.ClientKeeper,
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		wasmConfig,
+		app.GRPCQueryRouter(),
+	)
+	
 	clientKeeper := app.IBCKeeper.ClientKeeper
 	storeProvider := clientKeeper.GetStoreProvider()
 	tmLightClientModule := ibctm.NewLightClientModule(app.appCodec, storeProvider)
 	smLightClientModule := solomachine.NewLightClientModule(app.appCodec, storeProvider)
 	mithrilLightClientModule := ibcmithril.NewLightClientModule(app.appCodec, storeProvider)
 	probabilisticLightClientModule := ibcprobabilistic.NewLightClientModule(app.appCodec, storeProvider)
-
+	stabilityLightClientModule := ibcstability.NewLightClientModule(app.appCodec, storeProvider)
+	wasmLightClientModule := ibcwasm.NewLightClientModule(app.WasmClientKeeper, storeProvider)
+	
 	clientKeeper.AddRoute(ibctm.ModuleName, &tmLightClientModule)
 	clientKeeper.AddRoute(solomachine.ModuleName, &smLightClientModule)
 	// The Mithril client is deprecated and intentionally not routable for new IBC client
 	// operations. Keep its AppModule registered below so historical client types can decode.
 	clientKeeper.AddRoute(ibcprobabilistic.ModuleName, &probabilisticLightClientModule)
+	clientKeeper.AddRoute(ibcstability.ModuleName, &stabilityLightClientModule)
+	clientKeeper.AddRoute(ibcwasmtypes.ModuleName, &wasmLightClientModule)
 
 	// register IBC modules
 	if err := app.RegisterModules(
@@ -198,6 +222,7 @@ func (app *App) registerIBCModules() {
 		ibcmithril.NewAppModule(mithrilLightClientModule),
 		ibcprobabilistic.NewAppModule(probabilisticLightClientModule),
 		solomachine.NewAppModule(smLightClientModule),
+		ibcwasm.NewAppModule(app.WasmClientKeeper),
 	); err != nil {
 		panic(err)
 	}
@@ -217,6 +242,8 @@ func RegisterIBC(registry cdctypes.InterfaceRegistry) map[string]appmodule.AppMo
 		ibcmithril.ModuleName:       ibcmithril.NewAppModule(ibcmithril.LightClientModule{}),
 		ibcprobabilistic.ModuleName: ibcprobabilistic.NewAppModule(ibcprobabilistic.LightClientModule{}),
 		solomachine.ModuleName:      solomachine.NewAppModule(solomachine.LightClientModule{}),
+		ibcstability.ModuleName: ibcstability.NewAppModule(ibcstability.LightClientModule{}),
+		ibcwasmtypes.ModuleName:     ibcwasm.NewAppModule(ibcwasmkeeper.Keeper{}),
 	}
 
 	for _, module := range modules {

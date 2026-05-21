@@ -6,6 +6,7 @@ import (
 	vesseloraclemodulev1 "cardano-entrypoint/api/vesseloracle/vesseloracle/module"
 	_ "cardano-entrypoint/x/vesseloracle/module" // import for side-effects
 	vesseloracletypes "cardano-entrypoint/x/vesseloracle/types"
+
 	runtimev1alpha1 "cosmossdk.io/api/cosmos/app/runtime/v1alpha1"
 	appv1alpha1 "cosmossdk.io/api/cosmos/app/v1alpha1"
 	authmodulev1 "cosmossdk.io/api/cosmos/auth/module/v1"
@@ -66,6 +67,7 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	_ "github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v10/packetforward"
 	pfmroutertypes "github.com/cosmos/ibc-apps/middleware/packet-forward-middleware/v10/packetforward/types"
+	ibcwasmtypes "github.com/cosmos/ibc-go/modules/light-clients/08-wasm/v10/types"
 	_ "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts" // import for side-effects
 	icatypes "github.com/cosmos/ibc-go/v10/modules/apps/27-interchain-accounts/types"
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
@@ -103,6 +105,7 @@ var (
 		group.ModuleName,
 		consensusparamtypes.ModuleName,
 		vesseloracletypes.ModuleName,
+		ibcwasmtypes.ModuleName,
 		// chain modules
 		// this line is used by starport scaffolding # stargate/app/initGenesis
 	}
@@ -126,6 +129,7 @@ var (
 		icatypes.ModuleName,
 		pfmroutertypes.ModuleName,
 		vesseloracletypes.ModuleName,
+		ibcwasmtypes.ModuleName,
 		// chain modules
 		// this line is used by starport scaffolding # stargate/app/beginBlockers
 	}
@@ -144,6 +148,7 @@ var (
 		icatypes.ModuleName,
 		pfmroutertypes.ModuleName,
 		vesseloracletypes.ModuleName,
+		ibcwasmtypes.ModuleName,
 		// chain modules
 		// this line is used by starport scaffolding # stargate/app/endBlockers
 	}

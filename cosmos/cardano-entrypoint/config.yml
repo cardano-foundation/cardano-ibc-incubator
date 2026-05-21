@@ -64,6 +64,22 @@ faucet:
     - 100000stake
 genesis:
   app_state:
+    gov:
+      params:
+        min_deposit:
+          - denom: "stake"
+            amount: "1"
+        max_deposit_period: "10s"
+        voting_period: "15s"
+        quorum: "0.000000000000000001"
+        threshold: "0.000000000000000001"
+        veto_threshold: "0.334000000000000000"
+        expedited_voting_period: "10s"
+        expedited_threshold: "0.000000000000000002"
+        expedited_min_deposit:
+          - denom: "stake"
+            amount: "2"
+
     ibc:
       client_genesis:
         clients: []
@@ -71,8 +87,9 @@ genesis:
         clients_metadata: []
         "params":
           "allowed_clients":
-            - "08-cardano-mithril"
-            - "08-cardano-probabilistic"
+            - "08-cardano"
+            - "08-cardano-stability"
+            - "08-wasm"
             - "07-tendermint"
             - "06-solomachine"
         create_localhost: false
