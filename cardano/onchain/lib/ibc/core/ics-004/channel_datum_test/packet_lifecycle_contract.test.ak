@@ -29,6 +29,10 @@ type SendPacketFixture {
   }
 }
 
+type PacketLifecycleModel {
+  PacketLifecycleModel { channel: ChannelDatum }
+}
+
 fn test_output_ref(index: Int) -> OutputReference {
   OutputReference {
     transaction_id: #"0000000000000000000000000000000000000000000000000000000000000000",
@@ -147,6 +151,27 @@ fn build_send_packet_fixture(packet: Packet) -> SendPacketFixture {
     commitment,
     channel_redeemer: SendPacket { packet },
   }
+}
+
+fn model_from_channel(channel: ChannelDatum) -> PacketLifecycleModel {
+  PacketLifecycleModel { channel }
+}
+
+fn model_send_packet(
+  model: PacketLifecycleModel,
+  packet: Packet,
+) -> PacketLifecycleModel {
+  let commitment = packet_mod.commit_packet(packet)
+  PacketLifecycleModel {
+    channel: send_output(model.channel, packet, commitment),
+  }
+}
+
+fn model_ack_packet(
+  model: PacketLifecycleModel,
+  packet: Packet,
+) -> PacketLifecycleModel {
+  PacketLifecycleModel { channel: ack_output(model.channel, packet) }
 }
 
 fn mutate_wrong_sequence(fixture: SendPacketFixture) -> SendPacketFixture {
@@ -435,6 +460,36 @@ test prop_packet_send_accepts_valid_near_context(_seed via fuzz.int()) {
     |> build_send_packet_fixture
     |> run_send_packet_transition
     |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_model_packet_send_ack_valid_sequence(_seed via fuzz.int()) {
+  fuzz.label(@"model.packet.send_ack.valid_sequence")
+
+  let packet = base_packet(11)
+  let initial_model =
+    base_datum(Unordered, packet.sequence) |> model_from_channel
+  let sent_model = model_send_packet(initial_model, packet)
+  let acked_model = model_ack_packet(sent_model, packet)
+  let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
+  let acknowledgement_bytes = acknowledgement_mod.marshal_json(acknowledgement)
+
+  and {
+    packet
+      |> build_send_packet_fixture
+      |> run_send_packet_transition
+      |> fuzz_dsl.assert_protocol_valid,
+    run_ack_packet_transition(
+      sent_model.channel,
+      acked_model.channel,
+      packet,
+      acknowledgement,
+      acknowledgement_bytes,
+      fuzz_dsl.no_mutation(),
+    )
+      |> fuzz_dsl.assert_protocol_valid,
+    acked_model.channel.state.next_sequence_send == packet.sequence + 1,
+    !pairs.has_key(acked_model.channel.state.packet_commitment, packet.sequence),
+  }
 }
 
 test prop_packet_send_rejects_wrong_sequence(_seed via fuzz.int()) {

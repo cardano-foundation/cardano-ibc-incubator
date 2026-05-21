@@ -13,9 +13,9 @@ use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
 }
 use ibc/apps/transfer/trace_registry.{
-  Directory, InsertTrace, Shard, TraceRegistryDirectoryBucket,
-  TraceRegistryDirectoryDatum, TraceRegistryEntry, TraceRegistryShardDatum,
-  bucket_index_for_hash,
+  Directory, InsertTrace, Shard, TraceRegistryDatum,
+  TraceRegistryDirectoryBucket, TraceRegistryDirectoryDatum, TraceRegistryEntry,
+  TraceRegistryRedeemer, TraceRegistryShardDatum, bucket_index_for_hash,
 }
 use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
@@ -39,6 +39,7 @@ use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/testing/fuzz_dsl
 use ibc/utils/string as string_utils
 use minting_voucher
+use trace_registry as trace_registry_validator
 
 type MockData {
   module_token: AuthToken,
@@ -56,6 +57,9 @@ type FirstSeenVoucherFixture {
     redeemer: MintVoucherRedeemer,
     transaction: Transaction,
     mutation: fuzz_dsl.Mutation,
+    trace_registry_datum: TraceRegistryDatum,
+    trace_registry_redeemer: TraceRegistryRedeemer,
+    trace_registry_spent_output_ref: OutputReference,
   }
 }
 
@@ -262,6 +266,28 @@ fn make_shard_spend_input(
   }
 }
 
+fn make_shard_output(
+  shard_policy_id: PolicyId,
+  shard_name: ByteArray,
+  bucket_index: Int,
+  voucher_hash: ByteArray,
+  full_denom: ByteArray,
+) -> Output {
+  Output {
+    address: from_script("trace registry script hash"),
+    value: from_asset(shard_policy_id, shard_name, 1),
+    datum: InlineDatum(
+      Shard(
+        TraceRegistryShardDatum {
+          bucket_index,
+          entries: [TraceRegistryEntry { voucher_hash, full_denom }],
+        },
+      ),
+    ),
+    reference_script: None,
+  }
+}
+
 fn make_metadata_output(
   voucher_metadata_script_hash: crypto.ScriptHash,
   full_denom: ByteArray,
@@ -448,6 +474,8 @@ fn first_seen_voucher_fixture(
   let spend_channel_redeemer_in_data: Redeemer = channel_redeemer
   let trace_registry_redeemer_in_data: Redeemer =
     InsertTrace { voucher_hash: voucher_denom_hash, full_denom: prefixed_denom }
+  let trace_registry_redeemer =
+    InsertTrace { voucher_hash: voucher_denom_hash, full_denom: prefixed_denom }
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
       Pair(
@@ -488,12 +516,20 @@ fn first_seen_voucher_fixture(
       datum: NoDatum,
       reference_script: None,
     }
+  let updated_shard_output =
+    make_shard_output(
+      mock_data.directory_auth_token.policy_id,
+      active_shard_name,
+      bucket_index,
+      voucher_denom_hash,
+      prefixed_denom,
+    )
   let transaction =
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input, active_shard_input],
       reference_inputs: [directory_input],
-      outputs: [voucher_output, metadata_output],
+      outputs: [voucher_output, metadata_output, updated_shard_output],
       redeemers,
       mint,
     }
@@ -503,6 +539,11 @@ fn first_seen_voucher_fixture(
     redeemer: mint_voucher_redeemer,
     transaction,
     mutation,
+    trace_registry_datum: Shard(
+      TraceRegistryShardDatum { bucket_index, entries: [] },
+    ),
+    trace_registry_redeemer,
+    trace_registry_spent_output_ref: active_shard_input.output_reference,
   }
 }
 
@@ -567,6 +608,25 @@ fn run_first_seen_voucher_mint_transition(
       )
 }
 
+fn run_first_seen_voucher_mint_tx(
+  fixture: FirstSeenVoucherFixture,
+) -> fuzz_dsl.ProtocolTxFixture {
+  run_first_seen_voucher_mint_transition(fixture)
+    |> fuzz_dsl.with_protocol_validator_check(
+        "trace_registry",
+        trace_registry_validator.spend_trace_registry.spend(
+          fixture.mock_data.directory_auth_token.policy_id,
+          fixture.mock_data.directory_auth_token,
+          fixture.mock_data.voucher_minting_policy_id,
+          "",
+          Some(fixture.trace_registry_datum),
+          fixture.trace_registry_redeemer,
+          fixture.trace_registry_spent_output_ref,
+          fixture.transaction,
+        ),
+      )
+}
+
 fn first_seen_metadata_datum_with(
   name: ByteArray,
   ticker: ByteArray,
@@ -598,6 +658,19 @@ test prop_voucher_first_mint_policy_accepts_valid_metadata(_seed via fuzz.int())
     fuzz_dsl.no_mutation(),
   )
     |> run_first_seen_voucher_mint_transition
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_tx_first_seen_voucher_mint_couples_registry_append(
+  _seed via fuzz.int(),
+) {
+  fuzz.label(@"tx.voucher.first_mint.valid_registry_coupled")
+
+  first_seen_voucher_fixture(
+    canonical_first_seen_metadata_output(),
+    fuzz_dsl.no_mutation(),
+  )
+    |> run_first_seen_voucher_mint_tx
     |> fuzz_dsl.assert_protocol_valid
 }
 

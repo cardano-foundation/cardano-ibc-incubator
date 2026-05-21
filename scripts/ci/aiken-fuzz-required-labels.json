@@ -91,6 +91,8 @@
     "contract.trace.rollover.invalid_non_target_bucket_changed",
     "contract.trace.rollover.invalid_old_shard_not_preserved",
     "contract.trace.rollover.invalid_new_shard_not_exact_entry",
-    "contract.trace.rollover.invalid_missing_voucher_mint"
+    "contract.trace.rollover.invalid_missing_voucher_mint",
+    "tx.voucher.first_mint.valid_registry_coupled",
+    "model.packet.send_ack.valid_sequence"
   ]
 }

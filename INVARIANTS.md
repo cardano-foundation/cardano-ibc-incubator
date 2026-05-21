@@ -10,13 +10,14 @@ CI-enforced labels use an explicit depth prefix:
 
 - `unit.*` labels cover pure module logic and small isolated helpers.
 - `contract.*` labels cover validator-facing or near-valid transition fixtures.
-- `tx.*` is reserved for full transaction fixture coverage.
-- `model.*` is reserved for model/state-machine sequence coverage.
+- `tx.*` labels cover transaction-shaped fixtures that execute every validator
+  or minting policy currently represented in that fixture.
+- `model.*` labels cover multi-step state-machine sequences.
 
-The current suite uses `unit.*` and `contract.*` labels. The coverage checker
-rejects labels that do not start with one of these depth categories, so future
-fuzzing work can require `tx.*` or `model.*` coverage independently from lower
-level checks.
+The coverage checker rejects labels that do not start with one of these depth
+categories. It now also requires at least one `tx.*` label and at least one
+`model.*` label so the suite cannot regress back to only helper and
+single-contract coverage.
 
 ## Composable Fixtures
 
@@ -254,6 +255,7 @@ Required CI labels:
 - `contract.packet.timeout.valid_unordered`
 - `contract.packet.timeout.valid_ordered`
 - `contract.packet.timeout.invalid_before_timeout`
+- `model.packet.send_ack.valid_sequence`
 
 ### SendPacket
 
@@ -317,6 +319,21 @@ ordered timeout transitions. They prove these invariants:
   open.
 - A valid ordered timeout consumes the packet commitment and closes the channel.
 - A timeout cannot execute before the packet timeout timestamp has been reached.
+
+### Model Sequences
+
+Covered by `model.packet.send_ack.valid_sequence`.
+
+The model property constructs an explicit packet lifecycle state sequence:
+initial open channel -> SendPacket output state -> AcknowledgePacket output
+state. It runs the SendPacket transition and then the Ack transition against
+the modeled intermediate state. It proves these invariants:
+
+- A packet accepted by the send transition can be consumed by the ack
+  transition using the send output as the next model input.
+- The final model state removes the packet commitment.
+- The final model state preserves the incremented send sequence from the first
+  step.
 
 ## Transfer Module Accounting
 
@@ -419,6 +436,7 @@ Required CI labels:
 - `contract.voucher.first_mint.invalid_wrong_policy`
 - `contract.voucher.first_mint.invalid_wrong_reference_asset`
 - `contract.voucher.existing_mint.rejects_reference_nft`
+- `tx.voucher.first_mint.valid_registry_coupled`
 
 ### First Mint Canonical Metadata
 
@@ -448,6 +466,25 @@ They prove these invariants:
   same denom hash.
 - Human-readable metadata cannot claim a different denom, policy, or display
   identity than the voucher asset it describes.
+
+### First Mint Transaction Coupling
+
+Covered by `tx.voucher.first_mint.valid_registry_coupled`.
+
+The transaction-level property builds the first-seen voucher mint transaction
+with the voucher output, reference NFT metadata output, active trace shard input
+and output, trace directory reference input, channel packet redeemer, transfer
+module callback redeemer, and trace-registry redeemer. It then runs both the
+`minting_voucher` policy and the `trace_registry` spend validator against that
+same transaction fixture. It proves these invariants:
+
+- The first voucher mint and trace-registry append are accepted together for
+  the same full denom.
+- The trace registry update commits the same voucher hash and full denom that
+  the voucher policy checks.
+- The transaction fixture contains the registry output that the registry
+  validator requires, rather than only carrying a witness redeemer for the mint
+  policy.
 
 ### Existing Mapping Mint
 
