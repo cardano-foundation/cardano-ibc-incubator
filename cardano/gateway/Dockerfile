@@ -21,6 +21,7 @@ ENV NODE_PATH=/usr/src/app/node_modules
 COPY ${MAIN_CONTEXT} .
 COPY ./packages /usr/packages
 COPY --from=protos /usr/src/proto-types /usr/proto-types
+COPY ./manifests /usr/src/app/manifests
 
 # Build local file dependencies that publish compiled artifacts from dist/.
 RUN npm install --package-lock=false --prefix /usr/packages/cardano-ibc-trace-registry \

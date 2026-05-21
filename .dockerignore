@@ -12,6 +12,8 @@
 !dapps/ibc-swap/client/**
 !proto-types/
 !proto-types/**
+!manifests/
+!manifests/**
 
 cardano/gateway/node_modules
 cardano/gateway/dist
