@@ -1,0 +1,11 @@
+{
+  "minCount": 25,
+  "minPercentBps": 50,
+  "requiredLabels": [
+    "trace.rollover.valid",
+    "trace.rollover.invalid_non_target_bucket_changed",
+    "trace.rollover.invalid_old_shard_not_preserved",
+    "trace.rollover.invalid_new_shard_not_exact_entry",
+    "trace.rollover.invalid_missing_voucher_mint"
+  ]
+}

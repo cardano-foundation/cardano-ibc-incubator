@@ -243,6 +243,11 @@ jobs:
         with:
           version: v1.1.21
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Check formatting
         run: aiken fmt --check
 
@@ -251,7 +256,10 @@ jobs:
         run: scripts/ci/check-aiken-fuzz-imports.sh
 
       - name: Check and test
-        run: aiken check --deny
+        run: aiken check --deny --max-success 500 --property-coverage relative-to-tests > ../../aiken-check.json
+
+      - name: Check fuzz label coverage
+        run: node ../../scripts/ci/check-aiken-fuzz-coverage.mjs ../../aiken-check.json
 
   tx-budgets:
     name: Cardano Tx Budgets
