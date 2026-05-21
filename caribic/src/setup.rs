@@ -1956,7 +1956,7 @@ fn write_gateway_env_for_network(
                 ),
                 ("CARDANO_EPOCH_LENGTH", LOCAL_CARDANO_EPOCH_LENGTH),
                 (
-                    "STABILITY_THRESHOLD_UNIQUE_POOLS",
+                    "CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS",
                     local_stability_threshold_unique_pools.as_str(),
                 ),
             ];

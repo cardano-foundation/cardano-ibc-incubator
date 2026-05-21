@@ -43,7 +43,7 @@ function parsePositiveBigIntEnv(name: string, fallback: bigint): bigint {
 
 const LIGHT_CLIENT_STABILITY_POLICY: StabilityPolicy = {
   threshold_depth: 24n,
-  threshold_unique_pools: parsePositiveBigIntEnv('STABILITY_THRESHOLD_UNIQUE_POOLS', 5n),
+  threshold_unique_pools: parsePositiveBigIntEnv('CARDANO_STABILITY_THRESHOLD_UNIQUE_POOLS', 5n),
   threshold_unique_stake_bps: 511n,
   depth_weight_bps: 2000n,
   pools_weight_bps: 2000n,
