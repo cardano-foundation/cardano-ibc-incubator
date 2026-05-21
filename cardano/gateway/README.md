@@ -40,6 +40,12 @@ Published tags:
 - `sha-<commit>`: immutable image for a specific commit
 - `v*`: release tag image when a matching Git tag is pushed
 
+Published images include tracked bridge manifests at `/usr/src/app/manifests`.
+For example, set `BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preprod/cardano-preprod-bridge-manifest.json`
+to start the Gateway against the shared Cardano preprod bridge deployment.
+Tagged GitHub releases also attach a `cardano-gateway-manifests-<tag>.tar.gz`
+archive containing the same tracked manifest files.
+
 ## SendPacket Escrow Flow
 
 This sequence shows the user-funded escrow transfer path from request to on-chain submission.
