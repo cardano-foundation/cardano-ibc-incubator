@@ -1170,6 +1170,8 @@ pub async fn deploy_contracts(
         &optional_progress_bar,
     );
 
+    ensure_gateway_dependencies(gateway_dir.as_path(), &optional_progress_bar)?;
+
     let export_result = execute_script(
         gateway_dir.as_path(),
         "npm",
@@ -1563,6 +1565,9 @@ pub async fn deploy_preprod_bridge(
                 ("CARDANO_CHAIN_NETWORK_MAGIC", network_magic.as_str()),
                 ("CARDANO_NETWORK", "preprod"),
             ];
+
+            ensure_gateway_dependencies(gateway_dir.as_path(), &optional_progress_bar)?;
+
             let export_result = execute_script(
                 gateway_dir.as_path(),
                 "npm",
@@ -1790,6 +1795,9 @@ pub async fn deploy_preprod_bridge(
         ("CARDANO_CHAIN_NETWORK_MAGIC", network_magic.as_str()),
         ("CARDANO_NETWORK", "preprod"),
     ];
+
+    ensure_gateway_dependencies(gateway_dir.as_path(), &optional_progress_bar)?;
+
     let export_result = execute_script(
         gateway_dir.as_path(),
         "npm",
@@ -2657,6 +2665,31 @@ fn wait_for_mithril_artifact_readiness(
         "artifact endpoints were not ready after {} attempts: {}",
         attempts, last_status
     ))
+}
+
+fn ensure_gateway_dependencies(
+    gateway_dir: &Path,
+    optional_progress_bar: &Option<ProgressBar>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if gateway_dir.join("node_modules/.bin/ts-node").exists() {
+        return Ok(());
+    }
+
+    log_or_show_progress(
+        "Installing gateway npm dependencies (first run only)",
+        optional_progress_bar,
+    );
+
+    let lockfile_present = gateway_dir.join("package-lock.json").exists();
+    let install_args: Vec<&str> = if lockfile_present {
+        vec!["ci", "--legacy-peer-deps"]
+    } else {
+        vec!["install", "--package-lock=false", "--legacy-peer-deps"]
+    };
+
+    execute_script(gateway_dir, "npm", install_args, None)?;
+
+    Ok(())
 }
 
 pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
