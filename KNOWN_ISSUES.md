@@ -53,25 +53,37 @@ Though at the time of writing it is unclear how to quantify the implications for
 
 ## Unimplemented / Not Supported
 
-The following features are not currently supported by the Cardano bridge path. In several cases Hermes or Cosmos SDK chains support the feature generally, but the Cardano endpoint, Gateway, on-chain validators, or Cardano light-client integration do not yet expose the corresponding functionality.
+The following IBC features are not currently supported by the Cardano bridge path.
 
 ### Channel Upgrades
 
-IBC channel upgrades are not implemented for Cardano channels. Existing channels should be treated as fixed once established. If channel parameters need to change, the practical path is to open a new channel and migrate application routing to that new channel rather than attempting an in-place channel upgrade handshake.
+Existing channels should be treated as fixed once established. If channel parameters need to change, the practical path is to open a new channel and migrate application routing to that new channel rather than attempting an in-place channel upgrade handshake.
 
-This is especially relevant for production planning because channel upgrades are the standard IBC mechanism for changing channel ordering, version metadata, or app-level channel features without creating a fresh channel. The Cardano bridge should not assume that this operational path is available today.
+Channel upgradability was released in ibc-go v8.1.0. Channel upgradability allows IBC channels to upgrade and leverage new features without having to coordinate a network upgrade or open a new channel and thereby forego token fungibility.
+
+By enabling this feature, chains can:
+
+1. Add fee middleware on existing channels to incentivize IBC relayers.
+2. Adopt ICS-20 v2 (planned for later this year).
+3. Migrate from ordered Interchain Accounts (ICA) channels to unordered ones.
+4. Change connection hops if the application stack allows it.
+5. Prune stale acknowledgements and packet receipts to reduce disk overhead.
+
+Read more about channel upgradeability here: https://ibcprotocol.dev/blog/introducing-ibc-channel-upgradability
+
+This may be a target for further development. 
 
 ### ICS-29 Fee Middleware
 
-ICS-29 fee middleware is not supported for the Cardano bridge path. The Cardano relayer endpoint does not implement the fee middleware queries needed to discover incentivized packets, and counterparty payee registration is not implemented as a meaningful Cardano operation.
+The Cardano relayer endpoint does not implement the fee middleware queries needed to discover incentivized packets, and counterparty payee registration is not implemented as a meaningful Cardano operation. This means relayer incentives cannot currently rely on the standard ICS-29 packet fee flow for Cardano-connected channels. Operators should assume fees and relayer compensation need to be handled outside of ICS-29 until explicit support is added.
 
-This means relayer incentives cannot currently rely on the standard ICS-29 packet fee flow for Cardano-connected channels. Operators should assume fees and relayer compensation need to be handled outside of ICS-29 until explicit support is added.
+This may be a target for further development.
 
 ### Host Consensus State Query
 
-Cardano host consensus state queries are not implemented. The relayer endpoint cannot currently answer the standard host consensus state query for Cardano in the way it can for a conventional Cosmos SDK chain.
+Cardano host consensus state queries are not implemented. The relayer endpoint cannot currently answer the standard host consensus state query for Cardano in the way it can for a conventional Cosmos SDK chain. This is a consequence of the same underlying asymmetry discussed elsewhere. Cardano does not expose Tendermint-style per-height consensus states with an `app_hash`. The bridge instead authenticates Cardano IBC state through the Cardano HostState commitment and the relevant Cardano light-client evidence. Any workflow requiring a generic host consensus state query should be treated as unsupported for Cardano today.
 
-This is a consequence of the same underlying asymmetry discussed elsewhere in this document: Cardano does not expose Tendermint-style per-height consensus states with an `app_hash`. The bridge instead authenticates Cardano IBC state through the Cardano HostState commitment and the relevant Cardano light-client evidence. Any workflow requiring a generic host consensus state query should be treated as unsupported for Cardano today.
+This is not currently a target for further development.
 
 ### Balance Query
 
@@ -81,15 +93,13 @@ As a practical example, commands such as relayer wallet balance checks should no
 
 ### ICS-31 Cross-Chain Queries
 
-ICS-31 cross-chain queries are not supported for Cardano. The Cardano relayer endpoint does not implement the cross-chain query interface, so Cardano should not currently be treated as an ICS-31 query host or query target through this bridge.
-
-Supporting this would require more than a relayer command wrapper. The bridge would need a clear Cardano-side query model, proof model, and response verification path that fits the HostState commitment architecture.
+ICS-31 cross-chain queries are a work in progress for Cardano, but will need to be implemented on a per-chain basis. Much of the basic infrastructure exists for cross-chain queries with Cheqd, but still must be tested and validated, particularly in light of the entrypoint chain deprecation.
 
 ### Client Upgrade
 
-Standard IBC client upgrade is not supported for the Cardano light clients in this repository. The probabilistic Cardano light clients reject `VerifyUpgradeAndUpdateState`, and the historical Mithril design documentation also treats standard client upgrade as unsupported.
+Standard IBC client upgrade is not currently supported for the Cardano light client. The probabilistic Cardano light clients reject `VerifyUpgradeAndUpdateState`.
 
-This is distinct from client recovery. A frozen or expired client may be recoverable only if a safe recovery mechanism exists for that client type, such as a trusted substitute-client flow. A standard IBC client upgrade should not be assumed to be available for changing Cardano light-client parameters, code, or verification semantics in place.
+This may be a target for further development.
 
 ## Denom Display in Wallets + CIP-26 Token Metadata Registry
 
