@@ -5,6 +5,59 @@ Aiken labeled property/regression suite, with fuzzed cases in key areas. It is
 intentionally limited to invariants that are covered by existing property tests
 and their CI-enforced labels.
 
+## Index
+
+- [Label Kinds And Depths](#label-kinds-and-depths)
+- [Composable Fixtures](#composable-fixtures)
+- [Client Update And Misbehaviour](#client-update-and-misbehaviour)
+  - [Header Update Transitions](#header-update-transitions)
+  - [HostState Coupling](#hoststate-coupling)
+  - [Misbehaviour Detection](#misbehaviour-detection)
+  - [Frozen Client Rejection](#frozen-client-rejection)
+- [Connection And Channel Handshakes](#connection-and-channel-handshakes)
+  - [Connection Open Try](#connection-open-try)
+  - [Connection Open Ack](#connection-open-ack)
+  - [Channel Handshakes And Close](#channel-handshakes-and-close)
+- [Packet Lifecycle](#packet-lifecycle)
+  - [SendPacket](#sendpacket)
+  - [SendPacket Transaction Coupling](#sendpacket-transaction-coupling)
+  - [RecvPacket](#recvpacket)
+  - [AcknowledgePacket](#acknowledgepacket)
+  - [TimeoutPacket](#timeoutpacket)
+  - [Model Sequences](#model-sequences)
+- [Transfer Module Accounting](#transfer-module-accounting)
+  - [Native Token Escrow And Refunds](#native-token-escrow-and-refunds)
+  - [Voucher Mint, Burn, And Refunds](#voucher-mint-burn-and-refunds)
+  - [Accounting Mutations](#accounting-mutations)
+- [Voucher Metadata](#voucher-metadata)
+  - [First Mint Canonical Metadata](#first-mint-canonical-metadata)
+  - [First Mint Transaction Coupling](#first-mint-transaction-coupling)
+  - [Existing Mapping Mint](#existing-mapping-mint)
+- [Verifying Proof](#verifying-proof)
+  - [Membership Verification](#membership-verification)
+  - [Batch Membership Verification](#batch-membership-verification)
+  - [Non-Membership Verification](#non-membership-verification)
+- [HostState Root Transitions](#hoststate-root-transitions)
+  - [Client Root Updates](#client-root-updates)
+  - [Connection Root Updates](#connection-root-updates)
+  - [Channel Root Updates](#channel-root-updates)
+  - [Packet Root Updates](#packet-root-updates)
+- [Trace Registry Append](#trace-registry-append)
+  - [Valid Append Transition](#valid-append-transition)
+  - [Append Voucher Mint Coupling](#append-voucher-mint-coupling)
+  - [Bucket Correctness](#bucket-correctness)
+  - [Active-Shard Duplicate Detection](#active-shard-duplicate-detection)
+  - [Archived-Shard Duplicate Detection](#archived-shard-duplicate-detection)
+  - [Active Shard Authority](#active-shard-authority)
+- [Trace Registry Rollover](#trace-registry-rollover)
+  - [Valid Rollover Transition](#valid-rollover-transition)
+  - [Directory Bucket Isolation](#directory-bucket-isolation)
+  - [Archived Shard Preservation](#archived-shard-preservation)
+  - [New Active Shard Freshness](#new-active-shard-freshness)
+  - [Rollover Voucher Mint Coupling](#rollover-voucher-mint-coupling)
+  - [Append Rollover Lookup Model](#append-rollover-lookup-model)
+- [Current Coverage Boundary](#current-coverage-boundary)
+
 ## Label Kinds And Depths
 
 CI-enforced labels use `kind.depth.domain...`:
@@ -773,7 +826,7 @@ satisfy these invariants:
 - The transaction mints the matching CIP-67 user voucher asset under the
   production voucher policy.
 
-### Voucher Mint Coupling
+### Append Voucher Mint Coupling
 
 Covered by `contract.trace.append.invalid_missing_voucher_mint`.
 
@@ -894,7 +947,7 @@ be rejected, proving these invariants:
 - Rollover cannot duplicate or carry forward unrelated registry entries into
   the fresh shard.
 
-### Voucher Mint Coupling
+### Rollover Voucher Mint Coupling
 
 Covered by `contract.trace.rollover.invalid_missing_voucher_mint`.
 
