@@ -226,7 +226,8 @@ test prop_chan_close_confirm_accepts_valid_transition(_seed via fuzz.int()) {
 }
 
 test prop_chan_closed_rejects_send(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.chan.closed.rejects_send")
+  // Closed-channel send rejection is represented here as a local predicate check.
+  fuzz.label(@"regression.unit.chan.closed.rejects_send")
 
   fuzz_dsl.mutated_check(
     "chan",

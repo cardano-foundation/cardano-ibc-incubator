@@ -69,7 +69,8 @@ fn uses_requested_height(
 }
 
 test prop_conn_open_try_rejects_missing_client_proof(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.conn.open_try.invalid_missing_client_proof")
+  // This is a predicate-level guard, not a composed ConnOpenTry validator run.
+  fuzz.label(@"regression.unit.conn.open_try.invalid_missing_client_proof")
 
   let malformed_redeemer =
     BatchVerifyMembership([test_membership(test_height(10), "connection-end")])
@@ -85,7 +86,8 @@ test prop_conn_open_try_rejects_missing_client_proof(_seed via fuzz.int()) {
 }
 
 test prop_conn_open_try_rejects_wrong_host_redeemer(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.conn.open_try.invalid_wrong_host_redeemer")
+  // This checks the local HostState redeemer shape expected by ConnOpenTry.
+  fuzz.label(@"regression.unit.conn.open_try.invalid_wrong_host_redeemer")
 
   fuzz_dsl.mutated_check(
     "conn",
@@ -100,7 +102,8 @@ test prop_conn_open_try_rejects_wrong_host_redeemer(_seed via fuzz.int()) {
 }
 
 test prop_conn_open_ack_rejects_wrong_proof_height(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.conn.open_ack.invalid_wrong_proof_height")
+  // This checks proof-height selection logic before a full ConnOpenAck fixture exists.
+  fuzz.label(@"regression.unit.conn.open_ack.invalid_wrong_proof_height")
 
   let requested_height = test_height(10)
   let wrong_height = test_height(11)

@@ -22,7 +22,7 @@ CI-enforced labels use `kind.depth.domain...`:
 - `model.*` labels cover multi-step state-machine sequences.
 
 The full label shape is therefore examples like
-`regression.contract.transfer.native_ack.no_refund` or
+`regression.unit.transfer.native_ack.no_refund` or
 `fuzz.contract.trace.rollover.invalid_old_shard_not_preserved`. The coverage
 checker rejects labels that do not use this kind/depth convention. It also
 requires `tx` and `model` coverage through the required label catalog so the
@@ -183,24 +183,24 @@ not updateable.
 Required CI label suffixes:
 
 - `unit.conn.open_try.valid`
-- `contract.conn.open_try.invalid_missing_client_proof`
+- `unit.conn.open_try.invalid_missing_client_proof`
 - `contract.conn.open_try.invalid_wrong_counterparty_client_state`
-- `contract.conn.open_try.invalid_wrong_host_redeemer`
+- `unit.conn.open_try.invalid_wrong_host_redeemer`
 - `unit.conn.open_ack.valid`
-- `contract.conn.open_ack.invalid_wrong_proof_height`
+- `unit.conn.open_ack.invalid_wrong_proof_height`
 - `contract.chan.open_ack.valid`
 - `contract.chan.open_confirm.valid`
 - `contract.chan.close_init.valid_or_rejected_by_app_policy`
 - `contract.chan.close_confirm.valid`
-- `contract.chan.closed.rejects_send`
+- `unit.chan.closed.rejects_send`
 - `model.channel.open_close_reject_send`
 
 ### Connection Open Try
 
 Covered by `unit.conn.open_try.valid`,
-`contract.conn.open_try.invalid_missing_client_proof`,
+`unit.conn.open_try.invalid_missing_client_proof`,
 `contract.conn.open_try.invalid_wrong_counterparty_client_state`, and
-`contract.conn.open_try.invalid_wrong_host_redeemer`.
+`unit.conn.open_try.invalid_wrong_host_redeemer`.
 
 The valid unit property exercises the pure connection datum transition for a
 TryOpen connection. The wrong-counterparty-client-state property now builds a
@@ -223,11 +223,11 @@ invariants:
 ### Connection Open Ack
 
 Covered by `unit.conn.open_ack.valid` and
-`contract.conn.open_ack.invalid_wrong_proof_height`.
+`unit.conn.open_ack.invalid_wrong_proof_height`.
 
 The valid property exercises the pure connection datum transition from Init to
 Open with a concrete counterparty connection identifier. The proof-height
-contract property checks that an OpenAck proof redeemer cannot silently use a
+unit property checks that an OpenAck proof redeemer cannot silently use a
 different proof height. These properties prove these invariants:
 
 - ConnOpenAck must move a connection from `Init` to `Open`.
@@ -239,11 +239,11 @@ different proof height. These properties prove these invariants:
 
 Covered by `contract.chan.open_ack.valid`, `contract.chan.open_confirm.valid`,
 `contract.chan.close_init.valid_or_rejected_by_app_policy`,
-`contract.chan.close_confirm.valid`, and `contract.chan.closed.rejects_send`.
+`contract.chan.close_confirm.valid`, and `unit.chan.closed.rejects_send`.
 
 The channel properties exercise the shared channel datum transition functions
 for OpenAck, OpenConfirm, CloseInit, and CloseConfirm. The closed-channel
-property covers the send-packet validator's open-channel gate. They prove these
+property covers the local send-packet open-channel predicate. They prove these
 invariants:
 
 - ChanOpenAck must move a channel from `Init` to `Open` and commit the
@@ -397,6 +397,19 @@ final modeled state. They prove these invariants:
 
 Required CI label suffixes:
 
+- `unit.transfer.native_send.escrow_increases_exactly`
+- `unit.transfer.native_timeout.refund_exactly`
+- `unit.transfer.native_ack.no_refund`
+- `unit.transfer.voucher_send.burns_exactly`
+- `unit.transfer.voucher_error_ack.remints_exactly`
+- `unit.transfer.recv_source.unescrows_exactly`
+- `unit.transfer.recv_sink.mints_voucher_exactly`
+- `unit.transfer.invalid_extra_voucher_mint_rejected`
+- `unit.transfer.invalid_wrong_escrow_delta_rejected`
+- `unit.transfer.invalid_wrong_native_refund_amount_rejected`
+- `unit.transfer.invalid_wrong_voucher_burn_amount_rejected`
+- `unit.transfer.invalid_wrong_escrow_shard_rejected`
+- `unit.transfer.invalid_receiver_address_rejected`
 - `contract.transfer.native_send.escrow_increases_exactly`
 - `contract.transfer.native_timeout.refund_exactly`
 - `contract.transfer.native_ack.no_refund`
@@ -404,16 +417,16 @@ Required CI label suffixes:
 - `contract.transfer.voucher_error_ack.remints_exactly`
 - `contract.transfer.recv_source.unescrows_exactly`
 - `contract.transfer.recv_sink.mints_voucher_exactly`
-- `contract.transfer.invalid_extra_voucher_mint_rejected`
 - `contract.transfer.invalid_wrong_escrow_delta_rejected`
 - `contract.transfer.invalid_wrong_native_refund_amount_rejected`
-- `contract.transfer.invalid_wrong_voucher_burn_amount_rejected`
-- `contract.transfer.invalid_wrong_escrow_shard_rejected`
-- `contract.transfer.invalid_receiver_address_rejected`
 
 ### Native Token Escrow And Refunds
 
-Covered by `contract.transfer.native_send.escrow_increases_exactly`,
+Covered by `unit.transfer.native_send.escrow_increases_exactly`,
+`unit.transfer.native_timeout.refund_exactly`,
+`unit.transfer.native_ack.no_refund`,
+`unit.transfer.recv_source.unescrows_exactly`,
+`contract.transfer.native_send.escrow_increases_exactly`,
 `contract.transfer.native_timeout.refund_exactly`,
 `contract.transfer.native_ack.no_refund`, and
 `contract.transfer.recv_source.unescrows_exactly`.
@@ -436,7 +449,10 @@ inputs/outputs where the transition requires them. They prove these invariants:
 
 ### Voucher Mint, Burn, And Refunds
 
-Covered by `contract.transfer.voucher_send.burns_exactly`,
+Covered by `unit.transfer.voucher_send.burns_exactly`,
+`unit.transfer.voucher_error_ack.remints_exactly`,
+`unit.transfer.recv_sink.mints_voucher_exactly`,
+`contract.transfer.voucher_send.burns_exactly`,
 `contract.transfer.voucher_error_ack.remints_exactly`, and
 `contract.transfer.recv_sink.mints_voucher_exactly`.
 
@@ -456,12 +472,14 @@ redeemer expected by the module validator. They prove these invariants:
 
 ### Accounting Mutations
 
-Covered by `contract.transfer.invalid_extra_voucher_mint_rejected`,
+Covered by `unit.transfer.invalid_extra_voucher_mint_rejected`,
+`unit.transfer.invalid_wrong_escrow_delta_rejected`,
+`unit.transfer.invalid_wrong_native_refund_amount_rejected`,
+`unit.transfer.invalid_wrong_voucher_burn_amount_rejected`,
+`unit.transfer.invalid_wrong_escrow_shard_rejected`,
+`unit.transfer.invalid_receiver_address_rejected`,
 `contract.transfer.invalid_wrong_escrow_delta_rejected`,
-`contract.transfer.invalid_wrong_native_refund_amount_rejected`,
-`contract.transfer.invalid_wrong_voucher_burn_amount_rejected`,
-`contract.transfer.invalid_wrong_escrow_shard_rejected`, and
-`contract.transfer.invalid_receiver_address_rejected`.
+and `contract.transfer.invalid_wrong_native_refund_amount_rejected`.
 
 The mutation properties add one malicious difference to otherwise near-valid
 accounting fixtures. The full validator-level mutations currently cover wrong
@@ -486,6 +504,14 @@ invariants:
 
 Required CI label suffixes:
 
+- `unit.voucher.first_mint.valid_metadata`
+- `unit.voucher.first_mint.invalid_wrong_name`
+- `unit.voucher.first_mint.invalid_wrong_ticker`
+- `unit.voucher.first_mint.invalid_wrong_description`
+- `unit.voucher.first_mint.invalid_wrong_full_denom`
+- `unit.voucher.first_mint.invalid_wrong_policy`
+- `unit.voucher.first_mint.invalid_wrong_reference_asset`
+- `unit.voucher.existing_mint.rejects_reference_nft`
 - `contract.voucher.first_mint.valid_metadata`
 - `contract.voucher.first_mint.invalid_wrong_name`
 - `contract.voucher.first_mint.invalid_wrong_ticker`
@@ -493,12 +519,18 @@ Required CI label suffixes:
 - `contract.voucher.first_mint.invalid_wrong_full_denom`
 - `contract.voucher.first_mint.invalid_wrong_policy`
 - `contract.voucher.first_mint.invalid_wrong_reference_asset`
-- `contract.voucher.existing_mint.rejects_reference_nft`
 - `tx.voucher.first_mint.valid_registry_coupled`
 
 ### First Mint Canonical Metadata
 
-Covered by `contract.voucher.first_mint.valid_metadata`,
+Covered by `unit.voucher.first_mint.valid_metadata`,
+`unit.voucher.first_mint.invalid_wrong_name`,
+`unit.voucher.first_mint.invalid_wrong_ticker`,
+`unit.voucher.first_mint.invalid_wrong_description`,
+`unit.voucher.first_mint.invalid_wrong_full_denom`,
+`unit.voucher.first_mint.invalid_wrong_policy`,
+`unit.voucher.first_mint.invalid_wrong_reference_asset`,
+`contract.voucher.first_mint.valid_metadata`,
 `contract.voucher.first_mint.invalid_wrong_name`,
 `contract.voucher.first_mint.invalid_wrong_ticker`,
 `contract.voucher.first_mint.invalid_wrong_description`,
@@ -546,7 +578,7 @@ same transaction fixture. It proves these invariants:
 
 ### Existing Mapping Mint
 
-Covered by `contract.voucher.existing_mint.rejects_reference_nft`.
+Covered by `unit.voucher.existing_mint.rejects_reference_nft`.
 
 The existing-mapping property constructs the mint value for an already-registered
 voucher mapping and mutates it by adding a reference NFT. It proves this
