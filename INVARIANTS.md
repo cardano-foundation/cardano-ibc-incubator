@@ -184,7 +184,8 @@ Required CI label suffixes:
 
 - `unit.conn.open_try.valid`
 - `unit.conn.open_try.invalid_missing_client_proof`
-- `contract.conn.open_try.invalid_wrong_counterparty_client_state`
+- `tx.conn.open_try.valid_full_transition`
+- `tx.conn.open_try.invalid_wrong_client_state_proof`
 - `unit.conn.open_try.invalid_wrong_host_redeemer`
 - `unit.conn.open_ack.valid`
 - `unit.conn.open_ack.invalid_wrong_proof_height`
@@ -199,15 +200,16 @@ Required CI label suffixes:
 
 Covered by `unit.conn.open_try.valid`,
 `unit.conn.open_try.invalid_missing_client_proof`,
-`contract.conn.open_try.invalid_wrong_counterparty_client_state`, and
+`tx.conn.open_try.valid_full_transition`,
+`tx.conn.open_try.invalid_wrong_client_state_proof`, and
 `unit.conn.open_try.invalid_wrong_host_redeemer`.
 
 The valid unit property exercises the pure connection datum transition for a
-TryOpen connection. The wrong-counterparty-client-state property now builds a
+TryOpen connection. The tx-level ConnOpenTry properties build a
 near-valid ConnOpenTry transaction and runs the connection minting validator,
 HostState CreateConnection validator, and connection datum transition against
-the same fixture before mutating only the counterparty client-state proof
-value. The remaining proof-shape and HostState-redeemer properties are
+the same fixture. The invalid tx property mutates only the counterparty
+client-state proof value. The remaining proof-shape and HostState-redeemer properties are
 smoke/regression checks for narrow redeemer gates. Together they prove these
 invariants:
 
@@ -274,6 +276,8 @@ Required CI label suffixes:
 - `unit.packet.timeout.valid_ordered`
 - `unit.packet.timeout.invalid_before_timeout`
 - `tx.packet.send.valid_channel_host_marker`
+- `tx.packet.send.invalid_missing_operation_marker`
+- `tx.packet.recv.valid_sink_mints_voucher`
 - `model.packet.send_ack.valid_sequence`
 - `model.packet.send_recv_ack`
 - `model.packet.send_timeout`
@@ -300,7 +304,8 @@ invariants:
 
 ### SendPacket Transaction Coupling
 
-Covered by `tx.packet.send.valid_channel_host_marker`.
+Covered by `tx.packet.send.valid_channel_host_marker` and
+`tx.packet.send.invalid_missing_operation_marker`.
 
 The transaction-level SendPacket property runs the real `spending_channel`
 validator against a transaction-shaped fixture. The fixture includes the
@@ -311,6 +316,8 @@ invariants:
 
 - A SendPacket channel spend must be coupled to the HostState packet branch.
 - A SendPacket channel spend must mint exactly the SendPacket operation marker.
+- A SendPacket channel spend without the operation marker redeemer/mint is
+  rejected by the real channel validator.
 - The operation marker redeemer must carry the channel auth token.
 - The channel continuation output must preserve the channel thread token while
   recording the packet commitment.
@@ -323,7 +330,8 @@ voucher/escrow accounting validator in the same assertion.
 ### RecvPacket
 
 Covered by `unit.packet.recv.valid_receipt` and
-`unit.packet.recv.invalid_duplicate_receipt`.
+`unit.packet.recv.invalid_duplicate_receipt`. Sink-chain voucher mint coupling
+is additionally covered by `tx.packet.recv.valid_sink_mints_voucher`.
 
 The RecvPacket unit properties construct an unordered channel-datum receive
 transition that writes the receipt and acknowledgement commitment, then mutate
@@ -334,6 +342,8 @@ the input datum to already contain the receipt. They prove these invariants:
   sequence.
 - A packet cannot be received again if its receipt already exists.
 - A packet cannot be received again if its acknowledgement already exists.
+- A sink-chain RecvPacket voucher mint can be coupled to the trace-registry
+  append that proves the new voucher denom trace.
 
 ### AcknowledgePacket
 
@@ -522,6 +532,7 @@ Required CI label suffixes:
 - `contract.voucher.first_mint.invalid_wrong_policy`
 - `contract.voucher.first_mint.invalid_wrong_reference_asset`
 - `tx.voucher.first_mint.valid_registry_coupled`
+- `tx.voucher.first_mint.invalid_wrong_metadata_registry_coupled`
 
 ### First Mint Canonical Metadata
 
@@ -561,7 +572,9 @@ They prove these invariants:
 
 ### First Mint Transaction Coupling
 
-Covered by `tx.voucher.first_mint.valid_registry_coupled`.
+Covered by `tx.voucher.first_mint.valid_registry_coupled`,
+`tx.packet.recv.valid_sink_mints_voucher`, and
+`tx.voucher.first_mint.invalid_wrong_metadata_registry_coupled`.
 
 The transaction-level property builds the first-seen voucher mint transaction
 with the voucher output, reference NFT metadata output, active trace shard input
@@ -577,6 +590,9 @@ same transaction fixture. It proves these invariants:
 - The transaction fixture contains the registry output that the registry
   validator requires, rather than only carrying a witness redeemer for the mint
   policy.
+- A first-seen voucher mint with a valid trace-registry append but wrong
+  human-readable CIP-68 metadata is rejected by the voucher policy in the same
+  transaction fixture.
 
 ### Existing Mapping Mint
 
@@ -918,8 +934,11 @@ coverage for:
 - client creation or update,
 - full end-to-end connection handshake validator contexts,
 - full end-to-end channel handshake validator contexts,
-- full end-to-end packet lifecycle validator contexts,
-- full end-to-end voucher metadata validator contexts,
+- full end-to-end packet lifecycle validator contexts beyond the current
+  SendPacket channel-spend tx fixture and first-seen sink voucher mint tx
+  fixture,
+- full end-to-end voucher metadata validator contexts beyond first-seen
+  voucher mint plus trace-registry coupling,
 - misbehaviour freezing.
 
 Those areas may have unit or integration tests elsewhere, but they are not

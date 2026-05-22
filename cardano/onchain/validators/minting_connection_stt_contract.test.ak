@@ -438,7 +438,11 @@ fn run_conn_open_try_transition(
       )
 }
 
-test conn_open_try_composed_fixture_accepts_valid_transition() {
+test prop_tx_conn_open_try_accepts_valid_full_transition(_seed via fuzz.int()) {
+  fuzz.label(@"regression.tx.conn.open_try.valid_full_transition")
+
+  // tx.* depth: the same ConnOpenTry transaction is checked by connection
+  // minting, HostState CreateConnection, and the connection datum transition.
   build_conn_open_try_fixture(
     "client-state",
     "client-state",
@@ -451,9 +455,7 @@ test conn_open_try_composed_fixture_accepts_valid_transition() {
 test prop_conn_open_try_rejects_wrong_counterparty_client_state(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(
-    @"fuzz.contract.conn.open_try.invalid_wrong_counterparty_client_state",
-  )
+  fuzz.label(@"fuzz.tx.conn.open_try.invalid_wrong_client_state_proof")
 
   // Near-valid ConnOpenTry: the local connection datum and proof plumbing are
   // valid, but the counterparty client state bytes differ from the proof value.

@@ -667,6 +667,7 @@ test prop_tx_first_seen_voucher_mint_couples_registry_append(
   _seed via fuzz.int(),
 ) {
   fuzz.label(@"fuzz.tx.voucher.first_mint.valid_registry_coupled")
+  fuzz.label(@"fuzz.tx.packet.recv.valid_sink_mints_voucher")
 
   // tx.* depth: voucher mint and trace-registry append are checked together so
   // metadata cannot be minted without the matching denom trace entry.
@@ -676,6 +677,44 @@ test prop_tx_first_seen_voucher_mint_couples_registry_append(
   )
     |> run_first_seen_voucher_mint_tx
     |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_tx_first_seen_voucher_mint_rejects_wrong_metadata_registry_coupled(
+  _seed via fuzz.int(),
+) {
+  fuzz.label(
+    @"fuzz.tx.voucher.first_mint.invalid_wrong_metadata_registry_coupled",
+  )
+
+  // The trace-registry append still matches the minted denom, but the CIP-68
+  // metadata output tells a different human-readable story. The composed tx
+  // must fail through the voucher policy while the registry check remains
+  // tied to the same transaction.
+  let full_denom = "port-99/channel-99/ibc/usdt"
+  let metadata_datum =
+    first_seen_metadata_datum_with(
+      "usdt",
+      "usdt",
+      "not the real denom trace",
+      full_denom,
+      "mint voucher policy id",
+    )
+  let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(full_denom)
+  let reference_token_name =
+    voucher_asset_name.voucher_reference_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+
+  first_seen_voucher_fixture(
+    mutated_first_seen_metadata_output(
+      metadata_datum,
+      "mint voucher policy id",
+      reference_token_name,
+    ),
+    fuzz_dsl.mutation("wrong_metadata_registry_coupled"),
+  )
+    |> run_first_seen_voucher_mint_tx
+    |> fuzz_dsl.assert_protocol_rejected
 }
 
 test prop_voucher_first_mint_policy_rejects_wrong_name(_seed via fuzz.int()) {

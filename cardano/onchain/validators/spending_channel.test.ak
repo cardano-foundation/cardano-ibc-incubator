@@ -3,7 +3,7 @@ use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/fuzz
 use aiken/interval
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, from_asset}
+use cardano/assets.{PolicyId, Value, from_asset, zero}
 use cardano/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
   Spend, Transaction, ValidityRange,
@@ -471,6 +471,7 @@ fn run_spending_channel_transition(
   input_channel_datum: ChannelDatum,
   spend_channel_redeemer: SpendChannelRedeemer,
   channel_input_ref: OutputReference,
+  mutation: fuzz_dsl.Mutation,
   transaction: Transaction,
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock_data = setup()
@@ -478,7 +479,7 @@ fn run_spending_channel_transition(
   fuzz_dsl.protocol_tx_from_transaction(
     fuzz_dsl.model("packet", "send.tx"),
     fuzz_dsl.model("packet", "send.tx.after"),
-    fuzz_dsl.no_mutation(),
+    mutation,
     transaction,
   )
     |> fuzz_dsl.with_protocol_validator_check(
@@ -501,7 +502,11 @@ fn run_spending_channel_transition(
       )
 }
 
-fn send_packet_spending_channel_tx() -> fuzz_dsl.ProtocolTxFixture {
+fn send_packet_spending_channel_tx_with_marker(
+  marker_mint: Value,
+  include_marker_redeemer: Bool,
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
   let mock_data = setup()
   let packet =
     Packet {
@@ -551,6 +556,12 @@ fn send_packet_spending_channel_tx() -> fuzz_dsl.ProtocolTxFixture {
   let spend_channel_redeemer_in_data: Redeemer = SendPacket { packet }
   let module_redeemer: Redeemer = Operator(OtherModuleOperator)
   let send_packet_redeemer: Redeemer = mock_data.channel_token
+  let marker_redeemers =
+    if include_marker_redeemer {
+      [Pair(Mint(mock_data.send_packet_policy_id), send_packet_redeemer)]
+    } else {
+      []
+    }
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
       Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
@@ -562,7 +573,7 @@ fn send_packet_spending_channel_tx() -> fuzz_dsl.ProtocolTxFixture {
         Spend(mock_data.host_state_input.output_reference),
         host_state_handle_packet_redeemer(),
       ),
-      Pair(Mint(mock_data.send_packet_policy_id), send_packet_redeemer),
+      ..marker_redeemers
     ]
   let transaction =
     Transaction {
@@ -572,7 +583,7 @@ fn send_packet_spending_channel_tx() -> fuzz_dsl.ProtocolTxFixture {
       outputs,
       redeemers,
       validity_range: mock_data.validity_range,
-      mint: operation_marker(mock_data.send_packet_policy_id),
+      mint: marker_mint,
     }
   let spend_channel_redeemer = SendPacket { packet }
 
@@ -580,7 +591,25 @@ fn send_packet_spending_channel_tx() -> fuzz_dsl.ProtocolTxFixture {
     input_channel_datum,
     spend_channel_redeemer,
     channel_input.output_reference,
+    mutation,
     transaction,
+  )
+}
+
+fn send_packet_spending_channel_tx() -> fuzz_dsl.ProtocolTxFixture {
+  let mock_data = setup()
+  send_packet_spending_channel_tx_with_marker(
+    operation_marker(mock_data.send_packet_policy_id),
+    True,
+    fuzz_dsl.no_mutation(),
+  )
+}
+
+fn send_packet_spending_channel_tx_missing_marker() -> fuzz_dsl.ProtocolTxFixture {
+  send_packet_spending_channel_tx_with_marker(
+    zero,
+    False,
+    fuzz_dsl.mutation("missing_operation_marker"),
   )
 }
 
@@ -593,6 +622,18 @@ test prop_tx_packet_send_spending_channel_accepts_host_marker(
   // HostState co-spend and SendPacket operation marker instead of only checking
   // the channel datum transition helper.
   send_packet_spending_channel_tx()
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_tx_packet_send_rejects_missing_operation_marker(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(@"fuzz.tx.packet.send.invalid_missing_operation_marker")
+
+  // tx.* depth for the channel side: the channel spend sees the HostState
+  // co-spend redeemer, module co-spend redeemer, and marker mint together. The
+  // near-valid mutation removes the exact SendPacket marker mint.
+  send_packet_spending_channel_tx_missing_marker()
     |> fuzz_dsl.assert_protocol_valid
 }
 
