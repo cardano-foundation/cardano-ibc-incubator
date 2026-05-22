@@ -18,6 +18,7 @@ use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/value_delta
 use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_flow
+use ibc/apps/transfer/voucher_policy_registry.{VoucherPolicyRegistry}
 use ibc/client/ics_007_tendermint_client/height as height_mod
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/packet.{Packet}
@@ -41,6 +42,10 @@ const native_token_name = "coin"
 const shard_policy_id = "mock transfer escrow shard policy id"
 
 const voucher_policy_id = "mock voucher minting policy id"
+
+fn voucher_policy_registry() -> VoucherPolicyRegistry {
+  VoucherPolicyRegistry { active: voucher_policy_id, legacy: [] }
+}
 
 const amount = 20
 
@@ -303,7 +308,7 @@ fn voucher_send_contract(
   and {
     voucher_flow.validate_burn_voucher_packet(
       voucher_redeemers(redeemer),
-      voucher_policy_id,
+      voucher_policy_registry(),
       packet,
     )?,
     exact_voucher_mint(mint, data.denom, 0 - amount)?,
@@ -362,7 +367,7 @@ fn recv_sink_contract(
   and {
     voucher_flow.validate_mint_voucher_packet(
       voucher_redeemers(redeemer),
-      voucher_policy_id,
+      voucher_policy_registry(),
       packet,
     )?,
     exact_voucher_mint(mint, data.denom, amount)?,
@@ -405,7 +410,7 @@ test prop_transfer_native_ack_has_no_refund(_seed via fuzz.int()) {
   fuzz_dsl.valid_check("transfer", "native_ack", "native_ack_no_refund", and {
       value_delta.validate_output_amount(input, input.output, assets.zero)?,
       receiver_delta([input], outputs, valid_cardano_receiver) == Some(0),
-      voucher_flow.require_no_voucher_mint([], voucher_policy_id),
+      voucher_flow.require_no_voucher_mint([], voucher_policy_registry()),
     })
     |> fuzz_dsl.assert_valid
 }

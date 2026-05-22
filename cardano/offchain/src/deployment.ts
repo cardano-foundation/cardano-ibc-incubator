@@ -1648,24 +1648,18 @@ const deployTransferModule = async (
       portId,
       mintTransferEscrowShardPolicyId,
       mintChannelPolicyId,
-      {
-        active: mintVoucherPolicyId,
-        legacy: [],
-      },
+      mintVoucherPolicyId,
+      [],
       hostStateNFT.policy_id,
     ],
-    // Keep this schema in sync with
-    // ibc/apps/transfer/voucher_policy_registry.VoucherPolicyRegistry.
     Data.Tuple([
       AuthTokenSchema,
       AuthTokenSchema,
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
-      Data.Object({
-        active: Data.Bytes(),
-        legacy: Data.Array(Data.Bytes()),
-      }),
+      Data.Bytes(),
+      Data.Array(Data.Bytes()),
       Data.Bytes(),
     ]) as unknown as [
       AuthToken,
@@ -1673,10 +1667,8 @@ const deployTransferModule = async (
       string,
       string,
       string,
-      {
-        active: string;
-        legacy: string[];
-      },
+      string,
+      string[],
       string,
     ],
   );

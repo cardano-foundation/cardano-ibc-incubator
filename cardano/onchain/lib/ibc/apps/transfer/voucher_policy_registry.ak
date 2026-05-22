@@ -7,7 +7,7 @@ pub type VoucherPolicyRegistry {
 }
 
 pub fn operational_policies(registry: VoucherPolicyRegistry) -> List<PolicyId> {
-  list.concat([registry.active], registry.legacy)
+  registry.legacy |> list.push(registry.active)
 }
 
 pub fn is_active(registry: VoucherPolicyRegistry, policy_id: PolicyId) -> Bool {

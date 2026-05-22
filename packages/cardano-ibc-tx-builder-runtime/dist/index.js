@@ -152,8 +152,7 @@ function mapVoucherPolicyRegistry(manifest) {
     const active = registryEntryFromManifestEntry(manifest.voucher_policy_registry?.active) ??
         mapValidator(manifest.validators.mint_voucher);
     const legacy = uniqueRegistryEntries(manifest.voucher_policy_registry?.legacy?.map(registryEntryFromManifestEntry) ?? [], active.scriptHash);
-    const retired = uniqueRegistryEntries(manifest.voucher_policy_registry?.retired?.map(registryEntryFromManifestEntry) ?? [], active.scriptHash).filter((entry) => !legacy.some((legacyEntry) => legacyEntry.scriptHash === entry.scriptHash));
-    return { active, legacy, retired };
+    return { active, legacy };
 }
 function normalizeBridgeManifest(manifest) {
     return {

@@ -53,7 +53,9 @@ pub fn validate_burn_voucher_packet(
 ) -> Bool {
   list.any(
     operational_policies(voucher_policy_registry),
-    fn(policy_id) { validate_burn_voucher_packet_for_policy(redeemers, policy_id, packet) },
+    fn(policy_id) {
+      validate_burn_voucher_packet_for_policy(redeemers, policy_id, packet)
+    },
   )
 }
 

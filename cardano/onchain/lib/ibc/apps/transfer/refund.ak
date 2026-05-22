@@ -139,7 +139,11 @@ pub fn validate_refund_packet_token(
       list.any(
         operational_policies(voucher_policy_registry),
         fn(policy_id) {
-          validate_refund_voucher_redeemer_for_policy(redeemers, policy_id, packet)
+          validate_refund_voucher_redeemer_for_policy(
+            redeemers,
+            policy_id,
+            packet,
+          )
         },
       )
     trace @"mint_voucher (validate_refund_packet_token): tx mint voucher token"

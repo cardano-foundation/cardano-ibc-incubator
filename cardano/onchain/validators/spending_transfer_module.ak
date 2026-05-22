@@ -40,7 +40,8 @@ validator spend_transfer_module(
   port_id: ByteArray,
   transfer_escrow_shard_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
-  voucher_policy_registry: VoucherPolicyRegistry,
+  active_voucher_policy_id: PolicyId,
+  legacy_voucher_policy_ids: List<PolicyId>,
   host_state_nft_policy_id: PolicyId,
 ) {
   spend(
@@ -93,6 +94,11 @@ validator spend_transfer_module(
       AuthToken {
         policy_id: host_state_nft_policy_id,
         name: host_state_token_name,
+      }
+    let voucher_policy_registry =
+      VoucherPolicyRegistry {
+        active: active_voucher_policy_id,
+        legacy: legacy_voucher_policy_ids,
       }
 
     when redeemer is {
