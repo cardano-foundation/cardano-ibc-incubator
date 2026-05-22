@@ -174,6 +174,21 @@ fn model_ack_packet(
   PacketLifecycleModel { channel: ack_output(model.channel, packet) }
 }
 
+fn model_recv_packet(
+  model: PacketLifecycleModel,
+  packet: Packet,
+  ack: ByteArray,
+) -> PacketLifecycleModel {
+  PacketLifecycleModel { channel: recv_output(model.channel, packet, ack) }
+}
+
+fn model_timeout_packet(
+  model: PacketLifecycleModel,
+  packet: Packet,
+) -> PacketLifecycleModel {
+  PacketLifecycleModel { channel: timeout_output(model.channel, packet) }
+}
+
 fn mutate_wrong_sequence(fixture: SendPacketFixture) -> SendPacketFixture {
   let packet =
     Packet { ..fixture.packet, sequence: fixture.packet.sequence + 1 }
@@ -489,6 +504,94 @@ test prop_model_packet_send_ack_valid_sequence(_seed via fuzz.int()) {
       |> fuzz_dsl.assert_protocol_valid,
     acked_model.channel.state.next_sequence_send == packet.sequence + 1,
     !pairs.has_key(acked_model.channel.state.packet_commitment, packet.sequence),
+  }
+}
+
+test prop_model_packet_send_recv_ack_sequence(_seed via fuzz.int()) {
+  fuzz.label(@"model.packet.send_recv_ack")
+
+  let outbound_packet = base_packet(11)
+  let inbound_packet =
+    Packet {
+      ..base_packet(7),
+      source_port: "bank",
+      source_channel: "channel-90",
+      destination_port: "port-1",
+      destination_channel: "channel-0",
+    }
+  let initial_model =
+    base_datum(Unordered, outbound_packet.sequence) |> model_from_channel
+  let sent_model = model_send_packet(initial_model, outbound_packet)
+  let recv_ack = "recv-ack-commitment"
+  let received_model = model_recv_packet(sent_model, inbound_packet, recv_ack)
+  let acked_model = model_ack_packet(received_model, outbound_packet)
+  let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
+  let acknowledgement_bytes = acknowledgement_mod.marshal_json(acknowledgement)
+
+  and {
+    outbound_packet
+      |> build_send_packet_fixture
+      |> run_send_packet_transition
+      |> fuzz_dsl.assert_protocol_valid,
+    run_recv_packet_transition(
+      sent_model.channel,
+      received_model.channel,
+      inbound_packet,
+      recv_ack,
+      fuzz_dsl.no_mutation(),
+    )
+      |> fuzz_dsl.assert_protocol_valid,
+    run_ack_packet_transition(
+      received_model.channel,
+      acked_model.channel,
+      outbound_packet,
+      acknowledgement,
+      acknowledgement_bytes,
+      fuzz_dsl.no_mutation(),
+    )
+      |> fuzz_dsl.assert_protocol_valid,
+    pairs.has_key(
+      acked_model.channel.state.packet_receipt,
+      inbound_packet.sequence,
+    ),
+    pairs.has_key(
+      acked_model.channel.state.packet_acknowledgement,
+      inbound_packet.sequence,
+    ),
+    !pairs.has_key(
+      acked_model.channel.state.packet_commitment,
+      outbound_packet.sequence,
+    ),
+  }
+}
+
+test prop_model_packet_send_timeout_sequence(_seed via fuzz.int()) {
+  fuzz.label(@"model.packet.send_timeout")
+
+  let packet = base_packet(11)
+  let initial_model =
+    base_datum(Unordered, packet.sequence) |> model_from_channel
+  let sent_model = model_send_packet(initial_model, packet)
+  let timed_out_model = model_timeout_packet(sent_model, packet)
+
+  and {
+    packet
+      |> build_send_packet_fixture
+      |> run_send_packet_transition
+      |> fuzz_dsl.assert_protocol_valid,
+    run_timeout_packet_transition(
+      sent_model.channel,
+      timed_out_model.channel,
+      packet,
+      packet.timeout_timestamp,
+      fuzz_dsl.no_mutation(),
+    )
+      |> fuzz_dsl.assert_protocol_valid,
+    timed_out_model.channel.state.channel.state == Open,
+    !pairs.has_key(
+      timed_out_model.channel.state.packet_commitment,
+      packet.sequence,
+    ),
   }
 }
 

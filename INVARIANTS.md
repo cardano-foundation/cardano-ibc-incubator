@@ -179,6 +179,7 @@ Required CI labels:
 - `contract.chan.close_init.valid_or_rejected_by_app_policy`
 - `contract.chan.close_confirm.valid`
 - `contract.chan.closed.rejects_send`
+- `model.channel.open_close_reject_send`
 
 ### Connection Open Try
 
@@ -233,6 +234,9 @@ invariants:
 
 - ChanOpenAck must move a channel from `Init` to `Open` and commit the
   counterparty channel id.
+- A bounded open-close model can move `Init -> Open -> Closed`.
+- Once the model reaches `Closed`, the send-packet open-channel gate rejects
+  further sends.
 - ChanOpenConfirm must move a channel from `TryOpen` to `Open`.
 - ChanCloseInit must close an open channel at the core datum layer, while app
   policy may still reject the close path before this transition is accepted.
@@ -257,6 +261,8 @@ Required CI labels:
 - `contract.packet.timeout.invalid_before_timeout`
 - `tx.packet.send.valid_channel_host_marker`
 - `model.packet.send_ack.valid_sequence`
+- `model.packet.send_recv_ack`
+- `model.packet.send_timeout`
 
 ### SendPacket
 
@@ -345,15 +351,30 @@ ordered timeout transitions. They prove these invariants:
 
 ### Model Sequences
 
-Covered by `model.packet.send_ack.valid_sequence`.
+Covered by `model.packet.send_ack.valid_sequence`,
+`model.packet.send_recv_ack`, and `model.packet.send_timeout`.
 
-The model property constructs an explicit packet lifecycle state sequence:
-initial open channel -> SendPacket output state -> AcknowledgePacket output
-state. It runs the SendPacket transition and then the Ack transition against
-the modeled intermediate state. It proves these invariants:
+The model properties construct explicit bounded packet lifecycle state
+sequences:
+
+- initial open channel -> SendPacket output state -> AcknowledgePacket output
+  state;
+- initial open channel -> SendPacket output state -> RecvPacket output state ->
+  AcknowledgePacket output state; and
+- initial open channel -> SendPacket output state -> TimeoutPacket output state.
+
+They run each step against the relevant transition helper and then assert the
+final modeled state. They prove these invariants:
 
 - A packet accepted by the send transition can be consumed by the ack
   transition using the send output as the next model input.
+- A send output can also be the starting state for a receive of an independent
+  inbound packet before the original outbound packet is acknowledged.
+- The receive step records both receipt and acknowledgement commitments for the
+  inbound packet sequence.
+- A send output can be consumed by a mature timeout transition.
+- The timeout sequence removes the outbound packet commitment and keeps an
+  unordered channel open.
 - The final model state removes the packet commitment.
 - The final model state preserves the incremented send sequence from the first
   step.
@@ -749,6 +770,7 @@ Required CI labels:
 - `contract.trace.rollover.invalid_old_shard_not_preserved`
 - `contract.trace.rollover.invalid_new_shard_not_exact_entry`
 - `contract.trace.rollover.invalid_missing_voucher_mint`
+- `model.trace.append_rollover_lookup`
 
 ### Valid Rollover Transition
 
@@ -819,6 +841,26 @@ mint. The rollover must be rejected, proving these invariants:
 - Minting only the new active shard NFT is not sufficient authorization.
 - The trace registry cannot be written arbitrarily without the corresponding
   voucher asset flow.
+
+### Append Rollover Lookup Model
+
+Covered by `model.trace.append_rollover_lookup`.
+
+The model property starts with an empty active shard, appends an existing trace
+entry into that active shard, rolls the bucket to a new active shard containing
+a newly inserted trace entry, and then performs lookup-style assertions across
+the active and archived shard sets. It also runs the shard-side and
+directory-side rollover validators for the rollover step. It proves these
+invariants:
+
+- A trace entry appended before rollover remains discoverable after the old
+  active shard becomes archived.
+- The trace entry inserted during rollover is discoverable in the new active
+  shard.
+- The modeled directory after rollover matches the validator-accepted updated
+  directory.
+- Rollover preserves historical lookup reachability instead of replacing the
+  old active shard with only the new entry.
 
 ## Current Coverage Boundary
 

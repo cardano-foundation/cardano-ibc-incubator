@@ -142,6 +142,14 @@ type TestRolloverFixture {
   mint: Value,
 }
 
+type TraceRegistryModel {
+  TraceRegistryModel {
+    directory: TraceRegistryDirectoryDatum,
+    active_shard: TraceRegistryShardDatum,
+    archived_shards: List<TraceRegistryShardDatum>,
+  }
+}
+
 fn normalize_non_target_offset(seed: Int) -> Int {
   1 + if seed < 0 {
     ( 0 - seed ) % 15
@@ -254,6 +262,55 @@ fn test_rollover_fixture(extra_bucket_seed: Int) -> TestRolloverFixture {
   }
 }
 
+fn trace_model(
+  directory: TraceRegistryDirectoryDatum,
+  active_shard: TraceRegistryShardDatum,
+) -> TraceRegistryModel {
+  TraceRegistryModel { directory, active_shard, archived_shards: [] }
+}
+
+fn model_append_trace(
+  model: TraceRegistryModel,
+  entry: TraceRegistryEntry,
+) -> TraceRegistryModel {
+  TraceRegistryModel {
+    ..model,
+    active_shard: TraceRegistryShardDatum {
+      ..model.active_shard,
+      entries: [entry, ..model.active_shard.entries],
+    },
+  }
+}
+
+fn model_rollover_trace(
+  model: TraceRegistryModel,
+  updated_directory: TraceRegistryDirectoryDatum,
+  new_active_shard: TraceRegistryShardDatum,
+) -> TraceRegistryModel {
+  TraceRegistryModel {
+    directory: updated_directory,
+    active_shard: new_active_shard,
+    archived_shards: [model.active_shard, ..model.archived_shards],
+  }
+}
+
+fn shard_has_entry(
+  shard: TraceRegistryShardDatum,
+  entry: TraceRegistryEntry,
+) -> Bool {
+  list.any(shard.entries, fn(candidate) { candidate == entry })
+}
+
+fn trace_model_has_entry(
+  model: TraceRegistryModel,
+  entry: TraceRegistryEntry,
+) -> Bool {
+  or {
+    shard_has_entry(model.active_shard, entry),
+    list.any(model.archived_shards, fn(shard) { shard_has_entry(shard, entry) }),
+  }
+}
+
 // The shard-side validator sees both the spent shard and the spent directory,
 // so the rollover fixture includes both inputs in the same transaction.
 fn test_rollover_shard_transaction(
@@ -350,6 +407,80 @@ test prop_trace_registry_rollover_accepts_exactly_one_bucket_transition(
       ),
     })
     |> fuzz_dsl.assert_valid
+}
+
+test prop_model_trace_append_rollover_lookup(extra_bucket_seed via fuzz.int()) {
+  fuzz.label(@"model.trace.append_rollover_lookup")
+
+  let fixture = test_rollover_fixture(extra_bucket_seed)
+  let TestRolloverFixture {
+    old_shard,
+    old_directory,
+    updated_directory,
+    old_entry,
+    voucher_hash,
+    full_denom,
+    new_active_shard_name,
+    previous_active_shard_name,
+    archived_output,
+    new_active_output,
+    updated_directory_output,
+    mint,
+    ..
+  } = fixture
+  let initial_model =
+    trace_model(
+      old_directory,
+      TraceRegistryShardDatum { ..old_shard, entries: [] },
+    )
+  let appended_model = model_append_trace(initial_model, old_entry)
+  let inserted_entry = test_expected_entry(full_denom)
+  let rolled_model =
+    model_rollover_trace(
+      appended_model,
+      updated_directory,
+      TraceRegistryShardDatum {
+        bucket_index: old_shard.bucket_index,
+        entries: [inserted_entry],
+      },
+    )
+
+  and {
+    trace_model_has_entry(appended_model, old_entry),
+    run_trace_registry_spend(
+      Shard(appended_model.active_shard),
+      RolloverInsertTrace { voucher_hash, full_denom, new_active_shard_name },
+      test_output_ref(0),
+      test_rollover_shard_transaction(
+        fixture,
+        archived_output,
+        new_active_output,
+        updated_directory_output,
+        mint,
+      ),
+    ),
+    run_trace_registry_spend(
+      Directory(appended_model.directory),
+      AdvanceDirectory {
+        bucket_index: old_shard.bucket_index,
+        voucher_hash,
+        full_denom,
+        previous_active_shard_name,
+        new_active_shard_name,
+      },
+      test_output_ref(1),
+      test_rollover_directory_transaction(
+        fixture,
+        archived_output,
+        new_active_output,
+        updated_directory_output,
+        mint,
+      ),
+    ),
+    trace_model_has_entry(rolled_model, old_entry),
+    trace_model_has_entry(rolled_model, inserted_entry),
+    rolled_model.directory == updated_directory,
+  }
 }
 
 // Mutate only the untouched "noise" bucket. The directory transition should be

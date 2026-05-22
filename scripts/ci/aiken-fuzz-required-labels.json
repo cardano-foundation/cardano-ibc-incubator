@@ -38,6 +38,9 @@
     "contract.packet.timeout.valid_ordered",
     "contract.packet.timeout.invalid_before_timeout",
     "tx.packet.send.valid_channel_host_marker",
+    "model.packet.send_recv_ack",
+    "model.packet.send_timeout",
+    "model.channel.open_close_reject_send",
     "contract.transfer.native_send.escrow_increases_exactly",
     "contract.transfer.native_timeout.refund_exactly",
     "contract.transfer.native_ack.no_refund",
@@ -94,6 +97,7 @@
     "contract.trace.rollover.invalid_new_shard_not_exact_entry",
     "contract.trace.rollover.invalid_missing_voucher_mint",
     "tx.voucher.first_mint.valid_registry_coupled",
-    "model.packet.send_ack.valid_sequence"
+    "model.packet.send_ack.valid_sequence",
+    "model.trace.append_rollover_lookup"
   ]
 }

@@ -90,6 +90,48 @@ fn channel_allows_send(channel_datum: ChannelDatum) -> Bool {
   channel_datum.state.channel.state == Open
 }
 
+type ChannelLifecycleModel {
+  ChannelLifecycleModel { channel: ChannelDatum }
+}
+
+fn channel_model_from(channel: ChannelDatum) -> ChannelLifecycleModel {
+  ChannelLifecycleModel { channel }
+}
+
+fn model_open_ack(
+  model: ChannelLifecycleModel,
+  counterparty_channel_id: ByteArray,
+) -> ChannelLifecycleModel {
+  ChannelLifecycleModel {
+    channel: ChannelDatum {
+      ..model.channel,
+      state: ChannelDatumState {
+        ..model.channel.state,
+        channel: Channel {
+          ..model.channel.state.channel,
+          state: Open,
+          counterparty: ChannelCounterparty {
+            ..model.channel.state.channel.counterparty,
+            channel_id: counterparty_channel_id,
+          },
+        },
+      },
+    },
+  }
+}
+
+fn model_close(model: ChannelLifecycleModel) -> ChannelLifecycleModel {
+  ChannelLifecycleModel {
+    channel: ChannelDatum {
+      ..model.channel,
+      state: ChannelDatumState {
+        ..model.channel.state,
+        channel: Channel { ..model.channel.state.channel, state: Closed },
+      },
+    },
+  }
+}
+
 test prop_chan_open_ack_accepts_valid_transition(_seed via fuzz.int()) {
   fuzz.label(@"contract.chan.open_ack.valid")
 
@@ -101,6 +143,45 @@ test prop_chan_open_ack_accepts_valid_transition(_seed via fuzz.int()) {
     channel_datum_mod.validate_chan_open_ack(input_datum, output_datum),
   )
     |> fuzz_dsl.assert_valid
+}
+
+test prop_model_channel_open_close_reject_send(_seed via fuzz.int()) {
+  fuzz.label(@"model.channel.open_close_reject_send")
+
+  let initial_model = channel_datum(Init, "") |> channel_model_from
+  let opened_model = model_open_ack(initial_model, "channel-34")
+  let closed_model = model_close(opened_model)
+
+  and {
+    fuzz_dsl.valid_check(
+      "chan",
+      "model_open_ack",
+      "channel_datum.validate_chan_open_ack",
+      channel_datum_mod.validate_chan_open_ack(
+        initial_model.channel,
+        opened_model.channel,
+      ),
+    )
+      |> fuzz_dsl.assert_valid,
+    fuzz_dsl.valid_check(
+      "chan",
+      "model_close",
+      "channel_datum.validate_chan_close_init",
+      channel_datum_mod.validate_chan_close_init(
+        opened_model.channel,
+        closed_model.channel,
+      ),
+    )
+      |> fuzz_dsl.assert_valid,
+    fuzz_dsl.mutated_check(
+      "chan",
+      "model_send",
+      "closed_channel",
+      "channel_allows_send",
+      channel_allows_send(closed_model.channel),
+    )
+      |> fuzz_dsl.assert_rejected,
+  }
 }
 
 test prop_chan_open_confirm_accepts_valid_transition(_seed via fuzz.int()) {
