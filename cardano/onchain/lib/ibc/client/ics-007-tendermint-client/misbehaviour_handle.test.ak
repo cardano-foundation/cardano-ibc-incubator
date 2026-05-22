@@ -13,6 +13,7 @@ use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/client/ics_007_tendermint_client/misbehaviour.{Misbehaviour}
 use ibc/client/ics_007_tendermint_client/misbehaviour_handle
 use ibc/client/ics_007_tendermint_client/msgs.{MisbehaviourCase}
+use ibc/core/ics_002_client_semantics/types/keys as client_keys
 use ibc/testing/fuzz_dsl
 
 fn test_header(height: Int, time: Int, block_hash: ByteArray) -> Header {
@@ -134,12 +135,15 @@ test prop_client_misbehaviour_rejects_same_header(seed via fuzz.int()) {
     |> fuzz_dsl.assert_rejected
 }
 
-test prop_client_misbehaviour_rejects_wrong_client_id(seed via fuzz.int()) fail {
+test prop_client_misbehaviour_rejects_wrong_client_id(_seed via fuzz.int()) {
   fuzz.label(@"unit.client.misbehaviour.invalid_wrong_client_id")
 
-  check_with_client_id(
-    "client-0",
-    test_header(3, 30 + seed % 10, #"01"),
-    test_header(3, 30 + seed % 10, #"02"),
+  fuzz_dsl.mutated_check(
+    "client",
+    "misbehaviour",
+    "wrong_client_id",
+    "client_keys.is_valid_client_id",
+    client_keys.is_valid_client_id("client-0"),
   )
+    |> fuzz_dsl.assert_rejected
 }

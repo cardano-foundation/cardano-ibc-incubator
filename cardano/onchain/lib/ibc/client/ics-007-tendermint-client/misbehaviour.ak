@@ -4,7 +4,6 @@ use ibc/client/ics_007_tendermint_client/cometbft/validation
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
 use ibc/client/ics_007_tendermint_client/header.{Header}
 use ibc/client/ics_007_tendermint_client/height
-use ibc/core/ics_002_client_semantics/types/keys as client_keys
 
 pub type Misbehaviour {
   client_id: ByteArray,
@@ -35,7 +34,6 @@ pub fn get_time(misbehaviour: Misbehaviour) -> Int {
 }
 
 pub fn validate_basic(misbehaviour: Misbehaviour) -> Bool {
-  expect client_keys.is_valid_client_id(misbehaviour.client_id)
   expect misbehaviour.header1 != header.null_header()
   expect misbehaviour.header2 != header.null_header()
   expect misbehaviour.header1.trusted_height.revision_height != 0
@@ -49,10 +47,10 @@ pub fn validate_basic(misbehaviour: Misbehaviour) -> Bool {
 
   // TODO: Check validate_basic header for header1 and header2
   expect
-    !(height.compare(
+    height.compare(
       header.get_height(misbehaviour.header1),
       header.get_height(misbehaviour.header2),
-    ) == Less)
+    ) != Less
   expect
     valid_commit(
       misbehaviour.header1.signed_header.header.chain_id,
