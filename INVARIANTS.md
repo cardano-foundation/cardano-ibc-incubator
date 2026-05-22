@@ -56,6 +56,7 @@ and their CI-enforced labels.
   - [New Active Shard Freshness](#new-active-shard-freshness)
   - [Rollover Voucher Mint Coupling](#rollover-voucher-mint-coupling)
   - [Append Rollover Lookup Model](#append-rollover-lookup-model)
+- [Follow-Up Tasks](#follow-up-tasks)
 - [Current Coverage Boundary](#current-coverage-boundary)
 
 ## Label Kinds And Depths
@@ -978,6 +979,31 @@ invariants:
   directory.
 - Rollover preserves historical lookup reachability instead of replacing the
   old active shard with only the new entry.
+
+## Follow-Up Tasks
+
+These are the next useful improvements for the invariant suite:
+
+- Rename remaining deterministic `fuzz.*` labels to `regression.*`, or make the
+  generated seed materially change the fixture. This keeps the coverage report
+  honest about which properties are generated fuzz cases and which are labeled
+  regression checks.
+- Add `assert_rejected_by` and `assert_rejected_only_by` helpers to the fuzz
+  DSL. These should let mutation tests prove that a near-valid transaction
+  fails for the intended validator or predicate, not just because any check in
+  the composed fixture rejected it.
+- Expand `tx.*` coverage for packet and transfer flows. Prioritize full
+  transaction-shaped packet receive, acknowledgement, timeout, voucher mint,
+  voucher refund, and native escrow/refund flows, because these are the paths
+  that move user funds.
+- Make `ModelState` carry real protocol state instead of only protocol and
+  transition names. Start with a bounded packet lifecycle model containing:
+  channel state, packet commitments, packet receipts, packet acknowledgements,
+  escrow and voucher balances, and the HostState root.
+- Add cross-language golden fixtures for exact bytes shared by Aiken, Gateway,
+  Hermes, and Cosmos. These should cover CBOR, protobuf, commitment bytes,
+  proof paths, voucher asset names, and CIP-68 metadata so the implementations
+  cannot silently drift from each other.
 
 ## Current Coverage Boundary
 
