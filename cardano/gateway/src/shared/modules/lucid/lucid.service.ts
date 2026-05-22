@@ -198,6 +198,7 @@ type ReferenceScripts = {
   sendPacket: UTxO;
   timeoutPacket: UTxO;
   mintVoucher: UTxO;
+  legacyMintVouchers: Record<string, UTxO>;
   mintPort: UTxO;
   mintTransferEscrowShard: UTxO;
 };
@@ -205,7 +206,7 @@ type ReferenceScripts = {
 @Injectable()
 export class LucidService implements OnModuleInit {
   private readonly referenceScriptOutRefs: {
-    [K in keyof ReferenceScripts]:
+    [K in Exclude<keyof ReferenceScripts, "legacyMintVouchers">]:
       | Pick<UTxO, "txHash" | "outputIndex">
       | undefined;
   };
@@ -272,10 +273,10 @@ export class LucidService implements OnModuleInit {
   }
 
   private async loadReferenceScripts(): Promise<ReferenceScripts> {
-    const entries: Array<[keyof ReferenceScripts, UTxO]> = [];
+    const entries: Array<[Exclude<keyof ReferenceScripts, "legacyMintVouchers">, UTxO]> = [];
     for (const [label, outRef] of Object.entries(this.referenceScriptOutRefs) as Array<
       [
-        keyof ReferenceScripts,
+        Exclude<keyof ReferenceScripts, "legacyMintVouchers">,
         Pick<UTxO, "txHash" | "outputIndex"> | undefined,
       ]
     >) {
@@ -286,11 +287,27 @@ export class LucidService implements OnModuleInit {
       entries.push([label, utxo]);
     }
 
-    return Object.fromEntries(entries) as ReferenceScripts;
+    const deploymentConfig = this.configService.get("deployment");
+    const legacyMintVouchers: Record<string, UTxO> = {};
+    for (const entry of deploymentConfig.voucherPolicyRegistry?.legacy ?? []) {
+      if (!entry.refUtxo) {
+        continue;
+      }
+      legacyMintVouchers[entry.scriptHash.toLowerCase()] =
+        await this.resolveReferenceScriptUtxo(
+          `legacyMintVoucher:${entry.scriptHash}`,
+          entry.refUtxo,
+        );
+    }
+
+    return {
+      ...(Object.fromEntries(entries) as Omit<ReferenceScripts, "legacyMintVouchers">),
+      legacyMintVouchers,
+    };
   }
 
   private async resolveReferenceScriptUtxo(
-    label: keyof ReferenceScripts,
+    label: string,
     outRef: Pick<UTxO, "txHash" | "outputIndex"> | undefined,
   ): Promise<UTxO> {
     if (!outRef) {
@@ -344,6 +361,27 @@ export class LucidService implements OnModuleInit {
           : ""
       }`,
     );
+  }
+
+  private mintVoucherReferenceScript(policyId?: string): UTxO {
+    const deploymentConfig = this.configService.get("deployment");
+    const normalizedPolicyId = policyId?.toLowerCase();
+    const activePolicyId = (
+      deploymentConfig.voucherPolicyRegistry?.active?.scriptHash ??
+      deploymentConfig.validators.mintVoucher.scriptHash
+    ).toLowerCase();
+    if (!normalizedPolicyId || normalizedPolicyId === activePolicyId) {
+      return this.referenceScripts.mintVoucher;
+    }
+
+    const legacyReferenceScript =
+      this.referenceScripts.legacyMintVouchers[normalizedPolicyId];
+    if (!legacyReferenceScript) {
+      throw new Error(
+        `No reference script configured for legacy voucher policy ${normalizedPolicyId}`,
+      );
+    }
+    return legacyReferenceScript;
   }
 
   // ========================== Public functions ==========================
@@ -2497,7 +2535,7 @@ export class LucidService implements OnModuleInit {
     const tx = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.referenceScripts.mintVoucher,
+      this.mintVoucherReferenceScript(dto.voucherPolicyId),
       this.referenceScripts.sendPacket,
       this.referenceScripts.hostStateStt,
     ])

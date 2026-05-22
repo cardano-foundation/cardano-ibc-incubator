@@ -922,6 +922,29 @@ export type DeploymentTemplate = {
       name: string;
     };
   };
+  voucherPolicyRegistry?: {
+    active: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    legacy: Array<{
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    }>;
+    retired: Array<{
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    }>;
+  };
   modules: Record<
     Module,
     {

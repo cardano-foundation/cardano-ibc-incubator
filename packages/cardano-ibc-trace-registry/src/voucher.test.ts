@@ -17,6 +17,10 @@ import {
   encodeVoucherCip68MetadataDatum,
   expectVoucherAssetName,
   LABELED_VOUCHER_TOKEN_NAME_HEX_LENGTH,
+  findVoucherPolicy,
+  getActiveVoucherPolicyId,
+  listOperationalVoucherPolicies,
+  normalizeVoucherPolicyRegistry,
   parseVoucherAssetName,
   splitFullDenomTrace,
   VOUCHER_DENOM_HASH_HEX_LENGTH,
@@ -178,6 +182,89 @@ describe('trace registry duplicate detection', () => {
           },
         ]),
       /Duplicate trace-registry entries detected/,
+    );
+  });
+});
+
+describe('voucher policy registry', () => {
+  it('treats the existing mint_voucher validator as the active policy for legacy manifests', () => {
+    const activePolicy = 'aa'.repeat(28);
+
+    assert.deepEqual(
+      normalizeVoucherPolicyRegistry({
+        validators: {
+          mint_voucher: {
+            script_hash: activePolicy.toUpperCase(),
+          },
+        },
+      }),
+      {
+        active: { policyId: activePolicy, status: 'active' },
+        legacy: [],
+        retired: [],
+      },
+    );
+    assert.equal(
+      getActiveVoucherPolicyId({
+        validators: { mint_voucher: { script_hash: activePolicy } },
+      }),
+      activePolicy,
+    );
+  });
+
+  it('normalizes active, legacy, and retired voucher policy entries', () => {
+    const activePolicy = 'aa'.repeat(28);
+    const legacyPolicy = 'bb'.repeat(28);
+    const retiredPolicy = 'cc'.repeat(28);
+
+    const manifest = {
+      validators: {
+        mint_voucher: {
+          script_hash: 'dd'.repeat(28),
+        },
+      },
+      voucher_policy_registry: {
+        active: { policy_id: activePolicy.toUpperCase() },
+        legacy: [
+          { script_hash: legacyPolicy },
+          legacyPolicy.toUpperCase(),
+          activePolicy,
+        ],
+        retired: [
+          { policyId: retiredPolicy },
+          legacyPolicy,
+        ],
+      },
+    };
+
+    assert.deepEqual(normalizeVoucherPolicyRegistry(manifest), {
+      active: { policyId: activePolicy, status: 'active' },
+      legacy: [{ policyId: legacyPolicy, status: 'legacy' }],
+      retired: [{ policyId: retiredPolicy, status: 'retired' }],
+    });
+    assert.deepEqual(listOperationalVoucherPolicies(manifest), [
+      { policyId: activePolicy, status: 'active' },
+      { policyId: legacyPolicy, status: 'legacy' },
+    ]);
+    assert.deepEqual(findVoucherPolicy(manifest, legacyPolicy), {
+      policyId: legacyPolicy,
+      status: 'legacy',
+    });
+    assert.deepEqual(findVoucherPolicy(manifest, retiredPolicy), {
+      policyId: retiredPolicy,
+      status: 'retired',
+    });
+  });
+
+  it('rejects malformed voucher policy ids', () => {
+    assert.throws(
+      () =>
+        normalizeVoucherPolicyRegistry({
+          voucher_policy_registry: {
+            active: 'not-a-policy',
+          },
+        }),
+      /voucher_policy_registry\.active must be a 56-character policy id/,
     );
   });
 });

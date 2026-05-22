@@ -133,6 +133,8 @@ async function decodeClientDatum(encoded, Lucid) {
     const ClientDatumStateSchema = Data.Object({
         clientState: ClientStateSchema,
         consensusStates: Data.Map(HeightSchema, ConsensusStateSchema),
+        processedTimes: Data.Map(HeightSchema, Data.Integer()),
+        processedHeights: Data.Map(HeightSchema, Data.Integer()),
     });
     const ClientDatumSchema = Data.Object({
         state: ClientDatumStateSchema,
@@ -721,7 +723,18 @@ class LucidIbcAdapter {
             const utxo = await this.resolveReferenceScriptUtxo(label, outRef);
             return [label, utxo];
         }));
-        return Object.fromEntries(entries);
+        const legacyMintVouchers = {};
+        for (const entry of this.deployment.voucherPolicyRegistry?.legacy ?? []) {
+            if (!entry.refUtxo) {
+                continue;
+            }
+            legacyMintVouchers[entry.scriptHash.toLowerCase()] =
+                await this.resolveReferenceScriptUtxo(`legacyMintVoucher:${entry.scriptHash}`, entry.refUtxo);
+        }
+        return {
+            ...Object.fromEntries(entries),
+            legacyMintVouchers,
+        };
     }
     async resolveReferenceScriptUtxo(label, outRef) {
         for (let attempt = 1; attempt <= 30; attempt += 1) {
@@ -736,6 +749,19 @@ class LucidIbcAdapter {
             }
         }
         throw new Error(`Unable to resolve reference script UTxO "${String(label)}" at ${outRef.txHash}#${outRef.outputIndex}`);
+    }
+    mintVoucherReferenceScript(policyId) {
+        const normalizedPolicyId = policyId?.toLowerCase();
+        const activePolicyId = this.deployment.voucherPolicyRegistry?.active?.scriptHash?.toLowerCase() ??
+            this.deployment.validators.mintVoucher.scriptHash.toLowerCase();
+        if (!normalizedPolicyId || normalizedPolicyId === activePolicyId) {
+            return this.referenceScripts.mintVoucher;
+        }
+        const legacyReferenceScript = this.referenceScripts.legacyMintVouchers[normalizedPolicyId];
+        if (!legacyReferenceScript) {
+            throw new Error(`No reference script configured for legacy voucher policy ${normalizedPolicyId}`);
+        }
+        return legacyReferenceScript;
     }
     normalizeAddressOrCredential(addressOrCredential) {
         const normalized = addressOrCredential?.trim();
@@ -1036,7 +1062,7 @@ class LucidIbcAdapter {
         const tx = this.lucid.newTx();
         tx.readFrom([
             this.referenceScripts.spendChannel,
-            this.referenceScripts.mintVoucher,
+            this.mintVoucherReferenceScript(dto.voucherPolicyId),
             this.referenceScripts.sendPacket,
             this.referenceScripts.hostStateStt,
         ])

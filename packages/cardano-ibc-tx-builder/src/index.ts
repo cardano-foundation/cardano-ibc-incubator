@@ -77,6 +77,10 @@ export type LoadedSendPacketContext = {
   deployment: {
     sendPacketPolicyId: string;
     mintVoucherScriptHash: string;
+    voucherPolicyRegistry?: {
+      active: string;
+      legacy?: string[];
+    };
     transferEscrowShardPolicyId: string;
     spendChannelAddress: string;
     transferModuleAddress: string;
@@ -127,6 +131,7 @@ export type UnsignedSendPacketBurnTxInput = {
   channelToken: AuthToken;
   senderVoucherTokenUtxo: UTxO;
   walletUtxos?: UTxO[];
+  voucherPolicyId?: string;
   voucherTokenUnit: string;
   senderAddress: string;
   receiverAddress: string;
@@ -302,6 +307,19 @@ export async function buildUnsignedSendPacketTx(
   );
 
   if (isVoucher) {
+    const senderAddress = sendPacketOperator.sender;
+    const senderWalletUtxos = await deps.tryFindUtxosAt(
+      senderAddress,
+      LOOKUP_RETRY_OPTIONS,
+    );
+    const voucherTokenName = buildVoucherTokenName(resolvedDenom, deps);
+    const voucherTokenUnit = resolveVoucherTokenUnitForBurn(
+      voucherTokenName,
+      context.deployment,
+      senderWalletUtxos,
+      deps,
+    );
+    const voucherPolicyId = voucherTokenUnit.slice(0, 56);
     const encodedMintVoucherRedeemer = await deps.encode(
       {
         BurnVoucher: {
@@ -313,17 +331,9 @@ export async function buildUnsignedSendPacketTx(
       'mintVoucherRedeemer',
     );
 
-    const voucherTokenUnit =
-      context.deployment.mintVoucherScriptHash +
-      buildVoucherTokenName(resolvedDenom, deps);
-    const senderAddress = sendPacketOperator.sender;
     const senderVoucherTokenUtxo = await deps.findUtxoAtWithUnit(
       senderAddress,
       voucherTokenUnit,
-    );
-    const senderWalletUtxos = await deps.tryFindUtxosAt(
-      senderAddress,
-      LOOKUP_RETRY_OPTIONS,
     );
     const walletUtxos = dedupeUtxos([
       ...senderWalletUtxos,
@@ -347,6 +357,7 @@ export async function buildUnsignedSendPacketTx(
       receiverAddress: sendPacketOperator.receiver,
       constructedAddress: sendPacketOperator.signer,
       channelTokenUnit: context.channelTokenUnit,
+      voucherPolicyId,
       voucherTokenUnit,
       denomToken: inputDenom,
       sendPacketPolicyId: context.deployment.sendPacketPolicyId,
@@ -543,6 +554,58 @@ function buildVoucherTokenName(
     blake2b(Buffer.from(denom, 'utf8'), { dkLen: 28 }),
   ).toString('hex');
   return `${CIP67_FT_LABEL_HEX}${voucherDenomHash}`;
+}
+
+function getOperationalVoucherPolicyIds(
+  deployment: LoadedSendPacketContext['deployment'],
+): string[] {
+  const activePolicy =
+    deployment.voucherPolicyRegistry?.active ?? deployment.mintVoucherScriptHash;
+  const policies = [
+    activePolicy,
+    ...(deployment.voucherPolicyRegistry?.legacy ?? []),
+  ];
+  const seen = new Set<string>();
+  const normalizedPolicies: string[] = [];
+
+  for (const policy of policies) {
+    const normalized = policy.trim().toLowerCase();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    normalizedPolicies.push(normalized);
+  }
+
+  return normalizedPolicies;
+}
+
+function resolveVoucherTokenUnitForBurn(
+  voucherTokenName: string,
+  deployment: LoadedSendPacketContext['deployment'],
+  senderWalletUtxos: UTxO[],
+  deps: Pick<SendPacketBuildDependencies, 'invalidArgument'>,
+): string {
+  const senderAssets = sumAssetsFromUtxos(senderWalletUtxos);
+  const activePolicy =
+    deployment.voucherPolicyRegistry?.active ?? deployment.mintVoucherScriptHash;
+  const candidateUnits = getOperationalVoucherPolicyIds(deployment).map(
+    (policyId) => `${policyId}${voucherTokenName}`,
+  );
+
+  for (const candidateUnit of candidateUnits) {
+    const matchedUnit = tryResolveAssetUnitFromAssets(
+      senderAssets,
+      candidateUnit,
+    );
+    if (matchedUnit !== null) {
+      return matchedUnit;
+    }
+  }
+
+  throw deps.invalidArgument(
+    `Voucher asset ${activePolicy}${voucherTokenName} not found in sender wallet UTxOs under the active or legacy voucher policies`,
+  );
 }
 
 async function resolvePacketDenomForSend(

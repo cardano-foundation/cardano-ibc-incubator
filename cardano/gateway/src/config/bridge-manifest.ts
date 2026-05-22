@@ -52,6 +52,12 @@ type DeploymentTraceRegistry = {
   directory: DeploymentTraceRegistryShard;
 };
 
+type DeploymentVoucherPolicyRegistry = {
+  active: DeploymentValidator;
+  legacy: DeploymentValidator[];
+  retired: DeploymentValidator[];
+};
+
 export type DeploymentConfig = {
   deployedAt: string;
   hostStateNFT: AuthToken;
@@ -79,6 +85,7 @@ export type DeploymentConfig = {
     icq?: DeploymentModule;
   };
   traceRegistry?: DeploymentTraceRegistry;
+  voucherPolicyRegistry?: DeploymentVoucherPolicyRegistry;
 };
 
 type BridgeManifestRefUtxo = {
@@ -135,6 +142,12 @@ type BridgeManifestTraceRegistry = {
   directory: BridgeManifestTraceRegistryShard;
 };
 
+type BridgeManifestVoucherPolicyRegistry = {
+  active: BridgeManifestValidator;
+  legacy: BridgeManifestValidator[];
+  retired: BridgeManifestValidator[];
+};
+
 // The manifest is the public, deployment-stable bootstrap document we expose to
 // external operators. It intentionally uses snake_case and only includes the
 // on-chain facts another Gateway/relayer stack needs to reconnect to this bridge.
@@ -169,6 +182,7 @@ export type BridgeManifest = {
     // script_hash here because they are not consumed after deployment.
     voucher_metadata?: BridgeManifestVoucherMetadata;
   };
+  voucher_policy_registry?: BridgeManifestVoucherPolicyRegistry;
   modules: {
     transfer: BridgeManifestModule;
     mock?: BridgeManifestModule;
@@ -282,6 +296,66 @@ function requireManifestValidator(value: unknown, path: string): BridgeManifestV
     script_hash: requireNonEmptyString(validator.script_hash, `${path}.script_hash`),
     address: typeof validator.address === 'string' ? validator.address : '',
     ref_utxo: requireManifestRefUtxo(validator.ref_utxo, `${path}.ref_utxo`),
+  };
+}
+
+function requireDeploymentVoucherPolicyRegistry(
+  value: unknown,
+  fallbackActive: DeploymentValidator,
+  path: string,
+): DeploymentVoucherPolicyRegistry {
+  if (!value) {
+    return {
+      active: fallbackActive,
+      legacy: [],
+      retired: [],
+    };
+  }
+  const registry = requireObject(value, path);
+  return {
+    active: registry.active
+      ? requireDeploymentValidator(registry.active, `${path}.active`)
+      : fallbackActive,
+    legacy: Array.isArray(registry.legacy)
+      ? registry.legacy.map((entry, index) =>
+          requireDeploymentValidator(entry, `${path}.legacy[${index}]`),
+        )
+      : [],
+    retired: Array.isArray(registry.retired)
+      ? registry.retired.map((entry, index) =>
+          requireDeploymentValidator(entry, `${path}.retired[${index}]`),
+        )
+      : [],
+  };
+}
+
+function requireManifestVoucherPolicyRegistry(
+  value: unknown,
+  fallbackActive: BridgeManifestValidator,
+  path: string,
+): BridgeManifestVoucherPolicyRegistry {
+  if (!value) {
+    return {
+      active: fallbackActive,
+      legacy: [],
+      retired: [],
+    };
+  }
+  const registry = requireObject(value, path);
+  return {
+    active: registry.active
+      ? requireManifestValidator(registry.active, `${path}.active`)
+      : fallbackActive,
+    legacy: Array.isArray(registry.legacy)
+      ? registry.legacy.map((entry, index) =>
+          requireManifestValidator(entry, `${path}.legacy[${index}]`),
+        )
+      : [],
+    retired: Array.isArray(registry.retired)
+      ? registry.retired.map((entry, index) =>
+          requireManifestValidator(entry, `${path}.retired[${index}]`),
+        )
+      : [],
   };
 }
 
@@ -471,6 +545,26 @@ function manifestValidatorToDeployment(validator: BridgeManifestValidator): Depl
   };
 }
 
+function deploymentVoucherPolicyRegistryToManifest(
+  registry: DeploymentVoucherPolicyRegistry,
+): BridgeManifestVoucherPolicyRegistry {
+  return {
+    active: deploymentValidatorToManifest(registry.active),
+    legacy: registry.legacy.map(deploymentValidatorToManifest),
+    retired: registry.retired.map(deploymentValidatorToManifest),
+  };
+}
+
+function manifestVoucherPolicyRegistryToDeployment(
+  registry: BridgeManifestVoucherPolicyRegistry,
+): DeploymentVoucherPolicyRegistry {
+  return {
+    active: manifestValidatorToDeployment(registry.active),
+    legacy: registry.legacy.map(manifestValidatorToDeployment),
+    retired: registry.retired.map(manifestValidatorToDeployment),
+  };
+}
+
 function deploymentVoucherMetadataToManifest(
   validator: DeploymentVoucherMetadata,
 ): BridgeManifestVoucherMetadata {
@@ -598,6 +692,11 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
     ...(deploymentAny.traceRegistry
       ? { traceRegistry: requireDeploymentTraceRegistry(deploymentAny.traceRegistry, 'traceRegistry') }
       : {}),
+    voucherPolicyRegistry: requireDeploymentVoucherPolicyRegistry(
+      deploymentAny.voucherPolicyRegistry,
+      requireDeploymentValidator(validators.mintVoucher, 'validators.mintVoucher'),
+      'voucherPolicyRegistry',
+    ),
   };
 }
 
@@ -656,6 +755,13 @@ export function normalizeHandlerJsonDeploymentConfig(
       ...(normalizedDeployment.traceRegistry
         ? { trace_registry: deploymentTraceRegistryToManifest(normalizedDeployment.traceRegistry) }
         : {}),
+      voucher_policy_registry: deploymentVoucherPolicyRegistryToManifest(
+        normalizedDeployment.voucherPolicyRegistry ?? {
+          active: normalizedDeployment.validators.mintVoucher,
+          legacy: [],
+          retired: [],
+        },
+      ),
     },
   };
 }
@@ -668,6 +774,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
   // Manifest startup is the inverse path: validate the public document, then
   // rebuild the internal deployment shape so downstream Gateway code stays
   // unaware of which bootstrap source was used.
+  const mintVoucherManifest = requireManifestValidator(validators.mint_voucher, 'validators.mint_voucher');
   const bridgeManifest: BridgeManifest = {
     schema_version: requireNonNegativeInteger(manifestAny.schema_version, 'schema_version'),
     deployment_id: requireNonEmptyString(manifestAny.deployment_id, 'deployment_id'),
@@ -696,7 +803,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       mint_client_stt: requireManifestValidator(validators.mint_client_stt, 'validators.mint_client_stt'),
       mint_connection_stt: requireManifestValidator(validators.mint_connection_stt, 'validators.mint_connection_stt'),
       mint_channel_stt: requireManifestValidator(validators.mint_channel_stt, 'validators.mint_channel_stt'),
-      mint_voucher: requireManifestValidator(validators.mint_voucher, 'validators.mint_voucher'),
+      mint_voucher: mintVoucherManifest,
       mint_transfer_escrow_shard: requireManifestValidator(
         validators.mint_transfer_escrow_shard,
         'validators.mint_transfer_escrow_shard',
@@ -714,6 +821,11 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
     ...(manifestAny.trace_registry
       ? { trace_registry: requireManifestTraceRegistry(manifestAny.trace_registry, 'trace_registry') }
       : {}),
+    voucher_policy_registry: requireManifestVoucherPolicyRegistry(
+      manifestAny.voucher_policy_registry,
+      mintVoucherManifest,
+      'voucher_policy_registry',
+    ),
   };
 
   assert(
@@ -764,6 +876,13 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       ...(bridgeManifest.trace_registry
         ? { traceRegistry: manifestTraceRegistryToDeployment(bridgeManifest.trace_registry) }
         : {}),
+      voucherPolicyRegistry: manifestVoucherPolicyRegistryToDeployment(
+        bridgeManifest.voucher_policy_registry ?? {
+          active: bridgeManifest.validators.mint_voucher,
+          legacy: [],
+          retired: [],
+        },
+      ),
     },
   };
 }

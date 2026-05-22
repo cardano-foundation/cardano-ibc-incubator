@@ -73,7 +73,7 @@ export class PlannerClientService {
     }
 
     const trace = await this.denomTraceService.findByHash(parsedVoucherAssetName.voucherDenomHash);
-    if (!trace || trace.voucher_policy_id?.toLowerCase() !== policyId) {
+    if (!trace || !this.denomTraceService.isOperationalVoucherPolicyId(policyId)) {
       return null;
     }
 

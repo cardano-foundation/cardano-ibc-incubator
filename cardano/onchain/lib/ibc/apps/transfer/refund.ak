@@ -10,12 +10,15 @@ use ibc/apps/transfer/mint_voucher_redeemer.{MintVoucherRedeemer, RefundVoucher}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/value_delta
+use ibc/apps/transfer/voucher_policy_registry.{
+  VoucherPolicyRegistry, operational_policies,
+}
 use ibc/core/ics_004/types/packet.{Packet}
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
 pub fn validate_refund_packet_token(
-  voucher_minting_policy_id: PolicyId,
+  voucher_policy_registry: VoucherPolicyRegistry,
   inputs: List<Input>,
   outputs: List<Output>,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
@@ -33,7 +36,11 @@ pub fn validate_refund_packet_token(
   ) {
     // Source-side packets locked native funds, so timeout/ack-error refunds
     // release escrow back to the original sender address.
-    expect None = pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
+    expect
+      !list.any(
+        operational_policies(voucher_policy_registry),
+        fn(policy_id) { pairs.get_first(redeemers, Mint(policy_id)) != None },
+      )
 
     expect Some(escrowed_token_unit) =
       string_utils.hex_string_to_bytes(data.denom)
@@ -128,23 +135,37 @@ pub fn validate_refund_packet_token(
     }
   } else {
     // Sink-side packets burned vouchers on send, so refunds remint the voucher.
-    expect Some(mint_voucher_redeemer) =
-      pairs.get_first(redeemers, Mint(voucher_minting_policy_id))
-    expect mint_voucher_redeemer: MintVoucherRedeemer = mint_voucher_redeemer
-    expect RefundVoucher { packet_source_port, packet_source_channel, .. } =
-      mint_voucher_redeemer
+    expect
+      list.any(
+        operational_policies(voucher_policy_registry),
+        fn(policy_id) {
+          validate_refund_voucher_redeemer_for_policy(redeemers, policy_id, packet)
+        },
+      )
     trace @"mint_voucher (validate_refund_packet_token): tx mint voucher token"
 
     let updated_output = transfer_escrow.expect_module_state(spend)
 
-    and {
-      value_delta.validate_output_amount(
-        spent_input,
-        updated_output,
-        assets.zero,
-      )?,
-      (packet_source_port == packet.source_port)?,
-      (packet_source_channel == packet.source_channel)?,
+    value_delta.validate_output_amount(spent_input, updated_output, assets.zero)
+  }
+}
+
+fn validate_refund_voucher_redeemer_for_policy(
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  voucher_minting_policy_id: PolicyId,
+  packet: Packet,
+) -> Bool {
+  when pairs.get_first(redeemers, Mint(voucher_minting_policy_id)) is {
+    Some(mint_voucher_redeemer) -> {
+      expect mint_voucher_redeemer: MintVoucherRedeemer = mint_voucher_redeemer
+      expect RefundVoucher { packet_source_port, packet_source_channel, .. } =
+        mint_voucher_redeemer
+
+      and {
+        (packet_source_port == packet.source_port)?,
+        (packet_source_channel == packet.source_channel)?,
+      }
     }
+    None -> False
   }
 }

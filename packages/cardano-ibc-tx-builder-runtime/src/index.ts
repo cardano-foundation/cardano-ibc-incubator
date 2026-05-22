@@ -85,6 +85,18 @@ type DeploymentTraceRegistry = {
   };
 };
 
+type VoucherPolicyRegistryEntry = {
+  scriptHash: string;
+  refUtxo?: RefUtxo;
+  address?: string;
+};
+
+type VoucherPolicyRegistry = {
+  active: VoucherPolicyRegistryEntry;
+  legacy: VoucherPolicyRegistryEntry[];
+  retired: VoucherPolicyRegistryEntry[];
+};
+
 type DeploymentConfig = {
   deployedAt: string;
   hostStateNFT: AuthToken;
@@ -109,7 +121,20 @@ type DeploymentConfig = {
     mock?: DeploymentModule;
   };
   traceRegistry?: DeploymentTraceRegistry;
+  voucherPolicyRegistry?: VoucherPolicyRegistry;
 };
+
+type VoucherPolicyManifestEntry =
+  | string
+  | {
+      policy_id?: string;
+      policyId?: string;
+      script_hash?: string;
+      scriptHash?: string;
+      address?: string;
+      ref_utxo?: { tx_hash: string; output_index: number };
+      refUtxo?: RefUtxo;
+    };
 
 type BridgeManifest = {
   deployed_at: string;
@@ -225,6 +250,11 @@ type BridgeManifest = {
       address: string;
       ref_utxo: { tx_hash: string; output_index: number };
     };
+  };
+  voucher_policy_registry?: {
+    active?: VoucherPolicyManifestEntry;
+    legacy?: VoucherPolicyManifestEntry[];
+    retired?: VoucherPolicyManifestEntry[];
   };
   modules: {
     transfer: { identifier: string; address: string };
@@ -418,6 +448,62 @@ function mapValidator(validator: { script_hash: string; address: string; ref_utx
   };
 }
 
+function registryEntryFromManifestEntry(
+  entry: VoucherPolicyManifestEntry | undefined,
+): VoucherPolicyRegistryEntry | null {
+  if (!entry) {
+    return null;
+  }
+  if (typeof entry === 'string') {
+    return { scriptHash: entry.toLowerCase() };
+  }
+  const policyId =
+    entry.policy_id ?? entry.policyId ?? entry.script_hash ?? entry.scriptHash;
+  if (!policyId) {
+    return null;
+  }
+  return {
+    scriptHash: policyId.toLowerCase(),
+    address: entry.address,
+    refUtxo: entry.ref_utxo ? mapRefUtxo(entry.ref_utxo) : entry.refUtxo,
+  };
+}
+
+function uniqueRegistryEntries(
+  entries: Array<VoucherPolicyRegistryEntry | null>,
+  activePolicyId: string,
+): VoucherPolicyRegistryEntry[] {
+  const seen = new Set([activePolicyId]);
+  const normalized: VoucherPolicyRegistryEntry[] = [];
+  for (const entry of entries) {
+    if (!entry || seen.has(entry.scriptHash)) {
+      continue;
+    }
+    seen.add(entry.scriptHash);
+    normalized.push(entry);
+  }
+  return normalized;
+}
+
+function mapVoucherPolicyRegistry(manifest: BridgeManifest): VoucherPolicyRegistry {
+  const active =
+    registryEntryFromManifestEntry(manifest.voucher_policy_registry?.active) ??
+    mapValidator(manifest.validators.mint_voucher);
+  const legacy = uniqueRegistryEntries(
+    manifest.voucher_policy_registry?.legacy?.map(registryEntryFromManifestEntry) ?? [],
+    active.scriptHash,
+  );
+  const retired = uniqueRegistryEntries(
+    manifest.voucher_policy_registry?.retired?.map(registryEntryFromManifestEntry) ?? [],
+    active.scriptHash,
+  ).filter(
+    (entry) =>
+      !legacy.some((legacyEntry) => legacyEntry.scriptHash === entry.scriptHash),
+  );
+
+  return { active, legacy, retired };
+}
+
 function normalizeBridgeManifest(manifest: BridgeManifest): {
   deployment: DeploymentConfig;
   bridgeManifest: BridgeManifest;
@@ -502,6 +588,7 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
             },
           }
         : {}),
+      voucherPolicyRegistry: mapVoucherPolicyRegistry(manifest),
     },
   };
 }
@@ -1346,6 +1433,15 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
               deployment: {
                 sendPacketPolicyId: deployment.validators.spendChannel.refValidator.send_packet.scriptHash,
                 mintVoucherScriptHash: deployment.validators.mintVoucher.scriptHash,
+                voucherPolicyRegistry: {
+                  active:
+                    deployment.voucherPolicyRegistry?.active.scriptHash ??
+                    deployment.validators.mintVoucher.scriptHash,
+                  legacy:
+                    deployment.voucherPolicyRegistry?.legacy.map(
+                      (entry) => entry.scriptHash,
+                    ) ?? [],
+                },
                 transferEscrowShardPolicyId:
                   deployment.validators.mintTransferEscrowShard.scriptHash,
                 spendChannelAddress,

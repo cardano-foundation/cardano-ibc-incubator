@@ -2309,6 +2309,15 @@ export class PacketService {
                   .send_packet.scriptHash,
               mintVoucherScriptHash:
                 deploymentConfig.validators.mintVoucher.scriptHash,
+              voucherPolicyRegistry: {
+                active:
+                  deploymentConfig.voucherPolicyRegistry?.active.scriptHash ??
+                  deploymentConfig.validators.mintVoucher.scriptHash,
+                legacy:
+                  deploymentConfig.voucherPolicyRegistry?.legacy.map(
+                    (entry) => entry.scriptHash,
+                  ) ?? [],
+              },
               transferEscrowShardPolicyId:
                 deploymentConfig.validators.mintTransferEscrowShard.scriptHash,
               spendChannelAddress:
@@ -3134,7 +3143,9 @@ export class PacketService {
     }
 
     const deploymentConfig = this.configService.get('deployment');
-    const voucherPolicyId = deploymentConfig.validators.mintVoucher.scriptHash;
+    const voucherPolicyId =
+      deploymentConfig.voucherPolicyRegistry?.active?.scriptHash ??
+      deploymentConfig.validators.mintVoucher.scriptHash;
     const voucherMetadataAddress = deploymentConfig.validators.voucherMetadata?.address;
     if (!voucherMetadataAddress) {
       throw new GrpcInternalException(
@@ -3202,7 +3213,11 @@ export class PacketService {
     return this.configService.get('deployment').modules.transfer.address;
   }
   private getMintVoucherScriptHash(): string {
-    return this.configService.get('deployment').validators.mintVoucher.scriptHash;
+    const deploymentConfig = this.configService.get('deployment');
+    return (
+      deploymentConfig.voucherPolicyRegistry?.active?.scriptHash ??
+      deploymentConfig.validators.mintVoucher.scriptHash
+    );
   }
 
   private _resolveVoucherReceiverAddress(receiver: string): string {

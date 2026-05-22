@@ -56,6 +56,7 @@ export interface CardanoAssetDenomTrace {
   voucherTokenName: string | null;
   cip68ReferenceAssetId?: string | null;
   voucherPolicyId: string | null;
+  voucherPolicyStatus?: VoucherPolicyStatus | null;
   ibcDenomHash: string | null;
   displayName: string;
   displaySymbol: string;
@@ -90,11 +91,41 @@ export type TraceRegistryClient = {
   listCardanoIbcAssets: () => Promise<CardanoAssetDenomTrace[]>;
 };
 
-type BridgeManifest = {
+export type VoucherPolicyStatus = 'active' | 'legacy' | 'retired';
+
+export type VoucherPolicyRegistryEntry = {
+  policyId: string;
+  status: VoucherPolicyStatus;
+};
+
+export type VoucherPolicyRegistry = {
+  active: VoucherPolicyRegistryEntry;
+  legacy: VoucherPolicyRegistryEntry[];
+  retired: VoucherPolicyRegistryEntry[];
+};
+
+type VoucherPolicyManifestEntry =
+  | string
+  | {
+      policy_id?: string;
+      policyId?: string;
+      script_hash?: string;
+      scriptHash?: string;
+      address?: string;
+      ref_utxo?: unknown;
+      refUtxo?: unknown;
+    };
+
+export type BridgeManifest = {
   validators?: {
     mint_voucher?: {
       script_hash?: string;
     };
+  };
+  voucher_policy_registry?: {
+    active?: VoucherPolicyManifestEntry;
+    legacy?: VoucherPolicyManifestEntry[];
+    retired?: VoucherPolicyManifestEntry[];
   };
   trace_registry?: {
     shard_policy_id: string;
@@ -300,6 +331,7 @@ function buildNativeAssetTrace(
     voucherTokenName: null,
     cip68ReferenceAssetId: null,
     voucherPolicyId: null,
+    voucherPolicyStatus: null,
     ibcDenomHash: null,
     displayName,
     displaySymbol: displayName,
@@ -318,7 +350,7 @@ async function mapVoucherTrace(
   hash: string,
   fullDenom: string,
   metadata: Cip68VoucherMetadata | null,
-  voucherPolicyId: string,
+  voucherPolicy: VoucherPolicyRegistryEntry,
 ): Promise<CardanoAssetDenomTrace> {
   const trace = splitFullDenomTrace(fullDenom);
   const presentation = deriveVoucherPresentation(fullDenom, trace.baseDenom);
@@ -331,8 +363,9 @@ async function mapVoucherTrace(
     baseDenom: trace.baseDenom,
     fullDenom,
     voucherTokenName,
-    cip68ReferenceAssetId: deriveVoucherReferenceAssetId(voucherPolicyId, hash),
-    voucherPolicyId,
+    cip68ReferenceAssetId: deriveVoucherReferenceAssetId(voucherPolicy.policyId, hash),
+    voucherPolicyId: voucherPolicy.policyId,
+    voucherPolicyStatus: voucherPolicy.status,
     ibcDenomHash: buildIbcDenomHashFromFullDenom(fullDenom),
     displayName: metadata?.name ?? presentation.displayName,
     displaySymbol: metadata?.ticker ?? presentation.displaySymbol,
@@ -394,14 +427,114 @@ function getTraceRegistry(manifest: BridgeManifest) {
   return manifest.trace_registry;
 }
 
-function getVoucherPolicyId(manifest: BridgeManifest): string {
-  const policyId = manifest.validators?.mint_voucher?.script_hash?.toLowerCase();
+function normalizePolicyId(policyId: string, field: string): string {
+  const normalized = policyId.trim().toLowerCase();
+  if (!new RegExp(`^[0-9a-f]{${CARDANO_POLICY_ID_HEX_LENGTH}}$`, 'i').test(normalized)) {
+    throw new Error(`${field} must be a ${CARDANO_POLICY_ID_HEX_LENGTH}-character policy id`);
+  }
+  return normalized;
+}
+
+function policyIdFromManifestEntry(
+  entry: VoucherPolicyManifestEntry | undefined,
+  field: string,
+): string | null {
+  if (!entry) {
+    return null;
+  }
+  if (typeof entry === 'string') {
+    return normalizePolicyId(entry, field);
+  }
+  const policyId =
+    entry.policy_id ?? entry.policyId ?? entry.script_hash ?? entry.scriptHash;
+  if (!policyId) {
+    throw new Error(`${field} must include policy_id or script_hash`);
+  }
+  return normalizePolicyId(policyId, field);
+}
+
+function uniquePolicyEntries(
+  policyIds: readonly string[],
+  status: VoucherPolicyStatus,
+): VoucherPolicyRegistryEntry[] {
+  const seen = new Set<string>();
+  const entries: VoucherPolicyRegistryEntry[] = [];
+  for (const policyId of policyIds) {
+    if (seen.has(policyId)) {
+      continue;
+    }
+    seen.add(policyId);
+    entries.push({ policyId, status });
+  }
+  return entries;
+}
+
+export function normalizeVoucherPolicyRegistry(
+  manifest: BridgeManifest,
+): VoucherPolicyRegistry {
+  const activePolicyId =
+    policyIdFromManifestEntry(
+      manifest.voucher_policy_registry?.active,
+      'voucher_policy_registry.active',
+    ) ?? manifest.validators?.mint_voucher?.script_hash?.toLowerCase();
+
+  const policyId = activePolicyId
+    ? normalizePolicyId(activePolicyId, 'validators.mint_voucher.script_hash')
+    : null;
   if (!policyId) {
     throw new Error(
       'Bridge manifest does not include the Cardano voucher mint policy',
     );
   }
-  return policyId;
+
+  const legacyPolicyIds =
+    manifest.voucher_policy_registry?.legacy?.map((entry, index) =>
+      policyIdFromManifestEntry(entry, `voucher_policy_registry.legacy[${index}]`),
+    ) ?? [];
+  const retiredPolicyIds =
+    manifest.voucher_policy_registry?.retired?.map((entry, index) =>
+      policyIdFromManifestEntry(entry, `voucher_policy_registry.retired[${index}]`),
+    ) ?? [];
+
+  const active = { policyId, status: 'active' as const };
+  const legacy = uniquePolicyEntries(
+    legacyPolicyIds.filter((candidate): candidate is string => !!candidate),
+    'legacy',
+  ).filter((entry) => entry.policyId !== active.policyId);
+  const retired = uniquePolicyEntries(
+    retiredPolicyIds.filter((candidate): candidate is string => !!candidate),
+    'retired',
+  ).filter(
+    (entry) =>
+      entry.policyId !== active.policyId &&
+      !legacy.some((legacyEntry) => legacyEntry.policyId === entry.policyId),
+  );
+
+  return { active, legacy, retired };
+}
+
+export function getActiveVoucherPolicyId(manifest: BridgeManifest): string {
+  return normalizeVoucherPolicyRegistry(manifest).active.policyId;
+}
+
+export function listOperationalVoucherPolicies(
+  manifest: BridgeManifest,
+): VoucherPolicyRegistryEntry[] {
+  const registry = normalizeVoucherPolicyRegistry(manifest);
+  return [registry.active, ...registry.legacy];
+}
+
+export function findVoucherPolicy(
+  manifest: BridgeManifest,
+  policyId: string,
+): VoucherPolicyRegistryEntry | null {
+  const normalized = normalizePolicyId(policyId, 'asset policy id');
+  const registry = normalizeVoucherPolicyRegistry(manifest);
+  return (
+    [registry.active, ...registry.legacy, ...registry.retired].find(
+      (entry) => entry.policyId === normalized,
+    ) ?? null
+  );
 }
 
 function unresolvedVoucherTraceError(assetId: string, voucherHash: string): Error {
@@ -750,9 +883,9 @@ export function createTraceRegistryClient(
 
     const parsed = parseCardanoAssetId(assetId);
     const manifest = await getBridgeManifest();
-    const voucherPolicyId = getVoucherPolicyId(manifest);
+    const voucherPolicy = findVoucherPolicy(manifest, parsed.policyId);
 
-    if (parsed.policyId !== voucherPolicyId) {
+    if (!voucherPolicy) {
       return buildNativeAssetTrace(
         parsed.assetId,
         parsed.assetId,
@@ -778,7 +911,7 @@ export function createTraceRegistryClient(
     }
 
     const metadata = await resolveVoucherMetadata(
-      voucherPolicyId,
+      voucherPolicy.policyId,
       entry.voucher_hash,
       entry.full_denom,
     );
@@ -787,7 +920,7 @@ export function createTraceRegistryClient(
       entry.voucher_hash,
       entry.full_denom,
       metadata,
-      voucherPolicyId,
+      voucherPolicy,
     );
   }
 
@@ -800,7 +933,7 @@ export function createTraceRegistryClient(
     }
 
     const manifest = await getBridgeManifest();
-    const voucherPolicyId = getVoucherPolicyId(manifest);
+    const activeVoucherPolicy = normalizeVoucherPolicyRegistry(manifest).active;
     const entries = await findAllVoucherEntries();
     let match: TraceRegistryEntry | null = null;
     for (const entry of entries) {
@@ -815,36 +948,38 @@ export function createTraceRegistryClient(
     }
 
     const metadata = await resolveVoucherMetadata(
-      voucherPolicyId,
+      activeVoucherPolicy.policyId,
       match.voucher_hash,
       match.full_denom,
     );
     return mapVoucherTrace(
-      `${voucherPolicyId}${buildVoucherUserTokenNameFromDenomHash(match.voucher_hash)}`.toLowerCase(),
+      `${activeVoucherPolicy.policyId}${buildVoucherUserTokenNameFromDenomHash(match.voucher_hash)}`.toLowerCase(),
       match.voucher_hash,
       match.full_denom,
       metadata,
-      voucherPolicyId,
+      activeVoucherPolicy,
     );
   }
 
   async function listCardanoIbcAssets(): Promise<CardanoAssetDenomTrace[]> {
     const manifest = await getBridgeManifest();
-    const voucherPolicyId = getVoucherPolicyId(manifest);
+    const voucherPolicies = listOperationalVoucherPolicies(manifest);
     const entries = await findAllVoucherEntries();
 
     const traces = await Promise.all(
-      entries.map(async (entry) =>
-        mapVoucherTrace(
-          `${voucherPolicyId}${buildVoucherUserTokenNameFromDenomHash(entry.voucher_hash)}`.toLowerCase(),
-          entry.voucher_hash,
-          entry.full_denom,
-          await resolveVoucherMetadata(
-            voucherPolicyId,
+      entries.flatMap((entry) =>
+        voucherPolicies.map(async (voucherPolicy) =>
+          mapVoucherTrace(
+            `${voucherPolicy.policyId}${buildVoucherUserTokenNameFromDenomHash(entry.voucher_hash)}`.toLowerCase(),
             entry.voucher_hash,
             entry.full_denom,
+            await resolveVoucherMetadata(
+              voucherPolicy.policyId,
+              entry.voucher_hash,
+              entry.full_denom,
+            ),
+            voucherPolicy,
           ),
-          voucherPolicyId,
         ),
       ),
     );

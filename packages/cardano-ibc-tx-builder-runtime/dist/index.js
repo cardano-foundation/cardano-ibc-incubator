@@ -119,6 +119,42 @@ function mapValidator(validator) {
         refUtxo: mapRefUtxo(validator.ref_utxo),
     };
 }
+function registryEntryFromManifestEntry(entry) {
+    if (!entry) {
+        return null;
+    }
+    if (typeof entry === 'string') {
+        return { scriptHash: entry.toLowerCase() };
+    }
+    const policyId = entry.policy_id ?? entry.policyId ?? entry.script_hash ?? entry.scriptHash;
+    if (!policyId) {
+        return null;
+    }
+    return {
+        scriptHash: policyId.toLowerCase(),
+        address: entry.address,
+        refUtxo: entry.ref_utxo ? mapRefUtxo(entry.ref_utxo) : entry.refUtxo,
+    };
+}
+function uniqueRegistryEntries(entries, activePolicyId) {
+    const seen = new Set([activePolicyId]);
+    const normalized = [];
+    for (const entry of entries) {
+        if (!entry || seen.has(entry.scriptHash)) {
+            continue;
+        }
+        seen.add(entry.scriptHash);
+        normalized.push(entry);
+    }
+    return normalized;
+}
+function mapVoucherPolicyRegistry(manifest) {
+    const active = registryEntryFromManifestEntry(manifest.voucher_policy_registry?.active) ??
+        mapValidator(manifest.validators.mint_voucher);
+    const legacy = uniqueRegistryEntries(manifest.voucher_policy_registry?.legacy?.map(registryEntryFromManifestEntry) ?? [], active.scriptHash);
+    const retired = uniqueRegistryEntries(manifest.voucher_policy_registry?.retired?.map(registryEntryFromManifestEntry) ?? [], active.scriptHash).filter((entry) => !legacy.some((legacyEntry) => legacyEntry.scriptHash === entry.scriptHash));
+    return { active, legacy, retired };
+}
 function normalizeBridgeManifest(manifest) {
     return {
         bridgeManifest: manifest,
@@ -200,6 +236,7 @@ function normalizeBridgeManifest(manifest) {
                     },
                 }
                 : {}),
+            voucherPolicyRegistry: mapVoucherPolicyRegistry(manifest),
         },
     };
 }
@@ -872,6 +909,11 @@ function createTxBuilderRuntime(config) {
                         deployment: {
                             sendPacketPolicyId: deployment.validators.spendChannel.refValidator.send_packet.scriptHash,
                             mintVoucherScriptHash: deployment.validators.mintVoucher.scriptHash,
+                            voucherPolicyRegistry: {
+                                active: deployment.voucherPolicyRegistry?.active.scriptHash ??
+                                    deployment.validators.mintVoucher.scriptHash,
+                                legacy: deployment.voucherPolicyRegistry?.legacy.map((entry) => entry.scriptHash) ?? [],
+                            },
                             transferEscrowShardPolicyId: deployment.validators.mintTransferEscrowShard.scriptHash,
                             spendChannelAddress,
                             transferModuleAddress: deployment.modules.transfer.address,

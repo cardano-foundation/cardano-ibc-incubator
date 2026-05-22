@@ -48,6 +48,16 @@ type DeploymentConfig = {
             scriptHash: string;
         };
     };
+    voucherPolicyRegistry?: {
+        active?: {
+            scriptHash: string;
+            refUtxo?: RefUtxo;
+        };
+        legacy?: Array<{
+            scriptHash: string;
+            refUtxo?: RefUtxo;
+        }>;
+    };
     modules: {
         transfer: {
             address: string;
@@ -68,6 +78,7 @@ export declare class LucidIbcAdapter {
     onModuleInit(): Promise<void>;
     private loadReferenceScripts;
     private resolveReferenceScriptUtxo;
+    private mintVoucherReferenceScript;
     private normalizeAddressOrCredential;
     selectWalletFromAddress(addressOrCredential: string, utxos: UTxO[]): void;
     beginWalletSelectionScope(): number;

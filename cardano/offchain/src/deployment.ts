@@ -839,6 +839,17 @@ export const createDeployment = async (
         refUtxo: refUtxosInfo[mintChannelSttPolicyId],
       },
     },
+    voucherPolicyRegistry: {
+      active: {
+        title: "minting_voucher.mint_voucher.mint",
+        script: mintVoucher.validator.script,
+        scriptHash: mintVoucher.policyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintVoucher.policyId],
+      },
+      legacy: [],
+      retired: [],
+    },
     hostStateNFT: {
       policyId: hostStateNFT.policy_id,
       name: hostStateNFT.name,
@@ -1629,22 +1640,35 @@ const deployTransferModule = async (
   ] = await readValidator(
     "spending_transfer_module.spend_transfer_module.spend",
     lucid,
+    // Active vouchers can be minted and burned. Legacy vouchers are accepted by
+    // the transfer module for burn/refund flows once prior policy reference
+    // scripts are added to the deployment manifest.
     [
       portToken,
       identifierToken,
       portId,
       mintTransferEscrowShardPolicyId,
       mintChannelPolicyId,
-      mintVoucherPolicyId,
+      {
+        active: mintVoucherPolicyId,
+        legacy: [],
+        retired: [],
+      },
       hostStateNFT.policy_id,
     ],
+    // Keep this schema in sync with
+    // ibc/apps/transfer/voucher_policy_registry.VoucherPolicyRegistry.
     Data.Tuple([
       AuthTokenSchema,
       AuthTokenSchema,
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
-      Data.Bytes(),
+      Data.Object({
+        active: Data.Bytes(),
+        legacy: Data.Array(Data.Bytes()),
+        retired: Data.Array(Data.Bytes()),
+      }),
       Data.Bytes(),
     ]) as unknown as [
       AuthToken,
@@ -1652,7 +1676,11 @@ const deployTransferModule = async (
       string,
       string,
       string,
-      string,
+      {
+        active: string;
+        legacy: string[];
+        retired: string[];
+      },
       string,
     ],
   );

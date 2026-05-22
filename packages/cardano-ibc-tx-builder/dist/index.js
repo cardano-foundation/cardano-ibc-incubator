@@ -66,6 +66,11 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
     };
     const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit, } = await deps.buildHostStateUpdate(context.channelDatum, updatedChannelDatum, sendPacketOperator.sourceChannel);
     if (isVoucher) {
+        const senderAddress = sendPacketOperator.sender;
+        const senderWalletUtxos = await deps.tryFindUtxosAt(senderAddress, LOOKUP_RETRY_OPTIONS);
+        const voucherTokenName = buildVoucherTokenName(resolvedDenom, deps);
+        const voucherTokenUnit = resolveVoucherTokenUnitForBurn(voucherTokenName, context.deployment, senderWalletUtxos, deps);
+        const voucherPolicyId = voucherTokenUnit.slice(0, 56);
         const encodedMintVoucherRedeemer = await deps.encode({
             BurnVoucher: {
                 packet_source_port: packet.source_port,
@@ -73,11 +78,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
                 data: fungibleTokenPacketData,
             },
         }, 'mintVoucherRedeemer');
-        const voucherTokenUnit = context.deployment.mintVoucherScriptHash +
-            buildVoucherTokenName(resolvedDenom, deps);
-        const senderAddress = sendPacketOperator.sender;
         const senderVoucherTokenUtxo = await deps.findUtxoAtWithUnit(senderAddress, voucherTokenUnit);
-        const senderWalletUtxos = await deps.tryFindUtxosAt(senderAddress, LOOKUP_RETRY_OPTIONS);
         const walletUtxos = dedupeUtxos([
             ...senderWalletUtxos,
             senderVoucherTokenUtxo,
@@ -99,6 +100,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
             receiverAddress: sendPacketOperator.receiver,
             constructedAddress: sendPacketOperator.signer,
             channelTokenUnit: context.channelTokenUnit,
+            voucherPolicyId,
             voucherTokenUnit,
             denomToken: inputDenom,
             sendPacketPolicyId: context.deployment.sendPacketPolicyId,
@@ -231,6 +233,36 @@ function buildVoucherTokenName(denom, deps) {
     }
     const voucherDenomHash = Buffer.from((0, blake2b_1.blake2b)(Buffer.from(denom, 'utf8'), { dkLen: 28 })).toString('hex');
     return `${CIP67_FT_LABEL_HEX}${voucherDenomHash}`;
+}
+function getOperationalVoucherPolicyIds(deployment) {
+    const activePolicy = deployment.voucherPolicyRegistry?.active ?? deployment.mintVoucherScriptHash;
+    const policies = [
+        activePolicy,
+        ...(deployment.voucherPolicyRegistry?.legacy ?? []),
+    ];
+    const seen = new Set();
+    const normalizedPolicies = [];
+    for (const policy of policies) {
+        const normalized = policy.trim().toLowerCase();
+        if (!normalized || seen.has(normalized)) {
+            continue;
+        }
+        seen.add(normalized);
+        normalizedPolicies.push(normalized);
+    }
+    return normalizedPolicies;
+}
+function resolveVoucherTokenUnitForBurn(voucherTokenName, deployment, senderWalletUtxos, deps) {
+    const senderAssets = sumAssetsFromUtxos(senderWalletUtxos);
+    const activePolicy = deployment.voucherPolicyRegistry?.active ?? deployment.mintVoucherScriptHash;
+    const candidateUnits = getOperationalVoucherPolicyIds(deployment).map((policyId) => `${policyId}${voucherTokenName}`);
+    for (const candidateUnit of candidateUnits) {
+        const matchedUnit = tryResolveAssetUnitFromAssets(senderAssets, candidateUnit);
+        if (matchedUnit !== null) {
+            return matchedUnit;
+        }
+    }
+    throw deps.invalidArgument(`Voucher asset ${activePolicy}${voucherTokenName} not found in sender wallet UTxOs under the active or legacy voucher policies`);
 }
 async function resolvePacketDenomForSend(denom, deps) {
     if (!denom.startsWith('ibc/')) {

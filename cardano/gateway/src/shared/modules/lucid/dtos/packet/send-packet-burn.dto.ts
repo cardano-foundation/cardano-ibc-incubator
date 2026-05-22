@@ -18,6 +18,7 @@ export type UnsignedSendPacketBurnDto = WithHostStateUpdate &
   WithPacketPolicyAndChannelToken<'sendPacketPolicyId'> & {
   senderVoucherTokenUtxo: UTxO;
   walletUtxos?: UTxO[];
+  voucherPolicyId?: string;
   voucherTokenUnit: string;
   senderAddress: string;
   receiverAddress: string;

@@ -14,6 +14,7 @@ use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/value_delta as transfer_value_delta
 use ibc/apps/transfer/voucher_flow as transfer_voucher_flow
+use ibc/apps/transfer/voucher_policy_registry.{VoucherPolicyRegistry}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_datum.{ChannelDatum, validate_recv_packet}
 use ibc/core/ics_004/channel_redeemer.{
@@ -39,7 +40,7 @@ validator spend_transfer_module(
   port_id: ByteArray,
   transfer_escrow_shard_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
-  voucher_minting_policy_id: PolicyId,
+  voucher_policy_registry: VoucherPolicyRegistry,
   host_state_nft_policy_id: PolicyId,
 ) {
   spend(
@@ -105,7 +106,7 @@ validator spend_transfer_module(
           port_id,
           transfer_escrow_shard_policy_id,
           channel_minting_policy_id,
-          voucher_minting_policy_id,
+          voucher_policy_registry,
         )
       Operator(op) ->
         module_operator(
@@ -116,7 +117,7 @@ validator spend_transfer_module(
           spend,
           transfer_escrow_shard_policy_id,
           channel_minting_policy_id,
-          voucher_minting_policy_id,
+          voucher_policy_registry,
         )
     }
   }
@@ -135,7 +136,7 @@ fn module_callback(
   port_id: ByteArray,
   shard_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
-  voucher_minting_policy_id: PolicyId,
+  voucher_policy_registry: VoucherPolicyRegistry,
 ) -> Bool {
   let Transaction { outputs, redeemers, inputs, mint, .. } = transaction
 
@@ -285,7 +286,7 @@ fn module_callback(
         expect
           transfer_voucher_flow.require_no_voucher_mint(
             redeemers,
-            voucher_minting_policy_id,
+            voucher_policy_registry,
           )
 
         let voucher_prefix_len =
@@ -421,7 +422,7 @@ fn module_callback(
           )?,
           transfer_voucher_flow.validate_mint_voucher_packet(
             redeemers,
-            voucher_minting_policy_id,
+            voucher_policy_registry,
             packet,
           )?,
         }
@@ -445,7 +446,7 @@ fn module_callback(
       // Timeout refunds the sender-side packet effect.
       let valid_refund_packet =
         transfer_refund.validate_refund_packet_token(
-          voucher_minting_policy_id,
+          voucher_policy_registry,
           inputs,
           outputs,
           redeemers,
@@ -484,7 +485,7 @@ fn module_callback(
             fungible_token_packet_data.get_bytes(tf_data) == packet.data,
             acknowledgement_mod.marshal_json(acknowledgement) == channel_ack,
             transfer_refund.validate_refund_packet_token(
-              voucher_minting_policy_id,
+              voucher_policy_registry,
               inputs,
               outputs,
               redeemers,
@@ -522,7 +523,7 @@ fn module_operator(
   spend: TransferModuleSpend,
   shard_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
-  voucher_minting_policy_id: PolicyId,
+  voucher_policy_registry: VoucherPolicyRegistry,
 ) -> Bool {
   expect TransferModuleOperator(op) = op
   let Transaction { redeemers, inputs, mint, .. } = transaction
@@ -559,7 +560,7 @@ fn module_operator(
         expect
           transfer_voucher_flow.require_no_voucher_mint(
             redeemers,
-            voucher_minting_policy_id,
+            voucher_policy_registry,
           )
         trace @"spend_transfer_module: tx not mint voucher token"
 
@@ -608,7 +609,7 @@ fn module_operator(
           )?,
           transfer_voucher_flow.validate_burn_voucher_packet(
             redeemers,
-            voucher_minting_policy_id,
+            voucher_policy_registry,
             packet,
           )?,
         }
