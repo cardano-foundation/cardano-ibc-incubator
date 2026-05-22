@@ -342,28 +342,36 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - suite: host-client
+          - suite: host
             match_tests: >-
               -m prop_host_
+          - suite: client
+            match_tests: >-
               -m ibc/client/ics_007_tendermint_client/client_datum
               -m ibc/client/ics_007_tendermint_client/client_state
               -m ibc/client/ics_007_tendermint_client/misbehaviour_handle
               -m prop_client_update_
-          - suite: connection-channel-packet
+          - suite: connection
             match_tests: >-
               -m ibc/core/ics_003_connection_semantics/connection_datum
               -m ibc/core/ics_003_connection_semantics/connection_handshake_contract
               -m prop_conn_open_try_
+          - suite: channel-packet
+            match_tests: >-
               -m ibc/core/ics_004/channel_datum_test/channel_handshake_contract
               -m ibc/core/ics_004/channel_datum_test/packet_lifecycle_contract
               -m prop_tx_packet_send_
-          - suite: transfer-voucher-trace
+          - suite: transfer
             match_tests: >-
               -m ibc/apps/transfer/transfer_accounting_contract
-              -m ibc/apps/transfer/voucher_metadata_contract
               -m prop_transfer_module_
+          - suite: voucher
+            match_tests: >-
+              -m ibc/apps/transfer/voucher_metadata_contract
               -m prop_voucher_first_mint_
               -m prop_tx_first_seen_voucher_mint_
+          - suite: trace
+            match_tests: >-
               -m prop_trace_registry_
               -m prop_model_trace_
           - suite: proofs
