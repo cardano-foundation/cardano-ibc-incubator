@@ -373,6 +373,7 @@ jobs:
               -m ibc/core/ics_003_connection_semantics/connection_datum
               -m ibc/core/ics_003_connection_semantics/connection_handshake_contract
               -m prop_conn_open_try_
+              -m prop_tx_conn_open_try_
           - suite: channel-packet
             match_tests: >-
               -m ibc/core/ics_004/channel_datum_test/channel_handshake_contract
