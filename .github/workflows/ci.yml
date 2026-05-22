@@ -22,6 +22,70 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  aiken-changes:
+    name: Detect Aiken Changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      aiken_changed: ${{ steps.detect.outputs.aiken_changed }}
+
+    steps:
+      - name: Detect Aiken-relevant changes
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "aiken_changed=true" >> "$GITHUB_OUTPUT"
+            echo "Running Aiken jobs for non-PR event ${{ github.event_name }}."
+            exit 0
+          fi
+
+          mapfile -t changed_files < <(
+            gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" \
+              --paginate \
+              --jq '.[].filename'
+          )
+
+          aiken_changed=false
+          for file in "${changed_files[@]}"; do
+            case "${file}" in
+              cardano/onchain/*)
+                aiken_changed=true
+                ;;
+              .github/workflows/ci.yml)
+                aiken_changed=true
+                ;;
+              scripts/ci/check-aiken-fuzz-coverage.mjs)
+                aiken_changed=true
+                ;;
+              scripts/ci/aiken-fuzz-required-labels.json)
+                aiken_changed=true
+                ;;
+              scripts/ci/check-aiken-fuzz-imports.sh)
+                aiken_changed=true
+                ;;
+              scripts/ci/check-generated-artifacts-clean.sh)
+                aiken_changed=true
+                ;;
+              scripts/ci/merge-aiken-check-reports.mjs)
+                aiken_changed=true
+                ;;
+              cardano/gateway/src/scripts/ci/check-tx-budgets.ts)
+                aiken_changed=true
+                ;;
+            esac
+          done
+
+          echo "aiken_changed=${aiken_changed}" >> "$GITHUB_OUTPUT"
+          if [ "${aiken_changed}" = "true" ]; then
+            echo "Aiken-relevant changes detected."
+          else
+            echo "No Aiken-relevant changes detected; Aiken-heavy jobs can be skipped."
+          fi
+
   docs-branch-guard:
     name: Docs Branch Guard
     if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'docs/') }}
@@ -245,6 +309,7 @@ jobs:
   deno-offchain:
     name: Cardano Offchain Deno
     if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    needs: aiken-changes
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -258,11 +323,13 @@ jobs:
           deno-version: v2.x
 
       - name: Setup Aiken
+        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         uses: aiken-lang/setup-aiken@v1
         with:
           version: v1.1.21
 
       - name: Build Aiken blueprint
+        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         working-directory: cardano/onchain
         run: aiken build
 
@@ -280,7 +347,8 @@ jobs:
 
   aiken-static:
     name: Cardano Onchain Aiken Static
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_changed == 'true' }}
+    needs: aiken-changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -314,7 +382,8 @@ jobs:
 
   aiken-smoke:
     name: Cardano Onchain Aiken Smoke
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_changed == 'true' }}
+    needs: aiken-changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
@@ -337,7 +406,8 @@ jobs:
 
   aiken-fuzz:
     name: Cardano Onchain Aiken Property/Fuzz (${{ matrix.suite }})
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_changed == 'true' }}
+    needs: aiken-changes
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -453,8 +523,8 @@ jobs:
 
   aiken:
     name: Cardano Onchain Aiken
-    if: ${{ always() && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
-    needs: [aiken-static, aiken-smoke, aiken-fuzz]
+    if: ${{ always() && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_changed == 'true' }}
+    needs: [aiken-changes, aiken-static, aiken-smoke, aiken-fuzz]
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -502,7 +572,8 @@ jobs:
 
   tx-budgets:
     name: Cardano Tx Budgets
-    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_changed == 'true' }}
+    needs: aiken-changes
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -571,6 +642,7 @@ jobs:
   generated-artifacts:
     name: Generated Artifacts
     if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    needs: aiken-changes
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -586,6 +658,7 @@ jobs:
           cache-dependency-path: proto-types/package-lock.json
 
       - name: Setup Aiken
+        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         uses: aiken-lang/setup-aiken@v1
         with:
           version: v1.1.21
@@ -596,6 +669,7 @@ jobs:
           npm run --prefix proto-types codegen
 
       - name: Regenerate Aiken blueprint
+        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         working-directory: cardano/onchain
         run: aiken build --deny
 
