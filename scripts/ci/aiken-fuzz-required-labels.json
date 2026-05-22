@@ -37,6 +37,7 @@
     "contract.packet.timeout.valid_unordered",
     "contract.packet.timeout.valid_ordered",
     "contract.packet.timeout.invalid_before_timeout",
+    "tx.packet.send.valid_channel_host_marker",
     "contract.transfer.native_send.escrow_increases_exactly",
     "contract.transfer.native_timeout.refund_exactly",
     "contract.transfer.native_ack.no_refund",

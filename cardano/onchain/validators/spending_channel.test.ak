@@ -1,5 +1,6 @@
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
+use aiken/fuzz
 use aiken/interval
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
@@ -26,7 +27,7 @@ use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, ChanCloseConfirm, ChanCloseInit, ChanOpenAck,
-  ChanOpenConfirm, RecvPacket, SendPacket, TimeoutPacket,
+  ChanOpenConfirm, RecvPacket, SendPacket, SpendChannelRedeemer, TimeoutPacket,
 }
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/channel.{Channel}
@@ -47,6 +48,7 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
+use ibc/testing/fuzz_dsl
 use ibc/utils/validator_utils
 use spending_channel
 
@@ -463,6 +465,132 @@ fn send_packet(packet: Packet, channel_datum: ChannelDatum) -> ChannelDatum {
       ],
     },
   }
+}
+
+fn run_spending_channel_transition(
+  input_channel_datum: ChannelDatum,
+  spend_channel_redeemer: SpendChannelRedeemer,
+  channel_input_ref: OutputReference,
+  transaction: Transaction,
+) -> fuzz_dsl.ProtocolTxFixture {
+  let mock_data = setup()
+
+  fuzz_dsl.protocol_tx_from_transaction(
+    fuzz_dsl.model("packet", "send.tx"),
+    fuzz_dsl.model("packet", "send.tx.after"),
+    fuzz_dsl.no_mutation(),
+    transaction,
+  )
+    |> fuzz_dsl.with_protocol_validator_check(
+        "spending_channel",
+        spending_channel.spend_channel.spend(
+          mock_data.chan_open_ack_policy_id,
+          mock_data.chan_open_confirm_policy_id,
+          mock_data.chan_close_init_policy_id,
+          mock_data.chan_close_confirm_policy_id,
+          mock_data.recv_packet_policy_id,
+          mock_data.send_packet_policy_id,
+          mock_data.timeout_packet_policy_id,
+          mock_data.acknowledge_packet_policy_id,
+          mock_data.host_state_nft_policy_id,
+          Some(input_channel_datum),
+          spend_channel_redeemer,
+          channel_input_ref,
+          transaction,
+        ),
+      )
+}
+
+fn send_packet_spending_channel_tx() -> fuzz_dsl.ProtocolTxFixture {
+  let mock_data = setup()
+  let packet =
+    Packet {
+      sequence: 1,
+      source_port: "port-1",
+      source_channel: "channel-0",
+      destination_port: "port-1",
+      destination_channel: "channel-0",
+      data: "mock packet data",
+      timeout_height: Height { revision_number: 0, revision_height: 0 },
+      timeout_timestamp: 1735689600000000000,
+    }
+  let input_channel =
+    Channel {
+      state: channel_state.Open,
+      ordering: channel_order.Unordered,
+      counterparty: ChannelCounterparty {
+        port_id: "port-1",
+        channel_id: "channel-0",
+      },
+      connection_hops: [mock_data.connection_id],
+      version: "mock-version",
+    }
+  let input_channel_datum =
+    ChannelDatum {
+      state: ChannelDatumState {
+        channel: input_channel,
+        next_sequence_send: packet.sequence,
+        next_sequence_recv: 1,
+        next_sequence_ack: 1,
+        packet_commitment: [],
+        packet_receipt: [],
+        packet_acknowledgement: [],
+      },
+      port_id: mock_data.port_id,
+      token: mock_data.channel_token,
+    }
+  let channel_input =
+    build_channel_input(input_channel_datum, mock_data.channel_token)
+  let inputs =
+    [mock_data.module_input, channel_input, mock_data.host_state_input]
+  let reference_inputs = [mock_data.connection_input, mock_data.client_input]
+  let output_channel_datum = send_packet(packet, input_channel_datum)
+  let channel_output =
+    build_channel_output(output_channel_datum, mock_data.channel_token)
+  let outputs = [channel_output, mock_data.host_state_output]
+  let spend_channel_redeemer_in_data: Redeemer = SendPacket { packet }
+  let module_redeemer: Redeemer = Operator(OtherModuleOperator)
+  let send_packet_redeemer: Redeemer = mock_data.channel_token
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
+      Pair(
+        Spend(channel_input.output_reference),
+        spend_channel_redeemer_in_data,
+      ),
+      Pair(
+        Spend(mock_data.host_state_input.output_reference),
+        host_state_handle_packet_redeemer(),
+      ),
+      Pair(Mint(mock_data.send_packet_policy_id), send_packet_redeemer),
+    ]
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      reference_inputs,
+      outputs,
+      redeemers,
+      validity_range: mock_data.validity_range,
+      mint: operation_marker(mock_data.send_packet_policy_id),
+    }
+  let spend_channel_redeemer = SendPacket { packet }
+
+  run_spending_channel_transition(
+    input_channel_datum,
+    spend_channel_redeemer,
+    channel_input.output_reference,
+    transaction,
+  )
+}
+
+test prop_tx_packet_send_spending_channel_accepts_host_marker(
+  _seed via fuzz.int(),
+) {
+  fuzz.label(@"tx.packet.send.valid_channel_host_marker")
+
+  send_packet_spending_channel_tx()
+    |> fuzz_dsl.assert_protocol_valid
 }
 
 test chan_open_ack_succeed() {

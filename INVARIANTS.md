@@ -255,6 +255,7 @@ Required CI labels:
 - `contract.packet.timeout.valid_unordered`
 - `contract.packet.timeout.valid_ordered`
 - `contract.packet.timeout.invalid_before_timeout`
+- `tx.packet.send.valid_channel_host_marker`
 - `model.packet.send_ack.valid_sequence`
 
 ### SendPacket
@@ -274,6 +275,28 @@ then mutate exactly one field per negative case. They prove these invariants:
   advanced.
 - The transfer callback/channel redeemer must refer to the same packet bytes;
   a callback for a different transfer payload is rejected.
+
+### SendPacket Transaction Coupling
+
+Covered by `tx.packet.send.valid_channel_host_marker`.
+
+The transaction-level SendPacket property runs the real `spending_channel`
+validator against a transaction-shaped fixture. The fixture includes the
+channel input and continuation output, module co-spend redeemer, HostState
+`HandlePacket` redeemer, SendPacket operation marker mint, connection and
+client reference inputs, and the packet commitment update. It proves these
+invariants:
+
+- A SendPacket channel spend must be coupled to the HostState packet branch.
+- A SendPacket channel spend must mint exactly the SendPacket operation marker.
+- The operation marker redeemer must carry the channel auth token.
+- The channel continuation output must preserve the channel thread token while
+  recording the packet commitment.
+
+This is intentionally labelled `tx.*`, not `model.*`: it executes the real
+channel validator over a transaction-shaped fixture, but it still does not run
+the HostState validator, marker minting policy, transfer module validator, or
+voucher/escrow accounting validator in the same assertion.
 
 ### RecvPacket
 
