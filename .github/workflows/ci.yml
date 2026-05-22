@@ -278,11 +278,11 @@ jobs:
         working-directory: cardano/offchain
         run: deno task check
 
-  aiken:
-    name: Cardano Onchain Aiken
+  aiken-static:
+    name: Cardano Onchain Aiken Static
     if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: cardano/onchain
@@ -296,11 +296,6 @@ jobs:
         with:
           version: v1.1.21
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
       - name: Check formatting
         run: aiken fmt --check
 
@@ -308,11 +303,140 @@ jobs:
         working-directory: .
         run: scripts/ci/check-aiken-fuzz-imports.sh
 
-      - name: Check and test
-        run: aiken check --deny --max-success 500 --property-coverage relative-to-tests > ../../aiken-check.json
+      - name: Build blueprint
+        run: aiken build --deny
+
+      - name: Type check without tests
+        run: aiken check --deny --skip-tests
+
+  aiken-smoke:
+    name: Cardano Onchain Aiken Smoke
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: cardano/onchain
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Aiken
+        uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
+
+      - name: Run smoke test pass
+        run: aiken check --deny --max-success 1 --property-coverage relative-to-tests > ../../aiken-smoke.json
+
+  aiken-fuzz:
+    name: Cardano Onchain Aiken Fuzz (${{ matrix.suite }})
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: cardano/onchain
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: host-client
+            match_tests: >-
+              -m prop_host_
+              -m ibc/client/ics_007_tendermint_client/client_datum
+              -m ibc/client/ics_007_tendermint_client/client_state
+              -m ibc/client/ics_007_tendermint_client/misbehaviour_handle
+              -m prop_client_update_
+          - suite: connection-channel-packet
+            match_tests: >-
+              -m ibc/core/ics_003_connection_semantics/connection_datum
+              -m ibc/core/ics_003_connection_semantics/connection_handshake_contract
+              -m prop_conn_open_try_
+              -m ibc/core/ics_004/channel_datum_test/channel_handshake_contract
+              -m ibc/core/ics_004/channel_datum_test/packet_lifecycle_contract
+              -m prop_tx_packet_send_
+          - suite: transfer-voucher-trace
+            match_tests: >-
+              -m ibc/apps/transfer/transfer_accounting_contract
+              -m ibc/apps/transfer/voucher_metadata_contract
+              -m prop_transfer_module_
+              -m prop_voucher_first_mint_
+              -m prop_tx_first_seen_voucher_mint_
+              -m prop_trace_registry_
+              -m prop_model_trace_
+          - suite: proofs
+            match_tests: >-
+              -m prop_proof_
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Aiken
+        uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
+
+      - name: Run fuzz shard
+        run: |
+          aiken check \
+            --deny \
+            --max-success 500 \
+            --property-coverage relative-to-tests \
+            ${{ matrix.match_tests }} \
+            > ../../aiken-${{ matrix.suite }}.json
+
+      - name: Upload fuzz report
+        uses: actions/upload-artifact@v4
+        with:
+          name: aiken-fuzz-${{ matrix.suite }}
+          path: aiken-${{ matrix.suite }}.json
+
+  aiken:
+    name: Cardano Onchain Aiken
+    if: ${{ always() && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: [aiken-static, aiken-smoke, aiken-fuzz]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check shard status
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
+        run: |
+          node - <<'NODE'
+          const needs = JSON.parse(process.env.NEEDS_JSON);
+          const failed = Object.entries(needs)
+            .filter(([, value]) => value.result !== 'success')
+            .map(([name, value]) => `${name}: ${value.result}`);
+          if (failed.length > 0) {
+            console.error(`Aiken shard failure(s): ${failed.join(', ')}`);
+            process.exit(1);
+          }
+          NODE
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download fuzz reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: aiken-fuzz-*
+          path: aiken-fuzz-reports
+          merge-multiple: true
+
+      - name: Merge fuzz reports
+        run: node scripts/ci/merge-aiken-check-reports.mjs aiken-fuzz-reports aiken-fuzz.json
 
       - name: Check fuzz label coverage
-        run: node ../../scripts/ci/check-aiken-fuzz-coverage.mjs ../../aiken-check.json
+        run: node scripts/ci/check-aiken-fuzz-coverage.mjs aiken-fuzz.json
 
   tx-budgets:
     name: Cardano Tx Budgets
@@ -342,7 +466,29 @@ jobs:
 
       - name: Collect Aiken execution units
         working-directory: cardano/onchain
-        run: aiken check --deny --plain-numbers > ../../aiken-check.json
+        run: |
+          aiken check \
+            --deny \
+            --plain-numbers \
+            --exact-match \
+            -m 'ibc/core/ics_003_connection_semantics/connection_datum.{test_is_conn_open_try_valid_succeed}' \
+            -m 'spending_transfer_module.{on_chan_open_try_succeed}' \
+            -m 'spending_connection.{conn_open_ack_succeed}' \
+            -m 'spending_channel.{send_packet_succeed}' \
+            -m 'spending_channel/send_packet.{succeed_send_packet}' \
+            -m 'spending_channel.{recv_packet_succeed}' \
+            -m 'spending_channel/recv_packet.{succeed_recv_packet}' \
+            -m 'spending_channel.{acknowledge_packet_succeed}' \
+            -m 'spending_channel/acknowledge_packet.{succeed_acknowledge_packet}' \
+            -m 'spending_transfer_module.{on_acknowledgement_packet_result_succeed}' \
+            -m 'spending_channel.{timeout_packet_succeed}' \
+            -m 'spending_channel/timeout_packet.{succeed_timeout_unordered_packet}' \
+            -m 'spending_transfer_module.{on_timeout_packet_mint_voucher_succeed}' \
+            -m 'trace_registry.{trace_registry_insert_trace_succeeds_with_matching_voucher_mint}' \
+            -m 'trace_registry_rollover.{trace_registry_rollover_insert_succeeds_and_preserves_old_shard}' \
+            -m 'trace_registry_rollover.{trace_registry_advance_directory_succeeds_for_valid_rollover}' \
+            -m 'minting_voucher.{test_mint_voucher}' \
+            > ../../aiken-check.json
 
       - name: Install gateway dependencies
         run: npm ci --prefix cardano/gateway --legacy-peer-deps
