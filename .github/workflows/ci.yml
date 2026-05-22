@@ -336,7 +336,7 @@ jobs:
         run: aiken check --deny --max-success 1 --property-coverage relative-to-tests > ../../aiken-smoke.json
 
   aiken-fuzz:
-    name: Cardano Onchain Aiken Fuzz (${{ matrix.suite }})
+    name: Cardano Onchain Aiken Property/Fuzz (${{ matrix.suite }})
     if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -411,7 +411,7 @@ jobs:
         with:
           version: v1.1.21
 
-      - name: Run fuzz shard
+      - name: Run property shard
         run: |
           # Aiken emits JSON when stdout is redirected. The aggregate job merges
           # these per-shard reports and enforces the global label catalog once.
@@ -422,7 +422,7 @@ jobs:
             ${{ matrix.match_tests }} \
             > ../../aiken-${{ matrix.suite }}.json
 
-      - name: Upload fuzz report
+      - name: Upload property report
         uses: actions/upload-artifact@v4
         with:
           name: aiken-fuzz-${{ matrix.suite }}

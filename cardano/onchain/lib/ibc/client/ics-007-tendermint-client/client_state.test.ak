@@ -20,7 +20,7 @@ const fifty_one_char_chain_id =
 const empty_chain_id = ""
 
 test prop_client_frozen_rejects_update(seed via fuzz.int()) {
-  fuzz.label(@"unit.client.frozen.rejects_update")
+  fuzz.label(@"fuzz.unit.client.frozen.rejects_update")
 
   let offset =
     if seed < 0 {

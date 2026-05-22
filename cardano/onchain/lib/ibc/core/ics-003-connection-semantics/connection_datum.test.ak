@@ -169,7 +169,7 @@ test test_is_conn_open_try_valid_succeed() {
 }
 
 test prop_conn_open_try_accepts_valid_try_open(_seed via fuzz.int()) {
-  fuzz.label(@"unit.conn.open_try.valid")
+  fuzz.label(@"regression.unit.conn.open_try.valid")
 
   let mock_connection_end =
     create_mock_connection_end(state.TryOpen, mock_connection_id)
@@ -315,7 +315,7 @@ test test_is_connection_open_ack_valid_succeed() {
 }
 
 test prop_conn_open_ack_accepts_valid_transition(_seed via fuzz.int()) {
-  fuzz.label(@"unit.conn.open_ack.valid")
+  fuzz.label(@"regression.unit.conn.open_ack.valid")
 
   let mock_connection_end_input = create_mock_connection_end(state.Init, "")
   let mock_auth_token =

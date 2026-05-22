@@ -1055,7 +1055,7 @@ fn voucher_error_ack_refund_fixture(
 test prop_transfer_module_native_send_escrow_increases_exactly(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"contract.transfer.native_send.escrow_increases_exactly")
+  fuzz.label(@"fuzz.contract.transfer.native_send.escrow_increases_exactly")
 
   // Native SendPacket should move exactly the sent amount into escrow. This is
   // the positive baseline that the value-delta mutations below deviate from.
@@ -1066,7 +1066,7 @@ test prop_transfer_module_native_send_escrow_increases_exactly(
 test prop_transfer_module_native_send_rejects_wrong_escrow_delta(
   _seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"contract.transfer.invalid_wrong_escrow_delta_rejected")
+  fuzz.label(@"fuzz.contract.transfer.invalid_wrong_escrow_delta_rejected")
 
   // One-lovelace-short escrow is near-valid enough to exercise the same path,
   // but it must fail because transfer accounting is exact, not lower-bound.
@@ -1075,7 +1075,7 @@ test prop_transfer_module_native_send_rejects_wrong_escrow_delta(
 }
 
 test prop_transfer_module_recv_source_unescrows_exactly(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.recv_source.unescrows_exactly")
+  fuzz.label(@"regression.contract.transfer.recv_source.unescrows_exactly")
 
   // Source-chain receive releases escrow instead of minting voucher supply.
   recv_source_unescrow_fixture(fuzz_dsl.no_mutation())
@@ -1083,7 +1083,7 @@ test prop_transfer_module_recv_source_unescrows_exactly(_seed via fuzz.int()) {
 }
 
 test prop_transfer_module_native_timeout_refunds_exactly(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.native_timeout.refund_exactly")
+  fuzz.label(@"regression.contract.transfer.native_timeout.refund_exactly")
 
   // Timeout on native escrow should restore the original sender balance exactly.
   timeout_unescrow_fixture(1234, fuzz_dsl.no_mutation())
@@ -1093,7 +1093,9 @@ test prop_transfer_module_native_timeout_refunds_exactly(_seed via fuzz.int()) {
 test prop_transfer_module_native_timeout_rejects_wrong_refund_amount(
   _seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"contract.transfer.invalid_wrong_native_refund_amount_rejected")
+  fuzz.label(
+    @"fuzz.contract.transfer.invalid_wrong_native_refund_amount_rejected",
+  )
 
   // Wrong refund amount is a fund-moving bug class; the mutation keeps the rest
   // of the timeout shape valid so the amount check is the decisive guard.
@@ -1106,7 +1108,7 @@ test prop_transfer_module_native_timeout_rejects_wrong_refund_amount(
 }
 
 test prop_transfer_module_native_ack_has_no_refund(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.native_ack.no_refund")
+  fuzz.label(@"regression.contract.transfer.native_ack.no_refund")
 
   // Successful ack confirms delivery; it must not also refund native escrow.
   ack_success_fixture(fuzz_dsl.no_mutation())
@@ -1114,7 +1116,7 @@ test prop_transfer_module_native_ack_has_no_refund(_seed via fuzz.int()) {
 }
 
 test prop_transfer_module_voucher_send_burns_exactly(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.voucher_send.burns_exactly")
+  fuzz.label(@"regression.contract.transfer.voucher_send.burns_exactly")
 
   // Sending a voucher back toward its source burns voucher supply rather than
   // increasing native escrow.
@@ -1123,7 +1125,7 @@ test prop_transfer_module_voucher_send_burns_exactly(_seed via fuzz.int()) {
 }
 
 test prop_transfer_module_recv_sink_mints_voucher_exactly(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.recv_sink.mints_voucher_exactly")
+  fuzz.label(@"regression.contract.transfer.recv_sink.mints_voucher_exactly")
 
   // Sink-chain receive creates voucher supply only for the packet amount.
   voucher_recv_sink_fixture(fuzz_dsl.no_mutation())
@@ -1133,7 +1135,7 @@ test prop_transfer_module_recv_sink_mints_voucher_exactly(_seed via fuzz.int()) 
 test prop_transfer_module_voucher_error_ack_remints_exactly(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"contract.transfer.voucher_error_ack.remints_exactly")
+  fuzz.label(@"fuzz.contract.transfer.voucher_error_ack.remints_exactly")
 
   // Error ack reverses a voucher send by reminting the burned voucher amount.
   voucher_error_ack_refund_fixture(fuzz_dsl.no_mutation())

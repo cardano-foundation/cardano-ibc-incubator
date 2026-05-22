@@ -371,7 +371,9 @@ fn recv_sink_contract(
 }
 
 test prop_transfer_native_send_escrow_increases_exactly(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.native_send.escrow_increases_exactly")
+  fuzz.label(
+    @"regression.contract.transfer.native_send.escrow_increases_exactly",
+  )
 
   fuzz_dsl.valid_check(
     "transfer",
@@ -383,7 +385,7 @@ test prop_transfer_native_send_escrow_increases_exactly(_seed via fuzz.int()) {
 }
 
 test prop_transfer_native_timeout_refunds_exactly(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.native_timeout.refund_exactly")
+  fuzz.label(@"regression.contract.transfer.native_timeout.refund_exactly")
 
   fuzz_dsl.valid_check(
     "transfer",
@@ -395,7 +397,7 @@ test prop_transfer_native_timeout_refunds_exactly(_seed via fuzz.int()) {
 }
 
 test prop_transfer_native_ack_has_no_refund(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.native_ack.no_refund")
+  fuzz.label(@"regression.contract.transfer.native_ack.no_refund")
 
   let input = module_input()
   let outputs = [input.output]
@@ -409,7 +411,7 @@ test prop_transfer_native_ack_has_no_refund(_seed via fuzz.int()) {
 }
 
 test prop_transfer_voucher_send_burns_exactly(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.voucher_send.burns_exactly")
+  fuzz.label(@"regression.contract.transfer.voucher_send.burns_exactly")
 
   let (data, packet) =
     packet(
@@ -432,7 +434,7 @@ test prop_transfer_voucher_send_burns_exactly(_seed via fuzz.int()) {
 }
 
 test prop_transfer_voucher_error_ack_remints_exactly(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.voucher_error_ack.remints_exactly")
+  fuzz.label(@"regression.contract.transfer.voucher_error_ack.remints_exactly")
 
   let (data, packet) =
     packet(
@@ -455,7 +457,7 @@ test prop_transfer_voucher_error_ack_remints_exactly(_seed via fuzz.int()) {
 }
 
 test prop_transfer_recv_source_unescrows_exactly(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.recv_source.unescrows_exactly")
+  fuzz.label(@"regression.contract.transfer.recv_source.unescrows_exactly")
 
   fuzz_dsl.valid_check(
     "transfer",
@@ -467,7 +469,7 @@ test prop_transfer_recv_source_unescrows_exactly(_seed via fuzz.int()) {
 }
 
 test prop_transfer_recv_sink_mints_voucher_exactly(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.recv_sink.mints_voucher_exactly")
+  fuzz.label(@"regression.contract.transfer.recv_sink.mints_voucher_exactly")
 
   let (data, packet) =
     packet(
@@ -490,7 +492,9 @@ test prop_transfer_recv_sink_mints_voucher_exactly(_seed via fuzz.int()) {
 }
 
 test prop_transfer_rejects_extra_voucher_mint(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.invalid_extra_voucher_mint_rejected")
+  fuzz.label(
+    @"regression.contract.transfer.invalid_extra_voucher_mint_rejected",
+  )
 
   let (data, packet) =
     packet(
@@ -515,7 +519,9 @@ test prop_transfer_rejects_extra_voucher_mint(_seed via fuzz.int()) {
 }
 
 test prop_transfer_rejects_wrong_escrow_delta(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.invalid_wrong_escrow_delta_rejected")
+  fuzz.label(
+    @"regression.contract.transfer.invalid_wrong_escrow_delta_rejected",
+  )
 
   fuzz_dsl.mutated_check(
     "transfer",
@@ -528,7 +534,9 @@ test prop_transfer_rejects_wrong_escrow_delta(_seed via fuzz.int()) {
 }
 
 test prop_transfer_rejects_wrong_native_refund_amount(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.invalid_wrong_native_refund_amount_rejected")
+  fuzz.label(
+    @"regression.contract.transfer.invalid_wrong_native_refund_amount_rejected",
+  )
 
   fuzz_dsl.mutated_check(
     "transfer",
@@ -541,7 +549,9 @@ test prop_transfer_rejects_wrong_native_refund_amount(_seed via fuzz.int()) {
 }
 
 test prop_transfer_rejects_wrong_voucher_burn_amount(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.invalid_wrong_voucher_burn_amount_rejected")
+  fuzz.label(
+    @"regression.contract.transfer.invalid_wrong_voucher_burn_amount_rejected",
+  )
 
   let (data, packet) =
     packet(
@@ -564,13 +574,15 @@ test prop_transfer_rejects_wrong_voucher_burn_amount(_seed via fuzz.int()) {
 }
 
 test prop_transfer_rejects_wrong_escrow_shard(_seed via fuzz.int()) fail {
-  fuzz.label(@"contract.transfer.invalid_wrong_escrow_shard_rejected")
+  fuzz.label(
+    @"regression.contract.transfer.invalid_wrong_escrow_shard_rejected",
+  )
 
   native_escrow_contract(100, 120, amount, channel_id, "channel-999")
 }
 
 test prop_transfer_rejects_invalid_receiver_address(_seed via fuzz.int()) {
-  fuzz.label(@"contract.transfer.invalid_receiver_address_rejected")
+  fuzz.label(@"regression.contract.transfer.invalid_receiver_address_rejected")
 
   fuzz_dsl.mutated_check(
     "transfer",

@@ -133,7 +133,7 @@ fn model_close(model: ChannelLifecycleModel) -> ChannelLifecycleModel {
 }
 
 test prop_chan_open_ack_accepts_valid_transition(_seed via fuzz.int()) {
-  fuzz.label(@"contract.chan.open_ack.valid")
+  fuzz.label(@"regression.contract.chan.open_ack.valid")
 
   let (input_datum, output_datum) = open_ack_datums()
   fuzz_dsl.valid_check(
@@ -146,7 +146,7 @@ test prop_chan_open_ack_accepts_valid_transition(_seed via fuzz.int()) {
 }
 
 test prop_model_channel_open_close_reject_send(_seed via fuzz.int()) {
-  fuzz.label(@"model.channel.open_close_reject_send")
+  fuzz.label(@"regression.model.channel.open_close_reject_send")
 
   let initial_model = channel_datum(Init, "") |> channel_model_from
   let opened_model = model_open_ack(initial_model, "channel-34")
@@ -185,7 +185,7 @@ test prop_model_channel_open_close_reject_send(_seed via fuzz.int()) {
 }
 
 test prop_chan_open_confirm_accepts_valid_transition(_seed via fuzz.int()) {
-  fuzz.label(@"contract.chan.open_confirm.valid")
+  fuzz.label(@"regression.contract.chan.open_confirm.valid")
 
   let (input_datum, output_datum) = open_confirm_datums()
   fuzz_dsl.valid_check(
@@ -198,7 +198,9 @@ test prop_chan_open_confirm_accepts_valid_transition(_seed via fuzz.int()) {
 }
 
 test prop_chan_close_init_accepts_core_close_transition(_seed via fuzz.int()) {
-  fuzz.label(@"contract.chan.close_init.valid_or_rejected_by_app_policy")
+  fuzz.label(
+    @"regression.contract.chan.close_init.valid_or_rejected_by_app_policy",
+  )
 
   let (input_datum, output_datum) = close_datums()
   fuzz_dsl.valid_check(
@@ -211,7 +213,7 @@ test prop_chan_close_init_accepts_core_close_transition(_seed via fuzz.int()) {
 }
 
 test prop_chan_close_confirm_accepts_valid_transition(_seed via fuzz.int()) {
-  fuzz.label(@"contract.chan.close_confirm.valid")
+  fuzz.label(@"regression.contract.chan.close_confirm.valid")
 
   let (input_datum, output_datum) = close_datums()
   fuzz_dsl.valid_check(
@@ -224,7 +226,7 @@ test prop_chan_close_confirm_accepts_valid_transition(_seed via fuzz.int()) {
 }
 
 test prop_chan_closed_rejects_send(_seed via fuzz.int()) {
-  fuzz.label(@"contract.chan.closed.rejects_send")
+  fuzz.label(@"regression.contract.chan.closed.rejects_send")
 
   fuzz_dsl.mutated_check(
     "chan",

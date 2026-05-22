@@ -651,7 +651,7 @@ fn first_seen_metadata_datum_with(
 }
 
 test prop_voucher_first_mint_policy_accepts_valid_metadata(_seed via fuzz.int()) {
-  fuzz.label(@"contract.voucher.first_mint.valid_metadata")
+  fuzz.label(@"regression.contract.voucher.first_mint.valid_metadata")
 
   // First-seen voucher mint must create the canonical CIP-68 metadata output
   // for the full denom trace and voucher policy.
@@ -666,7 +666,7 @@ test prop_voucher_first_mint_policy_accepts_valid_metadata(_seed via fuzz.int())
 test prop_tx_first_seen_voucher_mint_couples_registry_append(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"tx.voucher.first_mint.valid_registry_coupled")
+  fuzz.label(@"fuzz.tx.voucher.first_mint.valid_registry_coupled")
 
   // tx.* depth: voucher mint and trace-registry append are checked together so
   // metadata cannot be minted without the matching denom trace entry.
@@ -679,7 +679,7 @@ test prop_tx_first_seen_voucher_mint_couples_registry_append(
 }
 
 test prop_voucher_first_mint_policy_rejects_wrong_name(_seed via fuzz.int()) {
-  fuzz.label(@"contract.voucher.first_mint.invalid_wrong_name")
+  fuzz.label(@"regression.contract.voucher.first_mint.invalid_wrong_name")
 
   // Human-readable name must be derived from the same full denom as the token.
   let full_denom = "port-99/channel-99/ibc/usdt"
@@ -710,7 +710,7 @@ test prop_voucher_first_mint_policy_rejects_wrong_name(_seed via fuzz.int()) {
 }
 
 test prop_voucher_first_mint_policy_rejects_wrong_ticker(_seed via fuzz.int()) {
-  fuzz.label(@"contract.voucher.first_mint.invalid_wrong_ticker")
+  fuzz.label(@"regression.contract.voucher.first_mint.invalid_wrong_ticker")
 
   // Ticker is also canonical; otherwise wallets could display a misleading
   // asset symbol for a correctly named voucher.
@@ -744,7 +744,7 @@ test prop_voucher_first_mint_policy_rejects_wrong_ticker(_seed via fuzz.int()) {
 test prop_voucher_first_mint_policy_rejects_wrong_description(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"contract.voucher.first_mint.invalid_wrong_description")
+  fuzz.label(@"fuzz.contract.voucher.first_mint.invalid_wrong_description")
 
   // Description carries the denom trace. It must not tell a different route
   // story than the actual voucher asset name.
@@ -778,7 +778,7 @@ test prop_voucher_first_mint_policy_rejects_wrong_description(
 test prop_voucher_first_mint_policy_rejects_wrong_full_denom(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"contract.voucher.first_mint.invalid_wrong_full_denom")
+  fuzz.label(@"fuzz.contract.voucher.first_mint.invalid_wrong_full_denom")
 
   // The metadata is internally consistent for the wrong denom, but the minted
   // asset name is derived from the correct denom. That mismatch must fail.
@@ -812,7 +812,7 @@ test prop_voucher_first_mint_policy_rejects_wrong_full_denom(
 }
 
 test prop_voucher_first_mint_policy_rejects_wrong_policy(_seed via fuzz.int()) {
-  fuzz.label(@"contract.voucher.first_mint.invalid_wrong_policy")
+  fuzz.label(@"regression.contract.voucher.first_mint.invalid_wrong_policy")
 
   // Metadata must name the policy that actually controls the voucher supply.
   let full_denom = "port-99/channel-99/ibc/usdt"
@@ -845,7 +845,7 @@ test prop_voucher_first_mint_policy_rejects_wrong_policy(_seed via fuzz.int()) {
 test prop_voucher_first_mint_policy_rejects_wrong_reference_asset(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"contract.voucher.first_mint.invalid_wrong_reference_asset")
+  fuzz.label(@"fuzz.contract.voucher.first_mint.invalid_wrong_reference_asset")
 
   // The CIP-68 reference NFT name is derived from the same denom hash as the
   // user token. A wrong reference asset would let metadata attach to another

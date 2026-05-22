@@ -608,7 +608,7 @@ fn test_handle_packet_commitment_delete_root(
 }
 
 test prop_host_update_client_accepts_exact_root(seed via fuzz.int()) {
-  fuzz.label(@"contract.host.update_client.valid")
+  fuzz.label(@"fuzz.contract.host.update_client.valid")
 
   // Positive root-transition case: the client datum change is committed into
   // the new HostState root with the same siblings supplied to the redeemer.
@@ -651,7 +651,7 @@ test prop_host_update_client_accepts_exact_root(seed via fuzz.int()) {
 }
 
 test prop_host_update_client_rejects_wrong_root(seed via fuzz.int()) fail {
-  fuzz.label(@"contract.host.update_client.invalid_wrong_root")
+  fuzz.label(@"fuzz.contract.host.update_client.invalid_wrong_root")
 
   // Near-valid mutation: the client datum changes, but HostState keeps the old
   // root. This proves object UTxOs cannot move without a matching root update.
@@ -681,7 +681,7 @@ test prop_host_update_client_rejects_wrong_root(seed via fuzz.int()) fail {
 }
 
 test prop_host_update_client_rejects_wrong_redeemer(seed via fuzz.int()) fail {
-  fuzz.label(@"contract.host.update_client.invalid_wrong_redeemer")
+  fuzz.label(@"fuzz.contract.host.update_client.invalid_wrong_redeemer")
 
   // The root is correct for a client update, but the redeemer claims a
   // connection update. HostState must bind each state mutation to its operation.
@@ -714,7 +714,7 @@ test prop_host_update_client_rejects_wrong_redeemer(seed via fuzz.int()) fail {
 }
 
 test prop_host_update_connection_accepts_exact_root(seed via fuzz.int()) {
-  fuzz.label(@"contract.host.update_connection.valid")
+  fuzz.label(@"fuzz.contract.host.update_connection.valid")
 
   let siblings = full_empty_siblings()
   let input_connection_datum =
@@ -763,7 +763,7 @@ test prop_host_update_connection_rejects_uncommitted_change(
   seed via fuzz.int(),
 ) fail {
   fuzz.label(
-    @"contract.host.update_connection.invalid_uncommitted_connection_change",
+    @"fuzz.contract.host.update_connection.invalid_uncommitted_connection_change",
   )
 
   // The connection datum advances from Init to Open while the root is left
@@ -796,7 +796,7 @@ test prop_host_update_connection_rejects_uncommitted_change(
 }
 
 test prop_host_update_channel_accepts_exact_root(seed via fuzz.int()) {
-  fuzz.label(@"contract.host.update_channel.valid")
+  fuzz.label(@"fuzz.contract.host.update_channel.valid")
 
   let siblings = full_empty_siblings()
   let input_channel_datum =
@@ -839,7 +839,7 @@ test prop_host_update_channel_accepts_exact_root(seed via fuzz.int()) {
 test prop_host_update_channel_rejects_packet_field_change(
   seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"contract.host.update_channel.invalid_packet_field_change")
+  fuzz.label(@"fuzz.contract.host.update_channel.invalid_packet_field_change")
 
   // UpdateChannel may change channel state, but packet fields are owned by
   // HandlePacket. Mutating sequence/commitment here must be rejected.
@@ -873,7 +873,7 @@ test prop_host_update_channel_rejects_packet_field_change(
 }
 
 test prop_host_handle_packet_accepts_send(seed via fuzz.int()) {
-  fuzz.label(@"contract.host.handle_packet.valid_send")
+  fuzz.label(@"fuzz.contract.host.handle_packet.valid_send")
 
   // SendPacket creates a packet commitment, so the new root must commit exactly
   // that packet key/value and the channel datum must record the same sequence.
@@ -927,7 +927,7 @@ test prop_host_handle_packet_accepts_send(seed via fuzz.int()) {
 }
 
 test prop_host_handle_packet_accepts_recv(seed via fuzz.int()) {
-  fuzz.label(@"contract.host.handle_packet.valid_recv")
+  fuzz.label(@"fuzz.contract.host.handle_packet.valid_recv")
 
   let sequence = test_sequence(seed)
   let siblings = full_empty_siblings()
@@ -978,7 +978,7 @@ test prop_host_handle_packet_accepts_recv(seed via fuzz.int()) {
 }
 
 test prop_host_handle_packet_accepts_ack(seed via fuzz.int()) {
-  fuzz.label(@"contract.host.handle_packet.valid_ack")
+  fuzz.label(@"fuzz.contract.host.handle_packet.valid_ack")
 
   let sequence = test_sequence(seed)
   let siblings = full_empty_siblings()
@@ -1036,7 +1036,7 @@ test prop_host_handle_packet_accepts_ack(seed via fuzz.int()) {
 }
 
 test prop_host_handle_packet_accepts_timeout(seed via fuzz.int()) {
-  fuzz.label(@"contract.host.handle_packet.valid_timeout")
+  fuzz.label(@"fuzz.contract.host.handle_packet.valid_timeout")
 
   let sequence = test_sequence(seed)
   let siblings = full_empty_siblings()
@@ -1096,7 +1096,7 @@ test prop_host_handle_packet_accepts_timeout(seed via fuzz.int()) {
 test prop_host_handle_packet_rejects_channel_only_change(
   seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"contract.host.handle_packet.invalid_channel_only_change")
+  fuzz.label(@"fuzz.contract.host.handle_packet.invalid_channel_only_change")
 
   // HandlePacket cannot be used as a generic channel-state updater. Closing the
   // channel with packet redeemer shape should fail even with a consistent root.
@@ -1132,7 +1132,7 @@ test prop_host_handle_packet_rejects_channel_only_change(
 }
 
 test prop_host_handle_packet_rejects_wrong_packet_key(seed via fuzz.int()) fail {
-  fuzz.label(@"contract.host.handle_packet.invalid_wrong_packet_key")
+  fuzz.label(@"fuzz.contract.host.handle_packet.invalid_wrong_packet_key")
 
   // The channel datum records the expected commitment, but the HostState root is
   // built for a different packet key. This catches key/path drift in packets.

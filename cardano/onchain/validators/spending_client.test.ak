@@ -1441,7 +1441,7 @@ test update_client_verify_non_adjacent_succeed() {
 }
 
 test prop_client_update_rejects_wrong_host_redeemer(_seed via fuzz.int()) fail {
-  fuzz.label(@"contract.client.update.invalid_wrong_host_redeemer")
+  fuzz.label(@"regression.contract.client.update.invalid_wrong_host_redeemer")
 
   let mock = setup()
   let transaction =
@@ -1462,7 +1462,7 @@ test prop_client_update_rejects_wrong_host_redeemer(_seed via fuzz.int()) fail {
 }
 
 test prop_client_update_rejects_missing_host_state(_seed via fuzz.int()) fail {
-  fuzz.label(@"contract.client.update.invalid_missing_host_state")
+  fuzz.label(@"regression.contract.client.update.invalid_missing_host_state")
 
   let mock = setup()
   let transaction =

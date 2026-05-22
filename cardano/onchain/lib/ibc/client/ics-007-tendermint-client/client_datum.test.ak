@@ -160,7 +160,7 @@ fn fuzz_height(seed: Int, offset: Int) -> Height {
 }
 
 test prop_client_update_accepts_adjacent(seed via fuzz.int()) {
-  fuzz.label(@"unit.client.update.valid_adjacent")
+  fuzz.label(@"fuzz.unit.client.update.valid_adjacent")
 
   let input_height = fuzz_height(seed, 2)
   let header_height =
@@ -208,7 +208,7 @@ test prop_client_update_accepts_adjacent(seed via fuzz.int()) {
 }
 
 test prop_client_update_accepts_non_adjacent(seed via fuzz.int()) {
-  fuzz.label(@"unit.client.update.valid_non_adjacent")
+  fuzz.label(@"fuzz.unit.client.update.valid_non_adjacent")
 
   let input_height = fuzz_height(seed, 1)
   let header_height =
@@ -256,7 +256,7 @@ test prop_client_update_accepts_non_adjacent(seed via fuzz.int()) {
 }
 
 test prop_client_update_rejects_wrong_consensus_state(seed via fuzz.int()) {
-  fuzz.label(@"unit.client.update.invalid_wrong_consensus_state")
+  fuzz.label(@"fuzz.unit.client.update.invalid_wrong_consensus_state")
 
   let input_height = fuzz_height(seed, 2)
   let header_height =

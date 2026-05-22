@@ -77,7 +77,7 @@ test same_height_same_block_hash_is_not_misbehaviour() {
 }
 
 test prop_client_misbehaviour_accepts_same_height_conflict(seed via fuzz.int()) {
-  fuzz.label(@"unit.client.misbehaviour.valid_same_height_conflict")
+  fuzz.label(@"fuzz.unit.client.misbehaviour.valid_same_height_conflict")
 
   fuzz_dsl.valid_check(
     "client",
@@ -92,7 +92,7 @@ test prop_client_misbehaviour_accepts_same_height_conflict(seed via fuzz.int()) 
 }
 
 test prop_client_misbehaviour_accepts_time_violation(seed via fuzz.int()) {
-  fuzz.label(@"unit.client.misbehaviour.valid_time_violation")
+  fuzz.label(@"fuzz.unit.client.misbehaviour.valid_time_violation")
 
   let lower_time = 20 + seed % 10
   fuzz_dsl.valid_check(
@@ -105,7 +105,7 @@ test prop_client_misbehaviour_accepts_time_violation(seed via fuzz.int()) {
 }
 
 test prop_client_misbehaviour_rejects_monotonic_headers(seed via fuzz.int()) {
-  fuzz.label(@"unit.client.misbehaviour.invalid_monotonic_headers")
+  fuzz.label(@"fuzz.unit.client.misbehaviour.invalid_monotonic_headers")
 
   let base_time = 20 + seed % 10
   fuzz_dsl.mutated_check(
@@ -122,7 +122,7 @@ test prop_client_misbehaviour_rejects_monotonic_headers(seed via fuzz.int()) {
 }
 
 test prop_client_misbehaviour_rejects_same_header(seed via fuzz.int()) {
-  fuzz.label(@"unit.client.misbehaviour.invalid_same_header")
+  fuzz.label(@"fuzz.unit.client.misbehaviour.invalid_same_header")
 
   let time = 30 + seed % 10
   fuzz_dsl.mutated_check(
@@ -136,7 +136,7 @@ test prop_client_misbehaviour_rejects_same_header(seed via fuzz.int()) {
 }
 
 test prop_client_misbehaviour_rejects_wrong_client_id(_seed via fuzz.int()) {
-  fuzz.label(@"unit.client.misbehaviour.invalid_wrong_client_id")
+  fuzz.label(@"regression.unit.client.misbehaviour.invalid_wrong_client_id")
 
   // This remains unit.* depth on purpose: the production misbehaviour path is
   // already size-sensitive, so the canonical client-id predicate is covered

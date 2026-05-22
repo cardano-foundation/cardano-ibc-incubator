@@ -1,12 +1,19 @@
-# Aiken Fuzzing Invariants
+# Aiken Property And Fuzzing Invariants
 
 This document records the protocol invariants currently exercised by the
-Aiken property-based fuzzing suite. It is intentionally limited to invariants
-that are covered by existing fuzz/property tests and their CI-enforced labels.
+Aiken labeled property/regression suite, with fuzzed cases in key areas. It is
+intentionally limited to invariants that are covered by existing property tests
+and their CI-enforced labels.
 
-## Label Depths
+## Label Kinds And Depths
 
-CI-enforced labels use an explicit depth prefix:
+CI-enforced labels use `kind.depth.domain...`:
+
+- `regression.*` labels cover deterministic property-style regression checks.
+  These tests may run under Aiken's property-test harness for label accounting,
+  but the generated value is intentionally not material to the fixture.
+- `fuzz.*` labels cover cases where a generated value materially changes the
+  fixture, state transition, proof, or mutation.
 
 - `unit.*` labels cover pure module logic and small isolated helpers.
 - `contract.*` labels cover validator-facing or near-valid transition fixtures.
@@ -14,10 +21,17 @@ CI-enforced labels use an explicit depth prefix:
   or minting policy currently represented in that fixture.
 - `model.*` labels cover multi-step state-machine sequences.
 
-The coverage checker rejects labels that do not start with one of these depth
-categories. It now also requires at least one `tx.*` label and at least one
-`model.*` label so the suite cannot regress back to only helper and
-single-contract coverage.
+The full label shape is therefore examples like
+`regression.contract.transfer.native_ack.no_refund` or
+`fuzz.contract.trace.rollover.invalid_old_shard_not_preserved`. The coverage
+checker rejects labels that do not use this kind/depth convention. It also
+requires `tx` and `model` coverage through the required label catalog so the
+suite cannot regress back to only helper and single-contract coverage.
+
+The "Required CI label suffixes" below omit the leading `regression.` or
+`fuzz.` kind when the surrounding prose is about the invariant rather than the
+generator quality. The exact enforced labels live in
+`scripts/ci/aiken-fuzz-required-labels.json`.
 
 ## Composable Fixtures
 
@@ -92,7 +106,7 @@ The fuzz suite currently covers:
 
 ## Client Update And Misbehaviour
 
-Required CI labels:
+Required CI label suffixes:
 
 - `unit.client.update.valid_adjacent`
 - `unit.client.update.valid_non_adjacent`
@@ -166,7 +180,7 @@ not updateable.
 
 ## Connection And Channel Handshakes
 
-Required CI labels:
+Required CI label suffixes:
 
 - `unit.conn.open_try.valid`
 - `contract.conn.open_try.invalid_missing_client_proof`
@@ -245,7 +259,7 @@ invariants:
 
 ## Packet Lifecycle
 
-Required CI labels:
+Required CI label suffixes:
 
 - `contract.packet.send.valid`
 - `contract.packet.send.invalid_wrong_sequence`
@@ -381,7 +395,7 @@ final modeled state. They prove these invariants:
 
 ## Transfer Module Accounting
 
-Required CI labels:
+Required CI label suffixes:
 
 - `contract.transfer.native_send.escrow_increases_exactly`
 - `contract.transfer.native_timeout.refund_exactly`
@@ -470,7 +484,7 @@ invariants:
 
 ## Voucher Metadata
 
-Required CI labels:
+Required CI label suffixes:
 
 - `contract.voucher.first_mint.valid_metadata`
 - `contract.voucher.first_mint.invalid_wrong_name`
@@ -543,7 +557,7 @@ invariant:
 
 ## Verifying Proof
 
-Required CI labels:
+Required CI label suffixes:
 
 - `contract.proof.membership.valid`
 - `contract.proof.membership.invalid_wrong_path`
@@ -604,7 +618,7 @@ key from the proof. They prove these invariants:
 
 ## HostState Root Transitions
 
-Required CI labels:
+Required CI label suffixes:
 
 - `contract.host.update_client.valid`
 - `contract.host.update_client.invalid_wrong_root`
@@ -683,7 +697,7 @@ The mutations prove these invariants:
 
 ## Trace Registry Append
 
-Required CI labels:
+Required CI label suffixes:
 
 - `contract.trace.append.valid`
 - `contract.trace.append.invalid_missing_voucher_mint`
@@ -763,7 +777,7 @@ active shard. The append must be rejected, proving these invariants:
 
 ## Trace Registry Rollover
 
-Required CI labels:
+Required CI label suffixes:
 
 - `contract.trace.rollover.valid`
 - `contract.trace.rollover.invalid_non_target_bucket_changed`

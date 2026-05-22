@@ -41,6 +41,7 @@ const minPercentBps = Number(
   process.env.AIKEN_FUZZ_MIN_LABEL_PERCENT_BPS ?? config.minPercentBps ?? 0,
 );
 const requiredLabels = config.requiredLabels ?? [];
+const allowedKindPrefixes = config.allowedKindPrefixes ?? ["regression", "fuzz"];
 const allowedDepthPrefixes = config.allowedDepthPrefixes ?? ["unit", "contract", "tx", "model"];
 
 // The checker is intentionally configurable from CI env vars so local smoke
@@ -50,6 +51,13 @@ if (!Number.isSafeInteger(minCount) || minCount < 1) {
 }
 if (!Number.isSafeInteger(minPercentBps) || minPercentBps < 0 || minPercentBps > 10_000) {
   throw new Error(`Invalid minPercentBps: ${minPercentBps}`);
+}
+if (
+  !Array.isArray(allowedKindPrefixes) ||
+  allowedKindPrefixes.length === 0 ||
+  !allowedKindPrefixes.every((prefix) => typeof prefix === "string" && prefix.length > 0)
+) {
+  throw new Error("allowedKindPrefixes must be a non-empty array of strings.");
 }
 if (
   !Array.isArray(allowedDepthPrefixes) ||
@@ -63,8 +71,8 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-const depthPrefixPattern = new RegExp(
-  `^(${allowedDepthPrefixes.map(escapeRegExp).join("|")})\\.`,
+const labelPrefixPattern = new RegExp(
+  `^(${allowedKindPrefixes.map(escapeRegExp).join("|")})\\.(${allowedDepthPrefixes.map(escapeRegExp).join("|")})\\.`,
 );
 
 const propertyTests = [];
@@ -98,9 +106,9 @@ if (propertyTests.length === 0) {
 }
 
 for (const label of requiredLabels) {
-  if (!depthPrefixPattern.test(label)) {
+  if (!labelPrefixPattern.test(label)) {
     failures.push(
-      `Required fuzz label '${label}' must start with one of: ${allowedDepthPrefixes.join(", ")}.`,
+      `Required Aiken label '${label}' must use kind.depth form where kind is one of ${allowedKindPrefixes.join(", ")} and depth is one of ${allowedDepthPrefixes.join(", ")}.`,
     );
   }
 }
@@ -114,9 +122,9 @@ for (const { testName, labels } of propertyTests) {
 }
 
 for (const label of labelCounts.keys()) {
-  if (!depthPrefixPattern.test(label)) {
+  if (!labelPrefixPattern.test(label)) {
     failures.push(
-      `Observed fuzz label '${label}' must start with one of: ${allowedDepthPrefixes.join(", ")}.`,
+      `Observed Aiken label '${label}' must use kind.depth form where kind is one of ${allowedKindPrefixes.join(", ")} and depth is one of ${allowedDepthPrefixes.join(", ")}.`,
     );
   }
 }
@@ -128,14 +136,14 @@ for (const label of requiredLabels) {
   // Count proves the branch appeared at all; percentage catches labels that are
   // technically present but starved by an imbalanced generator.
   if (count === 0) {
-    failures.push(`Required fuzz label '${label}' was not observed.`);
+    failures.push(`Required Aiken label '${label}' was not observed.`);
   } else if (count < minCount) {
-    failures.push(`Fuzz label '${label}' count ${count} is below minimum ${minCount}.`);
+    failures.push(`Aiken label '${label}' count ${count} is below minimum ${minCount}.`);
   }
 
   if (percentBps < minPercentBps) {
     failures.push(
-      `Fuzz label '${label}' share ${(percentBps / 100).toFixed(2)}% is below minimum ${(minPercentBps / 100).toFixed(2)}%.`,
+      `Aiken label '${label}' share ${(percentBps / 100).toFixed(2)}% is below minimum ${(minPercentBps / 100).toFixed(2)}%.`,
     );
   }
 }
@@ -147,13 +155,13 @@ const rows = [...labelCounts.entries()]
     return { label, count, percent: `${(percentBps / 100).toFixed(2)}%` };
   });
 
-console.log("Aiken fuzz label coverage");
+console.log("Aiken property label coverage");
 console.log(`property tests: ${propertyTests.length}`);
 console.log(`total labels: ${totalLabels}`);
 console.table(rows);
 
 if (failures.length > 0) {
-  console.error("\nAiken fuzz coverage check failed:");
+  console.error("\nAiken property label coverage check failed:");
   for (const failure of failures) {
     console.error(`- ${failure}`);
   }
@@ -161,5 +169,5 @@ if (failures.length > 0) {
 }
 
 console.log(
-  `Aiken fuzz coverage check passed with minCount=${minCount}, minPercent=${(minPercentBps / 100).toFixed(2)}%.`,
+  `Aiken property label coverage check passed with minCount=${minCount}, minPercent=${(minPercentBps / 100).toFixed(2)}%.`,
 );
