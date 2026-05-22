@@ -111,7 +111,11 @@ fn local_chain_profile() -> HermesCosmosChainProfile {
         gas_multiplier: "1.8",
         max_msg_num: 20,
         max_tx_size: 209_715,
-        clock_drift: "20s",
+        // The local Cardano devnet runs on a fixed backdated clock so stake
+        // registration cutoffs remain deterministic. Local Cosmos chains use
+        // wall-clock CometBFT timestamps, so local handshakes need enough
+        // timestamp tolerance for Cardano to verify Cosmos headers.
+        clock_drift: "8760h",
         max_block_time: "10s",
         trusting_period: "10days",
         memo_prefix: Some("Caribic"),

@@ -68,13 +68,7 @@ export function getStabilityPolicy(): StabilityPolicy {
 export function computePoolRegistrationCutoffSlot(
   anchorBlock: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>,
   slotLengthNs: bigint = DEFAULT_CARDANO_SLOT_LENGTH_NS,
-  env: NodeJS.ProcessEnv = process.env,
 ): bigint {
-  const configuredCutoffSlot = env.CARDANO_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT;
-  if (configuredCutoffSlot) {
-    return BigInt(configuredCutoffSlot);
-  }
-
   if (slotLengthNs <= 0n) {
     throw new Error('Cardano slot length must be greater than zero');
   }

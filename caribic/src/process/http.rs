@@ -32,6 +32,7 @@ impl HttpHealthClient {
                 .map(|body| body.contains(expected))
                 .unwrap_or(false)
         })
+        .unwrap_or(false)
     }
 
     pub fn responds_ok(&self, url: &str) -> bool {
@@ -43,6 +44,7 @@ impl HttpHealthClient {
                 .map(|response| response.status().is_success())
                 .unwrap_or(false)
         })
+        .unwrap_or(false)
     }
 
     pub fn get_json(&self, url: &str) -> Result<Value, String> {
@@ -69,10 +71,10 @@ impl HttpHealthClient {
                 .json::<Value>()
                 .await
                 .map_err(|error| format!("Failed to parse JSON from {}: {}", url, error))
-        })
+        })?
     }
 
-    fn block_on<F, T>(&self, future: F) -> T
+    fn block_on<F, T>(&self, future: F) -> Result<T, String>
     where
         F: Future<Output = T>,
     {
@@ -80,13 +82,15 @@ impl HttpHealthClient {
             // Health checks are called from both sync code and Tokio-driven command handlers.
             // `block_in_place` keeps the sync call-site simple without tripping Tokio's
             // "drop a blocking runtime in async context" panic.
-            tokio::task::block_in_place(|| handle.block_on(future))
+            Ok(tokio::task::block_in_place(|| handle.block_on(future)))
         } else {
-            tokio::runtime::Builder::new_current_thread()
+            let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
-                .expect("Failed to create Tokio runtime for HTTP process client")
-                .block_on(future)
+                .map_err(|error| {
+                    format!("Failed to create Tokio runtime for HTTP process client: {error}")
+                })?;
+            Ok(runtime.block_on(future))
         }
     }
 }

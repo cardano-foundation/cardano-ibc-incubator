@@ -5,7 +5,7 @@ use crate::utils::{
     change_dir_permissions_read_only, delete_file, download_file, replace_text_in_file, unzip_file,
     IndicatorMessage,
 };
-use chrono::{SecondsFormat, Utc};
+use chrono::Utc;
 use console::style;
 use fs_extra::{copy_items, file::copy};
 use indicatif::ProgressBar;
@@ -18,12 +18,14 @@ use std::time::Duration;
 use std::{fs, path::Path};
 
 const CARDANO_RUNTIME_NETWORK_MARKER: &str = ".caribic-network";
-const LOCAL_CARDANO_NODE_IMAGE: &str = "ghcr.io/blinklabs-io/cardano-node:10.1.4-3";
-const LOCAL_STABILITY_SPO_COUNT: usize = 3;
+const LOCAL_CARDANO_NODE_IMAGE: &str = "cardano-node-local-clock:10.1.4-3";
+const LOCAL_STABILITY_SPO_COUNT: usize = 5;
 const LOCAL_STABILITY_TARGET_POOL_STAKE_LOVELACE: u64 = 900_000_000_000;
-const LOCAL_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT: &str = "18446744073709551615";
 const LOCAL_STABILITY_ASSUME_POOL_REGISTRATION_SLOT: &str = "1";
 const LOCAL_CARDANO_EPOCH_LENGTH: &str = "5000";
+const LOCAL_CARDANO_SYSTEM_START: &str = "2025-12-31T23:59:00Z";
+const LOCAL_CARDANO_START_TIME_SECONDS: i64 = 1_767_225_540;
+const LOCAL_CARDANO_SLOTS_PER_KES_PERIOD: &str = "31536000";
 const LOCAL_GATEWAY_HEALTH_URL: &str = "http://localhost:8000/health";
 const LOCAL_YACI_STORE_POSTGRES_VOLUME: &str = "cardano_yaci_store_postgres_local_data";
 const PREPROD_ENVIRONMENT_BASE_URL: &str =
@@ -81,8 +83,8 @@ pub async fn download_repository(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let base_path = path.parent();
 
-    if (base_path.is_none() || !base_path.unwrap().exists()) && base_path.is_some() {
-        fs::create_dir_all(base_path.unwrap()).map_err(|error| {
+    if let Some(base_path) = base_path.filter(|base_path| !base_path.exists()) {
+        fs::create_dir_all(base_path).map_err(|error| {
             format!(
                 "Failed to create directory for {} source code: {}",
                 name, error
@@ -723,13 +725,13 @@ fn remove_local_yaci_postgres_volume() -> Result<(), Box<dyn std::error::Error>>
     .into())
 }
 
-fn local_spo_ipv4(index: usize) -> &'static str {
-    match index {
-        1 => "172.29.0.11",
-        2 => "172.29.0.12",
-        3 => "172.29.0.13",
-        _ => "172.29.0.254",
+fn local_spo_ipv4(index: usize) -> Result<String, Box<dyn std::error::Error>> {
+    if !(1..=243).contains(&index) {
+        return Err(
+            format!("Local SPO index is outside supported Docker subnet range: {index}").into(),
+        );
     }
+    Ok(format!("172.29.0.{}", 10 + index))
 }
 
 fn local_spo_port(index: usize) -> u16 {
@@ -745,21 +747,24 @@ fn local_spo_topology_filename(index: usize) -> String {
     }
 }
 
-fn build_local_spo_topology(index: usize, total_spo_count: usize) -> Value {
+fn build_local_spo_topology(
+    index: usize,
+    total_spo_count: usize,
+) -> Result<Value, Box<dyn std::error::Error>> {
     let producers: Vec<Value> = (1..=total_spo_count)
         .filter(|candidate| *candidate != index)
         .map(|candidate| {
-            json!({
-                "addr": local_spo_ipv4(candidate),
+            Ok(json!({
+                "addr": local_spo_ipv4(candidate)?,
                 "port": local_spo_port(candidate),
                 "valency": 1,
-            })
+            }))
         })
-        .collect();
+        .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
 
-    json!({
+    Ok(json!({
         "Producers": producers
-    })
+    }))
 }
 
 fn write_local_multi_spo_topology_files(
@@ -770,7 +775,7 @@ fn write_local_multi_spo_topology_files(
         let topology_path = devnet_dir.join(local_spo_topology_filename(index));
         fs::write(
             &topology_path,
-            serde_json::to_string_pretty(&build_local_spo_topology(index, total_spo_count))
+            serde_json::to_string_pretty(&build_local_spo_topology(index, total_spo_count)?)
                 .map_err(|error| format!("Failed to serialize local SPO topology: {}", error))?,
         )
         .map_err(|error| {
@@ -1104,7 +1109,13 @@ pub fn configure_local_cardano_devnet(
             })?;
         } else {
             let options = fs_extra::file::CopyOptions::new().overwrite(true);
-            let destination = devnet_dir.join(source.file_name().unwrap());
+            let file_name = source.file_name().ok_or_else(|| {
+                format!(
+                    "Failed to determine Cardano configuration file name for {}",
+                    source.display()
+                )
+            })?;
+            let destination = devnet_dir.join(file_name);
             copy(source, destination, &options)
                 .map_err(|error| format!("Failed to copy Cardano configuration file: {}", error))?;
         }
@@ -1113,20 +1124,30 @@ pub fn configure_local_cardano_devnet(
     let genesis_byron_path = devnet_dir.join("genesis-byron.json");
     let genesis_shelley_path = devnet_dir.join("genesis-shelley.json");
 
-    let start_time = Utc::now();
-
     replace_text_in_file(
         &genesis_byron_path,
         r#""startTime": \d*"#,
-        &format!(r#""startTime": {}"#, start_time.timestamp()),
+        &format!(r#""startTime": {}"#, LOCAL_CARDANO_START_TIME_SECONDS),
     )?;
 
     replace_text_in_file(
         &genesis_shelley_path,
         r#""systemStart": ".*""#,
+        &format!(r#""systemStart": "{}""#, LOCAL_CARDANO_SYSTEM_START),
+    )?;
+
+    replace_text_in_file(
+        &genesis_shelley_path,
+        r#""epochLength": \d+"#,
+        &format!(r#""epochLength": {}"#, LOCAL_CARDANO_EPOCH_LENGTH),
+    )?;
+
+    replace_text_in_file(
+        &genesis_shelley_path,
+        r#""slotsPerKESPeriod": \d+"#,
         &format!(
-            r#""systemStart": "{}""#,
-            start_time.to_rfc3339_opts(SecondsFormat::Secs, true)
+            r#""slotsPerKESPeriod": {}"#,
+            LOCAL_CARDANO_SLOTS_PER_KES_PERIOD
         ),
     )?;
 
@@ -1586,7 +1607,13 @@ pub(crate) fn refresh_local_gateway_epoch_nonce(
         epoch_nonce
     ));
 
-    DockerCli::new(gateway_dir.as_path()).compose_ok(&["up", "-d", "--force-recreate", "app"])?;
+    DockerCli::new(gateway_dir.as_path()).compose_ok(&[
+        "up",
+        "-d",
+        "--build",
+        "--force-recreate",
+        "app",
+    ])?;
 
     for _ in 0..60 {
         let healthy = Command::new("curl")
@@ -1946,14 +1973,11 @@ fn write_gateway_env_for_network(
                 ("CARDANO_CHAIN_HOST", "cardano-node"),
                 ("CARDANO_CHAIN_PORT", "3001"),
                 (
-                    "CARDANO_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT",
-                    LOCAL_STABILITY_POOL_REGISTRATION_CUTOFF_SLOT,
-                ),
-                (
                     "CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT",
                     LOCAL_STABILITY_ASSUME_POOL_REGISTRATION_SLOT,
                 ),
                 ("CARDANO_EPOCH_LENGTH", LOCAL_CARDANO_EPOCH_LENGTH),
+                ("CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS", "315360000"),
             ];
             for (key, value) in local_gateway_defaults {
                 set_or_append_env_var(&gateway_env, key, value)?;

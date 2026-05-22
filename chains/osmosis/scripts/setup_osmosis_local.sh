@@ -5,6 +5,7 @@ OSMOSIS_HOME=$HOME/.osmosisd
 CONFIG_FOLDER=$OSMOSIS_HOME/config
 MONIKER=val
 STATE='false'
+LOCAL_GENESIS_TIME="${OSMOSIS_LOCAL_GENESIS_TIME:-2025-12-31T23:59:00Z}"
 
 MNEMONIC="bottom loan skill merry east cradle onion journey palm apology verb edit desert impose absurd oil bubble sweet glove shallow size build burst effort"
 POOLSMNEMONIC="traffic cool olive pottery elegant innocent aisle dial genuine install shy uncle ride federal soon shift flight program cave famous provide cute pole struggle"
@@ -33,6 +34,10 @@ edit_app_toml () {
 edit_genesis () {
 
     GENESIS=$CONFIG_FOLDER/genesis.json
+
+    # Keep local Cosmos time aligned with the Cardano local-clock devnet so
+    # Cardano probabilistic clients are not immediately expired on creation.
+    dasel put -t string -f $GENESIS '.genesis_time' -v "$LOCAL_GENESIS_TIME"
 
     # Update staking module
     dasel put -t string -f $GENESIS '.app_state.staking.params.bond_denom' -v 'uosmo'

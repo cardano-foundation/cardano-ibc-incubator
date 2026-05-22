@@ -1,0 +1,15 @@
+#!/usr/bin/env sh
+set -eu
+
+target_seconds="$(date -u -d "${CARDANO_LOCAL_CLOCK_TARGET:-2025-12-31 23:59:10}" +%s)"
+current_seconds="$(date -u +%s)"
+export FAKETIME="$((target_seconds - current_seconds))s"
+
+for faketime_lib in /usr/lib/*/faketime/libfaketime.so.1; do
+  if [ -r "$faketime_lib" ]; then
+    export LD_PRELOAD="$faketime_lib"
+    break
+  fi
+done
+
+exec /usr/local/bin/entrypoint "$@"

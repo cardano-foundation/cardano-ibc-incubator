@@ -265,7 +265,8 @@ pub async fn run_start(
             let balance = query_balance(
                 project_root_path,
                 "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
-            );
+            )
+            .map_err(|error| format!("ERROR: Failed to query initial balance: {}", error))?;
             logger::info(&format!(
                 "Initial balance {}",
                 &balance.to_string().as_str()
@@ -365,7 +366,8 @@ pub async fn run_start(
             let balance = query_balance(
                 project_root_path,
                 "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
-            );
+            )
+            .map_err(|error| format!("ERROR: Failed to query post-deploy balance: {}", error))?;
             logger::info(&format!(
                 "Post deploy contract balance {}",
                 &balance.to_string().as_str()
@@ -490,7 +492,8 @@ pub async fn run_start(
             let balance = query_balance(
                 project_root_path,
                 "addr_test1vz8nzrmel9mmmu97lm06uvm55cj7vny6dxjqc0y0efs8mtqsd8r5m",
-            );
+            )
+            .map_err(|error| format!("ERROR: Failed to query final balance: {}", error))?;
             logger::log(&format!("Final balance {}", &balance.to_string().as_str()));
         }
 
@@ -506,7 +509,9 @@ pub async fn run_start(
                     ProgressStyle::with_template(
                         "{prefix:.bold} {spinner} [{elapsed_precise}] {wide_msg}",
                     )
-                    .unwrap()
+                    .map_err(|error| {
+                        format!("ERROR: Failed to configure progress output: {error}")
+                    })?
                     .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
                 );
                 progress_bar.set_prefix("Waiting for Mithril to become ready ...".to_owned());

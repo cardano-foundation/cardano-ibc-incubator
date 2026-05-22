@@ -1,0 +1,14 @@
+FROM ghcr.io/blinklabs-io/cardano-node:10.1.4-3
+
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libfaketime \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV CARDANO_LOCAL_CLOCK_TARGET="2025-12-31 23:59:10"
+ENV FAKETIME_DONT_FAKE_MONOTONIC=1
+
+COPY local-clock-entrypoint /usr/local/bin/local-clock-entrypoint
+RUN chmod +x /usr/local/bin/local-clock-entrypoint
+
+ENTRYPOINT ["/usr/local/bin/local-clock-entrypoint"]

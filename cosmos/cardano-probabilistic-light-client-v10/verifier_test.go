@@ -234,7 +234,7 @@ func TestComputeHeaderSecurityMetricsIgnoresPoolRegistrationCutoffEnv(t *testing
 		StakeDistribution: []*StakeDistributionEntry{
 			{
 				PoolId:                "pool-a",
-				Stake:                 500,
+				Stake:                 10_000,
 				VrfKeyHash:            bytes.Repeat([]byte{0x02}, 32),
 				FirstRegistrationSlot: 3,
 			},

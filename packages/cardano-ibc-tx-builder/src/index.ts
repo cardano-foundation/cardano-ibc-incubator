@@ -507,10 +507,10 @@ function stringifyIcs20PacketData(packet: {
 }): string {
   const ordered: Record<string, string> = {};
 
-  if (packet.amount) ordered.amount = packet.amount;
   if (packet.denom) ordered.denom = packet.denom;
-  if (packet.receiver) ordered.receiver = packet.receiver;
+  if (packet.amount) ordered.amount = packet.amount;
   if (packet.sender) ordered.sender = packet.sender;
+  if (packet.receiver) ordered.receiver = packet.receiver;
   if (packet.memo) ordered.memo = packet.memo;
 
   return JSON.stringify(ordered);

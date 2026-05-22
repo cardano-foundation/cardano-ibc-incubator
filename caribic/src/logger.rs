@@ -109,37 +109,53 @@ fn parse_verbosity(verbosity: usize) -> Verbosity {
 }
 
 pub fn init(verbosity: usize) {
-    let mut logger = LOGGER.lock().unwrap();
+    let mut logger = LOGGER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     *logger = Logger::new(parse_verbosity(verbosity));
 }
 
 pub fn log(message: &str) {
-    let logger = LOGGER.lock().unwrap();
+    let logger = LOGGER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     logger.log(message, Verbosity::Standard);
 }
 
 pub fn error(message: &str) {
-    let logger = LOGGER.lock().unwrap();
+    let logger = LOGGER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     logger.log(message, Verbosity::Error);
 }
 
 pub fn warn(message: &str) {
-    let logger = LOGGER.lock().unwrap();
+    let logger = LOGGER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     logger.log(message, Verbosity::Warning);
 }
 
 pub fn info(message: &str) {
-    let logger = LOGGER.lock().unwrap();
+    let logger = LOGGER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     logger.log(message, Verbosity::Info);
 }
 
 pub fn verbose(message: &str) {
-    let logger = LOGGER.lock().unwrap();
+    let logger = LOGGER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     logger.log(message, Verbosity::Verbose);
 }
 
 pub fn get_verbosity() -> Verbosity {
-    LOGGER.lock().unwrap().verbosity.clone()
+    LOGGER
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .verbosity
+        .clone()
 }
 
 pub fn is_quite() -> bool {

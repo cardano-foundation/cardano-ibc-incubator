@@ -267,15 +267,21 @@ lazy_static! {
 }
 
 pub async fn init(config_path: &str) {
-    let mut config = CONFIG.lock().unwrap();
+    let mut config = CONFIG
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     *config = Some(Config::load_from_file(config_path));
 }
 
 pub fn get_config() -> Config {
-    CONFIG.lock().unwrap().clone().unwrap_or_else(|| {
-        error("Configuration was accessed before initialization.");
-        process::exit(1);
-    })
+    CONFIG
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+        .unwrap_or_else(|| {
+            error("Configuration was accessed before initialization.");
+            process::exit(1);
+        })
 }
 
 pub fn cardano_network_profile(network: CoreCardanoNetwork) -> CardanoNetworkProfile {
