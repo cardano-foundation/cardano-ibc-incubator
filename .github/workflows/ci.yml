@@ -381,9 +381,20 @@ jobs:
           - suite: transfer-contract
             match_tests: >-
               -m ibc/apps/transfer/transfer_accounting_contract
-          - suite: transfer-module
+          - suite: transfer-module-native-send
             match_tests: >-
-              -m prop_transfer_module_
+              -m prop_transfer_module_native_send_
+          - suite: transfer-module-native-timeout
+            match_tests: >-
+              -m prop_transfer_module_native_timeout_
+          - suite: transfer-module-native-other
+            match_tests: >-
+              -m prop_transfer_module_recv_source_
+              -m prop_transfer_module_native_ack_
+          - suite: transfer-module-voucher
+            match_tests: >-
+              -m prop_transfer_module_voucher_
+              -m prop_transfer_module_recv_sink_
           - suite: voucher-contract
             match_tests: >-
               -m ibc/apps/transfer/voucher_metadata_contract
