@@ -201,7 +201,6 @@ describe('voucher policy registry', () => {
       {
         active: { policyId: activePolicy, status: 'active' },
         legacy: [],
-        retired: [],
       },
     );
     assert.equal(
@@ -212,10 +211,9 @@ describe('voucher policy registry', () => {
     );
   });
 
-  it('normalizes active, legacy, and retired voucher policy entries', () => {
+  it('normalizes active and legacy voucher policy entries', () => {
     const activePolicy = 'aa'.repeat(28);
     const legacyPolicy = 'bb'.repeat(28);
-    const retiredPolicy = 'cc'.repeat(28);
 
     const manifest = {
       validators: {
@@ -230,17 +228,12 @@ describe('voucher policy registry', () => {
           legacyPolicy.toUpperCase(),
           activePolicy,
         ],
-        retired: [
-          { policyId: retiredPolicy },
-          legacyPolicy,
-        ],
       },
     };
 
     assert.deepEqual(normalizeVoucherPolicyRegistry(manifest), {
       active: { policyId: activePolicy, status: 'active' },
       legacy: [{ policyId: legacyPolicy, status: 'legacy' }],
-      retired: [{ policyId: retiredPolicy, status: 'retired' }],
     });
     assert.deepEqual(listOperationalVoucherPolicies(manifest), [
       { policyId: activePolicy, status: 'active' },
@@ -249,10 +242,6 @@ describe('voucher policy registry', () => {
     assert.deepEqual(findVoucherPolicy(manifest, legacyPolicy), {
       policyId: legacyPolicy,
       status: 'legacy',
-    });
-    assert.deepEqual(findVoucherPolicy(manifest, retiredPolicy), {
-      policyId: retiredPolicy,
-      status: 'retired',
     });
   });
 

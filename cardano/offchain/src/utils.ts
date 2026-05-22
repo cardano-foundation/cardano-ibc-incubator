@@ -937,13 +937,6 @@ export type DeploymentTemplate = {
       address: string;
       refUtxo: UTxO;
     }>;
-    retired: Array<{
-      title: string;
-      script: string;
-      scriptHash: string;
-      address: string;
-      refUtxo: UTxO;
-    }>;
   };
   modules: Record<
     Module,

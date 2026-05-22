@@ -4,7 +4,6 @@ use cardano/assets.{PolicyId}
 pub type VoucherPolicyRegistry {
   active: PolicyId,
   legacy: List<PolicyId>,
-  retired: List<PolicyId>,
 }
 
 pub fn operational_policies(registry: VoucherPolicyRegistry) -> List<PolicyId> {
@@ -17,10 +16,6 @@ pub fn is_active(registry: VoucherPolicyRegistry, policy_id: PolicyId) -> Bool {
 
 pub fn is_legacy(registry: VoucherPolicyRegistry, policy_id: PolicyId) -> Bool {
   list.has(registry.legacy, policy_id)
-}
-
-pub fn is_retired(registry: VoucherPolicyRegistry, policy_id: PolicyId) -> Bool {
-  list.has(registry.retired, policy_id)
 }
 
 pub fn is_operational(

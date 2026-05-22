@@ -848,7 +848,6 @@ export const createDeployment = async (
         refUtxo: refUtxosInfo[mintVoucher.policyId],
       },
       legacy: [],
-      retired: [],
     },
     hostStateNFT: {
       policyId: hostStateNFT.policy_id,
@@ -1652,7 +1651,6 @@ const deployTransferModule = async (
       {
         active: mintVoucherPolicyId,
         legacy: [],
-        retired: [],
       },
       hostStateNFT.policy_id,
     ],
@@ -1667,7 +1665,6 @@ const deployTransferModule = async (
       Data.Object({
         active: Data.Bytes(),
         legacy: Data.Array(Data.Bytes()),
-        retired: Data.Array(Data.Bytes()),
       }),
       Data.Bytes(),
     ]) as unknown as [
@@ -1679,7 +1676,6 @@ const deployTransferModule = async (
       {
         active: string;
         legacy: string[];
-        retired: string[];
       },
       string,
     ],

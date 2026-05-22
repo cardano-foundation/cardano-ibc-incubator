@@ -94,7 +94,6 @@ type VoucherPolicyRegistryEntry = {
 type VoucherPolicyRegistry = {
   active: VoucherPolicyRegistryEntry;
   legacy: VoucherPolicyRegistryEntry[];
-  retired: VoucherPolicyRegistryEntry[];
 };
 
 type DeploymentConfig = {
@@ -254,7 +253,6 @@ type BridgeManifest = {
   voucher_policy_registry?: {
     active?: VoucherPolicyManifestEntry;
     legacy?: VoucherPolicyManifestEntry[];
-    retired?: VoucherPolicyManifestEntry[];
   };
   modules: {
     transfer: { identifier: string; address: string };
@@ -493,15 +491,8 @@ function mapVoucherPolicyRegistry(manifest: BridgeManifest): VoucherPolicyRegist
     manifest.voucher_policy_registry?.legacy?.map(registryEntryFromManifestEntry) ?? [],
     active.scriptHash,
   );
-  const retired = uniqueRegistryEntries(
-    manifest.voucher_policy_registry?.retired?.map(registryEntryFromManifestEntry) ?? [],
-    active.scriptHash,
-  ).filter(
-    (entry) =>
-      !legacy.some((legacyEntry) => legacyEntry.scriptHash === entry.scriptHash),
-  );
 
-  return { active, legacy, retired };
+  return { active, legacy };
 }
 
 function normalizeBridgeManifest(manifest: BridgeManifest): {

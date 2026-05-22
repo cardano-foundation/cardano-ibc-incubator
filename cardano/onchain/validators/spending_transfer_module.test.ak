@@ -341,7 +341,7 @@ fn setup() -> MockData {
 }
 
 fn voucher_policy_registry(active: PolicyId) -> VoucherPolicyRegistry {
-  VoucherPolicyRegistry { active, legacy: [], retired: [] }
+  VoucherPolicyRegistry { active, legacy: [] }
 }
 
 fn transfer_escrow_input(

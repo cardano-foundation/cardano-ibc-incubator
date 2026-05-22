@@ -55,7 +55,6 @@ type DeploymentTraceRegistry = {
 type DeploymentVoucherPolicyRegistry = {
   active: DeploymentValidator;
   legacy: DeploymentValidator[];
-  retired: DeploymentValidator[];
 };
 
 export type DeploymentConfig = {
@@ -145,7 +144,6 @@ type BridgeManifestTraceRegistry = {
 type BridgeManifestVoucherPolicyRegistry = {
   active: BridgeManifestValidator;
   legacy: BridgeManifestValidator[];
-  retired: BridgeManifestValidator[];
 };
 
 // The manifest is the public, deployment-stable bootstrap document we expose to
@@ -308,7 +306,6 @@ function requireDeploymentVoucherPolicyRegistry(
     return {
       active: fallbackActive,
       legacy: [],
-      retired: [],
     };
   }
   const registry = requireObject(value, path);
@@ -319,11 +316,6 @@ function requireDeploymentVoucherPolicyRegistry(
     legacy: Array.isArray(registry.legacy)
       ? registry.legacy.map((entry, index) =>
           requireDeploymentValidator(entry, `${path}.legacy[${index}]`),
-        )
-      : [],
-    retired: Array.isArray(registry.retired)
-      ? registry.retired.map((entry, index) =>
-          requireDeploymentValidator(entry, `${path}.retired[${index}]`),
         )
       : [],
   };
@@ -338,7 +330,6 @@ function requireManifestVoucherPolicyRegistry(
     return {
       active: fallbackActive,
       legacy: [],
-      retired: [],
     };
   }
   const registry = requireObject(value, path);
@@ -349,11 +340,6 @@ function requireManifestVoucherPolicyRegistry(
     legacy: Array.isArray(registry.legacy)
       ? registry.legacy.map((entry, index) =>
           requireManifestValidator(entry, `${path}.legacy[${index}]`),
-        )
-      : [],
-    retired: Array.isArray(registry.retired)
-      ? registry.retired.map((entry, index) =>
-          requireManifestValidator(entry, `${path}.retired[${index}]`),
         )
       : [],
   };
@@ -551,7 +537,6 @@ function deploymentVoucherPolicyRegistryToManifest(
   return {
     active: deploymentValidatorToManifest(registry.active),
     legacy: registry.legacy.map(deploymentValidatorToManifest),
-    retired: registry.retired.map(deploymentValidatorToManifest),
   };
 }
 
@@ -561,7 +546,6 @@ function manifestVoucherPolicyRegistryToDeployment(
   return {
     active: manifestValidatorToDeployment(registry.active),
     legacy: registry.legacy.map(manifestValidatorToDeployment),
-    retired: registry.retired.map(manifestValidatorToDeployment),
   };
 }
 
@@ -759,7 +743,6 @@ export function normalizeHandlerJsonDeploymentConfig(
         normalizedDeployment.voucherPolicyRegistry ?? {
           active: normalizedDeployment.validators.mintVoucher,
           legacy: [],
-          retired: [],
         },
       ),
     },
@@ -880,7 +863,6 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
         bridgeManifest.voucher_policy_registry ?? {
           active: bridgeManifest.validators.mint_voucher,
           legacy: [],
-          retired: [],
         },
       ),
     },

@@ -91,7 +91,7 @@ export type TraceRegistryClient = {
   listCardanoIbcAssets: () => Promise<CardanoAssetDenomTrace[]>;
 };
 
-export type VoucherPolicyStatus = 'active' | 'legacy' | 'retired';
+export type VoucherPolicyStatus = 'active' | 'legacy';
 
 export type VoucherPolicyRegistryEntry = {
   policyId: string;
@@ -101,7 +101,6 @@ export type VoucherPolicyRegistryEntry = {
 export type VoucherPolicyRegistry = {
   active: VoucherPolicyRegistryEntry;
   legacy: VoucherPolicyRegistryEntry[];
-  retired: VoucherPolicyRegistryEntry[];
 };
 
 type VoucherPolicyManifestEntry =
@@ -125,7 +124,6 @@ export type BridgeManifest = {
   voucher_policy_registry?: {
     active?: VoucherPolicyManifestEntry;
     legacy?: VoucherPolicyManifestEntry[];
-    retired?: VoucherPolicyManifestEntry[];
   };
   trace_registry?: {
     shard_policy_id: string;
@@ -491,26 +489,14 @@ export function normalizeVoucherPolicyRegistry(
     manifest.voucher_policy_registry?.legacy?.map((entry, index) =>
       policyIdFromManifestEntry(entry, `voucher_policy_registry.legacy[${index}]`),
     ) ?? [];
-  const retiredPolicyIds =
-    manifest.voucher_policy_registry?.retired?.map((entry, index) =>
-      policyIdFromManifestEntry(entry, `voucher_policy_registry.retired[${index}]`),
-    ) ?? [];
 
   const active = { policyId, status: 'active' as const };
   const legacy = uniquePolicyEntries(
     legacyPolicyIds.filter((candidate): candidate is string => !!candidate),
     'legacy',
   ).filter((entry) => entry.policyId !== active.policyId);
-  const retired = uniquePolicyEntries(
-    retiredPolicyIds.filter((candidate): candidate is string => !!candidate),
-    'retired',
-  ).filter(
-    (entry) =>
-      entry.policyId !== active.policyId &&
-      !legacy.some((legacyEntry) => legacyEntry.policyId === entry.policyId),
-  );
 
-  return { active, legacy, retired };
+  return { active, legacy };
 }
 
 export function getActiveVoucherPolicyId(manifest: BridgeManifest): string {
@@ -531,7 +517,7 @@ export function findVoucherPolicy(
   const normalized = normalizePolicyId(policyId, 'asset policy id');
   const registry = normalizeVoucherPolicyRegistry(manifest);
   return (
-    [registry.active, ...registry.legacy, ...registry.retired].find(
+    [registry.active, ...registry.legacy].find(
       (entry) => entry.policyId === normalized,
     ) ?? null
   );
