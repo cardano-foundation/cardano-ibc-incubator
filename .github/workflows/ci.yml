@@ -398,10 +398,21 @@ jobs:
           - suite: voucher-contract
             match_tests: >-
               -m ibc/apps/transfer/voucher_metadata_contract
-          - suite: voucher-policy
+          - suite: voucher-policy-valid
             match_tests: >-
-              -m prop_voucher_first_mint_
-              -m prop_tx_first_seen_voucher_mint_
+              -m prop_voucher_first_mint_policy_accepts_valid_metadata
+              -m prop_tx_first_seen_voucher_mint_couples_registry_append
+          - suite: voucher-policy-metadata-text
+            match_tests: >-
+              -m prop_voucher_first_mint_policy_rejects_wrong_name
+              -m prop_voucher_first_mint_policy_rejects_wrong_ticker
+              -m prop_voucher_first_mint_policy_rejects_wrong_description
+              -m prop_voucher_first_mint_policy_rejects_wrong_full_denom
+          - suite: voucher-policy-identity
+            match_tests: >-
+              -m prop_voucher_first_mint_policy_rejects_wrong_policy
+              -m prop_voucher_first_mint_policy_rejects_wrong_reference_asset
+              -m prop_tx_first_seen_voucher_mint_rejects_wrong_metadata_registry_coupled
           - suite: trace-append
             match_tests: >-
               -m prop_trace_registry_append_
