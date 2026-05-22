@@ -51,7 +51,7 @@ validator spend_transfer_module(
     let Transaction { inputs, outputs, .. } = transaction
 
     // Transfer state transitions must be committed through HostState.
-    expect _ =
+    let (host_state_input, _) =
       validator_utils.require_host_state_thread(
         inputs,
         outputs,
@@ -114,6 +114,7 @@ validator spend_transfer_module(
           spent_output_ref,
           transaction,
           spend,
+          host_state_input,
           transfer_escrow_shard_policy_id,
           channel_minting_policy_id,
           voucher_minting_policy_id,
@@ -520,6 +521,7 @@ fn module_operator(
   spent_output_ref: OutputReference,
   transaction: Transaction,
   spend: TransferModuleSpend,
+  host_state_input: Input,
   shard_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
@@ -555,6 +557,10 @@ fn module_operator(
         packet.source_channel,
         data.denom,
       ) {
+        // During shutdown, users may still burn vouchers or settle/refund
+        // in-flight packets, but new source-chain escrow deposits are blocked.
+        expect _ = validator_utils.require_active_host_state(host_state_input)
+
         // Sending from the source chain locks native value in escrow.
         expect
           transfer_voucher_flow.require_no_voucher_mint(

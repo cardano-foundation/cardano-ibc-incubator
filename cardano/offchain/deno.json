@@ -19,6 +19,7 @@
     "fmt:check": "deno fmt --check",
     "lint": "deno lint",
     "check": "deno check index.ts src/*.ts scripts/*.ts types/**/*.ts",
+    "shutdown:deployment": "deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi scripts/shutdown-deployment.ts",
     "start": "deno run --env-file=.env.default --allow-net --allow-env --allow-read --allow-run --allow-ffi --allow-write index.ts"
   }
 }

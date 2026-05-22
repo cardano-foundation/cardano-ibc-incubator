@@ -26,11 +26,12 @@ use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
   HostState, HostStateDatum, host_state_token_name, validate_bind_port,
   validate_create_channel, validate_create_client, validate_create_connection,
-  validate_update_only_root,
+  validate_enter_shutdown, validate_finalize_shutdown, validate_update_only_root,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  BindPort, CreateChannel, CreateClient, CreateConnection, HandlePacket,
-  HostStateRedeemer, UpdateChannel, UpdateClient, UpdateConnection,
+  BindPort, CreateChannel, CreateClient, CreateConnection, EnterShutdown,
+  FinalizeShutdown, HandlePacket, HostStateRedeemer, UpdateChannel, UpdateClient,
+  UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/utils/string as string_utils
@@ -976,134 +977,142 @@ validator host_state_stt(
     transaction: Transaction,
   ) {
     // 1. Extract transaction fields
-    let Transaction { inputs, outputs, .. } = transaction
+    let Transaction { inputs, outputs, extra_signatories, validity_range, .. } =
+      transaction
     // 2. Find input HostState UTXO
     expect Some(host_input) = find_host_state_input(inputs, nft_policy)
     let old_datum = decode_host_state_datum(host_input.output)
-    // 3. Find output HostState UTXO
-    expect Some(host_output) = find_host_state_output(outputs, nft_policy)
-    let new_datum = decode_host_state_datum(host_output)
-
-    // The HostState NFT must remain locked at the HostState script address.
-    //
-    // In practice, this means the output that carries the NFT must stay at the
-    // same address as the spent HostState UTxO.
-    expect host_output.address == host_input.output.address
-    // 4. Verify NFT policy matches
+    // 3. Verify NFT policy matches
     expect old_datum.nft_policy == nft_policy
-    expect new_datum.nft_policy == nft_policy
-    // 5. Verify exactly one output with NFT (no duplication)
-    let nft_output_count =
-      list.count(
-        outputs,
-        fn(output) {
-          assets.has_nft(output.value, nft_policy, host_state_token_name)
-        },
-      )
-    expect nft_output_count == 1
-    // 6. Validate state transition based on operation
+
+    // 4. Validate state transition based on operation.
     when redeemer is {
-      CreateClient { client_state_siblings, consensus_state_siblings } -> and {
-          validate_create_client(old_datum, new_datum),
-          validate_create_client_root(
+      FinalizeShutdown -> and {
+          list.has(extra_signatories, old_datum.deployer),
+          validate_finalize_shutdown(
             old_datum,
-            new_datum,
+            validator_utils.get_tx_valid_from(validity_range),
+          ),
+          !list.any(
             outputs,
-            spend_client_script_hash,
-            client_state_siblings,
-            consensus_state_siblings,
+            fn(output) {
+              output.address == host_input.output.address && assets.has_nft(
+                output.value,
+                nft_policy,
+                host_state_token_name,
+              )
+            },
           ),
         }
-      CreateConnection { connection_siblings } -> and {
-          validate_create_connection(old_datum, new_datum),
-          validate_create_connection_root(
-            old_datum,
-            new_datum,
+      _ -> {
+        // Non-final transitions must re-create exactly one HostState UTxO.
+        expect Some(host_output) = find_host_state_output(outputs, nft_policy)
+        let new_datum = decode_host_state_datum(host_output)
+
+        // The HostState NFT must remain locked at the HostState script address.
+        //
+        // In practice, this means the output that carries the NFT must stay at the
+        // same address as the spent HostState UTxO.
+        expect host_output.address == host_input.output.address
+        expect new_datum.nft_policy == nft_policy
+
+        // Verify exactly one output with NFT (no duplication).
+        let nft_output_count =
+          list.count(
             outputs,
-            spend_connection_script_hash,
-            connection_siblings,
-          ),
-        }
-      CreateChannel {
-        channel_siblings,
-        next_sequence_send_siblings,
-        next_sequence_recv_siblings,
-        next_sequence_ack_siblings,
-      } -> and {
-          validate_create_channel(old_datum, new_datum),
-          validate_create_channel_root(
-            old_datum,
-            new_datum,
-            outputs,
-            spend_channel_script_hash,
+            fn(output) {
+              assets.has_nft(output.value, nft_policy, host_state_token_name)
+            },
+          )
+        expect nft_output_count == 1
+
+        when redeemer is {
+          CreateClient { client_state_siblings, consensus_state_siblings } ->
+            and {
+              validate_create_client(old_datum, new_datum),
+              validate_create_client_root(
+                old_datum,
+                new_datum,
+                outputs,
+                spend_client_script_hash,
+                client_state_siblings,
+                consensus_state_siblings,
+              ),
+            }
+          CreateConnection { connection_siblings } -> and {
+              validate_create_connection(old_datum, new_datum),
+              validate_create_connection_root(
+                old_datum,
+                new_datum,
+                outputs,
+                spend_connection_script_hash,
+                connection_siblings,
+              ),
+            }
+          CreateChannel {
             channel_siblings,
             next_sequence_send_siblings,
             next_sequence_recv_siblings,
             next_sequence_ack_siblings,
-          ),
-        }
-      BindPort { port, port_siblings } -> and {
-          validate_bind_port(old_datum, new_datum, port),
-          validate_bind_port_root(old_datum, new_datum, port, port_siblings),
-        }
-      UpdateClient {
-        client_state_siblings,
-        consensus_state_siblings,
-        removed_consensus_state_siblings,
-      } -> and {
-          // Client updates should not change HostState sequencing, only the root.
-          validate_update_only_root(old_datum, new_datum),
-          validate_update_client_root(
-            old_datum,
-            new_datum,
-            inputs,
-            outputs,
-            spend_client_script_hash,
+          } -> and {
+              validate_create_channel(old_datum, new_datum),
+              validate_create_channel_root(
+                old_datum,
+                new_datum,
+                outputs,
+                spend_channel_script_hash,
+                channel_siblings,
+                next_sequence_send_siblings,
+                next_sequence_recv_siblings,
+                next_sequence_ack_siblings,
+              ),
+            }
+          BindPort { port, port_siblings } -> and {
+              validate_bind_port(old_datum, new_datum, port),
+              validate_bind_port_root(old_datum, new_datum, port, port_siblings),
+            }
+          UpdateClient {
             client_state_siblings,
             consensus_state_siblings,
             removed_consensus_state_siblings,
-          ),
-        }
-      UpdateConnection { connection_siblings } -> and {
-          validate_update_only_root(old_datum, new_datum),
-          validate_update_connection_root(
-            old_datum,
-            new_datum,
-            inputs,
-            outputs,
-            spend_connection_script_hash,
-            connection_siblings,
-          ),
-        }
-      UpdateChannel { channel_siblings } -> and {
-          // Channel updates should not change HostState sequencing, only the root.
-          validate_update_only_root(old_datum, new_datum),
-          validate_update_channel_root(
-            old_datum,
-            new_datum,
-            inputs,
-            outputs,
-            spend_channel_script_hash,
-            channel_siblings,
-          ),
-        }
-      HandlePacket {
-        channel_siblings,
-        next_sequence_send_siblings,
-        next_sequence_recv_siblings,
-        next_sequence_ack_siblings,
-        packet_commitment_siblings,
-        packet_receipt_siblings,
-        packet_acknowledgement_siblings,
-      } -> and {
-          // Packet operations should not change HostState sequencing, only the root.
-          validate_update_only_root(old_datum, new_datum),
-          validate_handle_packet_root(
-            old_datum,
-            new_datum,
-            inputs,
-            outputs,
-            spend_channel_script_hash,
+          } -> and {
+              // Client updates should not change HostState sequencing, only the root.
+              validate_update_only_root(old_datum, new_datum),
+              validate_update_client_root(
+                old_datum,
+                new_datum,
+                inputs,
+                outputs,
+                spend_client_script_hash,
+                client_state_siblings,
+                consensus_state_siblings,
+                removed_consensus_state_siblings,
+              ),
+            }
+          UpdateConnection { connection_siblings } -> and {
+              validate_update_only_root(old_datum, new_datum),
+              validate_update_connection_root(
+                old_datum,
+                new_datum,
+                inputs,
+                outputs,
+                spend_connection_script_hash,
+                connection_siblings,
+              ),
+            }
+          UpdateChannel { channel_siblings } -> and {
+              // Channel updates should not change HostState sequencing, only the root.
+              validate_update_only_root(old_datum, new_datum),
+              validate_update_channel_root(
+                old_datum,
+                new_datum,
+                inputs,
+                outputs,
+                spend_channel_script_hash,
+                channel_siblings,
+              ),
+            }
+          HandlePacket {
             channel_siblings,
             next_sequence_send_siblings,
             next_sequence_recv_siblings,
@@ -1111,8 +1120,31 @@ validator host_state_stt(
             packet_commitment_siblings,
             packet_receipt_siblings,
             packet_acknowledgement_siblings,
-          ),
+          } -> and {
+              // Packet operations should not change HostState sequencing, only the root.
+              validate_update_only_root(old_datum, new_datum),
+              validate_handle_packet_root(
+                old_datum,
+                new_datum,
+                inputs,
+                outputs,
+                spend_channel_script_hash,
+                channel_siblings,
+                next_sequence_send_siblings,
+                next_sequence_recv_siblings,
+                next_sequence_ack_siblings,
+                packet_commitment_siblings,
+                packet_receipt_siblings,
+                packet_acknowledgement_siblings,
+              ),
+            }
+          EnterShutdown { grace_period_end } -> and {
+              list.has(extra_signatories, old_datum.deployer),
+              validate_enter_shutdown(old_datum, new_datum, grace_period_end),
+            }
+          FinalizeShutdown -> fail
         }
+      }
     }
   }
 
