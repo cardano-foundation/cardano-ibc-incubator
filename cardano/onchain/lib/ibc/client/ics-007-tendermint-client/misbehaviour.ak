@@ -47,10 +47,10 @@ pub fn validate_basic(misbehaviour: Misbehaviour) -> Bool {
 
   // TODO: Check validate_basic header for header1 and header2
   expect
-    !(height.compare(
+    height.compare(
       header.get_height(misbehaviour.header1),
       header.get_height(misbehaviour.header2),
-    ) == Less)
+    ) != Less
   expect
     valid_commit(
       misbehaviour.header1.signed_header.header.chain_id,

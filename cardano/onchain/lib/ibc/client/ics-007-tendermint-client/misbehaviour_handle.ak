@@ -1,6 +1,5 @@
 use aiken/collection/list
 use aiken/collection/pairs
-use aiken/primitive/bytearray
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/cometbft/validation
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
@@ -74,10 +73,7 @@ pub fn check_for_misbehaviour(
         )
       is {
         Equal ->
-          !(bytearray.compare(
-            misbehaviour.header1.signed_header.commit.block_id.hash,
-            misbehaviour.header2.signed_header.commit.block_id.hash,
-          ) == Equal)
+          misbehaviour.header1.signed_header.commit.block_id.hash != misbehaviour.header2.signed_header.commit.block_id.hash
         Greater ->
           misbehaviour.header1.signed_header.header.time <= misbehaviour.header2.signed_header.header.time
         Less ->

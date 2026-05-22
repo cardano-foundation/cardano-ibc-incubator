@@ -278,11 +278,11 @@ jobs:
         working-directory: cardano/offchain
         run: deno task check
 
-  aiken:
-    name: Cardano Onchain Aiken
+  aiken-static:
+    name: Cardano Onchain Aiken Static
     if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: cardano/onchain
@@ -303,8 +303,202 @@ jobs:
         working-directory: .
         run: scripts/ci/check-aiken-fuzz-imports.sh
 
-      - name: Check and test
-        run: aiken check --deny
+      # Keep syntax/blueprint/type errors separate from the fuzz matrix. These
+      # checks should fail quickly and should not wait behind expensive
+      # property-test execution.
+      - name: Build blueprint
+        run: aiken build --deny
+
+      - name: Type check without tests
+        run: aiken check --deny --skip-tests
+
+  aiken-smoke:
+    name: Cardano Onchain Aiken Smoke
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: cardano/onchain
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Aiken
+        uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
+
+      # This intentionally runs every test once. It catches broad collection or
+      # fixture-construction failures before the deeper fuzz shards finish.
+      - name: Run smoke test pass
+        run: aiken check --deny --max-success 1 --property-coverage relative-to-tests > ../../aiken-smoke.json
+
+  aiken-fuzz:
+    name: Cardano Onchain Aiken Property/Fuzz (${{ matrix.suite }})
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: cardano/onchain
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Each shard is a protocol domain or a costly transition family. The
+          # split keeps max-success=500 meaningful without putting all generated
+          # cases behind one 30-minute job timeout.
+          - suite: host-update-client
+            match_tests: >-
+              -m prop_host_update_client_
+          - suite: host-update-connection
+            match_tests: >-
+              -m prop_host_update_connection_
+          - suite: host-update-channel
+            match_tests: >-
+              -m prop_host_update_channel_
+          - suite: host-handle-packet
+            match_tests: >-
+              -m prop_host_handle_packet_
+          - suite: client
+            match_tests: >-
+              -m ibc/client/ics_007_tendermint_client/client_datum
+              -m ibc/client/ics_007_tendermint_client/client_state
+              -m ibc/client/ics_007_tendermint_client/misbehaviour_handle
+              -m prop_client_update_
+          - suite: connection
+            match_tests: >-
+              -m ibc/core/ics_003_connection_semantics/connection_datum
+              -m ibc/core/ics_003_connection_semantics/connection_handshake_contract
+              -m prop_conn_open_try_
+              -m prop_tx_conn_open_try_
+          - suite: channel-packet
+            match_tests: >-
+              -m ibc/core/ics_004/channel_datum_test/channel_handshake_contract
+              -m ibc/core/ics_004/channel_datum_test/packet_lifecycle_contract
+              -m prop_tx_packet_send_
+          - suite: transfer-contract
+            match_tests: >-
+              -m ibc/apps/transfer/transfer_accounting_contract
+          - suite: transfer-module-native-send
+            match_tests: >-
+              -m prop_transfer_module_native_send_
+          - suite: transfer-module-native-timeout
+            match_tests: >-
+              -m prop_transfer_module_native_timeout_
+          - suite: transfer-module-native-other
+            match_tests: >-
+              -m prop_transfer_module_recv_source_
+              -m prop_transfer_module_native_ack_
+          - suite: transfer-module-voucher
+            match_tests: >-
+              -m prop_transfer_module_voucher_
+              -m prop_transfer_module_recv_sink_
+          - suite: voucher-contract
+            match_tests: >-
+              -m ibc/apps/transfer/voucher_metadata_contract
+          - suite: voucher-policy-valid
+            match_tests: >-
+              -m prop_voucher_first_mint_policy_accepts_valid_metadata
+              -m prop_tx_first_seen_voucher_mint_couples_registry_append
+          - suite: voucher-policy-metadata-text
+            match_tests: >-
+              -m prop_voucher_first_mint_policy_rejects_wrong_name
+              -m prop_voucher_first_mint_policy_rejects_wrong_ticker
+              -m prop_voucher_first_mint_policy_rejects_wrong_description
+              -m prop_voucher_first_mint_policy_rejects_wrong_full_denom
+          - suite: voucher-policy-identity
+            match_tests: >-
+              -m prop_voucher_first_mint_policy_rejects_wrong_policy
+              -m prop_voucher_first_mint_policy_rejects_wrong_reference_asset
+              -m prop_tx_first_seen_voucher_mint_rejects_wrong_metadata_registry_coupled
+          - suite: trace-append
+            match_tests: >-
+              -m prop_trace_registry_append_
+          - suite: trace-rollover
+            match_tests: >-
+              -m prop_trace_registry_rollover_
+              -m prop_model_trace_
+          - suite: proofs
+            match_tests: >-
+              -m prop_proof_
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Aiken
+        uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
+
+      - name: Run property shard
+        run: |
+          # Aiken emits JSON when stdout is redirected. The aggregate job merges
+          # these per-shard reports and enforces the global label catalog once.
+          aiken check \
+            --deny \
+            --max-success 500 \
+            --property-coverage relative-to-tests \
+            ${{ matrix.match_tests }} \
+            > ../../aiken-${{ matrix.suite }}.json
+
+      - name: Upload property report
+        uses: actions/upload-artifact@v4
+        with:
+          name: aiken-fuzz-${{ matrix.suite }}
+          path: aiken-${{ matrix.suite }}.json
+
+  aiken:
+    name: Cardano Onchain Aiken
+    if: ${{ always() && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs: [aiken-static, aiken-smoke, aiken-fuzz]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check shard status
+        env:
+          NEEDS_JSON: ${{ toJson(needs) }}
+        run: |
+          node - <<'NODE'
+          // This aggregate job keeps the stable check name
+          // "Cardano Onchain Aiken" while the actual work happens in parallel
+          // prerequisite jobs.
+          const needs = JSON.parse(process.env.NEEDS_JSON);
+          const failed = Object.entries(needs)
+            .filter(([, value]) => value.result !== 'success')
+            .map(([name, value]) => `${name}: ${value.result}`);
+          if (failed.length > 0) {
+            console.error(`Aiken shard failure(s): ${failed.join(', ')}`);
+            process.exit(1);
+          }
+          NODE
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Download fuzz reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: aiken-fuzz-*
+          path: aiken-fuzz-reports
+          merge-multiple: true
+
+      - name: Merge fuzz reports
+        run: node scripts/ci/merge-aiken-check-reports.mjs aiken-fuzz-reports aiken-fuzz.json
+
+      # Labels are enforced globally, not per shard. That lets shard boundaries
+      # follow runtime and protocol ownership without weakening coverage rules.
+      - name: Check fuzz label coverage
+        run: node scripts/ci/check-aiken-fuzz-coverage.mjs aiken-fuzz.json
 
   tx-budgets:
     name: Cardano Tx Budgets
@@ -334,7 +528,32 @@ jobs:
 
       - name: Collect Aiken execution units
         working-directory: cardano/onchain
-        run: aiken check --deny --plain-numbers > ../../aiken-check.json
+        run: |
+          # Tx budgets consume representative production transaction fixtures.
+          # Fuzzers and other .test.ak cases are not deployed transactions, so
+          # they should not inflate this job or affect the budget calculation.
+          aiken check \
+            --deny \
+            --plain-numbers \
+            --exact-match \
+            -m 'ibc/core/ics_003_connection_semantics/connection_datum.{test_is_conn_open_try_valid_succeed}' \
+            -m 'spending_transfer_module.{on_chan_open_try_succeed}' \
+            -m 'spending_connection.{conn_open_ack_succeed}' \
+            -m 'spending_channel.{send_packet_succeed}' \
+            -m 'spending_channel/send_packet.{succeed_send_packet}' \
+            -m 'spending_channel.{recv_packet_succeed}' \
+            -m 'spending_channel/recv_packet.{succeed_recv_packet}' \
+            -m 'spending_channel.{acknowledge_packet_succeed}' \
+            -m 'spending_channel/acknowledge_packet.{succeed_acknowledge_packet}' \
+            -m 'spending_transfer_module.{on_acknowledgement_packet_result_succeed}' \
+            -m 'spending_channel.{timeout_packet_succeed}' \
+            -m 'spending_channel/timeout_packet.{succeed_timeout_unordered_packet}' \
+            -m 'spending_transfer_module.{on_timeout_packet_mint_voucher_succeed}' \
+            -m 'trace_registry.{trace_registry_insert_trace_succeeds_with_matching_voucher_mint}' \
+            -m 'trace_registry_rollover.{trace_registry_rollover_insert_succeeds_and_preserves_old_shard}' \
+            -m 'trace_registry_rollover.{trace_registry_advance_directory_succeeds_for_valid_rollover}' \
+            -m 'minting_voucher.{test_mint_voucher}' \
+            > ../../aiken-check.json
 
       - name: Install gateway dependencies
         run: npm ci --prefix cardano/gateway --legacy-peer-deps

@@ -1,3 +1,4 @@
+use aiken/fuzz
 use ibc/auth.{AuthToken}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
@@ -5,6 +6,7 @@ use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
 use ibc/core/ics_003_connection_semantics/types/state.{State}
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
+use ibc/testing/fuzz_dsl
 
 const mock_client_id = "07-tendermint-199"
 
@@ -154,6 +156,28 @@ test test_is_conn_open_try_valid_succeed() {
   let mock_connection_datum =
     ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
 
+  fuzz_dsl.valid_check(
+    "conn",
+    "open_try",
+    "connection_datum.is_conn_open_try_valid",
+    connection_datum.is_conn_open_try_valid(
+      mock_connection_datum,
+      mock_auth_token,
+    ),
+  )
+    |> fuzz_dsl.assert_valid
+}
+
+test prop_conn_open_try_accepts_valid_try_open(_seed via fuzz.int()) {
+  fuzz.label(@"regression.unit.conn.open_try.valid")
+
+  let mock_connection_end =
+    create_mock_connection_end(state.TryOpen, mock_connection_id)
+  let mock_auth_token =
+    AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
+  let mock_connection_datum =
+    ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
+
   connection_datum.is_conn_open_try_valid(
     mock_connection_datum,
     mock_auth_token,
@@ -265,6 +289,39 @@ test test_is_connection_open_ack_valid_succeed() {
   let mock_connection_datum_input =
     ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
 
+  let output_connection_datum =
+    ConnectionDatum {
+      ..mock_connection_datum_input,
+      state: ConnectionEnd {
+        ..mock_connection_datum_input.state,
+        state: state.Open,
+        counterparty: Counterparty {
+          ..mock_connection_datum_input.state.counterparty,
+          connection_id: mock_connection_id,
+        },
+      },
+    }
+
+  fuzz_dsl.valid_check(
+    "conn",
+    "open_ack",
+    "connection_datum.is_connection_open_ack_valid",
+    connection_datum.is_connection_open_ack_valid(
+      mock_connection_datum_input,
+      output_connection_datum,
+    ),
+  )
+    |> fuzz_dsl.assert_valid
+}
+
+test prop_conn_open_ack_accepts_valid_transition(_seed via fuzz.int()) {
+  fuzz.label(@"regression.unit.conn.open_ack.valid")
+
+  let mock_connection_end_input = create_mock_connection_end(state.Init, "")
+  let mock_auth_token =
+    AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
+  let mock_connection_datum_input =
+    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
   let output_connection_datum =
     ConnectionDatum {
       ..mock_connection_datum_input,

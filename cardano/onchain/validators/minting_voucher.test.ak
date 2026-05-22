@@ -1,4 +1,6 @@
+use aiken/builtin
 use aiken/crypto
+use aiken/fuzz
 use aiken/primitive/bytearray
 use aiken/primitive/string
 use cardano/address.{from_script, from_verification_key}
@@ -8,12 +10,12 @@ use cardano/transaction.{
   ScriptPurpose, Spend, Transaction,
 }
 use ibc/apps/transfer/mint_voucher_redeemer.{
-  BurnVoucher, MintVoucher, RefundVoucher,
+  BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
 }
 use ibc/apps/transfer/trace_registry.{
-  Directory, InsertTrace, Shard, TraceRegistryDirectoryBucket,
-  TraceRegistryDirectoryDatum, TraceRegistryEntry, TraceRegistryShardDatum,
-  bucket_index_for_hash,
+  Directory, InsertTrace, Shard, TraceRegistryDatum,
+  TraceRegistryDirectoryBucket, TraceRegistryDirectoryDatum, TraceRegistryEntry,
+  TraceRegistryRedeemer, TraceRegistryShardDatum, bucket_index_for_hash,
 }
 use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
@@ -34,8 +36,10 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/testing/fuzz_dsl
 use ibc/utils/string as string_utils
 use minting_voucher
+use trace_registry as trace_registry_validator
 
 type MockData {
   module_token: AuthToken,
@@ -45,6 +49,18 @@ type MockData {
   channel_minting_policy_id: PolicyId,
   host_state_nft_policy_id: PolicyId,
   module_input: Input,
+}
+
+type FirstSeenVoucherFixture {
+  FirstSeenVoucherFixture {
+    mock_data: MockData,
+    redeemer: MintVoucherRedeemer,
+    transaction: Transaction,
+    mutation: fuzz_dsl.Mutation,
+    trace_registry_datum: TraceRegistryDatum,
+    trace_registry_redeemer: TraceRegistryRedeemer,
+    trace_registry_spent_output_ref: OutputReference,
+  }
 }
 
 fn prepare_mock_data() -> MockData {
@@ -250,6 +266,28 @@ fn make_shard_spend_input(
   }
 }
 
+fn make_shard_output(
+  shard_policy_id: PolicyId,
+  shard_name: ByteArray,
+  bucket_index: Int,
+  voucher_hash: ByteArray,
+  full_denom: ByteArray,
+) -> Output {
+  Output {
+    address: from_script("trace registry script hash"),
+    value: from_asset(shard_policy_id, shard_name, 1),
+    datum: InlineDatum(
+      Shard(
+        TraceRegistryShardDatum {
+          bucket_index,
+          entries: [TraceRegistryEntry { voucher_hash, full_denom }],
+        },
+      ),
+    ),
+    reference_script: None,
+  }
+}
+
 fn make_metadata_output(
   voucher_metadata_script_hash: crypto.ScriptHash,
   full_denom: ByteArray,
@@ -257,18 +295,625 @@ fn make_metadata_output(
   voucher_token_name: ByteArray,
   reference_token_name: ByteArray,
 ) -> Output {
+  make_metadata_output_with_datum(
+    voucher_metadata_script_hash,
+    voucher_policy_id,
+    reference_token_name,
+    voucher_metadata.build_datum(
+      full_denom,
+      voucher_token_name,
+      voucher_policy_id,
+    ),
+  )
+}
+
+fn make_metadata_output_with_datum(
+  voucher_metadata_script_hash: crypto.ScriptHash,
+  voucher_policy_id: PolicyId,
+  reference_token_name: ByteArray,
+  metadata_datum: Data,
+) -> Output {
   Output {
     address: from_script(voucher_metadata_script_hash),
     value: from_asset(voucher_policy_id, reference_token_name, 1),
-    datum: InlineDatum(
-      voucher_metadata.build_datum(
-        full_denom,
-        voucher_token_name,
-        voucher_policy_id,
-      ),
-    ),
+    datum: InlineDatum(metadata_datum),
     reference_script: None,
   }
+}
+
+fn metadata_description(denom: ByteArray) -> ByteArray {
+  bytearray.concat("IBC voucher for ", denom)
+}
+
+fn hex_ascii(bytes: ByteArray) -> ByteArray {
+  bytes
+    |> bytearray.to_hex
+    |> string.to_bytearray
+    |> ascii_lower
+}
+
+fn ascii_lower(bytes: ByteArray) -> ByteArray {
+  bytearray.foldr(
+    bytes,
+    "",
+    fn(byte, acc) {
+      bytearray.push(
+        acc,
+        if byte >= 65 && byte <= 90 {
+          byte + 32
+        } else {
+          byte
+        },
+      )
+    },
+  )
+}
+
+fn custom_metadata_datum(
+  name: ByteArray,
+  ticker: ByteArray,
+  description: ByteArray,
+  full_denom: ByteArray,
+  voucher_policy_id: PolicyId,
+  voucher_token_name: ByteArray,
+) -> Data {
+  let metadata_map =
+    builtin.map_data(
+      [
+        Pair(builtin.b_data("name"), builtin.b_data(name)),
+        Pair(builtin.b_data("ticker"), builtin.b_data(ticker)),
+        Pair(builtin.b_data("description"), builtin.b_data(description)),
+      ],
+    )
+  let extra_map =
+    builtin.map_data(
+      [
+        Pair(builtin.b_data("path"), builtin.b_data("port-99/channel-99")),
+        Pair(builtin.b_data("baseDenom"), builtin.b_data("ibc/usdt")),
+        Pair(builtin.b_data("fullDenom"), builtin.b_data(full_denom)),
+        Pair(
+          builtin.b_data("ibcDenomHash"),
+          builtin.b_data(crypto.sha2_256(full_denom) |> hex_ascii),
+        ),
+        Pair(builtin.b_data("traceVersion"), builtin.i_data(1)),
+        Pair(
+          builtin.b_data("voucherPolicyId"),
+          builtin.b_data(hex_ascii(voucher_policy_id)),
+        ),
+        Pair(
+          builtin.b_data("voucherTokenName"),
+          builtin.b_data(hex_ascii(voucher_token_name)),
+        ),
+      ],
+    )
+
+  builtin.constr_data(0, [metadata_map, builtin.i_data(1), extra_map])
+}
+
+fn first_seen_voucher_fixture(
+  metadata_output: Output,
+  mutation: fuzz_dsl.Mutation,
+) -> FirstSeenVoucherFixture {
+  let mock_data = prepare_mock_data()
+  let packet_source_port = "transfer"
+  let packet_source_channel = "channel-1"
+  let packet_dest_port = "port-99"
+  let packet_dest_channel = "channel-99"
+  let transfer_amount = 100
+  let receiver =
+    #"3532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232"
+  let ftpd =
+    FungibleTokenPacketData {
+      denom: "ibc/usdt",
+      amount: string.from_int(transfer_amount) |> string.to_bytearray(),
+      sender: "cosmos sender address",
+      receiver,
+      memo: "",
+    }
+  let mint_voucher_redeemer =
+    MintVoucher {
+      packet_source_port,
+      packet_source_channel,
+      packet_dest_port,
+      packet_dest_channel,
+      data: ftpd,
+    }
+  let source_prefix =
+    transfer_coin.get_denom_prefix(packet_dest_port, packet_dest_channel)
+  let prefixed_denom = bytearray.concat(source_prefix, ftpd.denom)
+  let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(prefixed_denom)
+  let token_name =
+    voucher_asset_name.voucher_user_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+  let reference_token_name =
+    voucher_asset_name.voucher_reference_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+  let bucket_index = bucket_index_for_hash(voucher_denom_hash)
+  let active_shard_name = "active-shard-0a"
+  let directory_input =
+    make_directory_input(
+      mock_data.directory_auth_token,
+      bucket_index,
+      active_shard_name,
+    )
+  let active_shard_input =
+    make_shard_spend_input(
+      mock_data.directory_auth_token.policy_id,
+      active_shard_name,
+      bucket_index,
+    )
+  let channel_input =
+    make_channel_input(
+      mock_data.channel_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
+      packet_dest_channel,
+    )
+  let channel_redeemer =
+    RecvPacket {
+      packet: make_packet(
+        packet_source_port,
+        packet_source_channel,
+        packet_dest_port,
+        packet_dest_channel,
+        fungible_token_packet_data.get_bytes(ftpd),
+      ),
+      proof_commitment: mock_proof(),
+      proof_height: Height { revision_number: 1, revision_height: 1 },
+    }
+  let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
+  let spend_module_redeemer_in_data: Redeemer =
+    Callback(
+      OnRecvPacket {
+        channel_id: packet_dest_channel,
+        acknowledgement: acknowledgement.new_result_acknowledgement(#[1]),
+        data: TransferModuleData(ftpd),
+      },
+    )
+  let spend_channel_redeemer_in_data: Redeemer = channel_redeemer
+  let trace_registry_redeemer_in_data: Redeemer =
+    InsertTrace { voucher_hash: voucher_denom_hash, full_denom: prefixed_denom }
+  let trace_registry_redeemer =
+    InsertTrace { voucher_hash: voucher_denom_hash, full_denom: prefixed_denom }
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(
+        Mint(mock_data.voucher_minting_policy_id),
+        mint_voucher_redeemer_in_data,
+      ),
+      Pair(
+        Spend(mock_data.module_input.output_reference),
+        spend_module_redeemer_in_data,
+      ),
+      Pair(
+        Spend(channel_input.output_reference),
+        spend_channel_redeemer_in_data,
+      ),
+      Pair(
+        Spend(active_shard_input.output_reference),
+        trace_registry_redeemer_in_data,
+      ),
+    ]
+  let mint =
+    from_asset(mock_data.voucher_minting_policy_id, token_name, transfer_amount)
+      |> assets.add(
+          mock_data.voucher_minting_policy_id,
+          reference_token_name,
+          1,
+        )
+
+  expect Some(receiver_public_key_hash) =
+    string_utils.hex_string_to_bytes(receiver)
+  let voucher_output =
+    Output {
+      address: from_verification_key(receiver_public_key_hash),
+      value: from_asset(
+        mock_data.voucher_minting_policy_id,
+        token_name,
+        transfer_amount,
+      ),
+      datum: NoDatum,
+      reference_script: None,
+    }
+  let updated_shard_output =
+    make_shard_output(
+      mock_data.directory_auth_token.policy_id,
+      active_shard_name,
+      bucket_index,
+      voucher_denom_hash,
+      prefixed_denom,
+    )
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock_data.module_input, channel_input, active_shard_input],
+      reference_inputs: [directory_input],
+      outputs: [voucher_output, metadata_output, updated_shard_output],
+      redeemers,
+      mint,
+    }
+
+  FirstSeenVoucherFixture {
+    mock_data,
+    redeemer: mint_voucher_redeemer,
+    transaction,
+    mutation,
+    trace_registry_datum: Shard(
+      TraceRegistryShardDatum { bucket_index, entries: [] },
+    ),
+    trace_registry_redeemer,
+    trace_registry_spent_output_ref: active_shard_input.output_reference,
+  }
+}
+
+fn canonical_first_seen_metadata_output() -> Output {
+  let mock_data = prepare_mock_data()
+  let full_denom = "port-99/channel-99/ibc/usdt"
+  let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(full_denom)
+  let token_name =
+    voucher_asset_name.voucher_user_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+  let reference_token_name =
+    voucher_asset_name.voucher_reference_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+
+  make_metadata_output(
+    mock_data.voucher_metadata_script_hash,
+    full_denom,
+    mock_data.voucher_minting_policy_id,
+    token_name,
+    reference_token_name,
+  )
+}
+
+fn mutated_first_seen_metadata_output(
+  metadata_datum: Data,
+  metadata_policy_id: PolicyId,
+  reference_token_name: ByteArray,
+) -> Output {
+  let mock_data = prepare_mock_data()
+
+  make_metadata_output_with_datum(
+    mock_data.voucher_metadata_script_hash,
+    metadata_policy_id,
+    reference_token_name,
+    metadata_datum,
+  )
+}
+
+fn run_first_seen_voucher_mint_transition(
+  fixture: FirstSeenVoucherFixture,
+) -> fuzz_dsl.ProtocolTxFixture {
+  fuzz_dsl.protocol_tx_from_transaction(
+    fuzz_dsl.model("voucher", "first_mint"),
+    fuzz_dsl.model("voucher", "first_mint.after"),
+    fixture.mutation,
+    fixture.transaction,
+  )
+    |> fuzz_dsl.with_protocol_validator_check(
+        "minting_voucher",
+        minting_voucher.mint_voucher.mint(
+          fixture.mock_data.module_token,
+          fixture.mock_data.directory_auth_token,
+          fixture.mock_data.voucher_metadata_script_hash,
+          fixture.mock_data.channel_minting_policy_id,
+          fixture.mock_data.host_state_nft_policy_id,
+          fixture.redeemer,
+          fixture.mock_data.voucher_minting_policy_id,
+          fixture.transaction,
+        ),
+      )
+}
+
+fn run_first_seen_voucher_mint_tx(
+  fixture: FirstSeenVoucherFixture,
+) -> fuzz_dsl.ProtocolTxFixture {
+  run_first_seen_voucher_mint_transition(fixture)
+    |> fuzz_dsl.with_protocol_validator_check(
+        "trace_registry",
+        trace_registry_validator.spend_trace_registry.spend(
+          fixture.mock_data.directory_auth_token.policy_id,
+          fixture.mock_data.directory_auth_token,
+          fixture.mock_data.voucher_minting_policy_id,
+          "",
+          Some(fixture.trace_registry_datum),
+          fixture.trace_registry_redeemer,
+          fixture.trace_registry_spent_output_ref,
+          fixture.transaction,
+        ),
+      )
+}
+
+fn first_seen_metadata_datum_with(
+  name: ByteArray,
+  ticker: ByteArray,
+  description: ByteArray,
+  full_denom: ByteArray,
+  voucher_policy_id: PolicyId,
+) -> Data {
+  let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(full_denom)
+  let token_name =
+    voucher_asset_name.voucher_user_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+
+  custom_metadata_datum(
+    name,
+    ticker,
+    description,
+    full_denom,
+    voucher_policy_id,
+    token_name,
+  )
+}
+
+test prop_voucher_first_mint_policy_accepts_valid_metadata(_seed via fuzz.int()) {
+  fuzz.label(@"regression.contract.voucher.first_mint.valid_metadata")
+
+  // First-seen voucher mint must create the canonical CIP-68 metadata output
+  // for the full denom trace and voucher policy.
+  first_seen_voucher_fixture(
+    canonical_first_seen_metadata_output(),
+    fuzz_dsl.no_mutation(),
+  )
+    |> run_first_seen_voucher_mint_transition
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_tx_first_seen_voucher_mint_couples_registry_append(
+  _seed via fuzz.int(),
+) {
+  fuzz.label(@"regression.tx.voucher.first_mint.valid_registry_coupled")
+  fuzz.label(@"regression.tx.packet.recv.valid_sink_mints_voucher")
+
+  // tx.* depth: voucher mint and trace-registry append are checked together so
+  // metadata cannot be minted without the matching denom trace entry.
+  first_seen_voucher_fixture(
+    canonical_first_seen_metadata_output(),
+    fuzz_dsl.no_mutation(),
+  )
+    |> run_first_seen_voucher_mint_tx
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_tx_first_seen_voucher_mint_rejects_wrong_metadata_registry_coupled(
+  _seed via fuzz.int(),
+) {
+  fuzz.label(
+    @"regression.tx.voucher.first_mint.invalid_wrong_metadata_registry_coupled",
+  )
+
+  // The trace-registry append still matches the minted denom, but the CIP-68
+  // metadata output tells a different human-readable story. The composed tx
+  // must fail through the voucher policy while the registry check remains
+  // tied to the same transaction.
+  let full_denom = "port-99/channel-99/ibc/usdt"
+  let metadata_datum =
+    first_seen_metadata_datum_with(
+      "usdt",
+      "usdt",
+      "not the real denom trace",
+      full_denom,
+      "mint voucher policy id",
+    )
+  let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(full_denom)
+  let reference_token_name =
+    voucher_asset_name.voucher_reference_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+
+  first_seen_voucher_fixture(
+    mutated_first_seen_metadata_output(
+      metadata_datum,
+      "mint voucher policy id",
+      reference_token_name,
+    ),
+    fuzz_dsl.mutation("wrong_metadata_registry_coupled"),
+  )
+    |> run_first_seen_voucher_mint_tx
+    |> fuzz_dsl.assert_protocol_rejected
+}
+
+test prop_voucher_first_mint_policy_rejects_wrong_name(_seed via fuzz.int()) {
+  fuzz.label(@"regression.contract.voucher.first_mint.invalid_wrong_name")
+
+  // Human-readable name must be derived from the same full denom as the token.
+  let full_denom = "port-99/channel-99/ibc/usdt"
+  let metadata_datum =
+    first_seen_metadata_datum_with(
+      "fake-usdt",
+      "usdt",
+      metadata_description(full_denom),
+      full_denom,
+      "mint voucher policy id",
+    )
+  let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(full_denom)
+  let reference_token_name =
+    voucher_asset_name.voucher_reference_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+
+  first_seen_voucher_fixture(
+    mutated_first_seen_metadata_output(
+      metadata_datum,
+      "mint voucher policy id",
+      reference_token_name,
+    ),
+    fuzz_dsl.mutation("wrong_name"),
+  )
+    |> run_first_seen_voucher_mint_transition
+    |> fuzz_dsl.assert_protocol_rejected
+}
+
+test prop_voucher_first_mint_policy_rejects_wrong_ticker(_seed via fuzz.int()) {
+  fuzz.label(@"regression.contract.voucher.first_mint.invalid_wrong_ticker")
+
+  // Ticker is also canonical; otherwise wallets could display a misleading
+  // asset symbol for a correctly named voucher.
+  let full_denom = "port-99/channel-99/ibc/usdt"
+  let metadata_datum =
+    first_seen_metadata_datum_with(
+      "usdt",
+      "FAKE",
+      metadata_description(full_denom),
+      full_denom,
+      "mint voucher policy id",
+    )
+  let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(full_denom)
+  let reference_token_name =
+    voucher_asset_name.voucher_reference_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+
+  first_seen_voucher_fixture(
+    mutated_first_seen_metadata_output(
+      metadata_datum,
+      "mint voucher policy id",
+      reference_token_name,
+    ),
+    fuzz_dsl.mutation("wrong_ticker"),
+  )
+    |> run_first_seen_voucher_mint_transition
+    |> fuzz_dsl.assert_protocol_rejected
+}
+
+test prop_voucher_first_mint_policy_rejects_wrong_description(
+  _seed via fuzz.int(),
+) {
+  fuzz.label(
+    @"regression.contract.voucher.first_mint.invalid_wrong_description",
+  )
+
+  // Description carries the denom trace. It must not tell a different route
+  // story than the actual voucher asset name.
+  let full_denom = "port-99/channel-99/ibc/usdt"
+  let metadata_datum =
+    first_seen_metadata_datum_with(
+      "usdt",
+      "usdt",
+      "not the real denom trace",
+      full_denom,
+      "mint voucher policy id",
+    )
+  let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(full_denom)
+  let reference_token_name =
+    voucher_asset_name.voucher_reference_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+
+  first_seen_voucher_fixture(
+    mutated_first_seen_metadata_output(
+      metadata_datum,
+      "mint voucher policy id",
+      reference_token_name,
+    ),
+    fuzz_dsl.mutation("wrong_description"),
+  )
+    |> run_first_seen_voucher_mint_transition
+    |> fuzz_dsl.assert_protocol_rejected
+}
+
+test prop_voucher_first_mint_policy_rejects_wrong_full_denom(
+  _seed via fuzz.int(),
+) {
+  fuzz.label(@"regression.contract.voucher.first_mint.invalid_wrong_full_denom")
+
+  // The metadata is internally consistent for the wrong denom, but the minted
+  // asset name is derived from the correct denom. That mismatch must fail.
+  let wrong_full_denom = "port-99/channel-404/ibc/usdt"
+  let correct_full_denom = "port-99/channel-99/ibc/usdt"
+  let metadata_datum =
+    first_seen_metadata_datum_with(
+      "usdt",
+      "usdt",
+      metadata_description(wrong_full_denom),
+      wrong_full_denom,
+      "mint voucher policy id",
+    )
+  let voucher_denom_hash =
+    voucher_asset_name.voucher_denom_hash(correct_full_denom)
+  let reference_token_name =
+    voucher_asset_name.voucher_reference_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+
+  first_seen_voucher_fixture(
+    mutated_first_seen_metadata_output(
+      metadata_datum,
+      "mint voucher policy id",
+      reference_token_name,
+    ),
+    fuzz_dsl.mutation("wrong_full_denom"),
+  )
+    |> run_first_seen_voucher_mint_transition
+    |> fuzz_dsl.assert_protocol_rejected
+}
+
+test prop_voucher_first_mint_policy_rejects_wrong_policy(_seed via fuzz.int()) {
+  fuzz.label(@"regression.contract.voucher.first_mint.invalid_wrong_policy")
+
+  // Metadata must name the policy that actually controls the voucher supply.
+  let full_denom = "port-99/channel-99/ibc/usdt"
+  let metadata_datum =
+    first_seen_metadata_datum_with(
+      "usdt",
+      "usdt",
+      metadata_description(full_denom),
+      full_denom,
+      "wrong voucher policy id",
+    )
+  let voucher_denom_hash = voucher_asset_name.voucher_denom_hash(full_denom)
+  let reference_token_name =
+    voucher_asset_name.voucher_reference_token_name_from_denom_hash(
+      voucher_denom_hash,
+    )
+
+  first_seen_voucher_fixture(
+    mutated_first_seen_metadata_output(
+      metadata_datum,
+      "mint voucher policy id",
+      reference_token_name,
+    ),
+    fuzz_dsl.mutation("wrong_policy"),
+  )
+    |> run_first_seen_voucher_mint_transition
+    |> fuzz_dsl.assert_protocol_rejected
+}
+
+test prop_voucher_first_mint_policy_rejects_wrong_reference_asset(
+  _seed via fuzz.int(),
+) {
+  fuzz.label(
+    @"regression.contract.voucher.first_mint.invalid_wrong_reference_asset",
+  )
+
+  // The CIP-68 reference NFT name is derived from the same denom hash as the
+  // user token. A wrong reference asset would let metadata attach to another
+  // denom.
+  let full_denom = "port-99/channel-99/ibc/usdt"
+  let wrong_full_denom = "port-99/channel-404/ibc/usdt"
+  let metadata_datum =
+    voucher_metadata.build_datum(
+      full_denom,
+      voucher_asset_name.voucher_user_token_name(full_denom),
+      "mint voucher policy id",
+    )
+  let wrong_reference_token_name =
+    voucher_asset_name.voucher_reference_token_name(wrong_full_denom)
+
+  first_seen_voucher_fixture(
+    mutated_first_seen_metadata_output(
+      metadata_datum,
+      "mint voucher policy id",
+      wrong_reference_token_name,
+    ),
+    fuzz_dsl.mutation("wrong_reference_asset"),
+  )
+    |> run_first_seen_voucher_mint_transition
+    |> fuzz_dsl.assert_protocol_rejected
 }
 
 test test_mint_voucher() {

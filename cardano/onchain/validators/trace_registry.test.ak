@@ -1,5 +1,6 @@
+use aiken/fuzz
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, add, from_asset}
+use cardano/assets.{PolicyId, Value, add, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, placeholder,
 }
@@ -10,6 +11,7 @@ use ibc/apps/transfer/trace_registry.{
 }
 use ibc/apps/transfer/voucher_asset_name
 use ibc/auth.{AuthToken}
+use ibc/testing/fuzz_dsl
 use trace_registry as trace_registry_validator
 
 fn test_shard_policy_id() -> PolicyId {
@@ -157,6 +159,320 @@ fn run_trace_registry_spend_with_benchmark(
     redeemer,
     spent_output_ref,
     transaction,
+  )
+}
+
+type TestInsertFixture {
+  full_denom: ByteArray,
+  voucher_hash: ByteArray,
+  bucket_index: Int,
+  wrong_bucket_index: Int,
+  shard_name: ByteArray,
+  archived_shard_name: ByteArray,
+  existing_entry: TraceRegistryEntry,
+  spent_input: Input,
+  directory_input: Input,
+  archived_shard_reference_input: Input,
+  updated_output: Output,
+  valid_mint: Value,
+}
+
+fn choose_insert_full_denom(seed: Int) -> ByteArray {
+  if seed % 3 == 0 {
+    "transfer/channel-7/uatom"
+  } else if seed % 3 == 1 {
+    "transfer/channel-22/uosmo"
+  } else {
+    "transfer/channel-144/factory/osmo1abcd/token"
+  }
+}
+
+fn test_insert_fixture(seed: Int) -> TestInsertFixture {
+  let full_denom = choose_insert_full_denom(seed)
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
+  let bucket_index = bucket_index_for_hash(voucher_hash)
+  let wrong_bucket_index = ( bucket_index + 1 ) % 16
+  let shard_name = "active-0a"
+  let archived_shard_name = "archived-0a"
+  let existing_entry = test_expected_entry(full_denom)
+  let spent_input =
+    Input {
+      output_reference: test_output_ref(0),
+      output: test_shard_output(bucket_index, shard_name, []),
+    }
+  let directory_input = test_directory_input(1, bucket_index, shard_name, [])
+  let archived_shard_reference_input =
+    Input {
+      output_reference: test_output_ref(2),
+      output: test_shard_output(
+        bucket_index,
+        archived_shard_name,
+        [existing_entry],
+      ),
+    }
+  let updated_output =
+    test_shard_output(bucket_index, shard_name, [existing_entry])
+  let valid_mint =
+    from_asset(
+      test_voucher_policy_id(),
+      voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+      1,
+    )
+
+  TestInsertFixture {
+    full_denom,
+    voucher_hash,
+    bucket_index,
+    wrong_bucket_index,
+    shard_name,
+    archived_shard_name,
+    existing_entry,
+    spent_input,
+    directory_input,
+    archived_shard_reference_input,
+    updated_output,
+    valid_mint,
+  }
+}
+
+fn test_insert_transaction(
+  spent_input: Input,
+  reference_inputs: List<Input>,
+  updated_output: Output,
+  mint: Value,
+) -> Transaction {
+  Transaction {
+    ..placeholder,
+    inputs: [spent_input],
+    reference_inputs,
+    outputs: [updated_output],
+    mint,
+  }
+}
+
+test prop_trace_registry_append_accepts_active_shard_insert(seed via fuzz.int()) {
+  fuzz.label(@"fuzz.contract.trace.append.valid")
+
+  // Happy path: spend the active shard for the hash bucket, append exactly one
+  // canonical trace entry, and mint the matching voucher.
+  let fixture = test_insert_fixture(seed)
+  let TestInsertFixture {
+    full_denom,
+    voucher_hash,
+    bucket_index,
+    spent_input,
+    directory_input,
+    updated_output,
+    valid_mint,
+    ..
+  } = fixture
+
+  fuzz_dsl.valid_check(
+    "trace",
+    "append",
+    "run_trace_registry_spend",
+    run_trace_registry_spend(
+      Shard(TraceRegistryShardDatum { bucket_index, entries: [] }),
+      InsertTrace { voucher_hash, full_denom },
+      test_output_ref(0),
+      test_insert_transaction(
+        spent_input,
+        [directory_input],
+        updated_output,
+        valid_mint,
+      ),
+    ),
+  )
+    |> fuzz_dsl.assert_valid
+}
+
+test prop_trace_registry_append_rejects_without_matching_voucher_mint(
+  seed via fuzz.int(),
+) fail {
+  fuzz.label(@"fuzz.contract.trace.append.invalid_missing_voucher_mint")
+
+  // Trace registry append is coupled to voucher minting. Without the matching
+  // voucher asset, a registry entry would let metadata claim unbacked supply.
+  let fixture = test_insert_fixture(seed)
+  let TestInsertFixture {
+    full_denom,
+    voucher_hash,
+    bucket_index,
+    spent_input,
+    directory_input,
+    updated_output,
+    ..
+  } = fixture
+
+  run_trace_registry_spend(
+    Shard(TraceRegistryShardDatum { bucket_index, entries: [] }),
+    InsertTrace { voucher_hash, full_denom },
+    test_output_ref(0),
+    test_insert_transaction(
+      spent_input,
+      [directory_input],
+      updated_output,
+      from_asset(test_voucher_policy_id(), "some-other-voucher", 1),
+    ),
+  )
+}
+
+test prop_trace_registry_append_rejects_wrong_bucket(seed via fuzz.int()) fail {
+  fuzz.label(@"fuzz.contract.trace.append.invalid_wrong_bucket")
+
+  // The entry is otherwise well-formed but placed in the wrong bucket. This
+  // protects lookup determinism for full-denom hash routing.
+  let fixture = test_insert_fixture(seed)
+  let TestInsertFixture {
+    full_denom,
+    voucher_hash,
+    wrong_bucket_index,
+    shard_name,
+    valid_mint,
+    ..
+  } = fixture
+  let spent_input =
+    Input {
+      output_reference: test_output_ref(0),
+      output: test_shard_output(wrong_bucket_index, shard_name, []),
+    }
+  let updated_output =
+    test_shard_output(
+      wrong_bucket_index,
+      shard_name,
+      [test_expected_entry(full_denom)],
+    )
+  let directory_input =
+    test_directory_input(1, wrong_bucket_index, shard_name, [])
+
+  run_trace_registry_spend(
+    Shard(
+      TraceRegistryShardDatum { bucket_index: wrong_bucket_index, entries: [] },
+    ),
+    InsertTrace { voucher_hash, full_denom },
+    test_output_ref(0),
+    test_insert_transaction(
+      spent_input,
+      [directory_input],
+      updated_output,
+      valid_mint,
+    ),
+  )
+}
+
+test prop_trace_registry_append_rejects_duplicate_active_hash(
+  seed via fuzz.int(),
+) fail {
+  fuzz.label(@"fuzz.contract.trace.append.invalid_duplicate_active_hash")
+
+  // Active-shard duplicate detection must reject the same full-denom hash even
+  // when the appended entry is canonical.
+  let fixture = test_insert_fixture(seed)
+  let TestInsertFixture {
+    full_denom,
+    voucher_hash,
+    bucket_index,
+    shard_name,
+    existing_entry,
+    directory_input,
+    valid_mint,
+    ..
+  } = fixture
+  let spent_input =
+    Input {
+      output_reference: test_output_ref(0),
+      output: test_shard_output(bucket_index, shard_name, [existing_entry]),
+    }
+  let updated_output =
+    test_shard_output(
+      bucket_index,
+      shard_name,
+      [existing_entry, test_expected_entry(full_denom)],
+    )
+
+  run_trace_registry_spend(
+    Shard(TraceRegistryShardDatum { bucket_index, entries: [existing_entry] }),
+    InsertTrace { voucher_hash, full_denom },
+    test_output_ref(0),
+    test_insert_transaction(
+      spent_input,
+      [directory_input],
+      updated_output,
+      valid_mint,
+    ),
+  )
+}
+
+test prop_trace_registry_append_rejects_duplicate_archived_hash(
+  seed via fuzz.int(),
+) fail {
+  fuzz.label(@"fuzz.contract.trace.append.invalid_duplicate_archived_hash")
+
+  // Archived shards are immutable lookup history, but they still participate in
+  // duplicate detection for newly appended traces.
+  let fixture = test_insert_fixture(seed)
+  let TestInsertFixture {
+    full_denom,
+    voucher_hash,
+    bucket_index,
+    shard_name,
+    archived_shard_name,
+    spent_input,
+    archived_shard_reference_input,
+    updated_output,
+    valid_mint,
+    ..
+  } = fixture
+  let directory_input =
+    test_directory_input(1, bucket_index, shard_name, [archived_shard_name])
+
+  run_trace_registry_spend(
+    Shard(TraceRegistryShardDatum { bucket_index, entries: [] }),
+    InsertTrace { voucher_hash, full_denom },
+    test_output_ref(0),
+    test_insert_transaction(
+      spent_input,
+      [directory_input, archived_shard_reference_input],
+      updated_output,
+      valid_mint,
+    ),
+  )
+}
+
+test prop_trace_registry_append_rejects_inactive_shard(seed via fuzz.int()) fail {
+  fuzz.label(@"fuzz.contract.trace.append.invalid_inactive_shard")
+
+  // Only the directory's active shard can be spent for append. Spending an
+  // archived shard would allow mutation of finalized registry history.
+  let fixture = test_insert_fixture(seed)
+  let TestInsertFixture {
+    full_denom,
+    voucher_hash,
+    bucket_index,
+    shard_name,
+    archived_shard_name,
+    updated_output,
+    valid_mint,
+    ..
+  } = fixture
+  let spent_input =
+    Input {
+      output_reference: test_output_ref(0),
+      output: test_shard_output(bucket_index, archived_shard_name, []),
+    }
+  let directory_input =
+    test_directory_input(1, bucket_index, shard_name, [archived_shard_name])
+
+  run_trace_registry_spend(
+    Shard(TraceRegistryShardDatum { bucket_index, entries: [] }),
+    InsertTrace { voucher_hash, full_denom },
+    test_output_ref(0),
+    test_insert_transaction(
+      spent_input,
+      [directory_input],
+      updated_output,
+      valid_mint,
+    ),
   )
 }
 
