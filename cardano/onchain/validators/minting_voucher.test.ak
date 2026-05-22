@@ -666,8 +666,8 @@ test prop_voucher_first_mint_policy_accepts_valid_metadata(_seed via fuzz.int())
 test prop_tx_first_seen_voucher_mint_couples_registry_append(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"fuzz.tx.voucher.first_mint.valid_registry_coupled")
-  fuzz.label(@"fuzz.tx.packet.recv.valid_sink_mints_voucher")
+  fuzz.label(@"regression.tx.voucher.first_mint.valid_registry_coupled")
+  fuzz.label(@"regression.tx.packet.recv.valid_sink_mints_voucher")
 
   // tx.* depth: voucher mint and trace-registry append are checked together so
   // metadata cannot be minted without the matching denom trace entry.
@@ -683,7 +683,7 @@ test prop_tx_first_seen_voucher_mint_rejects_wrong_metadata_registry_coupled(
   _seed via fuzz.int(),
 ) {
   fuzz.label(
-    @"fuzz.tx.voucher.first_mint.invalid_wrong_metadata_registry_coupled",
+    @"regression.tx.voucher.first_mint.invalid_wrong_metadata_registry_coupled",
   )
 
   // The trace-registry append still matches the minted denom, but the CIP-68
@@ -783,7 +783,9 @@ test prop_voucher_first_mint_policy_rejects_wrong_ticker(_seed via fuzz.int()) {
 test prop_voucher_first_mint_policy_rejects_wrong_description(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"fuzz.contract.voucher.first_mint.invalid_wrong_description")
+  fuzz.label(
+    @"regression.contract.voucher.first_mint.invalid_wrong_description",
+  )
 
   // Description carries the denom trace. It must not tell a different route
   // story than the actual voucher asset name.
@@ -817,7 +819,7 @@ test prop_voucher_first_mint_policy_rejects_wrong_description(
 test prop_voucher_first_mint_policy_rejects_wrong_full_denom(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"fuzz.contract.voucher.first_mint.invalid_wrong_full_denom")
+  fuzz.label(@"regression.contract.voucher.first_mint.invalid_wrong_full_denom")
 
   // The metadata is internally consistent for the wrong denom, but the minted
   // asset name is derived from the correct denom. That mismatch must fail.
@@ -884,7 +886,9 @@ test prop_voucher_first_mint_policy_rejects_wrong_policy(_seed via fuzz.int()) {
 test prop_voucher_first_mint_policy_rejects_wrong_reference_asset(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"fuzz.contract.voucher.first_mint.invalid_wrong_reference_asset")
+  fuzz.label(
+    @"regression.contract.voucher.first_mint.invalid_wrong_reference_asset",
+  )
 
   // The CIP-68 reference NFT name is derived from the same denom hash as the
   // user token. A wrong reference asset would let metadata attach to another

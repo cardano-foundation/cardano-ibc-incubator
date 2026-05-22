@@ -616,7 +616,7 @@ fn send_packet_spending_channel_tx_missing_marker() -> fuzz_dsl.ProtocolTxFixtur
 test prop_tx_packet_send_spending_channel_accepts_host_marker(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"fuzz.tx.packet.send.valid_channel_host_marker")
+  fuzz.label(@"regression.tx.packet.send.valid_channel_host_marker")
 
   // This is intentionally tx.* depth: it composes the channel spend with the
   // HostState co-spend and SendPacket operation marker instead of only checking
@@ -628,7 +628,7 @@ test prop_tx_packet_send_spending_channel_accepts_host_marker(
 test prop_tx_packet_send_rejects_missing_operation_marker(
   _seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"fuzz.tx.packet.send.invalid_missing_operation_marker")
+  fuzz.label(@"regression.tx.packet.send.invalid_missing_operation_marker")
 
   // tx.* depth for the channel side: the channel spend sees the HostState
   // co-spend redeemer, module co-spend redeemer, and marker mint together. The

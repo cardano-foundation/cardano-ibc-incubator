@@ -455,7 +455,7 @@ test prop_tx_conn_open_try_accepts_valid_full_transition(_seed via fuzz.int()) {
 test prop_conn_open_try_rejects_wrong_counterparty_client_state(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"fuzz.tx.conn.open_try.invalid_wrong_client_state_proof")
+  fuzz.label(@"regression.tx.conn.open_try.invalid_wrong_client_state_proof")
 
   // Near-valid ConnOpenTry: the local connection datum and proof plumbing are
   // valid, but the counterparty client state bytes differ from the proof value.

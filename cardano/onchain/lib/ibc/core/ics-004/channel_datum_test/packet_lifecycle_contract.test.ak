@@ -621,7 +621,9 @@ test prop_packet_send_rejects_wrong_sequence(_seed via fuzz.int()) {
 test prop_packet_send_rejects_missing_commitment_root_update(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"fuzz.unit.packet.send.invalid_missing_commitment_root_update")
+  fuzz.label(
+    @"regression.unit.packet.send.invalid_missing_commitment_root_update",
+  )
 
   // The channel-side send transition is valid-looking, but the output channel
   // datum does not commit the packet. Full HostState root coupling belongs in

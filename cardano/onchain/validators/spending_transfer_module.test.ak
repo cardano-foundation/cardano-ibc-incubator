@@ -1055,7 +1055,9 @@ fn voucher_error_ack_refund_fixture(
 test prop_transfer_module_native_send_escrow_increases_exactly(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"fuzz.contract.transfer.native_send.escrow_increases_exactly")
+  fuzz.label(
+    @"regression.contract.transfer.native_send.escrow_increases_exactly",
+  )
 
   // Native SendPacket should move exactly the sent amount into escrow. This is
   // the positive baseline that the value-delta mutations below deviate from.
@@ -1066,7 +1068,9 @@ test prop_transfer_module_native_send_escrow_increases_exactly(
 test prop_transfer_module_native_send_rejects_wrong_escrow_delta(
   _seed via fuzz.int(),
 ) fail {
-  fuzz.label(@"fuzz.contract.transfer.invalid_wrong_escrow_delta_rejected")
+  fuzz.label(
+    @"regression.contract.transfer.invalid_wrong_escrow_delta_rejected",
+  )
 
   // One-lovelace-short escrow is near-valid enough to exercise the same path,
   // but it must fail because transfer accounting is exact, not lower-bound.
@@ -1094,7 +1098,7 @@ test prop_transfer_module_native_timeout_rejects_wrong_refund_amount(
   _seed via fuzz.int(),
 ) fail {
   fuzz.label(
-    @"fuzz.contract.transfer.invalid_wrong_native_refund_amount_rejected",
+    @"regression.contract.transfer.invalid_wrong_native_refund_amount_rejected",
   )
 
   // Wrong refund amount is a fund-moving bug class; the mutation keeps the rest
@@ -1135,7 +1139,7 @@ test prop_transfer_module_recv_sink_mints_voucher_exactly(_seed via fuzz.int()) 
 test prop_transfer_module_voucher_error_ack_remints_exactly(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(@"fuzz.contract.transfer.voucher_error_ack.remints_exactly")
+  fuzz.label(@"regression.contract.transfer.voucher_error_ack.remints_exactly")
 
   // Error ack reverses a voucher send by reminting the burned voucher amount.
   voucher_error_ack_refund_fixture(fuzz_dsl.no_mutation())
