@@ -208,7 +208,7 @@ fn test_host_input(state: HostState) -> Input {
     Output {
       address: Address(Script(test_host_script_hash()), None),
       value: from_asset(nft_policy, host_state_token_name, 1),
-      datum: InlineDatum(HostStateDatum { state, nft_policy }),
+      datum: InlineDatum(test_host_state_datum(state, nft_policy)),
       reference_script: None,
     },
   )
@@ -219,7 +219,7 @@ fn test_host_output(state: HostState) -> Output {
   Output {
     address: Address(Script(test_host_script_hash()), None),
     value: from_asset(nft_policy, host_state_token_name, 1),
-    datum: InlineDatum(HostStateDatum { state, nft_policy }),
+    datum: InlineDatum(test_host_state_datum(state, nft_policy)),
     reference_script: None,
   }
 }
