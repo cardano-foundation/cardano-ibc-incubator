@@ -70,6 +70,8 @@ export async function encodeClientDatum(
   const ClientDatumStateSchema = Data.Object({
     clientState: ClientStateSchema,
     consensusStates: Data.Map(HeightSchema, ConsensusStateSchema),
+    processedTimes: Data.Map(HeightSchema, Data.Integer()),
+    processedHeights: Data.Map(HeightSchema, Data.Integer()),
   });
   const ClientDatumSchema = Data.Object({
     state: ClientDatumStateSchema,
@@ -145,6 +147,8 @@ export async function decodeClientDatum(
   const ClientDatumStateSchema = Data.Object({
     clientState: ClientStateSchema,
     consensusStates: Data.Map(HeightSchema, ConsensusStateSchema),
+    processedTimes: Data.Map(HeightSchema, Data.Integer()),
+    processedHeights: Data.Map(HeightSchema, Data.Integer()),
   });
   const ClientDatumSchema = Data.Object({
     state: ClientDatumStateSchema,

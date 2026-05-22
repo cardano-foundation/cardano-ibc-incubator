@@ -1,3 +1,6 @@
+use aiken/collection/list
+use aiken/collection/pairs
+use aiken/interval
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{Transaction, placeholder}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatumState}
@@ -36,7 +39,11 @@ type MockData {
 }
 
 fn proof_marker_tx(policy_id: PolicyId) -> Transaction {
-  Transaction { ..placeholder, mint: from_asset(policy_id, "", 1) }
+  Transaction {
+    ..placeholder,
+    mint: from_asset(policy_id, "", 1),
+    validity_range: interval.after(0),
+  }
 }
 
 fn setup() -> MockData {
@@ -115,6 +122,8 @@ fn setup() -> MockData {
     ClientDatumState {
       client_state,
       consensus_states: [Pair(init_height, cons_state)],
+      processed_times: [Pair(init_height, 0)],
+      processed_heights: [Pair(init_height, 0)],
     }
 
   //========================Connection==============================
@@ -161,6 +170,14 @@ fn insert_proof_cons_state(
   ClientDatumState {
     ..client_datum_state,
     consensus_states: updated_cons_states,
+    processed_times: list.map(
+      updated_cons_states,
+      fn(pair) { Pair(pair.1st, 0) },
+    ),
+    processed_heights: list.map(
+      updated_cons_states,
+      fn(pair) { Pair(pair.1st, 0) },
+    ),
   }
 }
 
@@ -307,10 +324,41 @@ test verify_non_membership_succeed() {
       cs: client_datum_state.client_state,
       cons_state: proof_cons_state,
       height: mock.proof_height,
+      processed_time: 0,
+      processed_height: 0,
       delay_time_period: 0,
       delay_block_period: 0,
       proof: proof_unreceived,
       path: merkle_path,
+    }
+
+  verifying_proof.verify_proof.mint(
+    redeemer,
+    #"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663",
+    proof_marker_tx(#"2aa9c1557fcf8e7caa049fa0911a8724a1cdaf8037fe0b431c6ac663"),
+  )
+}
+
+test verify_membership_fails_when_delay_time_period_is_nonzero() fail {
+  let mock = setup()
+  expect Some(cons_state) =
+    pairs.get_first(
+      mock.client_datum_state.consensus_states,
+      Height { revision_number: 1, revision_height: 13 },
+    )
+
+  let redeemer =
+    VerifyMembership {
+      cs: mock.client_datum_state.client_state,
+      cons_state,
+      height: mock.proof_height,
+      processed_time: 0,
+      processed_height: 0,
+      delay_time_period: 1,
+      delay_block_period: 0,
+      proof: MerkleProof { proofs: [] },
+      path: MerklePath { key_path: [] },
+      value: #"",
     }
 
   verifying_proof.verify_proof.mint(
@@ -467,6 +515,8 @@ test verify_membership_succeed() {
       cs: client_datum_state.client_state,
       cons_state: proof_cons_state,
       height: mock.proof_height,
+      processed_time: 0,
+      processed_height: 0,
       delay_time_period: 0,
       delay_block_period: 0,
       proof: proof_commitment,
@@ -628,6 +678,8 @@ test batch_verify_membership_succeed() {
       cs: client_datum_state.client_state,
       cons_state: proof_cons_state,
       height: mock.proof_height,
+      processed_time: 0,
+      processed_height: 0,
       delay_time_period: 0,
       delay_block_period: 0,
       proof: proof_commitment,
@@ -705,6 +757,8 @@ test try_non_mock_data() {
         },
       },
       height: Height { revision_height: 3307, revision_number: 0 },
+      processed_time: 0,
+      processed_height: 0,
       delay_time_period: 0,
       delay_block_period: 0,
       proof: MerkleProof {

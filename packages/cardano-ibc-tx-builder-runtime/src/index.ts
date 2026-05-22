@@ -4,8 +4,11 @@ import { buildUnsignedSendPacketTx, type SendPacketOperator } from '@cardano-ibc
 import { createTraceRegistryClient } from '@cardano-ibc/trace-registry';
 import { blake2b } from '@noble/hashes/blake2b';
 import WebSocket from 'ws';
+import { AsyncMutex } from './asyncMutex';
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, initTreeServices, isTreeAligned, rebuildTreeFromChain } from './ibcStateRoot';
 import { LucidIbcAdapter } from './lucidIbcAdapter';
+
+export { AsyncMutex } from './asyncMutex';
 
 const LOOKUP_RETRY_OPTIONS = {
   maxAttempts: 6,
@@ -1167,26 +1170,6 @@ async function computeTxValidityWindow(context: BuilderContext) {
     validToSlot,
     validToTime,
   };
-}
-
-class AsyncMutex {
-  private tail: Promise<void> = Promise.resolve();
-
-  async runExclusive<T>(operation: () => Promise<T>): Promise<T> {
-    let release!: () => void;
-    const previous = this.tail;
-    this.tail = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-
-    await previous;
-
-    try {
-      return await operation();
-    } finally {
-      release();
-    }
-  }
 }
 
 export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {

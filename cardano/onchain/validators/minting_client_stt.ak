@@ -91,6 +91,19 @@ validator mint_client_stt(
         |> client_datum.is_initialized_valid(client_token)
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
+    let tx_valid_from = validator_utils.get_tx_valid_from(validity_range)
+    let processed_time = tx_valid_from * 1_000_000
+    let processed_height =
+      client_datum.processed_height_from_time(processed_time)
+    let latest_height =
+      client_state.get_latest_height(client_output_datum.state.client_state)
+    expect Some(datum_processed_time) =
+      pairs.get_first(client_output_datum.state.processed_times, latest_height)
+    expect Some(datum_processed_height) =
+      pairs.get_first(
+        client_output_datum.state.processed_heights,
+        latest_height,
+      )
     let is_state_active =
       client_state.status(
         client_output_datum.state.client_state,
@@ -102,6 +115,8 @@ validator mint_client_stt(
       auth.mint_auth_token(mint, client_token)?,
       auth.contains_only_auth_tokens(client_output, [client_token])?,
       valid_output_datum?,
+      datum_processed_time == processed_time,
+      datum_processed_height == processed_height,
       is_state_active?,
       spent_host_state_for_create_client(redeemers, host_state_input)?,
     }

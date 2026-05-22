@@ -1,5 +1,6 @@
 import { credentialToAddress, type LucidEvolution, type TxBuilder, type UTxO } from '@lucid-evolution/lucid';
 import { sha3_256 } from 'js-sha3';
+import { acknowledgementSchema } from './acknowledgementCodec';
 
 const CHANNEL_TOKEN_PREFIX = '6368616e6e656c'; // fromText('channel')
 const CLIENT_PREFIX = '6962635f636c69656e74'; // fromText('ibc_client')
@@ -212,6 +213,8 @@ async function decodeClientDatum(
   const ClientDatumStateSchema = Data.Object({
     clientState: ClientStateSchema,
     consensusStates: Data.Map(HeightSchema, ConsensusStateSchema),
+    processedTimes: Data.Map(HeightSchema, Data.Integer()),
+    processedHeights: Data.Map(HeightSchema, Data.Integer()),
   });
   const ClientDatumSchema = Data.Object({
     state: ClientDatumStateSchema,
@@ -691,21 +694,7 @@ async function encodeIbcModuleRedeemer(
     receiver: Data.Bytes(),
     memo: Data.Bytes(),
   });
-  const AcknowledgementResponseSchema = Data.Enum([
-    Data.Object({
-      AcknowledgementResult: Data.Object({
-        result: Data.Bytes(),
-      }),
-    }),
-    Data.Object({
-      AcknowledgementError: Data.Object({
-        err: Data.Bytes(),
-      }),
-    }),
-  ]);
-  const AcknowledgementSchema = Data.Object({
-    response: AcknowledgementResponseSchema,
-  });
+  const AcknowledgementSchema = acknowledgementSchema(Lucid);
   const IBCModulePacketData = Data.Enum([
     Data.Object({
       TransferModuleData: Data.Tuple([FungibleTokenPacketDatumSchema]),
@@ -800,18 +789,7 @@ function encodeMintVoucherRedeemer(
         packet_source_port: Data.Bytes(),
         packet_source_channel: Data.Bytes(),
         data: FungibleTokenPacketDatumSchema,
-        acknowledgement: Data.Nullable(
-          Data.Object({
-            response: Data.Enum([
-              Data.Object({
-                AcknowledgementResult: Data.Object({ result: Data.Bytes() }),
-              }),
-              Data.Object({
-                AcknowledgementError: Data.Object({ err: Data.Bytes() }),
-              }),
-            ]),
-          }),
-        ),
+        acknowledgement: Data.Nullable(acknowledgementSchema(Lucid)),
       }),
     }),
   ]);

@@ -30,8 +30,8 @@ function checkRelayerSubmodule() {
     fail(`relayer submodule URL must stay on cardano-foundation/hermes-relayer.git; found ${url ?? 'missing'}`);
   }
 
-  if (branch !== 'feat/cardano-integration') {
-    fail(`relayer submodule branch must stay on feat/cardano-integration; found ${branch ?? 'missing'}`);
+  if (branch !== 'master') {
+    fail(`relayer submodule branch must stay on master; found ${branch ?? 'missing'}`);
   }
 
   const treeEntry = execFileSync('git', ['ls-tree', 'HEAD', 'relayer'], {

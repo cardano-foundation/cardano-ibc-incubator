@@ -22,6 +22,18 @@ import { ConnectionOpenAckOperator } from '../dto/connection/connection-open-ack
 import { decodeMerkleProof } from './helper';
 import { ConnectionOpenConfirmOperator } from '../dto/connection/connection-open-confirm-operator.dto';
 
+function parseDelayPeriod(delayPeriod: bigint | number | string | undefined | null): bigint {
+  try {
+    const parsed = delayPeriod == null ? 0n : BigInt(delayPeriod);
+    if (parsed < 0n) {
+      throw new Error('negative delay_period');
+    }
+    return parsed;
+  } catch {
+    throw new GrpcInvalidArgumentException('Invalid argument: "delay_period" must be an unsigned integer');
+  }
+}
+
 export function validateAndFormatConnectionOpenInitParams(data: MsgConnectionOpenInit): {
   constructedAddress: string;
   connectionOpenInitOperator: ConnectionOpenInitOperator;
@@ -44,6 +56,7 @@ export function validateAndFormatConnectionOpenInitParams(data: MsgConnectionOpe
         features: [DEFAULT_FEATURES_VERSION_ORDER_ORDERED, DEFAULT_FEATURES_VERSION_ORDER_UNORDERED],
       },
     ],
+    delayPeriod: parseDelayPeriod(data.delay_period),
     counterparty: {
       client_id: convertString2Hex(data.counterparty.client_id),
       connection_id: data.counterparty.connection_id || '',
@@ -86,6 +99,7 @@ export function validateAndFormatConnectionOpenTryParams(data: MsgConnectionOpen
         features: [DEFAULT_FEATURES_VERSION_ORDER_ORDERED, DEFAULT_FEATURES_VERSION_ORDER_UNORDERED],
       },
     ],
+    delayPeriod: parseDelayPeriod(data.delay_period),
     counterpartyClientState: clientStateAnyHex,
     proofInit: initializeMerkleProof(decodedProofInitMsg),
     proofClient: initializeMerkleProof(decodedProofClientMsg),

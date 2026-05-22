@@ -12,6 +12,7 @@ on:
       - "packages/cardano-ibc-tx-builder/**"
       - "packages/cardano-ibc-tx-builder-runtime/**"
       - "proto-types/**"
+      - "manifests/**"
   push:
     branches: [main]
     tags: ["v*.*.*"]
@@ -24,6 +25,7 @@ on:
       - "packages/cardano-ibc-tx-builder/**"
       - "packages/cardano-ibc-tx-builder-runtime/**"
       - "proto-types/**"
+      - "manifests/**"
   workflow_dispatch:
 
 permissions:
@@ -40,6 +42,7 @@ env:
 jobs:
   gateway-image:
     name: Build and publish Gateway image
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -101,11 +104,28 @@ jobs:
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           notes_file="${RUNNER_TEMP}/gateway-release-notes.md"
+          manifests_archive="${RUNNER_TEMP}/cardano-gateway-manifests-${IMAGE_TAG}.tar.gz"
+          tar -czf "${manifests_archive}" manifests
+
           cat > "${notes_file}" <<EOF
           Published Cardano Gateway container image:
 
           - \`${IMAGE_NAME}:${IMAGE_TAG}\`
           - \`${IMAGE_NAME}@${IMAGE_DIGEST}\`
+
+          The image includes tracked bridge manifests at:
+
+          - \`/usr/src/app/manifests\`
+
+          For example, a preprod Gateway can be started with:
+
+          \`\`\`bash
+          BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preprod/cardano-preprod-bridge-manifest.json
+          \`\`\`
+
+          The tracked manifests are also attached to this release as:
+
+          - \`cardano-gateway-manifests-${IMAGE_TAG}.tar.gz\`
 
           Pull with:
 
@@ -124,3 +144,5 @@ jobs:
               --title "${IMAGE_TAG}" \
               --notes-file "${notes_file}"
           fi
+
+          gh release upload "${IMAGE_TAG}" "${manifests_archive}" --clobber

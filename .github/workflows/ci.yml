@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -21,8 +22,54 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  docs-branch-guard:
+    name: Docs Branch Guard
+    if: ${{ github.event_name == 'pull_request' && startsWith(github.head_ref, 'docs/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check docs-only changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          mapfile -t changed_files < <(
+            gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" \
+              --paginate \
+              --jq '.[].filename'
+          )
+
+          if [ "${#changed_files[@]}" -eq 0 ]; then
+            echo "No changed files found for docs branch PR ${PR_NUMBER}."
+            exit 1
+          fi
+
+          non_docs_files=()
+          for file in "${changed_files[@]}"; do
+            case "${file}" in
+              *.md|*.mdx|*.txt|*.rst|*.adoc|*.asciidoc|LICENSE|NOTICE|AUTHORS)
+                ;;
+              docs/*.png|docs/*.jpg|docs/*.jpeg|docs/*.gif|docs/*.webp|docs/*.svg)
+                ;;
+              *)
+                non_docs_files+=("${file}")
+                ;;
+            esac
+          done
+
+          if [ "${#non_docs_files[@]}" -gt 0 ]; then
+            echo "Branches named docs/... may only edit documentation files."
+            printf 'Non-documentation file: %s\n' "${non_docs_files[@]}"
+            exit 1
+          fi
+
+          printf 'Documentation file: %s\n' "${changed_files[@]}"
+
   repo-invariants:
     name: Repository Invariants
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -40,6 +87,7 @@ jobs:
 
   quality-ratchets:
     name: Quality Ratchets
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -63,6 +111,7 @@ jobs:
 
   gateway:
     name: Cardano Gateway
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -123,6 +172,7 @@ jobs:
 
   proto-types:
     name: Proto Types
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -148,6 +198,7 @@ jobs:
 
   typescript-packages:
     name: TypeScript Packages
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -170,25 +221,30 @@ jobs:
         run: |
           npm ci --prefix packages/cardano-ibc-planner
           npm run --prefix packages/cardano-ibc-planner build
+          npm test --prefix packages/cardano-ibc-planner
 
       - name: Build tx builder
         run: |
           npm ci --prefix packages/cardano-ibc-tx-builder --legacy-peer-deps
           npm run --prefix packages/cardano-ibc-tx-builder build
+          npm test --prefix packages/cardano-ibc-tx-builder
           npm prune --omit=dev --prefix packages/cardano-ibc-tx-builder
 
       - name: Build trace registry
         run: |
           npm ci --prefix packages/cardano-ibc-trace-registry --legacy-peer-deps
           npm run --prefix packages/cardano-ibc-trace-registry build
+          npm test --prefix packages/cardano-ibc-trace-registry
 
       - name: Build tx builder runtime
         run: |
           npm ci --prefix packages/cardano-ibc-tx-builder-runtime --legacy-peer-deps
           npm run --prefix packages/cardano-ibc-tx-builder-runtime build
+          npm test --prefix packages/cardano-ibc-tx-builder-runtime
 
   deno-offchain:
     name: Cardano Offchain Deno
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -224,6 +280,7 @@ jobs:
 
   aiken:
     name: Cardano Onchain Aiken
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -249,8 +306,52 @@ jobs:
       - name: Check and test
         run: aiken check --deny
 
+  tx-budgets:
+    name: Cardano Tx Budgets
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cardano/gateway/package-lock.json
+
+      - name: Setup Aiken
+        uses: aiken-lang/setup-aiken@v1
+        with:
+          version: v1.1.21
+
+      - name: Build Aiken blueprint
+        working-directory: cardano/onchain
+        run: aiken build --deny
+
+      - name: Collect Aiken execution units
+        working-directory: cardano/onchain
+        run: aiken check --deny --plain-numbers > ../../aiken-check.json
+
+      - name: Install gateway dependencies
+        run: npm ci --prefix cardano/gateway --legacy-peer-deps
+
+      - name: Check transaction size and ex-unit budgets
+        env:
+          CARDANO_TX_BUDGET_MAX_TX_SIZE: 16384
+          CARDANO_TX_BUDGET_HEADROOM_BYTES: 750
+          CARDANO_TX_BUDGET_MAX_TX_EX_MEM: 140000000
+          CARDANO_TX_BUDGET_MAX_TX_EX_STEPS: 100000000000
+          CARDANO_TX_BUDGET_EX_UNIT_HEADROOM_BPS: 500
+          CARDANO_TX_BUDGET_AIKEN_CHECK_JSON: ../../aiken-check.json
+        run: npm run --prefix cardano/gateway check:tx-budgets
+
   generated-artifacts:
     name: Generated Artifacts
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -284,6 +385,7 @@ jobs:
 
   go:
     name: Go (${{ matrix.module.name }})
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -328,6 +430,7 @@ jobs:
 
   light-client-parity:
     name: Light Client Parity
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -345,6 +448,7 @@ jobs:
 
   rust:
     name: Rust
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -399,3 +503,45 @@ jobs:
 
       - name: Test
         run: cargo test --manifest-path caribic/Cargo.toml --locked
+
+  hermes-relayer:
+    name: Hermes Relayer
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            relayer/target
+          key: ${{ runner.os }}-cargo-hermes-relayer-${{ hashFiles('relayer/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-hermes-relayer-
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path relayer/Cargo.toml --all -- --check
+
+      - name: Lint
+        run: cargo clippy --manifest-path relayer/Cargo.toml -p ibc-relayer --lib --tests -- -D warnings
+
+      - name: Test
+        run: cargo test --manifest-path relayer/Cargo.toml -p ibc-relayer --lib --locked -- --test-threads=1
