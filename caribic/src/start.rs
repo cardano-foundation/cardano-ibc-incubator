@@ -1040,6 +1040,8 @@ pub async fn deploy_contracts(
         &optional_progress_bar,
     );
 
+    ensure_gateway_dependencies(gateway_dir.as_path(), &optional_progress_bar)?;
+
     let export_result = execute_script(
         gateway_dir.as_path(),
         "npm",
@@ -1433,6 +1435,9 @@ pub async fn deploy_preprod_bridge(
                 ("CARDANO_CHAIN_NETWORK_MAGIC", network_magic.as_str()),
                 ("CARDANO_NETWORK", "preprod"),
             ];
+
+            ensure_gateway_dependencies(gateway_dir.as_path(), &optional_progress_bar)?;
+
             let export_result = execute_script(
                 gateway_dir.as_path(),
                 "npm",
@@ -1660,6 +1665,9 @@ pub async fn deploy_preprod_bridge(
         ("CARDANO_CHAIN_NETWORK_MAGIC", network_magic.as_str()),
         ("CARDANO_NETWORK", "preprod"),
     ];
+
+    ensure_gateway_dependencies(gateway_dir.as_path(), &optional_progress_bar)?;
+
     let export_result = execute_script(
         gateway_dir.as_path(),
         "npm",
@@ -2555,6 +2563,93 @@ fn wait_for_mithril_artifact_readiness(
     ))
 }
 
+fn ensure_gateway_dependencies(
+    gateway_dir: &Path,
+    optional_progress_bar: &Option<ProgressBar>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if gateway_dir.join("node_modules/.bin/ts-node").exists() {
+        return Ok(());
+    }
+
+    log_or_show_progress(
+        "Installing gateway npm dependencies (first run only)",
+        optional_progress_bar,
+    );
+
+    let lockfile_present = gateway_dir.join("package-lock.json").exists();
+
+    let install_args: Vec<&str> = if lockfile_present {
+        vec!["ci", "--legacy-peer-deps"]
+    } else {
+        vec!["install", "--package-lock=false", "--legacy-peer-deps"]
+    };
+
+    execute_script(gateway_dir, "npm", install_args, None)?;
+
+    Ok(())
+}
+
+fn ensure_gateway_built(
+    gateway_dir: &Path,
+    optional_progress_bar: &Option<ProgressBar>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if gateway_dir.join("dist/main.js").exists() {
+        return Ok(());
+    }
+
+    let project_root = gateway_dir
+        .parent()
+        .and_then(|p| p.parent())
+        .ok_or("Failed to derive project root from gateway directory")?;
+
+    log_or_show_progress(
+        "Building gateway and file: dependencies (first run only)",
+        optional_progress_bar,
+    );
+
+    let proto_types_dir = project_root.join("proto-types");
+
+    if proto_types_dir.exists() && !proto_types_dir.join("build").exists() {
+        if !proto_types_dir.join("node_modules").exists() {
+            execute_script(&proto_types_dir, "npm", vec!["ci"], None)?;
+        }
+
+        execute_script(&proto_types_dir, "npm", vec!["run", "build"], None)?;
+    }
+
+    for package_name in [
+        "cardano-ibc-trace-registry",
+        "cardano-ibc-planner",
+        "cardano-ibc-tx-builder",
+    ] {
+        let package_dir = project_root.join("packages").join(package_name);
+
+        if !package_dir.exists() {
+            continue;
+        }
+
+        if package_dir.join("dist").exists() {
+            continue;
+        }
+
+        if !package_dir.join("node_modules").exists() {
+            execute_script(
+                &package_dir,
+                "npm",
+                vec!["install", "--package-lock=false"],
+                None,
+            )?;
+        }
+
+        execute_script(&package_dir, "npm", vec!["run", "build"], None)?;
+    }
+
+    ensure_gateway_dependencies(gateway_dir, optional_progress_bar)?;
+    execute_script(gateway_dir, "npm", vec!["run", "build"], None)?;
+
+    Ok(())
+}
+
 pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std::error::Error>> {
     const SHARED_CARDANO_NETWORK: &str = "cardano_ibc_net";
     let optional_progress_bar = match logger::get_verbosity() {
@@ -2573,6 +2668,8 @@ pub fn start_gateway(gateway_dir: &Path, clean: bool) -> Result<(), Box<dyn std:
     } else {
         log("Starting Gateway ...");
     }
+
+    ensure_gateway_built(gateway_dir, &optional_progress_bar)?;
 
     let network_exists = DockerCli::new(Path::new("."))
         .raw_output(["network", "inspect", SHARED_CARDANO_NETWORK].as_slice())
