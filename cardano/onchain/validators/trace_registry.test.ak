@@ -253,6 +253,8 @@ fn test_insert_transaction(
 test prop_trace_registry_append_accepts_active_shard_insert(seed via fuzz.int()) {
   fuzz.label(@"contract.trace.append.valid")
 
+  // Happy path: spend the active shard for the hash bucket, append exactly one
+  // canonical trace entry, and mint the matching voucher.
   let fixture = test_insert_fixture(seed)
   let TestInsertFixture {
     full_denom,
@@ -289,6 +291,8 @@ test prop_trace_registry_append_rejects_without_matching_voucher_mint(
 ) fail {
   fuzz.label(@"contract.trace.append.invalid_missing_voucher_mint")
 
+  // Trace registry append is coupled to voucher minting. Without the matching
+  // voucher asset, a registry entry would let metadata claim unbacked supply.
   let fixture = test_insert_fixture(seed)
   let TestInsertFixture {
     full_denom,
@@ -316,6 +320,8 @@ test prop_trace_registry_append_rejects_without_matching_voucher_mint(
 test prop_trace_registry_append_rejects_wrong_bucket(seed via fuzz.int()) fail {
   fuzz.label(@"contract.trace.append.invalid_wrong_bucket")
 
+  // The entry is otherwise well-formed but placed in the wrong bucket. This
+  // protects lookup determinism for full-denom hash routing.
   let fixture = test_insert_fixture(seed)
   let TestInsertFixture {
     full_denom,
@@ -359,6 +365,8 @@ test prop_trace_registry_append_rejects_duplicate_active_hash(
 ) fail {
   fuzz.label(@"contract.trace.append.invalid_duplicate_active_hash")
 
+  // Active-shard duplicate detection must reject the same full-denom hash even
+  // when the appended entry is canonical.
   let fixture = test_insert_fixture(seed)
   let TestInsertFixture {
     full_denom,
@@ -400,6 +408,8 @@ test prop_trace_registry_append_rejects_duplicate_archived_hash(
 ) fail {
   fuzz.label(@"contract.trace.append.invalid_duplicate_archived_hash")
 
+  // Archived shards are immutable lookup history, but they still participate in
+  // duplicate detection for newly appended traces.
   let fixture = test_insert_fixture(seed)
   let TestInsertFixture {
     full_denom,
@@ -432,6 +442,8 @@ test prop_trace_registry_append_rejects_duplicate_archived_hash(
 test prop_trace_registry_append_rejects_inactive_shard(seed via fuzz.int()) fail {
   fuzz.label(@"contract.trace.append.invalid_inactive_shard")
 
+  // Only the directory's active shard can be spent for append. Spending an
+  // archived shard would allow mutation of finalized registry history.
   let fixture = test_insert_fixture(seed)
   let TestInsertFixture {
     full_denom,

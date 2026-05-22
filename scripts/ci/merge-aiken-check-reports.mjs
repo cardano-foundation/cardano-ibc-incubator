@@ -15,6 +15,8 @@ if (!inputDirArg || !outputPathArg) {
 const inputDir = path.resolve(process.cwd(), inputDirArg);
 const outputPath = path.resolve(process.cwd(), outputPathArg);
 
+// download-artifact can either flatten files or preserve artifact directories.
+// Recurse so this script is insensitive to that GitHub Actions layout detail.
 function findJsonFiles(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   return entries.flatMap((entry) => {
@@ -33,6 +35,8 @@ if (files.length === 0) {
 }
 
 const merged = {
+  // Shards run with independent seeds. The label coverage checker only needs
+  // modules/tests/labels, so the aggregate seed is intentionally non-semantic.
   seed: null,
   summary: {
     total: 0,
@@ -45,6 +49,8 @@ const merged = {
 
 for (const file of files) {
   const report = JSON.parse(fs.readFileSync(file, "utf8"));
+  // Preserve the Aiken JSON shape closely enough that downstream checks can
+  // treat the merged report like one large aiken check invocation.
   merged.summary.total += report.summary?.total ?? 0;
   merged.summary.passed += report.summary?.passed ?? 0;
   merged.summary.failed += report.summary?.failed ?? 0;

@@ -453,6 +453,8 @@ test prop_conn_open_try_rejects_wrong_counterparty_client_state(
 ) {
   fuzz.label(@"contract.conn.open_try.invalid_wrong_counterparty_client_state")
 
+  // Near-valid ConnOpenTry: the local connection datum and proof plumbing are
+  // valid, but the counterparty client state bytes differ from the proof value.
   build_conn_open_try_fixture(
     "client-state",
     "wrong-client-state",

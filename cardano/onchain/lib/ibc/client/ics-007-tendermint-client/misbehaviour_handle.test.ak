@@ -138,6 +138,9 @@ test prop_client_misbehaviour_rejects_same_header(seed via fuzz.int()) {
 test prop_client_misbehaviour_rejects_wrong_client_id(_seed via fuzz.int()) {
   fuzz.label(@"unit.client.misbehaviour.invalid_wrong_client_id")
 
+  // This remains unit.* depth on purpose: the production misbehaviour path is
+  // already size-sensitive, so the canonical client-id predicate is covered
+  // directly instead of being duplicated inside the largest validator.
   fuzz_dsl.mutated_check(
     "client",
     "misbehaviour",

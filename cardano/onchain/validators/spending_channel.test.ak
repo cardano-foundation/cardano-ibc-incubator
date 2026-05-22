@@ -589,6 +589,9 @@ test prop_tx_packet_send_spending_channel_accepts_host_marker(
 ) {
   fuzz.label(@"tx.packet.send.valid_channel_host_marker")
 
+  // This is intentionally tx.* depth: it composes the channel spend with the
+  // HostState co-spend and SendPacket operation marker instead of only checking
+  // the channel datum transition helper.
   send_packet_spending_channel_tx()
     |> fuzz_dsl.assert_protocol_valid
 }

@@ -43,6 +43,8 @@ const minPercentBps = Number(
 const requiredLabels = config.requiredLabels ?? [];
 const allowedDepthPrefixes = config.allowedDepthPrefixes ?? ["unit", "contract", "tx", "model"];
 
+// The checker is intentionally configurable from CI env vars so local smoke
+// checks can use max-success=1 while CI keeps the production thresholds.
 if (!Number.isSafeInteger(minCount) || minCount < 1) {
   throw new Error(`Invalid minCount: ${minCount}`);
 }
@@ -69,6 +71,8 @@ const propertyTests = [];
 const labelCounts = new Map();
 let totalLabels = 0;
 
+// Aiken only adds `iterations` to property tests. Unit tests may still appear
+// in the JSON report, but they are not part of fuzz label coverage.
 for (const module of report.modules ?? []) {
   for (const test of module.tests ?? []) {
     if (typeof test.iterations !== "number") {
@@ -102,6 +106,8 @@ for (const label of requiredLabels) {
 }
 
 for (const { testName, labels } of propertyTests) {
+  // A property test without a label can pass forever while exercising only a
+  // boring generator path; treat that as a coverage failure.
   if (Object.keys(labels).length === 0) {
     failures.push(`${testName} is a property test without fuzz labels.`);
   }
@@ -119,6 +125,8 @@ for (const label of requiredLabels) {
   const count = labelCounts.get(label) ?? 0;
   const percentBps = totalLabels === 0 ? 0 : Math.floor((count * 10_000) / totalLabels);
 
+  // Count proves the branch appeared at all; percentage catches labels that are
+  // technically present but starved by an imbalanced generator.
   if (count === 0) {
     failures.push(`Required fuzz label '${label}' was not observed.`);
   } else if (count < minCount) {

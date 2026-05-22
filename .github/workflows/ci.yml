@@ -303,6 +303,9 @@ jobs:
         working-directory: .
         run: scripts/ci/check-aiken-fuzz-imports.sh
 
+      # Keep syntax/blueprint/type errors separate from the fuzz matrix. These
+      # checks should fail quickly and should not wait behind expensive
+      # property-test execution.
       - name: Build blueprint
         run: aiken build --deny
 
@@ -327,6 +330,8 @@ jobs:
         with:
           version: v1.1.21
 
+      # This intentionally runs every test once. It catches broad collection or
+      # fixture-construction failures before the deeper fuzz shards finish.
       - name: Run smoke test pass
         run: aiken check --deny --max-success 1 --property-coverage relative-to-tests > ../../aiken-smoke.json
 
@@ -342,6 +347,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Each shard is a protocol domain or a costly transition family. The
+          # split keeps max-success=500 meaningful without putting all generated
+          # cases behind one 30-minute job timeout.
           - suite: host-update-client
             match_tests: >-
               -m prop_host_update_client_
@@ -405,6 +413,8 @@ jobs:
 
       - name: Run fuzz shard
         run: |
+          # Aiken emits JSON when stdout is redirected. The aggregate job merges
+          # these per-shard reports and enforces the global label catalog once.
           aiken check \
             --deny \
             --max-success 500 \
@@ -431,6 +441,9 @@ jobs:
           NEEDS_JSON: ${{ toJson(needs) }}
         run: |
           node - <<'NODE'
+          // This aggregate job keeps the stable check name
+          // "Cardano Onchain Aiken" while the actual work happens in parallel
+          // prerequisite jobs.
           const needs = JSON.parse(process.env.NEEDS_JSON);
           const failed = Object.entries(needs)
             .filter(([, value]) => value.result !== 'success')
@@ -459,6 +472,8 @@ jobs:
       - name: Merge fuzz reports
         run: node scripts/ci/merge-aiken-check-reports.mjs aiken-fuzz-reports aiken-fuzz.json
 
+      # Labels are enforced globally, not per shard. That lets shard boundaries
+      # follow runtime and protocol ownership without weakening coverage rules.
       - name: Check fuzz label coverage
         run: node scripts/ci/check-aiken-fuzz-coverage.mjs aiken-fuzz.json
 
@@ -491,6 +506,9 @@ jobs:
       - name: Collect Aiken execution units
         working-directory: cardano/onchain
         run: |
+          # Tx budgets consume representative production transaction fixtures.
+          # Fuzzers and other .test.ak cases are not deployed transactions, so
+          # they should not inflate this job or affect the budget calculation.
           aiken check \
             --deny \
             --plain-numbers \

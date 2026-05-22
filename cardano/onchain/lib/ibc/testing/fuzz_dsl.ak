@@ -24,6 +24,9 @@ pub type ValidatorCheck {
   ValidatorCheck { name: ByteArray, accepted: Bool }
 }
 
+// Lightweight semantic fixture for helper-level and contract-level properties.
+// It records the transition being exercised, the mutation being applied, and
+// the validator checks that should collectively accept or reject the fixture.
 pub type TxFixture {
   TxFixture {
     model: ModelState,
@@ -32,6 +35,9 @@ pub type TxFixture {
   }
 }
 
+// Transaction-shaped fixture for deeper tx.* properties. The fields mirror the
+// Cardano transaction surface closely enough to compose multi-validator checks,
+// while still carrying model_before/model_after for state-machine assertions.
 pub type ProtocolTxFixture {
   ProtocolTxFixture {
     inputs: List<Input>,
@@ -68,6 +74,8 @@ pub fn protocol_tx_fixture(
   model_after: ModelState,
   mutation: Mutation,
 ) -> ProtocolTxFixture {
+  // Start from an empty transaction-shaped fixture so tests can pipe in only
+  // the inputs, outputs, redeemers, and checks relevant to one transition.
   ProtocolTxFixture {
     inputs: [],
     reference_inputs: [],
@@ -88,6 +96,8 @@ pub fn protocol_tx_from_transaction(
   mutation: Mutation,
   transaction: Transaction,
 ) -> ProtocolTxFixture {
+  // Use this when a test already builds a concrete Transaction and wants the
+  // DSL outcome helpers without reconstructing each transaction field by hand.
   ProtocolTxFixture {
     inputs: transaction.inputs,
     reference_inputs: transaction.reference_inputs,
@@ -133,6 +143,8 @@ pub fn mutated_check(
   check_name: ByteArray,
   accepted: Bool,
 ) -> TxFixture {
+  // Mutations should represent exactly one near-valid difference. That makes a
+  // failing assertion actionable: one protocol guard accepted one bad change.
   check_fixture(
     model(protocol, transition),
     mutation(mutation_name),
@@ -220,6 +232,8 @@ pub fn to_transaction(fixture: ProtocolTxFixture) -> Transaction {
 }
 
 pub fn run_all_relevant_validators(fixture: TxFixture) -> Bool {
+  // Empty check lists are rejected so a valid fixture cannot accidentally pass
+  // without executing any contract predicate.
   and {
     !list.is_empty(fixture.checks),
     list.all(fixture.checks, fn(check) { check.accepted }),
@@ -227,6 +241,8 @@ pub fn run_all_relevant_validators(fixture: TxFixture) -> Bool {
 }
 
 pub fn run_any_relevant_validator_rejected(fixture: TxFixture) -> Bool {
+  // Rejection properties only need one relevant validator to reject the
+  // mutation, matching how a composed transaction fails on-chain.
   and {
     !list.is_empty(fixture.checks),
     list.any(fixture.checks, fn(check) { !check.accepted }),

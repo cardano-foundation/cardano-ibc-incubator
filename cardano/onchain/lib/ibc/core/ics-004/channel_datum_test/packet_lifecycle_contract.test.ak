@@ -480,6 +480,8 @@ test prop_packet_send_accepts_valid_near_context(_seed via fuzz.int()) {
 test prop_model_packet_send_ack_valid_sequence(_seed via fuzz.int()) {
   fuzz.label(@"model.packet.send_ack.valid_sequence")
 
+  // Bounded model sequence: send creates a commitment, ack consumes it, and the
+  // final model must have no outstanding commitment for that packet sequence.
   let packet = base_packet(11)
   let initial_model =
     base_datum(Unordered, packet.sequence) |> model_from_channel
@@ -510,6 +512,9 @@ test prop_model_packet_send_ack_valid_sequence(_seed via fuzz.int()) {
 test prop_model_packet_send_recv_ack_sequence(_seed via fuzz.int()) {
   fuzz.label(@"model.packet.send_recv_ack")
 
+  // Exercises both directions in one model: outbound send/ack and inbound
+  // recv/ack must leave receipts and acknowledgements while clearing outbound
+  // commitment state.
   let outbound_packet = base_packet(11)
   let inbound_packet =
     Packet {
@@ -568,6 +573,8 @@ test prop_model_packet_send_recv_ack_sequence(_seed via fuzz.int()) {
 test prop_model_packet_send_timeout_sequence(_seed via fuzz.int()) {
   fuzz.label(@"model.packet.send_timeout")
 
+  // Timeout is the alternative terminal path for an outbound packet: the channel
+  // stays open, but the packet commitment must be removed.
   let packet = base_packet(11)
   let initial_model =
     base_datum(Unordered, packet.sequence) |> model_from_channel
@@ -598,6 +605,8 @@ test prop_model_packet_send_timeout_sequence(_seed via fuzz.int()) {
 test prop_packet_send_rejects_wrong_sequence(_seed via fuzz.int()) {
   fuzz.label(@"contract.packet.send.invalid_wrong_sequence")
 
+  // Near-valid mutation: only the packet sequence is wrong, so rejection proves
+  // the channel datum transition is tied to next_sequence_send.
   let packet = base_packet(11)
 
   packet
@@ -612,6 +621,8 @@ test prop_packet_send_rejects_missing_commitment_root_update(
 ) {
   fuzz.label(@"contract.packet.send.invalid_missing_commitment_root_update")
 
+  // The channel-side send transition is valid-looking, but the HostState root
+  // does not commit the packet. This is the core packet commitment invariant.
   let packet = base_packet(11)
 
   packet
