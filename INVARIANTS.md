@@ -261,18 +261,18 @@ invariants:
 
 Required CI label suffixes:
 
-- `contract.packet.send.valid`
-- `contract.packet.send.invalid_wrong_sequence`
-- `contract.packet.send.invalid_missing_commitment_root_update`
-- `contract.packet.send.invalid_wrong_transfer_callback`
-- `contract.packet.recv.valid_receipt`
-- `contract.packet.recv.invalid_duplicate_receipt`
-- `contract.packet.ack.valid_success`
-- `contract.packet.ack.valid_error`
-- `contract.packet.ack.invalid_wrong_ack_bytes`
-- `contract.packet.timeout.valid_unordered`
-- `contract.packet.timeout.valid_ordered`
-- `contract.packet.timeout.invalid_before_timeout`
+- `unit.packet.send.valid`
+- `unit.packet.send.invalid_wrong_sequence`
+- `unit.packet.send.invalid_missing_commitment_root_update`
+- `unit.packet.send.invalid_wrong_transfer_callback`
+- `unit.packet.recv.valid_receipt`
+- `unit.packet.recv.invalid_duplicate_receipt`
+- `unit.packet.ack.valid_success`
+- `unit.packet.ack.valid_error`
+- `unit.packet.ack.invalid_wrong_ack_bytes`
+- `unit.packet.timeout.valid_unordered`
+- `unit.packet.timeout.valid_ordered`
+- `unit.packet.timeout.invalid_before_timeout`
 - `tx.packet.send.valid_channel_host_marker`
 - `model.packet.send_ack.valid_sequence`
 - `model.packet.send_recv_ack`
@@ -280,18 +280,20 @@ Required CI label suffixes:
 
 ### SendPacket
 
-Covered by `contract.packet.send.valid`, `contract.packet.send.invalid_wrong_sequence`,
-`contract.packet.send.invalid_missing_commitment_root_update`, and
-`contract.packet.send.invalid_wrong_transfer_callback`.
+Covered by `unit.packet.send.valid`, `unit.packet.send.invalid_wrong_sequence`,
+`unit.packet.send.invalid_missing_commitment_root_update`, and
+`unit.packet.send.invalid_wrong_transfer_callback`.
 
-The SendPacket properties build a valid open-channel packet-send transition and
-then mutate exactly one field per negative case. They prove these invariants:
+The SendPacket unit properties build a valid open-channel channel-datum
+packet-send transition and then mutate exactly one field per negative case.
+They do not run the full composed packet transaction. They prove these
+invariants:
 
 - A valid send increments `next_sequence_send` and inserts the exact packet
   commitment under the packet sequence.
 - The packet sequence must equal the channel datum's current
   `next_sequence_send`.
-- The packet commitment/root effect cannot be omitted while the sequence is
+- The packet commitment datum effect cannot be omitted while the sequence is
   advanced.
 - The transfer callback/channel redeemer must refer to the same packet bytes;
   a callback for a different transfer payload is rejected.
@@ -320,12 +322,12 @@ voucher/escrow accounting validator in the same assertion.
 
 ### RecvPacket
 
-Covered by `contract.packet.recv.valid_receipt` and
-`contract.packet.recv.invalid_duplicate_receipt`.
+Covered by `unit.packet.recv.valid_receipt` and
+`unit.packet.recv.invalid_duplicate_receipt`.
 
-The RecvPacket properties construct an unordered receive transition that writes
-the receipt and acknowledgement commitment, then mutate the input datum to
-already contain the receipt. They prove these invariants:
+The RecvPacket unit properties construct an unordered channel-datum receive
+transition that writes the receipt and acknowledgement commitment, then mutate
+the input datum to already contain the receipt. They prove these invariants:
 
 - A valid unordered receive records a receipt for the packet sequence.
 - A valid receive records the acknowledgement commitment for the packet
@@ -335,12 +337,12 @@ already contain the receipt. They prove these invariants:
 
 ### AcknowledgePacket
 
-Covered by `contract.packet.ack.valid_success`, `contract.packet.ack.valid_error`, and
-`contract.packet.ack.invalid_wrong_ack_bytes`.
+Covered by `unit.packet.ack.valid_success`, `unit.packet.ack.valid_error`, and
+`unit.packet.ack.invalid_wrong_ack_bytes`.
 
-The acknowledgement properties construct a near-valid source-side packet
-commitment and apply success and error acknowledgement bytes. They prove these
-invariants:
+The acknowledgement unit properties construct a near-valid source-side channel
+datum packet commitment and apply success and error acknowledgement bytes. They
+prove these invariants:
 
 - A valid acknowledgement consumes the packet commitment.
 - Success acknowledgement bytes must be the canonical marshalled acknowledgement
@@ -352,11 +354,11 @@ invariants:
 
 ### TimeoutPacket
 
-Covered by `contract.packet.timeout.valid_unordered`,
-`contract.packet.timeout.valid_ordered`, and `contract.packet.timeout.invalid_before_timeout`.
+Covered by `unit.packet.timeout.valid_unordered`,
+`unit.packet.timeout.valid_ordered`, and `unit.packet.timeout.invalid_before_timeout`.
 
-The timeout properties construct committed packets and apply unordered and
-ordered timeout transitions. They prove these invariants:
+The timeout unit properties construct committed channel datum packets and apply
+unordered and ordered timeout transitions. They prove these invariants:
 
 - A valid unordered timeout consumes the packet commitment and keeps the channel
   open.
@@ -377,8 +379,8 @@ sequences:
   AcknowledgePacket output state; and
 - initial open channel -> SendPacket output state -> TimeoutPacket output state.
 
-They run each step against the relevant transition helper and then assert the
-final modeled state. They prove these invariants:
+They run each step against the relevant channel datum transition helper and
+then assert the final modeled state. They prove these invariants:
 
 - A packet accepted by the send transition can be consumed by the ack
   transition using the send output as the next model input.

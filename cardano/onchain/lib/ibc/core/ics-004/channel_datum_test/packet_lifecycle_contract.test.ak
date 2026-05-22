@@ -467,7 +467,9 @@ fn timeout_contract(
 }
 
 test prop_packet_send_accepts_valid_near_context(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.packet.send.valid")
+  // This fixture is transaction-shaped, but its check is still the channel
+  // datum send transition plus local packet/redeemer predicates.
+  fuzz.label(@"regression.unit.packet.send.valid")
 
   let packet = base_packet(11)
 
@@ -603,7 +605,7 @@ test prop_model_packet_send_timeout_sequence(_seed via fuzz.int()) {
 }
 
 test prop_packet_send_rejects_wrong_sequence(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.packet.send.invalid_wrong_sequence")
+  fuzz.label(@"regression.unit.packet.send.invalid_wrong_sequence")
 
   // Near-valid mutation: only the packet sequence is wrong, so rejection proves
   // the channel datum transition is tied to next_sequence_send.
@@ -619,12 +621,11 @@ test prop_packet_send_rejects_wrong_sequence(_seed via fuzz.int()) {
 test prop_packet_send_rejects_missing_commitment_root_update(
   _seed via fuzz.int(),
 ) {
-  fuzz.label(
-    @"fuzz.contract.packet.send.invalid_missing_commitment_root_update",
-  )
+  fuzz.label(@"fuzz.unit.packet.send.invalid_missing_commitment_root_update")
 
-  // The channel-side send transition is valid-looking, but the HostState root
-  // does not commit the packet. This is the core packet commitment invariant.
+  // The channel-side send transition is valid-looking, but the output channel
+  // datum does not commit the packet. Full HostState root coupling belongs in
+  // tx.* coverage, not this datum-transition property.
   let packet = base_packet(11)
 
   packet
@@ -635,7 +636,7 @@ test prop_packet_send_rejects_missing_commitment_root_update(
 }
 
 test prop_packet_send_rejects_wrong_transfer_callback(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.packet.send.invalid_wrong_transfer_callback")
+  fuzz.label(@"regression.unit.packet.send.invalid_wrong_transfer_callback")
 
   let packet = base_packet(11)
 
@@ -647,7 +648,7 @@ test prop_packet_send_rejects_wrong_transfer_callback(_seed via fuzz.int()) {
 }
 
 test prop_packet_recv_accepts_valid_receipt(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.packet.recv.valid_receipt")
+  fuzz.label(@"regression.unit.packet.recv.valid_receipt")
 
   let packet =
     Packet {
@@ -672,7 +673,7 @@ test prop_packet_recv_accepts_valid_receipt(_seed via fuzz.int()) {
 }
 
 test prop_packet_recv_rejects_duplicate_receipt(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.packet.recv.invalid_duplicate_receipt")
+  fuzz.label(@"regression.unit.packet.recv.invalid_duplicate_receipt")
 
   let packet =
     Packet {
@@ -705,7 +706,7 @@ test prop_packet_recv_rejects_duplicate_receipt(_seed via fuzz.int()) {
 }
 
 test prop_packet_ack_accepts_success_ack(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.packet.ack.valid_success")
+  fuzz.label(@"regression.unit.packet.ack.valid_success")
 
   let (input_datum, packet) = packet_with_commitment(Unordered)
   let ack = acknowledgement_mod.new_result_acknowledgement("ok")
@@ -722,7 +723,7 @@ test prop_packet_ack_accepts_success_ack(_seed via fuzz.int()) {
 }
 
 test prop_packet_ack_accepts_error_ack(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.packet.ack.valid_error")
+  fuzz.label(@"regression.unit.packet.ack.valid_error")
 
   let (input_datum, packet) = packet_with_commitment(Unordered)
   let ack = acknowledgement_mod.new_error_acknowledgement("refund")
@@ -739,7 +740,7 @@ test prop_packet_ack_accepts_error_ack(_seed via fuzz.int()) {
 }
 
 test prop_packet_ack_rejects_wrong_ack_bytes(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.packet.ack.invalid_wrong_ack_bytes")
+  fuzz.label(@"regression.unit.packet.ack.invalid_wrong_ack_bytes")
 
   let (input_datum, packet) = packet_with_commitment(Unordered)
   let ack = acknowledgement_mod.new_result_acknowledgement("ok")
@@ -756,7 +757,7 @@ test prop_packet_ack_rejects_wrong_ack_bytes(_seed via fuzz.int()) {
 }
 
 test prop_packet_timeout_accepts_unordered(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.packet.timeout.valid_unordered")
+  fuzz.label(@"regression.unit.packet.timeout.valid_unordered")
 
   let (input_datum, packet) = packet_with_commitment(Unordered)
   run_timeout_packet_transition(
@@ -770,7 +771,7 @@ test prop_packet_timeout_accepts_unordered(_seed via fuzz.int()) {
 }
 
 test prop_packet_timeout_accepts_ordered(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.packet.timeout.valid_ordered")
+  fuzz.label(@"regression.unit.packet.timeout.valid_ordered")
 
   let (input_datum, packet) = packet_with_commitment(Ordered)
   run_timeout_packet_transition(
@@ -784,7 +785,7 @@ test prop_packet_timeout_accepts_ordered(_seed via fuzz.int()) {
 }
 
 test prop_packet_timeout_rejects_before_timeout(_seed via fuzz.int()) {
-  fuzz.label(@"regression.contract.packet.timeout.invalid_before_timeout")
+  fuzz.label(@"regression.unit.packet.timeout.invalid_before_timeout")
 
   let (input_datum, packet) = packet_with_commitment(Unordered)
   run_timeout_packet_transition(
