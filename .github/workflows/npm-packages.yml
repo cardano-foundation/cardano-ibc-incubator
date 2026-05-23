@@ -1,0 +1,89 @@
+name: Cardano IBC npm Packages
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/npm-packages.yml"
+      - "scripts/ci/cardano-ibc-npm-packages.sh"
+      - "packages/cardano-ibc-planner/**"
+      - "packages/cardano-ibc-trace-registry/**"
+      - "packages/cardano-ibc-tx-builder/**"
+      - "packages/cardano-ibc-tx-builder-runtime/**"
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+    paths:
+      - ".github/workflows/npm-packages.yml"
+      - "scripts/ci/cardano-ibc-npm-packages.sh"
+      - "packages/cardano-ibc-planner/**"
+      - "packages/cardano-ibc-trace-registry/**"
+      - "packages/cardano-ibc-tx-builder/**"
+      - "packages/cardano-ibc-tx-builder-runtime/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: true
+  npm_config_audit: false
+  npm_config_fund: false
+
+jobs:
+  package:
+    name: Build and dry-run pack npm packages
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            packages/cardano-ibc-planner/package-lock.json
+            packages/cardano-ibc-tx-builder/package-lock.json
+            packages/cardano-ibc-trace-registry/package-lock.json
+            packages/cardano-ibc-tx-builder-runtime/package-lock.json
+
+      - name: Build, test, and dry-run package
+        run: scripts/ci/cardano-ibc-npm-packages.sh pack
+
+  publish:
+    name: Publish npm packages
+    if: ${{ github.ref_type == 'tag' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js for npm publishing
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: |
+            packages/cardano-ibc-planner/package-lock.json
+            packages/cardano-ibc-tx-builder/package-lock.json
+            packages/cardano-ibc-trace-registry/package-lock.json
+            packages/cardano-ibc-tx-builder-runtime/package-lock.json
+
+      - name: Build, test, and publish packages
+        run: scripts/ci/cardano-ibc-npm-packages.sh publish
