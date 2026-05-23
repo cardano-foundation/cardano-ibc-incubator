@@ -12,7 +12,7 @@ on:
       - "packages/cardano-ibc-tx-builder-runtime/**"
   push:
     branches: [main]
-    tags: ["v*.*.*"]
+    tags: ["npm/cardano-ibc/v*.*.*"]
     paths:
       - ".github/workflows/npm-packages.yml"
       - "scripts/ci/cardano-ibc-npm-packages.sh"
@@ -61,7 +61,7 @@ jobs:
 
   publish:
     name: Publish npm packages
-    if: ${{ github.ref_type == 'tag' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
+    if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'npm/cardano-ibc/v') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     needs: package
     runs-on: ubuntu-latest
     timeout-minutes: 20

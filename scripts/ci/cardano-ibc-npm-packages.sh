@@ -42,12 +42,12 @@ tag_release_version() {
     return 1
   fi
 
-  if [[ ! "${GITHUB_REF_NAME:-}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?)$ ]]; then
-    echo "npm package release tags must use semver format, for example v0.1.0 or v0.1.0-rc.1." >&2
+  if [[ ! "${GITHUB_REF_NAME:-}" =~ ^npm/cardano-ibc/v([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?)$ ]]; then
+    echo "npm package release tags must use format npm/cardano-ibc/vX.Y.Z, for example npm/cardano-ibc/v0.1.0 or npm/cardano-ibc/v0.1.0-rc.1." >&2
     exit 1
   fi
 
-  echo "${GITHUB_REF_NAME#v}"
+  echo "${BASH_REMATCH[1]}"
 }
 
 validate_package_metadata() {
@@ -167,8 +167,8 @@ publish_packages() {
 }
 
 release_version=""
-if tag_version="$(tag_release_version)"; then
-  release_version="${tag_version}"
+if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+  release_version="$(tag_release_version)"
 fi
 
 build_and_test_packages
@@ -178,7 +178,7 @@ pack_packages
 
 if [[ "${mode}" == "publish" ]]; then
   if [[ -z "${release_version}" ]]; then
-    echo "Publishing is only allowed from semver tags." >&2
+    echo "Publishing is only allowed from npm package release tags." >&2
     exit 1
   fi
 
