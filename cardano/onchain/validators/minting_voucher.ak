@@ -114,6 +114,16 @@ validator mint_voucher(
             voucher_denom_hash,
             prefixed_denom,
           )
+        let metadata_completeness =
+          metadata_completeness_satisfied(
+            reference_inputs,
+            outputs,
+            prefixed_denom,
+            user_token_name,
+            voucher_minting_policy_id,
+            reference_token_name,
+            voucher_metadata_script_hash,
+          )
 
         // Positive voucher mints require an exact trace-registry witness.
         expect Some(transfer_amount) = int.from_utf8(data.amount)
@@ -126,6 +136,7 @@ validator mint_voucher(
             reference_token_name,
             transfer_amount,
             registry_completeness,
+            metadata_completeness,
           )
         trace @"mint_voucher: minted token is valid"
 
@@ -153,15 +164,6 @@ validator mint_voucher(
         and {
           valid_receiver?,
           valid_minted_tokens?,
-          metadata_output_valid(
-            outputs,
-            prefixed_denom,
-            user_token_name,
-            voucher_minting_policy_id,
-            reference_token_name,
-            voucher_metadata_script_hash,
-            registry_completeness,
-          ),
           valid_voucher_output(
             payout_output,
             voucher_minting_policy_id,
@@ -292,6 +294,16 @@ validator mint_voucher(
             voucher_denom_hash,
             data.denom,
           )
+        let metadata_completeness =
+          metadata_completeness_satisfied(
+            reference_inputs,
+            outputs,
+            data.denom,
+            user_token_name,
+            voucher_minting_policy_id,
+            reference_token_name,
+            voucher_metadata_script_hash,
+          )
 
         // Refund mints use the same trace-registry witness rule.
         let minted_tokens = tokens(mint, voucher_minting_policy_id)
@@ -302,6 +314,7 @@ validator mint_voucher(
             reference_token_name,
             transfer_amount,
             registry_completeness,
+            metadata_completeness,
           )
         trace @"mint_voucher: minted token is valid"
 
@@ -354,15 +367,6 @@ validator mint_voucher(
           outputs_token - inputs_token == transfer_amount,
           valid_minted_tokens,
           valid_sender,
-          metadata_output_valid(
-            outputs,
-            data.denom,
-            user_token_name,
-            voucher_minting_policy_id,
-            reference_token_name,
-            voucher_metadata_script_hash,
-            registry_completeness,
-          ),
         }
       }
     }
@@ -376,6 +380,11 @@ validator mint_voucher(
 type TraceRegistryCompleteness {
   ExistingMapping
   FirstSeenMapping
+}
+
+type MetadataCompleteness {
+  ExistingMetadata
+  FirstSeenMetadata
 }
 
 fn extract_channel_redeemer(
@@ -712,34 +721,44 @@ fn positive_voucher_mint_matches(
   reference_token_name: AssetName,
   transfer_amount: Int,
   registry_completeness: Option<TraceRegistryCompleteness>,
+  metadata_completeness: Option<MetadataCompleteness>,
 ) -> Bool {
   when registry_completeness is {
-    Some(ExistingMapping) ->
-      minted_tokens == (
-        dict.empty
-          |> dict.insert(user_token_name, transfer_amount)
-      )
+    Some(_) ->
+      when metadata_completeness is {
+        Some(ExistingMetadata) ->
+          minted_tokens == (
+            dict.empty
+              |> dict.insert(user_token_name, transfer_amount)
+          )
 
-    Some(FirstSeenMapping) ->
-      minted_tokens == (
-        dict.empty
-          |> dict.insert(user_token_name, transfer_amount)
-          |> dict.insert(reference_token_name, 1)
-      )
+        Some(FirstSeenMetadata) ->
+          minted_tokens == (
+            dict.empty
+              |> dict.insert(user_token_name, transfer_amount)
+              |> dict.insert(reference_token_name, 1)
+          )
+
+        None -> False
+      }
 
     None -> False
   }
 }
 
-fn metadata_output_valid(
+// Trace entries are shared across voucher policy upgrades, but CIP-68 reference
+// NFTs are policy-scoped. A positive mint must therefore either create the
+// current policy's metadata NFT now or reference the already-created metadata
+// UTxO for this same policy and denom hash.
+fn metadata_completeness_satisfied(
+  reference_inputs: List<Input>,
   outputs: List<Output>,
   full_denom: ByteArray,
   user_token_name: AssetName,
   voucher_policy_id: PolicyId,
   reference_token_name: AssetName,
   voucher_metadata_script_hash: crypto.ScriptHash,
-  registry_completeness: Option<TraceRegistryCompleteness>,
-) -> Bool {
+) -> Option<MetadataCompleteness> {
   let metadata_address = from_script(voucher_metadata_script_hash)
   let metadata_outputs =
     list.filter(
@@ -752,32 +771,77 @@ fn metadata_output_valid(
         ) == 1
       },
     )
+  let metadata_reference_inputs =
+    list.filter(
+      reference_inputs,
+      fn(input) {
+        metadata_reference_output_valid(
+          input.output,
+          full_denom,
+          user_token_name,
+          voucher_policy_id,
+          reference_token_name,
+          voucher_metadata_script_hash,
+        )
+      },
+    )
 
-  when registry_completeness is {
-    Some(ExistingMapping) -> list.length(metadata_outputs) == 0
-
-    Some(FirstSeenMapping) ->
-      when metadata_outputs is {
-        [metadata_output] -> {
-          expect [policy_id] =
-            metadata_output.value
-              |> assets.without_lovelace
-              |> assets.policies()
-          expect [token_name] =
-            assets.tokens(metadata_output.value, voucher_policy_id)
-              |> dict.keys()
-          expect InlineDatum(metadata_datum) = metadata_output.datum
-
-          policy_id == voucher_policy_id && token_name == reference_token_name && metadata_datum == voucher_metadata_datum.build_datum(
-            full_denom,
-            user_token_name,
-            voucher_policy_id,
-          )
-        }
-
-        _ -> False
+  when metadata_outputs is {
+    [metadata_output] ->
+      if list.length(metadata_reference_inputs) == 0 && metadata_reference_output_valid(
+        metadata_output,
+        full_denom,
+        user_token_name,
+        voucher_policy_id,
+        reference_token_name,
+        voucher_metadata_script_hash,
+      ) {
+        Some(FirstSeenMetadata)
+      } else {
+        None
       }
 
-    None -> False
+    [] ->
+      if list.length(metadata_reference_inputs) == 1 {
+        Some(ExistingMetadata)
+      } else {
+        None
+      }
+
+    _ -> None
+  }
+}
+
+fn metadata_reference_output_valid(
+  output: Output,
+  full_denom: ByteArray,
+  user_token_name: AssetName,
+  voucher_policy_id: PolicyId,
+  reference_token_name: AssetName,
+  voucher_metadata_script_hash: crypto.ScriptHash,
+) -> Bool {
+  let metadata_address = from_script(voucher_metadata_script_hash)
+
+  if output.address != metadata_address || quantity_of(
+    output.value,
+    voucher_policy_id,
+    reference_token_name,
+  ) != 1 {
+    False
+  } else {
+    expect [policy_id] =
+      output.value
+        |> assets.without_lovelace
+        |> assets.policies()
+    expect [token_name] =
+      assets.tokens(output.value, voucher_policy_id)
+        |> dict.keys()
+    expect InlineDatum(metadata_datum) = output.datum
+
+    policy_id == voucher_policy_id && token_name == reference_token_name && metadata_datum == voucher_metadata_datum.build_datum(
+      full_denom,
+      user_token_name,
+      voucher_policy_id,
+    )
   }
 }

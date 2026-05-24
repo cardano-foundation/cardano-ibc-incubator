@@ -126,10 +126,6 @@ fn test_non_registry_reference_input(output_index: Int) -> Input {
   }
 }
 
-fn test_bridge_registry_input() -> Input {
-  test_bridge_registry_input_with_active(test_voucher_policy_id())
-}
-
 fn test_bridge_registry_input_with_active(
   active_voucher_policy_id: PolicyId,
 ) -> Input {
