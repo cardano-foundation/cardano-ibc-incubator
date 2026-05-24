@@ -664,7 +664,7 @@ fn run_first_seen_voucher_mint_tx(
         trace_registry_validator.spend_trace_registry.spend(
           fixture.mock_data.directory_auth_token.policy_id,
           fixture.mock_data.directory_auth_token,
-          fixture.mock_data.voucher_minting_policy_id,
+          fixture.mock_data.bridge_registry_token,
           "",
           Some(fixture.trace_registry_datum),
           fixture.trace_registry_redeemer,

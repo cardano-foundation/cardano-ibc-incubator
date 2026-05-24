@@ -5,6 +5,7 @@ use cardano/assets.{PolicyId, Value, add, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction, placeholder,
 }
+use ibc/apps/transfer/bridge_registry.{BridgeDeployment, BridgeRegistryDatum}
 use ibc/apps/transfer/trace_registry.{
   AdvanceDirectory, Directory, RolloverInsertTrace, Shard, TraceRegistryDatum,
   TraceRegistryDirectoryBucket, TraceRegistryDirectoryDatum, TraceRegistryEntry,
@@ -25,6 +26,13 @@ fn test_directory_auth_token() -> AuthToken {
 
 fn test_voucher_policy_id() -> PolicyId {
   "voucher mint policy"
+}
+
+fn test_bridge_registry_token() -> AuthToken {
+  AuthToken {
+    policy_id: "bridge registry policy",
+    name: "bridge registry token",
+  }
 }
 
 fn test_disabled_benchmark_voucher_policy_id() -> PolicyId {
@@ -106,6 +114,40 @@ fn test_expected_entry(full_denom: ByteArray) -> TraceRegistryEntry {
   }
 }
 
+fn test_bridge_registry_input() -> Input {
+  let token = test_bridge_registry_token()
+
+  Input {
+    output_reference: test_output_ref(99),
+    output: Output {
+      address: from_script("bridge registry script hash"),
+      value: from_asset(token.policy_id, token.name, 1),
+      datum: InlineDatum(
+        BridgeRegistryDatum {
+          active_deployment: BridgeDeployment {
+            host_state_nft_policy_id: "host state policy",
+            channel_minting_policy_id: "channel policy",
+          },
+          active_voucher_policy_id: test_voucher_policy_id(),
+          legacy_voucher_policy_ids: [],
+          governance_key_hash: #"00000000000000000000000000000000000000000000000000000000",
+        },
+      ),
+      reference_script: None,
+    },
+  }
+}
+
+fn with_bridge_registry(transaction: Transaction) -> Transaction {
+  Transaction {
+    ..transaction,
+    reference_inputs: [
+      test_bridge_registry_input(),
+      ..transaction.reference_inputs
+    ],
+  }
+}
+
 fn run_trace_registry_spend(
   datum: TraceRegistryDatum,
   redeemer: TraceRegistryRedeemer,
@@ -115,12 +157,12 @@ fn run_trace_registry_spend(
   trace_registry_validator.spend_trace_registry.spend(
     test_shard_policy_id(),
     test_directory_auth_token(),
-    test_voucher_policy_id(),
+    test_bridge_registry_token(),
     test_disabled_benchmark_voucher_policy_id(),
     Some(datum),
     redeemer,
     spent_output_ref,
-    transaction,
+    with_bridge_registry(transaction),
   )
 }
 

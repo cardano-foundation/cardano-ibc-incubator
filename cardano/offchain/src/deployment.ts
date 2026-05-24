@@ -285,8 +285,16 @@ type ExistingBridgeRegistrySource = {
   address: string;
   governanceKeyHash?: string;
   validator?: ExistingVoucherPolicy;
+  traceRegistry: ExistingTraceRegistrySource;
   legacyVoucherPolicyIds: string[];
   legacyVoucherPolicies: ExistingVoucherPolicy[];
+};
+
+type ExistingTraceRegistrySource = {
+  address: string;
+  shardPolicyId: string;
+  directory: AuthToken;
+  validator: ExistingVoucherPolicy;
 };
 
 const deploymentObject = (value: unknown): Record<string, unknown> | null =>
@@ -363,9 +371,12 @@ const loadExistingBridgeRegistrySource = ():
 
   const validators = deploymentObject(raw.validators);
   const registry = deploymentObject(raw.bridgeRegistry ?? raw.bridge_registry);
-  if (!validators || !registry) {
+  const traceRegistry = deploymentObject(
+    raw.traceRegistry ?? raw.trace_registry,
+  );
+  if (!validators || !registry || !traceRegistry) {
     throw new Error(
-      `Bridge registry source at ${path} must include validators and bridgeRegistry/bridge_registry.`,
+      `Bridge registry source at ${path} must include validators, bridgeRegistry/bridge_registry, and traceRegistry/trace_registry.`,
     );
   }
 
@@ -406,6 +417,33 @@ const loadExistingBridgeRegistrySource = ():
       `Bridge registry source at ${path} does not expose any reusable voucher policy.`,
     );
   }
+  const traceRegistryDirectory = deploymentObject(traceRegistry.directory);
+  const traceRegistryValidator = deploymentValidator(
+    validators.spendTraceRegistry ?? validators.spend_trace_registry,
+    "trace_registry.spend_trace_registry.spend",
+  );
+  const traceRegistryAddress = deploymentString(traceRegistry.address);
+  const traceRegistryShardPolicyId =
+    deploymentString(traceRegistry.shardPolicyId) ??
+      deploymentString(traceRegistry.shard_policy_id);
+  const traceRegistryDirectoryPolicyId =
+    deploymentString(traceRegistryDirectory?.policyId) ??
+      deploymentString(traceRegistryDirectory?.policy_id);
+  const traceRegistryDirectoryTokenName =
+    deploymentString(traceRegistryDirectory?.name) ??
+      deploymentString(traceRegistryDirectory?.tokenName) ??
+      deploymentString(traceRegistryDirectory?.token_name);
+  if (
+    !traceRegistryValidator ||
+    !traceRegistryAddress ||
+    !traceRegistryShardPolicyId ||
+    !traceRegistryDirectoryPolicyId ||
+    !traceRegistryDirectoryTokenName
+  ) {
+    throw new Error(
+      `Bridge registry source at ${path} must include a reusable trace registry validator, address, shard policy, and directory token.`,
+    );
+  }
 
   return {
     authToken: { policy_id: policyId, name: tokenName },
@@ -416,6 +454,15 @@ const loadExistingBridgeRegistrySource = ():
       validators.bridgeRegistry ?? validators.bridge_registry,
       "bridge_registry.bridge_registry.spend",
     ),
+    traceRegistry: {
+      address: traceRegistryAddress,
+      shardPolicyId: traceRegistryShardPolicyId,
+      directory: {
+        policy_id: traceRegistryDirectoryPolicyId,
+        name: traceRegistryDirectoryTokenName,
+      },
+      validator: traceRegistryValidator,
+    },
     legacyVoucherPolicyIds: legacyVoucherPolicies.map((policy) =>
       policy.scriptHash
     ),
@@ -559,8 +606,11 @@ export const createDeployment = async (
   const traceRegistryNonceStart = bridgeRegistrySource
     ? 0
     : BRIDGE_REGISTRY_NONCE_COUNT;
+  const traceRegistryNonceCount = bridgeRegistrySource
+    ? 0
+    : TRACE_REGISTRY_SHARD_COUNT + TRACE_REGISTRY_DIRECTORY_NONCE_COUNT;
   const traceRegistryNonceEnd = traceRegistryNonceStart +
-    TRACE_REGISTRY_SHARD_COUNT + TRACE_REGISTRY_DIRECTORY_NONCE_COUNT;
+    traceRegistryNonceCount;
   const traceRegistryNonceUtxos = remainingNonceUtxos.slice(
     traceRegistryNonceStart,
     traceRegistryNonceEnd,
@@ -766,19 +816,21 @@ export const createDeployment = async (
     ),
   };
 
-  const traceRegistryDirectoryNonce =
-    traceRegistryNonceUtxos[TRACE_REGISTRY_SHARD_COUNT];
-  if (!traceRegistryDirectoryNonce) {
+  const traceRegistryDirectoryNonce = bridgeRegistrySource
+    ? undefined
+    : traceRegistryNonceUtxos[TRACE_REGISTRY_SHARD_COUNT];
+  if (!bridgeRegistrySource && !traceRegistryDirectoryNonce) {
     throw new Error(
       "Missing reserved nonce UTxO for trace registry directory.",
     );
   }
-  const traceRegistryDirectoryAuthToken: AuthToken = {
-    policy_id: validatorToScriptHash(mintIdentifierValidator),
-    name: await generateIdentifierTokenName(
-      buildOutputReference(traceRegistryDirectoryNonce),
-    ),
-  };
+  const traceRegistryDirectoryAuthToken: AuthToken =
+    bridgeRegistrySource?.traceRegistry.directory ?? {
+      policy_id: validatorToScriptHash(mintIdentifierValidator),
+      name: await generateIdentifierTokenName(
+        buildOutputReference(traceRegistryDirectoryNonce!),
+      ),
+    };
   const bridgeRegistryAuthToken: AuthToken = bridgeRegistrySource?.authToken ??
     {
       policy_id: validatorToScriptHash(mintIdentifierValidator),
@@ -844,18 +896,22 @@ export const createDeployment = async (
     referredValidators.push(traceRegistryBenchmarkVoucher.validator);
   }
 
-  const traceRegistry = await deployTraceRegistry(
-    lucid,
-    mintIdentifierValidator,
-    traceRegistryDirectoryAuthToken,
-    mintVoucher.policyId,
-    traceRegistryBenchmarkVoucher?.policyId ?? "",
-    traceRegistryNonceUtxos,
-  );
+  const traceRegistry = bridgeRegistrySource
+    ? reuseTraceRegistry(bridgeRegistrySource.traceRegistry)
+    : await deployTraceRegistry(
+      lucid,
+      mintIdentifierValidator,
+      traceRegistryDirectoryAuthToken,
+      bridgeRegistryAuthToken,
+      traceRegistryBenchmarkVoucher?.policyId ?? "",
+      traceRegistryNonceUtxos,
+    );
   reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   // Bootstrap the registry with the bridge so voucher mints can rely on an
   // on-chain reverse mapping from the first deployment onward.
-  referredValidators.push(traceRegistry.base.validator);
+  if (!bridgeRegistrySource) {
+    referredValidators.push(traceRegistry.base.validator);
+  }
 
   const {
     identifierTokenUnit: mockModuleIdentifier,
@@ -991,7 +1047,9 @@ export const createDeployment = async (
         script: traceRegistry.base.validator.script,
         scriptHash: traceRegistry.base.scriptHash,
         address: traceRegistry.base.address,
-        refUtxo: refUtxosInfo[traceRegistry.base.scriptHash],
+        refUtxo: "refUtxo" in traceRegistry.base
+          ? traceRegistry.base.refUtxo as UTxO
+          : refUtxosInfo[traceRegistry.base.scriptHash],
       },
       mintVoucher: {
         title: "minting_voucher.mint_voucher.mint",
@@ -2274,7 +2332,7 @@ const deployTraceRegistry = async (
   lucid: LucidEvolution,
   mintIdentifierValidator: MintingPolicy,
   directoryAuthToken: AuthToken,
-  mintVoucherPolicyId: string,
+  bridgeRegistryAuthToken: AuthToken,
   benchmarkVoucherPolicyId: string,
   nonceUtxos: UTxO[],
 ) => {
@@ -2302,18 +2360,18 @@ const deployTraceRegistry = async (
     [
       shardPolicyId,
       directoryAuthToken,
-      mintVoucherPolicyId,
+      bridgeRegistryAuthToken,
       benchmarkVoucherPolicyId,
     ],
     Data.Tuple([
       Data.Bytes(),
       AuthTokenSchema,
-      Data.Bytes(),
+      AuthTokenSchema,
       Data.Bytes(),
     ]) as unknown as [
       string,
       AuthToken,
-      string,
+      AuthToken,
       string,
     ],
   );
@@ -2365,6 +2423,24 @@ const deployTraceRegistry = async (
     },
     shards,
     directory,
+  };
+};
+
+const reuseTraceRegistry = (source: ExistingTraceRegistrySource) => {
+  console.log("Reuse Trace Registry");
+
+  return {
+    shardPolicyId: source.shardPolicyId,
+    base: {
+      validator: {
+        type: "PlutusV3",
+        script: source.validator.script,
+      } as SpendingValidator,
+      scriptHash: source.validator.scriptHash,
+      address: source.address,
+      refUtxo: source.validator.refUtxo,
+    },
+    directory: source.directory,
   };
 };
 
