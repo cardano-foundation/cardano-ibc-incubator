@@ -60,9 +60,27 @@ type DeploymentBridgeRegistry = {
   governanceKeyHash: string;
 };
 
+type DeploymentVoucherCompatibilityProfile = {
+  compatibleBridgeVersion: number;
+  voucherAssetNameVersion: number;
+  redeemerVersion: number;
+  packetDataEncodingVersion: number;
+  transferDenomLogicVersion: number;
+  channelIdDerivationVersion: number;
+  hostStateChannelSemanticsVersion: number;
+  traceRegistrySemanticsVersion: number;
+  metadataFormatVersion: number;
+  bridgeRegistryToken: AuthToken;
+  traceRegistryId: string;
+};
+
+type DeploymentVoucherPolicyRegistryEntry = DeploymentValidator & {
+  compatibility?: DeploymentVoucherCompatibilityProfile;
+};
+
 type DeploymentVoucherPolicyRegistry = {
-  active: DeploymentValidator;
-  legacy: DeploymentValidator[];
+  active: DeploymentVoucherPolicyRegistryEntry;
+  legacy: DeploymentVoucherPolicyRegistryEntry[];
 };
 
 export type DeploymentConfig = {
@@ -159,9 +177,27 @@ type BridgeManifestBridgeRegistry = {
   governance_key_hash: string;
 };
 
+type BridgeManifestVoucherCompatibilityProfile = {
+  compatible_bridge_version: number;
+  voucher_asset_name_version: number;
+  redeemer_version: number;
+  packet_data_encoding_version: number;
+  transfer_denom_logic_version: number;
+  channel_id_derivation_version: number;
+  host_state_channel_semantics_version: number;
+  trace_registry_semantics_version: number;
+  metadata_format_version: number;
+  bridge_registry_token: BridgeManifestAuthToken;
+  trace_registry_id: string;
+};
+
+type BridgeManifestVoucherPolicyRegistryEntry = BridgeManifestValidator & {
+  compatibility?: BridgeManifestVoucherCompatibilityProfile;
+};
+
 type BridgeManifestVoucherPolicyRegistry = {
-  active: BridgeManifestValidator;
-  legacy: BridgeManifestValidator[];
+  active: BridgeManifestVoucherPolicyRegistryEntry;
+  legacy: BridgeManifestVoucherPolicyRegistryEntry[];
 };
 
 // The manifest is the public, deployment-stable bootstrap document we expose to
@@ -217,6 +253,18 @@ export type LoadedBridgeConfig = {
 };
 
 export const DEFAULT_HANDLER_JSON_PATH = '../deployment/offchain/handler.json';
+
+const VOUCHER_COMPATIBILITY_PROTOCOL = {
+  compatibleBridgeVersion: 1,
+  voucherAssetNameVersion: 1,
+  redeemerVersion: 1,
+  packetDataEncodingVersion: 1,
+  transferDenomLogicVersion: 1,
+  channelIdDerivationVersion: 1,
+  hostStateChannelSemanticsVersion: 1,
+  traceRegistrySemanticsVersion: 1,
+  metadataFormatVersion: 1,
+} as const;
 
 export function deriveCardanoNetwork(networkMagic: number): string {
   if (networkMagic === 1) {
@@ -317,6 +365,111 @@ function requireManifestValidator(value: unknown, path: string): BridgeManifestV
   };
 }
 
+function requireDeploymentVoucherCompatibilityProfile(
+  value: unknown,
+  path: string,
+): DeploymentVoucherCompatibilityProfile {
+  const profile = requireObject(value, path);
+  return {
+    compatibleBridgeVersion: requireNonNegativeInteger(
+      profile.compatibleBridgeVersion,
+      `${path}.compatibleBridgeVersion`,
+    ),
+    voucherAssetNameVersion: requireNonNegativeInteger(
+      profile.voucherAssetNameVersion,
+      `${path}.voucherAssetNameVersion`,
+    ),
+    redeemerVersion: requireNonNegativeInteger(profile.redeemerVersion, `${path}.redeemerVersion`),
+    packetDataEncodingVersion: requireNonNegativeInteger(
+      profile.packetDataEncodingVersion,
+      `${path}.packetDataEncodingVersion`,
+    ),
+    transferDenomLogicVersion: requireNonNegativeInteger(
+      profile.transferDenomLogicVersion,
+      `${path}.transferDenomLogicVersion`,
+    ),
+    channelIdDerivationVersion: requireNonNegativeInteger(
+      profile.channelIdDerivationVersion,
+      `${path}.channelIdDerivationVersion`,
+    ),
+    hostStateChannelSemanticsVersion: requireNonNegativeInteger(
+      profile.hostStateChannelSemanticsVersion,
+      `${path}.hostStateChannelSemanticsVersion`,
+    ),
+    traceRegistrySemanticsVersion: requireNonNegativeInteger(
+      profile.traceRegistrySemanticsVersion,
+      `${path}.traceRegistrySemanticsVersion`,
+    ),
+    metadataFormatVersion: requireNonNegativeInteger(profile.metadataFormatVersion, `${path}.metadataFormatVersion`),
+    bridgeRegistryToken: requireAuthToken(profile.bridgeRegistryToken, `${path}.bridgeRegistryToken`),
+    traceRegistryId: requireNonEmptyString(profile.traceRegistryId, `${path}.traceRegistryId`),
+  };
+}
+
+function requireManifestVoucherCompatibilityProfile(
+  value: unknown,
+  path: string,
+): BridgeManifestVoucherCompatibilityProfile {
+  const profile = requireObject(value, path);
+  return {
+    compatible_bridge_version: requireNonNegativeInteger(
+      profile.compatible_bridge_version,
+      `${path}.compatible_bridge_version`,
+    ),
+    voucher_asset_name_version: requireNonNegativeInteger(
+      profile.voucher_asset_name_version,
+      `${path}.voucher_asset_name_version`,
+    ),
+    redeemer_version: requireNonNegativeInteger(profile.redeemer_version, `${path}.redeemer_version`),
+    packet_data_encoding_version: requireNonNegativeInteger(
+      profile.packet_data_encoding_version,
+      `${path}.packet_data_encoding_version`,
+    ),
+    transfer_denom_logic_version: requireNonNegativeInteger(
+      profile.transfer_denom_logic_version,
+      `${path}.transfer_denom_logic_version`,
+    ),
+    channel_id_derivation_version: requireNonNegativeInteger(
+      profile.channel_id_derivation_version,
+      `${path}.channel_id_derivation_version`,
+    ),
+    host_state_channel_semantics_version: requireNonNegativeInteger(
+      profile.host_state_channel_semantics_version,
+      `${path}.host_state_channel_semantics_version`,
+    ),
+    trace_registry_semantics_version: requireNonNegativeInteger(
+      profile.trace_registry_semantics_version,
+      `${path}.trace_registry_semantics_version`,
+    ),
+    metadata_format_version: requireNonNegativeInteger(
+      profile.metadata_format_version,
+      `${path}.metadata_format_version`,
+    ),
+    bridge_registry_token: requireManifestAuthToken(profile.bridge_registry_token, `${path}.bridge_registry_token`),
+    trace_registry_id: requireNonEmptyString(profile.trace_registry_id, `${path}.trace_registry_id`),
+  };
+}
+
+function requireDeploymentVoucherPolicyEntry(value: unknown, path: string): DeploymentVoucherPolicyRegistryEntry {
+  const entry = requireObject(value, path);
+  return {
+    ...requireDeploymentValidator(entry, path),
+    ...(entry.compatibility
+      ? { compatibility: requireDeploymentVoucherCompatibilityProfile(entry.compatibility, `${path}.compatibility`) }
+      : {}),
+  };
+}
+
+function requireManifestVoucherPolicyEntry(value: unknown, path: string): BridgeManifestVoucherPolicyRegistryEntry {
+  const entry = requireObject(value, path);
+  return {
+    ...requireManifestValidator(entry, path),
+    ...(entry.compatibility
+      ? { compatibility: requireManifestVoucherCompatibilityProfile(entry.compatibility, `${path}.compatibility`) }
+      : {}),
+  };
+}
+
 function requireDeploymentVoucherPolicyRegistry(
   value: unknown,
   fallbackActive: DeploymentValidator,
@@ -330,13 +483,9 @@ function requireDeploymentVoucherPolicyRegistry(
   }
   const registry = requireObject(value, path);
   return {
-    active: registry.active
-      ? requireDeploymentValidator(registry.active, `${path}.active`)
-      : fallbackActive,
+    active: registry.active ? requireDeploymentVoucherPolicyEntry(registry.active, `${path}.active`) : fallbackActive,
     legacy: Array.isArray(registry.legacy)
-      ? registry.legacy.map((entry, index) =>
-          requireDeploymentValidator(entry, `${path}.legacy[${index}]`),
-        )
+      ? registry.legacy.map((entry, index) => requireDeploymentVoucherPolicyEntry(entry, `${path}.legacy[${index}]`))
       : [],
   };
 }
@@ -354,13 +503,9 @@ function requireManifestVoucherPolicyRegistry(
   }
   const registry = requireObject(value, path);
   return {
-    active: registry.active
-      ? requireManifestValidator(registry.active, `${path}.active`)
-      : fallbackActive,
+    active: registry.active ? requireManifestVoucherPolicyEntry(registry.active, `${path}.active`) : fallbackActive,
     legacy: Array.isArray(registry.legacy)
-      ? registry.legacy.map((entry, index) =>
-          requireManifestValidator(entry, `${path}.legacy[${index}]`),
-        )
+      ? registry.legacy.map((entry, index) => requireManifestVoucherPolicyEntry(entry, `${path}.legacy[${index}]`))
       : [],
   };
 }
@@ -432,7 +577,10 @@ function requireDeploymentSpendChannelValidator(value: unknown, path: string): D
         refValidator.chan_close_confirm,
         `${path}.refValidator.chan_close_confirm`,
       ),
-      chan_close_init: requireDeploymentRefValidator(refValidator.chan_close_init, `${path}.refValidator.chan_close_init`),
+      chan_close_init: requireDeploymentRefValidator(
+        refValidator.chan_close_init,
+        `${path}.refValidator.chan_close_init`,
+      ),
       chan_open_ack: requireDeploymentRefValidator(refValidator.chan_open_ack, `${path}.refValidator.chan_open_ack`),
       chan_open_confirm: requireDeploymentRefValidator(
         refValidator.chan_open_confirm,
@@ -460,7 +608,10 @@ function requireManifestSpendChannelValidator(value: unknown, path: string): Bri
         refValidator.chan_close_confirm,
         `${path}.ref_validator.chan_close_confirm`,
       ),
-      chan_close_init: requireManifestRefValidator(refValidator.chan_close_init, `${path}.ref_validator.chan_close_init`),
+      chan_close_init: requireManifestRefValidator(
+        refValidator.chan_close_init,
+        `${path}.ref_validator.chan_close_init`,
+      ),
       chan_open_ack: requireManifestRefValidator(refValidator.chan_open_ack, `${path}.ref_validator.chan_open_ack`),
       chan_open_confirm: requireManifestRefValidator(
         refValidator.chan_open_confirm,
@@ -577,8 +728,16 @@ function deploymentVoucherPolicyRegistryToManifest(
   registry: DeploymentVoucherPolicyRegistry,
 ): BridgeManifestVoucherPolicyRegistry {
   return {
-    active: deploymentValidatorToManifest(registry.active),
-    legacy: registry.legacy.map(deploymentValidatorToManifest),
+    active: {
+      ...deploymentValidatorToManifest(registry.active),
+      ...(registry.active.compatibility
+        ? { compatibility: deploymentVoucherCompatibilityToManifest(registry.active.compatibility) }
+        : {}),
+    },
+    legacy: registry.legacy.map((entry) => ({
+      ...deploymentValidatorToManifest(entry),
+      ...(entry.compatibility ? { compatibility: deploymentVoucherCompatibilityToManifest(entry.compatibility) } : {}),
+    })),
   };
 }
 
@@ -586,22 +745,26 @@ function manifestVoucherPolicyRegistryToDeployment(
   registry: BridgeManifestVoucherPolicyRegistry,
 ): DeploymentVoucherPolicyRegistry {
   return {
-    active: manifestValidatorToDeployment(registry.active),
-    legacy: registry.legacy.map(manifestValidatorToDeployment),
+    active: {
+      ...manifestValidatorToDeployment(registry.active),
+      ...(registry.active.compatibility
+        ? { compatibility: manifestVoucherCompatibilityToDeployment(registry.active.compatibility) }
+        : {}),
+    },
+    legacy: registry.legacy.map((entry) => ({
+      ...manifestValidatorToDeployment(entry),
+      ...(entry.compatibility ? { compatibility: manifestVoucherCompatibilityToDeployment(entry.compatibility) } : {}),
+    })),
   };
 }
 
-function deploymentVoucherMetadataToManifest(
-  validator: DeploymentVoucherMetadata,
-): BridgeManifestVoucherMetadata {
+function deploymentVoucherMetadataToManifest(validator: DeploymentVoucherMetadata): BridgeManifestVoucherMetadata {
   return {
     address: validator.address,
   };
 }
 
-function manifestVoucherMetadataToDeployment(
-  validator: BridgeManifestVoucherMetadata,
-): DeploymentVoucherMetadata {
+function manifestVoucherMetadataToDeployment(validator: BridgeManifestVoucherMetadata): DeploymentVoucherMetadata {
   return {
     address: validator.address,
   };
@@ -663,7 +826,186 @@ function manifestBridgeRegistryToDeployment(bridgeRegistry: BridgeManifestBridge
   };
 }
 
-function deploymentSpendChannelToManifest(validator: DeploymentSpendChannelValidator): BridgeManifestSpendChannelValidator {
+function deploymentTraceRegistryId(traceRegistry: DeploymentTraceRegistry): string {
+  return [
+    traceRegistry.address,
+    traceRegistry.shardPolicyId,
+    traceRegistry.directory.policyId,
+    traceRegistry.directory.name,
+  ].join(':');
+}
+
+function manifestTraceRegistryId(traceRegistry: BridgeManifestTraceRegistry): string {
+  return [
+    traceRegistry.address,
+    traceRegistry.shard_policy_id,
+    traceRegistry.directory.policy_id,
+    traceRegistry.directory.token_name,
+  ].join(':');
+}
+
+function expectedDeploymentVoucherCompatibilityProfile(
+  deployment: Pick<DeploymentConfig, 'bridgeRegistry' | 'traceRegistry'>,
+): DeploymentVoucherCompatibilityProfile {
+  assert(deployment.bridgeRegistry, 'Invalid bridge config: legacy voucher policy support requires bridgeRegistry');
+  assert(deployment.traceRegistry, 'Invalid bridge config: legacy voucher policy support requires traceRegistry');
+
+  return {
+    ...VOUCHER_COMPATIBILITY_PROTOCOL,
+    bridgeRegistryToken: {
+      policyId: deployment.bridgeRegistry.policyId,
+      name: deployment.bridgeRegistry.tokenName,
+    },
+    traceRegistryId: deploymentTraceRegistryId(deployment.traceRegistry),
+  };
+}
+
+function expectedManifestVoucherCompatibilityProfile(
+  manifest: Pick<BridgeManifest, 'bridge_registry' | 'trace_registry'>,
+): BridgeManifestVoucherCompatibilityProfile {
+  assert(manifest.bridge_registry, 'Invalid bridge config: legacy voucher policy support requires bridge_registry');
+  assert(manifest.trace_registry, 'Invalid bridge config: legacy voucher policy support requires trace_registry');
+
+  return {
+    compatible_bridge_version: VOUCHER_COMPATIBILITY_PROTOCOL.compatibleBridgeVersion,
+    voucher_asset_name_version: VOUCHER_COMPATIBILITY_PROTOCOL.voucherAssetNameVersion,
+    redeemer_version: VOUCHER_COMPATIBILITY_PROTOCOL.redeemerVersion,
+    packet_data_encoding_version: VOUCHER_COMPATIBILITY_PROTOCOL.packetDataEncodingVersion,
+    transfer_denom_logic_version: VOUCHER_COMPATIBILITY_PROTOCOL.transferDenomLogicVersion,
+    channel_id_derivation_version: VOUCHER_COMPATIBILITY_PROTOCOL.channelIdDerivationVersion,
+    host_state_channel_semantics_version: VOUCHER_COMPATIBILITY_PROTOCOL.hostStateChannelSemanticsVersion,
+    trace_registry_semantics_version: VOUCHER_COMPATIBILITY_PROTOCOL.traceRegistrySemanticsVersion,
+    metadata_format_version: VOUCHER_COMPATIBILITY_PROTOCOL.metadataFormatVersion,
+    bridge_registry_token: {
+      policy_id: manifest.bridge_registry.policy_id,
+      token_name: manifest.bridge_registry.token_name,
+    },
+    trace_registry_id: manifestTraceRegistryId(manifest.trace_registry),
+  };
+}
+
+function deploymentVoucherCompatibilityToManifest(
+  profile: DeploymentVoucherCompatibilityProfile,
+): BridgeManifestVoucherCompatibilityProfile {
+  return {
+    compatible_bridge_version: profile.compatibleBridgeVersion,
+    voucher_asset_name_version: profile.voucherAssetNameVersion,
+    redeemer_version: profile.redeemerVersion,
+    packet_data_encoding_version: profile.packetDataEncodingVersion,
+    transfer_denom_logic_version: profile.transferDenomLogicVersion,
+    channel_id_derivation_version: profile.channelIdDerivationVersion,
+    host_state_channel_semantics_version: profile.hostStateChannelSemanticsVersion,
+    trace_registry_semantics_version: profile.traceRegistrySemanticsVersion,
+    metadata_format_version: profile.metadataFormatVersion,
+    bridge_registry_token: deploymentAuthTokenToManifest(profile.bridgeRegistryToken),
+    trace_registry_id: profile.traceRegistryId,
+  };
+}
+
+function manifestVoucherCompatibilityToDeployment(
+  profile: BridgeManifestVoucherCompatibilityProfile,
+): DeploymentVoucherCompatibilityProfile {
+  return {
+    compatibleBridgeVersion: profile.compatible_bridge_version,
+    voucherAssetNameVersion: profile.voucher_asset_name_version,
+    redeemerVersion: profile.redeemer_version,
+    packetDataEncodingVersion: profile.packet_data_encoding_version,
+    transferDenomLogicVersion: profile.transfer_denom_logic_version,
+    channelIdDerivationVersion: profile.channel_id_derivation_version,
+    hostStateChannelSemanticsVersion: profile.host_state_channel_semantics_version,
+    traceRegistrySemanticsVersion: profile.trace_registry_semantics_version,
+    metadataFormatVersion: profile.metadata_format_version,
+    bridgeRegistryToken: manifestAuthTokenToDeployment(profile.bridge_registry_token),
+    traceRegistryId: profile.trace_registry_id,
+  };
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableJson).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) =>
+      left.localeCompare(right),
+    );
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function assertJsonEqual(left: unknown, right: unknown, message: string): void {
+  assert(stableJson(left) === stableJson(right), message);
+}
+
+function normalizeDeploymentVoucherPolicyRegistryCompatibility(deployment: DeploymentConfig): DeploymentConfig {
+  const registry = deployment.voucherPolicyRegistry ?? {
+    active: deployment.validators.mintVoucher as DeploymentVoucherPolicyRegistryEntry,
+    legacy: [],
+  };
+  const expected = expectedDeploymentVoucherCompatibilityProfile(deployment);
+  const activeCompatibility = registry.active.compatibility ?? expected;
+  assertJsonEqual(
+    activeCompatibility,
+    expected,
+    'Invalid bridge config: active voucher policy compatibility does not match this bridge deployment',
+  );
+
+  return {
+    ...deployment,
+    voucherPolicyRegistry: {
+      active: { ...registry.active, compatibility: activeCompatibility },
+      legacy: registry.legacy.map((entry, index) => {
+        assert(
+          entry.compatibility,
+          `Invalid bridge config: "voucherPolicyRegistry.legacy[${index}].compatibility" is required`,
+        );
+        assertJsonEqual(
+          entry.compatibility,
+          expected,
+          `Invalid bridge config: legacy voucher policy ${entry.scriptHash} is not compatible with this bridge deployment`,
+        );
+        return { ...entry, compatibility: entry.compatibility };
+      }),
+    },
+  };
+}
+
+function normalizeManifestVoucherPolicyRegistryCompatibility(manifest: BridgeManifest): BridgeManifest {
+  const registry = manifest.voucher_policy_registry ?? {
+    active: manifest.validators.mint_voucher as BridgeManifestVoucherPolicyRegistryEntry,
+    legacy: [],
+  };
+  const expected = expectedManifestVoucherCompatibilityProfile(manifest);
+  const activeCompatibility = registry.active.compatibility ?? expected;
+  assertJsonEqual(
+    activeCompatibility,
+    expected,
+    'Invalid bridge config: active voucher policy compatibility does not match this bridge manifest',
+  );
+
+  return {
+    ...manifest,
+    voucher_policy_registry: {
+      active: { ...registry.active, compatibility: activeCompatibility },
+      legacy: registry.legacy.map((entry, index) => {
+        assert(
+          entry.compatibility,
+          `Invalid bridge config: "voucher_policy_registry.legacy[${index}].compatibility" is required`,
+        );
+        assertJsonEqual(
+          entry.compatibility,
+          expected,
+          `Invalid bridge config: legacy voucher policy ${entry.script_hash} is not compatible with this bridge manifest`,
+        );
+        return { ...entry, compatibility: entry.compatibility };
+      }),
+    },
+  };
+}
+
+function deploymentSpendChannelToManifest(
+  validator: DeploymentSpendChannelValidator,
+): BridgeManifestSpendChannelValidator {
   return {
     ...deploymentValidatorToManifest(validator),
     ref_validator: {
@@ -679,7 +1021,9 @@ function deploymentSpendChannelToManifest(validator: DeploymentSpendChannelValid
   };
 }
 
-function manifestSpendChannelToDeployment(validator: BridgeManifestSpendChannelValidator): DeploymentSpendChannelValidator {
+function manifestSpendChannelToDeployment(
+  validator: BridgeManifestSpendChannelValidator,
+): DeploymentSpendChannelValidator {
   return {
     ...manifestValidatorToDeployment(validator),
     refValidator: {
@@ -715,7 +1059,12 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
         ? { bridgeRegistry: requireDeploymentValidator(validators.bridgeRegistry, 'validators.bridgeRegistry') }
         : {}),
       ...(validators.spendTraceRegistry
-        ? { spendTraceRegistry: requireDeploymentValidator(validators.spendTraceRegistry, 'validators.spendTraceRegistry') }
+        ? {
+            spendTraceRegistry: requireDeploymentValidator(
+              validators.spendTraceRegistry,
+              'validators.spendTraceRegistry',
+            ),
+          }
         : {}),
       spendTransferModule: requireDeploymentValidator(validators.spendTransferModule, 'validators.spendTransferModule'),
       mintIdentifier: requireDeploymentValidator(validators.mintIdentifier, 'validators.mintIdentifier'),
@@ -730,7 +1079,9 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
       ),
       mintPort: requireDeploymentValidator(validators.mintPort, 'validators.mintPort'),
       ...(validators.voucherMetadata
-        ? { voucherMetadata: requireDeploymentVoucherMetadata(validators.voucherMetadata, 'validators.voucherMetadata') }
+        ? {
+            voucherMetadata: requireDeploymentVoucherMetadata(validators.voucherMetadata, 'validators.voucherMetadata'),
+          }
         : {}),
     },
     modules: {
@@ -756,7 +1107,9 @@ export function normalizeHandlerJsonDeploymentConfig(
   deployment: unknown,
   cardano: BridgeManifestCardanoIdentity,
 ): LoadedBridgeConfig {
-  const normalizedDeployment = requireSttDeploymentConfig(deployment);
+  const normalizedDeployment = normalizeDeploymentVoucherPolicyRegistryCompatibility(
+    requireSttDeploymentConfig(deployment),
+  );
   const normalizedCardano = requireCardanoIdentity(cardano);
 
   // Normalize deployment JSON once so both startup sources feed the same public
@@ -832,11 +1185,13 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
   // rebuild the internal deployment shape so downstream Gateway code stays
   // unaware of which bootstrap source was used.
   const mintVoucherManifest = requireManifestValidator(validators.mint_voucher, 'validators.mint_voucher');
-  const bridgeManifest: BridgeManifest = {
+  const parsedBridgeManifest: BridgeManifest = {
     schema_version: requireNonNegativeInteger(manifestAny.schema_version, 'schema_version'),
     deployment_id: requireNonEmptyString(manifestAny.deployment_id, 'deployment_id'),
     deployed_at: requireIsoTimestamp(manifestAny.deployed_at, 'deployed_at'),
-    cardano: requireCardanoIdentity(requireObject(manifestAny.cardano, 'cardano') as unknown as BridgeManifestCardanoIdentity),
+    cardano: requireCardanoIdentity(
+      requireObject(manifestAny.cardano, 'cardano') as unknown as BridgeManifestCardanoIdentity,
+    ),
     host_state_nft: requireManifestAuthToken(manifestAny.host_state_nft, 'host_state_nft'),
     validators: {
       host_state_stt: requireManifestValidator(validators.host_state_stt, 'validators.host_state_stt'),
@@ -857,7 +1212,10 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
             ),
           }
         : {}),
-      spend_transfer_module: requireManifestValidator(validators.spend_transfer_module, 'validators.spend_transfer_module'),
+      spend_transfer_module: requireManifestValidator(
+        validators.spend_transfer_module,
+        'validators.spend_transfer_module',
+      ),
       mint_identifier: requireManifestValidator(validators.mint_identifier, 'validators.mint_identifier'),
       verify_proof: requireManifestValidator(validators.verify_proof, 'validators.verify_proof'),
       mint_client_stt: requireManifestValidator(validators.mint_client_stt, 'validators.mint_client_stt'),
@@ -870,7 +1228,12 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       ),
       mint_port: requireManifestValidator(validators.mint_port, 'validators.mint_port'),
       ...(validators.voucher_metadata
-        ? { voucher_metadata: requireManifestVoucherMetadata(validators.voucher_metadata, 'validators.voucher_metadata') }
+        ? {
+            voucher_metadata: requireManifestVoucherMetadata(
+              validators.voucher_metadata,
+              'validators.voucher_metadata',
+            ),
+          }
         : {}),
     },
     modules: {
@@ -892,9 +1255,11 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
   };
 
   assert(
-    bridgeManifest.schema_version === 2 || bridgeManifest.schema_version === 3,
+    parsedBridgeManifest.schema_version === 2 || parsedBridgeManifest.schema_version === 3,
     'Invalid bridge config: "schema_version" must be 2 or 3',
   );
+
+  const bridgeManifest = normalizeManifestVoucherPolicyRegistryCompatibility(parsedBridgeManifest);
 
   return {
     bridgeManifest,
@@ -924,9 +1289,7 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
         mintConnectionStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_connection_stt),
         mintChannelStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_channel_stt),
         mintVoucher: manifestValidatorToDeployment(bridgeManifest.validators.mint_voucher),
-        mintTransferEscrowShard: manifestValidatorToDeployment(
-          bridgeManifest.validators.mint_transfer_escrow_shard,
-        ),
+        mintTransferEscrowShard: manifestValidatorToDeployment(bridgeManifest.validators.mint_transfer_escrow_shard),
         mintPort: manifestValidatorToDeployment(bridgeManifest.validators.mint_port),
         ...(bridgeManifest.validators.voucher_metadata
           ? {
@@ -936,8 +1299,12 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       },
       modules: {
         transfer: requireDeploymentModule(bridgeManifest.modules.transfer, 'modules.transfer'),
-        ...(bridgeManifest.modules.mock ? { mock: requireDeploymentModule(bridgeManifest.modules.mock, 'modules.mock') } : {}),
-        ...(bridgeManifest.modules.icq ? { icq: requireDeploymentModule(bridgeManifest.modules.icq, 'modules.icq') } : {}),
+        ...(bridgeManifest.modules.mock
+          ? { mock: requireDeploymentModule(bridgeManifest.modules.mock, 'modules.mock') }
+          : {}),
+        ...(bridgeManifest.modules.icq
+          ? { icq: requireDeploymentModule(bridgeManifest.modules.icq, 'modules.icq') }
+          : {}),
       },
       ...(bridgeManifest.trace_registry
         ? { traceRegistry: manifestTraceRegistryToDeployment(bridgeManifest.trace_registry) }
@@ -973,9 +1340,7 @@ export function loadBridgeConfigFromEnv(
   // Startup must have a single source of truth. If both are set, we stop early
   // instead of guessing which deployment description should win.
   if (bridgeManifestPath && explicitHandlerPath) {
-    throw new Error(
-      'BRIDGE_MANIFEST_PATH and HANDLER_JSON_PATH are mutually exclusive; set only one startup source',
-    );
+    throw new Error('BRIDGE_MANIFEST_PATH and HANDLER_JSON_PATH are mutually exclusive; set only one startup source');
   }
 
   const cardanoNetworkMagic = Number(env.CARDANO_CHAIN_NETWORK_MAGIC || 42);

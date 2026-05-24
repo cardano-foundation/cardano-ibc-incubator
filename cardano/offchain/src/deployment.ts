@@ -278,6 +278,7 @@ type ExistingVoucherPolicy = {
   scriptHash: string;
   address: string;
   refUtxo: DeploymentRefUtxo;
+  compatibility?: unknown;
 };
 
 type ExistingBridgeRegistrySource = {
@@ -340,6 +341,9 @@ const deploymentValidator = (
     scriptHash,
     address: deploymentString(validator.address) ?? "",
     refUtxo,
+    ...(validator.compatibility
+      ? { compatibility: validator.compatibility }
+      : {}),
   };
 };
 
@@ -357,6 +361,46 @@ const uniqueVoucherPolicies = (
   }
   return unique;
 };
+
+const VOUCHER_COMPATIBILITY_PROTOCOL = {
+  compatibleBridgeVersion: 1,
+  voucherAssetNameVersion: 1,
+  redeemerVersion: 1,
+  packetDataEncodingVersion: 1,
+  transferDenomLogicVersion: 1,
+  channelIdDerivationVersion: 1,
+  hostStateChannelSemanticsVersion: 1,
+  traceRegistrySemanticsVersion: 1,
+  metadataFormatVersion: 1,
+} as const;
+
+const traceRegistryCompatibilityId = (traceRegistry: {
+  address: string;
+  shardPolicyId: string;
+  directory: AuthToken;
+}) =>
+  [
+    traceRegistry.address,
+    traceRegistry.shardPolicyId,
+    traceRegistry.directory.policy_id,
+    traceRegistry.directory.name,
+  ].join(":");
+
+const voucherCompatibilityProfile = (
+  bridgeRegistryToken: AuthToken,
+  traceRegistry: {
+    address: string;
+    shardPolicyId: string;
+    directory: AuthToken;
+  },
+) => ({
+  ...VOUCHER_COMPATIBILITY_PROTOCOL,
+  bridgeRegistryToken: {
+    policyId: bridgeRegistryToken.policy_id,
+    name: bridgeRegistryToken.name,
+  },
+  traceRegistryId: traceRegistryCompatibilityId(traceRegistry),
+});
 
 const loadExistingBridgeRegistrySource = ():
   | ExistingBridgeRegistrySource
@@ -912,6 +956,14 @@ export const createDeployment = async (
   if (!bridgeRegistrySource) {
     referredValidators.push(traceRegistry.base.validator);
   }
+  const voucherPolicyCompatibility = voucherCompatibilityProfile(
+    bridgeRegistry.authToken,
+    {
+      address: traceRegistry.base.address,
+      shardPolicyId: traceRegistry.shardPolicyId,
+      directory: traceRegistry.directory,
+    },
+  );
 
   const {
     identifierTokenUnit: mockModuleIdentifier,
@@ -1130,6 +1182,7 @@ export const createDeployment = async (
         scriptHash: mintVoucher.policyId,
         address: "",
         refUtxo: refUtxosInfo[mintVoucher.policyId],
+        compatibility: voucherPolicyCompatibility,
       },
       legacy: bridgeRegistrySource?.legacyVoucherPolicies.map((policy) => ({
         ...policy,

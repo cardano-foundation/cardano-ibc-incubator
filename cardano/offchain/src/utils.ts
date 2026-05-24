@@ -944,6 +944,7 @@ export type DeploymentTemplate = {
       scriptHash: string;
       address: string;
       refUtxo: UTxO;
+      compatibility?: unknown;
     };
     legacy: Array<{
       title: string;
@@ -951,6 +952,7 @@ export type DeploymentTemplate = {
       scriptHash: string;
       address: string;
       refUtxo: UTxO;
+      compatibility?: unknown;
     }>;
   };
   modules: Record<
