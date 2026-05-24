@@ -38,11 +38,43 @@ validator bridge_registry(registry_token: AuthToken) {
     expect output_datum: bridge_registry_lib.BridgeRegistryDatum =
       validator_utils.get_inline_datum(continuing_output)
     expect output_datum.governance_key_hash == input_datum.governance_key_hash
+    expect registry_upgrade_preserves_voucher_support(input_datum, output_datum)
 
     True
   }
 
   else(_) {
     fail
+  }
+}
+
+fn registry_upgrade_preserves_voucher_support(
+  input_datum: bridge_registry_lib.BridgeRegistryDatum,
+  output_datum: bridge_registry_lib.BridgeRegistryDatum,
+) -> Bool {
+  and {
+    list.has(
+      output_datum.legacy_voucher_policy_ids,
+      input_datum.active_voucher_policy_id,
+    )?,
+    list.all(
+      input_datum.legacy_voucher_policy_ids,
+      fn(policy_id) {
+        list.has(output_datum.legacy_voucher_policy_ids, policy_id)
+      },
+    )?,
+    !list.has(
+      output_datum.legacy_voucher_policy_ids,
+      output_datum.active_voucher_policy_id,
+    )?,
+    policy_ids_are_unique(output_datum.legacy_voucher_policy_ids)?,
+  }
+}
+
+fn policy_ids_are_unique(policy_ids: List<ByteArray>) -> Bool {
+  when policy_ids is {
+    [] -> True
+    [policy_id, ..rest] ->
+      !list.has(rest, policy_id) && policy_ids_are_unique(rest)
   }
 }
