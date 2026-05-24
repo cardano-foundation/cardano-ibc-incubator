@@ -5,3 +5,4 @@ export * from "./MintPortRedeemer.ts";
 export * from "./TransferEscrowShardRedeemer.ts";
 export * from "./OutputReference.ts";
 export * from "./TraceRegistry.ts";
+export * from "./BridgeRegistry.ts";

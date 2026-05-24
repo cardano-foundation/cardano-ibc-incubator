@@ -58,6 +58,12 @@ type DeploymentConfig = {
             refUtxo?: RefUtxo;
         }>;
     };
+    bridgeRegistry?: {
+        policyId: string;
+        tokenName: string;
+        address: string;
+        refUtxo: RefUtxo;
+    };
     modules: {
         transfer: {
             address: string;
@@ -79,6 +85,7 @@ export declare class LucidIbcAdapter {
     private loadReferenceScripts;
     private resolveReferenceScriptUtxo;
     private mintVoucherReferenceScript;
+    private bridgeRegistryReferenceInputs;
     private normalizeAddressOrCredential;
     selectWalletFromAddress(addressOrCredential: string, utxos: UTxO[]): void;
     beginWalletSelectionScope(): number;

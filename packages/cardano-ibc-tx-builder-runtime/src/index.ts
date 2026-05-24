@@ -85,6 +85,14 @@ type DeploymentTraceRegistry = {
   };
 };
 
+type DeploymentBridgeRegistry = {
+  policyId: string;
+  tokenName: string;
+  address: string;
+  refUtxo: RefUtxo;
+  governanceKeyHash?: string;
+};
+
 type VoucherPolicyRegistryEntry = {
   scriptHash: string;
   refUtxo?: RefUtxo;
@@ -104,6 +112,7 @@ type DeploymentConfig = {
     spendClient: DeploymentValidator;
     spendConnection: DeploymentValidator;
     spendChannel: DeploymentSpendChannelValidator;
+    bridgeRegistry?: DeploymentValidator;
     spendTraceRegistry?: DeploymentValidator;
     spendTransferModule: DeploymentValidator;
     mintIdentifier: DeploymentValidator;
@@ -120,6 +129,7 @@ type DeploymentConfig = {
     mock?: DeploymentModule;
   };
   traceRegistry?: DeploymentTraceRegistry;
+  bridgeRegistry?: DeploymentBridgeRegistry;
   voucherPolicyRegistry?: VoucherPolicyRegistry;
 };
 
@@ -204,6 +214,11 @@ type BridgeManifest = {
       address: string;
       ref_utxo: { tx_hash: string; output_index: number };
     };
+    bridge_registry?: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
     spend_transfer_module: {
       script_hash: string;
       address: string;
@@ -265,6 +280,13 @@ type BridgeManifest = {
       policy_id: string;
       token_name: string;
     };
+  };
+  bridge_registry?: {
+    policy_id: string;
+    token_name: string;
+    address: string;
+    ref_utxo: { tx_hash: string; output_index: number };
+    governance_key_hash?: string;
   };
 };
 
@@ -553,6 +575,11 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
               spendTraceRegistry: mapValidator(manifest.validators.spend_trace_registry),
             }
           : {}),
+        ...(manifest.validators.bridge_registry
+          ? {
+              bridgeRegistry: mapValidator(manifest.validators.bridge_registry),
+            }
+          : {}),
         spendTransferModule: mapValidator(manifest.validators.spend_transfer_module),
         mintIdentifier: mapValidator(manifest.validators.mint_identifier),
         verifyProof: mapValidator(manifest.validators.verify_proof),
@@ -576,6 +603,17 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
                 policyId: manifest.trace_registry.directory.policy_id,
                 name: manifest.trace_registry.directory.token_name,
               },
+            },
+          }
+        : {}),
+      ...(manifest.bridge_registry
+        ? {
+            bridgeRegistry: {
+              policyId: manifest.bridge_registry.policy_id,
+              tokenName: manifest.bridge_registry.token_name,
+              address: manifest.bridge_registry.address,
+              refUtxo: mapRefUtxo(manifest.bridge_registry.ref_utxo),
+              governanceKeyHash: manifest.bridge_registry.governance_key_hash,
             },
           }
         : {}),

@@ -199,6 +199,7 @@ type ReferenceScripts = {
   timeoutPacket: UTxO;
   mintVoucher: UTxO;
   legacyMintVouchers: Record<string, UTxO>;
+  bridgeRegistry?: UTxO;
   mintPort: UTxO;
   mintTransferEscrowShard: UTxO;
 };
@@ -236,6 +237,7 @@ export class LucidService implements OnModuleInit {
       mintClient: deploymentConfig.validators.mintClientStt.refUtxo,
       mintConnection: deploymentConfig.validators.mintConnectionStt.refUtxo,
       mintVoucher: deploymentConfig.validators.mintVoucher.refUtxo,
+      bridgeRegistry: deploymentConfig.bridgeRegistry?.refUtxo,
       mintPort: deploymentConfig.validators.mintPort.refUtxo,
       mintTransferEscrowShard:
         deploymentConfig.validators.mintTransferEscrowShard.refUtxo,
@@ -382,6 +384,12 @@ export class LucidService implements OnModuleInit {
       );
     }
     return legacyReferenceScript;
+  }
+
+  private bridgeRegistryReferenceInputs(): UTxO[] {
+    return this.referenceScripts.bridgeRegistry
+      ? [this.referenceScripts.bridgeRegistry]
+      : [];
   }
 
   // ========================== Public functions ==========================
@@ -1983,6 +1991,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.mintVoucher,
+      ...this.bridgeRegistryReferenceInputs(),
       this.referenceScripts.receivePacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
@@ -2299,6 +2308,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.mintVoucher,
+      ...this.bridgeRegistryReferenceInputs(),
       this.referenceScripts.ackPacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
@@ -2536,6 +2546,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.mintVoucherReferenceScript(dto.voucherPolicyId),
+      ...this.bridgeRegistryReferenceInputs(),
       this.referenceScripts.sendPacket,
       this.referenceScripts.hostStateStt,
     ])
@@ -2604,6 +2615,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.mintVoucher,
+      ...this.bridgeRegistryReferenceInputs(),
       this.referenceScripts.timeoutPacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,

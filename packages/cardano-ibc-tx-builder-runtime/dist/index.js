@@ -209,6 +209,11 @@ function normalizeBridgeManifest(manifest) {
                         spendTraceRegistry: mapValidator(manifest.validators.spend_trace_registry),
                     }
                     : {}),
+                ...(manifest.validators.bridge_registry
+                    ? {
+                        bridgeRegistry: mapValidator(manifest.validators.bridge_registry),
+                    }
+                    : {}),
                 spendTransferModule: mapValidator(manifest.validators.spend_transfer_module),
                 mintIdentifier: mapValidator(manifest.validators.mint_identifier),
                 verifyProof: mapValidator(manifest.validators.verify_proof),
@@ -232,6 +237,17 @@ function normalizeBridgeManifest(manifest) {
                             policyId: manifest.trace_registry.directory.policy_id,
                             name: manifest.trace_registry.directory.token_name,
                         },
+                    },
+                }
+                : {}),
+            ...(manifest.bridge_registry
+                ? {
+                    bridgeRegistry: {
+                        policyId: manifest.bridge_registry.policy_id,
+                        tokenName: manifest.bridge_registry.token_name,
+                        address: manifest.bridge_registry.address,
+                        refUtxo: mapRefUtxo(manifest.bridge_registry.ref_utxo),
+                        governanceKeyHash: manifest.bridge_registry.governance_key_hash,
                     },
                 }
                 : {}),

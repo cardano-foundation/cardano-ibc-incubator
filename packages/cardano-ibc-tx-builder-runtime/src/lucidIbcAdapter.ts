@@ -39,6 +39,12 @@ type DeploymentConfig = {
     active?: { scriptHash: string; refUtxo?: RefUtxo };
     legacy?: Array<{ scriptHash: string; refUtxo?: RefUtxo }>;
   };
+  bridgeRegistry?: {
+    policyId: string;
+    tokenName: string;
+    address: string;
+    refUtxo: RefUtxo;
+  };
   modules: {
     transfer: { address: string };
   };
@@ -51,6 +57,7 @@ type ReferenceScripts = {
   hostStateStt: UTxO;
   mintVoucher: UTxO;
   legacyMintVouchers: Record<string, UTxO>;
+  bridgeRegistry?: UTxO;
   mintPort: UTxO;
   mintTransferEscrowShard: UTxO;
 };
@@ -872,19 +879,26 @@ export class LucidIbcAdapter {
   }
 
   private async loadReferenceScripts(): Promise<ReferenceScripts> {
-    const outRefs: Record<Exclude<keyof ReferenceScripts, 'legacyMintVouchers'>, RefUtxo> = {
+    const outRefs: Record<
+      Exclude<keyof ReferenceScripts, 'legacyMintVouchers'>,
+      RefUtxo | undefined
+    > = {
       spendChannel: this.deployment.validators.spendChannel.refUtxo,
       spendTransferModule: this.deployment.validators.spendTransferModule.refUtxo,
       sendPacket: this.deployment.validators.spendChannel.refValidator.send_packet.refUtxo,
       hostStateStt: this.deployment.validators.hostStateStt.refUtxo,
       mintVoucher: this.deployment.validators.mintVoucher.refUtxo,
+      bridgeRegistry: this.deployment.bridgeRegistry?.refUtxo,
       mintPort: this.deployment.validators.mintPort.refUtxo,
       mintTransferEscrowShard:
         this.deployment.validators.mintTransferEscrowShard.refUtxo,
     };
 
+    const requiredOutRefs = Object.entries(outRefs).filter(
+      (entry): entry is [string, RefUtxo] => !!entry[1],
+    );
     const entries = await Promise.all(
-      Object.entries(outRefs).map(async ([label, outRef]) => {
+      requiredOutRefs.map(async ([label, outRef]) => {
         const utxo = await this.resolveReferenceScriptUtxo(label, outRef);
         return [label, utxo] as const;
       }),
@@ -948,6 +962,12 @@ export class LucidIbcAdapter {
       );
     }
     return legacyReferenceScript;
+  }
+
+  private bridgeRegistryReferenceInputs(): UTxO[] {
+    return this.referenceScripts.bridgeRegistry
+      ? [this.referenceScripts.bridgeRegistry]
+      : [];
   }
 
   private normalizeAddressOrCredential(addressOrCredential: string): string {
@@ -1347,6 +1367,7 @@ export class LucidIbcAdapter {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.mintVoucherReferenceScript(dto.voucherPolicyId),
+      ...this.bridgeRegistryReferenceInputs(),
       this.referenceScripts.sendPacket,
       this.referenceScripts.hostStateStt,
     ])

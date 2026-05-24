@@ -44,6 +44,7 @@ function buildHandlerJsonDeployment() {
         },
       },
       spendTraceRegistry: buildValidator('spendTraceRegistry'),
+      bridgeRegistry: buildValidator('bridgeRegistry'),
       spendTransferModule: buildValidator('spendTransferModule'),
       mintIdentifier: buildValidator('mintIdentifier'),
       verifyProof: buildValidator('verifyProof'),
@@ -74,6 +75,16 @@ function buildHandlerJsonDeployment() {
         policyId: 'trace-shard-policy',
         name: 'trace-directory',
       },
+    },
+    bridgeRegistry: {
+      policyId: 'bridge-registry-policy',
+      tokenName: 'bridge-registry-token',
+      address: 'bridge-registry-address',
+      refUtxo: {
+        txHash: 'bridge-registry-token-tx',
+        outputIndex: 10,
+      },
+      governanceKeyHash: 'bridge-registry-governance',
     },
   };
 }
@@ -122,6 +133,24 @@ describe('bridge manifest normalization', () => {
         policy_id: 'trace-shard-policy',
         token_name: 'trace-directory',
       },
+    });
+    expect(loaded.bridgeManifest.validators.bridge_registry).toEqual({
+      script_hash: 'bridgeRegistry-hash',
+      address: 'bridgeRegistry-address',
+      ref_utxo: {
+        tx_hash: 'bridgeRegistry-tx',
+        output_index: 1,
+      },
+    });
+    expect(loaded.bridgeManifest.bridge_registry).toEqual({
+      policy_id: 'bridge-registry-policy',
+      token_name: 'bridge-registry-token',
+      address: 'bridge-registry-address',
+      ref_utxo: {
+        tx_hash: 'bridge-registry-token-tx',
+        output_index: 10,
+      },
+      governance_key_hash: 'bridge-registry-governance',
     });
   });
 

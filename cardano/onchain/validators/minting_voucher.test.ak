@@ -9,6 +9,7 @@ use cardano/transaction.{
   InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
   ScriptPurpose, Spend, Transaction,
 }
+use ibc/apps/transfer/bridge_registry.{BridgeDeployment, BridgeRegistryDatum}
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
 }
@@ -48,6 +49,8 @@ type MockData {
   voucher_metadata_script_hash: crypto.ScriptHash,
   channel_minting_policy_id: PolicyId,
   host_state_nft_policy_id: PolicyId,
+  bridge_registry_token: AuthToken,
+  bridge_registry_input: Input,
   module_input: Input,
 }
 
@@ -91,7 +94,52 @@ fn prepare_mock_data() -> MockData {
     voucher_metadata_script_hash: "voucher metadata script hash",
     channel_minting_policy_id: "mint channel policy id",
     host_state_nft_policy_id: "host state nft policy id",
+    bridge_registry_token: AuthToken {
+      policy_id: "bridge registry policy id",
+      name: "bridge registry token name",
+    },
+    bridge_registry_input: make_bridge_registry_input(
+      AuthToken {
+        policy_id: "bridge registry policy id",
+        name: "bridge registry token name",
+      },
+      "mint channel policy id",
+      "host state nft policy id",
+      "mint voucher policy id",
+      [],
+    ),
     module_input,
+  }
+}
+
+fn make_bridge_registry_input(
+  registry_token: AuthToken,
+  channel_minting_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
+  active_voucher_policy_id: PolicyId,
+  legacy_voucher_policy_ids: List<PolicyId>,
+) -> Input {
+  Input {
+    output_reference: OutputReference {
+      transaction_id: #"50b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
+      output_index: 9,
+    },
+    output: Output {
+      address: from_script("bridge registry script hash"),
+      value: from_asset(registry_token.policy_id, registry_token.name, 1),
+      datum: InlineDatum(
+        BridgeRegistryDatum {
+          active_deployment: BridgeDeployment {
+            host_state_nft_policy_id,
+            channel_minting_policy_id,
+          },
+          active_voucher_policy_id,
+          legacy_voucher_policy_ids,
+          governance_key_hash: #"00000000000000000000000000000000000000000000000000000000",
+        },
+      ),
+      reference_script: None,
+    },
   }
 }
 
@@ -528,7 +576,7 @@ fn first_seen_voucher_fixture(
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input, active_shard_input],
-      reference_inputs: [directory_input],
+      reference_inputs: [directory_input, mock_data.bridge_registry_input],
       outputs: [voucher_output, metadata_output, updated_shard_output],
       redeemers,
       mint,
@@ -599,8 +647,7 @@ fn run_first_seen_voucher_mint_transition(
           fixture.mock_data.module_token,
           fixture.mock_data.directory_auth_token,
           fixture.mock_data.voucher_metadata_script_hash,
-          fixture.mock_data.channel_minting_policy_id,
-          fixture.mock_data.host_state_nft_policy_id,
+          fixture.mock_data.bridge_registry_token,
           fixture.redeemer,
           fixture.mock_data.voucher_minting_policy_id,
           fixture.transaction,
@@ -1062,7 +1109,7 @@ test test_mint_voucher() {
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input, active_shard_input],
-      reference_inputs: [directory_input],
+      reference_inputs: [directory_input, mock_data.bridge_registry_input],
       outputs: [voucher_output, metadata_output],
       redeemers,
       mint,
@@ -1072,8 +1119,7 @@ test test_mint_voucher() {
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
-    mock_data.channel_minting_policy_id,
-    mock_data.host_state_nft_policy_id,
+    mock_data.bridge_registry_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1201,7 +1247,7 @@ test test_mint_voucher_fails_with_wrong_mint_quantity() fail {
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input, active_shard_input],
-      reference_inputs: [directory_input],
+      reference_inputs: [directory_input, mock_data.bridge_registry_input],
       outputs: [voucher_output, metadata_output],
       redeemers: [
         Pair(purpose, mint_voucher_redeemer_in_data),
@@ -1225,8 +1271,7 @@ test test_mint_voucher_fails_with_wrong_mint_quantity() fail {
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
-    mock_data.channel_minting_policy_id,
-    mock_data.host_state_nft_policy_id,
+    mock_data.bridge_registry_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1379,7 +1424,7 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input, active_shard_input],
-      reference_inputs: [directory_input],
+      reference_inputs: [directory_input, mock_data.bridge_registry_input],
       outputs: [voucher_output, metadata_output],
       redeemers,
       mint,
@@ -1389,8 +1434,7 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
-    mock_data.channel_minting_policy_id,
-    mock_data.host_state_nft_policy_id,
+    mock_data.bridge_registry_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1470,6 +1514,7 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input],
+      reference_inputs: [mock_data.bridge_registry_input],
       outputs: [
         Output {
           address: from_verification_key(receiver_public_key_hash),
@@ -1499,8 +1544,7 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
-    mock_data.channel_minting_policy_id,
-    mock_data.host_state_nft_policy_id,
+    mock_data.bridge_registry_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1563,6 +1607,7 @@ test test_burn_voucher() {
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input],
+      reference_inputs: [mock_data.bridge_registry_input],
       redeemers: [
         Pair(
           Mint(mock_data.voucher_minting_policy_id),
@@ -1588,8 +1633,91 @@ test test_burn_voucher() {
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
-    mock_data.channel_minting_policy_id,
-    mock_data.host_state_nft_policy_id,
+    mock_data.bridge_registry_token,
+    mint_voucher_redeemer,
+    mock_data.voucher_minting_policy_id,
+    transaction,
+  )
+}
+
+test test_burn_legacy_voucher_uses_active_deployment_from_registry() {
+  let mock_data = prepare_mock_data()
+  let active_v2_voucher_policy_id = "new active voucher policy id"
+  let legacy_registry_input =
+    make_bridge_registry_input(
+      mock_data.bridge_registry_token,
+      mock_data.channel_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
+      active_v2_voucher_policy_id,
+      [mock_data.voucher_minting_policy_id],
+    )
+
+  let packet_source_port = "port-99"
+  let packet_source_channel = "channel-99"
+  let transfer_amount = 100
+
+  let source_prefix =
+    transfer_coin.get_denom_prefix(packet_source_port, packet_source_channel)
+  let prefixed_denom = bytearray.concat(source_prefix, "ibc/usdt")
+
+  let packet_data =
+    FungibleTokenPacketData {
+      denom: prefixed_denom,
+      amount: string.from_int(transfer_amount) |> string.to_bytearray(),
+      sender: "cardano sender verification key",
+      receiver: "cosmos address",
+      memo: "",
+    }
+
+  let mint_voucher_redeemer =
+    BurnVoucher { packet_source_port, packet_source_channel, data: packet_data }
+  let channel_input =
+    make_channel_input(
+      mock_data.channel_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
+      packet_source_channel,
+    )
+  let channel_redeemer =
+    SendPacket {
+      packet: make_packet(
+        packet_source_port,
+        packet_source_channel,
+        "transfer",
+        "channel-1",
+        fungible_token_packet_data.get_bytes(packet_data),
+      ),
+    }
+  let token_name = voucher_asset_name.voucher_user_token_name(packet_data.denom)
+  let mint_voucher_redeemer_in_data: Redeemer = mint_voucher_redeemer
+  let spend_channel_redeemer_in_data: Redeemer = channel_redeemer
+
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock_data.module_input, channel_input],
+      reference_inputs: [legacy_registry_input],
+      redeemers: [
+        Pair(
+          Mint(mock_data.voucher_minting_policy_id),
+          mint_voucher_redeemer_in_data,
+        ),
+        Pair(
+          Spend(channel_input.output_reference),
+          spend_channel_redeemer_in_data,
+        ),
+      ],
+      mint: from_asset(
+        mock_data.voucher_minting_policy_id,
+        token_name,
+        -transfer_amount,
+      ),
+    }
+
+  minting_voucher.mint_voucher.mint(
+    mock_data.module_token,
+    mock_data.directory_auth_token,
+    mock_data.voucher_metadata_script_hash,
+    mock_data.bridge_registry_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1649,6 +1777,7 @@ test test_burn_voucher_fails_with_wrong_burn_quantity() fail {
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input],
+      reference_inputs: [mock_data.bridge_registry_input],
       redeemers: [
         Pair(
           Mint(mock_data.voucher_minting_policy_id),
@@ -1674,8 +1803,7 @@ test test_burn_voucher_fails_with_wrong_burn_quantity() fail {
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
-    mock_data.channel_minting_policy_id,
-    mock_data.host_state_nft_policy_id,
+    mock_data.bridge_registry_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1772,7 +1900,11 @@ test test_refund_voucher() {
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input],
-      reference_inputs: [directory_input, shard_reference_input],
+      reference_inputs: [
+        directory_input,
+        shard_reference_input,
+        mock_data.bridge_registry_input,
+      ],
       outputs: [
         Output {
           address: from_verification_key(sender_public_key_hash),
@@ -1802,8 +1934,7 @@ test test_refund_voucher() {
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
-    mock_data.channel_minting_policy_id,
-    mock_data.host_state_nft_policy_id,
+    mock_data.bridge_registry_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -1904,7 +2035,11 @@ test test_refund_voucher_fails_with_wrong_mint_quantity() fail {
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input],
-      reference_inputs: [directory_input, shard_reference_input],
+      reference_inputs: [
+        directory_input,
+        shard_reference_input,
+        mock_data.bridge_registry_input,
+      ],
       outputs: [
         Output {
           address: from_verification_key(sender_public_key_hash),
@@ -1934,8 +2069,7 @@ test test_refund_voucher_fails_with_wrong_mint_quantity() fail {
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
-    mock_data.channel_minting_policy_id,
-    mock_data.host_state_nft_policy_id,
+    mock_data.bridge_registry_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -2045,8 +2179,10 @@ test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail 
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input],
       reference_inputs: [
-        directory_input, active_shard_reference_input,
+        directory_input,
+        active_shard_reference_input,
         archived_duplicate_reference_input,
+        mock_data.bridge_registry_input,
       ],
       outputs: [
         Output {
@@ -2077,8 +2213,7 @@ test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail 
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
-    mock_data.channel_minting_policy_id,
-    mock_data.host_state_nft_policy_id,
+    mock_data.bridge_registry_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,
@@ -2179,7 +2314,11 @@ test test_refund_voucher_fail() fail {
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input],
-      reference_inputs: [directory_input, shard_reference_input],
+      reference_inputs: [
+        directory_input,
+        shard_reference_input,
+        mock_data.bridge_registry_input,
+      ],
       outputs: [
         Output {
           address: from_verification_key(sender_public_key_hash),
@@ -2209,8 +2348,7 @@ test test_refund_voucher_fail() fail {
     mock_data.module_token,
     mock_data.directory_auth_token,
     mock_data.voucher_metadata_script_hash,
-    mock_data.channel_minting_policy_id,
-    mock_data.host_state_nft_policy_id,
+    mock_data.bridge_registry_token,
     mint_voucher_redeemer,
     mock_data.voucher_minting_policy_id,
     transaction,

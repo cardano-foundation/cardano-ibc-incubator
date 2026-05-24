@@ -1,5 +1,6 @@
 use aiken/collection/list
 use cardano/assets.{PolicyId}
+use ibc/apps/transfer/bridge_registry.{BridgeRegistryDatum}
 
 pub type VoucherPolicyRegistry {
   active: PolicyId,
@@ -8,6 +9,13 @@ pub type VoucherPolicyRegistry {
 
 pub fn operational_policies(registry: VoucherPolicyRegistry) -> List<PolicyId> {
   registry.legacy |> list.push(registry.active)
+}
+
+pub fn from_bridge_registry(datum: BridgeRegistryDatum) -> VoucherPolicyRegistry {
+  VoucherPolicyRegistry {
+    active: datum.active_voucher_policy_id,
+    legacy: datum.legacy_voucher_policy_ids,
+  }
 }
 
 pub fn is_active(registry: VoucherPolicyRegistry, policy_id: PolicyId) -> Bool {

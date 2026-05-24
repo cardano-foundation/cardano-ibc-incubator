@@ -3,6 +3,7 @@ import {
   Constr,
   Data,
   fromText,
+  getAddressDetails,
   LucidEvolution,
   type MintingPolicy,
   PolicyId,
@@ -26,6 +27,7 @@ import {
   submitTx,
 } from "./utils.ts";
 import {
+  BRIDGE_REGISTRY_NONCE_COUNT,
   DEPLOYMENT_NONCE_SPLIT_AMOUNT,
   EMULATOR_ENV,
   ICQ_MODULE_PORT,
@@ -39,6 +41,7 @@ import {
 import {
   AuthToken,
   AuthTokenSchema,
+  BridgeRegistryDatum,
   HostStateDatum,
   HostStateRedeemer,
   MintPortRedeemer,
@@ -264,6 +267,162 @@ const buildBindPortHostStateUpdate = async (
   };
 };
 
+type DeploymentRefUtxo = {
+  txHash: string;
+  outputIndex: number;
+};
+
+type ExistingVoucherPolicy = {
+  title: string;
+  script: string;
+  scriptHash: string;
+  address: string;
+  refUtxo: DeploymentRefUtxo;
+};
+
+type ExistingBridgeRegistrySource = {
+  authToken: AuthToken;
+  address: string;
+  governanceKeyHash?: string;
+  validator?: ExistingVoucherPolicy;
+  legacyVoucherPolicyIds: string[];
+  legacyVoucherPolicies: ExistingVoucherPolicy[];
+};
+
+const deploymentObject = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === "object" ? value as Record<string, unknown> : null;
+
+const deploymentString = (value: unknown): string | undefined =>
+  typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+
+const deploymentRefUtxo = (value: unknown): DeploymentRefUtxo | undefined => {
+  const ref = deploymentObject(value);
+  if (!ref) return undefined;
+
+  const txHash = deploymentString(ref.txHash) ?? deploymentString(ref.tx_hash);
+  const outputIndex = typeof ref.outputIndex === "number"
+    ? ref.outputIndex
+    : typeof ref.output_index === "number"
+    ? ref.output_index
+    : undefined;
+  if (!txHash || outputIndex === undefined) return undefined;
+
+  return { txHash, outputIndex };
+};
+
+const deploymentValidator = (
+  value: unknown,
+  fallbackTitle: string,
+): ExistingVoucherPolicy | undefined => {
+  const validator = deploymentObject(value);
+  if (!validator) return undefined;
+
+  const scriptHash = deploymentString(validator.scriptHash) ??
+    deploymentString(validator.script_hash) ??
+    deploymentString(validator.policyId) ??
+    deploymentString(validator.policy_id);
+  const refUtxo = deploymentRefUtxo(validator.refUtxo ?? validator.ref_utxo);
+  if (!scriptHash || !refUtxo) return undefined;
+
+  return {
+    title: deploymentString(validator.title) ?? fallbackTitle,
+    script: deploymentString(validator.script) ?? "",
+    scriptHash,
+    address: deploymentString(validator.address) ?? "",
+    refUtxo,
+  };
+};
+
+const uniqueVoucherPolicies = (
+  policies: ExistingVoucherPolicy[],
+): ExistingVoucherPolicy[] => {
+  const seen = new Set<string>();
+  const unique: ExistingVoucherPolicy[] = [];
+  for (const policy of policies) {
+    const key = policy.scriptHash.toLowerCase();
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    unique.push(policy);
+  }
+  return unique;
+};
+
+const loadExistingBridgeRegistrySource = ():
+  | ExistingBridgeRegistrySource
+  | null => {
+  const path = Deno.env.get("BRIDGE_REGISTRY_SOURCE_PATH")?.trim();
+  if (!path) return null;
+
+  const raw = deploymentObject(JSON.parse(Deno.readTextFileSync(path)));
+  if (!raw) {
+    throw new Error(`Bridge registry source at ${path} is not a JSON object.`);
+  }
+
+  const validators = deploymentObject(raw.validators);
+  const registry = deploymentObject(raw.bridgeRegistry ?? raw.bridge_registry);
+  if (!validators || !registry) {
+    throw new Error(
+      `Bridge registry source at ${path} must include validators and bridgeRegistry/bridge_registry.`,
+    );
+  }
+
+  const policyId = deploymentString(registry.policyId) ??
+    deploymentString(registry.policy_id);
+  const tokenName = deploymentString(registry.tokenName) ??
+    deploymentString(registry.token_name);
+  const address = deploymentString(registry.address);
+  if (!policyId || !tokenName || !address) {
+    throw new Error(
+      `Bridge registry source at ${path} is missing registry policy, token, or address.`,
+    );
+  }
+
+  const voucherPolicyRegistry = deploymentObject(
+    raw.voucherPolicyRegistry ?? raw.voucher_policy_registry,
+  );
+  const activeVoucher = deploymentValidator(
+    voucherPolicyRegistry?.active ??
+      validators.mintVoucher ??
+      validators.mint_voucher,
+    "legacy minting_voucher active",
+  );
+  const legacyVouchers = Array.isArray(voucherPolicyRegistry?.legacy)
+    ? voucherPolicyRegistry.legacy
+      .map((entry, index) =>
+        deploymentValidator(entry, `legacy minting_voucher ${index}`)
+      )
+      .filter((entry): entry is ExistingVoucherPolicy => !!entry)
+    : [];
+  const legacyVoucherPolicies = uniqueVoucherPolicies(
+    [activeVoucher, ...legacyVouchers].filter((
+      entry,
+    ): entry is ExistingVoucherPolicy => !!entry),
+  );
+  if (legacyVoucherPolicies.length === 0) {
+    throw new Error(
+      `Bridge registry source at ${path} does not expose any reusable voucher policy.`,
+    );
+  }
+
+  return {
+    authToken: { policy_id: policyId, name: tokenName },
+    address,
+    governanceKeyHash: deploymentString(registry.governanceKeyHash) ??
+      deploymentString(registry.governance_key_hash),
+    validator: deploymentValidator(
+      validators.bridgeRegistry ?? validators.bridge_registry,
+      "bridge_registry.bridge_registry.spend",
+    ),
+    legacyVoucherPolicyIds: legacyVoucherPolicies.map((policy) =>
+      policy.scriptHash
+    ),
+    legacyVoucherPolicies,
+  };
+};
+
 export const createDeployment = async (
   lucid: LucidEvolution,
   mode?: string,
@@ -274,6 +433,21 @@ export const createDeployment = async (
   const deploymentWalletAddress = deploymentReportEnabled
     ? await lucid.wallet().address()
     : undefined;
+  const governanceAddress = await lucid.wallet().address();
+  const governanceKeyHash = getAddressDetails(governanceAddress)
+    .paymentCredential?.hash;
+  if (!governanceKeyHash) {
+    throw new Error("Deployment wallet does not expose a payment key hash.");
+  }
+  const bridgeRegistrySource = loadExistingBridgeRegistrySource();
+  if (
+    bridgeRegistrySource?.governanceKeyHash &&
+    bridgeRegistrySource.governanceKeyHash !== governanceKeyHash
+  ) {
+    throw new Error(
+      "Deployment wallet does not match the existing bridge registry governance key.",
+    );
+  }
   if (deploymentWalletAddress) {
     await resetDeploymentCostReport(
       deploymentWalletAddress,
@@ -376,15 +550,26 @@ export const createDeployment = async (
     return new Set([...reservedNonceRefs, ...currentCollateralHoldbackRefs]);
   };
   reservedDeploymentRefs = await setSpendableWalletUtxos();
+  const bridgeRegistryNonceUtxo = bridgeRegistrySource
+    ? undefined
+    : remainingNonceUtxos[0];
+  if (!bridgeRegistrySource && !bridgeRegistryNonceUtxo) {
+    throw new Error("Missing reserved nonce UTxO for bridge registry.");
+  }
+  const traceRegistryNonceStart = bridgeRegistrySource
+    ? 0
+    : BRIDGE_REGISTRY_NONCE_COUNT;
+  const traceRegistryNonceEnd = traceRegistryNonceStart +
+    TRACE_REGISTRY_SHARD_COUNT + TRACE_REGISTRY_DIRECTORY_NONCE_COUNT;
   const traceRegistryNonceUtxos = remainingNonceUtxos.slice(
-    0,
-    TRACE_REGISTRY_SHARD_COUNT + TRACE_REGISTRY_DIRECTORY_NONCE_COUNT,
+    traceRegistryNonceStart,
+    traceRegistryNonceEnd,
   );
   const mockModuleNonceUtxo = remainingNonceUtxos.at(
-    TRACE_REGISTRY_SHARD_COUNT + TRACE_REGISTRY_DIRECTORY_NONCE_COUNT,
+    traceRegistryNonceEnd,
   );
   const icqModuleNonceUtxo = remainingNonceUtxos.at(
-    TRACE_REGISTRY_SHARD_COUNT + TRACE_REGISTRY_DIRECTORY_NONCE_COUNT + 1,
+    traceRegistryNonceEnd + 1,
   );
   if (!mockModuleNonceUtxo || !icqModuleNonceUtxo) {
     throw new Error(
@@ -594,6 +779,13 @@ export const createDeployment = async (
       buildOutputReference(traceRegistryDirectoryNonce),
     ),
   };
+  const bridgeRegistryAuthToken: AuthToken = bridgeRegistrySource?.authToken ??
+    {
+      policy_id: validatorToScriptHash(mintIdentifierValidator),
+      name: await generateIdentifierTokenName(
+        buildOutputReference(bridgeRegistryNonceUtxo!),
+      ),
+    };
 
   const {
     identifierTokenUnit: transferModuleIdentifier,
@@ -611,10 +803,35 @@ export const createDeployment = async (
     TRANSFER_MODULE_PORT,
     hostStateNFT,
     traceRegistryDirectoryAuthToken,
+    bridgeRegistryAuthToken,
     transferModuleNonceUtxo,
     bootstrapReferenceScripts,
   );
+  const bridgeRegistry = bridgeRegistrySource
+    ? await updateBridgeRegistry(
+      lucid,
+      bridgeRegistrySource,
+      bridgeRegistryAuthToken,
+      mintChannelSttPolicyId,
+      hostStateNFT,
+      mintVoucher.policyId,
+      governanceKeyHash,
+    )
+    : await deployBridgeRegistry(
+      lucid,
+      bridgeRegistryNonceUtxo!,
+      bridgeRegistryAuthToken,
+      mintChannelSttPolicyId,
+      hostStateNFT,
+      mintVoucher.policyId,
+      [],
+      governanceKeyHash,
+      bootstrapReferenceScripts,
+    );
   reservedDeploymentRefs = await setSpendableWalletUtxos(0);
+  if (bridgeRegistry.validator) {
+    referredValidators.push(bridgeRegistry.validator);
+  }
   referredValidators.push(
     mintTransferEscrowShard.validator,
     mintVoucher.validator,
@@ -746,6 +963,15 @@ export const createDeployment = async (
         address: spendTransferModule.address,
         refUtxo: refUtxosInfo[spendTransferModule.scriptHash],
       },
+      bridgeRegistry: {
+        title: "bridge_registry.bridge_registry.spend",
+        script: bridgeRegistry.validatorScript,
+        scriptHash: bridgeRegistry.scriptHash,
+        address: bridgeRegistry.address,
+        refUtxo: "validatorRefUtxo" in bridgeRegistry
+          ? bridgeRegistry.validatorRefUtxo
+          : refUtxosInfo[bridgeRegistry.scriptHash],
+      },
       spendMockModule: {
         title: "spending_mock_module.spend_mock_module.else",
         script: spendMockModule.validator.script,
@@ -847,7 +1073,10 @@ export const createDeployment = async (
         address: "",
         refUtxo: refUtxosInfo[mintVoucher.policyId],
       },
-      legacy: [],
+      legacy: bridgeRegistrySource?.legacyVoucherPolicies.map((policy) => ({
+        ...policy,
+        refUtxo: policy.refUtxo as UTxO,
+      })) ?? [],
     },
     hostStateNFT: {
       policyId: hostStateNFT.policy_id,
@@ -860,6 +1089,13 @@ export const createDeployment = async (
         policyId: traceRegistry.directory.policy_id,
         name: traceRegistry.directory.name,
       },
+    },
+    bridgeRegistry: {
+      policyId: bridgeRegistry.authToken.policy_id,
+      tokenName: bridgeRegistry.authToken.name,
+      address: bridgeRegistry.address,
+      refUtxo: bridgeRegistry.refUtxo,
+      governanceKeyHash,
     },
     modules: {
       transfer: {
@@ -1560,6 +1796,7 @@ const deployTransferModule = async (
   portNumber: bigint,
   hostStateNFT: AuthToken,
   traceRegistryDirectoryAuthToken: AuthToken,
+  bridgeRegistryAuthToken: AuthToken,
   nonceUtxo: UTxO,
   bootstrapReferenceScripts: BootstrapReferenceScripts,
 ) => {
@@ -1588,22 +1825,14 @@ const deployTransferModule = async (
       identifierToken,
       traceRegistryDirectoryAuthToken,
       voucherMetadataScriptHash,
-      mintChannelPolicyId,
-      hostStateNFT.policy_id,
+      bridgeRegistryAuthToken,
     ],
     Data.Tuple([
       AuthTokenSchema,
       AuthTokenSchema,
       Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-    ]) as unknown as [
-      AuthToken,
-      AuthToken,
-      string,
-      string,
-      string,
-    ],
+      AuthTokenSchema,
+    ]) as unknown as [AuthToken, AuthToken, string, AuthToken],
   );
 
   // NOTE: IBC port identifiers are part of on-chain commitment paths and are exchanged
@@ -1764,6 +1993,159 @@ const deployTransferModule = async (
       scriptHash: spendTransferModuleScriptHash,
       address: spendTransferModuleAddress,
     },
+  };
+};
+
+const deployBridgeRegistry = async (
+  lucid: LucidEvolution,
+  bridgeRegistryNonceUtxo: UTxO,
+  bridgeRegistryAuthToken: AuthToken,
+  mintChannelPolicyId: string,
+  hostStateNFT: AuthToken,
+  mintVoucherPolicyId: string,
+  legacyVoucherPolicyIds: string[],
+  governanceKeyHash: string,
+  bootstrapReferenceScripts: BootstrapReferenceScripts,
+) => {
+  console.log("Create Bridge Registry");
+
+  const [
+    bridgeRegistryValidator,
+    bridgeRegistryScriptHash,
+    bridgeRegistryAddress,
+  ] = await readValidator(
+    "bridge_registry.bridge_registry.spend",
+    lucid,
+    [bridgeRegistryAuthToken],
+    Data.Tuple([AuthTokenSchema]) as unknown as [AuthToken],
+  );
+
+  const bridgeRegistryTokenUnit = bridgeRegistryAuthToken.policy_id +
+    bridgeRegistryAuthToken.name;
+  const outputReference = buildOutputReference(bridgeRegistryNonceUtxo);
+  const datum = {
+    active_deployment: {
+      host_state_nft_policy_id: hostStateNFT.policy_id,
+      channel_minting_policy_id: mintChannelPolicyId,
+    },
+    active_voucher_policy_id: mintVoucherPolicyId,
+    legacy_voucher_policy_ids: legacyVoucherPolicyIds,
+    governance_key_hash: governanceKeyHash,
+  };
+
+  await submitTx(
+    () =>
+      lucid
+        .newTx()
+        .readFrom([bootstrapReferenceScripts.mintIdentifier])
+        .collectFrom([bridgeRegistryNonceUtxo], Data.void())
+        .mintAssets(
+          { [bridgeRegistryTokenUnit]: 1n },
+          Data.to(outputReference, OutputReference, { canonical: true }),
+        )
+        .pay.ToContract(
+          bridgeRegistryAddress,
+          {
+            kind: "inline",
+            value: Data.to(datum, BridgeRegistryDatum, { canonical: true }),
+          },
+          { [bridgeRegistryTokenUnit]: 1n },
+        ),
+    lucid,
+    "Mint Bridge Registry",
+  );
+
+  const registryUtxo = await lucid.utxoByUnit(bridgeRegistryTokenUnit);
+
+  return {
+    authToken: bridgeRegistryAuthToken,
+    validator: bridgeRegistryValidator,
+    validatorScript: bridgeRegistryValidator.script,
+    scriptHash: bridgeRegistryScriptHash,
+    address: bridgeRegistryAddress,
+    refUtxo: registryUtxo,
+  };
+};
+
+const resolveDeploymentRefUtxo = async (
+  lucid: LucidEvolution,
+  refUtxo: DeploymentRefUtxo,
+): Promise<UTxO> => {
+  const [utxo] = await lucid.utxosByOutRef([refUtxo]);
+  if (!utxo) {
+    throw new Error(
+      `Unable to resolve UTxO ${refUtxo.txHash}#${refUtxo.outputIndex}`,
+    );
+  }
+  return utxo;
+};
+
+const updateBridgeRegistry = async (
+  lucid: LucidEvolution,
+  source: ExistingBridgeRegistrySource,
+  bridgeRegistryAuthToken: AuthToken,
+  mintChannelPolicyId: string,
+  hostStateNFT: AuthToken,
+  mintVoucherPolicyId: string,
+  governanceKeyHash: string,
+) => {
+  if (!source.validator) {
+    throw new Error(
+      "Existing bridge registry source must include validators.bridgeRegistry/validators.bridge_registry.",
+    );
+  }
+
+  console.log("Update Bridge Registry");
+
+  const registryTokenUnit = bridgeRegistryAuthToken.policy_id +
+    bridgeRegistryAuthToken.name;
+  const registryUtxo = await lucid.utxoByUnit(registryTokenUnit);
+  const registryValidatorRefUtxo = await resolveDeploymentRefUtxo(
+    lucid,
+    source.validator.refUtxo,
+  );
+  const datum = {
+    active_deployment: {
+      host_state_nft_policy_id: hostStateNFT.policy_id,
+      channel_minting_policy_id: mintChannelPolicyId,
+    },
+    active_voucher_policy_id: mintVoucherPolicyId,
+    legacy_voucher_policy_ids: source.legacyVoucherPolicyIds,
+    governance_key_hash: governanceKeyHash,
+  };
+
+  await submitTx(
+    () =>
+      lucid
+        .newTx()
+        .readFrom([registryValidatorRefUtxo])
+        .collectFrom(
+          [registryUtxo],
+          Data.to(new Constr(0, [])),
+        )
+        .addSignerKey(governanceKeyHash)
+        .pay.ToContract(
+          registryUtxo.address,
+          {
+            kind: "inline",
+            value: Data.to(datum, BridgeRegistryDatum, { canonical: true }),
+          },
+          { [registryTokenUnit]: 1n },
+        ),
+    lucid,
+    "Update Bridge Registry",
+  );
+
+  const updatedRegistryUtxo = await lucid.utxoByUnit(registryTokenUnit);
+
+  return {
+    authToken: bridgeRegistryAuthToken,
+    validator: undefined as Script | undefined,
+    validatorScript: source.validator.script,
+    validatorRefUtxo: source.validator.refUtxo as UTxO,
+    scriptHash: source.validator.scriptHash,
+    address: registryUtxo.address,
+    refUtxo: updatedRegistryUtxo,
   };
 };
 

@@ -9,6 +9,7 @@ use cardano/assets.{AssetName, PolicyId, quantity_of, tokens}
 use cardano/transaction.{
   InlineDatum, Input, Output, Redeemer, ScriptPurpose, Spend, Transaction,
 }
+use ibc/apps/transfer/bridge_registry
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
 }
@@ -35,8 +36,7 @@ validator mint_voucher(
   _module_token: AuthToken,
   directory_auth_token: AuthToken,
   voucher_metadata_script_hash: crypto.ScriptHash,
-  channel_minting_policy_id: PolicyId,
-  host_state_nft_policy_id: PolicyId,
+  bridge_registry_token: AuthToken,
 ) {
   mint(
     redeemer: MintVoucherRedeemer,
@@ -45,6 +45,9 @@ validator mint_voucher(
   ) {
     let Transaction { inputs, reference_inputs, outputs, mint, redeemers, .. } =
       transaction
+    let bridge_registry_datum =
+      bridge_registry.find_registry_datum(transaction, bridge_registry_token)
+    let active_deployment = bridge_registry_datum.active_deployment
 
     when redeemer is {
       MintVoucher {
@@ -57,13 +60,18 @@ validator mint_voucher(
         trace @"mint_voucher: MintVoucher branch"
 
         // Validate the voucher mint against the spent RecvPacket channel UTxO.
+        expect
+          bridge_registry.is_active_voucher(
+            bridge_registry_datum,
+            voucher_minting_policy_id,
+          )
         expect fungible_token_packet_data.validate_basic(data)
         expect Some(channel_redeemer) =
           extract_channel_redeemer(
             inputs,
             redeemers,
-            channel_minting_policy_id,
-            host_state_nft_policy_id,
+            active_deployment.channel_minting_policy_id,
+            active_deployment.host_state_nft_policy_id,
             packet_dest_channel,
           )
         expect RecvPacket { packet, .. } = channel_redeemer
@@ -166,13 +174,18 @@ validator mint_voucher(
         trace @"mint_voucher: MintVoucher branch"
 
         // Validate the voucher burn against the spent SendPacket channel UTxO.
+        expect
+          bridge_registry.is_operational_voucher(
+            bridge_registry_datum,
+            voucher_minting_policy_id,
+          )
         expect fungible_token_packet_data.validate_basic(data)
         expect Some(channel_redeemer) =
           extract_channel_redeemer(
             inputs,
             redeemers,
-            channel_minting_policy_id,
-            host_state_nft_policy_id,
+            active_deployment.channel_minting_policy_id,
+            active_deployment.host_state_nft_policy_id,
             packet_source_channel,
           )
         expect SendPacket { packet } = channel_redeemer
@@ -213,13 +226,18 @@ validator mint_voucher(
         trace @"mint_voucher: RefundVoucher branch"
 
         // Voucher refunds are authorized by timeout or ack-error channel spends.
+        expect
+          bridge_registry.is_operational_voucher(
+            bridge_registry_datum,
+            voucher_minting_policy_id,
+          )
         expect fungible_token_packet_data.validate_basic(data)
         expect Some(channel_redeemer) =
           extract_channel_redeemer(
             inputs,
             redeemers,
-            channel_minting_policy_id,
-            host_state_nft_policy_id,
+            active_deployment.channel_minting_policy_id,
+            active_deployment.host_state_nft_policy_id,
             packet_source_channel,
           )
         when channel_redeemer is {

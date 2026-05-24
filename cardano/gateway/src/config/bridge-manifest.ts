@@ -52,6 +52,14 @@ type DeploymentTraceRegistry = {
   directory: DeploymentTraceRegistryShard;
 };
 
+type DeploymentBridgeRegistry = {
+  policyId: string;
+  tokenName: string;
+  address: string;
+  refUtxo: RefUtxo;
+  governanceKeyHash: string;
+};
+
 type DeploymentVoucherPolicyRegistry = {
   active: DeploymentValidator;
   legacy: DeploymentValidator[];
@@ -66,6 +74,7 @@ export type DeploymentConfig = {
     spendConnection: DeploymentValidator;
     spendChannel: DeploymentSpendChannelValidator;
     spendMockModule?: DeploymentValidator;
+    bridgeRegistry?: DeploymentValidator;
     spendTraceRegistry?: DeploymentValidator;
     spendTransferModule: DeploymentValidator;
     mintIdentifier: DeploymentValidator;
@@ -84,6 +93,7 @@ export type DeploymentConfig = {
     icq?: DeploymentModule;
   };
   traceRegistry?: DeploymentTraceRegistry;
+  bridgeRegistry?: DeploymentBridgeRegistry;
   voucherPolicyRegistry?: DeploymentVoucherPolicyRegistry;
 };
 
@@ -141,6 +151,14 @@ type BridgeManifestTraceRegistry = {
   directory: BridgeManifestTraceRegistryShard;
 };
 
+type BridgeManifestBridgeRegistry = {
+  policy_id: string;
+  token_name: string;
+  address: string;
+  ref_utxo: BridgeManifestRefUtxo;
+  governance_key_hash: string;
+};
+
 type BridgeManifestVoucherPolicyRegistry = {
   active: BridgeManifestValidator;
   legacy: BridgeManifestValidator[];
@@ -165,6 +183,7 @@ export type BridgeManifest = {
     spend_connection: BridgeManifestValidator;
     spend_channel: BridgeManifestSpendChannelValidator;
     spend_mock_module?: BridgeManifestValidator;
+    bridge_registry?: BridgeManifestValidator;
     spend_trace_registry?: BridgeManifestValidator;
     spend_transfer_module: BridgeManifestValidator;
     mint_identifier: BridgeManifestValidator;
@@ -187,6 +206,7 @@ export type BridgeManifest = {
     icq?: BridgeManifestModule;
   };
   trace_registry?: BridgeManifestTraceRegistry;
+  bridge_registry?: BridgeManifestBridgeRegistry;
 };
 
 export type BridgeManifestCardanoIdentity = BridgeManifest['cardano'];
@@ -342,6 +362,28 @@ function requireManifestVoucherPolicyRegistry(
           requireManifestValidator(entry, `${path}.legacy[${index}]`),
         )
       : [],
+  };
+}
+
+function requireDeploymentBridgeRegistry(value: unknown, path: string): DeploymentBridgeRegistry {
+  const registry = requireObject(value, path);
+  return {
+    policyId: requireNonEmptyString(registry.policyId, `${path}.policyId`),
+    tokenName: requireNonEmptyString(registry.tokenName, `${path}.tokenName`),
+    address: requireNonEmptyString(registry.address, `${path}.address`),
+    refUtxo: requireRefUtxo(registry.refUtxo, `${path}.refUtxo`),
+    governanceKeyHash: requireNonEmptyString(registry.governanceKeyHash, `${path}.governanceKeyHash`),
+  };
+}
+
+function requireManifestBridgeRegistry(value: unknown, path: string): BridgeManifestBridgeRegistry {
+  const registry = requireObject(value, path);
+  return {
+    policy_id: requireNonEmptyString(registry.policy_id, `${path}.policy_id`),
+    token_name: requireNonEmptyString(registry.token_name, `${path}.token_name`),
+    address: requireNonEmptyString(registry.address, `${path}.address`),
+    ref_utxo: requireManifestRefUtxo(registry.ref_utxo, `${path}.ref_utxo`),
+    governance_key_hash: requireNonEmptyString(registry.governance_key_hash, `${path}.governance_key_hash`),
   };
 }
 
@@ -601,6 +643,26 @@ function manifestTraceRegistryToDeployment(traceRegistry: BridgeManifestTraceReg
   };
 }
 
+function deploymentBridgeRegistryToManifest(bridgeRegistry: DeploymentBridgeRegistry): BridgeManifestBridgeRegistry {
+  return {
+    policy_id: bridgeRegistry.policyId,
+    token_name: bridgeRegistry.tokenName,
+    address: bridgeRegistry.address,
+    ref_utxo: deploymentRefUtxoToManifest(bridgeRegistry.refUtxo),
+    governance_key_hash: bridgeRegistry.governanceKeyHash,
+  };
+}
+
+function manifestBridgeRegistryToDeployment(bridgeRegistry: BridgeManifestBridgeRegistry): DeploymentBridgeRegistry {
+  return {
+    policyId: bridgeRegistry.policy_id,
+    tokenName: bridgeRegistry.token_name,
+    address: bridgeRegistry.address,
+    refUtxo: manifestRefUtxoToDeployment(bridgeRegistry.ref_utxo),
+    governanceKeyHash: bridgeRegistry.governance_key_hash,
+  };
+}
+
 function deploymentSpendChannelToManifest(validator: DeploymentSpendChannelValidator): BridgeManifestSpendChannelValidator {
   return {
     ...deploymentValidatorToManifest(validator),
@@ -649,6 +711,9 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
       ...(validators.spendMockModule
         ? { spendMockModule: requireDeploymentValidator(validators.spendMockModule, 'validators.spendMockModule') }
         : {}),
+      ...(validators.bridgeRegistry
+        ? { bridgeRegistry: requireDeploymentValidator(validators.bridgeRegistry, 'validators.bridgeRegistry') }
+        : {}),
       ...(validators.spendTraceRegistry
         ? { spendTraceRegistry: requireDeploymentValidator(validators.spendTraceRegistry, 'validators.spendTraceRegistry') }
         : {}),
@@ -675,6 +740,9 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
     },
     ...(deploymentAny.traceRegistry
       ? { traceRegistry: requireDeploymentTraceRegistry(deploymentAny.traceRegistry, 'traceRegistry') }
+      : {}),
+    ...(deploymentAny.bridgeRegistry
+      ? { bridgeRegistry: requireDeploymentBridgeRegistry(deploymentAny.bridgeRegistry, 'bridgeRegistry') }
       : {}),
     voucherPolicyRegistry: requireDeploymentVoucherPolicyRegistry(
       deploymentAny.voucherPolicyRegistry,
@@ -709,6 +777,9 @@ export function normalizeHandlerJsonDeploymentConfig(
         ...(normalizedDeployment.validators.spendMockModule
           ? { spend_mock_module: deploymentValidatorToManifest(normalizedDeployment.validators.spendMockModule) }
           : {}),
+        ...(normalizedDeployment.validators.bridgeRegistry
+          ? { bridge_registry: deploymentValidatorToManifest(normalizedDeployment.validators.bridgeRegistry) }
+          : {}),
         ...(normalizedDeployment.validators.spendTraceRegistry
           ? {
               spend_trace_registry: deploymentValidatorToManifest(normalizedDeployment.validators.spendTraceRegistry),
@@ -738,6 +809,9 @@ export function normalizeHandlerJsonDeploymentConfig(
       },
       ...(normalizedDeployment.traceRegistry
         ? { trace_registry: deploymentTraceRegistryToManifest(normalizedDeployment.traceRegistry) }
+        : {}),
+      ...(normalizedDeployment.bridgeRegistry
+        ? { bridge_registry: deploymentBridgeRegistryToManifest(normalizedDeployment.bridgeRegistry) }
         : {}),
       voucher_policy_registry: deploymentVoucherPolicyRegistryToManifest(
         normalizedDeployment.voucherPolicyRegistry ?? {
@@ -772,6 +846,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       ...(validators.spend_mock_module
         ? { spend_mock_module: requireManifestValidator(validators.spend_mock_module, 'validators.spend_mock_module') }
         : {}),
+      ...(validators.bridge_registry
+        ? { bridge_registry: requireManifestValidator(validators.bridge_registry, 'validators.bridge_registry') }
+        : {}),
       ...(validators.spend_trace_registry
         ? {
             spend_trace_registry: requireManifestValidator(
@@ -804,6 +881,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
     ...(manifestAny.trace_registry
       ? { trace_registry: requireManifestTraceRegistry(manifestAny.trace_registry, 'trace_registry') }
       : {}),
+    ...(manifestAny.bridge_registry
+      ? { bridge_registry: requireManifestBridgeRegistry(manifestAny.bridge_registry, 'bridge_registry') }
+      : {}),
     voucher_policy_registry: requireManifestVoucherPolicyRegistry(
       manifestAny.voucher_policy_registry,
       mintVoucherManifest,
@@ -828,6 +908,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
         spendChannel: manifestSpendChannelToDeployment(bridgeManifest.validators.spend_channel),
         ...(bridgeManifest.validators.spend_mock_module
           ? { spendMockModule: manifestValidatorToDeployment(bridgeManifest.validators.spend_mock_module) }
+          : {}),
+        ...(bridgeManifest.validators.bridge_registry
+          ? { bridgeRegistry: manifestValidatorToDeployment(bridgeManifest.validators.bridge_registry) }
           : {}),
         ...(bridgeManifest.validators.spend_trace_registry
           ? {
@@ -858,6 +941,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       },
       ...(bridgeManifest.trace_registry
         ? { traceRegistry: manifestTraceRegistryToDeployment(bridgeManifest.trace_registry) }
+        : {}),
+      ...(bridgeManifest.bridge_registry
+        ? { bridgeRegistry: manifestBridgeRegistryToDeployment(bridgeManifest.bridge_registry) }
         : {}),
       voucherPolicyRegistry: manifestVoucherPolicyRegistryToDeployment(
         bridgeManifest.voucher_policy_registry ?? {
