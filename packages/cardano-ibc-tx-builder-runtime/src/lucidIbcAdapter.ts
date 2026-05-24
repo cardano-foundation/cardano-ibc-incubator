@@ -1289,6 +1289,7 @@ export class LucidIbcAdapter {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
+      ...this.bridgeRegistryReferenceInputs(),
       this.referenceScripts.mintTransferEscrowShard,
       this.referenceScripts.sendPacket,
       this.referenceScripts.hostStateStt,

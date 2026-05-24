@@ -1868,37 +1868,25 @@ const deployTransferModule = async (
   ] = await readValidator(
     "spending_transfer_module.spend_transfer_module.spend",
     lucid,
-    // Active vouchers can be minted and burned. Legacy vouchers are accepted by
-    // the transfer module for burn/refund flows once prior policy reference
-    // scripts are added to the deployment manifest.
     [
       portToken,
       identifierToken,
       portId,
       mintTransferEscrowShardPolicyId,
-      mintChannelPolicyId,
-      mintVoucherPolicyId,
-      [],
-      hostStateNFT.policy_id,
+      bridgeRegistryAuthToken,
     ],
     Data.Tuple([
       AuthTokenSchema,
       AuthTokenSchema,
       Data.Bytes(),
       Data.Bytes(),
-      Data.Bytes(),
-      Data.Bytes(),
-      Data.Array(Data.Bytes()),
-      Data.Bytes(),
+      AuthTokenSchema,
     ]) as unknown as [
       AuthToken,
       AuthToken,
       string,
       string,
-      string,
-      string,
-      string[],
-      string,
+      AuthToken,
     ],
   );
 

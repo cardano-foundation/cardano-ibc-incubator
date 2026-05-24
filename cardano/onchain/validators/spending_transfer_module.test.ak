@@ -7,6 +7,7 @@ use cardano/transaction.{
   InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
   ScriptPurpose, Spend, Transaction,
 }
+use ibc/apps/transfer/bridge_registry.{BridgeDeployment, BridgeRegistryDatum}
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, RefundVoucher,
 }
@@ -57,6 +58,8 @@ type MockData {
   transfer_escrow_shard_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
+  bridge_registry_token: AuthToken,
+  bridge_registry_input: Input,
   channel_id: ByteArray,
   module_output: Output,
   module_input: Input,
@@ -115,6 +118,11 @@ fn setup() -> MockData {
   let channel_minting_policy_id = "mock channel minting policy id"
 
   let voucher_minting_policy_id = "mock voucher minting policy id"
+  let bridge_registry_token =
+    AuthToken {
+      policy_id: "mock bridge registry policy id",
+      name: "mock bridge registry token name",
+    }
 
   let channel_id = "channel-0"
 
@@ -327,6 +335,14 @@ fn setup() -> MockData {
     transfer_escrow_shard_policy_id,
     channel_minting_policy_id,
     voucher_minting_policy_id,
+    bridge_registry_token,
+    bridge_registry_input: make_bridge_registry_input(
+      bridge_registry_token,
+      channel_minting_policy_id,
+      host_state_nft_policy_id,
+      voucher_minting_policy_id,
+      [],
+    ),
     channel_id,
     module_output,
     module_input,
@@ -336,6 +352,47 @@ fn setup() -> MockData {
     proof,
     cardano_public_key_hash,
     cosmos_address,
+  }
+}
+
+fn make_bridge_registry_input(
+  registry_token: AuthToken,
+  channel_minting_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
+  active_voucher_policy_id: PolicyId,
+  legacy_voucher_policy_ids: List<PolicyId>,
+) -> Input {
+  Input {
+    output_reference: OutputReference {
+      transaction_id: #"50b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
+      output_index: 9,
+    },
+    output: Output {
+      address: from_script("mock bridge registry script hash"),
+      value: from_asset(registry_token.policy_id, registry_token.name, 1),
+      datum: InlineDatum(
+        BridgeRegistryDatum {
+          active_deployment: BridgeDeployment {
+            host_state_nft_policy_id,
+            channel_minting_policy_id,
+          },
+          active_voucher_policy_id,
+          legacy_voucher_policy_ids,
+          governance_key_hash: #"00000000000000000000000000000000000000000000000000000000",
+        },
+      ),
+      reference_script: None,
+    },
+  }
+}
+
+fn with_bridge_registry(mock: MockData, transaction: Transaction) -> Transaction {
+  Transaction {
+    ..transaction,
+    reference_inputs: [
+      mock.bridge_registry_input,
+      ..transaction.reference_inputs
+    ],
   }
 }
 
@@ -476,6 +533,8 @@ fn run_transfer_module_transition(
   module_redeemer: IBCModuleRedeemer,
   mutation: fuzz_dsl.Mutation,
 ) -> fuzz_dsl.ProtocolTxFixture {
+  let transaction = with_bridge_registry(mock, transaction)
+
   fuzz_dsl.protocol_tx_from_transaction(
     fuzz_dsl.model("transfer", "module"),
     fuzz_dsl.model("transfer", "module.after"),
@@ -489,10 +548,7 @@ fn run_transfer_module_transition(
           mock.module_token,
           mock.port_id,
           mock.transfer_escrow_shard_policy_id,
-          mock.channel_minting_policy_id,
-          mock.voucher_minting_policy_id,
-          [],
-          mock.host_state_nft_policy_id,
+          mock.bridge_registry_token,
           None,
           module_redeemer,
           mock.module_input.output_reference,
@@ -891,6 +947,33 @@ fn voucher_send_burn_fixture(
   mutation: fuzz_dsl.Mutation,
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
+  voucher_send_burn_fixture_with_mock(mock, mutation)
+}
+
+fn voucher_send_burn_legacy_registry_fixture(
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
+  let mock = setup()
+  let active_v2_voucher_policy_id = "mock active v2 voucher policy id"
+  let mock =
+    MockData {
+      ..mock,
+      bridge_registry_input: make_bridge_registry_input(
+        mock.bridge_registry_token,
+        mock.channel_minting_policy_id,
+        mock.host_state_nft_policy_id,
+        active_v2_voucher_policy_id,
+        [mock.voucher_minting_policy_id],
+      ),
+    }
+
+  voucher_send_burn_fixture_with_mock(mock, mutation)
+}
+
+fn voucher_send_burn_fixture_with_mock(
+  mock: MockData,
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
   let transfer_amount = 1234
   let receiver = mock.cardano_public_key_hash
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
@@ -1129,6 +1212,18 @@ test prop_transfer_module_voucher_send_burns_exactly(_seed via fuzz.int()) {
     |> fuzz_dsl.assert_protocol_valid
 }
 
+test prop_transfer_module_legacy_voucher_send_burns_from_registry(
+  _seed via fuzz.int(),
+) {
+  fuzz.label(@"regression.contract.transfer.voucher_send.legacy_registry_burn")
+
+  // The transfer module reads the bridge registry at validation time, so a new
+  // deployment can still recognize and burn a voucher policy from an older
+  // deployment once governance has recorded it as legacy.
+  voucher_send_burn_legacy_registry_fixture(fuzz_dsl.no_mutation())
+    |> fuzz_dsl.assert_protocol_valid
+}
+
 test prop_transfer_module_recv_sink_mints_voucher_exactly(_seed via fuzz.int()) {
   fuzz.label(@"regression.contract.transfer.recv_sink.mints_voucher_exactly")
 
@@ -1180,14 +1275,11 @@ test on_chan_open_init_succeed() {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -1219,14 +1311,11 @@ test on_chan_open_init_fails_without_host_state_co_spend() fail {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -1268,14 +1357,11 @@ test on_chan_open_try_succeed() {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -1317,14 +1403,11 @@ test on_chan_open_ack_succeed() {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -1362,14 +1445,11 @@ test on_chan_open_confirm_succeed() {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -1443,14 +1523,11 @@ test on_recv_packet_mint_voucher_succeed() {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -1563,14 +1640,11 @@ test on_recv_packet_unescrow_succeed() {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -1680,14 +1754,11 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -1776,14 +1847,11 @@ test transfer_escrow_succeed() {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -1859,14 +1927,11 @@ test transfer_escrow_native_asset_fails_with_short_created_shard() fail {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -1942,14 +2007,11 @@ test transfer_escrow_native_asset_fails_with_extra_created_shard() fail {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -2021,14 +2083,11 @@ test transfer_burn_voucher_succeed() {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -2103,14 +2162,11 @@ test on_timeout_packet_mint_voucher_succeed() {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -2217,14 +2273,11 @@ test on_timeout_packet_unescrow_succeed() {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -2311,14 +2364,11 @@ test on_timeout_packet_native_refund_fails_with_wrong_escrow_delta() fail {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -2420,14 +2470,11 @@ test on_recv_packet_source_fails_with_short_native_payout() fail {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -2503,14 +2550,11 @@ test on_acknowledgement_packet_result_succeed() {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -2595,14 +2639,11 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -2716,14 +2757,11 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
     mock.module_token,
     mock.port_id,
     mock.transfer_escrow_shard_policy_id,
-    mock.channel_minting_policy_id,
-    mock.voucher_minting_policy_id,
-    [],
-    mock.host_state_nft_policy_id,
+    mock.bridge_registry_token,
     None,
     module_redeemer,
     mock.module_input.output_reference,
-    transaction,
+    with_bridge_registry(mock, transaction),
   )
 }
 
@@ -2755,14 +2793,11 @@ test on_chan_close_init_given_any_input_returns_false() {
     fake_data.module_token,
     fake_data.port_id,
     fake_data.transfer_escrow_shard_policy_id,
-    fake_data.channel_minting_policy_id,
-    fake_data.voucher_minting_policy_id,
-    [],
-    fake_data.host_state_nft_policy_id,
+    fake_data.bridge_registry_token,
     None,
     module_redeemer,
     fake_data.module_input.output_reference,
-    transaction,
+    with_bridge_registry(fake_data, transaction),
   ) == False
 }
 
@@ -2794,13 +2829,10 @@ test on_chan_close_confirm_given_any_input_returns_false() {
     fake_data.module_token,
     fake_data.port_id,
     fake_data.transfer_escrow_shard_policy_id,
-    fake_data.channel_minting_policy_id,
-    fake_data.voucher_minting_policy_id,
-    [],
-    fake_data.host_state_nft_policy_id,
+    fake_data.bridge_registry_token,
     None,
     module_redeemer,
     fake_data.module_input.output_reference,
-    transaction,
+    with_bridge_registry(fake_data, transaction),
   ) == False
 }

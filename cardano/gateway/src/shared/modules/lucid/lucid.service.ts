@@ -1325,6 +1325,13 @@ export class LucidService implements OnModuleInit {
     return this.referenceScripts.spendMockModule;
   }
 
+  private getModuleReferenceInputs(moduleKey: GatewayModuleKey): UTxO[] {
+    const moduleReferenceScript = this.getModuleReferenceScript(moduleKey);
+    return moduleKey === "transfer"
+      ? [moduleReferenceScript, ...this.bridgeRegistryReferenceInputs()]
+      : [moduleReferenceScript];
+  }
+
   private getModuleAddress(moduleKey: GatewayModuleKey): string {
     const deploymentConfig = this.configService.get("deployment");
     const moduleConfig = deploymentConfig.modules[moduleKey];
@@ -1432,7 +1439,7 @@ export class LucidService implements OnModuleInit {
 
     tx.readFrom([
       this.referenceScripts.mintChannel,
-      this.getModuleReferenceScript(dto.moduleKey),
+      ...this.getModuleReferenceInputs(dto.moduleKey),
       this.referenceScripts.hostStateStt,
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
@@ -1477,7 +1484,7 @@ export class LucidService implements OnModuleInit {
       .collectFrom([dto.moduleUtxo], dto.encodedSpendModuleRedeemer)
       .readFrom([
         this.referenceScripts.mintChannel,
-        this.getModuleReferenceScript(dto.moduleKey),
+        ...this.getModuleReferenceInputs(dto.moduleKey),
         this.referenceScripts.hostStateStt,
       ])
       .mintAssets(
@@ -1528,7 +1535,7 @@ export class LucidService implements OnModuleInit {
 
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.getModuleReferenceScript(dto.moduleKey),
+      ...this.getModuleReferenceInputs(dto.moduleKey),
       this.referenceScripts.channelOpenAck,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
@@ -1589,7 +1596,7 @@ export class LucidService implements OnModuleInit {
 
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.getModuleReferenceScript(dto.moduleKey),
+      ...this.getModuleReferenceInputs(dto.moduleKey),
       this.referenceScripts.channelCloseInit,
       this.referenceScripts.hostStateStt,
     ])
@@ -1645,7 +1652,7 @@ export class LucidService implements OnModuleInit {
     // on-chain validation expects the spend and the two mint witnesses together.
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.getModuleReferenceScript(dto.moduleKey),
+      ...this.getModuleReferenceInputs(dto.moduleKey),
       this.referenceScripts.channelOpenConfirm,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
@@ -1707,7 +1714,7 @@ export class LucidService implements OnModuleInit {
 
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.getModuleReferenceScript(dto.moduleKey),
+      ...this.getModuleReferenceInputs(dto.moduleKey),
       this.referenceScripts.channelCloseConfirm,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
@@ -1772,6 +1779,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
+      ...this.bridgeRegistryReferenceInputs(),
       this.referenceScripts.mintTransferEscrowShard,
       this.referenceScripts.receivePacket,
       this.referenceScripts.verifyProof,
@@ -1918,7 +1926,7 @@ export class LucidService implements OnModuleInit {
 
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.getModuleReferenceScript(dto.moduleKey),
+      ...this.getModuleReferenceInputs(dto.moduleKey),
       this.referenceScripts.receivePacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
@@ -2142,7 +2150,7 @@ export class LucidService implements OnModuleInit {
     const tx: TxBuilder = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.getModuleReferenceScript(dto.moduleKey),
+      ...this.getModuleReferenceInputs(dto.moduleKey),
       this.referenceScripts.ackPacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
@@ -2209,6 +2217,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
+      ...this.bridgeRegistryReferenceInputs(),
       this.referenceScripts.mintTransferEscrowShard,
       this.referenceScripts.ackPacket,
       this.referenceScripts.verifyProof,
@@ -2406,6 +2415,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
+      ...this.bridgeRegistryReferenceInputs(),
       this.referenceScripts.mintTransferEscrowShard,
       this.referenceScripts.sendPacket,
       this.referenceScripts.hostStateStt,
@@ -2491,7 +2501,7 @@ export class LucidService implements OnModuleInit {
     const tx: TxBuilder = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.getModuleReferenceScript(dto.moduleKey),
+      ...this.getModuleReferenceInputs(dto.moduleKey),
       this.referenceScripts.sendPacket,
       this.referenceScripts.hostStateStt,
     ])
@@ -2708,6 +2718,7 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
+      ...this.bridgeRegistryReferenceInputs(),
       this.referenceScripts.mintTransferEscrowShard,
       this.referenceScripts.timeoutPacket,
       this.referenceScripts.verifyProof,

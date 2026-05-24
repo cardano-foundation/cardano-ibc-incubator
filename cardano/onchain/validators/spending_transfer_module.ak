@@ -4,6 +4,7 @@ use aiken/primitive/int
 use cardano/address.{from_verification_key}
 use cardano/assets.{PolicyId, quantity_of}
 use cardano/transaction.{Input, Output, OutputReference, Transaction}
+use ibc/apps/transfer/bridge_registry
 use ibc/apps/transfer/channel_callback as transfer_channel_callback
 use ibc/apps/transfer/escrow as transfer_escrow
 use ibc/apps/transfer/escrow.{EscrowShard, ModuleState, TransferModuleSpend}
@@ -14,7 +15,9 @@ use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/value_delta as transfer_value_delta
 use ibc/apps/transfer/voucher_flow as transfer_voucher_flow
-use ibc/apps/transfer/voucher_policy_registry.{VoucherPolicyRegistry}
+use ibc/apps/transfer/voucher_policy_registry.{
+  VoucherPolicyRegistry, from_bridge_registry,
+}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_datum.{ChannelDatum, validate_recv_packet}
 use ibc/core/ics_004/channel_redeemer.{
@@ -39,10 +42,7 @@ validator spend_transfer_module(
   module_token: AuthToken,
   port_id: ByteArray,
   transfer_escrow_shard_policy_id: PolicyId,
-  channel_minting_policy_id: PolicyId,
-  active_voucher_policy_id: PolicyId,
-  legacy_voucher_policy_ids: List<PolicyId>,
-  host_state_nft_policy_id: PolicyId,
+  bridge_registry_token: AuthToken,
 ) {
   spend(
     _datum: Option<Data>,
@@ -51,6 +51,11 @@ validator spend_transfer_module(
     transaction: Transaction,
   ) {
     let Transaction { inputs, outputs, .. } = transaction
+    let bridge_registry_datum =
+      bridge_registry.find_registry_datum(transaction, bridge_registry_token)
+    let active_deployment = bridge_registry_datum.active_deployment
+    let host_state_nft_policy_id = active_deployment.host_state_nft_policy_id
+    let channel_minting_policy_id = active_deployment.channel_minting_policy_id
 
     // Transfer state transitions must be committed through HostState.
     expect _ =
@@ -95,11 +100,7 @@ validator spend_transfer_module(
         policy_id: host_state_nft_policy_id,
         name: host_state_token_name,
       }
-    let voucher_policy_registry =
-      VoucherPolicyRegistry {
-        active: active_voucher_policy_id,
-        legacy: legacy_voucher_policy_ids,
-      }
+    let voucher_policy_registry = from_bridge_registry(bridge_registry_datum)
 
     when redeemer is {
       Callback(cb) ->
