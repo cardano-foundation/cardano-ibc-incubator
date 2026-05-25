@@ -1,12 +1,22 @@
 {
   "name": "@cardano-ibc/tx-builder",
   "version": "0.1.0",
-  "private": true,
+  "description": "Core Cardano IBC transaction builder primitives.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cardano-foundation/cardano-ibc-incubator.git",
+    "directory": "packages/cardano-ibc-tx-builder"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "!dist/*.test.*"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
