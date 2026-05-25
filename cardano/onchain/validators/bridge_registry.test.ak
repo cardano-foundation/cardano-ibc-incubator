@@ -1,4 +1,5 @@
 use aiken/crypto.{VerificationKeyHash}
+use aiken/fuzz
 use bridge_registry as bridge_registry_validator
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, from_asset}
@@ -10,6 +11,9 @@ use ibc/auth.{AuthToken}
 
 const governance_key_hash: VerificationKeyHash =
   #"00000000000000000000000000000000000000000000000000000000"
+
+const wrong_governance_key_hash: VerificationKeyHash =
+  #"11111111111111111111111111111111111111111111111111111111"
 
 fn registry_token() -> AuthToken {
   AuthToken {
@@ -58,13 +62,21 @@ fn run_registry_update(
   input_datum: BridgeRegistryDatum,
   output_datum: BridgeRegistryDatum,
 ) -> Bool {
+  run_registry_update_signed_by(input_datum, output_datum, governance_key_hash)
+}
+
+fn run_registry_update_signed_by(
+  input_datum: BridgeRegistryDatum,
+  output_datum: BridgeRegistryDatum,
+  signer: VerificationKeyHash,
+) -> Bool {
   let input = registry_input(input_datum)
   let transaction =
     Transaction {
       ..transaction.placeholder,
       inputs: [input],
       outputs: [registry_output(output_datum)],
-      extra_signatories: [governance_key_hash],
+      extra_signatories: [signer],
     }
 
   bridge_registry_validator.bridge_registry.spend(
@@ -73,6 +85,97 @@ fn run_registry_update(
     bridge_registry_validator.UpdateBridgeRegistry,
     input.output_reference,
     transaction,
+  )
+}
+
+test prop_tx_bridge_registry_update_accepts_active_rotation(
+  _seed via fuzz.int(),
+) {
+  fuzz.label(
+    @"regression.tx.bridge_registry.update.valid_active_rotates_to_legacy",
+  )
+
+  // tx.* depth: this executes the real bridge_registry spending validator with
+  // the registry token, input datum, continuing output, and governance signer.
+  run_registry_update(
+    datum("old active voucher policy", ["legacy voucher policy"]),
+    datum(
+      "new active voucher policy",
+      ["old active voucher policy", "legacy voucher policy"],
+    ),
+  )
+}
+
+test prop_tx_bridge_registry_update_rejects_dropped_old_active(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(@"regression.tx.bridge_registry.update.invalid_drops_old_active")
+
+  run_registry_update(
+    datum("old active voucher policy", ["legacy voucher policy"]),
+    datum("new active voucher policy", ["legacy voucher policy"]),
+  )
+}
+
+test prop_tx_bridge_registry_update_rejects_dropped_old_legacy(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(@"regression.tx.bridge_registry.update.invalid_drops_old_legacy")
+
+  run_registry_update(
+    datum("old active voucher policy", ["legacy voucher policy"]),
+    datum("new active voucher policy", ["old active voucher policy"]),
+  )
+}
+
+test prop_tx_bridge_registry_update_rejects_active_in_legacy(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(@"regression.tx.bridge_registry.update.invalid_active_in_legacy")
+
+  run_registry_update(
+    datum("old active voucher policy", ["legacy voucher policy"]),
+    datum(
+      "new active voucher policy",
+      [
+        "old active voucher policy", "legacy voucher policy",
+        "new active voucher policy",
+      ],
+    ),
+  )
+}
+
+test prop_tx_bridge_registry_update_rejects_duplicate_legacy(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(@"regression.tx.bridge_registry.update.invalid_duplicate_legacy")
+
+  run_registry_update(
+    datum("old active voucher policy", ["legacy voucher policy"]),
+    datum(
+      "new active voucher policy",
+      [
+        "old active voucher policy", "legacy voucher policy",
+        "legacy voucher policy",
+      ],
+    ),
+  )
+}
+
+test prop_tx_bridge_registry_update_rejects_wrong_governance_key(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(
+    @"regression.tx.bridge_registry.update.invalid_wrong_governance_key",
+  )
+
+  run_registry_update_signed_by(
+    datum("old active voucher policy", ["legacy voucher policy"]),
+    datum(
+      "new active voucher policy",
+      ["old active voucher policy", "legacy voucher policy"],
+    ),
+    wrong_governance_key_hash,
   )
 }
 
