@@ -10,6 +10,7 @@ use ibc/apps/transfer/mint_voucher_redeemer.{MintVoucherRedeemer, RefundVoucher}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/value_delta
+use ibc/apps/transfer/voucher_policy_memo
 use ibc/apps/transfer/voucher_policy_registry.{
   VoucherPolicyRegistry, operational_policies,
 }
@@ -162,12 +163,17 @@ fn validate_refund_voucher_redeemer_for_policy(
   when pairs.get_first(redeemers, Mint(voucher_minting_policy_id)) is {
     Some(mint_voucher_redeemer) -> {
       expect mint_voucher_redeemer: MintVoucherRedeemer = mint_voucher_redeemer
-      expect RefundVoucher { packet_source_port, packet_source_channel, .. } =
-        mint_voucher_redeemer
+      expect RefundVoucher {
+        packet_source_port,
+        packet_source_channel,
+        data,
+        ..
+      } = mint_voucher_redeemer
 
       and {
         (packet_source_port == packet.source_port)?,
         (packet_source_channel == packet.source_channel)?,
+        voucher_policy_memo.matches(data.memo, voucher_minting_policy_id)?,
       }
     }
     None -> False

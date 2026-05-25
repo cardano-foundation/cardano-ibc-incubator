@@ -17,6 +17,7 @@ use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/types/keys as transfer_module_keys
+use ibc/apps/transfer/voucher_policy_memo
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
@@ -527,6 +528,20 @@ fn build_packet(
   (ftpd, packet)
 }
 
+fn with_voucher_policy_memo(
+  packet_data: (FungibleTokenPacketData, Packet),
+  policy_id: PolicyId,
+) -> (FungibleTokenPacketData, Packet) {
+  let (ftpd, packet) = packet_data
+  let ftpd =
+    FungibleTokenPacketData {
+      ..ftpd,
+      memo: voucher_policy_memo.marker(policy_id),
+    }
+
+  (ftpd, Packet { ..packet, data: fungible_token_packet_data.get_bytes(ftpd) })
+}
+
 fn run_transfer_module_transition(
   mock: MockData,
   transaction: Transaction,
@@ -914,6 +929,7 @@ fn ack_success_fixture(
       "port-0",
       "channel-0",
     )
+      |> with_voucher_policy_memo(mock.voucher_minting_policy_id)
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
   let module_redeemer: Redeemer =
     Callback(
@@ -995,6 +1011,7 @@ fn voucher_send_burn_fixture_with_mock(
       "port-0",
       "channel-0",
     )
+      |> with_voucher_policy_memo(mock.voucher_minting_policy_id)
   let module_redeemer: Redeemer =
     Operator(
       TransferModuleOperator(
@@ -1099,6 +1116,7 @@ fn voucher_error_ack_refund_fixture(
       "port-0",
       "channel-0",
     )
+      |> with_voucher_policy_memo(mock.voucher_minting_policy_id)
   let acknowledgement = acknowledgement_mod.new_error_acknowledgement("")
   let module_redeemer: Redeemer =
     Callback(
@@ -2048,6 +2066,7 @@ test transfer_burn_voucher_succeed() {
       "port-0",
       "channel-0",
     )
+      |> with_voucher_policy_memo(mock.voucher_minting_policy_id)
 
   let module_redeemer: Redeemer =
     Operator(
@@ -2122,6 +2141,7 @@ test on_timeout_packet_mint_voucher_succeed() {
       "port-0",
       "channel-0",
     )
+      |> with_voucher_policy_memo(mock.voucher_minting_policy_id)
 
   let packet_data = TransferModuleData(ftpd)
 

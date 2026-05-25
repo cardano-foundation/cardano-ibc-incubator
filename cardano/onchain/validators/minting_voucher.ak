@@ -21,6 +21,7 @@ use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_metadata as voucher_metadata_datum
+use ibc/apps/transfer/voucher_policy_memo
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, RecvPacket, SendPacket, SpendChannelRedeemer, TimeoutPacket,
@@ -216,6 +217,7 @@ validator mint_voucher(
           )
         and {
           valid_sender,
+          voucher_policy_memo.matches(data.memo, voucher_minting_policy_id),
           valid_minted_tokens,
         }
       }
@@ -367,6 +369,7 @@ validator mint_voucher(
           outputs_token - inputs_token == transfer_amount,
           valid_minted_tokens,
           valid_sender,
+          voucher_policy_memo.matches(data.memo, voucher_minting_policy_id),
         }
       }
     }

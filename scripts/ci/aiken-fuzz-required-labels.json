@@ -126,6 +126,7 @@
     "regression.unit.transfer.recv_sink.mints_voucher_exactly",
     "regression.unit.transfer.recv_source.unescrows_exactly",
     "regression.unit.transfer.voucher_error_ack.remints_exactly",
+    "regression.unit.transfer.voucher_error_ack.rejects_wrong_refund_policy",
     "regression.unit.transfer.voucher_send.burns_exactly",
     "regression.unit.voucher.existing_mint.rejects_reference_nft",
     "regression.unit.voucher.first_mint.invalid_wrong_description",

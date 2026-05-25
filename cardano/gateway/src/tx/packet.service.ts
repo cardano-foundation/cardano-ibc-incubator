@@ -2180,7 +2180,13 @@ export class PacketService {
       },
     };
     const fullDenomPath = denom;
-    const voucherMintDetails = this.buildVoucherMintDetails(fullDenomPath);
+    const refundVoucherPolicyId = this.resolveRefundVoucherPolicyId(
+      timeoutPacketOperator.fungibleTokenPacketData.memo,
+    );
+    const voucherMintDetails = this.buildVoucherMintDetails(
+      fullDenomPath,
+      refundVoucherPolicyId,
+    );
 
     const encodedMintVoucherRedeemer: string = await this.lucidService.encode(
       mintVoucherRedeemer,
@@ -2205,6 +2211,7 @@ export class PacketService {
 
       spendChannelAddress: spendChannelAddress,
       channelTokenUnit: channelTokenUnit,
+      voucherPolicyId: voucherMintDetails.voucherPolicyId,
       voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
       voucherReferenceTokenUnit: voucherMintDetails.voucherReferenceTokenUnit,
       voucherMetadataAddress: voucherMintDetails.voucherMetadataAddress,
@@ -2914,7 +2921,13 @@ export class PacketService {
     // the canonical trace string for this refund path.
     const denomToHash = fungibleTokenPacketData.denom;
     const fullDenomPath = denomToHash;
-    const voucherMintDetails = this.buildVoucherMintDetails(fullDenomPath);
+    const refundVoucherPolicyId = this.resolveRefundVoucherPolicyId(
+      fungibleTokenPacketData.memo,
+    );
+    const voucherMintDetails = this.buildVoucherMintDetails(
+      fullDenomPath,
+      refundVoucherPolicyId,
+    );
 
     // build update channel datum
     const updatedChannelDatum: ChannelDatum = {
@@ -2945,6 +2958,7 @@ export class PacketService {
       encodedUpdatedChannelDatum,
 
       channelTokenUnit,
+      voucherPolicyId: voucherMintDetails.voucherPolicyId,
       voucherTokenUnit: voucherMintDetails.voucherTokenUnit,
       voucherReferenceTokenUnit: voucherMintDetails.voucherReferenceTokenUnit,
       voucherMetadataAddress: voucherMintDetails.voucherMetadataAddress,
@@ -3122,8 +3136,9 @@ export class PacketService {
     );
   }
 
-  private buildVoucherMintDetails(fullDenom: string): {
+  private buildVoucherMintDetails(fullDenom: string, voucherPolicyIdOverride?: string): {
     voucherDenomHash: string;
+    voucherPolicyId: string;
     voucherTokenName: string;
     voucherTokenUnit: string;
     voucherReferenceTokenName: string;
@@ -3144,8 +3159,11 @@ export class PacketService {
 
     const deploymentConfig = this.configService.get('deployment');
     const voucherPolicyId =
-      deploymentConfig.voucherPolicyRegistry?.active?.scriptHash ??
-      deploymentConfig.validators.mintVoucher.scriptHash;
+      voucherPolicyIdOverride?.toLowerCase() ??
+      (
+        deploymentConfig.voucherPolicyRegistry?.active?.scriptHash ??
+        deploymentConfig.validators.mintVoucher.scriptHash
+      ).toLowerCase();
     const voucherMetadataAddress = deploymentConfig.validators.voucherMetadata?.address;
     if (!voucherMetadataAddress) {
       throw new GrpcInternalException(
@@ -3170,6 +3188,7 @@ export class PacketService {
 
     return {
       voucherDenomHash,
+      voucherPolicyId,
       voucherTokenName,
       voucherTokenUnit: `${voucherPolicyId}${voucherTokenName}`,
       voucherReferenceTokenName,
@@ -3209,6 +3228,36 @@ export class PacketService {
   private async _resolvePacketDenomForSend(denom: string): Promise<string> {
     return this._resolveVoucherDenomForBurn(denom);
   }
+
+  private resolveRefundVoucherPolicyId(packetMemo: string | undefined): string {
+    const prefix = 'cardano-ibc:voucher-policy:';
+    const memo = packetMemo?.trim().toLowerCase() ?? '';
+    if (!memo.startsWith(prefix)) {
+      throw new GrpcInvalidArgumentException(
+        'Voucher refund packet memo is missing the committed voucher policy marker',
+      );
+    }
+
+    const policyId = memo.slice(prefix.length);
+    const deploymentConfig = this.configService.get('deployment');
+    const activePolicyId = (
+      deploymentConfig.voucherPolicyRegistry?.active?.scriptHash ??
+      deploymentConfig.validators.mintVoucher.scriptHash
+    ).toLowerCase();
+    const legacyPolicyIds =
+      deploymentConfig.voucherPolicyRegistry?.legacy.map((entry) =>
+        entry.scriptHash.toLowerCase()
+      ) ?? [];
+
+    if (policyId === activePolicyId || legacyPolicyIds.includes(policyId)) {
+      return policyId;
+    }
+
+    throw new GrpcInvalidArgumentException(
+      `Voucher refund policy ${policyId} is not active or legacy in the bridge registry`,
+    );
+  }
+
   private getTransferModuleAddress(): string {
     return this.configService.get('deployment').modules.transfer.address;
   }

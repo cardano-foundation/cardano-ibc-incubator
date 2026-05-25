@@ -231,10 +231,14 @@ describe('send-packet denom mapping', () => {
     );
     const burnRedeemer = harness.encodedValues.find(
       (entry) => entry.kind === 'mintVoucherRedeemer',
-    )?.value as { BurnVoucher: { data: { denom: string } } };
+    )?.value as { BurnVoucher: { data: { denom: string; memo: string } } };
     assert.equal(
       Buffer.from(burnRedeemer.BurnVoucher.data.denom, 'hex').toString('utf8'),
       fullDenom,
+    );
+    assert.equal(
+      Buffer.from(burnRedeemer.BurnVoucher.data.memo, 'hex').toString('utf8'),
+      `cardano-ibc:voucher-policy:${'44'.repeat(28)}`,
     );
   });
 
@@ -283,6 +287,13 @@ describe('send-packet denom mapping', () => {
     assert.equal(requestedUnit, legacyVoucherUnit);
     assert.equal(captured.voucherTokenUnit, legacyVoucherUnit);
     assert.equal(captured.voucherPolicyId, legacyPolicy);
+    const burnRedeemer = harness.encodedValues.find(
+      (entry) => entry.kind === 'mintVoucherRedeemer',
+    )?.value as { BurnVoucher: { data: { memo: string } } };
+    assert.equal(
+      Buffer.from(burnRedeemer.BurnVoucher.data.memo, 'hex').toString('utf8'),
+      `cardano-ibc:voucher-policy:${legacyPolicy}`,
+    );
   });
 
   it('rejects unresolved ibc hash denoms before building a transaction', async () => {

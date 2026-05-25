@@ -226,6 +226,32 @@ export async function buildUnsignedSendPacketTx(
     sendPacketOperator.sourcePort,
     sendPacketOperator.sourceChannel,
   );
+  let packetMemo = sendPacketOperator.memo;
+  let voucherSenderWalletUtxos: UTxO[] | undefined;
+  let senderVoucherTokenUtxo: UTxO | undefined;
+  let voucherTokenUnit: string | undefined;
+  let voucherPolicyId: string | undefined;
+
+  if (isVoucher) {
+    const senderAddress = sendPacketOperator.sender;
+    voucherSenderWalletUtxos = await deps.tryFindUtxosAt(
+      senderAddress,
+      LOOKUP_RETRY_OPTIONS,
+    );
+    const voucherTokenName = buildVoucherTokenName(resolvedDenom, deps);
+    voucherTokenUnit = resolveVoucherTokenUnitForBurn(
+      voucherTokenName,
+      context.deployment,
+      voucherSenderWalletUtxos,
+      deps,
+    );
+    voucherPolicyId = voucherTokenUnit.slice(0, 56);
+    packetMemo = buildVoucherPolicyMemo(voucherPolicyId);
+    senderVoucherTokenUtxo = await deps.findUtxoAtWithUnit(
+      senderAddress,
+      voucherTokenUnit,
+    );
+  }
 
   const packet: Packet = {
     sequence: context.channelDatum.state.next_sequence_send,
@@ -240,7 +266,7 @@ export async function buildUnsignedSendPacketTx(
         amount: sendPacketOperator.token.amount.toString(),
         sender: sendPacketOperator.sender,
         receiver: sendPacketOperator.receiver,
-        memo: sendPacketOperator.memo,
+        memo: packetMemo,
       }),
     ),
     timeout_height: sendPacketOperator.timeoutHeight,
@@ -251,7 +277,7 @@ export async function buildUnsignedSendPacketTx(
     amount: convertStringToHex(sendPacketOperator.token.amount.toString()),
     sender: convertStringToHex(sendPacketOperator.sender),
     receiver: convertStringToHex(sendPacketOperator.receiver),
-    memo: convertStringToHex(sendPacketOperator.memo),
+    memo: convertStringToHex(packetMemo),
   };
 
   const encodedSpendChannelRedeemer = await deps.encode(
@@ -308,18 +334,16 @@ export async function buildUnsignedSendPacketTx(
 
   if (isVoucher) {
     const senderAddress = sendPacketOperator.sender;
-    const senderWalletUtxos = await deps.tryFindUtxosAt(
-      senderAddress,
-      LOOKUP_RETRY_OPTIONS,
-    );
-    const voucherTokenName = buildVoucherTokenName(resolvedDenom, deps);
-    const voucherTokenUnit = resolveVoucherTokenUnitForBurn(
-      voucherTokenName,
-      context.deployment,
-      senderWalletUtxos,
-      deps,
-    );
-    const voucherPolicyId = voucherTokenUnit.slice(0, 56);
+    if (
+      !voucherSenderWalletUtxos ||
+      !senderVoucherTokenUtxo ||
+      !voucherTokenUnit ||
+      !voucherPolicyId
+    ) {
+      throw deps.internalError(
+        'Voucher burn context was not initialized before building the burn transaction',
+      );
+    }
     const encodedMintVoucherRedeemer = await deps.encode(
       {
         BurnVoucher: {
@@ -331,12 +355,8 @@ export async function buildUnsignedSendPacketTx(
       'mintVoucherRedeemer',
     );
 
-    const senderVoucherTokenUtxo = await deps.findUtxoAtWithUnit(
-      senderAddress,
-      voucherTokenUnit,
-    );
     const walletUtxos = dedupeUtxos([
-      ...senderWalletUtxos,
+      ...voucherSenderWalletUtxos,
       senderVoucherTokenUtxo,
     ]);
 
@@ -606,6 +626,10 @@ function resolveVoucherTokenUnitForBurn(
   throw deps.invalidArgument(
     `Voucher asset ${activePolicy}${voucherTokenName} not found in sender wallet UTxOs under the active or legacy voucher policies`,
   );
+}
+
+function buildVoucherPolicyMemo(policyId: string): string {
+  return `cardano-ibc:voucher-policy:${policyId.trim().toLowerCase()}`;
 }
 
 async function resolvePacketDenomForSend(

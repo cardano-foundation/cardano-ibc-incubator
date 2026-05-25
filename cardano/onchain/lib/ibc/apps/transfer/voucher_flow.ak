@@ -5,6 +5,7 @@ use cardano/transaction.{Mint, Redeemer, ScriptPurpose}
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, MintVoucherRedeemer,
 }
+use ibc/apps/transfer/voucher_policy_memo
 use ibc/apps/transfer/voucher_policy_registry.{
   VoucherPolicyRegistry, operational_policies,
 }
@@ -69,12 +70,13 @@ fn validate_burn_voucher_packet_for_policy(
   when pairs.get_first(redeemers, Mint(voucher_minting_policy_id)) is {
     Some(mint_voucher_redeemer) -> {
       expect mint_voucher_redeemer: MintVoucherRedeemer = mint_voucher_redeemer
-      expect BurnVoucher { packet_source_port, packet_source_channel, .. } =
+      expect BurnVoucher { packet_source_port, packet_source_channel, data } =
         mint_voucher_redeemer
 
       and {
         (packet_source_port == packet.source_port)?,
         (packet_source_channel == packet.source_channel)?,
+        voucher_policy_memo.matches(data.memo, voucher_minting_policy_id)?,
       }
     }
     None -> False

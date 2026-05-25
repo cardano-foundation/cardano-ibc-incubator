@@ -65,11 +65,22 @@ refund, and account for vouchers:
 - packet amount encoding
 - sender encoding
 - receiver encoding
+- voucher policy marker in packet memo for voucher burns
 - acknowledgement encoding
 - timeout and refund semantics
 
 Burning a legacy voucher for denom `D` is only compatible if the new bridge
 interprets `D` exactly as the old bridge did.
+
+Voucher refunds must preserve the voucher policy that was burned on send:
+
+```text
+burn P1 -> refund P1
+burn P2 -> refund P2
+```
+
+The send packet therefore commits the burned voucher policy in packet data, and
+the refund path must reject a refund under any other active or legacy policy.
 
 ### Trace Registry
 

@@ -2313,10 +2313,10 @@ export class LucidService implements OnModuleInit {
       }
       : {
         [dto.voucherTokenUnit]: dto.transferAmount,
-      };
+    };
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.referenceScripts.mintVoucher,
+      this.mintVoucherReferenceScript(dto.voucherPolicyId),
       ...this.bridgeRegistryReferenceInputs(),
       this.referenceScripts.ackPacket,
       this.referenceScripts.verifyProof,
@@ -2621,10 +2621,10 @@ export class LucidService implements OnModuleInit {
       }
       : {
         [dto.voucherTokenUnit]: dto.transferAmount,
-      };
+    };
     tx.readFrom([
       this.referenceScripts.spendChannel,
-      this.referenceScripts.mintVoucher,
+      this.mintVoucherReferenceScript(dto.voucherPolicyId),
       ...this.bridgeRegistryReferenceInputs(),
       this.referenceScripts.timeoutPacket,
       this.referenceScripts.verifyProof,
