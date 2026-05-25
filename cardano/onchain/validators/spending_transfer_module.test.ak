@@ -9,7 +9,7 @@ use cardano/transaction.{
 }
 use ibc/apps/transfer/bridge_registry.{BridgeDeployment, BridgeRegistryDatum}
 use ibc/apps/transfer/mint_voucher_redeemer.{
-  BurnVoucher, MintVoucher, RefundVoucher,
+  BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
 }
 use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
@@ -17,13 +17,14 @@ use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/types/keys as transfer_module_keys
+use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_policy_memo
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, ChanOpenAck, ChanOpenConfirm, ChanOpenInit, ChanOpenTry,
-  RecvPacket, SendPacket, TimeoutPacket,
+  RecvPacket, SendPacket, SpendChannelRedeemer, TimeoutPacket,
 }
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/channel.{Channel}
@@ -42,8 +43,11 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, LeafOp,
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
+use ibc/core/ics_025_handler_interface/host_state_redeemer
 use ibc/testing/fuzz_dsl
 use ibc/utils/string as string_utils
+use minting_voucher
+use spending_channel
 use spending_transfer_module
 
 //=====================================Test================================================
@@ -395,6 +399,168 @@ fn with_bridge_registry(mock: MockData, transaction: Transaction) -> Transaction
       ..transaction.reference_inputs
     ],
   }
+}
+
+const upgraded_host_state_nft_policy_id =
+  "mock upgraded host state nft policy id"
+
+const upgraded_channel_minting_policy_id =
+  "mock upgraded channel minting policy id"
+
+const upgraded_active_voucher_policy_id = "mock active v2 voucher policy id"
+
+const wrong_active_host_state_nft_policy_id =
+  "mock wrong active host state nft policy id"
+
+const wrong_active_channel_minting_policy_id =
+  "mock wrong active channel minting policy id"
+
+const send_packet_marker_policy_id = "mock send packet marker policy id"
+
+fn host_state_handle_packet_redeemer() -> Redeemer {
+  let redeemer: Redeemer =
+    host_state_redeemer.HandlePacket {
+      channel_siblings: [],
+      next_sequence_send_siblings: [],
+      next_sequence_recv_siblings: [],
+      next_sequence_ack_siblings: [],
+      packet_commitment_siblings: [],
+      packet_receipt_siblings: [],
+      packet_acknowledgement_siblings: [],
+    }
+  redeemer
+}
+
+fn upgraded_channel_token(
+  host_state_nft_policy_id: PolicyId,
+  channel_minting_policy_id: PolicyId,
+  channel_id: ByteArray,
+) -> AuthToken {
+  let channel_sequence = channel_keys.parse_channel_id_sequence(channel_id)
+  let host_state_nft =
+    AuthToken { policy_id: host_state_nft_policy_id, name: "ibc_host_state" }
+  let channel_token_name =
+    auth.generate_token_name(
+      host_state_nft,
+      channel_keys.channel_prefix,
+      channel_sequence,
+    )
+
+  AuthToken { policy_id: channel_minting_policy_id, name: channel_token_name }
+}
+
+fn retokenize_host_state_output(
+  output: Output,
+  host_state_nft_policy_id: PolicyId,
+) -> Output {
+  Output {
+    ..output,
+    value: from_asset(host_state_nft_policy_id, "ibc_host_state", 1),
+  }
+}
+
+fn retokenize_channel_output(output: Output, channel_token: AuthToken) -> Output {
+  expect InlineDatum(datum) = output.datum
+  expect channel_datum: ChannelDatum = datum
+
+  Output {
+    ..output,
+    value: from_asset(channel_token.policy_id, channel_token.name, 1),
+    datum: InlineDatum(ChannelDatum { ..channel_datum, token: channel_token }),
+  }
+}
+
+fn channel_datum_from_input(input: Input) -> ChannelDatum {
+  expect InlineDatum(datum) = input.output.datum
+  expect channel_datum: ChannelDatum = datum
+  channel_datum
+}
+
+fn with_deployment_tokens(
+  mock: MockData,
+  host_state_nft_policy_id: PolicyId,
+  channel_minting_policy_id: PolicyId,
+) -> MockData {
+  let host_state_output =
+    retokenize_host_state_output(
+      mock.host_state_output,
+      host_state_nft_policy_id,
+    )
+  let host_state_input =
+    Input { ..mock.host_state_input, output: host_state_output }
+  let channel_token =
+    upgraded_channel_token(
+      host_state_nft_policy_id,
+      channel_minting_policy_id,
+      mock.channel_id,
+    )
+  let channel_input =
+    Input {
+      ..mock.channel_input,
+      output: retokenize_channel_output(
+        mock.channel_input.output,
+        channel_token,
+      ),
+    }
+  let channel_output =
+    retokenize_channel_output(mock.channel_output, channel_token)
+
+  MockData {
+    ..mock,
+    host_state_nft_policy_id,
+    host_state_input,
+    host_state_output,
+    channel_minting_policy_id,
+    channel_input,
+    channel_output,
+  }
+}
+
+fn with_bridge_registry_deployment(
+  mock: MockData,
+  host_state_nft_policy_id: PolicyId,
+  channel_minting_policy_id: PolicyId,
+  active_voucher_policy_id: PolicyId,
+  legacy_voucher_policy_ids: List<PolicyId>,
+) -> MockData {
+  MockData {
+    ..mock,
+    bridge_registry_input: make_bridge_registry_input(
+      mock.bridge_registry_token,
+      channel_minting_policy_id,
+      host_state_nft_policy_id,
+      active_voucher_policy_id,
+      legacy_voucher_policy_ids,
+    ),
+  }
+}
+
+fn upgraded_bridge_mock(legacy_voucher_policy_ids: List<PolicyId>) -> MockData {
+  setup()
+    |> with_deployment_tokens(
+        upgraded_host_state_nft_policy_id,
+        upgraded_channel_minting_policy_id,
+      )
+    |> with_bridge_registry_deployment(
+        upgraded_host_state_nft_policy_id,
+        upgraded_channel_minting_policy_id,
+        upgraded_active_voucher_policy_id,
+        legacy_voucher_policy_ids,
+      )
+}
+
+fn upgraded_bridge_mock_with_wrong_active_deployment() -> MockData {
+  setup()
+    |> with_deployment_tokens(
+        upgraded_host_state_nft_policy_id,
+        upgraded_channel_minting_policy_id,
+      )
+    |> with_bridge_registry_deployment(
+        wrong_active_host_state_nft_policy_id,
+        wrong_active_channel_minting_policy_id,
+        upgraded_active_voucher_policy_id,
+        ["mock voucher minting policy id"],
+      )
 }
 
 fn transfer_escrow_input(
@@ -1038,6 +1204,140 @@ fn voucher_send_burn_fixture_with_mock(
   run_transfer_module_transition(mock, transaction, module_redeemer, mutation)
 }
 
+fn voucher_upgrade_legacy_burn_tx(
+  mock: MockData,
+  include_bridge_registry: Bool,
+  mutation: fuzz_dsl.Mutation,
+) -> fuzz_dsl.ProtocolTxFixture {
+  let transfer_amount = 1234
+  let receiver = mock.cardano_public_key_hash
+  let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
+  let reference_inputs =
+    if include_bridge_registry {
+      [mock.bridge_registry_input]
+    } else {
+      []
+    }
+  let outputs =
+    [mock.module_output, mock.channel_output, mock.host_state_output]
+  let source_port = mock.port_id
+  let source_channel = mock.channel_id
+  let denom =
+    transfer_coin.get_denom_prefix(source_port, source_channel)
+      |> bytearray.concat("atom")
+  let (ftpd, packet) =
+    build_packet(
+      denom,
+      transfer_amount,
+      mock.cosmos_address,
+      receiver,
+      source_port,
+      source_channel,
+      "port-0",
+      "channel-0",
+    )
+      |> with_voucher_policy_memo(mock.voucher_minting_policy_id)
+  let module_redeemer: Redeemer =
+    Operator(
+      TransferModuleOperator(
+        Transfer { channel_id: mock.channel_id, data: ftpd },
+      ),
+    )
+  let channel_redeemer: Redeemer = SendPacket { packet }
+  let mint_voucher_redeemer: Redeemer =
+    BurnVoucher {
+      packet_source_port: packet.source_port,
+      packet_source_channel: packet.source_channel,
+      data: ftpd,
+    }
+  let channel_datum = channel_datum_from_input(mock.channel_input)
+  let send_packet_marker_redeemer: Redeemer = channel_datum.token
+  let voucher_burn_mint =
+    from_asset(
+      mock.voucher_minting_policy_id,
+      voucher_asset_name.voucher_user_token_name(ftpd.denom),
+      0 - transfer_amount,
+    )
+  let mint =
+    voucher_burn_mint
+      |> add(send_packet_marker_policy_id, "", 1)
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+      Pair(
+        Spend(mock.host_state_input.output_reference),
+        host_state_handle_packet_redeemer(),
+      ),
+      Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
+      Pair(Mint(send_packet_marker_policy_id), send_packet_marker_redeemer),
+    ]
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      reference_inputs,
+      outputs,
+      redeemers,
+      mint,
+    }
+  expect module_redeemer_typed: IBCModuleRedeemer = module_redeemer
+  expect channel_redeemer_typed: SpendChannelRedeemer = channel_redeemer
+  expect mint_voucher_redeemer_typed: MintVoucherRedeemer =
+    mint_voucher_redeemer
+
+  fuzz_dsl.protocol_tx_from_transaction(
+    fuzz_dsl.model("voucher_upgrade", "legacy_burn"),
+    fuzz_dsl.model("voucher_upgrade", "legacy_burn.after"),
+    mutation,
+    transaction,
+  )
+    |> fuzz_dsl.with_protocol_validator_check(
+        "spending_transfer_module",
+        spending_transfer_module.spend_transfer_module.spend(
+          mock.port_token,
+          mock.module_token,
+          mock.port_id,
+          mock.transfer_escrow_shard_policy_id,
+          mock.bridge_registry_token,
+          None,
+          module_redeemer_typed,
+          mock.module_input.output_reference,
+          transaction,
+        ),
+      )
+    |> fuzz_dsl.with_protocol_validator_check(
+        "minting_voucher_legacy_policy",
+        minting_voucher.mint_voucher.mint(
+          mock.module_token,
+          AuthToken { policy_id: "mock trace directory policy id", name: "dir" },
+          "mock voucher metadata script hash",
+          mock.bridge_registry_token,
+          mint_voucher_redeemer_typed,
+          mock.voucher_minting_policy_id,
+          transaction,
+        ),
+      )
+    |> fuzz_dsl.with_protocol_validator_check(
+        "spending_channel_send_packet",
+        spending_channel.spend_channel.spend(
+          "mock chan open ack policy id",
+          "mock chan open confirm policy id",
+          "mock chan close init policy id",
+          "mock chan close confirm policy id",
+          "mock recv packet policy id",
+          send_packet_marker_policy_id,
+          "mock timeout packet policy id",
+          "mock acknowledge packet policy id",
+          mock.host_state_nft_policy_id,
+          Some(channel_datum),
+          channel_redeemer_typed,
+          mock.channel_input.output_reference,
+          transaction,
+        ),
+      )
+}
+
 fn voucher_recv_sink_fixture(
   mutation: fuzz_dsl.Mutation,
 ) -> fuzz_dsl.ProtocolTxFixture {
@@ -1239,6 +1539,76 @@ test prop_transfer_module_legacy_voucher_send_burns_from_registry(
   // deployment can still recognize and burn a voucher policy from an older
   // deployment once governance has recorded it as legacy.
   voucher_send_burn_legacy_registry_fixture(fuzz_dsl.no_mutation())
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_tx_voucher_upgrade_legacy_burn_valid(_seed via fuzz.int()) {
+  fuzz.label(@"regression.tx.voucher_upgrade.legacy_burn.valid")
+
+  // tx.* depth: this composes the upgraded transfer module, the old P1 voucher
+  // policy, and the channel SendPacket validator in one transaction. The
+  // registry points to the v2 HostState/channel deployment while listing P1 as
+  // legacy, so the old voucher can be burned without stranding the holder.
+  voucher_upgrade_legacy_burn_tx(
+    upgraded_bridge_mock(["mock voucher minting policy id"]),
+    True,
+    fuzz_dsl.no_mutation(),
+  )
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_tx_voucher_upgrade_legacy_burn_rejects_policy_not_in_registry(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(
+    @"regression.tx.voucher_upgrade.legacy_burn.invalid_policy_not_in_registry",
+  )
+
+  // Near-valid upgrade transaction, but governance did not preserve P1 in the
+  // legacy set. The transfer module and P1 policy must not treat it as
+  // operational.
+  voucher_upgrade_legacy_burn_tx(
+    upgraded_bridge_mock([]),
+    True,
+    fuzz_dsl.mutation("policy_not_in_registry"),
+  )
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_tx_voucher_upgrade_legacy_burn_rejects_missing_bridge_registry(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(
+    @"regression.tx.voucher_upgrade.legacy_burn.invalid_missing_bridge_registry",
+  )
+
+  // Registry-aware voucher policies only follow upgrades when the registry UTxO
+  // is present. Without it, the old policy cannot discover the active v2
+  // deployment and the transaction must fail.
+  voucher_upgrade_legacy_burn_tx(
+    upgraded_bridge_mock(["mock voucher minting policy id"]),
+    False,
+    fuzz_dsl.mutation("missing_bridge_registry"),
+  )
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_tx_voucher_upgrade_legacy_burn_rejects_wrong_active_deployment(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(
+    @"regression.tx.voucher_upgrade.legacy_burn.invalid_wrong_active_deployment",
+  )
+
+  // P1 is listed as legacy, but the registry points at a different active
+  // HostState/channel deployment than the one being used in the transaction.
+  // The old voucher policy must bind to the registry deployment, not to any
+  // convenient channel witness supplied off-chain.
+  voucher_upgrade_legacy_burn_tx(
+    upgraded_bridge_mock_with_wrong_active_deployment(),
+    True,
+    fuzz_dsl.mutation("wrong_active_deployment"),
+  )
     |> fuzz_dsl.assert_protocol_valid
 }
 
@@ -2609,6 +2979,7 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
       "port-0",
       "channel-0",
     )
+      |> with_voucher_policy_memo(mock.voucher_minting_policy_id)
 
   let acknowledgement = acknowledgement_mod.new_error_acknowledgement("")
 
