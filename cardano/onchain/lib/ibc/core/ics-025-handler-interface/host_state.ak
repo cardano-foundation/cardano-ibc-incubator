@@ -14,6 +14,7 @@
 // This design eliminates state ambiguity and simplifies indexing/querying.
 
 use aiken/collection/list
+use aiken/crypto.{VerificationKeyHash}
 use aiken/primitive/int
 
 // Empty ICS-23 Merkle tree root (32 bytes of zeros)
@@ -22,6 +23,16 @@ pub const empty_ibc_state_root =
 
 // IBC Host State NFT token name
 pub const host_state_token_name = "ibc_host_state"
+
+/// ShutdownState controls whether the bridge accepts new user-facing work.
+///
+/// `Active` is the normal operating mode. `ShuttingDown` is entered by the
+/// trusted deployment key and lets users drain/refund existing state before
+/// protocol-owned min-ADA can be reclaimed.
+pub type ShutdownState {
+  Active
+  ShuttingDown { initiated_at: Int, grace_period_end: Int }
+}
 
 /// HostState represents the canonical IBC host state on Cardano
 /// 
@@ -52,6 +63,25 @@ pub type HostStateDatum {
   // Policy ID of the IBC Host State NFT
   // This MUST match the NFT in the UTXO's value
   nft_policy: ByteArray,
+  // Trusted deployer key hash allowed to enter shutdown and reclaim deployment
+  // infrastructure after the grace period.
+  deployer: VerificationKeyHash,
+  // Lifecycle mode for controlled shutdown and eventual min-ADA reclaim.
+  shutdown: ShutdownState,
+}
+
+pub fn is_active(shutdown: ShutdownState) -> Bool {
+  when shutdown is {
+    Active -> True
+    ShuttingDown { .. } -> False
+  }
+}
+
+pub fn is_shutting_down(shutdown: ShutdownState) -> Bool {
+  when shutdown is {
+    Active -> False
+    ShuttingDown { .. } -> True
+  }
 }
 
 /// Validate initial HostState datum at genesis/deployment
@@ -66,7 +96,7 @@ pub fn is_initialized_valid(
   datum: HostStateDatum,
   expected_nft_policy: ByteArray,
 ) -> Bool {
-  let HostStateDatum { state, nft_policy } = datum
+  let HostStateDatum { state, nft_policy, shutdown, .. } = datum
   and {
     state.version == 0,
     state.next_client_sequence == 0,
@@ -74,6 +104,7 @@ pub fn is_initialized_valid(
     state.next_channel_sequence == 0,
     state.bound_port == [],
     state.ibc_state_root == empty_ibc_state_root,
+    shutdown == Active,
     nft_policy == expected_nft_policy,
   }
 }
@@ -105,7 +136,10 @@ pub fn validate_create_client(old: HostStateDatum, new: HostStateDatum) -> Bool 
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
     new.state.bound_port == old.state.bound_port,
+    old.shutdown |> is_active,
+    new.shutdown == old.shutdown,
     new.nft_policy == old.nft_policy,
+    new.deployer == old.deployer,
   }
 }
 
@@ -120,7 +154,10 @@ pub fn validate_create_connection(
     new.state.next_connection_sequence == old.state.next_connection_sequence + 1,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
     new.state.bound_port == old.state.bound_port,
+    old.shutdown |> is_active,
+    new.shutdown == old.shutdown,
     new.nft_policy == old.nft_policy,
+    new.deployer == old.deployer,
   }
 }
 
@@ -132,7 +169,10 @@ pub fn validate_create_channel(old: HostStateDatum, new: HostStateDatum) -> Bool
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence + 1,
     new.state.bound_port == old.state.bound_port,
+    old.shutdown |> is_active,
+    new.shutdown == old.shutdown,
     new.nft_policy == old.nft_policy,
+    new.deployer == old.deployer,
   }
 }
 
@@ -161,7 +201,10 @@ pub fn validate_bind_port(
     new.state.bound_port == (
       list.push(old.state.bound_port, port) |> list.sort(int.compare)
     ),
+    old.shutdown |> is_active,
+    new.shutdown == old.shutdown,
     new.nft_policy == old.nft_policy,
+    new.deployer == old.deployer,
   }
 }
 
@@ -186,6 +229,41 @@ pub fn validate_update_only_root(
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
     new.state.bound_port == old.state.bound_port,
+    new.shutdown == old.shutdown,
     new.nft_policy == old.nft_policy,
+    new.deployer == old.deployer,
+  }
+}
+
+pub fn validate_enter_shutdown(
+  old: HostStateDatum,
+  new: HostStateDatum,
+  grace_period_end: Int,
+) -> Bool {
+  and {
+    validate_version_increment(old.state, new.state),
+    old.shutdown |> is_active,
+    new.shutdown == ShuttingDown {
+      initiated_at: new.state.last_update_time,
+      grace_period_end,
+    },
+    grace_period_end > new.state.last_update_time,
+    new.state.ibc_state_root == old.state.ibc_state_root,
+    new.state.next_client_sequence == old.state.next_client_sequence,
+    new.state.next_connection_sequence == old.state.next_connection_sequence,
+    new.state.next_channel_sequence == old.state.next_channel_sequence,
+    new.state.bound_port == old.state.bound_port,
+    new.nft_policy == old.nft_policy,
+    new.deployer == old.deployer,
+  }
+}
+
+pub fn validate_finalize_shutdown(
+  datum: HostStateDatum,
+  valid_from: Int,
+) -> Bool {
+  when datum.shutdown is {
+    ShuttingDown { grace_period_end, .. } -> valid_from >= grace_period_end
+    Active -> False
   }
 }

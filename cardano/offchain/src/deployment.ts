@@ -66,6 +66,16 @@ const utxoRefKey = (utxo: UTxO): string => `${utxo.txHash}#${utxo.outputIndex}`;
 
 const utxoLovelace = (utxo: UTxO): bigint => utxo.assets.lovelace ?? 0n;
 
+const getPaymentCredentialHash = (address: string): string => {
+  const paymentCredential = getAddressDetails(address).paymentCredential;
+  if (!paymentCredential || paymentCredential.type !== "Key") {
+    throw new Error(
+      `Deployment wallet address does not have a key payment credential: ${address}`,
+    );
+  }
+  return paymentCredential.hash;
+};
+
 const isAdaOnlyUtxo = (utxo: UTxO): boolean =>
   Object.keys(utxo.assets).every((unit) => unit === "lovelace");
 
@@ -520,9 +530,11 @@ export const createDeployment = async (
 ) => {
   console.log("Create deployment info");
   const referredValidators: Script[] = [];
+  const walletAddress = await lucid.wallet().address();
+  const deployerPaymentKeyHash = getPaymentCredentialHash(walletAddress);
   const deploymentReportEnabled = mode !== undefined && mode != EMULATOR_ENV;
   const deploymentWalletAddress = deploymentReportEnabled
-    ? await lucid.wallet().address()
+    ? walletAddress
     : undefined;
   const governanceAddress = await lucid.wallet().address();
   const governanceKeyHash = getAddressDetails(governanceAddress)
@@ -823,6 +835,7 @@ export const createDeployment = async (
     spendClientScriptHash,
     spendConnectionScriptHash,
     spendingChannel.base.hash,
+    deployerPaymentKeyHash,
   );
   referredValidators.push(hostStateStt.validator);
   const hostStateTree = new DeploymentIbcTree();
@@ -837,6 +850,7 @@ export const createDeployment = async (
   reservedDeploymentRefs = await setSpendableWalletUtxos(0);
   const bootstrapRefUtxosInfo = await createReferenceUtxos(
     lucid,
+    mintHostStateNFTPolicyId,
     [hostStateStt.validator, mintPortValidator, mintIdentifierValidator],
     reservedDeploymentRefs,
     deploymentWalletAddress,
@@ -1012,6 +1026,7 @@ export const createDeployment = async (
     ...bootstrapRefUtxosInfo,
     ...await createReferenceUtxos(
       lucid,
+      mintHostStateNFTPolicyId,
       remainingReferredValidators,
       reservedDeploymentRefs,
       deploymentWalletAddress,
@@ -1579,6 +1594,7 @@ async function mintMockToken(lucid: LucidEvolution) {
 
 async function createReferenceUtxos(
   lucid: LucidEvolution,
+  hostStateNftPolicyId: string,
   referredValidators: Script[],
   reservedWalletRefs = new Set<string>(),
   deploymentWalletAddress?: string,
@@ -1589,6 +1605,8 @@ async function createReferenceUtxos(
     const [, , referenceAddress] = await readValidator(
       "reference_validator.refer_only.else",
       lucid,
+      [hostStateNftPolicyId],
+      Data.Tuple([Data.Bytes()]) as unknown as [string],
     );
 
     const maxTxSize = lucid.config().protocolParameters?.maxTxSize ?? 16_384;
@@ -2663,6 +2681,7 @@ const deployHostState = async (
   spendClientScriptHash: string,
   spendConnectionScriptHash: string,
   spendChannelScriptHash: string,
+  deployerPaymentKeyHash: string,
 ) => {
   console.log("Deploy HostState (STT Architecture)");
 
@@ -2730,6 +2749,8 @@ const deployHostState = async (
       last_update_time: BigInt(currentTime),
     },
     nft_policy: mintHostStateNFTPolicyId,
+    deployer: deployerPaymentKeyHash,
+    shutdown: "Active",
   };
 
   // Create and send tx to mint NFT and create HostState UTXO

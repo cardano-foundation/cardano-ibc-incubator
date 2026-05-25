@@ -323,13 +323,11 @@ jobs:
           deno-version: v2.x
 
       - name: Setup Aiken
-        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         uses: aiken-lang/setup-aiken@v1
         with:
           version: v1.1.21
 
       - name: Build Aiken blueprint
-        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         working-directory: cardano/onchain
         run: aiken build
 

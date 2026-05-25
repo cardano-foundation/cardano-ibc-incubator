@@ -35,7 +35,7 @@ use ibc/core/ics_023_vector_commitments/merkle_prefix
 use ibc/core/ics_024_host_requirements/client_keys as host_client_keys
 use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
 use ibc/core/ics_025_handler_interface/host_state.{
-  HostState, HostStateDatum, empty_ibc_state_root, host_state_token_name,
+  Active, HostState, HostStateDatum, empty_ibc_state_root, host_state_token_name,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   CreateConnection, HostStateRedeemer,
@@ -44,6 +44,9 @@ use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/testing/fuzz_dsl
 use ibc/utils/validator_utils
 use minting_connection_stt
+
+const trusted_deployer =
+  #"00000000000000000000000000000000000000000000000000000000"
 
 type ConnOpenTryFixture {
   ConnOpenTryFixture {
@@ -139,6 +142,8 @@ fn host_state_datum(
       last_update_time: 0,
     },
     nft_policy,
+    deployer: trusted_deployer,
+    shutdown: Active,
   }
 }
 

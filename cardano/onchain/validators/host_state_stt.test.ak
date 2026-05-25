@@ -1,11 +1,12 @@
 use aiken/cbor
 use aiken/crypto
 use aiken/fuzz
+use aiken/interval
 use aiken/primitive/bytearray
 use cardano/address.{Address, Script}
 use cardano/assets.{PolicyId, from_asset}
 use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Transaction, placeholder,
+  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, placeholder,
 }
 use host_state_stt
 use ibc/auth.{AuthToken}
@@ -40,11 +41,12 @@ use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
-  HostState, HostStateDatum, empty_ibc_state_root, host_state_token_name,
+  Active, HostState, HostStateDatum, ShutdownState, ShuttingDown,
+  empty_ibc_state_root, host_state_token_name,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  BindPort, HandlePacket, HostStateRedeemer, UpdateChannel, UpdateClient,
-  UpdateConnection,
+  BindPort, EnterShutdown, FinalizeShutdown, HandlePacket, HostStateRedeemer,
+  UpdateChannel, UpdateClient, UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/testing/fuzz_dsl
@@ -63,6 +65,29 @@ fn port_commitment_key(port: Int) -> ByteArray {
   key_port_prefix
     |> bytearray.concat("/")
     |> bytearray.concat(port_id)
+}
+
+const trusted_deployer =
+  #"00000000000000000000000000000000000000000000000000000000"
+
+fn test_host_state_datum(
+  state: HostState,
+  nft_policy: PolicyId,
+) -> HostStateDatum {
+  HostStateDatum {
+    state,
+    nft_policy,
+    deployer: trusted_deployer,
+    shutdown: Active,
+  }
+}
+
+fn test_host_state_datum_with_shutdown(
+  state: HostState,
+  nft_policy: PolicyId,
+  shutdown: ShutdownState,
+) -> HostStateDatum {
+  HostStateDatum { state, nft_policy, deployer: trusted_deployer, shutdown }
 }
 
 fn test_channel_token() -> AuthToken {
@@ -183,7 +208,7 @@ fn test_host_input(state: HostState) -> Input {
     Output {
       address: Address(Script(test_host_script_hash()), None),
       value: from_asset(nft_policy, host_state_token_name, 1),
-      datum: InlineDatum(HostStateDatum { state, nft_policy }),
+      datum: InlineDatum(test_host_state_datum(state, nft_policy)),
       reference_script: None,
     },
   )
@@ -194,7 +219,7 @@ fn test_host_output(state: HostState) -> Output {
   Output {
     address: Address(Script(test_host_script_hash()), None),
     value: from_asset(nft_policy, host_state_token_name, 1),
-    datum: InlineDatum(HostStateDatum { state, nft_policy }),
+    datum: InlineDatum(test_host_state_datum(state, nft_policy)),
     reference_script: None,
   }
 }
@@ -1211,7 +1236,7 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
       last_update_time: 0,
     }
 
-  let old_datum = HostStateDatum { state: old_state, nft_policy }
+  let old_datum = test_host_state_datum(old_state, nft_policy)
 
   let input_ref =
     OutputReference {
@@ -1262,7 +1287,7 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
       bound_port: [port],
     }
 
-  let new_datum = HostStateDatum { state: new_state, nft_policy }
+  let new_datum = test_host_state_datum(new_state, nft_policy)
 
   let host_output =
     Output {
@@ -1310,7 +1335,7 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
       last_update_time: 0,
     }
 
-  let old_datum = HostStateDatum { state: old_state, nft_policy }
+  let old_datum = test_host_state_datum(old_state, nft_policy)
 
   let input_ref =
     OutputReference {
@@ -1346,7 +1371,7 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
       bound_port: [port],
     }
 
-  let new_datum = HostStateDatum { state: new_state, nft_policy }
+  let new_datum = test_host_state_datum(new_state, nft_policy)
 
   let host_output =
     Output {
@@ -1400,7 +1425,7 @@ test host_state_cannot_move_nft_to_different_address() fail {
       last_update_time: 0,
     }
 
-  let old_datum = HostStateDatum { state: old_state, nft_policy }
+  let old_datum = test_host_state_datum(old_state, nft_policy)
 
   let input_ref =
     OutputReference {
@@ -1448,7 +1473,7 @@ test host_state_cannot_move_nft_to_different_address() fail {
       bound_port: [port],
     }
 
-  let new_datum = HostStateDatum { state: new_state, nft_policy }
+  let new_datum = test_host_state_datum(new_state, nft_policy)
 
   let host_output =
     Output {
@@ -1493,7 +1518,7 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
       last_update_time: 0,
     }
 
-  let old_datum = HostStateDatum { state: old_state, nft_policy }
+  let old_datum = test_host_state_datum(old_state, nft_policy)
 
   let input_ref =
     OutputReference {
@@ -1541,7 +1566,7 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
       bound_port: [port],
     }
 
-  let new_datum = HostStateDatum { state: new_state, nft_policy }
+  let new_datum = test_host_state_datum(new_state, nft_policy)
 
   let host_output =
     Output {
@@ -1588,7 +1613,7 @@ test host_state_bind_port_fails_if_output_missing() fail {
       last_update_time: 0,
     }
 
-  let old_datum = HostStateDatum { state: old_state, nft_policy }
+  let old_datum = test_host_state_datum(old_state, nft_policy)
 
   let input_ref =
     OutputReference {
@@ -1627,6 +1652,323 @@ test host_state_bind_port_fails_if_output_missing() fail {
     dummy_script_hash,
     None,
     redeemer,
+    input_ref,
+    transaction,
+  )
+}
+
+test host_state_enter_shutdown_succeeds_with_deployer_signature() {
+  let nft_policy: PolicyId =
+    #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
+  let host_script_hash =
+    #"f15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b371"
+  let dummy_script_hash =
+    #"a15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b372"
+  let address = Address(Script(host_script_hash), None)
+
+  let old_state =
+    HostState {
+      version: 0,
+      ibc_state_root: empty_ibc_state_root,
+      next_client_sequence: 0,
+      next_connection_sequence: 0,
+      next_channel_sequence: 0,
+      bound_port: [],
+      last_update_time: 1000,
+    }
+
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      last_update_time: 2000,
+    }
+
+  let grace_period_end = 5000
+  let input_ref =
+    OutputReference {
+      transaction_id: #"29cb4f757221692c87f44398681f46322575ce72d5ebf08e14548b9c41a75a5a",
+      output_index: 0,
+    }
+
+  let host_input =
+    Input(
+      input_ref,
+      Output {
+        address,
+        value: from_asset(nft_policy, host_state_token_name, 1),
+        datum: InlineDatum(test_host_state_datum(old_state, nft_policy)),
+        reference_script: None,
+      },
+    )
+
+  let host_output =
+    Output {
+      address,
+      value: from_asset(nft_policy, host_state_token_name, 1),
+      datum: InlineDatum(
+        test_host_state_datum_with_shutdown(
+          new_state,
+          nft_policy,
+          ShuttingDown {
+            initiated_at: new_state.last_update_time,
+            grace_period_end,
+          },
+        ),
+      ),
+      reference_script: None,
+    }
+
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [host_input],
+      outputs: [host_output],
+      extra_signatories: [trusted_deployer],
+    }
+
+  let redeemer: HostStateRedeemer = EnterShutdown { grace_period_end }
+
+  host_state_stt.host_state_stt.spend(
+    nft_policy,
+    dummy_script_hash,
+    dummy_script_hash,
+    dummy_script_hash,
+    None,
+    redeemer,
+    input_ref,
+    transaction,
+  )
+}
+
+test host_state_enter_shutdown_fails_without_deployer_signature() fail {
+  let nft_policy: PolicyId =
+    #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
+  let host_script_hash =
+    #"f15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b371"
+  let dummy_script_hash =
+    #"a15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b372"
+  let address = Address(Script(host_script_hash), None)
+
+  let old_state =
+    HostState {
+      version: 0,
+      ibc_state_root: empty_ibc_state_root,
+      next_client_sequence: 0,
+      next_connection_sequence: 0,
+      next_channel_sequence: 0,
+      bound_port: [],
+      last_update_time: 1000,
+    }
+
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      last_update_time: 2000,
+    }
+
+  let grace_period_end = 5000
+  let input_ref =
+    OutputReference {
+      transaction_id: #"29cb4f757221692c87f44398681f46322575ce72d5ebf08e14548b9c41a75a5a",
+      output_index: 0,
+    }
+
+  let host_input =
+    Input(
+      input_ref,
+      Output {
+        address,
+        value: from_asset(nft_policy, host_state_token_name, 1),
+        datum: InlineDatum(test_host_state_datum(old_state, nft_policy)),
+        reference_script: None,
+      },
+    )
+
+  let host_output =
+    Output {
+      address,
+      value: from_asset(nft_policy, host_state_token_name, 1),
+      datum: InlineDatum(
+        test_host_state_datum_with_shutdown(
+          new_state,
+          nft_policy,
+          ShuttingDown {
+            initiated_at: new_state.last_update_time,
+            grace_period_end,
+          },
+        ),
+      ),
+      reference_script: None,
+    }
+
+  let transaction =
+    Transaction { ..placeholder, inputs: [host_input], outputs: [host_output] }
+
+  let redeemer: HostStateRedeemer = EnterShutdown { grace_period_end }
+
+  host_state_stt.host_state_stt.spend(
+    nft_policy,
+    dummy_script_hash,
+    dummy_script_hash,
+    dummy_script_hash,
+    None,
+    redeemer,
+    input_ref,
+    transaction,
+  )
+}
+
+test host_state_finalize_shutdown_succeeds_after_grace_period() {
+  let nft_policy: PolicyId =
+    #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
+  let host_script_hash =
+    #"f15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b371"
+  let dummy_script_hash =
+    #"a15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b372"
+  let host_address = Address(Script(host_script_hash), None)
+  let reclaimed_address = Address(Script(dummy_script_hash), None)
+  let grace_period_end = 5000
+
+  let old_state =
+    HostState {
+      version: 1,
+      ibc_state_root: empty_ibc_state_root,
+      next_client_sequence: 0,
+      next_connection_sequence: 0,
+      next_channel_sequence: 0,
+      bound_port: [],
+      last_update_time: 2000,
+    }
+
+  let input_ref =
+    OutputReference {
+      transaction_id: #"29cb4f757221692c87f44398681f46322575ce72d5ebf08e14548b9c41a75a5a",
+      output_index: 0,
+    }
+
+  let host_input =
+    Input(
+      input_ref,
+      Output {
+        address: host_address,
+        value: from_asset(nft_policy, host_state_token_name, 1),
+        datum: InlineDatum(
+          test_host_state_datum_with_shutdown(
+            old_state,
+            nft_policy,
+            ShuttingDown {
+              initiated_at: old_state.last_update_time,
+              grace_period_end,
+            },
+          ),
+        ),
+        reference_script: None,
+      },
+    )
+
+  let reclaimed_output =
+    Output {
+      address: reclaimed_address,
+      value: from_asset(nft_policy, host_state_token_name, 1),
+      datum: NoDatum,
+      reference_script: None,
+    }
+
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [host_input],
+      outputs: [reclaimed_output],
+      extra_signatories: [trusted_deployer],
+      validity_range: interval.after(grace_period_end),
+    }
+
+  host_state_stt.host_state_stt.spend(
+    nft_policy,
+    dummy_script_hash,
+    dummy_script_hash,
+    dummy_script_hash,
+    None,
+    FinalizeShutdown,
+    input_ref,
+    transaction,
+  )
+}
+
+test host_state_finalize_shutdown_fails_before_grace_period() fail {
+  let nft_policy: PolicyId =
+    #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
+  let host_script_hash =
+    #"f15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b371"
+  let dummy_script_hash =
+    #"a15f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b372"
+  let host_address = Address(Script(host_script_hash), None)
+  let reclaimed_address = Address(Script(dummy_script_hash), None)
+  let grace_period_end = 5000
+
+  let old_state =
+    HostState {
+      version: 1,
+      ibc_state_root: empty_ibc_state_root,
+      next_client_sequence: 0,
+      next_connection_sequence: 0,
+      next_channel_sequence: 0,
+      bound_port: [],
+      last_update_time: 2000,
+    }
+
+  let input_ref =
+    OutputReference {
+      transaction_id: #"29cb4f757221692c87f44398681f46322575ce72d5ebf08e14548b9c41a75a5a",
+      output_index: 0,
+    }
+
+  let host_input =
+    Input(
+      input_ref,
+      Output {
+        address: host_address,
+        value: from_asset(nft_policy, host_state_token_name, 1),
+        datum: InlineDatum(
+          test_host_state_datum_with_shutdown(
+            old_state,
+            nft_policy,
+            ShuttingDown {
+              initiated_at: old_state.last_update_time,
+              grace_period_end,
+            },
+          ),
+        ),
+        reference_script: None,
+      },
+    )
+
+  let reclaimed_output =
+    Output {
+      address: reclaimed_address,
+      value: from_asset(nft_policy, host_state_token_name, 1),
+      datum: NoDatum,
+      reference_script: None,
+    }
+
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [host_input],
+      outputs: [reclaimed_output],
+      extra_signatories: [trusted_deployer],
+      validity_range: interval.after(grace_period_end - 1),
+    }
+
+  host_state_stt.host_state_stt.spend(
+    nft_policy,
+    dummy_script_hash,
+    dummy_script_hash,
+    dummy_script_hash,
+    None,
+    FinalizeShutdown,
     input_ref,
     transaction,
   )
@@ -1691,7 +2033,7 @@ test host_state_update_channel_rejects_packet_field_changes() fail {
       Output {
         address: host_address,
         value: from_asset(nft_policy, host_state_token_name, 1),
-        datum: InlineDatum(HostStateDatum { state: old_state, nft_policy }),
+        datum: InlineDatum(test_host_state_datum(old_state, nft_policy)),
         reference_script: None,
       },
     )
@@ -1700,7 +2042,7 @@ test host_state_update_channel_rejects_packet_field_changes() fail {
     Output {
       address: host_address,
       value: from_asset(nft_policy, host_state_token_name, 1),
-      datum: InlineDatum(HostStateDatum { state: new_state, nft_policy }),
+      datum: InlineDatum(test_host_state_datum(new_state, nft_policy)),
       reference_script: None,
     }
 
@@ -1823,7 +2165,7 @@ test host_state_handle_packet_rejects_channel_only_changes() fail {
       Output {
         address: host_address,
         value: from_asset(nft_policy, host_state_token_name, 1),
-        datum: InlineDatum(HostStateDatum { state: old_state, nft_policy }),
+        datum: InlineDatum(test_host_state_datum(old_state, nft_policy)),
         reference_script: None,
       },
     )
@@ -1832,7 +2174,7 @@ test host_state_handle_packet_rejects_channel_only_changes() fail {
     Output {
       address: host_address,
       value: from_asset(nft_policy, host_state_token_name, 1),
-      datum: InlineDatum(HostStateDatum { state: new_state, nft_policy }),
+      datum: InlineDatum(test_host_state_datum(new_state, nft_policy)),
       reference_script: None,
     }
 

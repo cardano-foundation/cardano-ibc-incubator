@@ -43,6 +43,10 @@ const HandlePacketSchema = Data.Object({
   packet_acknowledgement_siblings: SiblingHashesSchema,
 });
 
+const EnterShutdownSchema = Data.Object({
+  grace_period_end: Data.Integer(),
+});
+
 export const HostStateRedeemerSchema = Data.Enum([
   Data.Object({ CreateClient: CreateClientSchema }),
   Data.Object({ CreateConnection: CreateConnectionSchema }),
@@ -52,6 +56,8 @@ export const HostStateRedeemerSchema = Data.Enum([
   Data.Object({ UpdateConnection: CreateConnectionSchema }),
   Data.Object({ UpdateChannel: UpdateChannelSchema }),
   Data.Object({ HandlePacket: HandlePacketSchema }),
+  Data.Object({ EnterShutdown: EnterShutdownSchema }),
+  Data.Literal("FinalizeShutdown"),
 ]);
 
 export type HostStateRedeemer = Data.Static<typeof HostStateRedeemerSchema>;

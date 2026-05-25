@@ -43,6 +43,10 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, LeafOp,
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
+use ibc/core/ics_025_handler_interface/host_state.{
+  Active, HostState, HostStateDatum, ShutdownState, ShuttingDown,
+  empty_ibc_state_root,
+}
 use ibc/core/ics_025_handler_interface/host_state_redeemer
 use ibc/testing/fuzz_dsl
 use ibc/utils/string as string_utils
@@ -76,6 +80,26 @@ type MockData {
   cosmos_address: ByteArray,
 }
 
+fn host_state_datum(
+  nft_policy: PolicyId,
+  shutdown: ShutdownState,
+) -> HostStateDatum {
+  HostStateDatum {
+    state: HostState {
+      version: 0,
+      ibc_state_root: empty_ibc_state_root,
+      next_client_sequence: 0,
+      next_connection_sequence: 0,
+      next_channel_sequence: 0,
+      bound_port: [],
+      last_update_time: 0,
+    },
+    nft_policy,
+    deployer: #"00000000000000000000000000000000000000000000000000000000",
+    shutdown,
+  }
+}
+
 fn setup() -> MockData {
   let host_state_nft_policy_id: PolicyId = "mock host state nft policy id"
   let host_state_token_name = "ibc_host_state"
@@ -85,7 +109,7 @@ fn setup() -> MockData {
     Output {
       address: from_script(host_state_script_hash),
       value: from_asset(host_state_nft_policy_id, host_state_token_name, 1),
-      datum: InlineDatum(Void),
+      datum: InlineDatum(host_state_datum(host_state_nft_policy_id, Active)),
       reference_script: None,
     }
 
@@ -2243,6 +2267,105 @@ test transfer_escrow_succeed() {
   )
 }
 
+test transfer_escrow_fails_when_host_state_is_shutting_down() fail {
+  let mock = setup()
+
+  let transfer_amount = 1234
+  let receiver = mock.cardano_public_key_hash
+
+  let shutdown_host_state_output =
+    Output {
+      ..mock.host_state_output,
+      datum: InlineDatum(
+        host_state_datum(
+          mock.host_state_nft_policy_id,
+          ShuttingDown { initiated_at: 1, grace_period_end: 2 },
+        ),
+      ),
+    }
+  let shutdown_host_state_input =
+    Input { ..mock.host_state_input, output: shutdown_host_state_output }
+
+  let inputs =
+    [mock.module_input, mock.channel_input, shutdown_host_state_input]
+
+  let source_port = "port-0"
+  let source_channel = "channel-0"
+  let denom = "6c6f76656c616365"
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(mock.channel_id, denom)
+
+  let escrow_output =
+    transfer_escrow_output(
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      mock.channel_id,
+      denom,
+      transfer_amount,
+    )
+
+  let outputs =
+    [
+      mock.module_output,
+      escrow_output,
+      mock.channel_output,
+      shutdown_host_state_output,
+    ]
+
+  let (ftpd, packet) =
+    build_packet(
+      denom,
+      transfer_amount,
+      mock.cosmos_address,
+      receiver,
+      source_port,
+      source_channel,
+      mock.port_id,
+      mock.channel_id,
+    )
+
+  let module_redeemer: Redeemer =
+    Operator(
+      TransferModuleOperator(
+        Transfer { channel_id: mock.channel_id, data: ftpd },
+      ),
+    )
+  let channel_redeemer: Redeemer = SendPacket { packet }
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
+
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      redeemers,
+      mint: from_asset(
+        mock.transfer_escrow_shard_policy_id,
+        shard_token_name,
+        1,
+      ),
+    }
+
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+
+  spending_transfer_module.spend_transfer_module.spend(
+    mock.port_token,
+    mock.module_token,
+    mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
+    mock.bridge_registry_token,
+    None,
+    module_redeemer,
+    mock.module_input.output_reference,
+    with_bridge_registry(mock, transaction),
+  )
+}
+
 test transfer_escrow_native_asset_fails_with_short_created_shard() fail {
   let mock = setup()
   let transfer_amount = 1234
@@ -2462,6 +2585,88 @@ test transfer_burn_voucher_succeed() {
     ]
 
   //==========================arrange context=========================
+  let transaction =
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+
+  spending_transfer_module.spend_transfer_module.spend(
+    mock.port_token,
+    mock.module_token,
+    mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
+    mock.bridge_registry_token,
+    None,
+    module_redeemer,
+    mock.module_input.output_reference,
+    with_bridge_registry(mock, transaction),
+  )
+}
+
+test transfer_burn_voucher_succeeds_when_host_state_is_shutting_down() {
+  let mock = setup()
+
+  let transfer_amount = 1234
+  let receiver = mock.cardano_public_key_hash
+
+  let shutdown_host_state_output =
+    Output {
+      ..mock.host_state_output,
+      datum: InlineDatum(
+        host_state_datum(
+          mock.host_state_nft_policy_id,
+          ShuttingDown { initiated_at: 1, grace_period_end: 2 },
+        ),
+      ),
+    }
+  let shutdown_host_state_input =
+    Input { ..mock.host_state_input, output: shutdown_host_state_output }
+
+  let inputs =
+    [mock.module_input, mock.channel_input, shutdown_host_state_input]
+  let outputs =
+    [mock.module_output, mock.channel_output, shutdown_host_state_output]
+
+  let source_port = mock.port_id
+  let source_channel = mock.channel_id
+  let denom =
+    transfer_coin.get_denom_prefix(source_port, source_channel)
+      |> bytearray.concat("atom")
+
+  let (ftpd, packet) =
+    build_packet(
+      denom,
+      transfer_amount,
+      mock.cosmos_address,
+      receiver,
+      source_port,
+      source_channel,
+      "port-0",
+      "channel-0",
+    )
+      |> with_voucher_policy_memo(mock.voucher_minting_policy_id)
+
+  let module_redeemer: Redeemer =
+    Operator(
+      TransferModuleOperator(
+        Transfer { channel_id: mock.channel_id, data: ftpd },
+      ),
+    )
+  let channel_redeemer: Redeemer = SendPacket { packet }
+  let mint_voucher_redeemer: Redeemer =
+    BurnVoucher {
+      packet_source_port: packet.source_port,
+      packet_source_channel: packet.source_channel,
+      data: ftpd,
+    }
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(mock.module_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+      Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
+    ]
+
   let transaction =
     Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 

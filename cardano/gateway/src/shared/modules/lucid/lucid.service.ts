@@ -834,6 +834,9 @@ export class LucidService implements OnModuleInit {
             packet_receipt_siblings: SiblingHashesSchema,
             packet_acknowledgement_siblings: SiblingHashesSchema,
           });
+          const EnterShutdownSchema = LucidData.Object({
+            grace_period_end: LucidData.Integer(),
+          });
           const HostStateRedeemerSchema = LucidData.Enum([
             LucidData.Object({ CreateClient: CreateClientSchema }),
             LucidData.Object({ CreateConnection: CreateConnectionSchema }),
@@ -848,6 +851,8 @@ export class LucidService implements OnModuleInit {
             LucidData.Object({ UpdateConnection: CreateConnectionSchema }),
             LucidData.Object({ UpdateChannel: UpdateChannelSchema }),
             LucidData.Object({ HandlePacket: HandlePacketSchema }),
+            LucidData.Object({ EnterShutdown: EnterShutdownSchema }),
+            LucidData.Literal("FinalizeShutdown"),
           ]);
           return LucidData.to(data as any, HostStateRedeemerSchema as any, {
             canonical: true,
