@@ -162,6 +162,25 @@ test prop_tx_bridge_registry_update_rejects_duplicate_legacy(
   )
 }
 
+test prop_tx_bridge_registry_update_rejects_unrelated_legacy_addition(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(
+    @"regression.tx.bridge_registry.update.invalid_adds_unrelated_legacy",
+  )
+
+  run_registry_update(
+    datum("old active voucher policy", ["legacy voucher policy"]),
+    datum(
+      "new active voucher policy",
+      [
+        "old active voucher policy", "legacy voucher policy",
+        "unrelated voucher policy",
+      ],
+    ),
+  )
+}
+
 test prop_tx_bridge_registry_update_rejects_wrong_governance_key(
   _seed via fuzz.int(),
 ) fail {
@@ -224,6 +243,19 @@ test update_fails_when_legacy_policy_list_has_duplicates() fail {
       [
         "old active voucher policy", "legacy voucher policy",
         "legacy voucher policy",
+      ],
+    ),
+  )
+}
+
+test update_fails_when_unrelated_legacy_policy_is_added() fail {
+  run_registry_update(
+    datum("old active voucher policy", ["legacy voucher policy"]),
+    datum(
+      "new active voucher policy",
+      [
+        "old active voucher policy", "legacy voucher policy",
+        "unrelated voucher policy",
       ],
     ),
   )

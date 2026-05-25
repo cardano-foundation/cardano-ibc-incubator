@@ -81,6 +81,7 @@
     "regression.model.packet.send_recv_ack",
     "regression.model.packet.send_timeout",
     "regression.model.trace.append_rollover_lookup",
+    "regression.tx.bridge_registry.update.invalid_adds_unrelated_legacy",
     "regression.tx.bridge_registry.update.invalid_active_in_legacy",
     "regression.tx.bridge_registry.update.invalid_drops_old_active",
     "regression.tx.bridge_registry.update.invalid_drops_old_legacy",

@@ -63,6 +63,15 @@ fn registry_upgrade_preserves_voucher_support(
         list.has(output_datum.legacy_voucher_policy_ids, policy_id)
       },
     )?,
+    list.all(
+      output_datum.legacy_voucher_policy_ids,
+      fn(policy_id) {
+        policy_id == input_datum.active_voucher_policy_id || list.has(
+          input_datum.legacy_voucher_policy_ids,
+          policy_id,
+        )
+      },
+    )?,
     !list.has(
       output_datum.legacy_voucher_policy_ids,
       output_datum.active_voucher_policy_id,
