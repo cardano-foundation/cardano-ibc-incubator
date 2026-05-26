@@ -1921,7 +1921,7 @@ const deployTransferModule = async (
   hostStateTree: DeploymentIbcTree,
   mintPortValidator: MintingPolicy,
   mintIdentifierValidator: MintingPolicy,
-  mintChannelPolicyId: string,
+  _mintChannelPolicyId: string,
   portNumber: bigint,
   hostStateNFT: AuthToken,
   traceRegistryDirectoryAuthToken: AuthToken,

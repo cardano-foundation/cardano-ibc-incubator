@@ -368,10 +368,10 @@ export class LucidService implements OnModuleInit {
   private mintVoucherReferenceScript(policyId?: string): UTxO {
     const deploymentConfig = this.configService.get("deployment");
     const normalizedPolicyId = policyId?.toLowerCase();
-    const activePolicyId = (
+    const configuredActivePolicyId =
       deploymentConfig.voucherPolicyRegistry?.active?.scriptHash ??
-      deploymentConfig.validators.mintVoucher.scriptHash
-    ).toLowerCase();
+      deploymentConfig.validators.mintVoucher?.scriptHash;
+    const activePolicyId = configuredActivePolicyId?.toLowerCase();
     if (!normalizedPolicyId || normalizedPolicyId === activePolicyId) {
       return this.referenceScripts.mintVoucher;
     }
