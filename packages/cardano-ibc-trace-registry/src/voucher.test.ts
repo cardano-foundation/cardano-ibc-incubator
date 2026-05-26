@@ -1,5 +1,5 @@
-import { describe, it } from 'node:test';
-import assert from 'node:assert/strict';
+import { describe, it } from "node:test";
+import assert from "node:assert/strict";
 import {
   assertUniqueTraceRegistryEntries,
   buildIbcDenomHashFromFullDenom,
@@ -17,11 +17,60 @@ import {
   encodeVoucherCip68MetadataDatum,
   expectVoucherAssetName,
   LABELED_VOUCHER_TOKEN_NAME_HEX_LENGTH,
+  findVoucherPolicy,
+  getActiveVoucherPolicyId,
+  listOperationalVoucherPolicies,
+  normalizeVoucherPolicyRegistry,
   parseVoucherAssetName,
   splitFullDenomTrace,
   VOUCHER_DENOM_HASH_HEX_LENGTH,
   type LucidDataModule,
-} from './index';
+} from "./index";
+
+const bridgeRegistryToken = {
+  policy_id: "cc".repeat(28),
+  token_name: "bridge-registry-token",
+};
+
+const traceRegistry = {
+  address: "trace-registry-address",
+  shard_policy_id: "dd".repeat(28),
+  directory: {
+    policy_id: "dd".repeat(28),
+    token_name: "trace-directory",
+  },
+};
+
+const expectedCompatibility = {
+  compatibleBridgeVersion: 1,
+  voucherAssetNameVersion: 1,
+  redeemerVersion: 1,
+  packetDataEncodingVersion: 1,
+  transferDenomLogicVersion: 1,
+  channelIdDerivationVersion: 1,
+  hostStateChannelSemanticsVersion: 1,
+  traceRegistrySemanticsVersion: 1,
+  metadataFormatVersion: 1,
+  bridgeRegistryToken: {
+    policyId: bridgeRegistryToken.policy_id,
+    name: bridgeRegistryToken.token_name,
+  },
+  traceRegistryId: `${traceRegistry.address}:${traceRegistry.shard_policy_id}:${traceRegistry.directory.policy_id}:${traceRegistry.directory.token_name}`,
+};
+
+const manifestCompatibility = {
+  compatible_bridge_version: 1,
+  voucher_asset_name_version: 1,
+  redeemer_version: 1,
+  packet_data_encoding_version: 1,
+  transfer_denom_logic_version: 1,
+  channel_id_derivation_version: 1,
+  host_state_channel_semantics_version: 1,
+  trace_registry_semantics_version: 1,
+  metadata_format_version: 1,
+  bridge_registry_token: bridgeRegistryToken,
+  trace_registry_id: expectedCompatibility.traceRegistryId,
+};
 
 class TestConstr {
   constructor(
@@ -35,7 +84,7 @@ const TestLucidData: LucidDataModule = {
   Data: {
     to: (value) =>
       JSON.stringify(value, (_key, item) => {
-        if (typeof item === 'bigint') {
+        if (typeof item === "bigint") {
           return { __bigint: item.toString() };
         }
         if (item instanceof Map) {
@@ -46,9 +95,9 @@ const TestLucidData: LucidDataModule = {
     from: (encodedDatum) =>
       JSON.parse(encodedDatum, (_key, item) => {
         if (
-          typeof item === 'object' &&
+          typeof item === "object" &&
           item !== null &&
-          typeof item.__bigint === 'string'
+          typeof item.__bigint === "string"
         ) {
           return BigInt(item.__bigint);
         }
@@ -57,9 +106,9 @@ const TestLucidData: LucidDataModule = {
   },
 };
 
-describe('voucher asset naming', () => {
-  it('derives CIP-67 user and reference asset names from a full denom trace', () => {
-    const fullDenom = 'transfer/channel-0/transfer/channel-22/uosmo';
+describe("voucher asset naming", () => {
+  it("derives CIP-67 user and reference asset names from a full denom trace", () => {
+    const fullDenom = "transfer/channel-0/transfer/channel-22/uosmo";
     const denomHash = buildVoucherDenomHashFromFullDenom(fullDenom);
     const userTokenName = buildVoucherUserTokenNameFromDenomHash(denomHash);
     const referenceTokenName =
@@ -74,23 +123,23 @@ describe('voucher asset naming', () => {
     );
     assert.equal(userTokenName.length, LABELED_VOUCHER_TOKEN_NAME_HEX_LENGTH);
     assert.deepEqual(parseVoucherAssetName(userTokenName), {
-      kind: 'ft',
+      kind: "ft",
       voucherDenomHash: denomHash,
     });
     assert.deepEqual(expectVoucherAssetName(referenceTokenName), {
-      kind: 'reference_nft',
+      kind: "reference_nft",
       voucherDenomHash: denomHash,
     });
     assert.equal(
-      buildVoucherAssetId('AA'.repeat(28), userTokenName.toUpperCase()),
-      `${'aa'.repeat(28)}${userTokenName}`,
+      buildVoucherAssetId("AA".repeat(28), userTokenName.toUpperCase()),
+      `${"aa".repeat(28)}${userTokenName}`,
     );
   });
 });
 
-describe('voucher CIP-68 metadata', () => {
-  it('encodes, decodes, and verifies canonical voucher metadata', () => {
-    const fullDenom = 'transfer/channel-0/uosmo';
+describe("voucher CIP-68 metadata", () => {
+  it("encodes, decodes, and verifies canonical voucher metadata", () => {
+    const fullDenom = "transfer/channel-0/uosmo";
     const trace = splitFullDenomTrace(fullDenom);
     const params = {
       ...trace,
@@ -98,14 +147,14 @@ describe('voucher CIP-68 metadata', () => {
       voucherTokenName: buildVoucherUserTokenNameFromDenomHash(
         buildVoucherDenomHashFromFullDenom(fullDenom),
       ),
-      voucherPolicyId: 'ab'.repeat(28),
+      voucherPolicyId: "ab".repeat(28),
       ibcDenomHash: buildIbcDenomHashFromFullDenom(fullDenom),
     };
     const metadata = {
       ...buildVoucherCip68Metadata(params),
       decimals: 6,
-      url: 'https://example.test/uosmo',
-      logo: 'ipfs://voucher-logo',
+      url: "https://example.test/uosmo",
+      logo: "ipfs://voucher-logo",
     };
     const encoded = encodeVoucherCip68MetadataDatum(metadata, TestLucidData);
 
@@ -128,7 +177,7 @@ describe('voucher CIP-68 metadata', () => {
       () =>
         decodeVerifiedVoucherCip68MetadataDatum(
           encoded,
-          { ...params, baseDenom: 'uatom' },
+          { ...params, baseDenom: "uatom" },
           TestLucidData,
         ),
       /does not match the canonical voucher metadata/,
@@ -136,48 +185,210 @@ describe('voucher CIP-68 metadata', () => {
   });
 });
 
-describe('denom trace presentation', () => {
-  it('splits IBC paths without treating base-denom slashes as route hops', () => {
+describe("denom trace presentation", () => {
+  it("splits IBC paths without treating base-denom slashes as route hops", () => {
     assert.deepEqual(
-      splitFullDenomTrace('transfer/channel-0/transfer/channel-22/uosmo'),
+      splitFullDenomTrace("transfer/channel-0/transfer/channel-22/uosmo"),
       {
-        path: 'transfer/channel-0/transfer/channel-22',
-        baseDenom: 'uosmo',
+        path: "transfer/channel-0/transfer/channel-22",
+        baseDenom: "uosmo",
       },
     );
-    assert.deepEqual(splitFullDenomTrace('factory/osmo1contract/ufoo'), {
-      path: '',
-      baseDenom: 'factory/osmo1contract/ufoo',
+    assert.deepEqual(splitFullDenomTrace("factory/osmo1contract/ufoo"), {
+      path: "",
+      baseDenom: "factory/osmo1contract/ufoo",
     });
-    assert.equal(deriveVoucherCanonicalLabel('factory/osmo1contract/ufoo'), 'ufoo');
+    assert.equal(
+      deriveVoucherCanonicalLabel("factory/osmo1contract/ufoo"),
+      "ufoo",
+    );
     assert.deepEqual(
       deriveVoucherPresentation(
-        'transfer/channel-0/factory/osmo1contract/ufoo',
-        'factory/osmo1contract/ufoo',
+        "transfer/channel-0/factory/osmo1contract/ufoo",
+        "factory/osmo1contract/ufoo",
       ),
       {
-        displayName: 'transfer/channel-0/factory/osmo1contract/ufoo',
-        displaySymbol: 'ufoo',
+        displayName: "transfer/channel-0/factory/osmo1contract/ufoo",
+        displaySymbol: "ufoo",
         displayDescription:
-          'IBC voucher for transfer/channel-0/factory/osmo1contract/ufoo',
+          "IBC voucher for transfer/channel-0/factory/osmo1contract/ufoo",
       },
     );
   });
 });
 
-describe('trace registry duplicate detection', () => {
-  it('rejects duplicate voucher hashes regardless of casing', () => {
-    const voucherHash = 'a'.repeat(56);
+describe("trace registry duplicate detection", () => {
+  it("rejects duplicate voucher hashes regardless of casing", () => {
+    const voucherHash = "a".repeat(56);
     assert.throws(
       () =>
         assertUniqueTraceRegistryEntries([
-          { voucher_hash: voucherHash, full_denom: 'transfer/channel-0/uosmo' },
+          { voucher_hash: voucherHash, full_denom: "transfer/channel-0/uosmo" },
           {
             voucher_hash: voucherHash.toUpperCase(),
-            full_denom: 'transfer/channel-7/uosmo',
+            full_denom: "transfer/channel-7/uosmo",
           },
         ]),
       /Duplicate trace-registry entries detected/,
+    );
+  });
+});
+
+describe("voucher policy registry", () => {
+  it("treats the existing mint_voucher validator as the active policy for legacy manifests", () => {
+    const activePolicy = "aa".repeat(28);
+
+    assert.deepEqual(
+      normalizeVoucherPolicyRegistry({
+        validators: {
+          mint_voucher: {
+            script_hash: activePolicy.toUpperCase(),
+          },
+        },
+      }),
+      {
+        active: { policyId: activePolicy, status: "active" },
+        legacy: [],
+      },
+    );
+    assert.equal(
+      getActiveVoucherPolicyId({
+        validators: { mint_voucher: { script_hash: activePolicy } },
+      }),
+      activePolicy,
+    );
+  });
+
+  it("normalizes active and legacy voucher policy entries", () => {
+    const activePolicy = "aa".repeat(28);
+    const legacyPolicy = "bb".repeat(28);
+
+    const manifest = {
+      validators: {
+        mint_voucher: {
+          script_hash: "dd".repeat(28),
+        },
+      },
+      voucher_policy_registry: {
+        active: {
+          policy_id: activePolicy.toUpperCase(),
+          compatibility: manifestCompatibility,
+        },
+        legacy: [
+          { script_hash: legacyPolicy, compatibility: manifestCompatibility },
+          {
+            policy_id: legacyPolicy.toUpperCase(),
+            compatibility: manifestCompatibility,
+          },
+          activePolicy,
+        ],
+      },
+      bridge_registry: bridgeRegistryToken,
+      trace_registry: traceRegistry,
+    };
+
+    assert.deepEqual(normalizeVoucherPolicyRegistry(manifest), {
+      active: {
+        policyId: activePolicy,
+        status: "active",
+        compatibility: expectedCompatibility,
+      },
+      legacy: [
+        {
+          policyId: legacyPolicy,
+          status: "legacy",
+          compatibility: expectedCompatibility,
+        },
+      ],
+    });
+    assert.deepEqual(listOperationalVoucherPolicies(manifest), [
+      {
+        policyId: activePolicy,
+        status: "active",
+        compatibility: expectedCompatibility,
+      },
+      {
+        policyId: legacyPolicy,
+        status: "legacy",
+        compatibility: expectedCompatibility,
+      },
+    ]);
+    assert.deepEqual(findVoucherPolicy(manifest, legacyPolicy), {
+      policyId: legacyPolicy,
+      status: "legacy",
+      compatibility: expectedCompatibility,
+    });
+  });
+
+  it("rejects legacy voucher policies without compatibility metadata", () => {
+    const activePolicy = "aa".repeat(28);
+    const legacyPolicy = "bb".repeat(28);
+
+    assert.throws(
+      () =>
+        normalizeVoucherPolicyRegistry({
+          validators: {
+            mint_voucher: {
+              script_hash: activePolicy,
+            },
+          },
+          voucher_policy_registry: {
+            active: { policy_id: activePolicy },
+            legacy: [{ script_hash: legacyPolicy }],
+          },
+          bridge_registry: bridgeRegistryToken,
+          trace_registry: traceRegistry,
+        }),
+      /Legacy voucher policy .* is missing compatibility/,
+    );
+  });
+
+  it("rejects legacy voucher policies with a mismatched bridge registry token", () => {
+    const activePolicy = "aa".repeat(28);
+    const legacyPolicy = "bb".repeat(28);
+
+    assert.throws(
+      () =>
+        normalizeVoucherPolicyRegistry({
+          validators: {
+            mint_voucher: {
+              script_hash: activePolicy,
+            },
+          },
+          voucher_policy_registry: {
+            active: {
+              policy_id: activePolicy,
+              compatibility: manifestCompatibility,
+            },
+            legacy: [
+              {
+                script_hash: legacyPolicy,
+                compatibility: {
+                  ...manifestCompatibility,
+                  bridge_registry_token: {
+                    ...bridgeRegistryToken,
+                    token_name: "wrong-token",
+                  },
+                },
+              },
+            ],
+          },
+          bridge_registry: bridgeRegistryToken,
+          trace_registry: traceRegistry,
+        }),
+      /not compatible with this bridge manifest/,
+    );
+  });
+
+  it("rejects malformed voucher policy ids", () => {
+    assert.throws(
+      () =>
+        normalizeVoucherPolicyRegistry({
+          voucher_policy_registry: {
+            active: "not-a-policy",
+          },
+        }),
+      /voucher_policy_registry\.active must be a 56-character policy id/,
     );
   });
 });

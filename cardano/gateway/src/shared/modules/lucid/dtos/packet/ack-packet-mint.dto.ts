@@ -23,6 +23,7 @@ export type UnsignedAckPacketMintDto = WithHostStateUpdate &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'ackPacketPolicyId'> &
   WithVerifyProof & {
+  voucherPolicyId?: string;
   voucherTokenUnit: string;
   senderAddress: string;
 };

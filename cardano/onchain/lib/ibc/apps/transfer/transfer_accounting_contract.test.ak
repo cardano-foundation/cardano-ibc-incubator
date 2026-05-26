@@ -8,16 +8,19 @@ use cardano/transaction.{
   ScriptPurpose,
 }
 use ibc/apps/transfer/escrow as transfer_escrow
-use ibc/apps/transfer/escrow.{EscrowShard}
+use ibc/apps/transfer/escrow.{EscrowShard, ModuleState}
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
 }
+use ibc/apps/transfer/refund
 use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/value_delta
 use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_flow
+use ibc/apps/transfer/voucher_policy_memo
+use ibc/apps/transfer/voucher_policy_registry.{VoucherPolicyRegistry}
 use ibc/client/ics_007_tendermint_client/height as height_mod
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/packet.{Packet}
@@ -41,6 +44,19 @@ const native_token_name = "coin"
 const shard_policy_id = "mock transfer escrow shard policy id"
 
 const voucher_policy_id = "mock voucher minting policy id"
+
+const next_voucher_policy_id = "mock voucher minting policy id v2"
+
+fn voucher_policy_registry() -> VoucherPolicyRegistry {
+  VoucherPolicyRegistry { active: voucher_policy_id, legacy: [] }
+}
+
+fn upgraded_voucher_policy_registry() -> VoucherPolicyRegistry {
+  VoucherPolicyRegistry {
+    active: next_voucher_policy_id,
+    legacy: [voucher_policy_id],
+  }
+}
 
 const amount = 20
 
@@ -211,6 +227,19 @@ fn packet(
   (data, packet)
 }
 
+fn voucher_policy_packet(
+  packet_data: (FungibleTokenPacketData, Packet),
+) -> (FungibleTokenPacketData, Packet) {
+  let (data, packet) = packet_data
+  let data =
+    FungibleTokenPacketData {
+      ..data,
+      memo: voucher_policy_memo.marker(voucher_policy_id),
+    }
+
+  (data, Packet { ..packet, data: fungible_token_packet_data.get_bytes(data) })
+}
+
 fn native_escrow_contract(
   input_quantity: Int,
   output_quantity: Int,
@@ -287,6 +316,13 @@ fn voucher_redeemers(redeemer: Redeemer) -> List<Pair<ScriptPurpose, Redeemer>> 
   [Pair(Mint(voucher_policy_id), redeemer)]
 }
 
+fn voucher_redeemers_for(
+  policy_id: ByteArray,
+  redeemer: Redeemer,
+) -> List<Pair<ScriptPurpose, Redeemer>> {
+  [Pair(Mint(policy_id), redeemer)]
+}
+
 fn voucher_send_contract(
   mint: Value,
   data: FungibleTokenPacketData,
@@ -303,7 +339,7 @@ fn voucher_send_contract(
   and {
     voucher_flow.validate_burn_voucher_packet(
       voucher_redeemers(redeemer),
-      voucher_policy_id,
+      voucher_policy_registry(),
       packet,
     )?,
     exact_voucher_mint(mint, data.denom, 0 - amount)?,
@@ -331,6 +367,48 @@ fn voucher_refund_contract(
     exact_voucher_mint(mint, data.denom, amount)?,
     refund_redeemer_matches(redeemer, packet),
   }
+}
+
+fn voucher_refund_wrong_policy_contract(
+  data: FungibleTokenPacketData,
+  packet: Packet,
+) -> Bool {
+  let ack = acknowledgement_mod.new_error_acknowledgement("refund")
+  let redeemer: Redeemer =
+    RefundVoucher {
+      packet_source_port: packet.source_port,
+      packet_source_channel: packet.source_channel,
+      data,
+      acknowledgement: Some(ack),
+    }
+
+  transfer_refund_redeemer_matches_wrong_policy(redeemer, packet)
+}
+
+fn transfer_refund_redeemer_matches_wrong_policy(
+  redeemer: Redeemer,
+  packet: Packet,
+) -> Bool {
+  let input = module_input()
+
+  refund.validate_refund_packet_token(
+    upgraded_voucher_policy_registry(),
+    [],
+    [],
+    voucher_redeemers_for(next_voucher_policy_id, redeemer),
+    input,
+    ModuleState(input.output),
+    shard_policy_id,
+    assets.zero,
+    expect_data(redeemer),
+    packet,
+  )
+}
+
+fn expect_data(redeemer: Redeemer) -> FungibleTokenPacketData {
+  expect mint_voucher_redeemer: MintVoucherRedeemer = redeemer
+  expect RefundVoucher { data, .. } = mint_voucher_redeemer
+  data
 }
 
 fn refund_redeemer_matches(redeemer: Redeemer, packet: Packet) -> Bool {
@@ -362,7 +440,7 @@ fn recv_sink_contract(
   and {
     voucher_flow.validate_mint_voucher_packet(
       voucher_redeemers(redeemer),
-      voucher_policy_id,
+      voucher_policy_registry(),
       packet,
     )?,
     exact_voucher_mint(mint, data.denom, amount)?,
@@ -405,7 +483,7 @@ test prop_transfer_native_ack_has_no_refund(_seed via fuzz.int()) {
   fuzz_dsl.valid_check("transfer", "native_ack", "native_ack_no_refund", and {
       value_delta.validate_output_amount(input, input.output, assets.zero)?,
       receiver_delta([input], outputs, valid_cardano_receiver) == Some(0),
-      voucher_flow.require_no_voucher_mint([], voucher_policy_id),
+      voucher_flow.require_no_voucher_mint([], voucher_policy_registry()),
     })
     |> fuzz_dsl.assert_valid
 }
@@ -421,6 +499,7 @@ test prop_transfer_voucher_send_burns_exactly(_seed via fuzz.int()) {
       source_channel,
       destination_channel,
     )
+      |> voucher_policy_packet
   let mint =
     from_asset(voucher_policy_id, voucher_token_name(data.denom), 0 - amount)
 
@@ -444,6 +523,7 @@ test prop_transfer_voucher_error_ack_remints_exactly(_seed via fuzz.int()) {
       source_channel,
       destination_channel,
     )
+      |> voucher_policy_packet
   let mint =
     from_asset(voucher_policy_id, voucher_token_name(data.denom), amount)
 
@@ -452,6 +532,33 @@ test prop_transfer_voucher_error_ack_remints_exactly(_seed via fuzz.int()) {
     "voucher_error_ack",
     "voucher_refund_contract",
     voucher_refund_contract(mint, data, packet),
+  )
+    |> fuzz_dsl.assert_valid
+}
+
+test prop_transfer_voucher_error_ack_rejects_wrong_refund_policy(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(
+    @"regression.unit.transfer.voucher_error_ack.rejects_wrong_refund_policy",
+  )
+
+  let (data, packet) =
+    packet(
+      sink_voucher_denom(),
+      valid_cardano_receiver,
+      "cosmos1receiver",
+      source_channel,
+      destination_channel,
+    )
+      |> voucher_policy_packet
+
+  fuzz_dsl.mutated_check(
+    "transfer",
+    "voucher_error_ack",
+    "wrong_refund_policy",
+    "voucher_refund_wrong_policy_contract",
+    voucher_refund_wrong_policy_contract(data, packet),
   )
     |> fuzz_dsl.assert_valid
 }
@@ -557,6 +664,7 @@ test prop_transfer_rejects_wrong_voucher_burn_amount(_seed via fuzz.int()) {
       source_channel,
       destination_channel,
     )
+      |> voucher_policy_packet
   let mint = from_asset(voucher_policy_id, voucher_token_name(data.denom), -19)
 
   fuzz_dsl.mutated_check(

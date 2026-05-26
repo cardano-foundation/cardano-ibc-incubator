@@ -9,6 +9,7 @@ use cardano/assets.{AssetName, PolicyId, quantity_of, tokens}
 use cardano/transaction.{
   InlineDatum, Input, Output, Redeemer, ScriptPurpose, Spend, Transaction,
 }
+use ibc/apps/transfer/bridge_registry
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, MintVoucherRedeemer, RefundVoucher,
 }
@@ -20,6 +21,7 @@ use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_metadata as voucher_metadata_datum
+use ibc/apps/transfer/voucher_policy_memo
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, RecvPacket, SendPacket, SpendChannelRedeemer, TimeoutPacket,
@@ -35,8 +37,7 @@ validator mint_voucher(
   _module_token: AuthToken,
   directory_auth_token: AuthToken,
   voucher_metadata_script_hash: crypto.ScriptHash,
-  channel_minting_policy_id: PolicyId,
-  host_state_nft_policy_id: PolicyId,
+  bridge_registry_token: AuthToken,
 ) {
   mint(
     redeemer: MintVoucherRedeemer,
@@ -45,6 +46,9 @@ validator mint_voucher(
   ) {
     let Transaction { inputs, reference_inputs, outputs, mint, redeemers, .. } =
       transaction
+    let bridge_registry_datum =
+      bridge_registry.find_registry_datum(transaction, bridge_registry_token)
+    let active_deployment = bridge_registry_datum.active_deployment
 
     when redeemer is {
       MintVoucher {
@@ -57,13 +61,18 @@ validator mint_voucher(
         trace @"mint_voucher: MintVoucher branch"
 
         // Validate the voucher mint against the spent RecvPacket channel UTxO.
+        expect
+          bridge_registry.is_active_voucher(
+            bridge_registry_datum,
+            voucher_minting_policy_id,
+          )
         expect fungible_token_packet_data.validate_basic(data)
         expect Some(channel_redeemer) =
           extract_channel_redeemer(
             inputs,
             redeemers,
-            channel_minting_policy_id,
-            host_state_nft_policy_id,
+            active_deployment.channel_minting_policy_id,
+            active_deployment.host_state_nft_policy_id,
             packet_dest_channel,
           )
         expect RecvPacket { packet, .. } = channel_redeemer
@@ -106,6 +115,16 @@ validator mint_voucher(
             voucher_denom_hash,
             prefixed_denom,
           )
+        let metadata_completeness =
+          metadata_completeness_satisfied(
+            reference_inputs,
+            outputs,
+            prefixed_denom,
+            user_token_name,
+            voucher_minting_policy_id,
+            reference_token_name,
+            voucher_metadata_script_hash,
+          )
 
         // Positive voucher mints require an exact trace-registry witness.
         expect Some(transfer_amount) = int.from_utf8(data.amount)
@@ -118,6 +137,7 @@ validator mint_voucher(
             reference_token_name,
             transfer_amount,
             registry_completeness,
+            metadata_completeness,
           )
         trace @"mint_voucher: minted token is valid"
 
@@ -145,15 +165,6 @@ validator mint_voucher(
         and {
           valid_receiver?,
           valid_minted_tokens?,
-          metadata_output_valid(
-            outputs,
-            prefixed_denom,
-            user_token_name,
-            voucher_minting_policy_id,
-            reference_token_name,
-            voucher_metadata_script_hash,
-            registry_completeness,
-          ),
           valid_voucher_output(
             payout_output,
             voucher_minting_policy_id,
@@ -166,13 +177,18 @@ validator mint_voucher(
         trace @"mint_voucher: MintVoucher branch"
 
         // Validate the voucher burn against the spent SendPacket channel UTxO.
+        expect
+          bridge_registry.is_operational_voucher(
+            bridge_registry_datum,
+            voucher_minting_policy_id,
+          )
         expect fungible_token_packet_data.validate_basic(data)
         expect Some(channel_redeemer) =
           extract_channel_redeemer(
             inputs,
             redeemers,
-            channel_minting_policy_id,
-            host_state_nft_policy_id,
+            active_deployment.channel_minting_policy_id,
+            active_deployment.host_state_nft_policy_id,
             packet_source_channel,
           )
         expect SendPacket { packet } = channel_redeemer
@@ -201,6 +217,7 @@ validator mint_voucher(
           )
         and {
           valid_sender,
+          voucher_policy_memo.matches(data.memo, voucher_minting_policy_id),
           valid_minted_tokens,
         }
       }
@@ -213,13 +230,18 @@ validator mint_voucher(
         trace @"mint_voucher: RefundVoucher branch"
 
         // Voucher refunds are authorized by timeout or ack-error channel spends.
+        expect
+          bridge_registry.is_operational_voucher(
+            bridge_registry_datum,
+            voucher_minting_policy_id,
+          )
         expect fungible_token_packet_data.validate_basic(data)
         expect Some(channel_redeemer) =
           extract_channel_redeemer(
             inputs,
             redeemers,
-            channel_minting_policy_id,
-            host_state_nft_policy_id,
+            active_deployment.channel_minting_policy_id,
+            active_deployment.host_state_nft_policy_id,
             packet_source_channel,
           )
         when channel_redeemer is {
@@ -274,6 +296,16 @@ validator mint_voucher(
             voucher_denom_hash,
             data.denom,
           )
+        let metadata_completeness =
+          metadata_completeness_satisfied(
+            reference_inputs,
+            outputs,
+            data.denom,
+            user_token_name,
+            voucher_minting_policy_id,
+            reference_token_name,
+            voucher_metadata_script_hash,
+          )
 
         // Refund mints use the same trace-registry witness rule.
         let minted_tokens = tokens(mint, voucher_minting_policy_id)
@@ -284,6 +316,7 @@ validator mint_voucher(
             reference_token_name,
             transfer_amount,
             registry_completeness,
+            metadata_completeness,
           )
         trace @"mint_voucher: minted token is valid"
 
@@ -336,15 +369,7 @@ validator mint_voucher(
           outputs_token - inputs_token == transfer_amount,
           valid_minted_tokens,
           valid_sender,
-          metadata_output_valid(
-            outputs,
-            data.denom,
-            user_token_name,
-            voucher_minting_policy_id,
-            reference_token_name,
-            voucher_metadata_script_hash,
-            registry_completeness,
-          ),
+          voucher_policy_memo.matches(data.memo, voucher_minting_policy_id),
         }
       }
     }
@@ -358,6 +383,11 @@ validator mint_voucher(
 type TraceRegistryCompleteness {
   ExistingMapping
   FirstSeenMapping
+}
+
+type MetadataCompleteness {
+  ExistingMetadata
+  FirstSeenMetadata
 }
 
 fn extract_channel_redeemer(
@@ -694,34 +724,44 @@ fn positive_voucher_mint_matches(
   reference_token_name: AssetName,
   transfer_amount: Int,
   registry_completeness: Option<TraceRegistryCompleteness>,
+  metadata_completeness: Option<MetadataCompleteness>,
 ) -> Bool {
   when registry_completeness is {
-    Some(ExistingMapping) ->
-      minted_tokens == (
-        dict.empty
-          |> dict.insert(user_token_name, transfer_amount)
-      )
+    Some(_) ->
+      when metadata_completeness is {
+        Some(ExistingMetadata) ->
+          minted_tokens == (
+            dict.empty
+              |> dict.insert(user_token_name, transfer_amount)
+          )
 
-    Some(FirstSeenMapping) ->
-      minted_tokens == (
-        dict.empty
-          |> dict.insert(user_token_name, transfer_amount)
-          |> dict.insert(reference_token_name, 1)
-      )
+        Some(FirstSeenMetadata) ->
+          minted_tokens == (
+            dict.empty
+              |> dict.insert(user_token_name, transfer_amount)
+              |> dict.insert(reference_token_name, 1)
+          )
+
+        None -> False
+      }
 
     None -> False
   }
 }
 
-fn metadata_output_valid(
+// Trace entries are shared across voucher policy upgrades, but CIP-68 reference
+// NFTs are policy-scoped. A positive mint must therefore either create the
+// current policy's metadata NFT now or reference the already-created metadata
+// UTxO for this same policy and denom hash.
+fn metadata_completeness_satisfied(
+  reference_inputs: List<Input>,
   outputs: List<Output>,
   full_denom: ByteArray,
   user_token_name: AssetName,
   voucher_policy_id: PolicyId,
   reference_token_name: AssetName,
   voucher_metadata_script_hash: crypto.ScriptHash,
-  registry_completeness: Option<TraceRegistryCompleteness>,
-) -> Bool {
+) -> Option<MetadataCompleteness> {
   let metadata_address = from_script(voucher_metadata_script_hash)
   let metadata_outputs =
     list.filter(
@@ -734,32 +774,77 @@ fn metadata_output_valid(
         ) == 1
       },
     )
+  let metadata_reference_inputs =
+    list.filter(
+      reference_inputs,
+      fn(input) {
+        metadata_reference_output_valid(
+          input.output,
+          full_denom,
+          user_token_name,
+          voucher_policy_id,
+          reference_token_name,
+          voucher_metadata_script_hash,
+        )
+      },
+    )
 
-  when registry_completeness is {
-    Some(ExistingMapping) -> list.length(metadata_outputs) == 0
-
-    Some(FirstSeenMapping) ->
-      when metadata_outputs is {
-        [metadata_output] -> {
-          expect [policy_id] =
-            metadata_output.value
-              |> assets.without_lovelace
-              |> assets.policies()
-          expect [token_name] =
-            assets.tokens(metadata_output.value, voucher_policy_id)
-              |> dict.keys()
-          expect InlineDatum(metadata_datum) = metadata_output.datum
-
-          policy_id == voucher_policy_id && token_name == reference_token_name && metadata_datum == voucher_metadata_datum.build_datum(
-            full_denom,
-            user_token_name,
-            voucher_policy_id,
-          )
-        }
-
-        _ -> False
+  when metadata_outputs is {
+    [metadata_output] ->
+      if list.length(metadata_reference_inputs) == 0 && metadata_reference_output_valid(
+        metadata_output,
+        full_denom,
+        user_token_name,
+        voucher_policy_id,
+        reference_token_name,
+        voucher_metadata_script_hash,
+      ) {
+        Some(FirstSeenMetadata)
+      } else {
+        None
       }
 
-    None -> False
+    [] ->
+      if list.length(metadata_reference_inputs) == 1 {
+        Some(ExistingMetadata)
+      } else {
+        None
+      }
+
+    _ -> None
+  }
+}
+
+fn metadata_reference_output_valid(
+  output: Output,
+  full_denom: ByteArray,
+  user_token_name: AssetName,
+  voucher_policy_id: PolicyId,
+  reference_token_name: AssetName,
+  voucher_metadata_script_hash: crypto.ScriptHash,
+) -> Bool {
+  let metadata_address = from_script(voucher_metadata_script_hash)
+
+  if output.address != metadata_address || quantity_of(
+    output.value,
+    voucher_policy_id,
+    reference_token_name,
+  ) != 1 {
+    False
+  } else {
+    expect [policy_id] =
+      output.value
+        |> assets.without_lovelace
+        |> assets.policies()
+    expect [token_name] =
+      assets.tokens(output.value, voucher_policy_id)
+        |> dict.keys()
+    expect InlineDatum(metadata_datum) = output.datum
+
+    policy_id == voucher_policy_id && token_name == reference_token_name && metadata_datum == voucher_metadata_datum.build_datum(
+      full_denom,
+      user_token_name,
+      voucher_policy_id,
+    )
   }
 }

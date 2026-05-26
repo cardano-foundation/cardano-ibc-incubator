@@ -648,8 +648,25 @@ export class DenomTraceService {
   }
 
   private getVoucherPolicyId(): string {
-    return this.configService.get("deployment").validators.mintVoucher
-      .scriptHash;
+    const deployment = this.configService.get("deployment");
+    return (
+      deployment.voucherPolicyRegistry?.active?.scriptHash ??
+      deployment.validators.mintVoucher.scriptHash
+    );
+  }
+
+  isOperationalVoucherPolicyId(policyId: string): boolean {
+    const normalized = policyId.trim().toLowerCase();
+    const deployment = this.configService.get("deployment");
+    const activePolicyId = (
+      deployment.voucherPolicyRegistry?.active?.scriptHash ??
+      deployment.validators.mintVoucher.scriptHash
+    ).toLowerCase();
+    const legacyPolicyIds =
+      deployment.voucherPolicyRegistry?.legacy?.map((entry) =>
+        entry.scriptHash.toLowerCase(),
+      ) ?? [];
+    return normalized === activePolicyId || legacyPolicyIds.includes(normalized);
   }
 
   private getBucketIndexForHash(hash: string): number {

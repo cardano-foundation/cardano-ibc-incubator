@@ -34,16 +34,23 @@ function buildHandlerJsonDeployment() {
         ...buildValidator('spendChannel'),
         refValidator: {
           acknowledge_packet: { scriptHash: 'ack-hash', refUtxo: { txHash: 'ack-tx', outputIndex: 2 } },
-          chan_close_confirm: { scriptHash: 'close-confirm-hash', refUtxo: { txHash: 'close-confirm-tx', outputIndex: 3 } },
+          chan_close_confirm: {
+            scriptHash: 'close-confirm-hash',
+            refUtxo: { txHash: 'close-confirm-tx', outputIndex: 3 },
+          },
           chan_close_init: { scriptHash: 'close-init-hash', refUtxo: { txHash: 'close-init-tx', outputIndex: 4 } },
           chan_open_ack: { scriptHash: 'open-ack-hash', refUtxo: { txHash: 'open-ack-tx', outputIndex: 5 } },
-          chan_open_confirm: { scriptHash: 'open-confirm-hash', refUtxo: { txHash: 'open-confirm-tx', outputIndex: 6 } },
+          chan_open_confirm: {
+            scriptHash: 'open-confirm-hash',
+            refUtxo: { txHash: 'open-confirm-tx', outputIndex: 6 },
+          },
           recv_packet: { scriptHash: 'recv-hash', refUtxo: { txHash: 'recv-tx', outputIndex: 7 } },
           send_packet: { scriptHash: 'send-hash', refUtxo: { txHash: 'send-tx', outputIndex: 8 } },
           timeout_packet: { scriptHash: 'timeout-hash', refUtxo: { txHash: 'timeout-tx', outputIndex: 9 } },
         },
       },
       spendTraceRegistry: buildValidator('spendTraceRegistry'),
+      bridgeRegistry: buildValidator('bridgeRegistry'),
       spendTransferModule: buildValidator('spendTransferModule'),
       mintIdentifier: buildValidator('mintIdentifier'),
       verifyProof: buildValidator('verifyProof'),
@@ -74,6 +81,16 @@ function buildHandlerJsonDeployment() {
         policyId: 'trace-shard-policy',
         name: 'trace-directory',
       },
+    },
+    bridgeRegistry: {
+      policyId: 'bridge-registry-policy',
+      tokenName: 'bridge-registry-token',
+      address: 'bridge-registry-address',
+      refUtxo: {
+        txHash: 'bridge-registry-token-tx',
+        outputIndex: 10,
+      },
+      governanceKeyHash: 'bridge-registry-governance',
     },
   };
 }
@@ -123,6 +140,40 @@ describe('bridge manifest normalization', () => {
         token_name: 'trace-directory',
       },
     });
+    expect(loaded.bridgeManifest.validators.bridge_registry).toEqual({
+      script_hash: 'bridgeRegistry-hash',
+      address: 'bridgeRegistry-address',
+      ref_utxo: {
+        tx_hash: 'bridgeRegistry-tx',
+        output_index: 1,
+      },
+    });
+    expect(loaded.bridgeManifest.bridge_registry).toEqual({
+      policy_id: 'bridge-registry-policy',
+      token_name: 'bridge-registry-token',
+      address: 'bridge-registry-address',
+      ref_utxo: {
+        tx_hash: 'bridge-registry-token-tx',
+        output_index: 10,
+      },
+      governance_key_hash: 'bridge-registry-governance',
+    });
+    expect(loaded.bridgeManifest.voucher_policy_registry?.active.compatibility).toEqual({
+      compatible_bridge_version: 1,
+      voucher_asset_name_version: 1,
+      redeemer_version: 1,
+      packet_data_encoding_version: 1,
+      transfer_denom_logic_version: 1,
+      channel_id_derivation_version: 1,
+      host_state_channel_semantics_version: 1,
+      trace_registry_semantics_version: 1,
+      metadata_format_version: 1,
+      bridge_registry_token: {
+        policy_id: 'bridge-registry-policy',
+        token_name: 'bridge-registry-token',
+      },
+      trace_registry_id: 'trace-registry-address:trace-shard-policy:trace-shard-policy:trace-directory',
+    });
   });
 
   it('normalizes a public manifest back into the internal deployment config', () => {
@@ -146,7 +197,7 @@ describe('bridge manifest normalization', () => {
         chain_id: 'cardano-devnet',
         network_magic: 42,
         network: 'Custom',
-      })
+      }),
     ).toThrow('Invalid bridge config: "deployedAt" must be a non-empty string');
   });
 
@@ -210,6 +261,55 @@ describe('bridge manifest normalization', () => {
     expect(loaded.bridgeManifest.validators.voucher_metadata).toEqual({
       address: 'voucher-metadata-address',
     });
+  });
+
+  it('rejects legacy voucher policies without explicit compatibility', () => {
+    const handler = buildHandlerJsonDeployment();
+
+    expect(() =>
+      normalizeHandlerJsonDeploymentConfig(
+        {
+          ...handler,
+          voucherPolicyRegistry: {
+            active: handler.validators.mintVoucher,
+            legacy: [buildValidator('legacyMintVoucher')],
+          },
+        },
+        {
+          chain_id: 'cardano-devnet',
+          network_magic: 42,
+          network: 'Custom',
+        },
+      ),
+    ).toThrow('voucherPolicyRegistry.legacy[0].compatibility');
+  });
+
+  it('rejects legacy voucher policies with a mismatched compatibility profile', () => {
+    const loaded = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+    const active = loaded.bridgeManifest.voucher_policy_registry?.active;
+
+    expect(() =>
+      normalizeBridgeManifestConfig({
+        ...loaded.bridgeManifest,
+        voucher_policy_registry: {
+          active,
+          legacy: [
+            {
+              ...loaded.bridgeManifest.validators.mint_voucher,
+              script_hash: 'legacy-voucher-hash',
+              compatibility: {
+                ...active?.compatibility,
+                trace_registry_id: 'wrong-trace-registry',
+              },
+            },
+          ],
+        },
+      }),
+    ).toThrow('legacy voucher policy legacy-voucher-hash is not compatible');
   });
 
   it('fails startup resolution if both manifest and handler paths are set', () => {

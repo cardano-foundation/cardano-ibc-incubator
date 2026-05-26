@@ -29,6 +29,7 @@ use aiken/collection/list
 use aiken/primitive/bytearray
 use cardano/assets.{PolicyId, quantity_of}
 use cardano/transaction.{Input, Output, OutputReference, Transaction}
+use ibc/apps/transfer/bridge_registry
 use ibc/apps/transfer/trace_registry.{
   AdvanceDirectory, Directory, InsertTrace, RolloverInsertTrace, Shard,
   TraceRegistryDatum, TraceRegistryDirectoryBucket, TraceRegistryDirectoryDatum,
@@ -42,7 +43,7 @@ use ibc/utils/validator_utils
 validator spend_trace_registry(
   shard_nft_policy_id: PolicyId,
   directory_auth_token: AuthToken,
-  voucher_minting_policy_id: PolicyId,
+  bridge_registry_token: AuthToken,
   benchmark_voucher_minting_policy_id: PolicyId,
 ) {
   spend(
@@ -53,6 +54,10 @@ validator spend_trace_registry(
   ) {
     let Transaction { inputs, reference_inputs, outputs, mint, .. } =
       transaction
+    let bridge_registry_datum =
+      bridge_registry.find_registry_datum(transaction, bridge_registry_token)
+    let voucher_minting_policy_id =
+      bridge_registry_datum.active_voucher_policy_id
 
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     let spent_output = spent_input.output

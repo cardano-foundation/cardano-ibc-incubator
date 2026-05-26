@@ -769,6 +769,7 @@ type Validator =
   | "spendMockModule"
   | "spendTraceRegistry"
   | "spendTransferModule"
+  | "bridgeRegistry"
   | "mintIdentifier"
   | "mintTransferEscrowShard"
   | "mintVoucher"
@@ -813,6 +814,13 @@ export type DeploymentTemplate = {
       >;
     };
     spendTransferModule: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    bridgeRegistry?: {
       title: string;
       script: string;
       scriptHash: string;
@@ -921,6 +929,31 @@ export type DeploymentTemplate = {
       policyId: string;
       name: string;
     };
+  };
+  bridgeRegistry?: {
+    policyId: string;
+    tokenName: string;
+    address: string;
+    refUtxo: UTxO;
+    governanceKeyHash: string;
+  };
+  voucherPolicyRegistry?: {
+    active: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+      compatibility?: unknown;
+    };
+    legacy: Array<{
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+      compatibility?: unknown;
+    }>;
   };
   modules: Record<
     Module,

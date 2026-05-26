@@ -4,6 +4,7 @@ use cardano/assets.{PolicyId, Value, add, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, placeholder,
 }
+use ibc/apps/transfer/bridge_registry.{BridgeDeployment, BridgeRegistryDatum}
 use ibc/apps/transfer/trace_registry.{
   Directory, InsertTrace, Shard, TraceRegistryDatum,
   TraceRegistryDirectoryBucket, TraceRegistryDirectoryDatum, TraceRegistryEntry,
@@ -24,6 +25,13 @@ fn test_directory_auth_token() -> AuthToken {
 
 fn test_voucher_policy_id() -> PolicyId {
   "voucher mint policy"
+}
+
+fn test_bridge_registry_token() -> AuthToken {
+  AuthToken {
+    policy_id: "bridge registry policy",
+    name: "bridge registry token",
+  }
 }
 
 fn test_benchmark_voucher_policy_id() -> PolicyId {
@@ -118,6 +126,49 @@ fn test_non_registry_reference_input(output_index: Int) -> Input {
   }
 }
 
+fn test_bridge_registry_input_with_active(
+  active_voucher_policy_id: PolicyId,
+) -> Input {
+  let token = test_bridge_registry_token()
+
+  Input {
+    output_reference: test_output_ref(99),
+    output: Output {
+      address: from_script("bridge registry script hash"),
+      value: from_asset(token.policy_id, token.name, 1),
+      datum: InlineDatum(
+        BridgeRegistryDatum {
+          active_deployment: BridgeDeployment {
+            host_state_nft_policy_id: "host state policy",
+            channel_minting_policy_id: "channel policy",
+          },
+          active_voucher_policy_id,
+          legacy_voucher_policy_ids: [],
+          governance_key_hash: #"00000000000000000000000000000000000000000000000000000000",
+        },
+      ),
+      reference_script: None,
+    },
+  }
+}
+
+fn with_bridge_registry_active(
+  transaction: Transaction,
+  active_voucher_policy_id: PolicyId,
+) -> Transaction {
+  Transaction {
+    ..transaction,
+    reference_inputs: [
+      test_bridge_registry_input_with_active(active_voucher_policy_id),
+      ..transaction.reference_inputs
+    ],
+  }
+}
+
+fn with_bridge_registry(transaction: Transaction) -> Transaction {
+  with_bridge_registry_active(transaction, test_voucher_policy_id())
+}
+
 fn test_expected_entry(full_denom: ByteArray) -> TraceRegistryEntry {
   TraceRegistryEntry {
     voucher_hash: voucher_asset_name.voucher_denom_hash(full_denom),
@@ -134,12 +185,12 @@ fn run_trace_registry_spend(
   trace_registry_validator.spend_trace_registry.spend(
     test_shard_policy_id(),
     test_directory_auth_token(),
-    test_voucher_policy_id(),
+    test_bridge_registry_token(),
     test_disabled_benchmark_voucher_policy_id(),
     Some(datum),
     redeemer,
     spent_output_ref,
-    transaction,
+    with_bridge_registry(transaction),
   )
 }
 
@@ -153,12 +204,31 @@ fn run_trace_registry_spend_with_benchmark(
   trace_registry_validator.spend_trace_registry.spend(
     test_shard_policy_id(),
     test_directory_auth_token(),
-    test_voucher_policy_id(),
+    test_bridge_registry_token(),
     benchmark_policy_id,
     Some(datum),
     redeemer,
     spent_output_ref,
-    transaction,
+    with_bridge_registry(transaction),
+  )
+}
+
+fn run_trace_registry_spend_with_active_voucher(
+  datum: TraceRegistryDatum,
+  redeemer: TraceRegistryRedeemer,
+  spent_output_ref: OutputReference,
+  transaction: Transaction,
+  active_voucher_policy_id: PolicyId,
+) -> Bool {
+  trace_registry_validator.spend_trace_registry.spend(
+    test_shard_policy_id(),
+    test_directory_auth_token(),
+    test_bridge_registry_token(),
+    test_disabled_benchmark_voucher_policy_id(),
+    Some(datum),
+    redeemer,
+    spent_output_ref,
+    with_bridge_registry_active(transaction, active_voucher_policy_id),
   )
 }
 
@@ -284,6 +354,84 @@ test prop_trace_registry_append_accepts_active_shard_insert(seed via fuzz.int())
     ),
   )
     |> fuzz_dsl.assert_valid
+}
+
+test trace_registry_insert_uses_active_voucher_from_bridge_registry() {
+  let active_v2_voucher_policy_id = "voucher mint policy v2"
+  let full_denom = "transfer/channel-7/uatom"
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
+  let bucket_index = bucket_index_for_hash(voucher_hash)
+  let shard_name = "active-0a"
+  let spent_input =
+    Input {
+      output_reference: test_output_ref(0),
+      output: test_shard_output(bucket_index, shard_name, []),
+    }
+  let directory_input = test_directory_input(1, bucket_index, shard_name, [])
+  let updated_output =
+    test_shard_output(
+      bucket_index,
+      shard_name,
+      [test_expected_entry(full_denom)],
+    )
+  let valid_v2_mint =
+    from_asset(
+      active_v2_voucher_policy_id,
+      voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+      1,
+    )
+
+  run_trace_registry_spend_with_active_voucher(
+    Shard(TraceRegistryShardDatum { bucket_index, entries: [] }),
+    InsertTrace { voucher_hash, full_denom },
+    test_output_ref(0),
+    test_insert_transaction(
+      spent_input,
+      [directory_input],
+      updated_output,
+      valid_v2_mint,
+    ),
+    active_v2_voucher_policy_id,
+  )
+}
+
+test trace_registry_insert_rejects_inactive_voucher_after_upgrade() fail {
+  let active_v2_voucher_policy_id = "voucher mint policy v2"
+  let full_denom = "transfer/channel-7/uatom"
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
+  let bucket_index = bucket_index_for_hash(voucher_hash)
+  let shard_name = "active-0a"
+  let spent_input =
+    Input {
+      output_reference: test_output_ref(0),
+      output: test_shard_output(bucket_index, shard_name, []),
+    }
+  let directory_input = test_directory_input(1, bucket_index, shard_name, [])
+  let updated_output =
+    test_shard_output(
+      bucket_index,
+      shard_name,
+      [test_expected_entry(full_denom)],
+    )
+  let stale_v1_mint =
+    from_asset(
+      test_voucher_policy_id(),
+      voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+      1,
+    )
+
+  run_trace_registry_spend_with_active_voucher(
+    Shard(TraceRegistryShardDatum { bucket_index, entries: [] }),
+    InsertTrace { voucher_hash, full_denom },
+    test_output_ref(0),
+    test_insert_transaction(
+      spent_input,
+      [directory_input],
+      updated_output,
+      stale_v1_mint,
+    ),
+    active_v2_voucher_policy_id,
+  )
 }
 
 test prop_trace_registry_append_rejects_without_matching_voucher_mint(

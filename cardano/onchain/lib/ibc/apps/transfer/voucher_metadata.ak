@@ -144,7 +144,7 @@ fn hex_ascii(bytes: ByteArray) -> ByteArray {
     |> ascii_lower
 }
 
-fn ascii_lower(bytes: ByteArray) -> ByteArray {
+pub fn ascii_lower(bytes: ByteArray) -> ByteArray {
   bytearray.foldr(
     bytes,
     "",
