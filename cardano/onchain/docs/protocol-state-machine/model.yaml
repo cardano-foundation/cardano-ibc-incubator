@@ -1,0 +1,491 @@
+schema: cardano-ibc-onchain-state-machine
+version: 0.1.0
+status: draft
+
+intent:
+  description: >
+    A static formal model of the on-chain protocol. Every Aiken validator is
+    represented as a machine participant. Protocol behavior is described as
+    transitions over state spaces, with each transition naming its validators,
+    redeemers, guards, durable writes, and coupling mechanisms.
+  source_root: cardano/onchain
+
+state_spaces:
+  host:
+    state_thread: HostState NFT
+    variables:
+      ibc_state_root: Commitment root over ICS-24 paths
+      next_client_sequence: Client id allocator
+      next_connection_sequence: Connection id allocator
+      next_channel_sequence: Channel id allocator
+      shutdown_state: Active | ShuttingDown(grace_period_end) | Finalized
+  client:
+    state_thread: client STT
+    variables:
+      status: Active | Frozen | Expired
+      latest_height: Tendermint height
+      consensus_states: height -> consensus root/timestamp
+  connection:
+    state_thread: connection STT
+    variables:
+      state: Init | TryOpen | Open
+      client_id: local client id
+      counterparty: counterparty client/connection/prefix
+      delay_period: nanoseconds
+  channel:
+    state_thread: channel STT
+    variables:
+      state: Init | TryOpen | Open | Closed
+      ordering: Ordered | Unordered
+      connection_hops: list connection id
+      counterparty: counterparty port/channel
+      next_sequence_send: integer
+      next_sequence_recv: integer
+      next_sequence_ack: integer
+      packet_commitments: sequence -> commitment
+      packet_receipts: sequence -> receipt
+      packet_acknowledgements: sequence -> acknowledgement commitment
+  transfer:
+    state_thread: transfer module UTxO plus escrow shard UTxOs
+    variables:
+      bound_port: transfer port auth token
+      escrow_shards: channel/denom -> native value
+      voucher_supply: full denom trace hash -> amount
+  trace_registry:
+    state_thread: directory NFT plus shard NFTs
+    variables:
+      directory: bucket -> active shard id
+      active_shards: bucket -> voucher_hash -> full_denom
+      archived_shards: immutable shard history
+
+validators:
+  host_state_nft:
+    source: validators/host_state_nft.ak
+    kind: minting_policy
+    purpose: Mint the root HostState NFT from a chosen output reference.
+    redeemers: [MintHostStateNFT]
+    writes: [host.state_thread]
+
+  host_state_stt:
+    source: validators/host_state_stt.ak
+    kind: spending_validator
+    purpose: Commit every IBC-visible state update into HostState.ibc_state_root.
+    redeemers:
+      - CreateClient
+      - UpdateClient
+      - CreateConnection
+      - UpdateConnection
+      - CreateChannel
+      - UpdateChannel
+      - HandlePacket
+      - BindPort
+      - EnterShutdown
+      - FinalizeShutdown
+    reads: [host input datum, protocol state UTxOs, Merkle sibling witnesses]
+    writes: [host continuation datum, host.ibc_state_root, sequence counters, shutdown_state]
+
+  mint_client_stt:
+    source: validators/minting_client_stt.ak
+    kind: minting_policy
+    purpose: Mint exactly one client state-thread token derived from HostState and client sequence.
+    redeemers: [MintClient]
+    coupled_to: [host_state_stt.CreateClient]
+    writes: [client.state_thread]
+
+  spend_client:
+    source: validators/spending_client.ak
+    kind: spending_validator
+    purpose: Update Tendermint client state or freeze on misbehaviour.
+    redeemers: [UpdateClient, Other]
+    reads: [client input datum, HostState input/redeemer, tx validity interval]
+    guards:
+      - HostState is co-spent with UpdateClient
+      - input and output carry only the client auth token
+      - active client is required for normal updates
+      - client message verifies against stored consensus states
+    writes: [client datum, host client state key, host consensus state keys]
+
+  mint_connection_stt:
+    source: validators/minting_connection_stt.ak
+    kind: minting_policy
+    purpose: Mint exactly one connection state-thread token derived from HostState and connection sequence.
+    redeemers: [MintConnection]
+    coupled_to: [host_state_stt.CreateConnection]
+    writes: [connection.state_thread]
+
+  spend_connection:
+    source: validators/spending_connection.ak
+    kind: spending_validator
+    purpose: Advance proof-bearing connection handshake states.
+    redeemers: [ConnOpenAck, ConnOpenConfirm]
+    reads: [connection input datum, client reference input, proof marker, HostState redeemer]
+    guards:
+      - HostState is co-spent with UpdateConnection
+      - connection auth token is preserved
+      - client is active
+      - counterparty proof marker matches expected path/value
+    writes: [connection datum, host connection key]
+
+  mint_channel_stt:
+    source: validators/minting_channel_stt.ak
+    kind: minting_policy
+    purpose: Mint exactly one channel state-thread token derived from HostState and channel sequence.
+    redeemers: [MintChannel]
+    coupled_to: [host_state_stt.CreateChannel]
+    writes: [channel.state_thread]
+
+  spend_channel:
+    source: validators/spending_channel.ak
+    kind: spending_validator
+    purpose: Dispatch channel spends and require the correct HostState branch and marker mint.
+    redeemers:
+      - ChanOpenAck
+      - ChanOpenConfirm
+      - ChanCloseInit
+      - ChanCloseConfirm
+      - RecvPacket
+      - SendPacket
+      - TimeoutPacket
+      - AcknowledgePacket
+    reads: [channel input datum, HostState input/redeemer, marker mint]
+    guards:
+      - channel auth token identifies the canonical channel UTxO
+      - HostState branch is UpdateChannel for channel lifecycle transitions
+      - HostState branch is HandlePacket for packet transitions
+      - exact marker mint exists for the operation
+    writes: [channel datum]
+
+  chan_open_ack:
+    source: validators/spending_channel/chan_open_ack.ak
+    kind: marker_policy
+    purpose: Validate and mark ChanOpenAck.
+    redeemers: [mint(channel_token)]
+    coupled_to: [spend_channel.ChanOpenAck, verifying_proof.VerifyMembership]
+    writes: [channel.state: Open, channel.counterparty.channel_id]
+
+  chan_open_confirm:
+    source: validators/spending_channel/chan_open_confirm.ak
+    kind: spending_validator
+    purpose: Validate ChanOpenConfirm.
+    redeemers: [ChanOpenConfirm]
+    coupled_to: [spend_channel.ChanOpenConfirm, verifying_proof.VerifyMembership]
+    writes: [channel.state: Open]
+
+  chan_close_init:
+    source: validators/spending_channel/chan_close_init.ak
+    kind: spending_validator
+    purpose: Validate local channel close initiation.
+    redeemers: [ChanCloseInit]
+    coupled_to: [spend_channel.ChanCloseInit, host_state_stt.UpdateChannel]
+    writes: [channel.state: Closed]
+
+  chan_close_confirm:
+    source: validators/spending_channel/chan_close_confirm.ak
+    kind: spending_validator
+    purpose: Validate proof-bearing remote channel close confirmation.
+    redeemers: [ChanCloseConfirm]
+    coupled_to: [spend_channel.ChanCloseConfirm, verifying_proof.VerifyMembership]
+    writes: [channel.state: Closed]
+
+  send_packet:
+    source: validators/spending_channel/send_packet.ak
+    kind: marker_policy
+    purpose: Validate and mark SendPacket.
+    redeemers: [SendPacket, mint(channel_token)]
+    guards:
+      - channel is Open
+      - packet path matches local and counterparty channel ends
+      - packet sequence equals next_sequence_send
+      - referenced connection and client are valid
+      - client is Active
+      - timeout has not elapsed
+    writes: [channel.next_sequence_send, channel.packet_commitments, host packet commitment key]
+
+  recv_packet:
+    source: validators/spending_channel/recv_packet.ak
+    kind: marker_policy
+    purpose: Validate and mark RecvPacket.
+    redeemers: [RecvPacket, mint(channel_token)]
+    guards:
+      - channel is Open
+      - connection is Open
+      - client is Active
+      - proof marker proves remote packet commitment
+      - receipt has not already been written
+    writes: [channel.packet_receipts, channel.packet_acknowledgements, host receipt key, host acknowledgement key]
+
+  acknowledge_packet:
+    source: validators/spending_channel/acknowledge_packet.ak
+    kind: marker_policy
+    purpose: Validate and mark AcknowledgePacket.
+    redeemers: [AcknowledgePacket, mint(channel_token)]
+    guards:
+      - proof marker proves remote acknowledgement
+      - local packet commitment exists
+    writes: [remove channel.packet_commitments, remove host packet commitment key]
+
+  timeout_packet:
+    source: validators/spending_channel/timeout_packet.ak
+    kind: marker_policy
+    purpose: Validate and mark TimeoutPacket.
+    redeemers: [TimeoutPacket, mint(channel_token)]
+    guards:
+      - timeout height or timestamp has elapsed
+      - proof marker proves receipt absence or next_sequence_recv condition
+      - local packet commitment exists
+    writes: [remove channel.packet_commitments, remove host packet commitment key, maybe channel.state: Closed]
+
+  mint_port:
+    source: validators/minting_port.ak
+    kind: minting_policy
+    purpose: Mint a port binding token under HostState control.
+    redeemers: [MintPort]
+    coupled_to: [host_state_stt.BindPort]
+    writes: [port binding key]
+
+  minting_identifier:
+    source: validators/minting_identifier.ak
+    kind: minting_policy
+    purpose: Mint a one-shot identifier token from a supplied output reference.
+    redeemers: [OutputReference]
+    writes: [identifier token]
+
+  mint_transfer_escrow_shard:
+    source: validators/minting_transfer_escrow_shard.ak
+    kind: minting_policy
+    purpose: Mint transfer escrow shard NFTs for per-channel/denom accounting.
+    redeemers: [TransferEscrowShardRedeemer]
+    coupled_to: [spend_transfer_module]
+    writes: [transfer.escrow_shards]
+
+  spend_transfer_module:
+    source: validators/spending_transfer_module.ak
+    kind: spending_validator
+    purpose: Validate ICS-20 operator actions and channel callbacks.
+    redeemers:
+      - Operator.Transfer
+      - Callback.OnRecvPacket
+      - Callback.OnAcknowledgementPacket
+      - Callback.OnTimeoutPacket
+      - Callback.OnChanOpenInit
+      - Callback.OnChanOpenTry
+      - Callback.OnChanOpenAck
+      - Callback.OnChanOpenConfirm
+      - Callback.OnChanCloseInit
+      - Callback.OnChanCloseConfirm
+    reads: [transfer module datum, channel redeemer, HostState input, escrow shards, voucher mint]
+    writes: [escrow_shards, voucher supply authorizations, module continuation datum]
+
+  mint_voucher:
+    source: validators/minting_voucher.ak
+    kind: minting_policy
+    purpose: Mint, burn, or refund ICS-20 voucher assets.
+    redeemers: [MintVoucher, BurnVoucher, RefundVoucher]
+    coupled_to: [spend_channel packet redeemers, spend_transfer_module callbacks]
+    writes: [voucher_supply, voucher reference asset]
+
+  voucher_metadata:
+    source: validators/voucher_metadata.ak
+    kind: spending_validator
+    purpose: Lock immutable reference metadata outputs for voucher assets.
+    redeemers: [none]
+    writes: [none]
+
+  trace_registry:
+    source: validators/trace_registry.ak
+    kind: spending_validator
+    purpose: Maintain hashed voucher trace reverse lookups.
+    redeemers: [InsertTrace, RolloverInsertTrace, AdvanceDirectory]
+    reads: [directory UTxO, active shard UTxO, voucher mint, optional benchmark voucher mint]
+    guards:
+      - full denom hashes to voucher hash
+      - first four hash bits select the bucket
+      - active shard is authorized by directory
+      - archived shard content is immutable
+    writes: [trace_registry.directory, trace_registry.active_shards, trace_registry.archived_shards]
+
+  verifying_proof:
+    source: validators/verifying_proof.ak
+    kind: minting_policy
+    purpose: Verify ICS-23 membership or non-membership and mint a proof marker.
+    redeemers: [VerifyMembership, VerifyNonMembership]
+    writes: [proof marker]
+
+  reference_validator:
+    source: validators/reference_validator.ak
+    kind: spending_validator
+    purpose: Reference-only support validator for HostState NFT guarded flows.
+    redeemers: [spend]
+    writes: [none]
+
+  include_unused_types:
+    source: validators/include_unused_types.ak
+    kind: compile_support
+    purpose: Keep schema types reachable in the blueprint.
+    redeemers: [none]
+    writes: [none]
+
+  minting_mock_token:
+    source: validators/minting_mock_token.ak
+    kind: devnet_test_stub
+    purpose: Mint mock native assets in local/test environments.
+    redeemers: [Data]
+    writes: [mock token supply]
+
+  spending_mock_module:
+    source: validators/spending_mock_module.ak
+    kind: devnet_test_stub
+    purpose: Minimal module spending validator used for tests or mocked apps.
+    redeemers: [Data]
+    writes: [mock module output]
+
+  minting_trace_registry_benchmark_voucher:
+    source: validators/minting_trace_registry_benchmark_voucher.ak
+    kind: benchmark_stub
+    purpose: Mint benchmark voucher witnesses for trace-registry tests.
+    redeemers: [Data]
+    writes: [benchmark voucher supply]
+
+mechanisms:
+  state_thread_identity:
+    description: Canonical UTxOs are identified by non-fungible auth tokens, not by script address alone.
+    validators: [host_state_nft, mint_client_stt, mint_connection_stt, mint_channel_stt, mint_port, mint_transfer_escrow_shard]
+
+  host_commitment:
+    description: Every IBC-visible change must be reflected in HostState.ibc_state_root in the same transaction.
+    validators: [host_state_stt, spend_client, spend_connection, spend_channel, spend_transfer_module]
+
+  operation_marker_coupling:
+    description: Packet and channel operations mint exact one-shot markers to bind all validators to the same operation.
+    validators: [spend_channel, chan_open_ack, send_packet, recv_packet, acknowledge_packet, timeout_packet]
+
+  proof_marker_coupling:
+    description: Proof-bearing handshakes and packet operations mint a proof marker after ICS-23 verification.
+    validators: [verifying_proof, spend_connection, spend_channel, recv_packet, acknowledge_packet, timeout_packet]
+
+  transfer_accounting:
+    description: ICS-20 determines whether Cardano escrows/unescrows native assets or burns/mints vouchers.
+    validators: [spend_transfer_module, mint_transfer_escrow_shard, mint_voucher, voucher_metadata]
+
+  trace_reversibility:
+    description: Full denom traces are written to a Cardano-local registry so hashed voucher token names can be reversed.
+    validators: [trace_registry, mint_voucher, minting_trace_registry_benchmark_voucher]
+
+state_machines:
+  client_lifecycle:
+    states: [Uninitialized, Active, Frozen, Expired]
+    transitions:
+      - name: CreateClient
+        from: Uninitialized
+        to: Active
+        validators: [host_state_stt, mint_client_stt]
+      - name: UpdateClient
+        from: Active
+        to: Active
+        validators: [spend_client, host_state_stt]
+      - name: Misbehaviour
+        from: Active
+        to: Frozen
+        validators: [spend_client, host_state_stt]
+
+  connection_lifecycle:
+    states: [Uninitialized, Init, TryOpen, Open]
+    transitions:
+      - name: ConnOpenInit
+        from: Uninitialized
+        to: Init
+        validators: [host_state_stt, mint_connection_stt]
+      - name: ConnOpenTry
+        from: Uninitialized
+        to: TryOpen
+        validators: [host_state_stt, mint_connection_stt, verifying_proof]
+      - name: ConnOpenAck
+        from: Init
+        to: Open
+        validators: [spend_connection, host_state_stt, verifying_proof]
+      - name: ConnOpenConfirm
+        from: TryOpen
+        to: Open
+        validators: [spend_connection, host_state_stt, verifying_proof]
+
+  channel_lifecycle:
+    states: [Uninitialized, Init, TryOpen, Open, Closed]
+    transitions:
+      - name: ChanOpenInit
+        from: Uninitialized
+        to: Init
+        validators: [host_state_stt, mint_channel_stt, spend_transfer_module]
+      - name: ChanOpenTry
+        from: Uninitialized
+        to: TryOpen
+        validators: [host_state_stt, mint_channel_stt, verifying_proof, spend_transfer_module]
+      - name: ChanOpenAck
+        from: Init
+        to: Open
+        validators: [spend_channel, chan_open_ack, host_state_stt, verifying_proof, spend_transfer_module]
+      - name: ChanOpenConfirm
+        from: TryOpen
+        to: Open
+        validators: [spend_channel, chan_open_confirm, host_state_stt, verifying_proof, spend_transfer_module]
+      - name: ChanCloseInit
+        from: Open
+        to: Closed
+        validators: [spend_channel, chan_close_init, host_state_stt, spend_transfer_module]
+      - name: ChanCloseConfirm
+        from: Open
+        to: Closed
+        validators: [spend_channel, chan_close_confirm, host_state_stt, verifying_proof, spend_transfer_module]
+
+  packet_lifecycle:
+    states: [None, CommitmentWritten, Received, AcknowledgementWritten, Completed, TimedOut]
+    transitions:
+      - name: SendPacket
+        from: None
+        to: CommitmentWritten
+        validators: [spend_channel, send_packet, host_state_stt, spend_transfer_module, mint_voucher]
+      - name: RecvPacket
+        from: CommitmentWritten
+        to: AcknowledgementWritten
+        validators: [verifying_proof, spend_channel, recv_packet, host_state_stt, spend_transfer_module, mint_voucher, trace_registry]
+      - name: AcknowledgePacket
+        from: AcknowledgementWritten
+        to: Completed
+        validators: [verifying_proof, spend_channel, acknowledge_packet, host_state_stt, spend_transfer_module, mint_voucher]
+      - name: TimeoutPacket
+        from: CommitmentWritten
+        to: TimedOut
+        validators: [verifying_proof, spend_channel, timeout_packet, host_state_stt, spend_transfer_module, mint_voucher]
+
+  shutdown:
+    states: [Active, ShuttingDown, Finalized]
+    transitions:
+      - name: EnterShutdown
+        from: Active
+        to: ShuttingDown
+        validators: [host_state_stt]
+      - name: FinalizeShutdown
+        from: ShuttingDown
+        to: Finalized
+        validators: [host_state_stt]
+
+scenario_traces:
+  ics20_source_send:
+    description: Cardano is the source chain for the transferred denom.
+    transitions:
+      - transition: SendPacket
+        validators: [spend_transfer_module.Operator.Transfer, spend_channel.SendPacket, send_packet.mint, host_state_stt.HandlePacket]
+        writes: [escrow_shards, channel.next_sequence_send, channel.packet_commitments, host packet commitment key]
+      - transition: AcknowledgePacket
+        validators: [verifying_proof.VerifyMembership, spend_channel.AcknowledgePacket, acknowledge_packet.mint, host_state_stt.HandlePacket, spend_transfer_module.Callback.OnAcknowledgementPacket]
+        writes: [remove packet commitment]
+      - transition: TimeoutPacket
+        alternative_to: AcknowledgePacket
+        validators: [verifying_proof.VerifyNonMembership, spend_channel.TimeoutPacket, timeout_packet.mint, host_state_stt.HandlePacket, spend_transfer_module.Callback.OnTimeoutPacket]
+        writes: [remove packet commitment, refund sender]
+
+  ics20_sink_receive:
+    description: Cardano receives a denom for which it is not the source chain.
+    transitions:
+      - transition: RecvPacket
+        validators: [verifying_proof.VerifyMembership, spend_channel.RecvPacket, recv_packet.mint, spend_transfer_module.Callback.OnRecvPacket, mint_voucher.MintVoucher, trace_registry, host_state_stt.HandlePacket]
+        writes: [packet receipt, acknowledgement commitment, voucher supply, optional trace registry entry, host root]
