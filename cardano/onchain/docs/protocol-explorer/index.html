@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cardano IBC On-chain Protocol Explorer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Cardano IBC on-chain protocol</p>
+        <h1>Validator Protocol Explorer</h1>
+      </div>
+      <div class="topbar-actions" aria-label="Explorer actions">
+        <button id="replayButton" class="source-link" type="button" title="Replay transaction animation" aria-label="Replay transaction animation">
+          Replay
+        </button>
+        <a class="source-link" href="../../README.md">README</a>
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="Protocol operations">
+        <div class="phase-tabs" id="phaseTabs"></div>
+        <label class="search-label" for="operationSearch">Search operation</label>
+        <input id="operationSearch" class="search-input" type="search" placeholder="Search validator, state, packet..." />
+        <div id="operationList" class="operation-list"></div>
+      </aside>
+
+      <section class="workspace" aria-live="polite">
+        <section class="summary-panel">
+          <div>
+            <p class="eyebrow" id="operationPhase">Packets</p>
+            <h2 id="operationTitle">SendPacket</h2>
+            <p id="operationSummary"></p>
+          </div>
+          <dl class="stats-grid">
+            <div>
+              <dt>Validators</dt>
+              <dd id="validatorCount">0</dd>
+            </div>
+            <div>
+              <dt>Inputs</dt>
+              <dd id="inputCount">0</dd>
+            </div>
+            <div>
+              <dt>Host keys</dt>
+              <dd id="hostKeyCount">0</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="transaction-panel">
+          <div class="section-heading">
+            <h3>Transaction Shape</h3>
+            <p>Click any object to inspect its validator role, datum effect, or accounting rule.</p>
+          </div>
+          <div id="transactionCanvas" class="transaction-canvas"></div>
+        </section>
+
+        <section class="lower-grid">
+          <article class="detail-panel">
+            <div class="section-heading">
+              <h3>Inspector</h3>
+              <p id="inspectorHint">Select a transaction object or validator.</p>
+            </div>
+            <div id="inspectorBody" class="inspector-body"></div>
+          </article>
+
+          <article class="detail-panel">
+            <div class="section-heading">
+              <h3>Lifecycle</h3>
+              <p id="lifecycleTitle">Operation-specific state movement.</p>
+            </div>
+            <div id="lifecyclePanel" class="lifecycle-panel"></div>
+          </article>
+        </section>
+
+        <section class="lower-grid">
+          <article class="detail-panel">
+            <div class="section-heading">
+              <h3>Choreography</h3>
+              <p>What the composed transaction has to prove.</p>
+            </div>
+            <ol id="choreographyList" class="step-list"></ol>
+          </article>
+
+          <article class="detail-panel">
+            <div class="section-heading">
+              <h3>Commitments And Invariants</h3>
+              <p>HostState key effects and checks that should stay mirrored in tests.</p>
+            </div>
+            <div class="two-column-list">
+              <div>
+                <h4>HostState keys</h4>
+                <ul id="hostKeyList"></ul>
+              </div>
+              <div>
+                <h4>Invariant checks</h4>
+                <ul id="invariantList"></ul>
+              </div>
+            </div>
+          </article>
+        </section>
+      </section>
+    </main>
+
+    <script src="./protocol-model.js"></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

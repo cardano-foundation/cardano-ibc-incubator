@@ -10,6 +10,11 @@ on-chain protocol works. For exhaustive security claims and test labels, read
 [`../../INVARIANTS.md`](../../INVARIANTS.md). For voucher reverse lookup details,
 read [`../../docs/cardano-trace-registry.md`](../../docs/cardano-trace-registry.md).
 
+For a more tactile model, open the static
+[`docs/protocol-explorer`](docs/protocol-explorer) prototype. It lets you pick
+an operation and inspect the transaction inputs, reference inputs, minted
+markers, outputs, validators, HostState keys, and lifecycle transition together.
+
 ## Mental Model
 
 IBC expects a host chain to maintain clients, connections, channels, packet
