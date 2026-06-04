@@ -856,6 +856,29 @@ fn generate_additional_local_spo_data(
     Ok(temp_dir)
 }
 
+fn ensure_local_cardano_node_image(cardano_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    DockerCli::new(cardano_dir)
+        .raw_output(
+            [
+                "build",
+                "-f",
+                "Dockerfile.local-clock",
+                "-t",
+                LOCAL_CARDANO_NODE_IMAGE,
+                ".",
+            ]
+            .as_slice(),
+        )
+        .map_err(|error| {
+            format!(
+                "Failed to build managed Cardano local-clock image {}: {}",
+                LOCAL_CARDANO_NODE_IMAGE, error
+            )
+        })?;
+
+    Ok(())
+}
+
 fn merge_generated_local_spo_genesis(
     genesis_shelley_path: &Path,
     generated_shelley_genesis_path: &Path,
@@ -1159,6 +1182,7 @@ pub fn configure_local_cardano_devnet(
         )?;
     }
 
+    ensure_local_cardano_node_image(cardano_dir)?;
     extend_local_devnet_with_generated_spo_data(&devnet_dir, local_spo_count)?;
 
     let yaci_genesis_dir = cardano_dir.join("yaci").join("genesis");
