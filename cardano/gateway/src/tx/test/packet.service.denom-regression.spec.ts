@@ -28,6 +28,7 @@ const existingTraceRegistryProof = {
     },
   ],
 };
+const ACTIVE_VOUCHER_POLICY_ID = '11'.repeat(28);
 
 describe('PacketService denom regression coverage', () => {
   it('resolves ibc/<hash> to canonical denom and uses burn path packet/module denoms', async () => {
@@ -52,7 +53,7 @@ describe('PacketService denom regression coverage', () => {
               },
             },
             mintVoucher: {
-              scriptHash: 'mint-voucher-policy-id',
+              scriptHash: ACTIVE_VOUCHER_POLICY_ID,
             },
             mintTransferEscrowShard: {
               scriptHash: 'mint-transfer-escrow-shard-policy-id',
@@ -155,7 +156,7 @@ describe('PacketService denom regression coverage', () => {
     const voucherTokenName = buildVoucherUserTokenNameFromDenomHash(
       buildVoucherDenomHashFromFullDenom(canonicalDenom),
     );
-    const voucherTokenUnit = `mint-voucher-policy-id${voucherTokenName}`;
+    const voucherTokenUnit = `${ACTIVE_VOUCHER_POLICY_ID}${voucherTokenName}`;
     const senderVoucherUtxo = {
       txHash: 'sender-voucher-utxo',
       outputIndex: 1,
@@ -171,6 +172,7 @@ describe('PacketService denom regression coverage', () => {
         outputIndex: 0,
         assets: { lovelace: 4_000_000n },
       },
+      senderVoucherUtxo,
     ]);
 
     await service.buildUnsignedSendPacketTx({
@@ -198,11 +200,14 @@ describe('PacketService denom regression coverage', () => {
     const spendChannelCall = lucidServiceMock.encode.mock.calls.find(([, type]) => type === 'spendChannelRedeemer');
     expect(spendChannelCall).toBeDefined();
     const packetDataHex = spendChannelCall?.[0]?.SendPacket?.packet?.data as string;
-    expect(convertHex2String(packetDataHex)).toBe(
-      `{"denom":"${canonicalDenom}","amount":"10","sender":"${senderAddress}","receiver":"cosmos1receiver"}`,
-    );
     const packetData = JSON.parse(convertHex2String(packetDataHex));
-    expect(packetData.denom).toBe(canonicalDenom);
+    expect(packetData).toEqual(expect.objectContaining({
+      denom: canonicalDenom,
+      amount: '10',
+      sender: senderAddress,
+      receiver: 'cosmos1receiver',
+      memo: `cardano-ibc:voucher-policy:${ACTIVE_VOUCHER_POLICY_ID}`,
+    }));
 
     const transferModuleCall = lucidServiceMock.encode.mock.calls.find(([, type]) => type === 'iBCModuleRedeemer');
     expect(transferModuleCall).toBeDefined();
@@ -237,7 +242,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
               scriptHash: 'verify-proof-policy-id',
             },
             mintVoucher: {
-              scriptHash: 'mint-voucher-policy-id',
+              scriptHash: ACTIVE_VOUCHER_POLICY_ID,
             },
             mintTransferEscrowShard: {
               scriptHash: 'mint-transfer-escrow-shard-policy-id',
@@ -366,7 +371,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       amount: '10',
       sender: 'sender-credential',
       receiver: 'receiver-credential',
-      memo: '',
+      memo: `cardano-ibc:voucher-policy:${ACTIVE_VOUCHER_POLICY_ID}`,
     };
 
     await service.buildUnsignedAcknowlegementPacketTx(
@@ -395,7 +400,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
 
     expect(lucidServiceMock.createUnsignedAckPacketMintTx).toHaveBeenCalledWith(
       expect.objectContaining({
-        voucherTokenUnit: `mint-voucher-policy-id${expectedTokenName}`,
+        voucherTokenUnit: `${ACTIVE_VOUCHER_POLICY_ID}${expectedTokenName}`,
       }),
     );
     const ackMintDto = lucidServiceMock.createUnsignedAckPacketMintTx.mock.calls[0]?.[0];
@@ -433,7 +438,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
               scriptHash: 'verify-proof-policy-id',
             },
             mintVoucher: {
-              scriptHash: 'mint-voucher-policy-id',
+              scriptHash: ACTIVE_VOUCHER_POLICY_ID,
             },
             mintTransferEscrowShard: {
               scriptHash: 'mint-transfer-escrow-shard-policy-id',
@@ -635,7 +640,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
               scriptHash: 'verify-proof-policy-id',
             },
             mintVoucher: {
-              scriptHash: 'mint-voucher-policy-id',
+              scriptHash: ACTIVE_VOUCHER_POLICY_ID,
             },
             mintTransferEscrowShard: {
               scriptHash: 'mint-transfer-escrow-shard-policy-id',

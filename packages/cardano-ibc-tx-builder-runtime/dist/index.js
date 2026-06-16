@@ -27,21 +27,21 @@ const MAX_SAFE_COST_MODEL_VALUE = Number.MAX_SAFE_INTEGER;
 const PROTOCOL_PARAMETERS_MAX_ATTEMPTS = 5;
 const PROTOCOL_PARAMETERS_BASE_DELAY_MS = 1000;
 const TRANSIENT_STARTUP_ERROR_MARKERS = [
-    'timeoutexception',
-    'timeout',
-    'timed out',
-    'etimedout',
-    'econnreset',
-    'econnrefused',
-    'requesterror',
-    'request error',
-    'transport error',
-    'kupmioserror',
-    'socket hang up',
-    'network error',
-    'fetch failed',
+    "timeoutexception",
+    "timeout",
+    "timed out",
+    "etimedout",
+    "econnreset",
+    "econnrefused",
+    "requesterror",
+    "request error",
+    "transport error",
+    "kupmioserror",
+    "socket hang up",
+    "network error",
+    "fetch failed",
 ];
-const LUCID_NETWORKS = ['Mainnet', 'Preprod', 'Preview', 'Custom'];
+const LUCID_NETWORKS = ["Mainnet", "Preprod", "Preview", "Custom"];
 function defaultLogger(scope) {
     return {
         log: (...args) => console.log(`[${scope}]`, ...args),
@@ -59,18 +59,18 @@ function elapsedMs(start) {
 function normalizeCardanoNetwork(network) {
     const normalized = network.trim().toLowerCase();
     switch (normalized) {
-        case 'mainnet':
-            return 'Mainnet';
-        case 'preprod':
-            return 'Preprod';
-        case 'preview':
-            return 'Preview';
-        case 'custom':
-        case 'devnet':
-        case 'cardano-devnet':
-            return 'Custom';
+        case "mainnet":
+            return "Mainnet";
+        case "preprod":
+            return "Preprod";
+        case "preview":
+            return "Preview";
+        case "custom":
+        case "devnet":
+        case "cardano-devnet":
+            return "Custom";
         default:
-            throw new Error(`Unsupported Cardano network "${network}" in bridge manifest. Expected one of ${LUCID_NETWORKS.join(', ')}.`);
+            throw new Error(`Unsupported Cardano network "${network}" in bridge manifest. Expected one of ${LUCID_NETWORKS.join(", ")}.`);
     }
 }
 async function timed(logger, scope, label, operation) {
@@ -86,11 +86,18 @@ async function timed(logger, scope, label, operation) {
     }
 }
 function describeFetchFailure(error) {
-    const cause = error instanceof Error ? error.cause : undefined;
-    const causeRecord = typeof cause === 'object' && cause !== null ? cause : undefined;
-    const code = typeof causeRecord?.code === 'string' ? causeRecord.code : undefined;
-    const address = typeof causeRecord?.address === 'string' ? causeRecord.address : undefined;
-    const port = typeof causeRecord?.port === 'string' || typeof causeRecord?.port === 'number' ? String(causeRecord.port) : undefined;
+    const cause = error instanceof Error
+        ? error.cause
+        : undefined;
+    const causeRecord = typeof cause === "object" && cause !== null
+        ? cause
+        : undefined;
+    const code = typeof causeRecord?.code === "string" ? causeRecord.code : undefined;
+    const address = typeof causeRecord?.address === "string" ? causeRecord.address : undefined;
+    const port = typeof causeRecord?.port === "string" ||
+        typeof causeRecord?.port === "number"
+        ? String(causeRecord.port)
+        : undefined;
     const causeMessage = cause instanceof Error ? cause.message : undefined;
     if (code && address && port) {
         return `${code} while connecting to ${address}:${port}`;
@@ -119,6 +126,141 @@ function mapValidator(validator) {
         refUtxo: mapRefUtxo(validator.ref_utxo),
     };
 }
+const VOUCHER_COMPATIBILITY_PROTOCOL = {
+    compatibleBridgeVersion: 1,
+    voucherAssetNameVersion: 1,
+    redeemerVersion: 1,
+    packetDataEncodingVersion: 1,
+    transferDenomLogicVersion: 1,
+    channelIdDerivationVersion: 1,
+    hostStateChannelSemanticsVersion: 1,
+    traceRegistrySemanticsVersion: 1,
+    metadataFormatVersion: 1,
+};
+function requireCompatibilityNumber(value, field) {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+        throw new Error(`${field} must be a non-negative integer`);
+    }
+    return value;
+}
+function normalizeVoucherCompatibilityProfile(profile, field) {
+    if (!profile.bridge_registry_token) {
+        throw new Error(`${field}.bridge_registry_token must be present`);
+    }
+    return {
+        compatibleBridgeVersion: requireCompatibilityNumber(profile.compatible_bridge_version, `${field}.compatible_bridge_version`),
+        voucherAssetNameVersion: requireCompatibilityNumber(profile.voucher_asset_name_version, `${field}.voucher_asset_name_version`),
+        redeemerVersion: requireCompatibilityNumber(profile.redeemer_version, `${field}.redeemer_version`),
+        packetDataEncodingVersion: requireCompatibilityNumber(profile.packet_data_encoding_version, `${field}.packet_data_encoding_version`),
+        transferDenomLogicVersion: requireCompatibilityNumber(profile.transfer_denom_logic_version, `${field}.transfer_denom_logic_version`),
+        channelIdDerivationVersion: requireCompatibilityNumber(profile.channel_id_derivation_version, `${field}.channel_id_derivation_version`),
+        hostStateChannelSemanticsVersion: requireCompatibilityNumber(profile.host_state_channel_semantics_version, `${field}.host_state_channel_semantics_version`),
+        traceRegistrySemanticsVersion: requireCompatibilityNumber(profile.trace_registry_semantics_version, `${field}.trace_registry_semantics_version`),
+        metadataFormatVersion: requireCompatibilityNumber(profile.metadata_format_version, `${field}.metadata_format_version`),
+        bridgeRegistryToken: {
+            policyId: profile.bridge_registry_token.policy_id ?? "",
+            name: profile.bridge_registry_token.token_name ?? "",
+        },
+        traceRegistryId: profile.trace_registry_id ?? "",
+    };
+}
+function voucherCompatibilityFromManifestEntry(entry, field) {
+    if (!entry || typeof entry === "string" || !entry.compatibility) {
+        return undefined;
+    }
+    return normalizeVoucherCompatibilityProfile(entry.compatibility, `${field}.compatibility`);
+}
+function expectedVoucherCompatibilityProfile(manifest) {
+    if (!manifest.bridge_registry || !manifest.trace_registry) {
+        return undefined;
+    }
+    return {
+        ...VOUCHER_COMPATIBILITY_PROTOCOL,
+        bridgeRegistryToken: {
+            policyId: manifest.bridge_registry.policy_id,
+            name: manifest.bridge_registry.token_name,
+        },
+        traceRegistryId: [
+            manifest.trace_registry.address,
+            manifest.trace_registry.shard_policy_id,
+            manifest.trace_registry.directory.policy_id,
+            manifest.trace_registry.directory.token_name,
+        ].join(":"),
+    };
+}
+function stableJson(value) {
+    if (Array.isArray(value)) {
+        return `[${value.map(stableJson).join(",")}]`;
+    }
+    if (value && typeof value === "object") {
+        return `{${Object.entries(value)
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`)
+            .join(",")}}`;
+    }
+    return JSON.stringify(value);
+}
+function registryEntryFromManifestEntry(entry, field = "voucher_policy_registry entry") {
+    if (!entry) {
+        return null;
+    }
+    if (typeof entry === "string") {
+        return { scriptHash: entry.toLowerCase() };
+    }
+    const policyId = entry.policy_id ?? entry.policyId ?? entry.script_hash ?? entry.scriptHash;
+    if (!policyId) {
+        return null;
+    }
+    return {
+        scriptHash: policyId.toLowerCase(),
+        address: entry.address,
+        refUtxo: entry.ref_utxo ? mapRefUtxo(entry.ref_utxo) : entry.refUtxo,
+        compatibility: voucherCompatibilityFromManifestEntry(entry, field),
+    };
+}
+function uniqueRegistryEntries(entries, activePolicyId) {
+    const seen = new Set([activePolicyId]);
+    const normalized = [];
+    for (const entry of entries) {
+        if (!entry || seen.has(entry.scriptHash)) {
+            continue;
+        }
+        seen.add(entry.scriptHash);
+        normalized.push(entry);
+    }
+    return normalized;
+}
+function mapVoucherPolicyRegistry(manifest) {
+    const active = registryEntryFromManifestEntry(manifest.voucher_policy_registry?.active, "voucher_policy_registry.active") ??
+        mapValidator(manifest.validators.mint_voucher);
+    const legacy = uniqueRegistryEntries(manifest.voucher_policy_registry?.legacy?.map((entry, index) => registryEntryFromManifestEntry(entry, `voucher_policy_registry.legacy[${index}]`)) ?? [], active.scriptHash);
+    const expectedCompatibility = expectedVoucherCompatibilityProfile(manifest);
+    const activeCompatibility = active.compatibility ?? expectedCompatibility;
+    if (expectedCompatibility &&
+        activeCompatibility &&
+        stableJson(activeCompatibility) !== stableJson(expectedCompatibility)) {
+        throw new Error("Active voucher policy compatibility does not match this bridge manifest");
+    }
+    if (legacy.length > 0 && !expectedCompatibility) {
+        throw new Error("Bridge manifest legacy voucher policies require bridge_registry and trace_registry");
+    }
+    for (const entry of legacy) {
+        if (!entry.compatibility) {
+            throw new Error(`Legacy voucher policy ${entry.scriptHash} is missing compatibility`);
+        }
+        if (!expectedCompatibility ||
+            stableJson(entry.compatibility) !== stableJson(expectedCompatibility)) {
+            throw new Error(`Legacy voucher policy ${entry.scriptHash} is not compatible with this bridge manifest`);
+        }
+    }
+    return {
+        active: {
+            ...active,
+            ...(activeCompatibility ? { compatibility: activeCompatibility } : {}),
+        },
+        legacy,
+    };
+}
 function normalizeBridgeManifest(manifest) {
     return {
         bridgeManifest: manifest,
@@ -136,42 +278,63 @@ function normalizeBridgeManifest(manifest) {
                     ...mapValidator(manifest.validators.spend_channel),
                     refValidator: {
                         acknowledge_packet: {
-                            scriptHash: manifest.validators.spend_channel.ref_validator.acknowledge_packet.script_hash,
-                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.acknowledge_packet.ref_utxo),
+                            scriptHash: manifest.validators.spend_channel.ref_validator
+                                .acknowledge_packet.script_hash,
+                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator
+                                .acknowledge_packet.ref_utxo),
                         },
                         chan_close_confirm: {
-                            scriptHash: manifest.validators.spend_channel.ref_validator.chan_close_confirm.script_hash,
-                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.chan_close_confirm.ref_utxo),
+                            scriptHash: manifest.validators.spend_channel.ref_validator
+                                .chan_close_confirm.script_hash,
+                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator
+                                .chan_close_confirm.ref_utxo),
                         },
                         chan_close_init: {
-                            scriptHash: manifest.validators.spend_channel.ref_validator.chan_close_init.script_hash,
-                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.chan_close_init.ref_utxo),
+                            scriptHash: manifest.validators.spend_channel.ref_validator.chan_close_init
+                                .script_hash,
+                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.chan_close_init
+                                .ref_utxo),
                         },
                         chan_open_ack: {
-                            scriptHash: manifest.validators.spend_channel.ref_validator.chan_open_ack.script_hash,
-                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.chan_open_ack.ref_utxo),
+                            scriptHash: manifest.validators.spend_channel.ref_validator.chan_open_ack
+                                .script_hash,
+                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.chan_open_ack
+                                .ref_utxo),
                         },
                         chan_open_confirm: {
-                            scriptHash: manifest.validators.spend_channel.ref_validator.chan_open_confirm.script_hash,
-                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.chan_open_confirm.ref_utxo),
+                            scriptHash: manifest.validators.spend_channel.ref_validator
+                                .chan_open_confirm.script_hash,
+                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator
+                                .chan_open_confirm.ref_utxo),
                         },
                         recv_packet: {
-                            scriptHash: manifest.validators.spend_channel.ref_validator.recv_packet.script_hash,
-                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.recv_packet.ref_utxo),
+                            scriptHash: manifest.validators.spend_channel.ref_validator.recv_packet
+                                .script_hash,
+                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.recv_packet
+                                .ref_utxo),
                         },
                         send_packet: {
-                            scriptHash: manifest.validators.spend_channel.ref_validator.send_packet.script_hash,
-                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.send_packet.ref_utxo),
+                            scriptHash: manifest.validators.spend_channel.ref_validator.send_packet
+                                .script_hash,
+                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.send_packet
+                                .ref_utxo),
                         },
                         timeout_packet: {
-                            scriptHash: manifest.validators.spend_channel.ref_validator.timeout_packet.script_hash,
-                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.timeout_packet.ref_utxo),
+                            scriptHash: manifest.validators.spend_channel.ref_validator.timeout_packet
+                                .script_hash,
+                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.timeout_packet
+                                .ref_utxo),
                         },
                     },
                 },
                 ...(manifest.validators.spend_trace_registry
                     ? {
                         spendTraceRegistry: mapValidator(manifest.validators.spend_trace_registry),
+                    }
+                    : {}),
+                ...(manifest.validators.bridge_registry
+                    ? {
+                        bridgeRegistry: mapValidator(manifest.validators.bridge_registry),
                     }
                     : {}),
                 spendTransferModule: mapValidator(manifest.validators.spend_transfer_module),
@@ -200,21 +363,35 @@ function normalizeBridgeManifest(manifest) {
                     },
                 }
                 : {}),
+            ...(manifest.bridge_registry
+                ? {
+                    bridgeRegistry: {
+                        policyId: manifest.bridge_registry.policy_id,
+                        tokenName: manifest.bridge_registry.token_name,
+                        address: manifest.bridge_registry.address,
+                        refUtxo: mapRefUtxo(manifest.bridge_registry.ref_utxo),
+                        governanceKeyHash: manifest.bridge_registry.governance_key_hash,
+                    },
+                }
+                : {}),
+            voucherPolicyRegistry: mapVoucherPolicyRegistry(manifest),
         },
     };
 }
 function splitKupmiosUrl(kupmiosUrl) {
-    const [kupoEndpoint, ogmiosEndpoint] = kupmiosUrl.split(',').map((value) => value.trim());
+    const [kupoEndpoint, ogmiosEndpoint] = kupmiosUrl
+        .split(",")
+        .map((value) => value.trim());
     if (!kupoEndpoint || !ogmiosEndpoint) {
         throw new Error('kupmiosUrl must be "<kupoEndpoint>,<ogmiosEndpoint>"');
     }
     return { kupoEndpoint, ogmiosEndpoint };
 }
 function isDemeterHost(hostname) {
-    return hostname.endsWith('.dmtr.host') || hostname.endsWith('.demeter.run');
+    return hostname.endsWith(".dmtr.host") || hostname.endsWith(".demeter.run");
 }
 function normalizeDemeterOgmiosEndpoint(ogmiosEndpoint, headers) {
-    const apiKey = headers?.ogmiosHeader?.['dmtr-api-key']?.trim();
+    const apiKey = headers?.ogmiosHeader?.["dmtr-api-key"]?.trim();
     if (!apiKey) {
         return { ogmiosEndpoint, headers };
     }
@@ -231,7 +408,7 @@ function normalizeDemeterOgmiosEndpoint(ogmiosEndpoint, headers) {
         // header can leave POST requests waiting until the provider timeout.
         delete nextHeaders.ogmiosHeader;
         return {
-            ogmiosEndpoint: parsed.toString().replace(/\/$/, ''),
+            ogmiosEndpoint: parsed.toString().replace(/\/$/, ""),
             headers: nextHeaders.kupoHeader || nextHeaders.ogmiosHeader
                 ? nextHeaders
                 : undefined,
@@ -242,13 +419,15 @@ function normalizeDemeterOgmiosEndpoint(ogmiosEndpoint, headers) {
     }
 }
 function parseRequiredString(value, fieldName) {
-    if (typeof value !== 'string' || value.trim().length === 0) {
+    if (typeof value !== "string" || value.trim().length === 0) {
         throw new Error(`Invalid argument: "${fieldName}" is required`);
     }
     return value.trim();
 }
 function parseBigIntValue(value, fieldName) {
-    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'bigint') {
+    if (typeof value !== "string" &&
+        typeof value !== "number" &&
+        typeof value !== "bigint") {
         throw new Error(`Invalid argument: "${fieldName}" must be a bigint-compatible value`);
     }
     try {
@@ -259,40 +438,40 @@ function parseBigIntValue(value, fieldName) {
     }
 }
 function parseSendPacketOperator(body) {
-    const sourcePort = parseRequiredString(body.source_port, 'source_port');
-    const sourceChannel = parseRequiredString(body.source_channel, 'source_channel');
-    if (!sourceChannel.startsWith('channel-')) {
+    const sourcePort = parseRequiredString(body.source_port, "source_port");
+    const sourceChannel = parseRequiredString(body.source_channel, "source_channel");
+    if (!sourceChannel.startsWith("channel-")) {
         throw new Error('Invalid argument: "source_channel" must start with "channel-"');
     }
     return {
         sourcePort,
         sourceChannel,
         token: {
-            denom: parseRequiredString(body.token?.denom, 'token.denom'),
-            amount: parseBigIntValue(body.token?.amount, 'token.amount'),
+            denom: parseRequiredString(body.token?.denom, "token.denom"),
+            amount: parseBigIntValue(body.token?.amount, "token.amount"),
         },
-        sender: parseRequiredString(body.sender, 'sender'),
-        receiver: parseRequiredString(body.receiver, 'receiver'),
-        signer: parseRequiredString(body.signer, 'signer'),
+        sender: parseRequiredString(body.sender, "sender"),
+        receiver: parseRequiredString(body.receiver, "receiver"),
+        signer: parseRequiredString(body.signer, "signer"),
         timeoutHeight: {
-            revisionNumber: parseBigIntValue(body.timeout_height?.revision_number ?? '0', 'timeout_height.revision_number'),
-            revisionHeight: parseBigIntValue(body.timeout_height?.revision_height ?? '0', 'timeout_height.revision_height'),
+            revisionNumber: parseBigIntValue(body.timeout_height?.revision_number ?? "0", "timeout_height.revision_number"),
+            revisionHeight: parseBigIntValue(body.timeout_height?.revision_height ?? "0", "timeout_height.revision_height"),
         },
-        timeoutTimestamp: parseBigIntValue(body.timeout_timestamp ?? '0', 'timeout_timestamp'),
-        memo: body.memo ?? '',
+        timeoutTimestamp: parseBigIntValue(body.timeout_timestamp ?? "0", "timeout_timestamp"),
+        memo: body.memo ?? "",
     };
 }
 function parseOptionalString(value, fieldName) {
-    if (value === undefined || value === null || value === '') {
+    if (value === undefined || value === null || value === "") {
         return undefined;
     }
-    if (typeof value !== 'string') {
+    if (typeof value !== "string") {
         throw new Error(`Invalid argument: "${fieldName}" must be a string`);
     }
     return value;
 }
 function parseWalletUtxoAssets(value, fieldName) {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
         throw new Error(`Invalid argument: "${fieldName}" must be an asset map`);
     }
     const assets = {};
@@ -309,7 +488,7 @@ function parseWalletUtxos(value) {
         throw new Error('Invalid argument: "wallet_utxos" must be an array');
     }
     return value.map((utxo, index) => {
-        if (typeof utxo !== 'object' || utxo === null || Array.isArray(utxo)) {
+        if (typeof utxo !== "object" || utxo === null || Array.isArray(utxo)) {
             throw new Error(`Invalid argument: "wallet_utxos[${index}]" must be an object`);
         }
         const item = utxo;
@@ -330,9 +509,9 @@ function parseWalletUtxos(value) {
 }
 function convertHex2String(value) {
     if (!value) {
-        return '';
+        return "";
     }
-    return Buffer.from(value, 'hex').toString();
+    return Buffer.from(value, "hex").toString();
 }
 function parseConnectionSequence(connectionId) {
     const match = /^connection-(\d+)$/.exec(connectionId);
@@ -352,11 +531,14 @@ function commitPacket(packet) {
     let buffer = uint64ToBigEndian(packet.timeout_timestamp);
     buffer = appendBuffer(buffer, uint64ToBigEndian(packet.timeout_height.revisionNumber));
     buffer = appendBuffer(buffer, uint64ToBigEndian(packet.timeout_height.revisionHeight));
-    const dataHash = crypto_1.default.createHash('sha256').update(Buffer.from(packet.data, 'hex')).digest('hex');
+    const dataHash = crypto_1.default
+        .createHash("sha256")
+        .update(Buffer.from(packet.data, "hex"))
+        .digest("hex");
     return crypto_1.default
-        .createHash('sha256')
-        .update(Buffer.from(`${Buffer.from(buffer).toString('hex')}${dataHash}`, 'hex'))
-        .digest('hex');
+        .createHash("sha256")
+        .update(Buffer.from(`${Buffer.from(buffer).toString("hex")}${dataHash}`, "hex"))
+        .digest("hex");
 }
 function uint64ToBigEndian(value) {
     const buffer = new ArrayBuffer(8);
@@ -374,18 +556,19 @@ function ogmiosRequest(ogmiosUrl, methodName, args, headers) {
     return new Promise(async (resolve, reject) => {
         const client = new ws_1.default(ogmiosUrl, headers ? { headers } : undefined);
         const cleanup = () => {
-            if (client.readyState === ws_1.default.OPEN || client.readyState === ws_1.default.CONNECTING) {
+            if (client.readyState === ws_1.default.OPEN ||
+                client.readyState === ws_1.default.CONNECTING) {
                 client.close();
             }
         };
-        client.once('open', () => {
+        client.once("open", () => {
             client.send(JSON.stringify({
-                jsonrpc: '2.0',
+                jsonrpc: "2.0",
                 method: methodName,
                 params: args,
             }));
         });
-        client.once('message', (rawMessage) => {
+        client.once("message", (rawMessage) => {
             try {
                 const payload = JSON.parse(rawMessage.toString());
                 if (payload?.error) {
@@ -401,23 +584,23 @@ function ogmiosRequest(ogmiosUrl, methodName, args, headers) {
                 cleanup();
             }
         });
-        client.once('error', (error) => {
+        client.once("error", (error) => {
             cleanup();
             reject(error);
         });
     });
 }
 async function querySystemStart(ogmiosUrl, headers) {
-    const systemStart = await ogmiosRequest(ogmiosUrl, 'queryNetwork/startTime', {}, headers);
+    const systemStart = await ogmiosRequest(ogmiosUrl, "queryNetwork/startTime", {}, headers);
     return Date.parse(systemStart);
 }
 async function queryNetworkTipPoint(ogmiosUrl, headers) {
-    const result = await ogmiosRequest(ogmiosUrl, 'queryNetwork/tip', {}, headers);
-    if (result === 'origin') {
-        return 'origin';
+    const result = await ogmiosRequest(ogmiosUrl, "queryNetwork/tip", {}, headers);
+    if (result === "origin") {
+        return "origin";
     }
-    if (typeof result?.slot !== 'number' || typeof result?.id !== 'string') {
-        throw new Error('Ogmios queryNetwork/tip returned an invalid point');
+    if (typeof result?.slot !== "number" || typeof result?.id !== "string") {
+        throw new Error("Ogmios queryNetwork/tip returned an invalid point");
     }
     return {
         slot: result.slot,
@@ -426,14 +609,14 @@ async function queryNetworkTipPoint(ogmiosUrl, headers) {
 }
 async function submitSignedTxCbor(ogmiosUrl, signedTxCbor, headers, fetchImpl) {
     const response = await fetchImpl(ogmiosUrl, {
-        method: 'POST',
+        method: "POST",
         headers: {
-            'content-type': 'application/json',
+            "content-type": "application/json",
             ...(headers ?? {}),
         },
         body: JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'submitTransaction',
+            jsonrpc: "2.0",
+            method: "submitTransaction",
             params: {
                 transaction: { cbor: signedTxCbor },
             },
@@ -455,20 +638,20 @@ async function submitSignedTxCbor(ogmiosUrl, signedTxCbor, headers, fetchImpl) {
         throw new Error(`Ogmios submitTransaction rejected: ${payload.error.message ?? JSON.stringify(payload.error)}`);
     }
     const txHash = payload?.result?.transaction?.id;
-    if (typeof txHash !== 'string' || txHash.trim().length === 0) {
+    if (typeof txHash !== "string" || txHash.trim().length === 0) {
         throw new Error(`Ogmios submitTransaction returned an invalid response: ${responseText.slice(0, 1000)}`);
     }
     return txHash;
 }
 function toSafeCostModelInteger(value) {
     let parsedValue;
-    if (typeof value === 'number') {
+    if (typeof value === "number") {
         parsedValue = value;
     }
-    else if (typeof value === 'bigint') {
+    else if (typeof value === "bigint") {
         parsedValue = Number(value);
     }
-    else if (typeof value === 'string') {
+    else if (typeof value === "string") {
         parsedValue = Number(value);
     }
     else {
@@ -481,7 +664,9 @@ function toSafeCostModelInteger(value) {
         parsedValue = Math.trunc(parsedValue);
     }
     if (!Number.isSafeInteger(parsedValue)) {
-        return parsedValue > 0 ? MAX_SAFE_COST_MODEL_VALUE : -MAX_SAFE_COST_MODEL_VALUE;
+        return parsedValue > 0
+            ? MAX_SAFE_COST_MODEL_VALUE
+            : -MAX_SAFE_COST_MODEL_VALUE;
     }
     return parsedValue;
 }
@@ -506,7 +691,7 @@ function collectErrorSignals(error) {
     const signals = [];
     const visited = new Set();
     const pushSignal = (value) => {
-        if (typeof value !== 'string') {
+        if (typeof value !== "string") {
             return;
         }
         const normalized = value.trim();
@@ -519,18 +704,18 @@ function collectErrorSignals(error) {
             return;
         }
         visited.add(value);
-        if (typeof value === 'string') {
+        if (typeof value === "string") {
             pushSignal(value);
             return;
         }
         if (value instanceof Error) {
             pushSignal(value.name);
             pushSignal(value.message);
-            if (typeof value.stack === 'string') {
-                pushSignal(value.stack.split('\n')[0]?.trim());
+            if (typeof value.stack === "string") {
+                pushSignal(value.stack.split("\n")[0]?.trim());
             }
         }
-        if (typeof value === 'object') {
+        if (typeof value === "object") {
             const record = value;
             pushSignal(record.message);
             pushSignal(record.name);
@@ -562,23 +747,24 @@ async function retryWithBackoff(operation) {
             return await operation();
         }
         catch (error) {
-            if (!isTransientStartupError(error) || attempt >= PROTOCOL_PARAMETERS_MAX_ATTEMPTS) {
+            if (!isTransientStartupError(error) ||
+                attempt >= PROTOCOL_PARAMETERS_MAX_ATTEMPTS) {
                 throw error;
             }
             const retryDelayMs = computeJitteredBackoffDelayMs(attempt);
             await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
         }
     }
-    throw new Error('Kupmios protocol parameters fetch failed');
+    throw new Error("Kupmios protocol parameters fetch failed");
 }
 async function createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork, logger, headers) {
-    const Lucid = await timed(logger, '[context]', 'import lucid', () => eval(`import('@lucid-evolution/lucid')`));
+    const Lucid = await timed(logger, "[context]", "import lucid", () => eval(`import('@lucid-evolution/lucid')`));
     const provider = new Lucid.Kupmios(kupoEndpoint, ogmiosEndpoint, headers);
-    const protocolParameters = sanitizeProtocolParameters(await timed(logger, '[context]', 'fetch protocol parameters', () => retryWithBackoff(() => provider.getProtocolParameters())));
-    const lucid = await timed(logger, '[context]', 'create lucid runtime', () => Lucid.Lucid(provider, cardanoNetwork, {
+    const protocolParameters = sanitizeProtocolParameters(await timed(logger, "[context]", "fetch protocol parameters", () => retryWithBackoff(() => provider.getProtocolParameters())));
+    const lucid = await timed(logger, "[context]", "create lucid runtime", () => Lucid.Lucid(provider, cardanoNetwork, {
         presetProtocolParameters: protocolParameters,
     }));
-    const chainZeroTime = await timed(logger, '[context]', 'query system start', () => querySystemStart(ogmiosEndpoint, headers?.ogmiosHeader));
+    const chainZeroTime = await timed(logger, "[context]", "query system start", () => querySystemStart(ogmiosEndpoint, headers?.ogmiosHeader));
     const slotConfig = Lucid.SLOT_CONFIG_NETWORK?.[cardanoNetwork];
     if (!slotConfig) {
         throw new Error(`Lucid does not expose a slot configuration for Cardano network ${cardanoNetwork}`);
@@ -601,15 +787,17 @@ class RuntimeKupoService {
     constructor(lucidService, deployment) {
         this.lucidService = lucidService;
         this.clientTokenPrefix = deployment.validators.mintClientStt.scriptHash;
-        this.connectionTokenPrefix = deployment.validators.mintConnectionStt.scriptHash;
+        this.connectionTokenPrefix =
+            deployment.validators.mintConnectionStt.scriptHash;
         this.channelTokenPrefix = deployment.validators.mintChannelStt.scriptHash;
-        this.clientAddress = deployment.validators.spendClient.address ?? '';
-        this.connectionAddress = deployment.validators.spendConnection.address ?? '';
-        this.channelAddress = deployment.validators.spendChannel.address ?? '';
+        this.clientAddress = deployment.validators.spendClient.address ?? "";
+        this.connectionAddress =
+            deployment.validators.spendConnection.address ?? "";
+        this.channelAddress = deployment.validators.spendChannel.address ?? "";
     }
     getMatchingAssetNames(utxo, policyId) {
         return Object.keys(utxo.assets)
-            .filter((assetId) => assetId !== 'lovelace')
+            .filter((assetId) => assetId !== "lovelace")
             .filter((assetId) => assetId.startsWith(policyId))
             .map((assetId) => assetId.slice(policyId.length));
     }
@@ -649,13 +837,13 @@ function utxoRef(utxo) {
 }
 function transferEscrowShardTokenName(channelId, packetDenom) {
     return Buffer.from((0, blake2b_1.blake2b)(Buffer.concat([
-        Buffer.from('transfer-escrow', 'utf8'),
-        Buffer.from(channelId, 'hex'),
-        Buffer.from(packetDenom, 'hex'),
-    ]), { dkLen: 28 })).toString('hex');
+        Buffer.from("transfer-escrow", "utf8"),
+        Buffer.from(channelId, "hex"),
+        Buffer.from(packetDenom, "hex"),
+    ]), { dkLen: 28 })).toString("hex");
 }
 async function findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount) {
-    const encodedDatum = await context.lucidService.encode({ channel_id: channelId, denom: packetDenom }, 'transferEscrow');
+    const encodedDatum = await context.lucidService.encode({ channel_id: channelId, denom: packetDenom }, "transferEscrow");
     const shardTokenUnit = context.deployment.validators.mintTransferEscrowShard.scriptHash +
         transferEscrowShardTokenName(channelId, packetDenom);
     let utxo;
@@ -667,8 +855,9 @@ async function findTransferEscrowShard(context, channelId, packetDenom, denomTok
     }
     const canonicalUtxo = utxo?.datum === encodedDatum &&
         (utxo.assets[shardTokenUnit] ?? 0n) === 1n &&
-        Object.keys(utxo.assets ?? {}).every((unit) => unit === 'lovelace' || unit === denomToken || unit === shardTokenUnit) &&
-        (requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
+        Object.keys(utxo.assets ?? {}).every((unit) => unit === "lovelace" || unit === denomToken || unit === shardTokenUnit) &&
+        (requiredAmount === undefined ||
+            (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
         ? utxo
         : undefined;
     return { utxo: canonicalUtxo, encodedDatum, shardTokenUnit };
@@ -682,9 +871,9 @@ async function ensureTreeAlignedForRoot(context, onChainRoot) {
 async function buildHostStateUpdateForHandlePacket(context, inputChannelDatum, outputChannelDatum, channelIdForRoot) {
     const hostStateUtxo = await context.lucidService.findUtxoAtHostStateNFT();
     if (!hostStateUtxo.datum) {
-        throw new Error('HostState UTXO has no datum');
+        throw new Error("HostState UTXO has no datum");
     }
-    const hostStateDatum = await context.lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
+    const hostStateDatum = await context.lucidService.decodeDatum(hostStateUtxo.datum, "host_state");
     await ensureTreeAlignedForRoot(context, hostStateDatum.state.ibc_state_root);
     const portId = convertHex2String(inputChannelDatum.port);
     const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings, packetCommitmentSiblings, packetReceiptSiblings, packetAcknowledgementSiblings, commit, } = await (0, ibcStateRoot_1.computeRootWithHandlePacketUpdate)(hostStateDatum.state.ibc_state_root, portId, channelIdForRoot, inputChannelDatum, outputChannelDatum, context.lucidService.LucidImporter);
@@ -710,22 +899,24 @@ async function buildHostStateUpdateForHandlePacket(context, inputChannelDatum, o
     };
     return {
         hostStateUtxo,
-        encodedHostStateRedeemer: await context.lucidService.encode(hostStateRedeemer, 'host_state_redeemer'),
-        encodedUpdatedHostStateDatum: await context.lucidService.encode(updatedHostStateDatum, 'host_state'),
+        encodedHostStateRedeemer: await context.lucidService.encode(hostStateRedeemer, "host_state_redeemer"),
+        encodedUpdatedHostStateDatum: await context.lucidService.encode(updatedHostStateDatum, "host_state"),
         newRoot,
         commit,
     };
 }
 async function computeTxValidityWindow(context) {
     const tip = await queryNetworkTipPoint(context.ogmiosEndpoint, context.kupmiosHeaders?.ogmiosHeader);
-    const currentSlot = tip === 'origin' ? 0 : tip.slot;
+    const currentSlot = tip === "origin" ? 0 : tip.slot;
     const ttlSlots = Math.max(1, Math.ceil(TRANSACTION_TIME_TO_LIVE / 1000));
     const validToSlot = currentSlot + ttlSlots;
     const slotConfig = context.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[context.cardanoNetwork];
     if (!slotConfig || slotConfig.slotLength <= 0) {
         throw new Error(`Invalid Cardano slot configuration for network ${context.cardanoNetwork}`);
     }
-    const validToTime = slotConfig.zeroTime + (validToSlot + 1 - slotConfig.zeroSlot) * slotConfig.slotLength - 1;
+    const validToTime = slotConfig.zeroTime +
+        (validToSlot + 1 - slotConfig.zeroSlot) * slotConfig.slotLength -
+        1;
     return {
         currentSlot,
         validToSlot,
@@ -733,7 +924,7 @@ async function computeTxValidityWindow(context) {
     };
 }
 function createTxBuilderRuntime(config) {
-    const logger = config.logger ?? defaultLogger('txBuilderRuntime');
+    const logger = config.logger ?? defaultLogger("txBuilderRuntime");
     let cachedContextPromise = null;
     const transferBuildQueue = new asyncMutex_1.AsyncMutex();
     let transferBuildCounter = 0;
@@ -748,7 +939,7 @@ function createTxBuilderRuntime(config) {
         let response;
         try {
             response = await fetchImpl(config.bridgeManifestUrl, {
-                cache: 'no-store',
+                cache: "no-store",
             });
         }
         catch (error) {
@@ -761,18 +952,18 @@ function createTxBuilderRuntime(config) {
     }
     async function createContext() {
         const contextStartedAt = startTimer();
-        logger.log('[context] initializing shared Cardano tx-builder runtime context');
-        const manifest = await timed(logger, '[context]', 'load bridge manifest', getBridgeManifest);
+        logger.log("[context] initializing shared Cardano tx-builder runtime context");
+        const manifest = await timed(logger, "[context]", "load bridge manifest", getBridgeManifest);
         const { deployment, bridgeManifest } = normalizeBridgeManifest(manifest);
         const { kupoEndpoint, ogmiosEndpoint: rawOgmiosEndpoint } = splitKupmiosUrl(config.kupmiosUrl);
         const { ogmiosEndpoint, headers: kupmiosHeaders } = normalizeDemeterOgmiosEndpoint(rawOgmiosEndpoint, config.kupmiosHeaders);
         const cardanoNetwork = normalizeCardanoNetwork(bridgeManifest.cardano.network);
         const { lucidImporter, lucid } = await createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork, logger, kupmiosHeaders);
         const lucidService = new lucidIbcAdapter_1.LucidIbcAdapter(lucidImporter, lucid, deployment);
-        await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
+        await timed(logger, "[context]", "initialize lucid adapter", () => lucidService.onModuleInit());
         const kupoService = new RuntimeKupoService(lucidService, deployment);
         (0, ibcStateRoot_1.initTreeServices)(kupoService, lucidService);
-        await timed(logger, '[context]', 'rebuild IBC state tree', () => (0, ibcStateRoot_1.rebuildTreeFromChain)(kupoService, lucidService));
+        await timed(logger, "[context]", "rebuild IBC state tree", () => (0, ibcStateRoot_1.rebuildTreeFromChain)(kupoService, lucidService));
         logger.log(`[context] initialized shared Cardano tx-builder runtime context in ${elapsedMs(contextStartedAt)}`);
         return {
             deployment,
@@ -802,7 +993,7 @@ function createTxBuilderRuntime(config) {
     async function buildUnsignedTransferUnsafe(body, scope) {
         const buildStartedAt = startTimer();
         logger.log(`${scope} preparing unsigned Cardano transfer`);
-        const context = await timed(logger, scope, 'get runtime context', getContext);
+        const context = await timed(logger, scope, "get runtime context", getContext);
         const sendPacketOperator = parseSendPacketOperator(body);
         const providedWalletUtxos = parseWalletUtxos(body.wallet_utxos);
         logger.log(`${scope} parsed request for ${sendPacketOperator.signer}; provided wallet UTxOs=${providedWalletUtxos.length}`);
@@ -814,7 +1005,10 @@ function createTxBuilderRuntime(config) {
                 // Browser wallet UTxOs are hints; keep only refs still live according to the node.
                 const liveProvidedWalletUtxos = providedWalletUtxosForAddress.filter((utxo) => providerRefs.has(utxoRef(utxo)));
                 const staleProvidedCount = providedWalletUtxosForAddress.length - liveProvidedWalletUtxos.length;
-                const mergedWalletUtxos = dedupeUtxos([...liveProvidedWalletUtxos, ...providerWalletUtxos]);
+                const mergedWalletUtxos = dedupeUtxos([
+                    ...liveProvidedWalletUtxos,
+                    ...providerWalletUtxos,
+                ]);
                 logger.log(`${scope} wallet UTxO live validation for ${address}: provided=${providedWalletUtxosForAddress.length}, stale_provided=${staleProvidedCount}, provider=${providerWalletUtxos.length}, merged=${mergedWalletUtxos.length}`);
                 return mergedWalletUtxos;
             }
@@ -829,33 +1023,33 @@ function createTxBuilderRuntime(config) {
             }
             return context.lucidService.findUtxoAtWithUnit(address, unit);
         };
-        const initialWalletUtxos = await timed(logger, scope, 'load initial wallet UTxOs', () => getWalletUtxos(sendPacketOperator.signer, LOOKUP_RETRY_OPTIONS));
+        const initialWalletUtxos = await timed(logger, scope, "load initial wallet UTxOs", () => getWalletUtxos(sendPacketOperator.signer, LOOKUP_RETRY_OPTIONS));
         if (initialWalletUtxos.length === 0) {
             throw new Error(`sendPacketBuilder failed: no spendable UTxOs found for ${sendPacketOperator.signer}`);
         }
         logger.log(`${scope} initial wallet UTxOs selected=${initialWalletUtxos.length}`);
         context.lucidService.selectWalletFromAddress(sendPacketOperator.signer, initialWalletUtxos);
-        const { unsignedTx, walletOverride } = await timed(logger, scope, 'build send_packet tx skeleton', () => (0, tx_builder_1.buildUnsignedSendPacketTx)(sendPacketOperator, {
+        const { unsignedTx, walletOverride } = await timed(logger, scope, "build send_packet tx skeleton", () => (0, tx_builder_1.buildUnsignedSendPacketTx)(sendPacketOperator, {
             loadContext: async (operator) => {
                 const loadContextStartedAt = startTimer();
                 try {
-                    const channelSequence = operator.sourceChannel.replace('channel-', '');
+                    const channelSequence = operator.sourceChannel.replace("channel-", "");
                     const [mintChannelPolicyId, channelTokenName] = context.lucidService.getChannelTokenUnit(BigInt(channelSequence));
                     const channelTokenUnit = mintChannelPolicyId + channelTokenName;
-                    const channelUtxo = await timed(logger, scope, 'load channel UTxO', () => context.lucidService.findUtxoByUnit(channelTokenUnit));
-                    const channelDatum = await timed(logger, scope, 'decode channel datum', () => context.lucidService.decodeDatum(channelUtxo.datum, 'channel'));
+                    const channelUtxo = await timed(logger, scope, "load channel UTxO", () => context.lucidService.findUtxoByUnit(channelTokenUnit));
+                    const channelDatum = await timed(logger, scope, "decode channel datum", () => context.lucidService.decodeDatum(channelUtxo.datum, "channel"));
                     const [mintConnectionPolicyId, connectionTokenName] = context.lucidService.getConnectionTokenUnit(parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])));
                     const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
-                    const connectionUtxo = await timed(logger, scope, 'load connection UTxO', () => context.lucidService.findUtxoByUnit(connectionTokenUnit));
-                    const connectionDatum = await timed(logger, scope, 'decode connection datum', () => context.lucidService.decodeDatum(connectionUtxo.datum, 'connection'));
+                    const connectionUtxo = await timed(logger, scope, "load connection UTxO", () => context.lucidService.findUtxoByUnit(connectionTokenUnit));
+                    const connectionDatum = await timed(logger, scope, "decode connection datum", () => context.lucidService.decodeDatum(connectionUtxo.datum, "connection"));
                     const clientTokenUnit = context.lucidService.getClientTokenUnit(parseClientSequence(convertHex2String(connectionDatum.state.client_id)).toString());
-                    const clientUtxo = await timed(logger, scope, 'load client UTxO', () => context.lucidService.findUtxoByUnit(clientTokenUnit));
+                    const clientUtxo = await timed(logger, scope, "load client UTxO", () => context.lucidService.findUtxoByUnit(clientTokenUnit));
                     const transferModuleIdentifier = context.deployment.modules.transfer.identifier;
-                    const transferModuleReferenceUtxo = await timed(logger, scope, 'load transfer module reference UTxO', () => context.lucidService.findUtxoByUnit(transferModuleIdentifier));
+                    const transferModuleReferenceUtxo = await timed(logger, scope, "load transfer module reference UTxO", () => context.lucidService.findUtxoByUnit(transferModuleIdentifier));
                     const deployment = context.deployment;
                     const spendChannelAddress = deployment.validators.spendChannel.address;
                     if (!spendChannelAddress) {
-                        throw new Error('Spend channel script address is missing from deployment config');
+                        throw new Error("Spend channel script address is missing from deployment config");
                     }
                     return {
                         channelUtxo,
@@ -870,8 +1064,14 @@ function createTxBuilderRuntime(config) {
                             name: channelTokenName,
                         },
                         deployment: {
-                            sendPacketPolicyId: deployment.validators.spendChannel.refValidator.send_packet.scriptHash,
+                            sendPacketPolicyId: deployment.validators.spendChannel.refValidator.send_packet
+                                .scriptHash,
                             mintVoucherScriptHash: deployment.validators.mintVoucher.scriptHash,
+                            voucherPolicyRegistry: {
+                                active: deployment.voucherPolicyRegistry?.active.scriptHash ??
+                                    deployment.validators.mintVoucher.scriptHash,
+                                legacy: deployment.voucherPolicyRegistry?.legacy.map((entry) => entry.scriptHash) ?? [],
+                            },
                             transferEscrowShardPolicyId: deployment.validators.mintTransferEscrowShard.scriptHash,
                             spendChannelAddress,
                             transferModuleAddress: deployment.modules.transfer.address,
@@ -882,7 +1082,7 @@ function createTxBuilderRuntime(config) {
                     logger.log(`${scope} load builder context completed in ${elapsedMs(loadContextStartedAt)}`);
                 }
             },
-            buildHostStateUpdate: (inputChannelDatum, outputChannelDatum, channelIdForRoot) => timed(logger, scope, 'build host-state update', () => buildHostStateUpdateForHandlePacket(context, inputChannelDatum, outputChannelDatum, channelIdForRoot)),
+            buildHostStateUpdate: (inputChannelDatum, outputChannelDatum, channelIdForRoot) => timed(logger, scope, "build host-state update", () => buildHostStateUpdateForHandlePacket(context, inputChannelDatum, outputChannelDatum, channelIdForRoot)),
             resolveIbcDenomHash: async (denomHash) => {
                 const match = await timed(logger, scope, `resolve denom hash ${denomHash}`, () => context.traceRegistryClient.lookupIbcDenomTrace(denomHash));
                 if (!match) {
@@ -897,39 +1097,43 @@ function createTxBuilderRuntime(config) {
             encode: (value, kind) => context.lucidService.encode(value, kind),
             findUtxoAtWithUnit: findWalletUtxoAtWithUnit,
             tryFindUtxosAt: getWalletUtxos,
-            findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) => timed(logger, scope, 'find transfer escrow shard', () => findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount)),
+            findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) => timed(logger, scope, "find transfer escrow shard", () => findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount)),
             createUnsignedSendPacketBurnTx: (dto) => context.lucidService.createUnsignedSendPacketBurnTx(dto),
             createUnsignedSendPacketEscrowTx: (dto) => context.lucidService.createUnsignedSendPacketEscrowTx(dto),
             invalidArgument: (message) => new Error(message),
             internalError: (message) => new Error(message),
         }));
         if (!walletOverride) {
-            throw new Error('sendPacket failed: wallet override context was not produced');
+            throw new Error("sendPacket failed: wallet override context was not produced");
         }
-        const { currentSlot, validToSlot, validToTime } = await timed(logger, scope, 'compute validity window', () => computeTxValidityWindow(context));
+        const { currentSlot, validToSlot, validToTime } = await timed(logger, scope, "compute validity window", () => computeTxValidityWindow(context));
         if (currentSlot > validToSlot) {
-            throw new Error('sendPacket failed: tx time invalid');
+            throw new Error("sendPacket failed: tx time invalid");
         }
         const walletScopeId = context.lucidService.beginWalletSelectionScope();
         try {
-            const refreshedUtxos = await timed(logger, scope, 'refresh wallet UTxOs before completion', () => getWalletUtxos(walletOverride.address, LOOKUP_RETRY_OPTIONS));
+            const refreshedUtxos = await timed(logger, scope, "refresh wallet UTxOs before completion", () => getWalletUtxos(walletOverride.address, LOOKUP_RETRY_OPTIONS));
             const overrideUtxos = walletOverride.utxos ?? [];
             const mergedUtxos = dedupeUtxos([...overrideUtxos, ...refreshedUtxos]);
             const utxosToUse = mergedUtxos.length > 0 ? mergedUtxos : overrideUtxos;
             logger.log(`${scope} completion wallet UTxOs: override=${overrideUtxos.length}, refreshed=${refreshedUtxos.length}, using=${utxosToUse.length}`);
             context.lucidService.selectWalletFromAddress(walletOverride.address, utxosToUse);
-            context.lucidService.assertWalletSelectionScopeSatisfied(walletScopeId, 'sendPacket');
-            const completedUnsignedTx = await timed(logger, scope, 'complete unsigned tx', () => unsignedTx.validTo(validToTime).complete({
+            context.lucidService.assertWalletSelectionScopeSatisfied(walletScopeId, "sendPacket");
+            const completedUnsignedTx = await timed(logger, scope, "complete unsigned tx", () => unsignedTx.validTo(validToTime).complete({
                 localUPLCEval: true,
                 setCollateral: TRANSACTION_SET_COLLATERAL,
             }));
             const unsignedTxCbor = completedUnsignedTx.toCBOR();
-            const feeLovelace = completedUnsignedTx.toTransaction().body().fee().toString();
+            const feeLovelace = completedUnsignedTx
+                .toTransaction()
+                .body()
+                .fee()
+                .toString();
             logger.log(`${scope} prepared unsigned Cardano transfer in ${elapsedMs(buildStartedAt)}`);
             return {
                 result: 0,
                 unsignedTx: {
-                    type_url: '',
+                    type_url: "",
                     unsignedTxCborHex: unsignedTxCbor,
                 },
                 feeLovelace,
@@ -943,16 +1147,16 @@ function createTxBuilderRuntime(config) {
         const submitId = ++transferBuildCounter;
         const scope = `[submit:${submitId}]`;
         const submitStartedAt = startTimer();
-        const signedTxCbor = parseRequiredString(body.signed_tx_cbor, 'signed_tx_cbor');
-        const description = typeof body.description === 'string' && body.description.trim()
+        const signedTxCbor = parseRequiredString(body.signed_tx_cbor, "signed_tx_cbor");
+        const description = typeof body.description === "string" && body.description.trim()
             ? body.description.trim()
-            : 'Cardano signed transaction';
+            : "Cardano signed transaction";
         if (!/^[0-9a-f]+$/i.test(signedTxCbor) || signedTxCbor.length % 2 !== 0) {
             throw new Error('Invalid argument: "signed_tx_cbor" must be even-length hex CBOR');
         }
         logger.log(`${scope} submitting ${description}; signedTxLength=${signedTxCbor.length}`);
-        const context = await timed(logger, scope, 'get runtime context', getContext);
-        const txHash = await timed(logger, scope, 'submit signed transaction via Ogmios', () => submitSignedTxCbor(context.ogmiosEndpoint, signedTxCbor, context.kupmiosHeaders?.ogmiosHeader, config.fetchImpl ?? fetch));
+        const context = await timed(logger, scope, "get runtime context", getContext);
+        const txHash = await timed(logger, scope, "submit signed transaction via Ogmios", () => submitSignedTxCbor(context.ogmiosEndpoint, signedTxCbor, context.kupmiosHeaders?.ogmiosHeader, config.fetchImpl ?? fetch));
         logger.log(`${scope} submitted signed Cardano transaction ${txHash} in ${elapsedMs(submitStartedAt)}`);
         return { txHash };
     }

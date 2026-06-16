@@ -442,6 +442,9 @@ jobs:
               -m ibc/core/ics_003_connection_semantics/connection_handshake_contract
               -m prop_conn_open_try_
               -m prop_tx_conn_open_try_
+          - suite: bridge-registry
+            match_tests: >-
+              -m prop_tx_bridge_registry_update_
           - suite: channel-packet
             match_tests: >-
               -m ibc/core/ics_004/channel_datum_test/channel_handshake_contract
@@ -464,6 +467,9 @@ jobs:
             match_tests: >-
               -m prop_transfer_module_voucher_
               -m prop_transfer_module_recv_sink_
+          - suite: voucher-upgrade
+            match_tests: >-
+              -m prop_tx_voucher_upgrade_
           - suite: voucher-contract
             match_tests: >-
               -m ibc/apps/transfer/voucher_metadata_contract

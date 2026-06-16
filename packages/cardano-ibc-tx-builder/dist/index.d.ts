@@ -62,6 +62,10 @@ export type LoadedSendPacketContext = {
     deployment: {
         sendPacketPolicyId: string;
         mintVoucherScriptHash: string;
+        voucherPolicyRegistry?: {
+            active: string;
+            legacy?: string[];
+        };
         transferEscrowShardPolicyId: string;
         spendChannelAddress: string;
         transferModuleAddress: string;
@@ -107,6 +111,7 @@ export type UnsignedSendPacketBurnTxInput = {
     channelToken: AuthToken;
     senderVoucherTokenUtxo: UTxO;
     walletUtxos?: UTxO[];
+    voucherPolicyId?: string;
     voucherTokenUnit: string;
     senderAddress: string;
     receiverAddress: string;

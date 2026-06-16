@@ -21,6 +21,7 @@ export type UnsignedTimeoutPacketMintDto = WithHostStateUpdate &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'timeoutPacketPolicyId'> &
   WithVerifyProof & {
+  voucherPolicyId?: string;
   senderAddress: string;
   spendChannelAddress: string;
   voucherTokenUnit: string;

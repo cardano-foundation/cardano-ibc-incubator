@@ -4,6 +4,7 @@ use aiken/primitive/int
 use cardano/address.{from_verification_key}
 use cardano/assets.{PolicyId, quantity_of}
 use cardano/transaction.{Input, Output, OutputReference, Transaction}
+use ibc/apps/transfer/bridge_registry
 use ibc/apps/transfer/channel_callback as transfer_channel_callback
 use ibc/apps/transfer/escrow as transfer_escrow
 use ibc/apps/transfer/escrow.{EscrowShard, ModuleState, TransferModuleSpend}
@@ -14,6 +15,9 @@ use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/value_delta as transfer_value_delta
 use ibc/apps/transfer/voucher_flow as transfer_voucher_flow
+use ibc/apps/transfer/voucher_policy_registry.{
+  VoucherPolicyRegistry, from_bridge_registry,
+}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_datum.{ChannelDatum, validate_recv_packet}
 use ibc/core/ics_004/channel_redeemer.{
@@ -38,9 +42,7 @@ validator spend_transfer_module(
   module_token: AuthToken,
   port_id: ByteArray,
   transfer_escrow_shard_policy_id: PolicyId,
-  channel_minting_policy_id: PolicyId,
-  voucher_minting_policy_id: PolicyId,
-  host_state_nft_policy_id: PolicyId,
+  bridge_registry_token: AuthToken,
 ) {
   spend(
     _datum: Option<Data>,
@@ -49,6 +51,11 @@ validator spend_transfer_module(
     transaction: Transaction,
   ) {
     let Transaction { inputs, outputs, .. } = transaction
+    let bridge_registry_datum =
+      bridge_registry.find_registry_datum(transaction, bridge_registry_token)
+    let active_deployment = bridge_registry_datum.active_deployment
+    let host_state_nft_policy_id = active_deployment.host_state_nft_policy_id
+    let channel_minting_policy_id = active_deployment.channel_minting_policy_id
 
     // Transfer state transitions must be committed through HostState.
     let (host_state_input, _) =
@@ -93,6 +100,7 @@ validator spend_transfer_module(
         policy_id: host_state_nft_policy_id,
         name: host_state_token_name,
       }
+    let voucher_policy_registry = from_bridge_registry(bridge_registry_datum)
 
     when redeemer is {
       Callback(cb) ->
@@ -105,7 +113,7 @@ validator spend_transfer_module(
           port_id,
           transfer_escrow_shard_policy_id,
           channel_minting_policy_id,
-          voucher_minting_policy_id,
+          voucher_policy_registry,
         )
       Operator(op) ->
         module_operator(
@@ -117,7 +125,7 @@ validator spend_transfer_module(
           host_state_input,
           transfer_escrow_shard_policy_id,
           channel_minting_policy_id,
-          voucher_minting_policy_id,
+          voucher_policy_registry,
         )
     }
   }
@@ -136,7 +144,7 @@ fn module_callback(
   port_id: ByteArray,
   shard_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
-  voucher_minting_policy_id: PolicyId,
+  voucher_policy_registry: VoucherPolicyRegistry,
 ) -> Bool {
   let Transaction { outputs, redeemers, inputs, mint, .. } = transaction
 
@@ -286,7 +294,7 @@ fn module_callback(
         expect
           transfer_voucher_flow.require_no_voucher_mint(
             redeemers,
-            voucher_minting_policy_id,
+            voucher_policy_registry,
           )
 
         let voucher_prefix_len =
@@ -422,7 +430,7 @@ fn module_callback(
           )?,
           transfer_voucher_flow.validate_mint_voucher_packet(
             redeemers,
-            voucher_minting_policy_id,
+            voucher_policy_registry,
             packet,
           )?,
         }
@@ -446,7 +454,7 @@ fn module_callback(
       // Timeout refunds the sender-side packet effect.
       let valid_refund_packet =
         transfer_refund.validate_refund_packet_token(
-          voucher_minting_policy_id,
+          voucher_policy_registry,
           inputs,
           outputs,
           redeemers,
@@ -485,7 +493,7 @@ fn module_callback(
             fungible_token_packet_data.get_bytes(tf_data) == packet.data,
             acknowledgement_mod.marshal_json(acknowledgement) == channel_ack,
             transfer_refund.validate_refund_packet_token(
-              voucher_minting_policy_id,
+              voucher_policy_registry,
               inputs,
               outputs,
               redeemers,
@@ -524,7 +532,7 @@ fn module_operator(
   host_state_input: Input,
   shard_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
-  voucher_minting_policy_id: PolicyId,
+  voucher_policy_registry: VoucherPolicyRegistry,
 ) -> Bool {
   expect TransferModuleOperator(op) = op
   let Transaction { redeemers, inputs, mint, .. } = transaction
@@ -565,7 +573,7 @@ fn module_operator(
         expect
           transfer_voucher_flow.require_no_voucher_mint(
             redeemers,
-            voucher_minting_policy_id,
+            voucher_policy_registry,
           )
         trace @"spend_transfer_module: tx not mint voucher token"
 
@@ -614,7 +622,7 @@ fn module_operator(
           )?,
           transfer_voucher_flow.validate_burn_voucher_packet(
             redeemers,
-            voucher_minting_policy_id,
+            voucher_policy_registry,
             packet,
           )?,
         }
