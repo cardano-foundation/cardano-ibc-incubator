@@ -161,6 +161,7 @@
     }
   },
   "overrides": {
+    "multer": "^2.2.0",
     "protobufjs": "^8.2.0"
   }
 }
