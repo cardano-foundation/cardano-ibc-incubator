@@ -2897,11 +2897,12 @@ export class LucidService implements OnModuleInit {
       : undefined;
 
     if (ogmiosEndpoint && slotConfig?.slotLength > 0) {
-      const { validToTime } = await computeLedgerAnchoredValidityWindow(
+      const { validFromTime, validToTime } = await computeLedgerAnchoredValidityWindow(
         ogmiosEndpoint,
         slotConfig,
         TRANSACTION_TIME_TO_LIVE,
       );
+      tx.validFrom(validFromTime);
       tx.validTo(validToTime);
     } else {
       tx.validTo(Date.now() + TRANSACTION_TIME_TO_LIVE);

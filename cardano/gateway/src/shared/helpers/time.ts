@@ -224,7 +224,6 @@ const getNanoseconds = (d) => {
 
 export {
   querySystemStart,
-  queryNetworkTipPoint,
   queryTransactionInclusionBlockHeight,
   computeLedgerAnchoredValidityWindow,
   sleep,
