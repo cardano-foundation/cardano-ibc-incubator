@@ -429,6 +429,7 @@ func (cs ClientState) pruneOldestConsensusState(ctx sdk.Context, cdc codec.Binar
 // UpdateStateOnMisbehaviour performs appropriate state changes on the client given that misbehaviour has been detected and verified.
 // This method freezes the ClientState and should only be called after misbehaviour is confirmed.
 func (cs ClientState) UpdateStateOnMisbehaviour(ctx sdk.Context, cdc codec.BinaryCodec, clientStore storetypes.KVStore, _ exported.ClientMessage) {
-	// cs.FrozenHeight = &FrozenHeight
+	frozenHeight := FrozenHeight
+	cs.FrozenHeight = &frozenHeight
 	clientStore.Set(host.ClientStateKey(), clienttypes.MustMarshalClientState(cdc, &cs))
 }
