@@ -2,7 +2,6 @@ package probabilistic
 
 import (
 	"bytes"
-	"encoding/hex"
 	"strings"
 
 	errorsmod "cosmossdk.io/errors"
@@ -198,17 +197,11 @@ func (cs *ClientState) verifyNativeProbabilisticBlock(
 		}
 	}()
 
-	headerCborHex, bodyCborHex, vrfKeyBytes, err := probabilisticcore.BuildBlockVerificationArtifacts(decodedBlock)
-	if err != nil {
-		return "", nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "failed to build %s native verification payload: %v", label, err)
-	}
-
-	verifyErr, isValid, _, _, _ := ledger.VerifyBlock(ledger.BlockHexCbor{
-		HeaderCbor:    headerCborHex,
-		Eta0:          hex.EncodeToString(epochContext.EpochNonce),
-		Spk:           int(epochContext.SlotsPerKesPeriod),
-		BlockBodyCbor: bodyCborHex,
-	})
+	isValid, vrfKeyBytes, verifyErr := probabilisticcore.VerifyNativeBlock(
+		decodedBlock,
+		epochContext.EpochNonce,
+		int(epochContext.SlotsPerKesPeriod),
+	)
 	if verifyErr != nil {
 		return "", nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "native verification failed for %s block: %v", label, verifyErr)
 	}
