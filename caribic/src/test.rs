@@ -706,7 +706,7 @@ pub async fn run_integration_tests(
     //
     // What's being tested:
     //   - Gateway is listening on a local port (5001) and accepting gRPC connections
-    //   - Hermes config (normally at ~/.hermes/config.toml) has grpc_addr = "http://localhost:5001" for cardano-devnet
+    //   - Hermes config (normally at ~/.hermes/config.toml) has gateway_url = "http://localhost:5001" for cardano-devnet
     //     (can obviously change this setup as needed but I would call this the canonical setup)
     //   - The LatestHeight query should actually return valid data from the Cardano network
     if selection.should_run(2) {
@@ -851,12 +851,6 @@ pub async fn run_integration_tests(
     //   - Gateway's ClientState query endpoint can find and decode stored clients
     //   - The Tendermint client state fields (chain_id, trust_level, heights) are correct
     //   - Round-trip: what we wrote in Test 4 can be read back properly
-    //
-    // Known limitation: Gateway currently requires an explicit height parameter for
-    // client queries. If this test skips, it means we need to add support for querying
-    // at "latest" height without requiring the caller to specify it.
-    //
-    // Status: May skip due to height parameter requirement - this is a known TODO.
     if selection.should_run(5) {
         let mut test_5 = TestTimer::start("Test 5: Querying client state via Hermes...");
 
@@ -881,23 +875,12 @@ pub async fn run_integration_tests(
                 }
                 Err(e) => {
                     let elapsed = test_5.finish();
-                    let error_str = e.to_string();
-                    // Check for known Gateway limitation: requires height parameter
-                    if error_str.contains("height") && error_str.contains("must be provided") {
-                        logger::log(&format!(
-                            "SKIP Test 5: Gateway requires height parameter for client queries (took {})",
-                            format_duration(elapsed)
-                        ));
-                        logger::log("   This is a known limitation - Gateway needs to support querying at latest height.\n");
-                        results.skipped += 1;
-                    } else {
-                        logger::log(&format!(
-                            "FAIL Test 5: Failed to query client state (took {})\n{}\n",
-                            format_duration(elapsed),
-                            e
-                        ));
-                        results.failed += 1;
-                    }
+                    logger::log(&format!(
+                        "FAIL Test 5: Failed to query client state (took {})\n{}\n",
+                        format_duration(elapsed),
+                        e
+                    ));
+                    results.failed += 1;
                 }
             }
         } else {
@@ -951,15 +934,7 @@ pub async fn run_integration_tests(
                 Err(e) => {
                     let elapsed = test_6.finish();
                     let error_str = e.to_string();
-                    // Check for known Gateway limitation: requires height parameter
-                    if error_str.contains("height") && error_str.contains("must be provided") {
-                        logger::log(&format!(
-                            "SKIP Test 6: Gateway requires height parameter for client queries (took {})",
-                            format_duration(elapsed)
-                        ));
-                        logger::log("   Update requires querying current state first, which needs height support.\n");
-                        results.skipped += 1;
-                    } else if error_str.contains("no need to update")
+                    if error_str.contains("no need to update")
                         || error_str.contains("already up to date")
                     {
                         logger::log(&format!(
@@ -999,12 +974,9 @@ pub async fn run_integration_tests(
     //   - Hermes can coordinate the back-and-forth between both chains
     //   - Connection state is properly stored on Cardano
     //
-    // Known limitation: This requires a Cardano light client to exist on the Cosmos
-    // side too (for the bidirectional handshake). If the Cardano light client isn't
-    // implemented on Cosmos yet, this test will skip. At the point of writing this,
-    // there is still some uncertainty around Mithril/Ourobouos/STT architecture.
-    //
-    // Status: May skip - depends on Cardano light client being available on Cosmos.
+    // This requires the selected Cosmos target to compile, register, and allow the
+    // `08-cardano-probabilistic` client. Public target binaries do not gain that module
+    // from the relayer, so this test is intended for the patched local target profiles.
     let mut connection_test_skipped = false;
     let mut connection_id: Option<String> = None;
     if selection.should_run(7) {
@@ -1684,9 +1656,9 @@ pub async fn run_integration_tests(
                 let cardano_voucher_before =
                     sum_cardano_policy_assets(&cardano_voucher_assets_before);
 
-                // Cardano-origin packets can spend several minutes waiting on Mithril-certified
-                // heights while relaying update-client + recv/ack steps. Keep a large timeout
-                // margin so packet expiry does not race the relay path.
+                // Cardano-origin packets may wait for accepted proof heights while relaying
+                // update-client and receive/acknowledgement steps. Keep a large timeout margin
+                // so packet expiry does not race the relay path.
                 let timeout_height_offset = 10_000;
                 let timeout_seconds = 600;
 
@@ -1928,7 +1900,7 @@ pub async fn run_integration_tests(
             let cardano_root_before = query_handler_state_root(project_root)?;
 
             // Keep the timeout margin large for Cardano-origin packets to avoid false timeouts
-            // during long Mithril certification waits on relay/update-client steps.
+            // while accepted proof heights and relay/update-client steps advance.
             let timeout_height_offset = 10_000;
             let timeout_seconds = 600;
 
@@ -2185,8 +2157,8 @@ pub async fn run_integration_tests(
                     .as_deref()
                     .unwrap_or(counterparty_channel_id.as_str());
 
-                // Cardano-destination relays can spend significant time in Mithril-certified
-                // client updates. Keep timeout very large to avoid timeout/refund during long
+                // Cardano-destination relays can spend significant time waiting for accepted
+                // client-update heights. Keep the timeout large enough to avoid a refund during
                 // local devnet relay cycles.
                 let timeout_height_offset = 10_000;
                 let timeout_seconds = 7_200;
@@ -2568,7 +2540,7 @@ fn run_hermes_health_check(project_root: &Path) -> Result<(), Box<dyn std::error
              This indicates Hermes cannot connect to the Gateway.\n\
              Check that:\n\
              - Gateway is running on port 5001\n\
-             - Hermes config (~/.hermes/config.toml) has correct grpc_addr for cardano-devnet\n\
+             - Hermes config (~/.hermes/config.toml) has the correct gateway_url for cardano-devnet\n\
              - No firewall is blocking the connection",
             output.status.code(),
             stdout,
@@ -3232,8 +3204,8 @@ async fn create_test_connection(project_root: &Path) -> Result<String, Box<dyn s
     logger::verbose("   Creating connection via Hermes...");
 
     // The connection handshake can legitimately take a few minutes on a local devnet:
-    // - Hermes waits for Cardano tx inclusion, then for Mithril certification of the inclusion
-    //   height (used as the IBC `proof_height` when proving Cardano state to the Cosmos chain).
+    // - Hermes waits for Cardano tx inclusion, then for the active Gateway light-client mode
+    //   to accept the inclusion height used as the IBC `proof_height`.
     //
     // If this appears stuck, the next debugging step is to identify which handshake message was
     // last submitted (OpenInit/OpenTry/OpenAck/OpenConfirm) in `~/.hermes/hermes.log`, then check

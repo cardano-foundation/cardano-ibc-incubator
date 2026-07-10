@@ -133,7 +133,7 @@ enum Commands {
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, gateway, relayer
+    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, gateway, dapp, relayer (mithril is disabled)
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,

@@ -16,7 +16,7 @@ cargo install --path .
 
 ### `caribic check`
 
-Verifies prerequisites are available (Docker, Aiken, Deno, Go).
+Verifies Docker, Aiken, Deno, Go, and the native Hermes build toolchain on Linux. It does not currently probe Node.js or Rust/Cargo.
 
 ### `caribic install`
 
@@ -30,12 +30,15 @@ caribic install
 
 Starts services. Run `caribic --help` to see an actively maintained exhaustive list of targets and commands.
 
+- **Targets**: `all`, `network`, `bridge`, `gateway`, `dapp`, `relayer`; `mithril` is retained only to return the deprecation error.
+
 Examples:
 
 ```bash
 caribic start
 caribic start --clean
 caribic start bridge
+caribic start dapp
 caribic chain start --chain osmosis
 caribic chain start --chain injective --network local
 caribic chain start --chain injective --network testnet
@@ -92,7 +95,7 @@ caribic chain stop --chain injective --network local
 
 ### `caribic health-check [--service <name>]`
 
-Checks whether key services appear to be up (gateway, cardano, postgres, kupo, ogmios, hermes, mithril, cosmos, osmosis, redis, plus optional chain adapter checks such as Injective). Use this before running tests if you are unsure about your current state.
+Checks whether key services appear to be up (gateway, cardano, postgres, Yaci, Kupo, Ogmios, Hermes, Osmosis, Redis, cheqd, and Injective). The legacy Mithril check remains available for historical stacks. Use this before running tests if you are unsure about your current state.
 
 ```bash
 caribic health-check

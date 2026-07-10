@@ -178,7 +178,6 @@ function isNonRetryableStabilityLatestHeightError(error: unknown): boolean {
     message.includes('stake-weighted stability currently supports only current-epoch anchors')
   );
 }
-
 @Injectable()
 export class QueryService {
   private readonly txRedeemerCache = new Map<string, Promise<ParsedTxRedeemer[]>>();
@@ -276,7 +275,8 @@ export class QueryService {
 
   private async getProofHeight(context: string): Promise<bigint> {
     const lightClientMode =
-      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') || 'mithril';
+      this.configService.get<'mithril' | 'stake-weighted-stability'>('cardanoLightClientMode') ||
+      'stake-weighted-stability';
 
     return resolveProofHeightForCurrentRoot({
       logger: this.logger,
@@ -640,9 +640,9 @@ export class QueryService {
         const clientId = clientSequence.toString();
         const [clientDatum] = await this.getClientDatum(clientId);
 
-        // At the moment Cardano only hosts Tendermint clients. Mithril clients are
-        // hosted on the Cosmos side, not on Cardano, so the batch response can use
-        // the canonical Tendermint type URL and `07-tendermint-<n>` identifier form.
+        // Cardano currently hosts only Tendermint clients. Cardano-specific clients
+        // (`08-cardano-probabilistic` and the deprecated Mithril type) are hosted on
+        // counterparty chains, so this response uses the canonical Tendermint type URL.
         const clientStateTendermint = normalizeClientStateFromDatum(clientDatum.state.clientState);
         const clientStateAny: Any = {
           type_url: '/ibc.lightclients.tendermint.v1.ClientState',
