@@ -85,6 +85,14 @@ const sortUtxosByLovelaceDesc = (utxos: UTxO[]): UTxO[] =>
     return aLovelace < bLovelace ? 1 : -1;
   });
 
+const sortUtxosByLovelaceAsc = (utxos: UTxO[]): UTxO[] =>
+  [...utxos].sort((a, b) => {
+    const aLovelace = utxoLovelace(a);
+    const bLovelace = utxoLovelace(b);
+    if (aLovelace === bLovelace) return 0;
+    return aLovelace < bLovelace ? -1 : 1;
+  });
+
 const sortNonceCandidateUtxos = (utxos: UTxO[]): UTxO[] =>
   [...utxos].sort((a, b) => {
     const aAdaOnly = isAdaOnlyUtxo(a);
@@ -907,6 +915,8 @@ const REFERENCE_UTXO_TX_OVERHEAD_BYTES = 4_000;
 const REFERENCE_UTXO_OUTPUT_OVERHEAD_BYTES = 200;
 const REFERENCE_UTXO_SAFE_TX_HEADROOM_BYTES = 1_000;
 const REFERENCE_UTXO_SINGLE_TX_HEADROOM_BYTES = 750;
+const REFERENCE_UTXO_DEDICATED_FUNDING_MARGIN_BYTES = 1_500;
+const REFERENCE_UTXO_DEDICATED_FUNDING_FEE_BUFFER_LOVELACE = 1_500_000n;
 const REFERENCE_UTXO_ADOPTION_ATTEMPTS = 6;
 const REFERENCE_UTXO_ADOPTION_TIMEOUT_MS = 60_000;
 const REFERENCE_UTXO_ADOPTION_RETRY_DELAY_MS = 5_000;
@@ -1031,6 +1041,14 @@ const isReferenceUtxoAdoptionTimeout = (error: unknown): boolean => {
 const isRetryableReferenceUtxoAdoptionError = (error: unknown): boolean =>
   isRetryableOgmiosTransportError(error) ||
   isReferenceUtxoAdoptionTimeout(error);
+
+const shouldUseDedicatedReferenceFunding = (
+  validators: Script[],
+  maxTxSize: number,
+): boolean =>
+  validators.length === 1 &&
+  estimateReferenceValidatorSize(validators[0]) >
+    maxTxSize - REFERENCE_UTXO_DEDICATED_FUNDING_MARGIN_BYTES;
 
 export const buildReferenceValidatorBatches = (
   validators: Script[],
@@ -1252,6 +1270,7 @@ async function createReferenceUtxos(
       [hostStateNftPolicyId],
       Data.Tuple([Data.Bytes()]) as unknown as [string],
     );
+    const walletAddress = await lucid.wallet().address();
 
     const maxTxSize = lucid.config().protocolParameters?.maxTxSize ?? 16_384;
     logReferenceValidatorSizeReport(referredValidators, maxTxSize);
@@ -1303,13 +1322,82 @@ async function createReferenceUtxos(
     };
     await refreshReferenceWalletState();
 
+    const selectDedicatedFundingUtxo = (
+      walletUtxos: UTxO[],
+      fundingLovelace: bigint,
+    ): UTxO | undefined =>
+      sortUtxosByLovelaceAsc(
+        walletUtxos.filter((utxo) =>
+          isAdaOnlyUtxo(utxo) &&
+          !utxo.scriptRef &&
+          utxoLovelace(utxo) === fundingLovelace
+        ),
+      )[0];
+
+    const createDedicatedFundingUtxo = async (
+      fundingLovelace: bigint,
+      batchLabel: string,
+    ): Promise<UTxO> => {
+      await refreshReferenceWalletState();
+      const txHash = await submitTx(
+        () =>
+          lucid
+            .newTx()
+            .pay.ToAddress(walletAddress, { lovelace: fundingLovelace }),
+        lucid,
+        `Prepare reference funding ${batchLabel}`,
+        false,
+      );
+      await refreshReferenceWalletState();
+      const [fundingUtxo] = (await getLiveWalletUtxos(lucid)).filter((utxo) =>
+        utxo.txHash === txHash &&
+        isAdaOnlyUtxo(utxo) &&
+        utxoLovelace(utxo) === fundingLovelace
+      );
+      if (!fundingUtxo) {
+        throw new Error(
+          `Unable to find prepared reference funding UTxO ${txHash} with ${fundingLovelace} lovelace`,
+        );
+      }
+      return fundingUtxo;
+    };
+
+    const prepareDedicatedFundingUtxo = async (
+      outputLovelace: bigint,
+      batchLabel: string,
+    ): Promise<UTxO> => {
+      const fundingLovelace = outputLovelace +
+        REFERENCE_UTXO_DEDICATED_FUNDING_FEE_BUFFER_LOVELACE;
+      const spendableWalletUtxos = filterReservedWalletUtxos(
+        mergeWalletUtxos(await getLiveWalletUtxos(lucid)),
+        reservedWalletRefs,
+      ).filter((utxo) => !spentReferenceBatchRefs.has(utxoRefKey(utxo)));
+      const existingFundingUtxo = selectDedicatedFundingUtxo(
+        spendableWalletUtxos,
+        fundingLovelace,
+      );
+      if (existingFundingUtxo) {
+        return existingFundingUtxo;
+      }
+
+      console.log(
+        "Preparing dedicated reference funding UTxO",
+        batchLabel,
+        `with ${fundingLovelace} lovelace ...`,
+      );
+      return await createDedicatedFundingUtxo(fundingLovelace, batchLabel);
+    };
+
     while (pendingBatches.length > 0) {
       // We still submit sequentially because each successful batch updates the
       // wallet UTxO set used to build the next one.
       const batch = pendingBatches.shift()!;
+      const batchLabel = `${batch.startIndex + 1}-${
+        batch.startIndex + batch.validators.length
+      }`;
       console.log(
         "Preparing reference batch for validators",
-        `${batch.startIndex + 1}-${batch.startIndex + batch.validators.length}`,
+        batchLabel,
         `(${batch.validators.length} validators) ...`,
       );
 
@@ -1329,6 +1417,17 @@ async function createReferenceUtxos(
         return tx;
       };
 
+      const dedicatedFunding = shouldUseDedicatedReferenceFunding(
+          batch.validators,
+          maxTxSize,
+        )
+        ? await prepareDedicatedFundingUtxo(
+          (await buildReferenceBatchTx().config()).totalOutputAssets.lovelace ??
+            0n,
+          batchLabel,
+        )
+        : undefined;
+
       let newWalletUTxOs: UTxO[] | undefined;
       let derivedOutputs: UTxO[] | undefined;
       let signedTx;
@@ -1340,7 +1439,14 @@ async function createReferenceUtxos(
           [newWalletUTxOs, derivedOutputs, signedTx] = await (async () => {
             const txBuilder = buildReferenceBatchTx();
             const [walletUTxOs, outputs, txSignBuilder] = await txBuilder
-              .chain();
+              .chain(
+                dedicatedFunding
+                  ? {
+                    presetWalletInputs: [dedicatedFunding],
+                    includeLeftoverLovelaceAsFee: true,
+                  }
+                  : undefined,
+              );
             consumedWalletInputs = (txBuilder as unknown as {
               rawConfig: () => { consumedInputs?: UTxO[] };
             }).rawConfig().consumedInputs ?? [];

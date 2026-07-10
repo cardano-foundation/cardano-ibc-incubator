@@ -353,16 +353,37 @@ export class DenomTraceService {
   }
 
   async shouldRolloverForUnsignedTx(unsignedTx: TxBuilder): Promise<boolean> {
-    const maxTxSize =
-      this.lucidService.lucid.config().protocolParameters?.maxTxSize ?? 16_384;
+    const protocolParameters =
+      this.lucidService.lucid.config().protocolParameters;
+    const maxTxSize = protocolParameters?.maxTxSize ?? 16_384;
+    const maxTxExMem = Number(protocolParameters?.maxTxExMem ?? 0n);
+    const maxTxExSteps = Number(protocolParameters?.maxTxExSteps ?? 0n);
 
     try {
-      const unsignedSize = await this.lucidService.estimateUnsignedTxSizeBytes(
+      const budget = await this.lucidService.estimateUnsignedTxBudget(
         unsignedTx,
       );
-      return unsignedSize >= maxTxSize - TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES;
+      const exceedsTxSize =
+        budget.unsignedSizeBytes >=
+          maxTxSize - TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES;
+      const exceedsExecutionUnits =
+        (maxTxExMem > 0 && budget.executionUnits.memory >= maxTxExMem) ||
+        (maxTxExSteps > 0 && budget.executionUnits.cpu >= maxTxExSteps);
+
+      if (exceedsExecutionUnits) {
+        this.logger.warn(
+          `Trace-registry append candidate exceeds tx execution budget ` +
+            `(mem=${budget.executionUnits.memory}/${maxTxExMem}, ` +
+            `cpu=${budget.executionUnits.cpu}/${maxTxExSteps}); forcing rollover`,
+        );
+      }
+
+      return exceedsTxSize || exceedsExecutionUnits;
     } catch (error) {
-      if (this.isLikelyTxSizeError(error)) {
+      if (
+        this.isLikelyTxSizeError(error) ||
+        this.isLikelyTxExecutionBudgetError(error)
+      ) {
         return true;
       }
       throw error;
@@ -681,6 +702,14 @@ export class DenomTraceService {
   private getMaxTxSize(): number {
     return this.lucidService.lucid.config().protocolParameters?.maxTxSize ??
       16_384;
+  }
+
+  private isLikelyTxExecutionBudgetError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes("maximumExecutionUnits") ||
+      message.includes("providedExecutionUnits") ||
+      message.includes("execution budget") ||
+      message.includes("ExUnits");
   }
 
   private getProjectedMaxShardDatumBytesUpperBound(): number {

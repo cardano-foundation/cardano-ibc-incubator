@@ -17,6 +17,7 @@ describe('DenomTraceService', () => {
       wallet: () => { getUtxos: jest.Mock };
     };
     estimateUnsignedTxSizeBytes: jest.Mock;
+    estimateUnsignedTxBudget: jest.Mock;
     LucidImporter: typeof Lucid;
   };
   let configServiceMock: {
@@ -118,6 +119,8 @@ describe('DenomTraceService', () => {
         config: jest.fn(() => ({
           protocolParameters: {
             maxTxSize: 16_384,
+            maxTxExMem: 16_500_000n,
+            maxTxExSteps: 10_000_000_000n,
           },
         })),
         wallet: () => ({
@@ -131,6 +134,10 @@ describe('DenomTraceService', () => {
         }),
       },
       estimateUnsignedTxSizeBytes: jest.fn(async () => 1_000),
+      estimateUnsignedTxBudget: jest.fn(async () => ({
+        unsignedSizeBytes: 1_000,
+        executionUnits: { memory: 1_000_000, cpu: 1_000_000 },
+      })),
       LucidImporter: Lucid,
     };
 
@@ -417,6 +424,37 @@ describe('DenomTraceService', () => {
     expect(result.traceRegistryShardUtxo.txHash).toBe('trace-shard-10');
     expect(result.traceRegistryArchivedShardWitnessUtxos).toEqual([]);
     expect(result.newActiveTraceRegistryShardTokenUnit.startsWith('trace-shard-policy')).toBe(true);
+  });
+
+  it('keeps append candidates that fit size and execution budgets', async () => {
+    await expect(service.shouldRolloverForUnsignedTx({} as any)).resolves.toBe(false);
+    expect(lucidServiceMock.estimateUnsignedTxBudget).toHaveBeenCalledWith({});
+  });
+
+  it('rolls over append candidates that exceed the tx memory budget', async () => {
+    lucidServiceMock.estimateUnsignedTxBudget.mockResolvedValueOnce({
+      unsignedSizeBytes: 1_000,
+      executionUnits: { memory: 16_500_000, cpu: 1_000_000 },
+    });
+
+    await expect(service.shouldRolloverForUnsignedTx({} as any)).resolves.toBe(true);
+  });
+
+  it('rolls over append candidates that exceed the tx CPU budget', async () => {
+    lucidServiceMock.estimateUnsignedTxBudget.mockResolvedValueOnce({
+      unsignedSizeBytes: 1_000,
+      executionUnits: { memory: 1_000_000, cpu: 10_000_000_000 },
+    });
+
+    await expect(service.shouldRolloverForUnsignedTx({} as any)).resolves.toBe(true);
+  });
+
+  it('rolls over when append candidate evaluation reports a tx execution budget error', async () => {
+    lucidServiceMock.estimateUnsignedTxBudget.mockRejectedValueOnce(
+      new Error('providedExecutionUnits exceeded maximumExecutionUnits'),
+    );
+
+    await expect(service.shouldRolloverForUnsignedTx({} as any)).resolves.toBe(true);
   });
 
   it('summarizes bucket and shard counts from the on-chain directory', async () => {
