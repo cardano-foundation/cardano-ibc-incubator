@@ -6,7 +6,7 @@
 [![Status: Pre-production](https://img.shields.io/badge/Status-Pre--production-orange.svg)](#status)
 [![Docs: Architecture](https://img.shields.io/badge/Docs-Architecture-6b7280.svg)](#architecture)
 
-This is a work-in-progress implementation of IBC v1 for Cardano. It implements a Cardano-native realization of the IBC protocol semantics which allow trustless interop between Cardano and the Cosmos ecosystem. The bridge implements ICS-02 (clients), ICS-03 (connections), ICS-04 (channels and packets), ICS-20 (fungible token transfer), and the proof/path model of ICS-23 and ICS-24, while adapting Cardano to the IBC client model through the experimental `08-cardano-probabilistic` light client.
+This is a work-in-progress implementation of IBC v1 for Cardano. It implements a Cardano-native realization of IBC protocol semantics for interoperability between Cardano and the Cosmos ecosystem. The bridge implements ICS-02 (clients), ICS-03 (connections), ICS-04 (channels and packets), ICS-20 (fungible token transfer), and the proof/path model of ICS-23 and ICS-24, while adapting Cardano to the IBC client model through the experimental `08-cardano-probabilistic` light client. The current light client has explicit observer and settlement-heuristic trust assumptions; it is not equivalent to a Tendermint light client or BFT finality.
 
 The implementation adheres to the [inter-blockchain communication protocol](https://github.com/cosmos/ibc) standards.
 
@@ -49,14 +49,21 @@ There are currently protocol-level constraints that prevent IBC-style state proo
 
 The maintained Cardano-native approach uses a proprietary STT architecture plus the experimental `08-cardano-probabilistic` light client to attain an analogous IBC state machine in Cardano semantics. The STT architecture over the IBC host state keyspace functions as an authenticated mutex for IBC host state mutation, while the probabilistic light client authenticates accepted Cardano history through configured settlement heuristics. This model is documented in [Probabilistic Light Client Design](docs/probabilistic-light-client.md).
 
+The verifier checks the structure and internal consistency of submitted block witnesses, but canonical block history and epoch context currently come from configured observer data. Safety therefore depends on those data sources, tuned acceptance parameters, and an honest observer or relayer surfacing conflicting context; this is an explicit trust assumption of the current pre-production design.
+
 The older Mithril light client and local Mithril setup are deprecated, disabled, and not maintained. They remain in the repository only for historical design reference and protobuf/type compatibility.
 
 ## Overview
-This repository is divided into five main directories:
-- `cardano`: Contains all Cardano related source code that are part of the bridge as well as some facilities for bringing up a local Cardano blockchain for test and development purposes. It also contains the Aiken based Tendermint Light Client and IBC primitives implementation.
-- `cosmos`: Contains all Cosmos SDK related source code including the Cardano light client (or thin client) implementation running on the Cosmos chain. The folder was scaffolded via [Ignite CLI](https://docs.ignite.com/) with [Cosmos SDK 0.50](https://github.com/cosmos/cosmos-sdk).
-- `relayer`: A fork of [Hermes](https://hermes.informal.systems/) (Rust IBC relayer) with Cardano integration. This replaces the deprecated Go relayer and provides native `ChainEndpoint` implementation for Cardano chains.
-- `caribic`: A command-line tool responsible for starting and stopping all services, as well as providing a simple interface for users to interact with and configure the bridge services.
+The repository is organized around these main areas:
+
+- `cardano`: Cardano on-chain validators, off-chain deployment code, and the Gateway.
+- `cosmos`: The shared Cardano light-client core, ibc-go v8 and v10 adapters, and retained historical chain source. The v8 adapter targets Cosmos SDK 0.50; the v10 adapter and retained chain target Cosmos SDK 0.53.
+- `relayer`: A [Hermes](https://hermes.informal.systems/) fork with a native Cardano `ChainEndpoint` implementation.
+- `caribic`: The CLI for configuring, starting, stopping, and testing the local bridge stack.
+- `chains`: Managed Cardano and counterparty-chain runtime configuration.
+- `dapps`: Optional swap and explorer frontends.
+- `packages` and `proto-types`: Shared application packages and generated protocol bindings.
+- `docs`, `studies`, and `manifests`: Design documentation, analysis, and tracked deployment artifacts.
 
 ## Architecture
 
@@ -82,12 +89,12 @@ flowchart LR
     CH_TIMEOUT["spending_channel/<br/>timeout_packet.ak"]
     TRANSFER["spending_transfer_module.ak"]
     VOUCHER["minting_voucher.ak"]
+    TRACE_REGISTRY["trace_registry.ak"]
   end
 
   subgraph CardanoInfra["Cardano Infrastructure"]
     NODE["cardano-node"]
     KUPO["Kupo"]
-    DBSYNC["db-sync + Postgres"]
     HISTORY["Yaci / DB History<br/>+ Probabilistic Witnesses"]
   end
 
@@ -106,19 +113,19 @@ flowchart LR
   LUCID -->|"timeout-packet validation"| CH_TIMEOUT
   LUCID -->|"uses validators in tx scripts"| TRANSFER
   LUCID -->|"uses validators in tx scripts"| VOUCHER
+  LUCID -->|"trace-registry updates"| TRACE_REGISTRY
 
   HERMES -->|"submit signed tx"| NODE
   HERMES -->|"recv/ack/timeout calls"| TX
   HERMES <-->|"IBC packets and proofs"| COSMOS
 
   QUERY -->|"UTxO and datum reads"| KUPO
-  QUERY -->|"indexed tx/block queries"| DBSYNC
   QUERY -->|"history and witness queries"| HISTORY
-  TX -->|"denom trace writes<br/>and updates"| TRACE
-  TRACE -->|"persist trace rows"| DBSYNC
+  TX -->|"denom trace planning"| TRACE
+  TRACE -->|"read registry UTxOs"| KUPO
+  TRACE -->|"build on-chain updates"| LUCID
 
   NODE -->|"chain indexing feed"| KUPO
-  NODE -->|"chain indexing feed"| DBSYNC
   NODE -->|"chain history feed"| HISTORY
 
   classDef client fill:#e8f1ff,stroke:#2b5cab,color:#0f172a
@@ -129,8 +136,8 @@ flowchart LR
 
   class UI,UW client
   class TX,QUERY,LUCID,TRACE gateway
-  class HOST,CH_SEND,CH_RECV,CH_ACK,CH_TIMEOUT,TRANSFER,VOUCHER onchain
-  class NODE,KUPO,DBSYNC,HISTORY infra
+  class HOST,CH_SEND,CH_RECV,CH_ACK,CH_TIMEOUT,TRANSFER,VOUCHER,TRACE_REGISTRY onchain
+  class NODE,KUPO,HISTORY infra
   class HERMES,COSMOS relay
 ```
 
@@ -147,12 +154,12 @@ Additional architecture diagrams:
 This project uses a fork of the [Hermes IBC relayer](https://github.com/informalsystems/hermes) with native Cardano support. The relayer is integrated as a **git submodule** pointing to:
 
 **Fork Repository:** https://github.com/cardano-foundation/hermes-relayer
-**Branch:** `feat/cardano-integration`
+**Branch:** `master`
 
 The Cardano implementation resides in `relayer/crates/relayer/src/chain/cardano/` and includes:
 
 - `ChainEndpoint` trait implementation for Cardano
-- CIP-1852 hierarchical deterministic key derivation
+- Hermes-specific SLIP-0010 Ed25519 mnemonic derivation using a Cardano-shaped path. This is not wallet-compatible Ed25519-BIP32/CIP-1852 derivation; verify the derived address before funding it.
 - Ed25519 transaction signing using Pallas primitives
 - Gateway gRPC client for blockchain interaction
 - Cardano-specific IBC types (Header, ClientState, ConsensusState)
@@ -202,12 +209,14 @@ The following components are required to run the project:
 
 #### Verify Prerequisites
 
-To check if you have all the necessary prerequisites installed:
+To check Docker, Aiken, Deno, Go, and the Linux-native Hermes build toolchain when applicable:
 
 ```sh
 cd caribic
 cargo run check
 ```
+
+The command does not currently validate Node.js or Rust/Cargo; verify those separately with `node --version` and `cargo --version`.
 
 #### OS and Architecture Considerations
 
@@ -312,45 +321,26 @@ If client creation fails with an unsupported client type, the selected target ch
 
 #### Register a new stake pool on the local Cardano blockchain
 ```sh
-cd cardano/chains && ./regis-spo.sh <name>
+cd chains/cardano && ./regis-spo.sh <name>
 ```
 
 Example:
 
 ```sh
-cd cardano/chains && ./regis-spo.sh alice
+cd chains/cardano && ./regis-spo.sh alice
 ```
 
 #### Retire a stake pool on the local Cardano blockchain
-This will sent a tx to retire your pool in the next epoch:
+This sends a transaction to retire the pool in the next epoch:
 
 ```sh
-cd cardano/chains && ./deregis-spo.sh <name>
+cd chains/cardano && ./deregis-spo.sh <name>
 ```
 
 Example:
 
 ```sh
-cd cardano/chains && ./deregis-spo.sh alice
-```
-
-#### Register a validator on Cosmos
-This script will connect to your current docker and regis a new validator
-
-```sh
-Run this to check we only have 1 validator: curl -X GET "http://localhost:1317/cosmos/base/tendermint/v1beta1/validatorsets/latest" -H  "accept: application/json"
-
-Run this to regis new validator: cd cosmos/scripts/ && ./regis-spo.sh
-
-Run this to check we now have 2 validators: curl -X GET "http://localhost:1317/cosmos/base/tendermint/v1beta1/validatorsets/latest" -H  "accept: application/json"
-
-```
-
-#### Unregister a validator on Cosmos
-Stop the running script above, then wait for about 100 blocks (~2 mins), then check we only have 1 validator:
-
-```sh
-curl -X GET "http://localhost:1317/cosmos/base/tendermint/v1beta1/validatorsets/latest" -H  "accept: application/json"
+cd chains/cardano && ./deregis-spo.sh alice
 ```
 
 #### Test IBC primitives and lifecycles

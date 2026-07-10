@@ -4,7 +4,7 @@ Author: Julius Tranquilli,https://github.com/floor-licker
 
 Date: February 5, 2026 
 
-The intention of this document is to describe the current state of the Cardano on-chain host state which is able to satisfy IBC trustlessness and and Tendermint monotonicity invariants, but which also serializes IBC operations on Cardano. 
+The intention of this document is to describe the Cardano on-chain HostState design, which enforces the bridge's internal commitment and monotonicity invariants but also serializes IBC operations on Cardano. Counterparty trust assumptions are determined separately by the active Cardano light client.
 
 A core question to keep in mind before we dig into the challenge of sharding (or batching) is: 
 

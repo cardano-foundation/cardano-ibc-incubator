@@ -51,7 +51,6 @@ function isMissingCurrentLiveHostStateEvidence(error: unknown): boolean {
     "Historical tx evidence unavailable for current live HostState tx",
   );
 }
-
 export async function resolveCurrentLiveHostStateTxHeight({
   lucidService,
   historyService,
@@ -74,8 +73,8 @@ export async function resolveCurrentLiveHostStateTxHeight({
   );
 }
 
-// Proof-serving endpoints build ICS-23 proofs from the latest live IBC tree, so they can only
-// advertise a proof height once Mithril has certified the same HostState UTxO/root.
+// Proof-serving endpoints build ICS-23 proofs from the latest live IBC tree. They may advertise
+// a height only after the active Cardano light-client mode accepts the same HostState UTxO/root.
 export async function resolveProofHeightForCurrentRoot({
   logger,
   lucidService,

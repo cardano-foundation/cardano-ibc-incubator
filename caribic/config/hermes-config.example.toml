@@ -62,7 +62,7 @@ type = 'Cardano'
 id = 'cardano-devnet'
 
 # Gateway gRPC endpoint - this is your NestJS Gateway
-# Note: Gateway gRPC server listens on port 5001 (not 3001, which is HTTP/REST)
+# Note: Gateway gRPC listens on port 5001; its HTTP/REST server defaults to 8000.
 gateway_url = 'http://localhost:5001'
 
 # Cardano network ID (1 = mainnet, 0 = testnet)
@@ -74,26 +74,28 @@ key_store_type = 'Test'  # or 'Memory' for production
 # Note: Use absolute path, tilde expansion may not work
 # key_store_folder = '/Users/yourusername/.hermes/keys'
 
-# Account index for CIP-1852 key derivation (m/1852'/1815'/account'/2'/0')
+# Account component for Hermes' legacy Cardano-shaped SLIP-0010 path.
+# This is not wallet-compatible Ed25519-BIP32/CIP-1852 derivation; verify the
+# derived address before funding it.
 account = 0
 
 # Maximum time per block for this chain.
 max_block_time = '20000ms'
 
 # Additional timestamp tolerance used when other chains validate headers that
-# were produced from Cardano's Mithril-certified view.
+# were produced from Cardano's accepted proof view.
 #
 # `caribic start` widens this local-only for `cardano-devnet`, because the
-# certified Cardano view can lag the live tip by minutes in the local stack.
+# accepted Cardano view can lag the live tip in the local stack.
 clock_drift = '5s'
 
-# When Hermes submits a Cardano transaction via the Gateway, the Gateway reports the
-# Cardano inclusion *block number*. For Cardano↔Cosmos IBC, the Cosmos-side light
-# client only accepts Mithril-certified heights. Hermes therefore waits until the
-# latest Mithril `cardano-transactions` snapshot has a `block_number` >= the
-# transaction inclusion block number before continuing the handshake/relay.
+# When Hermes submits a Cardano transaction via the Gateway, the Gateway reports
+# the Cardano inclusion block number. Hermes waits until the active Gateway
+# light-client mode accepts that height before continuing the handshake or relay.
 #
-# Note: this "height" is a Cardano block number, not a Cardano slot number.
+# These field names are retained for configuration compatibility with the retired
+# Mithril mode. In the default stake-weighted-stability mode they control the
+# accepted-height wait. The height is a Cardano block number, not a slot number.
 mithril_certification_timeout = '30m'
 mithril_poll_interval = '5s'
 mithril_wait_log_interval = '30s'
