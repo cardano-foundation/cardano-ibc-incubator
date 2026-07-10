@@ -501,7 +501,7 @@ export const formatTimestamp = (timestampInMilliseconds: number): string => {
   const month = (date.getMonth() + 1).toString().padStart(2, "0"); // Months are zero-based
   const year = date.getFullYear();
 
-  // Format the date string as "hh:mm_ddMMyyy"
+  // Format the date string as "hhmmddMMyyyy"
   const formattedDate = `${hours}${minutes}${day}${month}${year}`;
 
   return formattedDate;

@@ -124,7 +124,6 @@ export function initializeClientState(clientStateMsg: ClientStateTendermint): Cl
   const clientState: ClientState = {
     chainId: convertString2Hex(clientStateMsg.chain_id),
     trustLevel: {
-      //TODO: remove hardcode 2n
       numerator: convertToBigInt(clientStateMsg.trust_level?.numerator),
       denominator: convertToBigInt(clientStateMsg.trust_level?.denominator),
     },

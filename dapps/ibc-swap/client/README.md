@@ -10,16 +10,18 @@ Create `.env` files with the following variables:
 |-----------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------|
 | BASE_PATH                               | NextJs will run instance under sub-path of a domain, refer to [this](https://nextjs.org/docs/app/api-reference/next-config-js/basePath) | Default: "/ibc"                                                          |
 | NEXT_PUBLIC_CARDANO_CHAIN_ID            | Network magic of Cardano chain                                                                                                          | Currently we use 42 for local Cardano, for preview, it will be 2         |
-| NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT    | RPC end-point of local Osmosis                                                                                                          | Default: http://localhost:26658                                          |
-| NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT   | Rest end-point of local Osmosis                                                                                                         | Default: http://localhost:1318                                           |
+| NEXT_PUBLIC_LOCALOSMOSIS_RPC_ENDPOINT   | RPC end-point of local Osmosis                                                                                                          | Default: http://localhost:26658                                          |
+| NEXT_PUBLIC_LOCALOSMOSIS_REST_ENDPOINT  | Rest end-point of local Osmosis                                                                                                         | Default: http://localhost:1318                                           |
 | NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT | Rest end-point of gateway                                                                                                               | Default: http://localhost:8000. This is only used as the default bridge-manifest host when `NEXT_PUBLIC_CARDANO_BRIDGE_MANIFEST_URL` is unset. |
 | NEXT_PUBLIC_CARDANO_BRIDGE_MANIFEST_URL | URL of the public Cardano bridge manifest                                                                                               | Default: `${NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT}/api/bridge-manifest` |
 | NEXT_PUBLIC_KUPMIOS_URL                 | Url of Kupo and Ogmios instances, should not be use when using NEXT_PUBLIC_BLOCKFROST_PROJECT_ID                                        | Default: "http://localhost:1442,http://localhost:1337"                   |
-| NEXT_PUBLIC_BLOCKFROST_PROJECT_ID       | Blockfrost Project ID, currently only support network preview, should not be use when using NEXT_PUBLIC_KUPMIOS_URL                     | Default: "previewVi2O..."                                                |
+| NEXT_PUBLIC_BLOCKFROST_PROJECT_ID       | Blockfrost Project ID for preview; do not set it when using `NEXT_PUBLIC_KUPMIOS_URL`                                                   | Unset by default                                                         |
 | NEXT_PUBLIC_CROSSCHAIN_SWAP_ADDRESS     | Cross-chain swap address on local Osmosis for direct Cardano-to-Osmosis swap packets.                                                  | Optional                                                                 |
 | NEXT_PUBLIC_FORWARD_TIMEOUT             | Timeout for packet forwarding                                                                                                           | Default: "60m"                                                           |
 
-Legacy compatibility: `NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT` and `NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT` are still accepted as fallbacks.
+Legacy compatibility: the misspelled `NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT`
+and `NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT` names are still accepted as
+fallbacks.
 
 TODO: This demo client should not depend on the gateway long term. Today
 denom-trace lookup, route planning, and unsigned Cardano transfer tx building
@@ -34,9 +36,13 @@ yarn && yarn dev
 ```
 
 ## Containerized local run
-This frontend is optional and is not started by `caribic start`.
+This frontend is optional. Start it through the dedicated Caribic target:
 
-To run it as a containerized demo UI:
+```bash
+caribic start dapp
+```
+
+Alternatively, run it directly through Compose:
 
 ```bash
 docker compose -f dapps/docker-compose.yml up --build ibc-swap-client

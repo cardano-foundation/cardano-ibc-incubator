@@ -69,7 +69,7 @@ validator spend_client(host_state_nft_policy_id: PolicyId) {
     // output contains client token
     expect auth.contains_only_auth_tokens(updated_output, [datum.token])
 
-    // TODO: add verify header
+    // Header and misbehaviour verification happen in verify_client_message below.
     // output datum is updated correctly
     expect updated_datum: ClientDatum =
       validator_utils.get_inline_datum(updated_output)

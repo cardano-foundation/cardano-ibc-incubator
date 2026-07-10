@@ -1,54 +1,53 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="200" alt="Nest Logo" /></a>
-</p>
+# Cardano Gateway
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+The Gateway is the Cardano-facing service for the bridge. It exposes IBC query
+and transaction-building APIs, builds unsigned Cardano transactions for wallet
+signing, and supplies the relayer with Cardano state and proof data.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+By default, the service listens on:
 
-## Description
+- HTTP/REST: `http://localhost:8000`
+- gRPC: `0.0.0.0:5001`
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+See [`.env.example`](.env.example) for the complete configuration surface.
 
-## Published Container Image
+## Data Sources
 
-The Cardano Gateway image is published to GitHub Container Registry after Gateway-relevant changes are merged to `main`.
+The Gateway separates current-chain access from historical bridge evidence:
+
+- **Ogmios** follows live chain progression and submits transactions.
+- **Kupo** indexes current UTxOs needed to build and validate transactions.
+- **Yaci Store plus the bridge projection** provides historical transactions,
+  UTxOs, and stake-pool evidence.
+
+The active Cardano light-client mode is `stake-weighted-stability`. Mithril
+integration remains only for compatibility with historical deployments and is
+deprecated for new deployments.
+
+IBC denomination traces are kept in the on-chain trace registry. The Gateway
+reads the registry directory and shards rather than treating a local database
+as the source of truth.
+
+## Bridge Discovery Manifest
+
+The Gateway exposes the public bridge manifest through
+`GET /api/bridge-manifest` and the Cardano gRPC `Query/BridgeManifest` method.
+The manifest records the script hashes, reference UTxOs, modules, auth tokens,
+and deployment metadata needed to reconnect a Gateway and relayer to an
+existing bridge deployment.
+
+At startup, either `HANDLER_JSON_PATH` or `BRIDGE_MANIFEST_PATH` can provide the
+deployment configuration. To convert an existing `handler.json` into the public
+format, run:
 
 ```bash
-docker pull ghcr.io/cardano-foundation/cardano-ibc-incubator/cardano-gateway:main
+npm run export:bridge-manifest -- <handler-json-path> <output-path>
 ```
 
-Published tags:
-
-- `main`: latest image built from the `main` branch
-- `sha-<commit>`: immutable image for a specific commit
-- `v*`: release tag image when a matching Git tag is pushed
-
-Published images include tracked bridge manifests at `/usr/src/app/manifests`.
-For example, set `BRIDGE_MANIFEST_PATH=/usr/src/app/manifests/preprod/cardano-preprod-bridge-manifest.json`
-to start the Gateway against the shared Cardano preprod bridge deployment.
-Tagged GitHub releases also attach a `cardano-gateway-manifests-<tag>.tar.gz`
-archive containing the same tracked manifest files.
+Tracked manifests are included in published container images under
+`/usr/src/app/manifests`.
 
 ## SendPacket Escrow Flow
-
-This sequence shows the user-funded escrow transfer path from request to on-chain submission.
 
 ```mermaid
 sequenceDiagram
@@ -65,115 +64,51 @@ sequenceDiagram
 
   U->>F: Enter amount and destination
   F->>T: MsgTransfer request
-  T->>L: build unsigned sendPacket (escrow)
-  L-->>T: channel/client/module UTxOs
-  T->>L: find sender UTxOs
-  alt sender UTxOs missing
-    T-->>F: error (fail immediately)
-  else sender UTxOs found
-    T->>L: create unsigned escrow tx using sender UTxOs
-    L-->>T: unsigned tx
-    T-->>F: unsigned tx bytes
-    F->>W: request signature
-    W-->>F: signed tx bytes
-    F->>H: hand off signed tx
-    H->>N: submit signed tx
-    N-->>H: tx hash
-    N-->>K: new UTxOs indexed
-    N-->>Y: tx evidence and bridge history indexed
-  end
+  T->>L: Build unsigned sendPacket escrow transaction
+  L-->>T: Channel, client, module, and sender UTxOs
+  T-->>F: Unsigned transaction bytes
+  F->>W: Request signature
+  W-->>F: Signed transaction bytes
+  F->>H: Hand off signed transaction
+  H->>N: Submit transaction
+  N-->>H: Transaction hash
+  N-->>K: Index current UTxOs
+  N-->>Y: Index transaction evidence and bridge history
 ```
 
-Related diagrams:
+Related documentation:
 
-- System architecture: `../../README.md#architecture-at-a-glance`
-- Denom trace lifecycle: `../../docs/denom-trace-mapping.md`
-- Mithril proof flow: `../../docs/mithril-light-client.md#mithril-proof-flow-for-relaying`
+- [System architecture](../../README.md#architecture)
+- [Denom trace lifecycle](../../docs/denom-trace-mapping.md)
+- [Probabilistic light client](../../docs/probabilistic-light-client.md)
 
-## Bridge Discovery Manifest
-
-The Gateway can expose a public bridge manifest at `GET /api/bridge-manifest` and the Cardano gRPC `Query/BridgeManifest` method. That manifest is the operator-facing bootstrap document for reconnecting another Gateway/relayer stack to the same deployed Cardano bridge, including the deployment timestamp, script hashes, reference UTxOs, modules, and auth tokens. At startup, the Gateway accepts either `HANDLER_JSON_PATH` or `BRIDGE_MANIFEST_PATH` and normalizes both sources into the same internal deployment config. If you already have a `handler.json`, you can export the equivalent public manifest with `npm run export:bridge-manifest -- <handler-json-path> <output-path>`.
-
-## Historical Backend
-
-The Gateway's historical Cardano reads now go through the Yaci-backed bridge history service.
-
-`HISTORY_DB_*` is the Gateway's database config surface for the historical backend.
-
-## Cardano Data Plane
-
-The Gateway now uses two Cardano data planes with different responsibilities:
-
-- Live data plane: `Ogmios + Kupo + Mithril`
-- Historical data plane: `Yaci Store + bridge-specific projection`
-
-The Yaci-backed projection is the Gateway's authoritative history backend. It stores the bridge-specific evidence the Gateway needs instead of querying a generic historical Cardano schema directly.
-
-Current bridge history tables include:
-
-- `bridge_tx_history`: light tx summary by block/slot
-- `bridge_tx_evidence`: tx CBOR, tx body CBOR, decoded redeemers, HostState evidence
-- `bridge_utxo_history`: historical bridge-relevant UTxOs by asset and block
-- `bridge_spo_event_history`: historical SPO register/unregister markers
-- `bridge_pool_registration_cache`: first-registration slots for stake pools used by stability scoring
-
-So the runtime split is:
-
-- use `Ogmios` for live chain progression and exact inclusion tracking
-- use `Kupo` for current live UTxO state
-- use `Mithril` for certified Cardano state roots / heights
-- use `Yaci` for historical bridge state and tx evidence
-
-Stake-weighted stability also needs a pool-age lookup because active pools can have registered long before a bridge
-deployment checkpoint. The Gateway first uses `bridge_pool_registration_cache`, then local Yaci registration tables, then
-the optional `CARDANO_POOL_REGISTRATION_HISTORY_ENDPOINT` for cache misses. Preprod defaults that endpoint to Koios so a
-checkpointed stack can resolve old pool registrations without replaying the full chain history.
-
-Stake-weighted stability uses Koios via `CARDANO_EPOCH_PARAMS_ENDPOINT` for epoch nonces because Demeter Ogmios
-endpoints consistently time out after 20 seconds on `queryLedgerState/nonces`.
-
-## Installation
+## Development
 
 ```bash
-$ npm install
+npm install
+npm run start:dev
 ```
 
-## Running the app
+Build and test commands:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm run build
+npm test
+npm run test:e2e
+npm run test:cov
 ```
 
-## Test
+## Published Container Image
+
+Gateway images are published to GitHub Container Registry after relevant
+changes reach `main`:
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+docker pull ghcr.io/cardano-foundation/cardano-ibc-incubator/cardano-gateway:main
 ```
 
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://kamilmysliwiec.com)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Tags include `main`, immutable `sha-<commit>` tags, and `v*` release tags.
 
 ## License
 
-Nest is [MIT licensed](LICENSE).
+This project is licensed under the [Apache License 2.0](../../LICENSE).

@@ -341,7 +341,6 @@ export function normalizeTxsResultFromModuleRedeemer(
   const packetAck = acknowledgementJsonFromResponse(acknowledgementRes);
   const packetAckHex = acknowledgementHexFromResponse(acknowledgementRes);
 
-  // TODO: handle packet ack
   const packetData: Packet = channelRedeemer['RecvPacket']?.packet as unknown as Packet;
   return {
     code: 0,

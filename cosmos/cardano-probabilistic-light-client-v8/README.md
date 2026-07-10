@@ -27,7 +27,7 @@ github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic
 This module targets:
 
 ```text
-github.com/cosmos/cosmos-sdk v0.53.0
+github.com/cosmos/cosmos-sdk v0.50.14
 github.com/cosmos/ibc-go/v8 v8.7.0
 ```
 
@@ -65,7 +65,7 @@ Because this is a nested Go module, release tags must be prefixed with the modul
 
 ```text
 cosmos/cardano-probabilistic-light-client-v8/v0.1.5
-cosmos/cardano-probabilistic-light-client-core/v0.1.2
+cosmos/cardano-probabilistic-light-client-core/v0.1.3
 ```
 
 Consumers can then require it with:

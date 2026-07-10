@@ -62,7 +62,7 @@ Because this is a nested Go module, release tags must be prefixed with the modul
 
 ```text
 cosmos/cardano-probabilistic-light-client-v10/v0.1.2
-cosmos/cardano-probabilistic-light-client-core/v0.1.2
+cosmos/cardano-probabilistic-light-client-core/v0.1.3
 ```
 
 Consumers can then require it with:

@@ -1,25 +1,29 @@
-# cosmjs-types
+# Project Protocol Type Bindings
 
-[![npm version](https://img.shields.io/npm/v/cosmjs-types.svg)](https://www.npmjs.com/package/cosmjs-types)
+This workspace package generates the JavaScript and TypeScript protobuf
+bindings used by the repository. It began from `cosmjs-types`, but is consumed
+here as the local `proto-types` package and includes the project's vendored
+Cosmos SDK, IBC, and Cardano protocol inputs.
 
-## Maintenance
+## Install
 
-This section is for maintainers of this repo, not users.
-
-### Getting started
-
-```sh
-# Pull external code
-git submodule init
-git submodule update
-
-# Install dependencies
+```bash
 npm install
 ```
 
-### Rebuilding types
+The protobuf sources are already present under `protos/`; no Git submodule
+initialization is required.
 
-```sh
-npm run codegen # Generate .ts files into ./src
-npm run build # Build .js/.d.ts files
+## Generate and Build
+
+```bash
+npm run codegen
+npm run build
 ```
+
+`scripts/codegen.js` reads the vendored protobuf inputs and regenerates
+TypeScript under `src/`. The build command compiles the package into `build/`.
+Generated source should be refreshed whenever an input protobuf changes.
+
+The imported upstream release history is retained in [CHANGELOG.md](CHANGELOG.md)
+for provenance.

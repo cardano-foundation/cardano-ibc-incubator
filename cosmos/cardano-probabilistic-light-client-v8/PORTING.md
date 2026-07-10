@@ -2,7 +2,7 @@
 
 ## Current Target
 
-This module targets Cosmos SDK `v0.53.0` and `ibc-go/v8.7.0`.
+This module targets Cosmos SDK `v0.50.14` and `ibc-go/v8.7.0`.
 
 ## Other Cosmos SDK v8 Targets
 

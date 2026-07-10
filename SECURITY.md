@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-The Cardano Foundation Explorer project takes security seriously. We appreciate your efforts in disclosing any potential vulnerabilities responsibly.
+The Cardano IBC project takes security seriously. We appreciate your efforts in disclosing any potential vulnerabilities responsibly.
 
 If you have discovered a security vulnerability within this project, please report it to us as soon as possible. We encourage responsible disclosure and kindly ask you to follow the guidelines outlined below.
 
@@ -14,7 +14,7 @@ To ensure that the security vulnerability is properly addressed, we request that
 
 2. **Privately disclose the vulnerability**: Please do not disclose the vulnerability publicly before we have had an opportunity to investigate and address the issue. We appreciate your discretion.
 
-3. **Contact us directly**: Send an email to our team at security@cardanofoundation.org with the subject line: "[Cardano Foundation Explorer] Security Vulnerability Report"
+3. **Contact us directly**: Send an email to our team at security@cardanofoundation.org with the subject line: "[Cardano IBC] Security Vulnerability Report"
 
 4. **Provide detailed information**: In your report, please include detailed information about the vulnerability, including steps to reproduce it and any potential impact.
 
@@ -28,4 +28,4 @@ To ensure that the security vulnerability is properly addressed, we request that
 
 We believe in recognizing the valuable contributions of the security community and are open to acknowledging those who responsibly disclose vulnerabilities. If you would like to be acknowledged for your responsible disclosure, please let us know when reporting the vulnerability. However, we respect your privacy and will not disclose any personal information without your explicit consent.
 
-Thank you for helping us ensure the security of the Cardano Foundation Explorer project and the broader Cardano ecosystem. Your efforts are greatly appreciated.
+Thank you for helping us ensure the security of the Cardano IBC project and the broader Cardano ecosystem. Your efforts are greatly appreciated.

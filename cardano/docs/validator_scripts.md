@@ -1,85 +1,65 @@
-# Cardano Validator Script
+# Cardano Validator Scripts
 
-## Overview
+The Cardano IBC on-chain logic is written in
+[Aiken](https://aiken-lang.org/) and lives in
+[`cardano/onchain/validators/`](../onchain/validators/). The validators enforce
+IBC state transitions in Cardano's eUTXO model.
 
-This document contains information about validator scripts that power IBC on Cardano blockchain.
+## Validator Groups
 
-Validator scripts is written in Aiken - a modern programming language and toolchain for developing smart contracts on the Cardano. Aiken is easier than Plutus to get started with for those who are less familiar with functional languages like Haskell. For more information visit [Aiken docs](https://aiken-lang.org/).
+The current validator set includes:
 
-## Components
+- **Host state:** `host_state_nft.ak` identifies the canonical HostState UTxO,
+  while `host_state_stt.ak` enforces its state-thread continuity and lifecycle.
+- **IBC core state:** minting and spending validators for clients,
+  connections, channels, and ports.
+- **Packet handling:** the validators under `spending_channel/` implement send,
+  receive, acknowledgement, timeout, and channel-handshake transitions.
+- **Proof verification:** `verifying_proof.ak` checks commitment proofs used by
+  connection, channel, and packet operations.
+- **Token transfer:** `spending_transfer_module.ak` and `minting_voucher.ak`
+  implement the transfer module and voucher lifecycle.
+- **Denom trace registry:** `trace_registry.ak` and its supporting minting
+  policy keep denomination trace mappings on-chain.
+- **Escrow sharding:** `minting_transfer_escrow_shard.ak` identifies transfer
+  escrow shards used to reduce contention.
+- **Voucher metadata:** `voucher_metadata.ak` validates voucher metadata state.
 
-Validators scripts are located in `validators/` directory and implement the following specifications of IBC:
-- [ICS-25 Handler Interface](https://github.com/cosmos/ibc/tree/main/spec/core/ics-025-handler-interface): `host_state_stt.host_state_stt`, `host_state_nft.host_state_nft`.
-- [ICS-02 Client Semantics](https://github.com/cosmos/ibc/tree/main/spec/core/ics-002-client-semantics): `minting_client_stt.mint_client_stt`, `spending_client.spend_client`.
-- [ICS-03 Connection Semantics](https://github.com/cosmos/ibc/tree/main/spec/core/ics-003-connection-semantics): `minting_connection_stt.mint_connection_stt`, `spending_connection.spend_connection`.
-- [ICS-04 Channel & Packet Semantics](https://github.com/cosmos/ibc/tree/main/spec/core/ics-004-channel-and-packet-semantics): `minting_channel_stt.mint_channel_stt`, `spending_channel.spend_channel`, all validators in `spending_channel/` directory.
-- [ICS-05 Port Allocation](https://github.com/cosmos/ibc/tree/main/spec/core/ics-005-port-allocation): `minting_port.mint_port`.
-- [ICS-23 Vector Commitments](https://github.com/cosmos/ibc/blob/main/spec/core/ics-023-vector-commitments): `verifying_proof.verify_proof`.
-- [ICS-20 Fungible Token Transfer](https://github.com/cosmos/ibc/tree/main/spec/app/ics-020-fungible-token-transfer): `spending_transfer_module.spend_transfer_module`, `minting_voucher.mint_voucher`.
+The validator filenames are the maintained inventory; tests live alongside the
+corresponding scripts.
 
-There are also some validator scripts used as utilities and will be explained later.
+## State Authentication
 
-## Storing IBC states
+IBC state is distributed across multiple UTxOs because Cardano transactions and
+outputs have bounded sizes. Native authentication tokens distinguish canonical
+bridge state from arbitrary outputs at the same script address. Spending
+validators require the expected token to continue into the updated output, and
+minting policies control token creation.
 
-Cardano uses the eUTXO model, where the states of the blockchain are stored in UTXOs and updated by spending these UTXOs. Unlike other blockchains, where an address can hold almost unlimited data (as long as you can pay the fee for it), transactions in Cardano have a size limit, and the UTXO size, which is also included in the transaction, must be lower than that limit. Therefore, if a DApp has too much data, we must distribute it into multiple UTXOs. In IBC which has a bunch of states, we choose to store states of each client, connection and channel in a sole UTXO and have different validator scripts to manage their spending conditions.
+See [Identifying Cardano IBC UTxOs](identify_utxo.md) for the HostState NFT and
+sequence-derived entity token scheme.
 
-However, distributed states also bring some challenges, one of which is identifying which UTXOs belong to our system. Since anyone can create UTXOs that contain any data and attach them to any address, we need a way to distinguish the ones with the same address. To achieve this goal, we used another type of validator scripts called minting policy which help us manage minting and burning native token on Cardano. With this, beside creating new UTXO for each object of IBC, we also mint a new authentication token and attach it to newly created UTXO. Then the spending validator script of the UTXO will ensure that the spent one must contain the authentication token, and this token will be retained in the updated output UTXO.
+## Reference Scripts
 
-By leveraging both the spending validator and minting policy, we can effectively create, update and query states of IBC on Cardano. You can refer to the previous section and notice that all semantic of IBC specs are also implemented with both these types of mentioned validator script.
+Cardano IBC uses [CIP-33 reference scripts](https://cips.cardano.org/cip/CIP-0033)
+so transactions can reference deployed validator bytecode instead of carrying
+every script inline. This is necessary for larger bridge transitions to remain
+within transaction-size limits.
 
-## Reference scripts
+Some operations are split across a spending validator and transaction-level
+minting policies. The spending validator verifies that the required policy is
+executed, while the policy validates the operation-specific transition. Script
+hashes are supplied as parameters where validators need to authenticate one
+another.
 
-Every time a script is used, the transaction which caused the usage must supply the whole script as part of the transaction. This not only increases the transaction fee but also makes the transaction reach its size limit more frequently. That is why Cardano introduced CIP-33 Reference scripts. This CIP allows scripts to be attached to UTXOs and used to satisfy the requirement of providing the scripts during validation.
+## Deployment
 
-In Cardano IBC, which has a large Aiken validator scripts codebase, using reference scripts is a must because transaction size limit is never satisfied with a large amount of IBC states plus a very long Aiken scripts (sometimes it can be 2 to 3 times larger the transaction size limit). While effectively helping reduce the transaction size and cost, using reference scripts also requires some extra steps for setup and use.We will discuss this further in section [Deploying](#deploying)
+"Deployment" creates the canonical HostState, module state, authentication
+tokens, and reference-script UTxOs. The maintained implementation is
+[`cardano/offchain/src/deployment.ts`](../offchain/src/deployment.ts). It reads
+the compiled Aiken blueprint, initializes parameterized scripts in dependency
+order, submits the required transactions, and writes deployment artifacts under
+`cardano/offchain/deployments/`, including `handler.json`.
 
-## Transaction Level Validator Minting Policy
-
-Sometimes the size of a single validator script can be larger than the transaction size limit, so we can't even execute a transaction to attach it to a reference script. This can happen if the validator script handles a lot of operations, as many of our IBC scripts do. To deal with this, instead of implementing all logic for a semantic in a single script, we can use minting policies to extend transaction-level validation. With this solution, the role of the original validator script is simply to check that other minting policies are included in the transaction, while the minting scripts will be responsible for validating the main logic. Despite bringing some downside regarding the cost of cross-validation between scripts and minting unused tokens, this method is very effective in reducing the size of validator scripts. Combined with reference scripts, it allows us to have very complicated logic in our validator scripts.
-
-## Dependencies between validator scripts
-
-Since we have separated validator scripts into multiple smaller ones, they often need to refer and cross-validate each other. This leads to some scripts needing to know about others, making dependencies between them somewhat complex. You can see the graph of script dependencies below (scripts depend on the ones they point to):
-
-```mermaid
-graph TD;
-    HOST_STATE(host_state_stt.host_state_stt)-.->MINT_CLIENT(minting_client_stt.mint_client_stt);
-    HOST_STATE-.->MINT_CONN(minting_connection_stt.mint_connection_stt);
-    HOST_STATE-.->MINT_CHAN(minting_channel_stt.mint_channel_stt);
-    HOST_STATE-.->MINT_PORT(minting_port.mint_port);
-
-    SPEND_CHANNEL-.->MINT_CLIENT;
-    SPEND_CHANNEL-.->MINT_CONN;
-    SPEND_CHANNEL-.->MINT_CHAN;
-    SPEND_CHANNEL-.->MINT_PORT(minting_port.mint_port);
-
-    MINT_CLIENT-.->SPEND_CLIENT(spending_client.spend_client);
-
-    MINT_CONN-.->MINT_CLIENT;
-    MINT_CONN-.->SPEND_CONN(spending_connection.spend_connection);
-    MINT_CONN-.->VERIFY_PROOF(verifying_proof.verify_proof);
-
-    MINT_CHAN-.->MINT_CLIENT;
-    MINT_CHAN-.->MINT_CONN;
-    MINT_CHAN-.->MINT_PORT;
-    MINT_CHAN-.->VERIFY_PROOF;
-    MINT_CHAN-.->SPEND_CHAN(spending_channel.spend_channel);
-
-    SPEND_CONN-.->MINT_CLIENT;
-    SPEND_CONN-.->VERIFY_PROOF;
-
-    SPEND_CHAN-.->SPEND_CHAN_MINTING_POLICIES(spending_channel/ minting polices);
-
-    SPEND_CHAN_MINTING_POLICIES-.->MINT_CLIENT;
-    SPEND_CHAN_MINTING_POLICIES-.->MINT_CONN;
-    SPEND_CHAN_MINTING_POLICIES-.->MINT_PORT;
-    SPEND_CHAN_MINTING_POLICIES-.->VERIFY_PROOF;
-```
-
-## Deploying
-
-Cardano does not have the concept of deploying validator scripts, so what we actually mean by deploying here is the creation of essential UTXOs to operate our system. More specifically, we will create the canonical HostState UTXO, module UTXOs and reference scripts. HostState stores IBC object sequences, bound ports and the commitment root. Module UTXOs contain IBC application state. Other UTXOs hold validators in reference script fields, which helps reduce transaction size and cost as mentioned [before](#reference-scripts).
-
-In the section about [dependencies between scripts](#dependencies-between-validator-scripts), we saw that some scripts need to know about others. The technique we use here is passing the script hashes of dependent scripts to the validator parameters of the needed ones. These parameters are only set off-chain and will become a part of the bytecode of the scripts instead of being stored as states on-chain. This leads to another requirement that validator scripts need to be initialized in a specific order, particularly in a bottom-up order from our dependencies graph.
-
-As you can see, the deploying process is quite complex and hard to do manually. To make the deploying experience better, we wrote a script to automate this process. This [script](https://github.com/cardano-foundation/cardano-ibc-incubator/blob/draft/aiken-contract-docs/cardano/src/deploy.ts) will read the `plutus.json` file generated by Aiken, initialize validator scripts, create required UTXOs for the system, and store all the needed information in a file called `handler.json`.
+The Gateway can also consume or expose a public bridge manifest derived from
+that deployment. See the [Gateway bridge manifest documentation](../gateway/README.md#bridge-discovery-manifest).

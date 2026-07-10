@@ -35,7 +35,7 @@ The chain which sends the query becomes the controller chain, and the chain whic
 
 ## Technical Specification
 
-![model](icq-img.png)
+![Interchain query model](https://raw.githubusercontent.com/cosmos/ibc-apps/5596e0a0358565b87fa6399125bbfc8dbdf97553/modules/async-icq/icq-img.png)
 
 ### ABCI Query
 

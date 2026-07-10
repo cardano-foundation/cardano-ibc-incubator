@@ -23,7 +23,7 @@ If you are starting with a very vague idea instead of a concrete feature request
 
 Thank you for contributing your changes by opening a pull requests! To get something merged we usually require:
 
-- ❗ Description of the changes - please follow the [Conventional Commits specification](https://www.conventionalcommits.org/en/v1.0.0/#specification) as we use it to automatically generate our CHANGELOG ❗
+- ❗ Description of the changes - please follow the [Conventional Commits specification](https://www.conventionalcommits.org/en/v1.0.0/#specification) for consistent commit history ❗
 - Quality of changes is ensured - through new or updated automated tests
 - Change is related to an issue (feature request or bug report) - ideally discussed beforehand
 - Well-scoped - we prefer multiple PRs, rather than a big one

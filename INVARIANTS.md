@@ -1007,10 +1007,11 @@ These are the next useful improvements for the invariant suite:
 
 ## Current Coverage Boundary
 
-The current fuzzing suite does not yet provide property-level invariant
-coverage for:
+The current fuzzing suite does not yet provide full transaction-shaped or
+end-to-end property coverage for:
 
-- client creation or update,
+- client creation and complete client-update/header-verification contexts
+  beyond the current unit and HostState-coupling properties,
 - full end-to-end connection handshake validator contexts,
 - full end-to-end channel handshake validator contexts,
 - full end-to-end packet lifecycle validator contexts beyond the current

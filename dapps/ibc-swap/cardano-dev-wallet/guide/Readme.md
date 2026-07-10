@@ -101,6 +101,16 @@ Fill in the details and click **Save**.
 
 ![](./03-configure-backend-2.png)
 
+## Activate Backend
+
+Open the backend's **Options** menu and click **Set Active**.
+
+![](./04-activate-backend-0.png)
+
+The active backend will be highlighted.
+
+![](./04-activate-backend-1.png)
+
 # Features
 
 ## Overview

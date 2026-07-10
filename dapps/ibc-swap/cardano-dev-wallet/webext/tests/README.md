@@ -2,7 +2,7 @@
 
 ### Start Plutip cluster
 
-* Go to `/plutip` in this repo.
+* Go to `dapps/ibc-swap/cardano-dev-wallet/plutip` in this repo.
 * Run `nix run .` to start the plutip cluster.
 
 ### Start CTL Test Server
@@ -19,5 +19,5 @@ https://github.com/Plutonomicon/cardano-transaction-lib/pull/1606
 ### Run E2E Tests
 
 * Wait for the Plutip cluster and the CTL Test Server to be up and running.
-* Go to `/webext` in this repo
+* Go to `dapps/ibc-swap/cardano-dev-wallet/webext` in this repo.
 * Run `node build.js --test` to start the E2E test suite.

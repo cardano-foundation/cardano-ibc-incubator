@@ -13,19 +13,22 @@ To instantiate the contract, you need to specify the following parameters:
 
  * swap_contract: the swaprouter contract to be used
  * channels: a list of (bech32 prefix, channel_id) that the contract will allow. 
+ * governor: the address allowed to manage the channel registry
 
 ### Example instantiation message
 
 ``` json
-{"swap_contract": "osmo1thiscontract", "channels": [["cosmos", "channel-0"], ["juno", "channel-42"]]}
+{"governor": "osmo1governor", "swap_contract": "osmo1thiscontract", "channels": [["cosmos", "channel-0"], ["juno", "channel-42"]]}
 ```
 
 ## Usage
 
 ### Via IBC
 
-Assuming the current implementation of the wasm middleware on Osmosis v14 (`x/ibc-hooks/v0.0.6`), the memo
-of an IBC transfer to do crosschain swaps would look as follows:
+This imported example was written for the wasm middleware shipped with Osmosis
+v14 (`x/ibc-hooks/v0.0.6`). Verify the memo format and contract compatibility
+against the version deployed on your target chain. In that historical setup,
+the memo for a cross-chain swap looked as follows:
 
 ``` json
 {"wasm": {
@@ -241,13 +244,13 @@ chainB tx wasm store ./bytecode/crosschainswaps.wasm --from validator "${TX_FLAG
 Get the code id:
 
 ```bash
-CROSSCHAINSWAPS_CODE_ID=$(chainA query wasm list-code -o json | jq -r '.code_infos[-1].code_id')
+CROSSCHAIN_SWAPS_CODE_ID=$(chainB query wasm list-code -o json | jq -r '.code_infos[-1].code_id')
 ```
 
 Instantiate the contract:
 
 ```bash
-MSG=$(jenv -c '{"swap_contract": $SWAPROUTER_ADDRESS, "channels": [["osmo", $CHANNEL_ID]]}')
+MSG=$(jenv -c '{"governor": $VALIDATOR, "swap_contract": $SWAPROUTER_ADDRESS, "channels": [["osmo", $CHANNEL_ID]]}')
 chainB tx wasm instantiate "$CROSSCHAIN_SWAPS_CODE_ID" "$MSG" --from validator --admin $VALIDATOR --label=crosschain_swaps --yes  -b block
 ```
 
