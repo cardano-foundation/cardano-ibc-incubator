@@ -1,11 +1,11 @@
 {
   "schema_version": 3,
-  "deployment_id": "cardano-devnet:381713b890cd761afc2205fe7c4e4f4c6cfc0095f285cc3941160d2e.6962635f686f73745f7374617465",
+  "deployment_id": "cardano-preprod:381713b890cd761afc2205fe7c4e4f4c6cfc0095f285cc3941160d2e.6962635f686f73745f7374617465",
   "deployed_at": "2026-07-09T17:24:05.560Z",
   "cardano": {
-    "chain_id": "cardano-devnet",
-    "network_magic": 42,
-    "network": "Custom"
+    "chain_id": "cardano-preprod",
+    "network_magic": 1,
+    "network": "preprod"
   },
   "host_state_nft": {
     "policy_id": "381713b890cd761afc2205fe7c4e4f4c6cfc0095f285cc3941160d2e",
