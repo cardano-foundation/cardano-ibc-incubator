@@ -26,14 +26,10 @@ pub fn null_validator_set() -> ValidatorSet {
   }
 }
 
-// TODO: Need recalculation of the set's total voting power 
-// if current total_voting_power is 0
+/// Derive total voting power from the validator entries committed by the
+/// validator-set hash. The relayed aggregate is never a source of truth.
 pub fn total_voting_power(vals: ValidatorSet) -> Int {
-  if vals.total_voting_power == 0 {
-    list.reduce(vals.validators, 0, fn(acc, val) { acc + val.voting_power })
-  } else {
-    vals.total_voting_power
-  }
+  list.reduce(vals.validators, 0, fn(acc, val) { acc + val.voting_power })
 }
 
 pub fn size(vals: ValidatorSet) -> Int {
