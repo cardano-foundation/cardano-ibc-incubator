@@ -287,7 +287,7 @@ fn check_update_client_misbehaviour_conflict_header(
         voting_power: 1,
         proposer_priority: -3,
       },
-      total_voting_power: 0,
+      total_voting_power: 4,
     }
 
   let trusted_validators =
@@ -324,7 +324,7 @@ fn check_update_client_misbehaviour_conflict_header(
         voting_power: 1,
         proposer_priority: -3,
       },
-      total_voting_power: 0,
+      total_voting_power: 4,
     }
 
   let header =
@@ -560,7 +560,7 @@ test update_client_misbehaviour_monotonic_time_violation() {
         voting_power: 1,
         proposer_priority: -3,
       },
-      total_voting_power: 0,
+      total_voting_power: 4,
     }
 
   let trusted_validators =
@@ -597,7 +597,7 @@ test update_client_misbehaviour_monotonic_time_violation() {
         voting_power: 1,
         proposer_priority: -3,
       },
-      total_voting_power: 0,
+      total_voting_power: 4,
     }
 
   let header =
@@ -828,7 +828,7 @@ fn check_update_client_verify_adjacent(
         voting_power: 1,
         proposer_priority: -3,
       },
-      total_voting_power: 0,
+      total_voting_power: 4,
     }
 
   let header =
@@ -946,7 +946,7 @@ fn check_update_client_verify_adjacent(
 }
 
 test update_client_verify_adjacent_succeed() {
-  check_update_client_verify_adjacent(0, adjacent_commit_signatures())
+  check_update_client_verify_adjacent(4, adjacent_commit_signatures())
 }
 
 test update_client_rejects_understated_positive_total_voting_power() fail {
@@ -955,12 +955,7 @@ test update_client_rejects_understated_positive_total_voting_power() fail {
 
   check_update_client_verify_adjacent(
     1,
-    [
-      first_signature,
-      absent_signature,
-      absent_signature,
-      absent_signature,
-    ],
+    [first_signature, absent_signature, absent_signature, absent_signature],
   )
 }
 
@@ -969,12 +964,7 @@ test update_client_rejects_negative_total_voting_power() fail {
 
   check_update_client_verify_adjacent(
     -3,
-    [
-      absent_signature,
-      absent_signature,
-      absent_signature,
-      absent_signature,
-    ],
+    [absent_signature, absent_signature, absent_signature, absent_signature],
   )
 }
 
@@ -1081,7 +1071,7 @@ test update_client_verify_adjacent_fails_without_host_state_co_spend() fail {
         voting_power: 1,
         proposer_priority: -3,
       },
-      total_voting_power: 0,
+      total_voting_power: 4,
     }
 
   let trusted_validators =
@@ -1118,7 +1108,7 @@ test update_client_verify_adjacent_fails_without_host_state_co_spend() fail {
         voting_power: 1,
         proposer_priority: -3,
       },
-      total_voting_power: 0,
+      total_voting_power: 4,
     }
 
   let header =
@@ -1335,7 +1325,7 @@ test update_client_verify_non_adjacent_succeed() {
         voting_power: 1,
         proposer_priority: -3,
       },
-      total_voting_power: 0,
+      total_voting_power: 4,
     }
 
   let trusted_validators =
@@ -1372,7 +1362,7 @@ test update_client_verify_non_adjacent_succeed() {
         voting_power: 1,
         proposer_priority: -3,
       },
-      total_voting_power: 0,
+      total_voting_power: 4,
     }
 
   let header =
