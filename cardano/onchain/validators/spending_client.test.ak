@@ -50,6 +50,44 @@ fn processed_time_for_update(header: Header, client_state: ClientState) -> Int {
   ) * 1_000_000
 }
 
+fn adjacent_commit_signatures() -> List<CommitSig> {
+  [
+    CommitSig {
+      block_id_flag: 2,
+      validator_address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
+      timestamp: 1577836805000000000,
+      signature: #"089320e6c61493b859d5485528bf235b1922f73e1fae9f7d9d7b0af57079f9626b5e915cda1fb3bf341707289560cedd911a6340e522c71fe7a29f3cc4c78c04",
+    },
+    CommitSig {
+      block_id_flag: 2,
+      validator_address: #"e00a0af166fcd30e9441311eaa050fbaaa686169",
+      timestamp: 1577836805000000000,
+      signature: #"8342b7063633aa39fcaf717c7075ace64a67a09dd84e4ae8c8934409c56f6b15422e4292d869c5c918c349cd47d0f14b047ae5d72f3bd453ad18b321c73f8b0c",
+    },
+    CommitSig {
+      block_id_flag: 2,
+      validator_address: #"e4898c3d0b56c7f0b156ab9e91532b598aba3096",
+      timestamp: 1577836805000000000,
+      signature: #"6b41808d685cb97f62efdb135431101c5186d43178a28322f089d6ee743fe3e4aa0ab373465dc60e8aa047517d5ecf315469af9979785483f7a4ef2ea0137c05",
+    },
+    CommitSig {
+      block_id_flag: 2,
+      validator_address: #"f437909d21f850d74fb6637efe8d9c9dd23fcf5e",
+      timestamp: 1577836805000000000,
+      signature: #"fc41696dca12b5965a6cf8991bf2d77b5f7aac0c9324911b3413d26eec0a8014c17f09629dd5f79d2d2deeca2124b7527219378acba17cd0ddfc8a5124226a05",
+    },
+  ]
+}
+
+fn absent_commit_signature() -> CommitSig {
+  CommitSig {
+    block_id_flag: 1,
+    validator_address: #"",
+    timestamp: 0,
+    signature: #"",
+  }
+}
+
 fn setup() -> MockData {
   let host_state_nft_policy_id: PolicyId = "mock host state nft policy id"
   let host_state_token_name = "ibc_host_state"
@@ -672,7 +710,10 @@ test update_client_misbehaviour_monotonic_time_violation() {
   )
 }
 
-test update_client_verify_adjacent_succeed() {
+fn check_update_client_verify_adjacent(
+  total_voting_power: Int,
+  signatures: List<CommitSig>,
+) {
   let mock = setup()
 
   let trusted_height = Height { revision_number: 1, revision_height: 2 }
@@ -712,32 +753,7 @@ test update_client_verify_adjacent_succeed() {
             hash: #"87080a39cfe336a663ea5c0d9bdeef493abdc18b7c3e3e0c8e661354c1831432",
           },
         },
-        signatures: [
-          CommitSig {
-            block_id_flag: 2,
-            validator_address: #"527acdc73a232f014ff2556aed3c7b32b056d569",
-            timestamp: 1577836805000000000,
-            signature: #"089320e6c61493b859d5485528bf235b1922f73e1fae9f7d9d7b0af57079f9626b5e915cda1fb3bf341707289560cedd911a6340e522c71fe7a29f3cc4c78c04",
-          },
-          CommitSig {
-            block_id_flag: 2,
-            validator_address: #"e00a0af166fcd30e9441311eaa050fbaaa686169",
-            timestamp: 1577836805000000000,
-            signature: #"8342b7063633aa39fcaf717c7075ace64a67a09dd84e4ae8c8934409c56f6b15422e4292d869c5c918c349cd47d0f14b047ae5d72f3bd453ad18b321c73f8b0c",
-          },
-          CommitSig {
-            block_id_flag: 2,
-            validator_address: #"e4898c3d0b56c7f0b156ab9e91532b598aba3096",
-            timestamp: 1577836805000000000,
-            signature: #"6b41808d685cb97f62efdb135431101c5186d43178a28322f089d6ee743fe3e4aa0ab373465dc60e8aa047517d5ecf315469af9979785483f7a4ef2ea0137c05",
-          },
-          CommitSig {
-            block_id_flag: 2,
-            validator_address: #"f437909d21f850d74fb6637efe8d9c9dd23fcf5e",
-            timestamp: 1577836805000000000,
-            signature: #"fc41696dca12b5965a6cf8991bf2d77b5f7aac0c9324911b3413d26eec0a8014c17f09629dd5f79d2d2deeca2124b7527219378acba17cd0ddfc8a5124226a05",
-          },
-        ],
+        signatures,
       },
     }
 
@@ -775,7 +791,7 @@ test update_client_verify_adjacent_succeed() {
         voting_power: 1,
         proposer_priority: -3,
       },
-      total_voting_power: 0,
+      total_voting_power,
     }
 
   let trusted_validators =
@@ -926,6 +942,39 @@ test update_client_verify_adjacent_succeed() {
     redeemer,
     mock.output_reference,
     transaction,
+  )
+}
+
+test update_client_verify_adjacent_succeed() {
+  check_update_client_verify_adjacent(0, adjacent_commit_signatures())
+}
+
+test update_client_rejects_understated_positive_total_voting_power() fail {
+  expect Some(first_signature) = list.at(adjacent_commit_signatures(), 0)
+  let absent_signature = absent_commit_signature()
+
+  check_update_client_verify_adjacent(
+    1,
+    [
+      first_signature,
+      absent_signature,
+      absent_signature,
+      absent_signature,
+    ],
+  )
+}
+
+test update_client_rejects_negative_total_voting_power() fail {
+  let absent_signature = absent_commit_signature()
+
+  check_update_client_verify_adjacent(
+    -3,
+    [
+      absent_signature,
+      absent_signature,
+      absent_signature,
+      absent_signature,
+    ],
   )
 }
 
