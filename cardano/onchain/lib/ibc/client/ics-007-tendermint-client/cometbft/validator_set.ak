@@ -32,14 +32,6 @@ pub fn total_voting_power(vals: ValidatorSet) -> Int {
   list.reduce(vals.validators, 0, fn(acc, val) { acc + val.voting_power })
 }
 
-pub fn has_valid_voting_power(vals: ValidatorSet) -> Bool {
-  and {
-    !list.is_empty(vals.validators),
-    list.all(vals.validators, fn(val) { val.voting_power > 0 }),
-    vals.total_voting_power == total_voting_power(vals),
-  }
-}
-
 pub fn size(vals: ValidatorSet) -> Int {
   list.length(vals.validators)
 }

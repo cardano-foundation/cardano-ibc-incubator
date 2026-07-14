@@ -61,7 +61,6 @@ pub fn verify_commit_light_trusting(
   list_vote_sign_bytes: Option<List<ByteArray>>,
 ) -> Bool {
   expect !list.is_empty(vals.validators)
-  expect validator_set.has_valid_voting_power(vals)
   expect rational.denominator(trust_level) != 0
   expect !list.is_empty(commit.signatures)
   let voting_power_needed =
@@ -105,7 +104,6 @@ fn verify_basic_vals_and_commit(
   block_id: BlockID,
 ) -> Bool {
   expect !list.is_empty(vals.validators)
-  expect validator_set.has_valid_voting_power(vals)
   expect !list.is_empty(commit.signatures)
   expect validator_set.size(vals) == list.length(commit.signatures)
   expect height == commit.height
