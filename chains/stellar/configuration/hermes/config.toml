@@ -1,0 +1,18 @@
+[[chains]]
+id = 'stellar-testnet'
+type = 'Stellar'
+event_poll_interval = 20
+event_replay_window = 256
+gateway_url = 'http://127.0.0.1:50052'
+network_passphrase = 'Test SDF Network ; September 2015'
+ibc_contract_id = ''
+key_name = 'stellar-relayer'
+stub_key_name = 'stellar-relayer'
+max_block_time = '6s'
+trust_threshold = '2/3'
+clear_interval = 0
+query_packets_chunk_size = 50
+clock_drift = '5s'
+client_refresh_rate = '1/3'
+wasm_checksum_hex = '3d4fc74efc59d49106857a887c005062829d9cfd5ca560cd664e146460c9ecef'
+packet_filter = { policy = 'allow', list = [['transfer', '*']] }
