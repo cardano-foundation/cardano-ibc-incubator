@@ -1,5 +1,8 @@
 /* global BigInt */
-import { cosmosRuntimeChains } from '@/configs/runtimeConfig';
+import {
+  activeRuntimeConfig,
+  cosmosRuntimeChains,
+} from '@/configs/runtimeConfig';
 
 export const THEME_MODE = {
   LIGHT: 'light',
@@ -7,7 +10,7 @@ export const THEME_MODE = {
 };
 
 export const INJECTIVE_TESTNET_CHAIN_ID = 'injective-888';
-export const defaultChainName = cosmosRuntimeChains[0]?.id || 'localosmosis';
+export const defaultChainName = activeRuntimeConfig.defaultCosmosChainId;
 
 export const FROM_TO = {
   FROM: 'From',
@@ -56,4 +59,6 @@ export const queryChannelsPrefixUrl = `/ibc/core/channel/v1/channels`;
 export const queryPacketForwardParamsUrl = `/ibc/apps/packetforward/v1/params`;
 export const queryAllChannelsUrl = `${queryChannelsPrefixUrl}?pagination.count_total=true&pagination.limit=10000`;
 export const OSMOSIS_CHAIN_ID = 'localosmosis';
-export const cosmosChainsSupported = [OSMOSIS_CHAIN_ID];
+export const cosmosChainsSupported = cosmosRuntimeChains.map(
+  (chain) => chain.id,
+);
