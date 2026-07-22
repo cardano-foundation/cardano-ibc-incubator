@@ -55,7 +55,7 @@ hermes:
   LET DOCKER_IMAGE_NAME=${DOCKER_IMAGES_PREFIX}-hermes
 
   WAIT
-    FROM DOCKERFILE -f docker/hermes/Dockerfile relayer
+    FROM DOCKERFILE -f relayer/ci/release/hermes.Dockerfile relayer
   END
   WAIT
     SAVE IMAGE ${DOCKER_IMAGE_NAME}
