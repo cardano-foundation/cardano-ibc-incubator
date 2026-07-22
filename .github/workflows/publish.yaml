@@ -19,7 +19,7 @@ env:
 jobs:
 
   build:
-    runs-on: ${{ fromJson(vars.RUNS_ON) }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
