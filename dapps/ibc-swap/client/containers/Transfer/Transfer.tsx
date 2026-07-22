@@ -29,6 +29,7 @@ import {
   unsignedTxTransferFromCardano,
 } from '@/utils/buildTransferTx';
 import {
+  lookupCardanoAssetDenomTrace,
   planTransferRoute,
   type TransferPlanResponse,
 } from '@/apis/restapi/cardano';
@@ -64,6 +65,7 @@ import {
   runtimeRouteChainIds,
   runtimeRouteDisabledReason,
 } from '@/configs/runtimeConfig';
+import { resolveCardanoAssetPresentation } from '@/utils/cardanoAssetDisplay';
 import SelectNetwork from './SelectNetwork';
 import SelectToken from './SelectToken';
 import { NetworkModal } from './modal/NetworkModal';
@@ -95,12 +97,10 @@ type RoutePreviewState = {
   message?: string;
 };
 
-type CardanoAsset = {
-  assetName: string;
-  quantity?: string;
-  unit?: string;
-  fingerprint?: string;
-  policyId?: string;
+type TransferNetworkItemProps = NetworkItemProps & {
+  networkType?: string;
+  networkRole?: 'user';
+  disabledReason?: string;
 };
 
 const initEstData = {
@@ -230,7 +230,7 @@ const getCardanoBuildErrorMessage = (error: unknown): string => {
 const networkItemFromChainId = (
   chainId?: string,
   savedNetwork?: NetworkItemProps,
-): NetworkItemProps => {
+): TransferNetworkItemProps => {
   if (savedNetwork?.networkId) {
     return savedNetwork;
   }
@@ -340,6 +340,7 @@ const Transfer = () => {
     useState<string>('');
   const [resumeChecked, setResumeChecked] = useState(false);
   const isRestoringTransferRef = useRef(false);
+  const tokenListRequestIdRef = useRef(0);
   const {
     wallet: cardanoWallet,
     name: connectedCardanoWalletName,
@@ -388,17 +389,9 @@ const Transfer = () => {
   const { getAccount, estimateFee } = cosmosChain;
 
   // handle get cardano assets
-  const cardano = useCardanoChain();
+  const { getTotalSupply: getCardanoTotalSupply } = useCardanoChain();
   const cardanoAddress = useSafeCardanoAddress();
-  const cardanoAssets: CardanoAsset[] = [];
-  cardano.getTotalSupply()?.forEach((asset) => {
-    const assetWithName = asset as typeof asset & { assetName: string };
-    cardanoAssets.push({
-      quantity: assetWithName.quantity,
-      assetName: assetWithName.assetName,
-      unit: asset.unit,
-    });
-  });
+  const cardanoAssets = getCardanoTotalSupply();
 
   const currentConfiguredRoute = findRuntimeRoute(
     fromNetwork.networkId,
@@ -945,7 +938,7 @@ const Transfer = () => {
   };
 
   const fetchNetworkList = async () => {
-    const networkListData: NetworkItemProps[] = selectableChains.map(
+    const networkListData: TransferNetworkItemProps[] = selectableChains.map(
       (chain) => ({
         networkId: chain.chain_id,
         ibcChainId: chain.ibc_chain_id || chain.chain_id,
@@ -963,15 +956,17 @@ const Transfer = () => {
   };
 
   const fetchTokenList = async () => {
-    let tokenListData: TransferTokenItemProps[] | undefined = [];
+    const requestId = tokenListRequestIdRef.current + 1;
+    tokenListRequestIdRef.current = requestId;
+    let tokenListData: TransferTokenItemProps[] = [];
+    setIsFetchDataLoading(true);
 
-    // Cosmos
-    if (
-      fromNetwork.networkId &&
-      cosmosChainsSupported.includes(fromNetwork.networkId)
-    ) {
-      try {
-        setIsFetchDataLoading(true);
+    try {
+      // Cosmos
+      if (
+        fromNetwork.networkId &&
+        cosmosChainsSupported.includes(fromNetwork.networkId)
+      ) {
         const allBalances = await cosmosChain?.getAllBalances();
         if (allBalances?.length) {
           tokenListData =
@@ -984,31 +979,42 @@ const Transfer = () => {
               balance: asset.amount,
             })) || [];
         }
-      } catch (error) {
-        setIsFetchDataLoading(false);
       }
-    }
 
-    // Cardano
-    if (fromNetwork.networkId && fromNetwork.networkId === CARDANO_CHAIN_ID) {
-      try {
-        setIsFetchDataLoading(true);
+      // Cardano
+      if (fromNetwork.networkId === CARDANO_CHAIN_ID) {
         if (cardanoAssets?.length) {
-          tokenListData =
-            cardanoAssets?.map((asset) => ({
-              tokenId: asset.unit,
-              tokenLogo: DefaultCardanoNetworkIcon.src,
-              tokenName: asset.assetName,
-              tokenSymbol: asset.unit,
-              tokenExponent: 0,
-              balance: asset.quantity,
-            })) || [];
+          const resolvedTokens = await Promise.all(
+            cardanoAssets.map(async (asset) => {
+              const presentation = await resolveCardanoAssetPresentation(
+                asset.unit,
+                lookupCardanoAssetDenomTrace,
+              );
+              if (!presentation) {
+                return null;
+              }
+
+              return {
+                tokenId: asset.unit,
+                tokenLogo:
+                  presentation.tokenLogo || DefaultCardanoNetworkIcon.src,
+                tokenName: presentation.assetName,
+                tokenSymbol: presentation.assetSymbol,
+                tokenExponent: presentation.tokenExponent,
+                balance: asset.quantity,
+              };
+            }),
+          );
+          tokenListData = resolvedTokens.filter((token) => token !== null);
         }
-      } catch (error) {
-        setIsFetchDataLoading(false);
       }
+    } catch {
+      tokenListData = [];
     }
 
+    if (tokenListRequestIdRef.current !== requestId) {
+      return;
+    }
     setTokenList(tokenListData);
     setIsFetchDataLoading(false);
   };
@@ -1045,26 +1051,39 @@ const Transfer = () => {
   }, [cardanoAddress, cosmosChain.address, isSubmitted, resumeChecked]);
 
   useEffect(() => {
-    if (isSubmitted || isRestoringTransferRef.current) {
-      return;
+    tokenListRequestIdRef.current += 1;
+    setIsFetchDataLoading(false);
+    let cancelled = false;
+
+    if (!isSubmitted && !isRestoringTransferRef.current) {
+      setTokenList([]);
+      setSelectedToken({});
+      setSendAmount('');
+
+      const onChangeFromNetwork = async () => {
+        if (
+          !cosmosChain?.isWalletConnected &&
+          cosmosChainsSupported.includes(fromNetwork.networkId!)
+        ) {
+          await cosmosChain?.connect();
+        } else if (fromNetwork.networkId && !cancelled) {
+          await fetchTokenList();
+        }
+      };
+      onChangeFromNetwork();
     }
 
-    const onChangeFromNetwork = async () => {
-      if (
-        !cosmosChain?.isWalletConnected &&
-        cosmosChainsSupported.includes(fromNetwork.networkId!)
-      ) {
-        await cosmosChain?.connect();
-      } else if (fromNetwork.networkId) {
-        setTokenList([]);
-        setSelectedToken({});
-        setSendAmount('');
-        await fetchTokenList();
-      }
+    return () => {
+      cancelled = true;
+      tokenListRequestIdRef.current += 1;
     };
-    onChangeFromNetwork();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fromNetwork.networkId, cosmosChain?.isWalletConnected, isSubmitted]);
+  }, [
+    fromNetwork.networkId,
+    cosmosChain?.isWalletConnected,
+    isSubmitted,
+    getCardanoTotalSupply,
+  ]);
 
   useEffect(() => {
     if (isSubmitted || isRestoringTransferRef.current) {

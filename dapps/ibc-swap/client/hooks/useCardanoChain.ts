@@ -14,38 +14,20 @@ import {
   isCardanoWalletLockedError,
 } from '@/utils/cardanoWalletStatus';
 import { logCardanoWalletDebug } from '@/utils/cardanoWalletDebug';
+import { getFallbackCardanoAssetName } from '@/utils/cardanoAssetDisplay';
 
-const hexToText = (hex: string): string => {
-  if (!hex || hex.length % 2 !== 0) {
-    return hex;
-  }
-
-  try {
-    const bytes = new Uint8Array(
-      hex.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) ?? [],
-    );
-    return new TextDecoder().decode(bytes);
-  } catch {
-    return hex;
-  }
-};
-
-const tryAssetName = (assetHex: string): string => {
-  const tokenName = assetHex.slice(56);
-  if (tokenName === '') {
-    return assetHex;
-  }
-  return hexToText(tokenName);
+export type CardanoWalletAsset = Asset & {
+  assetName: string;
 };
 
 export const useCardanoChain = () => {
-  const [assets, setAssets] = useState<Asset[]>();
+  const [assets, setAssets] = useState<CardanoWalletAsset[]>();
   const { hasConnectedWallet, connectedWalletName, connectedWalletInstance } =
     useContext(WalletContext);
   const { disconnect: disconnectCardanoWallet } = useWallet();
   const cardanoAddress = useSafeCardanoAddress();
 
-  const getAssets = useCallback(async (): Promise<Asset[]> => {
+  const getAssets = useCallback(async (): Promise<CardanoWalletAsset[]> => {
     if (!connectedWalletInstance) {
       logCardanoWalletDebug('balance:skip:no-wallet-instance', {
         walletName: connectedWalletName,
@@ -62,19 +44,19 @@ export const useCardanoChain = () => {
       elapsedMs: Date.now() - startedAt,
       assetCount: balance.length,
     });
-    return balance.map((asset) => {
+    return balance.map((asset): CardanoWalletAsset => {
       const assetKey = asset.unit;
       return {
-        unit: assetKey,
-        quantity: asset.quantity,
-        assetName: tryAssetName(assetKey),
-      } as Asset;
+        ...asset,
+        assetName: getFallbackCardanoAssetName(assetKey),
+      };
     });
   }, [connectedWalletInstance, connectedWalletName]);
 
   useEffect(() => {
     if (hasConnectedWallet && cardanoAddress) {
       let cancelled = false;
+      setAssets(undefined);
 
       getAssets()
         .then((walletAssets) => {
@@ -110,22 +92,25 @@ export const useCardanoChain = () => {
     hasConnectedWallet,
   ]);
 
-  const sortAssetsByQuantity = useCallback((assetList: Asset[]): Asset[] => {
-    return assetList.sort((assetA, assetB) => {
-      const quantityA = BigInt(assetA.quantity);
-      const quantityB = BigInt(assetB.quantity);
+  const sortAssetsByQuantity = useCallback(
+    (assetList: CardanoWalletAsset[]): CardanoWalletAsset[] => {
+      return [...assetList].sort((assetA, assetB) => {
+        const quantityA = BigInt(assetA.quantity);
+        const quantityB = BigInt(assetB.quantity);
 
-      if (quantityA === BigInt(0) && quantityB !== BigInt(0)) {
-        return 1;
-      }
-      if (quantityA !== BigInt(0) && quantityB === BigInt(0)) {
-        return -1;
-      }
-      return 0;
-    });
-  }, []);
+        if (quantityA === BigInt(0) && quantityB !== BigInt(0)) {
+          return 1;
+        }
+        if (quantityA !== BigInt(0) && quantityB === BigInt(0)) {
+          return -1;
+        }
+        return 0;
+      });
+    },
+    [],
+  );
 
-  const getTotalSupply = useCallback((): Asset[] => {
+  const getTotalSupply = useCallback((): CardanoWalletAsset[] => {
     return sortAssetsByQuantity(assets ?? []);
   }, [assets, sortAssetsByQuantity]);
 

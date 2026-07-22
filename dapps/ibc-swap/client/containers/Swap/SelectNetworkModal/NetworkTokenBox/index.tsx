@@ -15,8 +15,12 @@ import { debounce } from '@/utils/helper';
 import { Loading } from '@/components/Loading/Loading';
 import { useCardanoChain } from '@/hooks/useCardanoChain';
 import { CARDANO_CHAIN_ID } from '@/configs/runtime';
-import { getLocalOsmosisSwapOptions } from '@/apis/restapi/cardano';
+import {
+  getLocalOsmosisSwapOptions,
+  lookupCardanoAssetDenomTrace,
+} from '@/apis/restapi/cardano';
 import DefaultCosmosNetworkIcon from '@/assets/icons/cosmos-icon.svg';
+import { resolveCardanoAssetPresentation } from '@/utils/cardanoAssetDisplay';
 
 import { StyledNetworkBox, StyledNetworkBoxHeader } from './index.style';
 
@@ -108,7 +112,12 @@ const NetworkTokenBox = ({
       setNetworkSelected(networkList[0]);
       setDisabledNetwork?.(networkList[0]);
     }
-  }, [hasNetworkChoice, networkList, networkSelected?.networkId, setDisabledNetwork]);
+  }, [
+    hasNetworkChoice,
+    networkList,
+    networkSelected?.networkId,
+    setDisabledNetwork,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -125,16 +134,29 @@ const NetworkTokenBox = ({
       try {
         if (selectedNetworkId === CARDANO_CHAIN_ID) {
           const totalSupplyOnCardano = getCardanoTotalSupply();
-          const formatTokenList = totalSupplyOnCardano?.map((asset) => {
-            const assetWithName = asset as typeof asset & { assetName: string };
-            return {
-              tokenId: assetWithName.unit,
-              tokenName: assetWithName.assetName,
-              tokenLogo: DefaultCardanoNetworkIcon.src,
-            };
-          });
+          const resolvedTokens = await Promise.all(
+            totalSupplyOnCardano.map(async (asset) => {
+              const presentation = await resolveCardanoAssetPresentation(
+                asset.unit,
+                lookupCardanoAssetDenomTrace,
+              );
+              if (!presentation) {
+                return null;
+              }
+
+              return {
+                tokenId: asset.unit,
+                tokenName: presentation.assetName,
+                tokenLogo:
+                  presentation.tokenLogo || DefaultCardanoNetworkIcon.src,
+              };
+            }),
+          );
+          const formatTokenList = resolvedTokens.filter(
+            (token) => token !== null,
+          );
           if (!cancelled) {
-            setDisplayTokenList(formatTokenList || []);
+            setDisplayTokenList(formatTokenList);
           }
           return;
         }
@@ -169,6 +191,35 @@ const NetworkTokenBox = ({
   useEffect(() => {
     setDisplayNetworkList(networkList);
   }, [networkList]);
+
+  const renderTokenList = () => {
+    if (isFetchingData) {
+      return (
+        <Box mt={4}>
+          <Loading />
+        </Box>
+      );
+    }
+
+    if (displayTokenList.length === 0) {
+      return (
+        <Box py={10} px={6} textAlign="center">
+          <Text color={COLOR.neutral_3}>
+            No supported tokens available for this network yet.
+          </Text>
+        </Box>
+      );
+    }
+
+    return (
+      <TokenList
+        tokenList={displayTokenList}
+        tokenSelected={tokenSelected}
+        onClickToken={handleClickTokenItem}
+        disabledToken={disabledToken}
+      />
+    );
+  };
 
   return (
     <StyledNetworkBox isChoseToken={!!tokenSelected?.tokenId}>
@@ -267,24 +318,7 @@ const NetworkTokenBox = ({
             borderRightWidth="1px"
             borderColor={COLOR.neutral_5}
           >
-            {isFetchingData ? (
-              <Box mt={4}>
-                <Loading />
-              </Box>
-            ) : displayTokenList.length === 0 ? (
-              <Box py={10} px={6} textAlign="center">
-                <Text color={COLOR.neutral_3}>
-                  No supported tokens available for this network yet.
-                </Text>
-              </Box>
-            ) : (
-              <TokenList
-                tokenList={displayTokenList}
-                tokenSelected={tokenSelected}
-                onClickToken={handleClickTokenItem}
-                disabledToken={disabledToken}
-              />
-            )}
+            {renderTokenList()}
           </Box>
         </Box>
       </Box>

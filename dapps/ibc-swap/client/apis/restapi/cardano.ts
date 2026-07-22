@@ -386,19 +386,31 @@ export async function submitSignedCardanoTx(
   }
 }
 
-export async function lookupCardanoAssetDenomTrace(
+const cardanoAssetTraceCache = new Map<
+  string,
+  Promise<CardanoAssetDenomTrace | null>
+>();
+
+export function lookupCardanoAssetDenomTrace(
   assetId: string,
 ): Promise<CardanoAssetDenomTrace | null> {
-  try {
-    const response = await axios.get<CardanoAssetDenomTrace>(
-      `/api/cardano/trace-registry/${encodeURIComponent(assetId)}`,
-    );
-    return response.data;
-  } catch (error) {
-    const errorMessage = getGatewayErrorMessage(error);
-    toast.error(errorMessage, { theme: 'colored' });
-    return null;
+  const normalizedAssetId = assetId.trim().toLowerCase();
+  const cached = cardanoAssetTraceCache.get(normalizedAssetId);
+  if (cached) {
+    return cached;
   }
+
+  const request = axios
+    .get<CardanoAssetDenomTrace>(
+      `/api/cardano/trace-registry/${encodeURIComponent(normalizedAssetId)}`,
+    )
+    .then((response) => response.data)
+    .catch(() => {
+      cardanoAssetTraceCache.delete(normalizedAssetId);
+      return null;
+    });
+  cardanoAssetTraceCache.set(normalizedAssetId, request);
+  return request;
 }
 
 export async function requireCardanoAssetDenomTrace(

@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "module": "commonjs",
+    "noEmit": false,
+    "outDir": ".test-dist",
+    "target": "es2020"
+  },
+  "include": [
+    "utils/cardanoAssetDisplay.ts",
+    "utils/cardanoAssetDisplay.test.ts"
+  ]
+}

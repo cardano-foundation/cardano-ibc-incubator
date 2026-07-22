@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "test": "tsc -p tsconfig.test.json && node --test .test-dist/cardanoAssetDisplay.test.js",
     "lint": "eslint \"**/*.{ts,tsx}\"",
     "postinstall": "husky install"
   },
