@@ -1,0 +1,55 @@
+name: Build and Publish Docker images
+
+on:
+  push:
+    branches: [main, develop]
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+*'
+      - '[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+    types: [opened, synchronize]
+  workflow_dispatch:
+
+env:
+  PRIVATE_DOCKER_REGISTRY_URL: ${{ secrets.GITLAB_DOCKER_REGISTRY_URL }}
+  PRIVATE_DOCKER_REGISTRY_USER: Deploy-Token
+  PRIVATE_DOCKER_REGISTRY_PASS: ${{ secrets.GITLAB_PKG_REGISTRY_TOKEN }}
+  DOCKER_PUSH: true
+
+jobs:
+
+  build:
+    runs-on: ${{ fromJson(vars.RUNS_ON) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - gateway
+          - hermes
+          - swap-client
+          - explorer
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # hermes target builds from the relayer/ git submodule.
+          submodules: recursive
+
+      - name: ⛮ cf-gha-baseline
+        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@main
+        id: cf-gha-baseline
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRIVATE_DOCKER_REGISTRY_URL: ${{ env.PRIVATE_DOCKER_REGISTRY_URL }}
+          PRIVATE_DOCKER_REGISTRY_USER: ${{ env.PRIVATE_DOCKER_REGISTRY_USER }}
+          PRIVATE_DOCKER_REGISTRY_PASS: ${{ env.PRIVATE_DOCKER_REGISTRY_PASS }}
+          HUB_DOCKER_COM_USER: ${{ secrets.HUB_DOCKER_COM_USER }}
+          HUB_DOCKER_COM_PASS: ${{ secrets.HUB_DOCKER_COM_PASS }}
+          DOCKER_REGISTRIES: "${{ secrets.DOCKER_REGISTRIES }}"
+
+      - name: 🌍 earthly (docker build and push)
+        run: |
+          earthly +${{ matrix.service }} \
+            --PUSH=${DOCKER_PUSH} \
+            --DOCKER_REGISTRIES="${{ secrets.DOCKER_REGISTRIES }}" \
+            --DOCKER_IMAGES_EXTRA_TAGS="${EARTHLY_DOCKER_IMAGES_EXTRA_TAGS}"
