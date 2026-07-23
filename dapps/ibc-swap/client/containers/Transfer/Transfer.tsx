@@ -888,7 +888,7 @@ const Transfer = () => {
       // Cosmos
       if (cosmosChainsSupported.includes(fromNetwork.networkId!)) {
         setIsProcessingTransfer(true);
-        const client = await cosmosChain.getSigningStargateClient();
+        const client = await cosmosChain.getTransferSigningStargateClient();
         const tx = await client.signAndBroadcast(
           cosmosChain.address!,
           estData.msgs,
