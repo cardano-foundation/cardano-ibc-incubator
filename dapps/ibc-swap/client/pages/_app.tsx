@@ -34,6 +34,7 @@ import {
   customChains,
 } from '@/configs/customChainInfo';
 import { CosmosWalletModal } from '@/components/common/Header/CosmosWalletModal';
+import { injectiveAccountParser } from '@/utils/injectiveAccountParser';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -129,6 +130,16 @@ const getGasPrice = (chainId: string): string => {
   return `${fee?.fixed_min_gas_price}${fee?.denom}`;
 };
 
+const isInjectiveChain = (chainId: string): boolean => {
+  const chainFound = customChains.find(
+    (chain) => chain.chain_id === chainId || chain.chain_name === chainId,
+  );
+  return Boolean(
+    chainFound?.bech32_prefix === 'inj' &&
+      chainFound.key_algos?.includes('ethsecp256k1'),
+  );
+};
+
 function MyApp({ Component, pageProps }: AppProps) {
   const [availableCosmosWallets, setAvailableCosmosWallets] = useState<any[]>(
     [],
@@ -136,12 +147,21 @@ function MyApp({ Component, pageProps }: AppProps) {
   const [cosmosWalletsReady, setCosmosWalletsReady] = useState(false);
 
   const signerOptions = {
+    stargate: (chain: any) => {
+      const chainId = typeof chain === 'string' ? chain : chain?.chain_id;
+      return isInjectiveChain(chainId)
+        ? { accountParser: injectiveAccountParser }
+        : undefined;
+    },
     signingStargate: (chain: any) => {
       const chainId = typeof chain === 'string' ? chain : chain?.chain_id;
       return {
         registry,
         aminoTypes,
         gasPrice: getGasPrice(chainId),
+        accountParser: isInjectiveChain(chainId)
+          ? injectiveAccountParser
+          : undefined,
       } as any;
     },
   } as SignerOptions;

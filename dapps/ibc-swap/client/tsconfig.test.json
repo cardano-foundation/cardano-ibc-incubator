@@ -9,6 +9,8 @@
   },
   "include": [
     "utils/cardanoAssetDisplay.ts",
-    "utils/cardanoAssetDisplay.test.ts"
+    "utils/cardanoAssetDisplay.test.ts",
+    "utils/injectiveAccountParser.ts",
+    "utils/injectiveAccountParser.test.ts"
   ]
 }
