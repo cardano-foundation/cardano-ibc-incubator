@@ -28,12 +28,12 @@ import { manrope } from 'styles/font';
 import { theme } from 'styles/theme';
 import { Layout } from '@/components/common';
 import { CustomAppProvider } from '@/contexts';
-import { customChainassets, customChains } from '@/configs/customChainInfo';
-import { CosmosWalletModal } from '@/components/common/Header/CosmosWalletModal';
 import {
-  LOCAL_OSMOSIS_REST_ENDPOINT,
-  LOCAL_OSMOSIS_RPC_ENDPOINT,
-} from '@/configs/runtime';
+  cosmosEndpointOptions,
+  customChainassets,
+  customChains,
+} from '@/configs/customChainInfo';
+import { CosmosWalletModal } from '@/components/common/Header/CosmosWalletModal';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -129,16 +129,6 @@ const getGasPrice = (chainId: string): string => {
   return `${fee?.fixed_min_gas_price}${fee?.denom}`;
 };
 
-const endpointOptions = {
-  endpoints: {
-    localosmosis: {
-      isLazy: true,
-      rpc: [LOCAL_OSMOSIS_RPC_ENDPOINT],
-      rest: [LOCAL_OSMOSIS_REST_ENDPOINT],
-    },
-  },
-};
-
 function MyApp({ Component, pageProps }: AppProps) {
   const [availableCosmosWallets, setAvailableCosmosWallets] = useState<any[]>(
     [],
@@ -207,7 +197,7 @@ function MyApp({ Component, pageProps }: AppProps) {
           assetLists={customChainassets as any}
           wallets={availableCosmosWallets}
           signerOptions={signerOptions}
-          endpointOptions={endpointOptions}
+          endpointOptions={cosmosEndpointOptions}
           walletModal={CosmosWalletModal}
         >
           <QueryClientProvider client={queryClient}>
