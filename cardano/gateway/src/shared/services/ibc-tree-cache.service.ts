@@ -5,6 +5,22 @@ import zlib from 'zlib';
 import { ICS23MerkleTree } from '../helpers/ics23-merkle-tree';
 
 export const CURRENT_IBC_TREE_CACHE_ID = 'current';
+export const DEFAULT_IBC_TREE_CACHE_STATEMENT_TIMEOUT_MS = 10_000;
+export const MIN_IBC_TREE_CACHE_STATEMENT_TIMEOUT_MS = 100;
+export const MAX_IBC_TREE_CACHE_STATEMENT_TIMEOUT_MS = 60_000;
+
+export function resolveIbcTreeCacheStatementTimeoutMs(value?: string): number {
+  if (value === undefined || value.trim().length === 0) {
+    return DEFAULT_IBC_TREE_CACHE_STATEMENT_TIMEOUT_MS;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    return DEFAULT_IBC_TREE_CACHE_STATEMENT_TIMEOUT_MS;
+  }
+
+  return Math.min(MAX_IBC_TREE_CACHE_STATEMENT_TIMEOUT_MS, Math.max(MIN_IBC_TREE_CACHE_STATEMENT_TIMEOUT_MS, parsed));
+}
 
 export function ibcTreeCacheIdForRoot(root: string): string {
   return `root:${root.toLowerCase()}`;
@@ -24,6 +40,9 @@ type CachedTreeRow = {
 @Injectable()
 export class IbcTreeCacheService {
   private readonly logger = new Logger(IbcTreeCacheService.name);
+  private readonly statementTimeoutMs = resolveIbcTreeCacheStatementTimeoutMs(
+    process.env.IBC_TREE_CACHE_STATEMENT_TIMEOUT_MS,
+  );
 
   constructor(@InjectEntityManager('gateway') private readonly entityManager: EntityManager) {}
 
@@ -77,25 +96,60 @@ export class IbcTreeCacheService {
     const payload = JSON.stringify(tree.toJSON());
     const leavesGzip = zlib.gzipSync(Buffer.from(payload, 'utf8'));
 
-    await this.entityManager.query(
-      `
-        INSERT INTO ibc_state_tree_cache (id, root, leaves_gzip, updated_at)
-        VALUES ($1, $2, $3, NOW())
-        ON CONFLICT (id)
-        DO UPDATE SET root = EXCLUDED.root, leaves_gzip = EXCLUDED.leaves_gzip, updated_at = NOW();
-      `,
-      [id, root, leavesGzip],
-    );
+    await this.savePayload(id, root, leavesGzip);
 
     return { root };
   }
 
   async saveAliases(tree: ICS23MerkleTree, ids: string[]): Promise<{ root: string }> {
     const uniqueIds = [...new Set(ids.filter((id) => id && id.trim().length > 0))];
-    let root = tree.getRoot();
-    for (const id of uniqueIds) {
-      ({ root } = await this.save(tree, id));
+    const root = tree.getRoot();
+    const payload = JSON.stringify(tree.toJSON());
+    const leavesGzip = zlib.gzipSync(Buffer.from(payload, 'utf8'));
+    const results = await Promise.allSettled(uniqueIds.map((id) => this.savePayload(id, root, leavesGzip)));
+    const failures = results
+      .map((result, index) => ({ result, id: uniqueIds[index] }))
+      .filter(
+        (
+          entry,
+        ): entry is {
+          result: PromiseRejectedResult;
+          id: string;
+        } => entry.result.status === 'rejected',
+      );
+
+    if (failures.length > 0) {
+      for (const failure of failures) {
+        const reason =
+          failure.result.reason instanceof Error ? failure.result.reason.message : String(failure.result.reason);
+        this.logger.warn(`Failed to persist IBC state tree cache alias id=${failure.id}: ${reason}`);
+      }
+
+      throw new AggregateError(
+        failures.map((failure) => failure.result.reason),
+        `Failed to persist ${failures.length} of ${uniqueIds.length} IBC state tree cache aliases`,
+      );
     }
+
     return { root };
+  }
+
+  private async savePayload(id: string, root: string, leavesGzip: Buffer): Promise<void> {
+    await this.entityManager.transaction(async (transactionalEntityManager) => {
+      // Keep the timeout transaction-local so a failed cache write cannot leak
+      // session configuration to the next user of the pooled PostgreSQL connection.
+      await transactionalEntityManager.query(`SELECT set_config('statement_timeout', $1, true);`, [
+        `${this.statementTimeoutMs}ms`,
+      ]);
+      await transactionalEntityManager.query(
+        `
+          INSERT INTO ibc_state_tree_cache (id, root, leaves_gzip, updated_at)
+          VALUES ($1, $2, $3, NOW())
+          ON CONFLICT (id)
+          DO UPDATE SET root = EXCLUDED.root, leaves_gzip = EXCLUDED.leaves_gzip, updated_at = NOW();
+        `,
+        [id, root, leavesGzip],
+      );
+    });
   }
 }
