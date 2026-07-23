@@ -88,8 +88,8 @@ export type SwapEstimateResponse = {
 
 export type PlannerClientConfig = {
   cardanoChainId: string;
-  counterpartyChainId?: string;
   cardanoRestEndpoint?: string;
+  counterpartyChainId?: string;
   localOsmosisRestEndpoint: string;
   routeDiscoveryTimeoutMs?: number;
   swapRouterAddress?: string;
@@ -121,8 +121,8 @@ const LOCAL_OSMOSIS_CHAIN_ID = 'localosmosis';
 const QUERY_CHANNELS_PREFIX_URL = '/ibc/core/channel/v1/channels';
 const QUERY_ALL_CHANNELS_URL =
   `${QUERY_CHANNELS_PREFIX_URL}?pagination.count_total=true&pagination.limit=10000`;
-const GATEWAY_CHANNELS_URL =
-  '/api/channels?key=&offset=0&limit=200&countTotal=false&reverse=false';
+const QUERY_CARDANO_CHANNELS_URL =
+  '/api/channels?key=&offset=0&limit=10000&countTotal=true&reverse=false';
 const QUERY_SWAP_ROUTER_STATE =
   '/cosmwasm/wasm/v1/contract/SWAP_ROUTER_ADDRESS/state?pagination.limit=100000000';
 const SWAP_ROUTING_TABLE_PREFIX = '\x00\rrouting_table\x00D';
@@ -147,9 +147,9 @@ type QueryClientStateResponse = {
   };
 };
 
-type DirectOsmosisChannelPair = {
+type DirectChannelPair = {
   cardanoChannel: string;
-  osmosisChannel: string;
+  counterpartyChannel: string;
 };
 
 type SwapRoute = {
@@ -259,14 +259,22 @@ export function createPlannerClient(config: PlannerClientConfig): PlannerClient 
         };
       }
 
+      const isCardanoToCounterparty =
+        fromChainId === resolvedConfig.cardanoChainId &&
+        toChainId === resolvedConfig.counterpartyChainId;
+      const isCounterpartyToCardano =
+        fromChainId === resolvedConfig.counterpartyChainId &&
+        toChainId === resolvedConfig.cardanoChainId;
+
+      if (!isCardanoToCounterparty && !isCounterpartyToCardano) {
+        return noDirectRoute(fromChainId, toChainId, request.expectedChainPath);
+      }
+
       const directPair = await withRouteDiscoveryTimeout(
-        (signal) => fetchDirectOsmosisChannelPair(resolvedConfig, signal),
+        (signal) => fetchDirectChannelPair(resolvedConfig, signal),
         resolvedConfig.routeDiscoveryTimeoutMs,
       );
-      if (
-        fromChainId === resolvedConfig.cardanoChainId &&
-        toChainId === resolvedConfig.counterpartyChainId
-      ) {
+      if (isCardanoToCounterparty) {
         if (!directPair) {
           return noDirectRoute(fromChainId, toChainId, request.expectedChainPath);
         }
@@ -284,10 +292,7 @@ export function createPlannerClient(config: PlannerClientConfig): PlannerClient 
         };
       }
 
-      if (
-        fromChainId === resolvedConfig.counterpartyChainId &&
-        toChainId === resolvedConfig.cardanoChainId
-      ) {
+      if (isCounterpartyToCardano) {
         if (!directPair) {
           return noDirectRoute(fromChainId, toChainId, request.expectedChainPath);
         }
@@ -295,7 +300,7 @@ export function createPlannerClient(config: PlannerClientConfig): PlannerClient 
           foundRoute: true,
           mode: 'native-forward',
           chains: [fromChainId, toChainId],
-          routes: [`transfer/${directPair.osmosisChannel}`],
+          routes: [`transfer/${directPair.counterpartyChannel}`],
           tokenTrace: {
             kind: tokenDenom.startsWith('ibc/') ? 'ibc_voucher' : 'native',
             path: '',
@@ -337,7 +342,7 @@ export function createPlannerClient(config: PlannerClientConfig): PlannerClient 
         return buildEmptyEstimate('Input amount must be a positive integer amount.');
       }
 
-      const directPair = await fetchDirectOsmosisChannelPair(resolvedConfig);
+      const directPair = await fetchDirectChannelPair(resolvedConfig);
       if (!directPair) {
         return buildEmptyEstimate(
           'No direct Cardano-to-Osmosis transfer channel is available.',
@@ -367,7 +372,7 @@ export function createPlannerClient(config: PlannerClientConfig): PlannerClient 
         tokenSwapAmount: estimate.tokenSwapAmount.toString(),
         outToken: route.outToken,
         transferRoutes: [`transfer/${directPair.cardanoChannel}`],
-        transferBackRoutes: [`transfer/${directPair.osmosisChannel}`],
+        transferBackRoutes: [`transfer/${directPair.counterpartyChannel}`],
         transferChains: [resolvedConfig.cardanoChainId, LOCAL_OSMOSIS_CHAIN_ID],
       };
     },
@@ -401,55 +406,87 @@ function noDirectRoute(
   };
 }
 
-async function fetchDirectOsmosisChannelPair(
+async function fetchDirectChannelPair(
   config: PlannerConfig,
   signal?: AbortSignal,
-): Promise<DirectOsmosisChannelPair | null> {
-  const fromCardano = await fetchDirectChannelPairFromCardano(config, signal);
-  if (fromCardano) {
-    return fromCardano;
+): Promise<DirectChannelPair | null> {
+  if (config.cardanoRestEndpoint?.trim()) {
+    const channels = await fetchOpenCardanoChannels(config, signal);
+    const candidates = [...channels].sort((a, b) =>
+      compareChannelId(b.channel_id, a.channel_id),
+    );
+    for (const candidate of candidates) {
+      throwIfAborted(signal);
+      if (await isMatchingOpenCounterpartyChannel(config, candidate, signal)) {
+        return {
+          cardanoChannel: candidate.channel_id,
+          counterpartyChannel: candidate.counterparty.channel_id,
+        };
+      }
+    }
+    return null;
   }
-  const channels = await fetchOpenOsmosisChannels(config, signal);
+
+  const channels = await fetchOpenCounterpartyChannels(config, signal);
   const selected = selectLatestChannel(channels);
   return selected
     ? {
         cardanoChannel: selected.counterparty.channel_id,
-        osmosisChannel: selected.channel_id,
+        counterpartyChannel: selected.channel_id,
       }
     : null;
 }
 
-async function fetchDirectChannelPairFromCardano(
+async function fetchOpenCardanoChannels(
   config: PlannerConfig,
   signal?: AbortSignal,
-): Promise<DirectOsmosisChannelPair | null> {
-  if (!config.cardanoRestEndpoint) {
-    return null;
-  }
+): Promise<QueryChannelResponse[]> {
+  throwIfAborted(signal);
+  const restEndpoint = config.cardanoRestEndpoint!.trim().replace(/\/+$/, '');
   const data = await fetchJson<{ channels?: QueryChannelResponse[] }>(
-    `${config.cardanoRestEndpoint}${GATEWAY_CHANNELS_URL}`,
+    `${restEndpoint}${QUERY_CARDANO_CHANNELS_URL}`,
     config.fetchImpl,
     signal,
   ).catch(() => {
     throwIfAborted(signal);
-    return { channels: [] as QueryChannelResponse[] };
+    return { channels: [] };
   });
-  const openChannels = (data.channels || []).filter(
-    (channel) =>
-      isOpenChannelState(channel.state) &&
-      channel.port_id === 'transfer' &&
-      channel.counterparty?.channel_id,
-  );
-  const selected = selectLatestChannel(openChannels);
-  return selected
-    ? {
-        cardanoChannel: selected.channel_id,
-        osmosisChannel: selected.counterparty.channel_id,
-      }
-    : null;
+  return (data.channels || []).filter(isOpenTransferChannel);
 }
 
-async function fetchOpenOsmosisChannels(
+async function isMatchingOpenCounterpartyChannel(
+  config: PlannerConfig,
+  cardanoChannel: QueryChannelResponse,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const restEndpoint = config.localOsmosisRestEndpoint.trim().replace(/\/+$/, '');
+  const channelId = encodeURIComponent(cardanoChannel.counterparty.channel_id);
+  const portId = encodeURIComponent(cardanoChannel.counterparty.port_id);
+  const data = await fetchJson<{
+    channel?: {
+      state?: string | number;
+      counterparty?: {
+        channel_id?: string;
+        port_id?: string;
+      };
+    };
+  }>(
+    `${restEndpoint}${QUERY_CHANNELS_PREFIX_URL}/${channelId}/ports/${portId}`,
+    config.fetchImpl,
+    signal,
+  ).catch(() => {
+    throwIfAborted(signal);
+    return null;
+  });
+  return Boolean(
+    data?.channel &&
+      isOpenChannelState(data.channel.state) &&
+      data.channel.counterparty?.channel_id === cardanoChannel.channel_id &&
+      data.channel.counterparty.port_id === cardanoChannel.port_id,
+  );
+}
+
+async function fetchOpenCounterpartyChannels(
   config: PlannerConfig,
   signal?: AbortSignal,
 ): Promise<QueryChannelResponse[]> {
@@ -474,7 +511,7 @@ async function fetchOpenOsmosisChannels(
 
     for (const channel of data.channels || []) {
       throwIfAborted(signal);
-      if (!isOpenChannelState(channel.state)) {
+      if (!isOpenTransferChannel(channel)) {
         continue;
       }
       const clientState = await fetchClientStateFromChannel(
@@ -499,6 +536,16 @@ async function fetchOpenOsmosisChannels(
   } while (nextKey);
 
   return channels;
+}
+
+function isOpenTransferChannel(channel: QueryChannelResponse): boolean {
+  return (
+    isOpenChannelState(channel.state) &&
+    channel.port_id === 'transfer' &&
+    channel.counterparty?.port_id === 'transfer' &&
+    /^channel-\d+$/.test(channel.channel_id) &&
+    /^channel-\d+$/.test(channel.counterparty.channel_id)
+  );
 }
 
 async function fetchClientStateFromChannel(

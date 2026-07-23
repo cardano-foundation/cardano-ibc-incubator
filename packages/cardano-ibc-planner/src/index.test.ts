@@ -11,10 +11,14 @@ function jsonResponse(body: unknown): Response {
 
 describe('route planning', () => {
   it('reports unsupported direct routes with diagnostics instead of inventing a path', async () => {
-    const fetchImpl: typeof fetch = async () =>
-      jsonResponse({ channels: [], pagination: {} });
+    let fetchCount = 0;
+    const fetchImpl: typeof fetch = async () => {
+      fetchCount += 1;
+      return jsonResponse({ channels: [], pagination: {} });
+    };
     const planner = createPlannerClient({
       cardanoChainId: 'cardano-local',
+      cardanoRestEndpoint: 'http://cardano.test',
       localOsmosisRestEndpoint: 'http://osmosis.test',
       fetchImpl,
     });
@@ -45,55 +49,193 @@ describe('route planning', () => {
         },
       ],
     });
+    assert.equal(fetchCount, 0);
   });
 
-  it('returns a native direct route only when Osmosis exposes an open Cardano channel', async () => {
+  it('discovers configured Injective routes in both directions from Cardano channels', async () => {
+    const requestedUrls: string[] = [];
     const fetchImpl: typeof fetch = async (url) => {
       const requestUrl = String(url);
-      if (requestUrl.endsWith('/client_state')) {
+      requestedUrls.push(requestUrl);
+      return requestUrl.startsWith('http://cardano.test')
+        ? jsonResponse({
+            channels: [
+              {
+                channel_id: 'channel-8',
+                port_id: 'transfer',
+                state: 'STATE_OPEN',
+                counterparty: {
+                  channel_id: 'channel-2',
+                  port_id: 'transfer',
+                },
+              },
+            ],
+            pagination: {},
+          })
+        : jsonResponse({
+            channel: {
+              state: 'STATE_OPEN',
+              counterparty: {
+                channel_id: 'channel-8',
+                port_id: 'transfer',
+              },
+            },
+          });
+    };
+    const planner = createPlannerClient({
+      cardanoChainId: 'cardano-preprod',
+      cardanoRestEndpoint: 'http://cardano.test/',
+      counterpartyChainId: 'injective-888',
+      localOsmosisRestEndpoint: 'http://injective.test',
+      fetchImpl,
+    });
+
+    const cardanoToInjective = await planner.planTransferRoute({
+      fromChainId: 'cardano-preprod',
+      toChainId: 'injective-888',
+      tokenDenom: 'lovelace',
+    });
+    const injectiveToCardano = await planner.planTransferRoute({
+      fromChainId: 'injective-888',
+      toChainId: 'cardano-preprod',
+      tokenDenom: 'ibc/ABC123',
+    });
+
+    assert.equal(cardanoToInjective.foundRoute, true);
+    assert.equal(cardanoToInjective.mode, 'native-forward');
+    assert.deepEqual(cardanoToInjective.chains, [
+      'cardano-preprod',
+      'injective-888',
+    ]);
+    assert.deepEqual(cardanoToInjective.routes, ['transfer/channel-8']);
+    assert.deepEqual(cardanoToInjective.tokenTrace, {
+      kind: 'native',
+      path: '',
+      baseDenom: 'lovelace',
+      fullDenom: 'lovelace',
+    });
+    assert.equal(injectiveToCardano.foundRoute, true);
+    assert.equal(injectiveToCardano.mode, 'native-forward');
+    assert.deepEqual(injectiveToCardano.chains, [
+      'injective-888',
+      'cardano-preprod',
+    ]);
+    assert.deepEqual(injectiveToCardano.routes, ['transfer/channel-2']);
+    assert.deepEqual(injectiveToCardano.tokenTrace, {
+      kind: 'ibc_voucher',
+      path: '',
+      baseDenom: 'ibc/ABC123',
+      fullDenom: 'ibc/ABC123',
+    });
+    assert.deepEqual(requestedUrls, [
+      'http://cardano.test/api/channels?key=&offset=0&limit=10000&countTotal=true&reverse=false',
+      'http://injective.test/ibc/core/channel/v1/channels/channel-2/ports/transfer',
+      'http://cardano.test/api/channels?key=&offset=0&limit=10000&countTotal=true&reverse=false',
+      'http://injective.test/ibc/core/channel/v1/channels/channel-2/ports/transfer',
+    ]);
+  });
+
+  it('filters channels with one bounded Gateway listing and targeted counterparty checks', async () => {
+    const requestedUrls: string[] = [];
+    const fetchImpl: typeof fetch = async (url) => {
+      const requestUrl = String(url);
+      requestedUrls.push(requestUrl);
+      if (!requestUrl.startsWith('http://cardano.test')) {
+        const matchesCardanoChannel = requestUrl.includes('/channel-2/');
         return jsonResponse({
-          identified_client_state: {
-            client_state: { chain_id: 'cardano-local' },
+          channel: {
+            state: 'STATE_OPEN',
+            counterparty: {
+              channel_id: matchesCardanoChannel ? 'channel-8' : 'channel-404',
+              port_id: 'transfer',
+            },
           },
         });
       }
       return jsonResponse({
         channels: [
           {
-            channel_id: 'channel-2',
+            channel_id: 'channel-100',
+            port_id: 'icahost',
+            state: 'STATE_OPEN',
+            counterparty: {
+              channel_id: 'channel-100',
+              port_id: 'transfer',
+            },
+          },
+          {
+            channel_id: 'channel-99',
             port_id: 'transfer',
             state: 'STATE_OPEN',
             counterparty: {
-              channel_id: 'channel-8',
+              channel_id: 'channel-99',
+              port_id: 'wasm.contract',
+            },
+          },
+          {
+            channel_id: 'channel-98',
+            port_id: 'transfer',
+            state: 'STATE_CLOSED',
+            counterparty: {
+              channel_id: 'channel-98',
+              port_id: 'transfer',
+            },
+          },
+          {
+            channel_id: 'channel-9',
+            port_id: 'transfer',
+            state: 'STATE_OPEN',
+            counterparty: {
+              channel_id: 'channel-3',
+              port_id: 'transfer',
+            },
+          },
+          {
+            channel_id: 'channel-8',
+            port_id: 'transfer',
+            state: 'STATE_OPEN',
+            counterparty: {
+              channel_id: 'channel-2',
+              port_id: 'transfer',
+            },
+          },
+          {
+            channel_id: 'channel-7',
+            port_id: 'transfer',
+            state: 3,
+            counterparty: {
+              channel_id: 'channel-1',
               port_id: 'transfer',
             },
           },
         ],
-        pagination: {},
+        pagination: {
+          next_key: null,
+          total: '6',
+        },
       });
     };
     const planner = createPlannerClient({
-      cardanoChainId: 'cardano-local',
-      localOsmosisRestEndpoint: 'http://osmosis.test',
+      cardanoChainId: 'cardano-preprod',
+      cardanoRestEndpoint: 'http://cardano.test',
+      counterpartyChainId: 'injective-888',
+      localOsmosisRestEndpoint: 'http://injective.test',
       fetchImpl,
     });
 
     const result = await planner.planTransferRoute({
-      fromChainId: 'cardano-local',
-      toChainId: 'localosmosis',
-      tokenDenom: 'lovelace',
+      fromChainId: 'injective-888',
+      toChainId: 'cardano-preprod',
+      tokenDenom: 'inj',
     });
 
     assert.equal(result.foundRoute, true);
-    assert.equal(result.mode, 'native-forward');
-    assert.deepEqual(result.chains, ['cardano-local', 'localosmosis']);
-    assert.deepEqual(result.routes, ['transfer/channel-8']);
-    assert.deepEqual(result.tokenTrace, {
-      kind: 'native',
-      path: '',
-      baseDenom: 'lovelace',
-      fullDenom: 'lovelace',
-    });
+    assert.deepEqual(result.routes, ['transfer/channel-2']);
+    assert.deepEqual(requestedUrls, [
+      'http://cardano.test/api/channels?key=&offset=0&limit=10000&countTotal=true&reverse=false',
+      'http://injective.test/ibc/core/channel/v1/channels/channel-3/ports/transfer',
+      'http://injective.test/ibc/core/channel/v1/channels/channel-2/ports/transfer',
+    ]);
   });
 
   it(
@@ -114,16 +256,18 @@ describe('route planning', () => {
         return await new Promise<Response>(() => undefined);
       };
       const planner = createPlannerClient({
-        cardanoChainId: 'cardano-local',
-        localOsmosisRestEndpoint: 'http://osmosis.test',
+        cardanoChainId: 'cardano-preprod',
+        cardanoRestEndpoint: 'http://cardano.test',
+        counterpartyChainId: 'injective-888',
+        localOsmosisRestEndpoint: 'http://injective.test',
         routeDiscoveryTimeoutMs: 25,
         fetchImpl,
       });
 
       await assert.rejects(
         planner.planTransferRoute({
-          fromChainId: 'cardano-local',
-          toChainId: 'localosmosis',
+          fromChainId: 'cardano-preprod',
+          toChainId: 'injective-888',
           tokenDenom: 'lovelace',
         }),
         (error: unknown) => {
@@ -144,54 +288,6 @@ describe('route planning', () => {
   );
 
   it(
-    'passes the same timeout signal to nested client-state discovery',
-    { timeout: 1_000 },
-    async () => {
-      const capturedSignals: AbortSignal[] = [];
-      const fetchImpl: typeof fetch = async (url, init) => {
-        assert.ok(init?.signal);
-        capturedSignals.push(init.signal);
-        if (String(url).endsWith('/client_state')) {
-          return await new Promise<Response>(() => undefined);
-        }
-        return jsonResponse({
-          channels: [
-            {
-              channel_id: 'channel-2',
-              port_id: 'transfer',
-              state: 'STATE_OPEN',
-              counterparty: {
-                channel_id: 'channel-8',
-                port_id: 'transfer',
-              },
-            },
-          ],
-          pagination: {},
-        });
-      };
-      const planner = createPlannerClient({
-        cardanoChainId: 'cardano-local',
-        localOsmosisRestEndpoint: 'http://osmosis.test',
-        routeDiscoveryTimeoutMs: 25,
-        fetchImpl,
-      });
-
-      await assert.rejects(
-        planner.planTransferRoute({
-          fromChainId: 'cardano-local',
-          toChainId: 'localosmosis',
-          tokenDenom: 'lovelace',
-        }),
-        RouteDiscoveryTimeoutError,
-      );
-
-      assert.equal(capturedSignals.length, 2);
-      assert.equal(capturedSignals[0], capturedSignals[1]);
-      assert.equal(capturedSignals[1].aborted, true);
-    },
-  );
-
-  it(
     'clears the deadline after route discovery finishes',
     { timeout: 1_000 },
     async () => {
@@ -201,15 +297,17 @@ describe('route planning', () => {
         return jsonResponse({ channels: [], pagination: {} });
       };
       const planner = createPlannerClient({
-        cardanoChainId: 'cardano-local',
-        localOsmosisRestEndpoint: 'http://osmosis.test',
+        cardanoChainId: 'cardano-preprod',
+        cardanoRestEndpoint: 'http://cardano.test',
+        counterpartyChainId: 'injective-888',
+        localOsmosisRestEndpoint: 'http://injective.test',
         routeDiscoveryTimeoutMs: 25,
         fetchImpl,
       });
 
       const result = await planner.planTransferRoute({
-        fromChainId: 'cardano-local',
-        toChainId: 'localosmosis',
+        fromChainId: 'cardano-preprod',
+        toChainId: 'injective-888',
         tokenDenom: 'lovelace',
       });
       await new Promise((resolve) => setTimeout(resolve, 50));
