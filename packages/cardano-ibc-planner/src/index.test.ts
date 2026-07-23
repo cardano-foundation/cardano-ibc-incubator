@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createPlannerClient } from './index';
+import { createPlannerClient, RouteDiscoveryTimeoutError } from './index';
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -95,4 +95,128 @@ describe('route planning', () => {
       fullDenom: 'lovelace',
     });
   });
+
+  it(
+    'aborts and rejects route discovery after the overall timeout',
+    { timeout: 1_000 },
+    async () => {
+      const captured: { signal?: AbortSignal } = {};
+      let abortEvents = 0;
+      const fetchImpl: typeof fetch = async (_input, init) => {
+        captured.signal = init?.signal ?? undefined;
+        captured.signal?.addEventListener(
+          'abort',
+          () => {
+            abortEvents += 1;
+          },
+          { once: true },
+        );
+        return await new Promise<Response>(() => undefined);
+      };
+      const planner = createPlannerClient({
+        cardanoChainId: 'cardano-local',
+        localOsmosisRestEndpoint: 'http://osmosis.test',
+        routeDiscoveryTimeoutMs: 25,
+        fetchImpl,
+      });
+
+      await assert.rejects(
+        planner.planTransferRoute({
+          fromChainId: 'cardano-local',
+          toChainId: 'localosmosis',
+          tokenDenom: 'lovelace',
+        }),
+        (error: unknown) => {
+          assert.ok(error instanceof RouteDiscoveryTimeoutError);
+          assert.equal(error.timeoutMs, 25);
+          assert.equal(
+            error.message,
+            'IBC route discovery timed out after 25 milliseconds.',
+          );
+          return true;
+        },
+      );
+
+      assert.ok(captured.signal);
+      assert.equal(captured.signal.aborted, true);
+      assert.equal(abortEvents, 1);
+    },
+  );
+
+  it(
+    'passes the same timeout signal to nested client-state discovery',
+    { timeout: 1_000 },
+    async () => {
+      const capturedSignals: AbortSignal[] = [];
+      const fetchImpl: typeof fetch = async (url, init) => {
+        assert.ok(init?.signal);
+        capturedSignals.push(init.signal);
+        if (String(url).endsWith('/client_state')) {
+          return await new Promise<Response>(() => undefined);
+        }
+        return jsonResponse({
+          channels: [
+            {
+              channel_id: 'channel-2',
+              port_id: 'transfer',
+              state: 'STATE_OPEN',
+              counterparty: {
+                channel_id: 'channel-8',
+                port_id: 'transfer',
+              },
+            },
+          ],
+          pagination: {},
+        });
+      };
+      const planner = createPlannerClient({
+        cardanoChainId: 'cardano-local',
+        localOsmosisRestEndpoint: 'http://osmosis.test',
+        routeDiscoveryTimeoutMs: 25,
+        fetchImpl,
+      });
+
+      await assert.rejects(
+        planner.planTransferRoute({
+          fromChainId: 'cardano-local',
+          toChainId: 'localosmosis',
+          tokenDenom: 'lovelace',
+        }),
+        RouteDiscoveryTimeoutError,
+      );
+
+      assert.equal(capturedSignals.length, 2);
+      assert.equal(capturedSignals[0], capturedSignals[1]);
+      assert.equal(capturedSignals[1].aborted, true);
+    },
+  );
+
+  it(
+    'clears the deadline after route discovery finishes',
+    { timeout: 1_000 },
+    async () => {
+      const captured: { signal?: AbortSignal } = {};
+      const fetchImpl: typeof fetch = async (_input, init) => {
+        captured.signal = init?.signal ?? undefined;
+        return jsonResponse({ channels: [], pagination: {} });
+      };
+      const planner = createPlannerClient({
+        cardanoChainId: 'cardano-local',
+        localOsmosisRestEndpoint: 'http://osmosis.test',
+        routeDiscoveryTimeoutMs: 25,
+        fetchImpl,
+      });
+
+      const result = await planner.planTransferRoute({
+        fromChainId: 'cardano-local',
+        toChainId: 'localosmosis',
+        tokenDenom: 'lovelace',
+      });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      assert.equal(result.foundRoute, false);
+      assert.ok(captured.signal);
+      assert.equal(captured.signal.aborted, false);
+    },
+  );
 });

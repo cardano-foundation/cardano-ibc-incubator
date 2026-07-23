@@ -68,6 +68,7 @@ export type PlannerClientConfig = {
     counterpartyChainId?: string;
     cardanoRestEndpoint?: string;
     localOsmosisRestEndpoint: string;
+    routeDiscoveryTimeoutMs?: number;
     swapRouterAddress?: string;
     preferredChannels?: PreferredChannel[];
     resolveCardanoAssetDenomTrace?: (assetId: string) => Promise<ResolvedCardanoAssetTrace | null>;
@@ -84,4 +85,9 @@ export type PlannerClient = {
     getLocalOsmosisSwapOptions: () => Promise<SwapOptionsResponse>;
     estimateLocalOsmosisSwap: (request: SwapEstimateRequest) => Promise<SwapEstimateResponse>;
 };
+export declare const DEFAULT_ROUTE_DISCOVERY_TIMEOUT_MS = 10000;
+export declare class RouteDiscoveryTimeoutError extends Error {
+    readonly timeoutMs: number;
+    constructor(timeoutMs: number);
+}
 export declare function createPlannerClient(config: PlannerClientConfig): PlannerClient;

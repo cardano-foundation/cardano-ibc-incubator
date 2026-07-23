@@ -491,7 +491,7 @@ export async function planTransferRoute(params: {
   toChainId: string;
   tokenDenom: string;
   expectedChainPath?: string[];
-}): Promise<TransferPlanResponse | null> {
+}): Promise<TransferPlanResponse> {
   try {
     return await cardanoPlannerClient.planTransferRoute({
       fromChainId: params.fromChainId,
@@ -501,8 +501,7 @@ export async function planTransferRoute(params: {
     });
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);
-    toast.error(errorMessage, { theme: 'colored' });
-    return null;
+    throw new Error(errorMessage);
   }
 }
 
