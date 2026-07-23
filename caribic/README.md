@@ -223,3 +223,165 @@ The test suite is ordered and will **skip** later tests if prerequisites are not
 ```bash
 caribic --verbose 5 test
 ```
+
+## Full Test: Cardano Preprod to Injective Testnet
+
+End-to-end walkthrough for bridging Cardano **preprod** to the **public Injective testnet** (`injective-888`). The public Injective testnet has the Cardano light client registered and allowed, which you can verify with:
+
+```bash
+curl -s https://testnet.sentry.lcd.injective.network/ibc/core/client/v1/params
+# => {"params":{"allowed_clients":["06-solomachine","07-tendermint","08-cardano-probabilistic"]}}
+```
+
+You will need:
+
+- A **funded preprod signing key** (`DEPLOYER_SK`) — it pays for the bridge deployment and doubles as the Hermes `cardano-relayer` key.
+- A **funded Injective testnet account** — unfunded accounts return `NotFound` and the IBC handshake fails.
+- External preprod **Kupo** and **Ogmios** endpoints (e.g. [Demeter](https://demeter.run)) plus their API keys.
+
+The two keys can be generated and funded with the provisioning scripts in [`caribic/tools/`](tools/README.md) — each script generates (or reuses) the key material under `~/.caribic/`, prints the address together with faucet instructions, and waits until the account is funded:
+
+```bash
+deno run --allow-net --allow-read --allow-write --allow-env caribic/tools/provision-preprod-deployer.ts
+deno run --allow-net --allow-read --allow-write --allow-env caribic/tools/provision-injective-testnet-key.ts
+```
+
+> [!NOTE]
+> Why external Kupo/Ogmios? Ogmios speaks the node-to-client protocol over a **local socket**, so it cannot attach to a remote relay — running Ogmios yourself would require the fully synced local node this walkthrough deliberately disables. Kupo can in principle sync from a remote Ogmios (`PREPROD_KUPO_MODE=local` runs local Kupo behind an `ogmios-proxy`), but that mode currently requires compose services that are not fully wired, so `remote` mode with hosted endpoints is the reliable path.
+
+### 1. Create a config that disables the managed local node
+
+In preprod mode nothing consumes the locally managed `cardano-node` follower: Yaci and the Gateway's block-witness fetch talk node-to-node to the external relay (`CARDANO_CHAIN_HOST`), and transactions are built and submitted through the external Kupo/Ogmios endpoints. Skipping the local node saves a full preprod sync (disk and CPU).
+
+Copy the default config **within `caribic/config/`** (relative paths inside it resolve against the config file location) and disable the node service:
+
+```bash
+cp caribic/config/default-config.json caribic/config/preprod-config.json
+```
+
+In `preprod-config.json` set:
+
+```json
+"cardano": {
+  "services": {
+    "cardano_node": false,
+    ...
+  },
+  ...
+}
+```
+
+The preprod network profile in the same file already carries the correct protocol magic (`"network_magic": 1`) and chain id (`cardano-preprod`); you do not need to configure the magic anywhere else. Pass the config to **every** caribic invocation below via `--config`.
+
+> [!NOTE]
+> Disabling the node requires a caribic build that skips the node readiness probe when the service is off (and a compose file without `postgres → cardano-node` `depends_on`). Both are part of this branch; if `caribic start` still waits on "query cardano-node state" with the node disabled, rebuild the CLI with `cargo install --path caribic --force`.
+
+### 2. Configure the preprod endpoints in the gateway env
+
+`caribic start --network preprod` reads `cardano/gateway/.env` before writing anything and fails fast if the preprod endpoints are missing. Create/extend `cardano/gateway/.env` (start from `.env.example`) with a raw preprod relay and your external Kupo/Ogmios endpoints:
+
+```bash
+# Raw preprod relay used by Yaci history sync and gateway block-witness fetch (node-to-node)
+CARDANO_CHAIN_HOST=preprod-node.world.dev.cardano.org
+CARDANO_CHAIN_PORT=30000
+
+# External Kupo/Ogmios (remote mode); API keys are required in remote mode
+PREPROD_KUPO_MODE=remote
+KUPO_ENDPOINT=https://<your-project>.preprod-v2.kupo-m1.demeter.run
+KUPO_API_KEY=<your-kupo-api-key>
+OGMIOS_ENDPOINT=https://<your-project>.preprod-v6.ogmios-m1.demeter.run
+OGMIOS_API_KEY=<your-ogmios-api-key>
+```
+
+`CARDANO_CHAIN_HOST` must be a raw relay reachable over the node-to-node protocol — caribic rejects `cardano-node` here. The protocol magic (1) is applied automatically from the preprod profile.
+
+**Where the Demeter API keys go:** each Demeter service (Kupo, Ogmios) has its own project key — put them in this same `cardano/gateway/.env` file as `KUPO_API_KEY` and `OGMIOS_API_KEY` (shown above). Remote mode fails fast without both. The Gateway automatically sends them as `dmtr-api-key` headers, and it also accepts Demeter's key-in-hostname URL form (`https://<api-key>.preprod-v2.kupo-m1.demeter.run`) — either style works. Alternatively, export them as `CARIBIC_KUPO_API_KEY` / `CARIBIC_OGMIOS_API_KEY` before `caribic start` and they are written into the env file for you. If you later run the swap dapp (step 8), the same two key values are passed there as `IBC_SWAP_KUPO_API_KEY` / `IBC_SWAP_OGMIOS_API_KEY`.
+
+### 3. Resolve and persist a Yaci checkpoint
+
+Preprod history must sync from a recent checkpoint, never from genesis:
+
+```bash
+caribic --config caribic/config/preprod-config.json yaci-checkpoint --network preprod --epochs-back 2 --write-env
+```
+
+### 4. Start the preprod runtime and deploy the bridge
+
+```bash
+export DEPLOYER_SK=$(cat ~/.caribic/preprod-deployer.sk)   # or your own funded preprod signing key
+caribic --config caribic/config/preprod-config.json start --network preprod
+```
+
+This starts postgres and the Yaci history services, deploys the IBC validators to preprod (artifacts exported to `manifests/preprod/`), starts the Gateway (gRPC on 5001) and the Hermes daemon, and injects the `injective-888` chain block (public sentry endpoints) into `~/.hermes/config.toml`. Verify with:
+
+```bash
+caribic --config caribic/config/preprod-config.json health-check
+```
+
+A successful deploy is cached via the artifacts in `manifests/preprod/`; set `CARIBIC_FORCE_PREPROD_DEPLOY=1` to force a redeploy.
+
+### 5. Add the Injective testnet relayer key
+
+> [!IMPORTANT]
+> This step requires step 4 to have completed: Hermes refuses to add a key for a chain that is not in `~/.hermes/config.toml`, and it is `caribic start --network preprod` that writes the `injective-888` chain block there. If you run `keys add` first, it fails with an error that only shows Hermes' startup INFO lines. (To stage the key without the full preprod start, `caribic chain start --chain injective --network testnet` also writes just the chain block.)
+
+There is no bundled testnet key. Import your funded account's mnemonic with the Ethermint HD path (Injective uses `ethsecp256k1`, coin type 60). If you used the provisioning script, the mnemonic is at `~/.caribic/injective-testnet.mnemonic`:
+
+```bash
+caribic --config caribic/config/preprod-config.json keys add --chain injective-888 \
+  --mnemonic-file ~/.caribic/injective-testnet.mnemonic --key-name injective-888-relayer \
+  --hd-path "m/44'/60'/0'/0/0" --overwrite
+```
+
+No local Injective node is needed — Hermes talks directly to the public testnet sentries.
+
+### 6. Create the route (client, connection, channel)
+
+```bash
+caribic --config caribic/config/preprod-config.json setup route --from cardano --to injective --to-network testnet
+```
+
+This creates the `08-cardano-probabilistic` client on Injective testnet and the Tendermint client for Injective on Cardano, then opens the connection and the transfer channel, restarting the Hermes daemon around the setup.
+
+### 7. Exercise the route
+
+```bash
+caribic --config caribic/config/preprod-config.json demo token-swap --chain injective --network testnet
+```
+
+On Injective this runs the direct token-transfer legs (Cardano → Injective and back). A DEX-style swap leg currently exists only for Osmosis (via the `crosschain_swaps` wasm contract).
+
+### 8. Run the swap dapp against preprod + Injective testnet
+
+The IBC swap dapp has a dedicated `testnet` mode for exactly this topology (see `dapps/ibc-swap/client/README.md`):
+
+```bash
+cd dapps/ibc-swap/client
+cp env .env
+```
+
+Set at minimum:
+
+```bash
+NEXT_PUBLIC_IBC_SWAP_MODE=testnet
+NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT=http://localhost:8000
+NEXT_PUBLIC_KUPMIOS_URL=<preprod-kupo-url>,<preprod-ogmios-url>
+IBC_SWAP_KUPO_API_KEY=<your-kupo-api-key>
+IBC_SWAP_OGMIOS_API_KEY=<your-ogmios-api-key>
+```
+
+Then:
+
+```bash
+yarn && yarn dev   # serves at http://localhost:3000/ibc
+```
+
+Channels and denom traces are discovered at runtime through the planner and the bridge manifest, so the route created in step 6 is picked up automatically. Injective testnet RPC/REST endpoints default to public fallbacks and can be overridden via `NEXT_PUBLIC_INJECTIVE_RPC_ENDPOINT` / `NEXT_PUBLIC_INJECTIVE_REST_ENDPOINT`.
+
+### Troubleshooting
+
+- Hermes only reads `~/.hermes/config.toml` at startup — after manual config changes run `caribic stop relayer` then `caribic start relayer --network preprod`.
+- `caribic keys add --chain injective-888` failing with output that ends after Hermes' INFO startup lines means the `injective-888` chain block is missing from `~/.hermes/config.toml` — complete step 4 first (see the note in step 5).
+- `NotFound` account errors on Injective mean the relayer address is unfunded.
+- Hermes errors like `unknown header type: /ibc.lightclients.probabilistic.v1.ProbabilisticHeader` mean the compiled relayer binary is older than the `relayer/` submodule checkout — rebuild it with `cd relayer && cargo build --release --bin hermes`. (Hermes reports errors on stdout, so caribic may show such failures with an empty message.)
+- If client creation on Injective fails with an unsupported client type, re-check the `allowed_clients` query at the top of this section.
