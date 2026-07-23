@@ -13,6 +13,8 @@
     "utils/injectiveAccountParser.ts",
     "utils/injectiveAccountParser.test.ts",
     "utils/injectiveDirectSigner.ts",
-    "utils/injectiveDirectSigner.test.ts"
+    "utils/injectiveDirectSigner.test.ts",
+    "utils/injectiveSigningClient.ts",
+    "utils/injectiveSigningClient.test.ts"
   ]
 }

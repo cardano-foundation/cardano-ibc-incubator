@@ -1,13 +1,11 @@
 /* eslint-disable consistent-return */
 import { cosmosChainsSupported, defaultChainName } from '@/constants';
 import { useChain } from '@cosmos-kit/react';
-import { GasPrice, SigningStargateClient } from '@cosmjs/stargate';
 import { Coin } from 'cosmjs-types/cosmos/base/v1beta1/coin';
 import { cosmos } from 'interchain';
 import { useCallback, useMemo } from 'react';
 import { findRuntimeChain } from '@/configs/runtimeConfig';
-import { injectiveAccountParser } from '@/utils/injectiveAccountParser';
-import { withInjectiveDirectSigning } from '@/utils/injectiveDirectSigner';
+import { createInjectiveSigningClient } from '@/utils/injectiveSigningClient';
 
 export const useCosmosChain = (chainName: string) => {
   // handle chainName if not supported
@@ -36,16 +34,12 @@ export const useCosmosChain = (chainName: string) => {
         'This wallet does not support the direct signing required for Injective transfers',
       );
     }
-    return SigningStargateClient.connectWithSigner(
+    return createInjectiveSigningClient({
       rpcEndpoint,
-      withInjectiveDirectSigning(directSigner),
-      {
-        accountParser: injectiveAccountParser,
-        gasPrice: GasPrice.fromString(
-          `${runtimeChain.fixedMinGasPrice}${runtimeChain.feeDenom}`,
-        ),
-      },
-    );
+      directSigner,
+      feeDenom: runtimeChain.feeDenom,
+      fixedMinGasPrice: runtimeChain.fixedMinGasPrice,
+    });
   }, [chainName, cosmosChain, getRpcEndpoint]);
 
   const getAllBalances = useCallback(async () => {

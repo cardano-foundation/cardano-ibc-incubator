@@ -889,25 +889,29 @@ const Transfer = () => {
       if (cosmosChainsSupported.includes(fromNetwork.networkId!)) {
         setIsProcessingTransfer(true);
         const client = await cosmosChain.getTransferSigningStargateClient();
-        const tx = await client.signAndBroadcast(
-          cosmosChain.address!,
-          estData.msgs,
-          'auto',
-          '',
-        );
-        console.log(tx);
-        if (tx && tx.code === 0) {
-          const submittedAt = new Date().toISOString();
-          persistResumableTransfer(
-            buildResumableTransferRecord(
-              tx.transactionHash,
-              estData,
-              submittedAt,
-            ),
+        try {
+          const tx = await client.signAndBroadcast(
+            cosmosChain.address!,
+            estData.msgs,
+            'auto',
+            '',
           );
-          setLastTxHash(tx.transactionHash);
-          setLastTransferSubmittedAt(submittedAt);
-          setIsSubmitted(true);
+          console.log(tx);
+          if (tx && tx.code === 0) {
+            const submittedAt = new Date().toISOString();
+            persistResumableTransfer(
+              buildResumableTransferRecord(
+                tx.transactionHash,
+                estData,
+                submittedAt,
+              ),
+            );
+            setLastTxHash(tx.transactionHash);
+            setLastTransferSubmittedAt(submittedAt);
+            setIsSubmitted(true);
+          }
+        } finally {
+          client.disconnect();
         }
       }
       setIsProcessingTransfer(false);
