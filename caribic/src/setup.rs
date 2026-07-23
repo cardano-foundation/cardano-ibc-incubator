@@ -2032,6 +2032,7 @@ fn write_gateway_env_for_network(
                 ("HISTORY_DB_PASSWORD", "dbpass"),
                 ("GATEWAY_DB_HOST", "postgres"),
                 ("GATEWAY_DB_PORT", "5432"),
+                ("CARDANO_EPOCH_LENGTH", "432000"),
             ];
             for (key, value) in preprod_gateway_defaults {
                 set_or_append_env_var(&gateway_env, key, value)?;
