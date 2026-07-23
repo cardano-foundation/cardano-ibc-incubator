@@ -37,6 +37,16 @@ const IBC_SWAP_DAPP_READINESS_ATTEMPTS: u32 = 60;
 const IBC_SWAP_DAPP_READINESS_INTERVAL_MILLIS: u64 = 2000;
 const YACI_HEALTH_CHECK_ATTEMPTS: u32 = 36;
 const YACI_HEALTH_CHECK_INTERVAL_MILLIS: u64 = 5000;
+const PREPROD_LOCAL_CHAIN_SERVICES: [&str; 8] = [
+    "cardano-node",
+    "cardano-node-spo2",
+    "cardano-node-spo3",
+    "cardano-node-spo4",
+    "cardano-node-spo5",
+    "cardano-node-ogmios",
+    "kupo",
+    "cardano-db-sync",
+];
 static RELAYER_REMOTE_TIP_CHECK_ONCE: Once = Once::new();
 
 mod hermes;
@@ -100,6 +110,33 @@ fn managed_cardano_network_running(cardano_dir: &Path) -> bool {
         .ok()
         .map(|output| !String::from_utf8_lossy(&output.stdout).trim().is_empty())
         .unwrap_or(false)
+}
+
+fn should_manage_cardano_node(
+    network: config::CoreCardanoNetwork,
+    cardano_node_enabled: bool,
+) -> bool {
+    cardano_node_enabled && matches!(network, config::CoreCardanoNetwork::Local)
+}
+
+fn cardano_compose_up_args(network: config::CoreCardanoNetwork) -> Vec<&'static str> {
+    let mut args = vec!["compose", "up", "-d"];
+    if matches!(network, config::CoreCardanoNetwork::Preprod) {
+        // Preprod services use external Cardano access. Prevent Compose from
+        // starting cardano-node through a service's local-dev dependency.
+        args.push("--no-deps");
+    }
+    args
+}
+
+fn has_forbidden_preprod_local_chain_service(
+    network: config::CoreCardanoNetwork,
+    running_services: &std::collections::HashSet<String>,
+) -> bool {
+    matches!(network, config::CoreCardanoNetwork::Preprod)
+        && PREPROD_LOCAL_CHAIN_SERVICES
+            .iter()
+            .any(|service| running_services.contains(*service))
 }
 
 fn gateway_env_path_from_cardano_dir(cardano_dir: &Path) -> PathBuf {
@@ -192,10 +229,14 @@ fn managed_cardano_runtime_services_running(
             .filter(|line| !line.is_empty())
             .collect();
 
+    if has_forbidden_preprod_local_chain_service(network, &running_services) {
+        return false;
+    }
+
     let configuration = config::get_config().cardano;
     let mut required_services: Vec<&str> = Vec::new();
 
-    if configuration.services.cardano_node {
+    if should_manage_cardano_node(network, configuration.services.cardano_node) {
         required_services.push("cardano-node");
     }
     if configuration.services.postgres {
@@ -247,29 +288,22 @@ pub fn start_relayer(
         log("Configuring Hermes relayer ...");
     }
 
-    // Build Hermes with Cardano support if needed
+    // Always let Cargo verify the binary against the checked-out relayer source.
+    // This is a fast no-op when unchanged and prevents a stale binary from
+    // surviving a submodule update.
+    ensure_relayer_sources_available(relayer_path)?;
+    warn_if_relayer_submodule_is_not_remote_tip(relayer_path);
+    log_or_show_progress(
+        "Ensuring Hermes binary matches the checked-out relayer source...",
+        &optional_progress_bar,
+    );
+    execute_script_with_progress(
+        relayer_path,
+        "cargo",
+        Vec::from(["build", "--release", "--bin", "hermes"]),
+        "Building Hermes relayer...",
+    )?;
     let hermes_binary = relayer_path.join("target/release/hermes");
-
-    if !hermes_binary.exists() {
-        ensure_relayer_sources_available(relayer_path)?;
-        warn_if_relayer_submodule_is_not_remote_tip(relayer_path);
-        log_or_show_progress(
-            "Building Hermes with Cardano support (this may take a few minutes)...",
-            &optional_progress_bar,
-        );
-        execute_script_with_progress(
-            relayer_path,
-            "cargo",
-            Vec::from(["build", "--release", "--bin", "hermes"]),
-            "Building Hermes relayer...",
-        )?;
-    } else {
-        warn_if_relayer_submodule_is_not_remote_tip(relayer_path);
-        log_or_show_progress(
-            "Hermes binary already built, skipping compilation",
-            &optional_progress_bar,
-        );
-    }
 
     // Set up Hermes configuration directory
     log_or_show_progress("Setting up Hermes configuration", &optional_progress_bar);
@@ -551,15 +585,11 @@ Startup will continue; run `git submodule update --remote relayer` if you intend
 }
 
 pub fn build_hermes_if_needed(relayer_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let hermes_binary = relayer_path.join("target/release/hermes");
-    if hermes_binary.exists() {
-        warn_if_relayer_submodule_is_not_remote_tip(relayer_path);
-        return Ok(());
-    }
-
     ensure_relayer_sources_available(relayer_path)?;
     warn_if_relayer_submodule_is_not_remote_tip(relayer_path);
 
+    // Cargo performs its own source-freshness check, so invoking it every time is
+    // cheap when unchanged and guarantees the binary matches the submodule HEAD.
     // This helper intentionally does not use a progress bar because it is used by
     // `caribic start` to build Hermes in parallel with other startup tasks.
     //
@@ -720,7 +750,9 @@ pub async fn start_local_cardano_network(
             .into());
         }
     } else {
-        verbose("Cardano preprod relay and history services started successfully");
+        verbose(
+            "Cardano preprod history services started successfully using the configured external Cardano relay",
+        );
     }
 
     if config::get_config()
@@ -750,17 +782,16 @@ pub async fn start_local_cardano_network(
         }
     }
 
-    if config::get_config().cardano.services.cardano_node {
-        let mut slot_querried = u64::MAX;
+    if matches!(network, config::CoreCardanoNetwork::Local) {
+        let mut slot_queried = u64::MAX;
         let max_retries = 24; // 24 retries × 5 seconds = 120 seconds timeout
         let mut retry_count = 0;
 
-        while slot_querried == u64::MAX {
+        while slot_queried == u64::MAX {
             match get_cardano_state(project_root_path, CardanoQuery::Slot) {
-                Ok(value) => slot_querried = value,
-                Err(_e) => {
+                Ok(value) => slot_queried = value,
+                Err(_error) => {
                     retry_count += 1;
-
                     if retry_count % 3 == 0 {
                         let container_names = ["cardano-node", "cardano-cardano-node-ogmios-1"];
                         let (diagnostics, should_fail_fast) =
@@ -794,7 +825,9 @@ pub async fn start_local_cardano_network(
             }
         }
     } else {
-        verbose("Skipping cardano-node readiness probe: managed node service is disabled");
+        verbose(
+            "Skipping cardano-node readiness probe: preprod uses external Cardano infrastructure",
+        );
     }
 
     // Local Mithril used to be started here. It is now intentionally disabled
@@ -1762,15 +1795,23 @@ pub fn start_local_cardano_services(
     let mut base_services: Vec<String> = vec![];
     let mut follow_up_services: Vec<String> = vec![];
 
-    if configuration.services.cardano_node {
+    if matches!(network, config::CoreCardanoNetwork::Preprod) {
+        // Stop any local-chain services left behind by a previous runtime
+        // selection. They must never remain active in preprod.
+        all_services.extend(
+            PREPROD_LOCAL_CHAIN_SERVICES
+                .iter()
+                .map(|service| (*service).to_string()),
+        );
+    }
+
+    if should_manage_cardano_node(network, configuration.services.cardano_node) {
         all_services.push("cardano-node".to_string());
         base_services.push("cardano-node".to_string());
-        if matches!(network, config::CoreCardanoNetwork::Local) {
-            for index in 2..=local_spo_count {
-                let service_name = format!("cardano-node-spo{}", index);
-                all_services.push(service_name.clone());
-                base_services.push(service_name);
-            }
+        for index in 2..=local_spo_count {
+            let service_name = format!("cardano-node-spo{}", index);
+            all_services.push(service_name.clone());
+            base_services.push(service_name);
         }
     }
     if configuration.services.postgres {
@@ -1853,7 +1894,7 @@ pub fn start_local_cardano_services(
     }
 
     if !base_services.is_empty() {
-        let mut script_start_args = vec!["compose", "up", "-d"];
+        let mut script_start_args = cardano_compose_up_args(network);
         let mut base_service_args: Vec<&str> = base_services
             .iter()
             .map(|service| service.as_str())
@@ -1885,7 +1926,7 @@ pub fn start_local_cardano_services(
     }
 
     if !follow_up_services.is_empty() {
-        let mut script_start_args = vec!["compose", "up", "-d"];
+        let mut script_start_args = cardano_compose_up_args(network);
         let mut follow_up_service_args: Vec<&str> = follow_up_services
             .iter()
             .map(|service| service.as_str())
@@ -3264,6 +3305,17 @@ fn check_external_url_port(url: &str, label: &str) -> (bool, String) {
     check_external_host_port(host, port.as_str(), label)
 }
 
+fn check_preprod_cardano_access(context: &HealthContext) -> (bool, String) {
+    match crate::setup::resolve_preprod_history_relay(context.gateway_env_path.as_path()) {
+        Ok((host, port)) => check_external_host_port(
+            host.as_str(),
+            port.as_str(),
+            "Cardano preprod history relay",
+        ),
+        Err(error) => (false, error.to_string()),
+    }
+}
+
 fn run_core_health_check(
     check_type: CoreHealthCheckType,
     context: &HealthContext,
@@ -3272,7 +3324,7 @@ fn run_core_health_check(
         return match check_type {
             CoreHealthCheckType::Gateway => check_gateway_service_readiness(),
             CoreHealthCheckType::Dapp => check_dapp_service_readiness(),
-            CoreHealthCheckType::CardanoNode => check_container_only("cardano-node"),
+            CoreHealthCheckType::CardanoNode => check_preprod_cardano_access(context),
             CoreHealthCheckType::Postgres => check_postgres_service(),
             CoreHealthCheckType::Yaci => check_container_with_optional_port(
                 "yaci-store-1",
@@ -3963,4 +4015,65 @@ fn parse_pid_and_command(line: &str) -> Option<(u32, String)> {
     let pid = pid_str.parse::<u32>().ok()?;
 
     Some((pid, command))
+}
+
+#[cfg(test)]
+mod managed_cardano_runtime_tests {
+    use super::{
+        cardano_compose_up_args, has_forbidden_preprod_local_chain_service,
+        should_manage_cardano_node, PREPROD_LOCAL_CHAIN_SERVICES,
+    };
+    use crate::config::CoreCardanoNetwork;
+    use std::collections::HashSet;
+
+    #[test]
+    fn cardano_node_is_managed_only_for_local_runtime() {
+        assert!(should_manage_cardano_node(CoreCardanoNetwork::Local, true));
+        assert!(!should_manage_cardano_node(
+            CoreCardanoNetwork::Preprod,
+            true
+        ));
+        assert!(!should_manage_cardano_node(
+            CoreCardanoNetwork::Local,
+            false
+        ));
+    }
+
+    #[test]
+    fn preprod_compose_start_does_not_start_dependencies() {
+        assert_eq!(
+            cardano_compose_up_args(CoreCardanoNetwork::Preprod),
+            vec!["compose", "up", "-d", "--no-deps"]
+        );
+        assert_eq!(
+            cardano_compose_up_args(CoreCardanoNetwork::Local),
+            vec!["compose", "up", "-d"]
+        );
+        assert!(PREPROD_LOCAL_CHAIN_SERVICES.contains(&"cardano-node"));
+        assert!(PREPROD_LOCAL_CHAIN_SERVICES.contains(&"cardano-node-ogmios"));
+        assert!(PREPROD_LOCAL_CHAIN_SERVICES.contains(&"kupo"));
+    }
+
+    #[test]
+    fn preprod_runtime_rejects_running_local_chain_services() {
+        let local_node = HashSet::from(["cardano-node".to_string()]);
+        assert!(has_forbidden_preprod_local_chain_service(
+            CoreCardanoNetwork::Preprod,
+            &local_node
+        ));
+        assert!(!has_forbidden_preprod_local_chain_service(
+            CoreCardanoNetwork::Local,
+            &local_node
+        ));
+
+        let history_only = HashSet::from([
+            "postgres".to_string(),
+            "yaci-store".to_string(),
+            "yaci-store-postgres".to_string(),
+        ]);
+        assert!(!has_forbidden_preprod_local_chain_service(
+            CoreCardanoNetwork::Preprod,
+            &history_only
+        ));
+    }
 }

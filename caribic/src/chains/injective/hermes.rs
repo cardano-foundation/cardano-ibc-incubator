@@ -103,14 +103,16 @@ fn local_chain_profile() -> HermesCosmosChainProfile {
         }),
         store_prefix: "ibc",
         default_gas: 5_000_000,
-        max_gas: 15_000_000,
+        max_gas: 30_000_000,
         gas_price: HermesGasPrice {
             price: "500000000",
             denom: "inj",
         },
         gas_multiplier: "1.8",
         max_msg_num: 20,
-        max_tx_size: 209_715,
+        // Match Injective's application-level per-transaction limit. Oversized
+        // Cardano updates must be advanced through intermediate anchors.
+        max_tx_size: 1_048_576,
         // The local Cardano devnet runs on a fixed backdated clock so stake
         // registration cutoffs remain deterministic. Local Cosmos chains use
         // wall-clock CometBFT timestamps, so local handshakes need enough

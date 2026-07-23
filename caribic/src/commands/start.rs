@@ -231,7 +231,7 @@ pub async fn run_start(
                         "cardano-node, ogmios, kupo, postgres, yaci-store, yaci-store-postgres"
                     }
                     config::CoreCardanoNetwork::Preprod => {
-                        "cardano-node, postgres, yaci-store, yaci-store-postgres"
+                        "postgres, yaci-store, yaci-store-postgres; live APIs via Demeter and history via the configured external relay"
                     }
                 };
                 logger::log(&format!(

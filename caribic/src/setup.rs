@@ -30,6 +30,7 @@ const LOCAL_GATEWAY_HEALTH_URL: &str = "http://localhost:8000/health";
 const LOCAL_YACI_STORE_POSTGRES_VOLUME: &str = "cardano_yaci_store_postgres_local_data";
 const PREPROD_ENVIRONMENT_BASE_URL: &str =
     "https://book.world.dev.cardano.org/environments/preprod";
+const PREPROD_PUBLIC_RELAY_HOST: &str = "preprod-node.play.dev.cardano.org";
 const YACI_SYNC_START_SLOT_KEY: &str = "YACI_SYNC_START_SLOT";
 const YACI_SYNC_START_BLOCKHASH_KEY: &str = "YACI_SYNC_START_BLOCKHASH";
 const YACI_SYNC_START_BLOCK_NO_KEY: &str = "YACI_SYNC_START_BLOCK_NO";
@@ -147,6 +148,86 @@ fn process_env_value(keys: &[&str]) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn is_demeter_node_port_hostname(host: &str) -> bool {
+    let normalized = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    let is_demeter_http_api = normalized
+        .split('.')
+        .any(|label| label.starts_with("kupo-") || label.starts_with("ogmios-"));
+    !normalized.is_empty()
+        && normalized
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '.'))
+        && !is_demeter_http_api
+        && (normalized.ends_with(".dmtr.host") || normalized.ends_with(".demeter.run"))
+}
+
+fn is_demeter_live_api_endpoint(endpoint: &str, service: &str) -> bool {
+    let Ok(parsed) = Url::parse(endpoint.trim()) else {
+        return false;
+    };
+    let supported_scheme = match service {
+        "kupo" => parsed.scheme() == "https",
+        "ogmios" => matches!(parsed.scheme(), "https" | "wss"),
+        _ => false,
+    };
+    let Some(host) = parsed.host_str() else {
+        return false;
+    };
+    let normalized = host.trim_end_matches('.').to_ascii_lowercase();
+    supported_scheme
+        && (normalized.ends_with(".dmtr.host") || normalized.ends_with(".demeter.run"))
+        && normalized
+            .split('.')
+            .any(|label| label.starts_with(&format!("{service}-")))
+}
+
+fn is_official_public_preprod_relay_hostname(host: &str) -> bool {
+    host.trim()
+        .trim_end_matches('.')
+        .eq_ignore_ascii_case(PREPROD_PUBLIC_RELAY_HOST)
+}
+
+fn validate_preprod_history_relay_host(host: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if is_demeter_node_port_hostname(host) || is_official_public_preprod_relay_hostname(host) {
+        return Ok(());
+    }
+
+    Err(format!(
+        "Preprod Yaci history requires either the official public Preprod relay ({PREPROD_PUBLIC_RELAY_HOST}:3001) or a Demeter Cardano Node Port hostname, but CARDANO_CHAIN_HOST is '{}'. Kupo and Ogmios HTTPS endpoints cannot provide the node-to-node TCP protocol Yaci needs.",
+        host
+    )
+    .into())
+}
+
+fn validate_preprod_history_relay_port(port: &str) -> Result<(), Box<dyn std::error::Error>> {
+    match port.trim().parse::<u16>() {
+        Ok(port) if port > 0 => Ok(()),
+        _ => Err(format!(
+            "Preprod Yaci history requires a valid Cardano relay TCP port, but CARDANO_CHAIN_PORT is '{}'.",
+            port
+        )
+        .into()),
+    }
+}
+
+fn validate_preprod_history_relay_endpoint(
+    host: &str,
+    port: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    validate_preprod_history_relay_host(host)?;
+    validate_preprod_history_relay_port(port)?;
+
+    if is_official_public_preprod_relay_hostname(host) && port.trim() != "3001" {
+        return Err(format!(
+            "The official public Preprod relay must use {PREPROD_PUBLIC_RELAY_HOST}:3001, but CARDANO_CHAIN_PORT is '{}'.",
+            port
+        )
+        .into());
+    }
+
+    Ok(())
+}
+
 pub fn resolve_preprod_history_relay(
     gateway_env: &Path,
 ) -> Result<(String, String), Box<dyn std::error::Error>> {
@@ -184,12 +265,7 @@ pub fn resolve_preprod_history_relay(
             )
         })?;
 
-    if host == "cardano-node" {
-        return Err(
-            "Preprod Yaci history cannot use CARDANO_CHAIN_HOST=cardano-node; set it to a raw preprod Cardano relay host."
-                .into(),
-        );
-    }
+    validate_preprod_history_relay_endpoint(host.as_str(), port.as_str())?;
 
     Ok((host, port))
 }
@@ -1777,6 +1853,24 @@ fn validate_preprod_gateway_env(gateway_env: &Path) -> Result<(), Box<dyn std::e
             )
             .into());
         }
+        if !is_demeter_live_api_endpoint(runtime_kupo_endpoint, "kupo") {
+            return Err(
+                "Preprod Kupo must use an HTTPS Demeter Kupo endpoint (*.dmtr.host or *.demeter.run)."
+                    .into(),
+            );
+        }
+    }
+
+    let ogmios_endpoint = env_values
+        .get("OGMIOS_ENDPOINT")
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .ok_or("Preprod requires OGMIOS_ENDPOINT")?;
+    if !is_demeter_live_api_endpoint(ogmios_endpoint, "ogmios") {
+        return Err(
+            "Preprod Ogmios must use an HTTPS or WSS Demeter Ogmios endpoint (*.dmtr.host or *.demeter.run)."
+                .into(),
+        );
     }
 
     Ok(())
@@ -1821,16 +1915,19 @@ pub fn resolve_preprod_kupo_mode(
     )?
     .ok_or_else(|| {
         format!(
-            "Missing {}. Set {}=remote to use a managed Kupo endpoint or {}=local to run local Kupo explicitly.",
-            PREPROD_KUPO_MODE_KEY, PREPROD_KUPO_MODE_KEY, PREPROD_KUPO_MODE_KEY
+            "Missing {}. Set {}=remote to use a Demeter Kupo endpoint.",
+            PREPROD_KUPO_MODE_KEY, PREPROD_KUPO_MODE_KEY
         )
     })?;
 
     match mode.trim().to_lowercase().as_str() {
-        "local" => Ok(PreprodKupoMode::Local),
+        "local" => Err(
+            "PREPROD_KUPO_MODE=local is not supported for preprod; use PREPROD_KUPO_MODE=remote with a Demeter Kupo endpoint."
+                .into(),
+        ),
         "remote" => Ok(PreprodKupoMode::Remote),
         other => Err(format!(
-            "Invalid {} value '{}'. Expected 'remote' or 'local'.",
+            "Invalid {} value '{}'. Expected 'remote'.",
             PREPROD_KUPO_MODE_KEY, other
         )
         .into()),
@@ -2393,4 +2490,143 @@ pub fn prepare_db_sync_and_gateway(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod runtime_compose_tests {
+    use super::{
+        is_demeter_live_api_endpoint, is_demeter_node_port_hostname,
+        is_official_public_preprod_relay_hostname, validate_preprod_history_relay_endpoint,
+        validate_preprod_history_relay_host, validate_preprod_history_relay_port,
+    };
+
+    #[test]
+    fn preprod_history_relay_accepts_demeter_node_port_hostnames() {
+        for host in [
+            "cardano-preprod.node-port-123.dmtr.host",
+            "cardano-preprod.node-port-123.demeter.run",
+            "CARDANO-PREPROD.NODE-PORT-123.DMTR.HOST.",
+        ] {
+            assert!(is_demeter_node_port_hostname(host));
+            assert!(validate_preprod_history_relay_host(host).is_ok());
+        }
+    }
+
+    #[test]
+    fn preprod_history_relay_accepts_the_official_public_relay() {
+        for host in [
+            "preprod-node.play.dev.cardano.org",
+            "PREPROD-NODE.PLAY.DEV.CARDANO.ORG.",
+        ] {
+            assert!(is_official_public_preprod_relay_hostname(host));
+            assert!(validate_preprod_history_relay_host(host).is_ok());
+            assert!(validate_preprod_history_relay_endpoint(host, "3001").is_ok());
+        }
+
+        let error =
+            validate_preprod_history_relay_endpoint("preprod-node.play.dev.cardano.org", "3002")
+                .expect_err("official relay must use its exact TCP port")
+                .to_string();
+        assert!(error.contains("preprod-node.play.dev.cardano.org:3001"));
+    }
+
+    #[test]
+    fn preprod_history_relay_rejects_unapproved_hosts_and_urls() {
+        for host in [
+            "cardano-node",
+            "unverified-preprod-relay.example.com",
+            "https://cardano-preprod.node-port-123.dmtr.host",
+            "cardano-preprod-v2.kupo-m1.dmtr.host",
+            "ogmios-key.cardano-preprod-v6.ogmios-m1.dmtr.host",
+            "cardano-preprod.node-port-123.dmtr.host.example.com",
+        ] {
+            assert!(!is_demeter_node_port_hostname(host));
+            let error = validate_preprod_history_relay_host(host)
+                .expect_err("unapproved relay host should be rejected")
+                .to_string();
+            assert!(error.contains("Demeter Cardano Node Port"));
+            assert!(error.contains(host));
+        }
+    }
+
+    #[test]
+    fn preprod_history_relay_requires_a_valid_tcp_port() {
+        for port in ["1", "3001", "65535"] {
+            assert!(validate_preprod_history_relay_port(port).is_ok());
+        }
+
+        for port in ["", "0", "-1", "65536", "https"] {
+            let error = validate_preprod_history_relay_port(port)
+                .expect_err("invalid TCP port should be rejected")
+                .to_string();
+            assert!(error.contains("Cardano relay TCP port"));
+            assert!(error.contains(port));
+        }
+    }
+
+    #[test]
+    fn preprod_live_apis_require_demeter_service_endpoints() {
+        assert!(is_demeter_live_api_endpoint(
+            "https://cardano-preprod-v2.kupo-m1.dmtr.host",
+            "kupo"
+        ));
+        assert!(is_demeter_live_api_endpoint(
+            "wss://cardano-preprod-v6.ogmios-m1.demeter.run",
+            "ogmios"
+        ));
+        assert!(!is_demeter_live_api_endpoint(
+            "http://cardano-preprod-v2.kupo-m1.dmtr.host",
+            "kupo"
+        ));
+        assert!(!is_demeter_live_api_endpoint(
+            "ws://cardano-preprod-v6.ogmios-m1.demeter.run",
+            "ogmios"
+        ));
+        assert!(!is_demeter_live_api_endpoint(
+            "https://kupo.example.com",
+            "kupo"
+        ));
+        assert!(!is_demeter_live_api_endpoint(
+            "https://cardano-preprod-v6.ogmios-m1.dmtr.host",
+            "kupo"
+        ));
+        assert!(!is_demeter_live_api_endpoint(
+            "tcp://cardano-preprod-v6.ogmios-m1.dmtr.host",
+            "ogmios"
+        ));
+    }
+
+    #[test]
+    fn cardano_cli_socket_follows_the_selected_node_socket() {
+        let compose: serde_yaml::Value =
+            serde_yaml::from_str(include_str!("../../chains/cardano/docker-compose.yaml"))
+                .expect("Cardano Docker Compose file should be valid YAML");
+        let environment = compose["services"]["cardano-node"]["environment"]
+            .as_sequence()
+            .expect("cardano-node environment should be a list");
+
+        let environment_value = |key: &str| {
+            environment.iter().find_map(|entry| {
+                entry
+                    .as_str()
+                    .and_then(|entry| entry.split_once('='))
+                    .filter(|(entry_key, _)| *entry_key == key)
+                    .map(|(_, value)| value.to_string())
+            })
+        };
+
+        let node_socket = environment_value("CARDANO_SOCKET_PATH")
+            .expect("cardano-node should configure its socket path");
+        let cli_socket = environment_value("CARDANO_NODE_SOCKET_PATH")
+            .expect("cardano-cli should configure its socket path");
+
+        assert_eq!(
+            cli_socket, node_socket,
+            "cardano-node and cardano-cli must use the same runtime-selected socket"
+        );
+        assert_eq!(
+            node_socket, "${CARDANO_SOCKET_PATH:-/runtime/node.socket}",
+            "the compose service must honor Caribic's generated runtime socket path"
+        );
+    }
 }

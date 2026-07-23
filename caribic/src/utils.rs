@@ -21,7 +21,7 @@ use std::{collections::HashMap, fs};
 use tokio::io::AsyncWriteExt;
 use zip::read::ZipArchive;
 
-#[cfg(target_os = "linux")]
+#[cfg(unix)]
 use nix::unistd::{Gid, Uid};
 
 pub fn print_header() {
@@ -681,28 +681,40 @@ pub fn diagnose_container_failure(container_names: &[&str]) -> (String, bool) {
     (diagnostics, should_fail_fast)
 }
 
-/// Get current user's UID and GID for Docker containers
-/// - macOS: Returns 0:0 (root) for compatibility
-/// - Linux: Returns actual user UID/GID
-/// - Windows: Returns default 1000:1000
+/// Get current user's UID and GID for Docker containers.
+///
+/// Bind-mounted runtime data must be accessed as the host user on Unix. In
+/// particular, forcing root inside Docker Desktop on macOS makes images such as
+/// Postgres try to `chown` host-owned data, which the file-sharing layer can
+/// reject.
 pub fn get_user_ids() -> (String, String) {
-    #[cfg(target_os = "macos")]
+    #[cfg(unix)]
     {
-        // Use root permissions on macOS
-        ("0".to_string(), "0".to_string())
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        // Use actual user UID/GID on Linux
         let uid = Uid::current().as_raw();
         let gid = Gid::current().as_raw();
         (uid.to_string(), gid.to_string())
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(unix))]
     {
-        // Default UID/GID for other systems (Windows, etc.)
+        // Default UID/GID for platforms without Unix user IDs.
         ("1000".to_string(), "1000".to_string())
+    }
+}
+
+#[cfg(test)]
+mod user_id_tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn docker_user_ids_match_the_current_unix_user() {
+        assert_eq!(
+            get_user_ids(),
+            (
+                Uid::current().as_raw().to_string(),
+                Gid::current().as_raw().to_string()
+            )
+        );
     }
 }
