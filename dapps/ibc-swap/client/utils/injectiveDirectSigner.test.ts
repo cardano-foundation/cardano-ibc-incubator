@@ -73,7 +73,7 @@ describe('Injective direct signer', () => {
           signed: signDoc,
           signature: {
             pub_key: encodeSecp256k1Pubkey(RAW_PUBKEY),
-            signature: toBase64(new Uint8Array(64)),
+            signature: toBase64(new Uint8Array(64)).replace(/=+$/, ''),
           },
         };
       },
@@ -96,6 +96,74 @@ describe('Injective direct signer', () => {
     assert.equal(
       getPubkeyType(signedTx.authInfoBytes),
       INJECTIVE_ETH_SECP256K1_PUBKEY_TYPE_URL,
+    );
+    assert.equal(signedTx.signatures[0].length, 64);
+  });
+
+  it('preserves a canonical wallet signature', async () => {
+    const original = createStandardSignDoc();
+    const canonicalSignature = toBase64(new Uint8Array(64));
+    const walletSigner: OfflineDirectSigner = {
+      getAccounts: async () => [],
+      signDirect: async (_signerAddress, signDoc) => ({
+        signed: signDoc,
+        signature: {
+          pub_key: encodeSecp256k1Pubkey(RAW_PUBKEY),
+          signature: canonicalSignature,
+        },
+      }),
+    };
+
+    const response = await withInjectiveDirectSigning(walletSigner).signDirect(
+      ADDRESS,
+      original,
+    );
+
+    assert.equal(response.signature.signature, canonicalSignature);
+  });
+
+  it('rejects malformed or incorrectly sized wallet signatures', async () => {
+    const original = createStandardSignDoc();
+    const walletSigner = (signature: string): OfflineDirectSigner => ({
+      getAccounts: async () => [],
+      signDirect: async (_signerAddress, signDoc) => ({
+        signed: signDoc,
+        signature: {
+          pub_key: encodeSecp256k1Pubkey(RAW_PUBKEY),
+          signature,
+        },
+      }),
+    });
+
+    await assert.rejects(
+      () =>
+        withInjectiveDirectSigning(walletSigner('A')).signDirect(
+          ADDRESS,
+          original,
+        ),
+      /invalid base64 signature/,
+    );
+    await assert.rejects(
+      () =>
+        withInjectiveDirectSigning(
+          walletSigner(`${toBase64(new Uint8Array(64))}=`),
+        ).signDirect(ADDRESS, original),
+      /invalid base64 signature/,
+    );
+    await assert.rejects(
+      () =>
+        withInjectiveDirectSigning(
+          walletSigner(`_${'A'.repeat(85)}`),
+        ).signDirect(ADDRESS, original),
+      /invalid base64 signature/,
+    );
+    await assert.rejects(
+      () =>
+        withInjectiveDirectSigning(walletSigner('ab'.repeat(64))).signDirect(
+          ADDRESS,
+          original,
+        ),
+      /invalid signature length/,
     );
   });
 
