@@ -167,6 +167,57 @@ type LoadStakeWeightedStabilityHeaderEvidenceParams = LoadStakeWeightedStability
   trustedHeight: bigint;
 };
 
+type SelectedDescendantEvidence = {
+  descendantBlocks: HistoryBlock[];
+  metrics: StabilityMetrics;
+};
+
+function selectMinimalAcceptedDescendantPrefix(
+  eligibleDescendantBlocks: HistoryBlock[],
+  epochStakeDistribution: HistoryStakeDistributionEntry[],
+  stabilityPolicy: StabilityPolicy,
+  anchorBlock: Pick<HistoryBlock, 'height' | 'slotNo' | 'timestampUnixNs'>,
+  requireThresholds: boolean,
+): SelectedDescendantEvidence {
+  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
+  const computeMetrics = (descendantBlocks: HistoryBlock[]) =>
+    computeStabilityMetrics(descendantBlocks, epochStakeDistribution, stabilityPolicy, {
+      poolRegistrationCutoffSlot,
+    });
+
+  let descendantBlocks = eligibleDescendantBlocks;
+  let metrics = computeMetrics(eligibleDescendantBlocks);
+
+  if (!requireThresholds) {
+    return { descendantBlocks, metrics };
+  }
+
+  const thresholdDepth = Number(stabilityPolicy.threshold_depth || 0n);
+  for (
+    let prefixLength = Math.max(thresholdDepth, 1);
+    prefixLength <= eligibleDescendantBlocks.length;
+    prefixLength += 1
+  ) {
+    const candidateDescendantBlocks = eligibleDescendantBlocks.slice(0, prefixLength);
+    const candidateMetrics = computeMetrics(candidateDescendantBlocks);
+
+    if (
+      !getStabilityThresholdFailure(
+        candidateMetrics,
+        stabilityPolicy,
+        anchorBlock.height.toString(),
+        candidateDescendantBlocks.length,
+      )
+    ) {
+      descendantBlocks = candidateDescendantBlocks;
+      metrics = candidateMetrics;
+      break;
+    }
+  }
+
+  return { descendantBlocks, metrics };
+}
+
 function heightNotFound(height: bigint, message?: string): GrpcNotFoundException {
   return new GrpcNotFoundException(
     gatewayGrpcError(GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_FOUND, message ?? `Height ${height.toString()} not found`, {
@@ -312,41 +363,13 @@ export async function loadStakeWeightedStabilityEvidenceByHeight({
     anchorBlock,
   );
 
-  let acceptedDescendantBlocks = eligibleDescendantBlocks;
-  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
-  let metrics = computeStabilityMetrics(eligibleDescendantBlocks, hydratedEpochStakeDistribution, stabilityPolicy, {
-    poolRegistrationCutoffSlot,
-  });
-
-  const thresholdDepth = Number(stabilityPolicy.threshold_depth || 0n);
-  if (requireThresholds) {
-    for (
-      let prefixLength = Math.max(thresholdDepth, 1);
-      prefixLength <= eligibleDescendantBlocks.length;
-      prefixLength += 1
-    ) {
-      const candidateDescendantBlocks = eligibleDescendantBlocks.slice(0, prefixLength);
-      const candidateMetrics = computeStabilityMetrics(
-        candidateDescendantBlocks,
-        hydratedEpochStakeDistribution,
-        stabilityPolicy,
-        { poolRegistrationCutoffSlot },
-      );
-
-      if (
-        !getStabilityThresholdFailure(
-          candidateMetrics,
-          stabilityPolicy,
-          anchorBlock.height.toString(),
-          candidateDescendantBlocks.length,
-        )
-      ) {
-        acceptedDescendantBlocks = candidateDescendantBlocks;
-        metrics = candidateMetrics;
-        break;
-      }
-    }
-  }
+  const { descendantBlocks: acceptedDescendantBlocks, metrics } = selectMinimalAcceptedDescendantPrefix(
+    eligibleDescendantBlocks,
+    hydratedEpochStakeDistribution,
+    stabilityPolicy,
+    anchorBlock,
+    requireThresholds,
+  );
 
   if (requireThresholds) {
     const thresholdFailure = getStabilityThresholdFailure(
@@ -564,11 +587,13 @@ export async function loadStakeWeightedStabilityHeaderEvidence({
     anchorBlock,
   );
 
-  const acceptedDescendantBlocks = eligibleDescendantBlocks;
-  const poolRegistrationCutoffSlot = computePoolRegistrationCutoffSlot(anchorBlock);
-  const metrics = computeStabilityMetrics(eligibleDescendantBlocks, hydratedAnchorStakeDistribution, stabilityPolicy, {
-    poolRegistrationCutoffSlot,
-  });
+  const { descendantBlocks: acceptedDescendantBlocks, metrics } = selectMinimalAcceptedDescendantPrefix(
+    eligibleDescendantBlocks,
+    hydratedAnchorStakeDistribution,
+    stabilityPolicy,
+    anchorBlock,
+    requireThresholds,
+  );
 
   if (requireThresholds) {
     const thresholdFailure = getStabilityThresholdFailure(

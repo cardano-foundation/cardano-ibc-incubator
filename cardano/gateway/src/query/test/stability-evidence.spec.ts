@@ -202,6 +202,42 @@ describe('stability-evidence', () => {
     expect(evidence.bridgeBlocks).toEqual(bridgeBlocks);
   });
 
+  it('uses the shortest accepted descendant prefix in a stability header', async () => {
+    const extraDescendantBlocks = [
+      {
+        height: 104,
+        hash: 'hash-104',
+        prevHash: 'hash-103',
+        slotNo: 1040n,
+        epochNo: 7,
+        timestampUnixNs: 1_400_000_000n,
+        slotLeader: 'pool-a',
+      },
+      {
+        height: 105,
+        hash: 'hash-105',
+        prevHash: 'hash-104',
+        slotNo: 1050n,
+        epochNo: 7,
+        timestampUnixNs: 1_500_000_000n,
+        slotLeader: 'pool-b',
+      },
+    ];
+    historyServiceMock.findDescendantBlocks = jest
+      .fn()
+      .mockResolvedValue([...descendantBlocks, ...extraDescendantBlocks]);
+
+    const evidence = await loadStakeWeightedStabilityHeaderEvidence({
+      historyService: historyServiceMock as HistoryService,
+      trustedHeight: 97n,
+      height: 100n,
+      logger: { warn: jest.fn() } as unknown as Logger,
+      stabilityPolicy,
+    });
+
+    expect(evidence.descendantBlocks).toEqual(descendantBlocks);
+  });
+
   it('returns typed not-found status when a stability header height is unknown', async () => {
     const localHistoryService = {
       ...historyServiceMock,
