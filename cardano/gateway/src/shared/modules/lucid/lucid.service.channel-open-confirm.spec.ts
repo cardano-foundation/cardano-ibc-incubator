@@ -93,6 +93,7 @@ const createService = (txBuilder: ChainableTxBuilder): any => {
     channelOpenConfirm: buildRefUtxo('ref-channel-open-confirm', 2),
     verifyProof: buildRefUtxo('ref-verify-proof', 3),
     hostStateStt: buildRefUtxo('ref-host-state', 4),
+    mintChannel: buildRefUtxo('ref-mint-channel', 5),
   };
   service.LucidImporter = {
     Data: {
@@ -119,6 +120,48 @@ describe('LucidService channel open confirm wiring', () => {
     );
     expect(referenceScriptOutRefs.channelCloseConfirm).toEqual(
       deploymentConfig.validators.spendChannel.refValidator.chan_close_confirm.refUtxo,
+    );
+  });
+
+  it('uses the verify-proof policy and reference script when building ChannelOpenTry transactions', () => {
+    const txBuilder = createChainedTxBuilder();
+    const service = createService(txBuilder);
+
+    service.createUnsignedChannelOpenTryTransaction({
+      hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
+      encodedHostStateRedeemer: 'encoded-host-redeemer',
+      encodedUpdatedHostStateDatum: 'encoded-host-datum',
+      connectionUtxo: { txHash: 'connection-utxo', outputIndex: 0, assets: {} } as any,
+      clientUtxo: { txHash: 'client-utxo', outputIndex: 0, assets: {} } as any,
+      moduleKey: 'mock',
+      moduleUtxo: { txHash: 'mock-utxo', outputIndex: 0, assets: { lovelace: 2_000_000n } } as any,
+      encodedSpendModuleRedeemer: 'encoded-mock-redeemer',
+      encodedMintChannelRedeemer: 'encoded-channel-redeemer',
+      channelTokenUnit: 'channel-token-unit',
+      encodedChannelDatum: 'encoded-channel-datum',
+      verifyProofPolicyId: 'verify-proof-policy-id',
+      encodedVerifyProofRedeemer: 'encoded-verify-proof-redeemer',
+    });
+
+    expect(txBuilder.readFrom).toHaveBeenNthCalledWith(1, [
+      service.referenceScripts.mintChannel,
+      service.referenceScripts.spendMockModule,
+      service.referenceScripts.verifyProof,
+      service.referenceScripts.hostStateStt,
+    ]);
+    expect(txBuilder.mintAssets).toHaveBeenNthCalledWith(
+      1,
+      {
+        'channel-token-unit': 1n,
+      },
+      'encoded-channel-redeemer',
+    );
+    expect(txBuilder.mintAssets).toHaveBeenNthCalledWith(
+      2,
+      {
+        'verify-proof-policy-id': 1n,
+      },
+      'encoded-verify-proof-redeemer',
     );
   });
 

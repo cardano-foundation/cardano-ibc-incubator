@@ -277,10 +277,11 @@ export class ChannelService {
       const { constructedAddress, channelOpenTryOperator } = validateAndFormatChannelOpenTryParams(data);
       await this.refreshWalletContext(constructedAddress, 'channelOpenTryBuilder');
       // Build and complete the unsigned transaction
-      const unsignedChannelOpenTryTx: TxBuilder = await this.buildUnsignedChannelOpenTryTx(
-        channelOpenTryOperator,
-        constructedAddress,
-      );
+      const {
+        unsignedTx: unsignedChannelOpenTryTx,
+        channelId,
+        pendingTreeUpdate,
+      } = await this.buildUnsignedChannelOpenTryTx(channelOpenTryOperator, constructedAddress);
       const { validFromTime, validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'channelOpenTry',
@@ -297,6 +298,19 @@ export class ChannelService {
           localUPLCEval: false,
           setCollateral: TRANSACTION_SET_COLLATERAL,
         },
+        pendingTreeUpdate,
+        syntheticEvents: [
+          {
+            type: 'channel_open_try',
+            attributes: [
+              { key: 'port_id', value: channelOpenTryOperator.port_id },
+              { key: 'channel_id', value: channelId },
+              { key: 'connection_id', value: channelOpenTryOperator.connectionId },
+              { key: 'counterparty_port_id', value: channelOpenTryOperator.counterparty.port_id },
+              { key: 'counterparty_channel_id', value: channelOpenTryOperator.counterparty.channel_id },
+            ],
+          },
+        ],
       });
 
       this.logger.log('Returning unsigned tx for channel open try');
@@ -666,7 +680,7 @@ export class ChannelService {
   async buildUnsignedChannelOpenTryTx(
     channelOpenTryOperator: ChannelOpenTryOperator,
     _constructedAddress: string,
-  ): Promise<TxBuilder> {
+  ): Promise<{ unsignedTx: TxBuilder; channelId: string; pendingTreeUpdate: PendingTreeUpdate }> {
     // STT Architecture: Query the HostState UTXO via its unique NFT.
     const hostStateUtxo: UTxO = await this.lucidService.findUtxoAtHostStateNFT();
     if (!hostStateUtxo.datum) {
@@ -694,6 +708,14 @@ export class ChannelService {
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionClientSequence);
     const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    const clientDatum: ClientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+
+    const heightsArray = Array.from(clientDatum.state.consensusStates.keys());
+    if (!isValidProofHeight(heightsArray, channelOpenTryOperator.proofHeight)) {
+      throw new GrpcInternalException(
+        `Invalid proof height: ${channelOpenTryOperator.proofHeight.revisionNumber}/${channelOpenTryOperator.proofHeight.revisionHeight}`,
+      );
+    }
 
     // Derive the new channel identifier from the HostState sequence.
     const channelSequence = hostStateDatum.state.next_channel_sequence;
@@ -737,13 +759,19 @@ export class ChannelService {
       token: channelToken,
     };
 
-    const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings } =
-      await this.computeRootWithCreateChannelUpdate(
-        hostStateDatum.state.ibc_state_root,
-        channelOpenTryOperator.port_id,
-        channelId,
-        channelDatum,
-      );
+    const {
+      newRoot,
+      channelSiblings,
+      nextSequenceSendSiblings,
+      nextSequenceRecvSiblings,
+      nextSequenceAckSiblings,
+      commit,
+    } = await this.computeRootWithCreateChannelUpdate(
+      hostStateDatum.state.ibc_state_root,
+      channelOpenTryOperator.port_id,
+      channelId,
+      channelDatum,
+    );
 
     const updatedHostStateDatum: HostStateDatum = {
       ...hostStateDatum,
@@ -772,6 +800,66 @@ export class ChannelService {
     const encodedHostStateRedeemer: string = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
     const encodedUpdatedHostStateDatum: string = await this.lucidService.encode(updatedHostStateDatum, 'host_state');
     const encodedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(channelDatum, 'channel');
+    const verifyProofPolicyId = this.configService.get('deployment').validators.verifyProof.scriptHash;
+    const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
+      ([key]) =>
+        key.revisionNumber === channelOpenTryOperator.proofHeight.revisionNumber &&
+        key.revisionHeight === channelOpenTryOperator.proofHeight.revisionHeight,
+    );
+    if (!consensusEntry) {
+      throw new GrpcInternalException(
+        `Missing consensus state at proof height ${channelOpenTryOperator.proofHeight.revisionNumber}/${channelOpenTryOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const consensusState = consensusEntry[1];
+    const processedTime = getHeightMapValue(clientDatum.state.processedTimes, consensusEntry[0]);
+    const processedHeight = getHeightMapValue(clientDatum.state.processedHeights, consensusEntry[0]);
+    if (processedTime == null || processedHeight == null) {
+      throw new GrpcInternalException(
+        `Missing processed delay metadata at proof height ${channelOpenTryOperator.proofHeight.revisionNumber}/${channelOpenTryOperator.proofHeight.revisionHeight}`,
+      );
+    }
+
+    // ChanOpenTry proves the counterparty's Init channel end. The counterparty
+    // channel points back to our local port with an empty channel identifier.
+    const counterpartyChannelEnd: CardanoChannel = {
+      state: CardanoChannelState.STATE_INIT,
+      ordering: orderFromJSON(ORDER_MAPPING_CHANNEL[channelDatum.state.channel.ordering]),
+      counterparty: {
+        port_id: channelOpenTryOperator.port_id,
+        channel_id: '',
+      },
+      connection_hops: [convertHex2String(connectionDatum.state.counterparty.connection_id)],
+      version: channelOpenTryOperator.counterpartyVersion,
+    };
+    const verifyProofRedeemer: VerifyProofRedeemer = {
+      VerifyMembership: {
+        cs: clientDatum.state.clientState,
+        cons_state: consensusState,
+        height: channelOpenTryOperator.proofHeight,
+        processed_time: processedTime,
+        processed_height: processedHeight,
+        delay_time_period: connectionDatum.state.delay_period,
+        delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
+        proof: channelOpenTryOperator.proofInit,
+        path: {
+          key_path: [
+            connectionDatum.state.counterparty.prefix.key_prefix,
+            convertString2Hex(
+              channelPath(
+                channelOpenTryOperator.counterparty.port_id,
+                channelOpenTryOperator.counterparty.channel_id,
+              ),
+            ),
+          ],
+        },
+        value: toHex(CardanoChannel.encode(counterpartyChannelEnd).finish()),
+      },
+    };
+    const encodedVerifyProofRedeemer: string = encodeVerifyProofRedeemer(
+      verifyProofRedeemer,
+      this.lucidService.LucidImporter,
+    );
     const moduleConfig = this.getModuleConfig(channelOpenTryOperator.port_id);
     const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);
     const channelIdHex = convertString2Hex(CHANNEL_ID_PREFIX + '-' + channelSequence.toString());
@@ -788,7 +876,7 @@ export class ChannelService {
       spendModuleRedeemer,
       'iBCModuleRedeemer',
     );
-    return this.lucidService.createUnsignedChannelOpenTryTransaction({
+    const unsignedTx = this.lucidService.createUnsignedChannelOpenTryTransaction({
       moduleKey: moduleConfig.key,
       hostStateUtxo,
       encodedHostStateRedeemer,
@@ -800,7 +888,14 @@ export class ChannelService {
       channelTokenUnit,
       encodedUpdatedHostStateDatum,
       encodedChannelDatum,
+      verifyProofPolicyId,
+      encodedVerifyProofRedeemer,
     });
+    return {
+      unsignedTx,
+      channelId,
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+    };
   }
   async buildUnsignedChannelOpenAckTx(
     channelOpenAckOperator: ChannelOpenAckOperator,

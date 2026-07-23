@@ -1437,6 +1437,7 @@ export class LucidService implements OnModuleInit {
       .readFrom([
         this.referenceScripts.mintChannel,
         this.getModuleReferenceScript(dto.moduleKey),
+        this.referenceScripts.verifyProof,
         this.referenceScripts.hostStateStt,
       ])
       .mintAssets(
@@ -1444,6 +1445,12 @@ export class LucidService implements OnModuleInit {
           [dto.channelTokenUnit]: 1n,
         },
         dto.encodedMintChannelRedeemer,
+      )
+      .mintAssets(
+        {
+          [dto.verifyProofPolicyId]: 1n,
+        },
+        dto.encodedVerifyProofRedeemer,
       )
       .readFrom([dto.connectionUtxo, dto.clientUtxo]);
     const addPayToContract = (
