@@ -91,6 +91,7 @@ export type PlannerClientConfig = {
   counterpartyChainId?: string;
   cardanoRestEndpoint?: string;
   localOsmosisRestEndpoint: string;
+  routeDiscoveryTimeoutMs?: number;
   swapRouterAddress?: string;
   preferredChannels?: PreferredChannel[];
   resolveCardanoAssetDenomTrace?: (
@@ -126,6 +127,7 @@ const QUERY_SWAP_ROUTER_STATE =
   '/cosmwasm/wasm/v1/contract/SWAP_ROUTER_ADDRESS/state?pagination.limit=100000000';
 const SWAP_ROUTING_TABLE_PREFIX = '\x00\rrouting_table\x00D';
 const BIGINT_ZERO = BigInt(0);
+export const DEFAULT_ROUTE_DISCOVERY_TIMEOUT_MS = 10_000;
 
 type QueryChannelResponse = {
   channel_id: string;
@@ -156,16 +158,72 @@ type SwapRoute = {
   outToken: string;
 };
 
-type PlannerConfig = PlannerClientConfig & {
-  fetchImpl: typeof fetch;
+type PlannerConfig = Omit<
+  PlannerClientConfig,
+  'counterpartyChainId' | 'fetchImpl' | 'routeDiscoveryTimeoutMs'
+> & {
   counterpartyChainId: string;
+  fetchImpl: typeof fetch;
+  routeDiscoveryTimeoutMs: number;
 };
+
+export class RouteDiscoveryTimeoutError extends Error {
+  readonly timeoutMs: number;
+
+  constructor(timeoutMs: number) {
+    const duration =
+      timeoutMs % 1000 === 0
+        ? `${timeoutMs / 1000} seconds`
+        : `${timeoutMs} milliseconds`;
+    super(`IBC route discovery timed out after ${duration}.`);
+    this.name = 'RouteDiscoveryTimeoutError';
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+function normalizeRouteDiscoveryTimeoutMs(timeoutMs?: number): number {
+  return typeof timeoutMs === 'number' &&
+    Number.isFinite(timeoutMs) &&
+    timeoutMs > 0
+    ? timeoutMs
+    : DEFAULT_ROUTE_DISCOVERY_TIMEOUT_MS;
+}
+
+async function withRouteDiscoveryTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+): Promise<T> {
+  const controller = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutError = new RouteDiscoveryTimeoutError(timeoutMs);
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      controller.abort(timeoutError);
+      reject(timeoutError);
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => operation(controller.signal)),
+      timeout,
+    ]);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
 
 export function createPlannerClient(config: PlannerClientConfig): PlannerClient {
   const resolvedConfig: PlannerConfig = {
     ...config,
+    counterpartyChainId:
+      config.counterpartyChainId?.trim() || LOCAL_OSMOSIS_CHAIN_ID,
     fetchImpl: config.fetchImpl || fetch,
-    counterpartyChainId: config.counterpartyChainId || LOCAL_OSMOSIS_CHAIN_ID,
+    routeDiscoveryTimeoutMs: normalizeRouteDiscoveryTimeoutMs(
+      config.routeDiscoveryTimeoutMs,
+    ),
   };
 
   return {
@@ -201,7 +259,10 @@ export function createPlannerClient(config: PlannerClientConfig): PlannerClient 
         };
       }
 
-      const directPair = await fetchDirectOsmosisChannelPair(resolvedConfig);
+      const directPair = await withRouteDiscoveryTimeout(
+        (signal) => fetchDirectOsmosisChannelPair(resolvedConfig, signal),
+        resolvedConfig.routeDiscoveryTimeoutMs,
+      );
       if (
         fromChainId === resolvedConfig.cardanoChainId &&
         toChainId === resolvedConfig.counterpartyChainId
@@ -342,12 +403,13 @@ function noDirectRoute(
 
 async function fetchDirectOsmosisChannelPair(
   config: PlannerConfig,
+  signal?: AbortSignal,
 ): Promise<DirectOsmosisChannelPair | null> {
-  const fromCardano = await fetchDirectChannelPairFromCardano(config);
+  const fromCardano = await fetchDirectChannelPairFromCardano(config, signal);
   if (fromCardano) {
     return fromCardano;
   }
-  const channels = await fetchOpenOsmosisChannels(config);
+  const channels = await fetchOpenOsmosisChannels(config, signal);
   const selected = selectLatestChannel(channels);
   return selected
     ? {
@@ -359,6 +421,7 @@ async function fetchDirectOsmosisChannelPair(
 
 async function fetchDirectChannelPairFromCardano(
   config: PlannerConfig,
+  signal?: AbortSignal,
 ): Promise<DirectOsmosisChannelPair | null> {
   if (!config.cardanoRestEndpoint) {
     return null;
@@ -366,7 +429,11 @@ async function fetchDirectChannelPairFromCardano(
   const data = await fetchJson<{ channels?: QueryChannelResponse[] }>(
     `${config.cardanoRestEndpoint}${GATEWAY_CHANNELS_URL}`,
     config.fetchImpl,
-  ).catch(() => ({ channels: [] as QueryChannelResponse[] }));
+    signal,
+  ).catch(() => {
+    throwIfAborted(signal);
+    return { channels: [] as QueryChannelResponse[] };
+  });
   const openChannels = (data.channels || []).filter(
     (channel) =>
       isOpenChannelState(channel.state) &&
@@ -384,11 +451,13 @@ async function fetchDirectChannelPairFromCardano(
 
 async function fetchOpenOsmosisChannels(
   config: PlannerConfig,
+  signal?: AbortSignal,
 ): Promise<QueryChannelResponse[]> {
   const channels: QueryChannelResponse[] = [];
   let nextKey: string | undefined;
 
   do {
+    throwIfAborted(signal);
     const url = nextKey
       ? `${config.localOsmosisRestEndpoint}${QUERY_ALL_CHANNELS_URL}&pagination.key=${encodeURIComponent(nextKey)}`
       : `${config.localOsmosisRestEndpoint}${QUERY_ALL_CHANNELS_URL}`;
@@ -398,9 +467,13 @@ async function fetchOpenOsmosisChannels(
     } = await fetchJson<{
       channels?: QueryChannelResponse[];
       pagination?: { next_key?: string };
-    }>(url, config.fetchImpl).catch(() => ({ channels: [] }));
+    }>(url, config.fetchImpl, signal).catch(() => {
+      throwIfAborted(signal);
+      return { channels: [] };
+    });
 
     for (const channel of data.channels || []) {
+      throwIfAborted(signal);
       if (!isOpenChannelState(channel.state)) {
         continue;
       }
@@ -409,7 +482,11 @@ async function fetchOpenOsmosisChannels(
         channel.channel_id,
         channel.port_id,
         config.fetchImpl,
-      ).catch(() => null);
+        signal,
+      ).catch(() => {
+        throwIfAborted(signal);
+        return null;
+      });
       if (
         clientState?.identified_client_state?.client_state?.chain_id ===
         config.cardanoChainId
@@ -429,10 +506,12 @@ async function fetchClientStateFromChannel(
   channelId: string,
   portId: string,
   fetchImpl: typeof fetch,
+  signal?: AbortSignal,
 ): Promise<QueryClientStateResponse> {
   return fetchJson<QueryClientStateResponse>(
     `${restUrl}${QUERY_CHANNELS_PREFIX_URL}/${channelId}/ports/${portId}/client_state`,
     fetchImpl,
+    signal,
   );
 }
 
@@ -574,14 +653,31 @@ function isOpenChannelState(state: string | number | undefined): boolean {
 async function fetchJson<T>(
   url: string,
   fetchImpl: typeof fetch,
+  signal?: AbortSignal,
 ): Promise<T> {
-  const response = await fetchImpl(url);
+  throwIfAborted(signal);
+  const response = await fetchImpl(url, signal ? { signal } : undefined);
+  throwIfAborted(signal);
   if (!response.ok) {
     throw new Error(
       `Request failed for ${url}: ${response.status} ${response.statusText}`,
     );
   }
-  return (await response.json()) as T;
+  const data = (await response.json()) as T;
+  throwIfAborted(signal);
+  return data;
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) {
+    return;
+  }
+
+  if (signal.reason instanceof Error) {
+    throw signal.reason;
+  }
+
+  throw new Error('IBC route discovery was aborted.');
 }
 
 function hexToAscii(hexInput: string): string {
