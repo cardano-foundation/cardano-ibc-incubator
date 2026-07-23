@@ -9,6 +9,25 @@ import {
 type OgmiosPoint = { slot: number; id: string };
 type SlotConfig = { zeroTime: number; zeroSlot: number; slotLength: number };
 
+const configureSlotTimingFromSystemStart = (
+  network: string,
+  slotConfig: SlotConfig,
+  systemStart: number,
+): void => {
+  // Lucid's public-network presets are era-aware: for example, Preprod's
+  // zeroTime is the Shelley boundary and zeroSlot is 86400. Ogmios returns the
+  // earlier Byron system start, so mixing that time with Lucid's non-zero slot
+  // offset shifts every derived timestamp. A custom/devnet has no Lucid preset
+  // to preserve and starts at slot zero.
+  if (network !== 'Custom') {
+    return;
+  }
+
+  slotConfig.zeroTime = systemStart;
+  slotConfig.zeroSlot = 0;
+  slotConfig.slotLength = 1000;
+};
+
 const querySystemStart = async (ogmiosUrl: string) => {
   const resolvedUrl =
     resolveManagedOgmiosHttpEndpoint(ogmiosUrl, process.env.OGMIOS_API_KEY) ?? ogmiosUrl;
@@ -223,6 +242,7 @@ const getNanoseconds = (d) => {
 };
 
 export {
+  configureSlotTimingFromSystemStart,
   querySystemStart,
   queryTransactionInclusionBlockHeight,
   computeLedgerAnchoredValidityWindow,

@@ -1,5 +1,9 @@
 import { ConfigService } from '@nestjs/config';
-import { querySystemStart, queryTransactionInclusionBlockHeight } from '../../helpers/time';
+import {
+  configureSlotTimingFromSystemStart,
+  querySystemStart,
+  queryTransactionInclusionBlockHeight,
+} from '../../helpers/time';
 import { Network } from '@lucid-evolution/lucid';
 import { applyDoubleCborEncoding } from '@lucid-evolution/utils';
 import { writeFileSync } from 'fs';
@@ -894,16 +898,20 @@ export const LucidClient = {
     } as any);
     console.log('[startup] Lucid constructed successfully');
 
-    const isDevnetWithRuntimeSlotConfig = network === 'Custom';
-    if (isDevnetWithRuntimeSlotConfig) {
+    if (network === 'Custom') {
       console.log('[startup] Querying Ogmios system start');
-      const devnetZeroTime = await retryWithBackoff(
+      const chainZeroTime = await retryWithBackoff(
         () => querySystemStart(configService.get('ogmiosEndpoint')),
         'Ogmios system start query',
       );
       console.log('[startup] Ogmios system start loaded');
-      Lucid.SLOT_CONFIG_NETWORK[network].zeroTime = devnetZeroTime;
-      Lucid.SLOT_CONFIG_NETWORK[network].slotLength = 1000;
+      configureSlotTimingFromSystemStart(
+        network,
+        Lucid.SLOT_CONFIG_NETWORK[network],
+        chainZeroTime,
+      );
+    } else {
+      console.log(`[startup] Preserving Lucid ${network} slot timing`);
     }
     // const lucid = await Lucid.Lucid.new(
     //   new Lucid.Blockfrost('https://cardano-preview.blockfrost.io/api/v0', 'preview2fjKEg2Zh687WPUwB8eljT2Mz2q045GC'),
