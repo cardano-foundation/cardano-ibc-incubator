@@ -72,7 +72,7 @@ fn testnet_chain_profile() -> HermesCosmosChainProfile {
         },
         gas_multiplier: "1.8",
         max_msg_num: 20,
-        max_tx_size: 209_715,
+        max_tx_size: 1_000_000,
         clock_drift: "20s",
         max_block_time: "10s",
         trusting_period: "10days",
