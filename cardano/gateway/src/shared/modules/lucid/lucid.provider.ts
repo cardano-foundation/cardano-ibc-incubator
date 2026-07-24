@@ -894,8 +894,6 @@ export const LucidClient = {
     } as any);
     console.log('[startup] Lucid constructed successfully');
 
-    // Public networks keep Lucid's built-in Shelley-anchored slot configs; replacing
-    // zeroTime with the system start would drop the Byron era offset (20 days on preprod).
     const isDevnetWithRuntimeSlotConfig = network === 'Custom';
     if (isDevnetWithRuntimeSlotConfig) {
       console.log('[startup] Querying Ogmios system start');

@@ -750,8 +750,6 @@ pub async fn start_local_cardano_network(
         }
     }
 
-    // wait until network is running (with timeout); with the managed node service
-    // disabled (e.g. preprod against a remote relay) there is no container to probe.
     if config::get_config().cardano.services.cardano_node {
         let mut slot_querried = u64::MAX;
         let max_retries = 24; // 24 retries × 5 seconds = 120 seconds timeout
@@ -763,15 +761,6 @@ pub async fn start_local_cardano_network(
                 Err(_e) => {
                     retry_count += 1;
 
-                    // Check container health every 3 retries (15 seconds) to fail fast on unrecoverable errors.
-                    // We should NOT continue retrying if we detect issues that require developer intervention:
-                    // - Permission errors (requires fixing volume/socket permissions)
-                    // - Port conflicts (requires stopping conflicting services)
-                    // - Disk space errors (requires freeing up disk space)
-                    // However, we DO continue retrying for transient failures:
-                    // - Container crashes with restart policies (Docker may be restarting the container)
-                    // - Temporary network issues
-                    // This approach fails fast for fixable issues while allowing recovery for transient ones.
                     if retry_count % 3 == 0 {
                         let container_names = ["cardano-node", "cardano-cardano-node-ogmios-1"];
                         let (diagnostics, should_fail_fast) =
@@ -1516,8 +1505,6 @@ pub async fn deploy_preprod_bridge(
                 }
                 Some(parsed.to_string())
             });
-    // Deploy settings follow the same precedence as the endpoints themselves:
-    // process env first, then cardano/gateway/.env as the persistent source of truth.
     let gateway_env_path = cardano_dir.join("../../cardano/gateway/.env");
     let resolve_deploy_setting = |env_keys: &[&str], file_key: &str| -> Option<String> {
         env_keys
