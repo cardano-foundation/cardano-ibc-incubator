@@ -300,10 +300,10 @@ pub fn start_relayer(
     )
     .map_err(|e| format!("Failed to update Hermes Cardano chain id: {}", e))?;
     if cardano_chain_id == "cardano-devnet" || cardano_chain_id == "cardano-preprod" {
-        // Cardano relaying uses the gateway's accepted stability/Mithril view instead
-        // of the live tip. That certified view can lag the chain by minutes, so Hermes
-        // clients need a larger timestamp tolerance when validating EntryPoint headers
-        // against the latest Cardano header they can actually certify.
+        // Cardano relaying uses the Gateway's accepted proof view instead of the live
+        // tip. That view can lag the chain, so Hermes clients need a larger timestamp
+        // tolerance when validating target-chain headers against the latest accepted
+        // Cardano header.
         replace_text_in_file(
             hermes_config_path.as_path(),
             "clock_drift = '5s'",

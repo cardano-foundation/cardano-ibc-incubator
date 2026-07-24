@@ -2885,7 +2885,24 @@ export class LucidService implements OnModuleInit {
       );
   }
 
+  public async estimateUnsignedTxBudget(tx: TxBuilder): Promise<{
+    unsignedSizeBytes: number;
+    executionUnits: { memory: number; cpu: number };
+  }> {
+    const completed = await this.completeUnsignedTxForEstimation(tx);
+    const transaction = completed.toTransaction();
+    return {
+      unsignedSizeBytes: completed.toCBOR().length / 2,
+      executionUnits: this.sumRedeemerExecutionUnits(transaction),
+    };
+  }
+
   public async estimateUnsignedTxSizeBytes(tx: TxBuilder): Promise<number> {
+    const completed = await this.completeUnsignedTxForEstimation(tx);
+    return completed.toCBOR().length / 2;
+  }
+
+  private async completeUnsignedTxForEstimation(tx: TxBuilder) {
     // The trace-registry sizing probe completes a candidate tx before the outer
     // packet handlers attach their final validity window. Several on-chain IBC
     // validators expect a finite upper bound, so give the probe the same
@@ -2897,11 +2914,12 @@ export class LucidService implements OnModuleInit {
       : undefined;
 
     if (ogmiosEndpoint && slotConfig?.slotLength > 0) {
-      const { validToTime } = await computeLedgerAnchoredValidityWindow(
+      const { validFromTime, validToTime } = await computeLedgerAnchoredValidityWindow(
         ogmiosEndpoint,
         slotConfig,
         TRANSACTION_TIME_TO_LIVE,
       );
+      tx.validFrom(validFromTime);
       tx.validTo(validToTime);
     } else {
       tx.validTo(Date.now() + TRANSACTION_TIME_TO_LIVE);
@@ -2910,11 +2928,42 @@ export class LucidService implements OnModuleInit {
     // Keep the rollover sizing probe aligned with the real tx runner. Using
     // Lucid's default local evaluator here can fail on candidate append txs
     // even though the production completion path uses Ogmios evaluation.
-    const completed = await tx.complete({
+    return await tx.complete({
       localUPLCEval: false,
       setCollateral: TRANSACTION_SET_COLLATERAL,
     });
-    return completed.toCBOR().length / 2;
+  }
+
+  private sumRedeemerExecutionUnits(transaction: any): {
+    memory: number;
+    cpu: number;
+  } {
+    const redeemers = transaction.witness_set().redeemers();
+    const executionUnits = { memory: 0, cpu: 0 };
+    if (!redeemers) {
+      return executionUnits;
+    }
+
+    const legacyRedeemers = redeemers.as_arr_legacy_redeemer?.();
+    if (legacyRedeemers) {
+      for (let i = 0; i < legacyRedeemers.len(); i += 1) {
+        const redeemer = legacyRedeemers.get(i);
+        executionUnits.memory += Number(redeemer.ex_units().mem().toString());
+        executionUnits.cpu += Number(redeemer.ex_units().steps().toString());
+      }
+    }
+
+    const redeemerMap = redeemers.as_map_redeemer_key_to_redeemer_val?.();
+    if (redeemerMap) {
+      const keys = redeemerMap.keys();
+      for (let i = 0; i < (keys.len() || 0); i += 1) {
+        const value = redeemerMap.get(keys.get(i));
+        executionUnits.memory += Number(value.ex_units().mem().toString());
+        executionUnits.cpu += Number(value.ex_units().steps().toString());
+      }
+    }
+
+    return executionUnits;
   }
 
   public generateTokenName = (

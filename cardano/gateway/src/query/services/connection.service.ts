@@ -202,7 +202,7 @@ export class ConnectionService {
         total: count_total ? Object.values(connectionFilters).length : 0,
       },
       height: {
-        revision_number: BigInt(0), // Cardano uses fixed revision 0; semantic height is Mithril snapshot block_number.
+        revision_number: BigInt(0), // Cardano uses revision 0; revision_height is an accepted anchor block number.
         revision_height: queryHeight,
       },
     } as unknown as QueryConnectionsResponse;
@@ -271,7 +271,7 @@ export class ConnectionService {
       // Generate ICS-23 proof from the IBC state tree
       //
       // The proof contains sibling hashes that let Cosmos verify this connection state
-      // is authentic by reconstructing the Merkle root (which is certified by Mithril).
+      // is authentic by reconstructing the Merkle root accepted by the active Cardano client.
       // Even if Gateway is compromised, it cannot forge valid proofs.
       const ibcPath = `connections/${CONNECTION_ID_PREFIX}-${connectionId}`;
       const tree = proofContext.historical ? proofContext.tree : getCurrentTree();

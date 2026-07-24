@@ -461,10 +461,11 @@ export class ConnectionService {
           connectionOpenAckOperator,
           constructedAddress,
         );
-        const { validToTime } = await this.computeTxValidityWindow();
+        const { validFromTime, validToTime } = await this.computeTxValidityWindow();
         return {
           ...built,
-          unsignedTx: built.unsignedTx.validTo(validToTime),
+          validFromTime,
+          validToTime,
         };
       };
       // Build and complete the unsigned transaction
@@ -476,6 +477,8 @@ export class ConnectionService {
         connectionUtxo,
         clientUtxo,
         pendingTreeUpdate,
+        validFromTime,
+        validToTime,
       } = await buildConnectionOpenAckAttempt();
 
       this.appendConnOpenAckDebug('===== connectionOpenAck attempt start =====');
@@ -528,7 +531,7 @@ export class ConnectionService {
         unsignedTx: unsignedConnectionOpenAckTx,
         rebuildUnsignedTx: async () => (await buildConnectionOpenAckAttempt()).unsignedTx,
         validity: {
-          apply: (builder: TxBuilder) => builder,
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
         },
         wallet: {
           mode: 'refresh_from_address',

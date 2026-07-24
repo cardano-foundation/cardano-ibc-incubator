@@ -8,9 +8,9 @@ Author: Julius Tranquilli,https://github.com/floor-licker
 
 Date: March 10, 2026
 
-**Important Note**:  Mithril is in beta and regularly has protocol upgrades, often they are breaking, i.e, require the whole network to upgrade their local infra. Breaking Mithril protocol upgrades will break the IBC bridge and we will have to update and react accordingly whenever Mithril has breaking changes. Because of the nature of a network, its not really an option to just stay on an old version of the protocol, the whole point is that everyone is forming a network
+**Historical context**: When this client was under active development, Mithril was in beta and protocol upgrades could require coordinated infrastructure changes. A breaking network upgrade would also have required a compatible bridge update. This is no longer an operational requirement for the maintained bridge path because the Mithril client is disabled.
 
-This document is intended to describe the overall architecture of the Mithril light client as well as why we are using Mithril in the first place.
+This document describes the retired Mithril light-client architecture and why it was originally selected.
 
 The Mithril header and certificate formats are defined in retained historical Cosmos-side protobuf types; reviewing those shapes helps with overall intuition for this process.
 

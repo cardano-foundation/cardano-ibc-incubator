@@ -274,7 +274,7 @@ export class ChannelService {
         total: count_total ? Object.values(channelFilters).length : 0,
       },
       height: {
-        revision_number: BigInt(0), // Cardano uses fixed revision 0; semantic height is Mithril snapshot block_number.
+        revision_number: BigInt(0), // Cardano uses revision 0; revision_height is an accepted anchor block number.
         revision_height: queryHeight,
       },
     } as unknown as QueryChannelsResponse;
@@ -443,7 +443,7 @@ export class ChannelService {
         total: count_total ? Object.values(channelFilters).length : 0,
       },
       height: {
-        revision_number: BigInt(0), // Cardano uses fixed revision 0; semantic height is Mithril snapshot block_number.
+        revision_number: BigInt(0), // Cardano uses revision 0; revision_height is an accepted anchor block number.
         revision_height: queryHeight,
       },
     } as unknown as QueryConnectionChannelsResponse;

@@ -281,12 +281,12 @@ export class ChannelService {
         channelOpenTryOperator,
         constructedAddress,
       );
-      const { validToTime } = await this.computeTxValidityWindow();
+      const { validFromTime, validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'channelOpenTry',
         unsignedTx: unsignedChannelOpenTryTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -328,7 +328,7 @@ export class ChannelService {
         event: channelOpenAckEvent,
         pendingTreeUpdate,
       } = await this.buildUnsignedChannelOpenAckTx(channelOpenAckOperator, constructedAddress);
-      const { currentSlot, validToSlot, validToTime } = await this.computeTxValidityWindow();
+      const { currentSlot, validFromTime, validToSlot, validToTime } = await this.computeTxValidityWindow();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
@@ -336,7 +336,7 @@ export class ChannelService {
         operationName: 'channelOpenAck',
         unsignedTx: unsignedChannelOpenAckTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -389,12 +389,12 @@ export class ChannelService {
       // Build and complete the unsigned transaction
       const { unsignedTx: unsignedChannelConfirmInitTx, pendingTreeUpdate } =
         await this.buildUnsignedChannelOpenConfirmTx(channelOpenConfirmOperator, constructedAddress);
-      const { validToTime } = await this.computeTxValidityWindow();
+      const { validFromTime, validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'channelOpenConfirm',
         unsignedTx: unsignedChannelConfirmInitTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -479,12 +479,12 @@ export class ChannelService {
       const { constructedAddress, channelCloseConfirmOperator } = validateAndFormatChannelCloseConfirmParams(data);
       const { unsignedTx: unsignedChannelCloseConfirmTx, pendingTreeUpdate } =
         await this.buildUnsignedChannelCloseConfirmTx(channelCloseConfirmOperator, constructedAddress);
-      const { validToTime } = await this.computeTxValidityWindow();
+      const { validFromTime, validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'channelCloseConfirm',
         unsignedTx: unsignedChannelCloseConfirmTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
         },
         wallet: {
           mode: 'refresh_from_address',

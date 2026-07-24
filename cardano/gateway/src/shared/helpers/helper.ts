@@ -108,20 +108,20 @@ export function stringifyIcs20PacketData(packet: {
 }) {
   const ordered: Record<string, string> = {};
 
-  if (packet.denom !== undefined && packet.denom !== '') {
-    ordered.denom = packet.denom;
-  }
   if (packet.amount !== undefined && packet.amount !== '') {
     ordered.amount = packet.amount;
   }
-  if (packet.sender !== undefined && packet.sender !== '') {
-    ordered.sender = packet.sender;
+  if (packet.denom !== undefined && packet.denom !== '') {
+    ordered.denom = packet.denom;
+  }
+  if (packet.memo !== undefined && packet.memo !== '') {
+    ordered.memo = packet.memo;
   }
   if (packet.receiver !== undefined && packet.receiver !== '') {
     ordered.receiver = packet.receiver;
   }
-  if (packet.memo !== undefined && packet.memo !== '') {
-    ordered.memo = packet.memo;
+  if (packet.sender !== undefined && packet.sender !== '') {
+    ordered.sender = packet.sender;
   }
 
   return JSON.stringify(ordered);

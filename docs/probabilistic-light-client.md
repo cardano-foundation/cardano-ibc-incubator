@@ -4,7 +4,7 @@ Author: Julius Tranquilli, https://github.com/floor-licker
 
 Date: April 7, 2026
 
-I would "the Cardano light client problem" in 2026 as:
+I would describe "the Cardano light client problem" in 2026 as:
 
 You can have at most two of these three:
 
@@ -20,9 +20,9 @@ i.e, If you insist on fast acceptance and do not want to implement native Cardan
 
 The probabilistic light client is implemented as client type `08-cardano-probabilistic`. This is an alternative to the deprecated Mithril light client, whose client type is `08-cardano-mithril`. This model is not a fast finality model or anything of that nature, rather it tries to heuristically attain faster IBC settlement by making certain risk tradeoffs via a heuristic notion of Cardano settlement. The exact parameters and thereby strength of the heuristic are tunable, and some are epoch context dependent.
 
-The Mithril light client was effectively non-viable from a UX perspective. Simple IBC swaps/transfers would currently take hundreds of Cardano blocks under mainnet conditions.
+The Mithril light client was effectively non-viable from a UX perspective. Under the cadence assumptions evaluated before that client was retired, simple IBC swaps or transfers could take hundreds of Cardano blocks.
 
-I think it is worth clarifying as well that comparing this model to the Mithril-based light client is not just a question of "faster means weaker." For example, a large factor in the security of the Mithril model is Mithril network participation, which I believe at the time of writing is even less than 20% of the network. So we can imagine comparing two assertions like the following:
+Comparing this model to the Mithril-based light client is not just a question of "faster means weaker." A large factor in the security of the Mithril model is network participation, which is time-varying and must be supported by dated measurements rather than assumed as a constant. We can imagine comparing two assertions like the following:
 
 A) A randomly selected subset selected out of a pool of a fixed + hard, proportion of the network agree on the ledger view at a height H, so we consider it "final"
 

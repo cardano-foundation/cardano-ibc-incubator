@@ -84,7 +84,7 @@ import { alignTreeWithChain, computeRootWithHandlePacketUpdate, isTreeAligned } 
 import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
 import { AsyncIcqHostService } from './async-icq-host.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
-import { queryNetworkTipPoint } from '../shared/helpers/time';
+import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
 import { getGatewayModuleConfigForPortId } from '@shared/helpers/module-port';
 import { buildVoucherCip68Metadata, encodeVoucherCip68MetadataDatum } from '../shared/helpers/cip68-voucher-metadata';
 import {
@@ -747,26 +747,21 @@ export class PacketService {
     return order.map((k) => map.get(k)!).filter(Boolean);
   }
 
-  private async computeTxValidityWindow(): Promise<{ currentSlot: number; validToSlot: number; validToTime: number }> {
+  private async computeTxValidityWindow(): Promise<{
+    currentSlot: number;
+    currentLedgerTime: number;
+    validFromTime: number;
+    validToSlot: number;
+    validToTime: number;
+  }> {
     const ogmiosEndpoint = this.configService.get<string>('ogmiosEndpoint');
-    const tip = await queryNetworkTipPoint(ogmiosEndpoint);
-    const currentSlot = tip === 'origin' ? 0 : tip.slot;
-    // Local devnet can lag far behind wallclock time, so deriving validity from `Date.now()` or
-    // Lucid's wallclock-based `currentSlot()` can push tx TTL beyond the node's forecast horizon.
-    // Anchor expiry to the live ledger tip instead.
-    const ttlSlots = Math.max(1, Math.ceil(TRANSACTION_TIME_TO_LIVE / 1000));
-    const validToSlot = currentSlot + ttlSlots;
     const network = this.configService.get('cardanoNetwork') as Network;
     const slotConfig = this.lucidService.LucidImporter.SLOT_CONFIG_NETWORK?.[network];
     if (!slotConfig || slotConfig.slotLength <= 0) {
       throw new GrpcInternalException(`send packet failed: invalid slot configuration for network ${network}`);
     }
 
-    // Lucid floors `unixTime -> slot`, so target the last millisecond of the slot window we want.
-    const validToTime =
-      slotConfig.zeroTime + (validToSlot + 1 - slotConfig.zeroSlot) * slotConfig.slotLength - 1;
-
-    return { currentSlot, validToSlot, validToTime };
+    return computeLedgerAnchoredValidityWindow(ogmiosEndpoint, slotConfig, TRANSACTION_TIME_TO_LIVE);
   }
 
   private async refreshWalletContext(
@@ -989,7 +984,7 @@ export class PacketService {
         ['spendTraceRegistryRefScript', deploymentConfig.validators.spendTraceRegistry?.refUtxo],
       ]);
 
-      const { currentSlot, validToTime: initialValidToTime } = await this.computeTxValidityWindow();
+      const { currentSlot, validFromTime, validToTime: initialValidToTime } = await this.computeTxValidityWindow();
       let validToTime = initialValidToTime;
       if (recvPacketOperator.timeoutTimestamp > 0n) {
         // On-chain requires tx_valid_to * 1_000_000 < packet.timeout_timestamp.
@@ -1017,7 +1012,7 @@ export class PacketService {
         operationName: 'recvPacket',
         unsignedTx: unsignedRecvPacketTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
         },
         wallet: {
           mode: 'custom_before_complete',
@@ -1077,7 +1072,7 @@ export class PacketService {
 
       const { unsignedTx: unsignedSendPacketTx, pendingTreeUpdate, walletOverride } =
         await this.buildUnsignedSendPacketTx(sendPacketOperator);
-      const { currentSlot, validToSlot, validToTime } = await this.computeTxValidityWindow();
+      const { currentSlot, validFromTime, validToSlot, validToTime } = await this.computeTxValidityWindow();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('channel init failed: tx time invalid');
       }
@@ -1086,7 +1081,7 @@ export class PacketService {
         operationName: 'sendPacket',
         unsignedTx: unsignedSendPacketTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
         },
         wallet: {
           mode: 'custom_before_complete',
@@ -1148,7 +1143,7 @@ export class PacketService {
         pendingTreeUpdate,
         packetSequence,
       } = await this.buildUnsignedSendModulePacketTx(data);
-      const { currentSlot, validToSlot, validToTime } = await this.computeTxValidityWindow();
+      const { currentSlot, validFromTime, validToSlot, validToTime } = await this.computeTxValidityWindow();
       if (currentSlot > validToSlot) {
         throw new GrpcInternalException('async-icq send failed: tx time invalid');
       }
@@ -1157,7 +1152,7 @@ export class PacketService {
         operationName: 'sendAsyncIcqPacket',
         unsignedTx: unsignedSendPacketTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -1211,7 +1206,7 @@ export class PacketService {
       const timeoutAttempt = await buildTimeoutAttempt();
       const unsignedSendPacketTx = timeoutAttempt.unsignedTx;
       let pendingTreeUpdate = timeoutAttempt.pendingTreeUpdate;
-      const { validToTime } = await this.computeTxValidityWindow();
+      const { validFromTime, validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'timeoutPacket',
         unsignedTx: unsignedSendPacketTx,
@@ -1221,7 +1216,7 @@ export class PacketService {
           return rebuilt.unsignedTx;
         },
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
         },
         wallet: {
           mode: 'refresh_from_address',
@@ -1273,12 +1268,12 @@ export class PacketService {
         ackPacketOperator,
         constructedAddress,
       );
-      const { validToTime } = await this.computeTxValidityWindow();
+      const { validFromTime, validToTime } = await this.computeTxValidityWindow();
       const { unsignedTxBytes: cborHexBytes } = await this.txOperationRunnerService.run({
         operationName: 'acknowledgementPacket',
         unsignedTx: unsignedAckPacketTx,
         validity: {
-          apply: (builder: TxBuilder) => builder.validTo(validToTime),
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
         },
         wallet: {
           mode: 'custom_before_complete',

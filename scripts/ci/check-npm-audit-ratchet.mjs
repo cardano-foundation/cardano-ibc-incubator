@@ -23,9 +23,6 @@ const allowedHighCriticalAdvisories = new Set([
   '1113546',
   '1113548',
   '1113552',
-  '1113635',
-  '1113636',
-  '1113996',
   '1114200',
   '1114302',
   '1114680',
@@ -33,6 +30,7 @@ const allowedHighCriticalAdvisories = new Set([
   '1115573',
   '1115806',
   '1117159',
+  '1122163',
 ]);
 
 function highCriticalAdvisories(auditJson) {

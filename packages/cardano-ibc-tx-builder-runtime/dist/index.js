@@ -725,9 +725,12 @@ async function computeTxValidityWindow(context) {
     if (!slotConfig || slotConfig.slotLength <= 0) {
         throw new Error(`Invalid Cardano slot configuration for network ${context.cardanoNetwork}`);
     }
+    const currentLedgerTime = slotConfig.zeroTime + (currentSlot - slotConfig.zeroSlot) * slotConfig.slotLength;
     const validToTime = slotConfig.zeroTime + (validToSlot + 1 - slotConfig.zeroSlot) * slotConfig.slotLength - 1;
+    const validFromTime = Math.max(slotConfig.zeroTime, currentLedgerTime);
     return {
         currentSlot,
+        validFromTime,
         validToSlot,
         validToTime,
     };
@@ -906,7 +909,7 @@ function createTxBuilderRuntime(config) {
         if (!walletOverride) {
             throw new Error('sendPacket failed: wallet override context was not produced');
         }
-        const { currentSlot, validToSlot, validToTime } = await timed(logger, scope, 'compute validity window', () => computeTxValidityWindow(context));
+        const { currentSlot, validFromTime, validToSlot, validToTime } = await timed(logger, scope, 'compute validity window', () => computeTxValidityWindow(context));
         if (currentSlot > validToSlot) {
             throw new Error('sendPacket failed: tx time invalid');
         }
@@ -919,7 +922,7 @@ function createTxBuilderRuntime(config) {
             logger.log(`${scope} completion wallet UTxOs: override=${overrideUtxos.length}, refreshed=${refreshedUtxos.length}, using=${utxosToUse.length}`);
             context.lucidService.selectWalletFromAddress(walletOverride.address, utxosToUse);
             context.lucidService.assertWalletSelectionScopeSatisfied(walletScopeId, 'sendPacket');
-            const completedUnsignedTx = await timed(logger, scope, 'complete unsigned tx', () => unsignedTx.validTo(validToTime).complete({
+            const completedUnsignedTx = await timed(logger, scope, 'complete unsigned tx', () => unsignedTx.validFrom(validFromTime).validTo(validToTime).complete({
                 localUPLCEval: true,
                 setCollateral: TRANSACTION_SET_COLLATERAL,
             }));
