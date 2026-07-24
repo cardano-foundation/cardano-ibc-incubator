@@ -257,13 +257,27 @@ const nextConfig = {
     return [
       {
         source: '/',
-        destination: `${basePath}/swap`,
-        permanent: true,
+        destination: `${basePath}/transfer`,
+        permanent: false,
+      },
+      ...(basePath
+        ? [
+            {
+              source: basePath,
+              destination: `${basePath}/transfer`,
+              permanent: false,
+            },
+          ]
+        : []),
+      {
+        source: '/swap',
+        destination: `${basePath}/transfer`,
+        permanent: false,
       },
       {
-        source: basePath || '/',
-        destination: `${basePath}/swap`,
-        permanent: true,
+        source: '/queries',
+        destination: `${basePath}/transfer`,
+        permanent: false,
       },
     ];
   },

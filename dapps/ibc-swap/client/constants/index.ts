@@ -13,14 +13,23 @@ export const FROM_TO = {
   TO: 'To',
 };
 
-export const routes = [
+export const routes: Array<{
+  name: string;
+  path: string;
+  disabled?: boolean;
+  badge?: string;
+}> = [
   {
     name: 'Queries',
     path: '/queries',
+    disabled: true,
+    badge: 'Coming soon',
   },
   {
     name: 'Swap',
     path: '/swap',
+    disabled: true,
+    badge: 'Coming soon',
   },
   {
     name: 'Transfer',
