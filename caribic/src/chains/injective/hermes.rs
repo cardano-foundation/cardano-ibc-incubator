@@ -65,7 +65,7 @@ fn testnet_chain_profile() -> HermesCosmosChainProfile {
         }),
         store_prefix: "ibc",
         default_gas: 5_000_000,
-        max_gas: 15_000_000,
+        max_gas: 60_000_000,
         gas_price: HermesGasPrice {
             price: "500000000",
             denom: "inj",

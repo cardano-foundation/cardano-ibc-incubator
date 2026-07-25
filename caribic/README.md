@@ -381,9 +381,18 @@ yarn && yarn dev   # serves at http://localhost:3000/ibc
 
 Channels and denom traces are discovered at runtime through the planner and the bridge manifest, so the route created in step 6 is picked up automatically. Injective testnet RPC/REST endpoints default to public fallbacks and can be overridden via `NEXT_PUBLIC_INJECTIVE_RPC_ENDPOINT` / `NEXT_PUBLIC_INJECTIVE_REST_ENDPOINT`.
 
+### Keeping the route alive
+
+The Injective-side Cardano client can only be updated with headers whose size and gas grow with the update gap (~4.6–8KB and ~85k gas per preprod block), and update targets must be blocks containing a HostState transaction. In practice this means:
+
+- The Hermes daemon's client refresh must run continuously. After roughly an hour without refreshes, the next catch-up header exceeds Injective's 4MB block limit and the client becomes permanently un-updatable — the route then has to be rebuilt (new client, connection, and channel; `caribic setup route` reuses an existing channel, so a rebuild currently requires driving `hermes create client` / `create connection` / `create channel` manually).
+- Anything that pauses the host pauses the refresh loop: laptop sleep, a stopped Gateway container, or a crashed relayer all have the same effect. On macOS, run `caffeinate -dims` while testing, or host the Gateway + Yaci + Hermes stack on an always-on machine for multi-day use.
+- The tracked Hermes profile for `injective-888` uses `max_tx_size = 1000000` and `max_gas = 60000000`; the defaults (~205KB / 15M gas) reject even routine ~100-block refresh updates.
+
 ### Troubleshooting
 
 - Hermes only reads `~/.hermes/config.toml` at startup — after manual config changes run `caribic stop relayer` then `caribic start relayer --network preprod`.
+- A Gateway that dies with an unhandled WebSocket error (visible via `docker logs gateway-app`) has lost its remote Kupo/Ogmios connection; restart it with `docker start gateway-app`. Until it is back, Hermes reports Cardano queries as `Configuration error: wrong configuration type`.
 - `caribic keys add --chain injective-888` failing with output that ends after Hermes' INFO startup lines means the `injective-888` chain block is missing from `~/.hermes/config.toml` — complete step 4 first (see the note in step 5).
 - `NotFound` account errors on Injective mean the relayer address is unfunded.
 - Hermes errors like `unknown header type: /ibc.lightclients.probabilistic.v1.ProbabilisticHeader` mean the compiled relayer binary is older than the `relayer/` submodule checkout — rebuild it with `cd relayer && cargo build --release --bin hermes`. (Hermes reports errors on stdout, so caribic may show such failures with an empty message.)
