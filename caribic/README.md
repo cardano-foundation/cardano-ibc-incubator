@@ -381,7 +381,7 @@ HUSKY=0 yarn && yarn dev
 
 (`HUSKY=0` skips the git-hooks install script, which fails inside the monorepo because the dapp client has no `.git` of its own. Also make sure each variable appears only once in `.env` — dotenv keeps the first occurrence, so leftover template placeholders above your real values win.)
 
-The app serves at `http://localhost:3000/swap` (or `http://localhost:3000/<BASE_PATH>/swap` if `BASE_PATH` is set; the root URL redirects there).
+The app serves at `http://localhost:3000/swap`; the root URL redirects there. Leave `BASE_PATH` unset — the dapp's internal API calls use absolute `/api/...` paths that break under a base path prefix.
 
 To run a transfer in the browser:
 
