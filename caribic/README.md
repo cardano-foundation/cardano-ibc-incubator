@@ -376,8 +376,21 @@ IBC_SWAP_OGMIOS_API_KEY=<your-ogmios-api-key>
 Then:
 
 ```bash
-yarn && yarn dev   # serves at http://localhost:3000/ibc
+HUSKY=0 yarn && yarn dev
 ```
+
+(`HUSKY=0` skips the git-hooks install script, which fails inside the monorepo because the dapp client has no `.git` of its own. Also make sure each variable appears only once in `.env` — dotenv keeps the first occurrence, so leftover template placeholders above your real values win.)
+
+The app serves at `http://localhost:3000/swap` (or `http://localhost:3000/<BASE_PATH>/swap` if `BASE_PATH` is set; the root URL redirects there).
+
+To run a transfer in the browser:
+
+1. Open `http://localhost:3000/swap`.
+2. Install a Cardano wallet extension (for example VESPR, Eternl, or Lace), switch it to the **preprod** network, and fund the address via the [Cardano testnet faucet](https://docs.cardano.org/cardano-testnets/tools/faucet/).
+3. Install a Cosmos wallet extension (for example Keplr or Leap). The dapp suggests the Injective testnet chain to the wallet on connect; approve the "add chain" prompt. Fund the `inj...` address via the [Injective testnet faucet](https://testnet.faucet.injective.network/).
+4. Connect both wallets from the header.
+5. Wait until the route from step 6 is open and the Hermes daemon is running — the token selector stays empty until the planner finds an open, relayable channel.
+6. Pick tADA on the Cardano side, choose the Injective destination, and submit. The transfer completes when the relayer delivers the packet and the voucher balance shows up in the Cosmos wallet (allow a few minutes for preprod stability waits).
 
 Channels and denom traces are discovered at runtime through the planner and the bridge manifest, so the route created in step 6 is picked up automatically. Injective testnet RPC/REST endpoints default to public fallbacks and can be overridden via `NEXT_PUBLIC_INJECTIVE_RPC_ENDPOINT` / `NEXT_PUBLIC_INJECTIVE_REST_ENDPOINT`.
 
