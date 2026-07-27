@@ -853,10 +853,14 @@ function sanitizeProtocolParameters(protocolParameters: any): any {
     return protocolParameters;
   }
 
-  const sanitizedCostModels: Record<string, Record<string, number>> = {};
-  for (const [version, model] of Object.entries(protocolParameters.costModels as Record<string, Record<string, unknown>>)) {
+  const sanitizedCostModels: Record<string, number[] | Record<string, number>> = {};
+  for (const [version, model] of Object.entries(protocolParameters.costModels as Record<string, unknown>)) {
+    if (Array.isArray(model)) {
+      sanitizedCostModels[version] = model.map((value) => toSafeCostModelInteger(value));
+      continue;
+    }
     const sanitizedModel: Record<string, number> = {};
-    for (const [index, value] of Object.entries(model ?? {})) {
+    for (const [index, value] of Object.entries((model as Record<string, unknown>) ?? {})) {
       sanitizedModel[index] = toSafeCostModelInteger(value);
     }
     sanitizedCostModels[version] = sanitizedModel;
