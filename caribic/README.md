@@ -389,6 +389,13 @@ The Injective-side Cardano client can only be updated with headers whose size an
 - Anything that pauses the host pauses the refresh loop: laptop sleep, a stopped Gateway container, or a crashed relayer all have the same effect. On macOS, run `caffeinate -dims` while testing, or host the Gateway + Yaci + Hermes stack on an always-on machine for multi-day use.
 - The tracked Hermes profile for `injective-888` uses `max_tx_size = 1000000` and `max_gas = 60000000`; the defaults (~205KB / 15M gas) reject even routine ~100-block refresh updates.
 
+What survives a spin-down: the contract deployment (`manifests/preprod/`), all keys, the Yaci history volume, and — within its 10-day trusting period — the Cardano-side Tendermint client, which catches up with a single header regardless of gap. What does not: the Injective-side client, and with it the connection and channel. To restart after downtime:
+
+1. `caribic start --network preprod` (reuses the deployment) and wait until `/health/ready` reports `ready`.
+2. `hermes update client --host-chain cardano-preprod --client <07-tendermint-N>` — this revalidates the reusable client and mints a fresh HostState anchor. Wait for `proofHeight` to advance to it (~8 minutes). New clients anchor at the latest HostState tx block, so skipping this step creates the Injective-side client hours in the past, where no reachable update target exists.
+3. `hermes create client --host-chain injective-888 --reference-chain cardano-preprod`, then `hermes create connection` (reusing the Cardano-side client) and `hermes create channel` (`caribic setup route` reuses the existing dead channel, so the rebuild needs the explicit Hermes commands).
+4. Restart the relayer daemon before testing.
+
 ### Troubleshooting
 
 - Hermes only reads `~/.hermes/config.toml` at startup — after manual config changes run `caribic stop relayer` then `caribic start relayer --network preprod`.
