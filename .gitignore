@@ -1,5 +1,6 @@
 # IDEs and editors
 .idea
+.claude
 .project
 .classpath
 .c9/
