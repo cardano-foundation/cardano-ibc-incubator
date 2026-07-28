@@ -76,8 +76,9 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
         const voucherTokenUnit = context.deployment.mintVoucherScriptHash +
             buildVoucherTokenName(resolvedDenom, deps);
         const senderAddress = sendPacketOperator.sender;
-        const senderVoucherTokenUtxo = await deps.findUtxoAtWithUnit(senderAddress, voucherTokenUnit);
-        const senderWalletUtxos = await deps.tryFindUtxosAt(senderAddress, LOOKUP_RETRY_OPTIONS);
+        const signerWalletAddress = sendPacketOperator.signer;
+        const senderVoucherTokenUtxo = await deps.findUtxoAtWithUnit(signerWalletAddress, voucherTokenUnit);
+        const senderWalletUtxos = await deps.tryFindUtxosAt(signerWalletAddress, LOOKUP_RETRY_OPTIONS);
         const walletUtxos = dedupeUtxos([
             ...senderWalletUtxos,
             senderVoucherTokenUtxo,
@@ -111,15 +112,16 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
                 commit,
             },
             walletOverride: {
-                address: senderAddress,
+                address: signerWalletAddress,
                 utxos: walletUtxos,
             },
         };
     }
     const senderAddress = sendPacketOperator.sender;
-    const senderWalletUtxos = await deps.tryFindUtxosAt(senderAddress, LOOKUP_RETRY_OPTIONS);
+    const signerWalletAddress = sendPacketOperator.signer;
+    const senderWalletUtxos = await deps.tryFindUtxosAt(signerWalletAddress, LOOKUP_RETRY_OPTIONS);
     if (senderWalletUtxos.length === 0) {
-        throw deps.internalError(`No spendable UTxOs found for sender ${senderAddress}`);
+        throw deps.internalError(`No spendable UTxOs found for signer ${signerWalletAddress}`);
     }
     const walletUtxos = dedupeUtxos(senderWalletUtxos);
     const denomToken = resolveEscrowDenomToken(inputDenom, resolvedDenom, walletUtxos, deps);
@@ -168,7 +170,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
             commit,
         },
         walletOverride: {
-            address: senderAddress,
+            address: signerWalletAddress,
             utxos: walletUtxos,
         },
     };
@@ -204,16 +206,16 @@ function insertSortMapWithNumberKey(inputMap, newKey, newValue) {
 }
 function stringifyIcs20PacketData(packet) {
     const ordered = {};
-    if (packet.denom)
-        ordered.denom = packet.denom;
     if (packet.amount)
         ordered.amount = packet.amount;
-    if (packet.sender)
-        ordered.sender = packet.sender;
-    if (packet.receiver)
-        ordered.receiver = packet.receiver;
+    if (packet.denom)
+        ordered.denom = packet.denom;
     if (packet.memo)
         ordered.memo = packet.memo;
+    if (packet.receiver)
+        ordered.receiver = packet.receiver;
+    if (packet.sender)
+        ordered.sender = packet.sender;
     return JSON.stringify(ordered);
 }
 function convertStringToHex(value) {

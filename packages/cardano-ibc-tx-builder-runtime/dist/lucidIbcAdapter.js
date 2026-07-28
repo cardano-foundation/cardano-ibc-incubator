@@ -56,6 +56,16 @@ async function encodeHostStateDatum(hostStateDatum, Lucid) {
     const HostStateDatumSchema = Data.Object({
         state: HostStateStateSchema,
         nft_policy: Data.Bytes(),
+        deployer: Data.Bytes(),
+        shutdown: Data.Enum([
+            Data.Literal('Active'),
+            Data.Object({
+                ShuttingDown: Data.Object({
+                    initiated_at: Data.Integer(),
+                    grace_period_end: Data.Integer(),
+                }),
+            }),
+        ]),
     });
     return Data.to(hostStateDatum, HostStateDatumSchema, { canonical: true });
 }
@@ -73,6 +83,16 @@ async function decodeHostStateDatum(encoded, Lucid) {
     const HostStateDatumSchema = Data.Object({
         state: HostStateStateSchema,
         nft_policy: Data.Bytes(),
+        deployer: Data.Bytes(),
+        shutdown: Data.Enum([
+            Data.Literal('Active'),
+            Data.Object({
+                ShuttingDown: Data.Object({
+                    initiated_at: Data.Integer(),
+                    grace_period_end: Data.Integer(),
+                }),
+            }),
+        ]),
     });
     return Data.from(encoded, HostStateDatumSchema);
 }
