@@ -398,7 +398,16 @@ Channels and denom traces are discovered at runtime through the planner and the 
 
 The Injective-side Cardano client can only be updated with headers whose size and gas grow with the update gap (~4.6–8KB and ~85k gas per preprod block), and update targets must be blocks containing a HostState transaction. In practice this means:
 
-- The Hermes daemon's client refresh must run continuously. After roughly an hour without refreshes, the next catch-up header exceeds Injective's 4MB block limit and the client becomes permanently un-updatable — the route then has to be rebuilt (new client, connection, and channel; `caribic setup route` reuses an existing channel, so a rebuild currently requires driving `hermes create client` / `create connection` / `create channel` manually).
+- The Hermes daemon does NOT keep this client fresh on its own: its refresh policy triggers near the trusting-period threshold (days), which suits ordinary Tendermint clients but not one whose update cost grows per block of gap. Run an explicit refresh loop while the route is up, for example:
+
+  ```bash
+  while true; do
+    hermes update client --host-chain injective-888 --client <08-cardano-probabilistic-N>
+    sleep 1200
+  done
+  ```
+
+  After roughly an hour without refreshes the next catch-up header exceeds Injective's 4MB block limit (observed: a 541-block gap produced a 4.27MB update) and the client becomes permanently un-updatable — the route then has to be rebuilt (new client, connection, and channel; `caribic setup route` reuses an existing channel, so a rebuild currently requires driving `hermes create client` / `create connection` / `create channel` manually). Stuck packets refund via timeout proofs on Cardano, which only need the Cardano-side Tendermint client.
 - Anything that pauses the host pauses the refresh loop: laptop sleep, a stopped Gateway container, or a crashed relayer all have the same effect. On macOS, run `caffeinate -dims` while testing, or host the Gateway + Yaci + Hermes stack on an always-on machine for multi-day use.
 - The tracked Hermes profile for `injective-888` uses `max_tx_size = 1000000` and `max_gas = 60000000`; the defaults (~205KB / 15M gas) reject even routine ~100-block refresh updates.
 
