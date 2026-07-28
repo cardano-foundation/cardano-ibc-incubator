@@ -31,6 +31,12 @@ const allowedHighCriticalAdvisories = new Set([
   '1115806',
   '1117159',
   '1122163',
+  // Bundled by npm@9.9.4 through @cardano-sdk/crypto@0.2.3 and cannot be
+  // upgraded independently of that legacy Cardano SDK dependency chain.
+  '1123896',
+  '1123897',
+  '1123940',
+  '1123941',
 ]);
 
 function highCriticalAdvisories(auditJson) {
