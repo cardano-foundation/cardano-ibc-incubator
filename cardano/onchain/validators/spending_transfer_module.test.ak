@@ -2990,3 +2990,83 @@ test on_chan_close_confirm_given_any_input_returns_false() {
     transaction,
   ) == False
 }
+
+test transfer_escrow_existing_shard_update_succeed() {
+  let mock = setup()
+
+  let prior_escrow_amount = 2_000_000
+  let transfer_amount = 15_000_000
+  let receiver = mock.cardano_public_key_hash
+
+  let source_port = "port-0"
+  let source_channel = "channel-0"
+  let denom = "6c6f76656c616365"
+
+  let shard_input =
+    transfer_escrow_input(
+      2,
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      mock.channel_id,
+      denom,
+      prior_escrow_amount,
+    )
+  let inputs = [shard_input, mock.channel_input, mock.host_state_input]
+
+  let shard_output =
+    transfer_escrow_output(
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      mock.channel_id,
+      denom,
+      prior_escrow_amount + transfer_amount,
+    )
+  let outputs = [shard_output, mock.channel_output, mock.host_state_output]
+
+  let (ftpd, packet) =
+    build_packet(
+      denom,
+      transfer_amount,
+      mock.cosmos_address,
+      receiver,
+      source_port,
+      source_channel,
+      mock.port_id,
+      mock.channel_id,
+    )
+
+  let module_redeemer: Redeemer =
+    Operator(
+      TransferModuleOperator(
+        Transfer { channel_id: mock.channel_id, data: ftpd },
+      ),
+    )
+
+  let channel_redeemer: Redeemer = SendPacket { packet }
+
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(shard_input.output_reference), module_redeemer),
+      Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
+    ]
+
+  let transaction =
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+  let shard_datum: Data = TransferEscrowDatum { channel_id: mock.channel_id, denom }
+
+  spending_transfer_module.spend_transfer_module.spend(
+    mock.port_token,
+    mock.module_token,
+    mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
+    mock.channel_minting_policy_id,
+    mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
+    Some(shard_datum),
+    module_redeemer,
+    shard_input.output_reference,
+    transaction,
+  )
+}
