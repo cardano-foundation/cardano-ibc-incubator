@@ -602,6 +602,21 @@ fn write_yaci_preprod_genesis_files(
     Ok(())
 }
 
+pub(crate) fn set_env_var_if_absent(
+    env_path: &Path,
+    key: &str,
+    value: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let original = fs::read_to_string(env_path).unwrap_or_default();
+    if original
+        .lines()
+        .any(|candidate| candidate.starts_with(&format!("{key}=")))
+    {
+        return Ok(());
+    }
+    set_or_append_env_var(env_path, key, value)
+}
+
 pub(crate) fn set_or_append_env_var(
     env_path: &Path,
     key: &str,
@@ -2099,7 +2114,7 @@ fn write_gateway_env_for_network(
                 "GATEWAY_RUNTIME_KUPO_API_KEY",
                 runtime_kupo_api_key.as_deref().unwrap_or(""),
             )?;
-            set_or_append_env_var(
+            set_env_var_if_absent(
                 &gateway_env,
                 "CARDANO_EPOCH_PARAMS_ENDPOINT",
                 PREPROD_KOIOS_BASE_URL,
