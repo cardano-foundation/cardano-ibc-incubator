@@ -391,14 +391,14 @@ The Injective-side Cardano client can only be updated with headers whose size an
 
 What survives a spin-down: the contract deployment (`manifests/preprod/`), all keys, the Yaci history volume, and — within its 10-day trusting period — the Cardano-side Tendermint client, which catches up with a single header regardless of gap. What does not: the Injective-side client, and with it the connection and channel. To restart after downtime:
 
-1. `caribic start --network preprod` (reuses the deployment) and wait until `/health/ready` reports `ready`.
+1. `caribic --config caribic/config/preprod-config.json start --network preprod` (reuses the deployment) and wait until `/health/ready` reports `ready`.
 2. `hermes update client --host-chain cardano-preprod --client <07-tendermint-N>` — this revalidates the reusable client and mints a fresh HostState anchor. Wait for `proofHeight` to advance to it (~8 minutes). New clients anchor at the latest HostState tx block, so skipping this step creates the Injective-side client hours in the past, where no reachable update target exists.
 3. `hermes create client --host-chain injective-888 --reference-chain cardano-preprod`, then `hermes create connection` (reusing the Cardano-side client) and `hermes create channel` (`caribic setup route` reuses the existing dead channel, so the rebuild needs the explicit Hermes commands).
 4. Restart the relayer daemon before testing.
 
 ### Troubleshooting
 
-- Hermes only reads `~/.hermes/config.toml` at startup — after manual config changes run `caribic stop relayer` then `caribic start relayer --network preprod`.
+- Hermes only reads `~/.hermes/config.toml` at startup — after manual config changes run `caribic --config caribic/config/preprod-config.json stop relayer` then `caribic --config caribic/config/preprod-config.json start relayer --network preprod`.
 - A Gateway that dies with an unhandled WebSocket error (visible via `docker logs gateway-app`) has lost its remote Kupo/Ogmios connection; restart it with `docker start gateway-app`. Until it is back, Hermes reports Cardano queries as `Configuration error: wrong configuration type`.
 - `caribic keys add --chain injective-888` failing with output that ends after Hermes' INFO startup lines means the `injective-888` chain block is missing from `~/.hermes/config.toml` — complete step 4 first (see the note in step 5).
 - `NotFound` account errors on Injective mean the relayer address is unfunded.
