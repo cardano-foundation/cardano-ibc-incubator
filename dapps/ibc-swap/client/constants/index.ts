@@ -1,4 +1,5 @@
 /* global BigInt */
+import { cosmosRuntimeChains } from '@/configs/runtimeConfig';
 
 export const THEME_MODE = {
   LIGHT: 'light',
@@ -6,7 +7,7 @@ export const THEME_MODE = {
 };
 
 export const INJECTIVE_TESTNET_CHAIN_ID = 'injective-888';
-export const defaultChainName = 'localosmosis';
+export const defaultChainName = cosmosRuntimeChains[0]?.id || 'localosmosis';
 
 export const FROM_TO = {
   FROM: 'From',

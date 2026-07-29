@@ -491,6 +491,10 @@ function sanitizeProtocolParameters(protocolParameters) {
     }
     const sanitizedCostModels = {};
     for (const [version, model] of Object.entries(protocolParameters.costModels)) {
+        if (Array.isArray(model)) {
+            sanitizedCostModels[version] = model.map((value) => toSafeCostModelInteger(value));
+            continue;
+        }
         const sanitizedModel = {};
         for (const [index, value] of Object.entries(model ?? {})) {
             sanitizedModel[index] = toSafeCostModelInteger(value);

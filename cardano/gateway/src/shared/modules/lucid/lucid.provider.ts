@@ -894,14 +894,17 @@ export const LucidClient = {
     } as any);
     console.log('[startup] Lucid constructed successfully');
 
-    console.log('[startup] Querying Ogmios system start');
-    const chainZeroTime = await retryWithBackoff(
-      () => querySystemStart(configService.get('ogmiosEndpoint')),
-      'Ogmios system start query',
-    );
-    console.log('[startup] Ogmios system start loaded');
-    Lucid.SLOT_CONFIG_NETWORK[network].zeroTime = chainZeroTime;
-    Lucid.SLOT_CONFIG_NETWORK[network].slotLength = 1000;
+    const isDevnetWithRuntimeSlotConfig = network === 'Custom';
+    if (isDevnetWithRuntimeSlotConfig) {
+      console.log('[startup] Querying Ogmios system start');
+      const devnetZeroTime = await retryWithBackoff(
+        () => querySystemStart(configService.get('ogmiosEndpoint')),
+        'Ogmios system start query',
+      );
+      console.log('[startup] Ogmios system start loaded');
+      Lucid.SLOT_CONFIG_NETWORK[network].zeroTime = devnetZeroTime;
+      Lucid.SLOT_CONFIG_NETWORK[network].slotLength = 1000;
+    }
     // const lucid = await Lucid.Lucid.new(
     //   new Lucid.Blockfrost('https://cardano-preview.blockfrost.io/api/v0', 'preview2fjKEg2Zh687WPUwB8eljT2Mz2q045GC'),
     //   'Preview',

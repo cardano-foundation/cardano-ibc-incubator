@@ -13,7 +13,7 @@ services:
       - CARDANO_PORT=3001
       - CARDANO_TOPOLOGY=/runtime/${CARDANO_TOPOLOGY_FILE:-topology.json}
       - CARDANO_SOCKET_PATH=${CARDANO_SOCKET_PATH:-/runtime/node.socket} # used by cardano-node
-      - CARDANO_NODE_SOCKET_PATH=/runtime/node.socket # used by cardano-cli
+      - CARDANO_NODE_SOCKET_PATH=${CARDANO_SOCKET_PATH:-/runtime/node.socket} # used by cardano-cli
       - CARDANO_SHELLEY_KES_KEY=/runtime/kes.skey
       - CARDANO_SHELLEY_VRF_KEY=/runtime/vrf.skey
       - CARDANO_SHELLEY_OPERATIONAL_CERTIFICATE=/runtime/opcert.cert
@@ -202,8 +202,6 @@ services:
       - postgres_db
     ports:
       - ${POSTGRES_PORT:-6432}:5432
-    depends_on:
-      - cardano-node
     volumes:
       - ./postgres:/var/lib/postgresql/data
     restart: on-failure
@@ -242,7 +240,9 @@ services:
         max-file: "10"
 
   yaci-store:
-    image: bloxbean/yaci-store:2.0.0
+    # 2.0.2.1 fixes CBOR parsing of post-protocol-11 preprod blocks
+    # (2.0.0 dies with "CborException: Reserved additional information").
+    image: bloxbean/yaci-store:2.0.2.1
     ports:
       - ${YACI_STORE_PORT:-8081}:8080
     depends_on:

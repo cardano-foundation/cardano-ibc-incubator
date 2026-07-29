@@ -317,12 +317,13 @@ export async function buildUnsignedSendPacketTx(
       context.deployment.mintVoucherScriptHash +
       buildVoucherTokenName(resolvedDenom, deps);
     const senderAddress = sendPacketOperator.sender;
+    const signerWalletAddress = sendPacketOperator.signer;
     const senderVoucherTokenUtxo = await deps.findUtxoAtWithUnit(
-      senderAddress,
+      signerWalletAddress,
       voucherTokenUnit,
     );
     const senderWalletUtxos = await deps.tryFindUtxosAt(
-      senderAddress,
+      signerWalletAddress,
       LOOKUP_RETRY_OPTIONS,
     );
     const walletUtxos = dedupeUtxos([
@@ -360,20 +361,21 @@ export async function buildUnsignedSendPacketTx(
         commit,
       },
       walletOverride: {
-        address: senderAddress,
+        address: signerWalletAddress,
         utxos: walletUtxos,
       },
     };
   }
 
   const senderAddress = sendPacketOperator.sender;
+  const signerWalletAddress = sendPacketOperator.signer;
   const senderWalletUtxos = await deps.tryFindUtxosAt(
-    senderAddress,
+    signerWalletAddress,
     LOOKUP_RETRY_OPTIONS,
   );
   if (senderWalletUtxos.length === 0) {
     throw deps.internalError(
-      `No spendable UTxOs found for sender ${senderAddress}`,
+      `No spendable UTxOs found for signer ${signerWalletAddress}`,
     );
   }
 
@@ -438,7 +440,7 @@ export async function buildUnsignedSendPacketTx(
       commit,
     },
     walletOverride: {
-      address: senderAddress,
+      address: signerWalletAddress,
       utxos: walletUtxos,
     },
   };
@@ -507,11 +509,11 @@ function stringifyIcs20PacketData(packet: {
 }): string {
   const ordered: Record<string, string> = {};
 
-  if (packet.denom) ordered.denom = packet.denom;
   if (packet.amount) ordered.amount = packet.amount;
-  if (packet.sender) ordered.sender = packet.sender;
-  if (packet.receiver) ordered.receiver = packet.receiver;
+  if (packet.denom) ordered.denom = packet.denom;
   if (packet.memo) ordered.memo = packet.memo;
+  if (packet.receiver) ordered.receiver = packet.receiver;
+  if (packet.sender) ordered.sender = packet.sender;
 
   return JSON.stringify(ordered);
 }

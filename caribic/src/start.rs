@@ -51,9 +51,6 @@ pub(crate) use hermes::{
     read_hermes_pid_file, remove_hermes_pid_file,
 };
 
-/// Get environment variables for Docker Compose, including UID/GID
-/// - macOS: Uses 0:0 (root) for compatibility
-/// - Linux: Uses actual user UID/GID
 fn get_docker_env_vars() -> Vec<(&'static str, String)> {
     let (uid, gid) = get_user_ids();
     vec![("UID", uid), ("GID", gid)]
@@ -753,54 +750,51 @@ pub async fn start_local_cardano_network(
         }
     }
 
-    // wait until network is running (with timeout)
-    let mut slot_querried = u64::MAX;
-    let max_retries = 24; // 24 retries × 5 seconds = 120 seconds timeout
-    let mut retry_count = 0;
+    if config::get_config().cardano.services.cardano_node {
+        let mut slot_querried = u64::MAX;
+        let max_retries = 24; // 24 retries × 5 seconds = 120 seconds timeout
+        let mut retry_count = 0;
 
-    while slot_querried == u64::MAX {
-        match get_cardano_state(project_root_path, CardanoQuery::Slot) {
-            Ok(value) => slot_querried = value,
-            Err(_e) => {
-                retry_count += 1;
+        while slot_querried == u64::MAX {
+            match get_cardano_state(project_root_path, CardanoQuery::Slot) {
+                Ok(value) => slot_querried = value,
+                Err(_e) => {
+                    retry_count += 1;
 
-                // Check container health every 3 retries (15 seconds) to fail fast on unrecoverable errors.
-                // We should NOT continue retrying if we detect issues that require developer intervention:
-                // - Permission errors (requires fixing volume/socket permissions)
-                // - Port conflicts (requires stopping conflicting services)
-                // - Disk space errors (requires freeing up disk space)
-                // However, we DO continue retrying for transient failures:
-                // - Container crashes with restart policies (Docker may be restarting the container)
-                // - Temporary network issues
-                // This approach fails fast for fixable issues while allowing recovery for transient ones.
-                if retry_count % 3 == 0 {
-                    let container_names = ["cardano-node", "cardano-cardano-node-ogmios-1"];
-                    let (diagnostics, should_fail_fast) =
-                        diagnose_container_failure(&container_names);
-                    if should_fail_fast {
+                    if retry_count % 3 == 0 {
+                        let container_names = ["cardano-node", "cardano-cardano-node-ogmios-1"];
+                        let (diagnostics, should_fail_fast) =
+                            diagnose_container_failure(&container_names);
+                        if should_fail_fast {
+                            return Err(format!(
+                                "Cardano node has unrecoverable errors that require developer intervention:{}",
+                                diagnostics
+                            )
+                            .into());
+                        }
+                    }
+
+                    if retry_count >= max_retries {
+                        let container_names = ["cardano-node", "cardano-cardano-node-ogmios-1"];
+                        let (diagnostics, _should_fail_fast) =
+                            diagnose_container_failure(&container_names);
                         return Err(format!(
-                            "Cardano node has unrecoverable errors that require developer intervention:{}",
+                            "Failed to query cardano-node state after {} seconds. The node may have crashed or is not responding.{}",
+                            max_retries * 5,
                             diagnostics
                         )
                         .into());
                     }
+                    log_or_show_progress(
+                        "Waiting for node to start up ...",
+                        &optional_progress_bar,
+                    );
+                    std::thread::sleep(Duration::from_secs(5))
                 }
-
-                if retry_count >= max_retries {
-                    let container_names = ["cardano-node", "cardano-cardano-node-ogmios-1"];
-                    let (diagnostics, _should_fail_fast) =
-                        diagnose_container_failure(&container_names);
-                    return Err(format!(
-                        "Failed to query cardano-node state after {} seconds. The node may have crashed or is not responding.{}",
-                        max_retries * 5,
-                        diagnostics
-                    )
-                    .into());
-                }
-                log_or_show_progress("Waiting for node to start up ...", &optional_progress_bar);
-                std::thread::sleep(Duration::from_secs(5))
             }
         }
+    } else {
+        verbose("Skipping cardano-node readiness probe: managed node service is disabled");
     }
 
     // Local Mithril used to be started here. It is now intentionally disabled
@@ -1208,6 +1202,7 @@ fn wait_for_local_offchain_wallet_utxos(
 
 async fn wait_for_ogmios_protocol_parameters(
     ogmios_url: &str,
+    resolved_api_key: Option<&str>,
     optional_progress_bar: &Option<ProgressBar>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     const MAX_ATTEMPTS: u64 = 12;
@@ -1242,7 +1237,9 @@ async fn wait_for_ogmios_protocol_parameters(
             .unwrap_or(true)
     }
 
-    let ogmios_api_key = resolve_optional_env(&["CARIBIC_OGMIOS_API_KEY", "OGMIOS_API_KEY"]);
+    let ogmios_api_key = resolved_api_key
+        .map(|key| key.to_string())
+        .or_else(|| resolve_optional_env(&["CARIBIC_OGMIOS_API_KEY", "OGMIOS_API_KEY"]));
     let ogmios_http_url = resolve_optional_env(&["CARIBIC_OGMIOS_HTTP_URL", "OGMIOS_HTTP_URL"])
         .or_else(|| derive_http_url(ogmios_url))
         .unwrap_or_else(|| ogmios_url.to_string());
@@ -1508,28 +1505,39 @@ pub async fn deploy_preprod_bridge(
                 }
                 Some(parsed.to_string())
             });
-    let ogmios_http_url = ["CARIBIC_OGMIOS_HTTP_URL", "OGMIOS_HTTP_URL"]
-        .iter()
-        .find_map(|key| std::env::var(key).ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-    let ogmios_api_key = ["CARIBIC_OGMIOS_API_KEY", "OGMIOS_API_KEY"]
-        .iter()
-        .find_map(|key| std::env::var(key).ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-    let kupo_api_key = ["CARIBIC_KUPO_API_KEY", "KUPO_API_KEY"]
-        .iter()
-        .find_map(|key| std::env::var(key).ok())
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
+    let gateway_env_path = cardano_dir.join("../../cardano/gateway/.env");
+    let resolve_deploy_setting = |env_keys: &[&str], file_key: &str| -> Option<String> {
+        env_keys
+            .iter()
+            .find_map(|key| std::env::var(key).ok())
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                crate::setup::read_gateway_env_value(gateway_env_path.as_path(), file_key)
+                    .ok()
+                    .flatten()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+            })
+    };
+    let ogmios_http_url = resolve_deploy_setting(
+        &["CARIBIC_OGMIOS_HTTP_URL", "OGMIOS_HTTP_URL"],
+        "OGMIOS_HTTP_URL",
+    );
+    let ogmios_api_key = resolve_deploy_setting(
+        &["CARIBIC_OGMIOS_API_KEY", "OGMIOS_API_KEY"],
+        "OGMIOS_API_KEY",
+    );
+    let kupo_api_key =
+        resolve_deploy_setting(&["CARIBIC_KUPO_API_KEY", "KUPO_API_KEY"], "KUPO_API_KEY");
 
-    // Preprod deployment targets live Cardano infra; the local managed runtime
-    // only supports history/indexing and gateway bootstrap around that network.
-    wait_for_ogmios_protocol_parameters(ogmios_url.as_str(), &optional_progress_bar).await?;
+    wait_for_ogmios_protocol_parameters(
+        ogmios_url.as_str(),
+        ogmios_api_key.as_deref(),
+        &optional_progress_bar,
+    )
+    .await?;
 
-    // The offchain deploy still emits the generic handler.json used by local mode.
-    // Keep that behavior intact, then copy out a preprod-specific artifact beside it.
     let handler_backup = backup_handler_json(generic_handler_path.as_path())?;
 
     log_or_show_progress(

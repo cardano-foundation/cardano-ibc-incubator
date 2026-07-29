@@ -88,6 +88,7 @@ export type SwapEstimateResponse = {
 
 export type PlannerClientConfig = {
   cardanoChainId: string;
+  counterpartyChainId?: string;
   cardanoRestEndpoint?: string;
   localOsmosisRestEndpoint: string;
   swapRouterAddress?: string;
@@ -119,6 +120,8 @@ const LOCAL_OSMOSIS_CHAIN_ID = 'localosmosis';
 const QUERY_CHANNELS_PREFIX_URL = '/ibc/core/channel/v1/channels';
 const QUERY_ALL_CHANNELS_URL =
   `${QUERY_CHANNELS_PREFIX_URL}?pagination.count_total=true&pagination.limit=10000`;
+const GATEWAY_CHANNELS_URL =
+  '/api/channels?key=&offset=0&limit=200&countTotal=false&reverse=false';
 const QUERY_SWAP_ROUTER_STATE =
   '/cosmwasm/wasm/v1/contract/SWAP_ROUTER_ADDRESS/state?pagination.limit=100000000';
 const SWAP_ROUTING_TABLE_PREFIX = '\x00\rrouting_table\x00D';
@@ -155,12 +158,14 @@ type SwapRoute = {
 
 type PlannerConfig = PlannerClientConfig & {
   fetchImpl: typeof fetch;
+  counterpartyChainId: string;
 };
 
 export function createPlannerClient(config: PlannerClientConfig): PlannerClient {
   const resolvedConfig: PlannerConfig = {
     ...config,
     fetchImpl: config.fetchImpl || fetch,
+    counterpartyChainId: config.counterpartyChainId || LOCAL_OSMOSIS_CHAIN_ID,
   };
 
   return {
@@ -199,7 +204,7 @@ export function createPlannerClient(config: PlannerClientConfig): PlannerClient 
       const directPair = await fetchDirectOsmosisChannelPair(resolvedConfig);
       if (
         fromChainId === resolvedConfig.cardanoChainId &&
-        toChainId === LOCAL_OSMOSIS_CHAIN_ID
+        toChainId === resolvedConfig.counterpartyChainId
       ) {
         if (!directPair) {
           return noDirectRoute(fromChainId, toChainId, request.expectedChainPath);
@@ -219,7 +224,7 @@ export function createPlannerClient(config: PlannerClientConfig): PlannerClient 
       }
 
       if (
-        fromChainId === LOCAL_OSMOSIS_CHAIN_ID &&
+        fromChainId === resolvedConfig.counterpartyChainId &&
         toChainId === resolvedConfig.cardanoChainId
       ) {
         if (!directPair) {
@@ -338,12 +343,41 @@ function noDirectRoute(
 async function fetchDirectOsmosisChannelPair(
   config: PlannerConfig,
 ): Promise<DirectOsmosisChannelPair | null> {
+  const fromCardano = await fetchDirectChannelPairFromCardano(config);
+  if (fromCardano) {
+    return fromCardano;
+  }
   const channels = await fetchOpenOsmosisChannels(config);
   const selected = selectLatestChannel(channels);
   return selected
     ? {
         cardanoChannel: selected.counterparty.channel_id,
         osmosisChannel: selected.channel_id,
+      }
+    : null;
+}
+
+async function fetchDirectChannelPairFromCardano(
+  config: PlannerConfig,
+): Promise<DirectOsmosisChannelPair | null> {
+  if (!config.cardanoRestEndpoint) {
+    return null;
+  }
+  const data = await fetchJson<{ channels?: QueryChannelResponse[] }>(
+    `${config.cardanoRestEndpoint}${GATEWAY_CHANNELS_URL}`,
+    config.fetchImpl,
+  ).catch(() => ({ channels: [] as QueryChannelResponse[] }));
+  const openChannels = (data.channels || []).filter(
+    (channel) =>
+      isOpenChannelState(channel.state) &&
+      channel.port_id === 'transfer' &&
+      channel.counterparty?.channel_id,
+  );
+  const selected = selectLatestChannel(openChannels);
+  return selected
+    ? {
+        cardanoChannel: selected.channel_id,
+        osmosisChannel: selected.counterparty.channel_id,
       }
     : null;
 }
