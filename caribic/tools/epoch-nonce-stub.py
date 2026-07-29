@@ -11,9 +11,12 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+
 def _env_from_file():
     values = {}
-    for line in open('/Users/fabianbormann/workspace/cardano-ibc-incubator/cardano/gateway/.env'):
+    for line in open(os.path.join(_REPO_ROOT, 'cardano', 'gateway', '.env')):
         line = line.strip()
         if line.startswith('OGMIOS_ENDPOINT=') or line.startswith('OGMIOS_API_KEY='):
             k, v = line.split('=', 1)

@@ -1,7 +1,8 @@
 #!/bin/bash
-cd /Users/fabianbormann/workspace/cardano-ibc-incubator
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export DEPLOYER_SK=$(cat ~/.caribic/preprod-deployer.sk)
 HERMES=./relayer/target/release/hermes
+CARDANO_CLIENT=${CARDANO_CLIENT:-07-tendermint-1}
 CARIBIC=./caribic/target/release/caribic
 gw() { docker exec gateway-app sh -c "wget -qO- -T 4 http://localhost:8000/health/ready" 2>/dev/null; }
 
@@ -12,7 +13,8 @@ gw | grep -q '"status":"ready"' || { echo "FAILED: gateway not ready"; exit 1; }
 echo "MILESTONE: gateway ready"
 
 python3 - <<'PYEOF'
-p = '/Users/fabianbormann/.hermes/config.toml'
+import os
+p = os.path.expanduser('~/.hermes/config.toml')
 s = open(p).read()
 changed = False
 if 'testnet.sentry.tm.injective.network' in s:
@@ -35,7 +37,7 @@ echo "MILESTONE: daemon stopped for handshake"
 
 P0=$(gw | python3 -c "import sys,json; print(json.load(sys.stdin)['proofHeight'])" 2>/dev/null)
 echo "MILESTONE: minting fresh anchor (proofHeight $P0)"
-$HERMES update client --host-chain cardano-preprod --client 07-tendermint-1 2>&1 | tail -1 | grep -qa SUCCESS || echo "note: anchor update reported non-success (may still land)"
+$HERMES update client --host-chain cardano-preprod --client "$CARDANO_CLIENT" 2>&1 | tail -1 | grep -qa SUCCESS || echo "note: anchor update reported non-success (may still land)"
 for i in $(seq 1 60); do P1=$(gw | python3 -c "import sys,json; print(json.load(sys.stdin)['proofHeight'])" 2>/dev/null); [ -n "$P1" ] && [ "$P1" != "$P0" ] && break; sleep 20; done
 [ "$P1" = "$P0" ] && { echo "FAILED: anchor never certified"; exit 1; }
 echo "MILESTONE: anchor certified at $P1"
@@ -45,7 +47,7 @@ PROB=$(echo "$PROB_OUT" | grep -oE '08-cardano-probabilistic-[0-9]+' | tail -1)
 [ -z "$PROB" ] && { echo "FAILED: client creation"; echo "$PROB_OUT" | tail -4; exit 1; }
 echo "MILESTONE: injective-side client: $PROB"
 
-CONN_OUT=$($HERMES create connection --a-chain cardano-preprod --a-client 07-tendermint-1 --b-client "$PROB" 2>&1)
+CONN_OUT=$($HERMES create connection --a-chain cardano-preprod --a-client "$CARDANO_CLIENT" --b-client "$PROB" 2>&1)
 echo "$CONN_OUT" | grep -q SUCCESS || { echo "FAILED: connection"; echo "$CONN_OUT" | grep -aE "ERROR" | tail -3 | head -c 600; exit 1; }
 CONN=$($HERMES --json query connections --chain cardano-preprod 2>/dev/null | tail -1 | python3 -c "
 import sys, json
@@ -82,4 +84,4 @@ $HERMES --json query packet pending --chain cardano-preprod --port transfer --ch
 echo "MILESTONE: attempting timeout refund for stuck channel-5 packet"
 $HERMES clear packets --chain cardano-preprod --port transfer --channel channel-5 2>&1 | tail -2 | head -c 400; echo
 
-echo "MILESTONE: pipeline v6 complete: route $CHAN via $CONN, clients 07-tendermint-1 / $PROB"
+echo "MILESTONE: pipeline v6 complete: route $CHAN via $CONN, clients $CARDANO_CLIENT / $PROB"
