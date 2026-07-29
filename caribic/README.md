@@ -407,20 +407,20 @@ The Injective-side Cardano client can only be updated with headers whose size an
   done
   ```
 
-  After roughly an hour without refreshes the next catch-up header exceeds Injective's 4MB block limit (observed: a 541-block gap produced a 4.27MB update) and the client becomes permanently un-updatable — the route then has to be rebuilt (new client, connection, and channel; `caribic setup route` reuses an existing channel, so a rebuild currently requires driving `hermes create client` / `create connection` / `create channel` manually). Stuck packets refund via timeout proofs on Cardano, which only need the Cardano-side Tendermint client.
+  Catch-up updates outgrow the transport limits quickly. In the July 24, 2026 failure documented in [#552](https://github.com/cardano-foundation/cardano-ibc-incubator/issues/552), an update spanning Cardano heights 4,970,800 to 4,971,057 encoded to 3,073,891 bytes — below Injective's 4,194,304-byte (4 MiB) consensus block limit, but rejected by the tested public nodes because it exceeded their effective 1,048,576-byte per-transaction mempool limit (a 541-block gap has produced a 4.27MB update, beyond even the consensus cap). The amount of downtime before this happens varies with witness sizes and available HostState anchors; when no valid intermediate anchor exists the client is permanently un-updatable and recovery requires a new client, connection, and channel (`caribic setup route` reuses an existing channel, so a rebuild currently requires driving `hermes create client` / `create connection` / `create channel` manually). Stuck packets refund via timeout proofs on Cardano, which only need the Cardano-side Tendermint client.
 - Anything that pauses the host pauses the refresh loop: laptop sleep, a stopped Gateway container, or a crashed relayer all have the same effect. On macOS, run `caffeinate -dims` while testing, or host the Gateway + Yaci + Hermes stack on an always-on machine for multi-day use.
 - The tracked Hermes profile for `injective-888` uses `max_tx_size = 1000000` and `max_gas = 60000000`; the defaults (~205KB / 15M gas) reject even routine ~100-block refresh updates.
 
 What survives a spin-down: the contract deployment (`manifests/preprod/`), all keys, the Yaci history volume, and — within its 10-day trusting period — the Cardano-side Tendermint client, which catches up with a single header regardless of gap. What does not: the Injective-side client, and with it the connection and channel. To restart after downtime:
 
-1. `caribic start --network preprod` (reuses the deployment) and wait until `/health/ready` reports `ready`.
+1. `caribic --config caribic/config/preprod-config.json start --network preprod` (reuses the deployment) and wait until `/health/ready` reports `ready`.
 2. `hermes update client --host-chain cardano-preprod --client <07-tendermint-N>` — this revalidates the reusable client and mints a fresh HostState anchor. Wait for `proofHeight` to advance to it (~8 minutes). New clients anchor at the latest HostState tx block, so skipping this step creates the Injective-side client hours in the past, where no reachable update target exists.
 3. `hermes create client --host-chain injective-888 --reference-chain cardano-preprod`, then `hermes create connection` (reusing the Cardano-side client) and `hermes create channel` (`caribic setup route` reuses the existing dead channel, so the rebuild needs the explicit Hermes commands).
 4. Restart the relayer daemon before testing.
 
 ### Troubleshooting
 
-- Hermes only reads `~/.hermes/config.toml` at startup — after manual config changes run `caribic stop relayer` then `caribic start relayer --network preprod`.
+- Hermes only reads `~/.hermes/config.toml` at startup — after manual config changes run `caribic --config caribic/config/preprod-config.json stop relayer` then `caribic --config caribic/config/preprod-config.json start relayer --network preprod`.
 - A Gateway that dies with an unhandled WebSocket error (visible via `docker logs gateway-app`) has lost its remote Kupo/Ogmios connection; restart it with `docker start gateway-app`. Until it is back, Hermes reports Cardano queries as `Configuration error: wrong configuration type`.
 - `caribic keys add --chain injective-888` failing with output that ends after Hermes' INFO startup lines means the `injective-888` chain block is missing from `~/.hermes/config.toml` — complete step 4 first (see the note in step 5).
 - `NotFound` account errors on Injective mean the relayer address is unfunded.
