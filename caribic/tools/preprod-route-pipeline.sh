@@ -47,6 +47,13 @@ PROB=$(echo "$PROB_OUT" | grep -oE '08-cardano-probabilistic-[0-9]+' | tail -1)
 [ -z "$PROB" ] && { echo "FAILED: client creation"; echo "$PROB_OUT" | tail -4; exit 1; }
 echo "MILESTONE: injective-side client: $PROB"
 
+# Tight refresh cadence during the handshakes: public injective RPCs reject
+# client-update payloads beyond ~25-30 blocks of gap (HTTP 413/400 at ~1MB),
+# so never let the stride grow while handshake steps wait on stability.
+nohup bash -c "while true; do $HERMES update client --host-chain injective-888 --client $PROB >> /tmp/injective-client-refresh.log 2>&1; sleep 240; done" > /dev/null 2>&1 &
+echo $! > /tmp/injective-client-refresh.pid
+echo "MILESTONE: tight refresh loop started for $PROB (240s)"
+
 CONN_OUT=$($HERMES create connection --a-chain cardano-preprod --a-client "$CARDANO_CLIENT" --b-client "$PROB" 2>&1)
 echo "$CONN_OUT" | grep -q SUCCESS || { echo "FAILED: connection"; echo "$CONN_OUT" | grep -aE "ERROR" | tail -3 | head -c 600; exit 1; }
 CONN=$($HERMES --json query connections --chain cardano-preprod 2>/dev/null | tail -1 | python3 -c "
@@ -69,8 +76,9 @@ echo "MILESTONE: channel open: $CHAN"
 echo "MILESTONE: restarting daemon"
 $CARIBIC --config caribic/config/preprod-config.json start relayer --network preprod 2>&1 | tail -2
 
-echo "MILESTONE: starting client refresh loop for $PROB"
-nohup bash -c "while true; do $HERMES update client --host-chain injective-888 --client $PROB >> /tmp/injective-client-refresh.log 2>&1; sleep 1200; done" > /dev/null 2>&1 &
+echo "MILESTONE: relaxing client refresh loop to 1200s for $PROB"
+kill $(cat /tmp/injective-client-refresh.pid 2>/dev/null) 2>/dev/null
+nohup bash -c "while true; do sleep 1200; $HERMES update client --host-chain injective-888 --client $PROB >> /tmp/injective-client-refresh.log 2>&1; done" > /dev/null 2>&1 &
 echo $! > /tmp/injective-client-refresh.pid
 
 echo "MILESTONE: verification transfer on $CHAN"
