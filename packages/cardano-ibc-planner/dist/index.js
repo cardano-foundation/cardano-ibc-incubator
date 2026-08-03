@@ -146,14 +146,32 @@ function createPlannerClient(config) {
                         failureMessage: `No mutually open IBC transfer channel pair exists from ${fromChainId} to ${toChainId}.`,
                     };
                 }
+                const sourceChannel = isCardanoToCounterparty
+                    ? {
+                        portId: directPair.cardanoPort,
+                        channelId: directPair.cardanoChannel,
+                    }
+                    : {
+                        portId: directPair.counterpartyPort,
+                        channelId: directPair.counterpartyChannel,
+                    };
+                const destinationChannel = isCardanoToCounterparty
+                    ? {
+                        portId: directPair.counterpartyPort,
+                        channelId: directPair.counterpartyChannel,
+                    }
+                    : {
+                        portId: directPair.cardanoPort,
+                        channelId: directPair.cardanoChannel,
+                    };
                 return {
                     status: 'available',
                     chains,
-                    routes: [
-                        `transfer/${isCardanoToCounterparty
-                            ? directPair.cardanoChannel
-                            : directPair.counterpartyChannel}`,
-                    ],
+                    routes: [`${sourceChannel.portId}/${sourceChannel.channelId}`],
+                    channelPair: {
+                        source: sourceChannel,
+                        destination: destinationChannel,
+                    },
                 };
             }
             catch (error) {
@@ -337,7 +355,9 @@ async function fetchDirectChannelPair(config, signal) {
             try {
                 if (await isMatchingOpenCounterpartyChannel(config, candidate, signal)) {
                     return {
+                        cardanoPort: candidate.port_id,
                         cardanoChannel: candidate.channel_id,
+                        counterpartyPort: candidate.counterparty.port_id,
                         counterpartyChannel: candidate.counterparty.channel_id,
                     };
                 }
@@ -356,7 +376,9 @@ async function fetchDirectChannelPair(config, signal) {
     const selected = selectLatestChannel(channels);
     return selected
         ? {
+            cardanoPort: selected.counterparty.port_id,
             cardanoChannel: selected.counterparty.channel_id,
+            counterpartyPort: selected.port_id,
             counterpartyChannel: selected.channel_id,
         }
         : null;

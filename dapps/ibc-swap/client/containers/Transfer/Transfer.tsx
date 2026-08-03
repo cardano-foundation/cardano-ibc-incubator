@@ -1254,11 +1254,15 @@ const Transfer = () => {
         setRouteAvailability('available');
         setRoutePreparationAttempt((attempt) => attempt + 1);
         if (routePreviewGenerationRef.current === routePreviewGeneration) {
+          const channelPairDescription = result.channelPair
+            ? `${fromChainName} ${result.channelPair.source.portId}/${result.channelPair.source.channelId} ↔ ${toChainName} ${result.channelPair.destination.portId}/${result.channelPair.destination.channelId}`
+            : undefined;
           setRoutePreview({
             status: 'available',
             chainIds: liveChainIds,
-            message:
-              'Open IBC transfer channel pair found. Client and relayer liveness are not verified.',
+            message: `Open IBC transfer channel pair found${
+              channelPairDescription ? `: ${channelPairDescription}` : ''
+            }. Client and relayer liveness are not verified.`,
           });
         }
         return;

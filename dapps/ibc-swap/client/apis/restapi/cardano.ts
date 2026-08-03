@@ -122,6 +122,10 @@ export interface TransferRouteAvailabilityResponse {
   status: 'available' | 'unavailable' | 'unknown';
   chains: string[];
   routes: string[];
+  channelPair?: {
+    source: { portId: string; channelId: string };
+    destination: { portId: string; channelId: string };
+  };
   failureCode?:
     | 'invalid-request'
     | 'unsupported-route'

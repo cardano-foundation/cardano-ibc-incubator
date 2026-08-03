@@ -60,16 +60,41 @@ describe('route planning', () => {
       fromChainId: 'injective-888',
       toChainId: 'cardano-preprod',
     });
+    const sameChain = await planner.checkTransferRouteAvailability({
+      fromChainId: 'cardano-preprod',
+      toChainId: 'cardano-preprod',
+    });
 
     assert.deepEqual(forward, {
       status: 'available',
       chains: ['cardano-preprod', 'injective-888'],
       routes: ['transfer/channel-8'],
+      channelPair: {
+        source: { portId: 'transfer', channelId: 'channel-8' },
+        destination: { portId: 'transfer', channelId: 'channel-2' },
+      },
     });
     assert.deepEqual(reverse, {
       status: 'available',
       chains: ['injective-888', 'cardano-preprod'],
       routes: ['transfer/channel-2'],
+      channelPair: {
+        source: { portId: 'transfer', channelId: 'channel-2' },
+        destination: { portId: 'transfer', channelId: 'channel-8' },
+      },
+    });
+    assert.equal(
+      forward.routes[0],
+      `${forward.channelPair?.source.portId}/${forward.channelPair?.source.channelId}`,
+    );
+    assert.equal(
+      reverse.routes[0],
+      `${reverse.channelPair?.source.portId}/${reverse.channelPair?.source.channelId}`,
+    );
+    assert.deepEqual(sameChain, {
+      status: 'available',
+      chains: ['cardano-preprod'],
+      routes: [],
     });
     assert.equal(traceResolutionCount, 0);
     assert.equal(requestedUrls.length, 4);
@@ -132,6 +157,10 @@ describe('route planning', () => {
     });
 
     assert.equal(result.status, 'available');
+    assert.deepEqual(result.channelPair, {
+      source: { portId: 'transfer', channelId: 'channel-8' },
+      destination: { portId: 'transfer', channelId: 'channel-2' },
+    });
     assert.deepEqual(requestedUrls, [
       'http://cardano.test/api/cardano/channel-ends?key=&offset=0&limit=10000&countTotal=true&reverse=false',
       'http://cardano.test/api/channels?key=&offset=0&limit=10000&countTotal=true&reverse=false',
@@ -180,6 +209,7 @@ describe('route planning', () => {
     assert.equal(result.status, 'unavailable');
     assert.equal(result.failureCode, 'no-open-channel');
     assert.deepEqual(result.routes, []);
+    assert.equal(result.channelPair, undefined);
   });
 
   it('reports discovery failures as unknown instead of no channel', async () => {
