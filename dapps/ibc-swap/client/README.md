@@ -34,9 +34,15 @@ yarn && yarn dev
 ```
 
 ## Containerized local run
-This frontend is optional and is not started by `caribic start`.
+This frontend is started by the default `caribic start`/`caribic start all`
+stack. It can also be managed independently:
 
-To run it as a containerized demo UI:
+```bash
+caribic start dapp
+caribic stop dapp
+```
+
+To run it directly through Compose instead:
 
 ```bash
 docker compose -f dapps/docker-compose.yml up --build ibc-swap-client

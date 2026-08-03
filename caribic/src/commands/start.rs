@@ -9,7 +9,8 @@ use crate::{
     chains, config, logger,
     start::{
         build_aiken_validators_if_needed, build_hermes_if_needed, deploy_contracts,
-        deploy_preprod_bridge, start_dapp, start_gateway, start_hermes_daemon, start_relayer,
+        deploy_preprod_bridge, ibc_swap_dapp_url, start_dapp, start_gateway, start_hermes_daemon,
+        start_relayer,
     },
     utils::{prompt_runtime_deployer_sk, query_balance},
     StartTarget, StopTarget,
@@ -73,7 +74,11 @@ fn target_requires_runtime_deployer_sk(target: Option<StartTarget>) -> bool {
         || target == Some(StartTarget::Relayer)
 }
 
-/// Starts the requested target and orchestrates startup dependencies for network and bridge components.
+fn target_starts_dapp(target: Option<&StartTarget>) -> bool {
+    target.is_none() || matches!(target, Some(StartTarget::All) | Some(StartTarget::Dapp))
+}
+
+/// Starts the requested target and orchestrates the network, bridge, and dapp components.
 pub async fn run_start(
     target: Option<StartTarget>,
     clean: bool,
@@ -94,6 +99,7 @@ pub async fn run_start(
     let start_all = target.is_none() || target == Some(StartTarget::All);
     let start_network = start_all || target == Some(StartTarget::Network);
     let start_bridge = start_all || target == Some(StartTarget::Bridge);
+    let start_dapp_target = target_starts_dapp(target.as_ref());
 
     if !chain_flags.is_empty() {
         return Err(
@@ -166,14 +172,6 @@ pub async fn run_start(
         match start_gateway(project_root_path.join("cardano/gateway").as_path(), clean) {
             Ok(_) => logger::log("PASS: Gateway started (NestJS gRPC server on port 5001)"),
             Err(error) => return Err(format!("ERROR: Failed to start gateway: {}", error)),
-        };
-        return Ok(());
-    }
-
-    if target == Some(StartTarget::Dapp) {
-        match start_dapp(project_root_path, clean, core_cardano_network) {
-            Ok(_) => logger::log("PASS: IBC Swap dapp started"),
-            Err(error) => return Err(format!("ERROR: Failed to start IBC Swap dapp: {}", error)),
         };
         return Ok(());
     }
@@ -563,6 +561,22 @@ pub async fn run_start(
         }
     }
 
+    if start_dapp_target {
+        match start_dapp(project_root_path, clean, core_cardano_network) {
+            Ok(_) => logger::log(&format!(
+                "PASS: IBC Swap dapp started (Next.js UI at {})",
+                ibc_swap_dapp_url()
+            )),
+            Err(error) => {
+                return fail_and_stop_started_services(
+                    project_root_path,
+                    StopTarget::Dapp,
+                    &format!("ERROR: Failed to start IBC Swap dapp: {}", error),
+                )
+            }
+        }
+    }
+
     logger::log(&format!(
         "\ncaribic start completed in {}",
         format_elapsed_duration(start_elapsed_timer.elapsed())
@@ -608,5 +622,35 @@ fn format_elapsed_duration(duration: Duration) -> String {
         format!("{seconds}s")
     } else {
         format!("{}ms", duration.subsec_millis())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::target_starts_dapp;
+    use crate::StartTarget;
+
+    #[test]
+    fn default_and_all_targets_start_the_dapp() {
+        assert!(target_starts_dapp(None));
+        assert!(target_starts_dapp(Some(&StartTarget::All)));
+    }
+
+    #[test]
+    fn standalone_dapp_target_starts_the_dapp() {
+        assert!(target_starts_dapp(Some(&StartTarget::Dapp)));
+    }
+
+    #[test]
+    fn non_dapp_targets_do_not_start_the_dapp() {
+        for target in [
+            StartTarget::Network,
+            StartTarget::Bridge,
+            StartTarget::Gateway,
+            StartTarget::Relayer,
+            StartTarget::Mithril,
+        ] {
+            assert!(!target_starts_dapp(Some(&target)));
+        }
     }
 }

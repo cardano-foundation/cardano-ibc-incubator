@@ -32,7 +32,7 @@ enum DemoType {
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StartTarget {
-    /// Starts everything (network + bridge)
+    /// Starts everything (network + bridge + IBC Swap dapp)
     All,
     /// Starts the local Cardano network related services
     Network,
@@ -50,12 +50,14 @@ enum StartTarget {
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum StopTarget {
-    /// Stops everything (network + bridge + demos)
+    /// Stops everything (dapp + network + bridge + demos)
     All,
     /// Stops the local Cardano network related services
     Network,
     /// Tears down the gateway and relayer
     Bridge,
+    /// Stops only the IBC Swap dapp
+    Dapp,
     /// Stops the demo services
     Demo,
     /// Stops only the Gateway service
@@ -133,7 +135,7 @@ enum Commands {
     Check,
     /// Installs missing local prerequisites on macOS or Ubuntu Linux
     Install,
-    /// Starts bridge components. No argument starts everything; optionally specify: all, network, bridge, gateway, dapp, relayer (mithril is disabled)
+    /// Starts bridge components. No argument starts the network, bridge, and IBC Swap dapp; optionally specify: all, network, bridge, gateway, dapp, relayer (mithril is disabled)
     Start {
         #[arg(value_enum)]
         target: Option<StartTarget>,
@@ -150,7 +152,7 @@ enum Commands {
         #[arg(long = "chain-flag")]
         chain_flag: Vec<String>,
     },
-    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, demo, gateway, relayer, mithril
+    /// Stops bridge components. No argument stops everything; optionally specify: all, network, bridge, dapp, demo, gateway, relayer, mithril
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
@@ -175,7 +177,7 @@ enum Commands {
     },
     /// Check health of bridge services
     HealthCheck {
-        /// Optional: specific service to check (gateway, cardano, postgres, yaci, kupo, ogmios, mithril, hermes, osmosis, redis, cheqd, injective)
+        /// Optional: specific service to check (gateway, dapp, cardano, postgres, yaci, kupo, ogmios, mithril, hermes, osmosis, redis, cheqd, injective)
         #[arg(long)]
         service: Option<String>,
     },
