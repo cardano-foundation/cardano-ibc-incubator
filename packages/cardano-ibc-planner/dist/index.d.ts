@@ -9,6 +9,28 @@ export type TransferPlanRequest = {
     tokenDenom: string;
     expectedChainPath?: string[];
 };
+export type TransferRouteAvailabilityRequest = {
+    fromChainId: string;
+    toChainId: string;
+    signal?: AbortSignal;
+};
+export type TransferRouteAvailabilityResponse = {
+    status: 'available' | 'unavailable' | 'unknown';
+    chains: string[];
+    routes: string[];
+    channelPair?: {
+        source: {
+            portId: string;
+            channelId: string;
+        };
+        destination: {
+            portId: string;
+            channelId: string;
+        };
+    };
+    failureCode?: 'invalid-request' | 'unsupported-route' | 'no-open-channel' | 'discovery-timeout' | 'discovery-failed' | 'discovery-aborted';
+    failureMessage?: string;
+};
 export type MissingTransferRouteHop = {
     fromChainId: string;
     toChainId: string;
@@ -65,9 +87,10 @@ export type SwapEstimateResponse = {
 };
 export type PlannerClientConfig = {
     cardanoChainId: string;
-    counterpartyChainId?: string;
     cardanoRestEndpoint?: string;
+    counterpartyChainId?: string;
     localOsmosisRestEndpoint: string;
+    routeDiscoveryTimeoutMs?: number;
     swapRouterAddress?: string;
     preferredChannels?: PreferredChannel[];
     resolveCardanoAssetDenomTrace?: (assetId: string) => Promise<ResolvedCardanoAssetTrace | null>;
@@ -80,8 +103,14 @@ export type PreferredChannel = {
     srcChannel: string;
 };
 export type PlannerClient = {
+    checkTransferRouteAvailability: (request: TransferRouteAvailabilityRequest) => Promise<TransferRouteAvailabilityResponse>;
     planTransferRoute: (request: TransferPlanRequest) => Promise<TransferPlanResponse>;
     getLocalOsmosisSwapOptions: () => Promise<SwapOptionsResponse>;
     estimateLocalOsmosisSwap: (request: SwapEstimateRequest) => Promise<SwapEstimateResponse>;
 };
+export declare const DEFAULT_ROUTE_DISCOVERY_TIMEOUT_MS = 10000;
+export declare class RouteDiscoveryTimeoutError extends Error {
+    readonly timeoutMs: number;
+    constructor(timeoutMs: number);
+}
 export declare function createPlannerClient(config: PlannerClientConfig): PlannerClient;

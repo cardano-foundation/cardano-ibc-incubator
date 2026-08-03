@@ -34,7 +34,7 @@ describe('TransferPlannerService', () => {
   });
 
   afterEach(() => {
-    jest.resetAllMocks();
+    jest.restoreAllMocks();
   });
 
   it('returns a same-chain route without consulting a route chain', async () => {
@@ -59,6 +59,12 @@ describe('TransferPlannerService', () => {
   });
 
   it('fails closed when no direct channel is available', async () => {
+    const fetchMock = jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ channels: [] }), {
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
     await expect(
       service.planTransferRoute({
         fromChainId: 'cardano-devnet',
@@ -84,6 +90,10 @@ describe('TransferPlannerService', () => {
         ],
       },
     });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${CARDANO_REST_ENDPOINT}/api/cardano/channel-ends?key=&offset=0&limit=10000&countTotal=true&reverse=false`,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it('rejects incomplete route planning requests', async () => {

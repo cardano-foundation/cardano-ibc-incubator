@@ -8,10 +8,25 @@ export type NetworkItemProps = {
   networkName?: string;
   networkLogo?: string;
   networkPrettyName?: string;
+  networkType?: string;
+  networkRole?: 'user' | 'route-infra';
   isActive?: boolean;
   onClick?: () => void;
   isDisabled?: boolean;
+  disabledReason?: string;
 };
+
+type NetworkItemViewProps = Pick<
+  NetworkItemProps,
+  | 'networkId'
+  | 'ibcChainId'
+  | 'networkName'
+  | 'networkLogo'
+  | 'networkPrettyName'
+  | 'isActive'
+  | 'onClick'
+  | 'isDisabled'
+>;
 
 export const NetworkItem = ({
   networkId,
@@ -22,7 +37,7 @@ export const NetworkItem = ({
   isActive,
   onClick,
   isDisabled,
-}: NetworkItemProps) => {
+}: NetworkItemViewProps) => {
   return (
     <StyledNetworkItemWrapper
       onClick={isDisabled ? () => {} : onClick}

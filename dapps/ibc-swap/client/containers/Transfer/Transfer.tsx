@@ -2,7 +2,14 @@
 
 /* global BigInt */
 
-import { Box, Heading, Spinner, Text, useDisclosure } from '@chakra-ui/react';
+import {
+  Box,
+  Button,
+  Heading,
+  Spinner,
+  Text,
+  useDisclosure,
+} from '@chakra-ui/react';
 import React, { useContext, useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import CustomInput from '@/components/CustomInput';
@@ -29,6 +36,7 @@ import {
   unsignedTxTransferFromCardano,
 } from '@/utils/buildTransferTx';
 import {
+  checkTransferRouteAvailability,
   planTransferRoute,
   type TransferPlanResponse,
 } from '@/apis/restapi/cardano';
@@ -87,13 +95,30 @@ type EstimateFeeType = {
   sourceChainId?: string;
   destinationChainId?: string;
   destinationAddress?: string;
+  tokenId?: string;
+  sendAmount?: string;
 };
 
 type RoutePreviewState = {
-  status: 'idle' | 'loading' | 'ready' | 'error';
+  status:
+    | 'idle'
+    | 'loading'
+    | 'available'
+    | 'ready'
+    | 'unavailable'
+    | 'unknown'
+    | 'error';
   chainIds: string[];
   message?: string;
+  activity?: 'availability' | 'preparation';
 };
+
+type RouteAvailabilityStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'unavailable'
+  | 'unknown';
 
 type CardanoAsset = {
   assetName: string;
@@ -123,7 +148,10 @@ const CARDANO_TRANSFER_EST_TIME = '~10 mins';
 const routePreviewStatusColor: Record<RoutePreviewState['status'], string> = {
   idle: '#FFFFFF52',
   loading: '#F6C85F',
+  available: '#4DFED3',
   ready: '#4DFED3',
+  unavailable: '#FF6B6B',
+  unknown: '#F6C85F',
   error: '#FF6B6B',
 };
 
@@ -275,7 +303,13 @@ const networkItemFromChainId = (
   };
 };
 
-const RoutePreview = ({ preview }: { preview: RoutePreviewState }) => {
+const RoutePreview = ({
+  preview,
+  onRetry,
+}: {
+  preview: RoutePreviewState;
+  onRetry?: () => void;
+}) => {
   if (preview.status === 'idle' || preview.chainIds.length === 0) {
     return null;
   }
@@ -322,6 +356,18 @@ const RoutePreview = ({ preview }: { preview: RoutePreviewState }) => {
         {preview.message ||
           'Direct Cardano-to-target route discovery is not available yet.'}
       </Text>
+      {onRetry && (
+        <Button
+          mt="10px"
+          size="xs"
+          variant="outline"
+          color="#FAFAFA"
+          borderColor="#FFFFFF52"
+          onClick={onRetry}
+        >
+          Retry channel check
+        </Button>
+      )}
     </Box>
   );
 };
@@ -334,12 +380,20 @@ const Transfer = () => {
   const [estData, setEstData] = useState<EstimateFeeType>(initEstData);
   const [routePreview, setRoutePreview] =
     useState<RoutePreviewState>(initRoutePreview);
+  const [routeAvailability, setRouteAvailability] =
+    useState<RouteAvailabilityStatus>('idle');
+  const [routePreflightAttempt, setRoutePreflightAttempt] = useState(0);
+  const [routePreparationAttempt, setRoutePreparationAttempt] = useState(0);
   const [lastPrepareFailed, setLastPrepareFailed] = useState(false);
   const [lastTxHash, setLastTxHash] = useState<string>('');
   const [lastTransferSubmittedAt, setLastTransferSubmittedAt] =
     useState<string>('');
   const [resumeChecked, setResumeChecked] = useState(false);
   const isRestoringTransferRef = useRef(false);
+  const routePreflightGenerationRef = useRef(0);
+  const routePreviewGenerationRef = useRef(0);
+  const estimateGenerationRef = useRef(0);
+  const routePreflightAbortControllerRef = useRef<AbortController | null>(null);
   const {
     wallet: cardanoWallet,
     name: connectedCardanoWalletName,
@@ -404,6 +458,16 @@ const Transfer = () => {
     fromNetwork.networkId,
     toNetwork.networkId,
   );
+
+  const estimateMatchesCurrentTransfer = (
+    candidate: EstimateFeeType,
+  ): boolean =>
+    candidate.canEst &&
+    candidate.sourceChainId === fromNetwork.networkId &&
+    candidate.destinationChainId === toNetwork.networkId &&
+    candidate.destinationAddress === destinationAddress &&
+    candidate.tokenId === selectedToken.tokenId &&
+    candidate.sendAmount === sendAmount;
 
   const getSourceWalletAddress = (sourceChainId = fromNetwork.networkId) =>
     sourceChainId === CARDANO_CHAIN_ID
@@ -509,7 +573,12 @@ const Transfer = () => {
     return true;
   };
 
-  const calculateEst = async (): Promise<EstimateFeeType> => {
+  const calculateEst = async (
+    estimateGeneration: number,
+  ): Promise<EstimateFeeType | null> => {
+    if (estimateGenerationRef.current !== estimateGeneration) {
+      return null;
+    }
     setLastPrepareFailed(false);
     const routeChainIds = runtimeRouteChainIds(
       fromNetwork.networkId,
@@ -550,19 +619,15 @@ const Transfer = () => {
 
     // do verify address:
     if (!validateAddress() || !hasPositiveIntegerAmount(sendAmount)) {
-      setRoutePreview({
-        status: 'ready',
-        chainIds: routeChainIds,
-        message:
-          'Configured route found. Enter amount and destination to estimate.',
-      });
       return initEstData;
     }
     const dataTransfer = getDataTransfer();
+    routePreviewGenerationRef.current += 1;
     setRoutePreview({
       status: 'loading',
       chainIds: routeChainIds,
       message: 'Checking the live IBC route before building the transfer.',
+      activity: 'preparation',
     });
     let routePlan;
     try {
@@ -577,13 +642,16 @@ const Transfer = () => {
         expectedChainPath: toPlannerChainPath(routeChainIds),
       });
     } catch (error) {
+      if (estimateGenerationRef.current !== estimateGeneration) {
+        return null;
+      }
       const message = getErrorMessage(
         error,
         'Unable to load route plan from the active stack.',
       );
       markCardanoPrepareFailed();
       setRoutePreview({
-        status: 'error',
+        status: 'unknown',
         chainIds: routeChainIds,
         message,
       });
@@ -591,10 +659,14 @@ const Transfer = () => {
       return initEstData;
     }
 
+    if (estimateGenerationRef.current !== estimateGeneration) {
+      return null;
+    }
+
     if (!routePlan) {
       markCardanoPrepareFailed();
       setRoutePreview({
-        status: 'error',
+        status: 'unknown',
         chainIds: routeChainIds,
         message: 'Unable to load route plan from the active stack.',
       });
@@ -651,9 +723,18 @@ const Transfer = () => {
         routeBuilderDetail: failureMessage,
       });
       markCardanoPrepareFailed();
+      if (
+        failureCode === 'channels-not-loaded' ||
+        failureCode === 'source-chain-unavailable' ||
+        failureCode === 'destination-chain-unavailable' ||
+        failureCode === 'no-outbound-channels' ||
+        failureCode === 'no-route-found'
+      ) {
+        setRouteAvailability('unavailable');
+      }
       toast.error(message, { theme: 'colored', autoClose: 7000 });
       setRoutePreview({
-        status: 'error',
+        status: 'unavailable',
         chainIds: runtimeRouteChainIds(
           fromNetwork.networkId,
           toNetwork.networkId,
@@ -664,6 +745,10 @@ const Transfer = () => {
       return initEstData;
     }
 
+    routePreflightGenerationRef.current += 1;
+    routePreflightAbortControllerRef.current?.abort();
+    routePreflightAbortControllerRef.current = null;
+    setRouteAvailability('available');
     const liveRouteChainIds = runtimeRouteChainIds(
       fromNetwork.networkId,
       toNetwork.networkId,
@@ -677,6 +762,7 @@ const Transfer = () => {
         fromNetwork.networkId === CARDANO_CHAIN_ID
           ? 'Live route found. Building the unsigned Cardano transaction now.'
           : 'Live route found. Estimating wallet fee now.',
+      activity: 'preparation',
     });
 
     // // check token amount > 0, decimals
@@ -703,6 +789,9 @@ const Transfer = () => {
 
     if (fromNetwork.networkId !== CARDANO_CHAIN_ID) {
       const senderAddress = await getAccount();
+      if (estimateGenerationRef.current !== estimateGeneration) {
+        return null;
+      }
       const msg = unsignedTxTransferFromCosmos(
         chains,
         routes,
@@ -713,6 +802,9 @@ const Transfer = () => {
       );
       try {
         const est = await estimateFee(msg);
+        if (estimateGenerationRef.current !== estimateGeneration) {
+          return null;
+        }
         const estFee = est.amount[0];
         setRoutePreview({
           status: 'ready',
@@ -729,8 +821,13 @@ const Transfer = () => {
           sourceChainId: fromNetwork.networkId,
           destinationChainId: toNetwork.networkId,
           destinationAddress,
+          tokenId: selectedToken.tokenId,
+          sendAmount,
         };
       } catch (e) {
+        if (estimateGenerationRef.current !== estimateGeneration) {
+          return null;
+        }
         const message = getErrorMessage(
           e,
           'Unable to estimate the wallet fee for this transfer.',
@@ -748,6 +845,9 @@ const Transfer = () => {
         const walletUtxos = await getCardanoWalletUtxosForBuilder(
           cardanoWallet,
         );
+        if (estimateGenerationRef.current !== estimateGeneration) {
+          return null;
+        }
         const msg = await unsignedTxTransferFromCardano(
           chains,
           routes,
@@ -757,6 +857,9 @@ const Transfer = () => {
           { amount: sendAmount, denom: selectedToken.tokenId! },
           walletUtxos,
         );
+        if (estimateGenerationRef.current !== estimateGeneration) {
+          return null;
+        }
         const unsignedTx = requireUnsignedCardanoTxCborHex(
           msg[0].unsignedTxCborHex,
         );
@@ -777,8 +880,13 @@ const Transfer = () => {
           sourceChainId: fromNetwork.networkId,
           destinationChainId: toNetwork.networkId,
           destinationAddress,
+          tokenId: selectedToken.tokenId,
+          sendAmount,
         };
       } catch (e) {
+        if (estimateGenerationRef.current !== estimateGeneration) {
+          return null;
+        }
         const message = getCardanoBuildErrorMessage(e);
         setLastPrepareFailed(true);
         setRoutePreview({
@@ -795,12 +903,13 @@ const Transfer = () => {
   const canRetryCardanoPrepare =
     fromNetwork.networkId === CARDANO_CHAIN_ID &&
     lastPrepareFailed &&
-    !estData.canEst &&
+    !estimateMatchesCurrentTransfer(estData) &&
     !isProcessingTransfer &&
     routePreview.status !== 'loading' &&
     Boolean(fromNetwork.networkId) &&
     Boolean(toNetwork.networkId) &&
     Boolean(currentConfiguredRoute?.enabled) &&
+    routeAvailability === 'available' &&
     Boolean(selectedToken.tokenId) &&
     Boolean(destinationAddress) &&
     hasPositiveIntegerAmount(sendAmount) &&
@@ -810,26 +919,7 @@ const Transfer = () => {
   const handleTransferFromCardano = async (
     preparedEstData: EstimateFeeType = estData,
   ) => {
-    if (!preparedEstData.canEst) {
-      return;
-    }
-    if (
-      preparedEstData.sourceChainId !== fromNetwork.networkId ||
-      preparedEstData.destinationChainId !== toNetwork.networkId ||
-      preparedEstData.destinationAddress !== destinationAddress
-    ) {
-      const message =
-        'Transfer details changed after preparation. Wait for the transfer to prepare again, then retry.';
-      setEstData(initEstData);
-      setRoutePreview({
-        status: 'ready',
-        chainIds: runtimeRouteChainIds(
-          fromNetwork.networkId,
-          toNetwork.networkId,
-        ),
-        message,
-      });
-      toast.error(message, { theme: 'colored', autoClose: 7000 });
+    if (!estimateMatchesCurrentTransfer(preparedEstData)) {
       return;
     }
     const startedAt = Date.now();
@@ -888,7 +978,7 @@ const Transfer = () => {
   };
 
   const handleTransferFromCosmos = async () => {
-    if (!estData.canEst) {
+    if (!estimateMatchesCurrentTransfer(estData)) {
       return;
     }
     try {
@@ -929,11 +1019,24 @@ const Transfer = () => {
   const handleTransfer = async () => {
     if (fromNetwork.networkId === CARDANO_CHAIN_ID) {
       let preparedEstData = estData;
-      if (!preparedEstData.canEst && canRetryCardanoPrepare) {
+      if (
+        !estimateMatchesCurrentTransfer(preparedEstData) &&
+        canRetryCardanoPrepare
+      ) {
         setIsProcessingTransfer(true);
-        preparedEstData = await calculateEst();
+        estimateGenerationRef.current += 1;
+        const estimateGeneration = estimateGenerationRef.current;
+        const recalculatedEstData = await calculateEst(estimateGeneration);
+        if (
+          !recalculatedEstData ||
+          estimateGenerationRef.current !== estimateGeneration
+        ) {
+          setIsProcessingTransfer(false);
+          return;
+        }
+        preparedEstData = recalculatedEstData;
         setEstData(preparedEstData);
-        if (!preparedEstData.canEst) {
+        if (!estimateMatchesCurrentTransfer(preparedEstData)) {
           setIsProcessingTransfer(false);
           return;
         }
@@ -1068,39 +1171,183 @@ const Transfer = () => {
 
   useEffect(() => {
     if (isSubmitted || isRestoringTransferRef.current) {
-      return;
+      return undefined;
     }
+
+    routePreflightGenerationRef.current += 1;
+    const routePreflightGeneration = routePreflightGenerationRef.current;
+    routePreviewGenerationRef.current += 1;
+    const routePreviewGeneration = routePreviewGenerationRef.current;
+    estimateGenerationRef.current += 1;
+    setEstData(initEstData);
+    routePreflightAbortControllerRef.current?.abort();
+    routePreflightAbortControllerRef.current = null;
 
     if (!fromNetwork.networkId || !toNetwork.networkId) {
+      setRouteAvailability('idle');
       setRoutePreview(initRoutePreview);
-      return;
+      return undefined;
     }
 
-    const route = findRuntimeRoute(fromNetwork.networkId, toNetwork.networkId);
-    const chainIds = runtimeRouteChainIds(
-      fromNetwork.networkId,
-      toNetwork.networkId,
-    );
+    const fromNetworkId = fromNetwork.networkId;
+    const toNetworkId = toNetwork.networkId;
+    const route = findRuntimeRoute(fromNetworkId, toNetworkId);
+    const chainIds = runtimeRouteChainIds(fromNetworkId, toNetworkId);
+    if (!route?.enabled) {
+      setRouteAvailability('unavailable');
+      setRoutePreview({
+        status: 'unavailable',
+        chainIds,
+        message: runtimeRouteDisabledReason(fromNetworkId, toNetworkId),
+      });
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    routePreflightAbortControllerRef.current = controller;
+    let cancelled = false;
+
+    setRouteAvailability('checking');
     setRoutePreview({
-      status: route?.enabled ? 'ready' : 'error',
+      status: 'loading',
       chainIds,
-      message: route?.enabled
-        ? 'Configured route found.'
-        : runtimeRouteDisabledReason(
-            fromNetwork.networkId,
-            toNetwork.networkId,
-          ),
+      message: 'Checking for an open IBC transfer channel pair.',
+      activity: 'availability',
     });
-  }, [fromNetwork.networkId, toNetwork.networkId, isSubmitted]);
+
+    const checkAvailability = async () => {
+      const result = await checkTransferRouteAvailability({
+        fromChainId:
+          fromNetwork.ibcChainId ||
+          findRuntimeChain(fromNetworkId)?.ibcChainId ||
+          fromNetworkId,
+        toChainId:
+          toNetwork.ibcChainId ||
+          findRuntimeChain(toNetworkId)?.ibcChainId ||
+          toNetworkId,
+        signal: controller.signal,
+      });
+
+      if (
+        cancelled ||
+        routePreflightGenerationRef.current !== routePreflightGeneration
+      ) {
+        return;
+      }
+
+      routePreflightAbortControllerRef.current = null;
+      const liveChainIds = runtimeRouteChainIds(
+        fromNetworkId,
+        toNetworkId,
+        result.chains,
+      );
+      const fromChainName =
+        fromNetwork.networkPrettyName ||
+        fromNetwork.networkName ||
+        runtimeChainLabel(fromNetworkId);
+      const toChainName =
+        toNetwork.networkPrettyName ||
+        toNetwork.networkName ||
+        runtimeChainLabel(toNetworkId);
+
+      if (result.status === 'available') {
+        setRouteAvailability('available');
+        setRoutePreparationAttempt((attempt) => attempt + 1);
+        if (routePreviewGenerationRef.current === routePreviewGeneration) {
+          const channelPairDescription = result.channelPair
+            ? `${fromChainName} ${result.channelPair.source.portId}/${result.channelPair.source.channelId} ↔ ${toChainName} ${result.channelPair.destination.portId}/${result.channelPair.destination.channelId}`
+            : undefined;
+          setRoutePreview({
+            status: 'available',
+            chainIds: liveChainIds,
+            message: `Open IBC transfer channel pair found${
+              channelPairDescription ? `: ${channelPairDescription}` : ''
+            }. Client and relayer liveness are not verified.`,
+          });
+        }
+        return;
+      }
+
+      if (result.status === 'unavailable') {
+        setRouteAvailability('unavailable');
+        if (routePreviewGenerationRef.current === routePreviewGeneration) {
+          setRoutePreview({
+            status: 'unavailable',
+            chainIds: liveChainIds,
+            message: `No open IBC transfer channel pair currently connects ${fromChainName} and ${toChainName}.`,
+          });
+        }
+        return;
+      }
+
+      setRouteAvailability('unknown');
+      if (routePreviewGenerationRef.current === routePreviewGeneration) {
+        setRoutePreview({
+          status: 'unknown',
+          chainIds: liveChainIds,
+          message:
+            result.failureCode === 'discovery-timeout'
+              ? `${result.failureMessage} Channel availability is unknown; retry the check.`
+              : 'Could not verify IBC channel availability. Check the bridge services and retry.',
+        });
+      }
+    };
+
+    checkAvailability().catch(() => {
+      if (
+        cancelled ||
+        routePreflightGenerationRef.current !== routePreflightGeneration
+      ) {
+        return;
+      }
+      routePreflightAbortControllerRef.current = null;
+      setRouteAvailability('unknown');
+      if (routePreviewGenerationRef.current === routePreviewGeneration) {
+        setRoutePreview({
+          status: 'unknown',
+          chainIds,
+          message:
+            'Could not verify IBC channel availability. Check the bridge services and retry.',
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (routePreflightAbortControllerRef.current === controller) {
+        routePreflightAbortControllerRef.current = null;
+      }
+    };
+  }, [
+    fromNetwork.ibcChainId,
+    fromNetwork.networkId,
+    fromNetwork.networkName,
+    fromNetwork.networkPrettyName,
+    isSubmitted,
+    routePreflightAttempt,
+    toNetwork.ibcChainId,
+    toNetwork.networkId,
+    toNetwork.networkName,
+    toNetwork.networkPrettyName,
+  ]);
 
   useEffect(() => {
     if (isSubmitted || isRestoringTransferRef.current) {
       return;
     }
 
+    estimateGenerationRef.current += 1;
+    const estimateGeneration = estimateGenerationRef.current;
     setEstData(initEstData);
     const checkEstData = async () => {
-      await calculateEst().then(setEstData);
+      const calculatedEstData = await calculateEst(estimateGeneration);
+      if (
+        calculatedEstData &&
+        estimateGenerationRef.current === estimateGeneration
+      ) {
+        setEstData(calculatedEstData);
+      }
     };
     if (hasPositiveIntegerAmount(sendAmount)) {
       debounce(checkEstData, 500)();
@@ -1109,11 +1356,21 @@ const Transfer = () => {
       setLastPrepareFailed(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(getDataTransfer()), isSubmitted]);
+  }, [JSON.stringify(getDataTransfer()), isSubmitted, routePreparationAttempt]);
 
-  const isPreparingTransfer = routePreview.status === 'loading';
+  const isPreparingTransfer =
+    routePreview.status === 'loading' &&
+    routePreview.activity === 'preparation';
+  const canRetryRoutePreflight =
+    Boolean(currentConfiguredRoute?.enabled) &&
+    (routeAvailability === 'unknown' ||
+      routeAvailability === 'unavailable' ||
+      routePreview.status === 'unknown') &&
+    !isProcessingTransfer &&
+    !isPreparingTransfer;
   const transferButtonDisabled =
-    (!estData.canEst && !canRetryCardanoPrepare) ||
+    (!estimateMatchesCurrentTransfer(estData) && !canRetryCardanoPrepare) ||
+    routeAvailability !== 'available' ||
     isProcessingTransfer ||
     isPreparingTransfer;
   const transferButtonLabel = canRetryCardanoPrepare
@@ -1138,7 +1395,14 @@ const Transfer = () => {
             Transfer
           </Heading>
           <SelectNetwork onOpenNetworkModal={onOpenNetworkModal} />
-          <RoutePreview preview={routePreview} />
+          <RoutePreview
+            preview={routePreview}
+            onRetry={
+              canRetryRoutePreflight
+                ? () => setRoutePreflightAttempt((attempt) => attempt + 1)
+                : undefined
+            }
+          />
           <SelectToken onOpenTokenModal={onOpenTokenModal} />
           {estData.display && <CalculatorBox {...estData} />}
           <CustomInput

@@ -118,6 +118,24 @@ export interface TransferPlanResponse {
   };
 }
 
+export interface TransferRouteAvailabilityResponse {
+  status: 'available' | 'unavailable' | 'unknown';
+  chains: string[];
+  routes: string[];
+  channelPair?: {
+    source: { portId: string; channelId: string };
+    destination: { portId: string; channelId: string };
+  };
+  failureCode?:
+    | 'invalid-request'
+    | 'unsupported-route'
+    | 'no-open-channel'
+    | 'discovery-timeout'
+    | 'discovery-failed'
+    | 'discovery-aborted';
+  failureMessage?: string;
+}
+
 export type CheqdIcqQueryKind =
   | 'didDoc'
   | 'didDocVersion'
@@ -479,7 +497,7 @@ export async function planTransferRoute(params: {
   toChainId: string;
   tokenDenom: string;
   expectedChainPath?: string[];
-}): Promise<TransferPlanResponse | null> {
+}): Promise<TransferPlanResponse> {
   try {
     return await cardanoPlannerClient.planTransferRoute({
       fromChainId: params.fromChainId,
@@ -489,8 +507,24 @@ export async function planTransferRoute(params: {
     });
   } catch (error) {
     const errorMessage = getGatewayErrorMessage(error);
-    toast.error(errorMessage, { theme: 'colored' });
-    return null;
+    throw new Error(errorMessage);
+  }
+}
+
+export async function checkTransferRouteAvailability(params: {
+  fromChainId: string;
+  toChainId: string;
+  signal?: AbortSignal;
+}): Promise<TransferRouteAvailabilityResponse> {
+  try {
+    return await cardanoPlannerClient.checkTransferRouteAvailability({
+      fromChainId: params.fromChainId,
+      toChainId: params.toChainId,
+      signal: params.signal,
+    });
+  } catch (error) {
+    const errorMessage = getGatewayErrorMessage(error);
+    throw new Error(errorMessage);
   }
 }
 

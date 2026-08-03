@@ -29,14 +29,10 @@ async function resolveCardanoAssetTrace(
   }
 }
 
-const plannerCounterpartyChain = activeRuntimeConfig.chains.find(
-  (chain) => chain.kind === 'cosmos',
-);
-
 export const cardanoPlannerClient = createPlannerClient({
   cardanoChainId: CARDANO_IBC_CHAIN_ID,
-  counterpartyChainId: plannerCounterpartyChain?.id,
   cardanoRestEndpoint: GATEWAY_TX_BUILDER_ENDPOINT,
+  counterpartyChainId: activeRuntimeConfig.defaultCosmosChainId,
   localOsmosisRestEndpoint: activeRuntimeConfig.plannerCounterpartyRestEndpoint,
   swapRouterAddress: CROSSCHAIN_SWAP_ADDRESS,
   resolveCardanoAssetDenomTrace: resolveCardanoAssetTrace,
