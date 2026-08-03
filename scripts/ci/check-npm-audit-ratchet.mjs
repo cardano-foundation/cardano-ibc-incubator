@@ -10,31 +10,23 @@ const scopes = [
 ];
 
 const allowedHighCriticalAdvisories = new Set([
-  '1109842',
   '1112659',
   '1113300',
   '1113375',
   '1113459',
-  '1113461',
   '1113465',
   '1113538',
-  '1113540',
   '1113544',
   '1113546',
-  '1113548',
   '1113552',
   '1114200',
   '1114302',
   '1114680',
-  '1115356',
   '1115573',
   '1115806',
   '1117159',
-  '1122163',
-  // Bundled by npm@9.9.4 through @cardano-sdk/crypto@0.2.3 and cannot be
-  // upgraded independently of that legacy Cardano SDK dependency chain.
-  '1123896',
-  '1123897',
+  // Pulled in by sqlite3@5.1.7 through its node-gyp tar dependency; npm reports
+  // sqlite3@6 as the available fix, which is outside the current major range.
   '1123940',
   '1123941',
 ]);
