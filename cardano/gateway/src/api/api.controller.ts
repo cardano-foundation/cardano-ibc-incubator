@@ -117,6 +117,35 @@ export class ApiController {
     };
   }
 
+  @Get('cardano/channel-ends')
+  async getCardanoChannelEnds(
+    @Query('key') key: string,
+    @Query('offset', ParseIntPipe) offset: number,
+    @Query('limit', ParseIntPipe) limit: number,
+    @Query('countTotal', ParseBoolPipe) countTotal: boolean,
+    @Query('reverse', ParseBoolPipe) reverse: boolean,
+  ) {
+    const request = QueryChannelsRequest.fromJSON({
+      pagination: {
+        key,
+        offset,
+        limit,
+        count_total: countTotal,
+        reverse,
+      },
+    });
+    const response = await this.channelService.listCurrentChannelEnds(request);
+    const next_key = Buffer.from(response.pagination.next_key || '').toString('base64');
+
+    return {
+      channels: response.channels.map((channel) => IdentifiedChannel.toJSON(channel)),
+      pagination: {
+        next_key,
+        total: response.pagination.total.toString(),
+      },
+    };
+  }
+
   @Get('bridge-manifest')
   async getBridgeManifest() {
     // Exposes the public bootstrap document for operators that want to point a

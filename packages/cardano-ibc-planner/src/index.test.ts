@@ -73,6 +73,70 @@ describe('route planning', () => {
     });
     assert.equal(traceResolutionCount, 0);
     assert.equal(requestedUrls.length, 4);
+    assert.equal(
+      requestedUrls
+        .filter((url) => url.startsWith('http://cardano.test'))
+        .every((url) => url.includes('/api/cardano/channel-ends?')),
+      true,
+    );
+    assert.equal(
+      requestedUrls.some((url) => url.includes('/api/channels?')),
+      false,
+    );
+  });
+
+  it('falls back to the proof-bearing channel endpoint for an older Gateway', async () => {
+    const requestedUrls: string[] = [];
+    const fetchImpl: typeof fetch = async (url) => {
+      const requestUrl = String(url);
+      requestedUrls.push(requestUrl);
+      if (requestUrl.includes('/api/cardano/channel-ends?')) {
+        return new Response(null, { status: 404, statusText: 'Not Found' });
+      }
+      if (requestUrl.includes('/api/channels?')) {
+        return jsonResponse({
+          channels: [
+            {
+              channel_id: 'channel-8',
+              port_id: 'transfer',
+              state: 'STATE_OPEN',
+              counterparty: {
+                channel_id: 'channel-2',
+                port_id: 'transfer',
+              },
+            },
+          ],
+        });
+      }
+      return jsonResponse({
+        channel: {
+          state: 'STATE_OPEN',
+          counterparty: {
+            channel_id: 'channel-8',
+            port_id: 'transfer',
+          },
+        },
+      });
+    };
+    const planner = createPlannerClient({
+      cardanoChainId: 'cardano-preprod',
+      cardanoRestEndpoint: 'http://cardano.test',
+      counterpartyChainId: 'injective-888',
+      localOsmosisRestEndpoint: 'http://injective.test',
+      fetchImpl,
+    });
+
+    const result = await planner.checkTransferRouteAvailability({
+      fromChainId: 'cardano-preprod',
+      toChainId: 'injective-888',
+    });
+
+    assert.equal(result.status, 'available');
+    assert.deepEqual(requestedUrls, [
+      'http://cardano.test/api/cardano/channel-ends?key=&offset=0&limit=10000&countTotal=true&reverse=false',
+      'http://cardano.test/api/channels?key=&offset=0&limit=10000&countTotal=true&reverse=false',
+      'http://injective.test/ibc/core/channel/v1/channels/channel-2/ports/transfer',
+    ]);
   });
 
   it('reports unavailable only after confirming there is no mutually open pair', async () => {
@@ -494,9 +558,9 @@ describe('route planning', () => {
       fullDenom: 'ibc/ABC123',
     });
     assert.deepEqual(requestedUrls, [
-      'http://cardano.test/api/channels?key=&offset=0&limit=10000&countTotal=true&reverse=false',
+      'http://cardano.test/api/cardano/channel-ends?key=&offset=0&limit=10000&countTotal=true&reverse=false',
       'http://injective.test/ibc/core/channel/v1/channels/channel-2/ports/transfer',
-      'http://cardano.test/api/channels?key=&offset=0&limit=10000&countTotal=true&reverse=false',
+      'http://cardano.test/api/cardano/channel-ends?key=&offset=0&limit=10000&countTotal=true&reverse=false',
       'http://injective.test/ibc/core/channel/v1/channels/channel-2/ports/transfer',
     ]);
   });
@@ -604,7 +668,7 @@ describe('route planning', () => {
     assert.equal(result.foundRoute, true);
     assert.deepEqual(result.routes, ['transfer/channel-2']);
     assert.deepEqual(requestedUrls, [
-      'http://cardano.test/api/channels?key=&offset=0&limit=10000&countTotal=true&reverse=false',
+      'http://cardano.test/api/cardano/channel-ends?key=&offset=0&limit=10000&countTotal=true&reverse=false',
       'http://injective.test/ibc/core/channel/v1/channels/channel-3/ports/transfer',
       'http://injective.test/ibc/core/channel/v1/channels/channel-2/ports/transfer',
     ]);

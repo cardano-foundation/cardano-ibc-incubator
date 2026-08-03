@@ -185,8 +185,10 @@ export class ChannelService {
     };
   }
 
-  async queryChannels(request: QueryChannelsRequest): Promise<QueryChannelsResponse> {
-    this.logger.log('', 'queryChannels');
+  async listCurrentChannelEnds(
+    request: QueryChannelsRequest,
+  ): Promise<Pick<QueryChannelsResponse, 'channels' | 'pagination'>> {
+    this.logger.log('', 'listCurrentChannelEnds');
     const pagination = getPaginationParams(validPagination(request.pagination));
     const {
       'pagination.key': key,
@@ -266,20 +268,27 @@ export class ChannelService {
       nextKey = to < Object.values(channelFilters).length ? generatePaginationKey(pageKeyDto) : '';
     }
 
-    const queryHeight = await this.getQueryHeight();
-    const response = {
+    return {
       channels: channels,
       pagination: {
         next_key: nextKey,
         total: count_total ? Object.values(channelFilters).length : 0,
       },
+    } as unknown as Pick<QueryChannelsResponse, 'channels' | 'pagination'>;
+  }
+
+  async queryChannels(request: QueryChannelsRequest): Promise<QueryChannelsResponse> {
+    this.logger.log('', 'queryChannels');
+    const channelEnds = await this.listCurrentChannelEnds(request);
+    const queryHeight = await this.getQueryHeight();
+
+    return {
+      ...channelEnds,
       height: {
         revision_number: BigInt(0), // Cardano uses revision 0; revision_height is an accepted anchor block number.
         revision_height: queryHeight,
       },
     } as unknown as QueryChannelsResponse;
-
-    return response;
   }
 
   async queryChannel(request: QueryChannelRequest, options: ProofQueryOptions = {}): Promise<QueryChannelResponse> {

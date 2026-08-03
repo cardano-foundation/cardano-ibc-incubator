@@ -5,7 +5,8 @@ exports.createPlannerClient = createPlannerClient;
 const LOCAL_OSMOSIS_CHAIN_ID = 'localosmosis';
 const QUERY_CHANNELS_PREFIX_URL = '/ibc/core/channel/v1/channels';
 const QUERY_ALL_CHANNELS_URL = `${QUERY_CHANNELS_PREFIX_URL}?pagination.count_total=true&pagination.limit=10000`;
-const QUERY_CARDANO_CHANNELS_URL = '/api/channels?key=&offset=0&limit=10000&countTotal=true&reverse=false';
+const QUERY_CARDANO_CHANNELS_URL = '/api/cardano/channel-ends?key=&offset=0&limit=10000&countTotal=true&reverse=false';
+const QUERY_LEGACY_CARDANO_CHANNELS_URL = '/api/channels?key=&offset=0&limit=10000&countTotal=true&reverse=false';
 const QUERY_SWAP_ROUTER_STATE = '/cosmwasm/wasm/v1/contract/SWAP_ROUTER_ADDRESS/state?pagination.limit=100000000';
 const SWAP_ROUTING_TABLE_PREFIX = '\x00\rrouting_table\x00D';
 const BIGINT_ZERO = BigInt(0);
@@ -363,8 +364,19 @@ async function fetchDirectChannelPair(config, signal) {
 async function fetchOpenCardanoChannels(config, signal) {
     throwIfAborted(signal);
     const restEndpoint = config.cardanoRestEndpoint.trim().replace(/\/+$/, '');
-    const url = `${restEndpoint}${QUERY_CARDANO_CHANNELS_URL}`;
-    const data = await fetchJson(url, config.fetchImpl, signal);
+    let url = `${restEndpoint}${QUERY_CARDANO_CHANNELS_URL}`;
+    let data;
+    try {
+        data = await fetchJson(url, config.fetchImpl, signal);
+    }
+    catch (error) {
+        throwIfAborted(signal);
+        if (!(error instanceof RouteDiscoveryHttpError) || error.status !== 404) {
+            throw error;
+        }
+        url = `${restEndpoint}${QUERY_LEGACY_CARDANO_CHANNELS_URL}`;
+        data = await fetchJson(url, config.fetchImpl, signal);
+    }
     return parseChannelList(data.channels, url).filter(isOpenTransferChannel);
 }
 async function isMatchingOpenCounterpartyChannel(config, cardanoChannel, signal) {

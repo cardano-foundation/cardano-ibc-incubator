@@ -19,6 +19,7 @@ describe('ApiController (modern)', () => {
   let controller: ApiController;
   let channelServiceMock: {
     queryChannels: jest.Mock;
+    listCurrentChannelEnds: jest.Mock;
     getChannelHealth: jest.Mock;
   };
   let packetServiceMock: {
@@ -60,6 +61,7 @@ describe('ApiController (modern)', () => {
     // Channel/packet services are mocked so external IBC logic is out of scope here.
     channelServiceMock = {
       queryChannels: jest.fn(),
+      listCurrentChannelEnds: jest.fn(),
       getChannelHealth: jest.fn(),
     };
     packetServiceMock = {
@@ -136,6 +138,46 @@ describe('ApiController (modern)', () => {
         revision_number: '7',
       },
     });
+  });
+
+  it('lists current Cardano channel ends without computing or returning a proof height', async () => {
+    channelServiceMock.listCurrentChannelEnds.mockResolvedValue({
+      channels: [
+        {
+          state: 3,
+          ordering: 1,
+          counterparty: { port_id: 'transfer', channel_id: 'channel-2' },
+          connection_hops: ['connection-0'],
+          version: 'ics20-1',
+          port_id: 'transfer',
+          channel_id: 'channel-8',
+        },
+      ],
+      pagination: { next_key: Buffer.from('next'), total: 1n },
+    });
+
+    const response = await controller.getCardanoChannelEnds('', 0, 50, true, false);
+
+    expect(channelServiceMock.listCurrentChannelEnds).toHaveBeenCalledWith(expect.anything());
+    expect(channelServiceMock.queryChannels).not.toHaveBeenCalled();
+    expect(response).toEqual({
+      channels: [
+        {
+          state: 'STATE_OPEN',
+          ordering: 'ORDER_UNORDERED',
+          counterparty: { port_id: 'transfer', channel_id: 'channel-2' },
+          connection_hops: ['connection-0'],
+          version: 'ics20-1',
+          port_id: 'transfer',
+          channel_id: 'channel-8',
+        },
+      ],
+      pagination: {
+        next_key: Buffer.from('next').toString('base64'),
+        total: '1',
+      },
+    });
+    expect(response).not.toHaveProperty('height');
   });
 
   it('delegates Cardano channel health lookups to ChannelService', async () => {
