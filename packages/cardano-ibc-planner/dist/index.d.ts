@@ -9,6 +9,18 @@ export type TransferPlanRequest = {
     tokenDenom: string;
     expectedChainPath?: string[];
 };
+export type TransferRouteAvailabilityRequest = {
+    fromChainId: string;
+    toChainId: string;
+    signal?: AbortSignal;
+};
+export type TransferRouteAvailabilityResponse = {
+    status: 'available' | 'unavailable' | 'unknown';
+    chains: string[];
+    routes: string[];
+    failureCode?: 'invalid-request' | 'unsupported-route' | 'no-open-channel' | 'discovery-timeout' | 'discovery-failed' | 'discovery-aborted';
+    failureMessage?: string;
+};
 export type MissingTransferRouteHop = {
     fromChainId: string;
     toChainId: string;
@@ -81,6 +93,7 @@ export type PreferredChannel = {
     srcChannel: string;
 };
 export type PlannerClient = {
+    checkTransferRouteAvailability: (request: TransferRouteAvailabilityRequest) => Promise<TransferRouteAvailabilityResponse>;
     planTransferRoute: (request: TransferPlanRequest) => Promise<TransferPlanResponse>;
     getLocalOsmosisSwapOptions: () => Promise<SwapOptionsResponse>;
     estimateLocalOsmosisSwap: (request: SwapEstimateRequest) => Promise<SwapEstimateResponse>;

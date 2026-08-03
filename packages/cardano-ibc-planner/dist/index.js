@@ -22,6 +22,20 @@ class RouteDiscoveryTimeoutError extends Error {
     }
 }
 exports.RouteDiscoveryTimeoutError = RouteDiscoveryTimeoutError;
+class RouteDiscoveryHttpError extends Error {
+    status;
+    constructor(url, response) {
+        super(`Request failed for ${url}: ${response.status} ${response.statusText}`);
+        this.name = 'RouteDiscoveryHttpError';
+        this.status = response.status;
+    }
+}
+class RouteDiscoveryResponseError extends Error {
+    constructor(url, detail) {
+        super(`Invalid route discovery response from ${url}: ${detail}`);
+        this.name = 'RouteDiscoveryResponseError';
+    }
+}
 function normalizeRouteDiscoveryTimeoutMs(timeoutMs) {
     return typeof timeoutMs === 'number' &&
         Number.isFinite(timeoutMs) &&
@@ -29,9 +43,10 @@ function normalizeRouteDiscoveryTimeoutMs(timeoutMs) {
         ? timeoutMs
         : exports.DEFAULT_ROUTE_DISCOVERY_TIMEOUT_MS;
 }
-async function withRouteDiscoveryTimeout(operation, timeoutMs) {
+async function withRouteDiscoveryTimeout(operation, timeoutMs, externalSignal) {
     const controller = new AbortController();
     let timeoutId;
+    let removeExternalAbortListener;
     const timeoutError = new RouteDiscoveryTimeoutError(timeoutMs);
     const timeout = new Promise((_, reject) => {
         timeoutId = setTimeout(() => {
@@ -39,16 +54,34 @@ async function withRouteDiscoveryTimeout(operation, timeoutMs) {
             reject(timeoutError);
         }, timeoutMs);
     });
+    const operations = [
+        Promise.resolve().then(() => operation(controller.signal)),
+        timeout,
+    ];
+    if (externalSignal) {
+        operations.push(new Promise((_, reject) => {
+            const abort = () => {
+                const abortError = new Error('IBC route discovery was cancelled.');
+                abortError.name = 'RouteDiscoveryAbortedError';
+                controller.abort(abortError);
+                reject(abortError);
+            };
+            if (externalSignal.aborted) {
+                abort();
+                return;
+            }
+            externalSignal.addEventListener('abort', abort, { once: true });
+            removeExternalAbortListener = () => externalSignal.removeEventListener('abort', abort);
+        }));
+    }
     try {
-        return await Promise.race([
-            Promise.resolve().then(() => operation(controller.signal)),
-            timeout,
-        ]);
+        return await Promise.race(operations);
     }
     finally {
         if (timeoutId !== undefined) {
             clearTimeout(timeoutId);
         }
+        removeExternalAbortListener?.();
     }
 }
 function createPlannerClient(config) {
@@ -59,6 +92,91 @@ function createPlannerClient(config) {
         routeDiscoveryTimeoutMs: normalizeRouteDiscoveryTimeoutMs(config.routeDiscoveryTimeoutMs),
     };
     return {
+        async checkTransferRouteAvailability(request) {
+            const fromChainId = request.fromChainId.trim();
+            const toChainId = request.toChainId.trim();
+            const chains = [fromChainId, toChainId].filter(Boolean);
+            if (!fromChainId || !toChainId) {
+                return {
+                    status: 'unknown',
+                    chains,
+                    routes: [],
+                    failureCode: 'invalid-request',
+                    failureMessage: 'fromChainId and toChainId are required.',
+                };
+            }
+            if (fromChainId === toChainId) {
+                return {
+                    status: 'available',
+                    chains: [fromChainId],
+                    routes: [],
+                };
+            }
+            const isCardanoToCounterparty = fromChainId === resolvedConfig.cardanoChainId &&
+                toChainId === resolvedConfig.counterpartyChainId;
+            const isCounterpartyToCardano = fromChainId === resolvedConfig.counterpartyChainId &&
+                toChainId === resolvedConfig.cardanoChainId;
+            if (!isCardanoToCounterparty && !isCounterpartyToCardano) {
+                return {
+                    status: 'unavailable',
+                    chains,
+                    routes: [],
+                    failureCode: 'unsupported-route',
+                    failureMessage: `No configured direct transfer route exists from ${fromChainId} to ${toChainId}.`,
+                };
+            }
+            if (!resolvedConfig.cardanoRestEndpoint?.trim()) {
+                return {
+                    status: 'unknown',
+                    chains,
+                    routes: [],
+                    failureCode: 'discovery-failed',
+                    failureMessage: 'A Cardano channel endpoint is required to verify both ends of the IBC channel pair.',
+                };
+            }
+            try {
+                const directPair = await withRouteDiscoveryTimeout((signal) => fetchDirectChannelPair(resolvedConfig, signal), resolvedConfig.routeDiscoveryTimeoutMs, request.signal);
+                if (!directPair) {
+                    return {
+                        status: 'unavailable',
+                        chains,
+                        routes: [],
+                        failureCode: 'no-open-channel',
+                        failureMessage: `No mutually open IBC transfer channel pair exists from ${fromChainId} to ${toChainId}.`,
+                    };
+                }
+                return {
+                    status: 'available',
+                    chains,
+                    routes: [
+                        `transfer/${isCardanoToCounterparty
+                            ? directPair.cardanoChannel
+                            : directPair.counterpartyChannel}`,
+                    ],
+                };
+            }
+            catch (error) {
+                const failureCode = error instanceof RouteDiscoveryTimeoutError
+                    ? 'discovery-timeout'
+                    : error instanceof Error &&
+                        error.name === 'RouteDiscoveryAbortedError'
+                        ? 'discovery-aborted'
+                        : 'discovery-failed';
+                const detail = error instanceof Error && error.message.trim()
+                    ? error.message
+                    : 'The route discovery endpoints did not return a usable response.';
+                return {
+                    status: 'unknown',
+                    chains,
+                    routes: [],
+                    failureCode,
+                    failureMessage: failureCode === 'discovery-timeout' ||
+                        failureCode === 'discovery-aborted'
+                        ? detail
+                        : `Unable to verify IBC route availability. ${detail}`,
+                };
+            }
+        },
         async planTransferRoute(request) {
             const fromChainId = request.fromChainId.trim();
             const toChainId = request.toChainId.trim();
@@ -154,7 +272,15 @@ function createPlannerClient(config) {
                 BigInt(request.tokenInAmount) <= BIGINT_ZERO) {
                 return buildEmptyEstimate('Input amount must be a positive integer amount.');
             }
-            const directPair = await fetchDirectChannelPair(resolvedConfig);
+            let directPair;
+            try {
+                directPair = await withRouteDiscoveryTimeout((signal) => fetchDirectChannelPair(resolvedConfig, signal), resolvedConfig.routeDiscoveryTimeoutMs);
+            }
+            catch (error) {
+                return buildEmptyEstimate(error instanceof Error
+                    ? `Unable to verify the Cardano-to-Osmosis transfer channel. ${error.message}`
+                    : 'Unable to verify the Cardano-to-Osmosis transfer channel.');
+            }
             if (!directPair) {
                 return buildEmptyEstimate('No direct Cardano-to-Osmosis transfer channel is available.');
             }
@@ -204,14 +330,24 @@ async function fetchDirectChannelPair(config, signal) {
     if (config.cardanoRestEndpoint?.trim()) {
         const channels = await fetchOpenCardanoChannels(config, signal);
         const candidates = [...channels].sort((a, b) => compareChannelId(b.channel_id, a.channel_id));
+        let firstQueryError;
         for (const candidate of candidates) {
             throwIfAborted(signal);
-            if (await isMatchingOpenCounterpartyChannel(config, candidate, signal)) {
-                return {
-                    cardanoChannel: candidate.channel_id,
-                    counterpartyChannel: candidate.counterparty.channel_id,
-                };
+            try {
+                if (await isMatchingOpenCounterpartyChannel(config, candidate, signal)) {
+                    return {
+                        cardanoChannel: candidate.channel_id,
+                        counterpartyChannel: candidate.counterparty.channel_id,
+                    };
+                }
             }
+            catch (error) {
+                throwIfAborted(signal);
+                firstQueryError ??= error;
+            }
+        }
+        if (firstQueryError) {
+            throw firstQueryError;
         }
         return null;
     }
@@ -227,54 +363,115 @@ async function fetchDirectChannelPair(config, signal) {
 async function fetchOpenCardanoChannels(config, signal) {
     throwIfAborted(signal);
     const restEndpoint = config.cardanoRestEndpoint.trim().replace(/\/+$/, '');
-    const data = await fetchJson(`${restEndpoint}${QUERY_CARDANO_CHANNELS_URL}`, config.fetchImpl, signal).catch(() => {
-        throwIfAborted(signal);
-        return { channels: [] };
-    });
-    return (data.channels || []).filter(isOpenTransferChannel);
+    const url = `${restEndpoint}${QUERY_CARDANO_CHANNELS_URL}`;
+    const data = await fetchJson(url, config.fetchImpl, signal);
+    return parseChannelList(data.channels, url).filter(isOpenTransferChannel);
 }
 async function isMatchingOpenCounterpartyChannel(config, cardanoChannel, signal) {
     const restEndpoint = config.localOsmosisRestEndpoint.trim().replace(/\/+$/, '');
     const channelId = encodeURIComponent(cardanoChannel.counterparty.channel_id);
     const portId = encodeURIComponent(cardanoChannel.counterparty.port_id);
-    const data = await fetchJson(`${restEndpoint}${QUERY_CHANNELS_PREFIX_URL}/${channelId}/ports/${portId}`, config.fetchImpl, signal).catch(() => {
+    const url = `${restEndpoint}${QUERY_CHANNELS_PREFIX_URL}/${channelId}/ports/${portId}`;
+    let data;
+    try {
+        data = await fetchJson(url, config.fetchImpl, signal);
+    }
+    catch (error) {
         throwIfAborted(signal);
-        return null;
-    });
-    return Boolean(data?.channel &&
-        isOpenChannelState(data.channel.state) &&
-        data.channel.counterparty?.channel_id === cardanoChannel.channel_id &&
-        data.channel.counterparty.port_id === cardanoChannel.port_id);
+        if (error instanceof RouteDiscoveryHttpError && error.status === 404) {
+            return false;
+        }
+        throw error;
+    }
+    const channel = parseCounterpartyChannel(data.channel, url);
+    return Boolean(isOpenChannelState(channel.state) &&
+        channel.counterparty.channel_id === cardanoChannel.channel_id &&
+        channel.counterparty.port_id === cardanoChannel.port_id);
 }
 async function fetchOpenCounterpartyChannels(config, signal) {
     const channels = [];
+    let firstQueryError;
     let nextKey;
     do {
         throwIfAborted(signal);
         const url = nextKey
             ? `${config.localOsmosisRestEndpoint}${QUERY_ALL_CHANNELS_URL}&pagination.key=${encodeURIComponent(nextKey)}`
             : `${config.localOsmosisRestEndpoint}${QUERY_ALL_CHANNELS_URL}`;
-        const data = await fetchJson(url, config.fetchImpl, signal).catch(() => {
-            throwIfAborted(signal);
-            return { channels: [] };
-        });
-        for (const channel of data.channels || []) {
+        const data = await fetchJson(url, config.fetchImpl, signal);
+        for (const channel of parseChannelList(data.channels, url)) {
             throwIfAborted(signal);
             if (!isOpenTransferChannel(channel)) {
                 continue;
             }
-            const clientState = await fetchClientStateFromChannel(config.localOsmosisRestEndpoint, channel.channel_id, channel.port_id, config.fetchImpl, signal).catch(() => {
+            try {
+                const clientState = await fetchClientStateFromChannel(config.localOsmosisRestEndpoint, channel.channel_id, channel.port_id, config.fetchImpl, signal);
+                const clientChainId = clientState?.identified_client_state?.client_state?.chain_id;
+                if (!clientChainId) {
+                    throw new RouteDiscoveryResponseError(`${config.localOsmosisRestEndpoint}${QUERY_CHANNELS_PREFIX_URL}/${channel.channel_id}/ports/${channel.port_id}/client_state`, 'identified client chain_id is required.');
+                }
+                if (clientChainId === config.cardanoChainId) {
+                    channels.push(channel);
+                }
+            }
+            catch (error) {
                 throwIfAborted(signal);
-                return null;
-            });
-            if (clientState?.identified_client_state?.client_state?.chain_id ===
-                config.cardanoChainId) {
-                channels.push(channel);
+                firstQueryError ??= error;
             }
         }
         nextKey = data.pagination?.next_key;
     } while (nextKey);
+    if (channels.length === 0 && firstQueryError) {
+        throw firstQueryError;
+    }
     return channels;
+}
+function isRecord(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function parseChannelList(value, url) {
+    if (!Array.isArray(value)) {
+        throw new RouteDiscoveryResponseError(url, 'channels must be an array.');
+    }
+    return value.map((candidate, index) => {
+        const counterparty = isRecord(candidate) ? candidate.counterparty : null;
+        const state = isRecord(candidate) ? candidate.state : undefined;
+        if (!isRecord(candidate) ||
+            typeof candidate.channel_id !== 'string' ||
+            typeof candidate.port_id !== 'string' ||
+            (typeof state !== 'string' && typeof state !== 'number') ||
+            !isRecord(counterparty) ||
+            typeof counterparty.channel_id !== 'string' ||
+            typeof counterparty.port_id !== 'string') {
+            throw new RouteDiscoveryResponseError(url, `channels[${index}] is missing a channel id, port, state, or counterparty.`);
+        }
+        return {
+            channel_id: candidate.channel_id,
+            port_id: candidate.port_id,
+            state,
+            counterparty: {
+                channel_id: counterparty.channel_id,
+                port_id: counterparty.port_id,
+            },
+        };
+    });
+}
+function parseCounterpartyChannel(value, url) {
+    const counterparty = isRecord(value) ? value.counterparty : null;
+    const state = isRecord(value) ? value.state : undefined;
+    if (!isRecord(value) ||
+        (typeof state !== 'string' && typeof state !== 'number') ||
+        !isRecord(counterparty) ||
+        typeof counterparty.channel_id !== 'string' ||
+        typeof counterparty.port_id !== 'string') {
+        throw new RouteDiscoveryResponseError(url, 'channel state and counterparty channel/port ids are required.');
+    }
+    return {
+        state,
+        counterparty: {
+            channel_id: counterparty.channel_id,
+            port_id: counterparty.port_id,
+        },
+    };
 }
 function isOpenTransferChannel(channel) {
     return (isOpenChannelState(channel.state) &&
@@ -386,7 +583,7 @@ async function fetchJson(url, fetchImpl, signal) {
     const response = await fetchImpl(url, signal ? { signal } : undefined);
     throwIfAborted(signal);
     if (!response.ok) {
-        throw new Error(`Request failed for ${url}: ${response.status} ${response.statusText}`);
+        throw new RouteDiscoveryHttpError(url, response);
     }
     const data = (await response.json());
     throwIfAborted(signal);

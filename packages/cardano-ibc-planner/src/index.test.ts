@@ -10,6 +10,340 @@ function jsonResponse(body: unknown): Response {
 }
 
 describe('route planning', () => {
+  it('checks route availability without requiring a token denom', async () => {
+    const requestedUrls: string[] = [];
+    let traceResolutionCount = 0;
+    const fetchImpl: typeof fetch = async (url) => {
+      const requestUrl = String(url);
+      requestedUrls.push(requestUrl);
+      return requestUrl.startsWith('http://cardano.test')
+        ? jsonResponse({
+            channels: [
+              {
+                channel_id: 'channel-8',
+                port_id: 'transfer',
+                state: 'STATE_OPEN',
+                counterparty: {
+                  channel_id: 'channel-2',
+                  port_id: 'transfer',
+                },
+              },
+            ],
+          })
+        : jsonResponse({
+            channel: {
+              state: 'STATE_OPEN',
+              counterparty: {
+                channel_id: 'channel-8',
+                port_id: 'transfer',
+              },
+            },
+          });
+    };
+    const planner = createPlannerClient({
+      cardanoChainId: 'cardano-preprod',
+      cardanoRestEndpoint: 'http://cardano.test',
+      counterpartyChainId: 'injective-888',
+      localOsmosisRestEndpoint: 'http://injective.test',
+      resolveCardanoAssetDenomTrace: async () => {
+        traceResolutionCount += 1;
+        return null;
+      },
+      fetchImpl,
+    });
+
+    const forward = await planner.checkTransferRouteAvailability({
+      fromChainId: 'cardano-preprod',
+      toChainId: 'injective-888',
+    });
+    const reverse = await planner.checkTransferRouteAvailability({
+      fromChainId: 'injective-888',
+      toChainId: 'cardano-preprod',
+    });
+
+    assert.deepEqual(forward, {
+      status: 'available',
+      chains: ['cardano-preprod', 'injective-888'],
+      routes: ['transfer/channel-8'],
+    });
+    assert.deepEqual(reverse, {
+      status: 'available',
+      chains: ['injective-888', 'cardano-preprod'],
+      routes: ['transfer/channel-2'],
+    });
+    assert.equal(traceResolutionCount, 0);
+    assert.equal(requestedUrls.length, 4);
+  });
+
+  it('reports unavailable only after confirming there is no mutually open pair', async () => {
+    const fetchImpl: typeof fetch = async (url) =>
+      String(url).startsWith('http://cardano.test')
+        ? jsonResponse({
+            channels: [
+              {
+                channel_id: 'channel-8',
+                port_id: 'transfer',
+                state: 'STATE_OPEN',
+                counterparty: {
+                  channel_id: 'channel-2',
+                  port_id: 'transfer',
+                },
+              },
+            ],
+          })
+        : jsonResponse({
+            channel: {
+              state: 'STATE_CLOSED',
+              counterparty: {
+                channel_id: 'channel-8',
+                port_id: 'transfer',
+              },
+            },
+          });
+    const planner = createPlannerClient({
+      cardanoChainId: 'cardano-preprod',
+      cardanoRestEndpoint: 'http://cardano.test',
+      counterpartyChainId: 'injective-888',
+      localOsmosisRestEndpoint: 'http://injective.test',
+      fetchImpl,
+    });
+
+    const result = await planner.checkTransferRouteAvailability({
+      fromChainId: 'cardano-preprod',
+      toChainId: 'injective-888',
+    });
+
+    assert.equal(result.status, 'unavailable');
+    assert.equal(result.failureCode, 'no-open-channel');
+    assert.deepEqual(result.routes, []);
+  });
+
+  it('reports discovery failures as unknown instead of no channel', async () => {
+    const fetchImpl: typeof fetch = async () =>
+      new Response(JSON.stringify({ message: 'rate limited' }), {
+        status: 429,
+        statusText: 'Too Many Requests',
+        headers: { 'content-type': 'application/json' },
+      });
+    const planner = createPlannerClient({
+      cardanoChainId: 'cardano-preprod',
+      cardanoRestEndpoint: 'http://cardano.test',
+      counterpartyChainId: 'injective-888',
+      localOsmosisRestEndpoint: 'http://injective.test',
+      fetchImpl,
+    });
+
+    const result = await planner.checkTransferRouteAvailability({
+      fromChainId: 'cardano-preprod',
+      toChainId: 'injective-888',
+    });
+
+    assert.equal(result.status, 'unknown');
+    assert.equal(result.failureCode, 'discovery-failed');
+    assert.match(result.failureMessage || '', /429 Too Many Requests/);
+  });
+
+  it('reports malformed successful responses as unknown', async () => {
+    const planner = createPlannerClient({
+      cardanoChainId: 'cardano-preprod',
+      cardanoRestEndpoint: 'http://cardano.test',
+      counterpartyChainId: 'injective-888',
+      localOsmosisRestEndpoint: 'http://injective.test',
+      fetchImpl: async () => jsonResponse({}),
+    });
+
+    const result = await planner.checkTransferRouteAvailability({
+      fromChainId: 'cardano-preprod',
+      toChainId: 'injective-888',
+    });
+
+    assert.equal(result.status, 'unknown');
+    assert.equal(result.failureCode, 'discovery-failed');
+    assert.match(result.failureMessage || '', /channels must be an array/);
+  });
+
+  it('reports malformed channel entries as unknown', async () => {
+    const planner = createPlannerClient({
+      cardanoChainId: 'cardano-preprod',
+      cardanoRestEndpoint: 'http://cardano.test',
+      counterpartyChainId: 'injective-888',
+      localOsmosisRestEndpoint: 'http://injective.test',
+      fetchImpl: async () => jsonResponse({ channels: [{}] }),
+    });
+
+    const result = await planner.checkTransferRouteAvailability({
+      fromChainId: 'cardano-preprod',
+      toChainId: 'injective-888',
+    });
+
+    assert.equal(result.status, 'unknown');
+    assert.equal(result.failureCode, 'discovery-failed');
+    assert.match(result.failureMessage || '', /channels\[0\]/);
+  });
+
+  it('reports malformed counterparty channel entries as unknown', async () => {
+    const fetchImpl: typeof fetch = async (url) =>
+      String(url).startsWith('http://cardano.test')
+        ? jsonResponse({
+            channels: [
+              {
+                channel_id: 'channel-8',
+                port_id: 'transfer',
+                state: 'STATE_OPEN',
+                counterparty: {
+                  channel_id: 'channel-2',
+                  port_id: 'transfer',
+                },
+              },
+            ],
+          })
+        : jsonResponse({
+            channel: {
+              state: 'STATE_OPEN',
+              counterparty: {},
+            },
+          });
+    const planner = createPlannerClient({
+      cardanoChainId: 'cardano-preprod',
+      cardanoRestEndpoint: 'http://cardano.test',
+      counterpartyChainId: 'injective-888',
+      localOsmosisRestEndpoint: 'http://injective.test',
+      fetchImpl,
+    });
+
+    const result = await planner.checkTransferRouteAvailability({
+      fromChainId: 'cardano-preprod',
+      toChainId: 'injective-888',
+    });
+
+    assert.equal(result.status, 'unknown');
+    assert.equal(result.failureCode, 'discovery-failed');
+    assert.match(result.failureMessage || '', /counterparty channel\/port ids/);
+  });
+
+  it('does not claim a mutually open pair without a Cardano channel endpoint', async () => {
+    let fetchCount = 0;
+    const planner = createPlannerClient({
+      cardanoChainId: 'cardano-preprod',
+      counterpartyChainId: 'injective-888',
+      localOsmosisRestEndpoint: 'http://injective.test',
+      fetchImpl: async () => {
+        fetchCount += 1;
+        return jsonResponse({ channels: [] });
+      },
+    });
+
+    const result = await planner.checkTransferRouteAvailability({
+      fromChainId: 'cardano-preprod',
+      toChainId: 'injective-888',
+    });
+
+    assert.equal(result.status, 'unknown');
+    assert.equal(result.failureCode, 'discovery-failed');
+    assert.match(result.failureMessage || '', /Cardano channel endpoint/);
+    assert.equal(fetchCount, 0);
+  });
+
+  it('treats a missing counterparty channel as a confirmed non-match', async () => {
+    const fetchImpl: typeof fetch = async (url) =>
+      String(url).startsWith('http://cardano.test')
+        ? jsonResponse({
+            channels: [
+              {
+                channel_id: 'channel-8',
+                port_id: 'transfer',
+                state: 'STATE_OPEN',
+                counterparty: {
+                  channel_id: 'channel-2',
+                  port_id: 'transfer',
+                },
+              },
+            ],
+          })
+        : new Response(JSON.stringify({ message: 'channel not found' }), {
+            status: 404,
+            statusText: 'Not Found',
+            headers: { 'content-type': 'application/json' },
+          });
+    const planner = createPlannerClient({
+      cardanoChainId: 'cardano-preprod',
+      cardanoRestEndpoint: 'http://cardano.test',
+      counterpartyChainId: 'injective-888',
+      localOsmosisRestEndpoint: 'http://injective.test',
+      fetchImpl,
+    });
+
+    const result = await planner.checkTransferRouteAvailability({
+      fromChainId: 'cardano-preprod',
+      toChainId: 'injective-888',
+    });
+
+    assert.equal(result.status, 'unavailable');
+    assert.equal(result.failureCode, 'no-open-channel');
+  });
+
+  it('cancels an obsolete preflight through its external signal', async () => {
+    const controller = new AbortController();
+    const captured: { signal?: AbortSignal } = {};
+    const planner = createPlannerClient({
+      cardanoChainId: 'cardano-preprod',
+      cardanoRestEndpoint: 'http://cardano.test',
+      counterpartyChainId: 'injective-888',
+      localOsmosisRestEndpoint: 'http://injective.test',
+      routeDiscoveryTimeoutMs: 1_000,
+      fetchImpl: async (_input, init) => {
+        captured.signal = init?.signal ?? undefined;
+        return await new Promise<Response>(() => undefined);
+      },
+    });
+
+    const pending = planner.checkTransferRouteAvailability({
+      fromChainId: 'cardano-preprod',
+      toChainId: 'injective-888',
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    controller.abort();
+    const result = await pending;
+
+    assert.equal(result.status, 'unknown');
+    assert.equal(result.failureCode, 'discovery-aborted');
+    assert.equal(captured.signal?.aborted, true);
+  });
+
+  it(
+    'reports a preflight timeout as unknown and aborts the request',
+    { timeout: 1_000 },
+    async () => {
+      const captured: { signal?: AbortSignal } = {};
+      const fetchImpl: typeof fetch = async (_input, init) => {
+        captured.signal = init?.signal ?? undefined;
+        return await new Promise<Response>(() => undefined);
+      };
+      const planner = createPlannerClient({
+        cardanoChainId: 'cardano-preprod',
+        cardanoRestEndpoint: 'http://cardano.test',
+        counterpartyChainId: 'injective-888',
+        localOsmosisRestEndpoint: 'http://injective.test',
+        routeDiscoveryTimeoutMs: 25,
+        fetchImpl,
+      });
+
+      const result = await planner.checkTransferRouteAvailability({
+        fromChainId: 'cardano-preprod',
+        toChainId: 'injective-888',
+      });
+
+      assert.equal(result.status, 'unknown');
+      assert.equal(result.failureCode, 'discovery-timeout');
+      assert.equal(
+        result.failureMessage,
+        'IBC route discovery timed out after 25 milliseconds.',
+      );
+      assert.equal(captured.signal?.aborted, true);
+    },
+  );
+
   it('reports unsupported direct routes with diagnostics instead of inventing a path', async () => {
     let fetchCount = 0;
     const fetchImpl: typeof fetch = async () => {
@@ -50,6 +384,38 @@ describe('route planning', () => {
       ],
     });
     assert.equal(fetchCount, 0);
+  });
+
+  it('propagates route planning outages while swap estimates return an unavailable estimate', async () => {
+    const planner = createPlannerClient({
+      cardanoChainId: 'cardano-local',
+      cardanoRestEndpoint: 'http://cardano.test',
+      localOsmosisRestEndpoint: 'http://osmosis.test',
+      fetchImpl: async () =>
+        new Response(null, {
+          status: 503,
+          statusText: 'Service Unavailable',
+        }),
+    });
+
+    await assert.rejects(
+      planner.planTransferRoute({
+        fromChainId: 'cardano-local',
+        toChainId: 'localosmosis',
+        tokenDenom: 'lovelace',
+      }),
+      /503 Service Unavailable/,
+    );
+
+    const estimate = await planner.estimateLocalOsmosisSwap({
+      fromChainId: 'cardano-local',
+      tokenInDenom: 'lovelace',
+      tokenInAmount: '1',
+      toChainId: 'localosmosis',
+      tokenOutDenom: 'uosmo',
+    });
+    assert.match(estimate.message, /Unable to verify.*503 Service Unavailable/);
+    assert.deepEqual(estimate.transferRoutes, []);
   });
 
   it('discovers configured Injective routes in both directions from Cardano channels', async () => {
@@ -141,6 +507,12 @@ describe('route planning', () => {
       const requestUrl = String(url);
       requestedUrls.push(requestUrl);
       if (!requestUrl.startsWith('http://cardano.test')) {
+        if (requestUrl.includes('/channel-3/')) {
+          return new Response(null, {
+            status: 503,
+            statusText: 'Service Unavailable',
+          });
+        }
         const matchesCardanoChannel = requestUrl.includes('/channel-2/');
         return jsonResponse({
           channel: {
