@@ -32,6 +32,10 @@ Starts services. Run `caribic --help` to see an actively maintained exhaustive l
 
 - **Targets**: `all`, `network`, `bridge`, `gateway`, `dapp`, `relayer`; `mithril` is retained only to return the deprecation error.
 
+With no target, `caribic start` behaves like `caribic start all`: it starts the
+network and bridge stack (including Gateway and Hermes), then starts the IBC
+Swap dapp after those dependencies are ready.
+
 Examples:
 
 ```bash
@@ -70,13 +74,14 @@ Hermes config note:
 
 Stops services. With no target, it behaves like `all`.
 
-- **Targets**: `all`, `network`, `bridge`, `demo`, `gateway`, `relayer`, `mithril`
+- **Targets**: `all`, `network`, `bridge`, `dapp`, `demo`, `gateway`, `relayer`, `mithril`
 
 Examples:
 
 ```bash
 caribic stop
 caribic stop bridge
+caribic stop dapp
 caribic chain stop --chain osmosis
 caribic chain stop --chain injective --network local
 caribic chain stop --chain injective --network testnet
@@ -315,7 +320,7 @@ export DEPLOYER_SK=$(cat ~/.caribic/preprod-deployer.sk)   # or your own funded 
 caribic --config caribic/config/preprod-config.json start --network preprod
 ```
 
-This starts postgres and the Yaci history services, deploys the IBC validators to preprod (artifacts exported to `manifests/preprod/`), starts the Gateway (gRPC on 5001) and the Hermes daemon, and injects the `injective-888` chain block (public sentry endpoints) into `~/.hermes/config.toml`. Verify with:
+This starts postgres and the Yaci history services, deploys the IBC validators to preprod (artifacts exported to `manifests/preprod/`), starts the Gateway (gRPC on 5001), Hermes daemon, and IBC Swap dapp, and injects the `injective-888` chain block (public sentry endpoints) into `~/.hermes/config.toml`. Verify with:
 
 ```bash
 caribic --config caribic/config/preprod-config.json health-check
@@ -357,6 +362,17 @@ On Injective this runs the direct token-transfer legs (Cardano → Injective and
 ### 8. Run the swap dapp against preprod + Injective testnet
 
 The IBC swap dapp has a dedicated `testnet` mode for exactly this topology (see `dapps/ibc-swap/client/README.md`):
+
+If you used `caribic start --network preprod` in step 4, the dapp is already
+running in `testnet` mode at `http://localhost:3000/swap`. To rebuild or restart
+only the dapp, run:
+
+```bash
+caribic --config caribic/config/preprod-config.json start dapp --network preprod --clean
+```
+
+To run the dapp as a standalone development process instead, configure it
+manually:
 
 ```bash
 cd dapps/ibc-swap/client

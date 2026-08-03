@@ -1,9 +1,16 @@
-# Optional Frontends
+# Frontends
 
-These UI services are optional demo consumers of the bridge. They are not
-started by `caribic start` and are not required for the bridge stack itself.
+The IBC Swap UI is started by the default `caribic start`/`caribic start all`
+stack after Gateway and Hermes are ready. It can also be managed independently:
 
-Use the dedicated frontend compose stack instead:
+```bash
+caribic start dapp
+caribic stop dapp
+```
+
+The explorer UI remains optional and is not part of the default Caribic stack.
+
+Use the dedicated frontend compose stack to run either UI outside Caribic:
 
 ```bash
 docker compose -f dapps/docker-compose.yml up --build ibc-swap-client

@@ -23,7 +23,8 @@ yarn && yarn start
 ```
 
 ## Containerized local run
-This frontend is optional and is not started by `caribic start`.
+This frontend remains optional and is not started by `caribic start`; only the
+IBC Swap dapp is included in the default stack.
 
 To run it as a containerized demo UI:
 
