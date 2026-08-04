@@ -30,7 +30,7 @@ import {
   verifyAddress,
   verifyCardanoPaymentKeyHashAddress,
 } from '@/utils/address';
-import { HOUR_IN_NANOSEC } from '@/constants';
+import { PACKET_TIMEOUT_NANOSEC } from '@/constants';
 import { unsignedTxSwapFromCardano } from '@/utils/buildSwapTx';
 import { CARDANO_CHAIN_ID } from '@/configs/runtime';
 import { estimateLocalOsmosisSwap } from '@/apis/restapi/cardano';
@@ -231,7 +231,7 @@ const SwapContainer = () => {
         transferRoutes,
         transferBackRoutes,
         slippagePercentage: swapData.slippageTolerance!,
-        timeoutTimeOffset: HOUR_IN_NANOSEC,
+        timeoutTimeOffset: PACKET_TIMEOUT_NANOSEC,
       });
 
       let estDataResult: any;
