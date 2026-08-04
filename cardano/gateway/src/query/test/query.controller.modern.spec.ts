@@ -36,6 +36,7 @@ describe('QueryController (modern)', () => {
 
     connectionServiceMock = {
       queryConnections: jest.fn(),
+      queryClientConnections: jest.fn(),
       queryConnection: jest.fn(),
     };
 
@@ -155,6 +156,16 @@ describe('QueryController (modern)', () => {
       'queryConnections',
       { pagination: {} },
       { connections: [] },
+    );
+  });
+
+  it('delegates queryClientConnections to ConnectionService', async () => {
+    await expectDelegation(
+      'queryClientConnections',
+      connectionServiceMock,
+      'queryClientConnections',
+      { client_id: '07-tendermint-0' },
+      { connection_paths: ['connection-0'] },
     );
   });
 
