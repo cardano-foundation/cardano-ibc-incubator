@@ -43,7 +43,8 @@ export const CARDANO_LOVELACE_HEX_STRING = '6c6f76656c616365';
 
 export const DEFAULT_PFM_FEE = '0.100000000000000000';
 
-export const HOUR_IN_NANOSEC = BigInt(60 * 60) * BigInt(1000000000);
+// Source packet deadline; packet-forwarding memo timeouts are configured separately below.
+export const PACKET_TIMEOUT_NANOSEC = BigInt(30 * 60) * BigInt(1000000000);
 
 export const DEFAULT_FORWARD_TIMEOUT = '60m';
 

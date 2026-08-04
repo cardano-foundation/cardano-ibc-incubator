@@ -26,7 +26,7 @@ import { useCosmosChain } from '@/hooks/useCosmosChain';
 import {
   cosmosChainsSupported,
   defaultChainName,
-  HOUR_IN_NANOSEC,
+  PACKET_TIMEOUT_NANOSEC,
 } from '@/constants';
 
 import {
@@ -797,7 +797,7 @@ const Transfer = () => {
         routes,
         senderAddress?.address,
         destinationAddress,
-        HOUR_IN_NANOSEC,
+        PACKET_TIMEOUT_NANOSEC,
         { amount: sendAmount, denom: selectedToken.tokenId! },
       );
       try {
@@ -853,7 +853,7 @@ const Transfer = () => {
           routes,
           cardanoAddress || '',
           destinationAddress,
-          HOUR_IN_NANOSEC,
+          PACKET_TIMEOUT_NANOSEC,
           { amount: sendAmount, denom: selectedToken.tokenId! },
           walletUtxos,
         );
