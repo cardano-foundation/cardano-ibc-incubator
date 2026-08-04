@@ -103,6 +103,7 @@ type KoiosPoolUpdateRow = {
 };
 
 type KoiosEpochParamsRow = {
+  epoch_no?: string | number | null;
   nonce?: string | null;
 };
 
@@ -110,10 +111,27 @@ const CARDANO_SLOT_LENGTH_NS = 1_000_000_000n;
 const POOL_REGISTRATION_LOOKUP_BATCH_SIZE = 25;
 const POOL_REGISTRATION_LOOKUP_TIMEOUT_MS = 10_000;
 const EPOCH_PARAMS_LOOKUP_TIMEOUT_MS = 10_000;
+const EPOCH_PARAMS_LOOKUP_MAX_ATTEMPTS = 3;
+const EPOCH_PARAMS_RETRY_BASE_DELAY_MS = 250;
+const EPOCH_PARAMS_RETRY_MAX_DELAY_MS = 5_000;
+const EPOCH_PARAMS_CACHE_MAX_ENTRIES = 128;
+
+class EpochParamsLookupError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+    readonly retryAfterMs?: number,
+  ) {
+    super(message);
+    this.name = "EpochParamsLookupError";
+  }
+}
 
 @Injectable()
 export class YaciHistoryService implements HistoryService {
   private poolRegistrationCacheTableReady = false;
+  private readonly epochNonceCache = new Map<string, string>();
+  private readonly epochNonceLookups = new Map<string, Promise<string>>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -579,6 +597,97 @@ export class YaciHistoryService implements HistoryService {
       );
     }
 
+    const cacheKey = this.epochNonceCacheKey(epoch);
+    const cachedNonce = this.epochNonceCache.get(cacheKey);
+    if (cachedNonce) {
+      return cachedNonce;
+    }
+
+    const pendingLookup = this.epochNonceLookups.get(cacheKey);
+    if (pendingLookup) {
+      return pendingLookup;
+    }
+
+    const lookup = this.fetchEpochNonceWithRetry(endpoint, epoch);
+    this.epochNonceLookups.set(cacheKey, lookup);
+    try {
+      const nonce = await lookup;
+      this.cacheEpochNonce(cacheKey, nonce);
+      return nonce;
+    } finally {
+      if (this.epochNonceLookups.get(cacheKey) === lookup) {
+        this.epochNonceLookups.delete(cacheKey);
+      }
+    }
+  }
+
+  private epochNonceCacheKey(epoch: number): string {
+    const chainId = this.configService.get<string>("cardanoChainId") || "";
+    const network = this.configService.get<string>("cardanoNetwork") || "";
+    const networkMagic = this.configService.get<number>(
+      "cardanoChainNetworkMagic",
+    );
+    return `${chainId}:${network}:${networkMagic ?? ""}:${epoch}`;
+  }
+
+  private cacheEpochNonce(cacheKey: string, nonce: string): void {
+    if (!this.epochNonceCache.has(cacheKey)) {
+      while (this.epochNonceCache.size >= EPOCH_PARAMS_CACHE_MAX_ENTRIES) {
+        const oldestKey = this.epochNonceCache.keys().next().value;
+        if (oldestKey === undefined) {
+          break;
+        }
+        this.epochNonceCache.delete(oldestKey);
+      }
+    }
+    this.epochNonceCache.set(cacheKey, nonce);
+  }
+
+  private async fetchEpochNonceWithRetry(
+    endpoint: string,
+    epoch: number,
+  ): Promise<string> {
+    let lastError: Error | undefined;
+    for (
+      let attempt = 0;
+      attempt < EPOCH_PARAMS_LOOKUP_MAX_ATTEMPTS;
+      attempt += 1
+    ) {
+      try {
+        return await this.fetchEpochNonceAttempt(endpoint, epoch);
+      } catch (error) {
+        const lookupError = error instanceof Error
+          ? error
+          : new Error(String(error));
+        lastError = lookupError;
+        if (
+          !(lookupError instanceof EpochParamsLookupError) ||
+          !lookupError.retryable ||
+          attempt + 1 >= EPOCH_PARAMS_LOOKUP_MAX_ATTEMPTS
+        ) {
+          throw lookupError;
+        }
+
+        const exponentialDelay = Math.min(
+          EPOCH_PARAMS_RETRY_BASE_DELAY_MS * 2 ** attempt,
+          EPOCH_PARAMS_RETRY_MAX_DELAY_MS,
+        );
+        const retryDelay = Math.min(
+          lookupError.retryAfterMs ?? exponentialDelay,
+          EPOCH_PARAMS_RETRY_MAX_DELAY_MS,
+        );
+        await sleep(retryDelay);
+      }
+    }
+    throw lastError ?? new Error(
+      `Cardano epoch params lookup failed for epoch ${epoch}`,
+    );
+  }
+
+  private async fetchEpochNonceAttempt(
+    endpoint: string,
+    epoch: number,
+  ): Promise<string> {
     const url = new URL(`${endpoint}/epoch_params`);
     url.searchParams.set("_epoch_no", epoch.toString());
 
@@ -593,15 +702,29 @@ export class YaciHistoryService implements HistoryService {
         headers: { accept: "application/json" },
       });
       if (!response.ok) {
-        throw new Error(
+        const retryable = response.status === 408 ||
+          response.status === 429 || response.status >= 500;
+        throw new EpochParamsLookupError(
           `Cardano epoch params lookup failed for epoch ${epoch}: HTTP ${response.status}`,
+          retryable,
+          retryable ? parseRetryAfterMs(response.headers) : undefined,
         );
       }
 
       const body = await response.json();
-      const row = Array.isArray(body)
+      const row = Array.isArray(body) && body.length === 1
         ? (body[0] as KoiosEpochParamsRow | undefined)
         : undefined;
+      const epochNo = row?.epoch_no;
+      const returnedEpoch = typeof epochNo === "string" ||
+          typeof epochNo === "number"
+        ? Number(epochNo)
+        : Number.NaN;
+      if (!Number.isSafeInteger(returnedEpoch) || returnedEpoch !== epoch) {
+        throw new Error(
+          `Cardano epoch params lookup did not return params for epoch ${epoch}`,
+        );
+      }
       const nonce = normalizeHex(row?.nonce);
       if (!/^[0-9a-f]{64}$/.test(nonce)) {
         throw new Error(
@@ -613,6 +736,15 @@ export class YaciHistoryService implements HistoryService {
       if (error instanceof Error && error.name === "AbortError") {
         throw new Error(
           `Cardano epoch params lookup timed out for epoch ${epoch} after ${EPOCH_PARAMS_LOOKUP_TIMEOUT_MS}ms`,
+        );
+      }
+      if (error instanceof EpochParamsLookupError) {
+        throw error;
+      }
+      if (error instanceof TypeError) {
+        throw new EpochParamsLookupError(
+          `Cardano epoch params lookup failed for epoch ${epoch}: ${error.message}`,
+          true,
         );
       }
       throw error;
@@ -1127,6 +1259,27 @@ export class YaciHistoryService implements HistoryService {
 function normalizeHex(value?: string | null): string {
   const trimmed = value?.trim().toLowerCase() || "";
   return trimmed.startsWith("0x") ? trimmed.slice(2) : trimmed;
+}
+
+function parseRetryAfterMs(headers: Headers): number | undefined {
+  const retryAfter = headers?.get?.("retry-after")?.trim();
+  if (!retryAfter) {
+    return undefined;
+  }
+
+  if (/^\d+$/.test(retryAfter)) {
+    return Number(retryAfter) * 1_000;
+  }
+
+  const retryAt = Date.parse(retryAfter);
+  if (!Number.isFinite(retryAt)) {
+    return undefined;
+  }
+  return Math.max(0, retryAt - Date.now());
+}
+
+function sleep(delayMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 function normalizePoolId(value?: string | null): string {

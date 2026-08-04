@@ -27,6 +27,7 @@ describe('YaciHistoryService', () => {
       ok: true,
       json: async () => [
         {
+          epoch_no: 7,
           nonce: '11'.repeat(32),
         },
       ],
@@ -61,6 +62,7 @@ describe('YaciHistoryService', () => {
   });
 
   afterEach(() => {
+    jest.useRealTimers();
     jest.resetAllMocks();
     delete process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT;
     delete (global as typeof globalThis & { fetch?: typeof fetch }).fetch;
@@ -296,12 +298,109 @@ describe('YaciHistoryService', () => {
       .mockResolvedValueOnce([{ start_slot: '1200' }]);
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
-      json: async () => [{ nonce: null }],
+      json: async () => [{ epoch_no: 7, nonce: null }],
     });
 
     await expect(service.findEpochContextAtBlock(block)).rejects.toThrow(
       'Cardano epoch params lookup did not return a valid nonce for epoch 7',
     );
+    expect(queryEpochContextAtPoint).not.toHaveBeenCalled();
+  });
+
+  it('caches a validated epoch nonce for the same network and epoch', async () => {
+    const fetchEpochNonce = (service as any).fetchEpochNonce.bind(service);
+
+    await expect(fetchEpochNonce(7)).resolves.toBe('11'.repeat(32));
+    await expect(fetchEpochNonce(7)).resolves.toBe('11'.repeat(32));
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('coalesces concurrent epoch nonce lookups', async () => {
+    let resolveResponse: (response: unknown) => void;
+    (global.fetch as jest.Mock).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveResponse = resolve;
+      }),
+    );
+    const fetchEpochNonce = (service as any).fetchEpochNonce.bind(service);
+
+    const firstLookup = fetchEpochNonce(7);
+    const secondLookup = fetchEpochNonce(7);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    resolveResponse!({
+      ok: true,
+      json: async () => [{ epoch_no: 7, nonce: '22'.repeat(32) }],
+    });
+
+    await expect(Promise.all([firstLookup, secondLookup])).resolves.toEqual(['22'.repeat(32), '22'.repeat(32)]);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('backs off according to Retry-After and recovers from a transient 429', async () => {
+    jest.useFakeTimers();
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        headers: new Headers({ 'retry-after': '1' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ epoch_no: 7, nonce: '33'.repeat(32) }],
+      });
+    const fetchEpochNonce = (service as any).fetchEpochNonce.bind(service);
+
+    const lookup = fetchEpochNonce(7);
+    await Promise.resolve();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    await jest.advanceTimersByTimeAsync(999);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1);
+
+    await expect(lookup).resolves.toBe('33'.repeat(32));
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not cache an invalid epoch params response', async () => {
+    (global.fetch as jest.Mock)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ epoch_no: 8, nonce: '44'.repeat(32) }],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ epoch_no: 7, nonce: '55'.repeat(32) }],
+      });
+    const fetchEpochNonce = (service as any).fetchEpochNonce.bind(service);
+
+    await expect(fetchEpochNonce(7)).rejects.toThrow('Cardano epoch params lookup did not return params for epoch 7');
+    await expect(fetchEpochNonce(7)).resolves.toBe('55'.repeat(32));
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails closed when an epoch params lookup times out', async () => {
+    jest.useFakeTimers();
+    (global.fetch as jest.Mock).mockImplementationOnce(
+      (_url: URL, options: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          options.signal?.addEventListener('abort', () => {
+            const error = new Error('aborted');
+            error.name = 'AbortError';
+            reject(error);
+          });
+        }),
+    );
+    const fetchEpochNonce = (service as any).fetchEpochNonce.bind(service);
+
+    const lookup = fetchEpochNonce(7);
+    const rejection = expect(lookup).rejects.toThrow('Cardano epoch params lookup timed out for epoch 7 after 10000ms');
+    await jest.advanceTimersByTimeAsync(10_000);
+
+    await rejection;
+    expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(queryEpochContextAtPoint).not.toHaveBeenCalled();
   });
 
