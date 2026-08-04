@@ -4,7 +4,12 @@ import { ConnectionDatum, decodeConnectionDatum } from 'src/shared/types/connect
 import { LucidService } from 'src/shared/modules/lucid/lucid.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 
-import { CONNECTION_ID_PREFIX, CONNECTION_TOKEN_PREFIX, STATE_MAPPING_CONNECTION } from '../../constant';
+import {
+  CLIENT_ID_PREFIX,
+  CONNECTION_ID_PREFIX,
+  CONNECTION_TOKEN_PREFIX,
+  STATE_MAPPING_CONNECTION,
+} from '../../constant';
 import {
   QueryClientConnectionsRequest,
   QueryClientConnectionsResponse,
@@ -27,7 +32,11 @@ import { validPagination } from '../helpers/helper';
 import { convertHex2String, fromHex } from '../../shared/helpers/hex';
 import { validQueryConnectionParam } from '../helpers/connection.validate';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
-import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
+import {
+  GrpcInternalException,
+  GrpcInvalidArgumentException,
+  GrpcNotFoundException,
+} from '~@/exception/grpc_exceptions';
 import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { HostStateDatum } from '../../shared/types/host-state-datum';
@@ -211,17 +220,50 @@ export class ConnectionService {
   }
 
   async queryClientConnections(request: QueryClientConnectionsRequest): Promise<QueryClientConnectionsResponse> {
-    if (!request.client_id) {
+    const clientId = request.client_id;
+    if (!clientId) {
       throw new GrpcInvalidArgumentException('Invalid argument: "client_id" must be provided');
     }
 
-    const response = await this.queryConnections({ pagination: undefined } as QueryConnectionsRequest);
+    const clientIdPrefix = `${CLIENT_ID_PREFIX}-`;
+    const clientSequence = clientId.startsWith(clientIdPrefix) ? clientId.slice(clientIdPrefix.length) : '';
+    if (!/^\d+$/.test(clientSequence)) {
+      throw new GrpcInvalidArgumentException(
+        `Invalid argument: "client_id". Please use the prefix "${clientIdPrefix}" followed by a numeric sequence`,
+      );
+    }
+
+    this.logger.log(clientId, 'queryClientConnections');
+
+    const clientAuthTokenUnit = this.lucidService.getClientAuthTokenUnit(BigInt(clientSequence));
+    try {
+      await this.lucidService.findUtxoByUnit(clientAuthTokenUnit);
+    } catch (error) {
+      if (error instanceof GrpcNotFoundException) {
+        throw new GrpcNotFoundException(`Not found: client "${clientId}"`);
+      }
+      throw error;
+    }
+
+    // ClientConnections is not paginated, so ask the shared connection listing
+    // for its full result set before selecting the paths owned by this client.
+    const response = await this.queryConnections({
+      pagination: {
+        key: new Uint8Array(),
+        offset: 0n,
+        limit: 18_446_744_073_709_551_615n,
+        count_total: false,
+        reverse: false,
+      },
+    });
     const connectionPaths = (response.connections || [])
-      .filter((connection) => connection.client_id === request.client_id)
+      .filter((connection) => connection.client_id === clientId)
       .map((connection) => connection.id);
 
     return {
       connection_paths: connectionPaths,
+      // ibc-go leaves this field at its protobuf zero value for ClientConnections.
+      // There is no committed clients/{clientId}/connections path to prove on Cardano.
       proof: new Uint8Array(),
       proof_height: response.height,
     } as unknown as QueryClientConnectionsResponse;
