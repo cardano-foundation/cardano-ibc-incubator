@@ -911,6 +911,30 @@ pub(crate) fn set_or_append_env_var(
     Ok(())
 }
 
+pub(crate) fn remove_env_var(env_path: &Path, key: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let original = fs::read_to_string(env_path).unwrap_or_default();
+    let prefix = format!("{key}=");
+    let mut updated = original
+        .lines()
+        .filter(|line| !line.starts_with(prefix.as_str()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if !updated.is_empty() {
+        updated.push('\n');
+    }
+    if updated != original {
+        fs::write(env_path, updated).map_err(|error| {
+            format!(
+                "Failed to remove {} from environment file {}: {}",
+                key,
+                env_path.display(),
+                error
+            )
+        })?;
+    }
+    Ok(())
+}
+
 pub(crate) fn secure_env_file_permissions(
     env_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -2383,6 +2407,13 @@ fn write_gateway_env_for_network(
             )?;
         }
         config::CoreCardanoNetwork::Preprod | config::CoreCardanoNetwork::Preview => {
+            // This flag permits deliberately approximate local-dev fallbacks. It must
+            // never survive a switch to a public testnet, where historical epoch
+            // evidence is reconstructed from the configured public data provider.
+            remove_env_var(
+                &gateway_env,
+                "CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT",
+            )?;
             let epoch_length = network.epoch_length().to_string();
             let preprod_kupo_mode = resolve_preprod_kupo_mode(&gateway_env)?;
             set_or_append_env_var(
@@ -2781,9 +2812,10 @@ pub fn prepare_db_sync_and_gateway(
 #[cfg(test)]
 mod tests {
     use super::{
-        cardano_runtime_state_paths, set_env_var_if_absent, validate_active_cardano_runtime_env,
-        validate_external_http_endpoint, validate_override_network_marker,
-        validate_public_testnet_network_values, CARDANO_RUNTIME_NETWORK_KEY,
+        cardano_runtime_state_paths, remove_env_var, set_env_var_if_absent,
+        validate_active_cardano_runtime_env, validate_external_http_endpoint,
+        validate_override_network_marker, validate_public_testnet_network_values,
+        CARDANO_RUNTIME_NETWORK_KEY,
     };
     use crate::config::CoreCardanoNetwork;
     use std::{
@@ -2966,6 +2998,32 @@ mod tests {
         assert_eq!(
             fs::read_to_string(&env_path).expect("temporary env should be readable"),
             "CARDANO_EPOCH_PARAMS_ENDPOINT=https://koios-proxy.example/api/v1\n"
+        );
+        fs::remove_file(env_path).expect("temporary env should be removable");
+    }
+
+    #[test]
+    fn local_only_gateway_flags_are_removable_without_touching_other_values() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after the Unix epoch")
+            .as_nanos();
+        let env_path = std::env::temp_dir().join(format!(
+            "caribic-remove-local-flag-{unique}-{}.env",
+            std::process::id()
+        ));
+        fs::write(
+            &env_path,
+            "CARDANO_RUNTIME_NETWORK=preprod\nCARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT=1\nOGMIOS_ENDPOINT=https://example.com\n",
+        )
+        .expect("temporary env should be writable");
+
+        remove_env_var(&env_path, "CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT")
+            .expect("local-only flag removal should succeed");
+
+        assert_eq!(
+            fs::read_to_string(&env_path).expect("temporary env should be readable"),
+            "CARDANO_RUNTIME_NETWORK=preprod\nOGMIOS_ENDPOINT=https://example.com\n"
         );
         fs::remove_file(env_path).expect("temporary env should be removable");
     }
