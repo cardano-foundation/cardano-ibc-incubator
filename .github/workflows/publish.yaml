@@ -1,0 +1,99 @@
+name: Build and publish Docker images
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+# Builds only need repository contents. The trusted publishing job grants its
+# own package permission below instead of exposing it to pull-request code.
+permissions:
+  contents: read
+
+jobs:
+  pull-request-build:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - hermes
+          - swap-client
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up build tools without registry login
+        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@e02adcacc7178585dab0ca362adc83424654b324
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+          DOCKER_REGISTRIES: ''
+
+      - name: Build image without publishing
+        run: |
+          earthly +${{ matrix.service }} \
+            --PUSH=false \
+            --DOCKER_REGISTRIES="" \
+            --DOCKER_IMAGES_EXTRA_TAGS=""
+
+  publish:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - hermes
+          - swap-client
+    env:
+      PRIVATE_DOCKER_REGISTRY_URL: ${{ secrets.GITLAB_DOCKER_REGISTRY_URL }}
+      PRIVATE_DOCKER_REGISTRY_USER: Deploy-Token
+      PRIVATE_DOCKER_REGISTRY_PASS: ${{ secrets.GITLAB_PKG_REGISTRY_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Validate release ref
+        if: github.ref_type == 'tag'
+        run: |
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "Release tags must use semver, for example v1.2.3 or v1.2.3-rc.1."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main; then
+            echo "Release tags must point to a commit already merged into main."
+            exit 1
+          fi
+
+      - name: Set up trusted publishing credentials
+        id: baseline
+        uses: cardano-foundation/cf-gha-workflows/./actions/cf-gha-baseline@e02adcacc7178585dab0ca362adc83424654b324
+        with:
+          GITHUB_TOKEN: ${{ github.token }}
+          PRIVATE_DOCKER_REGISTRY_URL: ${{ env.PRIVATE_DOCKER_REGISTRY_URL }}
+          PRIVATE_DOCKER_REGISTRY_USER: ${{ env.PRIVATE_DOCKER_REGISTRY_USER }}
+          PRIVATE_DOCKER_REGISTRY_PASS: ${{ env.PRIVATE_DOCKER_REGISTRY_PASS }}
+          HUB_DOCKER_COM_USER: ${{ secrets.HUB_DOCKER_COM_USER }}
+          HUB_DOCKER_COM_PASS: ${{ secrets.HUB_DOCKER_COM_PASS }}
+          DOCKER_REGISTRIES: ${{ secrets.DOCKER_REGISTRIES }}
+
+      - name: Build and publish image
+        run: |
+          earthly +${{ matrix.service }} \
+            --PUSH=true \
+            --DOCKER_REGISTRIES="${{ steps.baseline.outputs.DOCKER_REGISTRIES_FILTERED }}" \
+            --DOCKER_IMAGES_EXTRA_TAGS="${{ steps.baseline.outputs.EARTHLY_DOCKER_IMAGES_EXTRA_TAGS }}"
