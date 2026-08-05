@@ -10,41 +10,13 @@ use crate::{
     utils::execute_script,
 };
 
-/// Check if any docker compose containers are running in a given directory
-fn has_running_containers(path: &Path) -> bool {
-    DockerCli::new(path)
-        .compose_output(&["ps", "-q"])
-        .map(|result| !String::from_utf8_lossy(&result.stdout).trim().is_empty())
-        .unwrap_or(false)
-}
-
-fn has_service_container(path: &Path, service: &str) -> bool {
-    DockerCli::new(path)
-        .compose_output(&["ps", "--all", "-q", service])
-        .map(|result| !String::from_utf8_lossy(&result.stdout).trim().is_empty())
-        .unwrap_or(false)
-}
-
 fn compose_project_container_names(
+    project_path: &Path,
     project: &str,
     service: Option<&str>,
     include_stopped: bool,
 ) -> Vec<String> {
-    let mut args = vec!["ps".to_string()];
-    if include_stopped {
-        args.push("--all".to_string());
-    }
-    args.extend([
-        "--filter".to_string(),
-        format!("label=com.docker.compose.project={project}"),
-    ]);
-    if let Some(service) = service {
-        args.extend([
-            "--filter".to_string(),
-            format!("label=com.docker.compose.service={service}"),
-        ]);
-    }
-    args.extend(["--format".to_string(), "{{.Names}}".to_string()]);
+    let args = compose_project_container_args(project_path, project, service, include_stopped);
     let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
 
     DockerCli::new(Path::new("."))
@@ -61,29 +33,90 @@ fn compose_project_container_names(
         .unwrap_or_default()
 }
 
+fn compose_project_container_args(
+    project_path: &Path,
+    project: &str,
+    service: Option<&str>,
+    include_stopped: bool,
+) -> Vec<String> {
+    let working_dir = project_path
+        .canonicalize()
+        .unwrap_or_else(|_| project_path.to_path_buf());
+    let mut args = vec!["ps".to_string()];
+    if include_stopped {
+        args.push("--all".to_string());
+    }
+    args.extend([
+        "--filter".to_string(),
+        format!("label=com.docker.compose.project={project}"),
+    ]);
+    args.extend([
+        "--filter".to_string(),
+        format!(
+            "label=com.docker.compose.project.working_dir={}",
+            working_dir.display()
+        ),
+    ]);
+    if let Some(service) = service {
+        args.extend([
+            "--filter".to_string(),
+            format!("label=com.docker.compose.service={service}"),
+        ]);
+    }
+    args.extend(["--format".to_string(), "{{.Names}}".to_string()]);
+    args
+}
+
 fn remove_named_containers(names: &[String], label: &str) {
     if names.is_empty() {
         log(&format!("{} was not running", label));
         return;
     }
-    let mut args = vec!["rm", "-f"];
-    args.extend(names.iter().map(String::as_str));
-    match execute_script(Path::new("."), "docker", args, None) {
+    let mut stop_args = vec!["stop", "--time", "10"];
+    stop_args.extend(names.iter().map(String::as_str));
+    if let Err(stop_error) = execute_script(Path::new("."), "docker", stop_args, None) {
+        error(&format!(
+            "ERROR: Failed to stop {} gracefully: {}",
+            label, stop_error
+        ));
+    }
+
+    let mut remove_args = vec!["rm", "-f"];
+    remove_args.extend(names.iter().map(String::as_str));
+    match execute_script(Path::new("."), "docker", remove_args, None) {
         Ok(_) => log(&format!("{} stopped successfully", label)),
         Err(stop_error) => error(&format!("ERROR: Failed to stop {}: {}", label, stop_error)),
     }
 }
 
-pub(crate) fn gateway_is_running(_project_root_path: &Path) -> bool {
-    !compose_project_container_names("gateway", None, false).is_empty()
+pub(crate) fn gateway_is_running(project_root_path: &Path) -> bool {
+    !compose_project_container_names(
+        project_root_path.join("cardano/gateway").as_path(),
+        "gateway",
+        None,
+        false,
+    )
+    .is_empty()
 }
 
-pub(crate) fn dapp_is_running(_project_root_path: &Path) -> bool {
-    !compose_project_container_names("dapps", Some("ibc-swap-client"), false).is_empty()
+pub(crate) fn dapp_is_running(project_root_path: &Path) -> bool {
+    !compose_project_container_names(
+        project_root_path.join("dapps").as_path(),
+        "dapps",
+        Some("ibc-swap-client"),
+        false,
+    )
+    .is_empty()
 }
 
-pub(crate) fn cardano_runtime_is_running(_project_root_path: &Path) -> bool {
-    !compose_project_container_names("cardano", None, false).is_empty()
+pub(crate) fn cardano_runtime_is_running(project_root_path: &Path) -> bool {
+    !compose_project_container_names(
+        project_root_path.join("chains/cardano").as_path(),
+        "cardano",
+        None,
+        false,
+    )
+    .is_empty()
 }
 
 pub(crate) fn relayer_is_running(project_root_path: &Path) -> bool {
@@ -100,80 +133,31 @@ pub(crate) fn relayer_is_running(project_root_path: &Path) -> bool {
     !find_running_hermes_daemon_pids(relayer_path.as_path()).is_empty()
 }
 
+// Do not replace these targeted removals with `docker compose down` or `rm`.
+// Compose scopes those commands by its generic project name, so another checkout
+// using the same project name can be selected even when its working directory differs.
 pub fn stop_gateway(project_root_path: &Path) {
     let gateway_path = project_root_path.join("cardano/gateway");
-
-    if !has_running_containers(&gateway_path) {
-        let containers = compose_project_container_names("gateway", None, true);
-        remove_named_containers(containers.as_slice(), "Gateway");
-        return;
-    }
-
-    let gateway_result = execute_script(
-        &gateway_path,
-        "docker",
-        Vec::from(["compose", "down", "--remove-orphans"]),
-        None,
-    );
-    match gateway_result {
-        Ok(_) => {
-            log("Gateway stopped successfully");
-        }
-        Err(e) => {
-            error(&format!("ERROR: Failed to stop gateway: {}", e));
-        }
-    }
+    let containers = compose_project_container_names(gateway_path.as_path(), "gateway", None, true);
+    remove_named_containers(containers.as_slice(), "Gateway");
 }
 
 pub fn stop_dapp(project_root_path: &Path) {
     const IBC_SWAP_DAPP_SERVICE: &str = "ibc-swap-client";
     let dapps_path = project_root_path.join("dapps");
-
-    if !has_service_container(&dapps_path, IBC_SWAP_DAPP_SERVICE) {
-        let containers =
-            compose_project_container_names("dapps", Some(IBC_SWAP_DAPP_SERVICE), true);
-        remove_named_containers(containers.as_slice(), "IBC Swap dapp");
-        return;
-    }
-
-    let dapp_result = execute_script(
-        &dapps_path,
-        "docker",
-        Vec::from(["compose", "rm", "-f", "-s", IBC_SWAP_DAPP_SERVICE]),
-        None,
+    let containers = compose_project_container_names(
+        dapps_path.as_path(),
+        "dapps",
+        Some(IBC_SWAP_DAPP_SERVICE),
+        true,
     );
-    match dapp_result {
-        Ok(_) => log("IBC Swap dapp stopped successfully"),
-        Err(stop_error) => error(&format!(
-            "ERROR: Failed to stop IBC Swap dapp: {}",
-            stop_error
-        )),
-    }
+    remove_named_containers(containers.as_slice(), "IBC Swap dapp");
 }
 
 pub fn stop_cardano_network(project_root_path: &Path) {
     let cardano_path = project_root_path.join("chains/cardano");
-
-    if !has_running_containers(&cardano_path) {
-        let containers = compose_project_container_names("cardano", None, true);
-        remove_named_containers(containers.as_slice(), "Cardano network");
-        return;
-    }
-
-    let cardano_result = execute_script(
-        &cardano_path,
-        "docker",
-        Vec::from(["compose", "down", "--remove-orphans"]),
-        None,
-    );
-    match cardano_result {
-        Ok(_) => {
-            log("Cardano network stopped successfully");
-        }
-        Err(e) => {
-            error(&format!("ERROR: Failed to stop Cardano network: {}", e));
-        }
-    }
+    let containers = compose_project_container_names(cardano_path.as_path(), "cardano", None, true);
+    remove_named_containers(containers.as_slice(), "Cardano network");
 }
 
 pub fn stop_relayer(relayer_path: &Path) {
@@ -274,6 +258,40 @@ fn parse_pid_and_command(line: &str) -> Option<(u32, String)> {
     let pid = pid_str.parse::<u32>().ok()?;
 
     Some((pid, command))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compose_project_container_args;
+    use std::path::Path;
+
+    #[test]
+    fn compose_cleanup_is_scoped_to_the_checkout_working_directory() {
+        let first_checkout = compose_project_container_args(
+            Path::new("/workspace/checkout-a/dapps"),
+            "dapps",
+            Some("ibc-swap-client"),
+            true,
+        );
+        let second_checkout = compose_project_container_args(
+            Path::new("/workspace/checkout-b/dapps"),
+            "dapps",
+            Some("ibc-swap-client"),
+            true,
+        );
+
+        assert!(first_checkout.contains(
+            &"label=com.docker.compose.project.working_dir=/workspace/checkout-a/dapps".to_string()
+        ));
+        assert!(second_checkout.contains(
+            &"label=com.docker.compose.project.working_dir=/workspace/checkout-b/dapps".to_string()
+        ));
+        assert!(first_checkout.contains(&"label=com.docker.compose.project=dapps".to_string()));
+        assert!(first_checkout
+            .contains(&"label=com.docker.compose.service=ibc-swap-client".to_string()));
+        assert!(first_checkout.contains(&"--all".to_string()));
+        assert_ne!(first_checkout, second_checkout);
+    }
 }
 
 pub fn stop_mithril(mithril_path: &Path) {
