@@ -4,11 +4,15 @@ import {
   CARDANO_BRIDGE_MANIFEST_URL,
   CARDANO_CHAIN_ID,
   CARDANO_IBC_CHAIN_ID,
+  CARDANO_NETWORK,
+  ENABLE_MAINNET_IBC_SWAP,
+  HAS_EXPLICIT_PUBLIC_CARDANO_BRIDGE_MANIFEST_URL,
   IBC_SWAP_MODE,
   INJECTIVE_REST_ENDPOINT,
   INJECTIVE_RPC_ENDPOINT,
   LOCAL_OSMOSIS_REST_ENDPOINT,
   LOCAL_OSMOSIS_RPC_ENDPOINT,
+  type CardanoNetwork,
   type IbcSwapMode,
 } from '@/configs/runtime';
 
@@ -62,6 +66,7 @@ export type RuntimeConfig = {
   enabled: boolean;
   disabledReason?: string;
   defaultCosmosChainId: string;
+  cardanoNetwork: CardanoNetwork;
   cardanoChainId: string;
   cardanoIbcChainId: string;
   cardanoBridgeManifestUrl: string;
@@ -82,13 +87,34 @@ export const INJECTIVE_TESTNET_CHAIN_ID = 'injective-888';
 export const INJECTIVE_MAINNET_CHAIN_ID = 'injective-1';
 
 function cardanoPrettyName(): string {
-  if (IBC_SWAP_MODE === 'testnet') return 'Cardano Preprod';
-  if (IBC_SWAP_MODE === 'mainnet') return 'Cardano Mainnet';
-  return 'Cardano Local';
+  switch (CARDANO_NETWORK) {
+    case 'mainnet':
+      return 'Cardano Mainnet';
+    case 'preview':
+      return 'Cardano Preview';
+    case 'preprod':
+      return 'Cardano Preprod';
+    case 'devnet':
+    default:
+      return 'Cardano Local';
+  }
+}
+
+function cardanoNetworkType(): RuntimeChainConfig['networkType'] {
+  switch (CARDANO_NETWORK) {
+    case 'mainnet':
+      return 'mainnet';
+    case 'preview':
+    case 'preprod':
+      return 'testnet';
+    case 'devnet':
+    default:
+      return 'devnet';
+  }
 }
 
 const cardanoChain = (
-  networkType: RuntimeChainConfig['networkType'],
+  networkType: RuntimeChainConfig['networkType'] = cardanoNetworkType(),
 ): RuntimeChainConfig => ({
   id: CARDANO_CHAIN_ID,
   ibcChainId: CARDANO_IBC_CHAIN_ID,
@@ -97,7 +123,7 @@ const cardanoChain = (
   role: 'user',
   networkType,
   prettyName: cardanoPrettyName(),
-  bech32Prefix: IBC_SWAP_MODE === 'mainnet' ? 'addr' : 'addr_test',
+  bech32Prefix: CARDANO_NETWORK === 'mainnet' ? 'addr' : 'addr_test',
   slip44: 1815,
   logoUri: DefaultCardanoNetworkIcon.src,
   visibleInSelector: true,
@@ -170,10 +196,10 @@ const injectiveTestnetChain: RuntimeChainConfig = {
 };
 
 const mainnetConfigured = Boolean(
-  process.env.NEXT_PUBLIC_CARDANO_BRIDGE_MANIFEST_URL &&
+  HAS_EXPLICIT_PUBLIC_CARDANO_BRIDGE_MANIFEST_URL &&
     INJECTIVE_RPC_ENDPOINT &&
     INJECTIVE_REST_ENDPOINT &&
-    process.env.NEXT_PUBLIC_ENABLE_MAINNET_IBC_SWAP === 'true',
+    ENABLE_MAINNET_IBC_SWAP,
 );
 
 const injectiveMainnetChain: RuntimeChainConfig = {
@@ -226,20 +252,21 @@ function buildRuntimeConfig(mode: IbcSwapMode): RuntimeConfig {
     return {
       mode,
       label: 'Testnet',
-      description: 'Cardano preprod plus Injective testnet direct-route preview.',
+      description: `${cardanoPrettyName()} plus Injective testnet direct-route preview.`,
       enabled: true,
       defaultCosmosChainId: INJECTIVE_TESTNET_CHAIN_ID,
+      cardanoNetwork: CARDANO_NETWORK,
       cardanoChainId: CARDANO_CHAIN_ID,
       cardanoIbcChainId: CARDANO_IBC_CHAIN_ID,
       cardanoBridgeManifestUrl: CARDANO_BRIDGE_MANIFEST_URL,
       plannerCounterpartyRestEndpoint: INJECTIVE_REST_ENDPOINT,
       pfmFeeChainIds: [],
-      chains: [cardanoChain('testnet'), injectiveTestnetChain],
+      chains: [cardanoChain(), injectiveTestnetChain],
       routes: bidirectionalRoutes(
         'testnet',
         CARDANO_CHAIN_ID,
         INJECTIVE_TESTNET_CHAIN_ID,
-        'Cardano Preprod',
+        cardanoPrettyName(),
         'Injective Testnet',
       ),
       features: {
@@ -262,13 +289,14 @@ function buildRuntimeConfig(mode: IbcSwapMode): RuntimeConfig {
       enabled: mainnetConfigured,
       disabledReason,
       defaultCosmosChainId: INJECTIVE_MAINNET_CHAIN_ID,
+      cardanoNetwork: CARDANO_NETWORK,
       cardanoChainId: CARDANO_CHAIN_ID,
       cardanoIbcChainId: CARDANO_IBC_CHAIN_ID,
       cardanoBridgeManifestUrl: CARDANO_BRIDGE_MANIFEST_URL,
       plannerCounterpartyRestEndpoint: INJECTIVE_REST_ENDPOINT,
       pfmFeeChainIds: [],
       chains: [
-        cardanoChain('mainnet'),
+        cardanoChain(),
         {
           ...injectiveMainnetChain,
           disabledReason,
@@ -278,7 +306,7 @@ function buildRuntimeConfig(mode: IbcSwapMode): RuntimeConfig {
         'mainnet',
         CARDANO_CHAIN_ID,
         INJECTIVE_MAINNET_CHAIN_ID,
-        'Cardano Mainnet',
+        cardanoPrettyName(),
         'Injective Mainnet',
         {
           enabled: mainnetConfigured,
@@ -297,20 +325,21 @@ function buildRuntimeConfig(mode: IbcSwapMode): RuntimeConfig {
   return {
     mode,
     label: 'Local',
-    description: 'Local Cardano demo stack plus Local Osmosis direct-route preview.',
+    description: `${cardanoPrettyName()} demo stack plus Local Osmosis direct-route preview.`,
     enabled: true,
     defaultCosmosChainId: LOCAL_OSMOSIS_CHAIN_ID,
+    cardanoNetwork: CARDANO_NETWORK,
     cardanoChainId: CARDANO_CHAIN_ID,
     cardanoIbcChainId: CARDANO_IBC_CHAIN_ID,
     cardanoBridgeManifestUrl: CARDANO_BRIDGE_MANIFEST_URL,
     plannerCounterpartyRestEndpoint: LOCAL_OSMOSIS_REST_ENDPOINT,
     pfmFeeChainIds: [],
-    chains: [cardanoChain('devnet'), localOsmosisChain],
+    chains: [cardanoChain(), localOsmosisChain],
     routes: bidirectionalRoutes(
       'local',
       CARDANO_CHAIN_ID,
       LOCAL_OSMOSIS_CHAIN_ID,
-      'Cardano Local',
+      cardanoPrettyName(),
       'Local Osmosis',
     ),
     features: {

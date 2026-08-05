@@ -34,7 +34,7 @@ enum DemoType {
 enum StartTarget {
     /// Starts everything (network + bridge + IBC Swap dapp)
     All,
-    /// Starts the local Cardano network related services
+    /// Starts the managed Cardano network/runtime services
     Network,
     /// Deploys the light client contracts and starts the gateway and relayer
     Bridge,
@@ -52,7 +52,7 @@ enum StartTarget {
 enum StopTarget {
     /// Stops everything (dapp + network + bridge + demos)
     All,
-    /// Stops the local Cardano network related services
+    /// Stops the managed Cardano network/runtime services
     Network,
     /// Tears down the gateway and relayer
     Bridge,
@@ -113,7 +113,7 @@ enum SetupCommand {
         /// Source chain for the route
         #[arg(long = "from", value_enum, default_value_t = TransferRouteChainArg::Cardano)]
         from: TransferRouteChainArg,
-        /// Expected source network (for Cardano: local or preprod)
+        /// Expected source network (for Cardano: local, preprod, or preview)
         #[arg(long = "from-network")]
         from_network: Option<String>,
         /// Destination chain for the route
@@ -145,7 +145,7 @@ enum Commands {
         /// Deprecated and disabled; use the default stake-weighted-stability light-client mode
         #[arg(long, default_value_t = false)]
         with_mithril: bool,
-        /// Optional network profile for the managed Cardano runtime (local, preprod)
+        /// Optional network profile for the managed Cardano runtime (local, preprod, preview)
         #[arg(long)]
         network: Option<String>,
         /// Chain-specific KEY=VALUE flag (repeatable); use `caribic chain start --chain <id>` for optional chains
@@ -156,7 +156,7 @@ enum Commands {
     Stop {
         #[arg(value_enum)]
         target: Option<StopTarget>,
-        /// Optional network profile for the managed Cardano runtime (local, preprod)
+        /// Optional network profile for the managed Cardano runtime (local, preprod, preview)
         #[arg(long)]
         network: Option<String>,
         /// Chain-specific KEY=VALUE flag (repeatable); use `caribic chain stop --chain <id>` for optional chains
@@ -177,7 +177,7 @@ enum Commands {
     },
     /// Check health of bridge services
     HealthCheck {
-        /// Optional: specific service to check (gateway, dapp, cardano, postgres, yaci, kupo, ogmios, mithril, hermes, osmosis, redis, cheqd, injective)
+        /// Optional: specific service to check (gateway, dapp, cardano, postgres, yaci, kupo, ogmios, hermes, osmosis, redis, cheqd, injective)
         #[arg(long)]
         service: Option<String>,
     },
@@ -189,7 +189,7 @@ enum Commands {
         /// Select the first block of tip_epoch - epochs_back
         #[arg(long, default_value_t = 2)]
         epochs_back: u64,
-        /// Write YACI_SYNC_START_* values into cardano/gateway/.env and chains/cardano/.env
+        /// Write the network marker and YACI_SYNC_START_* values into cardano/gateway/.env
         #[arg(long, default_value_t = false)]
         write_env: bool,
     },

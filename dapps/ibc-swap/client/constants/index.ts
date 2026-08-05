@@ -1,5 +1,6 @@
 /* global BigInt */
 import { cosmosRuntimeChains } from '@/configs/runtimeConfig';
+import { FORWARD_TIMEOUT as RUNTIME_FORWARD_TIMEOUT } from '@/configs/runtime';
 
 export const THEME_MODE = {
   LIGHT: 'light',
@@ -49,7 +50,7 @@ export const PACKET_TIMEOUT_NANOSEC = BigInt(30 * 60) * BigInt(1000000000);
 export const DEFAULT_FORWARD_TIMEOUT = '60m';
 
 export const FORWARD_TIMEOUT =
-  process.env.NEXT_PUBLIC_FORWARD_TIMEOUT || DEFAULT_FORWARD_TIMEOUT;
+  RUNTIME_FORWARD_TIMEOUT || DEFAULT_FORWARD_TIMEOUT;
 
 // common Cosmos urls query
 export const queryAllDenomTracesUrl = '/ibc/apps/transfer/v1/denoms';
@@ -57,4 +58,6 @@ export const queryChannelsPrefixUrl = `/ibc/core/channel/v1/channels`;
 export const queryPacketForwardParamsUrl = `/ibc/apps/packetforward/v1/params`;
 export const queryAllChannelsUrl = `${queryChannelsPrefixUrl}?pagination.count_total=true&pagination.limit=10000`;
 export const OSMOSIS_CHAIN_ID = 'localosmosis';
-export const cosmosChainsSupported = [OSMOSIS_CHAIN_ID];
+export const cosmosChainsSupported = cosmosRuntimeChains.length
+  ? cosmosRuntimeChains.map((chain) => chain.id)
+  : [OSMOSIS_CHAIN_ID];

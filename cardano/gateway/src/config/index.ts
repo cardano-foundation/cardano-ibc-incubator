@@ -46,6 +46,28 @@ type DeploymentConfig = {
   };
 };
 
+const defaultKoiosEndpoint = (networkMagic?: string): string | undefined => {
+  switch (networkMagic) {
+    case '1':
+      return 'https://preprod.koios.rest/api/v1';
+    case '2':
+      return 'https://preview.koios.rest/api/v1';
+    default:
+      return undefined;
+  }
+};
+
+const defaultEpochLength = (networkMagic?: string): number => {
+  switch (networkMagic) {
+    case '2':
+      return 86_400;
+    case '42':
+      return 5_000;
+    default:
+      return 432_000;
+  }
+};
+
 interface Config {
   deployment: DeploymentConfig;
   ogmiosEndpoint: string;
@@ -70,6 +92,7 @@ interface Config {
   cardanoClientTrustingPeriodSeconds: number;
   cardanoEpochParamsEndpoint?: string;
   cardanoPoolRegistrationHistoryEndpoint?: string;
+  cardanoKoiosApiKey?: string;
 
   mithrilEndpoint: string;
   mtithrilGenesisVerificationKey: string;
@@ -102,14 +125,16 @@ export default (): Partial<Config> => {
     cardanoLightClientMode:
       process.env.CARDANO_LIGHT_CLIENT_MODE === 'mithril' ? 'mithril' : 'stake-weighted-stability',
     cardanoNetwork: cardanoNetwork,
-    cardanoEpochLength: Number(process.env.CARDANO_EPOCH_LENGTH || 432000),
+    cardanoEpochLength: Number(
+      process.env.CARDANO_EPOCH_LENGTH || defaultEpochLength(process.env.CARDANO_NETWORK_MAGIC),
+    ),
     cardanoClientTrustingPeriodSeconds: Number(process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS || 86_400),
     cardanoEpochParamsEndpoint:
-      process.env.CARDANO_EPOCH_PARAMS_ENDPOINT ||
-      (process.env.CARDANO_NETWORK_MAGIC === '1' ? 'https://preprod.koios.rest/api/v1' : undefined),
+      process.env.CARDANO_EPOCH_PARAMS_ENDPOINT || defaultKoiosEndpoint(process.env.CARDANO_NETWORK_MAGIC),
     cardanoPoolRegistrationHistoryEndpoint:
-      process.env.CARDANO_POOL_REGISTRATION_HISTORY_ENDPOINT ||
-      (process.env.CARDANO_NETWORK_MAGIC === '1' ? 'https://preprod.koios.rest/api/v1' : undefined),
+      process.env.CARDANO_POOL_REGISTRATION_HISTORY_ENDPOINT || defaultKoiosEndpoint(process.env.CARDANO_NETWORK_MAGIC),
+    cardanoKoiosApiKey:
+      process.env.CARDANO_KOIOS_API_KEY || process.env.CARIBIC_KOIOS_API_KEY || process.env.KOIOS_API_KEY,
 
     mithrilEndpoint: process.env.MITHRIL_ENDPOINT,
     mtithrilGenesisVerificationKey: process.env.MITHRIL_GENESIS_VERIFICATION_KEY,

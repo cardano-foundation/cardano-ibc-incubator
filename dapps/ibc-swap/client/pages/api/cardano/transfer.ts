@@ -6,6 +6,7 @@ import {
   KUPMIOS_AUTH_HEADERS,
   KUPMIOS_URL,
 } from '@/configs/runtime';
+import { fetchCardanoResource } from '@/services/validatedBridgeManifestFetch';
 
 export const config = {
   api: {
@@ -25,6 +26,7 @@ const transferBuilderRuntime = createTxBuilderRuntime({
   bridgeManifestUrl: CARDANO_BRIDGE_MANIFEST_URL,
   kupmiosUrl: KUPMIOS_URL,
   kupmiosHeaders: KUPMIOS_AUTH_HEADERS,
+  fetchImpl: fetchCardanoResource,
 });
 
 type LocalUnsignedTransferResponse = Awaited<

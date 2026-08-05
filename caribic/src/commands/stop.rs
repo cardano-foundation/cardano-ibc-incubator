@@ -2,6 +2,24 @@ use std::path::Path;
 
 use crate::{chains, config, logger, stop, StopTarget};
 
+fn resolve_stop_network(
+    requested: Option<&str>,
+    active: config::CoreCardanoNetwork,
+) -> Result<config::CoreCardanoNetwork, String> {
+    let Some(requested) = requested else {
+        return Ok(active);
+    };
+    let requested = config::CoreCardanoNetwork::parse(Some(requested))?;
+    if requested != active {
+        return Err(format!(
+            "ERROR: Cardano {} is active, but stop requested {}. Refusing to stop a different runtime; switch the flag or omit --network.",
+            active.as_str(),
+            requested.as_str()
+        ));
+    }
+    Ok(active)
+}
+
 /// Stops the requested service group and keeps stop ordering consistent.
 pub fn run_stop(
     target: Option<StopTarget>,
@@ -18,10 +36,8 @@ pub fn run_stop(
         );
     }
 
-    let core_cardano_network = match network.as_deref() {
-        Some(requested_network) => config::CoreCardanoNetwork::parse(Some(requested_network))?,
-        None => config::active_core_cardano_network(project_root_path),
-    };
+    let active_network = config::active_core_cardano_network(project_root_path);
+    let core_cardano_network = resolve_stop_network(network.as_deref(), active_network)?;
 
     match target {
         Some(StopTarget::All) | None => {
@@ -30,7 +46,7 @@ pub fn run_stop(
             stop_all_managed_optional_chain_networks(project_root_path, "cheqd")?;
             stop_all_managed_optional_chain_networks(project_root_path, "injective")?;
             bridge_down(project_root_path);
-            network_down(project_root_path);
+            network_down(project_root_path, core_cardano_network);
             logger::log("\nAll services stopped successfully");
         }
         Some(StopTarget::Bridge) => {
@@ -42,7 +58,7 @@ pub fn run_stop(
             logger::log("\nIBC Swap dapp stopped successfully");
         }
         Some(StopTarget::Network) => {
-            network_down(project_root_path);
+            network_down(project_root_path, core_cardano_network);
             logger::log("\nCardano Network stopped successfully");
         }
         Some(StopTarget::Demo) => {
@@ -66,9 +82,10 @@ pub fn run_stop(
                     "\nMithril stopped successfully (mithril-aggregator, mithril-signer-1, mithril-signer-2)",
                 );
             } else {
-                logger::log(
-                    "\nUsing public Mithril release-preprod; no local Mithril containers to stop",
-                );
+                logger::log(&format!(
+                    "\nUsing public Mithril {}; no local Mithril containers to stop",
+                    core_cardano_network.as_str()
+                ));
             }
         }
     }
@@ -108,8 +125,7 @@ fn stop_all_managed_optional_chain_networks(
 }
 
 /// Stops the local Cardano network and Mithril services.
-fn network_down(project_root_path: &Path) {
-    let active_network = crate::config::active_core_cardano_network(project_root_path);
+fn network_down(project_root_path: &Path, active_network: config::CoreCardanoNetwork) {
     stop::stop_cardano_network(project_root_path);
 
     if active_network.uses_local_mithril() {
@@ -121,4 +137,26 @@ fn network_down(project_root_path: &Path) {
 fn bridge_down(project_root_path: &Path) {
     stop::stop_relayer(project_root_path.join("relayer").as_path());
     stop::stop_gateway(project_root_path);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_stop_network;
+    use crate::config::CoreCardanoNetwork;
+
+    #[test]
+    fn explicit_stop_network_must_match_the_active_runtime() {
+        assert_eq!(
+            resolve_stop_network(None, CoreCardanoNetwork::Preprod).unwrap(),
+            CoreCardanoNetwork::Preprod
+        );
+        assert_eq!(
+            resolve_stop_network(Some("preview"), CoreCardanoNetwork::Preview).unwrap(),
+            CoreCardanoNetwork::Preview
+        );
+        let error = resolve_stop_network(Some("preview"), CoreCardanoNetwork::Preprod)
+            .expect_err("a stop command must not target another active runtime");
+        assert!(error.contains("preprod is active"));
+        assert!(error.contains("requested preview"));
+    }
 }

@@ -1,24 +1,57 @@
+# Docker builds start from an empty context and explicitly opt in source trees.
 **
 
 !.dockerignore
+
 !cardano/
 !cardano/gateway/
 !cardano/gateway/**
+
+!relayer/
+!relayer/**
+
 !packages/
 !packages/**
+
 !dapps/
 !dapps/ibc-swap/
 !dapps/ibc-swap/client/
 !dapps/ibc-swap/client/**
+
 !proto-types/
 !proto-types/**
-!manifests/
-!manifests/**
 
-cardano/gateway/node_modules
-cardano/gateway/dist
-packages/**/node_modules
-dapps/ibc-swap/client/node_modules
-dapps/ibc-swap/client/.next
-proto-types/node_modules
-proto-types/dist
+!manifests/
+!manifests/preprod/
+!manifests/preprod/cardano-preprod-handler.json
+!manifests/preprod/cardano-preprod-bridge-manifest.json
+!manifests/preview/
+!manifests/preview/cardano-preview-handler.json
+!manifests/preview/cardano-preview-bridge-manifest.json
+
+# Never send local state, credentials, override configs, or build products to
+# the Docker daemon, even if a broader source directory is included above.
+**/.git
+**/.git/**
+**/node_modules
+**/node_modules/**
+**/target
+**/target/**
+**/dist
+**/dist/**
+# The Gateway consumes these tracked local packages through file: dependencies,
+# whose package entry points are the committed dist files. The trace-registry
+# package is built explicitly by the Gateway Dockerfile instead.
+!packages/cardano-ibc-planner/dist/
+!packages/cardano-ibc-planner/dist/**
+!packages/cardano-ibc-tx-builder/dist/
+!packages/cardano-ibc-tx-builder/dist/**
+**/.next
+**/.next/**
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.sk
+**/*mnemonic*
+caribic/config/*.local.*

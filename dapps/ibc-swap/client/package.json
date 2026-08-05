@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint \"**/*.{ts,tsx}\"",
+    "test": "node --test configs/*.test.js",
+    "test:runtime-image": "node scripts/smoke-standalone-runtime.mjs",
     "postinstall": "husky install"
   },
   "resolutions": {
@@ -71,6 +73,7 @@
     "@types/node": "20.14.10",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
+    "@types/ws": "^8.18.1",
     "eslint": "8.24.0",
     "eslint-config-airbnb": "19.0.4",
     "eslint-config-next": "12.3.1",

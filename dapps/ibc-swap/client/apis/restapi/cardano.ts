@@ -2,6 +2,7 @@ import axios, { type AxiosError } from 'axios';
 import { toast } from 'react-toastify';
 import type { CardanoAssetDenomTrace } from '@/types/cardanoTrace';
 import { cardanoPlannerClient } from '@/services/cardanoPlanner';
+import { dappApiPath } from '@/configs/runtime';
 import API from './api';
 
 export type CardanoWalletUtxo = {
@@ -364,7 +365,7 @@ export async function transfer({
   try {
     const response = await axios({
       method: 'POST',
-      url: '/api/cardano/transfer',
+      url: dappApiPath('/api/cardano/transfer'),
       data: {
         source_port: sourcePort,
         source_channel: sourceChannel,
@@ -391,7 +392,7 @@ export async function submitSignedCardanoTx(
   try {
     const response = await axios<SubmitSignedCardanoTxResponse>({
       method: 'POST',
-      url: '/api/cardano/submit',
+      url: dappApiPath('/api/cardano/submit'),
       data: {
         signed_tx_cbor: signedTxCbor,
         description: 'IBC transfer signed by browser wallet',
@@ -409,7 +410,7 @@ export async function lookupCardanoAssetDenomTrace(
 ): Promise<CardanoAssetDenomTrace | null> {
   try {
     const response = await axios.get<CardanoAssetDenomTrace>(
-      `/api/cardano/trace-registry/${encodeURIComponent(assetId)}`,
+      dappApiPath(`/api/cardano/trace-registry/${encodeURIComponent(assetId)}`),
     );
     return response.data;
   } catch (error) {
@@ -424,7 +425,7 @@ export async function requireCardanoAssetDenomTrace(
 ): Promise<CardanoAssetDenomTrace> {
   try {
     const response = await axios.get<CardanoAssetDenomTrace>(
-      `/api/cardano/trace-registry/${encodeURIComponent(assetId)}`,
+      dappApiPath(`/api/cardano/trace-registry/${encodeURIComponent(assetId)}`),
     );
     return response.data;
   } catch (error) {
@@ -439,7 +440,7 @@ export async function listCardanoIbcAssets(): Promise<
 > {
   try {
     const response = await axios.get<CardanoAssetDenomTrace[]>(
-      '/api/cardano/trace-registry',
+      dappApiPath('/api/cardano/trace-registry'),
     );
     return response.data;
   } catch (error) {

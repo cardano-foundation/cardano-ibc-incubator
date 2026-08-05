@@ -1,8 +1,10 @@
 import {
   CARDANO_CHAIN_ID,
   CARDANO_IBC_CHAIN_ID,
+  CARDANO_NETWORK,
   MAINNET_CARDANO_CHAIN_ID,
   PREPROD_CARDANO_CHAIN_ID,
+  PREVIEW_CARDANO_CHAIN_ID,
 } from '@/configs/runtime';
 import {
   findRuntimeChain,
@@ -12,10 +14,22 @@ import {
 
 export const getCardanoExplorerTxUrl = (txHash: string): string | undefined => {
   if (!txHash) return undefined;
-  if (CARDANO_CHAIN_ID === PREPROD_CARDANO_CHAIN_ID) {
+  if (
+    CARDANO_NETWORK === 'preprod' ||
+    CARDANO_CHAIN_ID === PREPROD_CARDANO_CHAIN_ID
+  ) {
     return `https://preprod.cexplorer.io/tx/${txHash}`;
   }
-  if (CARDANO_CHAIN_ID === MAINNET_CARDANO_CHAIN_ID) {
+  if (
+    CARDANO_NETWORK === 'preview' ||
+    CARDANO_CHAIN_ID === PREVIEW_CARDANO_CHAIN_ID
+  ) {
+    return `https://preview.cexplorer.io/tx/${txHash}`;
+  }
+  if (
+    CARDANO_NETWORK === 'mainnet' ||
+    CARDANO_CHAIN_ID === MAINNET_CARDANO_CHAIN_ID
+  ) {
     return `https://cexplorer.io/tx/${txHash}`;
   }
   return undefined;

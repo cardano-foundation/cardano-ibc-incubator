@@ -1,4 +1,8 @@
-import { resolveManagedKupmiosHeaders, resolveManagedOgmiosHttpEndpoint } from './managed-cardano-endpoints';
+import {
+  redactManagedEndpoint,
+  resolveManagedKupmiosHeaders,
+  resolveManagedOgmiosHttpEndpoint,
+} from './managed-cardano-endpoints';
 
 describe('managed Cardano endpoints', () => {
   it('uses Demeter authenticated Ogmios host for HTTP JSON-RPC', () => {
@@ -16,5 +20,14 @@ describe('managed Cardano endpoints', () => {
         'ogmios123',
       ),
     ).toEqual({ kupoHeader: { 'dmtr-api-key': 'kupo123' } });
+  });
+
+  it('redacts authenticated provider hostnames and URL credentials', () => {
+    expect(
+      redactManagedEndpoint('https://user:password@kupo123.cardano-preprod-v2.kupo-m1.dmtr.host/matches?token=secret'),
+    ).toBe('https://redacted.cardano-preprod-v2.kupo-m1.dmtr.host/matches');
+    expect(redactManagedEndpoint('https://private-token.cardano-preprod-v6.ogmios-m1.dmtr.host', 'private-token')).toBe(
+      'https://redacted.cardano-preprod-v6.ogmios-m1.dmtr.host',
+    );
   });
 });

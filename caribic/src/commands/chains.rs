@@ -7,10 +7,12 @@ pub fn run_chains() -> Result<(), String> {
     logger::log("Supported chains:\n");
 
     logger::log(&format!(
-        "{} (Cardano devnet)",
+        "{} (Cardano)",
         config::get_config().chains.cardano.chain_id
     ));
     logger::log("  - network: local (managed) - Core local Cardano devnet used by the bridge");
+    logger::log("  - network: preprod (managed history + external live endpoints) - Cardano public preprod testnet");
+    logger::log("  - network: preview (managed history + external live endpoints) - Cardano public preview testnet");
     logger::log("");
 
     if adapters.is_empty() {

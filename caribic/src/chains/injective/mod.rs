@@ -305,7 +305,7 @@ pub fn configure_hermes_for_testnet_demo(
     hermes::configure_hermes_for_testnet_demo(project_root_path, injective_dir)
 }
 
-/// Ensures Hermes has the Injective testnet chain block required for preprod multi-hop routing.
+/// Ensures Hermes has the Injective testnet chain block required by public Cardano routes.
 pub fn ensure_testnet_chain_in_hermes_config(
     project_root_path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {

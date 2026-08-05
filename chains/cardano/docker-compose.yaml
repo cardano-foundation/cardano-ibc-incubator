@@ -203,7 +203,7 @@ services:
     ports:
       - ${POSTGRES_PORT:-6432}:5432
     volumes:
-      - ./postgres:/var/lib/postgresql/data
+      - ./${GATEWAY_POSTGRES_DATA_DIR:-postgres}:/var/lib/postgresql/data
     restart: on-failure
     healthcheck:
       # Use pg_isready to check postgres is running. Substitute different
@@ -260,10 +260,10 @@ services:
       - HISTORY_DB_USERNAME=yaci
       - HISTORY_DB_PASSWORD=dbpass
     volumes:
-      - ./yaci/genesis:/app/genesis:ro
+      - ./${YACI_GENESIS_DIR:-yaci/genesis}:/app/genesis:ro
       - ./yaci/config:/app/config:ro
-      - ./yaci/data:/app/data
-      - ./yaci/logs:/app/logs
+      - ./${YACI_DATA_DIR:-yaci/data}:/app/data
+      - ./${YACI_LOGS_DIR:-yaci/logs}:/app/logs
     restart: on-failure
     healthcheck:
       test: [ "CMD-SHELL", "wget -qO- http://127.0.0.1:8080/actuator/health | grep -q '\"status\":\"UP\"'" ]

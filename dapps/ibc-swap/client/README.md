@@ -4,33 +4,37 @@
 This folder using to run Cardano IBC Swap frontend (NextJS).
 
 ## Setup
-Create `.env` files with the following variables:
+Create `.env` files with the following variables. Chain settings are read when
+the server starts; the optional base path is the one exception because Next.js
+fixes it while building the application:
 
 | Variable                                | Meaning                                                                                                                                 | Note                                                                     |
 |-----------------------------------------|:----------------------------------------------------------------------------------------------------------------------------------------|:-------------------------------------------------------------------------|
-| BASE_PATH                               | NextJs will run instance under sub-path of a domain, refer to [this](https://nextjs.org/docs/app/api-reference/next-config-js/basePath) | Default: "/ibc"                                                          |
-| NEXT_PUBLIC_CARDANO_CHAIN_ID            | Network magic of Cardano chain                                                                                                          | Currently we use 42 for local Cardano, for preview, it will be 2         |
+| IBC_SWAP_BASE_PATH                      | Optional URL prefix passed to the container as a build argument                                                                         | Default: empty (served at `/`); an already-built image cannot change this |
+| NEXT_PUBLIC_IBC_SWAP_MODE               | Overall topology                                                                                                                         | `local`, `testnet`, or `mainnet`                                          |
+| NEXT_PUBLIC_CARDANO_NETWORK             | Cardano network label used by runtime config and UI                                                                                     | `devnet`, `preprod`, `preview`, or `mainnet`; inferred from chain IDs if unset |
+| NEXT_PUBLIC_CARDANO_CHAIN_ID            | Network magic of Cardano chain                                                                                                          | 42 for local/devnet, 1 for preprod, 2 for preview                        |
+| NEXT_PUBLIC_CARDANO_IBC_CHAIN_ID        | Cardano IBC chain identifier                                                                                                             | `cardano-devnet`, `cardano-preprod`, `cardano-preview`, or `cardano-mainnet` |
 | NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT    | RPC end-point of local Osmosis                                                                                                          | Default: http://localhost:26658                                          |
 | NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT   | Rest end-point of local Osmosis                                                                                                         | Default: http://localhost:1318                                           |
 | NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT | Rest end-point of gateway                                                                                                               | Default: http://localhost:8000. This is only used as the default bridge-manifest host when `NEXT_PUBLIC_CARDANO_BRIDGE_MANIFEST_URL` is unset. |
 | NEXT_PUBLIC_CARDANO_BRIDGE_MANIFEST_URL | URL of the public Cardano bridge manifest                                                                                               | Default: `${NEXT_PUBLIC_GATEWAY_TX_BUILDER_ENDPOINT}/api/bridge-manifest` |
-| NEXT_PUBLIC_KUPMIOS_URL                 | Url of Kupo and Ogmios instances, should not be use when using NEXT_PUBLIC_BLOCKFROST_PROJECT_ID                                        | Default: "http://localhost:1442,http://localhost:1337"                   |
-| NEXT_PUBLIC_BLOCKFROST_PROJECT_ID       | Blockfrost Project ID, currently only support network preview, should not be use when using NEXT_PUBLIC_KUPMIOS_URL                     | Default: "previewVi2O..."                                                |
+| IBC_SWAP_KUPMIOS_URL                    | Server-only URLs of Kupo and Ogmios. Never use `NEXT_PUBLIC_` here because an authenticated Demeter hostname may contain its API key.    | Default: "http://localhost:1442,http://localhost:1337"                   |
+| IBC_SWAP_KUPO_API_KEY                   | Server-only Kupo API key                                                                                                                 | Optional for endpoints that do not require authentication                 |
+| IBC_SWAP_OGMIOS_API_KEY                 | Server-only Ogmios API key                                                                                                               | Optional for endpoints that do not require authentication                 |
 | NEXT_PUBLIC_CROSSCHAIN_SWAP_ADDRESS     | Cross-chain swap address on local Osmosis for direct Cardano-to-Osmosis swap packets.                                                  | Optional                                                                 |
 | NEXT_PUBLIC_FORWARD_TIMEOUT             | Timeout for packet forwarding                                                                                                           | Default: "60m"                                                           |
 
 Legacy compatibility: `NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT` and `NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT` are still accepted as fallbacks.
 
-TODO: This demo client should not depend on the gateway long term. Today
-denom-trace lookup, route planning, and unsigned Cardano transfer tx building
-all run through shared local packages, but bridge-manifest bootstrap still
-defaults to the gateway unless `NEXT_PUBLIC_CARDANO_BRIDGE_MANIFEST_URL` is
-set explicitly.
+The browser never receives Kupmios endpoints or credentials. Provider access,
+denom-trace lookup, and Cardano transaction construction use same-origin Next
+API routes; the server holds the Kupo and Ogmios configuration.
 
 ## Running
 After set up the `.env`, run:
 ```bash
-yarn && yarn dev
+npm ci --legacy-peer-deps && npm run dev
 ```
 
 ## Containerized local run

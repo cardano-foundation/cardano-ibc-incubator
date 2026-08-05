@@ -32,6 +32,39 @@ function isDemeterHost(hostname: string): boolean {
   return hostname.endsWith('.dmtr.host') || hostname.endsWith('.demeter.run');
 }
 
+export function redactManagedEndpoint(rawUrl?: string | null, apiKey?: string | null): string {
+  const trimmed = trimTrailingSlash(rawUrl);
+  if (!trimmed) {
+    return '<unset>';
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    parsed.username = '';
+    parsed.password = '';
+    parsed.search = '';
+    parsed.hash = '';
+
+    if (isDemeterHost(parsed.hostname)) {
+      const labels = parsed.hostname.split('.');
+      const configuredKey = apiKey?.trim();
+      const firstLabel = labels[0] ?? '';
+      if (
+        (configuredKey && firstLabel === configuredKey) ||
+        firstLabel.startsWith('kupo') ||
+        firstLabel.startsWith('ogmios')
+      ) {
+        labels[0] = 'redacted';
+        parsed.hostname = labels.join('.');
+      }
+    }
+
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return '<invalid-endpoint>';
+  }
+}
+
 function resolveManagedAuthHost(url: string, apiKey?: string | null): string {
   const trimmedApiKey = apiKey?.trim();
   if (!trimmedApiKey) {

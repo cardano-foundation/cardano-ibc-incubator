@@ -2,7 +2,7 @@ use crate::logger::error;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::Mutex;
 
@@ -12,6 +12,7 @@ const CARDANO_RUNTIME_NETWORK_MARKER: &str = ".caribic-network";
 pub enum CoreCardanoNetwork {
     Local,
     Preprod,
+    Preview,
 }
 
 impl CoreCardanoNetwork {
@@ -19,8 +20,9 @@ impl CoreCardanoNetwork {
         match raw_network.unwrap_or("local") {
             "local" => Ok(Self::Local),
             "preprod" => Ok(Self::Preprod),
+            "preview" => Ok(Self::Preview),
             other => Err(format!(
-                "ERROR: Unsupported core Cardano network '{}'. Supported values: local, preprod.",
+                "ERROR: Unsupported core Cardano network '{}'. Supported values: local, preprod, preview.",
                 other
             )),
         }
@@ -30,6 +32,7 @@ impl CoreCardanoNetwork {
         match self {
             Self::Local => "local",
             Self::Preprod => "preprod",
+            Self::Preview => "preview",
         }
     }
 
@@ -37,11 +40,32 @@ impl CoreCardanoNetwork {
         match self {
             Self::Local => "devnet",
             Self::Preprod => "preprod",
+            Self::Preview => "preview",
         }
     }
 
     pub fn uses_local_mithril(self) -> bool {
         matches!(self, Self::Local)
+    }
+
+    pub fn is_public_testnet(self) -> bool {
+        matches!(self, Self::Preprod | Self::Preview)
+    }
+
+    pub fn koios_base_url(self) -> Option<&'static str> {
+        match self {
+            Self::Local => None,
+            Self::Preprod => Some("https://preprod.koios.rest/api/v1"),
+            Self::Preview => Some("https://preview.koios.rest/api/v1"),
+        }
+    }
+
+    pub fn epoch_length(self) -> u64 {
+        match self {
+            Self::Local => 5_000,
+            Self::Preprod => 432_000,
+            Self::Preview => 86_400,
+        }
     }
 }
 
@@ -119,6 +143,8 @@ pub struct Cardano {
 pub struct CardanoNetworkProfiles {
     pub local: CardanoNetworkProfile,
     pub preprod: CardanoNetworkProfile,
+    #[serde(default = "default_preview_network_profile")]
+    pub preview: CardanoNetworkProfile,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -179,6 +205,22 @@ fn default_cardano_network_profiles() -> CardanoNetworkProfiles {
                 "../../manifests/preprod/cardano-preprod-bridge-manifest.json".to_string(),
             ),
         },
+        preview: default_preview_network_profile(),
+    }
+}
+
+fn default_preview_network_profile() -> CardanoNetworkProfile {
+    CardanoNetworkProfile {
+        chain_id: "cardano-preview".to_string(),
+        network_magic: 2,
+        mithril_aggregator_url:
+            "https://aggregator.pre-release-preview.api.mithril.network/aggregator".to_string(),
+        mithril_genesis_verification_key:
+            "5b3132372c37332c3132342c3136312c362c3133372c3133312c3231332c3230372c3131372c3139382c38352c3137362c3139392c3136322c3234312c36382c3132332c3131392c3134352c31332c3233322c3234332c34392c3232392c322c3234392c3230352c3230352c33392c3233352c34345d".to_string(),
+        handler_json_path: "../../manifests/preview/cardano-preview-handler.json".to_string(),
+        bridge_manifest_path: Some(
+            "../../manifests/preview/cardano-preview-bridge-manifest.json".to_string(),
+        ),
     }
 }
 
@@ -193,7 +235,14 @@ impl Config {
             return configured_path.to_string();
         };
 
-        let joined_path = config_dir.join(path);
+        let absolute_config_dir = if config_dir.is_absolute() {
+            config_dir.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(config_dir)
+        };
+        let joined_path = absolute_config_dir.join(path);
         joined_path
             .canonicalize()
             .unwrap_or(joined_path)
@@ -213,6 +262,10 @@ impl Config {
             config_path,
             &config.cardano.networks.preprod.handler_json_path,
         );
+        config.cardano.networks.preview.handler_json_path = Self::resolve_path_from_config_dir(
+            config_path,
+            &config.cardano.networks.preview.handler_json_path,
+        );
         config.cardano.networks.local.bridge_manifest_path = config
             .cardano
             .networks
@@ -224,6 +277,13 @@ impl Config {
             .cardano
             .networks
             .preprod
+            .bridge_manifest_path
+            .as_deref()
+            .map(|path| Self::resolve_path_from_config_dir(config_path, path));
+        config.cardano.networks.preview.bridge_manifest_path = config
+            .cardano
+            .networks
+            .preview
             .bridge_manifest_path
             .as_deref()
             .map(|path| Self::resolve_path_from_config_dir(config_path, path));
@@ -289,6 +349,7 @@ pub fn cardano_network_profile(network: CoreCardanoNetwork) -> CardanoNetworkPro
     match network {
         CoreCardanoNetwork::Local => config.cardano.networks.local,
         CoreCardanoNetwork::Preprod => config.cardano.networks.preprod,
+        CoreCardanoNetwork::Preview => config.cardano.networks.preview,
     }
 }
 
