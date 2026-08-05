@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "baseUrl": ".",
-    "target": "es5",
+    "target": "es2020",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
@@ -16,7 +16,19 @@
     "jsx": "preserve",
     "incremental": true,
     "paths": {
-      "@/*": ["*"]
+      "@/*": ["*"],
+      "@cardano-ibc/planner": [
+        "../../../packages/cardano-ibc-planner/src/index.ts"
+      ],
+      "@cardano-ibc/trace-registry": [
+        "../../../packages/cardano-ibc-trace-registry/src/index.ts"
+      ],
+      "@cardano-ibc/tx-builder": [
+        "../../../packages/cardano-ibc-tx-builder/src/index.ts"
+      ],
+      "@cardano-ibc/tx-builder-runtime": [
+        "../../../packages/cardano-ibc-tx-builder-runtime/src/index.ts"
+      ]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx"],

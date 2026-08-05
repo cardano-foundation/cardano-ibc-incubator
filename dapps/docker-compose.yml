@@ -3,6 +3,8 @@ services:
     build:
       context: ..
       dockerfile: dapps/ibc-swap/client/Dockerfile
+      args:
+        BASE_PATH: ${IBC_SWAP_BASE_PATH:-}
     init: true
     restart: unless-stopped
     extra_hosts:
@@ -10,8 +12,10 @@ services:
     ports:
       - "${IBC_SWAP_HOST_PORT:-3000}:3000"
     environment:
-      BASE_PATH: ${IBC_SWAP_BASE_PATH:-}
+      IBC_SWAP_BASE_PATH: ${IBC_SWAP_BASE_PATH:-}
+      IBC_SWAP_HOST_PORT: ${IBC_SWAP_HOST_PORT:-3000}
       NEXT_PUBLIC_IBC_SWAP_MODE: ${IBC_SWAP_MODE:-local}
+      NEXT_PUBLIC_CARDANO_NETWORK: ${IBC_SWAP_CARDANO_NETWORK:-}
       NEXT_PUBLIC_LOCALOSMOIS_RPC_ENDPOINT: ${IBC_SWAP_LOCALOSMOSIS_RPC_ENDPOINT:-http://localhost:26658}
       NEXT_PUBLIC_LOCALOSMOIS_REST_ENDPOINT: ${IBC_SWAP_LOCALOSMOSIS_REST_ENDPOINT:-http://localhost:1318}
       NEXT_PUBLIC_INJECTIVE_RPC_ENDPOINT: ${IBC_SWAP_INJECTIVE_RPC_ENDPOINT:-}
@@ -23,8 +27,6 @@ services:
       NEXT_PUBLIC_CARDANO_CHAIN_ID: ${IBC_SWAP_CARDANO_CHAIN_ID:-}
       NEXT_PUBLIC_CARDANO_IBC_CHAIN_ID: ${IBC_SWAP_CARDANO_IBC_CHAIN_ID:-}
       IBC_SWAP_CARDANO_BRIDGE_MANIFEST_URL: ${IBC_SWAP_CARDANO_BRIDGE_MANIFEST_INTERNAL_URL:-http://host.docker.internal:8000/api/bridge-manifest}
-      NEXT_PUBLIC_BLOCKFROST_PROJECT_ID: ${IBC_SWAP_BLOCKFROST_PROJECT_ID:-}
-      NEXT_PUBLIC_KUPMIOS_URL: ${IBC_SWAP_KUPMIOS_URL:-http://localhost:1442,http://localhost:1337}
       IBC_SWAP_KUPMIOS_URL: ${IBC_SWAP_KUPMIOS_INTERNAL_URL:-http://host.docker.internal:1442,http://host.docker.internal:1337}
       IBC_SWAP_KUPO_API_KEY: ${IBC_SWAP_KUPO_API_KEY:-}
       IBC_SWAP_OGMIOS_API_KEY: ${IBC_SWAP_OGMIOS_API_KEY:-}

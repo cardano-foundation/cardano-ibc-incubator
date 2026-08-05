@@ -2,78 +2,14 @@ const path = require('path');
 const { join } = path;
 const { copyFileSync, existsSync, mkdirSync } = require('fs');
 const { access, copyFile, mkdir, symlink } = require('fs/promises');
-const webpack = require('webpack');
 
-const basePath = process?.env?.BASE_PATH || '';
+const basePath =
+  process?.env?.BASE_PATH || process?.env?.IBC_SWAP_BASE_PATH || '';
 
 // Avoid bundling optional native `ws` addons into Next API routes. The pure JS
 // implementation is sufficient here and avoids webpack interop issues.
 process.env.WS_NO_BUFFER_UTIL ||= '1';
 process.env.WS_NO_UTF_8_VALIDATE ||= '1';
-
-function firstNonEmpty(...values) {
-  return values.find(
-    (value) => typeof value === 'string' && value.trim().length > 0,
-  );
-}
-
-function isDemeterPublicEndpoint(endpoint, authenticatedPrefix) {
-  try {
-    const hostname = new URL(endpoint).hostname;
-    const isDemeterHost =
-      hostname.endsWith('.dmtr.host') || hostname.endsWith('.demeter.run');
-    return isDemeterHost && !hostname.startsWith(authenticatedPrefix);
-  } catch {
-    return false;
-  }
-}
-
-function validateRemoteKupmiosAuth() {
-  const mode = firstNonEmpty(
-    process.env.NEXT_PUBLIC_IBC_SWAP_MODE,
-    process.env.IBC_SWAP_MODE,
-  );
-  if (mode !== 'testnet' && mode !== 'mainnet') return;
-
-  const kupmiosUrl = firstNonEmpty(
-    process.env.IBC_SWAP_KUPMIOS_INTERNAL_URL,
-    process.env.IBC_SWAP_KUPMIOS_URL,
-    process.env.NEXT_PUBLIC_KUPMIOS_URL,
-  );
-  if (!kupmiosUrl) return;
-
-  const [kupoEndpoint = '', ogmiosEndpoint = ''] = kupmiosUrl
-    .split(',')
-    .map((value) => value.trim());
-  const missing = [];
-
-  if (
-    isDemeterPublicEndpoint(kupoEndpoint, 'kupo') &&
-    !firstNonEmpty(process.env.IBC_SWAP_KUPO_API_KEY, process.env.KUPO_API_KEY)
-  ) {
-    missing.push('IBC_SWAP_KUPO_API_KEY');
-  }
-
-  if (
-    isDemeterPublicEndpoint(ogmiosEndpoint, 'ogmios') &&
-    !firstNonEmpty(
-      process.env.IBC_SWAP_OGMIOS_API_KEY,
-      process.env.OGMIOS_API_KEY,
-    )
-  ) {
-    missing.push('IBC_SWAP_OGMIOS_API_KEY');
-  }
-
-  if (missing.length > 0) {
-    throw new Error(
-      `Remote Cardano Kupo/Ogmios endpoints require server-side API key env vars: ${missing.join(
-        ', ',
-      )}`,
-    );
-  }
-}
-
-validateRemoteKupmiosAuth();
 
 function ensureSodiumWrapperEsmArtifact() {
   const packageRoots = [
@@ -104,6 +40,11 @@ ensureSodiumWrapperEsmArtifact();
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: {
+    NEXT_PUBLIC_BASE_PATH: basePath,
+  },
+  output: 'standalone',
+  outputFileTracingRoot: path.resolve(__dirname, '../../..'),
   reactStrictMode: true,
   basePath,
   experimental: {
@@ -128,10 +69,23 @@ const nextConfig = {
     config.resolve.alias = {
       ...config.resolve.alias,
       '@': path.resolve(__dirname, './'),
+      '@cardano-ibc/planner': path.resolve(
+        __dirname,
+        '../../../packages/cardano-ibc-planner/src/index.ts',
+      ),
+      '@cardano-ibc/trace-registry': path.resolve(
+        __dirname,
+        '../../../packages/cardano-ibc-trace-registry/src/index.ts',
+      ),
       '@cardano-ibc/tx-builder': path.resolve(
         __dirname,
-        '../../../packages/cardano-ibc-tx-builder/dist/index.js',
+        '../../../packages/cardano-ibc-tx-builder/src/index.ts',
       ),
+      '@cardano-ibc/tx-builder-runtime': path.resolve(
+        __dirname,
+        '../../../packages/cardano-ibc-tx-builder-runtime/src/index.ts',
+      ),
+      '@noble/hashes': path.dirname(require.resolve('@noble/hashes/blake2b')),
       'js-sha3': require.resolve('js-sha3'),
     };
     config.output.environment = {
@@ -148,7 +102,7 @@ const nextConfig = {
     // file it does not actually publish. Redirect that request to the real
     // module from libsodium-sumo so the swap UI can compile reliably.
     config.plugins.push(
-      new webpack.NormalModuleReplacementPlugin(
+      new options.webpack.NormalModuleReplacementPlugin(
         /^\.\/libsodium-sumo\.mjs$/,
         path.resolve(
           __dirname,
@@ -257,26 +211,17 @@ const nextConfig = {
     return [
       {
         source: '/',
-        destination: `${basePath}/transfer`,
+        destination: '/transfer',
         permanent: false,
       },
-      ...(basePath
-        ? [
-            {
-              source: basePath,
-              destination: `${basePath}/transfer`,
-              permanent: false,
-            },
-          ]
-        : []),
       {
         source: '/swap',
-        destination: `${basePath}/transfer`,
+        destination: '/transfer',
         permanent: false,
       },
       {
         source: '/queries',
-        destination: `${basePath}/transfer`,
+        destination: '/transfer',
         permanent: false,
       },
     ];

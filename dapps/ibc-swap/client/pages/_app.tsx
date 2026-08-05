@@ -18,7 +18,11 @@ import {
 } from 'osmojs';
 import { useEffect, useMemo, useState } from 'react';
 
-import type { AppProps } from 'next/app';
+import App, {
+  type AppContext,
+  type AppInitialProps,
+  type AppProps,
+} from 'next/app';
 import { ChakraProvider } from '@chakra-ui/react';
 import { ChainProvider } from '@cosmos-kit/react';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
@@ -217,5 +221,12 @@ function MyApp({ Component, pageProps }: AppProps) {
     </ChakraProvider>
   );
 }
+
+// Runtime chain identity is supplied when the container starts. Rendering
+// every page per request prevents build-time local defaults from being baked
+// into HTML that a Preview/Preprod browser would then try to hydrate.
+MyApp.getInitialProps = async (
+  appContext: AppContext,
+): Promise<AppInitialProps> => App.getInitialProps(appContext);
 
 export default MyApp;

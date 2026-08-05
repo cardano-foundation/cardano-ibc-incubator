@@ -7,11 +7,13 @@ import {
   KUPMIOS_AUTH_HEADERS,
   KUPMIOS_URL,
 } from '@/configs/runtime';
+import { fetchCardanoResource } from '@/services/validatedBridgeManifestFetch';
 
 const traceRegistryClient = createTraceRegistryClient({
   bridgeManifestUrl: CARDANO_BRIDGE_MANIFEST_URL,
   kupmiosUrl: KUPMIOS_URL,
   kupmiosHeaders: KUPMIOS_AUTH_HEADERS,
+  fetchImpl: fetchCardanoResource,
 });
 
 export async function lookupCardanoAssetDenomTraceFromRegistry(

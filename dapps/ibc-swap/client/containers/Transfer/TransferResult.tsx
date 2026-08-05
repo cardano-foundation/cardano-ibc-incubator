@@ -8,7 +8,7 @@ import RightArrowIcon from '@/assets/icons/Arrow-right.svg';
 import TimerIcon from '@/assets/icons/timer.svg';
 import TransferContext from '@/contexts/TransferContext';
 import { formatTokenSymbol } from '@/utils/string';
-import { IBC_SWAP_MODE } from '@/configs/runtime';
+import { IBC_SWAP_MODE, dappApiPath } from '@/configs/runtime';
 import {
   runtimeChainLabel,
   runtimeRouteChainIds,
@@ -322,7 +322,9 @@ export const TransferResult = ({
         sourceChainId,
         destinationChainId,
       });
-      const response = await fetch(`/api/transfer/status?${params}`);
+      const response = await fetch(
+        dappApiPath(`/api/transfer/status?${params}`),
+      );
       const data = (await response.json()) as TransferStatusResponse;
       if (!response.ok) {
         throw new Error(data.error || data.message || 'Status query failed.');

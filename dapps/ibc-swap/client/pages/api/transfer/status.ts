@@ -1,4 +1,5 @@
 /* eslint-disable no-await-in-loop */
+/* global BigInt */
 import type { NextApiRequest, NextApiResponse } from 'next';
 
 import { GATEWAY_TX_BUILDER_ENDPOINT } from '@/configs/runtime';
