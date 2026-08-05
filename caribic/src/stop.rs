@@ -260,40 +260,6 @@ fn parse_pid_and_command(line: &str) -> Option<(u32, String)> {
     Some((pid, command))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::compose_project_container_args;
-    use std::path::Path;
-
-    #[test]
-    fn compose_cleanup_is_scoped_to_the_checkout_working_directory() {
-        let first_checkout = compose_project_container_args(
-            Path::new("/workspace/checkout-a/dapps"),
-            "dapps",
-            Some("ibc-swap-client"),
-            true,
-        );
-        let second_checkout = compose_project_container_args(
-            Path::new("/workspace/checkout-b/dapps"),
-            "dapps",
-            Some("ibc-swap-client"),
-            true,
-        );
-
-        assert!(first_checkout.contains(
-            &"label=com.docker.compose.project.working_dir=/workspace/checkout-a/dapps".to_string()
-        ));
-        assert!(second_checkout.contains(
-            &"label=com.docker.compose.project.working_dir=/workspace/checkout-b/dapps".to_string()
-        ));
-        assert!(first_checkout.contains(&"label=com.docker.compose.project=dapps".to_string()));
-        assert!(first_checkout
-            .contains(&"label=com.docker.compose.service=ibc-swap-client".to_string()));
-        assert!(first_checkout.contains(&"--all".to_string()));
-        assert_ne!(first_checkout, second_checkout);
-    }
-}
-
 pub fn stop_mithril(mithril_path: &Path) {
     let mithril_script_path = mithril_path.join("scripts");
 
@@ -351,5 +317,39 @@ pub fn stop_mithril(mithril_path: &Path) {
         Err(e) => {
             error(&format!("ERROR: Failed to stop Mithril: {}", e));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compose_project_container_args;
+    use std::path::Path;
+
+    #[test]
+    fn compose_cleanup_is_scoped_to_the_checkout_working_directory() {
+        let first_checkout = compose_project_container_args(
+            Path::new("/workspace/checkout-a/dapps"),
+            "dapps",
+            Some("ibc-swap-client"),
+            true,
+        );
+        let second_checkout = compose_project_container_args(
+            Path::new("/workspace/checkout-b/dapps"),
+            "dapps",
+            Some("ibc-swap-client"),
+            true,
+        );
+
+        assert!(first_checkout.contains(
+            &"label=com.docker.compose.project.working_dir=/workspace/checkout-a/dapps".to_string()
+        ));
+        assert!(second_checkout.contains(
+            &"label=com.docker.compose.project.working_dir=/workspace/checkout-b/dapps".to_string()
+        ));
+        assert!(first_checkout.contains(&"label=com.docker.compose.project=dapps".to_string()));
+        assert!(first_checkout
+            .contains(&"label=com.docker.compose.service=ibc-swap-client".to_string()));
+        assert!(first_checkout.contains(&"--all".to_string()));
+        assert_ne!(first_checkout, second_checkout);
     }
 }
