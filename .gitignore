@@ -41,6 +41,7 @@ chains/osmosis/configuration/.osmosis-local/wasm/wasm/state/wasm
 
 chains/cardano/devnet/
 chains/cardano/preprod/
+chains/cardano/preview/
 chains/cardano/mainnet/
 chains/cardano/.caribic-network
 chains/cardano/kupo-db/

@@ -63,6 +63,14 @@
         "mithril_genesis_verification_key": "e2ea7ff3d783299ae9f12ea3c4e425ec70073c17613f1d7de4dd2ebf59c24ef4",
         "handler_json_path": "../../manifests/preprod/cardano-preprod-handler.json",
         "bridge_manifest_path": "../../manifests/preprod/cardano-preprod-bridge-manifest.json"
+      },
+      "preview": {
+        "chain_id": "cardano-preview",
+        "network_magic": 2,
+        "mithril_aggregator_url": "https://aggregator.pre-release-preview.api.mithril.network/aggregator",
+        "mithril_genesis_verification_key": "5b3132372c37332c3132342c3136312c362c3133372c3133312c3231332c3230372c3131372c3139382c38352c3137362c3139392c3136322c3234312c36382c3132332c3131392c3134352c31332c3233322c3234332c34392c3232392c322c3234392c3230352c3230352c33392c3233352c34345d",
+        "handler_json_path": "../../manifests/preview/cardano-preview-handler.json",
+        "bridge_manifest_path": "../../manifests/preview/cardano-preview-bridge-manifest.json"
       }
     },
     "bootstrap_addresses": [

@@ -17,6 +17,7 @@ const HERMES_PID_FILE_NAME: &str = "hermes.pid";
 const HERMES_STARTUP_CHECK_ATTEMPTS: u32 = 5;
 const HERMES_STARTUP_CHECK_INTERVAL_MILLIS: u64 = 1000;
 const CARDANO_PREPROD_CHAIN_ID: &str = "cardano-preprod";
+const CARDANO_PREVIEW_CHAIN_ID: &str = "cardano-preview";
 const INJECTIVE_TESTNET_CHAIN_ID: &str = "injective-888";
 
 pub(crate) fn hermes_pid_file_path() -> Option<PathBuf> {
@@ -119,30 +120,15 @@ fn hermes_config_chain_ids(config: &str) -> Vec<String> {
     chain_ids
 }
 
-fn validate_preprod_hermes_route_coverage(
-    hermes_config: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let config = fs::read_to_string(hermes_config).map_err(|error| {
-        format!(
-            "Failed to read Hermes config '{}': {}",
-            hermes_config.display(),
-            error
-        )
-    })?;
-    let chain_ids = hermes_config_chain_ids(&config);
+fn validate_public_testnet_route_chain_ids(chain_ids: &[String]) -> Result<(), String> {
+    let configured_public_testnets = [CARDANO_PREPROD_CHAIN_ID, CARDANO_PREVIEW_CHAIN_ID]
+        .into_iter()
+        .filter(|required| chain_ids.iter().any(|id| id == required))
+        .collect::<Vec<_>>();
 
-    if !chain_ids.iter().any(|id| id == CARDANO_PREPROD_CHAIN_ID) {
-        return Ok(());
-    }
-
-    let required_chain_ids = [INJECTIVE_TESTNET_CHAIN_ID];
-    let missing_chain_ids: Vec<&str> = required_chain_ids
-        .iter()
-        .copied()
-        .filter(|required| !chain_ids.iter().any(|id| id == required))
-        .collect();
-
-    if missing_chain_ids.is_empty() {
+    if configured_public_testnets.is_empty()
+        || chain_ids.iter().any(|id| id == INJECTIVE_TESTNET_CHAIN_ID)
+    {
         return Ok(());
     }
 
@@ -153,14 +139,29 @@ fn validate_preprod_hermes_route_coverage(
     };
 
     Err(format!(
-        "Invalid Hermes route for Cardano preprod swaps.\n\
+        "Invalid Hermes route for Cardano public-testnet swaps.\n\
          Found chains: {}\n\
-         Missing chains: {}\n\
+         Configured Cardano public testnets: {}\n\
+         Missing chain: {}\n\
          Configure the Injective testnet route before starting Hermes.",
         found_chain_ids,
-        missing_chain_ids.join(", ")
-    )
-    .into())
+        configured_public_testnets.join(", "),
+        INJECTIVE_TESTNET_CHAIN_ID,
+    ))
+}
+
+fn validate_public_testnet_hermes_route_coverage(
+    hermes_config: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = fs::read_to_string(hermes_config).map_err(|error| {
+        format!(
+            "Failed to read Hermes config '{}': {}",
+            hermes_config.display(),
+            error
+        )
+    })?;
+    let chain_ids = hermes_config_chain_ids(&config);
+    validate_public_testnet_route_chain_ids(&chain_ids).map_err(Into::into)
 }
 
 fn run_hermes_command_with_progress(
@@ -298,7 +299,7 @@ pub fn start_hermes_daemon() -> Result<(), Box<dyn std::error::Error>> {
     let hermes_err_log = hermes_log.with_extension("err");
     let expected_binary_str = hermes_binary.to_str();
 
-    validate_preprod_hermes_route_coverage(&hermes_config)?;
+    validate_public_testnet_hermes_route_coverage(&hermes_config)?;
 
     if let Some(existing_pid) = read_hermes_pid_file() {
         if is_process_alive(existing_pid)
@@ -799,4 +800,51 @@ pub fn hermes_create_channel(
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     Ok(format!("IBC channel created\n{}", stdout))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{hermes_config_chain_ids, validate_public_testnet_route_chain_ids};
+
+    fn chain_ids(ids: &[&str]) -> Vec<String> {
+        ids.iter().map(|id| (*id).to_string()).collect()
+    }
+
+    #[test]
+    fn parses_single_and_double_quoted_chain_ids() {
+        let config = r#"
+            [[chains]]
+            id = 'cardano-preview'
+
+            [[chains]]
+            id = "injective-888"
+        "#;
+
+        assert_eq!(
+            hermes_config_chain_ids(config),
+            chain_ids(&["cardano-preview", "injective-888"])
+        );
+    }
+
+    #[test]
+    fn requires_injective_for_preprod_and_preview_routes() {
+        for cardano_chain_id in ["cardano-preprod", "cardano-preview"] {
+            let error = validate_public_testnet_route_chain_ids(&chain_ids(&[cardano_chain_id]))
+                .expect_err("public Cardano route without Injective must be rejected");
+            assert!(error.contains(cardano_chain_id));
+            assert!(error.contains("injective-888"));
+
+            validate_public_testnet_route_chain_ids(&chain_ids(&[
+                cardano_chain_id,
+                "injective-888",
+            ]))
+            .expect("complete public-testnet route should pass validation");
+        }
+    }
+
+    #[test]
+    fn does_not_require_injective_for_local_only_config() {
+        validate_public_testnet_route_chain_ids(&chain_ids(&["cardano-devnet"]))
+            .expect("local-only Hermes config should not require Injective testnet");
+    }
 }
