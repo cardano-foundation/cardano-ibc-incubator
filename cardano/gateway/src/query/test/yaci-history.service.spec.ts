@@ -1,9 +1,15 @@
 import { ConfigService } from '@nestjs/config';
 import { EntityManager } from 'typeorm';
-import { queryEpochContextAtPoint } from '../../shared/helpers/ogmios';
+import {
+  queryCurrentEpochStakeDistribution,
+  queryCurrentEpochVerificationData,
+  queryEpochContextAtPoint,
+} from '../../shared/helpers/ogmios';
 import { YaciHistoryService } from '../services/yaci-history.service';
 
 jest.mock('../../shared/helpers/ogmios', () => ({
+  queryCurrentEpochStakeDistribution: jest.fn(),
+  queryCurrentEpochVerificationData: jest.fn(),
   queryEpochContextAtPoint: jest.fn(),
 }));
 
@@ -53,6 +59,12 @@ describe('YaciHistoryService', () => {
     entityManagerMock = {
       query: jest.fn().mockResolvedValue([]),
     };
+    (queryCurrentEpochVerificationData as jest.Mock).mockResolvedValue({
+      currentEpoch: 7,
+      epochNonce: '11'.repeat(32),
+      slotsPerKesPeriod: 129600,
+    });
+    (queryCurrentEpochStakeDistribution as jest.Mock).mockResolvedValue([]);
 
     service = new YaciHistoryService(
       configServiceMock as unknown as ConfigService,
@@ -591,5 +603,127 @@ describe('YaciHistoryService', () => {
       },
       '11'.repeat(32),
     );
+  });
+
+  it('reconstructs a completed historical epoch when public Ogmios can no longer acquire it', async () => {
+    process.env.CARDANO_STABILITY_ASSUME_POOL_REGISTRATION_SLOT = '1';
+    configServiceMock.get.mockImplementation((key: string) => {
+      if (key === 'ogmiosEndpoint') return 'ws://ogmios.local';
+      if (key === 'cardanoNetwork') return 'Preprod';
+      if (key === 'cardanoChainId') return 'cardano-preprod';
+      if (key === 'cardanoChainNetworkMagic') return 1;
+      if (key === 'cardanoEpochParamsEndpoint') return 'https://preprod.koios.rest/api/v1';
+      if (key === 'cardanoPoolRegistrationHistoryEndpoint') return 'https://preprod.koios.rest/api/v1';
+      if (key === 'cardanoEpochLength') return 432000;
+      return undefined;
+    });
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }])
+      .mockResolvedValueOnce([
+        {
+          number: 119,
+          hash: 'ef'.repeat(32),
+          prev_hash: '12'.repeat(32),
+          slot: '1199',
+          epoch: 7,
+          block_time: '1',
+          slot_leader: 'pool1historicalb',
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          block_count: '20',
+          pool_ids: ['pool1historicalb', 'pool1historicala'],
+        },
+      ]);
+    (queryEpochContextAtPoint as jest.Mock).mockRejectedValue(
+      new Error('Failed to acquire requested point. Target point is too old.'),
+    );
+    (queryCurrentEpochVerificationData as jest.Mock).mockResolvedValue({
+      currentEpoch: 9,
+      epochNonce: '11'.repeat(32),
+      slotsPerKesPeriod: 129600,
+    });
+    (global.fetch as jest.Mock).mockImplementation(async (url: URL) => {
+      if (url.pathname.endsWith('/epoch_params')) {
+        return {
+          ok: true,
+          json: async () => [{ epoch_no: 7, nonce: '11'.repeat(32) }],
+        };
+      }
+      if (url.pathname.endsWith('/epoch_info')) {
+        return {
+          ok: true,
+          json: async () => [{ epoch_no: 7, active_stake: '1000', blk_count: 20 }],
+        };
+      }
+      if (url.pathname.endsWith('/pool_history')) {
+        const poolId = url.searchParams.get('_pool_bech32');
+        return {
+          ok: true,
+          json: async () => [
+            {
+              epoch_no: 7,
+              active_stake: poolId === 'pool1historicala' ? '600' : '300',
+            },
+          ],
+        };
+      }
+      if (url.pathname.endsWith('/pool_updates')) {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              pool_id_bech32: 'pool1historicala',
+              active_epoch_no: 1,
+              vrf_key_hash: 'aa'.repeat(32),
+              update_type: 'registration',
+              block_time: 1,
+            },
+            {
+              pool_id_bech32: 'pool1historicalb',
+              active_epoch_no: 2,
+              vrf_key_hash: 'bb'.repeat(32),
+              update_type: 'registration',
+              block_time: 1,
+            },
+          ],
+        };
+      }
+      throw new Error(`Unexpected fetch URL ${url.toString()}`);
+    });
+
+    await expect(service.findEpochContextAtBlock(block)).resolves.toEqual({
+      epoch: 7,
+      stakeDistribution: [
+        {
+          poolId: 'pool1historicala',
+          stake: 600n,
+          vrfKeyHash: 'aa'.repeat(32),
+          firstRegistrationSlot: 1100n,
+        },
+        {
+          poolId: 'pool1historicalb',
+          stake: 300n,
+          vrfKeyHash: 'bb'.repeat(32),
+          firstRegistrationSlot: 1100n,
+        },
+        {
+          poolId: '__historical_unproduced_stake__:7',
+          stake: 100n,
+          vrfKeyHash: '00'.repeat(32),
+          firstRegistrationSlot: 1n,
+        },
+      ],
+      verificationContext: {
+        epochNonce: '11'.repeat(32),
+        slotsPerKesPeriod: 129600,
+        currentEpochStartSlot: 1000n,
+        currentEpochEndSlotExclusive: 1200n,
+      },
+    });
+    expect(queryEpochContextAtPoint).toHaveBeenCalledTimes(2);
+    expect(queryCurrentEpochStakeDistribution).not.toHaveBeenCalled();
   });
 });
