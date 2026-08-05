@@ -276,6 +276,92 @@ describe('YaciHistoryService', () => {
     );
   });
 
+  it('sends configured Koios credentials to epoch and pool-history endpoints', async () => {
+    configServiceMock.get.mockImplementation((key: string) => {
+      if (key === 'ogmiosEndpoint') return 'ws://ogmios.local';
+      if (key === 'cardanoEpochParamsEndpoint') return 'https://preprod.koios.rest/api/v1';
+      if (key === 'cardanoEpochLength') return 432000;
+      if (key === 'cardanoPoolRegistrationHistoryEndpoint') return 'https://preprod.koios.rest/api/v1';
+      if (key === 'cardanoKoiosApiKey') return 'koios-token';
+      return undefined;
+    });
+
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+    (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
+      currentEpoch: 7,
+      epochNonce: '11'.repeat(32),
+      slotsPerKesPeriod: 129600,
+      stakeDistribution: [
+        {
+          poolId: 'pool1externalpool',
+          stake: 900n,
+          vrfKeyHash: 'aa'.repeat(32),
+        },
+      ],
+    });
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => [{ epoch_no: 7, nonce: '11'.repeat(32) }],
+    });
+
+    await expect(service.findEpochContextAtBlock(block)).resolves.toMatchObject({
+      stakeDistribution: [
+        {
+          poolId: 'pool1externalpool',
+          firstRegistrationSlot: null,
+        },
+      ],
+    });
+
+    expect(global.fetch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ pathname: '/api/v1/epoch_params' }),
+      expect.objectContaining({
+        headers: {
+          accept: 'application/json',
+          Authorization: 'Bearer koios-token',
+        },
+      }),
+    );
+
+    (global.fetch as jest.Mock).mockClear().mockResolvedValueOnce({
+      ok: true,
+      json: async () => [
+        {
+          pool_id_bech32: 'pool1externalpool',
+          block_time: '1000',
+          update_type: 'registration',
+        },
+      ],
+    });
+    entityManagerMock.query
+      .mockReset()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(undefined);
+
+    await expect(
+      service.findFirstPoolRegistrationSlots(['pool1externalpool'], {
+        slotNo: 100n,
+        timestampUnixNs: 900_000_000_000n,
+      }),
+    ).resolves.toEqual(new Map([['pool1externalpool', 200n]]));
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.objectContaining({ pathname: '/api/v1/pool_updates' }),
+      expect.objectContaining({
+        headers: {
+          accept: 'application/json',
+          Authorization: 'Bearer koios-token',
+        },
+      }),
+    );
+  });
+
   it('rejects acquired epoch context when Ogmios resolves a different epoch than the block history', async () => {
     entityManagerMock.query
       .mockResolvedValueOnce([{ start_slot: '1000' }])

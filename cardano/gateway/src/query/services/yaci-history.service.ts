@@ -107,6 +107,11 @@ type KoiosEpochParamsRow = {
   nonce?: string | null;
 };
 
+type KoiosRequestHeaders = {
+  accept: string;
+  Authorization?: string;
+};
+
 const CARDANO_SLOT_LENGTH_NS = 1_000_000_000n;
 const POOL_REGISTRATION_LOOKUP_BATCH_SIZE = 25;
 const POOL_REGISTRATION_LOOKUP_TIMEOUT_MS = 10_000;
@@ -139,6 +144,19 @@ export class YaciHistoryService implements HistoryService {
     @InjectEntityManager("history") private readonly entityManager:
       EntityManager,
   ) {}
+
+  private koiosRequestHeaders(): KoiosRequestHeaders {
+    const apiKey = this.configService.get<string>("cardanoKoiosApiKey")
+      ?.trim();
+    if (!apiKey) {
+      return { accept: "application/json" };
+    }
+
+    return {
+      accept: "application/json",
+      Authorization: /^Bearer\s+/i.test(apiKey) ? apiKey : `Bearer ${apiKey}`,
+    };
+  }
 
   async findUtxosByPolicyIdAndPrefixTokenName(
     policyId: string,
@@ -699,7 +717,7 @@ export class YaciHistoryService implements HistoryService {
     try {
       const response = await fetch(url, {
         signal: controller.signal,
-        headers: { accept: "application/json" },
+        headers: this.koiosRequestHeaders(),
       });
       if (!response.ok) {
         const retryable = response.status === 408 ||
@@ -1017,7 +1035,7 @@ export class YaciHistoryService implements HistoryService {
     try {
       const response = await fetch(url, {
         signal: controller.signal,
-        headers: { accept: "application/json" },
+        headers: this.koiosRequestHeaders(),
       });
       if (!response.ok) {
         return [];

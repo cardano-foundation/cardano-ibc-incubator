@@ -50,4 +50,24 @@ describe('Lucid provider runtime error classification', () => {
     expect(isNonRetryableRuntimeProviderError(error)).toBe(false);
     expect(isTransientRuntimeProviderError(error)).toBe(true);
   });
+
+  it.each([429, 500, 502, 503, 504, 520, 599])(
+    'treats HTTP %s provider responses as transient',
+    (status) => {
+      const error = Object.assign(new Error(`Provider request failed with HTTP ${status}`), {
+        status,
+      });
+
+      expect(isNonRetryableRuntimeProviderError(error)).toBe(false);
+      expect(isTransientRuntimeProviderError(error)).toBe(true);
+    },
+  );
+
+  it('does not retry ordinary client errors', () => {
+    const error = Object.assign(new Error('Provider request failed with HTTP 400'), {
+      status: 400,
+    });
+
+    expect(isTransientRuntimeProviderError(error)).toBe(false);
+  });
 });

@@ -5,6 +5,7 @@ import { applyDoubleCborEncoding } from '@lucid-evolution/utils';
 import { writeFileSync } from 'fs';
 import {
   installManagedCardanoAuthFetch,
+  redactManagedEndpoint,
   resolveManagedKupmiosHeaders,
   resolveManagedKupoEndpoint,
   resolveManagedOgmiosHttpEndpoint,
@@ -13,9 +14,12 @@ export const LUCID_CLIENT = 'LUCID_CLIENT';
 export const LUCID_IMPORTER = 'LUCID_IMPORTER';
 
 const MAX_SAFE_COST_MODEL_VALUE = Number.MAX_SAFE_INTEGER;
+const OGMIOS_PROTOCOL_PARAMETERS_REQUEST_TIMEOUT_MS = 10_000;
 const PROTOCOL_PARAMETERS_MAX_ATTEMPTS = 20;
 const PROTOCOL_PARAMETERS_BASE_DELAY_MS = 1000;
 const PROTOCOL_PARAMETERS_MAX_DELAY_MS = 5000;
+// Respect provider rate limits without allowing one response to stall startup indefinitely.
+const PROTOCOL_PARAMETERS_RETRY_AFTER_MAX_MS = 60_000;
 const RUNTIME_PROVIDER_MAX_ATTEMPTS = 10;
 const RUNTIME_PROVIDER_BASE_DELAY_MS = 500;
 const RUNTIME_PROVIDER_MAX_DELAY_MS = 5000;
@@ -97,36 +101,239 @@ function toSafeCostModelInteger(value: unknown): number {
   return parsedValue;
 }
 
+function costModelRecordEntries(values: Record<string, unknown>): Array<[string, unknown]> {
+  const entries = Object.entries(values);
+  const hasOnlyNumericIndexes = entries.every(([index]) => /^\d+$/.test(index));
+  return hasOnlyNumericIndexes ? entries.sort(([left], [right]) => Number(left) - Number(right)) : entries;
+}
+
+function toCostModelArray(values: unknown[] | Record<string, unknown> | undefined): number[] {
+  if (!values) {
+    return [];
+  }
+
+  const rawValues = Array.isArray(values) ? values : costModelRecordEntries(values).map(([, value]) => value);
+  return rawValues.map((value) => toSafeCostModelInteger(value));
+}
+
+function mapOgmiosCostModels(plutusCostModels: unknown): Record<string, number[]> {
+  // Lucid's cost-model constructor iterates all three language keys
+  // unconditionally. Keep unavailable models empty so the object has the
+  // shape Lucid requires without copying another language's parameters.
+  const mappedModels: Record<string, number[]> = {
+    PlutusV1: [],
+    PlutusV2: [],
+    PlutusV3: [],
+  };
+  if (
+    plutusCostModels !== undefined &&
+    plutusCostModels !== null &&
+    (typeof plutusCostModels !== 'object' || Array.isArray(plutusCostModels))
+  ) {
+    throw new Error('Ogmios protocol parameters response contains invalid plutusCostModels');
+  }
+
+  const rawModels = (plutusCostModels ?? {}) as Record<string, unknown>;
+  const modelNames = [
+    ['plutus:v1', 'PlutusV1'],
+    ['plutus:v2', 'PlutusV2'],
+    ['plutus:v3', 'PlutusV3'],
+  ] as const;
+
+  for (const [ogmiosName, lucidName] of modelNames) {
+    const rawModel = rawModels[ogmiosName];
+    if (rawModel === undefined || rawModel === null) {
+      continue;
+    }
+    if (!Array.isArray(rawModel) && typeof rawModel !== 'object') {
+      throw new Error(`Ogmios protocol parameters response contains invalid ${ogmiosName} cost model`);
+    }
+    mappedModels[lucidName] = toCostModelArray(rawModel as unknown[] | Record<string, unknown>);
+  }
+
+  for (const [ogmiosName, lucidName] of modelNames.slice(0, 2)) {
+    if (mappedModels[lucidName].length === 0) {
+      throw new Error(`Ogmios protocol parameters response is missing a non-empty ${ogmiosName} cost model`);
+    }
+  }
+
+  return mappedModels;
+}
+
 function sanitizeProtocolParameters(protocolParameters: any): any {
   if (!protocolParameters?.costModels) {
     return protocolParameters;
   }
 
-  let sanitizedEntries = 0;
-  const sanitizedCostModels: Record<string, Record<string, number>> = {};
+  const sanitizedCostModels: Record<string, number[]> = {};
 
-  for (const [version, model] of Object.entries(protocolParameters.costModels as Record<string, Record<string, unknown>>)) {
-    const sanitizedModel: Record<string, number> = {};
-    for (const [index, value] of Object.entries(model ?? {})) {
-      const sanitized = toSafeCostModelInteger(value);
-      if (sanitized !== value) {
-        sanitizedEntries += 1;
-      }
-      sanitizedModel[index] = sanitized;
+  for (const [version, model] of Object.entries(protocolParameters.costModels as Record<string, unknown>)) {
+    if (Array.isArray(model) || (typeof model === 'object' && model !== null)) {
+      sanitizedCostModels[version] = toCostModelArray(model as unknown[] | Record<string, unknown>);
     }
-    sanitizedCostModels[version] = sanitizedModel;
-  }
-
-  if (sanitizedEntries > 0) {
-    console.warn(
-      `Normalized ${sanitizedEntries} cost model value(s) to safe integers before Lucid initialization.`,
-    );
   }
 
   return {
     ...protocolParameters,
     costModels: sanitizedCostModels,
   };
+}
+
+function parseOgmiosRatio(value: unknown, label: string): number {
+  if (Array.isArray(value) && value.length >= 2) {
+    const numerator = Number(value[0]);
+    const denominator = Number(value[1]);
+    if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0) {
+      return numerator / denominator;
+    }
+  }
+
+  if (typeof value === 'string') {
+    const [rawNumerator, rawDenominator] = value.includes('/') ? value.split('/') : [value, '1'];
+    const numerator = Number(rawNumerator);
+    const denominator = Number(rawDenominator);
+    if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0) {
+      return numerator / denominator;
+    }
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    const record = value as Record<string, unknown>;
+    const numerator = Number(record.numerator ?? record.num ?? record[0]);
+    const denominator = Number(record.denominator ?? record.den ?? record[1]);
+    if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0) {
+      return numerator / denominator;
+    }
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  throw new Error(`Invalid Ogmios ratio for ${label}: ${JSON.stringify(value)}`);
+}
+
+function parseRetryAfterMs(headers: Headers | undefined): number | undefined {
+  const retryAfter = headers?.get?.('retry-after')?.trim();
+  if (!retryAfter) {
+    return undefined;
+  }
+
+  if (/^\d+$/.test(retryAfter)) {
+    return Number(retryAfter) * 1_000;
+  }
+
+  const retryAt = Date.parse(retryAfter);
+  if (!Number.isFinite(retryAt)) {
+    return undefined;
+  }
+  return Math.max(0, retryAt - Date.now());
+}
+
+function lovelaceValue(value: any, fallback: bigint = 0n): bigint {
+  const raw = value?.ada?.lovelace ?? value?.lovelace ?? value;
+  if (raw === undefined || raw === null || raw === '') {
+    return fallback;
+  }
+  return BigInt(raw);
+}
+
+export function mapOgmiosProtocolParameters(result: any): any {
+  if (!result) {
+    throw new Error('Ogmios protocol parameters response is missing result');
+  }
+
+  const coinsPerUtxoByte = result.utxoCostPerByte ?? result.minUtxoDepositCoefficient;
+  if (coinsPerUtxoByte === undefined || coinsPerUtxoByte === null) {
+    throw new Error('Ogmios protocol parameters response is missing utxoCostPerByte/minUtxoDepositCoefficient');
+  }
+  const costModels = mapOgmiosCostModels(result.plutusCostModels);
+
+  return {
+    minFeeA: result.minFeeCoefficient,
+    minFeeB: Number(lovelaceValue(result.minFeeConstant)),
+    maxTxSize: result.maxTransactionSize?.bytes,
+    maxValSize: result.maxValueSize?.bytes,
+    keyDeposit: lovelaceValue(result.stakeCredentialDeposit),
+    poolDeposit: lovelaceValue(result.stakePoolDeposit),
+    drepDeposit: lovelaceValue(result.delegateRepresentativeDeposit),
+    govActionDeposit: lovelaceValue(result.governanceActionDeposit),
+    priceMem: parseOgmiosRatio(result.scriptExecutionPrices?.memory, 'scriptExecutionPrices.memory'),
+    priceStep: parseOgmiosRatio(result.scriptExecutionPrices?.cpu, 'scriptExecutionPrices.cpu'),
+    maxTxExMem: BigInt(result.maxExecutionUnitsPerTransaction?.memory ?? 0),
+    maxTxExSteps: BigInt(result.maxExecutionUnitsPerTransaction?.cpu ?? 0),
+    coinsPerUtxoByte: BigInt(coinsPerUtxoByte),
+    collateralPercentage: result.collateralPercentage,
+    maxCollateralInputs: result.maxCollateralInputs,
+    minFeeRefScriptCostPerByte: result.minFeeReferenceScripts?.base ?? 0,
+    costModels,
+  };
+}
+
+export async function queryProtocolParametersCompat(
+  ogmiosEndpoint: string | undefined,
+  headers?: Record<string, string>,
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = OGMIOS_PROTOCOL_PARAMETERS_REQUEST_TIMEOUT_MS,
+): Promise<any> {
+  if (!ogmiosEndpoint) {
+    throw new Error('OGMIOS_ENDPOINT is required to query protocol parameters');
+  }
+
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutError = new Error(`Ogmios protocol parameters query timed out after ${timeoutMs}ms`);
+  timeoutError.name = 'TimeoutError';
+
+  try {
+    return await Promise.race([
+      (async () => {
+        const response = await fetchImpl(ogmiosEndpoint, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            ...(headers ?? {}),
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'queryLedgerState/protocolParameters',
+            params: {},
+            id: 'gateway-protocol-parameters',
+          }),
+          signal: controller.signal,
+        });
+        const text = await response.text();
+        if (!response.ok) {
+          const error = new Error(`Ogmios protocol parameters query failed with HTTP ${response.status}: ${text}`);
+          Object.assign(error, {
+            status: response.status,
+            retryAfterMs: parseRetryAfterMs(response.headers),
+          });
+          throw error;
+        }
+        let payload: any;
+        try {
+          payload = JSON.parse(text);
+        } catch (error) {
+          throw new Error('Ogmios protocol parameters query returned invalid JSON', { cause: error });
+        }
+        if (payload.error) {
+          throw new Error(`Ogmios protocol parameters query failed: ${JSON.stringify(payload.error)}`);
+        }
+        return mapOgmiosProtocolParameters(payload.result);
+      })(),
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+          controller.abort(timeoutError);
+          reject(timeoutError);
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+  }
 }
 
 async function sleep(durationMs: number): Promise<void> {
@@ -177,24 +384,16 @@ function collectErrorSignals(error: unknown): string[] {
       pushSignal(record.details);
       pushSignal(record.type);
       pushSignal(record.statusText);
+      if (typeof record.status === 'number') {
+        pushSignal(`HTTP ${record.status}`);
+      }
 
       visit(record.cause, depth + 1);
       visit(record.error, depth + 1);
       visit(record.originalError, depth + 1);
 
       for (const key of Object.getOwnPropertyNames(value)) {
-        if (
-          [
-            'message',
-            'name',
-            'code',
-            'reason',
-            'details',
-            'type',
-            'statusText',
-            'stack',
-          ].includes(key)
-        ) {
+        if (['message', 'name', 'code', 'reason', 'details', 'type', 'statusText', 'stack'].includes(key)) {
           continue;
         }
         visit(record[key], depth + 1);
@@ -225,16 +424,29 @@ function summarizeError(error: unknown): string {
   return uniqueSignals.slice(0, 4).join(' | ');
 }
 
+function hasTransientHttpStatus(normalizedSignals: string[]): boolean {
+  return normalizedSignals.some((signal) => {
+    const statusMatches = [
+      ...signal.matchAll(/\bhttp\s+(\d{3})\b/g),
+      ...signal.matchAll(/\bstatus(?:code)?\s*[:=]?\s*(\d{3})\b/g),
+      ...signal.matchAll(/\((\d{3})\s+(?:get|post|put|delete|patch)\b/g),
+    ];
+    return statusMatches.some((match) => {
+      const status = Number(match[1]);
+      return status === 429 || (status >= 500 && status <= 599);
+    });
+  });
+}
+
 function isTransientStartupError(error: unknown): boolean {
-  const normalizedSignals = collectErrorSignals(error).map((signal) =>
-    signal.toLowerCase(),
-  );
+  const normalizedSignals = collectErrorSignals(error).map((signal) => signal.toLowerCase());
   if (normalizedSignals.length === 0) {
     return false;
   }
 
-  return normalizedSignals.some((signal) =>
-    TRANSIENT_STARTUP_ERROR_MARKERS.some((marker) => signal.includes(marker)),
+  return (
+    hasTransientHttpStatus(normalizedSignals) ||
+    normalizedSignals.some((signal) => TRANSIENT_STARTUP_ERROR_MARKERS.some((marker) => signal.includes(marker)))
   );
 }
 
@@ -246,9 +458,7 @@ export function isNonRetryableRuntimeProviderError(error: unknown): boolean {
     return false;
   }
 
-  return NON_RETRYABLE_RUNTIME_PROVIDER_ERROR_MARKERS.some((marker) =>
-    normalized.includes(marker),
-  );
+  return NON_RETRYABLE_RUNTIME_PROVIDER_ERROR_MARKERS.some((marker) => normalized.includes(marker));
 }
 
 function describeRuntimeProviderError(error: unknown): string {
@@ -281,12 +491,7 @@ function describeRuntimeProviderError(error: unknown): string {
 
   const validationErrorMatch = normalized.match(/"validationError"\s*:\s*"([^"]+)"/i);
   if (validationErrorMatch?.[1]) {
-    parts.push(
-      `validation_error=${validationErrorMatch[1]
-        .replace(/\\n/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim()}`,
-    );
+    parts.push(`validation_error=${validationErrorMatch[1].replace(/\\n/g, ' ').replace(/\s+/g, ' ').trim()}`);
   }
 
   parts.push(`summary=${summarizeError(error)}`);
@@ -298,37 +503,48 @@ export function isTransientRuntimeProviderError(error: unknown): boolean {
     return false;
   }
 
-  const normalizedSignals = collectErrorSignals(error).map((signal) =>
-    signal.toLowerCase(),
-  );
+  const normalizedSignals = collectErrorSignals(error).map((signal) => signal.toLowerCase());
   if (normalizedSignals.length === 0) {
     return false;
   }
 
-  return normalizedSignals.some((signal) =>
-    TRANSIENT_RUNTIME_PROVIDER_ERROR_MARKERS.some((marker) =>
-      signal.includes(marker),
-    ),
+  return (
+    hasTransientHttpStatus(normalizedSignals) ||
+    normalizedSignals.some((signal) =>
+      TRANSIENT_RUNTIME_PROVIDER_ERROR_MARKERS.some((marker) => signal.includes(marker)),
+    )
   );
 }
 
 function computeJitteredBackoffDelayMs(failedAttempt: number): number {
-  const backoffDelay =
-    PROTOCOL_PARAMETERS_BASE_DELAY_MS * 2 ** Math.max(0, failedAttempt - 1);
+  const backoffDelay = PROTOCOL_PARAMETERS_BASE_DELAY_MS * 2 ** Math.max(0, failedAttempt - 1);
   const jitterMultiplier = 0.8 + Math.random() * 0.4;
   return Math.round(Math.min(backoffDelay, PROTOCOL_PARAMETERS_MAX_DELAY_MS) * jitterMultiplier);
 }
 
+function computeProtocolParametersRetryDelayMs(failedAttempt: number, error: unknown): number {
+  const backoffDelayMs = computeJitteredBackoffDelayMs(failedAttempt);
+  if (typeof error !== 'object' || error === null) {
+    return backoffDelayMs;
+  }
+
+  const retryAfterMs = (error as { retryAfterMs?: unknown }).retryAfterMs;
+  if (typeof retryAfterMs !== 'number' || !Number.isFinite(retryAfterMs) || retryAfterMs < 0) {
+    return backoffDelayMs;
+  }
+
+  return Math.max(backoffDelayMs, Math.min(retryAfterMs, PROTOCOL_PARAMETERS_RETRY_AFTER_MAX_MS));
+}
+
 function computeRuntimeProviderDelayMs(failedAttempt: number): number {
-  const backoffDelay =
-    RUNTIME_PROVIDER_BASE_DELAY_MS * 2 ** Math.max(0, failedAttempt - 1);
+  const backoffDelay = RUNTIME_PROVIDER_BASE_DELAY_MS * 2 ** Math.max(0, failedAttempt - 1);
   const jitterMultiplier = 0.8 + Math.random() * 0.4;
   return Math.round(Math.min(backoffDelay, RUNTIME_PROVIDER_MAX_DELAY_MS) * jitterMultiplier);
 }
 
 type KupoValue = {
-  coins: number;
-  assets: Record<string, number>;
+  coins: number | string;
+  assets: Record<string, number | string>;
 };
 
 type KupoMatch = {
@@ -350,11 +566,28 @@ type KupoScript = {
   script: string;
 } | null;
 
+export function withKupoStringQuantityHeader(headers?: {
+  kupoHeader?: Record<string, string>;
+  ogmiosHeader?: Record<string, string>;
+}): {
+  kupoHeader: Record<string, string>;
+  ogmiosHeader?: Record<string, string>;
+} {
+  const kupoHeader = Object.fromEntries(
+    Object.entries(headers?.kupoHeader ?? {}).filter(([name]) => name.toLowerCase() !== 'accept'),
+  );
+  kupoHeader.accept = 'application/json;asset-quantity=string';
+  return {
+    ...(headers ?? {}),
+    kupoHeader,
+  };
+}
+
 const KUPMIOs_LOOKUP_ATTEMPTS = 10;
 const KUPMIOS_LOOKUP_BASE_DELAY_MS = 300;
 const KUPMIOS_LOOKUP_MAX_DELAY_MS = 3000;
 
-function toAssets(value: KupoValue): Record<string, bigint> {
+export function mapKupoValueToAssets(value: KupoValue): Record<string, bigint> {
   const assets: Record<string, bigint> = { lovelace: BigInt(value.coins) };
   for (const [unit, quantity] of Object.entries(value.assets ?? {})) {
     assets[unit.replace('.', '')] = BigInt(quantity);
@@ -382,14 +615,13 @@ function toScriptRef(script: KupoScript | undefined): any {
 async function fetchJson<T>(url: string, headers?: Record<string, string>): Promise<T> {
   let attempt = 1;
   let lastError: Error | undefined;
-  const requestHeaders = { ...(headers ?? {}) };
+  const requestHeaders = Object.fromEntries(
+    Object.entries(headers ?? {}).filter(([name]) => name.toLowerCase() !== 'accept'),
+  );
+  requestHeaders.accept = 'application/json;asset-quantity=string';
   try {
     const parsedUrl = new URL(url);
-    if (
-      parsedUrl.host.includes('kupo-m1.dmtr.host') &&
-      !requestHeaders['dmtr-api-key'] &&
-      process.env.KUPO_API_KEY
-    ) {
+    if (parsedUrl.host.includes('kupo-m1.dmtr.host') && !requestHeaders['dmtr-api-key'] && process.env.KUPO_API_KEY) {
       requestHeaders['dmtr-api-key'] = process.env.KUPO_API_KEY;
     }
   } catch {
@@ -408,19 +640,17 @@ async function fetchJson<T>(url: string, headers?: Record<string, string>): Prom
       if (!response.ok) {
         const body = await response.text().catch(() => '');
         throw new Error(
-          `HTTP ${response.status} GET ${url} authHeader=${requestHeaders['dmtr-api-key'] ? 'set' : 'missing'}${body ? `: ${body}` : ''}`,
+          `HTTP ${response.status} GET ${redactManagedEndpoint(url)} authHeader=${requestHeaders['dmtr-api-key'] ? 'set' : 'missing'}${body ? `: ${body}` : ''}`,
         );
       }
       return (await response.json()) as T;
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
+      const requestError = error instanceof Error ? error : new Error(String(error));
+      lastError = new Error(requestError.message.replaceAll(url, redactManagedEndpoint(url)));
       if (attempt >= KUPMIOs_LOOKUP_ATTEMPTS) {
         break;
       }
-      const delayMs = Math.min(
-        KUPMIOS_LOOKUP_BASE_DELAY_MS * 2 ** (attempt - 1),
-        KUPMIOS_LOOKUP_MAX_DELAY_MS,
-      );
+      const delayMs = Math.min(KUPMIOS_LOOKUP_BASE_DELAY_MS * 2 ** (attempt - 1), KUPMIOS_LOOKUP_MAX_DELAY_MS);
       await sleep(delayMs);
       attempt += 1;
     } finally {
@@ -428,7 +658,7 @@ async function fetchJson<T>(url: string, headers?: Record<string, string>): Prom
     }
   }
 
-  throw lastError ?? new Error(`Failed to fetch ${url}`);
+  throw lastError ?? new Error(`Failed to fetch ${redactManagedEndpoint(url)}`);
 }
 
 async function fetchKupoDatum(
@@ -469,8 +699,8 @@ async function kupoMatchesToUtxos(
       txHash: match.transaction_id,
       outputIndex: match.output_index,
       address: match.address,
-      assets: toAssets(match.value),
-      datumHash: match.datum_type === 'hash' ? match.datum_hash ?? undefined : undefined,
+      assets: mapKupoValueToAssets(match.value),
+      datumHash: match.datum_type === 'hash' ? (match.datum_hash ?? undefined) : undefined,
       datum: await fetchKupoDatum(kupoEndpoint, match.datum_type, match.datum_hash, headers),
       scriptRef: await fetchKupoScript(kupoEndpoint, match.script_hash, headers),
     });
@@ -553,31 +783,23 @@ async function fetchKupoUtxosByOutRef(
   const uniqueTxHashes = [...new Set(outRefs.map((outRef) => outRef.txHash))];
   const matches: KupoMatch[] = [];
   for (const txHash of uniqueTxHashes) {
-    const fetchedMatches = await fetchJson<KupoMatch[]>(
-      `${kupoEndpoint}/matches/*@${txHash}?unspent`,
-      headers,
-    );
+    const fetchedMatches = await fetchJson<KupoMatch[]>(`${kupoEndpoint}/matches/*@${txHash}?unspent`, headers);
     matches.push(...fetchedMatches);
   }
 
   const filteredMatches = matches.filter((match) =>
-    outRefs.some((outRef) =>
-      match.transaction_id === outRef.txHash && match.output_index === outRef.outputIndex
-    )
+    outRefs.some((outRef) => match.transaction_id === outRef.txHash && match.output_index === outRef.outputIndex),
   );
 
   return kupoMatchesToUtxos(kupoEndpoint, filteredMatches, headers);
 }
 
-async function retryWithBackoff<T>(
+export async function retryWithBackoff<T>(
   operation: () => Promise<T>,
   label: string,
+  wait: (durationMs: number) => Promise<void> = sleep,
 ): Promise<T> {
-  for (
-    let attempt = 1;
-    attempt <= PROTOCOL_PARAMETERS_MAX_ATTEMPTS;
-    attempt += 1
-  ) {
+  for (let attempt = 1; attempt <= PROTOCOL_PARAMETERS_MAX_ATTEMPTS; attempt += 1) {
     try {
       return await operation();
     } catch (error) {
@@ -592,23 +814,18 @@ async function retryWithBackoff<T>(
         );
       }
 
-      const retryDelayMs = computeJitteredBackoffDelayMs(attempt);
+      const retryDelayMs = computeProtocolParametersRetryDelayMs(attempt, error);
       console.warn(
         `[startup] ${label} failed (attempt ${attempt}/${PROTOCOL_PARAMETERS_MAX_ATTEMPTS}): ${errorSummary}. Retrying in ${retryDelayMs}ms`,
       );
-      await sleep(retryDelayMs);
+      await wait(retryDelayMs);
     }
   }
 
-  throw new Error(
-    `[startup] ${label} failed after ${PROTOCOL_PARAMETERS_MAX_ATTEMPTS} attempts`,
-  );
+  throw new Error(`[startup] ${label} failed after ${PROTOCOL_PARAMETERS_MAX_ATTEMPTS} attempts`);
 }
 
-async function retryRuntimeProviderOperation<T>(
-  operation: () => Promise<T>,
-  label: string,
-): Promise<T> {
+async function retryRuntimeProviderOperation<T>(operation: () => Promise<T>, label: string): Promise<T> {
   for (let attempt = 1; attempt <= RUNTIME_PROVIDER_MAX_ATTEMPTS; attempt += 1) {
     try {
       return await operation();
@@ -632,9 +849,7 @@ async function retryRuntimeProviderOperation<T>(
     }
   }
 
-  throw new Error(
-    `[runtime] ${label} failed after ${RUNTIME_PROVIDER_MAX_ATTEMPTS} attempts`,
-  );
+  throw new Error(`[runtime] ${label} failed after ${RUNTIME_PROVIDER_MAX_ATTEMPTS} attempts`);
 }
 
 export const LucidClient = {
@@ -646,19 +861,10 @@ export const LucidClient = {
     const kupoApiKey = configService.get('kupoApiKey') ?? process.env.KUPO_API_KEY;
     const ogmiosApiKey = configService.get('ogmiosApiKey') ?? process.env.OGMIOS_API_KEY;
     const rawKupoEndpoint = configService.get('kupoEndpoint');
-    const kupoEndpoint = resolveManagedKupoEndpoint(
-      rawKupoEndpoint,
-      kupoApiKey,
-    ) ?? rawKupoEndpoint;
-    const ogmiosEndpoint = resolveManagedOgmiosHttpEndpoint(
-      configService.get('ogmiosEndpoint'),
-      ogmiosApiKey,
-    );
-    const kupmiosHeaders = resolveManagedKupmiosHeaders(
-      kupoEndpoint,
-      kupoApiKey,
-      ogmiosEndpoint,
-      ogmiosApiKey,
+    const kupoEndpoint = resolveManagedKupoEndpoint(rawKupoEndpoint, kupoApiKey) ?? rawKupoEndpoint;
+    const ogmiosEndpoint = resolveManagedOgmiosHttpEndpoint(configService.get('ogmiosEndpoint'), ogmiosApiKey);
+    const kupmiosHeaders = withKupoStringQuantityHeader(
+      resolveManagedKupmiosHeaders(kupoEndpoint, kupoApiKey, ogmiosEndpoint, ogmiosApiKey),
     );
 
     installManagedCardanoAuthFetch(
@@ -670,17 +876,15 @@ export const LucidClient = {
 
     const provider: any = new Lucid.Kupmios(kupoEndpoint, ogmiosEndpoint, kupmiosHeaders);
     console.log(
-      `[startup] Lucid provider endpoints kupo=${kupoEndpoint} ogmiosHttp=${ogmiosEndpoint} ogmiosWs=${configService.get('ogmiosEndpoint')} kupoAuth=${kupoApiKey ? 'set' : 'missing'} ogmiosAuth=${ogmiosApiKey ? 'set' : 'missing'}`,
+      `[startup] Lucid provider endpoints kupo=${redactManagedEndpoint(kupoEndpoint, kupoApiKey)} ogmiosHttp=${redactManagedEndpoint(ogmiosEndpoint, ogmiosApiKey)} ogmiosWs=${redactManagedEndpoint(configService.get('ogmiosEndpoint'), ogmiosApiKey)} kupoAuth=${kupoApiKey ? 'set' : 'missing'} ogmiosAuth=${ogmiosApiKey ? 'set' : 'missing'}`,
     );
     if (typeof provider.getUtxos === 'function') {
       provider.getUtxos = async (addressOrCredential: string | { hash: string }) =>
         fetchKupoUtxos(kupoEndpoint, addressOrCredential, kupmiosHeaders?.kupoHeader);
     }
     if (typeof provider.getUtxosWithUnit === 'function') {
-      provider.getUtxosWithUnit = async (
-        addressOrCredential: string | { hash: string },
-        unit: string,
-      ) => fetchKupoUtxosWithUnit(kupoEndpoint, addressOrCredential, unit, kupmiosHeaders?.kupoHeader);
+      provider.getUtxosWithUnit = async (addressOrCredential: string | { hash: string }, unit: string) =>
+        fetchKupoUtxosWithUnit(kupoEndpoint, addressOrCredential, unit, kupmiosHeaders?.kupoHeader);
     }
     if (typeof provider.getUtxoByUnit === 'function') {
       provider.getUtxoByUnit = async (unit: string) =>
@@ -688,15 +892,9 @@ export const LucidClient = {
     }
     const originalGetUtxosByOutRef = provider.getUtxosByOutRef?.bind(provider);
     if (typeof originalGetUtxosByOutRef === 'function') {
-      provider.getUtxosByOutRef = async (
-        outRefs: Array<{ txHash: string; outputIndex: number }>,
-      ) => {
+      provider.getUtxosByOutRef = async (outRefs: Array<{ txHash: string; outputIndex: number }>) => {
         void originalGetUtxosByOutRef;
-        return await fetchKupoUtxosByOutRef(
-          kupoEndpoint,
-          outRefs,
-          kupmiosHeaders?.kupoHeader,
-        );
+        return await fetchKupoUtxosByOutRef(kupoEndpoint, outRefs, kupmiosHeaders?.kupoHeader);
       };
     }
     // DEBUG: `TxBuilder.complete()` uses `provider.evaluateTx(...)` to ask Ogmios for script
@@ -805,7 +1003,7 @@ export const LucidClient = {
                       const tagName = (CML.RedeemerTag as any)[tag] ?? String(tag);
                       const inputLabel =
                         tag === CML.RedeemerTag.Spend
-                          ? inputRefs[index] ?? `<missing input for Spend[${index}]>`
+                          ? (inputRefs[index] ?? `<missing input for Spend[${index}]>`)
                           : undefined;
                       lines.push(inputLabel ? `${tagName}[${index}] -> ${inputLabel}` : `${tagName}[${index}]`);
                     }
@@ -862,12 +1060,7 @@ export const LucidClient = {
       provider.awaitTx = async (txHash: string, checkInterval: number = 20_000) => {
         const timeoutMs = Math.max(160_000, checkInterval * 8);
         try {
-          await queryTransactionInclusionBlockHeight(
-            configService.get('ogmiosEndpoint'),
-            txHash,
-            'origin',
-            timeoutMs,
-          );
+          await queryTransactionInclusionBlockHeight(configService.get('ogmiosEndpoint'), txHash, 'origin', timeoutMs);
           return true;
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
@@ -880,14 +1073,14 @@ export const LucidClient = {
     }
 
     const network = configService.get('cardanoNetwork') as Network;
-    console.log('[startup] Fetching Kupmios protocol parameters');
+    console.log('[startup] Fetching Ogmios protocol parameters');
     const protocolParameters = sanitizeProtocolParameters(
       await retryWithBackoff(
-        () => provider.getProtocolParameters(),
-        'Kupmios protocol parameters fetch',
+        () => queryProtocolParametersCompat(ogmiosEndpoint, kupmiosHeaders?.ogmiosHeader),
+        'Ogmios protocol parameters fetch',
       ),
     );
-    console.log('[startup] Kupmios protocol parameters loaded');
+    console.log('[startup] Ogmios protocol parameters loaded');
     console.log(`[startup] Constructing Lucid for network=${network}`);
     const lucid = await Lucid.Lucid(provider, network, {
       presetProtocolParameters: protocolParameters,

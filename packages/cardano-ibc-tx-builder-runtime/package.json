@@ -25,6 +25,10 @@
   "dependencies": {
     "@cardano-ibc/trace-registry": "file:../cardano-ibc-trace-registry",
     "@cardano-ibc/tx-builder": "file:../cardano-ibc-tx-builder",
+    "@harmoniclabs/bytestring": "^1.0.0",
+    "@harmoniclabs/cbor": "^1.6.6",
+    "@harmoniclabs/crypto": "^0.3.0",
+    "@harmoniclabs/pair": "^1.0.0",
     "@lucid-evolution/lucid": "^0.4.29",
     "@noble/hashes": "^1.8.0",
     "js-sha256": "^0.11.0",
@@ -39,6 +43,10 @@
   "peerDependencies": {
     "@cardano-ibc/trace-registry": "0.1.0",
     "@cardano-ibc/tx-builder": "0.1.0",
+    "@harmoniclabs/bytestring": "^1.0.0",
+    "@harmoniclabs/cbor": "^1.6.6",
+    "@harmoniclabs/crypto": "^0.3.0",
+    "@harmoniclabs/pair": "^1.0.0",
     "@lucid-evolution/lucid": "^0.4.29",
     "@noble/hashes": "^1.8.0",
     "js-sha256": "^0.11.0",

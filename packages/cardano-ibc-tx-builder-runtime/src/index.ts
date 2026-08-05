@@ -19,8 +19,12 @@ const TRANSACTION_TIME_TO_LIVE = 10 * 60 * 1000;
 // Lucid still raises this when protocol collateral requirements exceed the floor.
 const TRANSACTION_SET_COLLATERAL = BigInt(5_000_000);
 const MAX_SAFE_COST_MODEL_VALUE = Number.MAX_SAFE_INTEGER;
+export const OGMIOS_PROTOCOL_PARAMETERS_REQUEST_TIMEOUT_MS = 10_000;
+export const OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS = 10_000;
 const PROTOCOL_PARAMETERS_MAX_ATTEMPTS = 5;
 const PROTOCOL_PARAMETERS_BASE_DELAY_MS = 1000;
+// Respect provider rate limits without allowing one response to stall startup indefinitely.
+const PROTOCOL_PARAMETERS_RETRY_AFTER_MAX_MS = 60_000;
 const TRANSIENT_STARTUP_ERROR_MARKERS = [
   'timeoutexception',
   'timeout',
@@ -298,6 +302,17 @@ type KupmiosAuthHeaders = {
   ogmiosHeader?: Record<string, string>;
 };
 
+export function withKupoStringQuantityHeader(headers?: KupmiosAuthHeaders): KupmiosAuthHeaders {
+  const kupoHeader = Object.fromEntries(
+    Object.entries(headers?.kupoHeader ?? {}).filter(([name]) => name.toLowerCase() !== 'accept'),
+  );
+  kupoHeader.accept = 'application/json;asset-quantity=string';
+  return {
+    ...(headers ?? {}),
+    kupoHeader,
+  };
+}
+
 type BuilderRuntimeConfig = {
   bridgeManifestUrl: string;
   kupmiosUrl: string;
@@ -526,14 +541,17 @@ function normalizeDemeterOgmiosEndpoint(
   headers?: KupmiosAuthHeaders,
 ): { ogmiosEndpoint: string; headers?: KupmiosAuthHeaders } {
   const apiKey = headers?.ogmiosHeader?.['dmtr-api-key']?.trim();
-  if (!apiKey) {
-    return { ogmiosEndpoint, headers };
-  }
 
   try {
     const parsed = new URL(ogmiosEndpoint);
-    if (!isDemeterHost(parsed.hostname)) {
-      return { ogmiosEndpoint, headers };
+    if (parsed.protocol === 'wss:') {
+      parsed.protocol = 'https:';
+    } else if (parsed.protocol === 'ws:') {
+      parsed.protocol = 'http:';
+    }
+
+    if (!apiKey || !isDemeterHost(parsed.hostname)) {
+      return { ogmiosEndpoint: parsed.toString().replace(/\/$/, ''), headers };
     }
     if (!parsed.host.startsWith(`${apiKey}.`)) {
       parsed.host = `${apiKey}.${parsed.host}`;
@@ -700,50 +718,126 @@ function appendBuffer(left: Uint8Array, right: Uint8Array): Uint8Array {
   return result;
 }
 
-function ogmiosRequest<T>(
+export function ogmiosRequest<T>(
   ogmiosUrl: string,
   methodName: string,
   args: unknown,
   headers?: Record<string, string>,
+  timeoutMs = OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS,
 ): Promise<T> {
-  return new Promise(async (resolve, reject) => {
-    const client = new WebSocket(ogmiosUrl, headers ? { headers } : undefined);
+  return new Promise((resolve, reject) => {
+    let client: WebSocket;
+    try {
+      client = new WebSocket(ogmiosUrl, headers ? { headers } : undefined);
+    } catch (error) {
+      reject(error);
+      return;
+    }
 
-    const cleanup = () => {
-      if (client.readyState === WebSocket.OPEN || client.readyState === WebSocket.CONNECTING) {
-        client.close();
+    let requestSent = false;
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    const removeRequestListeners = () => {
+      client.off('open', handleOpen);
+      client.off('message', handleMessage);
+      client.off('error', handleError);
+      client.off('close', handleClose);
+    };
+
+    const destroyClient = () => {
+      if (client.readyState === WebSocket.CLOSED) {
+        return;
+      }
+
+      // `ws` emits an error when a connecting socket is terminated. Keep a
+      // temporary listener until close so cleanup cannot create an unhandled error.
+      const ignoreCleanupError = () => undefined;
+      const removeCleanupErrorListener = () => client.off('error', ignoreCleanupError);
+      client.once('error', ignoreCleanupError);
+      client.once('close', removeCleanupErrorListener);
+
+      try {
+        client.terminate();
+      } catch {
+        client.off('error', ignoreCleanupError);
+        client.off('close', removeCleanupErrorListener);
       }
     };
 
-    client.once('open', () => {
-      client.send(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          method: methodName,
-          params: args,
-        }),
-      );
-    });
+    const settle = (result: { value: T } | { error: unknown }) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeout !== undefined) {
+        clearTimeout(timeout);
+      }
+      removeRequestListeners();
+      destroyClient();
 
-    client.once('message', (rawMessage: WebSocket.RawData) => {
+      if ('error' in result) {
+        reject(result.error);
+      } else {
+        resolve(result.value);
+      }
+    };
+
+    const handleOpen = () => {
+      requestSent = true;
+      try {
+        client.send(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            method: methodName,
+            params: args,
+          }),
+          (error?: Error) => {
+            if (error) {
+              settle({ error });
+            }
+          },
+        );
+      } catch (error) {
+        settle({ error });
+      }
+    };
+
+    const handleMessage = (rawMessage: WebSocket.RawData) => {
       try {
         const payload = JSON.parse(rawMessage.toString());
         if (payload?.error) {
-          reject(new Error(payload.error.message ?? JSON.stringify(payload.error)));
+          settle({ error: new Error(payload.error.message ?? JSON.stringify(payload.error)) });
           return;
         }
-        resolve(payload.result as T);
+        settle({ value: payload.result as T });
       } catch (error) {
-        reject(error);
-      } finally {
-        cleanup();
+        settle({ error });
       }
-    });
+    };
 
-    client.once('error', (error: Error) => {
-      cleanup();
-      reject(error);
-    });
+    const handleError = (error: Error) => settle({ error });
+
+    const handleClose = (code: number, reason: Buffer) => {
+      const reasonText = reason.length > 0 ? `: ${reason.toString()}` : '';
+      settle({
+        error: new Error(
+          `Ogmios ${methodName} WebSocket closed before a response was received (code ${code}${reasonText})`,
+        ),
+      });
+    };
+
+    client.once('open', handleOpen);
+    client.once('message', handleMessage);
+    client.once('error', handleError);
+    client.once('close', handleClose);
+
+    timeout = setTimeout(() => {
+      const phase = requestSent ? 'waiting for a response' : 'opening the WebSocket';
+      settle({
+        error: new Error(`Ogmios ${methodName} request timed out after ${timeoutMs}ms while ${phase}`),
+      });
+    }, timeoutMs);
   });
 }
 
@@ -848,28 +942,240 @@ function toSafeCostModelInteger(value: unknown): number {
   return parsedValue;
 }
 
+function costModelRecordEntries(values: Record<string, unknown>): Array<[string, unknown]> {
+  const entries = Object.entries(values);
+  const hasOnlyNumericIndexes = entries.every(([index]) => /^\d+$/.test(index));
+  return hasOnlyNumericIndexes
+    ? entries.sort(([left], [right]) => Number(left) - Number(right))
+    : entries;
+}
+
+function toCostModelArray(values: unknown[] | Record<string, unknown> | undefined): number[] {
+  if (!values) {
+    return [];
+  }
+
+  const rawValues = Array.isArray(values)
+    ? values
+    : costModelRecordEntries(values).map(([, value]) => value);
+  return rawValues.map((value) => toSafeCostModelInteger(value));
+}
+
+function mapOgmiosCostModels(plutusCostModels: unknown): Record<string, number[]> {
+  // Lucid's cost-model constructor iterates all three language keys
+  // unconditionally. Keep unavailable models empty so the object has the
+  // shape Lucid requires without copying another language's parameters.
+  const mappedModels: Record<string, number[]> = {
+    PlutusV1: [],
+    PlutusV2: [],
+    PlutusV3: [],
+  };
+  if (
+    plutusCostModels !== undefined &&
+    plutusCostModels !== null &&
+    (typeof plutusCostModels !== 'object' || Array.isArray(plutusCostModels))
+  ) {
+    throw new Error('Ogmios protocol parameters response contains invalid plutusCostModels');
+  }
+
+  const rawModels = (plutusCostModels ?? {}) as Record<string, unknown>;
+  const modelNames = [
+    ['plutus:v1', 'PlutusV1'],
+    ['plutus:v2', 'PlutusV2'],
+    ['plutus:v3', 'PlutusV3'],
+  ] as const;
+
+  for (const [ogmiosName, lucidName] of modelNames) {
+    const rawModel = rawModels[ogmiosName];
+    if (rawModel === undefined || rawModel === null) {
+      continue;
+    }
+    if (!Array.isArray(rawModel) && typeof rawModel !== 'object') {
+      throw new Error(`Ogmios protocol parameters response contains invalid ${ogmiosName} cost model`);
+    }
+    mappedModels[lucidName] = toCostModelArray(rawModel as unknown[] | Record<string, unknown>);
+  }
+
+  for (const [ogmiosName, lucidName] of modelNames.slice(0, 2)) {
+    if (mappedModels[lucidName].length === 0) {
+      throw new Error(
+        `Ogmios protocol parameters response is missing a non-empty ${ogmiosName} cost model`,
+      );
+    }
+  }
+
+  return mappedModels;
+}
+
 function sanitizeProtocolParameters(protocolParameters: any): any {
   if (!protocolParameters?.costModels) {
     return protocolParameters;
   }
 
-  const sanitizedCostModels: Record<string, number[] | Record<string, number>> = {};
+  const sanitizedCostModels: Record<string, number[]> = {};
   for (const [version, model] of Object.entries(protocolParameters.costModels as Record<string, unknown>)) {
-    if (Array.isArray(model)) {
-      sanitizedCostModels[version] = model.map((value) => toSafeCostModelInteger(value));
-      continue;
+    if (Array.isArray(model) || (typeof model === 'object' && model !== null)) {
+      sanitizedCostModels[version] = toCostModelArray(model as unknown[] | Record<string, unknown>);
     }
-    const sanitizedModel: Record<string, number> = {};
-    for (const [index, value] of Object.entries((model as Record<string, unknown>) ?? {})) {
-      sanitizedModel[index] = toSafeCostModelInteger(value);
-    }
-    sanitizedCostModels[version] = sanitizedModel;
   }
 
   return {
     ...protocolParameters,
     costModels: sanitizedCostModels,
   };
+}
+
+function parseOgmiosRatio(value: unknown, label: string): number {
+  if (Array.isArray(value) && value.length >= 2) {
+    const numerator = Number(value[0]);
+    const denominator = Number(value[1]);
+    if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0) {
+      return numerator / denominator;
+    }
+  }
+
+  if (typeof value === 'string') {
+    const [rawNumerator, rawDenominator] = value.includes('/') ? value.split('/') : [value, '1'];
+    const numerator = Number(rawNumerator);
+    const denominator = Number(rawDenominator);
+    if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0) {
+      return numerator / denominator;
+    }
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    const record = value as Record<string, unknown>;
+    const numerator = Number(record.numerator ?? record.num ?? record[0]);
+    const denominator = Number(record.denominator ?? record.den ?? record[1]);
+    if (Number.isFinite(numerator) && Number.isFinite(denominator) && denominator !== 0) {
+      return numerator / denominator;
+    }
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  throw new Error(`Invalid Ogmios ratio for ${label}: ${JSON.stringify(value)}`);
+}
+
+function parseRetryAfterMs(headers: Headers | undefined): number | undefined {
+  const retryAfter = headers?.get?.('retry-after')?.trim();
+  if (!retryAfter) {
+    return undefined;
+  }
+
+  if (/^\d+$/.test(retryAfter)) {
+    return Number(retryAfter) * 1_000;
+  }
+
+  const retryAt = Date.parse(retryAfter);
+  if (!Number.isFinite(retryAt)) {
+    return undefined;
+  }
+  return Math.max(0, retryAt - Date.now());
+}
+
+function lovelaceValue(value: any, fallback: bigint = 0n): bigint {
+  const raw = value?.ada?.lovelace ?? value?.lovelace ?? value;
+  if (raw === undefined || raw === null || raw === '') {
+    return fallback;
+  }
+  return BigInt(raw);
+}
+
+export function mapOgmiosProtocolParameters(result: any): any {
+  if (!result) {
+    throw new Error('Ogmios protocol parameters response is missing result');
+  }
+
+  const coinsPerUtxoByte = result.utxoCostPerByte ?? result.minUtxoDepositCoefficient;
+  if (coinsPerUtxoByte === undefined || coinsPerUtxoByte === null) {
+    throw new Error('Ogmios protocol parameters response is missing utxoCostPerByte/minUtxoDepositCoefficient');
+  }
+  const costModels = mapOgmiosCostModels(result.plutusCostModels);
+
+  return {
+    minFeeA: result.minFeeCoefficient,
+    minFeeB: Number(lovelaceValue(result.minFeeConstant)),
+    maxTxSize: result.maxTransactionSize?.bytes,
+    maxValSize: result.maxValueSize?.bytes,
+    keyDeposit: lovelaceValue(result.stakeCredentialDeposit),
+    poolDeposit: lovelaceValue(result.stakePoolDeposit),
+    drepDeposit: lovelaceValue(result.delegateRepresentativeDeposit),
+    govActionDeposit: lovelaceValue(result.governanceActionDeposit),
+    priceMem: parseOgmiosRatio(result.scriptExecutionPrices?.memory, 'scriptExecutionPrices.memory'),
+    priceStep: parseOgmiosRatio(result.scriptExecutionPrices?.cpu, 'scriptExecutionPrices.cpu'),
+    maxTxExMem: BigInt(result.maxExecutionUnitsPerTransaction?.memory ?? 0),
+    maxTxExSteps: BigInt(result.maxExecutionUnitsPerTransaction?.cpu ?? 0),
+    coinsPerUtxoByte: BigInt(coinsPerUtxoByte),
+    collateralPercentage: result.collateralPercentage,
+    maxCollateralInputs: result.maxCollateralInputs,
+    minFeeRefScriptCostPerByte: result.minFeeReferenceScripts?.base ?? 0,
+    costModels,
+  };
+}
+
+export async function queryProtocolParametersCompat(
+  ogmiosEndpoint: string,
+  headers?: Record<string, string>,
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = OGMIOS_PROTOCOL_PARAMETERS_REQUEST_TIMEOUT_MS,
+): Promise<any> {
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutError = new Error(`Ogmios protocol parameters query timed out after ${timeoutMs}ms`);
+  timeoutError.name = 'TimeoutError';
+
+  try {
+    return await Promise.race([
+      (async () => {
+        const response = await fetchImpl(ogmiosEndpoint, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            ...(headers ?? {}),
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'queryLedgerState/protocolParameters',
+            params: {},
+            id: 'tx-builder-runtime-protocol-parameters',
+          }),
+          signal: controller.signal,
+        });
+        const text = await response.text();
+        if (!response.ok) {
+          const error = new Error(`Ogmios protocol parameters query failed with HTTP ${response.status}: ${text}`);
+          Object.assign(error, {
+            status: response.status,
+            retryAfterMs: parseRetryAfterMs(response.headers),
+          });
+          throw error;
+        }
+        let payload: any;
+        try {
+          payload = JSON.parse(text);
+        } catch (error) {
+          throw new Error('Ogmios protocol parameters query returned invalid JSON', { cause: error });
+        }
+        if (payload.error) {
+          throw new Error(`Ogmios protocol parameters query failed: ${JSON.stringify(payload.error)}`);
+        }
+        return mapOgmiosProtocolParameters(payload.result);
+      })(),
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+          controller.abort(timeoutError);
+          reject(timeoutError);
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+  }
 }
 
 function collectErrorSignals(error: unknown): string[] {
@@ -914,6 +1220,9 @@ function collectErrorSignals(error: unknown): string[] {
       pushSignal(record.details);
       pushSignal(record.type);
       pushSignal(record.statusText);
+      if (typeof record.status === 'number') {
+        pushSignal(`HTTP ${record.status}`);
+      }
 
       visit(record.cause, depth + 1);
       visit(record.error, depth + 1);
@@ -925,9 +1234,26 @@ function collectErrorSignals(error: unknown): string[] {
   return signals;
 }
 
+function hasTransientHttpStatus(normalizedSignals: string[]): boolean {
+  return normalizedSignals.some((signal) => {
+    const statusMatches = [
+      ...signal.matchAll(/\bhttp\s+(\d{3})\b/g),
+      ...signal.matchAll(/\bstatus(?:code)?\s*[:=]?\s*(\d{3})\b/g),
+      ...signal.matchAll(/\((\d{3})\s+(?:get|post|put|delete|patch)\b/g),
+    ];
+    return statusMatches.some((match) => {
+      const status = Number(match[1]);
+      return status === 429 || (status >= 500 && status <= 599);
+    });
+  });
+}
+
 function isTransientStartupError(error: unknown): boolean {
   const normalizedSignals = collectErrorSignals(error).map((signal) => signal.toLowerCase());
-  return normalizedSignals.some((signal) => TRANSIENT_STARTUP_ERROR_MARKERS.some((marker) => signal.includes(marker)));
+  return (
+    hasTransientHttpStatus(normalizedSignals) ||
+    normalizedSignals.some((signal) => TRANSIENT_STARTUP_ERROR_MARKERS.some((marker) => signal.includes(marker)))
+  );
 }
 
 function computeJitteredBackoffDelayMs(failedAttempt: number): number {
@@ -936,7 +1262,35 @@ function computeJitteredBackoffDelayMs(failedAttempt: number): number {
   return Math.round(backoffDelay * jitterMultiplier);
 }
 
-async function retryWithBackoff<T>(operation: () => Promise<T>): Promise<T> {
+function computeProtocolParametersRetryDelayMs(
+  failedAttempt: number,
+  error: unknown,
+): number {
+  const backoffDelayMs = computeJitteredBackoffDelayMs(failedAttempt);
+  if (typeof error !== 'object' || error === null) {
+    return backoffDelayMs;
+  }
+
+  const retryAfterMs = (error as { retryAfterMs?: unknown }).retryAfterMs;
+  if (
+    typeof retryAfterMs !== 'number' ||
+    !Number.isFinite(retryAfterMs) ||
+    retryAfterMs < 0
+  ) {
+    return backoffDelayMs;
+  }
+
+  return Math.max(
+    backoffDelayMs,
+    Math.min(retryAfterMs, PROTOCOL_PARAMETERS_RETRY_AFTER_MAX_MS),
+  );
+}
+
+export async function retryWithBackoff<T>(
+  operation: () => Promise<T>,
+  wait: (durationMs: number) => Promise<void> = (durationMs) =>
+    new Promise((resolve) => setTimeout(resolve, durationMs)),
+): Promise<T> {
   for (let attempt = 1; attempt <= PROTOCOL_PARAMETERS_MAX_ATTEMPTS; attempt += 1) {
     try {
       return await operation();
@@ -944,8 +1298,11 @@ async function retryWithBackoff<T>(operation: () => Promise<T>): Promise<T> {
       if (!isTransientStartupError(error) || attempt >= PROTOCOL_PARAMETERS_MAX_ATTEMPTS) {
         throw error;
       }
-      const retryDelayMs = computeJitteredBackoffDelayMs(attempt);
-      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      const retryDelayMs = computeProtocolParametersRetryDelayMs(
+        attempt,
+        error,
+      );
+      await wait(retryDelayMs);
     }
   }
 
@@ -958,10 +1315,11 @@ async function createLucidRuntime(
   cardanoNetwork: Network,
   logger: RuntimeLogger,
   headers?: KupmiosAuthHeaders,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<{ lucidImporter: LucidModule; lucid: LucidEvolution }> {
   const Lucid = await timed(logger, '[context]', 'import lucid', () => eval(`import('@lucid-evolution/lucid')`) as Promise<LucidModule>);
-  const provider = new Lucid.Kupmios(kupoEndpoint, ogmiosEndpoint, headers);
-  const protocolParameters = sanitizeProtocolParameters(await timed(logger, '[context]', 'fetch protocol parameters', () => retryWithBackoff(() => provider.getProtocolParameters())));
+  const provider = new Lucid.Kupmios(kupoEndpoint, ogmiosEndpoint, withKupoStringQuantityHeader(headers));
+  const protocolParameters = sanitizeProtocolParameters(await timed(logger, '[context]', 'fetch protocol parameters', () => retryWithBackoff(() => queryProtocolParametersCompat(ogmiosEndpoint, headers?.ogmiosHeader, fetchImpl))));
   const lucid = await timed(logger, '[context]', 'create lucid runtime', () =>
     Lucid.Lucid(provider, cardanoNetwork, {
       presetProtocolParameters: protocolParameters,
@@ -1188,7 +1546,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
   const traceRegistryClient = createTraceRegistryClient({
     bridgeManifestUrl: config.bridgeManifestUrl,
     kupmiosUrl: config.kupmiosUrl,
-    kupmiosHeaders: config.kupmiosHeaders,
+    kupmiosHeaders: withKupoStringQuantityHeader(config.kupmiosHeaders),
     fetchImpl: config.fetchImpl,
   });
 
@@ -1216,8 +1574,9 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
     const manifest = await timed(logger, '[context]', 'load bridge manifest', getBridgeManifest);
     const { deployment, bridgeManifest } = normalizeBridgeManifest(manifest);
     const { kupoEndpoint, ogmiosEndpoint: rawOgmiosEndpoint } = splitKupmiosUrl(config.kupmiosUrl);
-    const { ogmiosEndpoint, headers: kupmiosHeaders } =
+    const { ogmiosEndpoint, headers: normalizedKupmiosHeaders } =
       normalizeDemeterOgmiosEndpoint(rawOgmiosEndpoint, config.kupmiosHeaders);
+    const kupmiosHeaders = withKupoStringQuantityHeader(normalizedKupmiosHeaders);
     const cardanoNetwork = normalizeCardanoNetwork(bridgeManifest.cardano.network);
 
     const { lucidImporter, lucid } = await createLucidRuntime(
@@ -1226,6 +1585,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
       cardanoNetwork,
       logger,
       kupmiosHeaders,
+      config.fetchImpl ?? fetch,
     );
     const lucidService = new LucidIbcAdapter(lucidImporter, lucid, deployment);
     await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
@@ -1471,6 +1831,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
 
 export type {
   BuilderRuntimeConfig,
+  KupmiosAuthHeaders,
   LocalSubmitSignedTransactionResponse,
   LocalUnsignedTransferResponse,
   SubmitSignedTransactionApiRequestBody,
