@@ -7,15 +7,6 @@
 !cardano/gateway/
 !cardano/gateway/**
 
-!caribic/
-!caribic/Cargo.toml
-!caribic/Cargo.lock
-!caribic/src/
-!caribic/src/**
-!caribic/config/
-!caribic/config/default-config.json
-!caribic/config/hermes-config.example.toml
-
 !relayer/
 !relayer/**
 

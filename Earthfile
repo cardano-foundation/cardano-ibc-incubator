@@ -51,16 +51,15 @@ gateway:
 
 # ---------------------------------------------------------------------------
 # Hermes relayer (Rust) — forked relayer with the native Cardano
-# ChainEndpoint plus the Caribic binary for explicit-network relayer helpers.
-# Build context is the repo root because the image compiles both `relayer/`
-# and `caribic/`; CI checkouts must run with submodules: recursive.
+# ChainEndpoint. Caribic configures the stack on the host; this image contains
+# only the Hermes runtime. CI checkouts must run with submodules: recursive.
 # ---------------------------------------------------------------------------
 hermes:
   ARG EARTHLY_TARGET_NAME
   LET DOCKER_IMAGE_NAME=${DOCKER_IMAGES_PREFIX}-hermes
 
   WAIT
-    FROM DOCKERFILE -f docker/hermes-caribic.Dockerfile .
+    FROM DOCKERFILE -f docker/hermes.Dockerfile .
   END
   WAIT
     SAVE IMAGE ${DOCKER_IMAGE_NAME}
