@@ -47,13 +47,13 @@ func TestLightClientModuleVerifyClientMessageEmitsRejectedEvent(t *testing.T) {
 
 	header := newVerifiedTestHeader(t)
 	err := module.VerifyClientMessage(ctx, clientID, header)
-	require.ErrorContains(t, err, "must equal latest height")
+	require.ErrorContains(t, err, "must equal latest authenticated checkpoint")
 
 	event := findEventByType(t, ctx.EventManager().Events(), EventTypeProbabilisticHeaderRejected)
 	require.Equal(t, clientID, eventAttributeValue(t, event, AttributeKeyClientID))
 	require.Equal(t, header.TrustedHeight.String(), eventAttributeValue(t, event, AttributeKeyTrustedHeight))
 	require.Equal(t, header.GetHeight().String(), eventAttributeValue(t, event, AttributeKeyAcceptedHeight))
-	require.Contains(t, eventAttributeValue(t, event, AttributeKeyReason), "must equal latest height")
+	require.Contains(t, eventAttributeValue(t, event, AttributeKeyReason), "must equal latest authenticated checkpoint")
 }
 
 func TestLightClientModuleUpdateStateOnMisbehaviourEmitsFrozenEvent(t *testing.T) {

@@ -63,36 +63,49 @@ func (cs *ClientState) verifyHeaderWithMode(
 		return err
 	}
 
-	if mode.enforceForwardUpdate && cs.LatestHeight != nil && header.GetHeight().LTE(cs.LatestHeight) {
-		return errorsmod.Wrapf(ErrInvalidHeaderHeight, "expected newer header height than %s, got %s", cs.LatestHeight.String(), header.GetHeight().String())
-	}
-
 	anchor := header.AnchorBlock
 	if anchor == nil || anchor.Height == nil {
 		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "anchor block missing")
 	}
+
+	var trustedBlock *trustedBlockState
+	var err error
 	if mode.enforceForwardUpdate {
-		if cs.LatestHeight == nil || cs.LatestHeight.IsZero() {
-			return errorsmod.Wrap(ErrInvalidHeaderHeight, "latest height must be present for probabilistic header verification")
+		if err := cs.validateCheckpointFields(); err != nil {
+			return err
 		}
-		if !header.TrustedHeight.EQ(cs.LatestHeight) {
+		expectedTrustedHeight := cs.LatestHeight
+		if cs.LatestCheckpointHeight != nil && !cs.LatestCheckpointHeight.IsZero() {
+			expectedTrustedHeight = cs.LatestCheckpointHeight
+		}
+		if expectedTrustedHeight == nil || expectedTrustedHeight.IsZero() {
+			return errorsmod.Wrap(ErrInvalidHeaderHeight, "latest authenticated checkpoint must be present")
+		}
+		if header.GetHeight().LTE(expectedTrustedHeight) {
 			return errorsmod.Wrapf(
 				ErrInvalidHeaderHeight,
-				"trusted height %s must equal latest height %s",
-				header.TrustedHeight.String(),
-				cs.LatestHeight.String(),
+				"expected newer header height than authenticated checkpoint %s, got %s",
+				expectedTrustedHeight.String(),
+				header.GetHeight().String(),
 			)
 		}
-	}
-
-	trustedHeight := NewHeight(header.TrustedHeight.RevisionNumber, header.TrustedHeight.RevisionHeight)
-	trustedConsensus, found := GetConsensusState(clientStore, cdc, trustedHeight)
-	if !found {
-		return errorsmod.Wrapf(
-			clienttypes.ErrConsensusStateNotFound,
-			"trusted consensus state not found at height %s",
-			trustedHeight.String(),
-		)
+		if !header.TrustedHeight.EQ(expectedTrustedHeight) {
+			return errorsmod.Wrapf(
+				ErrInvalidHeaderHeight,
+				"trusted height %s must equal latest authenticated checkpoint %s",
+				header.TrustedHeight.String(),
+				expectedTrustedHeight.String(),
+			)
+		}
+		trustedBlock, err = cs.latestTrustedBlockState(clientStore, cdc)
+		if err != nil {
+			return err
+		}
+	} else {
+		trustedBlock, err = cs.trustedBlockStateAtHeight(clientStore, cdc, header.TrustedHeight)
+		if err != nil {
+			return err
+		}
 	}
 
 	currentEpochContexts, err := cs.normalizedEpochContexts()
@@ -109,11 +122,11 @@ func (cs *ClientState) verifyHeaderWithMode(
 		return err
 	}
 
-	if err := verifyHeaderEpochTransition(header, trustedConsensus, authenticatedHeader); err != nil {
+	if err := verifyHeaderEpochTransition(header, trustedBlock, authenticatedHeader); err != nil {
 		return err
 	}
 
-	if err := verifyBridgeContinuity(header.TrustedHeight, authenticatedHeader, trustedConsensus); err != nil {
+	if err := verifyBridgeContinuity(authenticatedHeader, trustedBlock); err != nil {
 		return err
 	}
 
@@ -143,8 +156,10 @@ func (cs *ClientState) verifyHeaderWithMode(
 		return errorsmod.Wrapf(ErrInvalidUniqueStake, "insufficient qualified unique stake bps: got %d, need %d", qualifiedUniqueStakeBps, DefaultThresholdUniqueStakeBps)
 	}
 
-	if _, err := cs.ExtractIbcStateRootFromHostStateTx(header); err != nil {
-		return errorsmod.Wrapf(ErrInvalidHostStateCommitment, "invalid host state tx body: %v", err)
+	if !header.IsCheckpoint {
+		if _, err := cs.ExtractIbcStateRootFromHostStateTx(header); err != nil {
+			return errorsmod.Wrapf(ErrInvalidHostStateCommitment, "invalid host state tx body: %v", err)
+		}
 	}
 
 	return nil
@@ -152,20 +167,20 @@ func (cs *ClientState) verifyHeaderWithMode(
 
 func verifyHeaderEpochTransition(
 	header *ProbabilisticHeader,
-	trustedConsensus *ConsensusState,
+	trustedBlock *trustedBlockState,
 	authenticatedHeader *authenticatedProbabilisticHeader,
 ) error {
 	if header == nil {
 		return errorsmod.Wrap(ErrInvalidHeader, "probabilistic header missing")
 	}
-	if trustedConsensus == nil {
-		return errorsmod.Wrap(clienttypes.ErrConsensusStateNotFound, "trusted consensus state missing")
+	if trustedBlock == nil {
+		return errorsmod.Wrap(clienttypes.ErrConsensusStateNotFound, "trusted block state missing")
 	}
 	if authenticatedHeader == nil || authenticatedHeader.anchorBlock == nil {
 		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated anchor block missing")
 	}
 
-	trustedEpoch := trustedConsensus.AcceptedEpoch
+	trustedEpoch := trustedBlock.epoch
 	anchorEpoch := authenticatedHeader.anchorBlock.epoch
 
 	switch {
@@ -246,22 +261,18 @@ func verifyHeaderEpochTransition(
 }
 
 func verifyBridgeContinuity(
-	trustedHeight *Height,
 	authenticatedHeader *authenticatedProbabilisticHeader,
-	trustedConsensus *ConsensusState,
+	trustedBlock *trustedBlockState,
 ) error {
-	if trustedConsensus == nil {
-		return errorsmod.Wrap(clienttypes.ErrConsensusStateNotFound, "trusted consensus state missing")
-	}
-	if trustedHeight == nil {
-		return errorsmod.Wrap(ErrInvalidHeaderHeight, "trusted height missing")
+	if trustedBlock == nil || trustedBlock.height == nil {
+		return errorsmod.Wrap(clienttypes.ErrConsensusStateNotFound, "trusted block state missing")
 	}
 	if authenticatedHeader == nil || authenticatedHeader.anchorBlock == nil {
 		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "authenticated anchor block missing")
 	}
 
-	expectedPrevHash := trustedConsensus.AcceptedBlockHash
-	expectedHeight := trustedHeight.RevisionHeight + 1
+	expectedPrevHash := trustedBlock.blockHash
+	expectedHeight := trustedBlock.height.RevisionHeight + 1
 
 	for _, block := range authenticatedHeader.bridgeBlocks {
 		if block == nil {
@@ -481,11 +492,11 @@ func (cs *ClientState) UpdateState(
 		panic(fmt.Errorf("failed to authenticate verified ProbabilisticHeader blocks: %w", err))
 	}
 
-	trustedConsensus, found := GetConsensusState(clientStore, cdc, header.TrustedHeight)
-	if !found {
-		panic(fmt.Errorf("trusted consensus state missing for verified ProbabilisticHeader at height %s", header.TrustedHeight.String()))
+	trustedBlock, err := cs.trustedBlockStateAtHeight(clientStore, cdc, header.TrustedHeight)
+	if err != nil {
+		panic(fmt.Errorf("trusted block state missing for verified ProbabilisticHeader at height %s: %w", header.TrustedHeight.String(), err))
 	}
-	if err := verifyHeaderEpochTransition(header, trustedConsensus, authenticatedHeader); err != nil {
+	if err := verifyHeaderEpochTransition(header, trustedBlock, authenticatedHeader); err != nil {
 		panic(fmt.Errorf("verified ProbabilisticHeader violated epoch transition rules: %w", err))
 	}
 
@@ -494,8 +505,15 @@ func (cs *ClientState) UpdateState(
 		panic(fmt.Errorf("missing anchor epoch context for verified ProbabilisticHeader epoch %d", authenticatedHeader.anchorBlock.epoch))
 	}
 
-	cs.pruneOldestConsensusState(ctx, cdc, clientStore)
 	height := NewHeight(0, header.AnchorBlock.Height.RevisionHeight)
+	if header.IsCheckpoint {
+		if err := cs.persistCheckpoint(clientStore, cdc, epochContexts, authenticatedHeader); err != nil {
+			panic(fmt.Errorf("failed to persist verified checkpoint: %w", err))
+		}
+		return nil
+	}
+
+	cs.pruneOldestConsensusState(ctx, cdc, clientStore)
 
 	ibcStateRoot, err := cs.ExtractIbcStateRootFromHostStateTx(header)
 	if err != nil {
@@ -531,6 +549,7 @@ func (cs *ClientState) UpdateState(
 		panic(fmt.Errorf("failed to persist rollover epoch contexts after verified ProbabilisticHeader: %w", err))
 	}
 	cs.LatestHeight = height
+	cs.setLatestCheckpoint(height, authenticatedHeader.anchorBlock.hash, authenticatedHeader.anchorBlock.epoch)
 	setClientState(clientStore, cdc, cs)
 	return []exported.Height{height}
 }

@@ -67,8 +67,10 @@ func (cs *ClientState) authenticateHeaderBlocksWithContexts(header *Probabilisti
 		descendantBlocks = append(descendantBlocks, authenticatedBlock)
 	}
 
-	if err := verifyHostStateTxIncludedInAnchorBlock(header); err != nil {
-		return nil, err
+	if !header.IsCheckpoint {
+		if err := verifyHostStateTxIncludedInAnchorBlock(header); err != nil {
+			return nil, err
+		}
 	}
 
 	return &authenticatedProbabilisticHeader{
