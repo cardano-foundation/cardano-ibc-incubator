@@ -29,7 +29,6 @@ const allowed = new Set([
   'gateway:src/query/services/stability-evidence.ts:types:CardanoHeight',
   'gateway:src/query/services/stability-evidence.ts:types:EpochNumber',
   'gateway:src/query/services/stability-evidence.ts:types:StakeWeightedStabilityEvidence',
-  'gateway:src/query/services/stability-evidence.ts:types:StakeWeightedStabilityHeaderEvidence',
   'gateway:src/query/services/stability-evidence.ts:types:StakeWeightedStabilityTxEvidence',
   'gateway:src/shared/helpers/acknowledgement.ts:exports:acknowledgementBytesFromResponse',
   'gateway:src/shared/helpers/cip68-voucher-metadata.ts:exports:VOUCHER_METADATA_VERSION',
