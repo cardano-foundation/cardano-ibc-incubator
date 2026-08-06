@@ -44,6 +44,11 @@ import { ChannelService } from './channel.service';
 import { PacketService } from './packet.service';
 import { SubmissionService } from './submission.service';
 import { SubmitSignedTxRequest, SubmitSignedTxResponse } from './dto/submit-signed-tx.dto';
+import {
+  BuildHostStateHeartbeatRequest,
+  BuildHostStateHeartbeatResponse,
+} from './dto/host-state-heartbeat.dto';
+import { HostStateHeartbeatService } from './host-state-heartbeat.service';
 
 @Controller()
 export class TxController {
@@ -53,6 +58,7 @@ export class TxController {
     private readonly channelService: ChannelService,
     private readonly packetService: PacketService,
     private readonly submissionService: SubmissionService,
+    private readonly hostStateHeartbeatService: HostStateHeartbeatService,
   ) {}
 
   @GrpcMethod('Msg', 'CreateClient')
@@ -148,5 +154,12 @@ export class TxController {
   async SubmitSignedTx(data: SubmitSignedTxRequest): Promise<SubmitSignedTxResponse> {
     const response: SubmitSignedTxResponse = await this.submissionService.submitSignedTransaction(data);
     return response;
+  }
+
+  @GrpcMethod('CardanoMsg', 'BuildHostStateHeartbeat')
+  async BuildHostStateHeartbeat(
+    data: BuildHostStateHeartbeatRequest,
+  ): Promise<BuildHostStateHeartbeatResponse> {
+    return this.hostStateHeartbeatService.buildHeartbeat(data);
   }
 }

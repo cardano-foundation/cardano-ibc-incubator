@@ -807,6 +807,7 @@ export class LucidService implements OnModuleInit {
             LucidData.Object({ HandlePacket: HandlePacketSchema }),
             LucidData.Object({ EnterShutdown: EnterShutdownSchema }),
             LucidData.Literal("FinalizeShutdown"),
+            LucidData.Literal("Heartbeat"),
           ]);
           return LucidData.to(data as any, HostStateRedeemerSchema as any, {
             canonical: true,
@@ -949,6 +950,32 @@ export class LucidService implements OnModuleInit {
       );
 
     return tx;
+  }
+
+  public createUnsignedHostStateHeartbeatTransaction(
+    hostStateUtxo: UTxO,
+    encodedHostStateRedeemer: string,
+    encodedUpdatedHostStateDatum: string,
+    signerKeyHash: string,
+  ): TxBuilder {
+    const deploymentConfig = this.configService.get("deployment");
+    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
+      deploymentConfig.hostStateNFT.name;
+    const hostStateUtxoWithRawDatum = {
+      ...hostStateUtxo,
+      datum: hostStateUtxo.datum,
+      datumHash: undefined,
+    };
+
+    return this.newTxBuilder()
+      .readFrom([this.referenceScripts.hostStateStt])
+      .collectFrom([hostStateUtxoWithRawDatum], encodedHostStateRedeemer)
+      .pay.ToContract(
+        deploymentConfig.validators.hostStateStt.address,
+        { kind: "inline", value: encodedUpdatedHostStateDatum },
+        { [hostStateNFT]: 1n },
+      )
+      .addSignerKey(signerKeyHash);
   }
 
   public createUnsignedCreateClientTransaction(

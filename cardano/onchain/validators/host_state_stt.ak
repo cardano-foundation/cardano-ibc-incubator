@@ -26,12 +26,13 @@ use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
   HostState, HostStateDatum, host_state_token_name, validate_bind_port,
   validate_create_channel, validate_create_client, validate_create_connection,
-  validate_enter_shutdown, validate_finalize_shutdown, validate_update_only_root,
+  validate_enter_shutdown, validate_finalize_shutdown, validate_heartbeat,
+  validate_update_only_root,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, CreateChannel, CreateClient, CreateConnection, EnterShutdown,
-  FinalizeShutdown, HandlePacket, HostStateRedeemer, UpdateChannel, UpdateClient,
-  UpdateConnection,
+  FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer, UpdateChannel,
+  UpdateClient, UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/utils/string as string_utils
@@ -1141,6 +1142,10 @@ validator host_state_stt(
           EnterShutdown { grace_period_end } -> and {
               list.has(extra_signatories, old_datum.deployer),
               validate_enter_shutdown(old_datum, new_datum, grace_period_end),
+            }
+          Heartbeat -> and {
+              list.has(extra_signatories, old_datum.deployer),
+              validate_heartbeat(old_datum, new_datum),
             }
           FinalizeShutdown -> fail
         }

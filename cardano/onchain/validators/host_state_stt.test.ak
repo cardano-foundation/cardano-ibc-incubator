@@ -45,8 +45,8 @@ use ibc/core/ics_025_handler_interface/host_state.{
   empty_ibc_state_root, host_state_token_name,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  BindPort, EnterShutdown, FinalizeShutdown, HandlePacket, HostStateRedeemer,
-  UpdateChannel, UpdateClient, UpdateConnection,
+  BindPort, EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat,
+  HostStateRedeemer, UpdateChannel, UpdateClient, UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/testing/fuzz_dsl
@@ -229,6 +229,15 @@ fn spend_host_state(
   inputs: List<Input>,
   outputs: List<Output>,
 ) -> Bool {
+  spend_host_state_with_signatories(redeemer, inputs, outputs, [])
+}
+
+fn spend_host_state_with_signatories(
+  redeemer: HostStateRedeemer,
+  inputs: List<Input>,
+  outputs: List<Output>,
+  extra_signatories: List<crypto.VerificationKeyHash>,
+) -> Bool {
   host_state_stt.host_state_stt.spend(
     test_nft_policy(),
     test_client_script_hash(),
@@ -237,7 +246,7 @@ fn spend_host_state(
     None,
     redeemer,
     test_host_ref(),
-    Transaction { ..placeholder, inputs, outputs },
+    Transaction { ..placeholder, inputs, outputs, extra_signatories },
   )
 }
 
@@ -2228,5 +2237,131 @@ test host_state_handle_packet_rejects_channel_only_changes() fail {
     redeemer,
     host_ref,
     transaction,
+  )
+}
+
+test host_state_heartbeat_preserves_ibc_state() {
+  let old_state = test_host_state(#"11", 1000)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      last_update_time: old_state.last_update_time + 1,
+    }
+
+  spend_host_state_with_signatories(
+    Heartbeat,
+    [test_host_input(old_state)],
+    [test_host_output(new_state)],
+    [trusted_deployer],
+  )
+}
+
+test host_state_heartbeat_rejects_unauthorized_signer() fail {
+  let old_state = test_host_state(#"11", 1000)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      last_update_time: old_state.last_update_time + 1,
+    }
+
+  spend_host_state(
+    Heartbeat,
+    [test_host_input(old_state)],
+    [test_host_output(new_state)],
+  )
+}
+
+test host_state_heartbeat_rejects_root_change() fail {
+  let old_state = test_host_state(#"11", 1000)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: #"22",
+      last_update_time: old_state.last_update_time + 1,
+    }
+
+  spend_host_state_with_signatories(
+    Heartbeat,
+    [test_host_input(old_state)],
+    [test_host_output(new_state)],
+    [trusted_deployer],
+  )
+}
+
+test host_state_heartbeat_rejects_counter_change() fail {
+  let old_state = test_host_state(#"11", 1000)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      next_client_sequence: old_state.next_client_sequence + 1,
+      last_update_time: old_state.last_update_time + 1,
+    }
+
+  spend_host_state_with_signatories(
+    Heartbeat,
+    [test_host_input(old_state)],
+    [test_host_output(new_state)],
+    [trusted_deployer],
+  )
+}
+
+test host_state_heartbeat_rejects_stale_timestamp() fail {
+  let old_state = test_host_state(#"11", 1000)
+  let new_state = HostState { ..old_state, version: old_state.version + 1 }
+
+  spend_host_state_with_signatories(
+    Heartbeat,
+    [test_host_input(old_state)],
+    [test_host_output(new_state)],
+    [trusted_deployer],
+  )
+}
+
+test host_state_heartbeat_rejects_shutdown_state() fail {
+  let nft_policy = test_nft_policy()
+  let old_state = test_host_state(#"11", 1000)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      last_update_time: old_state.last_update_time + 1,
+    }
+  let shutdown =
+    ShuttingDown {
+      initiated_at: old_state.last_update_time,
+      grace_period_end: old_state.last_update_time + 1000,
+    }
+  let address = Address(Script(test_host_script_hash()), None)
+  let host_input =
+    Input(
+      test_host_ref(),
+      Output {
+        address,
+        value: from_asset(nft_policy, host_state_token_name, 1),
+        datum: InlineDatum(
+          test_host_state_datum_with_shutdown(old_state, nft_policy, shutdown),
+        ),
+        reference_script: None,
+      },
+    )
+  let host_output =
+    Output {
+      address,
+      value: from_asset(nft_policy, host_state_token_name, 1),
+      datum: InlineDatum(
+        test_host_state_datum_with_shutdown(new_state, nft_policy, shutdown),
+      ),
+      reference_script: None,
+    }
+
+  spend_host_state_with_signatories(
+    Heartbeat,
+    [host_input],
+    [host_output],
+    [trusted_deployer],
   )
 }

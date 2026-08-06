@@ -65,6 +65,12 @@ id = 'cardano-devnet'
 # Note: Gateway gRPC listens on port 5001; its HTTP/REST server defaults to 8000.
 gateway_url = 'http://localhost:5001'
 
+# Poll for a HostState heartbeat once a minute. The Gateway only builds a
+# transaction when no ordinary IBC transition has created an anchor in the
+# current Cardano epoch, so this does not produce one transaction per poll.
+# The configured Cardano key must match the HostState deployment authority.
+host_state_heartbeat_interval = '60s'
+
 # Cardano network ID (1 = mainnet, 0 = testnet)
 network_id = 0
 

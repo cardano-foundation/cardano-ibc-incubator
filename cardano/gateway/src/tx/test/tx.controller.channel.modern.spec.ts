@@ -5,6 +5,7 @@ import { ConnectionService } from '../connection.service';
 import { ChannelService } from '../channel.service';
 import { PacketService } from '../packet.service';
 import { SubmissionService } from '../submission.service';
+import { HostStateHeartbeatService } from '../host-state-heartbeat.service';
 
 describe('TxController - Channel (modern)', () => {
   let controller: TxController;
@@ -37,6 +38,7 @@ describe('TxController - Channel (modern)', () => {
         { provide: ChannelService, useValue: channelServiceMock },
         { provide: PacketService, useValue: {} },
         { provide: SubmissionService, useValue: {} },
+        { provide: HostStateHeartbeatService, useValue: {} },
       ],
     }).compile();
 
