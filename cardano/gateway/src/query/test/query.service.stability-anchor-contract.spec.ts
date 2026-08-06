@@ -238,6 +238,9 @@ describe('QueryService stability anchor contract', () => {
     expect(clientState.current_epoch_end_slot_exclusive).toBe(3000n);
     expect(clientState.system_start_unix_ns).toBe(STABILITY_SLOT_ORIGIN_NS);
     expect(clientState.slot_length_ns).toBe(1_000_000_000n);
+    expect(clientState.latest_checkpoint_height).toEqual(clientState.latest_height);
+    expect(clientState.latest_checkpoint_block_hash).toBe('anchor-hash');
+    expect(clientState.latest_checkpoint_epoch).toBe(7n);
     expect(consensusState.timestamp).toBe(timestampForSlot(1000n));
   });
 
@@ -265,6 +268,83 @@ describe('QueryService stability anchor contract', () => {
 
     expect(header.trusted_height?.revision_height).toBe(99n);
     expect(header.anchor_block?.height?.revision_height).toBe(100n);
+  });
+
+  it('returns a bounded rootless checkpoint when the requested HostState height is far ahead', async () => {
+    const blockAt = (height: number) => {
+      const slot = 1000n + BigInt(height - 100) * 10n;
+      return {
+        height,
+        hash: `hash-${height}`,
+        prevHash: `hash-${height - 1}`,
+        slotNo: slot,
+        epochNo: 7,
+        timestampUnixNs: timestampForSlot(slot),
+        slotLeader: `pool-${String.fromCharCode(97 + (height % 5))}`,
+      };
+    };
+
+    historyServiceMock.findBlockByHeight.mockImplementation(async (height: bigint) => blockAt(Number(height)));
+    historyServiceMock.findBridgeBlocks.mockImplementation(async (trustedHeight: bigint, anchorHeight: bigint) =>
+      Array.from({ length: Number(anchorHeight - trustedHeight - 1n) }, (_, index) =>
+        blockAt(Number(trustedHeight) + index + 1),
+      ),
+    );
+    historyServiceMock.findDescendantBlocks.mockImplementation(async (anchorHeight: bigint) =>
+      Array.from({ length: 24 }, (_, index) => blockAt(Number(anchorHeight) + index + 1)),
+    );
+    miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (blocks: unknown[]) =>
+      blocks.map((_, index) => Buffer.from([index + 1])),
+    );
+
+    const response = await service.queryIBCHeader({ height: 200n, trusted_height: 100n } as any);
+    const header = ProbabilisticHeader.decode(response.header!.value);
+
+    expect(header.is_checkpoint).toBe(true);
+    expect(header.trusted_height?.revision_height).toBe(100n);
+    expect(header.anchor_block?.height?.revision_height).toBe(133n);
+    expect(header.bridge_blocks).toHaveLength(32);
+    expect(header.host_state_tx_hash).toBe('');
+    expect(header.host_state_tx_output_index).toBe(0);
+    expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
+  });
+
+  it('shrinks a checkpoint until its encoded header fits the configured transaction budget', async () => {
+    const blockAt = (height: number) => {
+      const slot = 1000n + BigInt(height - 100) * 10n;
+      return {
+        height,
+        hash: `hash-${height}`,
+        prevHash: `hash-${height - 1}`,
+        slotNo: slot,
+        epochNo: 7,
+        timestampUnixNs: timestampForSlot(slot),
+        slotLeader: `pool-${String.fromCharCode(97 + (height % 5))}`,
+      };
+    };
+
+    historyServiceMock.findBlockByHeight.mockImplementation(async (height: bigint) => blockAt(Number(height)));
+    historyServiceMock.findBridgeBlocks.mockImplementation(async (trustedHeight: bigint, anchorHeight: bigint) =>
+      Array.from({ length: Number(anchorHeight - trustedHeight - 1n) }, (_, index) =>
+        blockAt(Number(trustedHeight) + index + 1),
+      ),
+    );
+    historyServiceMock.findDescendantBlocks.mockImplementation(async (anchorHeight: bigint) =>
+      Array.from({ length: 24 }, (_, index) => blockAt(Number(anchorHeight) + index + 1)),
+    );
+    miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (blocks: unknown[]) =>
+      blocks.map(() => Buffer.alloc(24 * 1024, 1)),
+    );
+
+    const response = await service.queryIBCHeader({ height: 200n, trusted_height: 100n } as any);
+    const header = ProbabilisticHeader.decode(response.header!.value);
+
+    expect(header.is_checkpoint).toBe(true);
+    expect(header.anchor_block!.height!.revision_height).toBeGreaterThan(100n);
+    expect(header.anchor_block!.height!.revision_height).toBeLessThan(133n);
+    expect(response.header!.value).toHaveLength(ProbabilisticHeader.encode(header).finish().length);
+    expect(response.header!.value.length).toBeLessThanOrEqual(768 * 1024);
+    expect(miniProtocalsServiceMock.fetchBlocksCbor.mock.calls.length).toBeGreaterThan(1);
   });
 
   it('does not return the live HostState tx height as latest stability height when the root was not accepted', async () => {

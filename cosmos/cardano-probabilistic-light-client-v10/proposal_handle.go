@@ -66,6 +66,15 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	setConsensusState(subjectClientStore, cdc, consensusState, height)
 	setConsensusMetadataWithValues(subjectClientStore, height, processedHeight, processedTime)
 	cs.LatestHeight = substituteClientState.LatestHeight
+	if substituteClientState.LatestCheckpointHeight != nil && !substituteClientState.LatestCheckpointHeight.IsZero() {
+		cs.setLatestCheckpoint(
+			substituteClientState.LatestCheckpointHeight,
+			substituteClientState.LatestCheckpointBlockHash,
+			substituteClientState.LatestCheckpointEpoch,
+		)
+	} else {
+		cs.setLatestCheckpoint(height, consensusState.AcceptedBlockHash, consensusState.AcceptedEpoch)
+	}
 	cs.ChainId = substituteClientState.ChainId
 	cs.TrustingPeriod = substituteClientState.TrustingPeriod
 	if err := syncCurrentEpochFields(&cs, contexts, substituteClientState.CurrentEpoch); err != nil {

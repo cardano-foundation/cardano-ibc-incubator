@@ -130,6 +130,7 @@ import {
 import {
   loadStakeWeightedStabilityEvidenceByHeight,
   loadStakeWeightedStabilityHeaderEvidence,
+  StakeWeightedStabilityHeaderEvidence,
 } from './stability-evidence';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ProofQueryOptions } from '../helpers/query-height';
@@ -525,6 +526,12 @@ export class QueryService {
       system_start_unix_ns: stabilitySlotTiming.systemStartUnixNs,
       slot_length_ns: stabilitySlotTiming.slotLengthNs,
       epoch_contexts: [currentEpochContext],
+      latest_checkpoint_height: {
+        revision_number: 0n,
+        revision_height: stabilityEvidence.anchorHeight,
+      },
+      latest_checkpoint_block_hash: stabilityEvidence.anchorBlock.hash,
+      latest_checkpoint_epoch: BigInt(stabilityEvidence.anchorEpoch),
     };
 
     const consensusStateProbabilistic: ConsensusStateProbabilistic = {
@@ -1829,17 +1836,104 @@ export class QueryService {
     }
     const effectiveTrustedHeight = this.normalizeStabilityTrustedHeight(BigInt(trustedHeight), BigInt(height));
 
-    const stabilityEvidence = await loadStakeWeightedStabilityHeaderEvidence({
-      historyService: this.historyService,
-      height: BigInt(height),
-      trustedHeight: effectiveTrustedHeight,
-      logger: this.logger,
-    });
-
-    const hostStateUtxo = await this.findExactStabilityAnchorHostStateUtxo(
-      stabilityEvidence.anchorHeight,
-      'header generation',
+    const stabilityHeader = await this.buildBoundedStabilityHeader(
+      effectiveTrustedHeight,
+      BigInt(height),
     );
+
+    return {
+      header: {
+        type_url: '/ibc.lightclients.probabilistic.v1.ProbabilisticHeader',
+        value: ProbabilisticHeader.encode(stabilityHeader).finish(),
+      },
+    };
+  }
+
+  private async buildBoundedStabilityHeader(trustedHeight: bigint, targetHeight: bigint): Promise<ProbabilisticHeader> {
+    const targetDistance = targetHeight - trustedHeight;
+    if (targetDistance <= 0n) {
+      throw new GrpcInvalidArgumentException(
+        `Invalid stability header request: trusted height ${trustedHeight.toString()} must be less than target height ${targetHeight.toString()}`,
+      );
+    }
+
+    const maxBridgeBlocks = this.getStabilityCheckpointMaxBridgeBlocks();
+    const maxHeaderBytes = this.getStabilityCheckpointMaxHeaderBytes();
+    const maxAdvance = BigInt(maxBridgeBlocks) + 1n;
+    let candidateDistance = targetDistance < maxAdvance ? targetDistance : maxAdvance;
+
+    while (candidateDistance >= 1n) {
+      const candidateHeight = trustedHeight + candidateDistance;
+      const isCheckpoint = candidateHeight < targetHeight;
+
+      let stabilityEvidence: StakeWeightedStabilityHeaderEvidence;
+      try {
+        stabilityEvidence = await loadStakeWeightedStabilityHeaderEvidence({
+          historyService: this.historyService,
+          height: candidateHeight,
+          trustedHeight,
+          logger: this.logger,
+        });
+      } catch (error) {
+        if (isCheckpoint && candidateDistance > 1n && this.isRecoverableCheckpointCandidateError(error)) {
+          candidateDistance -= 1n;
+          continue;
+        }
+        throw error;
+      }
+
+      const stabilityHeader = await this.buildStabilityHeader(stabilityEvidence, isCheckpoint);
+      const encodedHeaderBytes = ProbabilisticHeader.encode(stabilityHeader).finish().length;
+      if (encodedHeaderBytes <= maxHeaderBytes) {
+        if (isCheckpoint) {
+          this.logger.log(
+            `Returning rootless stability checkpoint ${trustedHeight.toString()} -> ${stabilityEvidence.anchorHeight.toString()} while catching up to ${targetHeight.toString()} (${encodedHeaderBytes} bytes)`,
+          );
+        }
+        return stabilityHeader;
+      }
+
+      this.logger.warn(
+        `Stability ${isCheckpoint ? 'checkpoint' : 'root-bearing'} header ${trustedHeight.toString()} -> ${stabilityEvidence.anchorHeight.toString()} is ${encodedHeaderBytes} bytes, above the configured ${maxHeaderBytes}-byte limit`,
+      );
+
+      if (candidateDistance === 1n || targetDistance === 1n) {
+        throw new GrpcFailedPreconditionException(
+          gatewayGrpcError(
+            GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_ACCEPTED,
+            `Even the smallest stability update from height ${trustedHeight.toString()} is ${encodedHeaderBytes} bytes, above the configured ${maxHeaderBytes}-byte checkpoint limit`,
+            {
+              trustedHeight: trustedHeight.toString(),
+              targetHeight: targetHeight.toString(),
+              encodedHeaderBytes,
+              maxHeaderBytes,
+            },
+          ),
+        );
+      }
+
+      const proportionalDistance = Math.max(
+        1,
+        Math.floor((Number(candidateDistance) * maxHeaderBytes) / encodedHeaderBytes),
+      );
+      candidateDistance = BigInt(Math.min(Number(candidateDistance - 1n), proportionalDistance));
+    }
+
+    throw new GrpcFailedPreconditionException(
+      gatewayGrpcError(
+        GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_ACCEPTED,
+        `Unable to construct a bounded stability checkpoint after height ${trustedHeight.toString()}`,
+      ),
+    );
+  }
+
+  private async buildStabilityHeader(
+    stabilityEvidence: StakeWeightedStabilityHeaderEvidence,
+    isCheckpoint: boolean,
+  ): Promise<ProbabilisticHeader> {
+    const hostStateUtxo = isCheckpoint
+      ? undefined
+      : await this.findExactStabilityAnchorHostStateUtxo(stabilityEvidence.anchorHeight, 'header generation');
     const requestedBlocks = [
       ...stabilityEvidence.bridgeBlocks,
       stabilityEvidence.anchorBlock,
@@ -1874,10 +1968,15 @@ export class QueryService {
       descendant_blocks: stabilityEvidence.descendantBlocks.map((block) =>
         this.toStabilityBlock(block, blockWitnessByHeight.get(block.height)),
       ),
-      host_state_tx_hash: hostStateUtxo.txHash,
-      host_state_tx_output_index: hostStateUtxo.outputIndex,
+      host_state_tx_hash: hostStateUtxo?.txHash ?? '',
+      host_state_tx_output_index: hostStateUtxo?.outputIndex ?? 0,
       new_epoch_context: newEpochContext,
+      is_checkpoint: isCheckpoint,
     };
+
+    if (isCheckpoint) {
+      stabilityHeader.host_state_tx_hash = '';
+    }
 
     if (newEpochContext) {
       const newEpochContextBytes = ProbabilisticEpochContext.encode(newEpochContext).finish().length;
@@ -1887,12 +1986,32 @@ export class QueryService {
       );
     }
 
-    return {
-      header: {
-        type_url: '/ibc.lightclients.probabilistic.v1.ProbabilisticHeader',
-        value: ProbabilisticHeader.encode(stabilityHeader).finish(),
-      },
-    };
+    return stabilityHeader;
+  }
+
+  private getStabilityCheckpointMaxBridgeBlocks(): number {
+    const value = this.configService.get<number>('cardanoStabilityCheckpointMaxBridgeBlocks') ?? 32;
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new GrpcInternalException('Invalid Cardano stability checkpoint bridge-block limit');
+    }
+    return value;
+  }
+
+  private getStabilityCheckpointMaxHeaderBytes(): number {
+    const value = this.configService.get<number>('cardanoStabilityCheckpointMaxHeaderBytes') ?? 768 * 1024;
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      throw new GrpcInternalException('Invalid Cardano stability checkpoint header-size limit');
+    }
+    return value;
+  }
+
+  private isRecoverableCheckpointCandidateError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return (
+      message.includes(GATEWAY_GRPC_ERROR_CODE.HEIGHT_NOT_ACCEPTED) ||
+      message.includes('stability thresholds not met') ||
+      message.includes('crosses epoch boundary')
+    );
   }
 
   /**

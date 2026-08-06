@@ -90,6 +90,8 @@ interface Config {
   cardanoNetwork: Network;
   cardanoEpochLength: number;
   cardanoClientTrustingPeriodSeconds: number;
+  cardanoStabilityCheckpointMaxBridgeBlocks: number;
+  cardanoStabilityCheckpointMaxHeaderBytes: number;
   cardanoEpochParamsEndpoint?: string;
   cardanoPoolRegistrationHistoryEndpoint?: string;
   cardanoKoiosApiKey?: string;
@@ -129,6 +131,12 @@ export default (): Partial<Config> => {
       process.env.CARDANO_EPOCH_LENGTH || defaultEpochLength(process.env.CARDANO_NETWORK_MAGIC),
     ),
     cardanoClientTrustingPeriodSeconds: Number(process.env.CARDANO_CLIENT_TRUSTING_PERIOD_SECONDS || 86_400),
+    cardanoStabilityCheckpointMaxBridgeBlocks: Number(
+      process.env.CARDANO_STABILITY_CHECKPOINT_MAX_BRIDGE_BLOCKS || 32,
+    ),
+    cardanoStabilityCheckpointMaxHeaderBytes: Number(
+      process.env.CARDANO_STABILITY_CHECKPOINT_MAX_HEADER_BYTES || 768 * 1024,
+    ),
     cardanoEpochParamsEndpoint:
       process.env.CARDANO_EPOCH_PARAMS_ENDPOINT || defaultKoiosEndpoint(process.env.CARDANO_NETWORK_MAGIC),
     cardanoPoolRegistrationHistoryEndpoint:

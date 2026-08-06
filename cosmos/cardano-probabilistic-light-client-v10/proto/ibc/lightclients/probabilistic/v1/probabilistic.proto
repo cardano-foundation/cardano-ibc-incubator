@@ -55,6 +55,11 @@ message ClientState {
   uint64 system_start_unix_ns = 15;
   uint64 slot_length_ns = 16;
   repeated EpochContext epoch_contexts = 17;
+  // The latest authenticated Cardano block, which may be newer than
+  // latest_height when rootless checkpoint updates are used for catch-up.
+  Height latest_checkpoint_height = 19;
+  string latest_checkpoint_block_hash = 20;
+  uint64 latest_checkpoint_epoch = 21;
 }
 
 message ConsensusState {
@@ -103,4 +108,7 @@ message ProbabilisticHeader {
   reserved 7 to 9;
   repeated ProbabilisticBlock bridge_blocks = 10;
   EpochContext new_epoch_context = 11;
+  // Checkpoints authenticate Cardano chain progression without creating an
+  // IBC consensus state or renewing the trusting period.
+  bool is_checkpoint = 12;
 }
