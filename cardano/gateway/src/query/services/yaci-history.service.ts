@@ -120,6 +120,16 @@ type KoiosPoolHistoryRow = {
   active_stake?: string | number | null;
 };
 
+type KoiosTipRow = {
+  epoch_no?: string | number | null;
+};
+
+type KoiosPoolListRow = {
+  pool_id_bech32?: string | null;
+  pool_id_hex?: string | null;
+  active_stake?: string | number | null;
+};
+
 type HistoricalEpochProducerSummaryRow = {
   block_count?: string | number | null;
   pool_ids?: string[] | null;
@@ -145,6 +155,8 @@ const HISTORICAL_STAKE_RETRY_MAX_DELAY_MS = 30_000;
 const HISTORICAL_STAKE_POOL_CONCURRENCY = 20;
 const HISTORICAL_STAKE_REMAINDER_POOL_PREFIX =
   "__historical_unproduced_stake__";
+const CURRENT_EPOCH_STAKE_PAGE_SIZE = 1_000;
+const CURRENT_EPOCH_STAKE_MAX_PAGES = 10;
 
 class EpochParamsLookupError extends Error {
   constructor(
@@ -180,6 +192,14 @@ export class YaciHistoryService implements HistoryService {
   private readonly historicalEpochContextLookups = new Map<
     string,
     Promise<HistoryEpochContextAtBlock>
+  >();
+  private readonly currentEpochStakeSnapshotCache = new Map<
+    string,
+    HistoryStakeDistributionEntry[]
+  >();
+  private readonly currentEpochStakeSnapshotLookups = new Map<
+    string,
+    Promise<HistoryStakeDistributionEntry[]>
   >();
 
   constructor(
@@ -490,12 +510,16 @@ export class YaciHistoryService implements HistoryService {
       );
     }
 
-    const stakeDistribution: HistoryStakeDistributionEntry[] = epochContext
-      .stakeDistribution.map((entry) => ({
+    const ogmiosStakeDistribution: HistoryStakeDistributionEntry[] =
+      epochContext.stakeDistribution.map((entry) => ({
         poolId: normalizePoolId(entry.poolId),
         stake: entry.stake,
         vrfKeyHash: normalizeHex(entry.vrfKeyHash),
       }));
+    const stakeDistribution = await this.findCurrentEpochStakeSnapshot(
+      block,
+      ogmiosStakeDistribution,
+    );
     const firstRegistrationSlots = await this.findKnownPoolRegistrationSlots(
       stakeDistribution.map((entry) => entry.poolId),
     );
@@ -513,6 +537,218 @@ export class YaciHistoryService implements HistoryService {
         currentEpochEndSlotExclusive: slotBounds.currentEpochEndSlotExclusive,
       },
     };
+  }
+
+  private async findCurrentEpochStakeSnapshot(
+    block: HistoryBlock,
+    ogmiosStakeDistribution: HistoryStakeDistributionEntry[],
+  ): Promise<HistoryStakeDistributionEntry[]> {
+    const cardanoNetwork = this.configService.get<string>("cardanoNetwork");
+    const isPublicNetwork = cardanoNetwork === "Preprod" ||
+      cardanoNetwork === "Preview" || cardanoNetwork === "Mainnet";
+    const endpoint = this.configService.get<string>(
+      "cardanoEpochParamsEndpoint",
+    )?.replace(/\/+$/, "");
+    if (!isPublicNetwork || !endpoint) {
+      return ogmiosStakeDistribution;
+    }
+
+    const cacheKey = this.epochNonceCacheKey(block.epochNo);
+    const cached = this.currentEpochStakeSnapshotCache.get(cacheKey);
+    if (cached) {
+      return cached.map((entry) => ({ ...entry }));
+    }
+
+    const pendingLookup = this.currentEpochStakeSnapshotLookups.get(cacheKey);
+    if (pendingLookup) {
+      const snapshot = await pendingLookup;
+      return snapshot.map((entry) => ({ ...entry }));
+    }
+
+    const tipEpoch = await this.fetchKoiosTipEpoch(endpoint);
+    if (tipEpoch !== block.epochNo) {
+      // pool_list exposes the current epoch's Set snapshot. Historical points
+      // continue through the existing point-in-time or completed-epoch paths.
+      return ogmiosStakeDistribution;
+    }
+
+    const lookup = this.buildCurrentEpochStakeSnapshot(
+      endpoint,
+      block,
+      ogmiosStakeDistribution,
+    );
+    this.currentEpochStakeSnapshotLookups.set(cacheKey, lookup);
+    try {
+      const snapshot = await lookup;
+      this.currentEpochStakeSnapshotCache.set(cacheKey, snapshot);
+      return snapshot.map((entry) => ({ ...entry }));
+    } finally {
+      if (this.currentEpochStakeSnapshotLookups.get(cacheKey) === lookup) {
+        this.currentEpochStakeSnapshotLookups.delete(cacheKey);
+      }
+    }
+  }
+
+  private async buildCurrentEpochStakeSnapshot(
+    endpoint: string,
+    block: HistoryBlock,
+    ogmiosStakeDistribution: HistoryStakeDistributionEntry[],
+  ): Promise<HistoryStakeDistributionEntry[]> {
+    const [poolRows, totalActiveStake] = await Promise.all([
+      this.fetchKoiosCurrentEpochPoolList(endpoint, block.epochNo),
+      this.fetchKoiosEpochActiveStake(endpoint, block.epochNo),
+    ]);
+    const stakeByPool = new Map<string, bigint>();
+    for (const row of poolRows) {
+      const poolId = normalizePoolId(row.pool_id_bech32 ?? row.pool_id_hex);
+      if (!poolId) {
+        throw new Error(
+          `Koios returned an invalid current epoch pool id for epoch ${block.epochNo}`,
+        );
+      }
+      if (
+        row.active_stake === null || row.active_stake === undefined ||
+        row.active_stake === ""
+      ) {
+        continue;
+      }
+      const stake = parseNonNegativeBigInt(row.active_stake);
+      if (stake === null) {
+        throw new Error(
+          `Koios returned an invalid current epoch stake entry for epoch ${block.epochNo}`,
+        );
+      }
+      if (stake === 0n) {
+        continue;
+      }
+      if (stakeByPool.has(poolId)) {
+        throw new Error(
+          `Koios returned duplicate current epoch stake for pool ${poolId} in epoch ${block.epochNo}`,
+        );
+      }
+      stakeByPool.set(poolId, stake);
+    }
+
+    if (stakeByPool.size === 0) {
+      throw new Error(
+        `Koios returned an empty current epoch stake snapshot for epoch ${block.epochNo}`,
+      );
+    }
+
+    const snapshotTotal = Array.from(stakeByPool.values()).reduce(
+      (sum, stake) => sum + stake,
+      0n,
+    );
+    if (snapshotTotal !== totalActiveStake) {
+      throw new Error(
+        `Koios current epoch stake snapshot total ${snapshotTotal.toString()} does not match epoch ${block.epochNo} active stake ${totalActiveStake.toString()}`,
+      );
+    }
+
+    const vrfByPool = new Map(
+      ogmiosStakeDistribution.map((
+        entry,
+      ) => [entry.poolId, normalizeHex(entry.vrfKeyHash)]),
+    );
+    const missingVrfPoolIds = Array.from(stakeByPool.keys()).filter(
+      (poolId) => !/^[0-9a-f]{64}$/.test(vrfByPool.get(poolId) ?? ""),
+    );
+    if (missingVrfPoolIds.length > 0) {
+      const registrationEndpoint =
+        this.configService.get<string>("cardanoPoolRegistrationHistoryEndpoint")
+          ?.replace(/\/+$/, "") || endpoint;
+      const updates = await this.fetchHistoricalProducerRegistrationUpdates(
+        registrationEndpoint,
+        missingVrfPoolIds,
+      );
+      const registrations = this.resolveHistoricalProducerRegistrations(
+        updates,
+        missingVrfPoolIds,
+        block.epochNo,
+        block,
+      );
+      for (const [poolId, registration] of registrations) {
+        vrfByPool.set(poolId, registration.vrfKeyHash);
+      }
+    }
+
+    return Array.from(stakeByPool.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([poolId, stake]) => {
+        const vrfKeyHash = normalizeHex(vrfByPool.get(poolId));
+        if (!/^[0-9a-f]{64}$/.test(vrfKeyHash)) {
+          throw new Error(
+            `Current epoch VRF key hash unavailable for pool ${poolId} in epoch ${block.epochNo}`,
+          );
+        }
+        return { poolId, stake, vrfKeyHash };
+      });
+  }
+
+  private async fetchKoiosTipEpoch(endpoint: string): Promise<number> {
+    const url = new URL(`${endpoint}/tip`);
+    url.searchParams.set("select", "epoch_no");
+    const rows = (await this.fetchKoiosArray(
+      url,
+      "current Cardano epoch",
+    )) as KoiosTipRow[];
+    const epoch = Number(rows[0]?.epoch_no);
+    if (rows.length !== 1 || !Number.isSafeInteger(epoch) || epoch < 0) {
+      throw new Error("Koios did not return a valid current Cardano epoch");
+    }
+    return epoch;
+  }
+
+  private async fetchKoiosCurrentEpochPoolList(
+    endpoint: string,
+    epoch: number,
+  ): Promise<KoiosPoolListRow[]> {
+    const rows: KoiosPoolListRow[] = [];
+    for (let page = 0; page < CURRENT_EPOCH_STAKE_MAX_PAGES; page += 1) {
+      const url = new URL(`${endpoint}/pool_list`);
+      url.searchParams.set("select", "pool_id_bech32,pool_id_hex,active_stake");
+      url.searchParams.set("active_stake", "gt.0");
+      url.searchParams.set("order", "pool_id_bech32.asc");
+      url.searchParams.set("limit", CURRENT_EPOCH_STAKE_PAGE_SIZE.toString());
+      url.searchParams.set(
+        "offset",
+        (page * CURRENT_EPOCH_STAKE_PAGE_SIZE).toString(),
+      );
+      const pageRows = (await this.fetchKoiosArray(
+        url,
+        `current epoch stake pool page ${page + 1} for epoch ${epoch}`,
+      )) as KoiosPoolListRow[];
+      rows.push(...pageRows);
+      if (pageRows.length < CURRENT_EPOCH_STAKE_PAGE_SIZE) {
+        return rows;
+      }
+    }
+
+    throw new Error(
+      `Koios current epoch stake pool list exceeded ${
+        CURRENT_EPOCH_STAKE_MAX_PAGES * CURRENT_EPOCH_STAKE_PAGE_SIZE
+      } rows for epoch ${epoch}`,
+    );
+  }
+
+  private async fetchKoiosEpochActiveStake(
+    endpoint: string,
+    epoch: number,
+  ): Promise<bigint> {
+    const url = new URL(`${endpoint}/epoch_info`);
+    url.searchParams.set("_epoch_no", epoch.toString());
+    url.searchParams.set("select", "epoch_no,active_stake");
+    const rows = (await this.fetchKoiosArray(
+      url,
+      `active stake for epoch ${epoch}`,
+    )) as KoiosEpochInfoRow[];
+    if (rows.length !== 1 || Number(rows[0].epoch_no) !== epoch) {
+      throw new Error(`Koios did not return active stake for epoch ${epoch}`);
+    }
+    return parsePositiveBigInt(
+      rows[0].active_stake,
+      `active stake for epoch ${epoch}`,
+    );
   }
 
   private isStaleOgmiosPointError(message: string): boolean {
