@@ -235,6 +235,22 @@ pub fn validate_update_only_root(
   }
 }
 
+/// Validate a liveness heartbeat which advances the HostState UTxO without
+/// changing any committed IBC state.
+///
+/// A heartbeat is deliberately narrower than a normal root update: it may only
+/// increment the version and advance the monitoring timestamp. In particular,
+/// it cannot be used during shutdown or to alter the IBC root, counters, ports,
+/// NFT identity, or deployer authority.
+pub fn validate_heartbeat(old: HostStateDatum, new: HostStateDatum) -> Bool {
+  and {
+    validate_update_only_root(old, new),
+    old.shutdown |> is_active,
+    new.state.ibc_state_root == old.state.ibc_state_root,
+    new.state.last_update_time > old.state.last_update_time,
+  }
+}
+
 pub fn validate_enter_shutdown(
   old: HostStateDatum,
   new: HostStateDatum,

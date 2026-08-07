@@ -1,7 +1,38 @@
 /* eslint-disable */
+import { Any } from "../../../google/protobuf/any";
 import { BinaryReader, BinaryWriter } from "../../../binary";
 import { isSet, DeepPartial, Exact } from "../../../helpers";
 export const protobufPackage = "ibc.cardano.v1";
+/**
+ * @name BuildHostStateHeartbeatRequest
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BuildHostStateHeartbeatRequest
+ */
+export interface BuildHostStateHeartbeatRequest {
+  /**
+   * Cardano address whose UTxOs fund and sign the heartbeat transaction.
+   */
+  signer: string;
+}
+/**
+ * @name BuildHostStateHeartbeatResponse
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BuildHostStateHeartbeatResponse
+ */
+export interface BuildHostStateHeartbeatResponse {
+  /**
+   * False when an ordinary IBC transaction or heartbeat has already refreshed
+   * HostState in the current epoch.
+   */
+  heartbeat_required: boolean;
+  current_epoch: bigint;
+  host_state_epoch: bigint;
+  /**
+   * Present only when heartbeat_required is true. The value contains the
+   * unsigned Cardano transaction CBOR encoded as UTF-8 hex.
+   */
+  unsigned_tx?: Any;
+}
 /**
  * SubmitSignedTxRequest contains a signed Cardano transaction in CBOR format.
  * @name SubmitSignedTxRequest
@@ -59,6 +90,157 @@ export interface EventAttribute {
   key: string;
   value: string;
 }
+function createBaseBuildHostStateHeartbeatRequest(): BuildHostStateHeartbeatRequest {
+  return {
+    signer: "",
+  };
+}
+/**
+ * @name BuildHostStateHeartbeatRequest
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BuildHostStateHeartbeatRequest
+ */
+export const BuildHostStateHeartbeatRequest = {
+  typeUrl: "/ibc.cardano.v1.BuildHostStateHeartbeatRequest",
+  encode(
+    message: BuildHostStateHeartbeatRequest,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
+    if (message.signer !== "") {
+      writer.uint32(10).string(message.signer);
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): BuildHostStateHeartbeatRequest {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseBuildHostStateHeartbeatRequest();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.signer = reader.string();
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): BuildHostStateHeartbeatRequest {
+    const obj = createBaseBuildHostStateHeartbeatRequest();
+    if (isSet(object.signer)) obj.signer = String(object.signer);
+    return obj;
+  },
+  toJSON(message: BuildHostStateHeartbeatRequest): unknown {
+    const obj: any = {};
+    message.signer !== undefined && (obj.signer = message.signer);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<BuildHostStateHeartbeatRequest>, I>>(
+    object: I,
+  ): BuildHostStateHeartbeatRequest {
+    const message = createBaseBuildHostStateHeartbeatRequest();
+    message.signer = object.signer ?? "";
+    return message;
+  },
+};
+function createBaseBuildHostStateHeartbeatResponse(): BuildHostStateHeartbeatResponse {
+  return {
+    heartbeat_required: false,
+    current_epoch: BigInt(0),
+    host_state_epoch: BigInt(0),
+    unsigned_tx: undefined,
+  };
+}
+/**
+ * @name BuildHostStateHeartbeatResponse
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.BuildHostStateHeartbeatResponse
+ */
+export const BuildHostStateHeartbeatResponse = {
+  typeUrl: "/ibc.cardano.v1.BuildHostStateHeartbeatResponse",
+  encode(
+    message: BuildHostStateHeartbeatResponse,
+    writer: BinaryWriter = BinaryWriter.create(),
+  ): BinaryWriter {
+    if (message.heartbeat_required === true) {
+      writer.uint32(8).bool(message.heartbeat_required);
+    }
+    if (message.current_epoch !== BigInt(0)) {
+      writer.uint32(16).uint64(message.current_epoch);
+    }
+    if (message.host_state_epoch !== BigInt(0)) {
+      writer.uint32(24).uint64(message.host_state_epoch);
+    }
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(34).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): BuildHostStateHeartbeatResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseBuildHostStateHeartbeatResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.heartbeat_required = reader.bool();
+          break;
+        case 2:
+          message.current_epoch = reader.uint64();
+          break;
+        case 3:
+          message.host_state_epoch = reader.uint64();
+          break;
+        case 4:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): BuildHostStateHeartbeatResponse {
+    const obj = createBaseBuildHostStateHeartbeatResponse();
+    if (isSet(object.heartbeat_required)) obj.heartbeat_required = Boolean(object.heartbeat_required);
+    if (isSet(object.current_epoch)) obj.current_epoch = BigInt(object.current_epoch.toString());
+    if (isSet(object.host_state_epoch)) obj.host_state_epoch = BigInt(object.host_state_epoch.toString());
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
+    return obj;
+  },
+  toJSON(message: BuildHostStateHeartbeatResponse): unknown {
+    const obj: any = {};
+    message.heartbeat_required !== undefined && (obj.heartbeat_required = message.heartbeat_required);
+    message.current_epoch !== undefined &&
+      (obj.current_epoch = (message.current_epoch || BigInt(0)).toString());
+    message.host_state_epoch !== undefined &&
+      (obj.host_state_epoch = (message.host_state_epoch || BigInt(0)).toString());
+    message.unsigned_tx !== undefined &&
+      (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<BuildHostStateHeartbeatResponse>, I>>(
+    object: I,
+  ): BuildHostStateHeartbeatResponse {
+    const message = createBaseBuildHostStateHeartbeatResponse();
+    message.heartbeat_required = object.heartbeat_required ?? false;
+    if (object.current_epoch !== undefined && object.current_epoch !== null) {
+      message.current_epoch = BigInt(object.current_epoch.toString());
+    }
+    if (object.host_state_epoch !== undefined && object.host_state_epoch !== null) {
+      message.host_state_epoch = BigInt(object.host_state_epoch.toString());
+    }
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
+    return message;
+  },
+};
 function createBaseSubmitSignedTxRequest(): SubmitSignedTxRequest {
   return {
     signed_tx_cbor: "",

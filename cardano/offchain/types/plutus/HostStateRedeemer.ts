@@ -58,6 +58,7 @@ export const HostStateRedeemerSchema = Data.Enum([
   Data.Object({ HandlePacket: HandlePacketSchema }),
   Data.Object({ EnterShutdown: EnterShutdownSchema }),
   Data.Literal("FinalizeShutdown"),
+  Data.Literal("Heartbeat"),
 ]);
 
 export type HostStateRedeemer = Data.Static<typeof HostStateRedeemerSchema>;

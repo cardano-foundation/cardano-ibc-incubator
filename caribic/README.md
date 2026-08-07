@@ -403,6 +403,8 @@ Channels and denom traces are discovered at runtime through the planner and the 
 
 The Injective-side Cardano client can only be updated with headers whose size and gas grow with the update gap (~4.6–8KB and ~85k gas per preprod block), and update targets must be blocks containing a HostState transaction. In practice this means:
 
+- The tracked Cardano Hermes profile sets `host_state_heartbeat_interval = '60s'`. Once per poll Hermes asks the Gateway whether the current Cardano epoch already contains a HostState transaction; if not, it submits a root-preserving heartbeat that spends and recreates HostState to provide an epoch anchor. Ordinary IBC transactions satisfy the same check, so this produces at most one proactive heartbeat per otherwise idle epoch, not one transaction per minute. Heartbeats require the HostState deployment authority, and concurrent authorized relayers are safe because only one transaction can consume the current HostState UTxO; losing attempts retry from fresh Gateway state on the next poll.
+
 - The Hermes daemon does NOT keep this client fresh on its own: its refresh policy triggers near the trusting-period threshold (days), which suits ordinary Tendermint clients but not one whose update cost grows per block of gap. Run an explicit refresh loop while the route is up, for example:
 
   ```bash

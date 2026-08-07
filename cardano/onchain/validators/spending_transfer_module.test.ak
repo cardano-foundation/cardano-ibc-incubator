@@ -3054,7 +3054,8 @@ test transfer_escrow_existing_shard_update_succeed() {
     Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
-  let shard_datum: Data = TransferEscrowDatum { channel_id: mock.channel_id, denom }
+  let shard_datum: Data =
+    TransferEscrowDatum { channel_id: mock.channel_id, denom }
 
   spending_transfer_module.spend_transfer_module.spend(
     mock.port_token,
