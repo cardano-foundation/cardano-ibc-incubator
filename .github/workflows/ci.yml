@@ -446,8 +446,17 @@ jobs:
             match_tests: >-
               -m ibc/core/ics_004/channel_datum_test/channel_handshake_contract
               -m ibc/core/ics_004/channel_datum_test/packet_lifecycle_contract
-              -m prop_tx_recv_packet_
               -m prop_tx_packet_send_
+          - suite: channel-packet-recv-callback
+            match_tests: >-
+              -m prop_tx_recv_packet_rejects_missing_application_callback
+              -m prop_tx_recv_packet_rejects_callback_packet_data_mismatch
+              -m prop_tx_recv_packet_rejects_callback_acknowledgement_mismatch
+          - suite: channel-packet-recv-successor
+            match_tests: >-
+              -m prop_tx_recv_packet_accepts_atomic_successor_and_callback
+              -m prop_tx_recv_packet_rejects_moved_port_binding
+              -m prop_tx_recv_packet_rejects_unrelated_successor_mutation
           - suite: transfer-contract
             match_tests: >-
               -m ibc/apps/transfer/transfer_accounting_contract
