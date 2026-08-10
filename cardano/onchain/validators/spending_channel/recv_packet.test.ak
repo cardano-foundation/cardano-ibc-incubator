@@ -176,6 +176,7 @@ fn check_recv_packet(
   match_callback_packet: Bool,
   match_callback_acknowledgement: Bool,
   preserve_module_binding: Bool,
+  compose_host_state: Bool,
 ) -> Bool {
   let mock_data = setup()
 
@@ -364,15 +365,20 @@ fn check_recv_packet(
 
   let inputs =
     if include_module_callback {
-      [mock_data.module_input, channel_input, host_input]
-    } else {
+      if compose_host_state {
+        [mock_data.module_input, channel_input, host_input]
+      } else {
+        [mock_data.module_input, channel_input]
+      }
+    } else if compose_host_state {
       [channel_input, host_input]
+    } else {
+      [channel_input]
     }
 
   let outputs =
     if include_module_callback {
-      [
-        channel_output,
+      let module_output =
         Output {
           ..mock_data.module_input.output,
           address: if preserve_module_binding {
@@ -380,11 +386,16 @@ fn check_recv_packet(
           } else {
             from_script("wrong-module-script")
           },
-        },
-        host_output,
-      ]
-    } else {
+        }
+      if compose_host_state {
+        [channel_output, module_output, host_output]
+      } else {
+        [channel_output, module_output]
+      }
+    } else if compose_host_state {
       [channel_output, host_output]
+    } else {
+      [channel_output]
     }
 
   //========================arrange validity_range=======================
@@ -562,13 +573,19 @@ fn check_recv_packet(
       packet_acknowledgement_siblings,
     }
   let host_state_redeemer_data: Redeemer = host_state_redeemer
+  let host_state_redeemers =
+    if compose_host_state {
+      [Pair(Spend(host_input.output_reference), host_state_redeemer_data)]
+    } else {
+      []
+    }
 
   let required_redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
       Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
-      Pair(Spend(host_input.output_reference), host_state_redeemer_data),
       Pair(Mint(mock_data.recv_packet_policy_id), recv_packet_redeemer),
       Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
+      ..host_state_redeemers
     ]
   let redeemers =
     if include_module_callback {
@@ -592,7 +609,7 @@ fn check_recv_packet(
       mint: from_asset(mock_data.recv_packet_policy_id, "", 1),
     }
 
-  and {
+  let recv_packet_valid =
     recv_packet.recv_packet.mint(
       mock_data.client_minting_policy_id,
       mock_data.connection_minting_policy_id,
@@ -601,58 +618,68 @@ fn check_recv_packet(
       mock_data.channel_token,
       mock_data.recv_packet_policy_id,
       transaction,
-    )?,
-    host_state_stt.host_state_stt.spend(
-      host_nft_policy,
-      "unused client script hash",
-      "unused connection script hash",
-      "mock spend channel script hash",
-      None,
-      host_state_redeemer,
-      host_input.output_reference,
-      transaction,
-    )?,
+    )
+  if compose_host_state {
+    and {
+      recv_packet_valid?,
+      host_state_stt.host_state_stt.spend(
+        host_nft_policy,
+        "unused client script hash",
+        "unused connection script hash",
+        "mock spend channel script hash",
+        None,
+        host_state_redeemer,
+        host_input.output_reference,
+        transaction,
+      )?,
+    }
+  } else {
+    recv_packet_valid
   }
+}
+
+test succeed_recv_packet() {
+  check_recv_packet(True, False, True, True, True, False)
 }
 
 test prop_tx_recv_packet_accepts_atomic_successor_and_callback(
   _seed via fuzz.int(),
 ) {
   fuzz.label(@"regression.tx.packet.recv.valid_atomic_successor_callback")
-  check_recv_packet(True, False, True, True, True)
+  check_recv_packet(True, False, True, True, True, True)
 }
 
 test prop_tx_recv_packet_rejects_missing_application_callback(
   _seed via fuzz.int(),
 ) fail {
   fuzz.label(@"regression.tx.packet.recv.invalid_missing_application_callback")
-  check_recv_packet(False, False, True, True, True)
+  check_recv_packet(False, False, True, True, True, True)
 }
 
 test prop_tx_recv_packet_rejects_moved_port_binding(_seed via fuzz.int()) fail {
   fuzz.label(@"regression.tx.packet.recv.invalid_moved_port_binding")
-  check_recv_packet(True, False, True, True, False)
+  check_recv_packet(True, False, True, True, False, True)
 }
 
 test prop_tx_recv_packet_rejects_unrelated_successor_mutation(
   _seed via fuzz.int(),
 ) fail {
   fuzz.label(@"regression.tx.packet.recv.invalid_unrelated_successor_mutation")
-  check_recv_packet(True, True, True, True, True)
+  check_recv_packet(True, True, True, True, True, True)
 }
 
 test prop_tx_recv_packet_rejects_callback_packet_data_mismatch(
   _seed via fuzz.int(),
 ) fail {
   fuzz.label(@"regression.tx.packet.recv.invalid_callback_packet_data")
-  check_recv_packet(True, False, False, True, True)
+  check_recv_packet(True, False, False, True, True, True)
 }
 
 test prop_tx_recv_packet_rejects_callback_acknowledgement_mismatch(
   _seed via fuzz.int(),
 ) fail {
   fuzz.label(@"regression.tx.packet.recv.invalid_callback_acknowledgement")
-  check_recv_packet(True, False, True, False, True)
+  check_recv_packet(True, False, True, False, True, True)
 }
 
 test recv_packet_fails_when_channel_is_closed() fail {
