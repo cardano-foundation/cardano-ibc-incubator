@@ -25,7 +25,7 @@ export type WithLegacyChannelContext = {
 };
 
 export type WithTransferModuleReferenceUtxo = {
-  transferModuleReferenceUtxo?: UTxO;
+  transferModuleReferenceUtxo: UTxO;
 };
 
 export type WithMockModuleUtxo = {

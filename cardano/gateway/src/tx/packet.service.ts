@@ -2419,6 +2419,7 @@ export class PacketService {
       timeout_height: resolvedTimeoutHeight,
       timeout_timestamp: sendPacketOperator.timeoutTimestamp,
     };
+    const packetCommitment = commitPacket(packet);
 
     const encodedSpendChannelRedeemer: string = await this.lucidService.encode(
       {
@@ -2431,7 +2432,16 @@ export class PacketService {
 
     const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
       {
-        Operator: ['OtherModuleOperator'],
+        Callback: [
+          {
+            OnSendPacket: {
+              channel_id: channelId,
+              packet_data: packet.data,
+              packet_commitment: packetCommitment,
+              data: 'OtherModuleData',
+            },
+          },
+        ],
       } as IBCModuleRedeemer,
       'iBCModuleRedeemer',
     );
@@ -2444,7 +2454,7 @@ export class PacketService {
         packet_commitment: insertSortMapWithNumberKey(
           channelDatum.state.packet_commitment,
           packet.sequence,
-          commitPacket(packet),
+          packetCommitment,
         ),
       },
     };

@@ -17,12 +17,13 @@ use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/keys as chan_keys_mod
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_004/types/state as chan_state_mod
+use ibc/core/ics_005/types/ibc_module_redeemer.{Callback, OnSendPacket}
 use ibc/utils/validator_utils
 
 validator send_packet(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
-  _port_minting_policy_id: PolicyId,
+  port_minting_policy_id: PolicyId,
 ) {
   spend(
     _datum: Option<Data>,
@@ -125,6 +126,28 @@ validator send_packet(
     let commitment = packet_mod.commit_packet(packet)
 
     trace @"send_packet: channel_datum is updated valid"
+
+    let module_redeemer =
+      validator_utils.extract_send_module_redeemer(
+        inputs,
+        reference_inputs,
+        redeemers,
+        datum.token.name,
+        port_minting_policy_id,
+        datum.port_id,
+      )
+    expect Callback(OnSendPacket {
+      channel_id: callback_channel_id,
+      packet_data,
+      packet_commitment,
+      ..
+    }) = module_redeemer
+    expect and {
+        callback_channel_id == channel_id,
+        packet_data == packet.data,
+        packet_commitment == commitment,
+      }
+    trace @"send_packet: exact application callback matched"
 
     and {
       (channel_token == datum.token)?,
@@ -242,6 +265,28 @@ validator send_packet(
     let commitment = packet_mod.commit_packet(packet)
 
     trace @"send_packet: channel_datum is updated valid"
+
+    let module_redeemer =
+      validator_utils.extract_send_module_redeemer(
+        inputs,
+        reference_inputs,
+        redeemers,
+        datum.token.name,
+        port_minting_policy_id,
+        datum.port_id,
+      )
+    expect Callback(OnSendPacket {
+      channel_id: callback_channel_id,
+      packet_data,
+      packet_commitment,
+      ..
+    }) = module_redeemer
+    expect and {
+        callback_channel_id == channel_id,
+        packet_data == packet.data,
+        packet_commitment == commitment,
+      }
+    trace @"send_packet: exact application callback matched"
 
     and {
       (channel_token == datum.token)?,

@@ -340,7 +340,8 @@ Required CI label suffixes:
 
 Covered by `unit.packet.send.valid`, `unit.packet.send.invalid_wrong_sequence`,
 `unit.packet.send.invalid_missing_commitment_root_update`, and
-`unit.packet.send.invalid_wrong_transfer_callback`.
+`unit.packet.send.invalid_wrong_transfer_callback`, plus the composed
+`spending_channel/send_packet.test.ak` callback-atomicity cases.
 
 The SendPacket unit properties build a valid open-channel channel-datum
 packet-send transition and then mutate exactly one field per negative case.
@@ -355,11 +356,18 @@ invariants:
   advanced.
 - The transfer callback/channel redeemer must refer to the same packet bytes;
   a callback for a different transfer payload is rejected.
+- The registered port-token UTxO must be spent, or referenced while exactly one
+  UTxO at its immutable module script credential is spent.
+- The typed `OnSendPacket` callback must match the source channel, raw packet
+  bytes, and packet commitment exactly.
+- A callback whose typed ICS-20 data disagrees with the packet bytes is rejected
+  by the transfer-module validator in the same composed transaction.
 
 ### SendPacket Transaction Coupling
 
-Covered by `tx.packet.send.valid_channel_host_marker` and
-`tx.packet.send.invalid_missing_operation_marker`.
+Covered by `tx.packet.send.valid_channel_host_marker`,
+`tx.packet.send.invalid_missing_operation_marker`, and the composed outbound
+callback tests in `spending_channel/send_packet.test.ak`.
 
 The transaction-level SendPacket property runs the real `spending_channel`
 validator against a transaction-shaped fixture. The fixture includes the
@@ -375,11 +383,20 @@ invariants:
 - The operation marker redeemer must carry the channel auth token.
 - The channel continuation output must preserve the channel thread token while
   recording the packet commitment.
+- The send-packet spend branch, send-packet mint branch, channel wrapper,
+  transfer-module validator, and first-shard minting policy accept one atomic
+  native send fixture together.
+- Omitting the registered module, using an untyped callback, changing the
+  callback channel/packet bytes/digest, or changing only the typed ICS-20
+  amount is rejected.
+- Existing escrow shards are accepted only when their payment script
+  credential matches the credential anchored by the registered port-token
+  reference input.
 
-This is intentionally labelled `tx.*`, not `model.*`: it executes the real
-channel validator over a transaction-shaped fixture, but it still does not run
-the HostState validator, marker minting policy, transfer module validator, or
-voucher/escrow accounting validator in the same assertion.
+The HostState root-transition validator remains covered separately because its
+fixture requires the full sparse-Merkle witness. The outbound native-send
+fixture does run the marker, channel, transfer-module, and escrow-shard policy
+checks over the same transaction, including exact escrow accounting.
 
 ### RecvPacket
 
@@ -1013,9 +1030,9 @@ coverage for:
 - client creation or update,
 - full end-to-end connection handshake validator contexts,
 - full end-to-end channel handshake validator contexts,
-- full end-to-end packet lifecycle validator contexts beyond the current
-  SendPacket channel-spend tx fixture and first-seen sink voucher mint tx
-  fixture,
+- full end-to-end receive, acknowledgement, and timeout packet validator
+  contexts beyond the composed SendPacket atomicity fixture and first-seen
+  sink voucher mint tx fixture,
 - full end-to-end voucher metadata validator contexts beyond first-seen
   voucher mint plus trace-registry coupling,
 - misbehaviour freezing.

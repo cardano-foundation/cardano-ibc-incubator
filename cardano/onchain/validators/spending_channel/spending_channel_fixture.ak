@@ -27,6 +27,7 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
+use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 
 pub type MockData {
   client_minting_policy_id: PolicyId,
@@ -58,7 +59,7 @@ pub type MockData {
 pub fn setup() -> MockData {
   let base_token =
     AuthToken {
-      name: "mock base token name",
+      name: host_state_token_name,
       policy_id: "mock base token policy_id",
     }
 

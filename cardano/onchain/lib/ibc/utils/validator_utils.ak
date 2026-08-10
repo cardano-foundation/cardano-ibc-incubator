@@ -4,6 +4,7 @@ use aiken/collection/pairs
 use aiken/interval.{Finite}
 use aiken/option.{map}
 use aiken/primitive/bytearray
+use cardano/address.{Script}
 use cardano/assets.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of, tokens,
 }
@@ -112,6 +113,81 @@ pub fn extract_module_redeemer(
 
   expect Some(spent_module_redeemer) =
     pairs.get_first(redeemers, Spend(module_input.output_reference))
+  expect ibc_module_redeemer: IBCModuleRedeemer = spent_module_redeemer
+
+  ibc_module_redeemer
+}
+
+/// Find the application input authorized to approve an outbound packet.
+///
+/// The port token is the immutable registration anchor. Root-state sends spend
+/// that token directly; sharded sends reference it and spend exactly one UTxO
+/// locked by the same module script credential.
+pub fn extract_send_module_redeemer(
+  inputs: List<Input>,
+  reference_inputs: List<Input>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  channel_token_name: ByteArray,
+  port_minting_policy_id: PolicyId,
+  port_id: ByteArray,
+) -> IBCModuleRedeemer {
+  let port_number = port_keys.parse_port_id_number(port_id)
+  let port_token_name =
+    auth.generate_token_name_from_another(
+      channel_token_name,
+      port_keys.port_prefix,
+      port_number,
+    )
+  let port_token =
+    AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
+
+  when find_module_state_input(inputs, port_token) is {
+    Some(module_input) -> {
+      expect Script(_) = module_input.output.address.payment_credential
+      input_redeemer(redeemers, module_input)
+    }
+    None -> {
+      expect Some(module_reference_input) =
+        find_module_state_input(reference_inputs, port_token)
+      expect Script(module_script_hash) =
+        module_reference_input.output.address.payment_credential
+      expect [module_spend_input] =
+        list.filter(
+          inputs,
+          fn(input) {
+            when input.output.address.payment_credential is {
+              Script(script_hash) -> script_hash == module_script_hash
+              _ -> False
+            }
+          },
+        )
+      input_redeemer(redeemers, module_spend_input)
+    }
+  }
+}
+
+fn find_module_state_input(
+  inputs: List<Input>,
+  port_token: AuthToken,
+) -> Option<Input> {
+  when
+    list.filter(
+      inputs,
+      fn(input) { auth.contain_auth_token(input.output, port_token) },
+    )
+  is {
+    [] -> None
+    [module_input] -> Some(module_input)
+    _ -> fail @"Multiple module state witnesses"
+  }
+}
+
+fn input_redeemer(
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  input: Input,
+) -> IBCModuleRedeemer {
+  expect Some(spent_module_redeemer) =
+    pairs.get_first(redeemers, Spend(input.output_reference))
   expect ibc_module_redeemer: IBCModuleRedeemer = spent_module_redeemer
 
   ibc_module_redeemer
