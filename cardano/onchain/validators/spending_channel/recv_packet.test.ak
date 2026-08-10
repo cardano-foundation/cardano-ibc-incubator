@@ -52,7 +52,10 @@ use ibc/utils/validator_utils
 use spending_channel/recv_packet
 use spending_channel/spending_channel_fixture.{MockData, setup}
 
-test succeed_recv_packet() {
+fn check_recv_packet_timeout(
+  timeout_height: Height,
+  timeout_timestamp: Int,
+) -> Bool {
   let mock_data = setup()
 
   let channel_id =
@@ -121,8 +124,8 @@ test succeed_recv_packet() {
       destination_port: mock_data.port_id,
       destination_channel: channel_id,
       data: "mock packet data",
-      timeout_height: Height { revision_number: 0, revision_height: 0 },
-      timeout_timestamp: 1735689600000000000,
+      timeout_height,
+      timeout_timestamp,
     }
 
   let output_channel_datum =
@@ -332,6 +335,27 @@ test succeed_recv_packet() {
   )
 }
 
+test succeed_recv_packet() {
+  check_recv_packet_timeout(
+    Height { revision_number: 0, revision_height: 0 },
+    1735689600000000000,
+  )
+}
+
+test recv_packet_rejects_height_only_timeout() fail {
+  check_recv_packet_timeout(
+    Height { revision_number: 0, revision_height: 100 },
+    0,
+  )
+}
+
+test recv_packet_rejects_mixed_height_and_timestamp_timeout() fail {
+  check_recv_packet_timeout(
+    Height { revision_number: 0, revision_height: 100 },
+    1735689600000000000,
+  )
+}
+
 test recv_packet_fails_when_channel_is_closed() fail {
   let mock_data = setup()
 
@@ -417,7 +441,7 @@ test recv_packet_fails_when_channel_is_closed() fail {
   )
 }
 
-test recv_packet_non_mock_data() {
+test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
   let client_minting_policy_id =
     #"dcecce6c178dae972476121042b79ac470bd9c2797bedea2c1906e8a"
   let connection_minting_policy_id =
