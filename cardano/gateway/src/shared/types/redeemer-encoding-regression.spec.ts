@@ -2,7 +2,7 @@ import * as Lucid from '@lucid-evolution/lucid';
 import { encodeMintChannelRedeemer, encodeSpendChannelRedeemer } from './channel/channel-redeemer';
 import { encodeMintConnectionRedeemer, encodeSpendConnectionRedeemer } from './connection/connection-redeemer';
 import { encodeVerifyProofRedeemer } from './connection/verify-proof-redeemer';
-import { encodeIBCModuleRedeemer } from './port/ibc_module_redeemer';
+import { decodeIBCModuleRedeemer, encodeIBCModuleRedeemer } from './port/ibc_module_redeemer';
 
 const EMPTY_PROOF = { proofs: [] } as const;
 const HEIGHT = { revisionNumber: 0n, revisionHeight: 11n } as const;
@@ -131,5 +131,30 @@ describe('Redeemer encoding regression', () => {
     );
 
     expect(encoded).toBe('d87981d87e81496368616e6e656c2d30');
+  });
+
+  it('round-trips the packet bytes authenticated by a receive callback', async () => {
+    const redeemer = {
+      Callback: [
+        {
+          OnRecvPacket: {
+            channel_id: PACKET.destination_channel,
+            packet_data: PACKET.data,
+            acknowledgement: {
+              response: {
+                AcknowledgementResult: {
+                  result: '01',
+                },
+              },
+            },
+            data: 'OtherModuleData' as const,
+          },
+        },
+      ],
+    };
+
+    const encoded = await encodeIBCModuleRedeemer(redeemer, Lucid);
+
+    expect(decodeIBCModuleRedeemer(encoded, Lucid)).toEqual(redeemer);
   });
 });

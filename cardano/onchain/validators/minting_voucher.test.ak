@@ -467,6 +467,7 @@ fn first_seen_voucher_fixture(
     Callback(
       OnRecvPacket {
         channel_id: packet_dest_channel,
+        packet_data: fungible_token_packet_data.get_bytes(ftpd),
         acknowledgement: acknowledgement.new_result_acknowledgement(#[1]),
         data: TransferModuleData(ftpd),
       },
@@ -953,6 +954,7 @@ test test_mint_voucher() {
     Callback(
       OnRecvPacket {
         channel_id: packet_dest_channel,
+        packet_data: fungible_token_packet_data.get_bytes(ftpd),
         acknowledgement: acknowledgement.new_result_acknowledgement(#[1]),
         data: packet_data,
       },
@@ -1112,6 +1114,7 @@ test test_mint_voucher_fails_with_wrong_mint_quantity() fail {
     Callback(
       OnRecvPacket {
         channel_id: packet_dest_channel,
+        packet_data: fungible_token_packet_data.get_bytes(ftpd),
         acknowledgement: acknowledgement.new_result_acknowledgement(#[1]),
         data: TransferModuleData(ftpd),
       },
@@ -1270,6 +1273,7 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
     Callback(
       OnRecvPacket {
         channel_id: packet_dest_channel,
+        packet_data: fungible_token_packet_data.get_bytes(ftpd),
         acknowledgement: acknowledgement.new_result_acknowledgement(#[1]),
         data: packet_data,
       },
@@ -1458,6 +1462,7 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
     Callback(
       OnRecvPacket {
         channel_id: packet_dest_channel,
+        packet_data: fungible_token_packet_data.get_bytes(ftpd),
         acknowledgement: acknowledgement.new_result_acknowledgement(#[1]),
         data: TransferModuleData(ftpd),
       },

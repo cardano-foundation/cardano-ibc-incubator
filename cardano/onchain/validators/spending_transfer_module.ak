@@ -3,7 +3,9 @@ use aiken/primitive/bytearray
 use aiken/primitive/int
 use cardano/address.{from_verification_key}
 use cardano/assets.{PolicyId, quantity_of}
-use cardano/transaction.{Input, Output, OutputReference, Transaction}
+use cardano/transaction.{
+  InlineDatum, Input, Output, OutputReference, Transaction,
+}
 use ibc/apps/transfer/channel_callback as transfer_channel_callback
 use ibc/apps/transfer/escrow as transfer_escrow
 use ibc/apps/transfer/escrow.{EscrowShard, ModuleState, TransferModuleSpend}
@@ -57,6 +59,8 @@ validator spend_transfer_module(
         outputs,
         host_state_nft_policy_id,
       )
+    // Force the HostState thread for callback branches as well as operators.
+    expect InlineDatum(_) = host_state_input.output.datum
 
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     let spent_output = spent_input.output
@@ -252,7 +256,7 @@ fn module_callback(
 
     OnChanCloseInit { .. } -> False
     OnChanCloseConfirm { .. } -> False
-    OnRecvPacket { channel_id, acknowledgement, data } -> {
+    OnRecvPacket { channel_id, packet_data, acknowledgement, data } -> {
       trace @"spend_transfer_module: Callback.OnRecvPacket branch"
 
       expect transfer_ibc_module.validate_on_chan_recv_packet(acknowledgement)
@@ -273,6 +277,7 @@ fn module_callback(
       expect RecvPacket { packet, .. } = channel_redeemer
       trace @"spend_transfer_module: channel redeemer is valid"
 
+      expect packet_data == packet.data
       expect fungible_token_packet_data.get_bytes(data) == packet.data
       trace @"spend_transfer_module: FungibleTokenPacketData is unmarshal valid"
 

@@ -16,6 +16,7 @@ pub type IBCModuleCallback {
   OnChanCloseConfirm { channel_id: ByteArray }
   OnRecvPacket {
     channel_id: ByteArray,
+    packet_data: ByteArray,
     acknowledgement: Acknowledgement,
     data: IBCModulePacketData,
   }

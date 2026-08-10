@@ -33,6 +33,7 @@ export type IBCModuleCallback =
   | {
       OnRecvPacket: {
         channel_id: string;
+        packet_data: string;
         acknowledgement: Acknowledgement;
         data: IBCModulePacketData;
       };
@@ -144,6 +145,7 @@ export async function encodeIBCModuleRedeemer(
     Data.Object({
       OnRecvPacket: Data.Object({
         channel_id: Data.Bytes(),
+        packet_data: Data.Bytes(),
         acknowledgement: AcknowledgementSchema,
         data: IBCModulePacketData,
       }),
@@ -260,6 +262,7 @@ export function decodeIBCModuleRedeemer(ibcModuleRedeemer: string, Lucid: typeof
     Data.Object({
       OnRecvPacket: Data.Object({
         channel_id: Data.Bytes(),
+        packet_data: Data.Bytes(),
         acknowledgement: AcknowledgementSchema,
         data: IBCModulePacketData,
       }),

@@ -107,7 +107,7 @@ fn setup_ordered_channel() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
       state: ChannelDatumState {
         channel: input_channel,
         next_sequence_send: 1,
-        next_sequence_recv: 1,
+        next_sequence_recv: packet.sequence,
         next_sequence_ack: 1,
         packet_commitment: [],
         packet_receipt: [],
@@ -163,6 +163,18 @@ test succeed_with_ordered_channel() {
   let (input_datum, output_datum, packet, ack) = setup_ordered_channel()
 
   channel_datum_mod.validate_recv_packet(input_datum, output_datum, packet, ack)
+}
+
+test fail_if_packet_sequence_does_not_match_ordered_next_sequence_recv() {
+  let (input_datum, output_datum, packet, ack) = setup_ordered_channel()
+  let wrong_packet = Packet { ..packet, sequence: packet.sequence + 1 }
+
+  !channel_datum_mod.validate_recv_packet(
+    input_datum,
+    output_datum,
+    wrong_packet,
+    ack,
+  )
 }
 
 test fail_if_next_sequence_recv_not_updated_with_ordered_channel() {

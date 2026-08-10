@@ -446,6 +446,7 @@ jobs:
             match_tests: >-
               -m ibc/core/ics_004/channel_datum_test/channel_handshake_contract
               -m ibc/core/ics_004/channel_datum_test/packet_lifecycle_contract
+              -m prop_tx_recv_packet_
               -m prop_tx_packet_send_
           - suite: transfer-contract
             match_tests: >-
