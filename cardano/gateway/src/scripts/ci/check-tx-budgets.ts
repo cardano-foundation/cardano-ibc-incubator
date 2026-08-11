@@ -398,6 +398,32 @@ async function buildScenarios(
         REFERENCE_SCRIPT_OUTPUT_OVERHEAD_BYTES,
     },
     {
+      name: 'BindPort at global cap',
+      inputCount: 2,
+      outputCount: 2,
+      mintPolicyCount: 2,
+      referenceScriptTitles: [
+        'host_state_stt.host_state_stt.spend',
+        'minting_port.mint_port.mint',
+        'minting_identifier.minting_identifier.mint',
+      ],
+      redeemers: [
+        // A BindPort witness contains one 32-byte sibling for every level of
+        // the 256-bit commitment tree. Keep this estimate deliberately above
+        // the encoded payload so the global-cap boundary has explicit margin.
+        dataBytes('host state BindPort redeemer', 9_000),
+        dataBytes('mint port redeemer', 80),
+        dataBytes('mint identifier redeemer', 40),
+      ],
+      datums: [dataBytes('updated HostState datum with ten ports', 512)],
+      largestProofPayloadBytes: 8_192,
+      aikenTests: [
+        'host_state_stt.test.host_state_bind_tenth_port_succeeds_at_global_cap',
+        'minting_port.test.mint_port_tenth_port_succeeds_at_module_cap',
+        'minting_identifier.test.mints_identifier_from_nonce_output_reference',
+      ],
+    },
+    {
       name: 'ConnOpenTry',
       inputCount: 2,
       outputCount: 3,

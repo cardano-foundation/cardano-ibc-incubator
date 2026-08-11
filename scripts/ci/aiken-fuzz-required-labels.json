@@ -13,6 +13,7 @@
   ],
   "requiredLabels": [
     "fuzz.contract.host.handle_packet.invalid_ack_capacity",
+    "fuzz.contract.host.bind_port.invalid_unauthorized",
     "fuzz.contract.host.handle_packet.invalid_channel_only_change",
     "fuzz.contract.host.handle_packet.invalid_commitment_capacity",
     "fuzz.contract.host.handle_packet.invalid_history_capacity",
@@ -39,6 +40,8 @@
     "fuzz.contract.trace.rollover.invalid_non_target_bucket_changed",
     "fuzz.contract.trace.rollover.invalid_old_shard_not_preserved",
     "fuzz.contract.trace.rollover.valid",
+    "fuzz.unit.host.bind_port.invalid_capacity",
+    "fuzz.unit.host.bind_port.invalid_identifier",
     "fuzz.unit.client.frozen.rejects_update",
     "fuzz.unit.client.misbehaviour.invalid_monotonic_headers",
     "fuzz.unit.client.misbehaviour.invalid_same_header",

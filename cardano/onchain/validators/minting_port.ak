@@ -6,23 +6,23 @@ use cardano/transaction.{Input, NoDatum, Output, Spend, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
-use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/core/ics_025_handler_interface/host_state.{
+  host_state_token_name, max_bound_ports,
+}
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, HostStateRedeemer,
 }
 use ibc/utils/string as string_utils
 
-// Introduced to prevent high spending costs or potentially prevent tx from being executed.
-const max_number_of_ports = 10
-
-// Checks the max number of ports is not exceeded
+// Keep the existing per-module capability-token bound aligned with the
+// protocol-wide HostState bound.
 fn valid_number_of_ports(
   module_output: Output,
   port_minting_policy_id: PolicyId,
 ) -> Bool {
   let number_of_ports =
     module_output.value |> assets.tokens(port_minting_policy_id) |> dict.size()
-  number_of_ports <= max_number_of_ports
+  number_of_ports <= max_bound_ports
 }
 
 fn find_host_state_input(

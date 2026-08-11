@@ -447,6 +447,9 @@ jobs:
             max_success: 300
             match_tests: >-
               -m prop_host_handle_packet_rejects_commitment_capacity_overflow
+          - suite: host-bind-port
+            match_tests: >-
+              -m prop_host_bind_port_
           - suite: client
             match_tests: >-
               -m ibc/client/ics_007_tendermint_client/client_datum
@@ -645,6 +648,9 @@ jobs:
             -m 'trace_registry_rollover.{trace_registry_rollover_insert_succeeds_and_preserves_old_shard}' \
             -m 'trace_registry_rollover.{trace_registry_advance_directory_succeeds_for_valid_rollover}' \
             -m 'minting_voucher.{test_mint_voucher}' \
+            -m 'host_state_stt.{host_state_bind_tenth_port_succeeds_at_global_cap}' \
+            -m 'minting_port.{mint_port_tenth_port_succeeds_at_module_cap}' \
+            -m 'minting_identifier.{mints_identifier_from_nonce_output_reference}' \
             > ../../aiken-check.json
 
       - name: Install gateway dependencies

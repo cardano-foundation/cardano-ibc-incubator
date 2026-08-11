@@ -1091,6 +1091,10 @@ validator host_state_stt(
               ),
             }
           BindPort { port, registration, port_siblings } -> and {
+              // A permanent global registration is an administrative action.
+              // Requiring the deployment authority prevents port squatting and
+              // makes the protocol-wide bound useful rather than attacker-fillable.
+              list.has(extra_signatories, old_datum.deployer),
               validate_bind_port(old_datum, new_datum, port, registration),
               validate_bind_port_root(
                 old_datum,
