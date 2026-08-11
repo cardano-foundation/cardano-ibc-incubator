@@ -119,7 +119,7 @@ fn check_acknowledge_packet(
     } else {
       mock_data.module_input
     }
-  let inputs = [callback_input, channel_input]
+  let inputs = [mock_data.host_state_input, callback_input, channel_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 20 }
@@ -373,6 +373,7 @@ fn check_acknowledge_packet(
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
+    mock_data.host_state_nft_policy_id,
     mock_data.channel_token,
     mock_data.acknowledge_packet_policy_id,
     transaction,

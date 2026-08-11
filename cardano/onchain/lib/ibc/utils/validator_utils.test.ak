@@ -1,6 +1,7 @@
 use aiken/collection/list
 use aiken/interval.{Finite, Interval, IntervalBound, PositiveInfinity}
 use aiken/primitive/bytearray
+use aiken/primitive/int
 use cardano/address.{from_script}
 use cardano/assets.{
   PolicyId, ada_asset_name, ada_policy_id, add, from_asset, zero,
@@ -31,7 +32,10 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
-use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/core/ics_025_handler_interface/host_state.{
+  Active, HostState, HostStateDatum, ModuleRegistration, empty_ibc_state_root,
+  host_state_token_name,
+}
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
 use ibc/utils/validator_utils
 
@@ -252,6 +256,7 @@ fn setup_extract_module_redeemer() -> (
   ByteArray,
   PolicyId,
   ByteArray,
+  PolicyId,
   IBCModuleRedeemer,
 ) {
   let channel_token_name =
@@ -267,15 +272,22 @@ fn setup_extract_module_redeemer() -> (
   let port_id = "port-100"
   let port_minting_policy_id = "mock port minting policy id"
 
-  let port_number = port_keys.parse_port_id_number(port_id)
+  let port_number_bytes = port_keys.parse_port_id_number(port_id)
+  expect Some(port_number) = int.from_utf8(port_number_bytes)
   let port_token_name =
     auth.generate_token_name_from_another(
       channel_token_name,
       port_keys.port_prefix,
-      port_number,
+      port_number_bytes,
     )
   let port_token =
     AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
+  let module_token =
+    AuthToken {
+      policy_id: "mock module token policy id",
+      name: "mock module token name",
+    }
+  let module_script_hash = "mock module script hash"
 
   let out_ref =
     OutputReference {
@@ -285,9 +297,10 @@ fn setup_extract_module_redeemer() -> (
 
   let module_output =
     Output {
-      address: from_script("mock module script hash"),
-      value: from_asset(port_token.policy_id, port_token.name, 1),
-      datum: InlineDatum(Void),
+      address: from_script(module_script_hash),
+      value: from_asset(port_token.policy_id, port_token.name, 1)
+        |> add(module_token.policy_id, module_token.name, 1),
+      datum: NoDatum,
       reference_script: None,
     }
 
@@ -300,12 +313,42 @@ fn setup_extract_module_redeemer() -> (
     [Pair(Spend(out_ref), module_redeemer)]
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
+  let host_state_nft_policy_id: PolicyId = "mock host state nft policy id"
+  let registration =
+    ModuleRegistration { module_script_hash, port_token, module_token }
+  let host_state_datum =
+    HostStateDatum {
+      state: HostState {
+        version: 1,
+        ibc_state_root: empty_ibc_state_root,
+        next_client_sequence: 0,
+        next_connection_sequence: 0,
+        next_channel_sequence: 0,
+        bound_port: [Pair(port_number, registration)],
+        last_update_time: 0,
+      },
+      nft_policy: host_state_nft_policy_id,
+      deployer: "mock deployer key hash",
+      shutdown: Active,
+    }
+  let host_state_input =
+    Input {
+      output_reference: OutputReference { ..out_ref, output_index: 1 },
+      output: Output {
+        address: from_script("mock host state script hash"),
+        value: from_asset(host_state_nft_policy_id, host_state_token_name, 1),
+        datum: InlineDatum(host_state_datum),
+        reference_script: None,
+      },
+    }
+
   (
-    [module_input],
+    [host_state_input, module_input],
     redeemers,
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
     module_redeemer,
   )
 }
@@ -317,6 +360,7 @@ test extract_module_redeemer_succeed() {
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
     module_redeemer,
   ) = setup_extract_module_redeemer()
 
@@ -326,20 +370,23 @@ test extract_module_redeemer_succeed() {
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
   ) == module_redeemer
 }
 
 test extract_module_redeemer_fail_if_inputs_not_contain_port_token() fail {
   let (
-    _,
+    inputs,
     redeemers,
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
     module_redeemer,
   ) = setup_extract_module_redeemer()
 
-  let inputs = []
+  expect [host_state_input, _] = inputs
+  let inputs = [host_state_input]
 
   validator_utils.extract_module_redeemer(
     inputs,
@@ -347,6 +394,7 @@ test extract_module_redeemer_fail_if_inputs_not_contain_port_token() fail {
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
   ) == module_redeemer
 }
 
@@ -357,6 +405,7 @@ test extract_module_redeemer_fail_if_redeemers_not_contain_module_redeemer() fai
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
     module_redeemer,
   ) = setup_extract_module_redeemer()
 
@@ -368,6 +417,7 @@ test extract_module_redeemer_fail_if_redeemers_not_contain_module_redeemer() fai
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
   ) == module_redeemer
 }
 
@@ -378,12 +428,13 @@ test extract_module_redeemer_fail_if_found_redeemer_is_not_ibc_redeemer() fail {
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
     module_redeemer,
   ) = setup_extract_module_redeemer()
 
   let invalid_module_redeemer: Redeemer = Void
 
-  expect [module_input] = inputs
+  expect [_, module_input] = inputs
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [Pair(Spend(module_input.output_reference), invalid_module_redeemer)]
@@ -394,7 +445,87 @@ test extract_module_redeemer_fail_if_found_redeemer_is_not_ibc_redeemer() fail {
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
   ) == module_redeemer
+}
+
+test extract_module_redeemer_rejects_wrong_registered_credential() fail {
+  let (
+    inputs,
+    _,
+    channel_token_name,
+    port_minting_policy_id,
+    port_id,
+    host_state_nft_policy_id,
+    module_redeemer,
+  ) = setup_extract_module_redeemer()
+  expect [host_state_input, module_input] = inputs
+  let wrong_module_input =
+    Input {
+      ..module_input,
+      output: Output {
+        ..module_input.output,
+        address: from_script("attacker module script hash"),
+      },
+    }
+  let inputs = [host_state_input, wrong_module_input]
+  let module_redeemer: Redeemer = module_redeemer
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [Pair(Spend(wrong_module_input.output_reference), module_redeemer)]
+
+  expect _ =
+    validator_utils.extract_module_redeemer(
+      inputs,
+      redeemers,
+      channel_token_name,
+      port_minting_policy_id,
+      port_id,
+      host_state_nft_policy_id,
+    )
+  True
+}
+
+test extract_module_redeemer_rejects_incomplete_capability_set() fail {
+  let (
+    inputs,
+    _redeemers,
+    channel_token_name,
+    port_minting_policy_id,
+    port_id,
+    host_state_nft_policy_id,
+    module_redeemer,
+  ) = setup_extract_module_redeemer()
+  expect [host_state_input, module_input] = inputs
+  expect host_state_datum: HostStateDatum =
+    validator_utils.get_inline_datum(host_state_input.output)
+  expect [Pair(_, registration)] = host_state_datum.state.bound_port
+  let incomplete_module_input =
+    Input {
+      ..module_input,
+      output: Output {
+        ..module_input.output,
+        value: from_asset(
+          registration.port_token.policy_id,
+          registration.port_token.name,
+          1,
+        ),
+      },
+    }
+  let inputs = [host_state_input, incomplete_module_input]
+  let module_redeemer: Redeemer = module_redeemer
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [Pair(Spend(incomplete_module_input.output_reference), module_redeemer)]
+
+  expect _ =
+    validator_utils.extract_module_redeemer(
+      inputs,
+      redeemers,
+      channel_token_name,
+      port_minting_policy_id,
+      port_id,
+      host_state_nft_policy_id,
+    )
+  True
 }
 
 //==================================validate_token_remain================================

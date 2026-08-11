@@ -7,7 +7,7 @@ use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/primitive/bytearray
 use cardano/assets.{AssetName, PolicyId}
 use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Transaction,
+  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
@@ -24,10 +24,10 @@ use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
-  HostState, HostStateDatum, host_state_token_name, validate_bind_port,
-  validate_create_channel, validate_create_client, validate_create_connection,
-  validate_enter_shutdown, validate_finalize_shutdown, validate_heartbeat,
-  validate_update_only_root,
+  HostState, HostStateDatum, ModuleRegistration, host_state_token_name,
+  validate_bind_port, validate_create_channel, validate_create_client,
+  validate_create_connection, validate_enter_shutdown,
+  validate_finalize_shutdown, validate_heartbeat, validate_update_only_root,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, CreateChannel, CreateClient, CreateConnection, EnterShutdown,
@@ -528,6 +528,8 @@ fn validate_bind_port_root(
   old_datum: HostStateDatum,
   new_datum: HostStateDatum,
   port: Int,
+  registration: ModuleRegistration,
+  outputs: List<Output>,
   port_siblings: List<ByteArray>,
 ) -> Bool {
   // Commitment key (IBC path): `ports/{portId}`.
@@ -541,10 +543,15 @@ fn validate_bind_port_root(
 
   // Commitment value.
   //
-  // We store a non-empty marker to represent "this port is bound".
-  // Using the CBOR encoding of the port number itself is deterministic and
-  // straightforward to reproduce off-chain.
-  let port_value = cbor.serialise(port)
+  // Commit the immutable application authority, not merely an "is bound"
+  // marker. This makes the port-to-module association part of the IBC root.
+  let port_value = cbor.serialise(registration)
+
+  // The initial root must be created at the registered script credential with
+  // precisely the two registered capability NFTs and no datum.
+  expect [module_output] =
+    transaction.find_script_outputs(outputs, registration.module_script_hash)
+  expect NoDatum = module_output.datum
 
   let root_after_bind =
     ibc_state_commitment.apply_update(
@@ -555,7 +562,13 @@ fn validate_bind_port_root(
       port_siblings,
     )
 
-  root_after_bind == new_datum.state.ibc_state_root
+  and {
+    root_after_bind == new_datum.state.ibc_state_root,
+    auth.contains_only_auth_tokens(
+      module_output,
+      [registration.port_token, registration.module_token],
+    ),
+  }
 }
 
 /// Enforce that `ibc_state_root` is updated correctly for UpdateConnection.
@@ -1068,9 +1081,16 @@ validator host_state_stt(
                 next_sequence_ack_siblings,
               ),
             }
-          BindPort { port, port_siblings } -> and {
-              validate_bind_port(old_datum, new_datum, port),
-              validate_bind_port_root(old_datum, new_datum, port, port_siblings),
+          BindPort { port, registration, port_siblings } -> and {
+              validate_bind_port(old_datum, new_datum, port, registration),
+              validate_bind_port_root(
+                old_datum,
+                new_datum,
+                port,
+                registration,
+                outputs,
+                port_siblings,
+              ),
             }
           UpdateClient {
             client_state_siblings,

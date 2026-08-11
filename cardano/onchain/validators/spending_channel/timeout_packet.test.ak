@@ -110,7 +110,7 @@ fn check_timeout_unordered_packet(
     } else {
       mock_data.module_input
     }
-  let inputs = [callback_input, channel_input]
+  let inputs = [mock_data.host_state_input, callback_input, channel_input]
 
   //========================arrange reference_inputs=======================
   let proof_height =
@@ -363,6 +363,7 @@ fn check_timeout_unordered_packet(
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
+    mock_data.host_state_nft_policy_id,
     mock_data.channel_token,
     mock_data.timeout_packet_policy_id,
     transaction,
@@ -445,7 +446,8 @@ test succeed_timeout_ordered_packet() {
   let channel_input =
     test_utils.build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input]
+  let inputs =
+    [mock_data.host_state_input, mock_data.module_input, channel_input]
 
   //========================arrange reference_inputs=======================
   let proof_height =
@@ -571,6 +573,7 @@ test succeed_timeout_ordered_packet() {
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
+    mock_data.host_state_nft_policy_id,
     mock_data.channel_token,
     mock_data.timeout_packet_policy_id,
     transaction,

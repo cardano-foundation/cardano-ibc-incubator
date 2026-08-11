@@ -4,12 +4,14 @@ use aiken/collection/pairs
 use aiken/interval.{Finite}
 use aiken/option.{map}
 use aiken/primitive/bytearray
+use aiken/primitive/int
 use cardano/address.{Script}
 use cardano/assets.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of, tokens,
 }
 use cardano/transaction.{
-  InlineDatum, Input, Output, Redeemer, ScriptPurpose, Spend, ValidityRange,
+  InlineDatum, Input, NoDatum, Output, Redeemer, ScriptPurpose, Spend,
+  ValidityRange,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
@@ -21,7 +23,7 @@ use ibc/core/ics_004/channel_redeemer.{SpendChannelRedeemer}
 use ibc/core/ics_005/types/ibc_module_redeemer.{IBCModuleRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_025_handler_interface/host_state.{
-  HostStateDatum, host_state_token_name, is_active,
+  HostStateDatum, ModuleRegistration, host_state_token_name, is_active,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
 
@@ -94,22 +96,29 @@ pub fn extract_module_redeemer(
   channel_token_name: ByteArray,
   port_minting_policy_id: PolicyId,
   port_id: ByteArray,
+  host_state_nft_policy_id: PolicyId,
 ) -> IBCModuleRedeemer {
-  let port_number = port_keys.parse_port_id_number(port_id)
+  let port_number_bytes = port_keys.parse_port_id_number(port_id)
+  expect Some(port_number) = int.from_utf8(port_number_bytes)
   let port_token_name =
     auth.generate_token_name_from_another(
       channel_token_name,
       port_keys.port_prefix,
-      port_number,
+      port_number_bytes,
     )
   let port_token =
     AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
 
-  expect [module_input] =
-    list.filter(
+  let registration =
+    registered_module_for_port(
       inputs,
-      fn(input) { auth.contain_auth_token(input.output, port_token) },
+      host_state_nft_policy_id,
+      port_number,
+      port_token,
     )
+
+  expect Some(module_input) =
+    find_registered_module_state_input(inputs, registration)
 
   expect Some(spent_module_redeemer) =
     pairs.get_first(redeemers, Spend(module_input.output_reference))
@@ -120,9 +129,9 @@ pub fn extract_module_redeemer(
 
 /// Find the registered application witness for a packet callback.
 ///
-/// Root-state callbacks spend and preserve the port token. Escrow-shard
-/// callbacks reference that root and spend exactly one UTxO at the script
-/// credential anchored by the registered port token.
+/// Root-state callbacks spend and preserve the exact registered capability
+/// pair. Escrow-shard callbacks reference that root and spend exactly one UTxO
+/// at the immutable script credential recorded by HostState.
 pub fn extract_packet_module_redeemer(
   inputs: List<Input>,
   reference_inputs: List<Input>,
@@ -131,39 +140,50 @@ pub fn extract_packet_module_redeemer(
   channel_token_name: ByteArray,
   port_minting_policy_id: PolicyId,
   port_id: ByteArray,
+  host_state_nft_policy_id: PolicyId,
 ) -> IBCModuleRedeemer {
-  let port_number = port_keys.parse_port_id_number(port_id)
+  let port_number_bytes = port_keys.parse_port_id_number(port_id)
+  expect Some(port_number) = int.from_utf8(port_number_bytes)
   let port_token_name =
     auth.generate_token_name_from_another(
       channel_token_name,
       port_keys.port_prefix,
-      port_number,
+      port_number_bytes,
     )
   let port_token =
     AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
 
-  when find_module_state_input(inputs, port_token) is {
+  let registration =
+    registered_module_for_port(
+      inputs,
+      host_state_nft_policy_id,
+      port_number,
+      port_token,
+    )
+
+  when find_registered_module_state_input(inputs, registration) is {
     Some(module_input) -> {
-      expect Script(_) = module_input.output.address.payment_credential
       expect [module_output] =
         list.filter(
           outputs,
-          fn(output) { auth.contain_auth_token(output, port_token) },
+          fn(output) {
+            auth.contain_auth_token(output, registration.port_token)
+          },
         )
       expect module_output.address == module_input.output.address
+      expect registered_module_state_is_exact(module_output, registration)
       input_redeemer(redeemers, module_input)
     }
     None -> {
-      expect Some(module_reference_input) =
-        find_module_state_input(reference_inputs, port_token)
-      expect Script(module_script_hash) =
-        module_reference_input.output.address.payment_credential
+      expect Some(_module_reference_input) =
+        find_registered_module_state_input(reference_inputs, registration)
       expect [module_spend_input] =
         list.filter(
           inputs,
           fn(input) {
             when input.output.address.payment_credential is {
-              Script(script_hash) -> script_hash == module_script_hash
+              Script(script_hash) ->
+                script_hash == registration.module_script_hash
               _ -> False
             }
           },
@@ -173,19 +193,64 @@ pub fn extract_packet_module_redeemer(
   }
 }
 
-fn find_module_state_input(
+fn find_registered_module_state_input(
   inputs: List<Input>,
-  port_token: AuthToken,
+  registration: ModuleRegistration,
 ) -> Option<Input> {
   when
     list.filter(
       inputs,
-      fn(input) { auth.contain_auth_token(input.output, port_token) },
+      fn(input) {
+        auth.contain_auth_token(input.output, registration.port_token)
+      },
     )
   is {
     [] -> None
-    [module_input] -> Some(module_input)
+    [module_input] -> {
+      expect registered_module_state_is_exact(module_input.output, registration)
+      Some(module_input)
+    }
     _ -> fail @"Multiple module state witnesses"
+  }
+}
+
+fn registered_module_for_port(
+  inputs: List<Input>,
+  host_state_nft_policy_id: PolicyId,
+  port_number: Int,
+  expected_port_token: AuthToken,
+) -> ModuleRegistration {
+  expect [host_state_input] =
+    list.filter(
+      inputs,
+      fn(input) {
+        assets.has_nft(
+          input.output.value,
+          host_state_nft_policy_id,
+          host_state_token_name,
+        )
+      },
+    )
+  expect host_state_datum: HostStateDatum =
+    get_inline_datum(host_state_input.output)
+  expect Some(registration) =
+    pairs.get_first(host_state_datum.state.bound_port, port_number)
+  expect registration.port_token == expected_port_token
+  registration
+}
+
+fn registered_module_state_is_exact(
+  output: Output,
+  registration: ModuleRegistration,
+) -> Bool {
+  expect Script(script_hash) = output.address.payment_credential
+  and {
+    script_hash == registration.module_script_hash,
+    output.datum == NoDatum,
+    auth.contains_only_auth_tokens(
+      output,
+      [registration.port_token, registration.module_token],
+    ),
   }
 }
 

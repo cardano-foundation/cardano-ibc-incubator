@@ -791,6 +791,15 @@ export class LucidService implements OnModuleInit {
           const EnterShutdownSchema = LucidData.Object({
             grace_period_end: LucidData.Integer(),
           });
+          const RegisteredAuthTokenSchema = LucidData.Object({
+            policy_id: LucidData.Bytes(),
+            name: LucidData.Bytes(),
+          });
+          const ModuleRegistrationSchema = LucidData.Object({
+            module_script_hash: LucidData.Bytes(),
+            port_token: RegisteredAuthTokenSchema,
+            module_token: RegisteredAuthTokenSchema,
+          });
           const HostStateRedeemerSchema = LucidData.Enum([
             LucidData.Object({ CreateClient: CreateClientSchema }),
             LucidData.Object({ CreateConnection: CreateConnectionSchema }),
@@ -798,6 +807,7 @@ export class LucidService implements OnModuleInit {
             LucidData.Object({
               BindPort: LucidData.Object({
                 port: LucidData.Integer(),
+                registration: ModuleRegistrationSchema,
                 port_siblings: SiblingHashesSchema,
               }),
             }),

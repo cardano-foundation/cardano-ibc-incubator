@@ -47,7 +47,8 @@ test chan_close_init_succeed() {
   let channel_input =
     test_utils.build_channel_input(input_channel_datum, fake_data.channel_token)
 
-  let inputs = [fake_data.module_input, channel_input]
+  let inputs =
+    [fake_data.host_state_input, fake_data.module_input, channel_input]
 
   //========================arrange reference_inputs=======================
   let reference_inputs = [fake_data.connection_input, fake_data.client_input]
@@ -109,6 +110,7 @@ test chan_close_init_succeed() {
     fake_data.client_minting_policy_id,
     fake_data.connection_minting_policy_id,
     fake_data.port_minting_policy_id,
+    fake_data.host_state_nft_policy_id,
     None,
     fake_data.channel_token,
     channel_input.output_reference,

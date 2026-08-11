@@ -170,6 +170,7 @@ validator mint_channel_stt(
         channel_token.name,
         port_minting_policy_id,
         channel_output_datum.port_id,
+        host_state_nft_policy_id,
       )
     expect Callback(ibc_module_callback) = ibc_module_redeemer
 

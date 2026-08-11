@@ -36,6 +36,7 @@ validator chan_open_ack(
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
 ) {
   mint(channel_token: AuthToken, policy_id: PolicyId, transaction: Transaction) {
     let Transaction {
@@ -132,6 +133,7 @@ validator chan_open_ack(
         datum.token.name,
         port_minting_policy_id,
         datum.port_id,
+        host_state_nft_policy_id,
       )
     expect Callback(ibc_module_callback) = ibc_module_redeemer
     expect ibc_module_callback == OnChanOpenAck { channel_id }

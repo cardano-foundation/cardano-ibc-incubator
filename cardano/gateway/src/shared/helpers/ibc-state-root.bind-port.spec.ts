@@ -1,4 +1,7 @@
+import * as Lucid from '@lucid-evolution/lucid';
+
 import { ICS23MerkleTree } from './ics23-merkle-tree';
+import { encodeModuleRegistration } from '../types/host-state-datum';
 
 describe('IBC state root - BindPort', () => {
   it('does not mutate the canonical tree unless commit() is called', async () => {
@@ -9,11 +12,15 @@ describe('IBC state root - BindPort', () => {
     const emptyRoot = '0'.repeat(64);
     expect(isTreeAligned(emptyRoot)).toBe(true);
 
-    // Any non-empty bytes work as a "bound port marker" for the commitment tree.
-    // On-chain we use the CBOR encoding of the integer port number, but the key
-    // property here is that state root updates remain side-effect free until
-    // a successful transaction is confirmed and commit() is invoked.
-    const portValue = Buffer.from('01', 'hex');
+    const registration = {
+      module_script_hash: '11'.repeat(28),
+      port_token: { policy_id: '22'.repeat(28), name: '01' },
+      module_token: { policy_id: '33'.repeat(28), name: '02' },
+    };
+    const portValue = Buffer.from(await encodeModuleRegistration(registration, Lucid), 'hex');
+    expect(portValue.toString('hex')).toBe(
+      'd8799f581c11111111111111111111111111111111111111111111111111111111d8799f581c222222222222222222222222222222222222222222222222222222224101ffd8799f581c333333333333333333333333333333333333333333333333333333334102ffff',
+    );
 
     const result = computeRootWithPortBind(emptyRoot, 99, portValue);
     expect(result.portSiblings).toHaveLength(64);
@@ -38,4 +45,3 @@ describe('IBC state root - BindPort', () => {
     expect(isTreeAligned(emptyRoot)).toBe(false);
   });
 });
-

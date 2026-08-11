@@ -35,6 +35,7 @@ validator timeout_packet(
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
 ) {
   // Timeout packet handling mints the channel auth token for this transition.
   mint(
@@ -188,6 +189,7 @@ validator timeout_packet(
         datum.token.name,
         port_minting_policy_id,
         datum.port_id,
+        host_state_nft_policy_id,
       )
     expect Callback(OnTimeoutPacket {
       channel_id: callback_channel_id,

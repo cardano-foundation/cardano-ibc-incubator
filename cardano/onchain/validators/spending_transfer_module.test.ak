@@ -7,6 +7,7 @@ use cardano/transaction.{
   InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
   ScriptPurpose, Spend, Transaction,
 }
+use ibc/apps/transfer/escrow as transfer_escrow
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, RefundVoucher,
 }
@@ -1172,6 +1173,28 @@ test prop_transfer_module_voucher_error_ack_remints_exactly(
   // Error ack reverses a voucher send by reminting the burned voucher amount.
   voucher_error_ack_refund_fixture(fuzz_dsl.no_mutation())
     |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_transfer_module_root_rejects_capability_relocation(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(@"regression.contract.transfer.invalid_capability_relocation")
+
+  let mock = setup()
+  let relocated_output =
+    Output {
+      ..mock.module_output,
+      address: from_script("attacker module script hash"),
+    }
+
+  expect _ =
+    transfer_escrow.classify_transfer_module_spend(
+      mock.module_input.output,
+      [relocated_output],
+      mock.port_token,
+      mock.module_token,
+    )
+  True
 }
 
 test on_chan_open_init_succeed() {
