@@ -402,7 +402,9 @@ the input datum to already contain the receipt. They prove these invariants:
 ### AcknowledgePacket
 
 Covered by `unit.packet.ack.valid_success`, `unit.packet.ack.valid_error`, and
-`unit.packet.ack.invalid_wrong_ack_bytes`.
+`unit.packet.ack.invalid_wrong_ack_bytes`, together with the registered-root
+and escrow-shard callback cases in
+`spending_channel/acknowledge_packet.test.ak`.
 
 The acknowledgement unit properties construct a near-valid source-side channel
 datum packet commitment and apply success and error acknowledgement bytes. They
@@ -415,11 +417,25 @@ prove these invariants:
   payload.
 - Mismatched acknowledgement bytes are rejected even when the channel datum
   transition is otherwise valid.
+- Packet commitment deletion requires a typed callback authorized by the port
+  token registered for the source port.
+- Voucher callbacks spend and preserve the registered module root. Native
+  refund callbacks may instead spend an escrow shard only when the root is a
+  reference input and the shard uses the root's immutable script credential.
+- The callback channel, raw packet bytes, and canonical acknowledgement bytes
+  must match the channel redeemer exactly. Consequently a relayer cannot prove
+  an error acknowledgement while presenting a success callback to bypass the
+  refund branch, or vice versa.
+- Missing and mismatched callbacks are rejected for both voucher-remint and
+  native-unescrow witness shapes before the packet commitment can be removed.
 
 ### TimeoutPacket
 
 Covered by `unit.packet.timeout.valid_unordered`,
-`unit.packet.timeout.valid_ordered`, and `unit.packet.timeout.invalid_before_timeout`.
+`unit.packet.timeout.valid_ordered`, and
+`unit.packet.timeout.invalid_before_timeout`, together with the registered-root
+and escrow-shard callback cases in
+`spending_channel/timeout_packet.test.ak`.
 
 The timeout unit properties construct committed channel datum packets and apply
 unordered and ordered timeout transitions. They prove these invariants:
@@ -428,6 +444,11 @@ unordered and ordered timeout transitions. They prove these invariants:
   open.
 - A valid ordered timeout consumes the packet commitment and closes the channel.
 - A timeout cannot execute before the packet timeout timestamp has been reached.
+- A timeout cannot consume the packet commitment unless the registered
+  application callback for the exact channel and packet bytes is executed in
+  the same transaction.
+- Both voucher-remint root callbacks and native-unescrow shard callbacks reject
+  omitted or mismatched refund witnesses.
 
 ### Model Sequences
 

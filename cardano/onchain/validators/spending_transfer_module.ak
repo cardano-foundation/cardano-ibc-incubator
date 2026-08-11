@@ -428,7 +428,7 @@ fn module_callback(
         }
       }
     }
-    OnTimeoutPacket { channel_id, data } -> {
+    OnTimeoutPacket { channel_id, packet_data, data } -> {
       trace @"spend_transfer_module: Callback.OnTimeoutPacket branch"
 
       expect Some(channel_redeemer) =
@@ -442,6 +442,7 @@ fn module_callback(
       expect TimeoutPacket { packet, .. } = channel_redeemer
       trace @"spend_transfer_module: channel redeemer is valid"
 
+      expect packet_data == packet.data
       expect TransferModuleData(data) = data
       // Timeout refunds the sender-side packet effect.
       let valid_refund_packet =
@@ -463,7 +464,7 @@ fn module_callback(
         (fungible_token_packet_data.get_bytes(data) == packet.data)?,
       }
     }
-    OnAcknowledgementPacket { channel_id, acknowledgement, data } -> {
+    OnAcknowledgementPacket { channel_id, packet_data, acknowledgement, data } -> {
       trace @"spend_transfer_module: Callback.OnAcknowledgementPacket branch"
 
       expect Some(channel_redeemer) =
@@ -478,6 +479,7 @@ fn module_callback(
         channel_redeemer
       trace @"spend_transfer_module: channel redeemer is valid"
 
+      expect packet_data == packet.data
       expect TransferModuleData(tf_data) = data
       when acknowledgement.response is {
         AcknowledgementError { .. } -> and {

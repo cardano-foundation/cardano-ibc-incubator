@@ -2067,6 +2067,7 @@ export class LucidService implements OnModuleInit {
     const tx: TxBuilder = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
+      this.referenceScripts.spendTransferModule,
       // minting 1
       this.referenceScripts.ackPacket,
       // minting 2
@@ -2075,6 +2076,10 @@ export class LucidService implements OnModuleInit {
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom(
+        [dto.transferModuleReferenceUtxo],
+        dto.encodedSpendTransferModuleRedeemer,
+      )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
@@ -2108,6 +2113,8 @@ export class LucidService implements OnModuleInit {
         },
         dto.encodedVerifyProofRedeemer,
       );
+
+    this.payModuleUtxo(tx, "transfer", dto.transferModuleReferenceUtxo);
 
     return tx;
   }
@@ -2205,7 +2212,11 @@ export class LucidService implements OnModuleInit {
         [transferEscrowUtxo],
         dto.encodedSpendTransferModuleRedeemer,
       )
-      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .readFrom([
+        dto.transferModuleReferenceUtxo,
+        dto.connectionUtxo,
+        dto.clientUtxo,
+      ])
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         {
@@ -2292,6 +2303,7 @@ export class LucidService implements OnModuleInit {
       };
     tx.readFrom([
       this.referenceScripts.spendChannel,
+      this.referenceScripts.spendTransferModule,
       this.referenceScripts.mintVoucher,
       this.referenceScripts.ackPacket,
       this.referenceScripts.verifyProof,
@@ -2303,6 +2315,10 @@ export class LucidService implements OnModuleInit {
     tx
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom(
+        [dto.transferModuleReferenceUtxo],
+        dto.encodedSpendTransferModuleRedeemer,
+      )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
       .mintAssets(
         mintVoucherAssets,
@@ -2343,6 +2359,8 @@ export class LucidService implements OnModuleInit {
         },
         dto.encodedVerifyProofRedeemer,
       );
+
+    this.payModuleUtxo(tx, "transfer", dto.transferModuleReferenceUtxo);
 
     if (isFirstSeenVoucher) {
       if (
@@ -2597,6 +2615,7 @@ export class LucidService implements OnModuleInit {
       };
     tx.readFrom([
       this.referenceScripts.spendChannel,
+      this.referenceScripts.spendTransferModule,
       this.referenceScripts.mintVoucher,
       this.referenceScripts.timeoutPacket,
       this.referenceScripts.verifyProof,
@@ -2608,6 +2627,10 @@ export class LucidService implements OnModuleInit {
     tx
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom(
+        [dto.transferModuleReferenceUtxo],
+        dto.encodedSpendTransferModuleRedeemer,
+      )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
       .mintAssets(
         mintVoucherAssets,
@@ -2648,6 +2671,8 @@ export class LucidService implements OnModuleInit {
         },
         dto.encodedVerifyProofRedeemer,
       );
+
+    this.payModuleUtxo(tx, "transfer", dto.transferModuleReferenceUtxo);
 
     if (isFirstSeenVoucher) {
       if (
@@ -2701,7 +2726,11 @@ export class LucidService implements OnModuleInit {
         [transferEscrowUtxo],
         dto.encodedSpendTransferModuleRedeemer,
       )
-      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .readFrom([
+        dto.transferModuleReferenceUtxo,
+        dto.connectionUtxo,
+        dto.clientUtxo,
+      ])
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         {

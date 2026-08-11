@@ -7,6 +7,7 @@ import {
   WithPacketPolicyAndChannelToken,
   WithTransferAmount,
   WithTransferEscrowShard,
+  WithRequiredTransferModuleReferenceUtxo,
   WithTransferModuleSpend,
   WithVerifyProof,
 } from './fragments';
@@ -15,6 +16,7 @@ export type UnsignedAckPacketUnescrowDto = WithHostStateUpdate &
   WithChannelContext &
   WithChannelSpend &
   WithTransferModuleSpend &
+  WithRequiredTransferModuleReferenceUtxo &
   WithTransferEscrowShard &
   WithMintTransferEscrowShardRedeemer &
   WithTransferAmount &

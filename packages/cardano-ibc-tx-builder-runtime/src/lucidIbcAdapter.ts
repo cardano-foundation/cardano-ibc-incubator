@@ -738,12 +738,14 @@ async function encodeIbcModuleRedeemer(
     Data.Object({
       OnTimeoutPacket: Data.Object({
         channel_id: Data.Bytes(),
+        packet_data: Data.Bytes(),
         data: IBCModulePacketData,
       }),
     }),
     Data.Object({
       OnAcknowledgementPacket: Data.Object({
         channel_id: Data.Bytes(),
+        packet_data: Data.Bytes(),
         acknowledgement: AcknowledgementSchema,
         data: IBCModulePacketData,
       }),

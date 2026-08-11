@@ -548,6 +548,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       .mockResolvedValueOnce({ txHash: 'channel', outputIndex: 0, datum: 'channel-datum', assets: {} })
       .mockResolvedValueOnce({ txHash: 'connection', outputIndex: 0, datum: 'connection-datum', assets: {} })
       .mockResolvedValueOnce({ txHash: 'client', outputIndex: 0, datum: 'client-datum', assets: {} })
+      .mockResolvedValueOnce({ txHash: 'transfer', outputIndex: 0, datum: 'transfer-datum', assets: {} })
       .mockImplementationOnce(async (shardTokenUnit: string) => ({
         txHash: 'transfer-escrow',
         outputIndex: 0,
