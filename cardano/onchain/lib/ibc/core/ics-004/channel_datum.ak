@@ -26,6 +26,17 @@ pub type ChannelDatumState {
   packet_acknowledgement: Pairs<Int, ByteArray>,
 }
 
+/// Ledger-safe upper bound for all packet entries retained in a channel datum.
+/// Packet insertion fails closed at this boundary so the combined commitment,
+/// receipt, and acknowledgement state cannot make the datum unspendable.
+pub const max_packet_entries_per_channel = 64
+
+pub fn packet_entry_count(state: ChannelDatumState) -> Int {
+  list.length(state.packet_commitment) + list.length(state.packet_receipt) + list.length(
+    state.packet_acknowledgement,
+  )
+}
+
 pub fn validate_chan_open_init(
   datum: ChannelDatum,
   auth_token: AuthToken,
@@ -201,17 +212,19 @@ pub fn validate_recv_packet(
   packet: Packet,
   ack: ByteArray,
 ) -> Bool {
-  let (expected_packet_receipt, expected_next_sequence_recv) =
+  let (expected_packet_receipt, expected_next_sequence_recv, inserted_entries) =
     when input_datum.state.channel.ordering is {
       order.Ordered ->
         (
           input_datum.state.packet_receipt,
           input_datum.state.next_sequence_recv + 1,
+          1,
         )
       order.Unordered ->
         (
           [Pair(packet.sequence, ""), ..input_datum.state.packet_receipt],
           input_datum.state.next_sequence_recv,
+          2,
         )
       _ -> fail
     }
@@ -232,7 +245,10 @@ pub fn validate_recv_packet(
       },
     }
 
-  expected_datum == output_datum
+  and {
+    packet_entry_count(input_datum.state) + inserted_entries <= max_packet_entries_per_channel,
+    expected_datum == output_datum,
+  }
 }
 
 pub fn validate_send_packet(
@@ -270,7 +286,10 @@ pub fn validate_send_packet(
       },
     }
 
-  (expected_datum == cloned_output_datum)?
+  and {
+    packet_entry_count(input_datum.state) < max_packet_entries_per_channel,
+    expected_datum == cloned_output_datum,
+  }
 }
 
 pub fn validate_timeout_packet(

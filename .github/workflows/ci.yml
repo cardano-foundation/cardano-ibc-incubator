@@ -610,8 +610,13 @@ jobs:
             -m 'spending_connection.{conn_open_ack_succeed}' \
             -m 'spending_channel.{send_packet_succeed}' \
             -m 'spending_channel/send_packet.{succeed_send_packet}' \
+            -m 'ibc/core/ics_004/channel_datum_test/validate_send_packet.{succeed_at_packet_commitment_capacity}' \
+            -m 'host_state_stt.{host_state_handle_packet_send_succeeds_at_commitment_capacity}' \
             -m 'spending_channel.{recv_packet_succeed}' \
             -m 'spending_channel/recv_packet.{succeed_recv_packet}' \
+            -m 'ibc/core/ics_004/channel_datum_test/validate_recv_packet.{succeed_at_packet_history_capacity}' \
+            -m 'host_state_stt.{host_state_handle_packet_recv_succeeds_at_history_capacity}' \
+            -m 'host_state_stt.{host_state_handle_packet_acknowledgement_succeeds_at_history_capacity}' \
             -m 'spending_channel.{acknowledge_packet_succeed}' \
             -m 'spending_channel/acknowledge_packet.{succeed_acknowledge_packet}' \
             -m 'spending_transfer_module.{on_acknowledgement_packet_result_succeed}' \

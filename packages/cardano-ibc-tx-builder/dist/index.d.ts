@@ -1,4 +1,5 @@
 import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
+export declare const MAX_PACKET_ENTRIES_PER_CHANNEL = 64;
 export type Height = {
     revisionNumber: bigint;
     revisionHeight: bigint;
@@ -36,6 +37,8 @@ export type ChannelDatumLike = {
     state: {
         next_sequence_send: bigint;
         packet_commitment: Map<bigint, string>;
+        packet_receipt: Map<bigint, string>;
+        packet_acknowledgement: Map<bigint, string>;
         channel: {
             connection_hops: string[];
             counterparty: {
@@ -158,6 +161,7 @@ export type SendPacketBuildDependencies = {
     createUnsignedSendPacketBurnTx: (dto: UnsignedSendPacketBurnTxInput) => TxBuilder;
     createUnsignedSendPacketEscrowTx: (dto: UnsignedSendPacketEscrowTxInput) => TxBuilder;
     invalidArgument: (message: string) => Error;
+    failedPrecondition?: (message: string) => Error;
     internalError: (message: string) => Error;
 };
 export declare function buildUnsignedSendPacketTx(sendPacketOperator: SendPacketOperator, deps: SendPacketBuildDependencies): Promise<SendPacketBuildResult>;

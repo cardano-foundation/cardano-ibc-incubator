@@ -15,7 +15,10 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/keys as conn_id_keys
-use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, max_packet_entries_per_channel,
+  packet_entry_count,
+}
 use ibc/core/ics_004/types/keys as chan_id_keys
 use ibc/core/ics_005/types/keys as port_id_keys
 use ibc/core/ics_024_host_requirements/channel_keys as host_channel_keys
@@ -855,6 +858,8 @@ fn validate_handle_packet_root(
       // Exactly one insertion is expected in a single packet operation.
       expect removed_commitments == []
       expect [Pair(sequence, commitment_bytes)] = inserted_commitments
+      expect
+        packet_entry_count(channel_output_datum.state) <= max_packet_entries_per_channel
       let commitment_key =
         packet_keys.packet_commitment_path(port_id, channel_id, sequence)
       let new_value = cbor.serialise(commitment_bytes)
@@ -905,6 +910,8 @@ fn validate_handle_packet_root(
       // Receipts should only ever be inserted.
       expect removed_receipts == []
       expect [Pair(sequence, receipt_bytes)] = inserted_receipts
+      expect
+        packet_entry_count(channel_output_datum.state) <= max_packet_entries_per_channel
       let receipt_key =
         packet_keys.packet_receipt_path(port_id, channel_id, sequence)
       let new_value = cbor.serialise(receipt_bytes)
@@ -937,6 +944,8 @@ fn validate_handle_packet_root(
       // Acknowledgements should only ever be inserted.
       expect removed_acks == []
       expect [Pair(sequence, ack_bytes)] = inserted_acks
+      expect
+        packet_entry_count(channel_output_datum.state) <= max_packet_entries_per_channel
       let ack_key =
         packet_keys.packet_acknowledgement_path(port_id, channel_id, sequence)
       let new_value = cbor.serialise(ack_bytes)
