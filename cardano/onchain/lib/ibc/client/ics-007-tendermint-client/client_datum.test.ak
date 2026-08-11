@@ -741,7 +741,6 @@ test test_update_state_succeed_03() {
     ClientDatum {
       ..mock_client_datum,
       state: ClientDatumState {
-        ..mock_client_datum.state,
         client_state: ClientState {
           ..mock_client_datum.state.client_state,
           latest_height: mock_header_latest_height,
