@@ -10,6 +10,7 @@ import {
 import { ClientState } from '@shared/types/client-state-types';
 import { ConsensusState } from '@shared/types/consensus-state';
 import { CLIENT_ID_PREFIX } from 'src/constant';
+import { Height } from '@shared/types/height';
 
 export function validateAndFormatCreateClientParams(data: MsgCreateClient): {
   constructedAddress: string;
@@ -58,4 +59,12 @@ export function validateAndFormatUpdateClientParams(data: MsgUpdateClient): {
   }
 
   return { constructedAddress, clientId };
+}
+
+export function validateUpdateHeaderAdvancesLatestHeight(headerHeight: bigint, latestHeight: Height): void {
+  if (headerHeight <= latestHeight.revisionHeight) {
+    throw new GrpcInvalidArgumentException(
+      `Update header height ${headerHeight} must be greater than client latest height ${latestHeight.revisionHeight}`,
+    );
+  }
 }
