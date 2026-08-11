@@ -104,7 +104,6 @@ fn check_acknowledge_packet(
 
   let module_shard_input =
     Input {
-      ..mock_data.module_input,
       output_reference: OutputReference {
         ..mock_data.module_input.output_reference,
         output_index: 9,
