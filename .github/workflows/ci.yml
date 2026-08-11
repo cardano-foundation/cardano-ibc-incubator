@@ -433,10 +433,10 @@ jobs:
               -m prop_host_handle_packet_rejects_channel_only_change
               -m prop_host_handle_packet_rejects_wrong_packet_key
           # Capacity cases build the full 64-entry bounded state. Their seed
-          # only varies unrelated metadata, so the catalog minimum provides
-          # meaningful coverage without repeating the same boundary 500 times.
+          # only varies unrelated metadata, so 300 cases satisfy the global
+          # label-share ratchet without repeating the same boundary 500 times.
           - suite: host-packet-capacity
-            max_success: 25
+            max_success: 300
             match_tests: >-
               -m prop_host_handle_packet_rejects_history_capacity_overflow
               -m prop_host_handle_packet_rejects_acknowledgement_capacity_overflow
