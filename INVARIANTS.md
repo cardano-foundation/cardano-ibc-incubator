@@ -222,6 +222,11 @@ headers and time-order violations. They prove these invariants:
 - Re-submitting the same header is not falsely treated as misbehaviour.
 - Explicit misbehaviour evidence with a malformed client identifier is
   rejected.
+- Each evidence header's height, time, application state, and validator hashes
+  must be covered by the block hash authenticated by its commit.
+- The validator set used to verify each commit must hash to the validator-set
+  commitment in that same header. Detached header fields or a mismatched set
+  cannot freeze the client.
 
 ### Frozen Client Rejection
 
