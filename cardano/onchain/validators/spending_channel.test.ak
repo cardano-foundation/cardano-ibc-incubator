@@ -1697,7 +1697,13 @@ test timeout_packet_succeed() {
   let channel_id =
     channel_keys.format_channel_identifier(mock_data.channel_sequence)
   let module_redeemer: Redeemer =
-    Callback(OnTimeoutPacket { channel_id, data: OtherModuleData })
+    Callback(
+      OnTimeoutPacket {
+        channel_id,
+        packet_data: packet.data,
+        data: OtherModuleData,
+      },
+    )
 
   let timeout_packet_redeemer: Redeemer = mock_data.channel_token
 
@@ -1948,6 +1954,7 @@ test acknowledge_packet_succeed() {
     Callback(
       OnAcknowledgementPacket {
         channel_id,
+        packet_data: packet.data,
         data: OtherModuleData,
         acknowledgement: acknowledgement_mod.new_result_acknowledgement("AQ=="),
       },

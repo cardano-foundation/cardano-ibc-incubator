@@ -1991,6 +1991,9 @@ export class PacketService {
     };
 
     const transferModuleAddress = this.getTransferModuleAddress();
+    const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(
+      this.getTransferModuleIdentifier(),
+    );
     const spendChannelAddress = this.getSpendChannelAddress();
     const transferAmount = BigInt(timeoutPacketOperator.fungibleTokenPacketData.amount);
     const senderPublicKeyHash = timeoutPacketOperator.fungibleTokenPacketData.sender;
@@ -2000,6 +2003,7 @@ export class PacketService {
         {
           OnTimeoutPacket: {
             channel_id: packet.source_channel,
+            packet_data: packet.data,
             data: {
               TransferModuleData: [
                 {
@@ -2129,6 +2133,7 @@ export class PacketService {
         hostStateUtxo: hostStateUtxo,
         channelUtxo: channelUtxo,
         transferEscrowUtxo: transferEscrowShard.utxo,
+        transferModuleReferenceUtxo,
         connectionUtxo: connectionUtxo,
         clientUtxo: clientUtxo,
 
@@ -2188,10 +2193,12 @@ export class PacketService {
       channelUtxo: channelUtxo,
       connectionUtxo: connectionUtxo,
       clientUtxo: clientUtxo,
+      transferModuleReferenceUtxo,
 
       encodedHostStateRedeemer: encodedHostStateRedeemer,
       encodedUpdatedHostStateDatum: encodedUpdatedHostStateDatum,
       encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
+      encodedSpendTransferModuleRedeemer,
       encodedMintVoucherRedeemer: encodedMintVoucherRedeemer,
       encodedUpdatedChannelDatum: encodedUpdatedChannelDatum,
 
@@ -2584,6 +2591,7 @@ export class PacketService {
         {
           OnAcknowledgementPacket: {
             channel_id: channelId,
+            packet_data: packet.data,
             data: {
               TransferModuleData: [fTokenPacketData],
             },
@@ -2597,6 +2605,7 @@ export class PacketService {
         {
           OnAcknowledgementPacket: {
             channel_id: channelId,
+            packet_data: packet.data,
             data: 'OtherModuleData',
             acknowledgement: { response: acknowledgementResponse },
           },
@@ -2720,6 +2729,14 @@ export class PacketService {
       receiver: convertString2Hex(fungibleTokenPacketData.receiver),
       memo: convertString2Hex(fungibleTokenPacketData.memo),
     };
+    const normalizedAcknowledgementResponse = this.normalizeAcknowledgementResponse(acknowledgementResponse);
+    const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
+      createTransferModuleRedeemer(channelId, fTokenPacketData, normalizedAcknowledgementResponse),
+      'iBCModuleRedeemer',
+    );
+    const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(
+      this.getTransferModuleIdentifier(),
+    );
     const acknowledgementResult = this.extractAcknowledgementResult(acknowledgementResponse);
     if (acknowledgementResult) {
       // build update channel datum
@@ -2741,9 +2758,11 @@ export class PacketService {
         channelUtxo,
         connectionUtxo,
         clientUtxo,
+        transferModuleReferenceUtxo,
         encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum,
         encodedSpendChannelRedeemer,
+        encodedSpendTransferModuleRedeemer,
         channelTokenUnit,
         encodedUpdatedChannelDatum,
         constructedAddress,
@@ -2773,14 +2792,6 @@ export class PacketService {
         `Acknowledgement Response invalid: unknown result (keys=${acknowledgementResponseKeys})`,
       );
     }
-    const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
-      createTransferModuleRedeemer(channelId, fTokenPacketData, {
-        AcknowledgementError: {
-          err: convertString2Hex(acknowledgementError),
-        },
-      }),
-      'iBCModuleRedeemer',
-    );
     this.logger.log('AcknowledgementError');
     if (
       !this._hasVoucherPrefix(
@@ -2842,6 +2853,7 @@ export class PacketService {
         connectionUtxo,
         clientUtxo,
         transferEscrowUtxo: transferEscrowShard.utxo,
+        transferModuleReferenceUtxo,
 
         encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum,
@@ -2923,10 +2935,12 @@ export class PacketService {
       channelUtxo,
       connectionUtxo,
       clientUtxo,
+      transferModuleReferenceUtxo,
 
       encodedHostStateRedeemer,
       encodedUpdatedHostStateDatum,
       encodedSpendChannelRedeemer,
+      encodedSpendTransferModuleRedeemer,
       encodedMintVoucherRedeemer,
       encodedUpdatedChannelDatum,
 

@@ -1,7 +1,8 @@
 use aiken/collection/pairs
 use cardano/assets.{PolicyId, Value, add, from_asset}
 use cardano/transaction.{
-  Input, Mint, Redeemer, ScriptPurpose, Spend, Transaction,
+  Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
+  Transaction,
 }
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -47,7 +48,13 @@ fn operation_marker_with_junk(policy_id: PolicyId) -> Value {
     |> add(policy_id, "junk", 1)
 }
 
-fn check_acknowledge_packet(transaction_mint: Value) {
+fn check_acknowledge_packet(
+  transaction_mint: Value,
+  use_escrow_shard: Bool,
+  include_callback: Bool,
+  callback_packet_matches: Bool,
+  callback_acknowledgement_matches: Bool,
+) {
   let mock_data = setup()
 
   let packet =
@@ -95,7 +102,25 @@ fn check_acknowledge_packet(transaction_mint: Value) {
   let channel_input =
     test_utils.build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input]
+  let module_shard_input =
+    Input {
+      ..mock_data.module_input,
+      output_reference: OutputReference {
+        ..mock_data.module_input.output_reference,
+        output_index: 9,
+      },
+      output: Output {
+        ..mock_data.module_input.output,
+        value: from_asset("mock escrow shard policy", "mock shard", 1),
+      },
+    }
+  let callback_input =
+    if use_escrow_shard {
+      module_shard_input
+    } else {
+      mock_data.module_input
+    }
+  let inputs = [callback_input, channel_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 20 }
@@ -112,7 +137,12 @@ fn check_acknowledge_packet(transaction_mint: Value) {
   let client_input =
     test_utils.update_client(proof_height, cons_state, mock_data.client_input)
 
-  let reference_inputs = [mock_data.connection_input, client_input]
+  let reference_inputs =
+    if use_escrow_shard {
+      [mock_data.module_input, mock_data.connection_input, client_input]
+    } else {
+      [mock_data.connection_input, client_input]
+    }
 
   //========================arrange outputs=======================
   let output_channel_datum =
@@ -133,7 +163,7 @@ fn check_acknowledge_packet(transaction_mint: Value) {
       mock_data.channel_token,
     )
 
-  let outputs = [channel_output]
+  let outputs = [callback_input.output, channel_output]
 
   //========================arrange validity_range=======================
   let validity_range = mock_data.validity_range
@@ -246,8 +276,19 @@ fn check_acknowledge_packet(transaction_mint: Value) {
     Callback(
       OnAcknowledgementPacket {
         channel_id,
+        packet_data: if callback_packet_matches {
+          packet.data
+        } else {
+          "mismatched packet data"
+        },
         data: OtherModuleData,
-        acknowledgement: acknowledgement_mod.new_result_acknowledgement("AQ=="),
+        acknowledgement: if callback_acknowledgement_matches {
+          acknowledgement_mod.new_result_acknowledgement(
+            "bW9jayBhY2tub3dsZWRnZW1lbnQ=",
+          )
+        } else {
+          acknowledgement_mod.new_error_acknowledgement("refund bypass")
+        },
       },
     )
 
@@ -297,9 +338,8 @@ fn check_acknowledge_packet(transaction_mint: Value) {
 
   let acknowledge_packet_redeemer: Redeemer = mock_data.channel_token
 
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+  let required_redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
-      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
       Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
       Pair(
         Mint(mock_data.acknowledge_packet_policy_id),
@@ -307,6 +347,15 @@ fn check_acknowledge_packet(transaction_mint: Value) {
       ),
       Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
     ]
+  let redeemers =
+    if include_callback {
+      [
+        Pair(Spend(callback_input.output_reference), module_redeemer),
+        ..required_redeemers
+      ]
+    } else {
+      required_redeemers
+    }
 
   //==========================arrange context=========================
   let transaction =
@@ -336,6 +385,10 @@ test succeed_acknowledge_packet() {
 
   check_acknowledge_packet(
     operation_marker(mock_data.acknowledge_packet_policy_id),
+    False,
+    True,
+    True,
+    True,
   )
 }
 
@@ -344,5 +397,69 @@ test acknowledge_packet_rejects_extra_operation_marker() fail {
 
   check_acknowledge_packet(
     operation_marker_with_junk(mock_data.acknowledge_packet_policy_id),
+    False,
+    True,
+    True,
+    True,
+  )
+}
+
+test acknowledge_packet_accepts_registered_escrow_shard_callback() {
+  let mock_data = setup()
+
+  check_acknowledge_packet(
+    operation_marker(mock_data.acknowledge_packet_policy_id),
+    True,
+    True,
+    True,
+    True,
+  )
+}
+
+test acknowledge_packet_rejects_missing_voucher_callback() fail {
+  let mock_data = setup()
+
+  check_acknowledge_packet(
+    operation_marker(mock_data.acknowledge_packet_policy_id),
+    False,
+    False,
+    True,
+    True,
+  )
+}
+
+test acknowledge_packet_rejects_mismatched_voucher_callback_acknowledgement() fail {
+  let mock_data = setup()
+
+  check_acknowledge_packet(
+    operation_marker(mock_data.acknowledge_packet_policy_id),
+    False,
+    True,
+    True,
+    False,
+  )
+}
+
+test acknowledge_packet_rejects_missing_native_refund_callback() fail {
+  let mock_data = setup()
+
+  check_acknowledge_packet(
+    operation_marker(mock_data.acknowledge_packet_policy_id),
+    True,
+    False,
+    True,
+    True,
+  )
+}
+
+test acknowledge_packet_rejects_mismatched_native_refund_packet() fail {
+  let mock_data = setup()
+
+  check_acknowledge_packet(
+    operation_marker(mock_data.acknowledge_packet_policy_id),
+    True,
+    True,
+    False,
+    True,
   )
 }

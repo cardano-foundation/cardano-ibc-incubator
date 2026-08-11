@@ -7,6 +7,8 @@ import {
   WithOptionalTraceRegistryUpdate,
   WithPacketPolicyAndChannelToken,
   WithTransferAmount,
+  WithRequiredTransferModuleReferenceUtxo,
+  WithTransferModuleSpend,
   WithVoucherMetadataOutput,
   WithVerifyProof,
 } from './fragments';
@@ -17,6 +19,8 @@ export type UnsignedTimeoutPacketMintDto = WithHostStateUpdate &
   WithMintVoucherRedeemer &
   WithVoucherMetadataOutput &
   WithOptionalTraceRegistryUpdate &
+  WithRequiredTransferModuleReferenceUtxo &
+  WithTransferModuleSpend &
   WithTransferAmount &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'timeoutPacketPolicyId'> &
