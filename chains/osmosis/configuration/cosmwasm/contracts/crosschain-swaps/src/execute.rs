@@ -108,13 +108,7 @@ pub fn handle_swap_reply(
     let ibc_transfer = MsgTransfer {
         source_port: "transfer".to_string(),
         source_channel: swap_msg_state.forward_to.channel.clone(),
-        token: Some(
-            Coin::new(
-                swap_response.amount.into(),
-                swap_response.token_out_denom.clone(),
-            )
-            .into(),
-        ),
+        token: Some(Coin::new(swap_response.amount, swap_response.token_out_denom.clone()).into()),
         sender: contract_addr.to_string(),
         receiver: swap_msg_state.forward_to.receiver.clone().into(),
         timeout_height: None,
@@ -168,7 +162,9 @@ pub fn handle_forward_reply(
 ) -> Result<Response, ContractError> {
     // Parse the result from the underlying chain call (IBC send)
     let SubMsgResult::Ok(SubMsgResponse { data: Some(b), .. }) = msg.result else {
-        return Err(ContractError::FailedIBCTransfer { msg: format!("failed reply: {:?}", msg.result) })
+        return Err(ContractError::FailedIBCTransfer {
+            msg: format!("failed reply: {:?}", msg.result),
+        });
     };
 
     // The response contains the packet sequence. This is needed to be able to
@@ -316,13 +312,10 @@ pub fn set_swap_contract(
 
 #[cfg(test)]
 mod tests {
-    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info, MockApi};
 
     use super::*;
     use crate::{contract, msg::InstantiateMsg, ExecuteMsg};
-
-    static CREATOR_ADDRESS: &str = "creator";
-    static SWAPCONTRACT_ADDRESS: &str = "swapcontract";
 
     static RECEIVER_ADDRESS1: &str = "prefix12smx2wdlyttvyzvzg54y2vnqwq2qjatel8rck9";
     static RECEIVER_ADDRESS2: &str = "other12smx2wdlyttvyzvzg54y2vnqwq2qjatere840z";
@@ -330,12 +323,14 @@ mod tests {
     // test helper
     #[allow(unused_assignments)]
     fn initialize_contract(deps: DepsMut) -> Addr {
+        let creator = MockApi::default().addr_make("creator");
+        let swap_contract = MockApi::default().addr_make("swapcontract");
         let msg = InstantiateMsg {
-            governor: String::from(CREATOR_ADDRESS),
-            swap_contract: String::from(SWAPCONTRACT_ADDRESS),
+            governor: creator.to_string(),
+            swap_contract: swap_contract.to_string(),
             channels: vec![("prefix".to_string(), "channel1".to_string())],
         };
-        let info = mock_info(CREATOR_ADDRESS, &[]);
+        let info = mock_info(creator.as_str(), &[]);
 
         contract::instantiate(deps, mock_env(), info.clone(), msg).unwrap();
 
@@ -362,7 +357,7 @@ mod tests {
         let governor = initialize_contract(deps.as_mut());
         let governor_info = mock_info(governor.as_str(), &vec![] as &Vec<Coin>);
 
-        let new_governor = "new_owner".to_string();
+        let new_governor = MockApi::default().addr_make("new_owner").to_string();
         // The owner can transfer ownership
         let msg = ExecuteMsg::TransferOwnership {
             new_governor: new_governor.clone(),
@@ -370,7 +365,7 @@ mod tests {
         contract::execute(deps.as_mut(), mock_env(), governor_info, msg).unwrap();
 
         let config = CONFIG.load(&deps.storage).unwrap();
-        assert_eq!(new_governor, config.governor);
+        assert_eq!(new_governor, config.governor.as_str());
     }
 
     #[test]
@@ -379,11 +374,12 @@ mod tests {
 
         let governor = initialize_contract(deps.as_mut());
 
-        let other_info = mock_info("other_sender", &vec![] as &Vec<Coin>);
+        let other_sender = MockApi::default().addr_make("other_sender");
+        let other_info = mock_info(other_sender.as_str(), &vec![] as &Vec<Coin>);
 
         // An unauthorized user cannot transfer ownership
         let msg = ExecuteMsg::TransferOwnership {
-            new_governor: "new_owner".to_string(),
+            new_governor: MockApi::default().addr_make("new_owner").to_string(),
         };
         contract::execute(deps.as_mut(), mock_env(), other_info, msg).unwrap_err();
 
@@ -456,7 +452,8 @@ mod tests {
         initialize_contract(deps.as_mut());
 
         // A user other than the owner cannot modify the channel registry
-        let other_info = mock_info("other_sender", &vec![] as &Vec<Coin>);
+        let other_sender = MockApi::default().addr_make("other_sender");
+        let other_info = mock_info(other_sender.as_str(), &vec![] as &Vec<Coin>);
         let msg = ExecuteMsg::SetChannel {
             prefix: "other".to_string(),
             channel: "something_else".to_string(),
@@ -485,13 +482,14 @@ mod tests {
         let governor_info = mock_info(governor.as_str(), &vec![] as &Vec<Coin>);
 
         // and new channel
+        let new_swap_contract = MockApi::default().addr_make("new_swap_contract");
         let msg = ExecuteMsg::SetSwapContract {
-            new_contract: "new_swap_contract".to_string(),
+            new_contract: new_swap_contract.to_string(),
         };
         contract::execute(deps.as_mut(), mock_env(), governor_info.clone(), msg).unwrap();
 
         let config = CONFIG.load(&deps.storage).unwrap();
-        assert_eq!(config.swap_contract, "new_swap_contract".to_string());
+        assert_eq!(config.swap_contract, new_swap_contract);
     }
 
     #[test]
@@ -500,12 +498,18 @@ mod tests {
         initialize_contract(deps.as_mut());
 
         // A user other than the owner cannot modify the channel registry
-        let other_info = mock_info("other_sender", &vec![] as &Vec<Coin>);
+        let other_sender = MockApi::default().addr_make("other_sender");
+        let other_info = mock_info(other_sender.as_str(), &vec![] as &Vec<Coin>);
         let msg = ExecuteMsg::SetSwapContract {
-            new_contract: "new_swap_contract".to_string(),
+            new_contract: MockApi::default()
+                .addr_make("new_swap_contract")
+                .to_string(),
         };
         contract::execute(deps.as_mut(), mock_env(), other_info, msg).unwrap_err();
         let config = CONFIG.load(&deps.storage).unwrap();
-        assert_eq!(config.swap_contract, SWAPCONTRACT_ADDRESS.to_string());
+        assert_eq!(
+            config.swap_contract,
+            MockApi::default().addr_make("swapcontract")
+        );
     }
 }

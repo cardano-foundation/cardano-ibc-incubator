@@ -2,9 +2,10 @@ mod test_env;
 use std::str::FromStr;
 
 use cosmwasm_std::{Coin, Decimal};
-use osmosis_std::types::osmosis::gamm::v1beta1::SwapAmountInRoute;
-use osmosis_testing::cosmrs::proto::cosmos::bank::v1beta1::QueryAllBalancesRequest;
-use osmosis_testing::cosmrs::proto::cosmwasm::wasm::v1::MsgExecuteContractResponse;
+use osmosis_std::types::cosmos::bank::v1beta1::QueryAllBalancesRequest;
+use osmosis_std::types::cosmos::base::v1beta1::Coin as ProtoCoin;
+use osmosis_std::types::cosmwasm::wasm::v1::MsgExecuteContractResponse;
+use osmosis_std::types::osmosis::poolmanager::v1beta1::SwapAmountInRoute;
 use osmosis_testing::{
     Account, Bank, Module, OsmosisTestApp, RunnerError, RunnerExecuteResult, SigningAccount, Wasm,
 };
@@ -16,12 +17,12 @@ test_swap!(
     should succeed,
 
     msg = ExecuteMsg::Swap {
-        input_coin: Coin::new(1000, "uosmo"),
+        input_coin: Coin::new(1000u128, "uosmo"),
         output_denom: "uion".to_string(),
         slippage: Slippage::MinOutputAmount(1u128.into()),
     },
     funds: [
-        Coin::new(1000, "uosmo")
+        Coin::new(1000u128, "uosmo")
     ]
 );
 
@@ -30,12 +31,12 @@ test_swap!(
     "Insufficient Funds: execute wasm contract failed",
 
     msg = ExecuteMsg::Swap {
-        input_coin: Coin::new(1000, "uosmo"),
+        input_coin: Coin::new(1000u128, "uosmo"),
         output_denom: "uion".to_string(),
         slippage: Slippage::MinOutputAmount(1u128.into()),
     },
     funds: [
-        Coin::new(10, "uosmo")
+        Coin::new(10u128, "uosmo")
     ]
 );
 
@@ -44,12 +45,12 @@ test_swap!(
     "Insufficient Funds: execute wasm contract failed",
 
     msg = ExecuteMsg::Swap {
-        input_coin: Coin::new(1000, "uosmo"),
+        input_coin: Coin::new(1000u128, "uosmo"),
         output_denom: "uion".to_string(),
         slippage: Slippage::MinOutputAmount(1u128.into()),
     },
     funds: [
-        Coin::new(10, "uion")
+        Coin::new(10u128, "uion")
     ]
 );
 
@@ -58,26 +59,28 @@ test_swap!(
     "dispatch: submessages: uion token is lesser than min amount: calculated amount is lesser than min amount",
 
     msg = ExecuteMsg::Swap {
-        input_coin: Coin::new(1000, "uosmo"),
+        input_coin: Coin::new(1000u128, "uosmo"),
         output_denom: "uion".to_string(),
         slippage: Slippage::MinOutputAmount(1000000000000000000000000u128.into()),
     },
     funds: [
-        Coin::new(1000, "uosmo")
+        Coin::new(1000u128, "uosmo")
     ]
 );
 
 test_swap!(
     non_existant_route should failed_with
+    // The checked-in integration-test fixture was built before the route type moved
+    // from gamm to poolmanager; its serialized route remains wire-compatible.
     "alloc::vec::Vec<osmosis_std::types::osmosis::gamm::v1beta1::SwapAmountInRoute> not found: execute wasm contract failed",
 
     msg = ExecuteMsg::Swap {
-        input_coin: Coin::new(1000, "uion"),
+        input_coin: Coin::new(1000u128, "uion"),
         output_denom: "uosmo".to_string(),
         slippage: Slippage::MinOutputAmount(1000000000000000000000000u128.into()),
     },
     funds: [
-        Coin::new(1000, "uion")
+        Coin::new(1000u128, "uion")
     ]
 );
 
@@ -85,12 +88,12 @@ test_swap!(
     twap_based_swap
     should succeed,
     msg = ExecuteMsg::Swap {
-        input_coin: Coin::new(1000, "uosmo"),
+        input_coin: Coin::new(1000u128, "uosmo"),
         output_denom: "uion".to_string(),
         slippage: Slippage::Twap{ window_seconds: Some(1), slippage_percentage: Decimal::from_str("5").unwrap() },
     },
     funds: [
-        Coin::new(10000, "uosmo")
+        Coin::new(10000u128, "uosmo")
     ]
 );
 
@@ -198,6 +201,7 @@ fn assert_input_decreased_and_output_increased(
         .query_all_balances(&QueryAllBalancesRequest {
             address: sender.to_string(),
             pagination: None,
+            resolve_denom: false,
         })
         .unwrap()
         .balances;
@@ -225,10 +229,7 @@ fn assert_input_decreased_and_output_increased(
     }
 }
 
-fn get_amount(
-    balances: &Vec<osmosis_testing::cosmrs::proto::cosmos::base::v1beta1::Coin>,
-    denom: &str,
-) -> u128 {
+fn get_amount(balances: &[ProtoCoin], denom: &str) -> u128 {
     balances
         .iter()
         .find(|b| b.denom == denom)
