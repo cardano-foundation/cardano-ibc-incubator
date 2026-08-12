@@ -309,6 +309,125 @@ describe('QueryService stability anchor contract', () => {
     expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
   });
 
+  it('resumes across an entirely idle epoch before returning the next HostState root', async () => {
+    const targetHeight = 200n;
+    const epochForHeight = (height: number) => {
+      if (height <= 133) return 303;
+      if (height <= 199) return 304;
+      return 305;
+    };
+    const blockAt = (height: number) => {
+      const slot = BigInt(height * 10);
+      return {
+        height,
+        hash: `hash-${height}`,
+        prevHash: `hash-${height - 1}`,
+        slotNo: slot,
+        epochNo: epochForHeight(height),
+        timestampUnixNs: timestampForSlot(slot),
+        slotLeader: `pool-${String.fromCharCode(97 + (height % 5))}`,
+      };
+    };
+    const epochContext = (epoch: number) => {
+      const [currentEpochStartSlot, currentEpochEndSlotExclusive] =
+        epoch === 303 ? [1000n, 1340n] : epoch === 304 ? [1340n, 2000n] : [2000n, 4000n];
+      return {
+        epoch,
+        stakeDistribution: [
+          { poolId: 'pool-a', stake: 200n, vrfKeyHash: 'aa'.repeat(32), firstRegistrationSlot: 1n },
+          { poolId: 'pool-b', stake: 200n, vrfKeyHash: 'bb'.repeat(32), firstRegistrationSlot: 1n },
+          { poolId: 'pool-c', stake: 200n, vrfKeyHash: 'cc'.repeat(32), firstRegistrationSlot: 1n },
+          { poolId: 'pool-d', stake: 200n, vrfKeyHash: 'dd'.repeat(32), firstRegistrationSlot: 1n },
+          { poolId: 'pool-e', stake: 200n, vrfKeyHash: 'ee'.repeat(32), firstRegistrationSlot: 1n },
+        ],
+        verificationContext: {
+          epochNonce: epoch.toString(16).padStart(64, '0'),
+          slotsPerKesPeriod: 129600,
+          currentEpochStartSlot,
+          currentEpochEndSlotExclusive,
+        },
+      };
+    };
+
+    historyServiceMock.findBlockByHeight.mockImplementation(async (height: bigint) => blockAt(Number(height)));
+    historyServiceMock.findBridgeBlocks.mockImplementation(async (trustedHeight: bigint, anchorHeight: bigint) =>
+      Array.from({ length: Number(anchorHeight - trustedHeight - 1n) }, (_, index) =>
+        blockAt(Number(trustedHeight) + index + 1),
+      ),
+    );
+    historyServiceMock.findDescendantBlocks.mockImplementation(async (anchorHeight: bigint, limit: number) =>
+      Array.from({ length: limit }, (_, index) => blockAt(Number(anchorHeight) + index + 1)),
+    );
+    historyServiceMock.findEpochContextAtBlock.mockImplementation(async (block: { epochNo: number }) =>
+      epochContext(block.epochNo),
+    );
+    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockImplementation(async (height: bigint) => {
+      expect(height).toBe(targetHeight);
+      return {
+        txHash: 'host-state-epoch-305',
+        txId: 2,
+        outputIndex: 0,
+        address: 'addr_test1...',
+        assetsPolicy: 'a'.repeat(56),
+        assetsName: 'b'.repeat(64),
+        datumHash: 'ef'.repeat(32),
+        datum: 'datum-cbor',
+        blockNo: Number(targetHeight),
+        blockId: Number(targetHeight),
+        index: 0,
+      };
+    });
+    miniProtocalsServiceMock.fetchBlocksCbor.mockImplementation(async (blocks: unknown[]) =>
+      blocks.map((_, index) => Buffer.from([index + 1])),
+    );
+
+    const headers: ProbabilisticHeader[] = [];
+    let trustedHeight = 100n;
+    for (let attempt = 0; attempt < 10 && trustedHeight < targetHeight; attempt += 1) {
+      const response = await service.queryIBCHeader({ height: targetHeight, trusted_height: trustedHeight } as any);
+      const header = ProbabilisticHeader.decode(response.header!.value);
+      const anchorHeight = header.anchor_block!.height!.revision_height;
+      const trustedEpoch = epochForHeight(Number(trustedHeight));
+      const anchorEpoch = epochForHeight(Number(anchorHeight));
+
+      expect(anchorHeight).toBeGreaterThan(trustedHeight);
+      expect(anchorHeight).toBeLessThanOrEqual(targetHeight);
+      expect(header.bridge_blocks).toHaveLength(Number(anchorHeight - trustedHeight - 1n));
+      expect(header.bridge_blocks.length).toBeLessThanOrEqual(32);
+      expect(response.header!.value.length).toBeLessThanOrEqual(768 * 1024);
+      expect(anchorEpoch - trustedEpoch).toBeLessThanOrEqual(1);
+      if (anchorEpoch !== trustedEpoch) {
+        expect(header.new_epoch_context?.epoch).toBe(BigInt(anchorEpoch));
+      } else {
+        expect(header.new_epoch_context).toBeUndefined();
+      }
+
+      if (anchorHeight < targetHeight) {
+        expect(header.is_checkpoint).toBe(true);
+        expect(header.host_state_tx_hash).toBe('');
+        expect(header.host_state_tx_output_index).toBe(0);
+      } else {
+        expect(header.is_checkpoint).toBe(false);
+        expect(header.host_state_tx_hash).toBe('host-state-epoch-305');
+      }
+
+      headers.push(header);
+      trustedHeight = anchorHeight;
+    }
+
+    expect(trustedHeight).toBe(targetHeight);
+    expect(headers.map((header) => header.anchor_block!.height!.revision_height)).toEqual([109n, 142n, 175n, 200n]);
+    expect(
+      headers.some(
+        (header) =>
+          header.is_checkpoint && epochForHeight(Number(header.anchor_block!.height!.revision_height)) === 304,
+      ),
+    ).toBe(true);
+    expect(headers.slice(0, -1).every((header) => header.is_checkpoint && header.host_state_tx_hash === '')).toBe(true);
+    expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).toHaveBeenCalledTimes(1);
+    expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).toHaveBeenCalledWith(targetHeight);
+  });
+
   it('shrinks a checkpoint until its encoded header fits the configured transaction budget', async () => {
     const blockAt = (height: number) => {
       const slot = 1000n + BigInt(height - 100) * 10n;
