@@ -2,13 +2,37 @@ syntax = "proto3";
 
 package ibc.cardano.v1;
 
+import "google/protobuf/any.proto";
+
 option go_package = "github.com/cosmos/ibc-go/v7/modules/cardano/types";
 
 // CardanoMsg defines the Cardano-specific transaction submission service.
 // This service is used by the Hermes relayer to submit signed Cardano transactions.
 service CardanoMsg {
+  // BuildHostStateHeartbeat builds a HostState-only transaction when the
+  // current Cardano epoch does not yet contain a HostState anchor.
+  rpc BuildHostStateHeartbeat(BuildHostStateHeartbeatRequest) returns (BuildHostStateHeartbeatResponse);
+
   // SubmitSignedTx submits a signed Cardano transaction.
   rpc SubmitSignedTx(SubmitSignedTxRequest) returns (SubmitSignedTxResponse);
+}
+
+message BuildHostStateHeartbeatRequest {
+  // Cardano address whose UTxOs fund and sign the heartbeat transaction.
+  string signer = 1;
+}
+
+message BuildHostStateHeartbeatResponse {
+  // False when an ordinary IBC transaction or heartbeat has already refreshed
+  // HostState in the current epoch.
+  bool heartbeat_required = 1;
+
+  uint64 current_epoch = 2;
+  uint64 host_state_epoch = 3;
+
+  // Present only when heartbeat_required is true. The value contains the
+  // unsigned Cardano transaction CBOR encoded as UTF-8 hex.
+  google.protobuf.Any unsigned_tx = 4;
 }
 
 // SubmitSignedTxRequest contains a signed Cardano transaction in CBOR format.
@@ -44,4 +68,3 @@ message EventAttribute {
   string key = 1;
   string value = 2;
 }
-

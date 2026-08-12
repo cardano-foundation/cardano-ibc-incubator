@@ -26,6 +26,9 @@ use ibc/core/ics_004/types/keys as chan_keys_mod
 use ibc/core/ics_004/types/order as chan_order_mod
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_004/types/state as chan_state_mod
+use ibc/core/ics_005/types/ibc_module_redeemer.{
+  Callback, OnAcknowledgementPacket,
+}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/utils/validator_utils
@@ -33,7 +36,7 @@ use ibc/utils/validator_utils
 validator acknowledge_packet(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
-  _port_minting_policy_id: PolicyId,
+  port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
 ) {
   mint(channel_token: AuthToken, policy_id: PolicyId, transaction: Transaction) {
@@ -52,7 +55,6 @@ validator acknowledge_packet(
     let (datum, channel_redeemer, spent_output) =
       validator_utils.extract_channel(inputs, redeemers, channel_token)
 
-    // Channel proof is checked here; transfer refunds are separate app witnesses.
     let updated_output =
       validator_utils.find_unique_continuation_output(
         spent_output,
@@ -154,6 +156,29 @@ validator acknowledge_packet(
         packet,
       )
     trace @"acknowledge_packet: channel datum is updated valid"
+
+    let module_redeemer =
+      validator_utils.extract_packet_module_redeemer(
+        inputs,
+        reference_inputs,
+        outputs,
+        redeemers,
+        datum.token.name,
+        port_minting_policy_id,
+        datum.port_id,
+      )
+    expect Callback(OnAcknowledgementPacket {
+      channel_id: callback_channel_id,
+      packet_data,
+      acknowledgement: callback_acknowledgement,
+      ..
+    }) = module_redeemer
+    expect and {
+        callback_channel_id == channel_id,
+        packet_data == packet.data,
+        acknowledgement_mod.marshal_json(callback_acknowledgement) == acknowledgement,
+      }
+    trace @"acknowledge_packet: exact application callback matched"
 
     and {
       channel_token == datum.token,

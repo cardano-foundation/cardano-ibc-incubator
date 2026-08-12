@@ -737,6 +737,7 @@ fn timeout_unescrow_fixture(
     Callback(
       OnTimeoutPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         data: TransferModuleData(ftpd),
       },
     )
@@ -835,6 +836,7 @@ fn native_asset_timeout_fixture(
     Callback(
       OnTimeoutPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         data: TransferModuleData(ftpd),
       },
     )
@@ -886,6 +888,7 @@ fn ack_success_fixture(
     Callback(
       OnAcknowledgementPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: TransferModuleData(ftpd),
       },
@@ -1044,6 +1047,7 @@ fn voucher_error_ack_refund_fixture(
     Callback(
       OnAcknowledgementPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: TransferModuleData(ftpd),
       },
@@ -2262,7 +2266,13 @@ test on_timeout_packet_mint_voucher_succeed() {
   let packet_data = TransferModuleData(ftpd)
 
   let module_redeemer: Redeemer =
-    Callback(OnTimeoutPacket { channel_id: mock.channel_id, data: packet_data })
+    Callback(
+      OnTimeoutPacket {
+        channel_id: mock.channel_id,
+        packet_data: packet.data,
+        data: packet_data,
+      },
+    )
 
   let channel_redeemer: Redeemer =
     TimeoutPacket {
@@ -2374,7 +2384,13 @@ test on_timeout_packet_unescrow_succeed() {
   let packet_data = TransferModuleData(ftpd)
 
   let module_redeemer: Redeemer =
-    Callback(OnTimeoutPacket { channel_id: mock.channel_id, data: packet_data })
+    Callback(
+      OnTimeoutPacket {
+        channel_id: mock.channel_id,
+        packet_data: packet.data,
+        data: packet_data,
+      },
+    )
 
   let channel_redeemer: Redeemer =
     TimeoutPacket {
@@ -2482,7 +2498,13 @@ test on_timeout_packet_native_refund_fails_with_wrong_escrow_delta() fail {
     )
   let packet_data = TransferModuleData(ftpd)
   let module_redeemer: Redeemer =
-    Callback(OnTimeoutPacket { channel_id: mock.channel_id, data: packet_data })
+    Callback(
+      OnTimeoutPacket {
+        channel_id: mock.channel_id,
+        packet_data: packet.data,
+        data: packet_data,
+      },
+    )
   let channel_redeemer: Redeemer =
     TimeoutPacket {
       packet,
@@ -2662,6 +2684,7 @@ test on_acknowledgement_packet_result_succeed() {
     Callback(
       OnAcknowledgementPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: packet_data,
       },
@@ -2744,6 +2767,7 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
     Callback(
       OnAcknowledgementPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: packet_data,
       },
@@ -2863,6 +2887,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
     Callback(
       OnAcknowledgementPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: packet_data,
       },
@@ -3054,7 +3079,8 @@ test transfer_escrow_existing_shard_update_succeed() {
     Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
-  let shard_datum: Data = TransferEscrowDatum { channel_id: mock.channel_id, denom }
+  let shard_datum: Data =
+    TransferEscrowDatum { channel_id: mock.channel_id, denom }
 
   spending_transfer_module.spend_transfer_module.spend(
     mock.port_token,

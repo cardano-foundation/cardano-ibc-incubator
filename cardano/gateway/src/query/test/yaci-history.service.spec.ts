@@ -727,3 +727,173 @@ describe('YaciHistoryService', () => {
     expect(queryCurrentEpochStakeDistribution).not.toHaveBeenCalled();
   });
 });
+
+describe('YaciHistoryService current epoch stake snapshots', () => {
+  let service: YaciHistoryService;
+  let entityManagerMock: { query: jest.Mock };
+
+  const block = {
+    height: 100,
+    hash: 'ab'.repeat(32),
+    prevHash: 'cd'.repeat(32),
+    slotNo: 1100n,
+    epochNo: 7,
+    timestampUnixNs: 1_000_000_000n,
+    slotLeader: 'pool1anchorpool',
+  };
+
+  beforeEach(() => {
+    const configServiceMock = {
+      get: jest.fn().mockImplementation((key: string) => {
+        if (key === 'ogmiosEndpoint') return 'ws://ogmios.local';
+        if (key === 'cardanoNetwork') return 'Preprod';
+        if (key === 'cardanoEpochParamsEndpoint') return 'https://preprod.koios.rest/api/v1';
+        if (key === 'cardanoPoolRegistrationHistoryEndpoint') return 'https://preprod.koios.rest/api/v1';
+        if (key === 'cardanoEpochLength') return 432000;
+        return undefined;
+      }),
+    };
+    entityManagerMock = {
+      query: jest.fn().mockResolvedValue([]),
+    };
+    (queryEpochContextAtPoint as jest.Mock).mockResolvedValue({
+      currentEpoch: 7,
+      epochNonce: '11'.repeat(32),
+      slotsPerKesPeriod: 129600,
+      stakeDistribution: [
+        {
+          poolId: 'pool1active',
+          stake: 50n,
+          vrfKeyHash: 'aa'.repeat(32),
+        },
+      ],
+    });
+    global.fetch = jest.fn();
+    service = new YaciHistoryService(
+      configServiceMock as unknown as ConfigService,
+      {} as any,
+      entityManagerMock as unknown as EntityManager,
+    );
+  });
+
+  afterEach(() => {
+    jest.resetAllMocks();
+    delete (global as typeof globalThis & { fetch?: typeof fetch }).fetch;
+  });
+
+  it('includes a retired producer omitted by the Ogmios live registry', async () => {
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([
+        { pool_id: 'pool1active', first_registration_slot: '41' },
+        { pool_id: 'pool1retired', first_registration_slot: '42' },
+      ]);
+    (global.fetch as jest.Mock).mockImplementation(async (url: URL) => {
+      if (url.pathname.endsWith('/epoch_params')) {
+        return {
+          ok: true,
+          json: async () => [{ epoch_no: 7, nonce: '11'.repeat(32) }],
+        };
+      }
+      if (url.pathname.endsWith('/tip')) {
+        return { ok: true, json: async () => [{ epoch_no: 7 }] };
+      }
+      if (url.pathname.endsWith('/pool_list')) {
+        return {
+          ok: true,
+          json: async () => [
+            { pool_id_bech32: 'pool1active', active_stake: '600' },
+            { pool_id_bech32: 'pool1retired', active_stake: '400' },
+            { pool_id_bech32: 'pool1nostake', active_stake: null },
+          ],
+        };
+      }
+      if (url.pathname.endsWith('/epoch_info')) {
+        return {
+          ok: true,
+          json: async () => [{ epoch_no: 7, active_stake: '1000' }],
+        };
+      }
+      if (url.pathname.endsWith('/pool_updates')) {
+        return {
+          ok: true,
+          json: async () => [
+            {
+              pool_id_bech32: 'pool1retired',
+              active_epoch_no: 1,
+              vrf_key_hash: 'bb'.repeat(32),
+              update_type: 'registration',
+              block_time: 1,
+            },
+          ],
+        };
+      }
+      throw new Error(`Unexpected fetch URL ${url.toString()}`);
+    });
+
+    await expect(service.findEpochContextAtBlock(block)).resolves.toEqual({
+      epoch: 7,
+      stakeDistribution: [
+        {
+          poolId: 'pool1active',
+          stake: 600n,
+          vrfKeyHash: 'aa'.repeat(32),
+          firstRegistrationSlot: 41n,
+        },
+        {
+          poolId: 'pool1retired',
+          stake: 400n,
+          vrfKeyHash: 'bb'.repeat(32),
+          firstRegistrationSlot: 42n,
+        },
+      ],
+      verificationContext: {
+        epochNonce: '11'.repeat(32),
+        slotsPerKesPeriod: 129600,
+        currentEpochStartSlot: 1000n,
+        currentEpochEndSlotExclusive: 1200n,
+      },
+    });
+
+    const requestedPaths = (global.fetch as jest.Mock).mock.calls.map(([url]) => url.pathname);
+    expect(requestedPaths).toEqual(
+      expect.arrayContaining(['/api/v1/tip', '/api/v1/pool_list', '/api/v1/epoch_info', '/api/v1/pool_updates']),
+    );
+  });
+
+  it('fails closed when the pool snapshot does not match total active stake', async () => {
+    entityManagerMock.query
+      .mockResolvedValueOnce([{ start_slot: '1000' }])
+      .mockResolvedValueOnce([{ start_slot: '1200' }]);
+    (global.fetch as jest.Mock).mockImplementation(async (url: URL) => {
+      if (url.pathname.endsWith('/epoch_params')) {
+        return {
+          ok: true,
+          json: async () => [{ epoch_no: 7, nonce: '11'.repeat(32) }],
+        };
+      }
+      if (url.pathname.endsWith('/tip')) {
+        return { ok: true, json: async () => [{ epoch_no: 7 }] };
+      }
+      if (url.pathname.endsWith('/pool_list')) {
+        return {
+          ok: true,
+          json: async () => [{ pool_id_bech32: 'pool1active', active_stake: '600' }],
+        };
+      }
+      if (url.pathname.endsWith('/epoch_info')) {
+        return {
+          ok: true,
+          json: async () => [{ epoch_no: 7, active_stake: '1000' }],
+        };
+      }
+      throw new Error(`Unexpected fetch URL ${url.toString()}`);
+    });
+
+    await expect(service.findEpochContextAtBlock(block)).rejects.toThrow(
+      'Koios current epoch stake snapshot total 600 does not match epoch 7 active stake 1000',
+    );
+  });
+});
