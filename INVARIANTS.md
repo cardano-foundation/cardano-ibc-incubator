@@ -322,8 +322,10 @@ Required CI label suffixes:
 - `unit.packet.send.invalid_wrong_sequence`
 - `unit.packet.send.invalid_missing_commitment_root_update`
 - `unit.packet.send.invalid_wrong_transfer_callback`
+- `unit.packet.send.invalid_commitment_capacity`
 - `unit.packet.recv.valid_receipt`
 - `unit.packet.recv.invalid_duplicate_receipt`
+- `unit.packet.recv.invalid_history_capacity`
 - `unit.packet.ack.valid_success`
 - `unit.packet.ack.valid_error`
 - `unit.packet.ack.invalid_wrong_ack_bytes`
@@ -341,7 +343,8 @@ Required CI label suffixes:
 
 Covered by `unit.packet.send.valid`, `unit.packet.send.invalid_wrong_sequence`,
 `unit.packet.send.invalid_missing_commitment_root_update`, and
-`unit.packet.send.invalid_wrong_transfer_callback`.
+`unit.packet.send.invalid_wrong_transfer_callback`, with the collection bound
+covered by `unit.packet.send.invalid_commitment_capacity`.
 
 The SendPacket unit properties build a valid open-channel channel-datum
 packet-send transition and then mutate exactly one field per negative case.
@@ -356,6 +359,9 @@ invariants:
   advanced.
 - The transfer callback/channel redeemer must refer to the same packet bytes;
   a callback for a different transfer payload is rejected.
+- A channel may retain at most 64 entries total across packet commitments,
+  receipts, and acknowledgements. A send may fill the final remaining entry;
+  another insertion is rejected before the datum is enlarged.
 
 ### SendPacket Transaction Coupling
 
@@ -385,7 +391,8 @@ voucher/escrow accounting validator in the same assertion.
 ### RecvPacket
 
 Covered by `unit.packet.recv.valid_receipt` and
-`unit.packet.recv.invalid_duplicate_receipt`. Sink-chain voucher mint coupling
+`unit.packet.recv.invalid_duplicate_receipt`, with the collection bound covered
+by `unit.packet.recv.invalid_history_capacity`. Sink-chain voucher mint coupling
 is additionally covered by `tx.packet.recv.valid_sink_mints_voucher`.
 
 The RecvPacket unit properties construct an unordered channel-datum receive
@@ -397,6 +404,10 @@ the input datum to already contain the receipt. They prove these invariants:
   sequence.
 - A packet cannot be received again if its receipt already exists.
 - A packet cannot be received again if its acknowledgement already exists.
+- Each channel may retain at most 64 entries total across packet commitments,
+  receipts, and acknowledgements. An unordered receive may fill the final two
+  remaining entries; the next receive fails closed before permanent history
+  can make the channel datum too large for the ledger.
 - A sink-chain RecvPacket voucher mint can be coupled to the trace-registry
   append that proves the new voucher denom trace.
 
@@ -772,6 +783,9 @@ Required CI label suffixes:
 - `contract.host.handle_packet.valid_ack`
 - `contract.host.handle_packet.valid_timeout`
 - `contract.host.handle_packet.invalid_channel_only_change`
+- `contract.host.handle_packet.invalid_commitment_capacity`
+- `contract.host.handle_packet.invalid_history_capacity`
+- `contract.host.handle_packet.invalid_ack_capacity`
 - `contract.host.handle_packet.invalid_wrong_packet_key`
 
 ### Client Root Updates
@@ -820,7 +834,10 @@ must be rejected, proving these invariants:
 
 Covered by `contract.host.handle_packet.valid_send`, `contract.host.handle_packet.valid_recv`,
 `contract.host.handle_packet.valid_ack`, `contract.host.handle_packet.valid_timeout`,
-`contract.host.handle_packet.invalid_channel_only_change`, and
+`contract.host.handle_packet.invalid_channel_only_change`,
+`contract.host.handle_packet.invalid_commitment_capacity`,
+`contract.host.handle_packet.invalid_history_capacity`,
+`contract.host.handle_packet.invalid_ack_capacity`, and
 `contract.host.handle_packet.invalid_wrong_packet_key`.
 
 The HandlePacket properties construct HostState plus channel UTxO transitions
@@ -831,6 +848,8 @@ The mutations prove these invariants:
 - Packet effects must use the packet-root HostState branch.
 - Send-like packet commitment insertion must update the committed packet key.
 - Recv-like receipt insertion must update the committed receipt key.
+- Packet-root insertion cannot grow a channel past the ledger-safe bound of 64
+  combined commitment, receipt, and acknowledgement entries.
 - Ack/timeout-like commitment deletion must update the committed packet key.
 - A channel-only change cannot be smuggled through the packet branch.
 - A packet update committed under the wrong packet key is rejected.

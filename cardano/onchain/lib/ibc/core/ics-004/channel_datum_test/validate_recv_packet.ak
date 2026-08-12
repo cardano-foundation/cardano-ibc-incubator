@@ -1,3 +1,5 @@
+use aiken/collection/pairs
+use aiken/primitive/int
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
@@ -7,6 +9,21 @@ use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order.{Ordered, Unordered}
 use ibc/core/ics_004/types/packet.{Packet}
 use ibc/core/ics_004/types/state.{Open}
+
+fn packet_entries(
+  sequence: Int,
+  last_sequence: Int,
+  value: ByteArray,
+) -> Pairs<Int, ByteArray> {
+  if sequence > last_sequence {
+    []
+  } else {
+    [
+      Pair(sequence, value),
+      ..packet_entries(sequence + 1, last_sequence, value)
+    ]
+  }
+}
 
 fn setup_unordered_channel() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
   let mock_auth_token =
@@ -203,4 +220,100 @@ test fail_if_packet_acknowledgement_not_updated() {
     packet,
     ack,
   )
+}
+
+test succeed_at_packet_history_capacity() {
+  let (base_input_datum, _, base_packet, ack) = setup_unordered_channel()
+  let sequence = channel_datum_mod.max_packet_entries_per_channel / 2
+  let packet = Packet { ..base_packet, sequence }
+  let existing_receipts = packet_entries(1, sequence - 1, "")
+  let existing_acks = packet_entries(1, sequence - 1, "existing ack")
+  let input_datum =
+    ChannelDatum {
+      ..base_input_datum,
+      state: ChannelDatumState {
+        ..base_input_datum.state,
+        packet_receipt: existing_receipts,
+        packet_acknowledgement: existing_acks,
+      },
+    }
+  let output_datum =
+    ChannelDatum {
+      ..input_datum,
+      state: ChannelDatumState {
+        ..input_datum.state,
+        packet_receipt: [Pair(sequence, ""), ..existing_receipts],
+        packet_acknowledgement: pairs.insert_by_ascending_key(
+          existing_acks,
+          sequence,
+          ack,
+          int.compare,
+        ),
+      },
+    }
+
+  channel_datum_mod.validate_recv_packet(input_datum, output_datum, packet, ack)
+}
+
+test fail_when_unordered_receipt_capacity_is_exhausted() fail {
+  let (base_input_datum, _, base_packet, ack) = setup_unordered_channel()
+  let sequence = channel_datum_mod.max_packet_entries_per_channel + 1
+  let packet = Packet { ..base_packet, sequence }
+  let existing_receipts =
+    packet_entries(1, channel_datum_mod.max_packet_entries_per_channel, "")
+  let input_datum =
+    ChannelDatum {
+      ..base_input_datum,
+      state: ChannelDatumState {
+        ..base_input_datum.state,
+        packet_receipt: existing_receipts,
+      },
+    }
+  let output_datum =
+    ChannelDatum {
+      ..input_datum,
+      state: ChannelDatumState {
+        ..input_datum.state,
+        packet_receipt: [Pair(sequence, ""), ..existing_receipts],
+        packet_acknowledgement: [Pair(sequence, ack)],
+      },
+    }
+
+  channel_datum_mod.validate_recv_packet(input_datum, output_datum, packet, ack)
+}
+
+test fail_when_acknowledgement_capacity_is_exhausted() fail {
+  let (base_input_datum, _, base_packet, ack) = setup_ordered_channel()
+  let sequence = channel_datum_mod.max_packet_entries_per_channel + 1
+  let packet = Packet { ..base_packet, sequence }
+  let existing_acks =
+    packet_entries(
+      1,
+      channel_datum_mod.max_packet_entries_per_channel,
+      "existing ack",
+    )
+  let input_datum =
+    ChannelDatum {
+      ..base_input_datum,
+      state: ChannelDatumState {
+        ..base_input_datum.state,
+        packet_acknowledgement: existing_acks,
+      },
+    }
+  let output_datum =
+    ChannelDatum {
+      ..input_datum,
+      state: ChannelDatumState {
+        ..input_datum.state,
+        next_sequence_recv: input_datum.state.next_sequence_recv + 1,
+        packet_acknowledgement: pairs.insert_by_ascending_key(
+          existing_acks,
+          sequence,
+          ack,
+          int.compare,
+        ),
+      },
+    }
+
+  channel_datum_mod.validate_recv_packet(input_datum, output_datum, packet, ack)
 }

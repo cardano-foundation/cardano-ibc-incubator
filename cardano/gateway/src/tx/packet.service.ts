@@ -49,12 +49,18 @@ import {
   validateAndFormatRecvPacketParams,
   validateAndFormatSendPacketParams,
   validateAndFormatTimeoutPacketParams,
+  validateRecvPacketHistoryCapacity,
+  validateSendPacketCommitmentCapacity,
 } from './helper/packet.validate';
 import { encodeVerifyProofRedeemer, VerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay, getHeightMapValue } from '../shared/helpers/verify';
 import { packetAcknowledgementPath, packetCommitmentPath, packetReceiptPath } from '../shared/helpers/packet-keys';
 import { Order as ChannelOrder } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
-import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
+import {
+  GrpcFailedPreconditionException,
+  GrpcInternalException,
+  GrpcInvalidArgumentException,
+} from '~@/exception/grpc_exceptions';
 import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import {
   AckPacketOperator,
@@ -1324,6 +1330,7 @@ export class PacketService {
     const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     // Get channel datum
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+    validateRecvPacketHistoryCapacity(channelDatum);
     const channelEnd = channelDatum.state.channel;
     if (channelEnd.state !== 'Open') {
       throw new Error('SendPacket to channel not in Open state');
@@ -2261,6 +2268,7 @@ export class PacketService {
               channelUtxo.datum!,
               'channel',
             );
+          validateSendPacketCommitmentCapacity(channelDatum);
           const [mintConnectionPolicyId, connectionTokenName] =
             this.lucidService.getConnectionTokenUnit(
               parseConnectionSequence(
@@ -2362,6 +2370,8 @@ export class PacketService {
           ),
         invalidArgument: (message) =>
           new GrpcInvalidArgumentException(message),
+        failedPrecondition: (message) =>
+          new GrpcFailedPreconditionException(message),
         internalError: (message) => new GrpcInternalException(message),
       },
     );
@@ -2381,6 +2391,7 @@ export class PacketService {
     const channelTokenUnit: string = mintChannelPolicyId + channelTokenName;
     const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+    validateSendPacketCommitmentCapacity(channelDatum);
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
     );

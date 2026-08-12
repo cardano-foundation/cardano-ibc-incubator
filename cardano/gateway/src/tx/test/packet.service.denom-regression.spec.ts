@@ -123,6 +123,8 @@ describe('PacketService denom regression coverage', () => {
         },
         next_sequence_send: 1n,
         packet_commitment: new Map<bigint, string>(),
+        packet_receipt: new Map<bigint, string>(),
+        packet_acknowledgement: new Map<bigint, string>(),
       },
     };
 
@@ -722,6 +724,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
           connection_hops: [convertString2Hex('connection-0')],
         },
         next_sequence_recv: 1n,
+        packet_commitment: new Map<bigint, string>(),
         packet_receipt: new Map<bigint, string>(),
         packet_acknowledgement: new Map<bigint, string>(),
       },

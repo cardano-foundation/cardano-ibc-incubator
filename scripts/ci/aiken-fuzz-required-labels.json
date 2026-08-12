@@ -12,7 +12,10 @@
     "model"
   ],
   "requiredLabels": [
+    "fuzz.contract.host.handle_packet.invalid_ack_capacity",
     "fuzz.contract.host.handle_packet.invalid_channel_only_change",
+    "fuzz.contract.host.handle_packet.invalid_commitment_capacity",
+    "fuzz.contract.host.handle_packet.invalid_history_capacity",
     "fuzz.contract.host.handle_packet.invalid_wrong_packet_key",
     "fuzz.contract.host.handle_packet.valid_ack",
     "fuzz.contract.host.handle_packet.valid_recv",
@@ -44,6 +47,8 @@
     "fuzz.unit.client.update.invalid_wrong_consensus_state",
     "fuzz.unit.client.update.valid_adjacent",
     "fuzz.unit.client.update.valid_non_adjacent",
+    "fuzz.unit.packet.recv.invalid_history_capacity",
+    "fuzz.unit.packet.send.invalid_commitment_capacity",
     "regression.contract.chan.close_confirm.valid",
     "regression.contract.chan.close_init.valid_or_rejected_by_app_policy",
     "regression.contract.chan.open_ack.valid",

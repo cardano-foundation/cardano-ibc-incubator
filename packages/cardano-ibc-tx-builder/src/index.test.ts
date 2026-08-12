@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import {
   buildUnsignedSendPacketTx,
+  MAX_PACKET_ENTRIES_PER_CHANNEL,
   type LoadedSendPacketContext,
   type SendPacketBuildDependencies,
   type SendPacketOperator,
@@ -52,6 +53,8 @@ function baseContext(): LoadedSendPacketContext {
       state: {
         next_sequence_send: 4n,
         packet_commitment: new Map([[1n, 'previous']]),
+        packet_receipt: new Map(),
+        packet_acknowledgement: new Map(),
         channel: {
           connection_hops: ['connection-0'],
           counterparty: {
@@ -246,6 +249,42 @@ describe('send-packet denom mapping', () => {
         ),
       /not found in denom traces/,
     );
+    assert.equal(harness.getCapturedEscrow(), undefined);
+    assert.equal(harness.getCapturedBurn(), undefined);
+  });
+
+  it('rejects sends before full combined packet state reaches the chain', async () => {
+    let hostStateBuilds = 0;
+    const fullContext = baseContext();
+    fullContext.channelDatum.state.packet_commitment = new Map();
+    fullContext.channelDatum.state.packet_receipt = new Map<bigint, string>(
+      Array.from({ length: MAX_PACKET_ENTRIES_PER_CHANNEL / 2 }, (_, index) => [
+        BigInt(index + 1),
+        `receipt-${index + 1}`,
+      ] as [bigint, string]),
+    );
+    fullContext.channelDatum.state.packet_acknowledgement = new Map<
+      bigint,
+      string
+    >(
+      Array.from({ length: MAX_PACKET_ENTRIES_PER_CHANNEL / 2 }, (_, index) => [
+        BigInt(index + 1),
+        `acknowledgement-${index + 1}`,
+      ] as [bigint, string]),
+    );
+    const harness = createDeps({
+      loadContext: async () => fullContext,
+      buildHostStateUpdate: async () => {
+        hostStateBuilds += 1;
+        throw new Error('must not build HostState after capacity rejection');
+      },
+    });
+
+    await assert.rejects(
+      () => buildUnsignedSendPacketTx(baseOperator(), harness.deps),
+      /retained packet state capacity of 64 is exhausted/,
+    );
+    assert.equal(hostStateBuilds, 0);
     assert.equal(harness.getCapturedEscrow(), undefined);
     assert.equal(harness.getCapturedBurn(), undefined);
   });
