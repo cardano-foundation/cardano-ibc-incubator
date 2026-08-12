@@ -65,7 +65,8 @@ fn check_chan_close_confirm(module_redeemer: Redeemer) {
   let channel_input =
     test_utils.build_channel_input(input_channel_datum, fake_data.channel_token)
 
-  let inputs = [fake_data.module_input, channel_input]
+  let inputs =
+    [fake_data.host_state_input, fake_data.module_input, channel_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 13 }
@@ -204,6 +205,7 @@ fn check_chan_close_confirm(module_redeemer: Redeemer) {
     fake_data.connection_minting_policy_id,
     fake_data.port_minting_policy_id,
     fake_data.verify_proof_policy_id,
+    fake_data.host_state_nft_policy_id,
     None,
     fake_data.channel_token,
     channel_input.output_reference,

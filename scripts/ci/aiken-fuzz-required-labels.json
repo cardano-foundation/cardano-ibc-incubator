@@ -60,6 +60,7 @@
     "regression.contract.proof.membership.valid",
     "regression.contract.proof.nonmembership.invalid_existing_key",
     "regression.contract.proof.nonmembership.valid",
+    "regression.contract.transfer.invalid_capability_relocation",
     "regression.contract.transfer.invalid_wrong_escrow_delta_rejected",
     "regression.contract.transfer.invalid_wrong_native_refund_amount_rejected",
     "regression.contract.transfer.native_ack.no_refund",

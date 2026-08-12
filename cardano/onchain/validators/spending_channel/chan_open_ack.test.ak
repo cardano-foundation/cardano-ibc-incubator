@@ -65,7 +65,8 @@ test succeed_chan_open_ack() {
   let channel_input =
     test_utils.build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input]
+  let inputs =
+    [mock_data.host_state_input, mock_data.module_input, channel_input]
 
   //========================arrange reference_inputs=======================
   let proof_height = Height { revision_number: 1, revision_height: 14 }
@@ -305,6 +306,7 @@ test succeed_chan_open_ack() {
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
+    mock_data.host_state_nft_policy_id,
     mock_data.channel_token,
     mock_data.chan_open_ack_policy_id,
     transaction,

@@ -36,6 +36,7 @@ validator chan_close_confirm(
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
 ) {
   spend(
     _datum: Option<Data>,
@@ -130,6 +131,7 @@ validator chan_close_confirm(
         datum.token.name,
         port_minting_policy_id,
         port_id,
+        host_state_nft_policy_id,
       )
     expect Callback(ibc_module_callback) = ibc_module_redeemer
     expect ibc_module_callback == OnChanCloseConfirm { channel_id }

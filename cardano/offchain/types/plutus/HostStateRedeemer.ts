@@ -1,4 +1,5 @@
 import { Data } from "@lucid-evolution/lucid";
+import { ModuleRegistrationSchema } from "./HostState.ts";
 
 const SiblingHashesSchema = Data.Array(Data.Bytes());
 
@@ -20,6 +21,7 @@ const CreateChannelSchema = Data.Object({
 
 const BindPortSchema = Data.Object({
   port: Data.Integer(),
+  registration: ModuleRegistrationSchema,
   port_siblings: SiblingHashesSchema,
 });
 

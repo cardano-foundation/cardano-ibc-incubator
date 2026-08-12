@@ -460,6 +460,7 @@ jobs:
             match_tests: >-
               -m prop_transfer_module_recv_source_
               -m prop_transfer_module_native_ack_
+              -m prop_transfer_module_root_
           - suite: transfer-module-voucher
             match_tests: >-
               -m prop_transfer_module_voucher_

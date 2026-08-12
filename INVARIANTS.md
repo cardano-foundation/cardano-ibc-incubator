@@ -26,6 +26,7 @@ and their CI-enforced labels.
   - [TimeoutPacket](#timeoutpacket)
   - [Model Sequences](#model-sequences)
 - [Transfer Module Accounting](#transfer-module-accounting)
+  - [Module Capability Identity](#module-capability-identity)
   - [Native Token Escrow And Refunds](#native-token-escrow-and-refunds)
   - [Voucher Mint, Burn, And Refunds](#voucher-mint-burn-and-refunds)
   - [Accounting Mutations](#accounting-mutations)
@@ -504,8 +505,22 @@ Required CI label suffixes:
 - `contract.transfer.voucher_error_ack.remints_exactly`
 - `contract.transfer.recv_source.unescrows_exactly`
 - `contract.transfer.recv_sink.mints_voucher_exactly`
+- `contract.transfer.invalid_capability_relocation`
 - `contract.transfer.invalid_wrong_escrow_delta_rejected`
 - `contract.transfer.invalid_wrong_native_refund_amount_rejected`
+
+### Module Capability Identity
+
+Covered by `contract.transfer.invalid_capability_relocation` and the focused
+wrong-credential and incomplete-capability-set tests in
+`cardano/onchain/lib/ibc/utils/validator_utils.test.ak`.
+
+Once a port is bound, its module authority is immutable: HostState records the
+registered script credential, port token, and module token; callback discovery
+accepts only that exact capability pair at that credential; and a transfer
+root transition must preserve both tokens at the original full address. A
+public callback can therefore neither relocate the root to an attacker script
+nor substitute an unrelated UTxO that merely carries the derived port token.
 
 ### Native Token Escrow And Refunds
 

@@ -8,7 +8,9 @@ use cardano/transaction.{
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
-use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/core/ics_025_handler_interface/host_state.{
+  ModuleRegistration, host_state_token_name,
+}
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{BindPort}
 use ibc/utils/string as string_utils
 use minting_port
@@ -97,8 +99,17 @@ test mint_port_succeed() {
   let mint = from_asset(mock.port_token.policy_id, mock.port_token.name, 1)
 
   //==============================arrange redeemers==============================
+  let registration =
+    ModuleRegistration {
+      module_script_hash: mock.spend_module_script_hash,
+      port_token: mock.port_token,
+      module_token: AuthToken {
+        policy_id: "mock module token policy",
+        name: "mock module token",
+      },
+    }
   let host_state_redeemer: Redeemer =
-    BindPort { port: mock.port_number, port_siblings: [] }
+    BindPort { port: mock.port_number, registration, port_siblings: [] }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [

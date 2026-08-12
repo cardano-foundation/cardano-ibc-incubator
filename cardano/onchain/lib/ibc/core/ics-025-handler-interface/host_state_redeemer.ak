@@ -1,3 +1,5 @@
+use ibc/core/ics_025_handler_interface/host_state.{ModuleRegistration}
+
 pub type HostStateRedeemer {
   CreateClient {
     client_state_siblings: List<ByteArray>,
@@ -16,6 +18,8 @@ pub type HostStateRedeemer {
   }
   BindPort {
     port: Int,
+    // Immutable module credential and capability tokens for this port.
+    registration: ModuleRegistration,
     // Sibling hashes for the `ports/{portId}` key update.
     port_siblings: List<ByteArray>,
   }

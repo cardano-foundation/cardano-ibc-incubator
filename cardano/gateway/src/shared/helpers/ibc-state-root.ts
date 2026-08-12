@@ -47,6 +47,7 @@ import { encodeClientStateValue, encodeConsensusStateValue } from '../types/clie
 import { encodeConnectionEndValue } from '../types/connection/connection-datum';
 import { encodeChannelEndValue } from '../types/channel/channel-datum';
 import type { ChannelDatum } from '../types/channel/channel-datum';
+import { encodeModuleRegistration } from '../types/host-state-datum';
 
 /**
  * Result of a state root computation
@@ -853,18 +854,19 @@ export async function rebuildTreeFromChain(
 
     // Bound ports are part of the committed IBC store (`ports/{portId}`).
     //
-    // The HostState datum stores ports as integers, but the committed key uses the
-    // `port-{n}` identifier format. The value is simply the CBOR/PlutusData encoding
-    // of the integer, which acts as a non-empty "is bound" marker.
-    const boundPorts = hostStateDatum.state.bound_port ?? [];
-    if (boundPorts.length > 0) {
-      const { Data } = lucidService.LucidImporter;
-      for (const portNumber of boundPorts) {
+    // Each value commits the immutable module credential and exact capability
+    // tokens registered for the port.
+    const boundPorts = hostStateDatum.state.bound_port ?? new Map();
+    if (boundPorts.size > 0) {
+      for (const [portNumber, registration] of boundPorts.entries()) {
         const portId = `port-${portNumber.toString()}`;
-        const portValue = Buffer.from(Data.to(portNumber as any, Data.Integer() as any), 'hex');
+        const portValue = Buffer.from(
+          await encodeModuleRegistration(registration, lucidService.LucidImporter),
+          'hex',
+        );
         tree.set(`ports/${portId}`, portValue);
       }
-      console.log(`Added ${boundPorts.length} bound port(s)`);
+      console.log(`Added ${boundPorts.size} bound port(s)`);
     }
     
     // Query and add all Client UTXOs

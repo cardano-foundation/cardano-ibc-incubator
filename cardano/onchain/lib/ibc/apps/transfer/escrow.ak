@@ -72,11 +72,19 @@ pub fn classify_transfer_module_spend(
   // Root state is identified by both module auth tokens; everything else must be
   // an escrow shard with an inline shard datum.
   if has_module_state_tokens(spent_output, port_token, module_token) {
-    // Root state spends must preserve the root token set.
+    // Root state spends must preserve the root token set at the full original
+    // address. Otherwise a public callback could relocate both capabilities to
+    // an attacker-controlled validator and transfer authority for the port.
     expect [updated_output] =
       list.filter(
         outputs,
-        fn(output) { has_module_state_tokens(output, port_token, module_token) },
+        fn(output) {
+          output.address == spent_output.address && has_module_state_tokens(
+            output,
+            port_token,
+            module_token,
+          )
+        },
       )
     expect NoDatum = updated_output.datum
     ModuleState(updated_output)
