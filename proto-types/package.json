@@ -28,6 +28,7 @@
     "google/",
     "ibc/",
     "tendermint/",
+    "vesseloracle/",
     "/binary.*",
     "/helpers.*",
     "/utf8.*",

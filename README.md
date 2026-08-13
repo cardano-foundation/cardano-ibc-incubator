@@ -57,7 +57,8 @@ The older Mithril light client and local Mithril setup are deprecated, disabled,
 The repository is organized around these main areas:
 
 - `cardano`: Cardano on-chain validators, off-chain deployment code, and the Gateway.
-- `cosmos`: The shared Cardano light-client core, ibc-go v8 and v10 adapters, the preserved deprecated Mithril module, and retained historical chain source. The v8 adapter targets Cosmos SDK 0.50; the v10 adapters and retained chain target Cosmos SDK 0.53.
+- `cosmos`: The [standalone async-ICQ host](cosmos/async-icq-v10/README.md), [dormant VesselOracle module](cosmos/vesseloracle-v10/README.md), shared Cardano light-client core, ibc-go v8 and v10 adapters, and preserved deprecated Mithril module. The v8 adapter targets Cosmos SDK 0.50; the async-ICQ host, VesselOracle, v10 adapters, and Mithril module target Cosmos SDK 0.53.
+- `proto-types`: Shared protobuf contracts and generated TypeScript bindings, including the [dormant VesselOracle integration contract](docs/vesseloracle.md).
 - `relayer`: A [Hermes](https://hermes.informal.systems/) fork with a native Cardano `ChainEndpoint` implementation.
 - `caribic`: The CLI for configuring, starting, stopping, and testing the local bridge stack.
 - `chains`: Managed Cardano and counterparty-chain runtime configuration.
@@ -272,7 +273,7 @@ caribic stop
 
 ### Demo: Direct Cosmos Routes
 
-The previous intermediary-chain topology has been phased out for production safety. Local and public-testnet flows should use direct Cardano-to-target routes instead.
+Local and public-testnet flows use direct Cardano-to-target routes.
 
 Direct routes require explicit target-chain support:
 

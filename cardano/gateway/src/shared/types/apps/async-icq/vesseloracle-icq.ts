@@ -1,5 +1,10 @@
-import * as protobuf from 'protobufjs';
 import { base64FromBytes } from '@cardano-ibc/proto-types/build/helpers';
+import {
+  QueryGetConsolidatedDataReportRequest,
+  QueryGetConsolidatedDataReportResponse,
+  QueryLatestConsolidatedDataReportRequest,
+  QueryLatestConsolidatedDataReportResponse,
+} from '@cardano-ibc/proto-types/build/vesseloracle/vesseloracle/query';
 import {
   ASYNC_ICQ_HOST_PORT,
   CosmosResponse,
@@ -8,41 +13,9 @@ import {
   encodeAsyncIcqPacketDataFromRequests,
 } from './async-icq';
 
-const VESSELORACLE_PROTO = `
-syntax = "proto3";
-package vesseloracle.vesseloracle;
-
-message ConsolidatedDataReport {
-  string imo = 1;
-  uint64 ts = 2;
-  int32 total_samples = 3;
-  int32 eta_outliers = 4;
-  uint64 eta_mean_cleaned = 5;
-  uint64 eta_mean_all = 6;
-  uint64 eta_std_cleaned = 7;
-  uint64 eta_std_all = 8;
-  int32 depport_score = 9;
-  string depport = 10;
-  string creator = 11;
-}
-
-message QueryGetConsolidatedDataReportRequest {
-  string imo = 1;
-  uint64 ts = 2;
-}
-
-message QueryLatestConsolidatedDataReportRequest {
-  string imo = 1;
-}
-
-message QueryGetConsolidatedDataReportResponse {
-  ConsolidatedDataReport consolidatedDataReport = 1;
-}
-
-message QueryLatestConsolidatedDataReportResponse {
-  ConsolidatedDataReport consolidatedDataReport = 1;
-}
-`;
+// This adapter is intentionally preserved without active API wiring. It keeps
+// the VesselOracle async-ICQ wire contract reusable if a target chain hosts the
+// corresponding gRPC query service again.
 
 export const VESSELORACLE_QUERY_PATH = '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport';
 export const VESSELORACLE_LATEST_QUERY_PATH = '/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport';
@@ -53,7 +26,52 @@ const VESSELORACLE_LATEST_RESPONSE_TYPE = 'vesseloracle.vesseloracle.QueryLatest
 
 type SupportedVesseloracleQueryPath = typeof VESSELORACLE_QUERY_PATH | typeof VESSELORACLE_LATEST_QUERY_PATH;
 
-let vesseloracleProtoRoot: protobuf.Root | null = null;
+type VesseloracleProtoCodec = {
+  encode(payload: Record<string, unknown>): Uint8Array;
+  decode(bytes: Uint8Array): Record<string, unknown>;
+};
+
+const VESSELORACLE_PROTO_TYPES: Record<string, VesseloracleProtoCodec> = {
+  [VESSELORACLE_REQUEST_TYPE]: {
+    encode: (payload) =>
+      QueryGetConsolidatedDataReportRequest.encode(QueryGetConsolidatedDataReportRequest.fromJSON(payload)).finish(),
+    decode: (bytes) =>
+      QueryGetConsolidatedDataReportRequest.toJSON(QueryGetConsolidatedDataReportRequest.decode(bytes)) as Record<
+        string,
+        unknown
+      >,
+  },
+  [VESSELORACLE_RESPONSE_TYPE]: {
+    encode: (payload) =>
+      QueryGetConsolidatedDataReportResponse.encode(QueryGetConsolidatedDataReportResponse.fromJSON(payload)).finish(),
+    decode: (bytes) =>
+      QueryGetConsolidatedDataReportResponse.toJSON(QueryGetConsolidatedDataReportResponse.decode(bytes)) as Record<
+        string,
+        unknown
+      >,
+  },
+  [VESSELORACLE_LATEST_REQUEST_TYPE]: {
+    encode: (payload) =>
+      QueryLatestConsolidatedDataReportRequest.encode(
+        QueryLatestConsolidatedDataReportRequest.fromJSON(payload),
+      ).finish(),
+    decode: (bytes) =>
+      QueryLatestConsolidatedDataReportRequest.toJSON(QueryLatestConsolidatedDataReportRequest.decode(bytes)) as Record<
+        string,
+        unknown
+      >,
+  },
+  [VESSELORACLE_LATEST_RESPONSE_TYPE]: {
+    encode: (payload) =>
+      QueryLatestConsolidatedDataReportResponse.encode(
+        QueryLatestConsolidatedDataReportResponse.fromJSON(payload),
+      ).finish(),
+    decode: (bytes) =>
+      QueryLatestConsolidatedDataReportResponse.toJSON(
+        QueryLatestConsolidatedDataReportResponse.decode(bytes),
+      ) as Record<string, unknown>,
+  },
+};
 
 export type DecodedVesseloracleIcqAcknowledgement =
   | {
@@ -93,21 +111,9 @@ export type DecodedVesseloracleIcqAcknowledgement =
       };
     };
 
-function getVesseloracleProtoRoot(): protobuf.Root {
-  if (vesseloracleProtoRoot) {
-    return vesseloracleProtoRoot;
-  }
-
-  const root = new protobuf.Root();
-  protobuf.parse(VESSELORACLE_PROTO, root, { keepCase: true });
-  root.resolveAll();
-  vesseloracleProtoRoot = root;
-  return root;
-}
-
-function getVesseloracleMessageType(typeName: string): protobuf.Type {
-  const messageType = getVesseloracleProtoRoot().lookupType(typeName);
-  if (!(messageType instanceof protobuf.Type)) {
+function getVesseloracleMessageType(typeName: string): VesseloracleProtoCodec {
+  const messageType = VESSELORACLE_PROTO_TYPES[typeName];
+  if (!messageType) {
     throw new Error(`vesseloracle protobuf type ${typeName} not found`);
   }
 
@@ -116,31 +122,18 @@ function getVesseloracleMessageType(typeName: string): protobuf.Type {
 
 export function encodeVesseloracleProtoMessage(typeName: string, payload: Record<string, unknown>): Uint8Array {
   const messageType = getVesseloracleMessageType(typeName);
-  const verificationError = messageType.verify(payload);
-  if (verificationError) {
-    throw new Error(`invalid ${typeName} payload: ${verificationError}`);
-  }
-
-  return messageType.encode(messageType.create(payload)).finish();
+  return messageType.encode(payload);
 }
 
 export function decodeVesseloracleProtoMessage(typeName: string, bytes: Uint8Array): Record<string, unknown> {
   const messageType = getVesseloracleMessageType(typeName);
-  const decoded = messageType.decode(bytes);
-  return messageType.toObject(decoded, {
-    longs: String,
-    enums: String,
-    bytes: String,
-    arrays: true,
-    objects: true,
-    defaults: false,
-  }) as Record<string, unknown>;
+  return messageType.decode(bytes);
 }
 
-export function buildVesseloracleConsolidatedDataReportPacketData(payload: {
-  imo: string;
-  ts: string;
-}): { packetData: Uint8Array; queryPath: typeof VESSELORACLE_QUERY_PATH } {
+export function buildVesseloracleConsolidatedDataReportPacketData(payload: { imo: string; ts: string }): {
+  packetData: Uint8Array;
+  queryPath: typeof VESSELORACLE_QUERY_PATH;
+} {
   const requestData = encodeVesseloracleProtoMessage(VESSELORACLE_REQUEST_TYPE, {
     imo: payload.imo,
     ts: Number(payload.ts),
@@ -158,9 +151,10 @@ export function buildVesseloracleConsolidatedDataReportPacketData(payload: {
   };
 }
 
-export function buildVesseloracleLatestConsolidatedDataReportPacketData(payload: {
-  imo: string;
-}): { packetData: Uint8Array; queryPath: typeof VESSELORACLE_LATEST_QUERY_PATH } {
+export function buildVesseloracleLatestConsolidatedDataReportPacketData(payload: { imo: string }): {
+  packetData: Uint8Array;
+  queryPath: typeof VESSELORACLE_LATEST_QUERY_PATH;
+} {
   const requestData = encodeVesseloracleProtoMessage(VESSELORACLE_LATEST_REQUEST_TYPE, {
     imo: payload.imo,
   });
@@ -202,9 +196,7 @@ function decodeVesseloracleAcknowledgementForPath(
 
   const cosmosResponse: CosmosResponse = decodedAck.cosmosResponse;
   if (cosmosResponse.responses.length !== 1) {
-    throw new Error(
-      `expected exactly one async-icq response for ${queryPath}, got ${cosmosResponse.responses.length}`,
-    );
+    throw new Error(`expected exactly one async-icq response for ${queryPath}, got ${cosmosResponse.responses.length}`);
   }
 
   const responseQuery = cosmosResponse.responses[0];

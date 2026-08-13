@@ -714,6 +714,10 @@ jobs:
       fail-fast: false
       matrix:
         module:
+          - name: async-icq-v10
+            path: cosmos/async-icq-v10
+          - name: vesseloracle-v10
+            path: cosmos/vesseloracle-v10
           - name: mithril-v10
             path: cosmos/cardano-mithril-light-client-v10
           - name: ibc-go-v10

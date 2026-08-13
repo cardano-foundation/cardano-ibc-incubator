@@ -9,7 +9,6 @@ import { PacketService } from '~@/tx/packet.service';
 import { MsgTransfer } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import { DenomTraceService } from '~@/query/services/denom-trace.service';
 import { CheqdIcqService } from './cheqd-icq.service';
-import { VesseloracleIcqService } from './vesseloracle-icq.service';
 import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { TransferPlannerService } from './transfer-planner.service';
 import { BridgeManifestService } from '~@/query/services/bridge-manifest.service';
@@ -36,13 +35,6 @@ describe('ApiController (modern)', () => {
   let cheqdIcqServiceMock: {
     buildDidDocQuery: jest.Mock;
     decodeDidDocAcknowledgement: jest.Mock;
-    findResult: jest.Mock;
-  };
-  let vesseloracleIcqServiceMock: {
-    buildConsolidatedDataReportQuery: jest.Mock;
-    buildLatestConsolidatedDataReportQuery: jest.Mock;
-    decodeConsolidatedDataReportAcknowledgement: jest.Mock;
-    decodeLatestConsolidatedDataReportAcknowledgement: jest.Mock;
     findResult: jest.Mock;
   };
   let transferPlannerServiceMock: {
@@ -80,13 +72,6 @@ describe('ApiController (modern)', () => {
       decodeDidDocAcknowledgement: jest.fn(),
       findResult: jest.fn(),
     };
-    vesseloracleIcqServiceMock = {
-      buildConsolidatedDataReportQuery: jest.fn(),
-      buildLatestConsolidatedDataReportQuery: jest.fn(),
-      decodeConsolidatedDataReportAcknowledgement: jest.fn(),
-      decodeLatestConsolidatedDataReportAcknowledgement: jest.fn(),
-      findResult: jest.fn(),
-    };
     transferPlannerServiceMock = {
       planTransferRoute: jest.fn(),
     };
@@ -106,7 +91,6 @@ describe('ApiController (modern)', () => {
         { provide: DenomTraceService, useValue: denomTraceServiceMock },
         { provide: LocalOsmosisSwapPlannerService, useValue: swapPlannerServiceMock },
         { provide: CheqdIcqService, useValue: cheqdIcqServiceMock },
-        { provide: VesseloracleIcqService, useValue: vesseloracleIcqServiceMock },
         { provide: TransferPlannerService, useValue: transferPlannerServiceMock },
         { provide: BridgeManifestService, useValue: bridgeManifestServiceMock },
         { provide: QueryService, useValue: queryServiceMock },
@@ -281,79 +265,6 @@ describe('ApiController (modern)', () => {
     });
   });
 
-  it('delegates vesseloracle consolidated-data-report ICQ tx building to VesseloracleIcqService', async () => {
-    vesseloracleIcqServiceMock.buildConsolidatedDataReportQuery.mockResolvedValue({
-      query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
-      source_port: 'icqhost',
-      source_channel: 'channel-4',
-      packet_sequence: '8',
-      packet_data_hex: 'beadfeed',
-      tx: {
-        result: 1,
-        unsigned_tx: {
-          type_url: '/ibc.core.channel.v1.MsgTransfer',
-          value: Buffer.from([4, 5, 6]),
-        },
-      },
-    });
-
-    await expect(
-      controller.buildVesseloracleConsolidatedDataReportIcq({
-        source_channel: 'channel-4',
-        signer: 'addr_test1q...',
-        imo: '9525338',
-        ts: '1713110400',
-      } as any),
-    ).resolves.toEqual({
-      query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
-      source_port: 'icqhost',
-      source_channel: 'channel-4',
-      packet_sequence: '8',
-      packet_data_hex: 'beadfeed',
-      result: 1,
-      unsigned_tx: {
-        type_url: '/ibc.core.channel.v1.MsgTransfer',
-        value: Buffer.from([4, 5, 6]).toString('base64'),
-      },
-    });
-  });
-
-  it('delegates vesseloracle latest-consolidated-data-report ICQ tx building to VesseloracleIcqService', async () => {
-    vesseloracleIcqServiceMock.buildLatestConsolidatedDataReportQuery.mockResolvedValue({
-      query_path: '/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport',
-      source_port: 'icqhost',
-      source_channel: 'channel-5',
-      packet_sequence: '9',
-      packet_data_hex: 'cafebabe',
-      tx: {
-        result: 1,
-        unsigned_tx: {
-          type_url: '/ibc.core.channel.v1.MsgTransfer',
-          value: Buffer.from([7, 8, 9]),
-        },
-      },
-    });
-
-    await expect(
-      controller.buildVesseloracleLatestConsolidatedDataReportIcq({
-        source_channel: 'channel-5',
-        signer: 'addr_test1q...',
-        imo: '9525338',
-      } as any),
-    ).resolves.toEqual({
-      query_path: '/vesseloracle.vesseloracle.Query/LatestConsolidatedDataReport',
-      source_port: 'icqhost',
-      source_channel: 'channel-5',
-      packet_sequence: '9',
-      packet_data_hex: 'cafebabe',
-      result: 1,
-      unsigned_tx: {
-        type_url: '/ibc.core.channel.v1.MsgTransfer',
-        value: Buffer.from([7, 8, 9]).toString('base64'),
-      },
-    });
-  });
-
   it('delegates cheqd ICQ result polling to CheqdIcqService', async () => {
     cheqdIcqServiceMock.findResult.mockResolvedValue({
       status: 'completed',
@@ -390,46 +301,6 @@ describe('ApiController (modern)', () => {
       acknowledgement: {
         status: 'success',
         response: { value: { did_doc: { id: 'did:cheqd:testnet:abc123' } } },
-      },
-    });
-  });
-
-  it('delegates vesseloracle ICQ result polling to VesseloracleIcqService', async () => {
-    vesseloracleIcqServiceMock.findResult.mockResolvedValue({
-      status: 'completed',
-      tx_hash: 'deadbeef',
-      query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
-      packet_data_hex: 'c0ffee',
-      current_height: '120',
-      next_search_from_height: '118',
-      completed_height: '118',
-      packet_sequence: '7',
-      acknowledgement_hex: 'bead',
-      acknowledgement: {
-        status: 'success',
-        response: { consolidatedDataReport: { imo: '9525338', ts: '1713110400' } },
-      },
-    });
-
-    await expect(
-      controller.getVesseloracleIcqResult({
-        tx_hash: 'deadbeef',
-        query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
-        packet_data_hex: 'c0ffee',
-      } as any),
-    ).resolves.toEqual({
-      status: 'completed',
-      tx_hash: 'deadbeef',
-      query_path: '/vesseloracle.vesseloracle.Query/ConsolidatedDataReport',
-      packet_data_hex: 'c0ffee',
-      current_height: '120',
-      next_search_from_height: '118',
-      completed_height: '118',
-      packet_sequence: '7',
-      acknowledgement_hex: 'bead',
-      acknowledgement: {
-        status: 'success',
-        response: { consolidatedDataReport: { imo: '9525338', ts: '1713110400' } },
       },
     });
   });

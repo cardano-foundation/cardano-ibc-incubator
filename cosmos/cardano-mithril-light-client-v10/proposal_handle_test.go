@@ -124,7 +124,7 @@ func newTestClientStore(t *testing.T, keyName string) (sdk.Context, storetypes.K
 	require.NoError(t, stateStore.LoadLatestVersion())
 
 	ctx := sdk.NewContext(stateStore, cmtproto.Header{
-		ChainID: "cardano-entrypoint-test",
+		ChainID: "mithril-test-0",
 		Height:  100,
 		Time:    time.Unix(1_700_000_000, 0),
 	}, false, log.NewNopLogger())

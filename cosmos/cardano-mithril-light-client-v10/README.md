@@ -2,8 +2,8 @@
 
 > [!WARNING]
 > This light client is deprecated and disabled for new deployments. This
-> standalone module preserves the historical Go implementation independently
-> of the retained `cardano-entrypoint` chain.
+> standalone module preserves the historical Go implementation for reference
+> and protobuf/type compatibility.
 
 The IBC client type is:
 
@@ -35,16 +35,15 @@ with its protobuf definitions and generated Go types.
 
 ## Status
 
-The module is independently compiled and tested, but the retained
-`cardano-entrypoint` application intentionally does not add its client type to
-the IBC client keeper router. Its app module remains registered there only so
-historical protobuf interface values can be decoded.
+The module is independently compiled and tested, but it is not wired into any
+chain application in this repository. Its client type therefore cannot be
+created or routed by any included Cosmos application.
 
-Moving this code into a standalone module does not reactivate Mithril or change
-its trust assumptions. It prevents deletion of the historical entrypoint chain
-from also deleting the light-client implementation.
+Keeping this code as a standalone module does not reactivate Mithril or change
+its trust assumptions. It only preserves the implementation and protobuf/type
+compatibility for reference and potential integrations.
 
-## Historical Integration Shape
+## Integration Requirements
 
 Like every ibc-go v10 light client, a chain would have to compile the module
 into its binary, register its concrete interfaces, add its route to the IBC

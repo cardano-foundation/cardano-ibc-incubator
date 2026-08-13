@@ -5,7 +5,9 @@ components. The TypeScript package is consumed as `@cardano-ibc/proto-types`.
 
 ## Layout
 
-- `protos/ibc-go/` contains the source Protocol Buffer definitions.
+- `protos/ibc-go/` contains the IBC source Protocol Buffer definitions. Code
+  generation also consumes the dormant VesselOracle contract from
+  `../cosmos/vesseloracle-v10/proto`.
 - `src/` contains generated TypeScript sources and is committed to the repository.
 - `build/` is the local TypeScript build output and is not committed.
 - `go/` contains the currently generated Go bindings.
