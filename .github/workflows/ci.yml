@@ -714,6 +714,8 @@ jobs:
       fail-fast: false
       matrix:
         module:
+          - name: mithril-v10
+            path: cosmos/cardano-mithril-light-client-v10
           - name: ibc-go-v10
             path: cosmos/cardano-probabilistic-light-client-v10
           - name: ibc-go-v8

@@ -1,8 +1,8 @@
 package entities
 
 import (
-	"cardano-entrypoint/x/clients/mithril/common/cryptohelpers"
 	"encoding/hex"
+	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-mithril-light-client-v10/common/cryptohelpers"
 )
 
 type CardanoTransactionsSetProof struct {

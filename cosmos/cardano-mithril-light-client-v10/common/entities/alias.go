@@ -1,9 +1,9 @@
 package entities
 
 import (
-	"cardano-entrypoint/x/clients/mithril/crypto"
 	"encoding/hex"
 	"fmt"
+	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-mithril-light-client-v10/crypto"
 )
 
 type ImmutableFileNumber = uint64

@@ -1,7 +1,7 @@
 package mithril
 
 import (
-	"cardano-entrypoint/x/clients/mithril/common/entities"
+	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-mithril-light-client-v10/common/entities"
 
 	errorsmod "cosmossdk.io/errors"
 )

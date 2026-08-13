@@ -1,12 +1,12 @@
 package mithril
 
 import (
-	"cardano-entrypoint/x/clients/mithril/common/entities"
-	"cardano-entrypoint/x/clients/mithril/crypto"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-mithril-light-client-v10/common/entities"
+	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-mithril-light-client-v10/crypto"
 	"hash"
 	"time"
 
