@@ -1,5 +1,5 @@
 import * as protobuf from 'protobufjs';
-import { base64FromBytes } from '@plus/proto-types/build/helpers';
+import { base64FromBytes } from '@cardano-ibc/proto-types/build/helpers';
 import {
   ASYNC_ICQ_HOST_PORT,
   CosmosResponse,

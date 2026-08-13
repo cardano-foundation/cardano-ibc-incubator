@@ -3,7 +3,7 @@ import {
   MsgCreateClient,
   MsgUpdateClient,
   MsgUpdateClientResponse,
-} from '@plus/proto-types/build/ibc/core/client/v1/tx';
+} from '@cardano-ibc/proto-types/build/ibc/core/client/v1/tx';
 import { Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
@@ -47,7 +47,7 @@ import {
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
-import { Any } from '@plus/proto-types/build/google/protobuf/any';
+import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
 import { toHex } from '../shared/helpers/hex';
 import type { GatewayEvent } from './tx-events.service';
 import { getHeightMapValue, getProcessedHeight } from '../shared/helpers/verify';

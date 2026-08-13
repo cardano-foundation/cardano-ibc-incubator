@@ -4,7 +4,7 @@ import {
   ClientState as ClientStateProbabilistic,
   ConsensusState as ConsensusStateProbabilistic,
   ProbabilisticHeader,
-} from '@plus/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic';
+} from '@cardano-ibc/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic';
 import { QueryService } from '../services/query.service';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';

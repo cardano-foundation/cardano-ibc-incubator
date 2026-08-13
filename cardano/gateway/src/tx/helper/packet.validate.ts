@@ -4,7 +4,7 @@ import {
 } from '~@/exception/grpc_exceptions';
 import { CHANNEL_ID_PREFIX } from 'src/constant';
 import { decodeMerkleProof } from './helper';
-import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
+import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
 import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
 import {
@@ -12,7 +12,7 @@ import {
   MsgRecvPacket,
   MsgTimeout,
   MsgTransfer,
-} from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
 import { AckPacketOperator, RecvPacketOperator, SendPacketOperator, TimeoutPacketOperator } from '../dto';
 import { isSupportedGatewayPortId } from '@shared/helpers/module-port';

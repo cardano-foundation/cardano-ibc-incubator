@@ -1,5 +1,5 @@
-import { PageRequest } from '@plus/proto-types/build/cosmos/base/query/v1beta1/pagination';
-import { PageRequestParams, Params, bytesFromBase64, setPaginationParams } from '@plus/proto-types/build/helpers';
+import { PageRequest } from '@cardano-ibc/proto-types/build/cosmos/base/query/v1beta1/pagination';
+import { PageRequestParams, Params, bytesFromBase64, setPaginationParams } from '@cardano-ibc/proto-types/build/helpers';
 import { PaginationKeyDto } from '../../query/dtos/pagination.dto';
 
 export function generatePaginationKey(key: PaginationKeyDto): Uint8Array {

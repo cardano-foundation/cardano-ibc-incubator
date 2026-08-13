@@ -9,7 +9,7 @@ import {
   QueryChannelsResponse,
   QueryConnectionChannelsRequest,
   QueryConnectionChannelsResponse,
-} from '@plus/proto-types/build/ibc/core/channel/v1/query';
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import {
@@ -19,7 +19,7 @@ import {
   State,
   orderFromJSON,
   stateFromJSON,
-} from '@plus/proto-types/build/ibc/core/channel/v1/channel';
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
 import { CHANNEL_ID_PREFIX, ORDER_MAPPING_CHANNEL, STATE_MAPPING_CHANNEL } from '../../constant/channel';
 import { convertHex2String } from '../../shared/helpers/hex';
