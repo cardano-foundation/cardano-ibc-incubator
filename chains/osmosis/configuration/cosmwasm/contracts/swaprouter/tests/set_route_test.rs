@@ -1,6 +1,6 @@
 mod test_env;
 use cosmwasm_std::Coin;
-use osmosis_std::types::osmosis::gamm::v1beta1::SwapAmountInRoute;
+use osmosis_std::types::osmosis::poolmanager::v1beta1::SwapAmountInRoute;
 use osmosis_testing::{Module, RunnerError, Wasm};
 use swaprouter::msg::{ExecuteMsg, GetRouteResponse, QueryMsg};
 use test_env::*;
@@ -249,9 +249,9 @@ fn test_set_route_failed_case(sender: Sender, msg: ExecuteMsg, expected_error: &
         Sender::Owner => owner,
         Sender::NonOwner => {
             let initial_balance = [
-                Coin::new(1_000_000_000_000, "uosmo"),
-                Coin::new(1_000_000_000_000, "uion"),
-                Coin::new(1_000_000_000_000, "uatom"),
+                Coin::new(1_000_000_000_000u128, "uosmo"),
+                Coin::new(1_000_000_000_000u128, "uion"),
+                Coin::new(1_000_000_000_000u128, "uatom"),
             ];
             app.init_account(&initial_balance).unwrap()
         }

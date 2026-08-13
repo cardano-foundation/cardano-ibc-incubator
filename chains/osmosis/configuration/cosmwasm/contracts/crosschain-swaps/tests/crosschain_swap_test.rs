@@ -5,8 +5,7 @@ mod test_env;
 use std::str::FromStr;
 
 use cosmwasm_std::{Addr, Coin, Decimal};
-use osmosis_std::types::osmosis::gamm::v1beta1::SwapAmountInRoute;
-use osmosis_testing::cosmrs::proto::cosmos::bank::v1beta1::QueryAllBalancesRequest;
+use osmosis_std::types::osmosis::poolmanager::v1beta1::SwapAmountInRoute;
 
 use crosschain_swaps::msg::{ExecuteMsg as CrossChainExecute, FailedDeliveryAction};
 use osmosis_testing::{Account, Bank, Module, Wasm};
@@ -68,7 +67,7 @@ fn crosschain_swap() {
         on_failed_delivery: FailedDeliveryAction::DoNothing,
         next_memo: None,
     };
-    let funds: &[Coin] = &[Coin::new(10000, "uosmo")];
+    let funds: &[Coin] = &[Coin::new(10000u128, "uosmo")];
     println!("{}", serde_json_wasm::to_string(&msg).unwrap());
     let _res = wasm.execute(&crosschain_address, &msg, funds, &sender);
     //dbg!(&res);
