@@ -44,7 +44,8 @@ use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateDatum, ModuleRegistration, ShutdownState,
-  ShuttingDown, empty_ibc_state_root, host_state_token_name,
+  ShuttingDown, empty_ibc_state_root, host_state_token_name, max_bound_ports,
+  max_port_number, validate_bind_port,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat,
@@ -270,6 +271,43 @@ fn test_host_state(root: ByteArray, seed: Int) -> HostState {
   }
 }
 
+fn test_bound_ports(ports: List<Int>) -> Pairs<Int, ModuleRegistration> {
+  when ports is {
+    [] -> []
+    [port, ..rest] ->
+      [
+        Pair(port, test_module_registration(test_module_script_hash())),
+        ..test_bound_ports(rest)
+      ]
+  }
+}
+
+fn test_bind_port_transition(
+  old_ports: List<Int>,
+  new_ports: List<Int>,
+  port: Int,
+) -> Bool {
+  let nft_policy = test_nft_policy()
+  let registration = test_module_registration(test_module_script_hash())
+  let old_state =
+    HostState {
+      ..test_host_state(empty_ibc_state_root, 0),
+      bound_port: test_bound_ports(old_ports),
+    }
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      bound_port: test_bound_ports(new_ports),
+    }
+  validate_bind_port(
+    test_host_state_datum(old_state, nft_policy),
+    test_host_state_datum(new_state, nft_policy),
+    port,
+    registration,
+  )
+}
+
 fn test_host_input(state: HostState) -> Input {
   let nft_policy = test_nft_policy()
   Input(
@@ -316,6 +354,47 @@ fn spend_host_state_with_signatories(
     redeemer,
     test_host_ref(),
     Transaction { ..placeholder, inputs, outputs, extra_signatories },
+  )
+}
+
+fn spend_test_bind_port(
+  old_ports: List<Int>,
+  new_ports: List<Int>,
+  port: Int,
+  extra_signatories: List<crypto.VerificationKeyHash>,
+) -> Bool {
+  let registration = test_module_registration(test_module_script_hash())
+  let port_siblings =
+    repeat_bytearray(
+      ibc_state_commitment.empty_hash,
+      ibc_state_commitment.merkle_depth_bits,
+    )
+  let old_state =
+    HostState {
+      ..test_host_state(empty_ibc_state_root, 0),
+      bound_port: test_bound_ports(old_ports),
+    }
+  let new_root =
+    ibc_state_commitment.apply_update(
+      old_state.ibc_state_root,
+      port_commitment_key(port),
+      "",
+      cbor.serialise(registration),
+      port_siblings,
+    )
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+      bound_port: test_bound_ports(new_ports),
+    }
+
+  spend_host_state_with_signatories(
+    BindPort { port, registration, port_siblings },
+    [test_host_input(old_state)],
+    [test_host_output(new_state), test_module_output(registration)],
+    extra_signatories,
   )
 }
 
@@ -1609,6 +1688,64 @@ test prop_host_handle_packet_rejects_wrong_packet_key(seed via fuzz.int()) fail 
   )
 }
 
+test prop_host_bind_port_rejects_missing_authority(seed via fuzz.int()) fail {
+  fuzz.label(@"fuzz.contract.host.bind_port.invalid_unauthorized")
+
+  let port = positive_seed(seed % 1000)
+  spend_test_bind_port([], [port], port, [])
+}
+
+test prop_host_bind_port_rejects_global_overflow(seed via fuzz.int()) {
+  fuzz.label(@"fuzz.unit.host.bind_port.invalid_capacity")
+
+  expect max_bound_ports == 10
+  let port = 10 + positive_seed(seed % 1000)
+  fuzz_dsl.mutated_check(
+    "host",
+    "bind_port",
+    "global_capacity",
+    "host_state.validate_bind_port",
+    test_bind_port_transition(
+      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, port],
+      port,
+    ),
+  )
+    |> fuzz_dsl.assert_rejected
+}
+
+test prop_host_bind_port_rejects_out_of_range_identifier(seed via fuzz.int()) {
+  fuzz.label(@"fuzz.unit.host.bind_port.invalid_identifier")
+
+  let offset = positive_seed(seed % 1000)
+  let port =
+    if seed % 2 == 0 {
+      -1 - offset
+    } else {
+      max_port_number + 1 + offset
+    }
+  fuzz_dsl.mutated_check(
+    "host",
+    "bind_port",
+    "identifier_range",
+    "host_state.validate_bind_port",
+    test_bind_port_transition([], [port], port),
+  )
+    |> fuzz_dsl.assert_rejected
+}
+
+/// This is the maximum-size HostState port-list transition permitted by the
+/// protocol and is also collected by the transaction-budget CI job.
+test host_state_bind_tenth_port_succeeds_at_global_cap() {
+  expect max_bound_ports == 10
+  spend_test_bind_port(
+    [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    9,
+    [trusted_deployer],
+  )
+}
+
 test host_state_bind_port_succeeds_with_correct_root_witness() {
   // -------------------------------------------------------------------------
   // Arrange: a starting HostState UTxO with an empty commitment root.
@@ -1707,6 +1844,7 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
       ..placeholder,
       inputs: [host_input],
       outputs: [host_output, test_module_output(registration)],
+      extra_signatories: [trusted_deployer],
     }
 
   host_state_stt.host_state_stt.spend(
@@ -1794,6 +1932,7 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
       ..placeholder,
       inputs: [host_input],
       outputs: [host_output, test_module_output(registration)],
+      extra_signatories: [trusted_deployer],
     }
 
   host_state_stt.host_state_stt.spend(
@@ -1902,6 +2041,7 @@ test host_state_cannot_move_nft_to_different_address() fail {
       ..placeholder,
       inputs: [host_input],
       outputs: [host_output, test_module_output(registration)],
+      extra_signatories: [trusted_deployer],
     }
 
   host_state_stt.host_state_stt.spend(
@@ -2003,6 +2143,7 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
       ..placeholder,
       inputs: [host_input],
       outputs: [host_output, test_module_output(registration)],
+      extra_signatories: [trusted_deployer],
     }
 
   host_state_stt.host_state_stt.spend(
@@ -2067,7 +2208,12 @@ test host_state_bind_port_fails_if_output_missing() fail {
 
   // No HostState output is produced, so the STT validator must fail.
   let transaction =
-    Transaction { ..placeholder, inputs: [host_input], outputs: [] }
+    Transaction {
+      ..placeholder,
+      inputs: [host_input],
+      outputs: [],
+      extra_signatories: [trusted_deployer],
+    }
 
   host_state_stt.host_state_stt.spend(
     nft_policy,

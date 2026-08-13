@@ -771,6 +771,9 @@ key from the proof. They prove these invariants:
 
 Required CI label suffixes:
 
+- `contract.host.bind_port.invalid_unauthorized`
+- `unit.host.bind_port.invalid_capacity`
+- `unit.host.bind_port.invalid_identifier`
 - `contract.host.update_client.valid`
 - `contract.host.update_client.invalid_wrong_root`
 - `contract.host.update_client.invalid_wrong_redeemer`
@@ -787,6 +790,22 @@ Required CI label suffixes:
 - `contract.host.handle_packet.invalid_history_capacity`
 - `contract.host.handle_packet.invalid_ack_capacity`
 - `contract.host.handle_packet.invalid_wrong_packet_key`
+
+### Port Binding
+
+Covered by `contract.host.bind_port.invalid_unauthorized`,
+`unit.host.bind_port.invalid_capacity`, and
+`unit.host.bind_port.invalid_identifier`, with deterministic boundary fixtures
+for the tenth HostState port and tenth module capability token.
+
+Port registration proves these invariants:
+
+- Only the immutable HostState deployment authority may register a port.
+- The singleton HostState can retain at most ten permanent port registrations.
+- Port numbers are non-negative and fit the at-most-eight-byte decimal postfix
+  used by the capability-token naming scheme.
+- A legitimate tenth registration remains executable within the ledger size
+  and execution-unit budgets enforced by CI.
 
 ### Client Root Updates
 

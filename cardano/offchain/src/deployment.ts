@@ -1859,7 +1859,8 @@ const deployTransferModule = async (
           [identifierTokenUnit]: 1n,
           [portTokenUnit]: 1n,
         },
-      );
+      )
+      .addSignerKey(currentHostStateDatum.deployer);
 
   await submitTx(buildMintTransferModuleTx, lucid, "Mint Transfer Module");
   hostStateUpdate.commit();
@@ -2006,7 +2007,8 @@ const deployGenericModule = async (
           [identifierTokenUnit]: 1n,
           [portTokenUnit]: 1n,
         },
-      );
+      )
+      .addSignerKey(currentHostStateDatum.deployer);
 
   await submitTx(buildMintGenericModuleTx, lucid, `Mint ${portIdText} Module`);
   hostStateUpdate.commit();

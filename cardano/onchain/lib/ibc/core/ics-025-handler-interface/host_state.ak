@@ -13,6 +13,7 @@
 //
 // This design eliminates state ambiguity and simplifies indexing/querying.
 
+use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script, VerificationKeyHash}
 use aiken/primitive/int
@@ -24,6 +25,20 @@ pub const empty_ibc_state_root =
 
 // IBC Host State NFT token name
 pub const host_state_token_name = "ibc_host_state"
+
+/// Bound ports are permanent protocol registrations, so their aggregate state
+/// must have a ledger-safe upper bound. The deployment currently registers
+/// three ports and can add up to this fixed protocol-wide maximum.
+pub const max_bound_ports = 10
+
+/// Port numbers are encoded as an at-most-eight-byte decimal postfix in their
+/// capability token names. Keep the state identifier inside that same domain
+/// and reject negative or arbitrarily large integers before serialization.
+pub const max_port_number = 99_999_999
+
+pub fn is_valid_port_number(port: Int) -> Bool {
+  port >= 0 && port <= max_port_number
+}
 
 /// ShutdownState controls whether the bridge accepts new user-facing work.
 ///
@@ -205,6 +220,8 @@ pub fn validate_bind_port(
     }
 
   and {
+    is_valid_port_number(port),
+    list.length(old.state.bound_port) < max_bound_ports,
     validate_version_increment(old.state, new.state),
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
