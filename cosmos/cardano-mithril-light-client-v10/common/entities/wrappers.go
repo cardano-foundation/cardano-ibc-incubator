@@ -1,13 +1,13 @@
 package entities
 
 import (
-	"cardano-entrypoint/x/clients/mithril/common/cryptohelpers"
-	"cardano-entrypoint/x/clients/mithril/crypto"
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-mithril-light-client-v10/common/cryptohelpers"
+	"github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-mithril-light-client-v10/crypto"
 )
 
 type ed25519Signature = []byte

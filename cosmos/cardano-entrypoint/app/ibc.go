@@ -2,7 +2,7 @@ package app
 
 import (
 	asyncicqmodule "cardano-entrypoint/x/asyncicq/module"
-	ibcmithril "cardano-entrypoint/x/clients/mithril"
+	ibcmithril "github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-mithril-light-client-v10"
 
 	"cosmossdk.io/core/appmodule"
 	storetypes "cosmossdk.io/store/types"

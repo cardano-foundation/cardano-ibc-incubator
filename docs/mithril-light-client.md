@@ -12,7 +12,7 @@ Date: March 10, 2026
 
 This document describes the retired Mithril light-client architecture and why it was originally selected.
 
-The Mithril header and certificate formats are defined in retained historical Cosmos-side protobuf types; reviewing those shapes helps with overall intuition for this process.
+The Mithril header and certificate formats, along with the complete historical Go implementation, are preserved in the standalone `cosmos/cardano-mithril-light-client-v10` module; reviewing those shapes helps with overall intuition for this process.
 
 In avoiding re-stating things that are explained in depth elsewhere, I will say that a Mithril certificate is a cryptographically attested certificate (by Cardano SPOs) which testifies to the state of Cardano at a given checkpoint, for example at block N. Mithril certifies transaction inclusion and **not** UTxO inclusion. The Mithril certificate is not something derived from Cardano consensus the way that Tendermint headers are, rather Mithril is a separate aggregator-signer network that SPOs run alongside their nodes. The integrity of that network of course also relies on the proportion of Cardano stake participating in the network, and if that proportion increases it would in general improve bridge operations, and also make Mithril certifications more meaningful with respect to extrapolations about finality since a greater proportion of stake is agreeing on a given state.
 
