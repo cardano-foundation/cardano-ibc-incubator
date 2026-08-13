@@ -9,27 +9,7 @@ const scopes = [
   { name: 'tx-builder-runtime', directory: 'packages/cardano-ibc-tx-builder-runtime' },
 ];
 
-const allowedHighCriticalAdvisories = new Set([
-  '1112659',
-  '1113300',
-  '1113375',
-  '1113459',
-  '1113465',
-  '1113538',
-  '1113544',
-  '1113546',
-  '1113552',
-  '1114200',
-  '1114302',
-  '1114680',
-  '1115573',
-  '1115806',
-  '1117159',
-  // Pulled in by sqlite3@5.1.7 through its node-gyp tar dependency; npm reports
-  // sqlite3@6 as the available fix, which is outside the current major range.
-  '1123940',
-  '1123941',
-]);
+const allowedHighCriticalAdvisories = new Set([]);
 
 function highCriticalAdvisories(auditJson) {
   const advisories = new Map();

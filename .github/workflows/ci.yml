@@ -725,7 +725,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24.x"
+          go-version: "1.25.12"
           cache-dependency-path: ${{ matrix.module.path }}/go.sum
 
       - name: Test
@@ -791,13 +791,7 @@ jobs:
         run: command -v cargo-audit || cargo install cargo-audit --locked
 
       - name: Audit Rust dependencies
-        run: >
-          cargo audit --file caribic/Cargo.lock
-          --ignore RUSTSEC-2026-0104
-          --ignore RUSTSEC-2026-0098
-          --ignore RUSTSEC-2026-0099
-          --ignore RUSTSEC-2026-0049
-          --ignore RUSTSEC-2026-0009
+        run: cargo audit --file caribic/Cargo.lock
 
       - name: Check formatting
         run: cargo fmt --manifest-path caribic/Cargo.toml -- --check

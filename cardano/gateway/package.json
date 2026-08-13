@@ -44,15 +44,15 @@
     "@harmoniclabs/uint8array-utils": "1.0.4",
     "@lucid-evolution/lucid": "^0.4.29",
     "@nestjs/axios": "^4.0.0",
-    "@nestjs/common": "^11.1.3",
+    "@nestjs/common": "^11.1.29",
     "@nestjs/config": "^4.0.2",
-    "@nestjs/core": "^11.1.3",
+    "@nestjs/core": "^11.1.29",
     "@nestjs/mapped-types": "*",
-    "@nestjs/microservices": "^11.1.3",
-    "@nestjs/platform-express": "^11.1.3",
+    "@nestjs/microservices": "^11.1.29",
+    "@nestjs/platform-express": "^11.1.29",
     "@nestjs/schedule": "^6.0.0",
     "@nestjs/swagger": "^11.2.0",
-    "@nestjs/terminus": "^10.2.3",
+    "@nestjs/terminus": "^11.1.1",
     "@nestjs/typeorm": "^11.0.0",
     "@nestjs/websockets": "^11.1.18",
     "@noble/hashes": "^1.8.0",
@@ -68,17 +68,17 @@
     "js-sha3": "^0.9.3",
     "pg": "^8.16.0",
     "prom-client": "^15.1.0",
-    "protobufjs": "^8.2.0",
+    "protobufjs": "^8.7.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "sqlite3": "^5.1.7",
-    "typeorm": "^0.3.24",
+    "sqlite3": "^6.0.1",
+    "typeorm": "^0.3.31",
     "ws": "^8.18.2"
   },
   "devDependencies": {
-    "@nestjs/cli": "^11.0.7",
-    "@nestjs/schematics": "^11.0.5",
-    "@nestjs/testing": "^11.1.3",
+    "@nestjs/cli": "^11.0.24",
+    "@nestjs/schematics": "^11.1.0",
+    "@nestjs/testing": "^11.1.29",
     "@types/express": "^5.0.3",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.3",
@@ -163,6 +163,6 @@
       "js-yaml": "5.2.2"
     },
     "multer": "^2.2.0",
-    "protobufjs": "^8.2.0"
+    "protobufjs": "^8.7.2"
   }
 }

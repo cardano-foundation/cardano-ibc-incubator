@@ -53,5 +53,11 @@
     "prettier": "^3.0.3",
     "ts-node": "^10.9.2",
     "typescript": "~5.2"
+  },
+  "overrides": {
+    "glob": "10.5.0",
+    "minimatch": "5.1.9",
+    "protobufjs": "7.6.5",
+    "tmp": "0.2.7"
   }
 }

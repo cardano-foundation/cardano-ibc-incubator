@@ -11,7 +11,7 @@ import {
   ModalOverlay,
   Text,
 } from '@chakra-ui/react';
-import { ChainWalletBase, WalletModalProps } from 'cosmos-kit';
+import type { ChainWalletBase, WalletModalProps } from '@cosmos-kit/core';
 import { toast } from 'react-toastify';
 
 export const CosmosWalletModal = ({
