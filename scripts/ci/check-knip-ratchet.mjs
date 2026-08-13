@@ -106,7 +106,6 @@ const allowed = new Set([
   'gateway:src/shared/types/apps/async-icq/async-icq.ts:types:DecodedAsyncIcqAcknowledgement',
   'gateway:src/shared/types/apps/async-icq/async-icq.ts:types:InterchainQueryPacketAck',
   'gateway:src/shared/types/apps/async-icq/async-icq.ts:types:InterchainQueryPacketData',
-  'gateway:src/shared/types/apps/async-icq/vesseloracle-icq.ts:exports:VESSELORACLE_QUERY_PATH',
   'gateway:src/shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer.ts:exports:decodeMintVoucherRedeemer',
   'gateway:src/shared/types/apps/transfer/transfer_module_redeemer/transfer-module-redeemer.ts:exports:castToTransferModuleRedeemer',
   'gateway:src/shared/types/apps/transfer/transfer_module_redeemer/transfer-module-redeemer.ts:exports:encodeTransferModuleRedeemer',

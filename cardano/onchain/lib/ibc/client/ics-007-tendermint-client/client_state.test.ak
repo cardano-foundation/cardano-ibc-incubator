@@ -276,7 +276,7 @@ test test_validate_fail_trusting_period_not_less_than_unbonding_period() fail {
 test test_validate_fail_empty_proof_specs() fail {
   let cs =
     client_state.new_client_state(
-      "entrypoint-0",
+      "example-0",
       unchecked_rational.from_int(1),
       1000,
       1500,
@@ -290,7 +290,7 @@ test test_validate_fail_empty_proof_specs() fail {
 test test_validate_fail_null_proof_spec() fail {
   let cs =
     client_state.new_client_state(
-      "entrypoint-0",
+      "example-0",
       unchecked_rational.from_int(1),
       1000,
       1500,

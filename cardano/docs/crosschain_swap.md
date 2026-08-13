@@ -2,7 +2,7 @@
 
 Cross-chain swap uses IBC connections to move Cardano-native assets to a target chain such as Osmosis or Injective, execute target-chain swap logic, and return the result where the route requires it.
 
-The route must be direct: Cardano connects to the selected target chain. The retired intermediary-chain topology is not part of the maintained runtime path because it placed another consensus system in the value path.
+Cardano connects directly to the selected target chain.
 
 ## Quick run
 
@@ -156,7 +156,7 @@ The script stores and instantiates `crosschain_swaps.wasm` with the `swaprouter`
 }
 ```
 
-The channel value is `OSMOSIS_CARDANO_CHANNEL_ID`, not a channel to an intermediary chain.
+The channel value is the direct Osmosis-to-Cardano `OSMOSIS_CARDANO_CHANNEL_ID`.
 
 ## Execute the Swap
 
@@ -210,7 +210,7 @@ Use `caribic setup route` before running swap demos if you want to validate the 
 
 The local Osmosis swap script consumes the direct channel pair produced by `caribic setup route`: Cardano sends directly to the Osmosis crosschain-swaps contract, and the contract returns over the direct Osmosis-to-Cardano channel.
 
-With a direct channel, packet-forwarding through an intermediary is no longer required for the first hop. If a target-chain swap uses packet-forward middleware or IBC hooks internally, those modules should be configured against the direct Cardano channel or against target-local downstream channels that do not reintroduce the retired intermediary chain.
+Packet-forwarding is not required for the direct Cardano-to-target hop. If a target-chain swap uses packet-forward middleware or IBC hooks internally, those modules should be configured against the direct Cardano channel or target-local downstream channels.
 
 If direct setup fails, check:
 

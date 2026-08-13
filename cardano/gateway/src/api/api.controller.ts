@@ -19,10 +19,6 @@ import {
   CheqdResourceIcqRequestDto,
 } from './cheqd-icq.dto';
 import { AsyncIcqAcknowledgementDto, AsyncIcqResultRequestDto } from './async-icq.dto';
-import {
-  VesseloracleConsolidatedDataReportIcqRequestDto,
-  VesseloracleLatestConsolidatedDataReportIcqRequestDto,
-} from './vesseloracle-icq.dto';
 import { ChannelService } from '~@/query/services/channel.service';
 import { QueryChannelsRequest } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
 import { IdentifiedChannel } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
@@ -36,7 +32,6 @@ import { TransferPlannerService } from './transfer-planner.service';
 import { BridgeManifestService } from '~@/query/services/bridge-manifest.service';
 import { QueryService } from '~@/query/services/query.service';
 import { CheqdIcqService } from './cheqd-icq.service';
-import { VesseloracleIcqService } from './vesseloracle-icq.service';
 import { parseVoucherAssetName } from '../shared/helpers/voucher-asset';
 
 type ApiCardanoAssetDenomTrace = {
@@ -81,7 +76,6 @@ export class ApiController {
     private readonly bridgeManifestService: BridgeManifestService,
     private readonly queryService: QueryService,
     private readonly cheqdIcqService: CheqdIcqService,
-    private readonly vesseloracleIcqService: VesseloracleIcqService,
   ) {}
 
   @Get('channels')
@@ -306,56 +300,6 @@ export class ApiController {
   @HttpCode(200)
   async getCheqdIcqResult(@Body() dto: AsyncIcqResultRequestDto) {
     return this.cheqdIcqService.findResult(dto);
-  }
-
-  @Post('icq/vesseloracle/consolidated-data-report')
-  @HttpCode(200)
-  async buildVesseloracleConsolidatedDataReportIcq(
-    @Body() requestDto: VesseloracleConsolidatedDataReportIcqRequestDto,
-  ) {
-    const response = await this.vesseloracleIcqService.buildConsolidatedDataReportQuery(requestDto);
-    return {
-      query_path: response.query_path,
-      source_port: response.source_port,
-      source_channel: response.source_channel,
-      packet_sequence: response.packet_sequence,
-      packet_data_hex: response.packet_data_hex,
-      ...this.serializeUnsignedTxResponse(response.tx),
-    };
-  }
-
-  @Post('icq/vesseloracle/consolidated-data-report/decode')
-  @HttpCode(200)
-  async decodeVesseloracleConsolidatedDataReportIcq(@Body() dto: AsyncIcqAcknowledgementDto) {
-    return this.vesseloracleIcqService.decodeConsolidatedDataReportAcknowledgement(dto.acknowledgement_hex);
-  }
-
-  @Post('icq/vesseloracle/latest-consolidated-data-report')
-  @HttpCode(200)
-  async buildVesseloracleLatestConsolidatedDataReportIcq(
-    @Body() requestDto: VesseloracleLatestConsolidatedDataReportIcqRequestDto,
-  ) {
-    const response = await this.vesseloracleIcqService.buildLatestConsolidatedDataReportQuery(requestDto);
-    return {
-      query_path: response.query_path,
-      source_port: response.source_port,
-      source_channel: response.source_channel,
-      packet_sequence: response.packet_sequence,
-      packet_data_hex: response.packet_data_hex,
-      ...this.serializeUnsignedTxResponse(response.tx),
-    };
-  }
-
-  @Post('icq/vesseloracle/latest-consolidated-data-report/decode')
-  @HttpCode(200)
-  async decodeVesseloracleLatestConsolidatedDataReportIcq(@Body() dto: AsyncIcqAcknowledgementDto) {
-    return this.vesseloracleIcqService.decodeLatestConsolidatedDataReportAcknowledgement(dto.acknowledgement_hex);
-  }
-
-  @Post('icq/vesseloracle/result')
-  @HttpCode(200)
-  async getVesseloracleIcqResult(@Body() dto: AsyncIcqResultRequestDto) {
-    return this.vesseloracleIcqService.findResult(dto);
   }
 
   private serializeUnsignedTxResponse(response: {
