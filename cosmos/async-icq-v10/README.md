@@ -38,6 +38,10 @@ ibcRouter.AddRoute(asyncicq.PortID, icqHost)
 Query policy remains application-specific. An empty allowlist rejects every
 incoming query.
 
+The dormant VesselOracle contract and Cardano Gateway adapter are retained
+separately for possible future activation; see
+[`docs/vesseloracle.md`](../../docs/vesseloracle.md).
+
 ## Host Guarantees
 
 The host accepts only unordered `icq-1` channels on `icqhost`. It rejects

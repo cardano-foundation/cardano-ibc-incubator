@@ -2,6 +2,7 @@ package asyncicq
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"testing"
 
@@ -20,6 +21,13 @@ import (
 )
 
 const testQueryPath = "/example.v1.Query/Item"
+
+const (
+	vesselOracleQueryPath = "/vesseloracle.vesseloracle.Query/ConsolidatedDataReport"
+	vesselOraclePacketHex = "7b2264617461223a22436b6f4b44776f484f5455794e544d7a4f4243412b2b2b77426849334c335a6c63334e6c6247397959574e735a5335325a584e7a5a577876636d466a624755755558566c636e6b765132397563323973615752686447566b5247463059564a6c6347397964413d3d227d"
+	vesselOracleValueHex  = "0a3d0a07393532353333381080fbefb006180c2001289097f0b00630f89ef0b006387840f001485f520541524255455a0e636f736d6f733163726561746f72"
+	vesselOracleAckHex    = "7b22726573756c74223a2265794a6b59585268496a6f695132744e4e6c4233627a6c445a324d31546c524a4d55313654545246535551334e7a6442523064426432644255326c526243394464304a7152445275646b4e33516d706f4e46465151554a54526a6c54516c564755314673566b5a585a7a5671596a4e4f6447497a5458685a4d30707357566853646d4e725a33456966513d3d227d"
+)
 
 type stubQueryRouter struct {
 	handlers map[string]baseapp.GRPCQueryHandler
@@ -65,6 +73,26 @@ func TestOnRecvPacketExecutesAllowedQuery(t *testing.T) {
 	require.Equal(t, []byte("query-key"), responses[0].Key)
 	require.Equal(t, []byte("query-value"), responses[0].Value)
 	require.Equal(t, int64(55), responses[0].Height)
+}
+
+func TestVesselOracleWireCompatibility(t *testing.T) {
+	packetData, err := hex.DecodeString(vesselOraclePacketHex)
+	require.NoError(t, err)
+	responseValue, err := hex.DecodeString(vesselOracleValueHex)
+	require.NoError(t, err)
+
+	ctx := newAsyncIcqTestContext(t, 42)
+	module := NewIBCModule(stubQueryRouter{
+		handlers: map[string]baseapp.GRPCQueryHandler{
+			vesselOracleQueryPath: func(_ sdk.Context, req *abci.RequestQuery) (*abci.ResponseQuery, error) {
+				require.Equal(t, vesselOracleQueryPath, req.Path)
+				return &abci.ResponseQuery{Value: responseValue, Height: 999}, nil
+			},
+		},
+	}, []string{vesselOracleQueryPath})
+
+	ack := module.OnRecvPacket(ctx, Version, channeltypes.Packet{Data: packetData}, nil)
+	require.Equal(t, vesselOracleAckHex, hex.EncodeToString(ack.Acknowledgement()))
 }
 
 func TestOnRecvPacketRejectsProofRequests(t *testing.T) {

@@ -56,7 +56,7 @@ function preserveUnsignedVarintHelpers() {
 }
 
 telescope({
-  protoDirs: ["protos/ibc-go"],
+  protoDirs: ["protos/ibc-go", "../cosmos/vesseloracle-v10/proto"],
   outPath: outPath,
   options: {
     logLevel: 0,
