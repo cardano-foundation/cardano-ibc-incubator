@@ -6,7 +6,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ApiController } from './api.controller';
 import { ChannelService } from '~@/query/services/channel.service';
 import { PacketService } from '~@/tx/packet.service';
-import { MsgTransfer } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+import { MsgTransfer } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import { DenomTraceService } from '~@/query/services/denom-trace.service';
 import { CheqdIcqService } from './cheqd-icq.service';
 import { VesseloracleIcqService } from './vesseloracle-icq.service';

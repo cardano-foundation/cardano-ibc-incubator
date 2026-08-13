@@ -1,7 +1,7 @@
 import { UTxO } from '@lucid-evolution/lucid';
 import { ClientDatum } from '../../../shared/types/client-datum';
 import { Header } from '../../../shared/types/header';
-import { Any } from '@plus/proto-types/build/google/protobuf/any';
+import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
 
 export type UpdateClientOperatorDto = {
   clientId: string;

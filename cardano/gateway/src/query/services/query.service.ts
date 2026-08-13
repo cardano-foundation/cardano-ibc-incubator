@@ -11,17 +11,17 @@ import {
   QueryLatestHeightResponse,
   QueryNewClientRequest,
   QueryNewClientResponse,
-} from '@plus/proto-types/build/ibc/core/client/v1/query';
+} from '@cardano-ibc/proto-types/build/ibc/core/client/v1/query';
 import {
   ClientState as ClientStateTendermint,
   ConsensusState as ConsensusStateTendermint,
-} from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+} from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import {
   ClientState as ClientStateMithril,
   ConsensusState as ConsensusStateMithril,
   MithrilCertificate,
   MithrilHeader,
-} from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
+} from '@cardano-ibc/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 import {
   ClientState as ClientStateProbabilistic,
   ConsensusState as ConsensusStateProbabilistic,
@@ -29,9 +29,9 @@ import {
   ProbabilisticBlock,
   ProbabilisticHeader,
   StakeDistributionEntry,
-} from '@plus/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic';
-import { Any } from '@plus/proto-types/build/google/protobuf/any';
-import { IdentifiedClientState } from '@plus/proto-types/build/ibc/core/client/v1/client';
+} from '@cardano-ibc/proto-types/build/ibc/lightclients/probabilistic/v1/probabilistic';
+import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
+import { IdentifiedClientState } from '@cardano-ibc/proto-types/build/ibc/core/client/v1/client';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
 import { KupoService } from '@shared/modules/kupo/kupo.service';
 import { ConfigService } from '@nestjs/config';
@@ -56,7 +56,7 @@ import {
   QueryTransactionByHashResponse,
   QueryIBCHeaderRequest,
   QueryIBCHeaderResponse,
-} from '@plus/proto-types/build/ibc/core/types/v1/query';
+} from '@cardano-ibc/proto-types/build/ibc/core/types/v1/query';
 import { UtxoDto } from '../dtos/utxo.dto';
 import {
   CHANNEL_ID_PREFIX,
@@ -86,12 +86,12 @@ import {
   ResponseDeliverTx,
   ResultBlockResults,
   ResultBlockSearch,
-} from '@plus/proto-types/build/ibc/core/types/v1/block';
+} from '@cardano-ibc/proto-types/build/ibc/core/types/v1/block';
 import { ChannelDatum, decodeChannelDatum } from '@shared/types/channel/channel-datum';
 import { getChannelIdByTokenName, getConnectionIdFromConnectionHops } from '@shared/helpers/channel';
 import { getConnectionIdByTokenName } from '@shared/helpers/connection';
 import { UTxO } from '@lucid-evolution/lucid';
-import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
+import { bytesFromBase64 } from '@cardano-ibc/proto-types/build/helpers';
 import { getIdByTokenName } from '@shared/helpers/helper';
 import { decodeMintChannelRedeemer, decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
 import {
@@ -117,8 +117,8 @@ import {
   QueryDenomResponse,
   QueryDenomsRequest,
   QueryDenomsResponse,
-} from '@plus/proto-types/build/ibc/applications/transfer/v1/query';
-import { Denom, Hop } from '@plus/proto-types/build/ibc/applications/transfer/v1/token';
+} from '@cardano-ibc/proto-types/build/ibc/applications/transfer/v1/query';
+import { Denom, Hop } from '@cardano-ibc/proto-types/build/ibc/applications/transfer/v1/token';
 import { DenomTraceService } from './denom-trace.service';
 import { convertHex2String } from '@shared/helpers/hex';
 import { HISTORY_SERVICE, HistoryBlock, HistoryService } from './history.service';

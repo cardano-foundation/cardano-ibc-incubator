@@ -24,10 +24,10 @@ import {
   VesseloracleLatestConsolidatedDataReportIcqRequestDto,
 } from './vesseloracle-icq.dto';
 import { ChannelService } from '~@/query/services/channel.service';
-import { QueryChannelsRequest } from '@plus/proto-types/build/ibc/core/channel/v1/query';
-import { IdentifiedChannel } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
+import { QueryChannelsRequest } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
+import { IdentifiedChannel } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
 import { PacketService } from '~@/tx/packet.service';
-import { MsgTransfer } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+import { MsgTransfer } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import { GrpcExceptionFilter } from '~@/exception/exception.filter';
 import { DenomTraceService, ResolvedDenomTrace } from '~@/query/services/denom-trace.service';
 import { LOVELACE } from '../constant';

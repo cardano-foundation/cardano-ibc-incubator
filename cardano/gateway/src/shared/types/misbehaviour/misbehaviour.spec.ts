@@ -1,8 +1,8 @@
-import { Any } from '@plus/proto-types/build/google/protobuf/any';
+import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
 import {
   Header,
   Misbehaviour as MisbehaviourMsg,
-} from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+} from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 
 import headerMockBuilder from '../../../tx/test/mock/header';
 import { clientDatumMockBuilder } from '../../../tx/test/mock/client-datum';

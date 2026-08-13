@@ -14,7 +14,7 @@ import {
   MsgTransfer,
   MsgTransferResponse,
   ResponseResultType,
-} from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 
 import { Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import { parseChannelSequence, parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
@@ -55,7 +55,7 @@ import {
 import { encodeVerifyProofRedeemer, VerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay, getHeightMapValue } from '../shared/helpers/verify';
 import { packetAcknowledgementPath, packetCommitmentPath, packetReceiptPath } from '../shared/helpers/packet-keys';
-import { Order as ChannelOrder } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
+import { Order as ChannelOrder } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
 import {
   GrpcFailedPreconditionException,
   GrpcInternalException,

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ResponseDeliverTx } from '@plus/proto-types/build/ibc/core/types/v1/block';
-import { MsgTransferResponse } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+import { ResponseDeliverTx } from '@cardano-ibc/proto-types/build/ibc/core/types/v1/block';
+import { MsgTransferResponse } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import { QueryService } from '~@/query/services/query.service';
 import { ATTRIBUTE_KEY_PACKET, EVENT_TYPE_PACKET } from '~@/constant/packet';
 import { GrpcInvalidArgumentException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';

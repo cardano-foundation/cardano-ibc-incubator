@@ -1,5 +1,5 @@
-import { Any } from '@plus/proto-types/build/google/protobuf/any';
-import { Header as HeaderMsg } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
+import { Header as HeaderMsg } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 
 import { ACK_RESULT, ATTRIBUTE_KEY_CLIENT, ATTRIBUTE_KEY_PACKET, EVENT_TYPE_CLIENT, EVENT_TYPE_PACKET } from '../../constant';
 import { initializeHeader } from '../types/header';

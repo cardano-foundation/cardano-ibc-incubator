@@ -1,4 +1,4 @@
-import { MsgTransfer } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+import { MsgTransfer } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import {
   GrpcFailedPreconditionException,
   GrpcInvalidArgumentException,

@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ClientState, ConsensusState } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import { ClientState, ConsensusState } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { DenomTraceService } from '../services/denom-trace.service';
 import { ChannelService } from '../services/channel.service';
 import { PacketService } from '../services/packet.service';

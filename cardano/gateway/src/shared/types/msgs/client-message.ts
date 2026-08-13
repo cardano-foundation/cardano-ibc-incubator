@@ -1,8 +1,8 @@
 import {
   Header as HeaderMsg,
   Misbehaviour as MisbehaviourMsg,
-} from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
-import { Any } from '@plus/proto-types/build/google/protobuf/any';
+} from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
 
 import {
   Misbehaviour,
