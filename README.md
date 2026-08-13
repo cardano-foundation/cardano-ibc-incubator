@@ -57,7 +57,7 @@ The older Mithril light client and local Mithril setup are deprecated, disabled,
 The repository is organized around these main areas:
 
 - `cardano`: Cardano on-chain validators, off-chain deployment code, and the Gateway.
-- `cosmos`: The shared Cardano light-client core, ibc-go v8 and v10 adapters, and the preserved deprecated Mithril module. The v8 adapter targets Cosmos SDK 0.50; the v10 adapters and Mithril module target Cosmos SDK 0.53.
+- `cosmos`: The [standalone async-ICQ host](cosmos/async-icq-v10/README.md), shared Cardano light-client core, ibc-go v8 and v10 adapters, and preserved deprecated Mithril module. The v8 adapter targets Cosmos SDK 0.50; the async-ICQ host, v10 adapters, and Mithril module target Cosmos SDK 0.53.
 - `relayer`: A [Hermes](https://hermes.informal.systems/) fork with a native Cardano `ChainEndpoint` implementation.
 - `caribic`: The CLI for configuring, starting, stopping, and testing the local bridge stack.
 - `chains`: Managed Cardano and counterparty-chain runtime configuration.
