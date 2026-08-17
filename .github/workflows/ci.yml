@@ -407,7 +407,7 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_changed == 'true' }}
     needs: aiken-changes
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: ${{ matrix.timeout_minutes || 20 }}
     defaults:
       run:
         working-directory: cardano/onchain
@@ -510,6 +510,12 @@ jobs:
           - suite: trace-rollover
             match_tests: >-
               -m prop_trace_registry_rollover_
+          # The model property is substantially more expensive than the
+          # rollover contract properties. Keep both at max-success=500 while
+          # giving them independent job time budgets.
+          - suite: trace-model
+            timeout_minutes: 30
+            match_tests: >-
               -m prop_model_trace_
           - suite: proofs
             match_tests: >-
