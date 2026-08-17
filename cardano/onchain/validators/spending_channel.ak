@@ -149,7 +149,7 @@ fn validate_operation_witness(
 
   let continuation_is_valid =
     if requires_continuation {
-      expect ChannelDatum { .. } =
+      let ChannelDatum { .. } =
         validate_output_datum(spent_output, outputs, channel_token)
       True
     } else {
