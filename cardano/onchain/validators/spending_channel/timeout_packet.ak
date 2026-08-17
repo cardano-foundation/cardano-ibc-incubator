@@ -107,22 +107,15 @@ validator timeout_packet(
       }
     trace @"timeout_packet: packet info matched channel state"
 
-    let connection_datum =
-      validator_utils.validate_referred_connection(
+    let (connection_datum, client_datum) =
+      validator_utils.validate_referred_connection_and_client(
         reference_inputs,
         datum.token.name,
+        client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
       )
     trace @"timeout_packet: reference_inputs contain Connection utxo"
-
-    let client_datum =
-      validator_utils.validate_referred_client(
-        reference_inputs,
-        datum.token.name,
-        client_minting_policy_id,
-        connection_datum.state.client_id,
-      )
     trace @"timeout_packet: reference_inputs contain Client utxo"
 
     expect

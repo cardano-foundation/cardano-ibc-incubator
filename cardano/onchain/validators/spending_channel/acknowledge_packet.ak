@@ -102,10 +102,11 @@ validator acknowledge_packet(
       }
     trace @"acknowledge_packet: packet info matched channel state"
 
-    let connection_datum =
-      validator_utils.validate_referred_connection(
+    let (connection_datum, client_datum) =
+      validator_utils.validate_referred_connection_and_client(
         reference_inputs,
         datum.token.name,
+        client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
       )
@@ -114,14 +115,6 @@ validator acknowledge_packet(
     let is_connection_state_open =
       connection_datum.state.state == conn_state_mod.Open
     trace @"acknowledge_packet: connection state is open"
-
-    let client_datum =
-      validator_utils.validate_referred_client(
-        reference_inputs,
-        datum.token.name,
-        client_minting_policy_id,
-        connection_datum.state.client_id,
-      )
     trace @"acknowledge_packet: reference_inputs contain Client utxo"
 
     let is_client_status_active =

@@ -78,10 +78,11 @@ validator chan_open_confirm(
 
     trace @"chan_open_confirm: tx context extracted"
 
-    let connection_datum =
-      validator_utils.validate_referred_connection(
+    let (connection_datum, client_datum) =
+      validator_utils.validate_referred_connection_and_client(
         reference_inputs,
         datum.token.name,
+        client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
       )
@@ -96,13 +97,6 @@ validator chan_open_confirm(
         |> version_mod.verify_supported_feature(connection_version, _)
     trace @"chan_open_confirm: connection support channel ordering"
 
-    let client_datum =
-      validator_utils.validate_referred_client(
-        reference_inputs,
-        datum.token.name,
-        client_minting_policy_id,
-        connection_datum.state.client_id,
-      )
     trace @"chan_open_confirm: validator_utils.validate_referred_client"
 
     expect

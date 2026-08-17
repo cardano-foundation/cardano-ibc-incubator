@@ -2,7 +2,7 @@ use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/interval.{Finite}
-use aiken/option.{map}
+use aiken/option
 use aiken/primitive/bytearray
 use aiken/primitive/int
 use cardano/address.{Script}
@@ -265,12 +265,11 @@ fn input_redeemer(
   ibc_module_redeemer
 }
 
-pub fn validate_referred_client(
-  reference_inputs: List<Input>,
+fn expected_client_token(
   referrer_token_name: ByteArray,
   client_minting_policy_id: PolicyId,
   client_id: ByteArray,
-) -> ClientDatum {
+) -> AuthToken {
   let client_sequence = client_keys.parse_client_id_sequence(client_id)
 
   let client_token_name =
@@ -279,14 +278,54 @@ pub fn validate_referred_client(
       client_keys.client_prefix,
       client_sequence,
     )
+  AuthToken { policy_id: client_minting_policy_id, name: client_token_name }
+}
+
+fn expected_connection_token(
+  referrer_token_name: ByteArray,
+  connection_minting_policy_id: PolicyId,
+  connection_id: ByteArray,
+) -> AuthToken {
+  let connection_sequence =
+    connection_keys.parse_connection_id_sequence(connection_id)
+
+  let connection_token_name =
+    auth.generate_token_name_from_another(
+      referrer_token_name,
+      connection_keys.connection_prefix,
+      connection_sequence,
+    )
+  AuthToken {
+    policy_id: connection_minting_policy_id,
+    name: connection_token_name,
+  }
+}
+
+fn find_authenticated_input(
+  inputs: List<Input>,
+  token: AuthToken,
+) -> Option<Input> {
+  list.find(
+    inputs,
+    fn(input) { input.output |> auth.contain_auth_token(token) },
+  )
+}
+
+pub fn validate_referred_client(
+  reference_inputs: List<Input>,
+  referrer_token_name: ByteArray,
+  client_minting_policy_id: PolicyId,
+  client_id: ByteArray,
+) -> ClientDatum {
   let client_token =
-    AuthToken { policy_id: client_minting_policy_id, name: client_token_name }
+    expected_client_token(
+      referrer_token_name,
+      client_minting_policy_id,
+      client_id,
+    )
 
   expect Some(client_input) =
-    list.find(
-      reference_inputs,
-      fn(input) { input.output |> auth.contain_auth_token(client_token) },
-    )
+    find_authenticated_input(reference_inputs, client_token)
   expect client_datum: ClientDatum = get_inline_datum(client_input.output)
   client_datum
 }
@@ -297,29 +336,93 @@ pub fn validate_referred_connection(
   connection_minting_policy_id: PolicyId,
   connection_id: ByteArray,
 ) -> ConnectionDatum {
-  let connection_sequence =
-    connection_keys.parse_connection_id_sequence(connection_id)
-
-  let connection_token_name =
-    auth.generate_token_name_from_another(
-      referrer_token_name,
-      connection_keys.connection_prefix,
-      connection_sequence,
-    )
   let connection_token =
-    AuthToken {
-      policy_id: connection_minting_policy_id,
-      name: connection_token_name,
-    }
-
-  expect Some(data) =
-    list.find(
-      reference_inputs,
-      fn(input) { input.output |> auth.contain_auth_token(connection_token) },
+    expected_connection_token(
+      referrer_token_name,
+      connection_minting_policy_id,
+      connection_id,
     )
-      |> map(fn(connection_input) { get_inline_datum(connection_input.output) })
-  expect connection_datum: ConnectionDatum = data
+
+  expect Some(connection_input) =
+    find_authenticated_input(reference_inputs, connection_token)
+  expect connection_datum: ConnectionDatum =
+    get_inline_datum(connection_input.output)
   connection_datum
+}
+
+/// Locate a channel's authenticated connection and client references together.
+///
+/// Before the connection datum reveals the client id, the scan records whether
+/// an earlier input could carry the client policy. Once the id is known, the
+/// exact derived client auth token is still required. The normal
+/// connection-before-client layout is traversed once; if references are
+/// reordered, lookup falls back to the complete list to preserve behavior.
+pub fn validate_referred_connection_and_client(
+  reference_inputs: List<Input>,
+  referrer_token_name: ByteArray,
+  client_minting_policy_id: PolicyId,
+  connection_minting_policy_id: PolicyId,
+  connection_id: ByteArray,
+) -> (ConnectionDatum, ClientDatum) {
+  let connection_token =
+    expected_connection_token(
+      referrer_token_name,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  let (connection_input, remaining_inputs, client_may_precede_connection) =
+    find_connection_with_remaining_inputs(
+      reference_inputs,
+      connection_token,
+      client_minting_policy_id,
+      False,
+    )
+  expect connection_datum: ConnectionDatum =
+    get_inline_datum(connection_input.output)
+  let client_token =
+    expected_client_token(
+      referrer_token_name,
+      client_minting_policy_id,
+      connection_datum.state.client_id,
+    )
+
+  let client_search_inputs =
+    if client_may_precede_connection || !(connection_input.output.value
+      |> tokens(client_minting_policy_id)
+      |> dict.is_empty) {
+      reference_inputs
+    } else {
+      remaining_inputs
+    }
+  expect Some(client_input) =
+    find_authenticated_input(client_search_inputs, client_token)
+  expect client_datum: ClientDatum = get_inline_datum(client_input.output)
+
+  (connection_datum, client_datum)
+}
+
+fn find_connection_with_remaining_inputs(
+  inputs: List<Input>,
+  connection_token: AuthToken,
+  client_minting_policy_id: PolicyId,
+  client_may_precede_connection: Bool,
+) -> (Input, List<Input>, Bool) {
+  when inputs is {
+    [] -> fail @"Missing authenticated connection reference input"
+    [input, ..remaining_inputs] ->
+      if auth.contain_auth_token(input.output, connection_token) {
+        (input, remaining_inputs, client_may_precede_connection)
+      } else {
+        find_connection_with_remaining_inputs(
+          remaining_inputs,
+          connection_token,
+          client_minting_policy_id,
+          client_may_precede_connection || !(input.output.value
+            |> tokens(client_minting_policy_id)
+            |> dict.is_empty),
+        )
+      }
+  }
 }
 
 pub fn validate_mint(
