@@ -406,7 +406,10 @@ voucher/escrow accounting validator in the same assertion.
 Covered by `unit.packet.recv.valid_receipt` and
 `unit.packet.recv.invalid_duplicate_receipt`, with the collection bound covered
 by `unit.packet.recv.invalid_history_capacity`. Sink-chain voucher mint coupling
-is additionally covered by `tx.packet.recv.valid_sink_mints_voucher`.
+is additionally covered by `tx.packet.recv.valid_sink_mints_voucher`. The real
+receive policy's timeout boundary is covered by `succeed_recv_packet`,
+`recv_packet_rejects_height_only_timeout`, and
+`recv_packet_rejects_mixed_height_and_timestamp_timeout`.
 
 The RecvPacket unit properties construct an unordered channel-datum receive
 transition that writes the receipt and acknowledgement commitment, then mutate
@@ -417,6 +420,11 @@ the input datum to already contain the receipt. They prove these invariants:
   sequence.
 - A packet cannot be received again if its receipt already exists.
 - A packet cannot be received again if its acknowledgement already exists.
+- A receive must use a zero timeout height because Cardano block height is not
+  authenticated in the transaction context; height-only and mixed timeouts
+  therefore fail closed.
+- A receive must use a nonzero timeout timestamp, and the transaction validity
+  interval must end strictly before that timestamp.
 - Each channel may retain at most 64 entries total across packet commitments,
   receipts, and acknowledgements. An unordered receive may fill the final two
   remaining entries; the next receive fails closed before permanent history

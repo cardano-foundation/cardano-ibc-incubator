@@ -78,12 +78,22 @@ export function validateAndFormatRecvPacketParams(data: MsgRecvPacket): {
       `Invalid argument: "destination_port" ${data.packet.destination_port} not supported`,
     );
   }
-  const decodedProofCommitment: MerkleProof = decodeMerkleProof(data.proof_commitment);
-  // Prepare the Recv packet operator object
-
   if (typeof data.packet?.timeout_timestamp === 'undefined') {
     throw new GrpcInvalidArgumentException('Invalid argument: "packet.timeout_timestamp" is required');
   }
+
+  const timeoutHeight = {
+    revisionHeight: BigInt(data.packet.timeout_height?.revision_height || 0),
+    revisionNumber: BigInt(data.packet.timeout_height?.revision_number || 0),
+  };
+  if (timeoutHeight.revisionHeight !== 0n || timeoutHeight.revisionNumber !== 0n) {
+    throw new GrpcInvalidArgumentException(
+      'Invalid argument: "packet.timeout_height" is not supported for Cardano receive packets; use "packet.timeout_timestamp"',
+    );
+  }
+
+  const decodedProofCommitment: MerkleProof = decodeMerkleProof(data.proof_commitment);
+  // Prepare the Recv packet operator object
 
   const recvPacketOperator: RecvPacketOperator = {
     channelId: data.packet.destination_channel,
@@ -94,10 +104,7 @@ export function validateAndFormatRecvPacketParams(data: MsgRecvPacket): {
       revisionHeight: BigInt(data.proof_height?.revision_height || 0),
       revisionNumber: BigInt(data.proof_height?.revision_number || 0),
     },
-    timeoutHeight: {
-      revisionHeight: BigInt(data.packet.timeout_height?.revision_height || 0),
-      revisionNumber: BigInt(data.packet.timeout_height?.revision_number || 0),
-    },
+    timeoutHeight,
     timeoutTimestamp: BigInt(data.packet?.timeout_timestamp),
   };
   return { constructedAddress, recvPacketOperator };
