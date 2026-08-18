@@ -172,6 +172,10 @@ validator recv_packet(
       valid_packet_proof?,
       (!pairs.has_key(cur_packet_receipt, packet.sequence))?,
       (!pairs.has_key(cur_packet_acknowledgement, packet.sequence))?,
+      // Cardano transaction contexts authenticate time through the validity
+      // interval, but do not expose an authenticated destination block height.
+      // Reject height timeouts until that height can be checked safely.
+      height_mod.is_zero(packet.timeout_height)?,
       (packet.timeout_timestamp != 0)?,
       (tx_valid_to * 1_000_000 < packet.timeout_timestamp)?,
       channel_datum_mod.validate_recv_packet(

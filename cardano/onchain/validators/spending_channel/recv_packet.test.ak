@@ -171,13 +171,15 @@ fn siblings_after_single_insert(
   single_sibling_list(0, divergence, sibling)
 }
 
-fn check_recv_packet(
+fn check_recv_packet_with_timeout(
   include_module_callback: Bool,
   mutate_successor: Bool,
   match_callback_packet: Bool,
   match_callback_acknowledgement: Bool,
   preserve_module_binding: Bool,
   compose_host_state: Bool,
+  timeout_height: Height,
+  timeout_timestamp: Int,
 ) -> Bool {
   let mock_data = setup()
 
@@ -245,8 +247,8 @@ fn check_recv_packet(
       destination_port: mock_data.port_id,
       destination_channel: channel_id,
       data: "mock packet data",
-      timeout_height: Height { revision_number: 0, revision_height: 0 },
-      timeout_timestamp: 1735689600000000000,
+      timeout_height,
+      timeout_timestamp,
     }
 
   let valid_output_channel_datum =
@@ -637,6 +639,42 @@ fn check_recv_packet(
   }
 }
 
+fn check_recv_packet(
+  include_module_callback: Bool,
+  mutate_successor: Bool,
+  match_callback_packet: Bool,
+  match_callback_acknowledgement: Bool,
+  preserve_module_binding: Bool,
+  compose_host_state: Bool,
+) -> Bool {
+  check_recv_packet_with_timeout(
+    include_module_callback,
+    mutate_successor,
+    match_callback_packet,
+    match_callback_acknowledgement,
+    preserve_module_binding,
+    compose_host_state,
+    Height { revision_number: 0, revision_height: 0 },
+    1735689600000000000,
+  )
+}
+
+fn check_recv_packet_timeout(
+  timeout_height: Height,
+  timeout_timestamp: Int,
+) -> Bool {
+  check_recv_packet_with_timeout(
+    True,
+    False,
+    True,
+    True,
+    True,
+    False,
+    timeout_height,
+    timeout_timestamp,
+  )
+}
+
 test succeed_recv_packet() {
   check_recv_packet(True, False, True, True, True, False)
 }
@@ -679,6 +717,20 @@ test prop_tx_recv_packet_rejects_callback_acknowledgement_mismatch(
 ) fail {
   fuzz.label(@"regression.tx.packet.recv.invalid_callback_acknowledgement")
   check_recv_packet(True, False, True, False, True, True)
+}
+
+test recv_packet_rejects_height_only_timeout() fail {
+  check_recv_packet_timeout(
+    Height { revision_number: 0, revision_height: 100 },
+    0,
+  )
+}
+
+test recv_packet_rejects_mixed_height_and_timestamp_timeout() fail {
+  check_recv_packet_timeout(
+    Height { revision_number: 0, revision_height: 100 },
+    1735689600000000000,
+  )
 }
 
 test recv_packet_fails_when_channel_is_closed() fail {
@@ -767,7 +819,7 @@ test recv_packet_fails_when_channel_is_closed() fail {
   )
 }
 
-test recv_packet_non_mock_data() {
+test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
   let client_minting_policy_id =
     #"dcecce6c178dae972476121042b79ac470bd9c2797bedea2c1906e8a"
   let connection_minting_policy_id =
