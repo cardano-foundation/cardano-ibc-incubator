@@ -7,7 +7,8 @@ use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/primitive/bytearray
 use cardano/assets.{AssetName, PolicyId}
 use cardano/transaction.{
-  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
+  InlineDatum, Input, NoDatum, Output, OutputReference, Redeemer, ScriptPurpose,
+  Spend, Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
@@ -15,11 +16,13 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/keys as conn_id_keys
-use ibc/core/ics_004/channel_datum.{
-  ChannelDatum, ChannelDatumState, max_packet_entries_per_channel,
-  packet_entry_count,
+use ibc/core/ics_004/channel_datum.{ChannelDatum,
+  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_redeemer.{
+  AcknowledgePacket, RecvPacket, SendPacket, SpendChannelRedeemer, TimeoutPacket,
 }
 use ibc/core/ics_004/types/keys as chan_id_keys
+use ibc/core/ics_004/types/packet as packet_mod
 use ibc/core/ics_005/types/keys as port_id_keys
 use ibc/core/ics_024_host_requirements/channel_keys as host_channel_keys
 use ibc/core/ics_024_host_requirements/client_keys
@@ -713,6 +716,57 @@ fn packet_state_unchanged(
   }
 }
 
+/// Require the channel co-spend to describe the one packet operation whose
+/// canonical successor is committed by HostState.
+fn validate_packet_channel_transition(
+  input_datum: ChannelDatum,
+  output_datum: ChannelDatum,
+  channel_input_reference: OutputReference,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+) -> Bool {
+  expect Some(channel_redeemer_data) =
+    pairs.get_first(redeemers, Spend(channel_input_reference))
+  expect channel_redeemer: SpendChannelRedeemer = channel_redeemer_data
+
+  when channel_redeemer is {
+    SendPacket { packet } ->
+      channel_datum_mod.validate_send_packet(
+        input_datum,
+        output_datum,
+        packet,
+        packet_mod.commit_packet(packet),
+      )
+    RecvPacket { packet, .. } -> {
+      // The receive marker policy authenticates the acknowledgement bytes. Here
+      // HostState uses the committed value to reject every unrelated datum change.
+      expect Some(acknowledgement_commitment) =
+        pairs.get_first(
+          output_datum.state.packet_acknowledgement,
+          packet.sequence,
+        )
+      channel_datum_mod.validate_recv_packet(
+        input_datum,
+        output_datum,
+        packet,
+        acknowledgement_commitment,
+      )
+    }
+    AcknowledgePacket { packet, .. } ->
+      channel_datum_mod.validate_acknowledge_packet(
+        input_datum,
+        output_datum,
+        packet,
+      )
+    TimeoutPacket { packet, .. } ->
+      channel_datum_mod.validate_timeout_packet(
+        input_datum,
+        output_datum,
+        packet,
+      )
+    _ -> False
+  }
+}
+
 /// Enforce that `ibc_state_root` is updated correctly for packet lifecycle operations.
 ///
 /// In this STT design, packet state lives inside the Channel datum:
@@ -734,6 +788,7 @@ fn validate_handle_packet_root(
   new_datum: HostStateDatum,
   inputs: List<Input>,
   outputs: List<Output>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
   channel_siblings: List<ByteArray>,
   next_sequence_send_siblings: List<ByteArray>,
@@ -760,14 +815,18 @@ fn validate_handle_packet_root(
   expect channel_input_datum: ChannelDatum =
     validator_utils.get_inline_datum(channel_input.output)
 
-  expect channel_input_datum.port_id == channel_output_datum.port_id
-  expect channel_input_datum.token == channel_output_datum.token
-  // HandlePacket is reserved for packet/sequence effects, not channel-only updates.
+  // The operation-specific validator constructs and compares the complete
+  // successor datum. That single check also preserves the token and port,
+  // enforces packet capacity, and rejects every unrelated state change.
   expect
-    !packet_state_unchanged(
-      channel_input_datum.state,
-      channel_output_datum.state,
+    validate_packet_channel_transition(
+      channel_input_datum,
+      channel_output_datum,
+      channel_input.output_reference,
+      redeemers,
     )
+  // HandlePacket is reserved for packet/sequence effects, not channel-only updates.
+  expect channel_input_datum.state != channel_output_datum.state
 
   // Commitment keys (ICS-24 paths).
   let channel_key = host_channel_keys.channel_path(port_id, channel_id)
@@ -872,8 +931,6 @@ fn validate_handle_packet_root(
       // Exactly one insertion is expected in a single packet operation.
       expect removed_commitments == []
       expect [Pair(sequence, commitment_bytes)] = inserted_commitments
-      expect
-        packet_entry_count(channel_output_datum.state) <= max_packet_entries_per_channel
       let commitment_key =
         packet_keys.packet_commitment_path(port_id, channel_id, sequence)
       let new_value = cbor.serialise(commitment_bytes)
@@ -924,8 +981,6 @@ fn validate_handle_packet_root(
       // Receipts should only ever be inserted.
       expect removed_receipts == []
       expect [Pair(sequence, receipt_bytes)] = inserted_receipts
-      expect
-        packet_entry_count(channel_output_datum.state) <= max_packet_entries_per_channel
       let receipt_key =
         packet_keys.packet_receipt_path(port_id, channel_id, sequence)
       let new_value = cbor.serialise(receipt_bytes)
@@ -958,8 +1013,6 @@ fn validate_handle_packet_root(
       // Acknowledgements should only ever be inserted.
       expect removed_acks == []
       expect [Pair(sequence, ack_bytes)] = inserted_acks
-      expect
-        packet_entry_count(channel_output_datum.state) <= max_packet_entries_per_channel
       let ack_key =
         packet_keys.packet_acknowledgement_path(port_id, channel_id, sequence)
       let new_value = cbor.serialise(ack_bytes)
@@ -1001,8 +1054,14 @@ validator host_state_stt(
     transaction: Transaction,
   ) {
     // 1. Extract transaction fields
-    let Transaction { inputs, outputs, extra_signatories, validity_range, .. } =
-      transaction
+    let Transaction {
+      inputs,
+      outputs,
+      redeemers,
+      extra_signatories,
+      validity_range,
+      ..
+    } = transaction
     // 2. Find input HostState UTXO
     expect Some(host_input) = find_host_state_input(inputs, nft_policy)
     let old_datum = decode_host_state_datum(host_input.output)
@@ -1153,6 +1212,7 @@ validator host_state_stt(
                 new_datum,
                 inputs,
                 outputs,
+                redeemers,
                 spend_channel_script_hash,
                 channel_siblings,
                 next_sequence_send_siblings,

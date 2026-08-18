@@ -618,6 +618,7 @@ async function encodeIbcModuleRedeemer(data, Lucid) {
         Data.Object({
             OnRecvPacket: Data.Object({
                 channel_id: Data.Bytes(),
+                packet_data: Data.Bytes(),
                 acknowledgement: AcknowledgementSchema,
                 data: IBCModulePacketData,
             }),

@@ -97,7 +97,10 @@ describe('PacketService recv packet fail-open regression', () => {
     );
   });
 
-  it('rejects malformed ICS-20 JSON instead of falling back to generic recv processing', async () => {
+  it.each([
+    ['malformed ICS-20 JSON', '{bad}'],
+    ['well-formed unsupported JSON', '{"query":"unsupported"}'],
+  ])('rejects %s instead of falling back to callback-free recv processing', async (_case, packetData) => {
     const fallbackUnsignedTx = { tag: 'fallback-non-ics20' };
 
     lucidServiceMock.createUnsignedRecvPacketTx.mockReturnValue(fallbackUnsignedTx);
@@ -170,7 +173,7 @@ describe('PacketService recv packet fail-open regression', () => {
     const recvPacketOperator = {
       channelId: 'channel-1',
       packetSequence: 1n,
-      packetData: convertString2Hex('{bad}'),
+      packetData: convertString2Hex(packetData),
       proofCommitment: { proofs: [] },
       proofHeight,
       timeoutHeight: {

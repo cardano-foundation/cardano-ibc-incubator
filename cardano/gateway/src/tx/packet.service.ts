@@ -75,7 +75,6 @@ import {
   UnsignedAckPacketMintDto,
   UnsignedAckPacketSucceedDto,
   UnsignedAckPacketUnescrowDto,
-  UnsignedRecvPacketDto,
   UnsignedRecvPacketModuleDto,
   UnsignedRecvPacketMintDto,
   UnsignedRecvPacketUnescrowDto,
@@ -1493,6 +1492,7 @@ export class PacketService {
             {
               OnRecvPacket: {
                 channel_id: channelId,
+                packet_data: packet.data,
                 acknowledgement: {
                   response: acknowledgementResponse,
                 },
@@ -1584,6 +1584,7 @@ export class PacketService {
               {
                 OnRecvPacket: {
                   channel_id: channelId,
+                  packet_data: packet.data,
                   data: {
                     TransferModuleData: [fTokenPacketData],
                   },
@@ -1602,6 +1603,9 @@ export class PacketService {
           const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
             spendTransferModuleRedeemer,
             'iBCModuleRedeemer',
+          );
+          const transferModuleUtxo = await this.lucidService.findUtxoByUnit(
+            this.getTransferModuleIdentifier(),
           );
 
           const packetSourcePort = convertHex2String(packet.source_port);
@@ -1678,6 +1682,7 @@ export class PacketService {
               connectionUtxo,
               clientUtxo,
               transferEscrowUtxo: transferEscrowShard.utxo,
+              transferModuleReferenceUtxo: transferModuleUtxo,
 
               encodedHostStateRedeemer,
               encodedUpdatedHostStateDatum,
@@ -1782,10 +1787,12 @@ export class PacketService {
               channelUtxo,
               connectionUtxo,
               clientUtxo,
+              transferModuleUtxo,
 
               encodedHostStateRedeemer,
               encodedUpdatedHostStateDatum,
               encodedSpendChannelRedeemer,
+              encodedSpendTransferModuleRedeemer,
               encodedMintVoucherRedeemer,
               encodedUpdatedChannelDatum,
 
@@ -1878,67 +1885,9 @@ export class PacketService {
           }
       }
     }
-    // Packet data is not related to an ICS-20 token transfer
-    const updatedChannelDatum: ChannelDatum = {
-      ...channelDatum,
-      state: {
-        ...channelDatum.state,
-        next_sequence_recv: nextSequenceRecv,
-        packet_receipt: packetReceipt,
-        packet_acknowledgement: insertSortMapWithNumberKey(
-          channelDatum.state.packet_acknowledgement,
-          packet.sequence,
-          '08F7557ED51826FE18D84512BF24EC75001EDBAF2123A477DF72A0A9F3640A7C',
-        ),
-      },
-    };
-
-    const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
-      updatedChannelDatum,
-      'channel',
+    throw new GrpcInvalidArgumentException(
+      `No application callback is available for receive packets on port ${convertHex2String(channelDatum.port)}`,
     );
-
-    const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-      await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
-
-    const unsignedRecvPacketMintParams: UnsignedRecvPacketDto = {
-      hostStateUtxo,
-      channelUtxo,
-      connectionUtxo,
-      clientUtxo,
-
-      encodedHostStateRedeemer,
-      encodedUpdatedHostStateDatum,
-      encodedSpendChannelRedeemer,
-      encodedUpdatedChannelDatum,
-
-      channelTokenUnit,
-      constructedAddress,
-
-      recvPacketPolicyId,
-      channelToken,
-
-      verifyProofPolicyId,
-      encodedVerifyProofRedeemer,
-    };
-
-    this.debugLogRecvPacketPlan('generic', {
-      spendInputs: [
-        { label: 'host_state', utxo: hostStateUtxo },
-        { label: 'channel', utxo: channelUtxo },
-      ],
-      channelOutputAddress: deploymentConfig.validators.spendChannel.address,
-      hostStateOutputAddress: deploymentConfig.validators.hostStateStt.address,
-      updatedChannelDatumHex: encodedUpdatedChannelDatum,
-      recvPacketPolicyId,
-      verifyProofPolicyId,
-      channelTokenUnit,
-      proofHeight: `${recvPacketOperator.proofHeight.revisionNumber}/${recvPacketOperator.proofHeight.revisionHeight}`,
-      packetSequence: packet.sequence.toString(),
-    });
-    // handle recv packet mint
-    const unsignedTx = this.lucidService.createUnsignedRecvPacketTx(unsignedRecvPacketMintParams);
-    return { unsignedTx, pendingTreeUpdate: { expectedNewRoot: newRoot, commit } };
   }
   async buildUnsignedTimeoutPacketTx(
     timeoutPacketOperator: TimeoutPacketOperator,

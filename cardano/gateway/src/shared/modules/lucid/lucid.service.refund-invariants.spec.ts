@@ -94,6 +94,107 @@ const createService = (txBuilder: ChainableTxBuilder): any => {
 };
 
 describe('LucidService voucher refund invariants', () => {
+  it('spends and recreates the registered transfer-module root for recv voucher minting', () => {
+    const txBuilder = createChainedTxBuilder();
+    const service = createService(txBuilder);
+    const transferModuleUtxo = {
+      txHash: 'transfer-root-utxo',
+      outputIndex: 0,
+      assets: {
+        lovelace: 5_000_000n,
+        'module-policy.module-token': 1n,
+        'port-policy.port-token': 1n,
+      },
+    } as any;
+
+    service.createUnsignedRecvPacketMintTx({
+      hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
+      channelUtxo: { txHash: 'channel-utxo', outputIndex: 0, assets: {} } as any,
+      connectionUtxo: { txHash: 'connection-utxo', outputIndex: 0, assets: {} } as any,
+      clientUtxo: { txHash: 'client-utxo', outputIndex: 0, assets: {} } as any,
+      transferModuleUtxo,
+      encodedHostStateRedeemer: 'encoded-host-redeemer',
+      encodedUpdatedHostStateDatum: 'encoded-host-datum',
+      encodedSpendChannelRedeemer: 'encoded-channel-redeemer',
+      encodedSpendTransferModuleRedeemer: 'encoded-transfer-redeemer',
+      encodedMintVoucherRedeemer: 'encoded-mint-voucher-redeemer',
+      encodedUpdatedChannelDatum: 'encoded-channel-datum',
+      channelTokenUnit: 'channel-token-unit',
+      voucherTokenUnit: 'voucher-token-unit',
+      transferAmount: 12n,
+      receiverAddress: 'addr_test1receiver',
+      constructedAddress: 'addr_test1operator',
+      recvPacketPolicyId: 'recv-packet-policy-id',
+      channelToken: { policyId: 'channel-policy-id', name: 'channel-token-name' },
+      verifyProofPolicyId: 'verify-proof-policy-id',
+      encodedVerifyProofRedeemer: 'encoded-verify-proof-redeemer',
+    });
+
+    expect(txBuilder.collectFrom).toHaveBeenCalledWith([transferModuleUtxo], 'encoded-transfer-redeemer');
+    expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
+      deploymentConfig.modules.transfer.address,
+      undefined,
+      transferModuleUtxo.assets,
+    );
+    expect(txBuilder.readFrom.mock.calls[0][0]).toEqual(
+      expect.arrayContaining([expect.objectContaining({ txHash: 'ref-spend-transfer' })]),
+    );
+  });
+
+  it('anchors recv unescrow shard callbacks to the registered module root reference', () => {
+    const txBuilder = createChainedTxBuilder();
+    const service = createService(txBuilder);
+    const denomToken = 'policy-id.native-token';
+    const transferEscrowShardTokenUnit = 'shard-policy.shard-token';
+    const transferModuleReferenceUtxo = {
+      txHash: 'transfer-root-utxo',
+      outputIndex: 0,
+      assets: { 'port-policy.port-token': 1n },
+    } as any;
+    const transferEscrowUtxo = {
+      txHash: 'transfer-escrow-utxo',
+      outputIndex: 1,
+      assets: {
+        lovelace: 2_000_000n,
+        [denomToken]: 42n,
+        [transferEscrowShardTokenUnit]: 1n,
+      },
+      datum: 'encoded-transfer-escrow-datum',
+    } as any;
+
+    service.createUnsignedRecvPacketUnescrowTx({
+      hostStateUtxo: { txHash: 'host-state-utxo', outputIndex: 0, assets: {}, datum: 'host-datum' } as any,
+      channelUtxo: { txHash: 'channel-utxo', outputIndex: 0, assets: {} } as any,
+      connectionUtxo: { txHash: 'connection-utxo', outputIndex: 0, assets: {} } as any,
+      clientUtxo: { txHash: 'client-utxo', outputIndex: 0, assets: {} } as any,
+      transferModuleReferenceUtxo,
+      transferEscrowUtxo,
+      encodedTransferEscrowDatum: 'encoded-transfer-escrow-datum',
+      transferEscrowShardTokenUnit,
+      encodedHostStateRedeemer: 'encoded-host-redeemer',
+      encodedUpdatedHostStateDatum: 'encoded-host-datum',
+      encodedSpendChannelRedeemer: 'encoded-channel-redeemer',
+      encodedSpendTransferModuleRedeemer: 'encoded-transfer-redeemer',
+      encodedUpdatedChannelDatum: 'encoded-channel-datum',
+      channelTokenUnit: 'channel-token-unit',
+      transferAmount: 10n,
+      receiverAddress: 'addr_test1receiver',
+      constructedAddress: 'addr_test1operator',
+      recvPacketPolicyId: 'recv-packet-policy-id',
+      channelToken: { policyId: 'channel-policy-id', name: 'channel-token-name' },
+      verifyProofPolicyId: 'verify-proof-policy-id',
+      encodedVerifyProofRedeemer: 'encoded-verify-proof-redeemer',
+      denomToken,
+    });
+
+    expect(txBuilder.collectFrom).toHaveBeenCalledWith([transferEscrowUtxo], 'encoded-transfer-redeemer');
+    expect(txBuilder.readFrom).toHaveBeenCalledWith([
+      expect.objectContaining({ txHash: 'connection-utxo' }),
+      expect.objectContaining({ txHash: 'client-utxo' }),
+      transferModuleReferenceUtxo,
+    ]);
+  });
+
   it('spends and preserves the transfer-module root for successful acknowledgements', () => {
     const txBuilder = createChainedTxBuilder();
     const service = createService(txBuilder);

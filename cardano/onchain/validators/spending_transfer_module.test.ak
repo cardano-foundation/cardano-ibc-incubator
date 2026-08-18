@@ -674,6 +674,7 @@ fn recv_source_unescrow_fixture(
     Callback(
       OnRecvPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: TransferModuleData(ftpd),
       },
@@ -1016,6 +1017,7 @@ fn voucher_recv_sink_fixture(
     Callback(
       OnRecvPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: TransferModuleData(ftpd),
       },
@@ -1508,6 +1510,7 @@ test on_recv_packet_mint_voucher_succeed() {
     Callback(
       OnRecvPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: packet_data,
       },
@@ -1627,6 +1630,7 @@ test on_recv_packet_unescrow_succeed() {
     Callback(
       OnRecvPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: packet_data,
       },
@@ -1743,6 +1747,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
     Callback(
       OnRecvPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: packet_data,
       },
@@ -2692,6 +2697,7 @@ test on_recv_packet_source_fails_with_short_native_payout() fail {
     Callback(
       OnRecvPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: TransferModuleData(ftpd),
       },

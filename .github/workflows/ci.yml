@@ -432,20 +432,23 @@ jobs:
               -m prop_host_handle_packet_accepts_
               -m prop_host_handle_packet_rejects_channel_only_change
               -m prop_host_handle_packet_rejects_wrong_packet_key
+          - suite: host-handle-packet-recv-successor
+            match_tests: >-
+              -m prop_host_handle_packet_rejects_recv_with_unrelated_channel_mutation
           # Capacity cases build the full 64-entry bounded state. Their seed
-          # only varies unrelated metadata, so 330 cases keep each label above
+          # only varies unrelated metadata, so 350 cases keep each label above
           # the global 0.50% share ratchet without repeating the boundary 500
           # times. The slight margin accommodates new labeled properties.
           - suite: host-packet-capacity-receipt
-            max_success: 330
+            max_success: 350
             match_tests: >-
               -m prop_host_handle_packet_rejects_history_capacity_overflow
           - suite: host-packet-capacity-acknowledgement
-            max_success: 330
+            max_success: 350
             match_tests: >-
               -m prop_host_handle_packet_rejects_acknowledgement_capacity_overflow
           - suite: host-packet-capacity-commitment
-            max_success: 330
+            max_success: 350
             match_tests: >-
               -m prop_host_handle_packet_rejects_commitment_capacity_overflow
           - suite: host-bind-port
@@ -469,6 +472,17 @@ jobs:
               -m ibc/core/ics_004/channel_datum_test/channel_handshake_contract
               -m ibc/core/ics_004/channel_datum_test/packet_lifecycle_contract
               -m prop_tx_packet_send_
+          - suite: channel-packet-recv-callback
+            match_tests: >-
+              -m prop_tx_recv_packet_rejects_missing_application_callback
+              -m prop_tx_recv_packet_rejects_callback_packet_data_mismatch
+              -m prop_tx_recv_packet_rejects_callback_acknowledgement_mismatch
+          - suite: channel-packet-recv-successor
+            timeout_minutes: 30
+            match_tests: >-
+              -m prop_tx_recv_packet_accepts_atomic_successor_and_callback
+              -m prop_tx_recv_packet_rejects_moved_port_binding
+              -m prop_tx_recv_packet_rejects_unrelated_successor_mutation
           - suite: transfer-contract
             match_tests: >-
               -m ibc/apps/transfer/transfer_accounting_contract

@@ -347,6 +347,12 @@ Required CI label suffixes:
 - `unit.packet.timeout.invalid_before_timeout`
 - `tx.packet.send.valid_channel_host_marker`
 - `tx.packet.send.invalid_missing_operation_marker`
+- `tx.packet.recv.valid_atomic_successor_callback`
+- `tx.packet.recv.invalid_missing_application_callback`
+- `tx.packet.recv.invalid_moved_port_binding`
+- `tx.packet.recv.invalid_unrelated_successor_mutation`
+- `tx.packet.recv.invalid_callback_packet_data`
+- `tx.packet.recv.invalid_callback_acknowledgement`
 - `tx.packet.recv.valid_sink_mints_voucher`
 - `model.packet.send_ack.valid_sequence`
 - `model.packet.send_recv_ack`
@@ -420,9 +426,10 @@ checks over the same transaction, including exact escrow accounting.
 
 ### RecvPacket
 
-Covered by `unit.packet.recv.valid_receipt` and
-`unit.packet.recv.invalid_duplicate_receipt`, with the collection bound covered
-by `unit.packet.recv.invalid_history_capacity`. Sink-chain voucher mint coupling
+Covered by `unit.packet.recv.valid_receipt`,
+`unit.packet.recv.invalid_duplicate_receipt`, and the `tx.packet.recv.*`
+receive-transition labels listed above, with the collection bound covered by
+`unit.packet.recv.invalid_history_capacity`. Sink-chain voucher mint coupling
 is additionally covered by `tx.packet.recv.valid_sink_mints_voucher`. The real
 receive policy's timeout boundary is covered by `succeed_recv_packet`,
 `recv_packet_rejects_height_only_timeout`, and
@@ -437,6 +444,15 @@ the input datum to already contain the receipt. They prove these invariants:
   sequence.
 - A packet cannot be received again if its receipt already exists.
 - A packet cannot be received again if its acknowledgement already exists.
+- A successful receive must atomically commit the unique canonical successor
+  for that packet and an authenticated callback from the module registered to
+  the destination port.
+- The callback must carry the exact packet bytes and acknowledgement whose
+  commitment is written to channel state.
+- A root-module callback must preserve the registered port token at the same
+  script address; a shard callback must be anchored to that immutable root.
+- Missing callbacks, unrelated channel mutations, moved port bindings, and
+  callback packet or acknowledgement mismatches are rejected.
 - A receive must use a zero timeout height because Cardano block height is not
   authenticated in the transaction context; height-only and mixed timeouts
   therefore fail closed.
@@ -448,6 +464,11 @@ the input datum to already contain the receipt. They prove these invariants:
   can make the channel datum too large for the ledger.
 - A sink-chain RecvPacket voucher mint can be coupled to the trace-registry
   append that proves the new voucher denom trace.
+
+The atomic receive transaction fixture executes the real receive marker policy
+and HostState validator over the same inputs, outputs, and redeemers. This
+proves that both validators accept one canonical transition rather than merely
+accepting independently constructed states.
 
 ### AcknowledgePacket
 
@@ -824,6 +845,7 @@ Required CI label suffixes:
 - `contract.host.handle_packet.valid_ack`
 - `contract.host.handle_packet.valid_timeout`
 - `contract.host.handle_packet.invalid_channel_only_change`
+- `contract.host.handle_packet.invalid_recv_channel_mutation`
 - `contract.host.handle_packet.invalid_commitment_capacity`
 - `contract.host.handle_packet.invalid_history_capacity`
 - `contract.host.handle_packet.invalid_ack_capacity`
@@ -889,9 +911,12 @@ must be rejected, proving these invariants:
 
 ### Packet Root Updates
 
-Covered by `contract.host.handle_packet.valid_send`, `contract.host.handle_packet.valid_recv`,
-`contract.host.handle_packet.valid_ack`, `contract.host.handle_packet.valid_timeout`,
+Covered by `contract.host.handle_packet.valid_send`,
+`contract.host.handle_packet.valid_recv`,
+`contract.host.handle_packet.valid_ack`,
+`contract.host.handle_packet.valid_timeout`,
 `contract.host.handle_packet.invalid_channel_only_change`,
+`contract.host.handle_packet.invalid_recv_channel_mutation`,
 `contract.host.handle_packet.invalid_commitment_capacity`,
 `contract.host.handle_packet.invalid_history_capacity`,
 `contract.host.handle_packet.invalid_ack_capacity`, and
@@ -909,6 +934,8 @@ The mutations prove these invariants:
   combined commitment, receipt, and acknowledgement entries.
 - Ack/timeout-like commitment deletion must update the committed packet key.
 - A channel-only change cannot be smuggled through the packet branch.
+- A receive cannot combine otherwise valid receipt and acknowledgement root
+  updates with a counterparty or connection rebind.
 - A packet update committed under the wrong packet key is rejected.
 
 ## Trace Registry Append

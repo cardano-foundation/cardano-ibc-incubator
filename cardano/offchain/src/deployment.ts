@@ -2443,6 +2443,7 @@ const deploySpendChannel = async (
     "chan_open_confirm",
     "chan_close_init",
     "chan_close_confirm",
+    "recv_packet",
     "timeout_packet",
     "acknowledge_packet",
   ]);

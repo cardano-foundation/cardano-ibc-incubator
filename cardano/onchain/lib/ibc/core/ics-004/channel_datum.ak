@@ -212,6 +212,13 @@ pub fn validate_recv_packet(
   packet: Packet,
   ack: ByteArray,
 ) -> Bool {
+  let valid_sequence =
+    when input_datum.state.channel.ordering is {
+      order.Ordered -> packet.sequence == input_datum.state.next_sequence_recv
+      order.Unordered -> True
+      _ -> False
+    }
+
   let (expected_packet_receipt, expected_next_sequence_recv, inserted_entries) =
     when input_datum.state.channel.ordering is {
       order.Ordered ->
@@ -246,6 +253,7 @@ pub fn validate_recv_packet(
     }
 
   and {
+    valid_sequence,
     packet_entry_count(input_datum.state) + inserted_entries <= max_packet_entries_per_channel,
     expected_datum == output_datum,
   }

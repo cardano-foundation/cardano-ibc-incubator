@@ -1779,7 +1779,11 @@ export class LucidService implements OnModuleInit {
         [transferEscrowUtxo],
         dto.encodedSpendTransferModuleRedeemer,
       )
-      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .readFrom([
+        dto.connectionUtxo,
+        dto.clientUtxo,
+        dto.transferModuleReferenceUtxo,
+      ])
       .pay.ToContract(
         deploymentConfig.validators.hostStateStt.address,
         {
@@ -1986,6 +1990,7 @@ export class LucidService implements OnModuleInit {
       };
     tx.readFrom([
       this.referenceScripts.spendChannel,
+      this.referenceScripts.spendTransferModule,
       this.referenceScripts.mintVoucher,
       this.referenceScripts.receivePacket,
       this.referenceScripts.verifyProof,
@@ -1997,6 +2002,10 @@ export class LucidService implements OnModuleInit {
     tx
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .collectFrom(
+        [dto.transferModuleUtxo],
+        dto.encodedSpendTransferModuleRedeemer,
+      )
       .readFrom([dto.connectionUtxo, dto.clientUtxo])
       .mintAssets(
         mintVoucherAssets,
@@ -2037,6 +2046,8 @@ export class LucidService implements OnModuleInit {
         },
         dto.encodedVerifyProofRedeemer,
       );
+
+    this.payModuleUtxo(tx, "transfer", dto.transferModuleUtxo);
 
     if (isFirstSeenVoucher) {
       if (

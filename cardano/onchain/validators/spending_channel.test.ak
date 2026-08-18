@@ -1451,7 +1451,12 @@ test recv_packet_succeed() {
     channel_keys.format_channel_identifier(mock_data.channel_sequence)
   let module_redeemer: Redeemer =
     Callback(
-      OnRecvPacket { channel_id, acknowledgement: ack, data: OtherModuleData },
+      OnRecvPacket {
+        channel_id,
+        packet_data: packet.data,
+        acknowledgement: ack,
+        data: OtherModuleData,
+      },
     )
 
   let recv_packet_redeemer: Redeemer = mock_data.channel_token

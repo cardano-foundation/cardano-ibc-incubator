@@ -32,6 +32,10 @@ export type WithRequiredTransferModuleReferenceUtxo = {
   transferModuleReferenceUtxo: UTxO;
 };
 
+export type WithTransferModuleUtxo = {
+  transferModuleUtxo: UTxO;
+};
+
 export type WithMockModuleUtxo = {
   mockModuleUtxo: UTxO;
 };

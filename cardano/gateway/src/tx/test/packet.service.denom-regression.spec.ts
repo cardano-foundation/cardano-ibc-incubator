@@ -755,6 +755,11 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       .mockResolvedValueOnce({ txHash: 'channel', outputIndex: 0, datum: 'channel-datum', assets: {} })
       .mockResolvedValueOnce({ txHash: 'connection', outputIndex: 0, datum: 'connection-datum', assets: {} })
       .mockResolvedValueOnce({ txHash: 'client', outputIndex: 0, datum: 'client-datum', assets: {} })
+      .mockResolvedValueOnce({
+        txHash: 'transfer-module',
+        outputIndex: 0,
+        assets: { 'transfer-module-identifier': 1n },
+      })
       .mockImplementationOnce(async (shardTokenUnit: string) => ({
         txHash: 'transfer-escrow',
         outputIndex: 0,
@@ -801,6 +806,9 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
         denomToken: 'lovelace',
         transferEscrowUtxo: expect.objectContaining({
           txHash: 'transfer-escrow',
+        }),
+        transferModuleReferenceUtxo: expect.objectContaining({
+          txHash: 'transfer-module',
         }),
         encodedTransferEscrowDatum: 'encoded',
       }),
