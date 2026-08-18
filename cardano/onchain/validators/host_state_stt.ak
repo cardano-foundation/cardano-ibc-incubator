@@ -16,10 +16,8 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/keys as conn_id_keys
-use ibc/core/ics_004/channel_datum.{
-  ChannelDatum, ChannelDatumState, max_packet_entries_per_channel,
-  packet_entry_count,
-} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{ChannelDatum,
+  ChannelDatumState} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, RecvPacket, SendPacket, SpendChannelRedeemer, TimeoutPacket,
 }
@@ -817,8 +815,9 @@ fn validate_handle_packet_root(
   expect channel_input_datum: ChannelDatum =
     validator_utils.get_inline_datum(channel_input.output)
 
-  expect channel_input_datum.port_id == channel_output_datum.port_id
-  expect channel_input_datum.token == channel_output_datum.token
+  // The operation-specific validator constructs and compares the complete
+  // successor datum. That single check also preserves the token and port,
+  // enforces packet capacity, and rejects every unrelated state change.
   expect
     validate_packet_channel_transition(
       channel_input_datum,
@@ -827,11 +826,7 @@ fn validate_handle_packet_root(
       redeemers,
     )
   // HandlePacket is reserved for packet/sequence effects, not channel-only updates.
-  expect
-    !packet_state_unchanged(
-      channel_input_datum.state,
-      channel_output_datum.state,
-    )
+  expect channel_input_datum.state != channel_output_datum.state
 
   // Commitment keys (ICS-24 paths).
   let channel_key = host_channel_keys.channel_path(port_id, channel_id)
@@ -936,8 +931,6 @@ fn validate_handle_packet_root(
       // Exactly one insertion is expected in a single packet operation.
       expect removed_commitments == []
       expect [Pair(sequence, commitment_bytes)] = inserted_commitments
-      expect
-        packet_entry_count(channel_output_datum.state) <= max_packet_entries_per_channel
       let commitment_key =
         packet_keys.packet_commitment_path(port_id, channel_id, sequence)
       let new_value = cbor.serialise(commitment_bytes)
@@ -988,8 +981,6 @@ fn validate_handle_packet_root(
       // Receipts should only ever be inserted.
       expect removed_receipts == []
       expect [Pair(sequence, receipt_bytes)] = inserted_receipts
-      expect
-        packet_entry_count(channel_output_datum.state) <= max_packet_entries_per_channel
       let receipt_key =
         packet_keys.packet_receipt_path(port_id, channel_id, sequence)
       let new_value = cbor.serialise(receipt_bytes)
@@ -1022,8 +1013,6 @@ fn validate_handle_packet_root(
       // Acknowledgements should only ever be inserted.
       expect removed_acks == []
       expect [Pair(sequence, ack_bytes)] = inserted_acks
-      expect
-        packet_entry_count(channel_output_datum.state) <= max_packet_entries_per_channel
       let ack_key =
         packet_keys.packet_acknowledgement_path(port_id, channel_id, sequence)
       let new_value = cbor.serialise(ack_bytes)
