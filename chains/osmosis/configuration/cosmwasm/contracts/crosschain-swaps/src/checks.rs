@@ -49,7 +49,9 @@ fn validate_simplified_receiver(
     receiver: &str,
 ) -> Result<(String, Addr), ContractError> {
     let Ok((prefix, _, _)) = bech32::decode(receiver) else {
-        return Err(ContractError::InvalidReceiver { receiver: receiver.to_string() })
+        return Err(ContractError::InvalidReceiver {
+            receiver: receiver.to_string(),
+        });
     };
 
     // Check if the prefix has been disabled

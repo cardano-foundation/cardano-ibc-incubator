@@ -1,5 +1,5 @@
-import { BinaryReader, BinaryWriter } from '@plus/proto-types/build/binary';
-import { base64FromBytes, bytesFromBase64 } from '@plus/proto-types/build/helpers';
+import { BinaryReader, BinaryWriter } from '@cardano-ibc/proto-types/build/binary';
+import { base64FromBytes, bytesFromBase64 } from '@cardano-ibc/proto-types/build/helpers';
 
 export const ASYNC_ICQ_HOST_PORT = 'icqhost';
 export const ASYNC_ICQ_CHANNEL_VERSION = 'icq-1';

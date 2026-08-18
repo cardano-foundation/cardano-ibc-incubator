@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ResponseDeliverTx } from '@plus/proto-types/build/ibc/core/types/v1/block';
-import { MsgTransferResponse } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+import { ResponseDeliverTx } from '@cardano-ibc/proto-types/build/ibc/core/types/v1/block';
+import { MsgTransferResponse } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import { QueryService } from '~@/query/services/query.service';
 import { ATTRIBUTE_KEY_PACKET, EVENT_TYPE_PACKET } from '~@/constant/packet';
 import { GrpcInvalidArgumentException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
@@ -15,6 +15,7 @@ import {
   DecodedVesseloracleIcqAcknowledgement,
   isSupportedVesseloracleQueryPath,
   VESSELORACLE_LATEST_QUERY_PATH,
+  VESSELORACLE_QUERY_PATH,
 } from '@shared/types/apps/async-icq/vesseloracle-icq';
 import { REDEEMER_EMPTY_DATA, REDEEMER_TYPE } from '~@/constant';
 import { HISTORY_SERVICE, HistoryService, HistoryTxEvidence } from '~@/query/services/history.service';
@@ -27,6 +28,10 @@ import {
   VesseloracleConsolidatedDataReportIcqRequestDto,
   VesseloracleLatestConsolidatedDataReportIcqRequestDto,
 } from './vesseloracle-icq.dto';
+
+// This service is intentionally not registered in ApiModule. It is preserved
+// as dormant integration code for a future chain that exposes the VesselOracle
+// query contract; registering it alone is not sufficient without that target.
 
 type BuiltVesseloracleIcqTransaction = {
   source_port: typeof ASYNC_ICQ_HOST_PORT;
@@ -230,7 +235,11 @@ export class VesseloracleIcqService {
       return decodeVesseloracleLatestConsolidatedDataReportAcknowledgement(ackHex);
     }
 
-    return decodeVesseloracleConsolidatedDataReportAcknowledgement(ackHex);
+    if (queryPath === VESSELORACLE_QUERY_PATH) {
+      return decodeVesseloracleConsolidatedDataReportAcknowledgement(ackHex);
+    }
+
+    throw new GrpcInvalidArgumentException(`Unsupported vesseloracle query_path: ${queryPath}`);
   }
 
   private async resolveSearchStartHeight(dto: AsyncIcqResultRequestDto): Promise<SearchStartResult> {

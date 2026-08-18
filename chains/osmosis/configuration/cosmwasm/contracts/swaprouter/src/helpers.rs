@@ -3,8 +3,9 @@ use std::ops::{Div, Mul};
 use cosmwasm_std::{Addr, Coin, Decimal, Deps, Timestamp, Uint128};
 use osmosis_std::shim::Timestamp as OsmosisTimestamp;
 use osmosis_std::types::osmosis::gamm::v1beta1::{
-    MsgSwapExactAmountIn, QueryTotalPoolLiquidityRequest, SwapAmountInRoute,
+    MsgSwapExactAmountIn, QueryTotalPoolLiquidityRequest,
 };
+use osmosis_std::types::osmosis::poolmanager::v1beta1::SwapAmountInRoute;
 use osmosis_std::types::osmosis::twap::v1beta1::TwapQuerier;
 
 use crate::{
@@ -175,8 +176,8 @@ pub fn calculate_min_output_from_twap(
     //     "twap_price minus {percentage_impact}%: {twap_price}"
     // ));
 
-    let min_out: Uint128 = input_token.amount.mul(twap_price);
+    let min_out = input_token.amount.mul_floor(twap_price);
     // deps.api.debug(&format!("min: {min_out}"));
 
-    Ok(Coin::new(min_out.into(), output_denom))
+    Ok(Coin::new(min_out, output_denom))
 }

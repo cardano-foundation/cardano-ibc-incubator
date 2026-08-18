@@ -1,4 +1,4 @@
-import { Coin } from 'interchain/types/codegen/cosmos/base/v1beta1/coin';
+import type { Coin } from 'cosmjs-types/cosmos/base/v1beta1/coin';
 
 // eslint-disable-next-line no-undef
 let timeout: NodeJS.Timeout;

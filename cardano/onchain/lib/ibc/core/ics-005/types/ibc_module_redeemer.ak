@@ -19,9 +19,14 @@ pub type IBCModuleCallback {
     acknowledgement: Acknowledgement,
     data: IBCModulePacketData,
   }
-  OnTimeoutPacket { channel_id: ByteArray, data: IBCModulePacketData }
+  OnTimeoutPacket {
+    channel_id: ByteArray,
+    packet_data: ByteArray,
+    data: IBCModulePacketData,
+  }
   OnAcknowledgementPacket {
     channel_id: ByteArray,
+    packet_data: ByteArray,
     acknowledgement: Acknowledgement,
     data: IBCModulePacketData,
   }

@@ -4,7 +4,6 @@ use async_trait::async_trait;
 
 use crate::{start::OptionalChainId, DemoType};
 
-mod message_exchange;
 mod token_swap;
 
 struct DemoRunOptions<'a> {
@@ -23,10 +22,8 @@ trait DemoDriver: Sync {
 }
 
 struct TokenSwapDemoDriver;
-struct MessageExchangeDemoDriver;
 
 static TOKEN_SWAP_DEMO_DRIVER: TokenSwapDemoDriver = TokenSwapDemoDriver;
-static MESSAGE_EXCHANGE_DEMO_DRIVER: MessageExchangeDemoDriver = MessageExchangeDemoDriver;
 
 #[async_trait]
 impl DemoDriver for TokenSwapDemoDriver {
@@ -43,29 +40,8 @@ impl DemoDriver for TokenSwapDemoDriver {
     }
 }
 
-#[async_trait]
-impl DemoDriver for MessageExchangeDemoDriver {
-    fn use_case(&self) -> DemoType {
-        DemoType::MessageExchange
-    }
-
-    async fn run(
-        &self,
-        project_root_path: &Path,
-        options: &DemoRunOptions<'_>,
-    ) -> Result<(), String> {
-        if options.chain.is_some() || options.network.is_some() {
-            return Err(
-                "message-exchange demo does not support --chain/--network options".to_string(),
-            );
-        }
-
-        message_exchange::run_message_exchange_demo(project_root_path).await
-    }
-}
-
 fn registered_demo_drivers() -> Vec<&'static dyn DemoDriver> {
-    vec![&TOKEN_SWAP_DEMO_DRIVER, &MESSAGE_EXCHANGE_DEMO_DRIVER]
+    vec![&TOKEN_SWAP_DEMO_DRIVER]
 }
 
 /// Dispatches demo execution through registered demo drivers.

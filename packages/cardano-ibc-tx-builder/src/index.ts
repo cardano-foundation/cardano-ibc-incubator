@@ -3,6 +3,7 @@ import { blake2b } from '@noble/hashes/blake2b';
 
 const LOVELACE = 'lovelace';
 const CIP67_FT_LABEL_HEX = '0014df10';
+export const MAX_PACKET_ENTRIES_PER_CHANNEL = 64;
 const LOOKUP_RETRY_OPTIONS = {
   maxAttempts: 6,
   retryDelayMs: 1000,
@@ -49,6 +50,8 @@ export type ChannelDatumLike = {
   state: {
     next_sequence_send: bigint;
     packet_commitment: Map<bigint, string>;
+    packet_receipt: Map<bigint, string>;
+    packet_acknowledgement: Map<bigint, string>;
     channel: {
       connection_hops: string[];
       counterparty: {
@@ -198,6 +201,7 @@ export type SendPacketBuildDependencies = {
     dto: UnsignedSendPacketEscrowTxInput,
   ) => TxBuilder;
   invalidArgument: (message: string) => Error;
+  failedPrecondition?: (message: string) => Error;
   internalError: (message: string) => Error;
 };
 
@@ -206,6 +210,21 @@ export async function buildUnsignedSendPacketTx(
   deps: SendPacketBuildDependencies,
 ): Promise<SendPacketBuildResult> {
   const context = await deps.loadContext(sendPacketOperator);
+
+  const retainedPacketEntryCount =
+    context.channelDatum.state.packet_commitment.size +
+    context.channelDatum.state.packet_receipt.size +
+    context.channelDatum.state.packet_acknowledgement.size;
+  if (
+    retainedPacketEntryCount >= MAX_PACKET_ENTRIES_PER_CHANNEL
+  ) {
+    const packetCapacityError =
+      deps.failedPrecondition ?? deps.invalidArgument;
+    throw packetCapacityError(
+      `Channel ${sendPacketOperator.sourceChannel} retained packet state capacity ` +
+        `of ${MAX_PACKET_ENTRIES_PER_CHANNEL} is exhausted`,
+    );
+  }
 
   const inputDenom = normalizeDenomTokenTransfer(
     sendPacketOperator.token.denom,

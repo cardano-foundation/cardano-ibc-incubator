@@ -1,15 +1,25 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.MAX_PACKET_ENTRIES_PER_CHANNEL = void 0;
 exports.buildUnsignedSendPacketTx = buildUnsignedSendPacketTx;
 const blake2b_1 = require("@noble/hashes/blake2b");
 const LOVELACE = 'lovelace';
 const CIP67_FT_LABEL_HEX = '0014df10';
+exports.MAX_PACKET_ENTRIES_PER_CHANNEL = 64;
 const LOOKUP_RETRY_OPTIONS = {
     maxAttempts: 6,
     retryDelayMs: 1000,
 };
 async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
     const context = await deps.loadContext(sendPacketOperator);
+    const retainedPacketEntryCount = context.channelDatum.state.packet_commitment.size +
+        context.channelDatum.state.packet_receipt.size +
+        context.channelDatum.state.packet_acknowledgement.size;
+    if (retainedPacketEntryCount >= exports.MAX_PACKET_ENTRIES_PER_CHANNEL) {
+        const packetCapacityError = deps.failedPrecondition ?? deps.invalidArgument;
+        throw packetCapacityError(`Channel ${sendPacketOperator.sourceChannel} retained packet state capacity ` +
+            `of ${exports.MAX_PACKET_ENTRIES_PER_CHANNEL} is exhausted`);
+    }
     const inputDenom = normalizeDenomTokenTransfer(sendPacketOperator.token.denom, deps);
     const resolvedDenom = await resolvePacketDenomForSend(inputDenom, deps);
     const packetDenom = normalizePacketDenom(resolvedDenom, sendPacketOperator.sourcePort, sendPacketOperator.sourceChannel, deps);

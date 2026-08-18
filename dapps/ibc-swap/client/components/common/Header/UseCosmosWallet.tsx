@@ -1,5 +1,5 @@
 import { useChain, useWalletClient } from '@cosmos-kit/react';
-import { ChainName } from 'cosmos-kit';
+import type { ChainName } from '@cosmos-kit/core';
 import { defaultChainName } from '@/constants';
 import { customChainassets, customChains } from '@/configs/customChainInfo';
 import { useCallback, useEffect } from 'react';

@@ -1,9 +1,10 @@
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/interval
+use aiken/primitive/int
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, from_asset}
+use cardano/assets.{PolicyId, add, from_asset}
 use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, ValidityRange,
+  InlineDatum, Input, NoDatum, Output, OutputReference, ValidityRange,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -27,7 +28,10 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
-use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/core/ics_025_handler_interface/host_state.{
+  Active, HostState, HostStateDatum, ModuleRegistration, empty_ibc_state_root,
+  host_state_token_name,
+}
 
 pub type MockData {
   client_minting_policy_id: PolicyId,
@@ -53,14 +57,18 @@ pub type MockData {
   client_input: Input,
   validity_range: ValidityRange,
   port_id: ByteArray,
+  host_state_nft_policy_id: PolicyId,
+  host_state_input: Input,
+  module_token: AuthToken,
   module_input: Input,
 }
 
 pub fn setup() -> MockData {
+  let host_state_nft_policy_id: PolicyId = "mock host state nft policy id"
   let base_token =
     AuthToken {
       name: host_state_token_name,
-      policy_id: "mock base token policy_id",
+      policy_id: host_state_nft_policy_id,
     }
 
   //========================Channel============================
@@ -252,11 +260,22 @@ pub fn setup() -> MockData {
   let port_minting_policy_id = "mock port_minting_policy_id"
 
   let port_id = "port-1"
-  let port_number = port_keys_mod.parse_port_id_number(port_id)
+  let port_number_bytes = port_keys_mod.parse_port_id_number(port_id)
+  expect Some(port_number) = int.from_utf8(port_number_bytes)
   let port_token_name =
-    auth.generate_token_name(base_token, port_keys_mod.port_prefix, port_number)
+    auth.generate_token_name(
+      base_token,
+      port_keys_mod.port_prefix,
+      port_number_bytes,
+    )
   let port_token =
     AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
+  let module_script_hash = "mock module script hash"
+  let module_token =
+    AuthToken {
+      policy_id: "mock module token policy id",
+      name: "mock module token name",
+    }
 
   let module_input =
     Input {
@@ -265,9 +284,42 @@ pub fn setup() -> MockData {
         output_index: 2,
       },
       output: Output {
-        address: from_script("mock module script hash"),
-        value: from_asset(port_token.policy_id, port_token.name, 1),
-        datum: InlineDatum(Void),
+        address: from_script(module_script_hash),
+        value: from_asset(port_token.policy_id, port_token.name, 1)
+          |> add(module_token.policy_id, module_token.name, 1),
+        datum: NoDatum,
+        reference_script: None,
+      },
+    }
+
+  //==========================HostState=========================
+  let registration =
+    ModuleRegistration { module_script_hash, port_token, module_token }
+  let host_state_datum =
+    HostStateDatum {
+      state: HostState {
+        version: 1,
+        ibc_state_root: empty_ibc_state_root,
+        next_client_sequence: 0,
+        next_connection_sequence: 0,
+        next_channel_sequence: 0,
+        bound_port: [Pair(port_number, registration)],
+        last_update_time: 0,
+      },
+      nft_policy: host_state_nft_policy_id,
+      deployer: "mock deployer key hash",
+      shutdown: Active,
+    }
+  let host_state_input =
+    Input {
+      output_reference: OutputReference {
+        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
+        output_index: 3,
+      },
+      output: Output {
+        address: from_script("mock host state script hash"),
+        value: from_asset(host_state_nft_policy_id, host_state_token_name, 1),
+        datum: InlineDatum(host_state_datum),
         reference_script: None,
       },
     }
@@ -296,6 +348,9 @@ pub fn setup() -> MockData {
     client_input,
     validity_range,
     port_id,
+    host_state_nft_policy_id,
+    host_state_input,
+    module_token,
     module_input,
   }
 }

@@ -1,6 +1,6 @@
-import { ClientState as ClientStateTendermint } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
-import { bytesFromBase64, toDuration } from '@plus/proto-types/build/helpers';
-import { HashOp, LengthOp, hashOpFromJSON, lengthOpFromJSON } from '@plus/proto-types/build/cosmos/ics23/v1/proofs';
+import { ClientState as ClientStateTendermint } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import { bytesFromBase64, toDuration } from '@cardano-ibc/proto-types/build/helpers';
+import { HashOp, LengthOp, hashOpFromJSON, lengthOpFromJSON } from '@cardano-ibc/proto-types/build/cosmos/ics23/v1/proofs';
 import { ClientState } from '../types/client-state-types';
 import { convertHex2String, convertString2Hex } from './hex';
 import { convertToProofType } from './proof_types';

@@ -14,7 +14,7 @@ import {
   MsgTransfer,
   MsgTransferResponse,
   ResponseResultType,
-} from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 
 import { Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import { parseChannelSequence, parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
@@ -49,12 +49,18 @@ import {
   validateAndFormatRecvPacketParams,
   validateAndFormatSendPacketParams,
   validateAndFormatTimeoutPacketParams,
+  validateRecvPacketHistoryCapacity,
+  validateSendPacketCommitmentCapacity,
 } from './helper/packet.validate';
 import { encodeVerifyProofRedeemer, VerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay, getHeightMapValue } from '../shared/helpers/verify';
 import { packetAcknowledgementPath, packetCommitmentPath, packetReceiptPath } from '../shared/helpers/packet-keys';
-import { Order as ChannelOrder } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
-import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
+import { Order as ChannelOrder } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
+import {
+  GrpcFailedPreconditionException,
+  GrpcInternalException,
+  GrpcInvalidArgumentException,
+} from '~@/exception/grpc_exceptions';
 import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import {
   AckPacketOperator,
@@ -1324,6 +1330,7 @@ export class PacketService {
     const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     // Get channel datum
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+    validateRecvPacketHistoryCapacity(channelDatum);
     const channelEnd = channelDatum.state.channel;
     if (channelEnd.state !== 'Open') {
       throw new Error('SendPacket to channel not in Open state');
@@ -1991,6 +1998,9 @@ export class PacketService {
     };
 
     const transferModuleAddress = this.getTransferModuleAddress();
+    const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(
+      this.getTransferModuleIdentifier(),
+    );
     const spendChannelAddress = this.getSpendChannelAddress();
     const transferAmount = BigInt(timeoutPacketOperator.fungibleTokenPacketData.amount);
     const senderPublicKeyHash = timeoutPacketOperator.fungibleTokenPacketData.sender;
@@ -2000,6 +2010,7 @@ export class PacketService {
         {
           OnTimeoutPacket: {
             channel_id: packet.source_channel,
+            packet_data: packet.data,
             data: {
               TransferModuleData: [
                 {
@@ -2129,6 +2140,7 @@ export class PacketService {
         hostStateUtxo: hostStateUtxo,
         channelUtxo: channelUtxo,
         transferEscrowUtxo: transferEscrowShard.utxo,
+        transferModuleReferenceUtxo,
         connectionUtxo: connectionUtxo,
         clientUtxo: clientUtxo,
 
@@ -2188,10 +2200,12 @@ export class PacketService {
       channelUtxo: channelUtxo,
       connectionUtxo: connectionUtxo,
       clientUtxo: clientUtxo,
+      transferModuleReferenceUtxo,
 
       encodedHostStateRedeemer: encodedHostStateRedeemer,
       encodedUpdatedHostStateDatum: encodedUpdatedHostStateDatum,
       encodedSpendChannelRedeemer: encodedSpendChannelRedeemer,
+      encodedSpendTransferModuleRedeemer,
       encodedMintVoucherRedeemer: encodedMintVoucherRedeemer,
       encodedUpdatedChannelDatum: encodedUpdatedChannelDatum,
 
@@ -2254,6 +2268,7 @@ export class PacketService {
               channelUtxo.datum!,
               'channel',
             );
+          validateSendPacketCommitmentCapacity(channelDatum);
           const [mintConnectionPolicyId, connectionTokenName] =
             this.lucidService.getConnectionTokenUnit(
               parseConnectionSequence(
@@ -2355,6 +2370,8 @@ export class PacketService {
           ),
         invalidArgument: (message) =>
           new GrpcInvalidArgumentException(message),
+        failedPrecondition: (message) =>
+          new GrpcFailedPreconditionException(message),
         internalError: (message) => new GrpcInternalException(message),
       },
     );
@@ -2374,6 +2391,7 @@ export class PacketService {
     const channelTokenUnit: string = mintChannelPolicyId + channelTokenName;
     const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+    validateSendPacketCommitmentCapacity(channelDatum);
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
     );
@@ -2594,6 +2612,7 @@ export class PacketService {
         {
           OnAcknowledgementPacket: {
             channel_id: channelId,
+            packet_data: packet.data,
             data: {
               TransferModuleData: [fTokenPacketData],
             },
@@ -2607,6 +2626,7 @@ export class PacketService {
         {
           OnAcknowledgementPacket: {
             channel_id: channelId,
+            packet_data: packet.data,
             data: 'OtherModuleData',
             acknowledgement: { response: acknowledgementResponse },
           },
@@ -2730,6 +2750,14 @@ export class PacketService {
       receiver: convertString2Hex(fungibleTokenPacketData.receiver),
       memo: convertString2Hex(fungibleTokenPacketData.memo),
     };
+    const normalizedAcknowledgementResponse = this.normalizeAcknowledgementResponse(acknowledgementResponse);
+    const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
+      createTransferModuleRedeemer(channelId, fTokenPacketData, normalizedAcknowledgementResponse),
+      'iBCModuleRedeemer',
+    );
+    const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(
+      this.getTransferModuleIdentifier(),
+    );
     const acknowledgementResult = this.extractAcknowledgementResult(acknowledgementResponse);
     if (acknowledgementResult) {
       // build update channel datum
@@ -2751,9 +2779,11 @@ export class PacketService {
         channelUtxo,
         connectionUtxo,
         clientUtxo,
+        transferModuleReferenceUtxo,
         encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum,
         encodedSpendChannelRedeemer,
+        encodedSpendTransferModuleRedeemer,
         channelTokenUnit,
         encodedUpdatedChannelDatum,
         constructedAddress,
@@ -2783,14 +2813,6 @@ export class PacketService {
         `Acknowledgement Response invalid: unknown result (keys=${acknowledgementResponseKeys})`,
       );
     }
-    const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
-      createTransferModuleRedeemer(channelId, fTokenPacketData, {
-        AcknowledgementError: {
-          err: convertString2Hex(acknowledgementError),
-        },
-      }),
-      'iBCModuleRedeemer',
-    );
     this.logger.log('AcknowledgementError');
     if (
       !this._hasVoucherPrefix(
@@ -2852,6 +2874,7 @@ export class PacketService {
         connectionUtxo,
         clientUtxo,
         transferEscrowUtxo: transferEscrowShard.utxo,
+        transferModuleReferenceUtxo,
 
         encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum,
@@ -2933,10 +2956,12 @@ export class PacketService {
       channelUtxo,
       connectionUtxo,
       clientUtxo,
+      transferModuleReferenceUtxo,
 
       encodedHostStateRedeemer,
       encodedUpdatedHostStateDatum,
       encodedSpendChannelRedeemer,
+      encodedSpendTransferModuleRedeemer,
       encodedMintVoucherRedeemer,
       encodedUpdatedChannelDatum,
 

@@ -2,8 +2,8 @@ use aiken/collection/list
 use cardano/address.{from_script}
 use cardano/assets.{ada_asset_name, ada_policy_id, add, from_asset}
 use cardano/transaction.{
-  InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
-  ScriptPurpose, Spend, Transaction,
+  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
+  Spend, Transaction,
 }
 use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/transfer_escrow_shard_redeemer.{CreateEscrowShard}
@@ -24,9 +24,6 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
   TransferModuleData,
 }
 use ibc/core/ics_005/types/keys as port_keys
-use ibc/core/ics_025_handler_interface/host_state.{
-  Active, HostState, HostStateDatum, empty_ibc_state_root, host_state_token_name,
-}
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{HandlePacket}
 use ibc/utils/test_utils
 use minting_transfer_escrow_shard
@@ -45,23 +42,6 @@ type CallbackMutation {
   WrongTypedPacketData
   ReferenceBoundShard
   WrongModuleCredential
-}
-
-fn active_host_state_datum(nft_policy: ByteArray) -> HostStateDatum {
-  HostStateDatum {
-    state: HostState {
-      version: 0,
-      ibc_state_root: empty_ibc_state_root,
-      next_client_sequence: 0,
-      next_connection_sequence: 0,
-      next_channel_sequence: 0,
-      bound_port: [1],
-      last_update_time: 0,
-    },
-    nft_policy,
-    deployer: #"00000000000000000000000000000000000000000000000000000000",
-    shutdown: Active,
-  }
 }
 
 fn check_send_packet(mutation: CallbackMutation) {
@@ -131,40 +111,10 @@ fn check_send_packet(mutation: CallbackMutation) {
       policy_id: mock_data.port_minting_policy_id,
       name: port_token_name,
     }
-  let module_token =
-    AuthToken { policy_id: "mock module policy", name: "mock module token" }
-  let registered_module_input =
-    Input {
-      ..mock_data.module_input,
-      output: Output {
-        ..mock_data.module_input.output,
-        value: mock_data.module_input.output.value
-          |> add(module_token.policy_id, module_token.name, 1),
-        datum: NoDatum,
-      },
-    }
-  let module_output =
-    Output { ..registered_module_input.output, datum: NoDatum }
-
-  let host_state_input =
-    Input {
-      output_reference: OutputReference {
-        transaction_id: #"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        output_index: 0,
-      },
-      output: Output {
-        address: from_script("mock host state script hash"),
-        value: from_asset(
-          mock_data.base_token.policy_id,
-          host_state_token_name,
-          1,
-        ),
-        datum: InlineDatum(
-          active_host_state_datum(mock_data.base_token.policy_id),
-        ),
-        reference_script: None,
-      },
-    }
+  let module_token = mock_data.module_token
+  let registered_module_input = mock_data.module_input
+  let module_output = registered_module_input.output
+  let host_state_input = mock_data.host_state_input
   let module_spend_input =
     Input {
       output_reference: OutputReference {
@@ -397,7 +347,7 @@ fn check_send_packet(mutation: CallbackMutation) {
             transfer_escrow_shard_policy_id,
             mock_data.channel_minting_policy_id,
             "mock voucher policy",
-            mock_data.base_token.policy_id,
+            mock_data.host_state_nft_policy_id,
             None,
             typed_module_redeemer,
             registered_module_input.output_reference,
@@ -417,6 +367,7 @@ fn check_send_packet(mutation: CallbackMutation) {
       mock_data.client_minting_policy_id,
       mock_data.connection_minting_policy_id,
       mock_data.port_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
       None,
       mock_data.channel_token,
       channel_input.output_reference,
@@ -426,6 +377,7 @@ fn check_send_packet(mutation: CallbackMutation) {
       mock_data.client_minting_policy_id,
       mock_data.connection_minting_policy_id,
       mock_data.port_minting_policy_id,
+      mock_data.host_state_nft_policy_id,
       mock_data.channel_token,
       mock_data.send_packet_policy_id,
       transaction,
@@ -439,7 +391,7 @@ fn check_send_packet(mutation: CallbackMutation) {
       mock_data.send_packet_policy_id,
       mock_data.timeout_packet_policy_id,
       mock_data.acknowledge_packet_policy_id,
-      mock_data.base_token.policy_id,
+      mock_data.host_state_nft_policy_id,
       Some(input_channel_datum),
       SendPacket { packet },
       channel_input.output_reference,

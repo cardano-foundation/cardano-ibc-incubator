@@ -1,4 +1,4 @@
-import { PageRequest } from '@plus/proto-types/build/cosmos/base/query/v1beta1/pagination';
+import { PageRequest } from '@cardano-ibc/proto-types/build/cosmos/base/query/v1beta1/pagination';
 
 /**
  * Normalize pagination parameters.

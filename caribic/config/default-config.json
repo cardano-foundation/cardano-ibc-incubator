@@ -22,22 +22,6 @@
     "gateway_max_retries": 60,
     "gateway_retry_interval_ms": 1000
   },
-  "demo": {
-    "mithril_artifact_max_retries": 240,
-    "mithril_artifact_retry_delay_secs": 5,
-    "message_exchange": {
-      "consolidated_report_max_retries": 40,
-      "consolidated_report_retry_delay_secs": 3,
-      "channel_discovery_max_retries": 20,
-      "channel_discovery_max_retries_after_create": 120,
-      "channel_discovery_retry_delay_secs": 3,
-      "connection_discovery_max_retries": 20,
-      "connection_discovery_retry_delay_secs": 3,
-      "mithril_readiness_progress_interval_secs": 30,
-      "relay_max_retries": 20,
-      "relay_retry_delay_secs": 3
-    }
-  },
   "cardano": {
     "services": {
       "db_sync": false,

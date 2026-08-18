@@ -1,5 +1,5 @@
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
-import { QueryClientStateRequest, QueryConsensusStateRequest } from '@plus/proto-types/src/ibc/core/client/v1/query';
+import { QueryClientStateRequest, QueryConsensusStateRequest } from '@cardano-ibc/proto-types/src/ibc/core/client/v1/query';
 import { CLIENT_ID_PREFIX } from '../../constant';
 
 /**

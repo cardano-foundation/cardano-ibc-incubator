@@ -6,15 +6,15 @@ import {
   DEFAULT_FEATURES_VERSION_ORDER_UNORDERED,
   DEFAULT_IDENTIFIER_VERSION,
 } from 'src/constant';
-import { MerkleProof as MerkleProofMsg } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
+import { MerkleProof as MerkleProofMsg } from '@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment';
 import {
   MsgConnectionOpenAck,
   MsgConnectionOpenConfirm,
   MsgConnectionOpenInit,
   MsgConnectionOpenTry,
-} from '@plus/proto-types/build/ibc/core/connection/v1/tx';
+} from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/tx';
 import { ConnectionOpenInitOperator } from '../dto/connection/connection-open-init-operator.dto';
-import { Any } from '@plus/proto-types/build/google/protobuf/any';
+import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
 import { convertString2Hex, toHex } from '@shared/helpers/hex';
 import { ConnectionOpenTryOperator } from '../dto/connection/connection-open-try-operator.dto';
 import { initializeMerkleProof } from '@shared/helpers/merkle-proof';

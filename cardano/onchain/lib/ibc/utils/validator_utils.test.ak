@@ -1,6 +1,7 @@
 use aiken/collection/list
 use aiken/interval.{Finite, Interval, IntervalBound, PositiveInfinity}
 use aiken/primitive/bytearray
+use aiken/primitive/int
 use cardano/address.{from_script}
 use cardano/assets.{
   PolicyId, ada_asset_name, ada_policy_id, add, from_asset, zero,
@@ -31,7 +32,10 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
-use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/core/ics_025_handler_interface/host_state.{
+  Active, HostState, HostStateDatum, ModuleRegistration, empty_ibc_state_root,
+  host_state_token_name,
+}
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
 use ibc/utils/validator_utils
 
@@ -252,6 +256,7 @@ fn setup_extract_module_redeemer() -> (
   ByteArray,
   PolicyId,
   ByteArray,
+  PolicyId,
   IBCModuleRedeemer,
 ) {
   let channel_token_name =
@@ -267,15 +272,22 @@ fn setup_extract_module_redeemer() -> (
   let port_id = "port-100"
   let port_minting_policy_id = "mock port minting policy id"
 
-  let port_number = port_keys.parse_port_id_number(port_id)
+  let port_number_bytes = port_keys.parse_port_id_number(port_id)
+  expect Some(port_number) = int.from_utf8(port_number_bytes)
   let port_token_name =
     auth.generate_token_name_from_another(
       channel_token_name,
       port_keys.port_prefix,
-      port_number,
+      port_number_bytes,
     )
   let port_token =
     AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
+  let module_token =
+    AuthToken {
+      policy_id: "mock module token policy id",
+      name: "mock module token name",
+    }
+  let module_script_hash = "mock module script hash"
 
   let out_ref =
     OutputReference {
@@ -285,9 +297,10 @@ fn setup_extract_module_redeemer() -> (
 
   let module_output =
     Output {
-      address: from_script("mock module script hash"),
-      value: from_asset(port_token.policy_id, port_token.name, 1),
-      datum: InlineDatum(Void),
+      address: from_script(module_script_hash),
+      value: from_asset(port_token.policy_id, port_token.name, 1)
+        |> add(module_token.policy_id, module_token.name, 1),
+      datum: NoDatum,
       reference_script: None,
     }
 
@@ -300,12 +313,42 @@ fn setup_extract_module_redeemer() -> (
     [Pair(Spend(out_ref), module_redeemer)]
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
+  let host_state_nft_policy_id: PolicyId = "mock host state nft policy id"
+  let registration =
+    ModuleRegistration { module_script_hash, port_token, module_token }
+  let host_state_datum =
+    HostStateDatum {
+      state: HostState {
+        version: 1,
+        ibc_state_root: empty_ibc_state_root,
+        next_client_sequence: 0,
+        next_connection_sequence: 0,
+        next_channel_sequence: 0,
+        bound_port: [Pair(port_number, registration)],
+        last_update_time: 0,
+      },
+      nft_policy: host_state_nft_policy_id,
+      deployer: "mock deployer key hash",
+      shutdown: Active,
+    }
+  let host_state_input =
+    Input {
+      output_reference: OutputReference { ..out_ref, output_index: 1 },
+      output: Output {
+        address: from_script("mock host state script hash"),
+        value: from_asset(host_state_nft_policy_id, host_state_token_name, 1),
+        datum: InlineDatum(host_state_datum),
+        reference_script: None,
+      },
+    }
+
   (
-    [module_input],
+    [host_state_input, module_input],
     redeemers,
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
     module_redeemer,
   )
 }
@@ -317,6 +360,7 @@ test extract_module_redeemer_succeed() {
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
     module_redeemer,
   ) = setup_extract_module_redeemer()
 
@@ -326,20 +370,23 @@ test extract_module_redeemer_succeed() {
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
   ) == module_redeemer
 }
 
 test extract_module_redeemer_fail_if_inputs_not_contain_port_token() fail {
   let (
-    _,
+    inputs,
     redeemers,
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
     module_redeemer,
   ) = setup_extract_module_redeemer()
 
-  let inputs = []
+  expect [host_state_input, _] = inputs
+  let inputs = [host_state_input]
 
   validator_utils.extract_module_redeemer(
     inputs,
@@ -347,6 +394,7 @@ test extract_module_redeemer_fail_if_inputs_not_contain_port_token() fail {
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
   ) == module_redeemer
 }
 
@@ -357,6 +405,7 @@ test extract_module_redeemer_fail_if_redeemers_not_contain_module_redeemer() fai
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
     module_redeemer,
   ) = setup_extract_module_redeemer()
 
@@ -368,6 +417,7 @@ test extract_module_redeemer_fail_if_redeemers_not_contain_module_redeemer() fai
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
   ) == module_redeemer
 }
 
@@ -378,12 +428,13 @@ test extract_module_redeemer_fail_if_found_redeemer_is_not_ibc_redeemer() fail {
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
     module_redeemer,
   ) = setup_extract_module_redeemer()
 
   let invalid_module_redeemer: Redeemer = Void
 
-  expect [module_input] = inputs
+  expect [_, module_input] = inputs
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [Pair(Spend(module_input.output_reference), invalid_module_redeemer)]
@@ -394,7 +445,87 @@ test extract_module_redeemer_fail_if_found_redeemer_is_not_ibc_redeemer() fail {
     channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
   ) == module_redeemer
+}
+
+test extract_module_redeemer_rejects_wrong_registered_credential() fail {
+  let (
+    inputs,
+    _,
+    channel_token_name,
+    port_minting_policy_id,
+    port_id,
+    host_state_nft_policy_id,
+    module_redeemer,
+  ) = setup_extract_module_redeemer()
+  expect [host_state_input, module_input] = inputs
+  let wrong_module_input =
+    Input {
+      ..module_input,
+      output: Output {
+        ..module_input.output,
+        address: from_script("attacker module script hash"),
+      },
+    }
+  let inputs = [host_state_input, wrong_module_input]
+  let module_redeemer: Redeemer = module_redeemer
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [Pair(Spend(wrong_module_input.output_reference), module_redeemer)]
+
+  expect _ =
+    validator_utils.extract_module_redeemer(
+      inputs,
+      redeemers,
+      channel_token_name,
+      port_minting_policy_id,
+      port_id,
+      host_state_nft_policy_id,
+    )
+  True
+}
+
+test extract_module_redeemer_rejects_incomplete_capability_set() fail {
+  let (
+    inputs,
+    _redeemers,
+    channel_token_name,
+    port_minting_policy_id,
+    port_id,
+    host_state_nft_policy_id,
+    module_redeemer,
+  ) = setup_extract_module_redeemer()
+  expect [host_state_input, module_input] = inputs
+  expect host_state_datum: HostStateDatum =
+    validator_utils.get_inline_datum(host_state_input.output)
+  expect [Pair(_, registration)] = host_state_datum.state.bound_port
+  let incomplete_module_input =
+    Input {
+      ..module_input,
+      output: Output {
+        ..module_input.output,
+        value: from_asset(
+          registration.port_token.policy_id,
+          registration.port_token.name,
+          1,
+        ),
+      },
+    }
+  let inputs = [host_state_input, incomplete_module_input]
+  let module_redeemer: Redeemer = module_redeemer
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [Pair(Spend(incomplete_module_input.output_reference), module_redeemer)]
+
+  expect _ =
+    validator_utils.extract_module_redeemer(
+      inputs,
+      redeemers,
+      channel_token_name,
+      port_minting_policy_id,
+      port_id,
+      host_state_nft_policy_id,
+    )
+  True
 }
 
 //==================================validate_token_remain================================
@@ -530,6 +661,47 @@ test find_unique_continuation_output_rejects_token_moved_to_other_address() fail
     [moved_token_output],
     token,
   ) == moved_token_output
+}
+
+fn continuation_decoys(updated_output: Output, count: Int) -> List<Output> {
+  let decoy =
+    Output {
+      ..updated_output,
+      value: from_asset("unrelated policy", "unrelated name", 1),
+    }
+  list.repeat(decoy, count)
+}
+
+test find_unique_continuation_output_target_first() {
+  let (spent_output, updated_output, token) =
+    setup_find_unique_continuation_output()
+
+  validator_utils.find_unique_continuation_output(
+    spent_output,
+    [updated_output, ..continuation_decoys(updated_output, 8)],
+    token,
+  ) == updated_output
+}
+
+test find_unique_continuation_output_target_middle() {
+  let (spent_output, updated_output, token) =
+    setup_find_unique_continuation_output()
+  let outputs =
+    list.concat(
+      continuation_decoys(updated_output, 4),
+      [updated_output, ..continuation_decoys(updated_output, 4)],
+    )
+
+  validator_utils.find_unique_continuation_output(spent_output, outputs, token) == updated_output
+}
+
+test find_unique_continuation_output_target_last() {
+  let (spent_output, updated_output, token) =
+    setup_find_unique_continuation_output()
+  let outputs =
+    list.concat(continuation_decoys(updated_output, 8), [updated_output])
+
+  validator_utils.find_unique_continuation_output(spent_output, outputs, token) == updated_output
 }
 
 test no_output_contains_auth_token_checks_all_addresses() {
@@ -969,6 +1141,398 @@ test validate_referred_connection_if_found_datum_is_not_connection_datum() fail 
     validator_utils.validate_referred_connection(
       reference_inputs,
       referrer_token_name,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
+}
+
+fn setup_referred_connection_and_client() -> (
+  Input,
+  Input,
+  ByteArray,
+  PolicyId,
+  PolicyId,
+  ByteArray,
+  ConnectionDatum,
+  ClientDatum,
+) {
+  let (
+    client_inputs,
+    referrer_token_name,
+    client_minting_policy_id,
+    client_id,
+    client_datum,
+  ) = setup_validate_referred_client()
+  let (
+    connection_inputs,
+    _,
+    connection_minting_policy_id,
+    connection_id,
+    connection_datum,
+  ) = setup_validate_referred_connection()
+  expect [client_input] = client_inputs
+  expect [connection_input] = connection_inputs
+  let connection_datum =
+    ConnectionDatum {
+      ..connection_datum,
+      state: ConnectionEnd { ..connection_datum.state, client_id },
+    }
+  let connection_input =
+    Input {
+      ..connection_input,
+      output: Output {
+        ..connection_input.output,
+        datum: InlineDatum(connection_datum),
+      },
+    }
+
+  (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    connection_datum,
+    client_datum,
+  )
+}
+
+fn unrelated_reference_input() -> Input {
+  Input {
+    output_reference: OutputReference {
+      transaction_id: hash_sample,
+      output_index: 99,
+    },
+    output: Output {
+      address: from_script("unrelated script hash"),
+      value: from_asset("unrelated policy", "unrelated token", 1),
+      datum: NoDatum,
+      reference_script: None,
+    },
+  }
+}
+
+fn validate_referred_connection_and_client(
+  reference_inputs: List<Input>,
+  referrer_token_name: ByteArray,
+  client_minting_policy_id: PolicyId,
+  connection_minting_policy_id: PolicyId,
+  connection_id: ByteArray,
+) -> (ConnectionDatum, ClientDatum) {
+  validator_utils.validate_referred_connection_and_client(
+    reference_inputs,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+  )
+}
+
+test validate_referred_connection_and_client_targets_first() {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    connection_datum,
+    client_datum,
+  ) = setup_referred_connection_and_client()
+  let reference_inputs =
+    [
+      connection_input, client_input,
+      ..list.repeat(unrelated_reference_input(), 8)
+    ]
+
+  validate_referred_connection_and_client(
+    reference_inputs,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+  ) == (connection_datum, client_datum)
+}
+
+test validate_referred_connection_and_client_targets_middle() {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    connection_datum,
+    client_datum,
+  ) = setup_referred_connection_and_client()
+  let reference_inputs =
+    list.concat(
+      list.repeat(unrelated_reference_input(), 4),
+      [
+        connection_input, client_input,
+        ..list.repeat(unrelated_reference_input(), 4)
+      ],
+    )
+
+  validate_referred_connection_and_client(
+    reference_inputs,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+  ) == (connection_datum, client_datum)
+}
+
+test validate_referred_connection_and_client_targets_last() {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    connection_datum,
+    client_datum,
+  ) = setup_referred_connection_and_client()
+  let reference_inputs =
+    list.concat(
+      list.repeat(unrelated_reference_input(), 8),
+      [connection_input, client_input],
+    )
+
+  validate_referred_connection_and_client(
+    reference_inputs,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+  ) == (connection_datum, client_datum)
+}
+
+test validate_referred_connection_and_client_accepts_reordered_inputs() {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    connection_datum,
+    client_datum,
+  ) = setup_referred_connection_and_client()
+
+  validate_referred_connection_and_client(
+    [client_input, unrelated_reference_input(), connection_input],
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+  ) == (connection_datum, client_datum)
+}
+
+test validate_referred_connection_and_client_rejects_forged_client_without_token() fail {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    _,
+    _,
+  ) = setup_referred_connection_and_client()
+  let forged_client_input =
+    Input {
+      ..client_input,
+      output: Output {
+        ..client_input.output,
+        value: from_asset(client_minting_policy_id, "forged client token", 1),
+      },
+    }
+
+  let result =
+    validate_referred_connection_and_client(
+      [connection_input, forged_client_input],
+      referrer_token_name,
+      client_minting_policy_id,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
+}
+
+test validate_referred_connection_and_client_rejects_wrong_derived_client_token() fail {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    connection_datum,
+    _,
+  ) = setup_referred_connection_and_client()
+  let wrong_connection_datum =
+    ConnectionDatum {
+      ..connection_datum,
+      state: ConnectionEnd {
+        ..connection_datum.state,
+        client_id: "07-tendermint-1",
+      },
+    }
+  let connection_input =
+    Input {
+      ..connection_input,
+      output: Output {
+        ..connection_input.output,
+        datum: InlineDatum(wrong_connection_datum),
+      },
+    }
+
+  let result =
+    validate_referred_connection_and_client(
+      [connection_input, client_input],
+      referrer_token_name,
+      client_minting_policy_id,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
+}
+
+test validate_referred_connection_and_client_rejects_malformed_client_datum() fail {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    _,
+    _,
+  ) = setup_referred_connection_and_client()
+  let malformed_client_input =
+    Input {
+      ..client_input,
+      output: Output { ..client_input.output, datum: InlineDatum(Void) },
+    }
+
+  let result =
+    validate_referred_connection_and_client(
+      [connection_input, malformed_client_input],
+      referrer_token_name,
+      client_minting_policy_id,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
+}
+
+test validate_referred_connection_and_client_rejects_malformed_connection_datum() fail {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    _,
+    _,
+  ) = setup_referred_connection_and_client()
+  let malformed_connection_input =
+    Input {
+      ..connection_input,
+      output: Output { ..connection_input.output, datum: InlineDatum(Void) },
+    }
+
+  let result =
+    validate_referred_connection_and_client(
+      [malformed_connection_input, client_input],
+      referrer_token_name,
+      client_minting_policy_id,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
+}
+
+test validate_referred_connection_and_client_rejects_wrong_connection_token() fail {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    _,
+    _,
+  ) = setup_referred_connection_and_client()
+  let wrong_connection_input =
+    Input {
+      ..connection_input,
+      output: Output {
+        ..connection_input.output,
+        value: from_asset(
+          connection_minting_policy_id,
+          "wrong connection token",
+          1,
+        ),
+      },
+    }
+
+  let result =
+    validate_referred_connection_and_client(
+      [wrong_connection_input, client_input],
+      referrer_token_name,
+      client_minting_policy_id,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
+}
+
+test validate_referred_connection_and_client_requires_connection_reference() fail {
+  let (
+    _,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    _,
+    _,
+  ) = setup_referred_connection_and_client()
+
+  let result =
+    validate_referred_connection_and_client(
+      [client_input],
+      referrer_token_name,
+      client_minting_policy_id,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
+}
+
+test validate_referred_connection_and_client_requires_client_reference() fail {
+  let (
+    connection_input,
+    _,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    _,
+    _,
+  ) = setup_referred_connection_and_client()
+
+  let result =
+    validate_referred_connection_and_client(
+      [connection_input],
+      referrer_token_name,
+      client_minting_policy_id,
       connection_minting_policy_id,
       connection_id,
     )

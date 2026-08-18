@@ -2,7 +2,8 @@ use aiken/collection/pairs
 use aiken/primitive/bytearray.{from_int_big_endian}
 use cardano/assets.{from_asset}
 use cardano/transaction.{
-  Input, Mint, Redeemer, ScriptPurpose, Spend, Transaction,
+  Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
+  Transaction,
 }
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -38,7 +39,11 @@ use ibc/utils/validator_utils
 use spending_channel/spending_channel_fixture.{MockData, setup}
 use spending_channel/timeout_packet
 
-test succeed_timeout_unordered_packet() {
+fn check_timeout_unordered_packet(
+  use_escrow_shard: Bool,
+  include_callback: Bool,
+  callback_packet_matches: Bool,
+) {
   let mock_data = setup()
 
   let pack_timeout_height = Height { revision_number: 1, revision_height: 18 }
@@ -88,7 +93,24 @@ test succeed_timeout_unordered_packet() {
   let channel_input =
     test_utils.build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input]
+  let module_shard_input =
+    Input {
+      output_reference: OutputReference {
+        ..mock_data.module_input.output_reference,
+        output_index: 9,
+      },
+      output: Output {
+        ..mock_data.module_input.output,
+        value: from_asset("mock escrow shard policy", "mock shard", 1),
+      },
+    }
+  let callback_input =
+    if use_escrow_shard {
+      module_shard_input
+    } else {
+      mock_data.module_input
+    }
+  let inputs = [mock_data.host_state_input, callback_input, channel_input]
 
   //========================arrange reference_inputs=======================
   let proof_height =
@@ -109,7 +131,12 @@ test succeed_timeout_unordered_packet() {
   let client_input =
     test_utils.update_client(proof_height, cons_state, mock_data.client_input)
 
-  let reference_inputs = [mock_data.connection_input, client_input]
+  let reference_inputs =
+    if use_escrow_shard {
+      [mock_data.module_input, mock_data.connection_input, client_input]
+    } else {
+      [mock_data.connection_input, client_input]
+    }
 
   //========================arrange outputs=======================
   let output_channel_datum =
@@ -130,7 +157,7 @@ test succeed_timeout_unordered_packet() {
       mock_data.channel_token,
     )
 
-  let outputs = [channel_output]
+  let outputs = [callback_input.output, channel_output]
 
   //========================arrange validity_range=======================
   let validity_range = mock_data.validity_range
@@ -257,7 +284,17 @@ test succeed_timeout_unordered_packet() {
   let channel_id =
     chan_keys_mod.format_channel_identifier(mock_data.channel_sequence)
   let module_redeemer: Redeemer =
-    Callback(OnTimeoutPacket { channel_id, data: OtherModuleData })
+    Callback(
+      OnTimeoutPacket {
+        channel_id,
+        packet_data: if callback_packet_matches {
+          packet.data
+        } else {
+          "mismatched packet data"
+        },
+        data: OtherModuleData,
+      },
+    )
 
   expect client_datum: ClientDatum =
     validator_utils.get_inline_datum(client_input.output)
@@ -293,13 +330,21 @@ test succeed_timeout_unordered_packet() {
 
   let timeout_packet_redeemer: Redeemer = mock_data.channel_token
 
-  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+  let required_redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
-      Pair(Spend(mock_data.module_input.output_reference), module_redeemer),
       Pair(Spend(channel_input.output_reference), spend_channel_redeemer),
       Pair(Mint(mock_data.timeout_packet_policy_id), timeout_packet_redeemer),
       Pair(Mint(mock_data.verify_proof_policy_id), verify_proof_redeemer),
     ]
+  let redeemers =
+    if include_callback {
+      [
+        Pair(Spend(callback_input.output_reference), module_redeemer),
+        ..required_redeemers
+      ]
+    } else {
+      required_redeemers
+    }
 
   //==========================arrange context=========================
   let transaction =
@@ -318,10 +363,35 @@ test succeed_timeout_unordered_packet() {
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
+    mock_data.host_state_nft_policy_id,
     mock_data.channel_token,
     mock_data.timeout_packet_policy_id,
     transaction,
   )
+}
+
+test succeed_timeout_unordered_packet() {
+  check_timeout_unordered_packet(False, True, True)
+}
+
+test timeout_packet_accepts_registered_escrow_shard_callback() {
+  check_timeout_unordered_packet(True, True, True)
+}
+
+test timeout_packet_rejects_missing_voucher_refund_callback() fail {
+  check_timeout_unordered_packet(False, False, True)
+}
+
+test timeout_packet_rejects_mismatched_voucher_refund_packet() fail {
+  check_timeout_unordered_packet(False, True, False)
+}
+
+test timeout_packet_rejects_missing_native_refund_callback() fail {
+  check_timeout_unordered_packet(True, False, True)
+}
+
+test timeout_packet_rejects_mismatched_native_refund_packet() fail {
+  check_timeout_unordered_packet(True, True, False)
 }
 
 test succeed_timeout_ordered_packet() {
@@ -376,7 +446,8 @@ test succeed_timeout_ordered_packet() {
   let channel_input =
     test_utils.build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let inputs = [mock_data.module_input, channel_input]
+  let inputs =
+    [mock_data.host_state_input, mock_data.module_input, channel_input]
 
   //========================arrange reference_inputs=======================
   let proof_height =
@@ -422,7 +493,7 @@ test succeed_timeout_ordered_packet() {
       mock_data.channel_token,
     )
 
-  let outputs = [channel_output]
+  let outputs = [mock_data.module_input.output, channel_output]
 
   //========================arrange validity_range=======================
   let validity_range = mock_data.validity_range
@@ -436,7 +507,13 @@ test succeed_timeout_ordered_packet() {
   let channel_id =
     chan_keys_mod.format_channel_identifier(mock_data.channel_sequence)
   let module_redeemer: Redeemer =
-    Callback(OnTimeoutPacket { channel_id, data: OtherModuleData })
+    Callback(
+      OnTimeoutPacket {
+        channel_id,
+        packet_data: packet.data,
+        data: OtherModuleData,
+      },
+    )
 
   expect client_datum: ClientDatum =
     validator_utils.get_inline_datum(client_input.output)
@@ -496,6 +573,7 @@ test succeed_timeout_ordered_packet() {
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
+    mock_data.host_state_nft_policy_id,
     mock_data.channel_token,
     mock_data.timeout_packet_policy_id,
     transaction,

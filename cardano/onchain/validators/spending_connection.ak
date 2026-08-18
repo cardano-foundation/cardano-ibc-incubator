@@ -87,26 +87,29 @@ validator spend_connection(
       conn_keys.format_connection_identifier(connection_sequence)
     trace @"spend_connection: extract connection_id"
 
+    // Both connection-spend variants authenticate the same referred client and
+    // require it to be active. Resolve that shared state once before dispatching
+    // to the branch-specific proof and transition checks.
+    let client_datum =
+      validator_utils.validate_referred_client(
+        reference_inputs,
+        datum.token.name,
+        client_minting_policy_id,
+        datum.state.client_id,
+      )
+    trace @"spend_connection: validator_utils.validate_referred_client"
+
+    let connection_state_active =
+      client_state.status(
+        client_datum.state.client_state,
+        tx_valid_to * 1_000_000,
+        client_datum.state.consensus_states,
+      ) == Active
+    trace @"spend_connection: client status is active"
+
     when redeemer is {
       ConnOpenAck -> {
         trace @"spend_connection: ConnOpenAck branch"
-
-        let client_datum =
-          validator_utils.validate_referred_client(
-            reference_inputs,
-            datum.token.name,
-            client_minting_policy_id,
-            datum.state.client_id,
-          )
-        trace @"spend_connection: validator_utils.validate_referred_client"
-
-        let connection_state_active =
-          client_state.status(
-            client_datum.state.client_state,
-            tx_valid_to * 1_000_000,
-            client_datum.state.consensus_states,
-          ) == Active
-        trace @"spend_connection: client status is active"
 
         let valid_connection =
           validate_conn_open_ack_proof(
@@ -125,23 +128,6 @@ validator spend_connection(
       }
       ConnOpenConfirm { proof_ack, proof_height } -> {
         trace @"spend_connection: ConnOpenConfirm branch"
-
-        let client_datum =
-          validator_utils.validate_referred_client(
-            reference_inputs,
-            datum.token.name,
-            client_minting_policy_id,
-            datum.state.client_id,
-          )
-        trace @"spend_connection: validator_utils.validate_referred_client"
-
-        let is_status_active =
-          client_state.status(
-            client_datum.state.client_state,
-            tx_valid_to * 1_000_000,
-            client_datum.state.consensus_states,
-          ) == Active
-        trace @"spend_connection: client status is active"
 
         let is_connection_open =
           connection_datum.is_connection_open_confirm_valid(
@@ -162,7 +148,7 @@ validator spend_connection(
           )
 
         and {
-          is_status_active?,
+          connection_state_active?,
           is_connection_open?,
           valid_connection?,
         }

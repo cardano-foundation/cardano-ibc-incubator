@@ -1,10 +1,11 @@
 use aiken/cbor
+use aiken/collection/list
 use aiken/crypto
 use aiken/fuzz
 use aiken/interval
 use aiken/primitive/bytearray
 use cardano/address.{Address, Script}
-use cardano/assets.{PolicyId, from_asset}
+use cardano/assets.{PolicyId, add, from_asset}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, placeholder,
 }
@@ -26,7 +27,9 @@ use ibc/core/ics_003_connection_semantics/types/counterparty as connection_count
 use ibc/core/ics_003_connection_semantics/types/keys as connection_keys
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
-use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, max_packet_entries_per_channel,
+}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/keys as channel_keys
@@ -41,8 +44,9 @@ use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
-  Active, HostState, HostStateDatum, ShutdownState, ShuttingDown,
-  empty_ibc_state_root, host_state_token_name,
+  Active, HostState, HostStateDatum, ModuleRegistration, ShutdownState,
+  ShuttingDown, empty_ibc_state_root, host_state_token_name, max_bound_ports,
+  max_port_number, validate_bind_port,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat,
@@ -60,11 +64,78 @@ fn repeat_bytearray(value: ByteArray, count: Int) -> List<ByteArray> {
   }
 }
 
+fn packet_entries(
+  sequence: Int,
+  last_sequence: Int,
+  value: ByteArray,
+) -> Pairs<Int, ByteArray> {
+  if sequence > last_sequence {
+    []
+  } else {
+    [
+      Pair(sequence, value),
+      ..packet_entries(sequence + 1, last_sequence, value)
+    ]
+  }
+}
+
 fn port_commitment_key(port: Int) -> ByteArray {
   let port_id = port_id_keys.format_port_identifier(port)
   key_port_prefix
     |> bytearray.concat("/")
     |> bytearray.concat(port_id)
+}
+
+fn test_module_registration(
+  module_script_hash: crypto.Hash<crypto.Blake2b_224, crypto.Script>,
+) -> ModuleRegistration {
+  ModuleRegistration {
+    module_script_hash,
+    port_token: AuthToken { policy_id: "mock port policy", name: "mock port" },
+    module_token: AuthToken {
+      policy_id: "mock module policy",
+      name: "mock module",
+    },
+  }
+}
+
+fn test_module_script_hash() -> crypto.Hash<crypto.Blake2b_224, crypto.Script> {
+  #"915f344ae918ebb7daf88fe7afa3737a9d4884d3aec39b64d177b379"
+}
+
+fn test_module_output(registration: ModuleRegistration) -> Output {
+  Output {
+    address: Address(Script(registration.module_script_hash), None),
+    value: from_asset(
+      registration.port_token.policy_id,
+      registration.port_token.name,
+      1,
+    )
+      |> add(
+          registration.module_token.policy_id,
+          registration.module_token.name,
+          1,
+        ),
+    datum: NoDatum,
+    reference_script: None,
+  }
+}
+
+test module_registration_cbor_matches_offchain_codec() {
+  let registration =
+    ModuleRegistration {
+      module_script_hash: #"11111111111111111111111111111111111111111111111111111111",
+      port_token: AuthToken {
+        policy_id: #"22222222222222222222222222222222222222222222222222222222",
+        name: #"01",
+      },
+      module_token: AuthToken {
+        policy_id: #"33333333333333333333333333333333333333333333333333333333",
+        name: #"02",
+      },
+    }
+
+  cbor.serialise(registration) == #"d8799f581c11111111111111111111111111111111111111111111111111111111d8799f581c222222222222222222222222222222222222222222222222222222224101ffd8799f581c333333333333333333333333333333333333333333333333333333334102ffff"
 }
 
 const trusted_deployer =
@@ -201,6 +272,43 @@ fn test_host_state(root: ByteArray, seed: Int) -> HostState {
   }
 }
 
+fn test_bound_ports(ports: List<Int>) -> Pairs<Int, ModuleRegistration> {
+  when ports is {
+    [] -> []
+    [port, ..rest] ->
+      [
+        Pair(port, test_module_registration(test_module_script_hash())),
+        ..test_bound_ports(rest)
+      ]
+  }
+}
+
+fn test_bind_port_transition(
+  old_ports: List<Int>,
+  new_ports: List<Int>,
+  port: Int,
+) -> Bool {
+  let nft_policy = test_nft_policy()
+  let registration = test_module_registration(test_module_script_hash())
+  let old_state =
+    HostState {
+      ..test_host_state(empty_ibc_state_root, 0),
+      bound_port: test_bound_ports(old_ports),
+    }
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      bound_port: test_bound_ports(new_ports),
+    }
+  validate_bind_port(
+    test_host_state_datum(old_state, nft_policy),
+    test_host_state_datum(new_state, nft_policy),
+    port,
+    registration,
+  )
+}
+
 fn test_host_input(state: HostState) -> Input {
   let nft_policy = test_nft_policy()
   Input(
@@ -222,6 +330,13 @@ fn test_host_output(state: HostState) -> Output {
     datum: InlineDatum(test_host_state_datum(state, nft_policy)),
     reference_script: None,
   }
+}
+
+fn test_unrelated_outputs(count: Int) -> List<Output> {
+  list.repeat(
+    test_module_output(test_module_registration(test_module_script_hash())),
+    count,
+  )
 }
 
 fn spend_host_state(
@@ -247,6 +362,47 @@ fn spend_host_state_with_signatories(
     redeemer,
     test_host_ref(),
     Transaction { ..placeholder, inputs, outputs, extra_signatories },
+  )
+}
+
+fn spend_test_bind_port(
+  old_ports: List<Int>,
+  new_ports: List<Int>,
+  port: Int,
+  extra_signatories: List<crypto.VerificationKeyHash>,
+) -> Bool {
+  let registration = test_module_registration(test_module_script_hash())
+  let port_siblings =
+    repeat_bytearray(
+      ibc_state_commitment.empty_hash,
+      ibc_state_commitment.merkle_depth_bits,
+    )
+  let old_state =
+    HostState {
+      ..test_host_state(empty_ibc_state_root, 0),
+      bound_port: test_bound_ports(old_ports),
+    }
+  let new_root =
+    ibc_state_commitment.apply_update(
+      old_state.ibc_state_root,
+      port_commitment_key(port),
+      "",
+      cbor.serialise(registration),
+      port_siblings,
+    )
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+      bound_port: test_bound_ports(new_ports),
+    }
+
+  spend_host_state_with_signatories(
+    BindPort { port, registration, port_siblings },
+    [test_host_input(old_state)],
+    [test_host_output(new_state), test_module_output(registration)],
+    extra_signatories,
   )
 }
 
@@ -621,6 +777,23 @@ fn test_handle_packet_receipt_root(
     "",
     cbor.serialise(""),
     packet_receipt_siblings,
+  )
+}
+
+fn test_handle_packet_acknowledgement_root(
+  old_root: ByteArray,
+  sequence: Int,
+  acknowledgement: ByteArray,
+  packet_acknowledgement_siblings: List<ByteArray>,
+) -> ByteArray {
+  let acknowledgement_key =
+    packet_keys.packet_acknowledgement_path("transfer", "channel-0", sequence)
+  ibc_state_commitment.apply_update(
+    old_root,
+    acknowledgement_key,
+    "",
+    cbor.serialise(acknowledgement),
+    packet_acknowledgement_siblings,
   )
 }
 
@@ -1011,6 +1184,309 @@ test prop_host_handle_packet_accepts_recv(seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
+test host_state_handle_packet_recv_succeeds_at_history_capacity() {
+  let sequence = max_packet_entries_per_channel
+  let siblings = full_empty_siblings()
+  let old_root = empty_ibc_state_root
+  let existing_receipts = packet_entries(1, sequence - 1, "")
+  let input_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Open),
+      1,
+      1,
+      1,
+      [],
+      existing_receipts,
+      [],
+    )
+  let output_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Open),
+      1,
+      1,
+      1,
+      [],
+      [Pair(sequence, ""), ..existing_receipts],
+      [],
+    )
+  let new_root = test_handle_packet_receipt_root(old_root, sequence, siblings)
+  let old_state = test_host_state(old_root, 0)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+    }
+
+  spend_host_state(
+    handle_packet_redeemer([], [], [], [], [], siblings, []),
+    [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+  )
+}
+
+test prop_host_handle_packet_rejects_history_capacity_overflow(
+  seed via fuzz.int(),
+) fail {
+  fuzz.label(@"fuzz.contract.host.handle_packet.invalid_history_capacity")
+
+  let half_capacity = max_packet_entries_per_channel / 2
+  let sequence = half_capacity + 1
+  let siblings = full_empty_siblings()
+  let old_root = empty_ibc_state_root
+  let existing_receipts = packet_entries(1, half_capacity, "")
+  let existing_acknowledgements =
+    packet_entries(1, half_capacity, "existing acknowledgement")
+  let input_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Open),
+      1,
+      1,
+      1,
+      [],
+      existing_receipts,
+      existing_acknowledgements,
+    )
+  let output_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Open),
+      1,
+      1,
+      1,
+      [],
+      [Pair(sequence, ""), ..existing_receipts],
+      existing_acknowledgements,
+    )
+  let new_root = test_handle_packet_receipt_root(old_root, sequence, siblings)
+  let old_state = test_host_state(old_root, seed)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+    }
+
+  spend_host_state(
+    handle_packet_redeemer([], [], [], [], [], siblings, []),
+    [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+  )
+}
+
+test host_state_handle_packet_acknowledgement_succeeds_at_history_capacity() {
+  let sequence = max_packet_entries_per_channel
+  let acknowledgement = "new acknowledgement"
+  let siblings = full_empty_siblings()
+  let old_root = empty_ibc_state_root
+  let existing_acknowledgements =
+    packet_entries(1, sequence - 1, "existing acknowledgement")
+  let input_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Open),
+      1,
+      1,
+      1,
+      [],
+      [],
+      existing_acknowledgements,
+    )
+  let output_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Open),
+      1,
+      1,
+      1,
+      [],
+      [],
+      [Pair(sequence, acknowledgement), ..existing_acknowledgements],
+    )
+  let new_root =
+    test_handle_packet_acknowledgement_root(
+      old_root,
+      sequence,
+      acknowledgement,
+      siblings,
+    )
+  let old_state = test_host_state(old_root, 0)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+    }
+
+  spend_host_state(
+    handle_packet_redeemer([], [], [], [], [], [], siblings),
+    [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+  )
+}
+
+test prop_host_handle_packet_rejects_acknowledgement_capacity_overflow(
+  seed via fuzz.int(),
+) fail {
+  fuzz.label(@"fuzz.contract.host.handle_packet.invalid_ack_capacity")
+
+  let half_capacity = max_packet_entries_per_channel / 2
+  let sequence = half_capacity + 1
+  let acknowledgement = "new acknowledgement"
+  let siblings = full_empty_siblings()
+  let old_root = empty_ibc_state_root
+  let existing_receipts = packet_entries(1, half_capacity, "")
+  let existing_acknowledgements =
+    packet_entries(1, half_capacity, "existing acknowledgement")
+  let input_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Open),
+      1,
+      1,
+      1,
+      [],
+      existing_receipts,
+      existing_acknowledgements,
+    )
+  let output_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Open),
+      1,
+      1,
+      1,
+      [],
+      existing_receipts,
+      [Pair(sequence, acknowledgement), ..existing_acknowledgements],
+    )
+  let new_root =
+    test_handle_packet_acknowledgement_root(
+      old_root,
+      sequence,
+      acknowledgement,
+      siblings,
+    )
+  let old_state = test_host_state(old_root, seed)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+    }
+
+  spend_host_state(
+    handle_packet_redeemer([], [], [], [], [], [], siblings),
+    [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+  )
+}
+
+test host_state_handle_packet_send_succeeds_at_commitment_capacity() {
+  let sequence = max_packet_entries_per_channel
+  let commitment = "new commitment"
+  let siblings = full_empty_siblings()
+  let old_root = empty_ibc_state_root
+  let existing_commitments =
+    packet_entries(1, sequence - 1, "existing commitment")
+  let input_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Open),
+      1,
+      1,
+      1,
+      existing_commitments,
+      [],
+      [],
+    )
+  let output_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Open),
+      1,
+      1,
+      1,
+      [Pair(sequence, commitment), ..existing_commitments],
+      [],
+      [],
+    )
+  let new_root = test_committed_packet_root(sequence, commitment, siblings)
+  let old_state = test_host_state(old_root, 0)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+    }
+
+  spend_host_state(
+    handle_packet_redeemer([], [], [], [], siblings, [], []),
+    [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+  )
+}
+
+test prop_host_handle_packet_rejects_commitment_capacity_overflow(
+  seed via fuzz.int(),
+) fail {
+  fuzz.label(@"fuzz.contract.host.handle_packet.invalid_commitment_capacity")
+
+  let half_capacity = max_packet_entries_per_channel / 2
+  let sequence = half_capacity + 1
+  let commitment = "new commitment"
+  let siblings = full_empty_siblings()
+  let old_root = empty_ibc_state_root
+  let existing_receipts = packet_entries(1, half_capacity, "")
+  let existing_acknowledgements =
+    packet_entries(1, half_capacity, "existing acknowledgement")
+  let input_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Open),
+      1,
+      1,
+      1,
+      [],
+      existing_receipts,
+      existing_acknowledgements,
+    )
+  let output_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Open),
+      1,
+      1,
+      1,
+      [Pair(sequence, commitment)],
+      existing_receipts,
+      existing_acknowledgements,
+    )
+  let new_root = test_committed_packet_root(sequence, commitment, siblings)
+  let old_state = test_host_state(old_root, seed)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: new_root,
+    }
+
+  spend_host_state(
+    handle_packet_redeemer([], [], [], [], siblings, [], []),
+    [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+  )
+}
+
 test prop_host_handle_packet_accepts_ack(seed via fuzz.int()) {
   fuzz.label(@"fuzz.contract.host.handle_packet.valid_ack")
 
@@ -1220,6 +1696,64 @@ test prop_host_handle_packet_rejects_wrong_packet_key(seed via fuzz.int()) fail 
   )
 }
 
+test prop_host_bind_port_rejects_missing_authority(seed via fuzz.int()) fail {
+  fuzz.label(@"fuzz.contract.host.bind_port.invalid_unauthorized")
+
+  let port = positive_seed(seed % 1000)
+  spend_test_bind_port([], [port], port, [])
+}
+
+test prop_host_bind_port_rejects_global_overflow(seed via fuzz.int()) {
+  fuzz.label(@"fuzz.unit.host.bind_port.invalid_capacity")
+
+  expect max_bound_ports == 10
+  let port = 10 + positive_seed(seed % 1000)
+  fuzz_dsl.mutated_check(
+    "host",
+    "bind_port",
+    "global_capacity",
+    "host_state.validate_bind_port",
+    test_bind_port_transition(
+      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, port],
+      port,
+    ),
+  )
+    |> fuzz_dsl.assert_rejected
+}
+
+test prop_host_bind_port_rejects_out_of_range_identifier(seed via fuzz.int()) {
+  fuzz.label(@"fuzz.unit.host.bind_port.invalid_identifier")
+
+  let offset = positive_seed(seed % 1000)
+  let port =
+    if seed % 2 == 0 {
+      -1 - offset
+    } else {
+      max_port_number + 1 + offset
+    }
+  fuzz_dsl.mutated_check(
+    "host",
+    "bind_port",
+    "identifier_range",
+    "host_state.validate_bind_port",
+    test_bind_port_transition([], [port], port),
+  )
+    |> fuzz_dsl.assert_rejected
+}
+
+/// This is the maximum-size HostState port-list transition permitted by the
+/// protocol and is also collected by the transaction-budget CI job.
+test host_state_bind_tenth_port_succeeds_at_global_cap() {
+  expect max_bound_ports == 10
+  spend_test_bind_port(
+    [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    9,
+    [trusted_deployer],
+  )
+}
+
 test host_state_bind_port_succeeds_with_correct_root_witness() {
   // -------------------------------------------------------------------------
   // Arrange: a starting HostState UTxO with an empty commitment root.
@@ -1268,6 +1802,7 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
   // Arrange: the updated HostState UTxO after binding one port.
   // -------------------------------------------------------------------------
   let port = 99
+  let registration = test_module_registration(test_module_script_hash())
 
   // For an empty tree, every sibling hash along the path is the empty hash.
   let port_siblings =
@@ -1277,7 +1812,7 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
     )
 
   let port_key = port_commitment_key(port)
-  let port_value = cbor.serialise(port)
+  let port_value = cbor.serialise(registration)
 
   let new_root =
     ibc_state_commitment.apply_update(
@@ -1293,7 +1828,7 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
       ..old_state,
       version: old_state.version + 1,
       ibc_state_root: new_root,
-      bound_port: [port],
+      bound_port: [Pair(port, registration)],
     }
 
   let new_datum = test_host_state_datum(new_state, nft_policy)
@@ -1309,10 +1844,16 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
   // -------------------------------------------------------------------------
   // Act: evaluate the HostState STT validator for BindPort.
   // -------------------------------------------------------------------------
-  let redeemer: HostStateRedeemer = BindPort { port, port_siblings }
+  let redeemer: HostStateRedeemer =
+    BindPort { port, registration, port_siblings }
 
   let transaction =
-    Transaction { ..placeholder, inputs: [host_input], outputs: [host_output] }
+    Transaction {
+      ..placeholder,
+      inputs: [host_input],
+      outputs: [host_output, test_module_output(registration)],
+      extra_signatories: [trusted_deployer],
+    }
 
   host_state_stt.host_state_stt.spend(
     nft_policy,
@@ -1364,6 +1905,7 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
     )
 
   let port = 99
+  let registration = test_module_registration(test_module_script_hash())
   let port_siblings =
     repeat_bytearray(
       ibc_state_commitment.empty_hash,
@@ -1377,7 +1919,7 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
       ..old_state,
       version: old_state.version + 1,
       ibc_state_root: empty_ibc_state_root,
-      bound_port: [port],
+      bound_port: [Pair(port, registration)],
     }
 
   let new_datum = test_host_state_datum(new_state, nft_policy)
@@ -1390,10 +1932,16 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
       reference_script: None,
     }
 
-  let redeemer: HostStateRedeemer = BindPort { port, port_siblings }
+  let redeemer: HostStateRedeemer =
+    BindPort { port, registration, port_siblings }
 
   let transaction =
-    Transaction { ..placeholder, inputs: [host_input], outputs: [host_output] }
+    Transaction {
+      ..placeholder,
+      inputs: [host_input],
+      outputs: [host_output, test_module_output(registration)],
+      extra_signatories: [trusted_deployer],
+    }
 
   host_state_stt.host_state_stt.spend(
     nft_policy,
@@ -1456,6 +2004,7 @@ test host_state_cannot_move_nft_to_different_address() fail {
   // Arrange: a valid state transition (BindPort) that would succeed, except the
   // output tries to move the NFT to a different address.
   let port = 99
+  let registration = test_module_registration(test_module_script_hash())
   let port_siblings =
     repeat_bytearray(
       ibc_state_commitment.empty_hash,
@@ -1463,7 +2012,7 @@ test host_state_cannot_move_nft_to_different_address() fail {
     )
 
   let port_key = port_commitment_key(port)
-  let port_value = cbor.serialise(port)
+  let port_value = cbor.serialise(registration)
 
   let new_root =
     ibc_state_commitment.apply_update(
@@ -1479,7 +2028,7 @@ test host_state_cannot_move_nft_to_different_address() fail {
       ..old_state,
       version: old_state.version + 1,
       ibc_state_root: new_root,
-      bound_port: [port],
+      bound_port: [Pair(port, registration)],
     }
 
   let new_datum = test_host_state_datum(new_state, nft_policy)
@@ -1492,10 +2041,16 @@ test host_state_cannot_move_nft_to_different_address() fail {
       reference_script: None,
     }
 
-  let redeemer: HostStateRedeemer = BindPort { port, port_siblings }
+  let redeemer: HostStateRedeemer =
+    BindPort { port, registration, port_siblings }
 
   let transaction =
-    Transaction { ..placeholder, inputs: [host_input], outputs: [host_output] }
+    Transaction {
+      ..placeholder,
+      inputs: [host_input],
+      outputs: [host_output, test_module_output(registration)],
+      extra_signatories: [trusted_deployer],
+    }
 
   host_state_stt.host_state_stt.spend(
     nft_policy,
@@ -1547,6 +2102,7 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
     )
 
   let port = 99
+  let registration = test_module_registration(test_module_script_hash())
 
   // Compute the correct new root (still using the full witness list) so that the
   // only mismatch is the missing witness carried in the redeemer.
@@ -1557,7 +2113,7 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
     )
 
   let port_key = port_commitment_key(port)
-  let port_value = cbor.serialise(port)
+  let port_value = cbor.serialise(registration)
   let new_root =
     ibc_state_commitment.apply_update(
       old_state.ibc_state_root,
@@ -1572,7 +2128,7 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
       ..old_state,
       version: old_state.version + 1,
       ibc_state_root: new_root,
-      bound_port: [port],
+      bound_port: [Pair(port, registration)],
     }
 
   let new_datum = test_host_state_datum(new_state, nft_policy)
@@ -1587,10 +2143,16 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
 
   // Pass an empty witness list. The validator expects exactly `merkle_depth_bits`
   // hashes, so this must fail.
-  let redeemer: HostStateRedeemer = BindPort { port, port_siblings: [] }
+  let redeemer: HostStateRedeemer =
+    BindPort { port, registration, port_siblings: [] }
 
   let transaction =
-    Transaction { ..placeholder, inputs: [host_input], outputs: [host_output] }
+    Transaction {
+      ..placeholder,
+      inputs: [host_input],
+      outputs: [host_output, test_module_output(registration)],
+      extra_signatories: [trusted_deployer],
+    }
 
   host_state_stt.host_state_stt.spend(
     nft_policy,
@@ -1642,17 +2204,24 @@ test host_state_bind_port_fails_if_output_missing() fail {
     )
 
   let port = 99
+  let registration = test_module_registration(test_module_script_hash())
   let port_siblings =
     repeat_bytearray(
       ibc_state_commitment.empty_hash,
       ibc_state_commitment.merkle_depth_bits,
     )
 
-  let redeemer: HostStateRedeemer = BindPort { port, port_siblings }
+  let redeemer: HostStateRedeemer =
+    BindPort { port, registration, port_siblings }
 
   // No HostState output is produced, so the STT validator must fail.
   let transaction =
-    Transaction { ..placeholder, inputs: [host_input], outputs: [] }
+    Transaction {
+      ..placeholder,
+      inputs: [host_input],
+      outputs: [],
+      extra_signatories: [trusted_deployer],
+    }
 
   host_state_stt.host_state_stt.spend(
     nft_policy,
@@ -2253,6 +2822,82 @@ test host_state_heartbeat_preserves_ibc_state() {
     Heartbeat,
     [test_host_input(old_state)],
     [test_host_output(new_state)],
+    [trusted_deployer],
+  )
+}
+
+test host_state_heartbeat_finds_host_output_first() {
+  let old_state = test_host_state(#"11", 1000)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      last_update_time: old_state.last_update_time + 1,
+    }
+
+  spend_host_state_with_signatories(
+    Heartbeat,
+    [test_host_input(old_state)],
+    [test_host_output(new_state), ..test_unrelated_outputs(8)],
+    [trusted_deployer],
+  )
+}
+
+test host_state_heartbeat_finds_host_output_middle() {
+  let old_state = test_host_state(#"11", 1000)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      last_update_time: old_state.last_update_time + 1,
+    }
+  let outputs =
+    list.concat(
+      test_unrelated_outputs(4),
+      [test_host_output(new_state), ..test_unrelated_outputs(4)],
+    )
+
+  spend_host_state_with_signatories(
+    Heartbeat,
+    [test_host_input(old_state)],
+    outputs,
+    [trusted_deployer],
+  )
+}
+
+test host_state_heartbeat_finds_host_output_last() {
+  let old_state = test_host_state(#"11", 1000)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      last_update_time: old_state.last_update_time + 1,
+    }
+  let outputs =
+    list.concat(test_unrelated_outputs(8), [test_host_output(new_state)])
+
+  spend_host_state_with_signatories(
+    Heartbeat,
+    [test_host_input(old_state)],
+    outputs,
+    [trusted_deployer],
+  )
+}
+
+test host_state_heartbeat_rejects_duplicate_host_outputs() fail {
+  let old_state = test_host_state(#"11", 1000)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      last_update_time: old_state.last_update_time + 1,
+    }
+  let host_output = test_host_output(new_state)
+
+  spend_host_state_with_signatories(
+    Heartbeat,
+    [test_host_input(old_state)],
+    [host_output, host_output],
     [trusted_deployer],
   )
 }

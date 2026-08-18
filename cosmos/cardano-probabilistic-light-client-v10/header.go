@@ -68,6 +68,13 @@ func (h ProbabilisticHeader) ValidateBasic() error {
 			h.AnchorBlock.Height.RevisionHeight,
 		)
 	}
+	if h.IsCheckpoint {
+		if h.HostStateTxHash != "" || h.HostStateTxOutputIndex != 0 {
+			return errorsmod.Wrap(ErrInvalidHostStateCommitment, "checkpoint header must not contain HostState transaction fields")
+		}
+	} else if h.HostStateTxHash == "" {
+		return errorsmod.Wrap(ErrInvalidHostStateCommitment, "root-bearing header must contain a HostState transaction hash")
+	}
 	if h.NewEpochContext != nil {
 		if err := validateEpochContext(h.NewEpochContext); err != nil {
 			return err

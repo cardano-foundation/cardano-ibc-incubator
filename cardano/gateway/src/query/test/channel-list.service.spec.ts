@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { QueryChannelsRequest } from '@plus/proto-types/build/ibc/core/channel/v1/query';
+import { QueryChannelsRequest } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
 import { ChannelService } from '../services/channel.service';
 import { decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { resolveProofHeightForCurrentRoot } from '../services/proof-context';

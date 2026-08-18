@@ -1,4 +1,4 @@
-import { MsgChannelOpenInit } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+import { MsgChannelOpenInit } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 
 class MsgChannelOpenInitMockBuilder {
   private msgChannelOpenInit: MsgChannelOpenInit;

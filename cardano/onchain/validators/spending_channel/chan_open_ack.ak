@@ -36,6 +36,7 @@ validator chan_open_ack(
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
 ) {
   mint(channel_token: AuthToken, policy_id: PolicyId, transaction: Transaction) {
     let Transaction {
@@ -74,10 +75,11 @@ validator chan_open_ack(
 
     trace @"chan_open_ack: tx context extracted"
 
-    let connection_datum =
-      validator_utils.validate_referred_connection(
+    let (connection_datum, client_datum) =
+      validator_utils.validate_referred_connection_and_client(
         reference_inputs,
         datum.token.name,
+        client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
       )
@@ -92,13 +94,6 @@ validator chan_open_ack(
         |> version_mod.verify_supported_feature(connection_version, _)
     trace @"chan_open_ack: connection support channel ordering"
 
-    let client_datum =
-      validator_utils.validate_referred_client(
-        reference_inputs,
-        datum.token.name,
-        client_minting_policy_id,
-        connection_datum.state.client_id,
-      )
     trace @"chan_open_ack: validator_utils.validate_referred_client"
 
     expect
@@ -132,6 +127,7 @@ validator chan_open_ack(
         datum.token.name,
         port_minting_policy_id,
         datum.port_id,
+        host_state_nft_policy_id,
       )
     expect Callback(ibc_module_callback) = ibc_module_redeemer
     expect ibc_module_callback == OnChanOpenAck { channel_id }
