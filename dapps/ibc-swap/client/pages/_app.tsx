@@ -25,8 +25,11 @@ import App, {
 } from 'next/app';
 import { ChakraProvider } from '@chakra-ui/react';
 import { ChainProvider } from '@cosmos-kit/react';
+import type { SignerOptions } from '@cosmos-kit/core';
+import { wallets as cosmostationWallets } from '@cosmos-kit/cosmostation-extension';
+import { wallets as keplrWallets } from '@cosmos-kit/keplr-extension';
+import { wallets as leapWallets } from '@cosmos-kit/leap-extension';
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query';
-import { SignerOptions, wallets } from 'cosmos-kit';
 import { MeshProvider } from '@meshsdk/react';
 import { manrope } from 'styles/font';
 import { theme } from 'styles/theme';
@@ -71,9 +74,9 @@ const isExtensionWallet = (wallet: any) => {
 };
 
 const extensionWallets = [
-  ...wallets.keplr.filter(isExtensionWallet),
-  ...wallets.leap.filter(isExtensionWallet),
-  ...wallets.cosmostation.filter(isExtensionWallet),
+  ...keplrWallets.filter(isExtensionWallet),
+  ...leapWallets.filter(isExtensionWallet),
+  ...cosmostationWallets.filter(isExtensionWallet),
 ];
 
 const getAvailableCosmosExtensionWallets = () => {
@@ -200,6 +203,7 @@ function MyApp({ Component, pageProps }: AppProps) {
           chains={customChains as any}
           assetLists={customChainassets as any}
           wallets={availableCosmosWallets}
+          throwErrors={false}
           signerOptions={signerOptions}
           endpointOptions={cosmosEndpointOptions}
           walletModal={CosmosWalletModal}

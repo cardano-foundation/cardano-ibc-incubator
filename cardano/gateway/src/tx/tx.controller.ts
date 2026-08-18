@@ -5,7 +5,7 @@ import {
   MsgCreateClient,
   MsgUpdateClient,
   MsgUpdateClientResponse,
-} from '@plus/proto-types/build/ibc/core/client/v1/tx';
+} from '@cardano-ibc/proto-types/build/ibc/core/client/v1/tx';
 import {
   MsgConnectionOpenAck,
   MsgConnectionOpenAckResponse,
@@ -15,7 +15,7 @@ import {
   MsgConnectionOpenInitResponse,
   MsgConnectionOpenTry,
   MsgConnectionOpenTryResponse,
-} from '@plus/proto-types/build/ibc/core/connection/v1/tx';
+} from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/tx';
 import {
   MsgAcknowledgement,
   MsgAcknowledgementResponse,
@@ -37,7 +37,7 @@ import {
   MsgTransferResponse,
   MsgChannelCloseInit,
   MsgChannelCloseInitResponse,
-} from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import { ConnectionService } from './connection.service';
 import { ClientService } from './client.service';
 import { ChannelService } from './channel.service';

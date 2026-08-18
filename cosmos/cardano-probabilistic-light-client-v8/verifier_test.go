@@ -16,6 +16,7 @@ import (
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
+	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/stretchr/testify/require"
 
 	"github.com/blinklabs-io/gouroboros/cbor"
@@ -23,10 +24,9 @@ import (
 )
 
 func TestVerifyBridgeContinuityRejectsBadPrevHash(t *testing.T) {
-	trustedConsensus := &ConsensusState{
-		Timestamp:         uint64(time.Now().UnixNano()),
-		IbcStateRoot:      bytes.Repeat([]byte{0x01}, 32),
-		AcceptedBlockHash: "trusted-hash",
+	trustedBlock := &trustedBlockState{
+		height:    &Height{RevisionHeight: 10},
+		blockHash: "trusted-hash",
 	}
 	authenticatedHeader := &authenticatedProbabilisticHeader{
 		bridgeBlocks: []*authenticatedProbabilisticBlock{
@@ -43,7 +43,7 @@ func TestVerifyBridgeContinuityRejectsBadPrevHash(t *testing.T) {
 		},
 	}
 
-	err := verifyBridgeContinuity(&Height{RevisionHeight: 10}, authenticatedHeader, trustedConsensus)
+	err := verifyBridgeContinuity(authenticatedHeader, trustedBlock)
 	require.ErrorContains(t, err, "does not connect to trusted chain")
 }
 
@@ -152,7 +152,7 @@ func TestVerifyHeaderRejectsTrustedHeightOlderThanLatestHeight(t *testing.T) {
 
 	err := cs.verifyHeader(sdk.Context{}, clientStore, cdc, header)
 	require.ErrorContains(t, err, "trusted height")
-	require.ErrorContains(t, err, "must equal latest height")
+	require.ErrorContains(t, err, "must equal latest authenticated checkpoint")
 }
 
 func TestComputeHeaderSecurityMetricsRejectsEmptyEpochStakeDistribution(t *testing.T) {
@@ -296,7 +296,7 @@ func TestVerifyHeaderEpochTransitionAcceptsAdjacentEpochRollover(t *testing.T) {
 	header := &ProbabilisticHeader{
 		NewEpochContext: &EpochContext{Epoch: 8},
 	}
-	trustedConsensus := &ConsensusState{AcceptedEpoch: 7}
+	trustedBlock := &trustedBlockState{epoch: 7}
 	authenticatedHeader := &authenticatedProbabilisticHeader{
 		anchorBlock: &authenticatedProbabilisticBlock{
 			epoch: 8,
@@ -310,7 +310,7 @@ func TestVerifyHeaderEpochTransitionAcceptsAdjacentEpochRollover(t *testing.T) {
 		},
 	}
 
-	err := verifyHeaderEpochTransition(header, trustedConsensus, authenticatedHeader)
+	err := verifyHeaderEpochTransition(header, trustedBlock, authenticatedHeader)
 	require.NoError(t, err)
 }
 
@@ -318,14 +318,14 @@ func TestVerifyHeaderEpochTransitionAcceptsMatchingSameEpochContext(t *testing.T
 	header := &ProbabilisticHeader{
 		NewEpochContext: &EpochContext{Epoch: 7},
 	}
-	trustedConsensus := &ConsensusState{AcceptedEpoch: 7}
+	trustedBlock := &trustedBlockState{epoch: 7}
 	authenticatedHeader := &authenticatedProbabilisticHeader{
 		anchorBlock:      &authenticatedProbabilisticBlock{epoch: 7},
 		bridgeBlocks:     []*authenticatedProbabilisticBlock{{epoch: 7}},
 		descendantBlocks: []*authenticatedProbabilisticBlock{{epoch: 7}},
 	}
 
-	err := verifyHeaderEpochTransition(header, trustedConsensus, authenticatedHeader)
+	err := verifyHeaderEpochTransition(header, trustedBlock, authenticatedHeader)
 	require.NoError(t, err)
 }
 
@@ -333,14 +333,14 @@ func TestVerifyHeaderEpochTransitionRejectsMismatchedSameEpochContext(t *testing
 	header := &ProbabilisticHeader{
 		NewEpochContext: &EpochContext{Epoch: 8},
 	}
-	trustedConsensus := &ConsensusState{AcceptedEpoch: 7}
+	trustedBlock := &trustedBlockState{epoch: 7}
 	authenticatedHeader := &authenticatedProbabilisticHeader{
 		anchorBlock:      &authenticatedProbabilisticBlock{epoch: 7},
 		bridgeBlocks:     []*authenticatedProbabilisticBlock{{epoch: 7}},
 		descendantBlocks: []*authenticatedProbabilisticBlock{{epoch: 7}},
 	}
 
-	err := verifyHeaderEpochTransition(header, trustedConsensus, authenticatedHeader)
+	err := verifyHeaderEpochTransition(header, trustedBlock, authenticatedHeader)
 	require.ErrorContains(t, err, "same-epoch new_epoch_context epoch 8 must match accepted epoch 7")
 }
 
@@ -601,6 +601,224 @@ func TestSetConsensusMetadataStoresParseableProcessedHeight(t *testing.T) {
 	processedHeight, found := GetProcessedHeight(clientStore, consensusHeight)
 	require.True(t, found)
 	require.Equal(t, clienttypes.GetSelfHeight(ctx), processedHeight)
+}
+
+func TestInitializeCreatesCheckpointCursorAtInitialConsensusState(t *testing.T) {
+	cdc := newProbabilisticTestCodec()
+	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-initial-checkpoint")
+	clientState := newProbabilisticTestClientState()
+	consensusState := newProbabilisticTestConsensusState("initial-block-hash")
+
+	require.NoError(t, clientState.Initialize(ctx, cdc, clientStore, consensusState))
+
+	stored, found := getClientState(clientStore, cdc)
+	require.True(t, found)
+	require.Equal(t, uint64(10), stored.LatestHeight.RevisionHeight)
+	require.Equal(t, uint64(10), stored.LatestCheckpointHeight.RevisionHeight)
+	require.Equal(t, "initial-block-hash", stored.LatestCheckpointBlockHash)
+	require.Equal(t, uint64(7), stored.LatestCheckpointEpoch)
+}
+
+func TestCheckpointCursorDoesNotCreateConsensusStateOrRenewTrust(t *testing.T) {
+	cdc := newProbabilisticTestCodec()
+	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-checkpoint-trust")
+	clientState := newProbabilisticTestClientState()
+	clientState.TrustingPeriod = time.Second
+	clientState.setLatestCheckpoint(NewHeight(0, 20), "checkpoint-block-hash", 8)
+
+	expiredTimestamp := uint64(ctx.BlockTime().Add(-2 * time.Second).UnixNano())
+	consensusState := newProbabilisticTestConsensusState("root-block-hash")
+	consensusState.Timestamp = expiredTimestamp
+	setConsensusState(clientStore, cdc, consensusState, clientState.LatestHeight)
+
+	trustedBlock, err := clientState.latestTrustedBlockState(clientStore, cdc)
+	require.NoError(t, err)
+	require.Equal(t, uint64(20), trustedBlock.height.RevisionHeight)
+	require.Equal(t, "checkpoint-block-hash", trustedBlock.blockHash)
+	require.Equal(t, uint64(8), trustedBlock.epoch)
+
+	_, checkpointConsensusFound := GetConsensusState(clientStore, cdc, clientState.LatestCheckpointHeight)
+	require.False(t, checkpointConsensusFound)
+	require.Equal(t, exported.Expired, clientState.Status(ctx, clientStore, cdc))
+}
+
+func TestPersistCheckpointAdvancesCursorWithoutAdvancingIbcRoot(t *testing.T) {
+	cdc := newProbabilisticTestCodec()
+	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-persist-checkpoint")
+	clientState := newProbabilisticTestClientState()
+	consensusState := newProbabilisticTestConsensusState("root-block-hash")
+	require.NoError(t, clientState.Initialize(ctx, cdc, clientStore, consensusState))
+
+	epochContexts := mustTestEpochContexts(t, clientState)
+	authenticatedHeader := &authenticatedProbabilisticHeader{
+		anchorBlock: &authenticatedProbabilisticBlock{
+			height: 20,
+			hash:   "checkpoint-block-hash",
+			epoch:  7,
+		},
+	}
+	require.NoError(t, clientState.persistCheckpoint(clientStore, cdc, epochContexts, authenticatedHeader))
+
+	stored, found := getClientState(clientStore, cdc)
+	require.True(t, found)
+	require.Equal(t, uint64(10), stored.LatestHeight.RevisionHeight)
+	require.Equal(t, uint64(20), stored.LatestCheckpointHeight.RevisionHeight)
+	require.Equal(t, "checkpoint-block-hash", stored.LatestCheckpointBlockHash)
+
+	_, rootConsensusFound := GetConsensusState(clientStore, cdc, NewHeight(0, 10))
+	_, checkpointConsensusFound := GetConsensusState(clientStore, cdc, NewHeight(0, 20))
+	require.True(t, rootConsensusFound)
+	require.False(t, checkpointConsensusFound)
+	_, checkpointProcessedTimeFound := GetProcessedTime(clientStore, NewHeight(0, 20))
+	require.False(t, checkpointProcessedTimeFound)
+}
+
+func TestIdleEpochCheckpointSequenceMakesNextHostStateReachableWithoutRenewingTrust(t *testing.T) {
+	cdc := newProbabilisticTestCodec()
+	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-idle-epoch-checkpoints")
+	clientState := newProbabilisticTestClientState()
+
+	makeEpochContext := func(epoch, startSlot, endSlot uint64, nonceByte byte) *EpochContext {
+		epochContext := cloneEpochContext(clientState.EpochContexts[0])
+		epochContext.Epoch = epoch
+		epochContext.EpochNonce = bytes.Repeat([]byte{nonceByte}, 32)
+		epochContext.EpochStartSlot = startSlot
+		epochContext.EpochEndSlotExclusive = endSlot
+		return epochContext
+	}
+
+	epoch303 := makeEpochContext(303, 0, 1_000, 0x03)
+	epoch304 := makeEpochContext(304, 1_000, 2_000, 0x04)
+	epoch305 := makeEpochContext(305, 2_000, 3_000, 0x05)
+	clientState.LatestHeight = NewHeight(0, 100)
+	clientState.EpochContexts = []*EpochContext{epoch303}
+	require.NoError(t, syncCurrentEpochFields(clientState, clientState.EpochContexts, 303))
+
+	initialConsensus := newProbabilisticTestConsensusState("host-state-epoch-303")
+	initialConsensus.AcceptedEpoch = 303
+	initialConsensus.IbcStateRoot = bytes.Repeat([]byte{0x33}, 32)
+	require.NoError(t, clientState.Initialize(ctx, cdc, clientStore, initialConsensus))
+
+	initialProcessedTime, found := GetProcessedTime(clientStore, clientState.LatestHeight)
+	require.True(t, found)
+	initialProcessedHeight, found := GetProcessedHeight(clientStore, clientState.LatestHeight)
+	require.True(t, found)
+
+	checkpoints := []struct {
+		height          uint64
+		epoch           uint64
+		hash            string
+		newEpochContext *EpochContext
+	}{
+		{height: 101, epoch: 303, hash: "checkpoint-303", newEpochContext: nil},
+		{height: 102, epoch: 304, hash: "checkpoint-304-rollover", newEpochContext: epoch304},
+		{height: 103, epoch: 304, hash: "checkpoint-304-resume", newEpochContext: nil},
+	}
+
+	for _, checkpoint := range checkpoints {
+		trustedBlock, err := clientState.latestTrustedBlockState(clientStore, cdc)
+		require.NoError(t, err)
+
+		header := &ProbabilisticHeader{
+			TrustedHeight:   NewHeight(trustedBlock.height.RevisionNumber, trustedBlock.height.RevisionHeight),
+			AnchorBlock:     &ProbabilisticBlock{Height: NewHeight(0, checkpoint.height), Hash: checkpoint.hash, BlockCbor: []byte{0x01}},
+			NewEpochContext: checkpoint.newEpochContext,
+			IsCheckpoint:    true,
+		}
+		require.NoError(t, header.ValidateBasic())
+
+		authenticatedHeader := &authenticatedProbabilisticHeader{
+			anchorBlock: &authenticatedProbabilisticBlock{
+				height:   checkpoint.height,
+				hash:     checkpoint.hash,
+				prevHash: trustedBlock.blockHash,
+				epoch:    checkpoint.epoch,
+			},
+		}
+		require.NoError(t, verifyHeaderEpochTransition(header, trustedBlock, authenticatedHeader))
+		require.NoError(t, verifyBridgeContinuity(authenticatedHeader, trustedBlock))
+
+		epochContexts, err := mergeEpochContexts(clientState.EpochContexts, checkpoint.newEpochContext)
+		require.NoError(t, err)
+		require.NoError(t, clientState.persistCheckpoint(clientStore, cdc, epochContexts, authenticatedHeader))
+
+		stored, found := getClientState(clientStore, cdc)
+		require.True(t, found)
+		clientState = stored
+
+		require.Equal(t, uint64(100), clientState.LatestHeight.RevisionHeight)
+		require.Equal(t, checkpoint.height, clientState.LatestCheckpointHeight.RevisionHeight)
+		require.Equal(t, checkpoint.hash, clientState.LatestCheckpointBlockHash)
+		require.Equal(t, checkpoint.epoch, clientState.LatestCheckpointEpoch)
+
+		storedRoot, found := GetConsensusState(clientStore, cdc, NewHeight(0, 100))
+		require.True(t, found)
+		require.Equal(t, initialConsensus.IbcStateRoot, storedRoot.IbcStateRoot)
+		require.Equal(t, initialConsensus.Timestamp, storedRoot.Timestamp)
+		require.Equal(t, initialConsensus.AcceptedBlockHash, storedRoot.AcceptedBlockHash)
+		require.Equal(t, initialConsensus.AcceptedEpoch, storedRoot.AcceptedEpoch)
+
+		_, found = GetConsensusState(clientStore, cdc, NewHeight(0, checkpoint.height))
+		require.False(t, found)
+		_, found = GetProcessedTime(clientStore, NewHeight(0, checkpoint.height))
+		require.False(t, found)
+		_, found = GetProcessedHeight(clientStore, NewHeight(0, checkpoint.height))
+		require.False(t, found)
+
+		processedTime, found := GetProcessedTime(clientStore, NewHeight(0, 100))
+		require.True(t, found)
+		require.Equal(t, initialProcessedTime, processedTime)
+		processedHeight, found := GetProcessedHeight(clientStore, NewHeight(0, 100))
+		require.True(t, found)
+		require.Equal(t, initialProcessedHeight, processedHeight)
+		require.Equal(t, exported.Active, clientState.Status(ctx, clientStore, cdc))
+	}
+
+	trustedBlock, err := clientState.latestTrustedBlockState(clientStore, cdc)
+	require.NoError(t, err)
+	finalHeader := &ProbabilisticHeader{
+		TrustedHeight:   NewHeight(trustedBlock.height.RevisionNumber, trustedBlock.height.RevisionHeight),
+		AnchorBlock:     &ProbabilisticBlock{Height: NewHeight(0, 104), Hash: "host-state-epoch-305", BlockCbor: []byte{0x01}},
+		HostStateTxHash: "host-state-tx-epoch-305",
+		NewEpochContext: epoch305,
+	}
+	require.NoError(t, finalHeader.ValidateBasic())
+
+	finalAuthenticatedHeader := &authenticatedProbabilisticHeader{
+		anchorBlock: &authenticatedProbabilisticBlock{
+			height:   104,
+			hash:     "host-state-epoch-305",
+			prevHash: trustedBlock.blockHash,
+			epoch:    305,
+		},
+	}
+	require.NoError(t, verifyHeaderEpochTransition(finalHeader, trustedBlock, finalAuthenticatedHeader))
+	require.NoError(t, verifyBridgeContinuity(finalAuthenticatedHeader, trustedBlock))
+	require.Equal(t, uint64(100), clientState.LatestHeight.RevisionHeight)
+
+	storedRoot, found := GetConsensusState(clientStore, cdc, NewHeight(0, 100))
+	require.True(t, found)
+	require.Equal(t, initialConsensus.IbcStateRoot, storedRoot.IbcStateRoot)
+}
+
+func TestCheckpointHeaderHasNoHostStateCommitment(t *testing.T) {
+	header := &ProbabilisticHeader{
+		TrustedHeight: &Height{RevisionHeight: 10},
+		AnchorBlock: &ProbabilisticBlock{
+			Height:    &Height{RevisionHeight: 11},
+			Hash:      "checkpoint-hash",
+			BlockCbor: []byte{0x01},
+		},
+		IsCheckpoint: true,
+	}
+
+	require.NoError(t, header.ValidateBasic())
+	header.HostStateTxHash = "must-not-be-present"
+	require.ErrorContains(t, header.ValidateBasic(), "must not contain HostState transaction fields")
+
+	header.IsCheckpoint = false
+	header.HostStateTxHash = ""
+	require.ErrorContains(t, header.ValidateBasic(), "must contain a HostState transaction hash")
 }
 
 func newProbabilisticTestCodec() codec.BinaryCodec {

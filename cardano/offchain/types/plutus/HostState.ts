@@ -1,4 +1,15 @@
 import { Data } from "@lucid-evolution/lucid";
+import { AuthTokenSchema } from "./AuthToken.ts";
+
+export const ModuleRegistrationSchema = Data.Object({
+  module_script_hash: Data.Bytes(),
+  port_token: AuthTokenSchema,
+  module_token: AuthTokenSchema,
+});
+
+export type ModuleRegistration = Data.Static<typeof ModuleRegistrationSchema>;
+export const ModuleRegistration =
+  ModuleRegistrationSchema as unknown as ModuleRegistration;
 
 export const ShutdownStateSchema = Data.Enum([
   Data.Literal("Active"),
@@ -29,7 +40,7 @@ export const HostStateSchema = Data.Object({
   next_client_sequence: Data.Integer(),
   next_connection_sequence: Data.Integer(),
   next_channel_sequence: Data.Integer(),
-  bound_port: Data.Array(Data.Integer()),
+  bound_port: Data.Map(Data.Integer(), ModuleRegistrationSchema),
   last_update_time: Data.Integer(), // Unix epoch milliseconds
 });
 

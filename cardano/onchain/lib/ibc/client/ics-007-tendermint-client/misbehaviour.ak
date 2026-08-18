@@ -1,5 +1,6 @@
 use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{BlockID}
 use ibc/client/ics_007_tendermint_client/cometbft/block/commit.{Commit}
+use ibc/client/ics_007_tendermint_client/cometbft/signed_header
 use ibc/client/ics_007_tendermint_client/cometbft/validation
 use ibc/client/ics_007_tendermint_client/cometbft/validator_set.{ValidatorSet}
 use ibc/client/ics_007_tendermint_client/header.{Header}
@@ -45,27 +46,33 @@ pub fn validate_basic(misbehaviour: Misbehaviour) -> Bool {
   expect
     misbehaviour.header1.signed_header.header.chain_id == misbehaviour.header2.signed_header.header.chain_id
 
-  // TODO: Check validate_basic header for header1 and header2
   expect
     height.compare(
       header.get_height(misbehaviour.header1),
       header.get_height(misbehaviour.header2),
     ) != Less
-  expect
-    valid_commit(
-      misbehaviour.header1.signed_header.header.chain_id,
-      misbehaviour.header1.signed_header.commit.block_id,
-      misbehaviour.header1.signed_header.commit,
-      misbehaviour.header1.validator_set,
-    )
-  expect
-    valid_commit(
-      misbehaviour.header2.signed_header.header.chain_id,
-      misbehaviour.header2.signed_header.commit.block_id,
-      misbehaviour.header2.signed_header.commit,
-      misbehaviour.header2.validator_set,
-    )
+  let chain_id = misbehaviour.header1.signed_header.header.chain_id
+  expect validate_header_basic(misbehaviour.header1, chain_id)
+  expect validate_header_basic(misbehaviour.header2, chain_id)
   True
+}
+
+/// Bind every field consumed by misbehaviour detection to the validator commit.
+/// The validator set that authenticates the commit must also be the set committed
+/// by the signed header.
+fn validate_header_basic(h: Header, chain_id: ByteArray) -> Bool {
+  expect signed_header.validate_basic(h.signed_header, chain_id)
+  expect
+    h.signed_header.header.validators_hash == validator_set.hash(
+      h.validator_set,
+    )
+
+  valid_commit(
+    chain_id,
+    h.signed_header.commit.block_id,
+    h.signed_header.commit,
+    h.validator_set,
+  )
 }
 
 /// valid_commit() checks if the given commit is a valid commit from the passed-in validator_set

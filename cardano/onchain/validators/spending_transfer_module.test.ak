@@ -7,6 +7,7 @@ use cardano/transaction.{
   InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
   ScriptPurpose, Spend, Transaction,
 }
+use ibc/apps/transfer/escrow as transfer_escrow
 use ibc/apps/transfer/mint_voucher_redeemer.{
   BurnVoucher, MintVoucher, RefundVoucher,
 }
@@ -737,6 +738,7 @@ fn timeout_unescrow_fixture(
     Callback(
       OnTimeoutPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         data: TransferModuleData(ftpd),
       },
     )
@@ -835,6 +837,7 @@ fn native_asset_timeout_fixture(
     Callback(
       OnTimeoutPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         data: TransferModuleData(ftpd),
       },
     )
@@ -886,6 +889,7 @@ fn ack_success_fixture(
     Callback(
       OnAcknowledgementPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: TransferModuleData(ftpd),
       },
@@ -1044,6 +1048,7 @@ fn voucher_error_ack_refund_fixture(
     Callback(
       OnAcknowledgementPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: TransferModuleData(ftpd),
       },
@@ -1168,6 +1173,28 @@ test prop_transfer_module_voucher_error_ack_remints_exactly(
   // Error ack reverses a voucher send by reminting the burned voucher amount.
   voucher_error_ack_refund_fixture(fuzz_dsl.no_mutation())
     |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_transfer_module_root_rejects_capability_relocation(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(@"regression.contract.transfer.invalid_capability_relocation")
+
+  let mock = setup()
+  let relocated_output =
+    Output {
+      ..mock.module_output,
+      address: from_script("attacker module script hash"),
+    }
+
+  expect _ =
+    transfer_escrow.classify_transfer_module_spend(
+      mock.module_input.output,
+      [relocated_output],
+      mock.port_token,
+      mock.module_token,
+    )
+  True
 }
 
 test on_chan_open_init_succeed() {
@@ -2262,7 +2289,13 @@ test on_timeout_packet_mint_voucher_succeed() {
   let packet_data = TransferModuleData(ftpd)
 
   let module_redeemer: Redeemer =
-    Callback(OnTimeoutPacket { channel_id: mock.channel_id, data: packet_data })
+    Callback(
+      OnTimeoutPacket {
+        channel_id: mock.channel_id,
+        packet_data: packet.data,
+        data: packet_data,
+      },
+    )
 
   let channel_redeemer: Redeemer =
     TimeoutPacket {
@@ -2374,7 +2407,13 @@ test on_timeout_packet_unescrow_succeed() {
   let packet_data = TransferModuleData(ftpd)
 
   let module_redeemer: Redeemer =
-    Callback(OnTimeoutPacket { channel_id: mock.channel_id, data: packet_data })
+    Callback(
+      OnTimeoutPacket {
+        channel_id: mock.channel_id,
+        packet_data: packet.data,
+        data: packet_data,
+      },
+    )
 
   let channel_redeemer: Redeemer =
     TimeoutPacket {
@@ -2482,7 +2521,13 @@ test on_timeout_packet_native_refund_fails_with_wrong_escrow_delta() fail {
     )
   let packet_data = TransferModuleData(ftpd)
   let module_redeemer: Redeemer =
-    Callback(OnTimeoutPacket { channel_id: mock.channel_id, data: packet_data })
+    Callback(
+      OnTimeoutPacket {
+        channel_id: mock.channel_id,
+        packet_data: packet.data,
+        data: packet_data,
+      },
+    )
   let channel_redeemer: Redeemer =
     TimeoutPacket {
       packet,
@@ -2662,6 +2707,7 @@ test on_acknowledgement_packet_result_succeed() {
     Callback(
       OnAcknowledgementPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: packet_data,
       },
@@ -2744,6 +2790,7 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
     Callback(
       OnAcknowledgementPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: packet_data,
       },
@@ -2863,6 +2910,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
     Callback(
       OnAcknowledgementPacket {
         channel_id: mock.channel_id,
+        packet_data: packet.data,
         acknowledgement,
         data: packet_data,
       },

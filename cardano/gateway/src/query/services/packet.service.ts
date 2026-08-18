@@ -20,12 +20,12 @@ import {
   QueryProofUnreceivedPacketsResponse,
   QueryNextSequenceReceiveRequest,
   QueryNextSequenceReceiveResponse,
-} from '@plus/proto-types/build/ibc/core/channel/v1/query';
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
 import { ACK_RESULT, CHANNEL_ID_PREFIX, CHANNEL_TOKEN_PREFIX, REDEEMER_EMPTY_DATA, REDEEMER_TYPE } from '../../constant';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
-import { bytesFromBase64 } from '@plus/proto-types/build/helpers';
+import { bytesFromBase64 } from '@cardano-ibc/proto-types/build/helpers';
 import {
   validQueryPacketAcknowledgementParam,
   validQueryPacketAcknowledgementsParam,

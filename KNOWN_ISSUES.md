@@ -93,7 +93,7 @@ As a practical example, commands such as relayer wallet balance checks should no
 
 ### ICS-31 Cross-Chain Queries
 
-ICS-31 cross-chain queries are a work in progress for Cardano, but will need to be implemented on a per-chain basis. Much of the basic infrastructure exists for cross-chain queries with Cheqd, but still must be tested and validated, particularly in light of the entrypoint chain deprecation.
+ICS-31 cross-chain queries are a work in progress for Cardano, but will need to be implemented on a per-chain basis. Much of the basic infrastructure exists for cross-chain queries with Cheqd, but still must be tested and validated against each supported counterparty chain.
 
 ### Client Upgrade
 

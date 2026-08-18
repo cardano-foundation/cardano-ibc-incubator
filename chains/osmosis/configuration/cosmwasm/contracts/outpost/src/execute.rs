@@ -66,7 +66,7 @@ pub fn execute_swap(
     let ibc_transfer_msg = crosschain_swaps::ibc::MsgTransfer {
         source_port: "transfer".to_string(),
         source_channel: "channel-0".to_string(),
-        token: Some(Coin::new(coin.amount.into(), coin.denom).into()),
+        token: Some(Coin::new(coin.amount, coin.denom).into()),
         sender: own_addr.to_string(),
         receiver: config.crosschain_swaps_contract,
         timeout_height: None,

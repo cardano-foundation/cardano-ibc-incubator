@@ -25,7 +25,7 @@
     "@types/node": "^16.7.13",
     "@types/react": "^18.0.0",
     "@types/react-dom": "^18.0.0",
-    "axios": "^0.21.2",
+    "axios": "^1.19.0",
     "buffer": "^6.0.3",
     "chain-registry": "^1.63.90",
     "cross-env": "^7.0.2",

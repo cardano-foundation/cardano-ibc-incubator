@@ -15,6 +15,7 @@ node_modules/
 /google/
 /ibc/
 /tendermint/
+/vesseloracle/
 /binary.*
 /helpers.*
 /index.*

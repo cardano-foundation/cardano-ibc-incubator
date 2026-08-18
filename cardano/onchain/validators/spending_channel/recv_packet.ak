@@ -94,10 +94,11 @@ validator recv_packet(
     expect cur_channel.state == chan_state_mod.Open
     trace @"recv_packet: channel state is open"
 
-    let connection_datum =
-      validator_utils.validate_referred_connection(
+    let (connection_datum, client_datum) =
+      validator_utils.validate_referred_connection_and_client(
         reference_inputs,
         datum.token.name,
+        client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
       )
@@ -105,14 +106,6 @@ validator recv_packet(
 
     expect connection_datum.state.state == conn_state_mod.Open
     trace @"recv_packet: Connection is open"
-
-    let client_datum =
-      validator_utils.validate_referred_client(
-        reference_inputs,
-        datum.token.name,
-        client_minting_policy_id,
-        connection_datum.state.client_id,
-      )
     trace @"recv_packet: validator_utils.validate_referred_client"
 
     let client_status =

@@ -138,12 +138,10 @@ caribic create-connection --a-chain cardano-devnet --b-chain localosmosis
 caribic create-channel --a-chain cardano-devnet --b-chain localosmosis --a-port transfer --b-port transfer
 ```
 
-### `caribic demo <message-exchange|token-swap>`
+### `caribic demo token-swap`
 
 `caribic demo token-swap` prepares direct Cardano-to-target transfer routes and runs the selected local demo against those direct channel ids.
-`caribic demo message-exchange` needs to be reworked per target chain because ICQ/message modules are target-specific.
 
-The deprecated Mithril readiness settings remain in the config only for historical compatibility and are not part of the maintained startup path.
 If your machine is slower, tune retry windows in `caribic/config/default-config.json` (or whichever file you pass via `--config`).
 
 Operator-facing retry/timeout tuning is configurable in one place: `caribic/config/default-config.json` by default.
@@ -156,22 +154,6 @@ For example:
     "cosmos_retry_interval_ms": 10000,
     "gateway_max_retries": 180,
     "gateway_retry_interval_ms": 2000
-  },
-  "demo": {
-    "mithril_artifact_max_retries": 240,
-    "mithril_artifact_retry_delay_secs": 5,
-    "message_exchange": {
-      "consolidated_report_max_retries": 40,
-      "consolidated_report_retry_delay_secs": 3,
-      "channel_discovery_max_retries": 20,
-      "channel_discovery_max_retries_after_create": 120,
-      "channel_discovery_retry_delay_secs": 3,
-      "connection_discovery_max_retries": 20,
-      "connection_discovery_retry_delay_secs": 3,
-      "mithril_readiness_progress_interval_secs": 30,
-      "relay_max_retries": 20,
-      "relay_retry_delay_secs": 3
-    }
   }
 }
 ```

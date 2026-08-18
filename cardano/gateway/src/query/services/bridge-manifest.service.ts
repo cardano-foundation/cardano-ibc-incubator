@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { BridgeManifest } from '../../config/bridge-manifest';
 import {
   QueryBridgeManifestResponse,
-} from '@plus/proto-types/build/ibc/cardano/v1/query';
+} from '@cardano-ibc/proto-types/build/ibc/cardano/v1/query';
 
 @Injectable()
 export class BridgeManifestService {

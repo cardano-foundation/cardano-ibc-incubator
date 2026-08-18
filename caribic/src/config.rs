@@ -75,7 +75,6 @@ pub struct Config {
     pub chains: Chains,
     pub mithril: Mithril,
     pub health: Health,
-    pub demo: Demo,
     pub cardano: Cardano,
 }
 
@@ -108,27 +107,6 @@ pub struct Mithril {
 pub struct Health {
     pub gateway_max_retries: u32,
     pub gateway_retry_interval_ms: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Demo {
-    pub mithril_artifact_max_retries: usize,
-    pub mithril_artifact_retry_delay_secs: u64,
-    pub message_exchange: MessageExchangeDemo,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct MessageExchangeDemo {
-    pub consolidated_report_max_retries: usize,
-    pub consolidated_report_retry_delay_secs: u64,
-    pub channel_discovery_max_retries: usize,
-    pub channel_discovery_max_retries_after_create: usize,
-    pub channel_discovery_retry_delay_secs: u64,
-    pub connection_discovery_max_retries: usize,
-    pub connection_discovery_retry_delay_secs: u64,
-    pub mithril_readiness_progress_interval_secs: u64,
-    pub relay_max_retries: usize,
-    pub relay_retry_delay_secs: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -6,19 +6,19 @@ import {
   MsgChannelOpenInit,
   MsgChannelOpenTry,
   MsgChannelCloseInit,
-} from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import { ChannelCloseConfirmOperator } from '../dto/channel/channel-close-confirm-operator.dto';
 import { ChannelOpenInitOperator } from '../dto/channel/channel-open-init-operator.dto';
 import { Order } from 'src/shared/types/channel/order';
 import { ChannelOpenTryOperator } from '../dto/channel/channel-open-try-operator.dto';
 import { ChannelCloseInitOperator } from '../dto/channel/channel-close-init-operator.dto';
 import { decodeMerkleProof } from './helper';
-import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
+import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment';
 import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
 import { ChannelOpenAckOperator } from '../dto/channel/channel-open-ack-operator.dto';
 import { CHANNEL_ID_PREFIX } from 'src/constant';
 import { ChannelOpenConfirmOperator } from '../dto/channel/channel-open-confirm-operator.dto';
-import { Order as ChannelOrder } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
+import { Order as ChannelOrder } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
 export function validateAndFormatChannelOpenInitParams(data: MsgChannelOpenInit): {
   constructedAddress: string;
   channelOpenInitOperator: ChannelOpenInitOperator;

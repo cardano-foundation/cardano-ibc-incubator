@@ -3,7 +3,7 @@ import {
   MsgCreateClient,
   MsgUpdateClient,
   MsgUpdateClientResponse,
-} from '@plus/proto-types/build/ibc/core/client/v1/tx';
+} from '@cardano-ibc/proto-types/build/ibc/core/client/v1/tx';
 import { Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
@@ -34,7 +34,11 @@ import {
 } from '../shared/types/msgs/client-message';
 import { checkForMisbehaviour, TENDERMINT_MISBEHAVIOUR_TYPE_URL } from '@shared/types/misbehaviour/misbehaviour';
 import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto';
-import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParams } from './helper/client.validate';
+import {
+  validateAndFormatCreateClientParams,
+  validateAndFormatUpdateClientParams,
+  validateUpdateHeaderAdvancesLatestHeight,
+} from './helper/client.validate';
 import { sumLovelaceFromUtxos } from './helper/helper';
 import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import {
@@ -47,7 +51,7 @@ import {
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
-import { Any } from '@plus/proto-types/build/google/protobuf/any';
+import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
 import { toHex } from '../shared/helpers/hex';
 import type { GatewayEvent } from './tx-events.service';
 import { getHeightMapValue, getProcessedHeight } from '../shared/helpers/verify';
@@ -562,6 +566,10 @@ export class ClientService {
       },
     };
     const headerHeight = header.signedHeader.header.height;
+    validateUpdateHeaderAdvancesLatestHeight(
+      headerHeight,
+      currentClientDatumState.clientState.latestHeight,
+    );
     const newHeight: Height = {
       ...currentClientDatumState.clientState.latestHeight,
       revisionHeight: headerHeight,

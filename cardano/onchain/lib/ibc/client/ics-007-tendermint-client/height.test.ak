@@ -73,8 +73,8 @@ test test_is_zero() {
 test test_parse_chain_id() {
   let test_cases: List<(ByteArray, Int)> =
     [
-      ("ogmosis", 0), ("cardano-entrypoint", 0), ("osmosis-1", 1),
-      ("gaia-revision-2", 2), ("chain-", 0),
+      ("ogmosis", 0), ("cardano", 0), ("osmosis-1", 1), ("gaia-revision-2", 2),
+      ("chain-", 0),
     ]
 
   test_cases

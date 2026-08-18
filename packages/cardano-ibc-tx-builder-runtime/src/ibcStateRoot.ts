@@ -356,12 +356,24 @@ export async function rebuildTreeFromChain(
   const expectedRoot = hostStateDatum.state.ibc_state_root;
   const tree = new ICS23MerkleTree();
 
-  const boundPorts = hostStateDatum.state.bound_port ?? [];
-  if (boundPorts.length > 0) {
+  const boundPorts = hostStateDatum.state.bound_port ?? new Map();
+  if (boundPorts.size > 0) {
     const { Data } = lucidService.LucidImporter;
-    for (const portNumber of boundPorts) {
+    const AuthTokenSchema = Data.Object({
+      policy_id: Data.Bytes(),
+      name: Data.Bytes(),
+    });
+    const ModuleRegistrationSchema = Data.Object({
+      module_script_hash: Data.Bytes(),
+      port_token: AuthTokenSchema,
+      module_token: AuthTokenSchema,
+    });
+    for (const [portNumber, registration] of boundPorts.entries()) {
       const portId = `port-${portNumber.toString()}`;
-      const portValue = Buffer.from(Data.to(portNumber as any, Data.Integer() as any), 'hex');
+      const portValue = Buffer.from(
+        Data.to(registration as any, ModuleRegistrationSchema as any),
+        'hex',
+      );
       tree.set(`ports/${portId}`, portValue);
     }
   }

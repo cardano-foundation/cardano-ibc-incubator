@@ -7,7 +7,7 @@ use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/primitive/bytearray
 use cardano/assets.{AssetName, PolicyId}
 use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Transaction,
+  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
@@ -15,7 +15,10 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/keys as conn_id_keys
-use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
+use ibc/core/ics_004/channel_datum.{
+  ChannelDatum, ChannelDatumState, max_packet_entries_per_channel,
+  packet_entry_count,
+}
 use ibc/core/ics_004/types/keys as chan_id_keys
 use ibc/core/ics_005/types/keys as port_id_keys
 use ibc/core/ics_024_host_requirements/channel_keys as host_channel_keys
@@ -24,10 +27,10 @@ use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
-  HostState, HostStateDatum, host_state_token_name, validate_bind_port,
-  validate_create_channel, validate_create_client, validate_create_connection,
-  validate_enter_shutdown, validate_finalize_shutdown, validate_heartbeat,
-  validate_update_only_root,
+  HostState, HostStateDatum, ModuleRegistration, host_state_token_name,
+  validate_bind_port, validate_create_channel, validate_create_client,
+  validate_create_connection, validate_enter_shutdown,
+  validate_finalize_shutdown, validate_heartbeat, validate_update_only_root,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, CreateChannel, CreateClient, CreateConnection, EnterShutdown,
@@ -56,16 +59,17 @@ fn find_host_state_input(
 /// Find the HostState UTXO output being created
 /// 
 /// Returns the output that contains the IBC Host State NFT
-fn find_host_state_output(
-  outputs: List<Output>,
-  nft_policy: PolicyId,
-) -> Option<Output> {
-  list.find(
-    outputs,
-    fn(output) {
-      assets.has_nft(output.value, nft_policy, host_state_token_name)
-    },
-  )
+fn find_host_state_output(outputs: List<Output>, nft_policy: PolicyId) -> Output {
+  // Selecting the singleton directly preserves the uniqueness invariant while
+  // avoiding the previous follow-up count over every transaction output.
+  expect [host_output] =
+    list.filter(
+      outputs,
+      fn(output) {
+        assets.has_nft(output.value, nft_policy, host_state_token_name)
+      },
+    )
+  host_output
 }
 
 /// Find an input that carries a specific auth token.
@@ -528,6 +532,8 @@ fn validate_bind_port_root(
   old_datum: HostStateDatum,
   new_datum: HostStateDatum,
   port: Int,
+  registration: ModuleRegistration,
+  outputs: List<Output>,
   port_siblings: List<ByteArray>,
 ) -> Bool {
   // Commitment key (IBC path): `ports/{portId}`.
@@ -541,10 +547,15 @@ fn validate_bind_port_root(
 
   // Commitment value.
   //
-  // We store a non-empty marker to represent "this port is bound".
-  // Using the CBOR encoding of the port number itself is deterministic and
-  // straightforward to reproduce off-chain.
-  let port_value = cbor.serialise(port)
+  // Commit the immutable application authority, not merely an "is bound"
+  // marker. This makes the port-to-module association part of the IBC root.
+  let port_value = cbor.serialise(registration)
+
+  // The initial root must be created at the registered script credential with
+  // precisely the two registered capability NFTs and no datum.
+  expect [module_output] =
+    transaction.find_script_outputs(outputs, registration.module_script_hash)
+  expect NoDatum = module_output.datum
 
   let root_after_bind =
     ibc_state_commitment.apply_update(
@@ -555,7 +566,13 @@ fn validate_bind_port_root(
       port_siblings,
     )
 
-  root_after_bind == new_datum.state.ibc_state_root
+  and {
+    root_after_bind == new_datum.state.ibc_state_root,
+    auth.contains_only_auth_tokens(
+      module_output,
+      [registration.port_token, registration.module_token],
+    ),
+  }
 }
 
 /// Enforce that `ibc_state_root` is updated correctly for UpdateConnection.
@@ -855,6 +872,8 @@ fn validate_handle_packet_root(
       // Exactly one insertion is expected in a single packet operation.
       expect removed_commitments == []
       expect [Pair(sequence, commitment_bytes)] = inserted_commitments
+      expect
+        packet_entry_count(channel_output_datum.state) <= max_packet_entries_per_channel
       let commitment_key =
         packet_keys.packet_commitment_path(port_id, channel_id, sequence)
       let new_value = cbor.serialise(commitment_bytes)
@@ -905,6 +924,8 @@ fn validate_handle_packet_root(
       // Receipts should only ever be inserted.
       expect removed_receipts == []
       expect [Pair(sequence, receipt_bytes)] = inserted_receipts
+      expect
+        packet_entry_count(channel_output_datum.state) <= max_packet_entries_per_channel
       let receipt_key =
         packet_keys.packet_receipt_path(port_id, channel_id, sequence)
       let new_value = cbor.serialise(receipt_bytes)
@@ -937,6 +958,8 @@ fn validate_handle_packet_root(
       // Acknowledgements should only ever be inserted.
       expect removed_acks == []
       expect [Pair(sequence, ack_bytes)] = inserted_acks
+      expect
+        packet_entry_count(channel_output_datum.state) <= max_packet_entries_per_channel
       let ack_key =
         packet_keys.packet_acknowledgement_path(port_id, channel_id, sequence)
       let new_value = cbor.serialise(ack_bytes)
@@ -1007,7 +1030,7 @@ validator host_state_stt(
         }
       _ -> {
         // Non-final transitions must re-create exactly one HostState UTxO.
-        expect Some(host_output) = find_host_state_output(outputs, nft_policy)
+        let host_output = find_host_state_output(outputs, nft_policy)
         let new_datum = decode_host_state_datum(host_output)
 
         // The HostState NFT must remain locked at the HostState script address.
@@ -1016,16 +1039,6 @@ validator host_state_stt(
         // same address as the spent HostState UTxO.
         expect host_output.address == host_input.output.address
         expect new_datum.nft_policy == nft_policy
-
-        // Verify exactly one output with NFT (no duplication).
-        let nft_output_count =
-          list.count(
-            outputs,
-            fn(output) {
-              assets.has_nft(output.value, nft_policy, host_state_token_name)
-            },
-          )
-        expect nft_output_count == 1
 
         when redeemer is {
           CreateClient { client_state_siblings, consensus_state_siblings } ->
@@ -1068,9 +1081,20 @@ validator host_state_stt(
                 next_sequence_ack_siblings,
               ),
             }
-          BindPort { port, port_siblings } -> and {
-              validate_bind_port(old_datum, new_datum, port),
-              validate_bind_port_root(old_datum, new_datum, port, port_siblings),
+          BindPort { port, registration, port_siblings } -> and {
+              // A permanent global registration is an administrative action.
+              // Requiring the deployment authority prevents port squatting and
+              // makes the protocol-wide bound useful rather than attacker-fillable.
+              list.has(extra_signatories, old_datum.deployer),
+              validate_bind_port(old_datum, new_datum, port, registration),
+              validate_bind_port_root(
+                old_datum,
+                new_datum,
+                port,
+                registration,
+                outputs,
+                port_siblings,
+              ),
             }
           UpdateClient {
             client_state_siblings,

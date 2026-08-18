@@ -3,7 +3,7 @@ use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/fuzz
 use aiken/interval
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, Value, from_asset, zero}
+use cardano/assets.{PolicyId, Value, add, from_asset, zero}
 use cardano/transaction.{
   InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
   Spend, Transaction, ValidityRange,
@@ -525,9 +525,12 @@ fn run_spending_channel_transition(
       )
 }
 
-fn send_packet_spending_channel_tx_with_marker(
+fn send_packet_spending_channel_tx_with_witness(
   marker_mint: Value,
-  include_marker_redeemer: Bool,
+  marker_policy_id: PolicyId,
+  marker_redeemer: Option<Redeemer>,
+  host_state_redeemer: Redeemer,
+  continuation_count: Int,
   mutation: fuzz_dsl.Mutation,
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock_data = setup()
@@ -575,15 +578,20 @@ fn send_packet_spending_channel_tx_with_marker(
   let output_channel_datum = send_packet(packet, input_channel_datum)
   let channel_output =
     build_channel_output(output_channel_datum, mock_data.channel_token)
-  let outputs = [channel_output, mock_data.host_state_output]
+  let outputs =
+    if continuation_count == 0 {
+      [mock_data.host_state_output]
+    } else if continuation_count == 1 {
+      [channel_output, mock_data.host_state_output]
+    } else {
+      [channel_output, channel_output, mock_data.host_state_output]
+    }
   let spend_channel_redeemer_in_data: Redeemer = SendPacket { packet }
   let module_redeemer: Redeemer = Operator(OtherModuleOperator)
-  let send_packet_redeemer: Redeemer = mock_data.channel_token
   let marker_redeemers =
-    if include_marker_redeemer {
-      [Pair(Mint(mock_data.send_packet_policy_id), send_packet_redeemer)]
-    } else {
-      []
+    when marker_redeemer is {
+      Some(marker_redeemer) -> [Pair(Mint(marker_policy_id), marker_redeemer)]
+      None -> []
     }
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
@@ -594,7 +602,7 @@ fn send_packet_spending_channel_tx_with_marker(
       ),
       Pair(
         Spend(mock_data.host_state_input.output_reference),
-        host_state_handle_packet_redeemer(),
+        host_state_redeemer,
       ),
       ..marker_redeemers
     ]
@@ -621,18 +629,108 @@ fn send_packet_spending_channel_tx_with_marker(
 
 fn send_packet_spending_channel_tx() -> fuzz_dsl.ProtocolTxFixture {
   let mock_data = setup()
-  send_packet_spending_channel_tx_with_marker(
+  let marker_redeemer: Redeemer = mock_data.channel_token
+  send_packet_spending_channel_tx_with_witness(
     operation_marker(mock_data.send_packet_policy_id),
-    True,
+    mock_data.send_packet_policy_id,
+    Some(marker_redeemer),
+    host_state_handle_packet_redeemer(),
+    1,
     fuzz_dsl.no_mutation(),
   )
 }
 
 fn send_packet_spending_channel_tx_missing_marker() -> fuzz_dsl.ProtocolTxFixture {
-  send_packet_spending_channel_tx_with_marker(
+  let mock_data = setup()
+  send_packet_spending_channel_tx_with_witness(
     zero,
-    False,
+    mock_data.send_packet_policy_id,
+    None,
+    host_state_handle_packet_redeemer(),
+    1,
     fuzz_dsl.mutation("missing_operation_marker"),
+  )
+}
+
+fn send_packet_spending_channel_tx_extra_marker() -> fuzz_dsl.ProtocolTxFixture {
+  let mock_data = setup()
+  let marker_redeemer: Redeemer = mock_data.channel_token
+  let marker_mint =
+    operation_marker(mock_data.send_packet_policy_id)
+      |> add(mock_data.send_packet_policy_id, "junk", 1)
+  send_packet_spending_channel_tx_with_witness(
+    marker_mint,
+    mock_data.send_packet_policy_id,
+    Some(marker_redeemer),
+    host_state_handle_packet_redeemer(),
+    1,
+    fuzz_dsl.mutation("extra_operation_marker"),
+  )
+}
+
+fn send_packet_spending_channel_tx_wrong_policy() -> fuzz_dsl.ProtocolTxFixture {
+  let mock_data = setup()
+  let marker_redeemer: Redeemer = mock_data.channel_token
+  send_packet_spending_channel_tx_with_witness(
+    operation_marker(mock_data.acknowledge_packet_policy_id),
+    mock_data.acknowledge_packet_policy_id,
+    Some(marker_redeemer),
+    host_state_handle_packet_redeemer(),
+    1,
+    fuzz_dsl.mutation("wrong_operation_policy"),
+  )
+}
+
+fn send_packet_spending_channel_tx_wrong_token() -> fuzz_dsl.ProtocolTxFixture {
+  let mock_data = setup()
+  let marker_redeemer: Redeemer =
+    AuthToken { ..mock_data.channel_token, name: "wrong channel token" }
+  send_packet_spending_channel_tx_with_witness(
+    operation_marker(mock_data.send_packet_policy_id),
+    mock_data.send_packet_policy_id,
+    Some(marker_redeemer),
+    host_state_handle_packet_redeemer(),
+    1,
+    fuzz_dsl.mutation("wrong_marker_redeemer"),
+  )
+}
+
+fn send_packet_spending_channel_tx_wrong_host_action() -> fuzz_dsl.ProtocolTxFixture {
+  let mock_data = setup()
+  let marker_redeemer: Redeemer = mock_data.channel_token
+  send_packet_spending_channel_tx_with_witness(
+    operation_marker(mock_data.send_packet_policy_id),
+    mock_data.send_packet_policy_id,
+    Some(marker_redeemer),
+    host_state_update_channel_redeemer(),
+    1,
+    fuzz_dsl.mutation("wrong_host_state_action"),
+  )
+}
+
+fn send_packet_spending_channel_tx_missing_continuation() -> fuzz_dsl.ProtocolTxFixture {
+  let mock_data = setup()
+  let marker_redeemer: Redeemer = mock_data.channel_token
+  send_packet_spending_channel_tx_with_witness(
+    operation_marker(mock_data.send_packet_policy_id),
+    mock_data.send_packet_policy_id,
+    Some(marker_redeemer),
+    host_state_handle_packet_redeemer(),
+    0,
+    fuzz_dsl.mutation("missing_channel_continuation"),
+  )
+}
+
+fn send_packet_spending_channel_tx_duplicate_continuation() -> fuzz_dsl.ProtocolTxFixture {
+  let mock_data = setup()
+  let marker_redeemer: Redeemer = mock_data.channel_token
+  send_packet_spending_channel_tx_with_witness(
+    operation_marker(mock_data.send_packet_policy_id),
+    mock_data.send_packet_policy_id,
+    Some(marker_redeemer),
+    host_state_handle_packet_redeemer(),
+    2,
+    fuzz_dsl.mutation("duplicate_channel_continuation"),
   )
 }
 
@@ -657,6 +755,52 @@ test prop_tx_packet_send_rejects_missing_operation_marker(
   // co-spend redeemer, module co-spend redeemer, and marker mint together. The
   // near-valid mutation removes the exact SendPacket marker mint.
   send_packet_spending_channel_tx_missing_marker()
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_tx_packet_send_rejects_extra_operation_marker(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(@"regression.tx.packet.send.invalid_extra_operation_marker")
+  send_packet_spending_channel_tx_extra_marker()
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_tx_packet_send_rejects_wrong_operation_policy(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(@"regression.tx.packet.send.invalid_wrong_operation_policy")
+  send_packet_spending_channel_tx_wrong_policy()
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_tx_packet_send_rejects_wrong_marker_redeemer(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(@"regression.tx.packet.send.invalid_wrong_marker_redeemer")
+  send_packet_spending_channel_tx_wrong_token()
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_tx_packet_send_rejects_wrong_host_state_action(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(@"regression.tx.packet.send.invalid_wrong_host_state_action")
+  send_packet_spending_channel_tx_wrong_host_action()
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_tx_packet_send_rejects_missing_continuation(_seed via fuzz.int()) fail {
+  fuzz.label(@"regression.tx.packet.send.invalid_missing_continuation")
+  send_packet_spending_channel_tx_missing_continuation()
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test prop_tx_packet_send_rejects_duplicate_continuation(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(@"regression.tx.packet.send.invalid_duplicate_continuation")
+  send_packet_spending_channel_tx_duplicate_continuation()
     |> fuzz_dsl.assert_protocol_valid
 }
 
@@ -1697,7 +1841,13 @@ test timeout_packet_succeed() {
   let channel_id =
     channel_keys.format_channel_identifier(mock_data.channel_sequence)
   let module_redeemer: Redeemer =
-    Callback(OnTimeoutPacket { channel_id, data: OtherModuleData })
+    Callback(
+      OnTimeoutPacket {
+        channel_id,
+        packet_data: packet.data,
+        data: OtherModuleData,
+      },
+    )
 
   let timeout_packet_redeemer: Redeemer = mock_data.channel_token
 
@@ -1948,6 +2098,7 @@ test acknowledge_packet_succeed() {
     Callback(
       OnAcknowledgementPacket {
         channel_id,
+        packet_data: packet.data,
         data: OtherModuleData,
         acknowledgement: acknowledgement_mod.new_result_acknowledgement("AQ=="),
       },

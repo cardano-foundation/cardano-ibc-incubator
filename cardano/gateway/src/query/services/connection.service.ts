@@ -17,7 +17,7 @@ import {
   QueryConnectionResponse,
   QueryConnectionsRequest,
   QueryConnectionsResponse,
-} from '@plus/proto-types/build/ibc/core/connection/v1/query';
+} from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
 import { AuthToken } from '../../shared/types/auth-token';
@@ -26,7 +26,7 @@ import {
   IdentifiedConnection,
   State as StateConnectionEnd,
   stateFromJSON,
-} from '@plus/proto-types/build/ibc/core/connection/v1/connection';
+} from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/connection';
 import { getConnectionIdByTokenName } from '../../shared/helpers/connection';
 import { validPagination } from '../helpers/helper';
 import { convertHex2String, fromHex } from '../../shared/helpers/hex';

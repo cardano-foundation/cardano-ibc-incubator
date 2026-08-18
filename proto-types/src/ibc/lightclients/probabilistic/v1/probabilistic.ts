@@ -58,6 +58,13 @@ export interface ClientState {
   system_start_unix_ns: bigint;
   slot_length_ns: bigint;
   epoch_contexts: EpochContext[];
+  /**
+   * The latest authenticated Cardano block, which may be newer than
+   * latest_height when rootless checkpoint updates are used for catch-up.
+   */
+  latest_checkpoint_height?: Height;
+  latest_checkpoint_block_hash: string;
+  latest_checkpoint_epoch: bigint;
 }
 /**
  * @name ConsensusState
@@ -112,6 +119,11 @@ export interface ProbabilisticHeader {
   host_state_tx_output_index: number;
   bridge_blocks: ProbabilisticBlock[];
   new_epoch_context?: EpochContext;
+  /**
+   * Checkpoints authenticate Cardano chain progression without creating an
+   * IBC consensus state or renewing the trusting period.
+   */
+  is_checkpoint: boolean;
 }
 function createBaseHeight(): Height {
   return {
@@ -413,6 +425,9 @@ function createBaseClientState(): ClientState {
     system_start_unix_ns: BigInt(0),
     slot_length_ns: BigInt(0),
     epoch_contexts: [],
+    latest_checkpoint_height: undefined,
+    latest_checkpoint_block_hash: "",
+    latest_checkpoint_epoch: BigInt(0),
   };
 }
 /**
@@ -471,6 +486,15 @@ export const ClientState = {
     for (const v of message.epoch_contexts) {
       EpochContext.encode(v!, writer.uint32(138).fork()).ldelim();
     }
+    if (message.latest_checkpoint_height !== undefined) {
+      Height.encode(message.latest_checkpoint_height, writer.uint32(154).fork()).ldelim();
+    }
+    if (message.latest_checkpoint_block_hash !== "") {
+      writer.uint32(162).string(message.latest_checkpoint_block_hash);
+    }
+    if (message.latest_checkpoint_epoch !== BigInt(0)) {
+      writer.uint32(168).uint64(message.latest_checkpoint_epoch);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ClientState {
@@ -528,6 +552,15 @@ export const ClientState = {
         case 17:
           message.epoch_contexts.push(EpochContext.decode(reader, reader.uint32()));
           break;
+        case 19:
+          message.latest_checkpoint_height = Height.decode(reader, reader.uint32());
+          break;
+        case 20:
+          message.latest_checkpoint_block_hash = reader.string();
+          break;
+        case 21:
+          message.latest_checkpoint_epoch = reader.uint64();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -564,6 +597,12 @@ export const ClientState = {
     if (isSet(object.slot_length_ns)) obj.slot_length_ns = BigInt(object.slot_length_ns.toString());
     if (Array.isArray(object?.epoch_contexts))
       obj.epoch_contexts = object.epoch_contexts.map((e: any) => EpochContext.fromJSON(e));
+    if (isSet(object.latest_checkpoint_height))
+      obj.latest_checkpoint_height = Height.fromJSON(object.latest_checkpoint_height);
+    if (isSet(object.latest_checkpoint_block_hash))
+      obj.latest_checkpoint_block_hash = String(object.latest_checkpoint_block_hash);
+    if (isSet(object.latest_checkpoint_epoch))
+      obj.latest_checkpoint_epoch = BigInt(object.latest_checkpoint_epoch.toString());
     return obj;
   },
   toJSON(message: ClientState): unknown {
@@ -620,6 +659,14 @@ export const ClientState = {
     } else {
       obj.epoch_contexts = [];
     }
+    message.latest_checkpoint_height !== undefined &&
+      (obj.latest_checkpoint_height = message.latest_checkpoint_height
+        ? Height.toJSON(message.latest_checkpoint_height)
+        : undefined);
+    message.latest_checkpoint_block_hash !== undefined &&
+      (obj.latest_checkpoint_block_hash = message.latest_checkpoint_block_hash);
+    message.latest_checkpoint_epoch !== undefined &&
+      (obj.latest_checkpoint_epoch = (message.latest_checkpoint_epoch || BigInt(0)).toString());
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ClientState>, I>>(object: I): ClientState {
@@ -662,6 +709,13 @@ export const ClientState = {
       message.slot_length_ns = BigInt(object.slot_length_ns.toString());
     }
     message.epoch_contexts = object.epoch_contexts?.map((e) => EpochContext.fromPartial(e)) || [];
+    if (object.latest_checkpoint_height !== undefined && object.latest_checkpoint_height !== null) {
+      message.latest_checkpoint_height = Height.fromPartial(object.latest_checkpoint_height);
+    }
+    message.latest_checkpoint_block_hash = object.latest_checkpoint_block_hash ?? "";
+    if (object.latest_checkpoint_epoch !== undefined && object.latest_checkpoint_epoch !== null) {
+      message.latest_checkpoint_epoch = BigInt(object.latest_checkpoint_epoch.toString());
+    }
     return message;
   },
 };
@@ -999,6 +1053,7 @@ function createBaseProbabilisticHeader(): ProbabilisticHeader {
     host_state_tx_output_index: 0,
     bridge_blocks: [],
     new_epoch_context: undefined,
+    is_checkpoint: false,
   };
 }
 /**
@@ -1030,6 +1085,9 @@ export const ProbabilisticHeader = {
     if (message.new_epoch_context !== undefined) {
       EpochContext.encode(message.new_epoch_context, writer.uint32(90).fork()).ldelim();
     }
+    if (message.is_checkpoint === true) {
+      writer.uint32(96).bool(message.is_checkpoint);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ProbabilisticHeader {
@@ -1060,6 +1118,9 @@ export const ProbabilisticHeader = {
         case 11:
           message.new_epoch_context = EpochContext.decode(reader, reader.uint32());
           break;
+        case 12:
+          message.is_checkpoint = reader.bool();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1080,6 +1141,7 @@ export const ProbabilisticHeader = {
       obj.bridge_blocks = object.bridge_blocks.map((e: any) => ProbabilisticBlock.fromJSON(e));
     if (isSet(object.new_epoch_context))
       obj.new_epoch_context = EpochContext.fromJSON(object.new_epoch_context);
+    if (isSet(object.is_checkpoint)) obj.is_checkpoint = Boolean(object.is_checkpoint);
     return obj;
   },
   toJSON(message: ProbabilisticHeader): unknown {
@@ -1107,6 +1169,7 @@ export const ProbabilisticHeader = {
       (obj.new_epoch_context = message.new_epoch_context
         ? EpochContext.toJSON(message.new_epoch_context)
         : undefined);
+    message.is_checkpoint !== undefined && (obj.is_checkpoint = message.is_checkpoint);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ProbabilisticHeader>, I>>(object: I): ProbabilisticHeader {
@@ -1124,6 +1187,7 @@ export const ProbabilisticHeader = {
     if (object.new_epoch_context !== undefined && object.new_epoch_context !== null) {
       message.new_epoch_context = EpochContext.fromPartial(object.new_epoch_context);
     }
+    message.is_checkpoint = object.is_checkpoint ?? false;
     return message;
   },
 };

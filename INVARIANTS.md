@@ -26,6 +26,7 @@ and their CI-enforced labels.
   - [TimeoutPacket](#timeoutpacket)
   - [Model Sequences](#model-sequences)
 - [Transfer Module Accounting](#transfer-module-accounting)
+  - [Module Capability Identity](#module-capability-identity)
   - [Native Token Escrow And Refunds](#native-token-escrow-and-refunds)
   - [Voucher Mint, Burn, And Refunds](#voucher-mint-burn-and-refunds)
   - [Accounting Mutations](#accounting-mutations)
@@ -164,6 +165,7 @@ Required CI label suffixes:
 
 - `unit.client.update.valid_adjacent`
 - `unit.client.update.valid_non_adjacent`
+- `unit.client.update.invalid_historical_height`
 - `contract.client.update.invalid_wrong_host_redeemer`
 - `unit.client.update.invalid_wrong_consensus_state`
 - `contract.client.update.invalid_missing_host_state`
@@ -177,7 +179,8 @@ Required CI label suffixes:
 ### Header Update Transitions
 
 Covered by `unit.client.update.valid_adjacent`,
-`unit.client.update.valid_non_adjacent`, and
+`unit.client.update.valid_non_adjacent`,
+`unit.client.update.invalid_historical_height`, and
 `unit.client.update.invalid_wrong_consensus_state`.
 
 The update properties construct client datum transitions around generated
@@ -187,9 +190,15 @@ header and must be rejected, proving these invariants:
 
 - A valid update can advance to the immediately next height.
 - A valid update can advance to a non-adjacent higher height.
+- An ordinary update must strictly advance `latest_height`; historical headers
+  remain usable as explicit misbehaviour evidence but cannot be inserted into
+  the bounded client history.
 - The output consensus state must exactly match the submitted header.
 - The client latest height must move to the submitted height when the submitted
   height is newer.
+- The consensus state and processed metadata named by `latest_height` remain at
+  the head of their lists, so bounded truncation cannot evict them independently
+  of `latest_height`.
 
 ### HostState Coupling
 
@@ -222,6 +231,11 @@ headers and time-order violations. They prove these invariants:
 - Re-submitting the same header is not falsely treated as misbehaviour.
 - Explicit misbehaviour evidence with a malformed client identifier is
   rejected.
+- Each evidence header's height, time, application state, and validator hashes
+  must be covered by the block hash authenticated by its commit.
+- The validator set used to verify each commit must hash to the validator-set
+  commitment in that same header. Detached header fields or a mismatched set
+  cannot freeze the client.
 
 ### Frozen Client Rejection
 
@@ -321,8 +335,10 @@ Required CI label suffixes:
 - `unit.packet.send.invalid_wrong_sequence`
 - `unit.packet.send.invalid_missing_commitment_root_update`
 - `unit.packet.send.invalid_wrong_transfer_callback`
+- `unit.packet.send.invalid_commitment_capacity`
 - `unit.packet.recv.valid_receipt`
 - `unit.packet.recv.invalid_duplicate_receipt`
+- `unit.packet.recv.invalid_history_capacity`
 - `unit.packet.ack.valid_success`
 - `unit.packet.ack.valid_error`
 - `unit.packet.ack.invalid_wrong_ack_bytes`
@@ -340,7 +356,8 @@ Required CI label suffixes:
 
 Covered by `unit.packet.send.valid`, `unit.packet.send.invalid_wrong_sequence`,
 `unit.packet.send.invalid_missing_commitment_root_update`, and
-`unit.packet.send.invalid_wrong_transfer_callback`.
+`unit.packet.send.invalid_wrong_transfer_callback`, with the collection bound
+covered by `unit.packet.send.invalid_commitment_capacity`.
 
 The SendPacket unit properties build a valid open-channel channel-datum
 packet-send transition and then mutate exactly one field per negative case.
@@ -355,6 +372,9 @@ invariants:
   advanced.
 - The transfer callback/channel redeemer must refer to the same packet bytes;
   a callback for a different transfer payload is rejected.
+- A channel may retain at most 64 entries total across packet commitments,
+  receipts, and acknowledgements. A send may fill the final remaining entry;
+  another insertion is rejected before the datum is enlarged.
 
 ### SendPacket Transaction Coupling
 
@@ -384,7 +404,8 @@ voucher/escrow accounting validator in the same assertion.
 ### RecvPacket
 
 Covered by `unit.packet.recv.valid_receipt` and
-`unit.packet.recv.invalid_duplicate_receipt`. Sink-chain voucher mint coupling
+`unit.packet.recv.invalid_duplicate_receipt`, with the collection bound covered
+by `unit.packet.recv.invalid_history_capacity`. Sink-chain voucher mint coupling
 is additionally covered by `tx.packet.recv.valid_sink_mints_voucher`. The real
 receive policy's timeout boundary is covered by `succeed_recv_packet`,
 `recv_packet_rejects_height_only_timeout`, and
@@ -404,13 +425,19 @@ the input datum to already contain the receipt. They prove these invariants:
   therefore fail closed.
 - A receive must use a nonzero timeout timestamp, and the transaction validity
   interval must end strictly before that timestamp.
+- Each channel may retain at most 64 entries total across packet commitments,
+  receipts, and acknowledgements. An unordered receive may fill the final two
+  remaining entries; the next receive fails closed before permanent history
+  can make the channel datum too large for the ledger.
 - A sink-chain RecvPacket voucher mint can be coupled to the trace-registry
   append that proves the new voucher denom trace.
 
 ### AcknowledgePacket
 
 Covered by `unit.packet.ack.valid_success`, `unit.packet.ack.valid_error`, and
-`unit.packet.ack.invalid_wrong_ack_bytes`.
+`unit.packet.ack.invalid_wrong_ack_bytes`, together with the registered-root
+and escrow-shard callback cases in
+`spending_channel/acknowledge_packet.test.ak`.
 
 The acknowledgement unit properties construct a near-valid source-side channel
 datum packet commitment and apply success and error acknowledgement bytes. They
@@ -423,11 +450,25 @@ prove these invariants:
   payload.
 - Mismatched acknowledgement bytes are rejected even when the channel datum
   transition is otherwise valid.
+- Packet commitment deletion requires a typed callback authorized by the port
+  token registered for the source port.
+- Voucher callbacks spend and preserve the registered module root. Native
+  refund callbacks may instead spend an escrow shard only when the root is a
+  reference input and the shard uses the root's immutable script credential.
+- The callback channel, raw packet bytes, and canonical acknowledgement bytes
+  must match the channel redeemer exactly. Consequently a relayer cannot prove
+  an error acknowledgement while presenting a success callback to bypass the
+  refund branch, or vice versa.
+- Missing and mismatched callbacks are rejected for both voucher-remint and
+  native-unescrow witness shapes before the packet commitment can be removed.
 
 ### TimeoutPacket
 
 Covered by `unit.packet.timeout.valid_unordered`,
-`unit.packet.timeout.valid_ordered`, and `unit.packet.timeout.invalid_before_timeout`.
+`unit.packet.timeout.valid_ordered`, and
+`unit.packet.timeout.invalid_before_timeout`, together with the registered-root
+and escrow-shard callback cases in
+`spending_channel/timeout_packet.test.ak`.
 
 The timeout unit properties construct committed channel datum packets and apply
 unordered and ordered timeout transitions. They prove these invariants:
@@ -436,6 +477,11 @@ unordered and ordered timeout transitions. They prove these invariants:
   open.
 - A valid ordered timeout consumes the packet commitment and closes the channel.
 - A timeout cannot execute before the packet timeout timestamp has been reached.
+- A timeout cannot consume the packet commitment unless the registered
+  application callback for the exact channel and packet bytes is executed in
+  the same transaction.
+- Both voucher-remint root callbacks and native-unescrow shard callbacks reject
+  omitted or mismatched refund witnesses.
 
 ### Model Sequences
 
@@ -491,8 +537,22 @@ Required CI label suffixes:
 - `contract.transfer.voucher_error_ack.remints_exactly`
 - `contract.transfer.recv_source.unescrows_exactly`
 - `contract.transfer.recv_sink.mints_voucher_exactly`
+- `contract.transfer.invalid_capability_relocation`
 - `contract.transfer.invalid_wrong_escrow_delta_rejected`
 - `contract.transfer.invalid_wrong_native_refund_amount_rejected`
+
+### Module Capability Identity
+
+Covered by `contract.transfer.invalid_capability_relocation` and the focused
+wrong-credential and incomplete-capability-set tests in
+`cardano/onchain/lib/ibc/utils/validator_utils.test.ak`.
+
+Once a port is bound, its module authority is immutable: HostState records the
+registered script credential, port token, and module token; callback discovery
+accepts only that exact capability pair at that credential; and a transfer
+root transition must preserve both tokens at the original full address. A
+public callback can therefore neither relocate the root to an attacker script
+nor substitute an unrelated UTxO that merely carries the derived port token.
 
 ### Native Token Escrow And Refunds
 
@@ -732,6 +792,9 @@ key from the proof. They prove these invariants:
 
 Required CI label suffixes:
 
+- `contract.host.bind_port.invalid_unauthorized`
+- `unit.host.bind_port.invalid_capacity`
+- `unit.host.bind_port.invalid_identifier`
 - `contract.host.update_client.valid`
 - `contract.host.update_client.invalid_wrong_root`
 - `contract.host.update_client.invalid_wrong_redeemer`
@@ -744,7 +807,26 @@ Required CI label suffixes:
 - `contract.host.handle_packet.valid_ack`
 - `contract.host.handle_packet.valid_timeout`
 - `contract.host.handle_packet.invalid_channel_only_change`
+- `contract.host.handle_packet.invalid_commitment_capacity`
+- `contract.host.handle_packet.invalid_history_capacity`
+- `contract.host.handle_packet.invalid_ack_capacity`
 - `contract.host.handle_packet.invalid_wrong_packet_key`
+
+### Port Binding
+
+Covered by `contract.host.bind_port.invalid_unauthorized`,
+`unit.host.bind_port.invalid_capacity`, and
+`unit.host.bind_port.invalid_identifier`, with deterministic boundary fixtures
+for the tenth HostState port and tenth module capability token.
+
+Port registration proves these invariants:
+
+- Only the immutable HostState deployment authority may register a port.
+- The singleton HostState can retain at most ten permanent port registrations.
+- Port numbers are non-negative and fit the at-most-eight-byte decimal postfix
+  used by the capability-token naming scheme.
+- A legitimate tenth registration remains executable within the ledger size
+  and execution-unit budgets enforced by CI.
 
 ### Client Root Updates
 
@@ -792,7 +874,10 @@ must be rejected, proving these invariants:
 
 Covered by `contract.host.handle_packet.valid_send`, `contract.host.handle_packet.valid_recv`,
 `contract.host.handle_packet.valid_ack`, `contract.host.handle_packet.valid_timeout`,
-`contract.host.handle_packet.invalid_channel_only_change`, and
+`contract.host.handle_packet.invalid_channel_only_change`,
+`contract.host.handle_packet.invalid_commitment_capacity`,
+`contract.host.handle_packet.invalid_history_capacity`,
+`contract.host.handle_packet.invalid_ack_capacity`, and
 `contract.host.handle_packet.invalid_wrong_packet_key`.
 
 The HandlePacket properties construct HostState plus channel UTxO transitions
@@ -803,6 +888,8 @@ The mutations prove these invariants:
 - Packet effects must use the packet-root HostState branch.
 - Send-like packet commitment insertion must update the committed packet key.
 - Recv-like receipt insertion must update the committed receipt key.
+- Packet-root insertion cannot grow a channel past the ledger-safe bound of 64
+  combined commitment, receipt, and acknowledgement entries.
 - Ack/timeout-like commitment deletion must update the committed packet key.
 - A channel-only change cannot be smuggled through the packet branch.
 - A packet update committed under the wrong packet key is rejected.

@@ -1,4 +1,4 @@
-import { MsgUpdateClient } from '@plus/proto-types/build/ibc/core/client/v1/tx';
+import { MsgUpdateClient } from '@cardano-ibc/proto-types/build/ibc/core/client/v1/tx';
 import headerMockBuilder from './header';
 
 export class MsgUpdateClientMockBuilder {

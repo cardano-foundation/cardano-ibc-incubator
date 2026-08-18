@@ -24,8 +24,6 @@ mod utils;
 
 #[derive(clap::ValueEnum, Clone, Debug, PartialEq)]
 enum DemoType {
-    /// Starts the message-exchange demo preset
-    MessageExchange,
     /// Starts the token-swap demo preset using a running bridge plus selected chain/network
     TokenSwap,
 }

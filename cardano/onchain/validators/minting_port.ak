@@ -6,23 +6,23 @@ use cardano/transaction.{Input, NoDatum, Output, Spend, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
-use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/core/ics_025_handler_interface/host_state.{
+  host_state_token_name, max_bound_ports,
+}
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, HostStateRedeemer,
 }
 use ibc/utils/string as string_utils
 
-// Introduced to prevent high spending costs or potentially prevent tx from being executed.
-const max_number_of_ports = 10
-
-// Checks the max number of ports is not exceeded
+// Keep the existing per-module capability-token bound aligned with the
+// protocol-wide HostState bound.
 fn valid_number_of_ports(
   module_output: Output,
   port_minting_policy_id: PolicyId,
 ) -> Bool {
   let number_of_ports =
     module_output.value |> assets.tokens(port_minting_policy_id) |> dict.size()
-  number_of_ports <= max_number_of_ports
+  number_of_ports <= max_bound_ports
 }
 
 fn find_host_state_input(
@@ -48,17 +48,6 @@ validator mint_port(host_state_nft_policy_id: PolicyId) {
 
     let MintPortRedeemer { spend_module_script_hash, port_number } = redeemer
 
-    expect Some(host_state_input) =
-      find_host_state_input(inputs, host_state_nft_policy_id)
-    expect Some(spent_host_state_redeemer) =
-      pairs.get_first(redeemers, Spend(host_state_input.output_reference))
-    expect host_state_redeemer: HostStateRedeemer = spent_host_state_redeemer
-    let valid_host_state_operator =
-      when host_state_redeemer is {
-        BindPort { port, .. } -> port == port_number
-        _ -> False
-      }
-
     // Port tokens are referenced across IBC transactions that only have access to the
     // channel auth token name. Channel auth tokens are derived from the HostState NFT.
     //
@@ -74,6 +63,21 @@ validator mint_port(host_state_nft_policy_id: PolicyId) {
         |> auth.generate_token_name(host_state_nft, port_keys.port_prefix, _)
     let port_token =
       AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
+
+    expect Some(host_state_input) =
+      find_host_state_input(inputs, host_state_nft_policy_id)
+    expect Some(spent_host_state_redeemer) =
+      pairs.get_first(redeemers, Spend(host_state_input.output_reference))
+    expect host_state_redeemer: HostStateRedeemer = spent_host_state_redeemer
+    let valid_host_state_operator =
+      when host_state_redeemer is {
+        BindPort { port, registration, .. } -> and {
+            port == port_number,
+            registration.module_script_hash == spend_module_script_hash,
+            registration.port_token == port_token,
+          }
+        _ -> False
+      }
     expect [module_output] =
       transaction.find_script_outputs(outputs, spend_module_script_hash)
 

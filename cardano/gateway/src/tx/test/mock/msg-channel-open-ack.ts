@@ -1,4 +1,4 @@
-import { MsgChannelOpenAck } from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+import { MsgChannelOpenAck } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 
 class MsgChannelOpenAckBuilder {
   private msgChannelOpenAck: MsgChannelOpenAck;

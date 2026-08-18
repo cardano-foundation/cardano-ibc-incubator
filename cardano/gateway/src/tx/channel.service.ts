@@ -17,7 +17,7 @@ import {
   MsgChannelOpenInitResponse,
   MsgChannelOpenTry,
   MsgChannelOpenTryResponse,
-} from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
 import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
@@ -47,7 +47,7 @@ import {
   Channel as CardanoChannel,
   State as CardanoChannelState,
   orderFromJSON,
-} from '@plus/proto-types/build/ibc/core/channel/v1/channel';
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
 import { ORDER_MAPPING_CHANNEL } from '~@/constant/channel';
 import { computeLedgerAnchoredValidityWindow, sleep } from '../shared/helpers/time';
 import {

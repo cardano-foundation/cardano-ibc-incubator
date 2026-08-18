@@ -11,7 +11,7 @@ import {
   QueryUnreceivedAcksRequest,
   QueryProofUnreceivedPacketsRequest,
   QueryNextSequenceReceiveRequest,
-} from '@plus/proto-types/build/ibc/core/channel/v1/query';
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
 import { validPagination } from './helper';
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 

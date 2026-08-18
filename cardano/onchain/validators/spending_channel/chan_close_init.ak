@@ -22,6 +22,7 @@ validator chan_close_init(
   client_minting_policy_id: PolicyId,
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
 ) {
   spend(
     _datum: Option<Data>,
@@ -67,10 +68,11 @@ validator chan_close_init(
     expect cur_channel.state != chan_state_mod.Closed
     trace @"chan_close_init: channel state is not Closed"
 
-    let connection_datum =
-      validator_utils.validate_referred_connection(
+    let (connection_datum, client_datum) =
+      validator_utils.validate_referred_connection_and_client(
         reference_inputs,
         datum.token.name,
+        client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
       )
@@ -78,14 +80,6 @@ validator chan_close_init(
 
     expect connection_datum.state.state == conn_state_mod.Open
     trace @"chan_close_init: Connection is open"
-
-    let client_datum =
-      validator_utils.validate_referred_client(
-        reference_inputs,
-        datum.token.name,
-        client_minting_policy_id,
-        connection_datum.state.client_id,
-      )
     trace @"chan_close_init: reference_inputs contain Client utxo"
 
     expect
@@ -103,6 +97,7 @@ validator chan_close_init(
         datum.token.name,
         port_minting_policy_id,
         port_id,
+        host_state_nft_policy_id,
       )
     expect Callback(ibc_module_callback) = ibc_module_redeemer
     expect ibc_module_callback == OnChanCloseInit { channel_id }

@@ -1,6 +1,7 @@
+use aiken/collection/list
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use cardano/address.{from_script}
-use cardano/assets.{PolicyId, from_asset}
+use cardano/assets.{PolicyId, Value, from_asset, zero}
 use cardano/transaction.{
   InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
   ScriptPurpose, Spend, Transaction,
@@ -8,7 +9,9 @@ use cardano/transaction.{
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
-use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
+use ibc/core/ics_025_handler_interface/host_state.{
+  ModuleRegistration, host_state_token_name,
+}
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{BindPort}
 use ibc/utils/string as string_utils
 use minting_port
@@ -71,55 +74,99 @@ fn setup() -> MockData {
   }
 }
 
-test mint_port_succeed() {
-  let mock = setup()
+fn port_token_for(mock: MockData, port_number: Int) -> AuthToken {
+  let port_token_name =
+    string_utils.int_to_string(port_number)
+      |> auth.generate_token_name(
+          AuthToken {
+            policy_id: mock.host_state_nft_policy_id,
+            name: host_state_token_name,
+          },
+          port_keys.port_prefix,
+          _,
+        )
+  AuthToken { policy_id: mock.port_minting_policy_id, name: port_token_name }
+}
 
-  //==============================arrange redeemer============================
+fn module_value_for_ports(mock: MockData, ports: List<Int>) -> Value {
+  list.foldl(
+    ports,
+    zero,
+    fn(port_number, value) {
+      let token = port_token_for(mock, port_number)
+      value |> assets.merge(from_asset(token.policy_id, token.name, 1))
+    },
+  )
+}
+
+fn validate_mint_port(mock: MockData, module_value: Value) -> Bool {
   let redeemer: Redeemer =
     MintPortRedeemer {
       spend_module_script_hash: mock.spend_module_script_hash,
       port_number: mock.port_number,
     }
-
-  //===============================arrange inputs===============================
-  let inputs = [mock.host_state_input]
-
-  //==============================arrange outputs==============================
   let module_output =
     Output {
       address: from_script(mock.spend_module_script_hash),
-      value: from_asset(mock.port_token.policy_id, mock.port_token.name, 1),
+      value: module_value,
       datum: NoDatum,
       reference_script: None,
     }
-  let outputs = [module_output]
-  //==============================arrange mint==============================
   let mint = from_asset(mock.port_token.policy_id, mock.port_token.name, 1)
 
   //==============================arrange redeemers==============================
+  let registration =
+    ModuleRegistration {
+      module_script_hash: mock.spend_module_script_hash,
+      port_token: mock.port_token,
+      module_token: AuthToken {
+        policy_id: "mock module token policy",
+        name: "mock module token",
+      },
+    }
   let host_state_redeemer: Redeemer =
-    BindPort { port: mock.port_number, port_siblings: [] }
+    BindPort { port: mock.port_number, registration, port_siblings: [] }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
       Pair(Spend(mock.host_state_input.output_reference), host_state_redeemer),
       Pair(Mint(mock.port_minting_policy_id), redeemer),
     ]
-
-  let redeemer =
-    MintPortRedeemer {
-      spend_module_script_hash: mock.spend_module_script_hash,
-      port_number: mock.port_number,
-    }
-
-  //==========================arrange context=========================
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, mint, redeemers }
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [mock.host_state_input],
+      outputs: [module_output],
+      mint,
+      redeemers,
+    }
 
   minting_port.mint_port.mint(
     mock.host_state_nft_policy_id,
-    redeemer,
+    MintPortRedeemer {
+      spend_module_script_hash: mock.spend_module_script_hash,
+      port_number: mock.port_number,
+    },
     mock.port_minting_policy_id,
     transaction,
+  )
+}
+
+test mint_port_succeed() {
+  let mock = setup()
+  validate_mint_port(
+    mock,
+    from_asset(mock.port_token.policy_id, mock.port_token.name, 1),
+  )
+}
+
+/// Exercise the largest module capability-token set allowed by the shared cap.
+/// This fixture is collected by the transaction-budget CI job together with the
+/// HostState tenth-port transition.
+test mint_port_tenth_port_succeeds_at_module_cap() {
+  let mock = setup()
+  validate_mint_port(
+    mock,
+    module_value_for_ports(mock, [0, 1, 2, 3, 4, 5, 6, 7, 8, 100]),
   )
 }

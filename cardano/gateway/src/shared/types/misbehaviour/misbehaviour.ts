@@ -1,12 +1,12 @@
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
-import { Misbehaviour as MisbehaviourMsg } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import { Misbehaviour as MisbehaviourMsg } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { ClientDatum } from '../client-datum';
 
 import { Header, checkTrustedHeader, decodeHeader, initializeHeader } from '../header';
 import { ClientState } from '../client-state-types';
 import { ConsensusState } from '../consensus-state';
 import { validatorSetFromProto } from '../cometbft/validator-set';
-import { Any } from '@plus/proto-types/build/google/protobuf/any';
+import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
 import { deepEquals } from '@shared/helpers/deep-equal';
 import { getConsensusStateFromTmHeader } from '../cometbft/header';
 import { Height } from '../height';

@@ -1,4 +1,4 @@
-import { ClientState } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import { ClientState } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 
 class ClientStateTendermintMockBuilder {
   private clientState: ClientState;
