@@ -2,8 +2,8 @@ import { Logger } from '@nestjs/common';
 import {
   QueryClientStateRequest,
   QueryClientStateResponse,
-} from '@plus/proto-types/build/ibc/core/client/v1/query';
-import { Any } from '@plus/proto-types/build/google/protobuf/any';
+} from '@cardano-ibc/proto-types/build/ibc/core/client/v1/query';
+import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
 import {
   TendermintRequestQuery,
   decodeCosmosResponse,

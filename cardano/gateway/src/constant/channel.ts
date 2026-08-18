@@ -1,4 +1,4 @@
-import { State as ChannelState, Order as ChannelOrder } from '@plus/proto-types/build/ibc/core/channel/v1/channel';
+import { State as ChannelState, Order as ChannelOrder } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
 import { Order } from '../shared/types/channel/order';
 import { ChannelState as State } from '../shared/types/channel/state';
 

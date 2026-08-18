@@ -40,6 +40,10 @@ pub fn verify_header(
     check_trusted_header(header, cons_state),
     header_mod.get_height(header).revision_number == header.trusted_height.revision_number,
     height.compare(header_mod.get_height(header), header.trusted_height) == Greater,
+    // Submission order is the retention order in the bounded client datum.
+    // Requiring monotonic updates therefore preserves the latest consensus
+    // state and its processed metadata.
+    height.compare(header_mod.get_height(header), cs.latest_height) == Greater,
     verifier.verify(
       trusted_header,
       header.trusted_validators,

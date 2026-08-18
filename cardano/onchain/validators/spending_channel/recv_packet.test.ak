@@ -4,10 +4,10 @@ use aiken/collection/pairs
 use aiken/fuzz
 use aiken/interval
 use cardano/address.{from_script}
-use cardano/assets.{from_asset}
+use cardano/assets.{add, from_asset}
 use cardano/transaction.{
-  InlineDatum, Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose,
-  Spend, Transaction,
+  InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
+  ScriptPurpose, Spend, Transaction,
 }
 use host_state_stt
 use ibc/auth.{AuthToken}
@@ -53,7 +53,8 @@ use ibc/core/ics_023_vector_commitments/merkle.{
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/core/ics_025_handler_interface/host_state.{
-  Active, HostState, HostStateDatum, empty_ibc_state_root, host_state_token_name,
+  Active, HostState, HostStateDatum, ModuleRegistration, empty_ibc_state_root,
+  host_state_token_name,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{HandlePacket}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
@@ -315,18 +316,15 @@ fn check_recv_packet(
       cbor.serialise(commit_ack),
       packet_acknowledgement_siblings,
     )
-  let host_nft_policy =
-    #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
-  let deployer = #"00000000000000000000000000000000000000000000000000000000"
+  let host_nft_policy = mock_data.host_state_nft_policy_id
+  expect registered_host_datum: HostStateDatum =
+    validator_utils.get_inline_datum(mock_data.host_state_input.output)
+  let deployer = registered_host_datum.deployer
   let old_host_state =
     HostState {
+      ..registered_host_datum.state,
       version: 0,
       ibc_state_root: empty_ibc_state_root,
-      next_client_sequence: 0,
-      next_connection_sequence: 0,
-      next_channel_sequence: 0,
-      bound_port: [],
-      last_update_time: 0,
     }
   let new_host_state =
     HostState { ..old_host_state, version: 1, ibc_state_root: updated_root }
@@ -368,12 +366,12 @@ fn check_recv_packet(
       if compose_host_state {
         [mock_data.module_input, channel_input, host_input]
       } else {
-        [mock_data.module_input, channel_input]
+        [mock_data.module_input, channel_input, mock_data.host_state_input]
       }
     } else if compose_host_state {
       [channel_input, host_input]
     } else {
-      [channel_input]
+      [channel_input, mock_data.host_state_input]
     }
 
   let outputs =
@@ -615,6 +613,7 @@ fn check_recv_packet(
       mock_data.connection_minting_policy_id,
       mock_data.port_minting_policy_id,
       mock_data.verify_proof_policy_id,
+      mock_data.host_state_nft_policy_id,
       mock_data.channel_token,
       mock_data.recv_packet_policy_id,
       transaction,
@@ -761,6 +760,7 @@ test recv_packet_fails_when_channel_is_closed() fail {
     mock_data.connection_minting_policy_id,
     mock_data.port_minting_policy_id,
     mock_data.verify_proof_policy_id,
+    mock_data.host_state_nft_policy_id,
     mock_data.channel_token,
     mock_data.recv_packet_policy_id,
     transaction,
@@ -776,6 +776,8 @@ test recv_packet_non_mock_data() {
     #"b28620755b65066a860e6ff8e1772bb65e73b60dd21d099b2457052b"
   let verify_proof_policy_id =
     #"f94ca68702f061f67713298edda2dd59eaab7b9de711e4728bfe6e03"
+  let host_state_nft_policy_id =
+    #"b377ba1758b1fdea633a60e494f085d59c7799448b0913cc2c6ca753"
   let recv_packet_policy_id =
     #"fb62d2738f5a9fdf049ef19229f82b4b427ed0aceab4282ba9a56039"
 
@@ -850,6 +852,16 @@ test recv_packet_non_mock_data() {
       port_keys.port_prefix,
       "100",
     )
+  let port_token =
+    AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
+  let module_token =
+    AuthToken { policy_id: "module-token-policy", name: "module-token-name" }
+  let module_registration =
+    ModuleRegistration {
+      module_script_hash: "module-script",
+      port_token,
+      module_token,
+    }
   let module_input =
     Input {
       output_reference: OutputReference {
@@ -858,13 +870,43 @@ test recv_packet_non_mock_data() {
       },
       output: Output {
         address: from_script("module-script"),
-        value: from_asset(port_minting_policy_id, port_token_name, 1),
-        datum: InlineDatum("module-state"),
+        value: from_asset(port_token.policy_id, port_token.name, 1)
+          |> add(module_token.policy_id, module_token.name, 1),
+        datum: NoDatum,
         reference_script: None,
       },
     }
 
-  let inputs = [module_input, spend_channel_input]
+  let host_state_input =
+    Input {
+      output_reference: OutputReference {
+        transaction_id: #"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        output_index: 0,
+      },
+      output: Output {
+        address: from_script("host-state-script"),
+        value: from_asset(host_state_nft_policy_id, host_state_token_name, 1),
+        datum: InlineDatum(
+          HostStateDatum {
+            state: HostState {
+              version: 0,
+              ibc_state_root: empty_ibc_state_root,
+              next_client_sequence: 0,
+              next_connection_sequence: 0,
+              next_channel_sequence: 0,
+              bound_port: [Pair(100, module_registration)],
+              last_update_time: 0,
+            },
+            nft_policy: host_state_nft_policy_id,
+            deployer: #"00000000000000000000000000000000000000000000000000000000",
+            shutdown: Active,
+          },
+        ),
+        reference_script: None,
+      },
+    }
+
+  let inputs = [module_input, spend_channel_input, host_state_input]
 
   let outputs =
     [
@@ -1373,6 +1415,7 @@ test recv_packet_non_mock_data() {
     connection_minting_policy_id,
     port_minting_policy_id,
     verify_proof_policy_id,
+    host_state_nft_policy_id,
     channel_token,
     recv_packet_policy_id,
     transaction,

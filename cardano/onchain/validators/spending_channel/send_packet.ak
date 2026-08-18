@@ -7,8 +7,6 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 use ibc/client/ics_007_tendermint_client/client_state as client_state_mod
 use ibc/client/ics_007_tendermint_client/height as height_mod
 use ibc/core/ics_002_client_semantics/types/client as client_status_mod
-use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
-use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{SendPacket}
@@ -79,22 +77,15 @@ validator send_packet(
       }
     trace @"send_packet: packet info matched channel state"
 
-    let connection_datum =
-      validator_utils.validate_referred_connection(
+    let (_connection_datum, client_datum) =
+      validator_utils.validate_referred_connection_and_client(
         reference_inputs,
         datum.token.name,
+        client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
       )
     trace @"send_packet: reference_inputs contain Connection utxo"
-
-    let client_datum =
-      validator_utils.validate_referred_client(
-        reference_inputs,
-        datum.token.name,
-        client_minting_policy_id,
-        connection_datum.state.client_id,
-      )
     trace @"send_packet: reference_inputs contain Client utxo"
 
     expect
@@ -196,22 +187,15 @@ validator send_packet(
       }
     trace @"send_packet: packet info matched channel state"
 
-    let connection_datum =
-      validator_utils.validate_referred_connection(
+    let (_connection_datum, client_datum) =
+      validator_utils.validate_referred_connection_and_client(
         reference_inputs,
         datum.token.name,
+        client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
       )
     trace @"send_packet: reference_inputs contain Connection utxo"
-
-    let client_datum =
-      validator_utils.validate_referred_client(
-        reference_inputs,
-        datum.token.name,
-        client_minting_policy_id,
-        connection_datum.state.client_id,
-      )
     trace @"send_packet: reference_inputs contain Client utxo"
 
     expect

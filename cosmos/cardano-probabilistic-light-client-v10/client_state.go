@@ -101,6 +101,9 @@ func (cs ClientState) Validate() error {
 	if cs.SlotLengthNs == 0 {
 		return errorsmod.Wrapf(ErrInvalidTimestamp, "slot_length_ns must be greater than zero")
 	}
+	if err := cs.validateCheckpointFields(); err != nil {
+		return err
+	}
 
 	contexts, err := cs.normalizedEpochContexts()
 	if err != nil {
@@ -144,6 +147,9 @@ func (cs ClientState) Initialize(ctx sdk.Context, cdc codec.BinaryCodec, clientS
 	consensusState, ok := consState.(*ConsensusState)
 	if !ok {
 		return errorsmod.Wrapf(clienttypes.ErrInvalidConsensus, "invalid initial consensus state. expected type: %T, got: %T", &ConsensusState{}, consState)
+	}
+	if err := cs.initializeCheckpoint(consensusState); err != nil {
+		return err
 	}
 	setClientState(clientStore, cdc, &cs)
 	setConsensusState(clientStore, cdc, consensusState, cs.LatestHeight)

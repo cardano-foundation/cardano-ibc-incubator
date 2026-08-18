@@ -14,8 +14,10 @@
 // This design eliminates state ambiguity and simplifies indexing/querying.
 
 use aiken/collection/list
-use aiken/crypto.{VerificationKeyHash}
+use aiken/collection/pairs
+use aiken/crypto.{Blake2b_224, Hash, Script, VerificationKeyHash}
 use aiken/primitive/int
+use ibc/auth.{AuthToken}
 
 // Empty ICS-23 Merkle tree root (32 bytes of zeros)
 pub const empty_ibc_state_root =
@@ -23,6 +25,20 @@ pub const empty_ibc_state_root =
 
 // IBC Host State NFT token name
 pub const host_state_token_name = "ibc_host_state"
+
+/// Bound ports are permanent protocol registrations, so their aggregate state
+/// must have a ledger-safe upper bound. The deployment currently registers
+/// three ports and can add up to this fixed protocol-wide maximum.
+pub const max_bound_ports = 10
+
+/// Port numbers are encoded as an at-most-eight-byte decimal postfix in their
+/// capability token names. Keep the state identifier inside that same domain
+/// and reject negative or arbitrarily large integers before serialization.
+pub const max_port_number = 99_999_999
+
+pub fn is_valid_port_number(port: Int) -> Bool {
+  port >= 0 && port <= max_port_number
+}
 
 /// ShutdownState controls whether the bridge accepts new user-facing work.
 ///
@@ -32,6 +48,16 @@ pub const host_state_token_name = "ibc_host_state"
 pub type ShutdownState {
   Active
   ShuttingDown { initiated_at: Int, grace_period_end: Int }
+}
+
+/// The immutable authority registered for a bound IBC port.
+///
+/// Callback validators use this record to distinguish the real application
+/// root from an arbitrary UTxO that happens to carry a derived port token.
+pub type ModuleRegistration {
+  module_script_hash: Hash<Blake2b_224, Script>,
+  port_token: AuthToken,
+  module_token: AuthToken,
 }
 
 /// HostState represents the canonical IBC host state on Cardano
@@ -50,8 +76,8 @@ pub type HostState {
   next_client_sequence: Int,
   next_connection_sequence: Int,
   next_channel_sequence: Int,
-  // List of bound port identifiers
-  bound_port: List<Int>,
+  // Port number -> immutable module authority and exact capability token set.
+  bound_port: Pairs<Int, ModuleRegistration>,
   // Optional: Timestamp of last update (Unix epoch milliseconds)
   // Useful for debugging and monitoring
   last_update_time: Int,
@@ -181,25 +207,31 @@ pub fn validate_bind_port(
   old: HostStateDatum,
   new: HostStateDatum,
   port: Int,
+  registration: ModuleRegistration,
 ) -> Bool {
   // A port can only be bound once.
   //
-  // If a port is already in the list, we reject the transition.
+  // If a port already has a registration, we reject the transition.
   expect
-    if list.has(old.state.bound_port, port) {
+    if pairs.has_key(old.state.bound_port, port) {
       False
     } else {
       True
     }
 
   and {
+    is_valid_port_number(port),
+    list.length(old.state.bound_port) < max_bound_ports,
     validate_version_increment(old.state, new.state),
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
-    // Port list should have the new port added and be sorted.
-    new.state.bound_port == (
-      list.push(old.state.bound_port, port) |> list.sort(int.compare)
+    // Port registrations are immutable and kept in ascending port order.
+    new.state.bound_port == pairs.insert_by_ascending_key(
+      old.state.bound_port,
+      port,
+      registration,
+      int.compare,
     ),
     old.shutdown |> is_active,
     new.shutdown == old.shutdown,

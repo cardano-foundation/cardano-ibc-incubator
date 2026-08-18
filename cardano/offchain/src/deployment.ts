@@ -43,6 +43,7 @@ import {
   HostStateDatum,
   HostStateRedeemer,
   MintPortRedeemer,
+  ModuleRegistration,
   OutputReference,
   OutputReferenceSchema,
   type TraceRegistryDirectoryDatum,
@@ -249,6 +250,7 @@ const portCommitmentKey = (portNumber: bigint): string =>
 const buildBindPortHostStateUpdate = async (
   currentDatum: HostStateDatum,
   portNumber: bigint,
+  registration: ModuleRegistration,
   tree: DeploymentIbcTree,
 ): Promise<{
   redeemer: HostStateRedeemer;
@@ -257,9 +259,7 @@ const buildBindPortHostStateUpdate = async (
 }> => {
   const portKey = portCommitmentKey(portNumber);
   const portSiblings = await tree.getSiblings(portKey);
-  const portValue = Data.to(portNumber as never, Data.Integer() as never, {
-    canonical: true,
-  });
+  const portValue = Data.to(registration, ModuleRegistration);
   tree.set(portKey, portValue);
   const newRoot = await tree.getRoot();
   const updatedDatum: HostStateDatum = {
@@ -268,16 +268,17 @@ const buildBindPortHostStateUpdate = async (
       ...currentDatum.state,
       version: currentDatum.state.version + 1n,
       ibc_state_root: newRoot,
-      bound_port: sortPortNumbers([
-        ...currentDatum.state.bound_port,
-        portNumber,
-      ]),
+      bound_port: sortPortRegistrations(
+        new Map(currentDatum.state.bound_port).set(portNumber, registration),
+      ),
       last_update_time: BigInt(Date.now()),
     },
   };
 
   return {
-    redeemer: { BindPort: { port: portNumber, port_siblings: portSiblings } },
+    redeemer: {
+      BindPort: { port: portNumber, registration, port_siblings: portSiblings },
+    },
     datum: updatedDatum,
     commit: () => {},
   };
@@ -1209,13 +1210,15 @@ const isLikelyReferenceBatchTooLarge = (error: unknown) => {
   ].some((pattern) => normalizedMessage.includes(pattern));
 };
 
-const sortPortNumbers = (ports: bigint[]) =>
-  [...ports].sort((left, right) => {
+const sortPortRegistrations = (
+  registrations: Map<bigint, ModuleRegistration>,
+) =>
+  new Map([...registrations.entries()].sort(([left], [right]) => {
     if (left === right) {
       return 0;
     }
     return left < right ? -1 : 1;
-  });
+  }));
 
 async function mintMockToken(lucid: LucidEvolution) {
   // load mint mock token validator
@@ -1785,9 +1788,15 @@ const deployTransferModule = async (
   const hostStateUnit = hostStateNFT.policy_id + hostStateNFT.name;
   const hostStateUtxo = await lucid.utxoByUnit(hostStateUnit);
   const currentHostStateDatum = Data.from(hostStateUtxo.datum!, HostStateDatum);
+  const registration: ModuleRegistration = {
+    module_script_hash: spendTransferModuleScriptHash,
+    port_token: portToken,
+    module_token: identifierToken,
+  };
   const hostStateUpdate = await buildBindPortHostStateUpdate(
     currentHostStateDatum,
     portNumber,
+    registration,
     hostStateTree,
   );
 
@@ -1850,7 +1859,8 @@ const deployTransferModule = async (
           [identifierTokenUnit]: 1n,
           [portTokenUnit]: 1n,
         },
-      );
+      )
+      .addSignerKey(currentHostStateDatum.deployer);
 
   await submitTx(buildMintTransferModuleTx, lucid, "Mint Transfer Module");
   hostStateUpdate.commit();
@@ -1930,9 +1940,15 @@ const deployGenericModule = async (
   const hostStateUnit = hostStateNFT.policy_id + hostStateNFT.name;
   const hostStateUtxo = await lucid.utxoByUnit(hostStateUnit);
   const currentHostStateDatum = Data.from(hostStateUtxo.datum!, HostStateDatum);
+  const registration: ModuleRegistration = {
+    module_script_hash: spendModuleScriptHash,
+    port_token: portToken,
+    module_token: identifierToken,
+  };
   const hostStateUpdate = await buildBindPortHostStateUpdate(
     currentHostStateDatum,
     portNumber,
+    registration,
     hostStateTree,
   );
 
@@ -1991,7 +2007,8 @@ const deployGenericModule = async (
           [identifierTokenUnit]: 1n,
           [portTokenUnit]: 1n,
         },
-      );
+      )
+      .addSignerKey(currentHostStateDatum.deployer);
 
   await submitTx(buildMintGenericModuleTx, lucid, `Mint ${portIdText} Module`);
   hostStateUpdate.commit();
@@ -2337,7 +2354,7 @@ const deployHostState = async (
       next_client_sequence: 0n,
       next_connection_sequence: 0n,
       next_channel_sequence: 0n,
-      bound_port: [],
+      bound_port: new Map(),
       last_update_time: BigInt(currentTime),
     },
     nft_policy: mintHostStateNFTPolicyId,
@@ -2420,12 +2437,25 @@ const deploySpendChannel = async (
   };
 
   const referredScripts: Record<string, { script: Script; hash: string }> = {};
+  const moduleCallbackValidators = new Set([
+    "chan_open_ack",
+    "chan_open_confirm",
+    "chan_close_init",
+    "chan_close_confirm",
+    "recv_packet",
+    "timeout_packet",
+    "acknowledge_packet",
+  ]);
 
   for (const [name, validator] of Object.entries(referredValidators)) {
     const args = [mintClientPolicyId, mintConnectionPolicyId, mintPortPolicyId];
 
     if (name !== "send_packet" && name !== "chan_close_init") {
       args.push(verifyProofScriptHash);
+    }
+
+    if (moduleCallbackValidators.has(name)) {
+      args.push(hostStateNftPolicyId);
     }
 
     const [script, hash] = await readValidator(

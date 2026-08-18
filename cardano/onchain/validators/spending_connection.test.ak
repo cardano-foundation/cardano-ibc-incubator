@@ -22,7 +22,7 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/connection_redeemer.{
-  ConnOpenAck, SpendConnectionRedeemer,
+  ConnOpenAck, ConnOpenConfirm, SpendConnectionRedeemer,
 }
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
@@ -417,6 +417,141 @@ test conn_open_ack_succeed() {
     conn_input.output_reference,
     transaction,
   )
+}
+
+fn run_conn_open_confirm(client_is_active: Bool) -> Bool {
+  let mock = setup()
+
+  let input_conn =
+    ConnectionEnd {
+      client_id: mock.client_id,
+      versions: version.get_compatible_versions(),
+      state: connection_state.TryOpen,
+      counterparty: Counterparty {
+        client_id: #"3039392d63617264616e6f2d3430",
+        connection_id: #"636f6e6e656374696f6e2d3232",
+        prefix: MerklePrefix { key_prefix: #"696263" },
+      },
+      delay_period: 0,
+    }
+  let input_conn_datum =
+    ConnectionDatum { state: input_conn, token: mock.connection_token }
+  let conn_input = build_input(input_conn_datum, mock.connection_token)
+
+  let proof_height = Height { revision_number: 0, revision_height: 188485 }
+  let cons_state =
+    ConsensusState {
+      timestamp: 1711966816442701366,
+      next_validators_hash: #"f88f12713a51934a3dc227fb41830b06e61db5b9518af2ac5b4d549f0f516ac5",
+      root: MerkleRoot {
+        hash: #"cc4f52848dc32a5ccc85f2aac7c14fae959173570915db4ed9408b1ebdf10afe",
+      },
+    }
+  let client_input =
+    test_utils.update_client(proof_height, cons_state, mock.client_input)
+
+  let output_conn_datum =
+    ConnectionDatum {
+      ..input_conn_datum,
+      state: ConnectionEnd {
+        ..input_conn_datum.state,
+        state: connection_state.Open,
+      },
+    }
+  let conn_output = build_output(output_conn_datum, mock.connection_token)
+
+  expect client_datum: ClientDatum =
+    validator_utils.get_inline_datum(client_input.output)
+  let client_datum_state = client_datum.state
+  let connection = output_conn_datum.state
+  let expected_counterparty =
+    counterparty.new_counterparty(
+      connection.client_id,
+      mock.connection_id,
+      merkle_prefix.new_merkle_prefix(default_merkle_prefix),
+    )
+  let expected_connection =
+    connection_end.new_connection_end(
+      connection_state.Open,
+      connection.counterparty.client_id,
+      expected_counterparty,
+      connection.versions,
+      connection.delay_period,
+    )
+  let expected_connection_bz =
+    connection_pb.marshal_for_connection_end(
+      connection_end.convert_to_connection_end_proto(expected_connection),
+    )
+  let conn_merkle_path =
+    merkle.apply_prefix(
+      connection.counterparty.prefix,
+      merkle.new_merkle_path(
+        [connection_keys.connection_path(connection.counterparty.connection_id)],
+      ),
+    )
+  expect Some(consensus_state) =
+    pairs.get_first(client_datum_state.consensus_states, proof_height)
+
+  let proof_ack = MerkleProof { proofs: [] }
+  let connection_redeemer: Redeemer =
+    ConnOpenConfirm { proof_ack, proof_height }
+  let verify_proof_redeemer: Redeemer =
+    VerifyMembership {
+      cs: client_datum_state.client_state,
+      cons_state: consensus_state,
+      height: proof_height,
+      processed_time: 0,
+      processed_height: 0,
+      delay_time_period: connection.delay_period,
+      delay_block_period: verify_mod.get_block_delay(connection),
+      proof: proof_ack,
+      path: conn_merkle_path,
+      value: expected_connection_bz,
+    }
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(conn_input.output_reference), connection_redeemer),
+      Pair(
+        Spend(mock.host_state_input.output_reference),
+        host_state_update_connection_redeemer(),
+      ),
+      Pair(Mint(mock.verify_proof_policy_id), verify_proof_redeemer),
+    ]
+  expect connection_redeemer: SpendConnectionRedeemer = connection_redeemer
+
+  let validity_range =
+    if client_is_active {
+      mock.validity_range
+    } else {
+      interval.before(9_999_999_999_999)
+    }
+  let transaction =
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [conn_input, mock.host_state_input],
+      reference_inputs: [client_input],
+      outputs: [conn_output, mock.host_state_output],
+      redeemers,
+      validity_range,
+    }
+
+  spending_connection.spend_connection.spend(
+    mock.client_minting_policy_id,
+    mock.verify_proof_policy_id,
+    mock.host_state_nft_policy_id,
+    Some(input_conn_datum),
+    connection_redeemer,
+    conn_input.output_reference,
+    transaction,
+  )
+}
+
+test conn_open_confirm_succeed() {
+  run_conn_open_confirm(True)
+}
+
+test conn_open_confirm_rejects_inactive_client() fail {
+  run_conn_open_confirm(False)
 }
 
 test conn_open_ack_fails_without_host_state_co_spend() fail {

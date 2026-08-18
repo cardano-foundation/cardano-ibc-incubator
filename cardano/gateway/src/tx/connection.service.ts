@@ -1,4 +1,4 @@
-import { MsgUpdateClientResponse } from '@plus/proto-types/build/ibc/core/client/v1/tx';
+import { MsgUpdateClientResponse } from '@cardano-ibc/proto-types/build/ibc/core/client/v1/tx';
 import { Network, TxBuilder, UTxO, fromHex } from '@lucid-evolution/lucid';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
@@ -15,7 +15,7 @@ import {
   MsgConnectionOpenInitResponse,
   MsgConnectionOpenTry,
   MsgConnectionOpenTryResponse,
-} from '@plus/proto-types/build/ibc/core/connection/v1/tx';
+} from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/tx';
 import { RpcException } from '@nestjs/microservices';
 import { CLIENT_ID_PREFIX, CONNECTION_ID_PREFIX, DEFAULT_MERKLE_PREFIX } from 'src/constant';
 import { AuthToken } from 'src/shared/types/auth-token';
@@ -43,7 +43,7 @@ import {
 	  isTreeAligned,
 	  getCurrentTree,
 	} from '../shared/helpers/ibc-state-root';
-import { ConnectionEnd, State as ConnectionState } from '@plus/proto-types/build/ibc/core/connection/v1/connection';
+import { ConnectionEnd, State as ConnectionState } from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/connection';
 import {
   ConnectionOpenAckOperator,
   ConnectionOpenConfirmOperator,

@@ -1747,6 +1747,7 @@ test test_refund_voucher() {
     Callback(
       OnTimeoutPacket {
         channel_id: packet_source_channel,
+        packet_data: fungible_token_packet_data.get_bytes(ftpd),
         data: TransferModuleData(ftpd),
       },
     )
@@ -1879,6 +1880,7 @@ test test_refund_voucher_fails_with_wrong_mint_quantity() fail {
     Callback(
       OnTimeoutPacket {
         channel_id: packet_source_channel,
+        packet_data: fungible_token_packet_data.get_bytes(ftpd),
         data: TransferModuleData(ftpd),
       },
     )
@@ -2019,6 +2021,7 @@ test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail 
     Callback(
       OnTimeoutPacket {
         channel_id: packet_source_channel,
+        packet_data: fungible_token_packet_data.get_bytes(ftpd),
         data: TransferModuleData(ftpd),
       },
     )
@@ -2153,6 +2156,7 @@ test test_refund_voucher_fail() fail {
     Callback(
       OnAcknowledgementPacket {
         channel_id: packet_dest_channel,
+        packet_data: fungible_token_packet_data.get_bytes(ftpd),
         acknowledgement: success_ack,
         data: TransferModuleData(ftpd),
       },

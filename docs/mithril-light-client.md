@@ -12,7 +12,7 @@ Date: March 10, 2026
 
 This document describes the retired Mithril light-client architecture and why it was originally selected.
 
-The Mithril header and certificate formats are defined in retained historical Cosmos-side protobuf types; reviewing those shapes helps with overall intuition for this process.
+The Mithril header and certificate formats, along with the complete historical Go implementation, are preserved in the standalone `cosmos/cardano-mithril-light-client-v10` module; reviewing those shapes helps with overall intuition for this process.
 
 In avoiding re-stating things that are explained in depth elsewhere, I will say that a Mithril certificate is a cryptographically attested certificate (by Cardano SPOs) which testifies to the state of Cardano at a given checkpoint, for example at block N. Mithril certifies transaction inclusion and **not** UTxO inclusion. The Mithril certificate is not something derived from Cardano consensus the way that Tendermint headers are, rather Mithril is a separate aggregator-signer network that SPOs run alongside their nodes. The integrity of that network of course also relies on the proportion of Cardano stake participating in the network, and if that proportion increases it would in general improve bridge operations, and also make Mithril certifications more meaningful with respect to extrapolations about finality since a greater proportion of stake is agreeing on a given state.
 
@@ -67,13 +67,13 @@ At a high level, the current design is:
 
 - The deprecated Mithril-backed Cardano client type is `08-cardano-mithril`.
 - The runtime logic is exposed through a dedicated `LightClientModule`, not through capability-era custom wiring.
-- The historical app registration for that module used the IBC client keeper router via `ClientKeeper.AddRoute("08-cardano-mithril", ...)`.
+- An integrating Cosmos application would register the module with the IBC client keeper router via `ClientKeeper.AddRoute("08-cardano-mithril", ...)`.
 - The Mithril `AppModule` is intentionally thin; it mainly exists so interfaces/types are registered and the custom client can participate cleanly in the ibc-go v10 module model.
 - This remains **IBC Classic**, not IBC v2.
 
 In practice that means the v10 adapter layer handles the standard ibc-go light-client entrypoints such as initialization, header verification, misbehaviour handling, state updates, membership / non-membership verification, status queries, recovery, and upgrade handling, while the actual Cardano-specific verification logic still lives in the Mithril `ClientState` methods and helper code.
 
-In this repo, the historical v10 adapter, recovery logic, and app-level client registration remain in the retained Cosmos-side source tree for reference only.
+In this repo, the v10 adapter, recovery logic, interface registration, and preserved types live together in the standalone `cosmos/cardano-mithril-light-client-v10` module.
 
 The core idea is that Mithril does not directly sign the Cardano IBC commitment root, instead Mithril certifies a transaction snapshot that can prove a specific Cardano transaction happened at a given Cardano block number, and that transaction is used to locate and authenticate the HostState UTxO, whose inline datum contains the `ibc_state_root`. Once that root is authenticated and stored in the client’s consensus state for that height, the normal IBC membership and non-membership verification methods can operate against it. 
 So to be clear, it’s not the case that you can “do” the kind of UTxO membership/non-membership proofs we initially endeavoured to do (which are ostensibly not possible at the moment), rather you can get around this by building a system based on transaction inclusion attestation and then cryptographic proofs of the output of those transactions. Inherently we are talking about transactions which operate on Cardano’s on-chain host state as thats where we’ve implemented the underlying validators and STT architecture + spending conditions that allow us to enforce this and operate as we do, that is, the cryptographic guarantees I’m describing are not true for arbitrary Cardano transactions, this is an explicitly designed architecture that relies on the integrity of the validators and HostState UTxO we have deployed on Cardano.

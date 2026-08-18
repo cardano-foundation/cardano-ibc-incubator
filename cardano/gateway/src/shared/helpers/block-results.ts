@@ -1,4 +1,4 @@
-import { Event, EventAttribute, ResponseDeliverTx } from '@plus/proto-types/build/ibc/core/types/v1/block';
+import { Event, EventAttribute, ResponseDeliverTx } from '@cardano-ibc/proto-types/build/ibc/core/types/v1/block';
 import {
   EVENT_TYPE_CLIENT,
   EVENT_TYPE_CONNECTION,
@@ -28,8 +28,8 @@ import { convertHeaderToTendermint } from '../types/header';
 import {
   Header,
   Misbehaviour as MisbehaviourMsg,
-} from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
-import { Any } from '@plus/proto-types/build/google/protobuf/any';
+} from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import { Any } from '@cardano-ibc/proto-types/build/google/protobuf/any';
 import { acknowledgementHexFromResponse, acknowledgementJsonFromResponse } from './acknowledgement';
 
 function normalizeEventConnection(evtType: ConnectionState): string {

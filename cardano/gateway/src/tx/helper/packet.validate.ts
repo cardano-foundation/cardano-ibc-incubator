@@ -1,7 +1,10 @@
-import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
+import {
+  GrpcFailedPreconditionException,
+  GrpcInvalidArgumentException,
+} from '~@/exception/grpc_exceptions';
 import { CHANNEL_ID_PREFIX } from 'src/constant';
 import { decodeMerkleProof } from './helper';
-import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
+import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment';
 import { convertHex2String, convertString2Hex, toHex } from '@shared/helpers/hex';
 import { initializeMerkleProof } from '@shared/helpers/merkle-proof';
 import {
@@ -9,10 +12,51 @@ import {
   MsgRecvPacket,
   MsgTimeout,
   MsgTransfer,
-} from '@plus/proto-types/build/ibc/core/channel/v1/tx';
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
 import { AckPacketOperator, RecvPacketOperator, SendPacketOperator, TimeoutPacketOperator } from '../dto';
 import { isSupportedGatewayPortId } from '@shared/helpers/module-port';
+import { ChannelDatum } from '@shared/types/channel/channel-datum';
+import { Order } from '@shared/types/channel/order';
+import { MAX_PACKET_ENTRIES_PER_CHANNEL } from '@cardano-ibc/tx-builder';
+
+function packetCapacityExhausted(
+  channelDatum: ChannelDatum,
+): GrpcFailedPreconditionException {
+  return new GrpcFailedPreconditionException(
+    `Channel ${channelDatum.port} retained packet state capacity of ` +
+      `${MAX_PACKET_ENTRIES_PER_CHANNEL} is exhausted`,
+  );
+}
+
+function packetEntryCount(channelDatum: ChannelDatum): number {
+  return (
+    channelDatum.state.packet_commitment.size +
+    channelDatum.state.packet_receipt.size +
+    channelDatum.state.packet_acknowledgement.size
+  );
+}
+
+export function validateRecvPacketHistoryCapacity(
+  channelDatum: ChannelDatum,
+): void {
+  const insertedEntries =
+    channelDatum.state.channel.ordering === Order.Unordered ? 2 : 1;
+  if (
+    packetEntryCount(channelDatum) + insertedEntries >
+    MAX_PACKET_ENTRIES_PER_CHANNEL
+  ) {
+    throw packetCapacityExhausted(channelDatum);
+  }
+}
+
+export function validateSendPacketCommitmentCapacity(
+  channelDatum: ChannelDatum,
+): void {
+  if (packetEntryCount(channelDatum) >= MAX_PACKET_ENTRIES_PER_CHANNEL) {
+    throw packetCapacityExhausted(channelDatum);
+  }
+}
 
 export function validateAndFormatRecvPacketParams(data: MsgRecvPacket): {
   constructedAddress: string;

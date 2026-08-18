@@ -2,14 +2,16 @@ use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/interval.{Finite}
-use aiken/option.{map}
+use aiken/option
 use aiken/primitive/bytearray
+use aiken/primitive/int
 use cardano/address.{Script}
 use cardano/assets.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of, tokens,
 }
 use cardano/transaction.{
-  InlineDatum, Input, Output, Redeemer, ScriptPurpose, Spend, ValidityRange,
+  InlineDatum, Input, NoDatum, Output, Redeemer, ScriptPurpose, Spend,
+  ValidityRange,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
@@ -21,7 +23,7 @@ use ibc/core/ics_004/channel_redeemer.{SpendChannelRedeemer}
 use ibc/core/ics_005/types/ibc_module_redeemer.{IBCModuleRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_025_handler_interface/host_state.{
-  HostStateDatum, host_state_token_name, is_active,
+  HostStateDatum, ModuleRegistration, host_state_token_name, is_active,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
 
@@ -94,22 +96,29 @@ pub fn extract_module_redeemer(
   channel_token_name: ByteArray,
   port_minting_policy_id: PolicyId,
   port_id: ByteArray,
+  host_state_nft_policy_id: PolicyId,
 ) -> IBCModuleRedeemer {
-  let port_number = port_keys.parse_port_id_number(port_id)
+  let port_number_bytes = port_keys.parse_port_id_number(port_id)
+  expect Some(port_number) = int.from_utf8(port_number_bytes)
   let port_token_name =
     auth.generate_token_name_from_another(
       channel_token_name,
       port_keys.port_prefix,
-      port_number,
+      port_number_bytes,
     )
   let port_token =
     AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
 
-  expect [module_input] =
-    list.filter(
+  let registration =
+    registered_module_for_port(
       inputs,
-      fn(input) { auth.contain_auth_token(input.output, port_token) },
+      host_state_nft_policy_id,
+      port_number,
+      port_token,
     )
+
+  expect Some(module_input) =
+    find_registered_module_state_input(inputs, registration)
 
   expect Some(spent_module_redeemer) =
     pairs.get_first(redeemers, Spend(module_input.output_reference))
@@ -118,11 +127,11 @@ pub fn extract_module_redeemer(
   ibc_module_redeemer
 }
 
-/// Find the application input authorized to approve a packet callback.
+/// Find the registered application witness for a packet callback.
 ///
-/// The registered port token is the immutable authorization anchor. Module-root
-/// callbacks spend that token directly; sharded callbacks reference the root and
-/// spend exactly one UTxO locked by the same module script credential.
+/// Root-state callbacks spend and preserve the exact registered capability
+/// pair. Escrow-shard callbacks reference that root and spend exactly one UTxO
+/// at the immutable script credential recorded by HostState.
 pub fn extract_packet_module_redeemer(
   inputs: List<Input>,
   reference_inputs: List<Input>,
@@ -131,39 +140,50 @@ pub fn extract_packet_module_redeemer(
   channel_token_name: ByteArray,
   port_minting_policy_id: PolicyId,
   port_id: ByteArray,
+  host_state_nft_policy_id: PolicyId,
 ) -> IBCModuleRedeemer {
-  let port_number = port_keys.parse_port_id_number(port_id)
+  let port_number_bytes = port_keys.parse_port_id_number(port_id)
+  expect Some(port_number) = int.from_utf8(port_number_bytes)
   let port_token_name =
     auth.generate_token_name_from_another(
       channel_token_name,
       port_keys.port_prefix,
-      port_number,
+      port_number_bytes,
     )
   let port_token =
     AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
 
-  when find_module_state_input(inputs, port_token) is {
+  let registration =
+    registered_module_for_port(
+      inputs,
+      host_state_nft_policy_id,
+      port_number,
+      port_token,
+    )
+
+  when find_registered_module_state_input(inputs, registration) is {
     Some(module_input) -> {
-      expect Script(_) = module_input.output.address.payment_credential
       expect [module_output] =
         list.filter(
           outputs,
-          fn(output) { auth.contain_auth_token(output, port_token) },
+          fn(output) {
+            auth.contain_auth_token(output, registration.port_token)
+          },
         )
       expect module_output.address == module_input.output.address
+      expect registered_module_state_is_exact(module_output, registration)
       input_redeemer(redeemers, module_input)
     }
     None -> {
-      expect Some(module_reference_input) =
-        find_module_state_input(reference_inputs, port_token)
-      expect Script(module_script_hash) =
-        module_reference_input.output.address.payment_credential
+      expect Some(_module_reference_input) =
+        find_registered_module_state_input(reference_inputs, registration)
       expect [module_spend_input] =
         list.filter(
           inputs,
           fn(input) {
             when input.output.address.payment_credential is {
-              Script(script_hash) -> script_hash == module_script_hash
+              Script(script_hash) ->
+                script_hash == registration.module_script_hash
               _ -> False
             }
           },
@@ -173,19 +193,64 @@ pub fn extract_packet_module_redeemer(
   }
 }
 
-fn find_module_state_input(
+fn find_registered_module_state_input(
   inputs: List<Input>,
-  port_token: AuthToken,
+  registration: ModuleRegistration,
 ) -> Option<Input> {
   when
     list.filter(
       inputs,
-      fn(input) { auth.contain_auth_token(input.output, port_token) },
+      fn(input) {
+        auth.contain_auth_token(input.output, registration.port_token)
+      },
     )
   is {
     [] -> None
-    [module_input] -> Some(module_input)
+    [module_input] -> {
+      expect registered_module_state_is_exact(module_input.output, registration)
+      Some(module_input)
+    }
     _ -> fail @"Multiple module state witnesses"
+  }
+}
+
+fn registered_module_for_port(
+  inputs: List<Input>,
+  host_state_nft_policy_id: PolicyId,
+  port_number: Int,
+  expected_port_token: AuthToken,
+) -> ModuleRegistration {
+  expect [host_state_input] =
+    list.filter(
+      inputs,
+      fn(input) {
+        assets.has_nft(
+          input.output.value,
+          host_state_nft_policy_id,
+          host_state_token_name,
+        )
+      },
+    )
+  expect host_state_datum: HostStateDatum =
+    get_inline_datum(host_state_input.output)
+  expect Some(registration) =
+    pairs.get_first(host_state_datum.state.bound_port, port_number)
+  expect registration.port_token == expected_port_token
+  registration
+}
+
+fn registered_module_state_is_exact(
+  output: Output,
+  registration: ModuleRegistration,
+) -> Bool {
+  expect Script(script_hash) = output.address.payment_credential
+  and {
+    script_hash == registration.module_script_hash,
+    output.datum == NoDatum,
+    auth.contains_only_auth_tokens(
+      output,
+      [registration.port_token, registration.module_token],
+    ),
   }
 }
 
@@ -200,12 +265,11 @@ fn input_redeemer(
   ibc_module_redeemer
 }
 
-pub fn validate_referred_client(
-  reference_inputs: List<Input>,
+fn expected_client_token(
   referrer_token_name: ByteArray,
   client_minting_policy_id: PolicyId,
   client_id: ByteArray,
-) -> ClientDatum {
+) -> AuthToken {
   let client_sequence = client_keys.parse_client_id_sequence(client_id)
 
   let client_token_name =
@@ -214,14 +278,54 @@ pub fn validate_referred_client(
       client_keys.client_prefix,
       client_sequence,
     )
+  AuthToken { policy_id: client_minting_policy_id, name: client_token_name }
+}
+
+fn expected_connection_token(
+  referrer_token_name: ByteArray,
+  connection_minting_policy_id: PolicyId,
+  connection_id: ByteArray,
+) -> AuthToken {
+  let connection_sequence =
+    connection_keys.parse_connection_id_sequence(connection_id)
+
+  let connection_token_name =
+    auth.generate_token_name_from_another(
+      referrer_token_name,
+      connection_keys.connection_prefix,
+      connection_sequence,
+    )
+  AuthToken {
+    policy_id: connection_minting_policy_id,
+    name: connection_token_name,
+  }
+}
+
+fn find_authenticated_input(
+  inputs: List<Input>,
+  token: AuthToken,
+) -> Option<Input> {
+  list.find(
+    inputs,
+    fn(input) { input.output |> auth.contain_auth_token(token) },
+  )
+}
+
+pub fn validate_referred_client(
+  reference_inputs: List<Input>,
+  referrer_token_name: ByteArray,
+  client_minting_policy_id: PolicyId,
+  client_id: ByteArray,
+) -> ClientDatum {
   let client_token =
-    AuthToken { policy_id: client_minting_policy_id, name: client_token_name }
+    expected_client_token(
+      referrer_token_name,
+      client_minting_policy_id,
+      client_id,
+    )
 
   expect Some(client_input) =
-    list.find(
-      reference_inputs,
-      fn(input) { input.output |> auth.contain_auth_token(client_token) },
-    )
+    find_authenticated_input(reference_inputs, client_token)
   expect client_datum: ClientDatum = get_inline_datum(client_input.output)
   client_datum
 }
@@ -232,29 +336,93 @@ pub fn validate_referred_connection(
   connection_minting_policy_id: PolicyId,
   connection_id: ByteArray,
 ) -> ConnectionDatum {
-  let connection_sequence =
-    connection_keys.parse_connection_id_sequence(connection_id)
-
-  let connection_token_name =
-    auth.generate_token_name_from_another(
-      referrer_token_name,
-      connection_keys.connection_prefix,
-      connection_sequence,
-    )
   let connection_token =
-    AuthToken {
-      policy_id: connection_minting_policy_id,
-      name: connection_token_name,
-    }
-
-  expect Some(data) =
-    list.find(
-      reference_inputs,
-      fn(input) { input.output |> auth.contain_auth_token(connection_token) },
+    expected_connection_token(
+      referrer_token_name,
+      connection_minting_policy_id,
+      connection_id,
     )
-      |> map(fn(connection_input) { get_inline_datum(connection_input.output) })
-  expect connection_datum: ConnectionDatum = data
+
+  expect Some(connection_input) =
+    find_authenticated_input(reference_inputs, connection_token)
+  expect connection_datum: ConnectionDatum =
+    get_inline_datum(connection_input.output)
   connection_datum
+}
+
+/// Locate a channel's authenticated connection and client references together.
+///
+/// Before the connection datum reveals the client id, the scan records whether
+/// an earlier input could carry the client policy. Once the id is known, the
+/// exact derived client auth token is still required. The normal
+/// connection-before-client layout is traversed once; if references are
+/// reordered, lookup falls back to the complete list to preserve behavior.
+pub fn validate_referred_connection_and_client(
+  reference_inputs: List<Input>,
+  referrer_token_name: ByteArray,
+  client_minting_policy_id: PolicyId,
+  connection_minting_policy_id: PolicyId,
+  connection_id: ByteArray,
+) -> (ConnectionDatum, ClientDatum) {
+  let connection_token =
+    expected_connection_token(
+      referrer_token_name,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  let (connection_input, remaining_inputs, client_may_precede_connection) =
+    find_connection_with_remaining_inputs(
+      reference_inputs,
+      connection_token,
+      client_minting_policy_id,
+      False,
+    )
+  expect connection_datum: ConnectionDatum =
+    get_inline_datum(connection_input.output)
+  let client_token =
+    expected_client_token(
+      referrer_token_name,
+      client_minting_policy_id,
+      connection_datum.state.client_id,
+    )
+
+  let client_search_inputs =
+    if client_may_precede_connection || !(connection_input.output.value
+      |> tokens(client_minting_policy_id)
+      |> dict.is_empty) {
+      reference_inputs
+    } else {
+      remaining_inputs
+    }
+  expect Some(client_input) =
+    find_authenticated_input(client_search_inputs, client_token)
+  expect client_datum: ClientDatum = get_inline_datum(client_input.output)
+
+  (connection_datum, client_datum)
+}
+
+fn find_connection_with_remaining_inputs(
+  inputs: List<Input>,
+  connection_token: AuthToken,
+  client_minting_policy_id: PolicyId,
+  client_may_precede_connection: Bool,
+) -> (Input, List<Input>, Bool) {
+  when inputs is {
+    [] -> fail @"Missing authenticated connection reference input"
+    [input, ..remaining_inputs] ->
+      if auth.contain_auth_token(input.output, connection_token) {
+        (input, remaining_inputs, client_may_precede_connection)
+      } else {
+        find_connection_with_remaining_inputs(
+          remaining_inputs,
+          connection_token,
+          client_minting_policy_id,
+          client_may_precede_connection || !(input.output.value
+            |> tokens(client_minting_policy_id)
+            |> dict.is_empty),
+        )
+      }
+  }
 }
 
 pub fn validate_mint(

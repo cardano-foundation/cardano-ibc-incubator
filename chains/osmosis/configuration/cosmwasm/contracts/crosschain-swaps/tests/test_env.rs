@@ -21,33 +21,33 @@ impl TestEnv {
 
         // setup owner account
         let initial_balance = [
-            Coin::new(1_000_000_000_000, "uosmo"),
-            Coin::new(1_000_000_000_000, "uion"),
-            Coin::new(1_000_000_000_000, "uatom"),
+            Coin::new(1_000_000_000_000u128, "uosmo"),
+            Coin::new(1_000_000_000_000u128, "uion"),
+            Coin::new(1_000_000_000_000u128, "uatom"),
         ];
         let owner = app.init_account(&initial_balance).unwrap();
 
         // create pools
         gamm.create_basic_pool(
             &[
-                Coin::new(100_000_000, "uion"),
-                Coin::new(100_000_000, "uosmo"),
+                Coin::new(100_000_000u128, "uion"),
+                Coin::new(100_000_000u128, "uosmo"),
             ],
             &owner,
         )
         .unwrap();
         gamm.create_basic_pool(
             &[
-                Coin::new(100_000_000, "uatom"),
-                Coin::new(100_000_000, "uosmo"),
+                Coin::new(100_000_000u128, "uatom"),
+                Coin::new(100_000_000u128, "uosmo"),
             ],
             &owner,
         )
         .unwrap();
         gamm.create_basic_pool(
             &[
-                Coin::new(100_000_000, "uatom"),
-                Coin::new(100_000_000, "uion"),
+                Coin::new(100_000_000u128, "uatom"),
+                Coin::new(100_000_000u128, "uion"),
             ],
             &owner,
         )
@@ -101,7 +101,7 @@ where
             code_id,
             instantiate_msg,
             Some(&owner.address()),
-            None,
+            Some("contract-under-test"),
             &[],
             owner,
         )
@@ -115,10 +115,7 @@ fn get_swaprouter_wasm() -> Vec<u8> {
     let wasm_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
-        .join("..")
-        .join("tests")
-        .join("ibc-hooks")
-        .join("bytecode")
+        .join("wasm")
         .join("swaprouter.wasm");
     println!("reading swaprouter wasm: {wasm_path:?}");
     std::fs::read(wasm_path).unwrap()
@@ -128,10 +125,7 @@ fn get_crosschain_swaps_wasm() -> Vec<u8> {
     let wasm_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
-        .join("..")
-        .join("tests")
-        .join("ibc-hooks")
-        .join("bytecode")
+        .join("wasm")
         .join("crosschain_swaps.wasm");
     println!("reading crosschain swaps wasm: {wasm_path:?}");
     std::fs::read(wasm_path).unwrap()

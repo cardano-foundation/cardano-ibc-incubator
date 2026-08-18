@@ -1,4 +1,4 @@
-import { MsgCreateClient, MsgUpdateClient } from '@plus/proto-types/build/ibc/core/client/v1/tx';
+import { MsgCreateClient, MsgUpdateClient } from '@cardano-ibc/proto-types/build/ibc/core/client/v1/tx';
 import { decodeClientState, decodeConsensusState } from './helper';
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { initializeClientState, validateClientState } from '@shared/helpers/client-state';
@@ -6,10 +6,11 @@ import { initializeConsensusState, validateConsensusState } from '@shared/helper
 import {
   ClientState as ClientStateMsg,
   ConsensusState as ConsensusStateMsg,
-} from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+} from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { ClientState } from '@shared/types/client-state-types';
 import { ConsensusState } from '@shared/types/consensus-state';
 import { CLIENT_ID_PREFIX } from 'src/constant';
+import { Height } from '@shared/types/height';
 
 export function validateAndFormatCreateClientParams(data: MsgCreateClient): {
   constructedAddress: string;
@@ -58,4 +59,12 @@ export function validateAndFormatUpdateClientParams(data: MsgUpdateClient): {
   }
 
   return { constructedAddress, clientId };
+}
+
+export function validateUpdateHeaderAdvancesLatestHeight(headerHeight: bigint, latestHeight: Height): void {
+  if (headerHeight <= latestHeight.revisionHeight) {
+    throw new GrpcInvalidArgumentException(
+      `Update header height ${headerHeight} must be greater than client latest height ${latestHeight.revisionHeight}`,
+    );
+  }
 }

@@ -1,4 +1,4 @@
-import { State as StateConnectionEnd } from '@plus/proto-types/build/ibc/core/connection/v1/connection';
+import { State as StateConnectionEnd } from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/connection';
 import { State } from '../shared/types/connection/state';
 
 export const EVENT_TYPE_CONNECTION = {

@@ -13,6 +13,13 @@ import {
   encodeInterchainQueryPacketAckJson,
 } from '@shared/types/apps/async-icq/async-icq';
 
+const VESSELORACLE_GOLDEN_PACKET_HEX =
+  '7b2264617461223a22436b6f4b44776f484f5455794e544d7a4f4243412b2b2b77426849334c335a6c63334e6c6247397959574e735a5335325a584e7a5a577876636d466a624755755558566c636e6b765132397563323973615752686447566b5247463059564a6c6347397964413d3d227d';
+const VESSELORACLE_GOLDEN_RESPONSE_VALUE_HEX =
+  '0a3d0a07393532353333381080fbefb006180c2001289097f0b00630f89ef0b006387840f001485f520541524255455a0e636f736d6f733163726561746f72';
+const VESSELORACLE_GOLDEN_ACKNOWLEDGEMENT_HEX =
+  '7b22726573756c74223a2265794a6b59585268496a6f695132744e4e6c4233627a6c445a324d31546c524a4d55313654545246535551334e7a6442523064426432644255326c526243394464304a7152445275646b4e33516d706f4e46465151554a54526a6c54516c564755314673566b5a585a7a5671596a4e4f6447497a5458685a4d30707357566853646d4e725a33456966513d3d227d';
+
 describe('VesseloracleIcqService', () => {
   let service: VesseloracleIcqService;
   let packetServiceMock: {
@@ -76,6 +83,7 @@ describe('VesseloracleIcqService', () => {
     );
 
     const sentPacketHex = packetServiceMock.sendAsyncIcqPacket.mock.calls[0][0].packetData as string;
+    expect(sentPacketHex).toBe(VESSELORACLE_GOLDEN_PACKET_HEX);
     const packet = decodeInterchainQueryPacketDataJson(Buffer.from(sentPacketHex, 'hex'));
     const cosmosQuery = decodeCosmosQuery(packet.data);
     expect(cosmosQuery.requests).toHaveLength(1);
@@ -127,21 +135,25 @@ describe('VesseloracleIcqService', () => {
   });
 
   it('decodes a successful vesseloracle consolidated-data-report acknowledgement', () => {
-    const responseValue = encodeVesseloracleProtoMessage('vesseloracle.vesseloracle.QueryGetConsolidatedDataReportResponse', {
-      consolidatedDataReport: {
-        imo: '9525338',
-        ts: 1713110400,
-        total_samples: 12,
-        eta_outliers: 1,
-        eta_mean_cleaned: 1713114000,
-        eta_mean_all: 1713115000,
-        eta_std_cleaned: 120,
-        eta_std_all: 240,
-        depport_score: 95,
-        depport: 'ARBUE',
-        creator: 'cosmos1creator',
+    const responseValue = encodeVesseloracleProtoMessage(
+      'vesseloracle.vesseloracle.QueryGetConsolidatedDataReportResponse',
+      {
+        consolidatedDataReport: {
+          imo: '9525338',
+          ts: 1713110400,
+          total_samples: 12,
+          eta_outliers: 1,
+          eta_mean_cleaned: 1713114000,
+          eta_mean_all: 1713115000,
+          eta_std_cleaned: 120,
+          eta_std_all: 240,
+          depport_score: 95,
+          depport: 'ARBUE',
+          creator: 'cosmos1creator',
+        },
       },
-    });
+    );
+    expect(Buffer.from(responseValue).toString('hex')).toBe(VESSELORACLE_GOLDEN_RESPONSE_VALUE_HEX);
 
     const ackBytes = encodeInterchainQueryPacketAckJson({
       data: encodeCosmosResponse({
@@ -165,6 +177,7 @@ describe('VesseloracleIcqService', () => {
       }),
       'utf8',
     ).toString('hex');
+    expect(ackHex).toBe(VESSELORACLE_GOLDEN_ACKNOWLEDGEMENT_HEX);
 
     expect(service.decodeConsolidatedDataReportAcknowledgement(ackHex)).toEqual(
       expect.objectContaining({

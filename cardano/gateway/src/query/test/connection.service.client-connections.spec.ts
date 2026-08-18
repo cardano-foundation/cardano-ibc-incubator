@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { QueryClientConnectionsResponse } from '@plus/proto-types/build/ibc/core/connection/v1/query';
+import { QueryClientConnectionsResponse } from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/query';
 import { GrpcInvalidArgumentException, GrpcNotFoundException } from '../../exception/grpc_exceptions';
 import { KupoService } from '../../shared/modules/kupo/kupo.service';
 import { LucidService } from '../../shared/modules/lucid/lucid.service';

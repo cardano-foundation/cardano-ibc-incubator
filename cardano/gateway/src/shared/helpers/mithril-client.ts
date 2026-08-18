@@ -1,6 +1,6 @@
 import { MithrilClientState } from '../types/mithril';
 import { convertHex2String, fromText } from './hex';
-import { ClientState as ClientStateMithril } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
+import { ClientState as ClientStateMithril } from '@cardano-ibc/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 
 export function initializeMithrilClientState(clientStateMsg: ClientStateMithril): MithrilClientState {
   if (!clientStateMsg.latest_height) {

@@ -18,33 +18,33 @@ impl TestEnv {
 
         // setup owner account
         let initial_balance = [
-            Coin::new(1_000_000_000_000, "uosmo"),
-            Coin::new(1_000_000_000_000, "uion"),
-            Coin::new(1_000_000_000_000, "uatom"),
+            Coin::new(1_000_000_000_000u128, "uosmo"),
+            Coin::new(1_000_000_000_000u128, "uion"),
+            Coin::new(1_000_000_000_000u128, "uatom"),
         ];
         let owner = app.init_account(&initial_balance).unwrap();
 
         // create pools
         gamm.create_basic_pool(
             &[
-                Coin::new(100_000_000, "uion"),
-                Coin::new(100_000_000, "uosmo"),
+                Coin::new(100_000_000u128, "uion"),
+                Coin::new(100_000_000u128, "uosmo"),
             ],
             &owner,
         )
         .unwrap();
         gamm.create_basic_pool(
             &[
-                Coin::new(100_000_000, "uatom"),
-                Coin::new(200_000_000, "uosmo"),
+                Coin::new(100_000_000u128, "uatom"),
+                Coin::new(200_000_000u128, "uosmo"),
             ],
             &owner,
         )
         .unwrap();
         gamm.create_basic_pool(
             &[
-                Coin::new(100_000_000, "uatom"),
-                Coin::new(100_000_000, "uion"),
+                Coin::new(100_000_000u128, "uatom"),
+                Coin::new(100_000_000u128, "uion"),
             ],
             &owner,
         )
@@ -63,7 +63,7 @@ impl TestEnv {
                     owner: owner.address(),
                 },
                 Some(&owner.address()),
-                None,
+                Some("swaprouter"),
                 &[],
                 &owner,
             )
@@ -83,10 +83,7 @@ fn get_wasm() -> Vec<u8> {
     let wasm_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
-        .join("..")
-        .join("tests")
-        .join("ibc-hooks")
-        .join("bytecode")
+        .join("wasm")
         .join("swaprouter.wasm");
     std::fs::read(wasm_path).unwrap()
 }

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { ConsensusState as ConsensusStateTendermint } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
-import { Timestamp } from '@plus/proto-types/build/google/protobuf/timestamp';
+import { ConsensusState as ConsensusStateTendermint } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import { Timestamp } from '@cardano-ibc/proto-types/build/google/protobuf/timestamp';
 import { ConsensusState } from '../types/consensus-state';
 import { Height } from '../types/height';
 import { fromHex, toHex } from './hex';

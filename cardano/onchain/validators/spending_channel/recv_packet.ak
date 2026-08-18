@@ -35,6 +35,7 @@ validator recv_packet(
   connection_minting_policy_id: PolicyId,
   port_minting_policy_id: PolicyId,
   verify_proof_policy_id: PolicyId,
+  host_state_nft_policy_id: PolicyId,
 ) {
   mint(
     channel_token: AuthToken,
@@ -96,10 +97,11 @@ validator recv_packet(
     expect cur_channel.state == chan_state_mod.Open
     trace @"recv_packet: channel state is open"
 
-    let connection_datum =
-      validator_utils.validate_referred_connection(
+    let (connection_datum, client_datum) =
+      validator_utils.validate_referred_connection_and_client(
         reference_inputs,
         datum.token.name,
+        client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
       )
@@ -107,14 +109,6 @@ validator recv_packet(
 
     expect connection_datum.state.state == conn_state_mod.Open
     trace @"recv_packet: Connection is open"
-
-    let client_datum =
-      validator_utils.validate_referred_client(
-        reference_inputs,
-        datum.token.name,
-        client_minting_policy_id,
-        connection_datum.state.client_id,
-      )
     trace @"recv_packet: validator_utils.validate_referred_client"
 
     let client_status =
@@ -149,6 +143,7 @@ validator recv_packet(
         datum.token.name,
         port_minting_policy_id,
         datum.port_id,
+        host_state_nft_policy_id,
       )
     expect Callback(OnRecvPacket {
       channel_id: callback_channel_id,

@@ -44,13 +44,22 @@ function hashSha3_256Hex(data) {
 }
 async function encodeHostStateDatum(hostStateDatum, Lucid) {
     const { Data } = Lucid;
+    const RegisteredAuthTokenSchema = Data.Object({
+        policy_id: Data.Bytes(),
+        name: Data.Bytes(),
+    });
+    const ModuleRegistrationSchema = Data.Object({
+        module_script_hash: Data.Bytes(),
+        port_token: RegisteredAuthTokenSchema,
+        module_token: RegisteredAuthTokenSchema,
+    });
     const HostStateStateSchema = Data.Object({
         version: Data.Integer(),
         ibc_state_root: Data.Bytes(),
         next_client_sequence: Data.Integer(),
         next_connection_sequence: Data.Integer(),
         next_channel_sequence: Data.Integer(),
-        bound_port: Data.Array(Data.Integer()),
+        bound_port: Data.Map(Data.Integer(), ModuleRegistrationSchema),
         last_update_time: Data.Integer(),
     });
     const HostStateDatumSchema = Data.Object({
@@ -71,13 +80,22 @@ async function encodeHostStateDatum(hostStateDatum, Lucid) {
 }
 async function decodeHostStateDatum(encoded, Lucid) {
     const { Data } = Lucid;
+    const RegisteredAuthTokenSchema = Data.Object({
+        policy_id: Data.Bytes(),
+        name: Data.Bytes(),
+    });
+    const ModuleRegistrationSchema = Data.Object({
+        module_script_hash: Data.Bytes(),
+        port_token: RegisteredAuthTokenSchema,
+        module_token: RegisteredAuthTokenSchema,
+    });
     const HostStateStateSchema = Data.Object({
         version: Data.Integer(),
         ibc_state_root: Data.Bytes(),
         next_client_sequence: Data.Integer(),
         next_connection_sequence: Data.Integer(),
         next_channel_sequence: Data.Integer(),
-        bound_port: Data.Array(Data.Integer()),
+        bound_port: Data.Map(Data.Integer(), ModuleRegistrationSchema),
         last_update_time: Data.Integer(),
     });
     const HostStateDatumSchema = Data.Object({
@@ -413,6 +431,15 @@ async function encodeHostStateRedeemer(data, Lucid) {
         packet_receipt_siblings: SiblingHashesSchema,
         packet_acknowledgement_siblings: SiblingHashesSchema,
     });
+    const RegisteredAuthTokenSchema = Data.Object({
+        policy_id: Data.Bytes(),
+        name: Data.Bytes(),
+    });
+    const ModuleRegistrationSchema = Data.Object({
+        module_script_hash: Data.Bytes(),
+        port_token: RegisteredAuthTokenSchema,
+        module_token: RegisteredAuthTokenSchema,
+    });
     const HostStateRedeemerSchema = Data.Enum([
         Data.Object({ CreateClient: CreateClientSchema }),
         Data.Object({ CreateConnection: CreateConnectionSchema }),
@@ -420,6 +447,7 @@ async function encodeHostStateRedeemer(data, Lucid) {
         Data.Object({
             BindPort: Data.Object({
                 port: Data.Integer(),
+                registration: ModuleRegistrationSchema,
                 port_siblings: SiblingHashesSchema,
             }),
         }),
@@ -598,12 +626,14 @@ async function encodeIbcModuleRedeemer(data, Lucid) {
         Data.Object({
             OnTimeoutPacket: Data.Object({
                 channel_id: Data.Bytes(),
+                packet_data: Data.Bytes(),
                 data: IBCModulePacketData,
             }),
         }),
         Data.Object({
             OnAcknowledgementPacket: Data.Object({
                 channel_id: Data.Bytes(),
+                packet_data: Data.Bytes(),
                 acknowledgement: AcknowledgementSchema,
                 data: IBCModulePacketData,
             }),

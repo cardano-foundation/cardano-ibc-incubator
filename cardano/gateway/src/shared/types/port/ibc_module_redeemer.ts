@@ -41,12 +41,14 @@ export type IBCModuleCallback =
   | {
       OnTimeoutPacket: {
         channel_id: string;
+        packet_data: string;
         data: IBCModulePacketData;
       };
     }
   | {
       OnAcknowledgementPacket: {
         channel_id: string;
+        packet_data: string;
         acknowledgement: Acknowledgement;
         data: IBCModulePacketData;
       };
@@ -153,12 +155,14 @@ export async function encodeIBCModuleRedeemer(
     Data.Object({
       OnTimeoutPacket: Data.Object({
         channel_id: Data.Bytes(),
+        packet_data: Data.Bytes(),
         data: IBCModulePacketData,
       }),
     }),
     Data.Object({
       OnAcknowledgementPacket: Data.Object({
         channel_id: Data.Bytes(),
+        packet_data: Data.Bytes(),
         acknowledgement: AcknowledgementSchema,
         data: IBCModulePacketData,
       }),
@@ -270,12 +274,14 @@ export function decodeIBCModuleRedeemer(ibcModuleRedeemer: string, Lucid: typeof
     Data.Object({
       OnTimeoutPacket: Data.Object({
         channel_id: Data.Bytes(),
+        packet_data: Data.Bytes(),
         data: IBCModulePacketData,
       }),
     }),
     Data.Object({
       OnAcknowledgementPacket: Data.Object({
         channel_id: Data.Bytes(),
+        packet_data: Data.Bytes(),
         acknowledgement: AcknowledgementSchema,
         data: IBCModulePacketData,
       }),

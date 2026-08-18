@@ -1,9 +1,9 @@
 import { UTxO } from '@lucid-evolution/lucid';
-import { ClientState, ConsensusState } from '@plus/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
+import { ClientState, ConsensusState } from '@cardano-ibc/proto-types/build/ibc/lightclients/tendermint/v1/tendermint';
 import { LOVELACE } from '../../constant';
 import { GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
-import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
-import { ClientState as ClientStateMithril } from '@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril';
+import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment';
+import { ClientState as ClientStateMithril } from '@cardano-ibc/proto-types/build/ibc/lightclients/mithril/v1/mithril';
 
 export function normalizeDenomTokenTransfer(denom: string): string {
   const normalizedDenom = denom?.trim();

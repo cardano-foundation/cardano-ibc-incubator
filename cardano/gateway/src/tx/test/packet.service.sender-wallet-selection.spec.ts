@@ -102,6 +102,8 @@ describe('PacketService signer wallet selection for escrow', () => {
         },
         next_sequence_send: 1n,
         packet_commitment: new Map<bigint, string>(),
+        packet_receipt: new Map<bigint, string>(),
+        packet_acknowledgement: new Map<bigint, string>(),
       },
     };
 

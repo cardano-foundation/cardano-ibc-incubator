@@ -398,6 +398,32 @@ async function buildScenarios(
         REFERENCE_SCRIPT_OUTPUT_OVERHEAD_BYTES,
     },
     {
+      name: 'BindPort at global cap',
+      inputCount: 2,
+      outputCount: 2,
+      mintPolicyCount: 2,
+      referenceScriptTitles: [
+        'host_state_stt.host_state_stt.spend',
+        'minting_port.mint_port.mint',
+        'minting_identifier.minting_identifier.mint',
+      ],
+      redeemers: [
+        // A BindPort witness contains one 32-byte sibling for every level of
+        // the 256-bit commitment tree. Keep this estimate deliberately above
+        // the encoded payload so the global-cap boundary has explicit margin.
+        dataBytes('host state BindPort redeemer', 9_000),
+        dataBytes('mint port redeemer', 80),
+        dataBytes('mint identifier redeemer', 40),
+      ],
+      datums: [dataBytes('updated HostState datum with ten ports', 512)],
+      largestProofPayloadBytes: 8_192,
+      aikenTests: [
+        'host_state_stt.test.host_state_bind_tenth_port_succeeds_at_global_cap',
+        'minting_port.test.mint_port_tenth_port_succeeds_at_module_cap',
+        'minting_identifier.test.mints_identifier_from_nonce_output_reference',
+      ],
+    },
+    {
       name: 'ConnOpenTry',
       inputCount: 2,
       outputCount: 3,
@@ -458,7 +484,7 @@ async function buildScenarios(
       aikenTests: ['spending_connection.test.conn_open_ack_succeed'],
     },
     {
-      name: 'SendPacket',
+      name: 'SendPacket at commitment capacity',
       inputCount: 3,
       outputCount: 3,
       mintPolicyCount: 1,
@@ -473,22 +499,25 @@ async function buildScenarios(
           'spend channel SendPacket',
           await encodeSpendChannelRedeemer({ SendPacket: { packet: PACKET as never } }, Lucid),
         ),
-        dataBytes('host state redeemer', 512),
+        // SendPacket carries one 64-level sparse-Merkle packet witness.
+        dataBytes('host state redeemer', 2_400),
         dataBytes('transfer module redeemer', 384),
       ],
       datums: [
         dataBytes('updated host state datum', 1000),
-        dataBytes('updated channel datum', 700),
+        dataBytes('updated channel datum', 2_800),
         dataBytes('transfer escrow shard datum', 360),
       ],
       largestProofPayloadBytes: 0,
       aikenTests: [
         'spending_channel.test.send_packet_succeed',
         'spending_channel/send_packet.test.succeed_send_packet',
+        'ibc/core/ics_004/channel_datum_test/validate_send_packet.succeed_at_packet_commitment_capacity',
+        'host_state_stt.test.host_state_handle_packet_send_succeeds_at_commitment_capacity',
       ],
     },
     {
-      name: 'RecvPacket',
+      name: 'RecvPacket at history capacity',
       inputCount: 3,
       outputCount: 3,
       mintPolicyCount: 2,
@@ -513,16 +542,21 @@ async function buildScenarios(
           ),
         ),
         sized('verify proof', verifyProofRedeemer(1536)),
-        dataBytes('host state redeemer', 512),
+        // RecvPacket updates both receipt and acknowledgement paths. Each path
+        // carries a 64-level sparse-Merkle witness at the configured boundary.
+        dataBytes('host state redeemer', 4_600),
       ],
       datums: [
         dataBytes('updated host state datum', 1000),
-        dataBytes('updated channel datum', 700),
+        dataBytes('updated channel datum', 2_800),
       ],
       largestProofPayloadBytes: 1536,
       aikenTests: [
         'spending_channel.test.recv_packet_succeed',
         'spending_channel/recv_packet.test.succeed_recv_packet',
+        'ibc/core/ics_004/channel_datum_test/validate_recv_packet.succeed_at_packet_history_capacity',
+        'host_state_stt.test.host_state_handle_packet_recv_succeeds_at_history_capacity',
+        'host_state_stt.test.host_state_handle_packet_acknowledgement_succeeds_at_history_capacity',
       ],
     },
     {

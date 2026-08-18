@@ -20,8 +20,8 @@ import {
   ICS23NonExistenceProof,
 } from './ics23-merkle-tree';
 
-import { HashOp } from '@plus/proto-types/build/cosmos/ics23/v1/proofs';
-import { MerkleProof } from '@plus/proto-types/build/ibc/core/commitment/v1/commitment';
+import { HashOp } from '@cardano-ibc/proto-types/build/cosmos/ics23/v1/proofs';
+import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment';
 
 /**
  * Serialize an ICS-23 ExistenceProof to protobuf-compatible MerkleProof bytes

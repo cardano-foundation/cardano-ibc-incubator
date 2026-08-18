@@ -4,8 +4,8 @@ import {
   QueryClientStateResponse,
   QueryConsensusStateRequest,
   QueryConsensusStateResponse,
-} from '@plus/proto-types/build/ibc/core/client/v1/query';
-import { QueryConnectionRequest, QueryConnectionResponse } from '@plus/proto-types/build/ibc/core/connection/v1/query';
+} from '@cardano-ibc/proto-types/build/ibc/core/client/v1/query';
+import { QueryConnectionRequest, QueryConnectionResponse } from '@cardano-ibc/proto-types/build/ibc/core/connection/v1/query';
 import {
   QueryChannelRequest,
   QueryChannelResponse,
@@ -15,7 +15,7 @@ import {
   QueryPacketCommitmentResponse,
   QueryPacketReceiptRequest,
   QueryPacketReceiptResponse,
-} from '@plus/proto-types/build/ibc/core/channel/v1/query';
+} from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
 import { QueryService } from 'src/query/services/query.service';
 import { ConnectionService } from 'src/query/services/connection.service';
 import { ChannelService } from 'src/query/services/channel.service';

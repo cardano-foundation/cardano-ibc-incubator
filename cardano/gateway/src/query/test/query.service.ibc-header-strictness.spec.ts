@@ -11,8 +11,8 @@ import { HistoryService } from '../services/history.service';
 
 // We only care that queryIBCHeader reaches "header build" paths.
 // The exact protobuf bytes are not relevant for these failure-path regressions.
-jest.mock('@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril', () => {
-  const actual = jest.requireActual('@plus/proto-types/build/ibc/lightclients/mithril/v1/mithril');
+jest.mock('@cardano-ibc/proto-types/build/ibc/lightclients/mithril/v1/mithril', () => {
+  const actual = jest.requireActual('@cardano-ibc/proto-types/build/ibc/lightclients/mithril/v1/mithril');
   return {
     ...actual,
     MithrilHeader: {

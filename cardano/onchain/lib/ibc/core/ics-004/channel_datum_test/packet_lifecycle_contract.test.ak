@@ -1,5 +1,6 @@
 use aiken/collection/pairs
 use aiken/fuzz
+use aiken/primitive/int
 use cardano/address.{from_script}
 use cardano/assets as assets
 use cardano/transaction.{InlineDatum, Input, Output, OutputReference, Spend}
@@ -95,6 +96,21 @@ fn base_datum(ordering: Order, next_sequence_send: Int) -> ChannelDatum {
   }
 }
 
+fn packet_entries(
+  sequence: Int,
+  last_sequence: Int,
+  value: ByteArray,
+) -> Pairs<Int, ByteArray> {
+  if sequence > last_sequence {
+    []
+  } else {
+    [
+      Pair(sequence, value),
+      ..packet_entries(sequence + 1, last_sequence, value)
+    ]
+  }
+}
+
 fn send_output(
   input_datum: ChannelDatum,
   packet: Packet,
@@ -105,10 +121,12 @@ fn send_output(
     state: ChannelDatumState {
       ..input_datum.state,
       next_sequence_send: input_datum.state.next_sequence_send + 1,
-      packet_commitment: [
-        Pair(packet.sequence, commitment),
-        ..input_datum.state.packet_commitment
-      ],
+      packet_commitment: pairs.insert_by_ascending_key(
+        input_datum.state.packet_commitment,
+        packet.sequence,
+        commitment,
+        int.compare,
+      ),
     },
   }
 }
@@ -341,10 +359,12 @@ fn recv_output(
         Pair(packet.sequence, ""),
         ..input_datum.state.packet_receipt
       ],
-      packet_acknowledgement: [
-        Pair(packet.sequence, ack),
-        ..input_datum.state.packet_acknowledgement
-      ],
+      packet_acknowledgement: pairs.insert_by_ascending_key(
+        input_datum.state.packet_acknowledgement,
+        packet.sequence,
+        ack,
+        int.compare,
+      ),
     },
   }
 }
@@ -703,6 +723,79 @@ test prop_packet_recv_rejects_duplicate_receipt(_seed via fuzz.int()) {
     packet,
     ack,
     fuzz_dsl.mutation("duplicate_receipt"),
+  )
+    |> fuzz_dsl.assert_protocol_rejected
+}
+
+test prop_packet_send_rejects_commitment_capacity_overflow(_seed via fuzz.int()) {
+  fuzz.label(@"fuzz.unit.packet.send.invalid_commitment_capacity")
+
+  let sequence = channel_datum_mod.max_packet_entries_per_channel + 1
+  let packet = base_packet(sequence)
+  let base = base_datum(Unordered, sequence)
+  let input_datum =
+    ChannelDatum {
+      ..base,
+      state: ChannelDatumState {
+        ..base.state,
+        packet_commitment: packet_entries(
+          1,
+          channel_datum_mod.max_packet_entries_per_channel,
+          "existing commitment",
+        ),
+      },
+    }
+  let commitment = packet_mod.commit_packet(packet)
+
+  run_send_packet_transition(
+    SendPacketFixture {
+      model: fuzz_dsl.model("packet", "send"),
+      mutation: fuzz_dsl.mutation("commitment_capacity_overflow"),
+      input_datum,
+      output_datum: send_output(input_datum, packet, commitment),
+      packet,
+      commitment,
+      channel_redeemer: SendPacket { packet },
+    },
+  )
+    |> fuzz_dsl.assert_protocol_rejected
+}
+
+test prop_packet_recv_rejects_history_capacity_overflow(_seed via fuzz.int()) {
+  fuzz.label(@"fuzz.unit.packet.recv.invalid_history_capacity")
+
+  let history_entries = channel_datum_mod.max_packet_entries_per_channel / 2
+  let sequence = history_entries + 1
+  let packet =
+    Packet {
+      ..base_packet(sequence),
+      source_port: "bank",
+      source_channel: "channel-90",
+      destination_port: "port-1",
+      destination_channel: "channel-0",
+    }
+  let base = base_datum(Unordered, 1)
+  let input_datum =
+    ChannelDatum {
+      ..base,
+      state: ChannelDatumState {
+        ..base.state,
+        packet_receipt: packet_entries(1, history_entries, ""),
+        packet_acknowledgement: packet_entries(
+          1,
+          history_entries,
+          "existing acknowledgement",
+        ),
+      },
+    }
+  let ack = "ack-commitment"
+
+  run_recv_packet_transition(
+    input_datum,
+    recv_output(input_datum, packet, ack),
+    packet,
+    ack,
+    fuzz_dsl.mutation("history_capacity_overflow"),
   )
     |> fuzz_dsl.assert_protocol_rejected
 }
