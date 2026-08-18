@@ -255,6 +255,52 @@ test prop_client_update_accepts_non_adjacent(seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
+test prop_client_update_rejects_historical_height(seed via fuzz.int()) {
+  fuzz.label(@"fuzz.unit.client.update.invalid_historical_height")
+
+  let input_height = fuzz_height(seed, 3)
+  let header_height =
+    Height { ..input_height, revision_height: input_height.revision_height - 1 }
+  let input_client_datum = get_mock_client_datum(input_height)
+  let mock_header = get_mock_header(header_height)
+  let output_client_datum =
+    ClientDatum {
+      ..input_client_datum,
+      state: ClientDatumState {
+        ..input_client_datum.state,
+        consensus_states: [
+          Pair(
+            header.get_height(mock_header),
+            header.consensus_state(mock_header),
+          ),
+          ..input_client_datum.state.consensus_states
+        ],
+        processed_times: [
+          Pair(header_height, 0),
+          ..input_client_datum.state.processed_times
+        ],
+        processed_heights: [
+          Pair(header_height, 0),
+          ..input_client_datum.state.processed_heights
+        ],
+      },
+    }
+
+  fuzz_dsl.mutated_check(
+    "client",
+    "update",
+    "historical_height",
+    "client_datum.update_state",
+    client_datum.update_state(
+      input_client_datum,
+      output_client_datum,
+      mock_header,
+      0,
+    ),
+  )
+    |> fuzz_dsl.assert_rejected
+}
+
 test prop_client_update_rejects_wrong_consensus_state(seed via fuzz.int()) {
   fuzz.label(@"fuzz.unit.client.update.invalid_wrong_consensus_state")
 
@@ -565,11 +611,10 @@ test test_update_state_succeed_01() {
   )
 }
 
-// The input consensus_states do not contain the key that corresponds to the header height.
-// The latest height of the input client_state greater than or equal the header height.
-// The output consensus_states has one more element than the input consensus_states, which is the header consensus_states.
-// All other elements of the input and output datum must be equal.
-test test_update_state_succeed_02() {
+// Historical insertion through the ordinary update path is rejected even when
+// the output preserves the previous latest height and otherwise matches the old
+// prepend-by-submission-order transition.
+test test_update_state_rejects_historical_update() {
   let mock_header_latest_height =
     Height { revision_number: 0, revision_height: 100 }
   let mock_input_latest_height =
@@ -611,7 +656,7 @@ test test_update_state_succeed_02() {
         ),
       },
     }
-  client_datum.update_state(
+  !client_datum.update_state(
     input_client_datum,
     output_client_datum,
     mock_header,
@@ -624,7 +669,7 @@ test test_update_state_succeed_03() {
   let mock_header_latest_height =
     Height { revision_number: 0, revision_height: 100 }
   let mock_input_latest_height =
-    Height { revision_number: 0, revision_height: 101 }
+    Height { revision_number: 0, revision_height: 99 }
   let mock_client_datum = get_mock_client_datum(mock_input_latest_height)
   let mock_header = get_mock_header(mock_header_latest_height)
 
@@ -696,7 +741,10 @@ test test_update_state_succeed_03() {
     ClientDatum {
       ..mock_client_datum,
       state: ClientDatumState {
-        ..mock_client_datum.state,
+        client_state: ClientState {
+          ..mock_client_datum.state.client_state,
+          latest_height: mock_header_latest_height,
+        },
         consensus_states: expected_cons_state,
         processed_times: list.map(
           expected_cons_state,

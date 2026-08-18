@@ -165,6 +165,7 @@ Required CI label suffixes:
 
 - `unit.client.update.valid_adjacent`
 - `unit.client.update.valid_non_adjacent`
+- `unit.client.update.invalid_historical_height`
 - `contract.client.update.invalid_wrong_host_redeemer`
 - `unit.client.update.invalid_wrong_consensus_state`
 - `contract.client.update.invalid_missing_host_state`
@@ -178,7 +179,8 @@ Required CI label suffixes:
 ### Header Update Transitions
 
 Covered by `unit.client.update.valid_adjacent`,
-`unit.client.update.valid_non_adjacent`, and
+`unit.client.update.valid_non_adjacent`,
+`unit.client.update.invalid_historical_height`, and
 `unit.client.update.invalid_wrong_consensus_state`.
 
 The update properties construct client datum transitions around generated
@@ -188,9 +190,15 @@ header and must be rejected, proving these invariants:
 
 - A valid update can advance to the immediately next height.
 - A valid update can advance to a non-adjacent higher height.
+- An ordinary update must strictly advance `latest_height`; historical headers
+  remain usable as explicit misbehaviour evidence but cannot be inserted into
+  the bounded client history.
 - The output consensus state must exactly match the submitted header.
 - The client latest height must move to the submitted height when the submitted
   height is newer.
+- The consensus state and processed metadata named by `latest_height` remain at
+  the head of their lists, so bounded truncation cannot evict them independently
+  of `latest_height`.
 
 ### HostState Coupling
 

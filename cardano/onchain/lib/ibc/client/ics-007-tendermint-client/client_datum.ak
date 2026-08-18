@@ -66,17 +66,19 @@ pub fn update_state(
 
   expect (!pairs.has_key(input_datum_cons_state, header_height))?
 
-  let latest_height = {
-    let input_height =
-      input_datum.state.client_state |> client_state_mod.get_latest_height()
-    if height.compare(header_height, input_height) == Greater {
-      header_height
-    } else {
-      input_height
-    }
-  }
+  let input_height =
+    input_datum.state.client_state |> client_state_mod.get_latest_height()
+  // Ordinary updates must be submitted in increasing height order. This keeps
+  // the consensus state named by latest_height at the head of every bounded
+  // history list, so truncation cannot evict it while leaving latest_height
+  // unchanged.
+  let advances_latest_height =
+    height.compare(header_height, input_height) == Greater
   let expected_client_state =
-    ClientState { ..input_datum.state.client_state, latest_height }
+    ClientState {
+      ..input_datum.state.client_state,
+      latest_height: header_height,
+    }
 
   let expected_cons_state =
     list.filter(
@@ -133,7 +135,10 @@ pub fn update_state(
 
   // The HostState root commits the exact datum encoding, and Gateway builds
   // this output in the same canonical order as the validator.
-  expected_updated_output == output_datum
+  and {
+    advances_latest_height,
+    expected_updated_output == output_datum,
+  }
 }
 
 pub fn update_state_on_misbehaviour(

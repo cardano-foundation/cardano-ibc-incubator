@@ -34,7 +34,11 @@ import {
 } from '../shared/types/msgs/client-message';
 import { checkForMisbehaviour, TENDERMINT_MISBEHAVIOUR_TYPE_URL } from '@shared/types/misbehaviour/misbehaviour';
 import { UpdateOnMisbehaviourOperatorDto, UpdateClientOperatorDto } from './dto';
-import { validateAndFormatCreateClientParams, validateAndFormatUpdateClientParams } from './helper/client.validate';
+import {
+  validateAndFormatCreateClientParams,
+  validateAndFormatUpdateClientParams,
+  validateUpdateHeaderAdvancesLatestHeight,
+} from './helper/client.validate';
 import { sumLovelaceFromUtxos } from './helper/helper';
 import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import {
@@ -562,6 +566,10 @@ export class ClientService {
       },
     };
     const headerHeight = header.signedHeader.header.height;
+    validateUpdateHeaderAdvancesLatestHeight(
+      headerHeight,
+      currentClientDatumState.clientState.latestHeight,
+    );
     const newHeight: Height = {
       ...currentClientDatumState.clientState.latestHeight,
       revisionHeight: headerHeight,

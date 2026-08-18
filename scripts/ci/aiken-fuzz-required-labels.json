@@ -47,6 +47,7 @@
     "fuzz.unit.client.misbehaviour.invalid_same_header",
     "fuzz.unit.client.misbehaviour.valid_same_height_conflict",
     "fuzz.unit.client.misbehaviour.valid_time_violation",
+    "fuzz.unit.client.update.invalid_historical_height",
     "fuzz.unit.client.update.invalid_wrong_consensus_state",
     "fuzz.unit.client.update.valid_adjacent",
     "fuzz.unit.client.update.valid_non_adjacent",
