@@ -464,6 +464,7 @@ jobs:
               -m prop_conn_open_try_
               -m prop_tx_conn_open_try_
           - suite: channel-packet
+            timeout_minutes: 30
             match_tests: >-
               -m ibc/core/ics_004/channel_datum_test/channel_handshake_contract
               -m ibc/core/ics_004/channel_datum_test/packet_lifecycle_contract
