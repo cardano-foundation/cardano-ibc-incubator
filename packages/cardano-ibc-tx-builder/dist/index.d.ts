@@ -104,6 +104,8 @@ export type UnsignedSendPacketBurnTxInput = {
     encodedUpdatedChannelDatum: string;
     channelTokenUnit: string;
     encodedMintVoucherRedeemer: string;
+    encodedSpendTransferModuleRedeemer: string;
+    transferModuleReferenceUtxo: UTxO;
     transferAmount: bigint;
     constructedAddress: string;
     sendPacketPolicyId: string;
@@ -122,7 +124,7 @@ export type UnsignedSendPacketEscrowTxInput = {
     channelUTxO: UTxO;
     connectionUTxO: UTxO;
     clientUTxO: UTxO;
-    transferModuleReferenceUtxo?: UTxO;
+    transferModuleReferenceUtxo: UTxO;
     encodedSpendChannelRedeemer: string;
     encodedUpdatedChannelDatum: string;
     channelTokenUnit: string;

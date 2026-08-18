@@ -25,10 +25,11 @@ use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/acknowledgement_response.{AcknowledgementError}
 use ibc/core/ics_004/types/keys as channel_keys
 use ibc/core/ics_004/types/packet.{Packet}
+use ibc/core/ics_004/types/packet as packet_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, IBCModuleCallback, IBCModuleOperator, IBCModuleRedeemer,
   OnAcknowledgementPacket, OnChanCloseConfirm, OnChanCloseInit, OnChanOpenAck,
-  OnChanOpenConfirm, OnChanOpenInit, OnChanOpenTry, OnRecvPacket,
+  OnChanOpenConfirm, OnChanOpenInit, OnChanOpenTry, OnRecvPacket, OnSendPacket,
   OnTimeoutPacket, Operator, TransferModuleData, TransferModuleOperator,
 }
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
@@ -106,6 +107,7 @@ validator spend_transfer_module(
           spent_output_ref,
           transaction,
           spend,
+          host_state_input,
           port_id,
           transfer_escrow_shard_policy_id,
           channel_minting_policy_id,
@@ -137,6 +139,7 @@ fn module_callback(
   spent_output_ref: OutputReference,
   transaction: Transaction,
   spend: TransferModuleSpend,
+  host_state_input: Input,
   port_id: ByteArray,
   shard_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
@@ -147,6 +150,31 @@ fn module_callback(
   expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
 
   when cb is {
+    OnSendPacket { channel_id, packet_data, packet_commitment, data } -> {
+      expect TransferModuleData(transfer_data) = data
+      expect
+        exact_send_callback_matches(
+          transaction,
+          host_state_nft,
+          channel_minting_policy_id,
+          channel_id,
+          packet_data,
+          packet_commitment,
+        )
+
+      module_operator(
+        TransferModuleOperator(Transfer { channel_id, data: transfer_data }),
+        host_state_nft,
+        spent_output_ref,
+        transaction,
+        spend,
+        host_state_input,
+        shard_policy_id,
+        channel_minting_policy_id,
+        voucher_minting_policy_id,
+      )
+    }
+
     OnChanOpenInit { channel_id } -> {
       let updated_output = transfer_escrow.expect_module_state(spend)
       let output_channel =
@@ -519,6 +547,31 @@ fn module_callback(
         }
       }
     }
+  }
+}
+
+fn exact_send_callback_matches(
+  transaction: Transaction,
+  host_state_nft: AuthToken,
+  channel_minting_policy_id: PolicyId,
+  channel_id: ByteArray,
+  packet_data: ByteArray,
+  packet_commitment: ByteArray,
+) -> Bool {
+  let Transaction { inputs, redeemers, .. } = transaction
+  expect Some(channel_redeemer) =
+    transfer_channel_callback.extract_channel_redeemer(
+      inputs,
+      redeemers,
+      channel_minting_policy_id,
+      host_state_nft,
+      channel_id,
+    )
+  expect SendPacket { packet } = channel_redeemer
+
+  and {
+    packet_data == packet.data,
+    packet_commitment == packet_mod.commit_packet(packet),
   }
 }
 

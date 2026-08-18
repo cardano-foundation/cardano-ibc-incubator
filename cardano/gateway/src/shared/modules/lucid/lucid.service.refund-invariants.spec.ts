@@ -314,7 +314,7 @@ describe('LucidService voucher refund invariants', () => {
     ]);
   });
 
-  it('creates a transfer escrow shard by referencing the module root and minting the shard NFT', () => {
+  it('creates a transfer escrow shard by spending and recreating the module root', () => {
     const txBuilder = createChainedTxBuilder();
     const service = createService(txBuilder);
     const denomToken = 'policy-id.native-token';
@@ -360,11 +360,16 @@ describe('LucidService voucher refund invariants', () => {
     const transferSpendCall = txBuilder.collectFrom.mock.calls.find((call: unknown[]) => {
       return call[1] === 'encoded-transfer-redeemer';
     });
-    expect(transferSpendCall).toBeUndefined();
-    expect(txBuilder.readFrom).toHaveBeenCalledWith([transferModuleReferenceUtxo]);
+    expect(transferSpendCall?.[0]).toEqual([transferModuleReferenceUtxo]);
     expect(txBuilder.mintAssets).toHaveBeenCalledWith(
       { [transferEscrowShardTokenUnit]: 1n },
       'encoded-shard-create-redeemer',
+    );
+
+    expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
+      deploymentConfig.modules.transfer.address,
+      undefined,
+      transferModuleReferenceUtxo.assets,
     );
 
     const transferOutputs = txBuilder.pay.ToContract.mock.calls.filter((call: unknown[]) => {

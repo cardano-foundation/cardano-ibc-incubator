@@ -31,6 +31,15 @@ pub type IBCModuleCallback {
     acknowledgement: Acknowledgement,
     data: IBCModulePacketData,
   }
+  // Application approval for an outbound packet. The raw packet bytes and
+  // packet commitment bind the application effect to the exact IBC packet;
+  // `data` carries the module-specific typed payload used for accounting.
+  OnSendPacket {
+    channel_id: ByteArray,
+    packet_data: ByteArray,
+    packet_commitment: ByteArray,
+    data: IBCModulePacketData,
+  }
 }
 
 pub type IBCModuleOperator {

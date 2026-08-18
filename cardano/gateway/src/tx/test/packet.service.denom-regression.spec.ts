@@ -209,7 +209,7 @@ describe('PacketService denom regression coverage', () => {
     const transferModuleCall = lucidServiceMock.encode.mock.calls.find(([, type]) => type === 'iBCModuleRedeemer');
     expect(transferModuleCall).toBeDefined();
     const transferModuleDenomHex =
-      transferModuleCall?.[0]?.Operator?.[0]?.TransferModuleOperator?.[0]?.Transfer?.data?.denom;
+      transferModuleCall?.[0]?.Callback?.[0]?.OnSendPacket?.data?.TransferModuleData?.[0]?.denom;
     expect(transferModuleDenomHex).toBe(convertString2Hex(canonicalDenom));
   });
 });

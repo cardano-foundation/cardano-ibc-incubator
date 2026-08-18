@@ -67,7 +67,7 @@ pub fn setup() -> MockData {
   let host_state_nft_policy_id: PolicyId = "mock host state nft policy id"
   let base_token =
     AuthToken {
-      name: "mock base token name",
+      name: host_state_token_name,
       policy_id: host_state_nft_policy_id,
     }
 

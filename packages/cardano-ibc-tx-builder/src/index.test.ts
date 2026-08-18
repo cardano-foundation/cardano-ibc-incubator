@@ -181,6 +181,42 @@ describe('send-packet denom mapping', () => {
     );
     assert.equal(packetData.denom, Buffer.from('lovelace').toString('hex'));
     assert.equal(packetData.amount, '123');
+    const moduleRedeemer = harness.encodedValues.find(
+      (entry) => entry.kind === 'iBCModuleRedeemer',
+    )?.value as {
+      Callback: [
+        {
+          OnSendPacket: {
+            channel_id: string;
+            packet_data: string;
+            packet_commitment: string;
+            data: unknown;
+          };
+        },
+      ];
+    };
+    assert.deepEqual(moduleRedeemer.Callback[0].OnSendPacket, {
+      channel_id: Buffer.from('channel-7').toString('hex'),
+      packet_data: spendRedeemer.SendPacket.packet.data,
+      packet_commitment: 'packet-commitment',
+      data: {
+        TransferModuleData: [
+          {
+            denom: Buffer.from(
+              Buffer.from('lovelace').toString('hex'),
+            ).toString('hex'),
+            amount: Buffer.from('123').toString('hex'),
+            sender: Buffer.from('addr_sender').toString('hex'),
+            receiver: Buffer.from('osmo1receiver').toString('hex'),
+            memo: '',
+          },
+        ],
+      },
+    });
+    assert.deepEqual(
+      captured.transferModuleReferenceUtxo,
+      baseContext().transferModuleReferenceUtxo,
+    );
   });
 
   it('reverse-resolves ibc hashes to voucher burns and deduplicates wallet UTxOs', async () => {
@@ -218,6 +254,11 @@ describe('send-packet denom mapping', () => {
     assert.equal(captured.transferAmount, 456n);
     assert.equal(captured.walletUtxos?.length, 2);
     assert.equal(captured.voucherTokenUnit, requestedUnit);
+    assert.ok(captured.encodedSpendTransferModuleRedeemer);
+    assert.deepEqual(
+      captured.transferModuleReferenceUtxo,
+      baseContext().transferModuleReferenceUtxo,
+    );
     assert.match(
       captured.voucherTokenUnit,
       new RegExp(`^${'44'.repeat(28)}0014df10[0-9a-f]{56}$`),
