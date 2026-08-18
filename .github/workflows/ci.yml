@@ -478,6 +478,7 @@ jobs:
               -m prop_tx_recv_packet_rejects_callback_packet_data_mismatch
               -m prop_tx_recv_packet_rejects_callback_acknowledgement_mismatch
           - suite: channel-packet-recv-successor
+            timeout_minutes: 30
             match_tests: >-
               -m prop_tx_recv_packet_accepts_atomic_successor_and_callback
               -m prop_tx_recv_packet_rejects_moved_port_binding
