@@ -82,10 +82,11 @@ validator chan_close_confirm(
     expect cur_channel.state != chan_state_mod.Closed
     trace @"chan_close_confirm: channel state is not Closed"
 
-    let connection_datum =
-      validator_utils.validate_referred_connection(
+    let (connection_datum, client_datum) =
+      validator_utils.validate_referred_connection_and_client(
         reference_inputs,
         datum.token.name,
+        client_minting_policy_id,
         connection_minting_policy_id,
         connection_id,
       )
@@ -93,14 +94,6 @@ validator chan_close_confirm(
 
     expect connection_datum.state.state == conn_state_mod.Open
     trace @"chan_close_confirm: Connection is open"
-
-    let client_datum =
-      validator_utils.validate_referred_client(
-        reference_inputs,
-        datum.token.name,
-        client_minting_policy_id,
-        connection_datum.state.client_id,
-      )
     trace @"chan_close_confirm: reference_inputs contain Client utxo"
 
     expect

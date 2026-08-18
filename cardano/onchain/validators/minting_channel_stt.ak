@@ -112,20 +112,13 @@ validator mint_channel_stt(
 
     expect [connection_id] = channel_output_datum.state.channel.connection_hops
 
-    let connection_datum =
-      validator_utils.validate_referred_connection(
-        reference_inputs,
-        channel_output_datum.token.name,
-        connection_minting_policy_id,
-        connection_id,
-      )
-
-    let client_datum =
-      validator_utils.validate_referred_client(
+    let (connection_datum, client_datum) =
+      validator_utils.validate_referred_connection_and_client(
         reference_inputs,
         channel_output_datum.token.name,
         client_minting_policy_id,
-        connection_datum.state.client_id,
+        connection_minting_policy_id,
+        connection_id,
       )
 
     let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)

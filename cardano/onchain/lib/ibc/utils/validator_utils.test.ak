@@ -663,6 +663,47 @@ test find_unique_continuation_output_rejects_token_moved_to_other_address() fail
   ) == moved_token_output
 }
 
+fn continuation_decoys(updated_output: Output, count: Int) -> List<Output> {
+  let decoy =
+    Output {
+      ..updated_output,
+      value: from_asset("unrelated policy", "unrelated name", 1),
+    }
+  list.repeat(decoy, count)
+}
+
+test find_unique_continuation_output_target_first() {
+  let (spent_output, updated_output, token) =
+    setup_find_unique_continuation_output()
+
+  validator_utils.find_unique_continuation_output(
+    spent_output,
+    [updated_output, ..continuation_decoys(updated_output, 8)],
+    token,
+  ) == updated_output
+}
+
+test find_unique_continuation_output_target_middle() {
+  let (spent_output, updated_output, token) =
+    setup_find_unique_continuation_output()
+  let outputs =
+    list.concat(
+      continuation_decoys(updated_output, 4),
+      [updated_output, ..continuation_decoys(updated_output, 4)],
+    )
+
+  validator_utils.find_unique_continuation_output(spent_output, outputs, token) == updated_output
+}
+
+test find_unique_continuation_output_target_last() {
+  let (spent_output, updated_output, token) =
+    setup_find_unique_continuation_output()
+  let outputs =
+    list.concat(continuation_decoys(updated_output, 8), [updated_output])
+
+  validator_utils.find_unique_continuation_output(spent_output, outputs, token) == updated_output
+}
+
 test no_output_contains_auth_token_checks_all_addresses() {
   let (_spent_output, updated_output, token) =
     setup_find_unique_continuation_output()
@@ -1100,6 +1141,398 @@ test validate_referred_connection_if_found_datum_is_not_connection_datum() fail 
     validator_utils.validate_referred_connection(
       reference_inputs,
       referrer_token_name,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
+}
+
+fn setup_referred_connection_and_client() -> (
+  Input,
+  Input,
+  ByteArray,
+  PolicyId,
+  PolicyId,
+  ByteArray,
+  ConnectionDatum,
+  ClientDatum,
+) {
+  let (
+    client_inputs,
+    referrer_token_name,
+    client_minting_policy_id,
+    client_id,
+    client_datum,
+  ) = setup_validate_referred_client()
+  let (
+    connection_inputs,
+    _,
+    connection_minting_policy_id,
+    connection_id,
+    connection_datum,
+  ) = setup_validate_referred_connection()
+  expect [client_input] = client_inputs
+  expect [connection_input] = connection_inputs
+  let connection_datum =
+    ConnectionDatum {
+      ..connection_datum,
+      state: ConnectionEnd { ..connection_datum.state, client_id },
+    }
+  let connection_input =
+    Input {
+      ..connection_input,
+      output: Output {
+        ..connection_input.output,
+        datum: InlineDatum(connection_datum),
+      },
+    }
+
+  (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    connection_datum,
+    client_datum,
+  )
+}
+
+fn unrelated_reference_input() -> Input {
+  Input {
+    output_reference: OutputReference {
+      transaction_id: hash_sample,
+      output_index: 99,
+    },
+    output: Output {
+      address: from_script("unrelated script hash"),
+      value: from_asset("unrelated policy", "unrelated token", 1),
+      datum: NoDatum,
+      reference_script: None,
+    },
+  }
+}
+
+fn validate_referred_connection_and_client(
+  reference_inputs: List<Input>,
+  referrer_token_name: ByteArray,
+  client_minting_policy_id: PolicyId,
+  connection_minting_policy_id: PolicyId,
+  connection_id: ByteArray,
+) -> (ConnectionDatum, ClientDatum) {
+  validator_utils.validate_referred_connection_and_client(
+    reference_inputs,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+  )
+}
+
+test validate_referred_connection_and_client_targets_first() {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    connection_datum,
+    client_datum,
+  ) = setup_referred_connection_and_client()
+  let reference_inputs =
+    [
+      connection_input, client_input,
+      ..list.repeat(unrelated_reference_input(), 8)
+    ]
+
+  validate_referred_connection_and_client(
+    reference_inputs,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+  ) == (connection_datum, client_datum)
+}
+
+test validate_referred_connection_and_client_targets_middle() {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    connection_datum,
+    client_datum,
+  ) = setup_referred_connection_and_client()
+  let reference_inputs =
+    list.concat(
+      list.repeat(unrelated_reference_input(), 4),
+      [
+        connection_input, client_input,
+        ..list.repeat(unrelated_reference_input(), 4)
+      ],
+    )
+
+  validate_referred_connection_and_client(
+    reference_inputs,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+  ) == (connection_datum, client_datum)
+}
+
+test validate_referred_connection_and_client_targets_last() {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    connection_datum,
+    client_datum,
+  ) = setup_referred_connection_and_client()
+  let reference_inputs =
+    list.concat(
+      list.repeat(unrelated_reference_input(), 8),
+      [connection_input, client_input],
+    )
+
+  validate_referred_connection_and_client(
+    reference_inputs,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+  ) == (connection_datum, client_datum)
+}
+
+test validate_referred_connection_and_client_accepts_reordered_inputs() {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    connection_datum,
+    client_datum,
+  ) = setup_referred_connection_and_client()
+
+  validate_referred_connection_and_client(
+    [client_input, unrelated_reference_input(), connection_input],
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+  ) == (connection_datum, client_datum)
+}
+
+test validate_referred_connection_and_client_rejects_forged_client_without_token() fail {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    _,
+    _,
+  ) = setup_referred_connection_and_client()
+  let forged_client_input =
+    Input {
+      ..client_input,
+      output: Output {
+        ..client_input.output,
+        value: from_asset(client_minting_policy_id, "forged client token", 1),
+      },
+    }
+
+  let result =
+    validate_referred_connection_and_client(
+      [connection_input, forged_client_input],
+      referrer_token_name,
+      client_minting_policy_id,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
+}
+
+test validate_referred_connection_and_client_rejects_wrong_derived_client_token() fail {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    connection_datum,
+    _,
+  ) = setup_referred_connection_and_client()
+  let wrong_connection_datum =
+    ConnectionDatum {
+      ..connection_datum,
+      state: ConnectionEnd {
+        ..connection_datum.state,
+        client_id: "07-tendermint-1",
+      },
+    }
+  let connection_input =
+    Input {
+      ..connection_input,
+      output: Output {
+        ..connection_input.output,
+        datum: InlineDatum(wrong_connection_datum),
+      },
+    }
+
+  let result =
+    validate_referred_connection_and_client(
+      [connection_input, client_input],
+      referrer_token_name,
+      client_minting_policy_id,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
+}
+
+test validate_referred_connection_and_client_rejects_malformed_client_datum() fail {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    _,
+    _,
+  ) = setup_referred_connection_and_client()
+  let malformed_client_input =
+    Input {
+      ..client_input,
+      output: Output { ..client_input.output, datum: InlineDatum(Void) },
+    }
+
+  let result =
+    validate_referred_connection_and_client(
+      [connection_input, malformed_client_input],
+      referrer_token_name,
+      client_minting_policy_id,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
+}
+
+test validate_referred_connection_and_client_rejects_malformed_connection_datum() fail {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    _,
+    _,
+  ) = setup_referred_connection_and_client()
+  let malformed_connection_input =
+    Input {
+      ..connection_input,
+      output: Output { ..connection_input.output, datum: InlineDatum(Void) },
+    }
+
+  let result =
+    validate_referred_connection_and_client(
+      [malformed_connection_input, client_input],
+      referrer_token_name,
+      client_minting_policy_id,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
+}
+
+test validate_referred_connection_and_client_rejects_wrong_connection_token() fail {
+  let (
+    connection_input,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    _,
+    _,
+  ) = setup_referred_connection_and_client()
+  let wrong_connection_input =
+    Input {
+      ..connection_input,
+      output: Output {
+        ..connection_input.output,
+        value: from_asset(
+          connection_minting_policy_id,
+          "wrong connection token",
+          1,
+        ),
+      },
+    }
+
+  let result =
+    validate_referred_connection_and_client(
+      [wrong_connection_input, client_input],
+      referrer_token_name,
+      client_minting_policy_id,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
+}
+
+test validate_referred_connection_and_client_requires_connection_reference() fail {
+  let (
+    _,
+    client_input,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    _,
+    _,
+  ) = setup_referred_connection_and_client()
+
+  let result =
+    validate_referred_connection_and_client(
+      [client_input],
+      referrer_token_name,
+      client_minting_policy_id,
+      connection_minting_policy_id,
+      connection_id,
+    )
+  result == result
+}
+
+test validate_referred_connection_and_client_requires_client_reference() fail {
+  let (
+    connection_input,
+    _,
+    referrer_token_name,
+    client_minting_policy_id,
+    connection_minting_policy_id,
+    connection_id,
+    _,
+    _,
+  ) = setup_referred_connection_and_client()
+
+  let result =
+    validate_referred_connection_and_client(
+      [connection_input],
+      referrer_token_name,
+      client_minting_policy_id,
       connection_minting_policy_id,
       connection_id,
     )

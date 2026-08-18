@@ -59,16 +59,17 @@ fn find_host_state_input(
 /// Find the HostState UTXO output being created
 /// 
 /// Returns the output that contains the IBC Host State NFT
-fn find_host_state_output(
-  outputs: List<Output>,
-  nft_policy: PolicyId,
-) -> Option<Output> {
-  list.find(
-    outputs,
-    fn(output) {
-      assets.has_nft(output.value, nft_policy, host_state_token_name)
-    },
-  )
+fn find_host_state_output(outputs: List<Output>, nft_policy: PolicyId) -> Output {
+  // Selecting the singleton directly preserves the uniqueness invariant while
+  // avoiding the previous follow-up count over every transaction output.
+  expect [host_output] =
+    list.filter(
+      outputs,
+      fn(output) {
+        assets.has_nft(output.value, nft_policy, host_state_token_name)
+      },
+    )
+  host_output
 }
 
 /// Find an input that carries a specific auth token.
@@ -1029,7 +1030,7 @@ validator host_state_stt(
         }
       _ -> {
         // Non-final transitions must re-create exactly one HostState UTxO.
-        expect Some(host_output) = find_host_state_output(outputs, nft_policy)
+        let host_output = find_host_state_output(outputs, nft_policy)
         let new_datum = decode_host_state_datum(host_output)
 
         // The HostState NFT must remain locked at the HostState script address.
@@ -1038,16 +1039,6 @@ validator host_state_stt(
         // same address as the spent HostState UTxO.
         expect host_output.address == host_input.output.address
         expect new_datum.nft_policy == nft_policy
-
-        // Verify exactly one output with NFT (no duplication).
-        let nft_output_count =
-          list.count(
-            outputs,
-            fn(output) {
-              assets.has_nft(output.value, nft_policy, host_state_token_name)
-            },
-          )
-        expect nft_output_count == 1
 
         when redeemer is {
           CreateClient { client_state_siblings, consensus_state_siblings } ->
