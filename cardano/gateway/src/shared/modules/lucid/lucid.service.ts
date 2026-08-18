@@ -2453,13 +2453,14 @@ export class LucidService implements OnModuleInit {
       );
 
     if (dto.transferEscrowUtxo) {
-      tx.collectFrom(
-        [dto.transferEscrowUtxo],
-        dto.encodedSpendTransferModuleRedeemer,
-      );
+      tx
+        .readFrom([dto.transferModuleReferenceUtxo])
+        .collectFrom(
+          [dto.transferEscrowUtxo],
+          dto.encodedSpendTransferModuleRedeemer,
+        );
     } else {
       if (
-        !dto.transferModuleReferenceUtxo ||
         !dto.transferEscrowShardTokenUnit ||
         !dto.encodedMintTransferEscrowShardRedeemer
       ) {
@@ -2468,11 +2469,19 @@ export class LucidService implements OnModuleInit {
         );
       }
       tx
-        .readFrom([dto.transferModuleReferenceUtxo])
+        .collectFrom(
+          [dto.transferModuleReferenceUtxo],
+          dto.encodedSpendTransferModuleRedeemer,
+        )
         .mintAssets(
           { [dto.transferEscrowShardTokenUnit]: 1n },
           dto.encodedMintTransferEscrowShardRedeemer,
         );
+      this.payModuleUtxo(
+        tx,
+        "transfer",
+        dto.transferModuleReferenceUtxo,
+      );
     }
 
     this.payTransferEscrowDelta(
@@ -2557,12 +2566,17 @@ export class LucidService implements OnModuleInit {
     const tx = this.newTxBuilder();
     tx.readFrom([
       this.referenceScripts.spendChannel,
+      this.referenceScripts.spendTransferModule,
       this.referenceScripts.mintVoucher,
       this.referenceScripts.sendPacket,
       this.referenceScripts.hostStateStt,
     ])
       .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
       .collectFrom([dto.channelUTxO], dto.encodedSpendChannelRedeemer)
+      .collectFrom(
+        [dto.transferModuleReferenceUtxo],
+        dto.encodedSpendTransferModuleRedeemer,
+      )
       .collectFrom([dto.senderVoucherTokenUtxo])
       .readFrom([dto.connectionUTxO, dto.clientUTxO])
       .mintAssets(
@@ -2597,6 +2611,12 @@ export class LucidService implements OnModuleInit {
         },
         encodeAuthToken(dto.channelToken, this.LucidImporter),
       );
+
+    this.payModuleUtxo(
+      tx,
+      "transfer",
+      dto.transferModuleReferenceUtxo,
+    );
 
     return tx;
   }

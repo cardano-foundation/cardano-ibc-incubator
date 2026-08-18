@@ -25,6 +25,7 @@ validator mint_transfer_escrow_shard(transfer_port_token: AuthToken) {
       // First native send mints the canonical shard NFT.
       CreateEscrowShard { channel_id, denom, data } ->
         validate_create_escrow_shard(
+          inputs,
           transaction.reference_inputs,
           outputs,
           mint,
@@ -54,6 +55,7 @@ validator mint_transfer_escrow_shard(transfer_port_token: AuthToken) {
 }
 
 fn validate_create_escrow_shard(
+  inputs: List<Input>,
   reference_inputs: List<Input>,
   outputs: List<Output>,
   mint,
@@ -82,9 +84,9 @@ fn validate_create_escrow_shard(
     }
 
   // The transfer port/module root anchors the canonical shard address.
-  expect [module_reference_input] =
+  expect [module_state_input] =
     list.filter(
-      reference_inputs,
+      list.concat(inputs, reference_inputs),
       fn(input) { input.output |> auth.contain_auth_token(transfer_port_token) },
     )
 
@@ -93,7 +95,7 @@ fn validate_create_escrow_shard(
       outputs,
       fn(output) {
         and {
-          output.address == module_reference_input.output.address,
+          output.address == module_state_input.output.address,
           output |> auth.contain_auth_token(shard_token),
         }
       },

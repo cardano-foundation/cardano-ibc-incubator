@@ -87,6 +87,9 @@ pub fn classify_transfer_module_spend(
         },
       )
     expect NoDatum = updated_output.datum
+    // The port token permanently binds this module state to its original
+    // script credential/address.
+    expect updated_output.address == spent_output.address
     ModuleState(updated_output)
   } else {
     // Non-root transfer spends are escrow shards.

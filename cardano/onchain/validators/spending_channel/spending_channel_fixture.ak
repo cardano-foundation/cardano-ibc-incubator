@@ -64,10 +64,11 @@ pub type MockData {
 }
 
 pub fn setup() -> MockData {
+  let host_state_nft_policy_id: PolicyId = "mock host state nft policy id"
   let base_token =
     AuthToken {
-      name: "mock base token name",
-      policy_id: "mock base token policy_id",
+      name: host_state_token_name,
+      policy_id: host_state_nft_policy_id,
     }
 
   //========================Channel============================
@@ -292,7 +293,6 @@ pub fn setup() -> MockData {
     }
 
   //==========================HostState=========================
-  let host_state_nft_policy_id: PolicyId = "mock host state nft policy id"
   let registration =
     ModuleRegistration { module_script_hash, port_token, module_token }
   let host_state_datum =

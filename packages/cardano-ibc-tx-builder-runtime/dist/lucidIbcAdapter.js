@@ -637,6 +637,14 @@ async function encodeIbcModuleRedeemer(data, Lucid) {
                 data: IBCModulePacketData,
             }),
         }),
+        Data.Object({
+            OnSendPacket: Data.Object({
+                channel_id: Data.Bytes(),
+                packet_data: Data.Bytes(),
+                packet_commitment: Data.Bytes(),
+                data: IBCModulePacketData,
+            }),
+        }),
     ]);
     const TransferModuleRedeemerSchema = Data.Enum([
         Data.Object({

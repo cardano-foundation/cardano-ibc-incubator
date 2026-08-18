@@ -47,22 +47,23 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
         receiver: convertStringToHex(sendPacketOperator.receiver),
         memo: convertStringToHex(sendPacketOperator.memo),
     };
+    const packetCommitment = deps.commitPacket(packet);
     const encodedSpendChannelRedeemer = await deps.encode({
         SendPacket: {
             packet,
         },
     }, 'spendChannelRedeemer');
     const encodedSpendTransferModuleRedeemer = await deps.encode({
-        Operator: [
+        Callback: [
             {
-                TransferModuleOperator: [
-                    {
-                        Transfer: {
-                            channel_id: convertStringToHex(sendPacketOperator.sourceChannel),
-                            data: fungibleTokenPacketData,
-                        },
+                OnSendPacket: {
+                    channel_id: convertStringToHex(sendPacketOperator.sourceChannel),
+                    packet_data: packet.data,
+                    packet_commitment: packetCommitment,
+                    data: {
+                        TransferModuleData: [fungibleTokenPacketData],
                     },
-                ],
+                },
             },
         ],
     }, 'iBCModuleRedeemer');
@@ -71,7 +72,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
         state: {
             ...context.channelDatum.state,
             next_sequence_send: context.channelDatum.state.next_sequence_send + 1n,
-            packet_commitment: insertSortMapWithNumberKey(context.channelDatum.state.packet_commitment, packet.sequence, deps.commitPacket(packet)),
+            packet_commitment: insertSortMapWithNumberKey(context.channelDatum.state.packet_commitment, packet.sequence, packetCommitment),
         },
     };
     const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit, } = await deps.buildHostStateUpdate(context.channelDatum, updatedChannelDatum, sendPacketOperator.sourceChannel);
@@ -103,6 +104,8 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
             encodedHostStateRedeemer,
             encodedUpdatedHostStateDatum,
             encodedMintVoucherRedeemer,
+            encodedSpendTransferModuleRedeemer,
+            transferModuleReferenceUtxo: context.transferModuleReferenceUtxo,
             encodedSpendChannelRedeemer,
             encodedUpdatedChannelDatum: await deps.encode(updatedChannelDatum, 'channel'),
             transferAmount: sendPacketOperator.token.amount,
@@ -141,9 +144,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
         channelUTxO: context.channelUtxo,
         connectionUTxO: context.connectionUtxo,
         clientUTxO: context.clientUtxo,
-        transferModuleReferenceUtxo: transferEscrowShard.utxo
-            ? undefined
-            : context.transferModuleReferenceUtxo,
+        transferModuleReferenceUtxo: context.transferModuleReferenceUtxo,
         encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum,
         encodedSpendChannelRedeemer,

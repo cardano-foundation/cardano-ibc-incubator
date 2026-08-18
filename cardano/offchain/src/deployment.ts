@@ -2438,6 +2438,7 @@ const deploySpendChannel = async (
 
   const referredScripts: Record<string, { script: Script; hash: string }> = {};
   const moduleCallbackValidators = new Set([
+    "send_packet",
     "chan_open_ack",
     "chan_open_confirm",
     "chan_close_init",

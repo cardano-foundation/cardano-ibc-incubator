@@ -29,13 +29,13 @@ use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/keys as channel_keys
 use ibc/core/ics_004/types/order as chan_order_mod
-use ibc/core/ics_004/types/packet.{Packet}
+use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_004/types/state as chan_state_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, IBCModuleRedeemer, OnAcknowledgementPacket, OnChanCloseConfirm,
   OnChanCloseInit, OnChanOpenAck, OnChanOpenConfirm, OnChanOpenInit,
-  OnChanOpenTry, OnRecvPacket, OnTimeoutPacket, Operator, TransferModuleData,
-  TransferModuleOperator,
+  OnChanOpenTry, OnRecvPacket, OnSendPacket, OnTimeoutPacket, Operator,
+  TransferModuleData, TransferModuleOperator,
 }
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, LeafOp,
@@ -525,9 +525,17 @@ fn run_transfer_module_transition(
       )
 }
 
+type SendCallbackMutation {
+  ExactSendCallback
+  WrongTypedPacketData
+  WrongSendCommitment
+  MovedModuleCredential
+}
+
 fn native_send_escrow_fixture(
   escrow_amount: Int,
   mutation: fuzz_dsl.Mutation,
+  callback_mutation: SendCallbackMutation,
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
   let transfer_amount = 1234
@@ -546,13 +554,17 @@ fn native_send_escrow_fixture(
       denom,
       escrow_amount,
     )
+  let module_output =
+    when callback_mutation is {
+      MovedModuleCredential ->
+        Output {
+          ..mock.module_output,
+          address: from_script("attacker module script hash"),
+        }
+      _ -> mock.module_output
+    }
   let outputs =
-    [
-      mock.module_output,
-      escrow_output,
-      mock.channel_output,
-      mock.host_state_output,
-    ]
+    [module_output, escrow_output, mock.channel_output, mock.host_state_output]
   let (ftpd, packet) =
     build_packet(
       denom,
@@ -564,11 +576,24 @@ fn native_send_escrow_fixture(
       mock.port_id,
       mock.channel_id,
     )
+  let callback_data =
+    when callback_mutation is {
+      WrongTypedPacketData -> FungibleTokenPacketData { ..ftpd, amount: "999" }
+      _ -> ftpd
+    }
+  let callback_commitment =
+    when callback_mutation is {
+      WrongSendCommitment -> "wrong packet commitment"
+      _ -> packet_mod.commit_packet(packet)
+    }
   let module_redeemer: Redeemer =
-    Operator(
-      TransferModuleOperator(
-        Transfer { channel_id: mock.channel_id, data: ftpd },
-      ),
+    Callback(
+      OnSendPacket {
+        channel_id: mock.channel_id,
+        packet_data: packet.data,
+        packet_commitment: callback_commitment,
+        data: TransferModuleData(callback_data),
+      },
     )
   let channel_redeemer: Redeemer = SendPacket { packet }
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
@@ -940,10 +965,13 @@ fn voucher_send_burn_fixture(
       "channel-0",
     )
   let module_redeemer: Redeemer =
-    Operator(
-      TransferModuleOperator(
-        Transfer { channel_id: mock.channel_id, data: ftpd },
-      ),
+    Callback(
+      OnSendPacket {
+        channel_id: mock.channel_id,
+        packet_data: packet.data,
+        packet_commitment: packet_mod.commit_packet(packet),
+        data: TransferModuleData(ftpd),
+      },
     )
   let channel_redeemer: Redeemer = SendPacket { packet }
   let mint_voucher_redeemer: Redeemer =
@@ -1090,7 +1118,7 @@ test prop_transfer_module_native_send_escrow_increases_exactly(
 
   // Native SendPacket should move exactly the sent amount into escrow. This is
   // the positive baseline that the value-delta mutations below deviate from.
-  native_send_escrow_fixture(1234, fuzz_dsl.no_mutation())
+  native_send_escrow_fixture(1234, fuzz_dsl.no_mutation(), ExactSendCallback)
     |> fuzz_dsl.assert_protocol_valid
 }
 
@@ -1103,7 +1131,38 @@ test prop_transfer_module_native_send_rejects_wrong_escrow_delta(
 
   // One-lovelace-short escrow is near-valid enough to exercise the same path,
   // but it must fail because transfer accounting is exact, not lower-bound.
-  native_send_escrow_fixture(1233, fuzz_dsl.mutation("wrong_escrow_delta"))
+  native_send_escrow_fixture(
+    1233,
+    fuzz_dsl.mutation("wrong_escrow_delta"),
+    ExactSendCallback,
+  )
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test transfer_send_rejects_mismatched_typed_packet_data() fail {
+  native_send_escrow_fixture(
+    1234,
+    fuzz_dsl.mutation("wrong_typed_packet_data"),
+    WrongTypedPacketData,
+  )
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test transfer_send_rejects_mismatched_packet_commitment() fail {
+  native_send_escrow_fixture(
+    1234,
+    fuzz_dsl.mutation("wrong_packet_commitment"),
+    WrongSendCommitment,
+  )
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test transfer_module_rejects_moving_registered_port_credential() fail {
+  native_send_escrow_fixture(
+    1234,
+    fuzz_dsl.mutation("moved_module_credential"),
+    MovedModuleCredential,
+  )
     |> fuzz_dsl.assert_protocol_valid
 }
 

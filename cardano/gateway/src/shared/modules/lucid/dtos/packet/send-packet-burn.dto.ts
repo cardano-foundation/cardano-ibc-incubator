@@ -7,12 +7,16 @@ import {
   WithMintVoucherRedeemer,
   WithPacketPolicyAndChannelToken,
   WithTransferAmount,
+  WithTransferModuleReferenceUtxo,
+  WithTransferModuleSpend,
 } from './fragments';
 
 export type UnsignedSendPacketBurnDto = WithHostStateUpdate &
   WithLegacyChannelContext &
   WithChannelSpend &
   WithMintVoucherRedeemer &
+  WithTransferModuleReferenceUtxo &
+  WithTransferModuleSpend &
   WithTransferAmount &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'sendPacketPolicyId'> & {
