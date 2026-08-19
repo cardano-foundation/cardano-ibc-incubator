@@ -759,7 +759,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25.12"
+          go-version: "1.25.13"
           cache-dependency-path: ${{ matrix.module.path }}/go.sum
 
       - name: Test

@@ -1,6 +1,6 @@
 module github.com/cardano-foundation/cardano-ibc-incubator/cosmos/cardano-probabilistic-light-client-core
 
-go 1.25.12
+go 1.25.13
 
 require (
 	github.com/blinklabs-io/gouroboros v0.89.1
