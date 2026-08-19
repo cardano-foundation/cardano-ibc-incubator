@@ -13,7 +13,6 @@ use ibc/core/ics_025_handler_interface/host_state.{
   ModuleRegistration, host_state_token_name,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{BindPort}
-use ibc/utils/string as string_utils
 use minting_port
 
 type MockData {
@@ -21,7 +20,7 @@ type MockData {
   port_minting_policy_id: PolicyId,
   spend_module_script_hash: Hash<Blake2b_224, Script>,
   host_state_input: Input,
-  port_number: Int,
+  port_id: ByteArray,
   port_token: AuthToken,
 }
 
@@ -30,7 +29,7 @@ fn setup() -> MockData {
 
   let port_minting_policy_id = "mock port_minting_policy_id"
 
-  let port_number = 100
+  let port_id = "transfer"
 
   let spend_module_script_hash = "mock spend_module_script_hash"
 
@@ -51,16 +50,7 @@ fn setup() -> MockData {
       },
     }
 
-  let port_token_name =
-    string_utils.int_to_string(port_number)
-      |> auth.generate_token_name(
-          AuthToken {
-            policy_id: host_state_nft_policy_id,
-            name: host_state_token_name,
-          },
-          port_keys.port_prefix,
-          _,
-        )
+  let port_token_name = port_keys.port_token_name(port_id)
   let port_token =
     AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
 
@@ -69,31 +59,22 @@ fn setup() -> MockData {
     port_minting_policy_id,
     spend_module_script_hash,
     host_state_input,
-    port_number,
+    port_id,
     port_token,
   }
 }
 
-fn port_token_for(mock: MockData, port_number: Int) -> AuthToken {
-  let port_token_name =
-    string_utils.int_to_string(port_number)
-      |> auth.generate_token_name(
-          AuthToken {
-            policy_id: mock.host_state_nft_policy_id,
-            name: host_state_token_name,
-          },
-          port_keys.port_prefix,
-          _,
-        )
+fn port_token_for(mock: MockData, port_id: ByteArray) -> AuthToken {
+  let port_token_name = port_keys.port_token_name(port_id)
   AuthToken { policy_id: mock.port_minting_policy_id, name: port_token_name }
 }
 
-fn module_value_for_ports(mock: MockData, ports: List<Int>) -> Value {
+fn module_value_for_ports(mock: MockData, ports: List<ByteArray>) -> Value {
   list.foldl(
     ports,
     zero,
-    fn(port_number, value) {
-      let token = port_token_for(mock, port_number)
+    fn(port_id, value) {
+      let token = port_token_for(mock, port_id)
       value |> assets.merge(from_asset(token.policy_id, token.name, 1))
     },
   )
@@ -103,7 +84,7 @@ fn validate_mint_port(mock: MockData, module_value: Value) -> Bool {
   let redeemer: Redeemer =
     MintPortRedeemer {
       spend_module_script_hash: mock.spend_module_script_hash,
-      port_number: mock.port_number,
+      port_id: mock.port_id,
     }
   let module_output =
     Output {
@@ -125,7 +106,7 @@ fn validate_mint_port(mock: MockData, module_value: Value) -> Bool {
       },
     }
   let host_state_redeemer: Redeemer =
-    BindPort { port: mock.port_number, registration, port_siblings: [] }
+    BindPort { port_id: mock.port_id, registration, port_siblings: [] }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
@@ -145,7 +126,7 @@ fn validate_mint_port(mock: MockData, module_value: Value) -> Bool {
     mock.host_state_nft_policy_id,
     MintPortRedeemer {
       spend_module_script_hash: mock.spend_module_script_hash,
-      port_number: mock.port_number,
+      port_id: mock.port_id,
     },
     mock.port_minting_policy_id,
     transaction,
@@ -167,6 +148,12 @@ test mint_port_tenth_port_succeeds_at_module_cap() {
   let mock = setup()
   validate_mint_port(
     mock,
-    module_value_for_ports(mock, [0, 1, 2, 3, 4, 5, 6, 7, 8, 100]),
+    module_value_for_ports(
+      mock,
+      [
+        "ica-controller", "ica-host", "icqhost", "mock", "nft-transfer",
+        "transfer-v2", "transfer-v3", "wasm", "wasm-hooks", "transfer",
+      ],
+    ),
   )
 }

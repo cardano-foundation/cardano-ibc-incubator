@@ -1,7 +1,4 @@
-import {
-  GrpcFailedPreconditionException,
-  GrpcInvalidArgumentException,
-} from '~@/exception/grpc_exceptions';
+import { GrpcFailedPreconditionException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { CHANNEL_ID_PREFIX } from 'src/constant';
 import { decodeMerkleProof } from './helper';
 import { MerkleProof } from '@cardano-ibc/proto-types/build/ibc/core/commitment/v1/commitment';
@@ -20,9 +17,7 @@ import { ChannelDatum } from '@shared/types/channel/channel-datum';
 import { Order } from '@shared/types/channel/order';
 import { MAX_PACKET_ENTRIES_PER_CHANNEL } from '@cardano-ibc/tx-builder';
 
-function packetCapacityExhausted(
-  channelDatum: ChannelDatum,
-): GrpcFailedPreconditionException {
+function packetCapacityExhausted(channelDatum: ChannelDatum): GrpcFailedPreconditionException {
   return new GrpcFailedPreconditionException(
     `Channel ${channelDatum.port} retained packet state capacity of ` +
       `${MAX_PACKET_ENTRIES_PER_CHANNEL} is exhausted`,
@@ -37,22 +32,14 @@ function packetEntryCount(channelDatum: ChannelDatum): number {
   );
 }
 
-export function validateRecvPacketHistoryCapacity(
-  channelDatum: ChannelDatum,
-): void {
-  const insertedEntries =
-    channelDatum.state.channel.ordering === Order.Unordered ? 2 : 1;
-  if (
-    packetEntryCount(channelDatum) + insertedEntries >
-    MAX_PACKET_ENTRIES_PER_CHANNEL
-  ) {
+export function validateRecvPacketHistoryCapacity(channelDatum: ChannelDatum): void {
+  const insertedEntries = channelDatum.state.channel.ordering === Order.Unordered ? 2 : 1;
+  if (packetEntryCount(channelDatum) + insertedEntries > MAX_PACKET_ENTRIES_PER_CHANNEL) {
     throw packetCapacityExhausted(channelDatum);
   }
 }
 
-export function validateSendPacketCommitmentCapacity(
-  channelDatum: ChannelDatum,
-): void {
+export function validateSendPacketCommitmentCapacity(channelDatum: ChannelDatum): void {
   if (packetEntryCount(channelDatum) >= MAX_PACKET_ENTRIES_PER_CHANNEL) {
     throw packetCapacityExhausted(channelDatum);
   }
@@ -70,9 +57,7 @@ export function validateAndFormatRecvPacketParams(data: MsgRecvPacket): {
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "destination_channel". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
     );
-  // Hermes (and standard IBC) uses well-known port ids like "transfer".
-  // Older versions of the Gateway used a legacy numeric port scheme (e.g. "port-100").
-  // Accept both for compatibility, but treat "transfer" / "mock" as canonical.
+  // Port identifiers are exact, case-sensitive commitment-path identities.
   if (!isSupportedGatewayPortId(data.packet.destination_port)) {
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "destination_port" ${data.packet.destination_port} not supported`,

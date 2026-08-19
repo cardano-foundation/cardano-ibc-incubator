@@ -1,3 +1,4 @@
+use aiken/builtin
 // IBC Host State - Single Token Thread (STT) Architecture
 //
 // This module defines the canonical IBC host state maintained in a single UTXO
@@ -16,7 +17,7 @@
 use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script, VerificationKeyHash}
-use aiken/primitive/int
+use aiken/primitive/bytearray
 use ibc/auth.{AuthToken}
 
 // Empty ICS-23 Merkle tree root (32 bytes of zeros)
@@ -31,13 +32,26 @@ pub const host_state_token_name = "ibc_host_state"
 /// three ports and can add up to this fixed protocol-wide maximum.
 pub const max_bound_ports = 10
 
-/// Port numbers are encoded as an at-most-eight-byte decimal postfix in their
-/// capability token names. Keep the state identifier inside that same domain
-/// and reject negative or arbitrarily large integers before serialization.
-pub const max_port_number = 99_999_999
-
-pub fn is_valid_port_number(port: Int) -> Bool {
-  port >= 0 && port <= max_port_number
+/// Order byte-string map keys for `pairs.insert_by_ascending_key` using the
+/// order required by canonical CBOR.
+///
+/// Canonical CBOR sorts map keys by the length of their encoded form before
+/// comparing the encoded bytes. Since both keys are byte strings, comparing
+/// their payload lengths first and their bytes second produces that same order.
+/// Equal keys return `Greater` because `validate_bind_port` rejects duplicates
+/// and the insertion helper performs its own equality check.
+fn compare_port_keys_for_insertion(
+  left: ByteArray,
+  right: ByteArray,
+) -> Ordering {
+  if builtin.less_than_bytearray(
+    bytearray.push(left, bytearray.length(left)),
+    bytearray.push(right, bytearray.length(right)),
+  ) {
+    Less
+  } else {
+    Greater
+  }
 }
 
 /// ShutdownState controls whether the bridge accepts new user-facing work.
@@ -76,8 +90,8 @@ pub type HostState {
   next_client_sequence: Int,
   next_connection_sequence: Int,
   next_channel_sequence: Int,
-  // Port number -> immutable module authority and exact capability token set.
-  bound_port: Pairs<Int, ModuleRegistration>,
+  // Exact textual port ID -> immutable module authority and capability tokens.
+  bound_port: Pairs<ByteArray, ModuleRegistration>,
   // Optional: Timestamp of last update (Unix epoch milliseconds)
   // Useful for debugging and monitoring
   last_update_time: Int,
@@ -206,32 +220,32 @@ pub fn validate_create_channel(old: HostStateDatum, new: HostStateDatum) -> Bool
 pub fn validate_bind_port(
   old: HostStateDatum,
   new: HostStateDatum,
-  port: Int,
+  port_id: ByteArray,
   registration: ModuleRegistration,
 ) -> Bool {
+  let port_id_length = bytearray.length(port_id)
+
   // A port can only be bound once.
   //
   // If a port already has a registration, we reject the transition.
-  expect
-    if pairs.has_key(old.state.bound_port, port) {
-      False
-    } else {
-      True
-    }
+  expect (!pairs.has_key(old.state.bound_port, port_id))?
 
   and {
-    is_valid_port_number(port),
+    // The minting policy enforces the complete ICS identifier alphabet while
+    // HostState cheaply retains the consensus-critical textual length bound.
+    port_id_length >= 2,
+    port_id_length <= 128,
     list.length(old.state.bound_port) < max_bound_ports,
     validate_version_increment(old.state, new.state),
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
-    // Port registrations are immutable and kept in ascending port order.
+    // Port registrations are immutable and kept in canonical CBOR map order.
     new.state.bound_port == pairs.insert_by_ascending_key(
       old.state.bound_port,
-      port,
+      port_id,
       registration,
-      int.compare,
+      compare_port_keys_for_insertion,
     ),
     old.shutdown |> is_active,
     new.shutdown == old.shutdown,

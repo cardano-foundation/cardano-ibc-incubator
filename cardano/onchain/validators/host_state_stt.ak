@@ -23,7 +23,6 @@ use ibc/core/ics_004/channel_redeemer.{
 }
 use ibc/core/ics_004/types/keys as chan_id_keys
 use ibc/core/ics_004/types/packet as packet_mod
-use ibc/core/ics_005/types/keys as port_id_keys
 use ibc/core/ics_024_host_requirements/channel_keys as host_channel_keys
 use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
@@ -534,15 +533,13 @@ fn validate_create_channel_root(
 fn validate_bind_port_root(
   old_datum: HostStateDatum,
   new_datum: HostStateDatum,
-  port: Int,
+  port_id: ByteArray,
   registration: ModuleRegistration,
   outputs: List<Output>,
   port_siblings: List<ByteArray>,
 ) -> Bool {
   // Commitment key (IBC path): `ports/{portId}`.
   //
-  // The port identifier is a stable Cardano-specific format: `port-{n}`.
-  let port_id = port_id_keys.format_port_identifier(port)
   let port_key =
     key_port_prefix
       |> bytearray.concat("/")
@@ -1140,16 +1137,16 @@ validator host_state_stt(
                 next_sequence_ack_siblings,
               ),
             }
-          BindPort { port, registration, port_siblings } -> and {
+          BindPort { port_id, registration, port_siblings } -> and {
               // A permanent global registration is an administrative action.
               // Requiring the deployment authority prevents port squatting and
               // makes the protocol-wide bound useful rather than attacker-fillable.
               list.has(extra_signatories, old_datum.deployer),
-              validate_bind_port(old_datum, new_datum, port, registration),
+              validate_bind_port(old_datum, new_datum, port_id, registration),
               validate_bind_port_root(
                 old_datum,
                 new_datum,
-                port,
+                port_id,
                 registration,
                 outputs,
                 port_siblings,

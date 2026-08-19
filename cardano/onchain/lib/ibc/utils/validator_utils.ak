@@ -4,7 +4,6 @@ use aiken/collection/pairs
 use aiken/interval.{Finite}
 use aiken/option
 use aiken/primitive/bytearray
-use aiken/primitive/int
 use cardano/address.{Script}
 use cardano/assets.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of, tokens,
@@ -93,27 +92,21 @@ pub fn get_tx_valid_from(validity_range: ValidityRange) -> PosixTime {
 pub fn extract_module_redeemer(
   inputs: List<Input>,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
-  channel_token_name: ByteArray,
   port_minting_policy_id: PolicyId,
   port_id: ByteArray,
   host_state_nft_policy_id: PolicyId,
 ) -> IBCModuleRedeemer {
-  let port_number_bytes = port_keys.parse_port_id_number(port_id)
-  expect Some(port_number) = int.from_utf8(port_number_bytes)
-  let port_token_name =
-    auth.generate_token_name_from_another(
-      channel_token_name,
-      port_keys.port_prefix,
-      port_number_bytes,
-    )
   let port_token =
-    AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
+    AuthToken {
+      policy_id: port_minting_policy_id,
+      name: port_keys.port_token_name(port_id),
+    }
 
   let registration =
     registered_module_for_port(
       inputs,
       host_state_nft_policy_id,
-      port_number,
+      port_id,
       port_token,
     )
 
@@ -137,27 +130,21 @@ pub fn extract_packet_module_redeemer(
   reference_inputs: List<Input>,
   outputs: List<Output>,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
-  channel_token_name: ByteArray,
   port_minting_policy_id: PolicyId,
   port_id: ByteArray,
   host_state_nft_policy_id: PolicyId,
 ) -> IBCModuleRedeemer {
-  let port_number_bytes = port_keys.parse_port_id_number(port_id)
-  expect Some(port_number) = int.from_utf8(port_number_bytes)
-  let port_token_name =
-    auth.generate_token_name_from_another(
-      channel_token_name,
-      port_keys.port_prefix,
-      port_number_bytes,
-    )
   let port_token =
-    AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
+    AuthToken {
+      policy_id: port_minting_policy_id,
+      name: port_keys.port_token_name(port_id),
+    }
 
   let registration =
     registered_module_for_port(
       inputs,
       host_state_nft_policy_id,
-      port_number,
+      port_id,
       port_token,
     )
 
@@ -217,7 +204,7 @@ fn find_registered_module_state_input(
 fn registered_module_for_port(
   inputs: List<Input>,
   host_state_nft_policy_id: PolicyId,
-  port_number: Int,
+  port_id: ByteArray,
   expected_port_token: AuthToken,
 ) -> ModuleRegistration {
   expect [host_state_input] =
@@ -234,7 +221,7 @@ fn registered_module_for_port(
   expect host_state_datum: HostStateDatum =
     get_inline_datum(host_state_input.output)
   expect Some(registration) =
-    pairs.get_first(host_state_datum.state.bound_port, port_number)
+    pairs.get_first(host_state_datum.state.bound_port, port_id)
   expect registration.port_token == expected_port_token
   registration
 }

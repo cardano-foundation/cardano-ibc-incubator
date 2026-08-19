@@ -206,10 +206,12 @@ describe('PacketService denom regression coverage', () => {
     const packetData = JSON.parse(convertHex2String(packetDataHex));
     expect(packetData.denom).toBe(canonicalDenom);
 
-    const transferModuleCall = lucidServiceMock.encode.mock.calls.find(([, type]) => type === 'iBCModuleRedeemer');
+    const transferModuleCall = lucidServiceMock.encode.mock.calls.find(
+      ([, type]) => type === 'transferIBCModuleRedeemer',
+    );
     expect(transferModuleCall).toBeDefined();
     const transferModuleDenomHex =
-      transferModuleCall?.[0]?.Callback?.[0]?.OnSendPacket?.data?.TransferModuleData?.[0]?.denom;
+      transferModuleCall?.[0]?.Callback?.[0]?.OnSendPacket?.data?.ModuleDataV1?.[0]?.denom;
     expect(transferModuleDenomHex).toBe(convertString2Hex(canonicalDenom));
   });
 });

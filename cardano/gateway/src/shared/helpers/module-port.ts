@@ -1,5 +1,4 @@
 import { DeploymentConfig } from 'src/config/bridge-manifest';
-import { ICQ_MODULE_PORT, MOCK_MODULE_PORT, PORT_ID_PREFIX, TRANSFER_MODULE_PORT } from 'src/constant';
 
 export type GatewayModuleKey = 'transfer' | 'mock' | 'icq';
 
@@ -11,33 +10,14 @@ export type GatewayModuleConfig = {
   referenceScript: 'spendTransferModule' | 'spendMockModule';
 };
 
-export function normalizeGatewayPortId(portId: string): string {
-  const normalized = portId.trim().toLowerCase();
-  switch (normalized) {
-    case 'transfer':
-    case `${PORT_ID_PREFIX}-${TRANSFER_MODULE_PORT}`:
-      return 'transfer';
-    case 'mock':
-    case `${PORT_ID_PREFIX}-${MOCK_MODULE_PORT}`:
-      return 'mock';
-    case 'icqhost':
-    case `${PORT_ID_PREFIX}-${ICQ_MODULE_PORT}`:
-      return 'icqhost';
-    default:
-      return normalized;
-  }
-}
-
 export function isSupportedGatewayPortId(portId: string): boolean {
-  const normalized = normalizeGatewayPortId(portId);
-  return normalized === 'transfer' || normalized === 'mock' || normalized === 'icqhost';
+  return portId === 'transfer' || portId === 'mock' || portId === 'icqhost';
 }
 
-export function getGatewayModuleConfigForPortId(
-  deployment: DeploymentConfig,
-  portId: string,
-): GatewayModuleConfig {
-  switch (normalizeGatewayPortId(portId)) {
+export function getGatewayModuleConfigForPortId(deployment: DeploymentConfig, portId: string): GatewayModuleConfig {
+  // Port identifiers are exact, case-sensitive commitment-path bytes. Do not
+  // trim, lowercase, or route legacy numeric aliases under another identity.
+  switch (portId) {
     case 'transfer':
       return {
         key: 'transfer',

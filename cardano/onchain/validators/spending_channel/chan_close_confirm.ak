@@ -121,7 +121,6 @@ validator chan_close_confirm(
       validator_utils.extract_module_redeemer(
         inputs,
         redeemers,
-        datum.token.name,
         port_minting_policy_id,
         port_id,
         host_state_nft_policy_id,

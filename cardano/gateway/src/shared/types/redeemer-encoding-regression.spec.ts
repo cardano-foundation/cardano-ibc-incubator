@@ -2,6 +2,11 @@ import * as Lucid from '@lucid-evolution/lucid';
 import { encodeMintChannelRedeemer, encodeSpendChannelRedeemer } from './channel/channel-redeemer';
 import { encodeMintConnectionRedeemer, encodeSpendConnectionRedeemer } from './connection/connection-redeemer';
 import { encodeVerifyProofRedeemer } from './connection/verify-proof-redeemer';
+import {
+  decodeTransferIBCModuleRedeemer,
+  encodeTransferIBCModuleRedeemer,
+  TransferIBCModuleRedeemer,
+} from './apps/transfer/transfer-ibc-module-redeemer';
 import { decodeIBCModuleRedeemer, encodeIBCModuleRedeemer } from './port/ibc_module_redeemer';
 
 const EMPTY_PROOF = { proofs: [] } as const;
@@ -156,5 +161,37 @@ describe('Redeemer encoding regression', () => {
     const encoded = await encodeIBCModuleRedeemer(redeemer, Lucid);
 
     expect(decodeIBCModuleRedeemer(encoded, Lucid)).toEqual(redeemer);
+  });
+
+  it('keeps the transfer callback CBOR stable behind the opaque module envelope', async () => {
+    const redeemer: TransferIBCModuleRedeemer = {
+      Callback: [
+        {
+          OnSendPacket: {
+            channel_id: PACKET.source_channel,
+            packet_data: PACKET.data,
+            packet_commitment: 'aabb',
+            data: {
+              ModuleDataV1: [
+                {
+                  denom: '75616461',
+                  amount: '31',
+                  sender: 'aa',
+                  receiver: 'bb',
+                  memo: '',
+                },
+              ],
+            },
+          },
+        },
+      ],
+    };
+
+    const encoded = await encodeTransferIBCModuleRedeemer(redeemer, Lucid);
+
+    expect(encoded).toBe(
+      'd87981d9050284496368616e6e656c2d30427b7d42aabbd87981d879854475616461413141aa41bb40',
+    );
+    expect(decodeTransferIBCModuleRedeemer(encoded, Lucid)).toEqual(redeemer);
   });
 });

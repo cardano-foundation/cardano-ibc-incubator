@@ -157,7 +157,6 @@ validator acknowledge_packet(
         reference_inputs,
         outputs,
         redeemers,
-        datum.token.name,
         port_minting_policy_id,
         datum.port_id,
         host_state_nft_policy_id,

@@ -1,5 +1,5 @@
 import { Data } from '@lucid-evolution/lucid';
-import { FungibleTokenPacketDatum } from '../types/fungible-token-packet-data';
+import { FungibleTokenPacketDatum, fungibleTokenPacketDatumSchema } from '../types/fungible-token-packet-data';
 export type TransferModuleRedeemer =
   | {
       Transfer: {
@@ -9,29 +9,26 @@ export type TransferModuleRedeemer =
     }
   | 'OtherTransferOp';
 
+export function transferModuleRedeemerSchema(Lucid: typeof import('@lucid-evolution/lucid')) {
+  const { Data } = Lucid;
+  return Data.Enum([
+    Data.Object({
+      Transfer: Data.Object({
+        channel_id: Data.Bytes(),
+        data: fungibleTokenPacketDatumSchema(Lucid),
+      }),
+    }),
+    Data.Literal('OtherTransferOp'),
+  ]);
+}
+
 export function encodeTransferModuleRedeemer(
   transferModuleRedeemer: TransferModuleRedeemer,
   Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
 
-  const FungibleTokenPacketDataSchema = Data.Object({
-    denom: Data.Bytes(),
-    amount: Data.Bytes(),
-    sender: Data.Bytes(),
-    receiver: Data.Bytes(),
-    memo: Data.Bytes(),
-  });
-
-  const TransferModuleRedeemerSchema = Data.Enum([
-    Data.Object({
-      Transfer: Data.Object({
-        channel_id: Data.Bytes(),
-        data: FungibleTokenPacketDataSchema,
-      }),
-    }),
-    Data.Literal('OtherTransferOp'),
-  ]);
+  const TransferModuleRedeemerSchema = transferModuleRedeemerSchema(Lucid);
   type TTransferModuleRedeemer = Data.Static<typeof TransferModuleRedeemerSchema>;
   const TTransferModuleRedeemer = TransferModuleRedeemerSchema as unknown as TransferModuleRedeemer;
 
@@ -45,23 +42,7 @@ export function castToTransferModuleRedeemer(
 ) {
   const { Data } = Lucid;
 
-  const FungibleTokenPacketDataSchema = Data.Object({
-    denom: Data.Bytes(),
-    amount: Data.Bytes(),
-    sender: Data.Bytes(),
-    receiver: Data.Bytes(),
-    memo: Data.Bytes(),
-  });
-
-  const TransferModuleRedeemerSchema = Data.Enum([
-    Data.Object({
-      Transfer: Data.Object({
-        channel_id: Data.Bytes(),
-        data: FungibleTokenPacketDataSchema,
-      }),
-    }),
-    Data.Literal('OtherTransferOp'),
-  ]);
+  const TransferModuleRedeemerSchema = transferModuleRedeemerSchema(Lucid);
   type TTransferModuleRedeemer = Data.Static<typeof TransferModuleRedeemerSchema>;
   const TTransferModuleRedeemer = TransferModuleRedeemerSchema as unknown as TransferModuleRedeemer;
 

@@ -1,11 +1,20 @@
-import { assertEquals } from "@std/assert";
-import { Data, type Script } from "@lucid-evolution/lucid";
+import { assertEquals, assertNotEquals } from "@std/assert";
+import {
+  Data,
+  fromText,
+  type LucidEvolution,
+  type Script,
+} from "@lucid-evolution/lucid";
+import blueprint from "../../onchain/plutus.json" with { type: "json" };
 
 import {
   buildReferenceValidatorBatches,
   buildReferenceValidatorSizeReport,
   DeploymentIbcTree,
+  GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
+  sortPortRegistrations,
 } from "./deployment.ts";
+import { generatePortTokenName, readValidator } from "./utils.ts";
 
 const makeValidator = (byteLength: number): Script => ({
   type: "PlutusV3",
@@ -13,6 +22,75 @@ const makeValidator = (byteLength: number): Script => ({
 });
 
 const EMPTY_HASH = "00".repeat(32);
+
+Deno.test("generatePortTokenName matches the cross-language transfer vector", () => {
+  assertEquals(
+    generatePortTokenName(fromText("transfer")),
+    "04c1bb73a4a1a77a59b16e461d6ea244bac88d36050557ba026d36f46dd0f873",
+  );
+});
+
+Deno.test("generic module deployments pin the spend handler from the blueprint", () => {
+  const genericModuleSpendHandler = blueprint.validators.find(
+    ({ title }) => title === GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
+  ) as { title: string; parameters?: Array<{ title: string }> } | undefined;
+
+  assertEquals(
+    genericModuleSpendHandler?.title,
+    GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
+  );
+  assertEquals(
+    genericModuleSpendHandler?.parameters?.map(({ title }) => title) ?? [],
+    ["host_state_nft_policy_id"],
+  );
+});
+
+Deno.test("mock and icq share the host-policy-bound generic module hash", () => {
+  const lucid = {
+    config: () => ({ network: "Preview" }),
+  } as unknown as LucidEvolution;
+  const parameterSchema = Data.Tuple([Data.Bytes()]) as unknown as [string];
+  const hostPolicy = "11".repeat(28);
+  const [, mockHash] = readValidator(
+    GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
+    lucid,
+    [hostPolicy],
+    parameterSchema,
+  );
+  const [, icqHash] = readValidator(
+    GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
+    lucid,
+    [hostPolicy],
+    parameterSchema,
+  );
+  const [, otherHostHash] = readValidator(
+    GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
+    lucid,
+    ["22".repeat(28)],
+    parameterSchema,
+  );
+
+  assertEquals(mockHash, icqHash);
+  assertNotEquals(mockHash, otherHostHash);
+});
+
+Deno.test("sortPortRegistrations uses canonical bytes-key ordering", () => {
+  const registration = {
+    module_script_hash: "00".repeat(28),
+    port_token: { policy_id: "11".repeat(28), name: "22" },
+    module_token: { policy_id: "33".repeat(28), name: "44" },
+  };
+  const registrations = new Map([
+    [fromText("transfer"), registration],
+    [fromText("icqhost"), registration],
+    [fromText("mock"), registration],
+  ]);
+
+  assertEquals(
+    [...sortPortRegistrations(registrations).keys()],
+    [fromText("mock"), fromText("icqhost"), fromText("transfer")],
+  );
+});
 
 const concatBytes = (...parts: Uint8Array[]): Uint8Array => {
   const length = parts.reduce((sum, part) => sum + part.length, 0);
@@ -141,7 +219,7 @@ Deno.test("buildReferenceValidatorSizeReport flags validators that cannot fit al
 
 Deno.test("DeploymentIbcTree commits leaves with key hash included", async () => {
   const tree = new DeploymentIbcTree();
-  const key = "ports/port-100";
+  const key = "ports/transfer";
   const value = Data.to(100n as never, Data.Integer() as never, {
     canonical: true,
   });

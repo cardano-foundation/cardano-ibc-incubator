@@ -7,19 +7,24 @@ export type FungibleTokenPacketDatum = {
   memo: string;
 };
 
-export function encodeFungibleTokenPacketDatum(
-  fungibleTokenPacketDatum: FungibleTokenPacketDatum,
-  Lucid: typeof import('@lucid-evolution/lucid'),
-): string {
+export function fungibleTokenPacketDatumSchema(Lucid: typeof import('@lucid-evolution/lucid')) {
   const { Data } = Lucid;
-
-  const FungibleTokenPacketDatumSchema = Data.Object({
+  return Data.Object({
     denom: Data.Bytes(),
     amount: Data.Bytes(),
     sender: Data.Bytes(),
     receiver: Data.Bytes(),
     memo: Data.Bytes(),
   });
+}
+
+export function encodeFungibleTokenPacketDatum(
+  fungibleTokenPacketDatum: FungibleTokenPacketDatum,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+): string {
+  const { Data } = Lucid;
+
+  const FungibleTokenPacketDatumSchema = fungibleTokenPacketDatumSchema(Lucid);
   type TFungibleTokenPacketDatum = Data.Static<typeof FungibleTokenPacketDatumSchema>;
   const TFungibleTokenPacketDatum = FungibleTokenPacketDatumSchema as unknown as FungibleTokenPacketDatum;
 
@@ -32,13 +37,7 @@ export function decodeFungibleTokenPacketDatum(
 ): FungibleTokenPacketDatum {
   const { Data } = Lucid;
 
-  const FungibleTokenPacketDatumSchema = Data.Object({
-    denom: Data.Bytes(),
-    amount: Data.Bytes(),
-    sender: Data.Bytes(),
-    receiver: Data.Bytes(),
-    memo: Data.Bytes(),
-  });
+  const FungibleTokenPacketDatumSchema = fungibleTokenPacketDatumSchema(Lucid);
   type TFungibleTokenPacketDatum = Data.Static<typeof FungibleTokenPacketDatumSchema>;
   const TFungibleTokenPacketDatum = FungibleTokenPacketDatumSchema as unknown as FungibleTokenPacketDatum;
 
@@ -51,13 +50,7 @@ export function castToFungibleTokenPacket(
   Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
-  const FungibleTokenPacketDatumSchema = Data.Object({
-    denom: Data.Bytes(),
-    amount: Data.Bytes(),
-    sender: Data.Bytes(),
-    receiver: Data.Bytes(),
-    memo: Data.Bytes(),
-  });
+  const FungibleTokenPacketDatumSchema = fungibleTokenPacketDatumSchema(Lucid);
   type TFungibleTokenPacketDatum = Data.Static<typeof FungibleTokenPacketDatumSchema>;
   const TFungibleTokenPacketDatum = FungibleTokenPacketDatumSchema as unknown as FungibleTokenPacketDatum;
 

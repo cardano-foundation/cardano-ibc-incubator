@@ -12,7 +12,6 @@ use ibc/core/ics_025_handler_interface/host_state.{
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, HostStateRedeemer,
 }
-use ibc/utils/string as string_utils
 
 // Keep the existing per-module capability-token bound aligned with the
 // protocol-wide HostState bound.
@@ -46,21 +45,11 @@ validator mint_port(host_state_nft_policy_id: PolicyId) {
     let Transaction { inputs, outputs, mint, redeemers, .. } = transaction
     trace @"mint_port: extracted context data"
 
-    let MintPortRedeemer { spend_module_script_hash, port_number } = redeemer
+    let MintPortRedeemer { spend_module_script_hash, port_id } = redeemer
 
-    // Port tokens are referenced across IBC transactions that only have access to the
-    // channel auth token name. Channel auth tokens are derived from the HostState NFT.
-    //
-    // To make the port-token name derivable from the channel-token name, the port-token
-    // name must also be derived from the same HostState NFT base.
-    let host_state_nft =
-      AuthToken {
-        policy_id: host_state_nft_policy_id,
-        name: host_state_token_name,
-      }
-    let port_token_name =
-      string_utils.int_to_string(port_number)
-        |> auth.generate_token_name(host_state_nft, port_keys.port_prefix, _)
+    // The full textual identifier is authenticated by HostState and committed at
+    // `ports/{port_id}`. Hash it to the fixed 32-byte Cardano asset-name domain.
+    let port_token_name = port_keys.port_token_name(port_id)
     let port_token =
       AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
 
@@ -71,8 +60,8 @@ validator mint_port(host_state_nft_policy_id: PolicyId) {
     expect host_state_redeemer: HostStateRedeemer = spent_host_state_redeemer
     let valid_host_state_operator =
       when host_state_redeemer is {
-        BindPort { port, registration, .. } -> and {
-            port == port_number,
+        BindPort { port_id: bound_port_id, registration, .. } -> and {
+            bound_port_id == port_id,
             registration.module_script_hash == spend_module_script_hash,
             registration.port_token == port_token,
           }

@@ -1,11 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import * as LucidImporter from '@lucid-evolution/lucid';
 import { AsyncMutex } from './asyncMutex';
 import {
   decodeAcknowledgement,
   encodeAcknowledgement,
   type Acknowledgement,
 } from './acknowledgementCodec';
+import { LucidIbcAdapter } from './lucidIbcAdapter';
 
 function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -104,5 +106,72 @@ describe('acknowledgement codec', () => {
       ),
       failure,
     );
+  });
+});
+
+describe('IBC module and textual-port codecs', () => {
+  const adapter = new LucidIbcAdapter(
+    LucidImporter,
+    {} as never,
+    {} as never,
+  );
+
+  it('keeps transfer callback CBOR stable behind the opaque module envelope', async () => {
+    const encoded = await adapter.encode(
+      {
+        Callback: [
+          {
+            OnSendPacket: {
+              channel_id: '6368616e6e656c2d30',
+              packet_data: '7b7d',
+              packet_commitment: 'aabb',
+              data: {
+                ModuleDataV1: [
+                  {
+                    denom: '75616461',
+                    amount: '31',
+                    sender: 'aa',
+                    receiver: 'bb',
+                    memo: '',
+                  },
+                ],
+              },
+            },
+          },
+        ],
+      },
+      'transferIBCModuleRedeemer',
+    );
+
+    assert.equal(
+      encoded,
+      'd87981d9050284496368616e6e656c2d30427b7d42aabbd87981d879854475616461413141aa41bb40',
+    );
+  });
+
+  it('round-trips HostState registrations keyed by exact textual port bytes', async () => {
+    const portId = Buffer.from('transfer').toString('hex');
+    const registration = {
+      module_script_hash: '11'.repeat(28),
+      port_token: { policy_id: '22'.repeat(28), name: '33'.repeat(32) },
+      module_token: { policy_id: '44'.repeat(28), name: '55'.repeat(32) },
+    };
+    const datum = {
+      state: {
+        version: 1n,
+        ibc_state_root: '00'.repeat(32),
+        next_client_sequence: 0n,
+        next_connection_sequence: 0n,
+        next_channel_sequence: 0n,
+        bound_port: new Map([[portId, registration]]),
+        last_update_time: 0n,
+      },
+      nft_policy: '66'.repeat(28),
+      deployer: '77'.repeat(28),
+      shutdown: 'Active',
+    };
+
+    const encoded = await adapter.encode(datum, 'host_state');
+    assert.deepEqual(await adapter.decodeDatum(encoded, 'host_state'), datum);
   });
 });

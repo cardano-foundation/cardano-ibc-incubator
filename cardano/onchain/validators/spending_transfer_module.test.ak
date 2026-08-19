@@ -32,10 +32,10 @@ use ibc/core/ics_004/types/order as chan_order_mod
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_004/types/state as chan_state_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{
-  Callback, IBCModuleRedeemer, OnAcknowledgementPacket, OnChanCloseConfirm,
-  OnChanCloseInit, OnChanOpenAck, OnChanOpenConfirm, OnChanOpenInit,
-  OnChanOpenTry, OnRecvPacket, OnSendPacket, OnTimeoutPacket, Operator,
-  TransferModuleData, TransferModuleOperator,
+  Callback, IBCModuleRedeemer, ModuleDataV1, ModuleOperatorV1,
+  OnAcknowledgementPacket, OnChanCloseConfirm, OnChanCloseInit, OnChanOpenAck,
+  OnChanOpenConfirm, OnChanOpenInit, OnChanOpenTry, OnRecvPacket, OnSendPacket,
+  OnTimeoutPacket, Operator,
 }
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, LeafOp,
@@ -592,7 +592,7 @@ fn native_send_escrow_fixture(
         channel_id: mock.channel_id,
         packet_data: packet.data,
         packet_commitment: callback_commitment,
-        data: TransferModuleData(callback_data),
+        data: ModuleDataV1(callback_data),
       },
     )
   let channel_redeemer: Redeemer = SendPacket { packet }
@@ -676,7 +676,7 @@ fn recv_source_unescrow_fixture(
         channel_id: mock.channel_id,
         packet_data: packet.data,
         acknowledgement,
-        data: TransferModuleData(ftpd),
+        data: ModuleDataV1(ftpd),
       },
     )
   let channel_redeemer: Redeemer =
@@ -765,7 +765,7 @@ fn timeout_unescrow_fixture(
       OnTimeoutPacket {
         channel_id: mock.channel_id,
         packet_data: packet.data,
-        data: TransferModuleData(ftpd),
+        data: ModuleDataV1(ftpd),
       },
     )
   let channel_redeemer: Redeemer =
@@ -864,7 +864,7 @@ fn native_asset_timeout_fixture(
       OnTimeoutPacket {
         channel_id: mock.channel_id,
         packet_data: packet.data,
-        data: TransferModuleData(ftpd),
+        data: ModuleDataV1(ftpd),
       },
     )
   let channel_redeemer: Redeemer =
@@ -917,7 +917,7 @@ fn ack_success_fixture(
         channel_id: mock.channel_id,
         packet_data: packet.data,
         acknowledgement,
-        data: TransferModuleData(ftpd),
+        data: ModuleDataV1(ftpd),
       },
     )
   let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
@@ -971,7 +971,7 @@ fn voucher_send_burn_fixture(
         channel_id: mock.channel_id,
         packet_data: packet.data,
         packet_commitment: packet_mod.commit_packet(packet),
-        data: TransferModuleData(ftpd),
+        data: ModuleDataV1(ftpd),
       },
     )
   let channel_redeemer: Redeemer = SendPacket { packet }
@@ -1019,7 +1019,7 @@ fn voucher_recv_sink_fixture(
         channel_id: mock.channel_id,
         packet_data: packet.data,
         acknowledgement,
-        data: TransferModuleData(ftpd),
+        data: ModuleDataV1(ftpd),
       },
     )
   let channel_redeemer: Redeemer =
@@ -1080,7 +1080,7 @@ fn voucher_error_ack_refund_fixture(
         channel_id: mock.channel_id,
         packet_data: packet.data,
         acknowledgement,
-        data: TransferModuleData(ftpd),
+        data: ModuleDataV1(ftpd),
       },
     )
   let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
@@ -1504,7 +1504,7 @@ test on_recv_packet_mint_voucher_succeed() {
       mock.channel_id,
     )
 
-  let packet_data = TransferModuleData(ftpd)
+  let packet_data = ModuleDataV1(ftpd)
 
   let module_redeemer: Redeemer =
     Callback(
@@ -1624,7 +1624,7 @@ test on_recv_packet_unescrow_succeed() {
       mock.channel_id,
     )
 
-  let packet_data = TransferModuleData(ftpd)
+  let packet_data = ModuleDataV1(ftpd)
 
   let module_redeemer: Redeemer =
     Callback(
@@ -1741,7 +1741,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
       mock.channel_id,
     )
 
-  let packet_data = TransferModuleData(ftpd)
+  let packet_data = ModuleDataV1(ftpd)
 
   let module_redeemer: Redeemer =
     Callback(
@@ -1848,9 +1848,7 @@ test transfer_escrow_succeed() {
 
   let module_redeemer: Redeemer =
     Operator(
-      TransferModuleOperator(
-        Transfer { channel_id: mock.channel_id, data: ftpd },
-      ),
+      ModuleOperatorV1(Transfer { channel_id: mock.channel_id, data: ftpd }),
     )
 
   let channel_redeemer: Redeemer = SendPacket { packet }
@@ -1951,9 +1949,7 @@ test transfer_escrow_fails_when_host_state_is_shutting_down() fail {
 
   let module_redeemer: Redeemer =
     Operator(
-      TransferModuleOperator(
-        Transfer { channel_id: mock.channel_id, data: ftpd },
-      ),
+      ModuleOperatorV1(Transfer { channel_id: mock.channel_id, data: ftpd }),
     )
   let channel_redeemer: Redeemer = SendPacket { packet }
 
@@ -2028,9 +2024,7 @@ test transfer_escrow_native_asset_fails_with_short_created_shard() fail {
 
   let module_redeemer: Redeemer =
     Operator(
-      TransferModuleOperator(
-        Transfer { channel_id: mock.channel_id, data: ftpd },
-      ),
+      ModuleOperatorV1(Transfer { channel_id: mock.channel_id, data: ftpd }),
     )
   let channel_redeemer: Redeemer = SendPacket { packet }
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
@@ -2110,9 +2104,7 @@ test transfer_escrow_native_asset_fails_with_extra_created_shard() fail {
 
   let module_redeemer: Redeemer =
     Operator(
-      TransferModuleOperator(
-        Transfer { channel_id: mock.channel_id, data: ftpd },
-      ),
+      ModuleOperatorV1(Transfer { channel_id: mock.channel_id, data: ftpd }),
     )
   let channel_redeemer: Redeemer = SendPacket { packet }
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
@@ -2193,9 +2185,7 @@ test transfer_burn_voucher_succeed() {
 
   let module_redeemer: Redeemer =
     Operator(
-      TransferModuleOperator(
-        Transfer { channel_id: mock.channel_id, data: ftpd },
-      ),
+      ModuleOperatorV1(Transfer { channel_id: mock.channel_id, data: ftpd }),
     )
 
   let channel_redeemer: Redeemer = SendPacket { packet }
@@ -2279,9 +2269,7 @@ test transfer_burn_voucher_succeeds_when_host_state_is_shutting_down() {
 
   let module_redeemer: Redeemer =
     Operator(
-      TransferModuleOperator(
-        Transfer { channel_id: mock.channel_id, data: ftpd },
-      ),
+      ModuleOperatorV1(Transfer { channel_id: mock.channel_id, data: ftpd }),
     )
   let channel_redeemer: Redeemer = SendPacket { packet }
   let mint_voucher_redeemer: Redeemer =
@@ -2350,7 +2338,7 @@ test on_timeout_packet_mint_voucher_succeed() {
       "channel-0",
     )
 
-  let packet_data = TransferModuleData(ftpd)
+  let packet_data = ModuleDataV1(ftpd)
 
   let module_redeemer: Redeemer =
     Callback(
@@ -2468,7 +2456,7 @@ test on_timeout_packet_unescrow_succeed() {
       mock.channel_id,
     )
 
-  let packet_data = TransferModuleData(ftpd)
+  let packet_data = ModuleDataV1(ftpd)
 
   let module_redeemer: Redeemer =
     Callback(
@@ -2583,7 +2571,7 @@ test on_timeout_packet_native_refund_fails_with_wrong_escrow_delta() fail {
       mock.port_id,
       mock.channel_id,
     )
-  let packet_data = TransferModuleData(ftpd)
+  let packet_data = ModuleDataV1(ftpd)
   let module_redeemer: Redeemer =
     Callback(
       OnTimeoutPacket {
@@ -2699,7 +2687,7 @@ test on_recv_packet_source_fails_with_short_native_payout() fail {
         channel_id: mock.channel_id,
         packet_data: packet.data,
         acknowledgement,
-        data: TransferModuleData(ftpd),
+        data: ModuleDataV1(ftpd),
       },
     )
   let channel_redeemer: Redeemer =
@@ -2766,7 +2754,7 @@ test on_acknowledgement_packet_result_succeed() {
 
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
 
-  let packet_data = TransferModuleData(ftpd)
+  let packet_data = ModuleDataV1(ftpd)
 
   let module_redeemer: Redeemer =
     Callback(
@@ -2849,7 +2837,7 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
 
   let acknowledgement = acknowledgement_mod.new_error_acknowledgement("")
 
-  let packet_data = TransferModuleData(ftpd)
+  let packet_data = ModuleDataV1(ftpd)
 
   let module_redeemer: Redeemer =
     Callback(
@@ -2969,7 +2957,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
   let acknowledgement = acknowledgement_mod.new_error_acknowledgement("")
 
   // let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
-  let packet_data = TransferModuleData(ftpd)
+  let packet_data = ModuleDataV1(ftpd)
 
   let module_redeemer: Redeemer =
     Callback(
@@ -3150,9 +3138,7 @@ test transfer_escrow_existing_shard_update_succeed() {
 
   let module_redeemer: Redeemer =
     Operator(
-      TransferModuleOperator(
-        Transfer { channel_id: mock.channel_id, data: ftpd },
-      ),
+      ModuleOperatorV1(Transfer { channel_id: mock.channel_id, data: ftpd }),
     )
 
   let channel_redeemer: Redeemer = SendPacket { packet }

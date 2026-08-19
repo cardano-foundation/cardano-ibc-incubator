@@ -20,7 +20,7 @@ const CreateChannelSchema = Data.Object({
 });
 
 const BindPortSchema = Data.Object({
-  port: Data.Integer(),
+  port_id: Data.Bytes(),
   registration: ModuleRegistrationSchema,
   port_siblings: SiblingHashesSchema,
 });

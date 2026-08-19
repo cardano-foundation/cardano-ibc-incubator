@@ -369,6 +369,10 @@ jobs:
         working-directory: .
         run: scripts/ci/check-aiken-fuzz-imports.sh
 
+      - name: Check core/application dependency direction
+        working-directory: .
+        run: scripts/ci/check-aiken-layering.sh
+
       # Keep syntax/blueprint/type errors separate from the fuzz matrix. These
       # checks should fail quickly and should not wait behind expensive
       # property-test execution.

@@ -30,10 +30,6 @@ export function validateAndFormatChannelOpenInitParams(data: MsgChannelOpenInit)
   if (data.channel.connection_hops.length == 0) {
     throw new GrpcInvalidArgumentException('Invalid connection id: Connection Id is not valid');
   }
-  // if (['transfer'].includes(data.port_id.toLocaleLowerCase())) data.port_id = 'port-99';
-
-  // if (['transfer'].includes(data.port_id.toLocaleLowerCase())) data.port_id = 'port-99';
-
   // Prepare the Channel open init operator object
   let orderingChannel: Order;
   switch (data.channel.ordering) {
@@ -69,7 +65,6 @@ export function validateAndFormatChannelOpenTryParams(data: MsgChannelOpenTry): 
     throw new GrpcInvalidArgumentException('Invalid connection id: Connection Id is not valid');
   }
   const decodedProofInitMsg: MerkleProof = decodeMerkleProof(data.proof_init);
-  // if (['transfer'].includes(data.port_id.toLocaleLowerCase())) data.port_id = 'port-99';
   // Prepare the Channel open try operator object
   const channelOpenTryOperator: ChannelOpenTryOperator = {
     //TODO: check with connection_hops
@@ -100,7 +95,6 @@ export function validateAndFormatChannelOpenAckParams(data: MsgChannelOpenAck): 
     throw new GrpcInvalidArgumentException(
       `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
     );
-  // if (['transfer'].includes(data.port_id.toLocaleLowerCase())) data.port_id = 'port-99';
   const channelSequence: string = data.channel_id.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
   const decodedProofTryMsg: MerkleProof = decodeMerkleProof(data.proof_try);
   // Prepare the Channel open ack operator object

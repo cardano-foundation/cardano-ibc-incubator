@@ -1,38 +1,22 @@
+use aiken/crypto
 use aiken/primitive/bytearray
-use aiken/primitive/string
 
-pub const port_prefix = "port"
-
-const port_prefix_with_separator = "port-"
-
-const port_prefix_with_separator_len = 5
-
-pub fn format_port_identifier(port_number: Int) -> ByteArray {
-  let port_number = string.from_int(port_number) |> string.to_bytearray()
-  bytearray.concat(port_prefix_with_separator, port_number)
-}
-
-/// Parse number of a port_id.
-/// The port_id should be a valid Cardano IBC port ID (validated with is_valid_port_id()).
+/// Domain separator for the v2 port capability-token name.
 ///
-/// Note: Port IDs in IBC are strings (eg. "transfer"), but Cardano's on-chain
-/// port-token naming scheme historically derived the token postfix by stripping
-/// the "port-" prefix (eg. "port-100" -> "100").
+/// Port identifiers can be up to 128 bytes, while Cardano asset names are
+/// limited to 32 bytes, so the exact identifier cannot be embedded directly.
+pub const port_token_domain = "cardano-ibc/port-token/v1"
+
+/// Derive the fixed-width capability-token name for an exact textual port ID.
 ///
-/// For now we support:
-/// - legacy numeric port IDs: "port-{n}" -> "{n}"
-/// - canonical transfer port: "transfer" -> "100" (matches deployment TRANSFER_MODULE_PORT)
-/// - canonical async-icq host port: "icqhost" -> "101" (matches deployment ICQ_MODULE_PORT)
-pub fn parse_port_id_number(port_id: ByteArray) -> ByteArray {
-  if port_id == "transfer" {
-    "100"
-  } else if port_id == "icqhost" {
-    "101"
-  } else if bytearray.take(port_id, port_prefix_with_separator_len) == port_prefix_with_separator {
-    bytearray.drop(port_id, port_prefix_with_separator_len)
-  } else {
-    fail @"Unsupported port id for port token derivation"
-  }
+/// The dedicated minting policy already scopes the token to one deployment;
+/// hashing the domain and complete identifier avoids truncation and aliasing.
+pub fn port_token_name(port_id: ByteArray) -> ByteArray {
+  expect is_valid_port_id(port_id)?
+  port_token_domain
+    |> bytearray.concat(#"00")
+    |> bytearray.concat(port_id)
+    |> crypto.blake2b_256
 }
 
 pub fn is_valid_port_id(port_id: ByteArray) -> Bool {
@@ -41,8 +25,6 @@ pub fn is_valid_port_id(port_id: ByteArray) -> Bool {
   //
   // This follows the IBC convention: 2..128 chars, restricted to an ASCII-safe set.
   //
-  // NOTE: `format_port_identifier/parse_port_id_number` still exist for the legacy
-  // `port-{n}` style, but `is_valid_port_id` is intentionally more permissive.
   let len = bytearray.length(port_id)
   if len < 2 || len > 128 {
     False

@@ -20,8 +20,8 @@ use ibc/core/ics_004/types/order as chan_order_mod
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_004/types/state as chan_state_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{
-  Callback, IBCModuleRedeemer, OnSendPacket, Operator, OtherModuleOperator,
-  TransferModuleData,
+  Callback, IBCModuleRedeemer, ModuleDataV1, OnSendPacket, Operator,
+  OtherModuleOperator,
 }
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{HandlePacket}
@@ -99,13 +99,7 @@ fn check_send_packet(mutation: CallbackMutation) {
   let channel_input =
     test_utils.build_channel_input(input_channel_datum, mock_data.channel_token)
 
-  let port_number = port_keys.parse_port_id_number(mock_data.port_id)
-  let port_token_name =
-    auth.generate_token_name(
-      mock_data.base_token,
-      port_keys.port_prefix,
-      port_number,
-    )
+  let port_token_name = port_keys.port_token_name(mock_data.port_id)
   let port_token =
     AuthToken {
       policy_id: mock_data.port_minting_policy_id,
@@ -222,7 +216,7 @@ fn check_send_packet(mutation: CallbackMutation) {
             channel_id: "channel-999",
             packet_data,
             packet_commitment: commitment,
-            data: TransferModuleData(transfer_data),
+            data: ModuleDataV1(transfer_data),
           },
         )
       WrongPacketData ->
@@ -231,7 +225,7 @@ fn check_send_packet(mutation: CallbackMutation) {
             channel_id: "channel-0",
             packet_data: "different packet data",
             packet_commitment: commitment,
-            data: TransferModuleData(transfer_data),
+            data: ModuleDataV1(transfer_data),
           },
         )
       WrongPacketCommitment ->
@@ -240,7 +234,7 @@ fn check_send_packet(mutation: CallbackMutation) {
             channel_id: "channel-0",
             packet_data,
             packet_commitment: "different commitment",
-            data: TransferModuleData(transfer_data),
+            data: ModuleDataV1(transfer_data),
           },
         )
       WrongTypedPacketData ->
@@ -249,7 +243,7 @@ fn check_send_packet(mutation: CallbackMutation) {
             channel_id: "channel-0",
             packet_data,
             packet_commitment: commitment,
-            data: TransferModuleData(
+            data: ModuleDataV1(
               FungibleTokenPacketData { ..transfer_data, amount: "999" },
             ),
           },
@@ -260,7 +254,7 @@ fn check_send_packet(mutation: CallbackMutation) {
             channel_id: "channel-0",
             packet_data,
             packet_commitment: commitment,
-            data: TransferModuleData(transfer_data),
+            data: ModuleDataV1(transfer_data),
           },
         )
     }

@@ -368,8 +368,8 @@ export async function rebuildTreeFromChain(
       port_token: AuthTokenSchema,
       module_token: AuthTokenSchema,
     });
-    for (const [portNumber, registration] of boundPorts.entries()) {
-      const portId = `port-${portNumber.toString()}`;
+    for (const [portIdHex, registration] of boundPorts.entries()) {
+      const portId = Buffer.from(portIdHex, 'hex').toString('utf8');
       const portValue = Buffer.from(
         Data.to(registration as any, ModuleRegistrationSchema as any),
         'hex',

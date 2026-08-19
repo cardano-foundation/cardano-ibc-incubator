@@ -898,12 +898,7 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
       },
     }
 
-  let port_token_name =
-    auth.generate_token_name_from_another(
-      channel_token.name,
-      port_keys.port_prefix,
-      "100",
-    )
+  let port_token_name = port_keys.port_token_name(input_channel_datum.port_id)
   let port_token =
     AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
   let module_token =
@@ -946,7 +941,9 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
               next_client_sequence: 0,
               next_connection_sequence: 0,
               next_channel_sequence: 0,
-              bound_port: [Pair(100, module_registration)],
+              bound_port: [
+                Pair(input_channel_datum.port_id, module_registration),
+              ],
               last_update_time: 0,
             },
             nft_policy: host_state_nft_policy_id,

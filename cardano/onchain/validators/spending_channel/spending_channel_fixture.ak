@@ -1,6 +1,5 @@
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/interval
-use aiken/primitive/int
 use cardano/address.{from_script}
 use cardano/assets.{PolicyId, add, from_asset}
 use cardano/transaction.{
@@ -260,14 +259,7 @@ pub fn setup() -> MockData {
   let port_minting_policy_id = "mock port_minting_policy_id"
 
   let port_id = "port-1"
-  let port_number_bytes = port_keys_mod.parse_port_id_number(port_id)
-  expect Some(port_number) = int.from_utf8(port_number_bytes)
-  let port_token_name =
-    auth.generate_token_name(
-      base_token,
-      port_keys_mod.port_prefix,
-      port_number_bytes,
-    )
+  let port_token_name = port_keys_mod.port_token_name(port_id)
   let port_token =
     AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
   let module_script_hash = "mock module script hash"
@@ -303,7 +295,7 @@ pub fn setup() -> MockData {
         next_client_sequence: 0,
         next_connection_sequence: 0,
         next_channel_sequence: 0,
-        bound_port: [Pair(port_number, registration)],
+        bound_port: [Pair(port_id, registration)],
         last_update_time: 0,
       },
       nft_policy: host_state_nft_policy_id,
