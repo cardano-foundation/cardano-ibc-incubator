@@ -17,7 +17,7 @@ use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/value_delta as transfer_value_delta
 use ibc/apps/transfer/voucher_flow as transfer_voucher_flow
 use ibc/auth.{AuthToken}
-use ibc/core/ics_004/channel_datum.{ChannelDatum, validate_recv_packet}
+use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, RecvPacket, SendPacket, TimeoutPacket,
 }
@@ -390,7 +390,7 @@ fn module_callback(
           }
 
         trace @"spend_transfer_module: locating channel inputs and outputs"
-        expect Some(channel_input) =
+        expect Some(_) =
           list.find(
             inputs,
             fn(input) { input.output |> auth.contain_auth_token(channel_token) },
@@ -402,8 +402,6 @@ fn module_callback(
             fn(output) { auth.contain_auth_token(output, channel_token) },
           )
 
-        expect input_channel_datum: ChannelDatum =
-          validator_utils.get_inline_datum(channel_input.output)
         expect updated_channel_datum: ChannelDatum =
           validator_utils.get_inline_datum(channel_output)
 
@@ -412,16 +410,11 @@ fn module_callback(
         let channel_id_from_sequence =
           channel_keys.format_channel_identifier(channel_sequence)
 
-        let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
-        let commit_ack = acknowledgement_mod.commit_acknowledgement(bz_ack)
-        let valid_packet =
-          validate_recv_packet(
-            input_channel_datum,
-            updated_channel_datum,
-            packet,
-            commit_ack,
-          )
-
+        // The mandatory RecvPacket marker validates the complete channel
+        // successor, including the acknowledgement and receive proof heights.
+        // This callback independently owns the transfer-value effects and the
+        // exact channel-token binding, so repeating that datum transition here
+        // would add no protocol-level protection.
         expect Some(payout_output) =
           list.find(
             transaction.outputs,
@@ -432,7 +425,6 @@ fn module_callback(
           auth.extract_token_sequence(updated_channel_datum.token.name)
 
         and {
-          valid_packet?,
           valid_transfer_amount?,
           (channel_id_from_sequence == channel_id)?,
           (derived_channel_sequence == channel_sequence)?,

@@ -65,10 +65,12 @@ import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/
 import {
   AckPacketOperator,
   RecvPacketOperator,
+  PrunePacketHistoryOperator,
   SendModulePacketOperator,
   SendPacketOperator,
   TimeoutPacketOperator,
 } from './dto';
+import { MsgPrunePacketHistoryResponse } from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
 import { PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
 import {
   UnsignedAckPacketModuleDto,
@@ -78,6 +80,7 @@ import {
   UnsignedRecvPacketModuleDto,
   UnsignedRecvPacketMintDto,
   UnsignedRecvPacketUnescrowDto,
+  UnsignedPrunePacketHistoryDto,
   UnsignedSendPacketModuleDto,
   UnsignedSendPacketBurnDto,
   UnsignedSendPacketEscrowDto,
@@ -85,11 +88,17 @@ import {
   UnsignedTimeoutPacketUnescrowDto,
 } from '~@/shared/modules/lucid/dtos';
 import { acknowledgementCommitmentFromResponse } from '../shared/helpers/acknowledgement';
-import { alignTreeWithChain, computeRootWithHandlePacketUpdate, isTreeAligned } from '../shared/helpers/ibc-state-root';
+import {
+  alignTreeWithChain,
+  computeRootWithHandlePacketUpdate,
+  computeRootWithPrunePacketHistoryUpdate,
+  isTreeAligned,
+} from '../shared/helpers/ibc-state-root';
 import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
 import { AsyncIcqHostService } from './async-icq-host.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { computeLedgerAnchoredValidityWindow } from '../shared/helpers/time';
+import { isHeightAtLeast, maximumHeight } from '../shared/helpers/packet-history-height';
 import { getGatewayModuleConfigForPortId } from '@shared/helpers/module-port';
 import { buildVoucherCip68Metadata, encodeVoucherCip68MetadataDatum } from '../shared/helpers/cip68-voucher-metadata';
 import {
@@ -970,6 +979,273 @@ export class PacketService {
     };
   }
 
+  private async buildHostStateUpdateForPrunePacketHistory(
+    inputChannelDatum: ChannelDatum,
+    channelId: string,
+    sequence: bigint,
+  ): Promise<{
+    hostStateUtxo: UTxO;
+    encodedHostStateRedeemer: string;
+    encodedUpdatedHostStateDatum: string;
+    newRoot: string;
+    commit: () => void;
+  }> {
+    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo.datum) {
+      throw new GrpcInternalException('HostState UTXO has no datum');
+    }
+
+    const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(
+      hostStateUtxo.datum,
+      'host_state',
+    );
+    await this.ensureTreeAligned(hostStateDatum.state.ibc_state_root);
+
+    const {
+      newRoot,
+      packetReceiptSiblings,
+      packetAcknowledgementSiblings,
+      commit,
+    } = computeRootWithPrunePacketHistoryUpdate(
+      hostStateDatum.state.ibc_state_root,
+      convertHex2String(inputChannelDatum.port),
+      channelId,
+      sequence,
+    );
+    const updatedHostStateDatum: HostStateDatum = {
+      ...hostStateDatum,
+      state: {
+        ...hostStateDatum.state,
+        version: hostStateDatum.state.version + 1n,
+        ibc_state_root: newRoot,
+        last_update_time: BigInt(Date.now()),
+      },
+    };
+    const encodedHostStateRedeemer = await this.lucidService.encode(
+      {
+        HandlePacket: {
+          channel_siblings: [],
+          next_sequence_send_siblings: [],
+          next_sequence_recv_siblings: [],
+          next_sequence_ack_siblings: [],
+          packet_commitment_siblings: [],
+          packet_receipt_siblings: packetReceiptSiblings,
+          packet_acknowledgement_siblings: packetAcknowledgementSiblings,
+        },
+      },
+      'host_state_redeemer',
+    );
+
+    return {
+      hostStateUtxo,
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum: await this.lucidService.encode(updatedHostStateDatum, 'host_state'),
+      newRoot,
+      commit,
+    };
+  }
+
+  async prunePacketHistory(
+    pruneOperator: PrunePacketHistoryOperator,
+  ): Promise<MsgPrunePacketHistoryResponse> {
+    try {
+      const { unsignedTx, pendingTreeUpdate } = await this.buildUnsignedPrunePacketHistoryTx(pruneOperator);
+      const { validFromTime, validToTime } = await this.computeTxValidityWindow();
+      const { unsignedTxBytes } = await this.txOperationRunnerService.run({
+        operationName: 'prunePacketHistory',
+        unsignedTx,
+        validity: {
+          apply: (builder: TxBuilder) => builder.validFrom(validFromTime).validTo(validToTime),
+        },
+        wallet: {
+          mode: 'refresh_from_address',
+          address: pruneOperator.signer,
+          context: 'prunePacketHistory',
+        },
+        completeOptions: {
+          localUPLCEval: false,
+          setCollateral: TRANSACTION_SET_COLLATERAL,
+        },
+        pendingTreeUpdate,
+      });
+
+      return {
+        unsigned_tx: { type_url: '', value: unsignedTxBytes },
+      };
+    } catch (error) {
+      this.logger.error(`prunePacketHistory: ${error}`);
+      if (error instanceof RpcException) {
+        throw error;
+      }
+      throw new GrpcInternalException(`An unexpected error occurred. ${error}`);
+    }
+  }
+
+  async buildUnsignedPrunePacketHistoryTx(
+    pruneOperator: PrunePacketHistoryOperator,
+  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate }> {
+    const channelSequence = parseChannelSequence(pruneOperator.channelId);
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(channelSequence);
+    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
+    const channelUtxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+    if (!channelUtxo.datum) {
+      throw new GrpcInternalException(`Channel ${pruneOperator.channelId} has no datum`);
+    }
+    const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum, 'channel');
+    if (convertHex2String(channelDatum.port) !== pruneOperator.portId) {
+      throw new GrpcFailedPreconditionException(
+        `Channel ${pruneOperator.channelId} belongs to port ${convertHex2String(channelDatum.port)}, not ${pruneOperator.portId}`,
+      );
+    }
+    if (channelDatum.state.channel.ordering !== 'Unordered') {
+      throw new GrpcFailedPreconditionException('Packet history pruning is only valid for unordered channels');
+    }
+    if (!channelDatum.state.packet_receipt.has(pruneOperator.sequence)) {
+      throw new GrpcFailedPreconditionException(
+        `Packet receipt ${pruneOperator.sequence} does not exist on ${pruneOperator.channelId}`,
+      );
+    }
+    if (!channelDatum.state.packet_acknowledgement.has(pruneOperator.sequence)) {
+      throw new GrpcFailedPreconditionException(
+        `Packet acknowledgement ${pruneOperator.sequence} does not exist on ${pruneOperator.channelId}`,
+      );
+    }
+    if (!isHeightAtLeast(pruneOperator.proofHeight, channelDatum.state.minimum_receive_proof_height)) {
+      throw new GrpcFailedPreconditionException(
+        `Prune proof height ${pruneOperator.proofHeight.revisionNumber}/${pruneOperator.proofHeight.revisionHeight} ` +
+          `is below the channel history floor ${channelDatum.state.minimum_receive_proof_height.revisionNumber}/${channelDatum.state.minimum_receive_proof_height.revisionHeight}`,
+      );
+    }
+    if (!isHeightAtLeast(pruneOperator.proofHeight, channelDatum.state.maximum_receive_proof_height)) {
+      throw new GrpcFailedPreconditionException(
+        `Prune proof height ${pruneOperator.proofHeight.revisionNumber}/${pruneOperator.proofHeight.revisionHeight} ` +
+          `is below the channel receive high-water mark ${channelDatum.state.maximum_receive_proof_height.revisionNumber}/${channelDatum.state.maximum_receive_proof_height.revisionHeight}`,
+      );
+    }
+
+    const connectionSequence = parseConnectionSequence(
+      convertHex2String(channelDatum.state.channel.connection_hops[0]),
+    );
+    const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
+      connectionSequence,
+    );
+    const connectionUtxo = await this.lucidService.findUtxoByUnit(
+      mintConnectionPolicyId + connectionTokenName,
+    );
+    const connectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
+      connectionUtxo.datum!,
+      'connection',
+    );
+    const clientTokenUnit = this.lucidService.getClientTokenUnit(
+      parseClientSequence(convertHex2String(connectionDatum.state.client_id)),
+    );
+    const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
+    const clientDatum = await this.lucidService.decodeDatum<ClientDatum>(clientUtxo.datum!, 'client');
+    const consensusEntry = [...clientDatum.state.consensusStates.entries()].find(
+      ([height]) =>
+        height.revisionNumber === pruneOperator.proofHeight.revisionNumber &&
+        height.revisionHeight === pruneOperator.proofHeight.revisionHeight,
+    );
+    if (!consensusEntry) {
+      throw new GrpcFailedPreconditionException(
+        `Missing consensus state at prune proof height ${pruneOperator.proofHeight.revisionNumber}/${pruneOperator.proofHeight.revisionHeight}`,
+      );
+    }
+    const processedTime = getHeightMapValue(clientDatum.state.processedTimes, consensusEntry[0]);
+    const processedHeight = getHeightMapValue(clientDatum.state.processedHeights, consensusEntry[0]);
+    if (processedTime == null || processedHeight == null) {
+      throw new GrpcFailedPreconditionException('Missing processed delay metadata at prune proof height');
+    }
+
+    const spendChannelRedeemer: SpendChannelRedeemer = {
+      PrunePacketHistory: {
+        sequence: pruneOperator.sequence,
+        proof_commitment_absence: pruneOperator.proofCommitmentAbsence,
+        proof_height: pruneOperator.proofHeight,
+      },
+    };
+    const updatedChannelDatum: ChannelDatum = {
+      ...channelDatum,
+      state: {
+        ...channelDatum.state,
+        packet_receipt: deleteKeySortMap(channelDatum.state.packet_receipt, pruneOperator.sequence),
+        packet_acknowledgement: deleteKeySortMap(
+          channelDatum.state.packet_acknowledgement,
+          pruneOperator.sequence,
+        ),
+        minimum_receive_proof_height: pruneOperator.proofHeight,
+      },
+    };
+    const encodedSpendChannelRedeemer = await this.lucidService.encode(
+      spendChannelRedeemer,
+      'spendChannelRedeemer',
+    );
+    const encodedUpdatedChannelDatum = await this.lucidService.encode(updatedChannelDatum, 'channel');
+    const {
+      hostStateUtxo,
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum,
+      newRoot,
+      commit,
+    } = await this.buildHostStateUpdateForPrunePacketHistory(
+      channelDatum,
+      pruneOperator.channelId,
+      pruneOperator.sequence,
+    );
+
+    const verifyProofRedeemer: VerifyProofRedeemer = {
+      VerifyNonMembership: {
+        cs: clientDatum.state.clientState,
+        cons_state: consensusEntry[1],
+        height: pruneOperator.proofHeight,
+        processed_time: processedTime,
+        processed_height: processedHeight,
+        delay_time_period: connectionDatum.state.delay_period,
+        delay_block_period: getBlockDelay(connectionDatum.state.delay_period),
+        proof: pruneOperator.proofCommitmentAbsence,
+        path: {
+          key_path: [
+            connectionDatum.state.counterparty.prefix.key_prefix,
+            convertString2Hex(
+              packetCommitmentPath(
+                convertHex2String(channelDatum.state.channel.counterparty.port_id),
+                convertHex2String(channelDatum.state.channel.counterparty.channel_id),
+                pruneOperator.sequence,
+              ),
+            ),
+          ],
+        },
+      },
+    };
+    const deploymentConfig = this.configService.get('deployment');
+    const prunePacketHistoryPolicyId =
+      deploymentConfig.validators.spendChannel.refValidator.prune_packet_history.scriptHash;
+    const verifyProofPolicyId = deploymentConfig.validators.verifyProof.scriptHash;
+    const unsignedDto: UnsignedPrunePacketHistoryDto = {
+      hostStateUtxo,
+      channelUtxo,
+      connectionUtxo,
+      clientUtxo,
+      encodedHostStateRedeemer,
+      encodedUpdatedHostStateDatum,
+      encodedSpendChannelRedeemer,
+      encodedUpdatedChannelDatum,
+      channelTokenUnit,
+      prunePacketHistoryPolicyId,
+      channelToken: { policyId: mintChannelPolicyId, name: channelTokenName },
+      verifyProofPolicyId,
+      encodedVerifyProofRedeemer: encodeVerifyProofRedeemer(
+        verifyProofRedeemer,
+        this.lucidService.LucidImporter,
+      ),
+    };
+
+    return {
+      unsignedTx: this.lucidService.createUnsignedPrunePacketHistoryTx(unsignedDto),
+      pendingTreeUpdate: { expectedNewRoot: newRoot, commit },
+    };
+  }
+
   async recvPacket(data: MsgRecvPacket): Promise<MsgRecvPacketResponse> {
     try {
       this.logger.log('RecvPacket data: ', data);
@@ -1369,6 +1645,12 @@ export class PacketService {
         `Invalid proof height: ${recvPacketOperator.proofHeight.revisionNumber}/${recvPacketOperator.proofHeight.revisionHeight}`,
       );
     }
+    if (!isHeightAtLeast(recvPacketOperator.proofHeight, channelDatum.state.minimum_receive_proof_height)) {
+      throw new GrpcFailedPreconditionException(
+        `RecvPacket proof height ${recvPacketOperator.proofHeight.revisionNumber}/${recvPacketOperator.proofHeight.revisionHeight} ` +
+          `is below the channel history floor ${channelDatum.state.minimum_receive_proof_height.revisionNumber}/${channelDatum.state.minimum_receive_proof_height.revisionHeight}`,
+      );
+    }
     // check packet receipt has sequence packet
     if (channelDatum.state.packet_receipt.has(recvPacketOperator.packetSequence)) {
       throw new GrpcInternalException(
@@ -1509,6 +1791,10 @@ export class PacketService {
         state: {
           ...channelDatum.state,
           next_sequence_recv: nextSequenceRecv,
+          maximum_receive_proof_height: maximumHeight(
+            channelDatum.state.maximum_receive_proof_height,
+            recvPacketOperator.proofHeight,
+          ),
           packet_receipt: packetReceipt,
           // Commit the exact ack bytes produced by the async-icq host executor.
           packet_acknowledgement: insertSortMapWithNumberKey(
@@ -1618,6 +1904,10 @@ export class PacketService {
               state: {
                 ...channelDatum.state,
                 next_sequence_recv: nextSequenceRecv,
+                maximum_receive_proof_height: maximumHeight(
+                  channelDatum.state.maximum_receive_proof_height,
+                  recvPacketOperator.proofHeight,
+                ),
                 packet_receipt: packetReceipt,
                 packet_acknowledgement: insertSortMapWithNumberKey(
                   channelDatum.state.packet_acknowledgement,
@@ -1762,6 +2052,10 @@ export class PacketService {
               state: {
                 ...channelDatum.state,
                 next_sequence_recv: nextSequenceRecv,
+                maximum_receive_proof_height: maximumHeight(
+                  channelDatum.state.maximum_receive_proof_height,
+                  recvPacketOperator.proofHeight,
+                ),
                 packet_receipt: packetReceipt,
                 packet_acknowledgement: insertSortMapWithNumberKey(
                   channelDatum.state.packet_acknowledgement,

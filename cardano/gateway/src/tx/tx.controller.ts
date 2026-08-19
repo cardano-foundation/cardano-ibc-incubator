@@ -48,6 +48,11 @@ import {
   BuildHostStateHeartbeatRequest,
   BuildHostStateHeartbeatResponse,
 } from './dto/host-state-heartbeat.dto';
+import {
+  MsgPrunePacketHistory,
+  MsgPrunePacketHistoryResponse,
+} from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
+import { validateAndFormatPrunePacketHistoryParams } from './helper/packet.validate';
 import { HostStateHeartbeatService } from './host-state-heartbeat.service';
 
 @Controller()
@@ -161,5 +166,14 @@ export class TxController {
     data: BuildHostStateHeartbeatRequest,
   ): Promise<BuildHostStateHeartbeatResponse> {
     return this.hostStateHeartbeatService.buildHeartbeat(data);
+  }
+
+  @GrpcMethod('CardanoMsg', 'PrunePacketHistory')
+  async PrunePacketHistory(
+    data: MsgPrunePacketHistory,
+  ): Promise<MsgPrunePacketHistoryResponse> {
+    return this.packetService.prunePacketHistory(
+      validateAndFormatPrunePacketHistoryParams(data),
+    );
   }
 }

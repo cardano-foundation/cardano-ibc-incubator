@@ -71,7 +71,16 @@ By enabling this feature, chains can:
 
 Read more about channel upgradeability here: https://ibcprotocol.dev/blog/introducing-ibc-channel-upgradability
 
-This may be a target for further development. 
+Cardano IBC now provides a narrower, Cardano-local cleanup operation for
+unordered packet history without implementing the channel-upgrade handshake.
+After the source packet commitment has been removed by acknowledgement or
+timeout, anyone may submit its authenticated non-membership proof to delete the
+matching Cardano receipt and acknowledgement. The channel records a monotonic
+proof-height floor and receive high-water mark on-chain, so deleting those
+entries does not make an older packet-membership proof replayable; unresolved
+packets remain deliberately unprunable.
+
+Full channel upgrade support may still be a target for further development.
 
 ### ICS-29 Fee Middleware
 

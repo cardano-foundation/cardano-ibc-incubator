@@ -141,6 +141,11 @@ export interface HandlePacketStateRootResult extends StateRootResult {
   packetAcknowledgementSiblings: string[];
 }
 
+export interface PrunePacketHistoryStateRootResult extends StateRootResult {
+  packetReceiptSiblings: string[];
+  packetAcknowledgementSiblings: string[];
+}
+
 /**
  * Get or reconstruct tree from root hash (returns a CLONE for speculative use)
  * 
@@ -712,6 +717,52 @@ export async function computeRootWithHandlePacketUpdate(
       currentTree = speculativeTree;
       console.log(
         `Committed HandlePacket: ${portId}/${channelId}, new root: ${newRoot.substring(0, 16)}...`,
+      );
+    },
+  };
+}
+
+/**
+ * Delete one finalized unordered packet's receipt and acknowledgement.
+ *
+ * Witness ordering is consensus-critical: the acknowledgement siblings are
+ * computed after the receipt has been removed, matching `host_state_stt`.
+ */
+export function computeRootWithPrunePacketHistoryUpdate(
+  oldRoot: string,
+  portId: string,
+  channelId: string,
+  sequence: bigint,
+): PrunePacketHistoryStateRootResult {
+  const speculativeTree = getClonedTreeFromRoot(oldRoot);
+  const sequenceText = sequence.toString();
+  const receiptPath = `receipts/ports/${portId}/channels/${channelId}/sequences/${sequenceText}`;
+  const acknowledgementPath = `acks/ports/${portId}/channels/${channelId}/sequences/${sequenceText}`;
+
+  if (!speculativeTree.get(receiptPath)) {
+    throw new Error(`PrunePacketHistory expects an existing receipt at '${receiptPath}'`);
+  }
+  if (!speculativeTree.get(acknowledgementPath)) {
+    throw new Error(`PrunePacketHistory expects an existing acknowledgement at '${acknowledgementPath}'`);
+  }
+
+  const packetReceiptSiblings = speculativeTree.getSiblings(receiptPath).map((hash) => hash.toString('hex'));
+  speculativeTree.set(receiptPath, Buffer.alloc(0));
+
+  const packetAcknowledgementSiblings = speculativeTree
+    .getSiblings(acknowledgementPath)
+    .map((hash) => hash.toString('hex'));
+  speculativeTree.set(acknowledgementPath, Buffer.alloc(0));
+
+  const newRoot = speculativeTree.getRoot();
+  return {
+    newRoot,
+    packetReceiptSiblings,
+    packetAcknowledgementSiblings,
+    commit: () => {
+      currentTree = speculativeTree;
+      console.log(
+        `Committed PrunePacketHistory: ${portId}/${channelId}/${sequenceText}, new root: ${newRoot.substring(0, 16)}...`,
       );
     },
   };

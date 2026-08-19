@@ -182,6 +182,8 @@ fn setup() -> MockData {
   let channel_datum =
     ChannelDatum {
       state: ChannelDatumState {
+        minimum_receive_proof_height: height.zero_height(),
+        maximum_receive_proof_height: height.zero_height(),
         channel: Channel {
           state: chan_state_mod.Init,
           ordering: chan_order_mod.Unordered,
@@ -361,6 +363,24 @@ fn setup() -> MockData {
     proof,
     cardano_public_key_hash,
     cosmos_address,
+  }
+}
+
+fn receive_channel_output(mock: MockData) -> Output {
+  expect InlineDatum(channel_datum_data) = mock.channel_output.datum
+  expect channel_datum: ChannelDatum = channel_datum_data
+
+  Output {
+    ..mock.channel_output,
+    datum: InlineDatum(
+      ChannelDatum {
+        ..channel_datum,
+        state: ChannelDatumState {
+          ..channel_datum.state,
+          maximum_receive_proof_height: mock.proof_height,
+        },
+      },
+    ),
   }
 }
 
@@ -636,7 +656,7 @@ fn recv_source_unescrow_fixture(
   let outputs =
     [
       mock.module_output,
-      mock.channel_output,
+      receive_channel_output(mock),
       receiver_output,
       mock.host_state_output,
     ]
@@ -1581,7 +1601,7 @@ test on_recv_packet_unescrow_succeed() {
   let outputs =
     [
       mock.module_output,
-      mock.channel_output,
+      receive_channel_output(mock),
       receiver_output,
       mock.host_state_output,
     ]
@@ -1701,7 +1721,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
   let outputs =
     [
       mock.module_output,
-      mock.channel_output,
+      receive_channel_output(mock),
       receiver_output,
       mock.host_state_output,
     ]
@@ -2677,7 +2697,7 @@ test on_recv_packet_source_fails_with_short_native_payout() fail {
     [
       mock.module_output,
       escrow_output,
-      mock.channel_output,
+      receive_channel_output(mock),
       receiver_output,
       mock.host_state_output,
     ]

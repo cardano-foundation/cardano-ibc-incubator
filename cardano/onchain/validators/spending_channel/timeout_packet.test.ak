@@ -76,6 +76,8 @@ fn check_timeout_unordered_packet(
   let input_channel_datum =
     ChannelDatum {
       state: ChannelDatumState {
+        maximum_receive_proof_height: height_mod.zero_height(),
+        minimum_receive_proof_height: height_mod.zero_height(),
         channel: input_channel,
         next_sequence_send: 1,
         next_sequence_recv: 1,
@@ -429,6 +431,8 @@ test succeed_timeout_ordered_packet() {
   let input_channel_datum =
     ChannelDatum {
       state: ChannelDatumState {
+        maximum_receive_proof_height: height_mod.zero_height(),
+        minimum_receive_proof_height: height_mod.zero_height(),
         channel: input_channel,
         next_sequence_send: 1,
         next_sequence_recv: 1,

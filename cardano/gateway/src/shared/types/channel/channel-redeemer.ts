@@ -67,6 +67,13 @@ export type SpendChannelRedeemer =
         proof_init: MerkleProof;
         proof_height: Height;
       };
+    }
+  | {
+      PrunePacketHistory: {
+        sequence: bigint;
+        proof_commitment_absence: MerkleProof;
+        proof_height: Height;
+      };
     };
 
 function buildMintChannelRedeemerSchema(Data: LucidData) {
@@ -136,6 +143,13 @@ function buildSpendChannelRedeemerSchema(Data: LucidData) {
     Data.Object({
       ChanCloseConfirm: Data.Object({
         proof_init: MerkleProofSchema,
+        proof_height: HeightSchema,
+      }),
+    }),
+    Data.Object({
+      PrunePacketHistory: Data.Object({
+        sequence: Data.Integer(),
+        proof_commitment_absence: MerkleProofSchema,
         proof_height: HeightSchema,
       }),
     }),

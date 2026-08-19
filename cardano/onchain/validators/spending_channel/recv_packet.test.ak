@@ -202,6 +202,8 @@ fn check_recv_packet_with_timeout(
   let input_channel_datum =
     ChannelDatum {
       state: ChannelDatumState {
+        maximum_receive_proof_height: height_mod.zero_height(),
+        minimum_receive_proof_height: height_mod.zero_height(),
         channel: input_channel,
         next_sequence_send: 1,
         next_sequence_recv: 1,
@@ -256,6 +258,7 @@ fn check_recv_packet_with_timeout(
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
+        maximum_receive_proof_height: proof_height,
         packet_receipt: [
           Pair(packet.sequence, ""),
           ..input_channel_datum.state.packet_receipt
@@ -754,6 +757,8 @@ test recv_packet_fails_when_channel_is_closed() fail {
   let input_channel_datum =
     ChannelDatum {
       state: ChannelDatumState {
+        maximum_receive_proof_height: height_mod.zero_height(),
+        minimum_receive_proof_height: height_mod.zero_height(),
         channel: input_channel,
         next_sequence_send: 1,
         next_sequence_recv: 1,
@@ -844,6 +849,8 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
   let input_channel_datum =
     ChannelDatum {
       state: ChannelDatumState {
+        maximum_receive_proof_height: height_mod.zero_height(),
+        minimum_receive_proof_height: height_mod.zero_height(),
         channel: Channel {
           state: chan_state_mod.Open,
           ordering: chan_order_mod.Unordered,

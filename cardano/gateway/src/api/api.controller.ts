@@ -11,7 +11,12 @@ import {
   Query,
   UseFilters,
 } from '@nestjs/common';
-import { EstimateLocalOsmosisSwapDto, MsgtransferDto, PlanTransferRouteDto } from './api.dto';
+import {
+  EstimateLocalOsmosisSwapDto,
+  MsgtransferDto,
+  PlanTransferRouteDto,
+  PrunePacketHistoryDto,
+} from './api.dto';
 import {
   CheqdDidDocIcqRequestDto,
   CheqdDidDocVersionIcqRequestDto,
@@ -33,6 +38,7 @@ import { BridgeManifestService } from '~@/query/services/bridge-manifest.service
 import { QueryService } from '~@/query/services/query.service';
 import { CheqdIcqService } from './cheqd-icq.service';
 import { parseVoucherAssetName } from '../shared/helpers/voucher-asset';
+import { validateAndFormatPrunePacketHistoryParams } from '../tx/helper/packet.validate';
 
 type ApiCardanoAssetDenomTrace = {
   asset_id: string;
@@ -153,6 +159,25 @@ export class ApiController {
     const request = MsgTransfer.fromJSON(msgtransferDto);
     const response = await this.packetService.sendPacket(request);
 
+    return this.serializeUnsignedTxResponse(response);
+  }
+
+  @Post('packet-history/prune')
+  @HttpCode(200)
+  async buildPrunePacketHistory(@Body() dto: PrunePacketHistoryDto) {
+    const response = await this.packetService.prunePacketHistory(
+      validateAndFormatPrunePacketHistoryParams({
+        signer: dto.signer,
+        port_id: dto.port_id,
+        channel_id: dto.channel_id,
+        sequence: BigInt(dto.sequence),
+        proof_commitment_absence: Buffer.from(dto.proof_commitment_absence, 'base64'),
+        proof_height: {
+          revision_number: BigInt(dto.proof_height.revision_number),
+          revision_height: BigInt(dto.proof_height.revision_height),
+        },
+      }),
+    );
     return this.serializeUnsignedTxResponse(response);
   }
 

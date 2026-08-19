@@ -94,6 +94,8 @@ Related diagrams:
 
 The Gateway can expose a public bridge manifest at `GET /api/bridge-manifest` and the Cardano gRPC `Query/BridgeManifest` method. That manifest is the operator-facing bootstrap document for reconnecting another Gateway/relayer stack to the same deployed Cardano bridge, including the deployment timestamp, script hashes, reference UTxOs, modules, and auth tokens. At startup, the Gateway accepts either `HANDLER_JSON_PATH` or `BRIDGE_MANIFEST_PATH` and normalizes both sources into the same internal deployment config. If you already have a `handler.json`, you can export the equivalent public manifest with `npm run export:bridge-manifest -- <handler-json-path> <output-path>`.
 
+Manifest schema v4 adds the packet-history-prune reference validator and is intentionally incompatible with older deployments. The pruning replay floor and receive high-water mark extend `ChannelDatum`, so adopting v4 requires a fresh Cardano protocol deployment and new channels rather than reusing v2/v3 script UTxOs.
+
 ## Historical Backend
 
 The Gateway's historical Cardano reads now go through the Yaci-backed bridge history service.

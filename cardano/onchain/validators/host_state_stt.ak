@@ -19,9 +19,11 @@ use ibc/core/ics_003_connection_semantics/types/keys as conn_id_keys
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{
-  AcknowledgePacket, RecvPacket, SendPacket, SpendChannelRedeemer, TimeoutPacket,
+  AcknowledgePacket, PrunePacketHistory as PruneChannelPacketHistory, RecvPacket,
+  SendPacket, SpendChannelRedeemer, TimeoutPacket,
 }
 use ibc/core/ics_004/types/keys as chan_id_keys
+use ibc/core/ics_004/types/order.{Ordered}
 use ibc/core/ics_004/types/packet as packet_mod
 use ibc/core/ics_005/types/keys as port_id_keys
 use ibc/core/ics_024_host_requirements/channel_keys as host_channel_keys
@@ -675,13 +677,14 @@ fn validate_update_channel_root(
 
   // UpdateChannel only commits the channel end key; packet and sequence fields
   // must be handled by HandlePacket.
-  expect channel_input_datum.port_id == channel_output_datum.port_id
-  expect channel_input_datum.token == channel_output_datum.token
   expect
-    packet_state_unchanged(
-      channel_input_datum.state,
-      channel_output_datum.state,
-    )?
+    ChannelDatum {
+      ..channel_input_datum,
+      state: ChannelDatumState {
+        ..channel_input_datum.state,
+        channel: channel_output_datum.state.channel,
+      },
+    } == channel_output_datum
 
   // Commitment values.
   //
@@ -702,71 +705,6 @@ fn validate_update_channel_root(
   root_after_channel == new_datum.state.ibc_state_root
 }
 
-fn packet_state_unchanged(
-  input_state: ChannelDatumState,
-  output_state: ChannelDatumState,
-) -> Bool {
-  and {
-    input_state.next_sequence_send == output_state.next_sequence_send,
-    input_state.next_sequence_recv == output_state.next_sequence_recv,
-    input_state.next_sequence_ack == output_state.next_sequence_ack,
-    input_state.packet_commitment == output_state.packet_commitment,
-    input_state.packet_receipt == output_state.packet_receipt,
-    input_state.packet_acknowledgement == output_state.packet_acknowledgement,
-  }
-}
-
-/// Require the channel co-spend to describe the one packet operation whose
-/// canonical successor is committed by HostState.
-fn validate_packet_channel_transition(
-  input_datum: ChannelDatum,
-  output_datum: ChannelDatum,
-  channel_input_reference: OutputReference,
-  redeemers: Pairs<ScriptPurpose, Redeemer>,
-) -> Bool {
-  expect Some(channel_redeemer_data) =
-    pairs.get_first(redeemers, Spend(channel_input_reference))
-  expect channel_redeemer: SpendChannelRedeemer = channel_redeemer_data
-
-  when channel_redeemer is {
-    SendPacket { packet } ->
-      channel_datum_mod.validate_send_packet(
-        input_datum,
-        output_datum,
-        packet,
-        packet_mod.commit_packet(packet),
-      )
-    RecvPacket { packet, .. } -> {
-      // The receive marker policy authenticates the acknowledgement bytes. Here
-      // HostState uses the committed value to reject every unrelated datum change.
-      expect Some(acknowledgement_commitment) =
-        pairs.get_first(
-          output_datum.state.packet_acknowledgement,
-          packet.sequence,
-        )
-      channel_datum_mod.validate_recv_packet(
-        input_datum,
-        output_datum,
-        packet,
-        acknowledgement_commitment,
-      )
-    }
-    AcknowledgePacket { packet, .. } ->
-      channel_datum_mod.validate_acknowledge_packet(
-        input_datum,
-        output_datum,
-        packet,
-      )
-    TimeoutPacket { packet, .. } ->
-      channel_datum_mod.validate_timeout_packet(
-        input_datum,
-        output_datum,
-        packet,
-      )
-    _ -> False
-  }
-}
-
 /// Enforce that `ibc_state_root` is updated correctly for packet lifecycle operations.
 ///
 /// In this STT design, packet state lives inside the Channel datum:
@@ -778,11 +716,28 @@ fn validate_packet_channel_transition(
 /// The HostState `ibc_state_root` must commit to those fields so that the counterparty
 /// can verify membership/non-membership proofs about packets.
 ///
-/// This function:
-/// 1) locates the channel input and output being updated
-/// 2) compares the relevant fields to determine which ICS-24 keys changed
-/// 3) applies those key updates to the old root using the sibling witnesses from the redeemer
-/// 4) requires the computed root equals the new HostState datum's root
+/// The channel redeemer identifies the exact keys changed by each canonical
+/// transition. Applying only those operation-specific updates is both stricter
+/// and smaller than rediscovering the same changes by diffing every packet map.
+fn apply_packet_commitment_deletion(
+  root: ByteArray,
+  channel_datum: ChannelDatum,
+  port_id: ByteArray,
+  channel_id: ByteArray,
+  sequence: Int,
+  siblings: List<ByteArray>,
+) -> ByteArray {
+  expect Some(commitment) =
+    pairs.get_first(channel_datum.state.packet_commitment, sequence)
+  ibc_state_commitment.apply_update(
+    root,
+    packet_keys.packet_commitment_path(port_id, channel_id, sequence),
+    cbor.serialise(commitment),
+    "",
+    siblings,
+  )
+}
+
 fn validate_handle_packet_root(
   old_datum: HostStateDatum,
   new_datum: HostStateDatum,
@@ -815,222 +770,184 @@ fn validate_handle_packet_root(
   expect channel_input_datum: ChannelDatum =
     validator_utils.get_inline_datum(channel_input.output)
 
-  // The operation-specific validator constructs and compares the complete
-  // successor datum. That single check also preserves the token and port,
-  // enforces packet capacity, and rejects every unrelated state change.
-  expect
-    validate_packet_channel_transition(
-      channel_input_datum,
-      channel_output_datum,
-      channel_input.output_reference,
-      redeemers,
-    )
-  // HandlePacket is reserved for packet/sequence effects, not channel-only updates.
-  expect channel_input_datum.state != channel_output_datum.state
+  expect Some(channel_redeemer_data) =
+    pairs.get_first(redeemers, Spend(channel_input.output_reference))
+  expect channel_redeemer: SpendChannelRedeemer = channel_redeemer_data
 
-  // Commitment keys (ICS-24 paths).
-  let channel_key = host_channel_keys.channel_path(port_id, channel_id)
-  let next_sequence_send_key =
-    packet_keys.next_sequence_send_path(port_id, channel_id)
-  let next_sequence_recv_key =
-    packet_keys.next_sequence_recv_path(port_id, channel_id)
-  let next_sequence_ack_key =
-    packet_keys.next_sequence_ack_path(port_id, channel_id)
-
-  // Start from the old committed root.
-  let root0 = old_datum.state.ibc_state_root
-
-  // 1) Channel end update (only for operations that change the channel end, e.g. ordered timeout).
-  let root1 =
-    if channel_input_datum.state.channel == channel_output_datum.state.channel {
-      root0
-    } else {
-      let old_value = cbor.serialise(channel_input_datum.state.channel)
-      let new_value = cbor.serialise(channel_output_datum.state.channel)
-      ibc_state_commitment.apply_update(
-        root0,
-        channel_key,
-        old_value,
-        new_value,
-        channel_siblings,
-      )
+  let old_root = old_datum.state.ibc_state_root
+  let is_ordered = channel_input_datum.state.channel.ordering == Ordered
+  let expected_root =
+    when channel_redeemer is {
+      SendPacket { packet } -> {
+        let commitment = packet_mod.commit_packet(packet)
+        expect
+          channel_datum_mod.validate_send_packet(
+            channel_input_datum,
+            channel_output_datum,
+            packet,
+            commitment,
+          )
+        let sequence_root =
+          ibc_state_commitment.apply_update(
+            old_root,
+            packet_keys.next_sequence_send_path(port_id, channel_id),
+            cbor.serialise(channel_input_datum.state.next_sequence_send),
+            cbor.serialise(channel_output_datum.state.next_sequence_send),
+            next_sequence_send_siblings,
+          )
+        ibc_state_commitment.apply_update(
+          sequence_root,
+          packet_keys.packet_commitment_path(
+            port_id,
+            channel_id,
+            packet.sequence,
+          ),
+          "",
+          cbor.serialise(commitment),
+          packet_commitment_siblings,
+        )
+      }
+      RecvPacket { packet, proof_height, .. } -> {
+        expect Some(acknowledgement) =
+          pairs.get_first(
+            channel_output_datum.state.packet_acknowledgement,
+            packet.sequence,
+          )
+        expect
+          channel_datum_mod.validate_recv_packet(
+            channel_input_datum,
+            channel_output_datum,
+            packet,
+            acknowledgement,
+            proof_height,
+          )
+        let sequence_root =
+          if is_ordered {
+            ibc_state_commitment.apply_update(
+              old_root,
+              packet_keys.next_sequence_recv_path(port_id, channel_id),
+              cbor.serialise(channel_input_datum.state.next_sequence_recv),
+              cbor.serialise(channel_output_datum.state.next_sequence_recv),
+              next_sequence_recv_siblings,
+            )
+          } else {
+            old_root
+          }
+        let receipt_root =
+          if is_ordered {
+            sequence_root
+          } else {
+            ibc_state_commitment.apply_update(
+              sequence_root,
+              packet_keys.packet_receipt_path(
+                port_id,
+                channel_id,
+                packet.sequence,
+              ),
+              "",
+              cbor.serialise(""),
+              packet_receipt_siblings,
+            )
+          }
+        ibc_state_commitment.apply_update(
+          receipt_root,
+          packet_keys.packet_acknowledgement_path(
+            port_id,
+            channel_id,
+            packet.sequence,
+          ),
+          "",
+          cbor.serialise(acknowledgement),
+          packet_acknowledgement_siblings,
+        )
+      }
+      AcknowledgePacket { packet, .. } -> {
+        expect
+          channel_datum_mod.validate_acknowledge_packet(
+            channel_input_datum,
+            channel_output_datum,
+            packet,
+          )
+        let sequence_root =
+          if is_ordered {
+            ibc_state_commitment.apply_update(
+              old_root,
+              packet_keys.next_sequence_ack_path(port_id, channel_id),
+              cbor.serialise(channel_input_datum.state.next_sequence_ack),
+              cbor.serialise(channel_output_datum.state.next_sequence_ack),
+              next_sequence_ack_siblings,
+            )
+          } else {
+            old_root
+          }
+        apply_packet_commitment_deletion(
+          sequence_root,
+          channel_input_datum,
+          port_id,
+          channel_id,
+          packet.sequence,
+          packet_commitment_siblings,
+        )
+      }
+      TimeoutPacket { packet, .. } -> {
+        expect
+          channel_datum_mod.validate_timeout_packet(
+            channel_input_datum,
+            channel_output_datum,
+            packet,
+          )
+        let channel_root =
+          if is_ordered {
+            ibc_state_commitment.apply_update(
+              old_root,
+              host_channel_keys.channel_path(port_id, channel_id),
+              cbor.serialise(channel_input_datum.state.channel),
+              cbor.serialise(channel_output_datum.state.channel),
+              channel_siblings,
+            )
+          } else {
+            old_root
+          }
+        apply_packet_commitment_deletion(
+          channel_root,
+          channel_input_datum,
+          port_id,
+          channel_id,
+          packet.sequence,
+          packet_commitment_siblings,
+        )
+      }
+      PruneChannelPacketHistory { sequence, .. } -> {
+        // The prune marker validates the complete successor datum and the
+        // authenticated absence proof. The HostState side binds that typed
+        // operation to the same sequence and commits its paired deletions.
+        expect Some(receipt) =
+          pairs.get_first(channel_input_datum.state.packet_receipt, sequence)
+        expect Some(acknowledgement) =
+          pairs.get_first(
+            channel_input_datum.state.packet_acknowledgement,
+            sequence,
+          )
+        let receipt_root =
+          ibc_state_commitment.apply_update(
+            old_root,
+            packet_keys.packet_receipt_path(port_id, channel_id, sequence),
+            cbor.serialise(receipt),
+            "",
+            packet_receipt_siblings,
+          )
+        ibc_state_commitment.apply_update(
+          receipt_root,
+          packet_keys.packet_acknowledgement_path(port_id, channel_id, sequence),
+          cbor.serialise(acknowledgement),
+          "",
+          packet_acknowledgement_siblings,
+        )
+      }
+      _ -> fail
     }
 
-  // 2) nextSequenceSend update (SendPacket).
-  let root2 =
-    if channel_input_datum.state.next_sequence_send == channel_output_datum.state.next_sequence_send {
-      root1
-    } else {
-      let old_value =
-        cbor.serialise(channel_input_datum.state.next_sequence_send)
-      let new_value =
-        cbor.serialise(channel_output_datum.state.next_sequence_send)
-      ibc_state_commitment.apply_update(
-        root1,
-        next_sequence_send_key,
-        old_value,
-        new_value,
-        next_sequence_send_siblings,
-      )
-    }
-
-  // 3) nextSequenceRecv update (RecvPacket on ordered channels).
-  let root3 =
-    if channel_input_datum.state.next_sequence_recv == channel_output_datum.state.next_sequence_recv {
-      root2
-    } else {
-      let old_value =
-        cbor.serialise(channel_input_datum.state.next_sequence_recv)
-      let new_value =
-        cbor.serialise(channel_output_datum.state.next_sequence_recv)
-      ibc_state_commitment.apply_update(
-        root2,
-        next_sequence_recv_key,
-        old_value,
-        new_value,
-        next_sequence_recv_siblings,
-      )
-    }
-
-  // 4) nextSequenceAck update (AcknowledgePacket on ordered channels).
-  let root4 =
-    if channel_input_datum.state.next_sequence_ack == channel_output_datum.state.next_sequence_ack {
-      root3
-    } else {
-      let old_value =
-        cbor.serialise(channel_input_datum.state.next_sequence_ack)
-      let new_value =
-        cbor.serialise(channel_output_datum.state.next_sequence_ack)
-      ibc_state_commitment.apply_update(
-        root3,
-        next_sequence_ack_key,
-        old_value,
-        new_value,
-        next_sequence_ack_siblings,
-      )
-    }
-
-  // 5) Packet commitment insertion/deletion (SendPacket inserts, Ack/Timeout delete).
-  let input_commitments = channel_input_datum.state.packet_commitment
-  let output_commitments = channel_output_datum.state.packet_commitment
-
-  let inserted_commitments =
-    list.filter(
-      output_commitments,
-      fn(pair) { !pairs.has_key(input_commitments, pair.1st) },
-    )
-
-  let removed_commitments =
-    list.filter(
-      input_commitments,
-      fn(pair) { !pairs.has_key(output_commitments, pair.1st) },
-    )
-
-  let root5 =
-    if inserted_commitments != [] {
-      // Exactly one insertion is expected in a single packet operation.
-      expect removed_commitments == []
-      expect [Pair(sequence, commitment_bytes)] = inserted_commitments
-      let commitment_key =
-        packet_keys.packet_commitment_path(port_id, channel_id, sequence)
-      let new_value = cbor.serialise(commitment_bytes)
-
-      ibc_state_commitment.apply_update(
-        root4,
-        commitment_key,
-        "",
-        new_value,
-        packet_commitment_siblings,
-      )
-    } else if removed_commitments != [] {
-      // Exactly one deletion is expected in a single packet operation.
-      expect [Pair(sequence, commitment_bytes)] = removed_commitments
-      let commitment_key =
-        packet_keys.packet_commitment_path(port_id, channel_id, sequence)
-      let old_value = cbor.serialise(commitment_bytes)
-
-      ibc_state_commitment.apply_update(
-        root4,
-        commitment_key,
-        old_value,
-        "",
-        packet_commitment_siblings,
-      )
-    } else {
-      root4
-    }
-
-  // 6) Packet receipt insertion (RecvPacket on unordered channels).
-  let input_receipts = channel_input_datum.state.packet_receipt
-  let output_receipts = channel_output_datum.state.packet_receipt
-
-  let inserted_receipts =
-    list.filter(
-      output_receipts,
-      fn(pair) { !pairs.has_key(input_receipts, pair.1st) },
-    )
-
-  let removed_receipts =
-    list.filter(
-      input_receipts,
-      fn(pair) { !pairs.has_key(output_receipts, pair.1st) },
-    )
-
-  let root6 =
-    if inserted_receipts != [] {
-      // Receipts should only ever be inserted.
-      expect removed_receipts == []
-      expect [Pair(sequence, receipt_bytes)] = inserted_receipts
-      let receipt_key =
-        packet_keys.packet_receipt_path(port_id, channel_id, sequence)
-      let new_value = cbor.serialise(receipt_bytes)
-
-      ibc_state_commitment.apply_update(
-        root5,
-        receipt_key,
-        "",
-        new_value,
-        packet_receipt_siblings,
-      )
-    } else {
-      // If no insertion occurred, we also require no deletion occurred.
-      expect removed_receipts == []
-      root5
-    }
-
-  // 7) Packet acknowledgement insertion (RecvPacket writes the acknowledgement).
-  let input_acks = channel_input_datum.state.packet_acknowledgement
-  let output_acks = channel_output_datum.state.packet_acknowledgement
-
-  let inserted_acks =
-    list.filter(output_acks, fn(pair) { !pairs.has_key(input_acks, pair.1st) })
-
-  let removed_acks =
-    list.filter(input_acks, fn(pair) { !pairs.has_key(output_acks, pair.1st) })
-
-  let root7 =
-    if inserted_acks != [] {
-      // Acknowledgements should only ever be inserted.
-      expect removed_acks == []
-      expect [Pair(sequence, ack_bytes)] = inserted_acks
-      let ack_key =
-        packet_keys.packet_acknowledgement_path(port_id, channel_id, sequence)
-      let new_value = cbor.serialise(ack_bytes)
-
-      ibc_state_commitment.apply_update(
-        root6,
-        ack_key,
-        "",
-        new_value,
-        packet_acknowledgement_siblings,
-      )
-    } else {
-      // If no insertion occurred, we also require no deletion occurred.
-      expect removed_acks == []
-      root6
-    }
-
-  root7 == new_datum.state.ibc_state_root
+  expected_root == new_datum.state.ibc_state_root
 }
 
 /// Main validator for HostState STT

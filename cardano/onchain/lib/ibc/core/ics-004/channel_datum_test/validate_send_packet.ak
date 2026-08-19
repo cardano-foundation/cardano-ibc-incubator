@@ -58,6 +58,8 @@ fn setup() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
   let input_channel_datum =
     ChannelDatum {
       state: ChannelDatumState {
+        maximum_receive_proof_height: height_mod.zero_height(),
+        minimum_receive_proof_height: height_mod.zero_height(),
         channel: input_channel,
         next_sequence_send: 1,
         next_sequence_recv: 1,
@@ -73,6 +75,8 @@ fn setup() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
   let output_channel_datum =
     ChannelDatum {
       state: ChannelDatumState {
+        maximum_receive_proof_height: height_mod.zero_height(),
+        minimum_receive_proof_height: height_mod.zero_height(),
         channel: input_channel,
         next_sequence_send: input_channel_datum.state.next_sequence_send + 1,
         next_sequence_recv: 1,
@@ -92,6 +96,8 @@ test succeed() {
   let input_datum_2 =
     ChannelDatum {
       state: ChannelDatumState {
+        maximum_receive_proof_height: height_mod.zero_height(),
+        minimum_receive_proof_height: height_mod.zero_height(),
         channel: channel_mod.new(
           Open,
           Unordered,
@@ -119,6 +125,8 @@ test succeed() {
   let output_datum_2 =
     ChannelDatum {
       state: ChannelDatumState {
+        maximum_receive_proof_height: height_mod.zero_height(),
+        minimum_receive_proof_height: height_mod.zero_height(),
         channel: channel_mod.new(
           Open,
           Unordered,

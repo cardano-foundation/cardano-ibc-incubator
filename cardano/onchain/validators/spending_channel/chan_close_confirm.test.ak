@@ -50,6 +50,8 @@ fn check_chan_close_confirm(module_redeemer: Redeemer) {
   let input_channel_datum =
     ChannelDatum {
       state: ChannelDatumState {
+        maximum_receive_proof_height: height_mod.zero_height(),
+        minimum_receive_proof_height: height_mod.zero_height(),
         channel: input_channel,
         next_sequence_send: 1,
         next_sequence_recv: 1,

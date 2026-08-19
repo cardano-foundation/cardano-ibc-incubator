@@ -32,6 +32,8 @@ function makeChannelDatum(ordering: 'Ordered' | 'Unordered', pendingSequences: b
       next_sequence_send: 9n,
       next_sequence_recv: 1n,
       next_sequence_ack: 1n,
+      minimum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
+      maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
       packet_commitment: new Map(pendingSequences.map((sequence) => [sequence, 'commitment'])),
       packet_receipt: new Map(),
       packet_acknowledgement: new Map(),

@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, Matches } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsDefined, IsNotEmpty, IsString, Matches, ValidateNested } from 'class-validator';
 
 export class Coin {
   @ApiProperty()
@@ -98,4 +99,49 @@ export class PlanTransferRouteDto {
   @IsString()
   @IsNotEmpty()
   token_denom: string;
+}
+
+export class PrunePacketHistoryHeightDto {
+  @ApiProperty()
+  @IsString()
+  @Matches(/^\d+$/)
+  revision_number: string;
+
+  @ApiProperty()
+  @IsString()
+  @Matches(/^\d+$/)
+  revision_height: string;
+}
+
+export class PrunePacketHistoryDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  signer: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  port_id: string;
+
+  @ApiProperty()
+  @IsString()
+  @Matches(/^channel-\d+$/)
+  channel_id: string;
+
+  @ApiProperty()
+  @IsString()
+  @Matches(/^\d+$/)
+  sequence: string;
+
+  @ApiProperty({ description: 'Base64-encoded protobuf MerkleProof bytes' })
+  @IsString()
+  @Matches(/^[A-Za-z0-9+/]+={0,2}$/)
+  proof_commitment_absence: string;
+
+  @ApiProperty({ type: PrunePacketHistoryHeightDto })
+  @IsDefined()
+  @ValidateNested()
+  @Type(() => PrunePacketHistoryHeightDto)
+  proof_height: PrunePacketHistoryHeightDto;
 }

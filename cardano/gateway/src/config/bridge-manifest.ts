@@ -31,6 +31,7 @@ type DeploymentSpendChannelValidator = DeploymentValidator & {
     chan_open_ack: DeploymentRefValidator;
     chan_open_confirm: DeploymentRefValidator;
     recv_packet: DeploymentRefValidator;
+    prune_packet_history: DeploymentRefValidator;
     send_packet: DeploymentRefValidator;
     timeout_packet: DeploymentRefValidator;
   };
@@ -114,6 +115,7 @@ type BridgeManifestSpendChannelValidator = BridgeManifestValidator & {
     chan_open_ack: BridgeManifestRefValidator;
     chan_open_confirm: BridgeManifestRefValidator;
     recv_packet: BridgeManifestRefValidator;
+    prune_packet_history: BridgeManifestRefValidator;
     send_packet: BridgeManifestRefValidator;
     timeout_packet: BridgeManifestRefValidator;
   };
@@ -337,6 +339,10 @@ function requireDeploymentSpendChannelValidator(value: unknown, path: string): D
         `${path}.refValidator.chan_open_confirm`,
       ),
       recv_packet: requireDeploymentRefValidator(refValidator.recv_packet, `${path}.refValidator.recv_packet`),
+      prune_packet_history: requireDeploymentRefValidator(
+        refValidator.prune_packet_history,
+        `${path}.refValidator.prune_packet_history`,
+      ),
       send_packet: requireDeploymentRefValidator(refValidator.send_packet, `${path}.refValidator.send_packet`),
       timeout_packet: requireDeploymentRefValidator(refValidator.timeout_packet, `${path}.refValidator.timeout_packet`),
     },
@@ -365,6 +371,10 @@ function requireManifestSpendChannelValidator(value: unknown, path: string): Bri
         `${path}.ref_validator.chan_open_confirm`,
       ),
       recv_packet: requireManifestRefValidator(refValidator.recv_packet, `${path}.ref_validator.recv_packet`),
+      prune_packet_history: requireManifestRefValidator(
+        refValidator.prune_packet_history,
+        `${path}.ref_validator.prune_packet_history`,
+      ),
       send_packet: requireManifestRefValidator(refValidator.send_packet, `${path}.ref_validator.send_packet`),
       timeout_packet: requireManifestRefValidator(refValidator.timeout_packet, `${path}.ref_validator.timeout_packet`),
     },
@@ -533,6 +543,7 @@ function deploymentSpendChannelToManifest(validator: DeploymentSpendChannelValid
       chan_open_ack: deploymentRefValidatorToManifest(validator.refValidator.chan_open_ack),
       chan_open_confirm: deploymentRefValidatorToManifest(validator.refValidator.chan_open_confirm),
       recv_packet: deploymentRefValidatorToManifest(validator.refValidator.recv_packet),
+      prune_packet_history: deploymentRefValidatorToManifest(validator.refValidator.prune_packet_history),
       send_packet: deploymentRefValidatorToManifest(validator.refValidator.send_packet),
       timeout_packet: deploymentRefValidatorToManifest(validator.refValidator.timeout_packet),
     },
@@ -549,6 +560,7 @@ function manifestSpendChannelToDeployment(validator: BridgeManifestSpendChannelV
       chan_open_ack: manifestRefValidatorToDeployment(validator.ref_validator.chan_open_ack),
       chan_open_confirm: manifestRefValidatorToDeployment(validator.ref_validator.chan_open_confirm),
       recv_packet: manifestRefValidatorToDeployment(validator.ref_validator.recv_packet),
+      prune_packet_history: manifestRefValidatorToDeployment(validator.ref_validator.prune_packet_history),
       send_packet: manifestRefValidatorToDeployment(validator.ref_validator.send_packet),
       timeout_packet: manifestRefValidatorToDeployment(validator.ref_validator.timeout_packet),
     },
@@ -613,7 +625,7 @@ export function normalizeHandlerJsonDeploymentConfig(
   return {
     deployment: normalizedDeployment,
     bridgeManifest: {
-      schema_version: 3,
+      schema_version: 4,
       deployment_id: buildDeploymentId(normalizedCardano, normalizedDeployment.hostStateNFT),
       deployed_at: normalizedDeployment.deployedAt,
       cardano: normalizedCardano,
@@ -717,8 +729,8 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
   };
 
   assert(
-    bridgeManifest.schema_version === 2 || bridgeManifest.schema_version === 3,
-    'Invalid bridge config: "schema_version" must be 2 or 3',
+    bridgeManifest.schema_version === 4,
+    'Invalid bridge config: "schema_version" must be 4',
   );
 
   return {

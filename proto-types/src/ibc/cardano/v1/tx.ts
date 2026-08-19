@@ -1,7 +1,8 @@
 /* eslint-disable */
+import { Height } from "../../core/client/v1/client";
 import { Any } from "../../../google/protobuf/any";
 import { BinaryReader, BinaryWriter } from "../../../binary";
-import { isSet, DeepPartial, Exact } from "../../../helpers";
+import { isSet, DeepPartial, Exact, bytesFromBase64, base64FromBytes } from "../../../helpers";
 export const protobufPackage = "ibc.cardano.v1";
 /**
  * @name BuildHostStateHeartbeatRequest
@@ -30,6 +31,40 @@ export interface BuildHostStateHeartbeatResponse {
   /**
    * Present only when heartbeat_required is true. The value contains the
    * unsigned Cardano transaction CBOR encoded as UTF-8 hex.
+   */
+  unsigned_tx?: Any;
+}
+/**
+ * @name MsgPrunePacketHistory
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.MsgPrunePacketHistory
+ */
+export interface MsgPrunePacketHistory {
+  /**
+   * Cardano address whose UTxOs fund and sign the pruning transaction.
+   */
+  signer: string;
+  /**
+   * Local Cardano channel identifiers whose retained history is pruned.
+   */
+  port_id: string;
+  channel_id: string;
+  sequence: bigint;
+  /**
+   * ICS-23 non-membership proof for the corresponding source-chain packet
+   * commitment, evaluated at proof_height.
+   */
+  proof_commitment_absence: Uint8Array;
+  proof_height?: Height;
+}
+/**
+ * @name MsgPrunePacketHistoryResponse
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.MsgPrunePacketHistoryResponse
+ */
+export interface MsgPrunePacketHistoryResponse {
+  /**
+   * Unsigned Cardano transaction CBOR encoded as UTF-8 hex.
    */
   unsigned_tx?: Any;
 }
@@ -235,6 +270,172 @@ export const BuildHostStateHeartbeatResponse = {
     if (object.host_state_epoch !== undefined && object.host_state_epoch !== null) {
       message.host_state_epoch = BigInt(object.host_state_epoch.toString());
     }
+    if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
+      message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
+    }
+    return message;
+  },
+};
+function createBaseMsgPrunePacketHistory(): MsgPrunePacketHistory {
+  return {
+    signer: "",
+    port_id: "",
+    channel_id: "",
+    sequence: BigInt(0),
+    proof_commitment_absence: new Uint8Array(),
+    proof_height: undefined,
+  };
+}
+/**
+ * @name MsgPrunePacketHistory
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.MsgPrunePacketHistory
+ */
+export const MsgPrunePacketHistory = {
+  typeUrl: "/ibc.cardano.v1.MsgPrunePacketHistory",
+  encode(message: MsgPrunePacketHistory, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.signer !== "") {
+      writer.uint32(10).string(message.signer);
+    }
+    if (message.port_id !== "") {
+      writer.uint32(18).string(message.port_id);
+    }
+    if (message.channel_id !== "") {
+      writer.uint32(26).string(message.channel_id);
+    }
+    if (message.sequence !== BigInt(0)) {
+      writer.uint32(32).uint64(message.sequence);
+    }
+    if (message.proof_commitment_absence.length !== 0) {
+      writer.uint32(42).bytes(message.proof_commitment_absence);
+    }
+    if (message.proof_height !== undefined) {
+      Height.encode(message.proof_height, writer.uint32(50).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): MsgPrunePacketHistory {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMsgPrunePacketHistory();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.signer = reader.string();
+          break;
+        case 2:
+          message.port_id = reader.string();
+          break;
+        case 3:
+          message.channel_id = reader.string();
+          break;
+        case 4:
+          message.sequence = reader.uint64();
+          break;
+        case 5:
+          message.proof_commitment_absence = reader.bytes();
+          break;
+        case 6:
+          message.proof_height = Height.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): MsgPrunePacketHistory {
+    const obj = createBaseMsgPrunePacketHistory();
+    if (isSet(object.signer)) obj.signer = String(object.signer);
+    if (isSet(object.port_id)) obj.port_id = String(object.port_id);
+    if (isSet(object.channel_id)) obj.channel_id = String(object.channel_id);
+    if (isSet(object.sequence)) obj.sequence = BigInt(object.sequence.toString());
+    if (isSet(object.proof_commitment_absence))
+      obj.proof_commitment_absence = bytesFromBase64(object.proof_commitment_absence);
+    if (isSet(object.proof_height)) obj.proof_height = Height.fromJSON(object.proof_height);
+    return obj;
+  },
+  toJSON(message: MsgPrunePacketHistory): unknown {
+    const obj: any = {};
+    message.signer !== undefined && (obj.signer = message.signer);
+    message.port_id !== undefined && (obj.port_id = message.port_id);
+    message.channel_id !== undefined && (obj.channel_id = message.channel_id);
+    message.sequence !== undefined && (obj.sequence = (message.sequence || BigInt(0)).toString());
+    message.proof_commitment_absence !== undefined &&
+      (obj.proof_commitment_absence = base64FromBytes(
+        message.proof_commitment_absence !== undefined ? message.proof_commitment_absence : new Uint8Array(),
+      ));
+    message.proof_height !== undefined &&
+      (obj.proof_height = message.proof_height ? Height.toJSON(message.proof_height) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<MsgPrunePacketHistory>, I>>(object: I): MsgPrunePacketHistory {
+    const message = createBaseMsgPrunePacketHistory();
+    message.signer = object.signer ?? "";
+    message.port_id = object.port_id ?? "";
+    message.channel_id = object.channel_id ?? "";
+    if (object.sequence !== undefined && object.sequence !== null) {
+      message.sequence = BigInt(object.sequence.toString());
+    }
+    message.proof_commitment_absence = object.proof_commitment_absence ?? new Uint8Array();
+    if (object.proof_height !== undefined && object.proof_height !== null) {
+      message.proof_height = Height.fromPartial(object.proof_height);
+    }
+    return message;
+  },
+};
+function createBaseMsgPrunePacketHistoryResponse(): MsgPrunePacketHistoryResponse {
+  return {
+    unsigned_tx: undefined,
+  };
+}
+/**
+ * @name MsgPrunePacketHistoryResponse
+ * @package ibc.cardano.v1
+ * @see proto type: ibc.cardano.v1.MsgPrunePacketHistoryResponse
+ */
+export const MsgPrunePacketHistoryResponse = {
+  typeUrl: "/ibc.cardano.v1.MsgPrunePacketHistoryResponse",
+  encode(message: MsgPrunePacketHistoryResponse, writer: BinaryWriter = BinaryWriter.create()): BinaryWriter {
+    if (message.unsigned_tx !== undefined) {
+      Any.encode(message.unsigned_tx, writer.uint32(10).fork()).ldelim();
+    }
+    return writer;
+  },
+  decode(input: BinaryReader | Uint8Array, length?: number): MsgPrunePacketHistoryResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseMsgPrunePacketHistoryResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1:
+          message.unsigned_tx = Any.decode(reader, reader.uint32());
+          break;
+        default:
+          reader.skipType(tag & 7);
+          break;
+      }
+    }
+    return message;
+  },
+  fromJSON(object: any): MsgPrunePacketHistoryResponse {
+    const obj = createBaseMsgPrunePacketHistoryResponse();
+    if (isSet(object.unsigned_tx)) obj.unsigned_tx = Any.fromJSON(object.unsigned_tx);
+    return obj;
+  },
+  toJSON(message: MsgPrunePacketHistoryResponse): unknown {
+    const obj: any = {};
+    message.unsigned_tx !== undefined &&
+      (obj.unsigned_tx = message.unsigned_tx ? Any.toJSON(message.unsigned_tx) : undefined);
+    return obj;
+  },
+  fromPartial<I extends Exact<DeepPartial<MsgPrunePacketHistoryResponse>, I>>(
+    object: I,
+  ): MsgPrunePacketHistoryResponse {
+    const message = createBaseMsgPrunePacketHistoryResponse();
     if (object.unsigned_tx !== undefined && object.unsigned_tx !== null) {
       message.unsigned_tx = Any.fromPartial(object.unsigned_tx);
     }

@@ -18,6 +18,8 @@ class ChannelDatumMockBuilder {
         next_sequence_send: 1n,
         next_sequence_recv: 1n,
         next_sequence_ack: 1n,
+        minimum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
+        maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
         packet_commitment: new Map(),
         packet_receipt: new Map([
           [0n, ''],

@@ -23,6 +23,7 @@ describe('ApiController (modern)', () => {
   };
   let packetServiceMock: {
     sendPacket: jest.Mock;
+    prunePacketHistory: jest.Mock;
   };
   let denomTraceServiceMock: {
     findByHash: jest.Mock;
@@ -58,6 +59,7 @@ describe('ApiController (modern)', () => {
     };
     packetServiceMock = {
       sendPacket: jest.fn(),
+      prunePacketHistory: jest.fn(),
     };
     denomTraceServiceMock = {
       findByHash: jest.fn(),
@@ -213,6 +215,38 @@ describe('ApiController (modern)', () => {
     });
   });
 
+  it('builds a permissionless prune request and preserves unsigned transaction bytes', async () => {
+    packetServiceMock.prunePacketHistory.mockResolvedValue({
+      unsigned_tx: { type_url: '', value: Buffer.from('deadbeef', 'utf8') },
+    });
+
+    const response = await controller.buildPrunePacketHistory({
+      signer: 'addr_test1signer',
+      port_id: 'transfer',
+      channel_id: 'channel-7',
+      sequence: '9',
+      proof_commitment_absence: Buffer.from([0x0a, 0x00]).toString('base64'),
+      proof_height: { revision_number: '0', revision_height: '55' },
+    });
+
+    expect(packetServiceMock.prunePacketHistory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        signer: 'addr_test1signer',
+        portId: 'transfer',
+        channelId: 'channel-7',
+        sequence: 9n,
+        proofHeight: { revisionNumber: 0n, revisionHeight: 55n },
+      }),
+    );
+    expect(response).toEqual({
+      result: undefined,
+      unsigned_tx: {
+        type_url: '',
+        value: Buffer.from('deadbeef', 'utf8').toString('base64'),
+      },
+    });
+  });
+
   it('delegates cheqd DidDoc ICQ tx building to CheqdIcqService', async () => {
     cheqdIcqServiceMock.buildDidDocQuery.mockResolvedValue({
       query_path: '/cheqd.did.v2.Query/DidDoc',
@@ -339,12 +373,12 @@ describe('ApiController (modern)', () => {
 
   it('returns the public bridge manifest', async () => {
     bridgeManifestServiceMock.getBridgeManifest.mockReturnValue({
-      schema_version: 2,
+      schema_version: 4,
       deployment_id: 'cardano-devnet:policy.token',
     });
 
     await expect(controller.getBridgeManifest()).resolves.toEqual({
-      schema_version: 2,
+      schema_version: 4,
       deployment_id: 'cardano-devnet:policy.token',
     });
     expect(bridgeManifestServiceMock.getBridgeManifest).toHaveBeenCalledWith();

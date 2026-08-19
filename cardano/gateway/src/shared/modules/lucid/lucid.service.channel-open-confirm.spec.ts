@@ -40,6 +40,7 @@ const deploymentConfig = {
         chan_open_ack: { scriptHash: 'chan-open-ack-policy-id', refUtxo: buildRefUtxo('open-ack-tx', 7) },
         chan_open_confirm: { scriptHash: 'chan-open-confirm-policy-id', refUtxo: buildRefUtxo('open-confirm-tx', 8) },
         recv_packet: { scriptHash: 'recv-packet-policy-id', refUtxo: buildRefUtxo('recv-packet-tx', 9) },
+        prune_packet_history: { scriptHash: 'prune-packet-policy-id', refUtxo: buildRefUtxo('prune-packet-tx', 23) },
         send_packet: { scriptHash: 'send-packet-policy-id', refUtxo: buildRefUtxo('send-packet-tx', 10) },
         timeout_packet: { scriptHash: 'timeout-packet-policy-id', refUtxo: buildRefUtxo('timeout-packet-tx', 11) },
       },
@@ -106,7 +107,7 @@ const createService = (txBuilder: ChainableTxBuilder): any => {
 };
 
 describe('LucidService channel open confirm wiring', () => {
-  it('loads both confirm reference script out-refs from deployment config', () => {
+  it('loads confirm and packet-history-prune reference script out-refs from deployment config', () => {
     const configService = {
       get: jest.fn().mockReturnValue(deploymentConfig),
     };
@@ -119,6 +120,9 @@ describe('LucidService channel open confirm wiring', () => {
     );
     expect(referenceScriptOutRefs.channelCloseConfirm).toEqual(
       deploymentConfig.validators.spendChannel.refValidator.chan_close_confirm.refUtxo,
+    );
+    expect(referenceScriptOutRefs.prunePacketHistory).toEqual(
+      deploymentConfig.validators.spendChannel.refValidator.prune_packet_history.refUtxo,
     );
   });
 

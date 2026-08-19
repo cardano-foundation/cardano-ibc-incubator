@@ -1,5 +1,6 @@
 use aiken/fuzz
 use ibc/auth.{AuthToken}
+use ibc/client/ics_007_tendermint_client/height as height_mod
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
   ChannelDatumState} as channel_datum_mod
 use ibc/core/ics_004/types/channel.{Channel} as channel_mod
@@ -15,6 +16,8 @@ fn mock_token() -> AuthToken {
 fn channel_datum(state, counterparty_channel_id: ByteArray) -> ChannelDatum {
   ChannelDatum {
     state: ChannelDatumState {
+      maximum_receive_proof_height: height_mod.zero_height(),
+      minimum_receive_proof_height: height_mod.zero_height(),
       channel: channel_mod.new(
         state,
         Unordered,

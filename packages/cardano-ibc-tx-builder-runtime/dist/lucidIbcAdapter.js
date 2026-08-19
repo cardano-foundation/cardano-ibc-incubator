@@ -250,6 +250,14 @@ async function decodeChannelDatum(encoded, Lucid) {
         packet_commitment: Data.Map(Data.Integer(), Data.Bytes()),
         packet_receipt: Data.Map(Data.Integer(), Data.Bytes()),
         packet_acknowledgement: Data.Map(Data.Integer(), Data.Bytes()),
+        minimum_receive_proof_height: Data.Object({
+            revisionNumber: Data.Integer(),
+            revisionHeight: Data.Integer(),
+        }),
+        maximum_receive_proof_height: Data.Object({
+            revisionNumber: Data.Integer(),
+            revisionHeight: Data.Integer(),
+        }),
     });
     const AuthTokenSchema = Data.Object({
         policyId: Data.Bytes(),
@@ -297,6 +305,14 @@ async function encodeChannelDatum(channelDatum, Lucid) {
             packet_commitment: Data.Map(Data.Integer(), Data.Bytes()),
             packet_receipt: Data.Map(Data.Integer(), Data.Bytes()),
             packet_acknowledgement: Data.Map(Data.Integer(), Data.Bytes()),
+            minimum_receive_proof_height: Data.Object({
+                revisionNumber: Data.Integer(),
+                revisionHeight: Data.Integer(),
+            }),
+            maximum_receive_proof_height: Data.Object({
+                revisionNumber: Data.Integer(),
+                revisionHeight: Data.Integer(),
+            }),
         });
         const AuthTokenSchema = Data.Object({
             policyId: Data.Bytes(),
@@ -366,6 +382,14 @@ async function encodeChannelDatum(channelDatum, Lucid) {
         mapData(channelDatum.state.packet_commitment),
         mapData(channelDatum.state.packet_receipt),
         mapData(channelDatum.state.packet_acknowledgement),
+        constrData(0, [
+            intData(channelDatum.state.minimum_receive_proof_height.revisionNumber),
+            intData(channelDatum.state.minimum_receive_proof_height.revisionHeight),
+        ]),
+        constrData(0, [
+            intData(channelDatum.state.maximum_receive_proof_height.revisionNumber),
+            intData(channelDatum.state.maximum_receive_proof_height.revisionHeight),
+        ]),
     ]);
     const tokenData = constrData(0, [
         bytesData(channelDatum.token.policyId),
@@ -588,7 +612,13 @@ async function encodeSpendChannelRedeemer(data, Lucid) {
                 proof_height: HeightSchema,
             }),
         }),
-        Data.Literal('RefreshUtxo'),
+        Data.Object({
+            PrunePacketHistory: Data.Object({
+                sequence: Data.Integer(),
+                proof_commitment_absence: ProofSchema,
+                proof_height: HeightSchema,
+            }),
+        }),
     ]);
     return Data.to(data, SpendChannelRedeemerSchema, { canonical: true });
 }

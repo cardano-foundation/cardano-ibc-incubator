@@ -39,6 +39,8 @@ export type ChannelDatumLike = {
         packet_commitment: Map<bigint, string>;
         packet_receipt: Map<bigint, string>;
         packet_acknowledgement: Map<bigint, string>;
+        minimum_receive_proof_height: Height;
+        maximum_receive_proof_height: Height;
         channel: {
             connection_hops: string[];
             counterparty: {

@@ -137,6 +137,9 @@ function mapValidator(validator) {
     };
 }
 function normalizeBridgeManifest(manifest) {
+    if (manifest.schema_version !== 4) {
+        throw new Error('Unsupported bridge manifest schema_version: expected 4');
+    }
     return {
         bridgeManifest: manifest,
         deployment: {
@@ -175,6 +178,10 @@ function normalizeBridgeManifest(manifest) {
                         recv_packet: {
                             scriptHash: manifest.validators.spend_channel.ref_validator.recv_packet.script_hash,
                             refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.recv_packet.ref_utxo),
+                        },
+                        prune_packet_history: {
+                            scriptHash: manifest.validators.spend_channel.ref_validator.prune_packet_history.script_hash,
+                            refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.prune_packet_history.ref_utxo),
                         },
                         send_packet: {
                             scriptHash: manifest.validators.spend_channel.ref_validator.send_packet.script_hash,

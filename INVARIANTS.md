@@ -23,6 +23,7 @@ and their CI-enforced labels.
   - [SendPacket Transaction Coupling](#sendpacket-transaction-coupling)
   - [RecvPacket](#recvpacket)
   - [AcknowledgePacket](#acknowledgepacket)
+  - [Packet History Pruning](#packet-history-pruning)
   - [TimeoutPacket](#timeoutpacket)
   - [Model Sequences](#model-sequences)
 - [Transfer Module Accounting](#transfer-module-accounting)
@@ -488,6 +489,7 @@ prove these invariants:
   payload.
 - Mismatched acknowledgement bytes are rejected even when the channel datum
   transition is otherwise valid.
+
 - Packet commitment deletion requires a typed callback authorized by the port
   token registered for the source port.
 - Voucher callbacks spend and preserve the registered module root. Native
@@ -499,6 +501,35 @@ prove these invariants:
   refund branch, or vice versa.
 - Missing and mismatched callbacks are rejected for both voucher-remint and
   native-unescrow witness shapes before the packet commitment can be removed.
+
+### Packet History Pruning
+
+Covered by the deterministic
+`channel_datum_test/validate_prune_packet_history.ak`,
+`spending_channel/prune_packet_history.test.ak`, and HostState prune-root
+fixtures. The `spending_channel/prune_packet_history_contract.test.ak`
+regression executes the prune marker, channel, HostState, and proof validators
+against one shared transaction.
+
+The cleanup transition proves these invariants:
+
+- Packet history remains authoritative on-chain; Gateway or relayer state is
+  not needed to recover the live IBC state root.
+- Only an unordered receipt and acknowledgement for the same sequence can be
+  removed, and the corresponding source commitment must be proven absent at an
+  authenticated counterparty height.
+- The prune height cannot precede either the existing replay floor or the
+  greatest proof height accepted by any receive on the channel.
+- Pruning advances the replay floor atomically with both Merkle-leaf deletions,
+  so a packet-membership proof from an older height cannot replay the receive.
+- Ordinary unordered receives may still arrive out of proof-height order above
+  the replay floor; the receive high-water mark never becomes a receive-ordering
+  requirement.
+- Receipt deletion is applied before acknowledgement deletion, and both sparse
+  Merkle witnesses must produce the exact successor HostState root.
+- No packet commitment or unrelated channel field may change during cleanup,
+  and pruning remains executable when the channel datum is at its 64-entry
+  bound.
 
 ### TimeoutPacket
 
@@ -840,6 +871,7 @@ Required CI label suffixes:
 - `contract.host.update_connection.invalid_uncommitted_connection_change`
 - `contract.host.update_channel.valid`
 - `contract.host.update_channel.invalid_packet_field_change`
+- `contract.host.update_channel.invalid_receive_height_mutation`
 - `contract.host.handle_packet.valid_send`
 - `contract.host.handle_packet.valid_recv`
 - `contract.host.handle_packet.valid_ack`
@@ -897,8 +929,9 @@ connection end. The mutation proves these invariants:
 
 ### Channel Root Updates
 
-Covered by `contract.host.update_channel.valid` and
-`contract.host.update_channel.invalid_packet_field_change`.
+Covered by `contract.host.update_channel.valid`,
+`contract.host.update_channel.invalid_packet_field_change`, and
+`contract.host.update_channel.invalid_receive_height_mutation`.
 
 The UpdateChannel properties construct a HostState UTxO plus a channel UTxO and
 require the channel-end update branch to commit only the channel end. The
@@ -906,8 +939,9 @@ mutation changes packet/sequence fields under the UpdateChannel redeemer and
 must be rejected, proving these invariants:
 
 - Channel-end changes must be reflected in the new HostState root.
-- Packet commitments, receipts, acknowledgements, and sequence fields cannot be
-  changed through the channel-end-only branch.
+- Packet commitments, receipts, acknowledgements, sequence fields, and packet
+  history proof-height bounds cannot be changed through the channel-end-only
+  branch.
 
 ### Packet Root Updates
 

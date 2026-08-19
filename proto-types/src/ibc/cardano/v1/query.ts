@@ -143,6 +143,7 @@ export interface BridgeManifestSpendChannelRefValidators {
   recv_packet?: BridgeManifestReferredValidator;
   send_packet?: BridgeManifestReferredValidator;
   timeout_packet?: BridgeManifestReferredValidator;
+  prune_packet_history?: BridgeManifestReferredValidator;
 }
 /**
  * @name BridgeManifestSpendChannelValidator
@@ -970,6 +971,7 @@ function createBaseBridgeManifestSpendChannelRefValidators(): BridgeManifestSpen
     recv_packet: undefined,
     send_packet: undefined,
     timeout_packet: undefined,
+    prune_packet_history: undefined,
   };
 }
 /**
@@ -1007,6 +1009,9 @@ export const BridgeManifestSpendChannelRefValidators = {
     if (message.timeout_packet !== undefined) {
       BridgeManifestReferredValidator.encode(message.timeout_packet, writer.uint32(66).fork()).ldelim();
     }
+    if (message.prune_packet_history !== undefined) {
+      BridgeManifestReferredValidator.encode(message.prune_packet_history, writer.uint32(74).fork()).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): BridgeManifestSpendChannelRefValidators {
@@ -1040,6 +1045,9 @@ export const BridgeManifestSpendChannelRefValidators = {
         case 8:
           message.timeout_packet = BridgeManifestReferredValidator.decode(reader, reader.uint32());
           break;
+        case 9:
+          message.prune_packet_history = BridgeManifestReferredValidator.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1065,6 +1073,8 @@ export const BridgeManifestSpendChannelRefValidators = {
       obj.send_packet = BridgeManifestReferredValidator.fromJSON(object.send_packet);
     if (isSet(object.timeout_packet))
       obj.timeout_packet = BridgeManifestReferredValidator.fromJSON(object.timeout_packet);
+    if (isSet(object.prune_packet_history))
+      obj.prune_packet_history = BridgeManifestReferredValidator.fromJSON(object.prune_packet_history);
     return obj;
   },
   toJSON(message: BridgeManifestSpendChannelRefValidators): unknown {
@@ -1101,6 +1111,10 @@ export const BridgeManifestSpendChannelRefValidators = {
       (obj.timeout_packet = message.timeout_packet
         ? BridgeManifestReferredValidator.toJSON(message.timeout_packet)
         : undefined);
+    message.prune_packet_history !== undefined &&
+      (obj.prune_packet_history = message.prune_packet_history
+        ? BridgeManifestReferredValidator.toJSON(message.prune_packet_history)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<BridgeManifestSpendChannelRefValidators>, I>>(
@@ -1130,6 +1144,9 @@ export const BridgeManifestSpendChannelRefValidators = {
     }
     if (object.timeout_packet !== undefined && object.timeout_packet !== null) {
       message.timeout_packet = BridgeManifestReferredValidator.fromPartial(object.timeout_packet);
+    }
+    if (object.prune_packet_history !== undefined && object.prune_packet_history !== null) {
+      message.prune_packet_history = BridgeManifestReferredValidator.fromPartial(object.prune_packet_history);
     }
     return message;
   },

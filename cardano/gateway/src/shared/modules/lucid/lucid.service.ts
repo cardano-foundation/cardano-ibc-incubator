@@ -88,6 +88,7 @@ import {
   UnsignedChannelOpenInitDto,
   UnsignedChannelOpenTryDto,
   UnsignedConnectionOpenAckDto,
+  UnsignedPrunePacketHistoryDto,
   UnsignedRecvPacketDto,
   UnsignedRecvPacketModuleDto,
   UnsignedRecvPacketMintDto,
@@ -194,6 +195,7 @@ type ReferenceScripts = {
   channelCloseConfirm: UTxO;
   channelCloseInit: UTxO;
   receivePacket: UTxO;
+  prunePacketHistory: UTxO;
   ackPacket: UTxO;
   sendPacket: UTxO;
   timeoutPacket: UTxO;
@@ -255,6 +257,9 @@ export class LucidService implements OnModuleInit {
       receivePacket:
         deploymentConfig.validators.spendChannel.refValidator.recv_packet
           .refUtxo,
+      prunePacketHistory:
+        deploymentConfig.validators.spendChannel.refValidator
+          .prune_packet_history.refUtxo,
       ackPacket:
         deploymentConfig.validators.spendChannel.refValidator.acknowledge_packet
           .refUtxo,
@@ -1900,6 +1905,48 @@ export class LucidService implements OnModuleInit {
       );
 
     return tx;
+  }
+
+  public createUnsignedPrunePacketHistoryTx(
+    dto: UnsignedPrunePacketHistoryDto,
+  ): TxBuilder {
+    const deploymentConfig = this.configService.get("deployment");
+    const hostStateNFT = deploymentConfig.hostStateNFT.policyId +
+      deploymentConfig.hostStateNFT.name;
+    const hostStateUtxoWithRawDatum = {
+      ...dto.hostStateUtxo,
+      datum: dto.hostStateUtxo.datum,
+      datumHash: undefined,
+    };
+
+    return this.newTxBuilder()
+      .readFrom([
+        this.referenceScripts.spendChannel,
+        this.referenceScripts.prunePacketHistory,
+        this.referenceScripts.verifyProof,
+        this.referenceScripts.hostStateStt,
+      ])
+      .collectFrom([hostStateUtxoWithRawDatum], dto.encodedHostStateRedeemer)
+      .collectFrom([dto.channelUtxo], dto.encodedSpendChannelRedeemer)
+      .readFrom([dto.connectionUtxo, dto.clientUtxo])
+      .pay.ToContract(
+        deploymentConfig.validators.hostStateStt.address,
+        { kind: "inline", value: dto.encodedUpdatedHostStateDatum },
+        { [hostStateNFT]: 1n },
+      )
+      .pay.ToContract(
+        deploymentConfig.validators.spendChannel.address,
+        { kind: "inline", value: dto.encodedUpdatedChannelDatum },
+        { [dto.channelTokenUnit]: 1n },
+      )
+      .mintAssets(
+        { [dto.prunePacketHistoryPolicyId]: 1n },
+        encodeAuthToken(dto.channelToken, this.LucidImporter),
+      )
+      .mintAssets(
+        { [dto.verifyProofPolicyId]: 1n },
+        dto.encodedVerifyProofRedeemer,
+      );
   }
 
   public createUnsignedRecvPacketModuleTx(

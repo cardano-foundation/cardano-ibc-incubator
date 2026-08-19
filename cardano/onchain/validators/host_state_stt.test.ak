@@ -20,7 +20,7 @@ use ibc/client/ics_007_tendermint_client/client_datum.{
 }
 use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
-use ibc/client/ics_007_tendermint_client/height.{Height}
+use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
   UncheckedRational,
 }
@@ -35,7 +35,8 @@ use ibc/core/ics_004/channel_datum.{
   ChannelDatum, ChannelDatumState, max_packet_entries_per_channel,
 }
 use ibc/core/ics_004/channel_redeemer.{
-  AcknowledgePacket, RecvPacket, SendPacket, SpendChannelRedeemer, TimeoutPacket,
+  AcknowledgePacket, PrunePacketHistory as PruneChannelPacketHistory, RecvPacket,
+  SendPacket, SpendChannelRedeemer, TimeoutPacket,
 }
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
@@ -199,6 +200,8 @@ fn test_channel_datum(
 ) -> ChannelDatum {
   ChannelDatum {
     state: ChannelDatumState {
+      maximum_receive_proof_height: height_mod.zero_height(),
+      minimum_receive_proof_height: height_mod.zero_height(),
       channel,
       next_sequence_send,
       next_sequence_recv: 1,
@@ -851,9 +854,24 @@ fn test_channel_datum_full(
       packet_commitment,
       packet_receipt,
       packet_acknowledgement,
+      minimum_receive_proof_height: height_mod.zero_height(),
+      maximum_receive_proof_height: height_mod.zero_height(),
     },
     port_id: "transfer",
     token: test_channel_token(),
+  }
+}
+
+fn with_maximum_receive_proof_height(
+  datum: ChannelDatum,
+  proof_height: Height,
+) -> ChannelDatum {
+  ChannelDatum {
+    ..datum,
+    state: ChannelDatumState {
+      ..datum.state,
+      maximum_receive_proof_height: proof_height,
+    },
   }
 }
 
@@ -1291,6 +1309,44 @@ test prop_host_update_channel_rejects_packet_field_change(
   )
 }
 
+test prop_host_update_channel_rejects_receive_height_mutation(
+  seed via fuzz.int(),
+) fail {
+  fuzz.label(
+    @"fuzz.contract.host.update_channel.invalid_receive_height_mutation",
+  )
+
+  let siblings = full_empty_siblings()
+  let input_channel_datum =
+    test_channel_datum(test_channel(channel_state.Open), 1, [])
+  let output_channel_datum =
+    ChannelDatum {
+      ..input_channel_datum,
+      state: ChannelDatumState {
+        ..input_channel_datum.state,
+        minimum_receive_proof_height: test_height(10),
+        maximum_receive_proof_height: test_height(11),
+      },
+    }
+  let old_root = test_committed_channel_root(input_channel_datum, siblings)
+  let old_state = test_host_state(old_root, seed)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: old_root,
+    }
+
+  spend_host_state(
+    UpdateChannel { channel_siblings: siblings },
+    [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+  )
+}
+
 test prop_host_handle_packet_accepts_send(seed via fuzz.int()) {
   fuzz.label(@"fuzz.contract.host.handle_packet.valid_send")
 
@@ -1391,14 +1447,17 @@ test prop_host_handle_packet_accepts_recv(seed via fuzz.int()) {
       [],
     )
   let output_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      [Pair(sequence, "")],
-      [Pair(sequence, acknowledgement_commitment)],
+    with_maximum_receive_proof_height(
+      test_channel_datum_full(
+        test_channel(channel_state.Open),
+        1,
+        1,
+        1,
+        [],
+        [Pair(sequence, "")],
+        [Pair(sequence, acknowledgement_commitment)],
+      ),
+      test_height(1),
     )
   let root_after_receipt =
     test_handle_packet_receipt_root(old_root, sequence, siblings)
@@ -1476,14 +1535,17 @@ test host_state_handle_packet_recv_succeeds_at_history_capacity() {
       [],
     )
   let output_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      [Pair(sequence, ""), ..existing_receipts],
-      [Pair(sequence, acknowledgement)],
+    with_maximum_receive_proof_height(
+      test_channel_datum_full(
+        test_channel(channel_state.Open),
+        1,
+        1,
+        1,
+        [],
+        [Pair(sequence, ""), ..existing_receipts],
+        [Pair(sequence, acknowledgement)],
+      ),
+      test_height(1),
     )
   let root_after_receipt =
     test_handle_packet_receipt_root(old_root, sequence, siblings)
@@ -1645,19 +1707,22 @@ test host_state_handle_packet_acknowledgement_succeeds_at_history_capacity() {
       existing_acknowledgements,
     )
   let output_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      [Pair(sequence, "")],
-      pairs.insert_by_ascending_key(
-        existing_acknowledgements,
-        sequence,
-        acknowledgement,
-        int.compare,
+    with_maximum_receive_proof_height(
+      test_channel_datum_full(
+        test_channel(channel_state.Open),
+        1,
+        1,
+        1,
+        [],
+        [Pair(sequence, "")],
+        pairs.insert_by_ascending_key(
+          existing_acknowledgements,
+          sequence,
+          acknowledgement,
+          int.compare,
+        ),
       ),
+      test_height(1),
     )
   let root_after_receipt =
     test_handle_packet_receipt_root(old_root, sequence, siblings)
@@ -2300,6 +2365,172 @@ test prop_host_handle_packet_rejects_wrong_packet_key(seed via fuzz.int()) fail 
       test_channel_output_full(output_channel_datum),
     ],
   )
+}
+
+fn check_host_prune_packet_history(
+  use_wrong_ack_witness: Bool,
+  at_capacity: Bool,
+) -> Bool {
+  let sequence =
+    if at_capacity {
+      max_packet_entries_per_channel / 2
+    } else {
+      7
+    }
+  let acknowledgement = "acknowledgement commitment"
+  let receipt_key =
+    packet_keys.packet_receipt_path("transfer", "channel-0", sequence)
+  let acknowledgement_key =
+    packet_keys.packet_acknowledgement_path("transfer", "channel-0", sequence)
+  let empty_siblings = full_empty_siblings()
+  let acknowledgement_insert_siblings =
+    siblings_after_single_insert(
+      receipt_key,
+      cbor.serialise(""),
+      acknowledgement_key,
+    )
+  let root_after_receipt_insert =
+    ibc_state_commitment.apply_update(
+      empty_ibc_state_root,
+      receipt_key,
+      "",
+      cbor.serialise(""),
+      empty_siblings,
+    )
+  let old_root =
+    ibc_state_commitment.apply_update(
+      root_after_receipt_insert,
+      acknowledgement_key,
+      "",
+      cbor.serialise(acknowledgement),
+      acknowledgement_insert_siblings,
+    )
+  let receipt_delete_siblings =
+    siblings_after_single_insert(
+      acknowledgement_key,
+      cbor.serialise(acknowledgement),
+      receipt_key,
+    )
+  let root_after_receipt_delete =
+    ibc_state_commitment.apply_update(
+      old_root,
+      receipt_key,
+      cbor.serialise(""),
+      "",
+      receipt_delete_siblings,
+    )
+  let expected_new_root =
+    ibc_state_commitment.apply_update(
+      root_after_receipt_delete,
+      acknowledgement_key,
+      cbor.serialise(acknowledgement),
+      "",
+      empty_siblings,
+    )
+
+  let receipt_entries =
+    if at_capacity {
+      packet_entries(1, sequence, "")
+    } else {
+      [Pair(sequence, "")]
+    }
+  let acknowledgement_entries =
+    if at_capacity {
+      packet_entries(1, sequence, acknowledgement)
+    } else {
+      [Pair(sequence, acknowledgement)]
+    }
+  expect
+    if at_capacity {
+      list.length(receipt_entries) + list.length(acknowledgement_entries) == max_packet_entries_per_channel
+    } else {
+      True
+    }
+  let base_input_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Open),
+      1,
+      1,
+      1,
+      [],
+      receipt_entries,
+      acknowledgement_entries,
+    )
+  let input_channel_datum =
+    ChannelDatum {
+      ..base_input_channel_datum,
+      state: ChannelDatumState {
+        ..base_input_channel_datum.state,
+        maximum_receive_proof_height: test_height(10),
+      },
+    }
+  let proof_height = test_height(12)
+  let output_channel_datum =
+    ChannelDatum {
+      ..input_channel_datum,
+      state: ChannelDatumState {
+        ..input_channel_datum.state,
+        packet_receipt: pairs.delete_first(receipt_entries, sequence),
+        packet_acknowledgement: pairs.delete_first(
+          acknowledgement_entries,
+          sequence,
+        ),
+        minimum_receive_proof_height: proof_height,
+      },
+    }
+  let old_state = test_host_state(old_root, 0)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: expected_new_root,
+    }
+  let acknowledgement_delete_siblings =
+    if use_wrong_ack_witness {
+      receipt_delete_siblings
+    } else {
+      empty_siblings
+    }
+  let host_redeemer: HostStateRedeemer =
+    HandlePacket {
+      channel_siblings: [],
+      next_sequence_send_siblings: [],
+      next_sequence_recv_siblings: [],
+      next_sequence_ack_siblings: [],
+      packet_commitment_siblings: [],
+      packet_receipt_siblings: receipt_delete_siblings,
+      packet_acknowledgement_siblings: acknowledgement_delete_siblings,
+    }
+  let channel_redeemer: SpendChannelRedeemer =
+    PruneChannelPacketHistory {
+      sequence,
+      proof_commitment_absence: empty_proof(),
+      proof_height,
+    }
+  let channel_input = test_channel_input_full(input_channel_datum)
+
+  spend_host_state_with_channel_redeemer(
+    host_redeemer,
+    channel_redeemer,
+    channel_input,
+    [test_host_input(old_state), channel_input],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+  )
+}
+
+test host_state_prune_packet_history_deletes_receipt_then_ack_root() {
+  check_host_prune_packet_history(False, False)
+}
+
+test host_state_prune_packet_history_succeeds_at_full_packet_history_capacity() {
+  check_host_prune_packet_history(False, True)
+}
+
+test host_state_prune_packet_history_rejects_wrong_post_receipt_ack_witness() fail {
+  check_host_prune_packet_history(True, False)
 }
 
 test prop_host_bind_port_rejects_missing_authority(seed via fuzz.int()) fail {

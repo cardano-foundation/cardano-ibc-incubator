@@ -183,6 +183,7 @@ validator recv_packet(
         updated_datum,
         packet,
         acknowledgement_commitment,
+        proof_height,
       )?,
     }
   }

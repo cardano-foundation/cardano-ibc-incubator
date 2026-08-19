@@ -2434,6 +2434,7 @@ const deploySpendChannel = async (
     send_packet: "send_packet.spend",
     timeout_packet: "timeout_packet.mint",
     acknowledge_packet: "acknowledge_packet.mint",
+    prune_packet_history: "prune_packet_history.mint",
   };
 
   const referredScripts: Record<string, { script: Script; hash: string }> = {};
@@ -2449,15 +2450,19 @@ const deploySpendChannel = async (
   ]);
 
   for (const [name, validator] of Object.entries(referredValidators)) {
-    const args = [mintClientPolicyId, mintConnectionPolicyId, mintPortPolicyId];
+    const args = name === "prune_packet_history"
+      ? [mintClientPolicyId, mintConnectionPolicyId, verifyProofScriptHash]
+      : [mintClientPolicyId, mintConnectionPolicyId, mintPortPolicyId];
 
-    if (name !== "send_packet" && name !== "chan_close_init") {
+    if (
+      name !== "prune_packet_history" &&
+      name !== "send_packet" &&
+      name !== "chan_close_init"
+    ) {
       args.push(verifyProofScriptHash);
     }
 
-    if (moduleCallbackValidators.has(name)) {
-      args.push(hostStateNftPolicyId);
-    }
+    if (moduleCallbackValidators.has(name)) args.push(hostStateNftPolicyId);
 
     const [script, hash] = await readValidator(
       `spending_channel/${name}.${validator}`,

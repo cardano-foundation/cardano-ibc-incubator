@@ -70,6 +70,7 @@ type DeploymentSpendChannelValidator = DeploymentValidator & {
     chan_open_ack: DeploymentRefValidator;
     chan_open_confirm: DeploymentRefValidator;
     recv_packet: DeploymentRefValidator;
+    prune_packet_history: DeploymentRefValidator;
     send_packet: DeploymentRefValidator;
     timeout_packet: DeploymentRefValidator;
   };
@@ -116,6 +117,7 @@ type DeploymentConfig = {
 };
 
 type BridgeManifest = {
+  schema_version: number;
   deployed_at: string;
   cardano: {
     network: string;
@@ -166,6 +168,10 @@ type BridgeManifest = {
           ref_utxo: { tx_hash: string; output_index: number };
         };
         recv_packet: {
+          script_hash: string;
+          ref_utxo: { tx_hash: string; output_index: number };
+        };
+        prune_packet_history: {
           script_hash: string;
           ref_utxo: { tx_hash: string; output_index: number };
         };
@@ -437,6 +443,9 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
   deployment: DeploymentConfig;
   bridgeManifest: BridgeManifest;
 } {
+  if (manifest.schema_version !== 4) {
+    throw new Error('Unsupported bridge manifest schema_version: expected 4');
+  }
   return {
     bridgeManifest: manifest,
     deployment: {
@@ -475,6 +484,12 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
             recv_packet: {
               scriptHash: manifest.validators.spend_channel.ref_validator.recv_packet.script_hash,
               refUtxo: mapRefUtxo(manifest.validators.spend_channel.ref_validator.recv_packet.ref_utxo),
+            },
+            prune_packet_history: {
+              scriptHash: manifest.validators.spend_channel.ref_validator.prune_packet_history.script_hash,
+              refUtxo: mapRefUtxo(
+                manifest.validators.spend_channel.ref_validator.prune_packet_history.ref_utxo,
+              ),
             },
             send_packet: {
               scriptHash: manifest.validators.spend_channel.ref_validator.send_packet.script_hash,
