@@ -2355,8 +2355,25 @@ test host_state_bind_port_uses_canonical_cbor_bytearray_order() {
   )
 }
 
-test host_state_bind_port_rejects_too_short_textual_identifier() fail {
-  test_bind_port_transition([], ["a"], "a")
+test prop_host_bind_port_rejects_too_short_textual_identifier(
+  seed via fuzz.int(),
+) {
+  fuzz.label(@"fuzz.unit.host.bind_port.invalid_identifier")
+
+  let port_id =
+    if seed % 2 == 0 {
+      "a"
+    } else {
+      "b"
+    }
+  fuzz_dsl.mutated_check(
+    "host",
+    "bind_port",
+    "identifier_length",
+    "host_state.validate_bind_port",
+    test_bind_port_transition([], [port_id], port_id),
+  )
+    |> fuzz_dsl.assert_rejected
 }
 
 /// This is the maximum-size HostState port-list transition permitted by the
