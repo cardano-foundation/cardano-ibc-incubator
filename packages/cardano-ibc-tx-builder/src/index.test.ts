@@ -352,7 +352,7 @@ describe('transfer escrow shard identity and lookup', () => {
         Buffer.from('6c6f76656c616365').toString('hex'),
         creationInput,
       ),
-      'fe22c4038335c37cfb02186c038df753e56e6f54a1aecb1b9380db4f',
+      '52fa044c4d41cbe0580854c6f863fb3a7003feb75e3045cf43b4e4aa',
     );
   });
 

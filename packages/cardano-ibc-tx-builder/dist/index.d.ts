@@ -1,4 +1,4 @@
-import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
+import type { TxBuilder, UTxO } from '@lucid-evolution/lucid';
 export declare const MAX_PACKET_ENTRIES_PER_CHANNEL = 64;
 export type Height = {
     revisionNumber: bigint;

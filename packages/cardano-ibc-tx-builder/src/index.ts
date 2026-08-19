@@ -1,11 +1,10 @@
-import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
+import type { TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import { blake2b } from '@noble/hashes/blake2b';
 
 const LOVELACE = 'lovelace';
 const CIP67_FT_LABEL_HEX = '0014df10';
-const TRANSFER_ESCROW_SHARD_DOMAIN = Buffer.from(
-  'transfer-escrow-v2',
-  'utf8',
+const TRANSFER_ESCROW_SHARD_DOMAIN = Buffer.from('transfer-escrow-v2').toString(
+  'hex',
 );
 export const MAX_PACKET_ENTRIES_PER_CHANNEL = 64;
 const LOOKUP_RETRY_OPTIONS = {
@@ -29,17 +28,40 @@ export type TransferEscrowShardLookup = {
   shardTokenUnit: string;
 };
 
-function encodeUint64(value: bigint): Buffer {
+function encodeCborHeader(majorType: number, value: bigint): Buffer {
   if (value < 0n || value > 0xffff_ffff_ffff_ffffn) {
     throw new Error(`Escrow shard identity integer is outside uint64: ${value}`);
   }
-  const encoded = Buffer.alloc(8);
-  encoded.writeBigUInt64BE(value);
+  if (value < 24n) {
+    return Buffer.from([(majorType << 5) | Number(value)]);
+  }
+  if (value <= 0xffn) {
+    return Buffer.from([(majorType << 5) | 24, Number(value)]);
+  }
+  if (value <= 0xffffn) {
+    const encoded = Buffer.alloc(3);
+    encoded[0] = (majorType << 5) | 25;
+    encoded.writeUInt16BE(Number(value), 1);
+    return encoded;
+  }
+  if (value <= 0xffff_ffffn) {
+    const encoded = Buffer.alloc(5);
+    encoded[0] = (majorType << 5) | 26;
+    encoded.writeUInt32BE(Number(value), 1);
+    return encoded;
+  }
+  const encoded = Buffer.alloc(9);
+  encoded[0] = (majorType << 5) | 27;
+  encoded.writeBigUInt64BE(value, 1);
   return encoded;
 }
 
-function frameBytes(value: Uint8Array): Buffer {
-  return Buffer.concat([encodeUint64(BigInt(value.length)), Buffer.from(value)]);
+function encodeCborBytes(hex: string, field: string): Buffer {
+  if (hex.length % 2 !== 0 || !/^[0-9a-f]*$/i.test(hex)) {
+    throw new Error(`Escrow shard ${field} must be even-length hexadecimal`);
+  }
+  const bytes = Buffer.from(hex, 'hex');
+  return Buffer.concat([encodeCborHeader(2, BigInt(bytes.length)), bytes]);
 }
 
 /**
@@ -51,12 +73,18 @@ export function deriveTransferEscrowShardTokenName(
   packetDenom: string,
   creationInput: Pick<UTxO, 'txHash' | 'outputIndex'>,
 ): string {
+  // Aiken encodes tuples as indefinite Plutus lists and OutputReference as
+  // constructor 0. Use the same length-delimited CBOR fields without pulling
+  // the Lucid runtime into this otherwise dependency-light package.
   const preimage = Buffer.concat([
-    frameBytes(TRANSFER_ESCROW_SHARD_DOMAIN),
-    frameBytes(Buffer.from(channelId, 'hex')),
-    frameBytes(Buffer.from(packetDenom, 'hex')),
-    frameBytes(Buffer.from(creationInput.txHash, 'hex')),
-    encodeUint64(BigInt(creationInput.outputIndex)),
+    Buffer.from([0x9f]),
+    encodeCborBytes(TRANSFER_ESCROW_SHARD_DOMAIN, 'domain'),
+    encodeCborBytes(channelId, 'channel ID'),
+    encodeCborBytes(packetDenom, 'denomination'),
+    Buffer.from([0xd8, 0x79, 0x9f]),
+    encodeCborBytes(creationInput.txHash, 'creation transaction ID'),
+    encodeCborHeader(0, BigInt(creationInput.outputIndex)),
+    Buffer.from([0xff, 0xff]),
   ]);
 
   return Buffer.from(blake2b(preimage, { dkLen: 28 })).toString('hex');

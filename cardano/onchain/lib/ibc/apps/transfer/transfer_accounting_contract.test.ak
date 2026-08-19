@@ -231,6 +231,11 @@ fn native_escrow_contract(
     EscrowShard {
       datum: escrow_datum(actual_channel_id, denom),
       updated_output: Some(output),
+      shard_token_name: transfer_escrow_shard.shard_token_name(
+        actual_channel_id,
+        denom,
+        module_input().output_reference,
+      ),
     },
     [input],
     [output],
@@ -262,6 +267,11 @@ fn native_unescrow_contract(
       EscrowShard {
         datum: escrow_datum(channel_id, denom),
         updated_output: Some(output),
+        shard_token_name: transfer_escrow_shard.shard_token_name(
+          channel_id,
+          denom,
+          module_input().output_reference,
+        ),
       },
       [input],
       outputs,

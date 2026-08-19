@@ -1263,6 +1263,7 @@ test prop_transfer_module_root_rejects_capability_relocation(
       [relocated_output],
       mock.port_token,
       mock.module_token,
+      mock.transfer_escrow_shard_policy_id,
     )
   True
 }

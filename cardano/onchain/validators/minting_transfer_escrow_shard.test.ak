@@ -142,7 +142,7 @@ test shard_token_name_matches_offchain_vector() {
     mock.channel_id,
     mock.denom,
     mock.module_state_input.output_reference,
-  ) == #"fe22c4038335c37cfb02186c038df753e56e6f54a1aecb1b9380db4f"
+  ) == #"52fa044c4d41cbe0580854c6f863fb3a7003feb75e3045cf43b4e4aa"
 }
 
 test create_transfer_escrow_shard_rejects_reference_only_state() fail {

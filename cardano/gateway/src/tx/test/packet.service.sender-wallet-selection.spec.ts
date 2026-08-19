@@ -119,7 +119,12 @@ describe('PacketService signer wallet selection for escrow', () => {
       .mockResolvedValueOnce({ txHash: 'channel', outputIndex: 0, datum: 'channel-datum', assets: {} })
       .mockResolvedValueOnce({ txHash: 'connection', outputIndex: 0, datum: 'connection-datum', assets: {} })
       .mockResolvedValueOnce({ txHash: 'client', outputIndex: 0, datum: 'client-datum', assets: {} })
-      .mockResolvedValueOnce({ txHash: 'transfer', outputIndex: 0, datum: 'transfer-datum', assets: {} });
+      .mockResolvedValueOnce({
+        txHash: 'aa'.repeat(32),
+        outputIndex: 0,
+        datum: 'transfer-datum',
+        assets: {},
+      });
 
     lucidServiceMock.decodeDatum.mockImplementation((_datum: string, type: string) => {
       if (type === 'channel') return channelDatum;
