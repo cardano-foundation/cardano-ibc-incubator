@@ -35,6 +35,22 @@ registry or consume metadata derived from it. Our dapps and SDKs can do that, bu
 third-party wallets will only show better names if they choose to integrate that
 resolution path.
 
+## Why can finalized packet history be pruned without keeping an off-chain copy?
+
+Pruning removes only a finalized receipt and acknowledgement pair from an
+unordered channel; unresolved outbound packet commitments remain on-chain.
+Before allowing deletion, Cardano verifies at a sufficiently new authenticated
+counterparty height that the corresponding source commitment no longer exists,
+then atomically raises the channel's on-chain receive-proof floor so an older
+membership proof cannot replay the packet.
+
+Packet sequences advance monotonically, so a resolved commitment for that
+sequence cannot later be recreated. The proof floor, sequence counters,
+remaining commitments, and commitment root all remain in live on-chain datums,
+which means a fresh Gateway can reconstruct the current proof tree from chain
+state alone without relying on a unique Gateway database, relayer, or historical
+off-chain copy.
+
 ## Why was Mithril removed from the maintained path?
 
 The retired Mithril client used periodic transaction-snapshot certificates as a
