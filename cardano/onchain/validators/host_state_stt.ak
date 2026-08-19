@@ -7,8 +7,8 @@ use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/primitive/bytearray
 use cardano/assets.{AssetName, PolicyId}
 use cardano/transaction.{
-  InlineDatum, Input, NoDatum, Output, OutputReference, Redeemer, ScriptPurpose,
-  Spend, Transaction,
+  InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
+  Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
@@ -555,10 +555,10 @@ fn validate_bind_port_root(
   let port_value = cbor.serialise(registration)
 
   // The initial root must be created at the registered script credential with
-  // precisely the two registered capability NFTs and no datum.
+  // precisely the two registered capability NFTs. Its datum is application
+  // state owned and interpreted by the registered module, not IBC core.
   expect [module_output] =
     transaction.find_script_outputs(outputs, registration.module_script_hash)
-  expect NoDatum = module_output.datum
 
   let root_after_bind =
     ibc_state_commitment.apply_update(

@@ -6,6 +6,9 @@ import {
   encodeAcknowledgement,
   type Acknowledgement,
 } from './acknowledgementCodec';
+import { transferEscrowShardTokenName } from './index';
+import { LucidIbcAdapter } from './lucidIbcAdapter';
+import * as Lucid from '@lucid-evolution/lucid';
 
 function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -28,6 +31,61 @@ const TestLucid = {
 } as unknown as typeof import('@lucid-evolution/lucid');
 
 describe('tx-builder runtime serialization', () => {
+  it('frames channel and denomination boundaries in escrow shard names', () => {
+    const suffix = 'ab'.repeat(28);
+    const first = transferEscrowShardTokenName(
+      Buffer.from('channel-1').toString('hex'),
+      Buffer.from(`23${suffix}`).toString('hex'),
+    );
+    const formerlyAliased = transferEscrowShardTokenName(
+      Buffer.from('channel-123').toString('hex'),
+      Buffer.from(suffix).toString('hex'),
+    );
+
+    assert.equal(
+      first,
+      '82bd61ddc779508a845de79b0119ec03c6c5f4adaec7e1462052cc50',
+    );
+    assert.notEqual(first, formerlyAliased);
+    assert.throws(
+      () => transferEscrowShardTokenName('not-hex', '00'),
+      /channelId must be an even-length hexadecimal string/,
+    );
+  });
+
+  it('encodes the one-constructor escrow shard redeemer as the Aiken wire type', async () => {
+    const adapter = new LucidIbcAdapter(Lucid, {} as never, {} as never);
+    const encoded = await adapter.encode(
+      {
+        CreateEscrowShard: {
+          channel_id: '00',
+          denom: '01',
+          data: {
+            denom: '01',
+            amount: '31',
+            sender: '02',
+            receiver: '03',
+            memo: '',
+          },
+          registry_siblings: ['00'.repeat(32)],
+        },
+      },
+      'transferEscrowShardRedeemer',
+    );
+
+    assert.equal(
+      encoded,
+      [
+        'd87984',
+        '4100',
+        '4101',
+        'd87985410141314102410340',
+        '815820',
+        '00'.repeat(32),
+      ].join(''),
+    );
+  });
+
   it('runs queued operations one at a time in submission order', async () => {
     const mutex = new AsyncMutex();
     const firstCanFinish = deferred();

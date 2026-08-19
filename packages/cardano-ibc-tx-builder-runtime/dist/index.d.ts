@@ -1,4 +1,5 @@
 export { AsyncMutex } from './asyncMutex';
+export { transferEscrowShardTokenName } from './transferEscrowShard';
 export declare const OGMIOS_PROTOCOL_PARAMETERS_REQUEST_TIMEOUT_MS = 10000;
 export declare const OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS = 10000;
 type TransferApiRequestBody = {

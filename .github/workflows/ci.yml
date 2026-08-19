@@ -655,6 +655,8 @@ jobs:
             -m 'spending_channel/send_packet.{succeed_send_packet}' \
             -m 'ibc/core/ics_004/channel_datum_test/validate_send_packet.{succeed_at_packet_commitment_capacity}' \
             -m 'host_state_stt.{host_state_handle_packet_send_succeeds_at_commitment_capacity}' \
+            -m 'spending_transfer_module.{transfer_escrow_succeed}' \
+            -m 'minting_transfer_escrow_shard.{create_transfer_escrow_shard_succeeds}' \
             -m 'spending_channel.{recv_packet_succeed}' \
             -m 'spending_channel/recv_packet.{succeed_recv_packet}' \
             -m 'ibc/core/ics_004/channel_datum_test/validate_recv_packet.{succeed_at_packet_history_capacity}' \

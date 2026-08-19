@@ -17,6 +17,9 @@ use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/types/keys as transfer_module_keys
+use ibc/apps/transfer/types/transfer_module_datum.{
+  TransferModuleDatum, empty_escrow_shard_registry_root,
+}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height.{Height}
 use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
@@ -149,7 +152,11 @@ fn setup() -> MockData {
       value: from_asset(module_token.policy_id, module_token.name, 1)
         |> add(port_token.policy_id, port_token.name, 1)
         |> add(ada_policy_id, ada_asset_name, 99999999999),
-      datum: NoDatum,
+      datum: InlineDatum(
+        TransferModuleDatum {
+          escrow_shard_registry_root: empty_escrow_shard_registry_root,
+        },
+      ),
       reference_script: None,
     }
 
@@ -407,6 +414,17 @@ fn transfer_escrow_output(
   }
 }
 
+fn module_output_with_registered_shard(module_output: Output) -> Output {
+  Output {
+    ..module_output,
+    datum: InlineDatum(
+      TransferModuleDatum {
+        escrow_shard_registry_root: #"1111111111111111111111111111111111111111111111111111111111111111",
+      },
+    ),
+  }
+}
+
 fn transfer_native_asset_escrow_input(
   output_index: Int,
   module_output: Output,
@@ -558,10 +576,10 @@ fn native_send_escrow_fixture(
     when callback_mutation is {
       MovedModuleCredential ->
         Output {
-          ..mock.module_output,
+          ..module_output_with_registered_shard(mock.module_output),
           address: from_script("attacker module script hash"),
         }
-      _ -> mock.module_output
+      _ -> module_output_with_registered_shard(mock.module_output)
     }
   let outputs =
     [module_output, escrow_output, mock.channel_output, mock.host_state_output]
@@ -633,9 +651,18 @@ fn recv_source_unescrow_fixture(
       datum: NoDatum,
       reference_script: None,
     }
+  let empty_escrow_output =
+    transfer_escrow_output(
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      mock.channel_id,
+      "6c6f76656c616365",
+      0,
+    )
   let outputs =
     [
       mock.module_output,
+      empty_escrow_output,
       mock.channel_output,
       receiver_output,
       mock.host_state_output,
@@ -655,8 +682,6 @@ fn recv_source_unescrow_fixture(
       "6c6f76656c616365",
       transfer_amount,
     )
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(mock.channel_id, "6c6f76656c616365")
   let inputs =
     [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
   let (ftpd, packet) =
@@ -691,17 +716,7 @@ fn recv_source_unescrow_fixture(
       Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
     ]
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs,
-      outputs,
-      redeemers,
-      mint: from_asset(
-        mock.transfer_escrow_shard_policy_id,
-        shard_token_name,
-        -1,
-      ),
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   run_transfer_module_transition(mock, transaction, module_redeemer, mutation)
@@ -726,9 +741,18 @@ fn timeout_unescrow_fixture(
       datum: NoDatum,
       reference_script: None,
     }
+  let empty_escrow_output =
+    transfer_escrow_output(
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      "channel-0",
+      "6c6f76656c616365",
+      0,
+    )
   let outputs =
     [
       mock.module_output,
+      empty_escrow_output,
       mock.channel_output,
       receiver_output,
       mock.host_state_output,
@@ -745,8 +769,6 @@ fn timeout_unescrow_fixture(
       denom,
       transfer_amount,
     )
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(source_channel, denom)
   let inputs =
     [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
   let (ftpd, packet) =
@@ -781,17 +803,7 @@ fn timeout_unescrow_fixture(
       Pair(Spend(mock.channel_input.output_reference), channel_redeemer),
     ]
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs,
-      outputs,
-      redeemers,
-      mint: from_asset(
-        mock.transfer_escrow_shard_policy_id,
-        shard_token_name,
-        -1,
-      ),
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   run_transfer_module_transition(mock, transaction, module_redeemer, mutation)
@@ -1254,8 +1266,79 @@ test prop_transfer_module_root_rejects_capability_relocation(
       [relocated_output],
       mock.port_token,
       mock.module_token,
+      mock.transfer_escrow_shard_policy_id,
     )
   True
+}
+
+test transfer_module_root_rejects_datum_downgrade() fail {
+  let mock = setup()
+  let no_datum_output = Output { ..mock.module_output, datum: NoDatum }
+
+  let spend =
+    transfer_escrow.classify_transfer_module_spend(
+      mock.module_input.output,
+      [no_datum_output],
+      mock.port_token,
+      mock.module_token,
+      mock.transfer_escrow_shard_policy_id,
+    )
+
+  expect _ = transfer_escrow.expect_module_state(spend)
+  True
+}
+
+test transfer_module_root_rejects_registry_mutation_without_mint() fail {
+  let mock = setup()
+  let mutated_output =
+    Output {
+      ..mock.module_output,
+      datum: InlineDatum(
+        TransferModuleDatum {
+          escrow_shard_registry_root: #"1111111111111111111111111111111111111111111111111111111111111111",
+        },
+      ),
+    }
+  let spend =
+    transfer_escrow.classify_transfer_module_spend(
+      mock.module_input.output,
+      [mutated_output],
+      mock.port_token,
+      mock.module_token,
+      mock.transfer_escrow_shard_policy_id,
+    )
+
+  expect _ = transfer_escrow.expect_module_state(spend)
+  True
+}
+
+test transfer_escrow_rejects_missing_empty_successor() fail {
+  let mock = setup()
+  let denom = "6c6f76656c616365"
+  let escrow_amount = 1_234
+  let escrow_input =
+    transfer_escrow_input(
+      2,
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      mock.channel_id,
+      denom,
+      escrow_amount,
+    )
+  let datum = TransferEscrowDatum { channel_id: mock.channel_id, denom }
+
+  transfer_escrow.validate_module_escrow_transition(
+    escrow_input,
+    transfer_escrow.EscrowShard { datum, updated_output: None },
+    [escrow_input],
+    [],
+    datum,
+    mock.transfer_escrow_shard_policy_id,
+    from_asset(ada_policy_id, ada_asset_name, 0),
+    0 - escrow_amount,
+    from_asset(ada_policy_id, ada_asset_name, 0 - escrow_amount),
+    "lovelace",
+  )
 }
 
 test on_chan_open_init_succeed() {
@@ -1578,9 +1661,19 @@ test on_recv_packet_unescrow_succeed() {
       reference_script: None,
     }
 
+  let empty_escrow_output =
+    transfer_escrow_output(
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      mock.channel_id,
+      "6c6f76656c616365",
+      0,
+    )
+
   let outputs =
     [
       mock.module_output,
+      empty_escrow_output,
       mock.channel_output,
       receiver_output,
       mock.host_state_output,
@@ -1606,8 +1699,6 @@ test on_recv_packet_unescrow_succeed() {
       "6c6f76656c616365",
       transfer_amount,
     )
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(mock.channel_id, "6c6f76656c616365")
   let inputs =
     [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
 
@@ -1651,17 +1742,7 @@ test on_recv_packet_unescrow_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs,
-      outputs,
-      redeemers,
-      mint: from_asset(
-        mock.transfer_escrow_shard_policy_id,
-        shard_token_name,
-        -1,
-      ),
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -1828,7 +1909,7 @@ test transfer_escrow_succeed() {
 
   let outputs =
     [
-      mock.module_output,
+      module_output_with_registered_shard(mock.module_output),
       escrow_output,
       mock.channel_output,
       mock.host_state_output,
@@ -2426,9 +2507,19 @@ test on_timeout_packet_unescrow_succeed() {
       reference_script: None,
     }
 
+  let empty_escrow_output =
+    transfer_escrow_output(
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      "channel-0",
+      "6c6f76656c616365",
+      0,
+    )
+
   let outputs =
     [
       mock.module_output,
+      empty_escrow_output,
       mock.channel_output,
       receiver_output,
       mock.host_state_output,
@@ -2451,8 +2542,6 @@ test on_timeout_packet_unescrow_succeed() {
       denom,
       transfer_amount,
     )
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(source_channel, denom)
   let inputs =
     [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
 
@@ -2495,17 +2584,7 @@ test on_timeout_packet_unescrow_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs,
-      outputs,
-      redeemers,
-      mint: from_asset(
-        mock.transfer_escrow_shard_policy_id,
-        shard_token_name,
-        -1,
-      ),
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -2924,9 +3003,19 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
       reference_script: None,
     }
 
+  let empty_escrow_output =
+    transfer_escrow_output(
+      mock.module_output,
+      mock.transfer_escrow_shard_policy_id,
+      "channel-0",
+      "6c6f76656c616365",
+      0,
+    )
+
   let outputs =
     [
       mock.module_output,
+      empty_escrow_output,
       mock.channel_output,
       receiver_output,
       mock.host_state_output,
@@ -2949,8 +3038,6 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
       denom,
       transfer_amount,
     )
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(source_channel, denom)
   let inputs =
     [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
 
@@ -2999,17 +3086,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction {
-      ..transaction.placeholder,
-      inputs,
-      outputs,
-      redeemers,
-      mint: from_asset(
-        mock.transfer_escrow_shard_policy_id,
-        shard_token_name,
-        -1,
-      ),
-    }
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -3104,36 +3181,57 @@ test on_chan_close_confirm_given_any_input_returns_false() {
   ) == False
 }
 
-test transfer_escrow_existing_shard_update_succeed() {
+test transfer_escrow_zero_balance_shard_reuse_succeeds() {
   let mock = setup()
 
-  let prior_escrow_amount = 2_000_000
+  let prior_escrow_amount = 0
   let transfer_amount = 15_000_000
   let receiver = mock.cardano_public_key_hash
 
   let source_port = "port-0"
   let source_channel = "channel-0"
-  let denom = "6c6f76656c616365"
+  let denom = native_asset_denom()
+  let token_policy_id: PolicyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  let token_name = "coin"
 
-  let shard_input =
-    transfer_escrow_input(
+  let zero_balance_shard =
+    transfer_native_asset_escrow_input(
       2,
       mock.module_output,
       mock.transfer_escrow_shard_policy_id,
       mock.channel_id,
       denom,
+      token_policy_id,
+      token_name,
       prior_escrow_amount,
     )
+  let shard_input =
+    Input {
+      ..zero_balance_shard,
+      output: Output {
+        ..zero_balance_shard.output,
+        value: zero_balance_shard.output.value
+          |> add(ada_policy_id, ada_asset_name, 2_000_000),
+      },
+    }
   let inputs = [shard_input, mock.channel_input, mock.host_state_input]
 
-  let shard_output =
-    transfer_escrow_output(
+  let zero_balance_shard_output =
+    transfer_native_asset_escrow_output(
       mock.module_output,
       mock.transfer_escrow_shard_policy_id,
       mock.channel_id,
       denom,
+      token_policy_id,
+      token_name,
       prior_escrow_amount + transfer_amount,
     )
+  let shard_output =
+    Output {
+      ..zero_balance_shard_output,
+      value: zero_balance_shard_output.value
+        |> add(ada_policy_id, ada_asset_name, 2_000_000),
+    }
   let outputs = [shard_output, mock.channel_output, mock.host_state_output]
 
   let (ftpd, packet) =

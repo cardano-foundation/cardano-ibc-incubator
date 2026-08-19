@@ -12,6 +12,7 @@ describe('PacketService signer wallet selection for escrow', () => {
     getConnectionTokenUnit: jest.Mock;
     getClientTokenUnit: jest.Mock;
     findUtxoByUnit: jest.Mock;
+    findUtxoAt: jest.Mock;
     decodeDatum: jest.Mock;
     encode: jest.Mock;
     createUnsignedSendPacketEscrowTx: jest.Mock;
@@ -64,6 +65,7 @@ describe('PacketService signer wallet selection for escrow', () => {
       getConnectionTokenUnit: jest.fn().mockReturnValue(['connection-policy-id', 'connection-token-name']),
       getClientTokenUnit: jest.fn().mockReturnValue('client-token-unit'),
       findUtxoByUnit: jest.fn(),
+      findUtxoAt: jest.fn(),
       decodeDatum: jest.fn(),
       encode: jest.fn().mockResolvedValue('encoded'),
       createUnsignedSendPacketEscrowTx: jest.fn().mockReturnValue({ tag: 'unsigned-escrow' }),
@@ -113,11 +115,26 @@ describe('PacketService signer wallet selection for escrow', () => {
       },
     };
 
+    const transferModuleUtxo = {
+      txHash: 'transfer',
+      outputIndex: 0,
+      datum: 'transfer-datum',
+      assets: { 'transfer-module-identifier': 1n },
+    };
+
     lucidServiceMock.findUtxoByUnit
       .mockResolvedValueOnce({ txHash: 'channel', outputIndex: 0, datum: 'channel-datum', assets: {} })
       .mockResolvedValueOnce({ txHash: 'connection', outputIndex: 0, datum: 'connection-datum', assets: {} })
-      .mockResolvedValueOnce({ txHash: 'client', outputIndex: 0, datum: 'client-datum', assets: {} })
-      .mockResolvedValueOnce({ txHash: 'transfer', outputIndex: 0, datum: 'transfer-datum', assets: {} });
+      .mockResolvedValueOnce({ txHash: 'client', outputIndex: 0, datum: 'client-datum', assets: {} });
+    lucidServiceMock.findUtxoAt.mockResolvedValue([transferModuleUtxo]);
+    jest.spyOn(service as any, 'findTransferEscrowShard').mockResolvedValue({
+      kind: 'missing',
+      encodedDatum: 'encoded-transfer-escrow-datum',
+      shardTokenUnit: 'shard-policy.shard-token',
+      transferModuleUtxo,
+      registrySiblings: Array(64).fill('00'.repeat(32)),
+      encodedUpdatedTransferModuleDatum: 'encoded-updated-transfer-module-datum',
+    });
 
     lucidServiceMock.decodeDatum.mockImplementation((_datum: string, type: string) => {
       if (type === 'channel') return channelDatum;
@@ -167,7 +184,16 @@ describe('PacketService signer wallet selection for escrow', () => {
       expect.objectContaining({
         senderAddress,
         walletUtxos: signerWalletUtxos,
+        encodedUpdatedTransferModuleDatum: 'encoded-updated-transfer-module-datum',
       }),
+    );
+    expect(lucidServiceMock.encode).toHaveBeenCalledWith(
+      expect.objectContaining({
+        CreateEscrowShard: expect.objectContaining({
+          registry_siblings: Array(64).fill('00'.repeat(32)),
+        }),
+      }),
+      'transferEscrowShardRedeemer',
     );
     expect(result.walletOverride).toEqual({
       address: signerAddress,
