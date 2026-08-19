@@ -17,6 +17,23 @@ const MERKLE_DEPTH_BITS = 64;
 const HASH_SIZE_BYTES = 32;
 const EMPTY_HASH = Buffer.alloc(HASH_SIZE_BYTES, 0);
 
+type LeafNode = {
+  kind: 'leaf';
+  index: bigint;
+  key: string;
+  value: Buffer;
+  hash: Buffer;
+};
+
+type BranchNode = {
+  kind: 'branch';
+  left: MerkleNode;
+  right: MerkleNode;
+  hash: Buffer;
+};
+
+type MerkleNode = LeafNode | BranchNode | null;
+
 function sha256Bytes(data: Buffer): Buffer {
   return Buffer.from(sha256.array(data));
 }
@@ -46,6 +63,63 @@ function keyIndex64(key: string): bigint {
   // We interpret those 8 bytes as a big-endian unsigned integer.
   const first8 = keyHash(key).subarray(0, 8);
   return BigInt(`0x${first8.toString('hex')}`);
+}
+
+function nodeHash(node: MerkleNode): Buffer {
+  return node?.hash ?? EMPTY_HASH;
+}
+
+function branch(left: MerkleNode, right: MerkleNode): MerkleNode {
+  if (left === null && right === null) return null;
+  return {
+    kind: 'branch',
+    left,
+    right,
+    hash: innerHash(nodeHash(left), nodeHash(right)),
+  };
+}
+
+function updateNode(node: MerkleNode, index: bigint, key: string, value: Buffer | null, bit: number): MerkleNode {
+  if (bit < 0) {
+    if (node !== null && node.kind !== 'leaf') {
+      throw new Error(`Invalid Merkle tree shape at leaf for '${key}'`);
+    }
+    if (node?.kind === 'leaf' && node.key !== key) {
+      throw new Error(`Merkle key collision at index ${index.toString()}: '${node.key}' and '${key}'`);
+    }
+    return value === null ? null : { kind: 'leaf', index, key, value: Buffer.from(value), hash: leafHash(key, value) };
+  }
+
+  if (node !== null && node.kind !== 'branch') {
+    throw new Error(`Invalid Merkle tree shape above leaf for '${key}'`);
+  }
+  const left = node?.kind === 'branch' ? node.left : null;
+  const right = node?.kind === 'branch' ? node.right : null;
+  return ((index >> BigInt(bit)) & 1n) === 0n
+    ? branch(updateNode(left, index, key, value, bit - 1), right)
+    : branch(left, updateNode(right, index, key, value, bit - 1));
+}
+
+function findLeaf(node: MerkleNode, index: bigint): LeafNode | null {
+  let current = node;
+  for (let bit = MERKLE_DEPTH_BITS - 1; bit >= 0; bit -= 1) {
+    if (current === null) return null;
+    if (current.kind !== 'branch') throw new Error('Invalid Merkle tree shape while reading a leaf');
+    current = ((index >> BigInt(bit)) & 1n) === 0n ? current.left : current.right;
+  }
+  if (current === null) return null;
+  if (current.kind !== 'leaf') throw new Error('Invalid Merkle tree shape at leaf depth');
+  return current;
+}
+
+function collectLeaves(node: MerkleNode, output: LeafNode[]): void {
+  if (node === null) return;
+  if (node.kind === 'leaf') {
+    output.push(node);
+    return;
+  }
+  collectLeaves(node.left, output);
+  collectLeaves(node.right, output);
 }
 
 /**
@@ -90,53 +164,75 @@ export interface ICS23NonExistenceProof {
  * Fixed-depth Merkle tree keyed by `sha256(key)`.
  */
 export class ICS23MerkleTree {
-  private leaves: Map<string, Buffer> = new Map();
-
-  private root: Buffer = EMPTY_HASH;
-  private dirty = true;
-  private nodesByHeight: Array<Map<bigint, Buffer>> | null = null;
+  private rootNode: MerkleNode = null;
+  private leafCount = 0;
+  private mutationOldValues = new Map<string, string | null>();
 
   clone(): ICS23MerkleTree {
     const cloned = new ICS23MerkleTree();
-    for (const [key, value] of this.leaves) {
-      cloned.leaves.set(key, Buffer.from(value));
-    }
-    cloned.dirty = true;
+    cloned.rootNode = this.rootNode;
+    cloned.leafCount = this.leafCount;
     return cloned;
   }
 
   set(key: string, value: Buffer | string): void {
-    const valueBuffer = typeof value === 'string' ? Buffer.from(value, 'hex') : value;
-    // Empty values are treated as "absent" in this commitment scheme, so we
-    // model them as deletion to avoid ambiguous state.
+    const valueBuffer = typeof value === 'string' ? Buffer.from(value, 'hex') : Buffer.from(value);
     if (valueBuffer.length === 0) {
-      this.leaves.delete(key);
-    } else {
-      this.leaves.set(key, valueBuffer);
+      this.delete(key);
+      return;
     }
-    this.dirty = true;
+
+    const index = keyIndex64(key);
+    const existing = findLeaf(this.rootNode, index);
+    if (existing && existing.key !== key) {
+      throw new Error(`Merkle key collision at index ${index.toString()}: '${existing.key}' and '${key}'`);
+    }
+    if (!this.mutationOldValues.has(key)) {
+      this.mutationOldValues.set(key, existing?.value.toString('hex') ?? null);
+    }
+    this.rootNode = updateNode(this.rootNode, index, key, valueBuffer, MERKLE_DEPTH_BITS - 1);
+    if (!existing) this.leafCount += 1;
   }
 
   get(key: string): Buffer | undefined {
-    return this.leaves.get(key);
+    const leaf = findLeaf(this.rootNode, keyIndex64(key));
+    return !leaf || leaf.key !== key ? undefined : Buffer.from(leaf.value);
   }
 
   delete(key: string): void {
-    this.leaves.delete(key);
-    this.dirty = true;
+    const index = keyIndex64(key);
+    const existing = findLeaf(this.rootNode, index);
+    if (!existing || existing.key !== key) return;
+    if (!this.mutationOldValues.has(key)) {
+      this.mutationOldValues.set(key, existing.value.toString('hex'));
+    }
+    this.rootNode = updateNode(this.rootNode, index, key, null, MERKLE_DEPTH_BITS - 1);
+    this.leafCount -= 1;
   }
 
   size(): number {
-    return this.leaves.size;
+    return this.leafCount;
   }
 
   getKeys(): string[] {
-    return Array.from(this.leaves.keys());
+    const leaves: LeafNode[] = [];
+    collectLeaves(this.rootNode, leaves);
+    return leaves.map((leaf) => leaf.key);
   }
 
   getRoot(): string {
-    this.ensureRebuilt();
-    return this.root.toString('hex');
+    return nodeHash(this.rootNode).toString('hex');
+  }
+
+  getChanges(): Array<{ path: string; oldValue: string | null; newValue: string | null }> {
+    return [...this.mutationOldValues.entries()]
+      .map(([path, oldValue]) => ({
+        path,
+        oldValue,
+        newValue: this.get(path)?.toString('hex') ?? null,
+      }))
+      .filter((change) => change.oldValue !== change.newValue)
+      .sort((left, right) => left.path.localeCompare(right.path));
   }
 
   /**
@@ -145,30 +241,33 @@ export class ICS23MerkleTree {
    * This is the exact structure we use as an on-chain update witness.
    */
   getSiblings(key: string): Buffer[] {
-    this.ensureRebuilt();
-
-    const siblings: Buffer[] = [];
-    let index = keyIndex64(key);
-
-    for (let height = 0; height < MERKLE_DEPTH_BITS; height++) {
-      const siblingIndex = index ^ 1n;
-      const siblingHash = this.nodesByHeight![height].get(siblingIndex) ?? EMPTY_HASH;
-      siblings.push(Buffer.from(siblingHash));
-      index >>= 1n;
+    const index = keyIndex64(key);
+    const topDown: Buffer[] = [];
+    let current = this.rootNode;
+    for (let bit = MERKLE_DEPTH_BITS - 1; bit >= 0; bit -= 1) {
+      if (current === null) {
+        topDown.push(Buffer.from(EMPTY_HASH));
+        continue;
+      }
+      if (current.kind !== 'branch') {
+        throw new Error(`Invalid Merkle tree shape while producing siblings for '${key}'`);
+      }
+      const goesLeft = ((index >> BigInt(bit)) & 1n) === 0n;
+      topDown.push(Buffer.from(nodeHash(goesLeft ? current.right : current.left)));
+      current = goesLeft ? current.left : current.right;
     }
-
-    return siblings;
+    return topDown.reverse();
   }
 
   /**
    * Generate a membership proof for an existing key.
    */
   generateProof(key: string): ICS23ExistenceProof {
-    if (this.leaves.size === 0) {
+    if (this.leafCount === 0) {
       throw new Error(`Cannot generate proof: tree is empty`);
     }
 
-    const value = this.leaves.get(key);
+    const value = this.get(key);
     if (!value) {
       throw new Error(`Cannot generate proof: key '${key}' not found in tree`);
     }
@@ -220,11 +319,11 @@ export class ICS23MerkleTree {
    * The leaf hash for an empty value is the all-zero hash.
    */
   generateNonExistenceProof(key: string): ICS23NonExistenceProof {
-    if (this.leaves.has(key)) {
+    if (this.get(key)) {
       throw new Error(`Cannot generate non-existence proof: key '${key}' exists in tree`);
     }
 
-    if (this.leaves.size === 0) {
+    if (this.leafCount === 0) {
       throw new Error(`Cannot generate non-existence proof: tree is empty`);
     }
 
@@ -278,8 +377,6 @@ export class ICS23MerkleTree {
    * This is primarily used by unit tests to sanity-check the proof generator.
    */
   verifyProof(proof: ICS23ExistenceProof): boolean {
-    this.ensureRebuilt();
-
     const proofKey = proof.key.toString('utf8');
     let currentHash = leafHash(proofKey, proof.value);
 
@@ -297,14 +394,14 @@ export class ICS23MerkleTree {
       }
     }
 
-    return currentHash.equals(this.root);
+    return currentHash.equals(nodeHash(this.rootNode));
   }
 
   toJSON(): { leaves: Record<string, string>; root: string } {
     const leaves: Record<string, string> = {};
-    this.leaves.forEach((value, key) => {
-      leaves[key] = value.toString('hex');
-    });
+    const nodes: LeafNode[] = [];
+    collectLeaves(this.rootNode, nodes);
+    for (const node of nodes) leaves[node.key] = node.value.toString('hex');
     return { leaves, root: this.getRoot() };
   }
 
@@ -314,53 +411,5 @@ export class ICS23MerkleTree {
       tree.set(key, Buffer.from(value, 'hex'));
     }
     return tree;
-  }
-
-  private ensureRebuilt(): void {
-    if (!this.dirty && this.nodesByHeight) return;
-
-    const nodesByHeight: Array<Map<bigint, Buffer>> = Array.from(
-      { length: MERKLE_DEPTH_BITS + 1 },
-      () => new Map<bigint, Buffer>(),
-    );
-
-    const indexToKey = new Map<bigint, string>();
-    for (const [key, value] of this.leaves) {
-      const index = keyIndex64(key);
-
-      const previousKey = indexToKey.get(index);
-      if (previousKey && previousKey !== key) {
-        throw new Error(`Merkle key collision at index ${index.toString()}: '${previousKey}' and '${key}'`);
-      }
-      indexToKey.set(index, key);
-
-      const h = leafHash(key, value);
-      if (!h.equals(EMPTY_HASH)) nodesByHeight[0].set(index, h);
-    }
-
-    for (let height = 1; height <= MERKLE_DEPTH_BITS; height++) {
-      const childMap = nodesByHeight[height - 1];
-      const parentMap = nodesByHeight[height];
-
-      const parents = new Set<bigint>();
-      for (const childIndex of childMap.keys()) {
-        parents.add(childIndex >> 1n);
-      }
-
-      for (const parentIndex of parents) {
-        const leftIndex = parentIndex << 1n;
-        const rightIndex = leftIndex + 1n;
-
-        const left = childMap.get(leftIndex) ?? EMPTY_HASH;
-        const right = childMap.get(rightIndex) ?? EMPTY_HASH;
-
-        const p = innerHash(left, right);
-        if (!p.equals(EMPTY_HASH)) parentMap.set(parentIndex, p);
-      }
-    }
-
-    this.nodesByHeight = nodesByHeight;
-    this.root = nodesByHeight[MERKLE_DEPTH_BITS].get(0n) ?? EMPTY_HASH;
-    this.dirty = false;
   }
 }

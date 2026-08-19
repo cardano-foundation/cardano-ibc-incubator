@@ -8,8 +8,6 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY dapps/ibc-swap/client/package.json dapps/ibc-swap/client/package-lock.json ./
 COPY packages/cardano-ibc-planner /workspace/packages/cardano-ibc-planner
 COPY packages/cardano-ibc-trace-registry /workspace/packages/cardano-ibc-trace-registry
-COPY packages/cardano-ibc-tx-builder /workspace/packages/cardano-ibc-tx-builder
-COPY packages/cardano-ibc-tx-builder-runtime /workspace/packages/cardano-ibc-tx-builder-runtime
 
 # The peer graph still contains legacy constraints, but the committed lockfile
 # makes the accepted resolution reproducible.

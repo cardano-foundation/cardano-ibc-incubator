@@ -68,7 +68,7 @@ export class ConnectionService {
     if (isTreeAligned(onChainRoot)) return;
 
     this.logger.warn(
-      `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding from chain...`,
+      `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., recovering durable proof state...`,
     );
     await alignTreeWithChain();
   }

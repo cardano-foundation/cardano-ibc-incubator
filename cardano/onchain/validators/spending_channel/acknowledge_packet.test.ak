@@ -89,9 +89,6 @@ fn check_acknowledge_packet(
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -144,17 +141,7 @@ fn check_acknowledge_packet(
     }
 
   //========================arrange outputs=======================
-  let output_channel_datum =
-    ChannelDatum {
-      ..input_channel_datum,
-      state: ChannelDatumState {
-        ..input_channel_datum.state,
-        packet_commitment: pairs.delete_first(
-          input_channel_datum.state.packet_commitment,
-          packet.sequence,
-        ),
-      },
-    }
+  let output_channel_datum = input_channel_datum
 
   let channel_output =
     test_utils.build_channel_output(

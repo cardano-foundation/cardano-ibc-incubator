@@ -779,7 +779,18 @@ export class LucidService implements OnModuleInit {
             consensus_state_siblings: SiblingHashesSchema,
             removed_consensus_state_siblings: SiblingHashesListSchema,
           });
+          const PacketStateTransitionSchema = LucidData.Enum([
+            LucidData.Literal("SendPacketState"),
+            LucidData.Object({
+              RecvPacketState: LucidData.Object({
+                acknowledgement_commitment: LucidData.Bytes(),
+              }),
+            }),
+            LucidData.Literal("AcknowledgePacketState"),
+            LucidData.Literal("TimeoutPacketState"),
+          ]);
           const HandlePacketSchema = LucidData.Object({
+            transition: PacketStateTransitionSchema,
             channel_siblings: SiblingHashesSchema,
             next_sequence_send_siblings: SiblingHashesSchema,
             next_sequence_recv_siblings: SiblingHashesSchema,

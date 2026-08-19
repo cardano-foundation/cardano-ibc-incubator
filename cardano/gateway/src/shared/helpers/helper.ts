@@ -20,14 +20,6 @@ const sortByKey = <K, V>(map: Map<K, V>, reverse?: boolean): Map<K, V> => {
   );
 };
 
-const sortByNumberKey = <K, V>(map: Map<K, V>, reverse?: boolean): Map<K, V> => {
-  return new Map(
-    Array.from(map.entries()).sort(([keyA], [keyB]) =>
-      reverse ? Number(keyB) - Number(keyA) : Number(keyA) - Number(keyB),
-    ),
-  );
-};
-
 export const insertSortMap = <K, V>(inputMap: Map<K, V>, newKey: K, newValue: V, reverse?: boolean): Map<K, V> => {
   // Build a new map so callers can keep using the input snapshot they already hold.
   const updatedMap = new Map(inputMap);
@@ -37,53 +29,9 @@ export const insertSortMap = <K, V>(inputMap: Map<K, V>, newKey: K, newValue: V,
   return sortByKey(updatedMap, reverse);
 };
 
-export const insertSortMapWithNumberKey = <K, V>(
-  inputMap: Map<K, V>,
-  newKey: K,
-  newValue: V,
-  reverse?: boolean,
-): Map<K, V> => {
-  // Same behavior as `insertSortMap`, but with numeric key ordering.
-  const updatedMap = new Map(inputMap);
-  updatedMap.set(newKey, newValue);
-  return sortByNumberKey(updatedMap, reverse);
-};
-
-export const deleteSortMap = <K, V>(
-  sortedMap: Map<K, V>,
-  keyToDelete: K,
-  keyComparator?: (a: K, b: K) => number,
-): Map<K, V> => {
-  // Work on an array copy to keep this helper independent of map-iterator side effects.
-  const entriesArray: [K, V][] = Array.from(sortedMap.entries());
-
-  // Find the index of the key to delete
-  const indexToDelete = entriesArray.findIndex(([key]) =>
-    keyComparator ? keyComparator(key, keyToDelete) === 0 : key === keyToDelete,
-  );
-
-  // If the key is found, remove it from the array
-  if (indexToDelete !== -1) {
-    entriesArray.splice(indexToDelete, 1);
-  }
-
-  // Rebuild as a map and return a new instance.
-  const updatedMap = new Map<K, V>(entriesArray);
-
-  return updatedMap;
-};
-
 export function getDenomPrefix(portId: string, channelId: string): string {
   return `${portId}/${channelId}/`;
 }
-
-// write function delete key of sort map by typescript
-export const deleteKeySortMap = <K, V>(inputMap: Map<K, V>, deleteKey: K): Map<K, V> => {
-  // Keep deletion immutable for consistency with the insert helpers above.
-  const updatedMap = new Map(inputMap);
-  updatedMap.delete(deleteKey);
-  return updatedMap;
-};
 export function sortedStringify(obj) {
   if (typeof obj !== 'object' || obj === null) {
     return JSON.stringify(obj);
@@ -126,11 +74,3 @@ export function stringifyIcs20PacketData(packet: {
 
   return JSON.stringify(ordered);
 }
-
-export const prependToMap = <K, V>(map: Map<K, V>, key: K, val: V): Map<K, V> => {
-  const newMap = new Map<K, V>([[key, val]]);
-  for (const [k, v] of map) {
-    newMap.set(k, v);
-  }
-  return newMap;
-};

@@ -22,10 +22,15 @@ import {
   QueryNextSequenceReceiveResponse,
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
-import { ACK_RESULT, CHANNEL_ID_PREFIX, CHANNEL_TOKEN_PREFIX, REDEEMER_EMPTY_DATA, REDEEMER_TYPE } from '../../constant';
+import {
+  ACK_RESULT,
+  CHANNEL_ID_PREFIX,
+  CHANNEL_TOKEN_PREFIX,
+  REDEEMER_EMPTY_DATA,
+  REDEEMER_TYPE,
+} from '../../constant';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
-import { bytesFromBase64 } from '@cardano-ibc/proto-types/build/helpers';
 import {
   validQueryPacketAcknowledgementParam,
   validQueryPacketAcknowledgementsParam,
@@ -39,7 +44,11 @@ import {
 } from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
 import { convertHex2String, convertString2Hex, hashSHA256 } from '../../shared/helpers/hex';
-import { GrpcInvalidArgumentException, GrpcInternalException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
+import {
+  GrpcInvalidArgumentException,
+  GrpcInternalException,
+  GrpcNotFoundException,
+} from '~@/exception/grpc_exceptions';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof, serializeNonExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
@@ -54,6 +63,7 @@ import {
   acknowledgementCommitmentFromResponse,
   acknowledgementHexFromResponse,
 } from '../../shared/helpers/acknowledgement';
+import { getPacketStoreValue, listPacketStoreEntries, packetStorePath } from '../../shared/helpers/packet-state-store';
 
 const SUCCESS_ACKNOWLEDGEMENT_HEX = convertString2Hex(JSON.stringify({ result: ACK_RESULT }));
 const SUCCESS_ACKNOWLEDGEMENT_COMMITMENT = hashSHA256(SUCCESS_ACKNOWLEDGEMENT_HEX).toLowerCase();
@@ -81,7 +91,7 @@ export class PacketService {
     if (isTreeAligned(onChainRoot)) return;
 
     this.logger.warn(
-      `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding from chain...`,
+      `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., recovering durable proof state...`,
     );
     await alignTreeWithChain();
   }
@@ -128,10 +138,7 @@ export class PacketService {
 
   private async findChannelUtxo(channelTokenUnit: string) {
     const deploymentConfig = this.configService.get('deployment');
-    return this.lucidService.findUtxoAtWithUnit(
-      deploymentConfig.validators.spendChannel.address,
-      channelTokenUnit,
-    );
+    return this.lucidService.findUtxoAtWithUnit(deploymentConfig.validators.spendChannel.address, channelTokenUnit);
   }
 
   private async getChannelUtxo(channelId: string, queryHeight?: bigint) {
@@ -206,7 +213,8 @@ export class PacketService {
           const acknowledgementResponse = callback.OnRecvPacket?.acknowledgement?.response;
           if (!acknowledgementResponse) continue;
 
-          const acknowledgementCommitment = acknowledgementCommitmentFromResponse(acknowledgementResponse).toLowerCase();
+          const acknowledgementCommitment =
+            acknowledgementCommitmentFromResponse(acknowledgementResponse).toLowerCase();
           if (acknowledgementCommitment === normalizedCommitment) {
             return acknowledgementHexFromResponse(acknowledgementResponse);
           }
@@ -296,7 +304,18 @@ export class PacketService {
     const proofContext = await this.getProofContext(options.queryHeight);
     const utxo = await this.getChannelUtxo(channelId, proofContext.historical ? proofContext.proofHeight : undefined);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-    const packetAcknowledgement = channelDatumDecoded.state.packet_acknowledgement.get(BigInt(sequence));
+    if (!proofContext.historical) {
+      await this.ensureTreeAligned();
+    }
+    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    const packetAcknowledgement = getPacketStoreValue(
+      tree,
+      'acks',
+      portId,
+      `${CHANNEL_ID_PREFIX}-${channelId}`,
+      sequence,
+      this.lucidService.LucidImporter,
+    );
     if (!packetAcknowledgement) {
       throw new GrpcNotFoundException("Not found: 'Packet Acknowledgement' not found");
     }
@@ -309,14 +328,9 @@ export class PacketService {
       proofHeight: proofContext.historical ? proofContext.proofHeight : undefined,
     });
 
-    if (!proofContext.historical) {
-      await this.ensureTreeAligned();
-    }
-
     // Generate ICS-23 proof from the IBC state tree
     // Path: acks/ports/{portId}/channels/{channelId}/sequences/{sequence}
-    const ibcPath = `acks/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
-    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    const ibcPath = packetStorePath('acks', portId, `${CHANNEL_ID_PREFIX}-${channelId}`, sequence);
     let ackProof: Buffer;
     try {
       const existenceProof = tree.generateProof(ibcPath);
@@ -331,7 +345,7 @@ export class PacketService {
     }
 
     const response: QueryPacketAcknowledgementResponse = {
-      acknowledgement: acknowledgementHex,
+      acknowledgement: Uint8Array.from(Buffer.from(acknowledgementHex, 'hex')),
       proof: ackProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
@@ -360,39 +374,44 @@ export class PacketService {
     let { 'pagination.offset': offset } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const utxo = await this.getChannelUtxo(channelId);
-    const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-    const packetAcknowledgementSeqs = [...channelDatumDecoded.state.packet_acknowledgement.keys()];
+    await this.ensureTreeAligned();
+    const packetAcknowledgements = listPacketStoreEntries(
+      getCurrentTree(),
+      'acks',
+      portId,
+      `${CHANNEL_ID_PREFIX}-${channelId}`,
+      this.lucidService.LucidImporter,
+    );
 
     let nextKey = null;
-    let packetAckSeqs = reverse ? packetAcknowledgementSeqs.reverse() : packetAcknowledgementSeqs;
-    if (packetAckSeqs.length > +limit) {
+    let packetAckEntries = reverse ? [...packetAcknowledgements].reverse() : packetAcknowledgements;
+    if (packetAckEntries.length > +limit) {
       const from = parseInt(offset);
       const to = parseInt(offset) + parseInt(limit);
-      packetAckSeqs = packetAckSeqs.slice(from, to);
+      packetAckEntries = packetAckEntries.slice(from, to);
 
       const pageKeyDto: PaginationKeyDto = {
         offset: to,
       };
-      nextKey = to < packetAcknowledgementSeqs.length ? generatePaginationKey(pageKeyDto) : '';
+      nextKey = to < packetAcknowledgements.length ? generatePaginationKey(pageKeyDto) : '';
     }
 
     const queryHeight = await this.getQueryHeight();
     const response: QueryPacketAcknowledgementsResponse = {
-      acknowledgements: packetAckSeqs.map((seq) => ({
+      acknowledgements: packetAckEntries.map(({ sequence, value }) => ({
         /** channel port identifier. */
-        port_id: convertHex2String(channelDatumDecoded.port),
+        port_id: portId,
         /** channel unique identifier. */
         channel_id: `${CHANNEL_ID_PREFIX}-${request.channel_id}`,
         /** packet sequence. */
-        sequence: seq.toString(),
+        sequence: sequence.toString(),
         /** embedded data that represents packet state. */
-        data: bytesFromBase64(channelDatumDecoded.state.packet_acknowledgement.get(seq)),
+        data: Uint8Array.from(Buffer.from(value, 'hex')),
       })),
       /** pagination response */
       pagination: {
         next_key: nextKey,
-        total: count_total ? packetAckSeqs.length : 0,
+        total: count_total ? packetAcknowledgements.length : 0,
       },
       /** query block height */
       height: {
@@ -414,18 +433,25 @@ export class PacketService {
     );
 
     const proofContext = await this.getProofContext(options.queryHeight);
-    const utxo = await this.getChannelUtxo(channelId, proofContext.historical ? proofContext.proofHeight : undefined);
-    const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-    const packetCommitment = channelDatumDecoded.state.packet_commitment.get(BigInt(sequence));
-    // if (!packetCommitment) throw new GrpcNotFoundException("Not found: 'Packet Commitment' not found");
     if (!proofContext.historical) {
       await this.ensureTreeAligned();
+    }
+    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    const packetCommitment = getPacketStoreValue(
+      tree,
+      'commitments',
+      portId,
+      `${CHANNEL_ID_PREFIX}-${channelId}`,
+      sequence,
+      this.lucidService.LucidImporter,
+    );
+    if (!packetCommitment) {
+      throw new GrpcNotFoundException("Not found: 'Packet Commitment' not found");
     }
 
     // Generate ICS-23 proof from the IBC state tree
     // Path: commitments/ports/{portId}/channels/{channelId}/sequences/{sequence}
-    const ibcPath = `commitments/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
-    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    const ibcPath = packetStorePath('commitments', portId, `${CHANNEL_ID_PREFIX}-${channelId}`, sequence);
     let commitmentProof: Buffer;
     try {
       const existenceProof = tree.generateProof(ibcPath);
@@ -440,7 +466,7 @@ export class PacketService {
     }
 
     const response: QueryPacketCommitmentResponse = {
-      commitment: packetCommitment,
+      commitment: Uint8Array.from(Buffer.from(packetCommitment, 'hex')),
       proof: commitmentProof, // ICS-23 Merkle proof
       proof_height: {
         revision_number: 0,
@@ -467,39 +493,44 @@ export class PacketService {
     let { 'pagination.offset': offset } = pagination;
     if (key) offset = decodePaginationKey(key);
 
-    const utxo = await this.getChannelUtxo(channelId);
-    const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-    const packetCommitmentSeqs = [...channelDatumDecoded.state.packet_commitment.keys()];
+    await this.ensureTreeAligned();
+    const packetCommitments = listPacketStoreEntries(
+      getCurrentTree(),
+      'commitments',
+      portId,
+      `${CHANNEL_ID_PREFIX}-${channelId}`,
+      this.lucidService.LucidImporter,
+    );
 
     let nextKey = null;
-    let packetCmmSeqs = reverse ? packetCommitmentSeqs.reverse() : packetCommitmentSeqs;
-    if (packetCmmSeqs.length > +limit) {
+    let packetCommitmentEntries = reverse ? [...packetCommitments].reverse() : packetCommitments;
+    if (packetCommitmentEntries.length > +limit) {
       const from = parseInt(offset);
       const to = parseInt(offset) + parseInt(limit);
-      packetCmmSeqs = packetCmmSeqs.slice(from, to);
+      packetCommitmentEntries = packetCommitmentEntries.slice(from, to);
 
       const pageKeyDto: PaginationKeyDto = {
         offset: to,
       };
-      nextKey = to < packetCommitmentSeqs.length ? generatePaginationKey(pageKeyDto) : '';
+      nextKey = to < packetCommitments.length ? generatePaginationKey(pageKeyDto) : '';
     }
 
     const queryHeight = await this.getQueryHeight();
     const response: QueryPacketCommitmentsResponse = {
-      commitments: packetCmmSeqs.map((seq) => ({
+      commitments: packetCommitmentEntries.map(({ sequence, value }) => ({
         /** channel port identifier. */
-        port_id: convertHex2String(channelDatumDecoded.port),
+        port_id: portId,
         /** channel unique identifier. */
         channel_id: `${CHANNEL_ID_PREFIX}-${request.channel_id}`,
         /** packet sequence. */
-        sequence: seq.toString(),
+        sequence: sequence.toString(),
         /** embedded data that represents packet state. */
-        data: bytesFromBase64(channelDatumDecoded.state.packet_commitment.get(seq)),
+        data: Uint8Array.from(Buffer.from(value, 'hex')),
       })),
       /** pagination response */
       pagination: {
         next_key: nextKey,
-        total: count_total ? packetCmmSeqs.length : 0,
+        total: count_total ? packetCommitments.length : 0,
       },
       /** query block height */
       height: {
@@ -519,21 +550,17 @@ export class PacketService {
     this.logger.log(`channelId = ${channelId}, portId = ${portId}, sequence=${sequence}`, 'QueryPacketReceiptRequest');
 
     const proofContext = await this.getProofContext(options.queryHeight);
-    const utxo = await this.getChannelUtxo(channelId, proofContext.historical ? proofContext.proofHeight : undefined);
-    const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-    const packetReceipt = channelDatumDecoded.state.packet_receipt.has(BigInt(sequence));
-
-    // if (!packetReceipt) throw new GrpcNotFoundException("Not found: 'Packet Receipt' not found");
     if (!proofContext.historical) {
       await this.ensureTreeAligned();
     }
+    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
 
     // Generate ICS-23 proof from the IBC state tree
     // Path: receipts/ports/{portId}/channels/{channelId}/sequences/{sequence}
     // If received=true: ExistenceProof showing receipt marker exists
     // If received=false: NonExistenceProof showing receipt marker doesn't exist
-    const ibcPath = `receipts/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
-    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    const ibcPath = packetStorePath('receipts', portId, `${CHANNEL_ID_PREFIX}-${channelId}`, sequence);
+    const packetReceipt = tree.get(ibcPath) !== undefined;
     let receiptProof: Buffer;
     try {
       if (packetReceipt) {
@@ -577,10 +604,11 @@ export class PacketService {
       'QueryUnreceivedPacketsRequest',
     );
 
-    const utxo = await this.getChannelUtxo(channelId);
-    const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-    const packetReceiptSeqs = channelDatumDecoded.state.packet_receipt;
-    const sequences = request.packet_commitment_sequences.filter((seq) => !packetReceiptSeqs.has(BigInt(seq)));
+    await this.ensureTreeAligned();
+    const tree = getCurrentTree();
+    const sequences = request.packet_commitment_sequences.filter(
+      (seq) => tree.get(packetStorePath('receipts', portId, `${CHANNEL_ID_PREFIX}-${channelId}`, seq)) === undefined,
+    );
 
     const queryHeight = await this.getQueryHeight();
     const response: QueryUnreceivedPacketsResponse = {
@@ -606,10 +634,11 @@ export class PacketService {
       'QueryUnreceivedAcksRequest',
     );
 
-    const utxo = await this.getChannelUtxo(channelId);
-    const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-    const packetCommitsSeqs = channelDatumDecoded.state.packet_commitment;
-    const sequences = packetAcksSequences.filter((seq) => packetCommitsSeqs.has(BigInt(seq)));
+    await this.ensureTreeAligned();
+    const tree = getCurrentTree();
+    const sequences = packetAcksSequences.filter(
+      (seq) => tree.get(packetStorePath('commitments', portId, `${CHANNEL_ID_PREFIX}-${channelId}`, seq)) !== undefined,
+    );
 
     const queryHeight = await this.getQueryHeight();
     const response: QueryUnreceivedAcksResponse = {
@@ -645,13 +674,15 @@ export class PacketService {
         `Invalid port, found port ${channelDatumDecoded.port} instead of ${portId} in datum`,
       );
     }
-    if (channelDatumDecoded.state.packet_receipt.has(sequence)) {
-      throw new GrpcInvalidArgumentException(
-        `Invalid sequence, sequence ${sequence} already exists in packet_receipt map`,
-      );
-    }
     if (!proofContext.historical) {
       await this.ensureTreeAligned();
+    }
+    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
+    const ibcPath = packetStorePath('receipts', portId, `${CHANNEL_ID_PREFIX}-${channelId}`, sequence);
+    if (tree.get(ibcPath)) {
+      throw new GrpcInvalidArgumentException(
+        `Invalid sequence, sequence ${sequence} already has an authenticated packet receipt`,
+      );
     }
     // if (BigInt(proof.blockNo) > revisionHeight) {
     //   throw new GrpcInvalidArgumentException(
@@ -662,8 +693,6 @@ export class PacketService {
     // Generate ICS-23 non-existence proof from the IBC state tree
     // This proves that the receipt does NOT exist (packet is unreceived)
     // Path: receipts/ports/{portId}/channels/{channelId}/sequences/{sequence}
-    const ibcPath = `receipts/ports/${portId}/channels/channel-${channelId}/sequences/${sequence}`;
-    const tree = proofContext.historical ? proofContext.tree : getCurrentTree();
     let unreceivedProof: Buffer;
     try {
       const nonExistenceProof = tree.generateNonExistenceProof(ibcPath);

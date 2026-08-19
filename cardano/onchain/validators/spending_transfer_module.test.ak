@@ -192,29 +192,12 @@ fn setup() -> MockData {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id,
       token: channel_token,
     }
 
-  let output_channel_datum =
-    ChannelDatum {
-      ..channel_datum,
-      state: ChannelDatumState {
-        ..channel_datum.state,
-        packet_receipt: [Pair(1, ""), ..channel_datum.state.packet_receipt],
-        packet_acknowledgement: [
-          Pair(
-            1,
-            #"08f7557ed51826fe18d84512bf24ec75001edbaf2123a477df72a0a9f3640a7c",
-          ),
-          ..channel_datum.state.packet_acknowledgement
-        ],
-      },
-    }
+  let output_channel_datum = channel_datum
 
   let channel_output =
     Output {

@@ -14,8 +14,6 @@ process.env.WS_NO_UTF_8_VALIDATE ||= '1';
 function ensureSodiumWrapperEsmArtifact() {
   const packageRoots = [
     __dirname,
-    path.resolve(__dirname, '../../../packages/cardano-ibc-tx-builder'),
-    path.resolve(__dirname, '../../../packages/cardano-ibc-tx-builder-runtime'),
     path.resolve(__dirname, '../../../packages/cardano-ibc-trace-registry'),
   ];
 
@@ -51,7 +49,6 @@ const nextConfig = {
     externalDir: true,
   },
   transpilePackages: [
-    '@cardano-ibc/tx-builder-runtime',
     '@cardano-ibc/planner',
     '@cardano-ibc/trace-registry',
   ],
@@ -76,14 +73,6 @@ const nextConfig = {
       '@cardano-ibc/trace-registry': path.resolve(
         __dirname,
         '../../../packages/cardano-ibc-trace-registry/src/index.ts',
-      ),
-      '@cardano-ibc/tx-builder': path.resolve(
-        __dirname,
-        '../../../packages/cardano-ibc-tx-builder/src/index.ts',
-      ),
-      '@cardano-ibc/tx-builder-runtime': path.resolve(
-        __dirname,
-        '../../../packages/cardano-ibc-tx-builder-runtime/src/index.ts',
       ),
       '@noble/hashes': path.dirname(require.resolve('@noble/hashes/blake2b')),
       'js-sha3': require.resolve('js-sha3'),

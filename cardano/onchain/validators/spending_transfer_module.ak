@@ -412,14 +412,11 @@ fn module_callback(
         let channel_id_from_sequence =
           channel_keys.format_channel_identifier(channel_sequence)
 
-        let bz_ack = acknowledgement_mod.acknowledgement(acknowledgement)
-        let commit_ack = acknowledgement_mod.commit_acknowledgement(bz_ack)
         let valid_packet =
           validate_recv_packet(
             input_channel_datum,
             updated_channel_datum,
             packet,
-            commit_ack,
           )
 
         expect Some(payout_output) =

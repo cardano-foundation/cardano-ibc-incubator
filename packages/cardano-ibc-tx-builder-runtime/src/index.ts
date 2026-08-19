@@ -5,10 +5,33 @@ import { createTraceRegistryClient } from '@cardano-ibc/trace-registry';
 import { blake2b } from '@noble/hashes/blake2b';
 import WebSocket from 'ws';
 import { AsyncMutex } from './asyncMutex';
-import { alignTreeWithChain, computeRootWithHandlePacketUpdate, initTreeServices, isTreeAligned, rebuildTreeFromChain } from './ibcStateRoot';
+import {
+  alignTreeWithChain,
+  computeRootWithHandlePacketUpdate,
+  createFetchIbcTreeRecoveryStore,
+  initTreeServices,
+  isTreeAligned,
+  rebuildTreeFromChain,
+  type IbcStateTreeJournalEntry,
+  type IbcStateTreeRecoveryStore,
+  type PacketStateOperation,
+} from './ibcStateRoot';
 import { LucidIbcAdapter } from './lucidIbcAdapter';
 
 export { AsyncMutex } from './asyncMutex';
+export {
+  createTreeCheckpoint,
+  createFetchIbcTreeRecoveryStore,
+  installVerifiedTreeRecovery,
+  recoverTreeFromCheckpointAndJournal,
+} from './ibcStateRoot';
+export type {
+  IbcStateTreeCheckpoint,
+  IbcStateTreeJournalEntry,
+  IbcStateTreeMutation,
+  IbcStateTreeRecoveryState,
+  IbcStateTreeRecoveryStore,
+} from './ibcStateRoot';
 
 const LOOKUP_RETRY_OPTIONS = {
   maxAttempts: 6,
@@ -319,6 +342,9 @@ type BuilderRuntimeConfig = {
   kupmiosHeaders?: KupmiosAuthHeaders;
   fetchImpl?: typeof fetch;
   logger?: RuntimeLogger;
+  ibcTreeRecoveryStore?: IbcStateTreeRecoveryStore;
+  ibcTreeRecoveryUrl?: string;
+  ibcSubmitUrl?: string;
 };
 
 type BuilderContext = {
@@ -860,58 +886,6 @@ async function queryNetworkTipPoint(ogmiosUrl: string, headers?: Record<string, 
     slot: result.slot,
     id: result.id,
   };
-}
-
-async function submitSignedTxCbor(
-  ogmiosUrl: string,
-  signedTxCbor: string,
-  headers: Record<string, string> | undefined,
-  fetchImpl: typeof fetch,
-): Promise<string> {
-  const response = await fetchImpl(ogmiosUrl, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...(headers ?? {}),
-    },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      method: 'submitTransaction',
-      params: {
-        transaction: { cbor: signedTxCbor },
-      },
-      id: null,
-    }),
-  });
-
-  const responseText = await response.text();
-  let payload: any;
-  try {
-    payload = responseText ? JSON.parse(responseText) : null;
-  } catch {
-    payload = null;
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      `Ogmios submitTransaction failed (${response.status} ${response.statusText}): ${responseText.slice(0, 1000)}`,
-    );
-  }
-
-  if (payload?.error) {
-    throw new Error(
-      `Ogmios submitTransaction rejected: ${payload.error.message ?? JSON.stringify(payload.error)}`,
-    );
-  }
-
-  const txHash = payload?.result?.transaction?.id;
-  if (typeof txHash !== 'string' || txHash.trim().length === 0) {
-    throw new Error(
-      `Ogmios submitTransaction returned an invalid response: ${responseText.slice(0, 1000)}`,
-    );
-  }
-
-  return txHash;
 }
 
 function toSafeCostModelInteger(value: unknown): number {
@@ -1461,7 +1435,13 @@ async function ensureTreeAlignedForRoot(context: BuilderContext, onChainRoot: st
   }
 }
 
-async function buildHostStateUpdateForHandlePacket(context: BuilderContext, inputChannelDatum: any, outputChannelDatum: any, channelIdForRoot: string) {
+async function buildHostStateUpdateForHandlePacket(
+  context: BuilderContext,
+  inputChannelDatum: any,
+  outputChannelDatum: any,
+  channelIdForRoot: string,
+  packetStateUpdate: PacketStateOperation,
+) {
   const hostStateUtxo = await context.lucidService.findUtxoAtHostStateNFT();
   if (!hostStateUtxo.datum) {
     throw new Error('HostState UTXO has no datum');
@@ -1481,8 +1461,17 @@ async function buildHostStateUpdateForHandlePacket(context: BuilderContext, inpu
     packetCommitmentSiblings,
     packetReceiptSiblings,
     packetAcknowledgementSiblings,
+    journalEntry,
     commit,
-  } = await computeRootWithHandlePacketUpdate(hostStateDatum.state.ibc_state_root, portId, channelIdForRoot, inputChannelDatum, outputChannelDatum, context.lucidService.LucidImporter);
+  } = await computeRootWithHandlePacketUpdate(
+    hostStateDatum.state.ibc_state_root,
+    portId,
+    channelIdForRoot,
+    inputChannelDatum,
+    outputChannelDatum,
+    packetStateUpdate,
+    context.lucidService.LucidImporter,
+  );
 
   const updatedHostStateDatum = {
     ...hostStateDatum,
@@ -1496,6 +1485,17 @@ async function buildHostStateUpdateForHandlePacket(context: BuilderContext, inpu
 
   const hostStateRedeemer = {
     HandlePacket: {
+      transition: packetStateUpdate.kind === 'send'
+        ? 'SendPacketState'
+        : packetStateUpdate.kind === 'recv'
+          ? {
+              RecvPacketState: {
+                acknowledgement_commitment: packetStateUpdate.acknowledgementCommitment,
+              },
+            }
+          : packetStateUpdate.kind === 'acknowledge'
+            ? 'AcknowledgePacketState'
+            : 'TimeoutPacketState',
       channel_siblings: channelSiblings,
       next_sequence_send_siblings: nextSequenceSendSiblings,
       next_sequence_recv_siblings: nextSequenceRecvSiblings,
@@ -1511,6 +1511,7 @@ async function buildHostStateUpdateForHandlePacket(context: BuilderContext, inpu
     encodedHostStateRedeemer: await context.lucidService.encode(hostStateRedeemer, 'host_state_redeemer'),
     encodedUpdatedHostStateDatum: await context.lucidService.encode(updatedHostStateDatum, 'host_state'),
     newRoot,
+    journalEntry,
     commit,
   };
 }
@@ -1539,6 +1540,13 @@ async function computeTxValidityWindow(context: BuilderContext) {
 
 export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
   const logger = config.logger ?? defaultLogger('txBuilderRuntime');
+  const ibcTreeRecoveryStore = config.ibcTreeRecoveryStore ??
+    (config.ibcTreeRecoveryUrl
+      ? createFetchIbcTreeRecoveryStore(
+          config.ibcTreeRecoveryUrl,
+          config.fetchImpl ?? fetch,
+        )
+      : undefined);
   let cachedContextPromise: Promise<BuilderContext> | null = null;
   const transferBuildQueue = new AsyncMutex();
   let transferBuildCounter = 0;
@@ -1591,8 +1599,10 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
     await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
 
     const kupoService = new RuntimeKupoService(lucidService, deployment);
-    initTreeServices(kupoService, lucidService);
-    await timed(logger, '[context]', 'rebuild IBC state tree', () => rebuildTreeFromChain(kupoService, lucidService));
+    initTreeServices(kupoService, lucidService, ibcTreeRecoveryStore);
+    await timed(logger, '[context]', 'rebuild IBC state tree', () =>
+      rebuildTreeFromChain(kupoService, lucidService, ibcTreeRecoveryStore),
+    );
 
     logger.log(`[context] initialized shared Cardano tx-builder runtime context in ${elapsedMs(contextStartedAt)}`);
 
@@ -1669,6 +1679,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
     }
     logger.log(`${scope} initial wallet UTxOs selected=${initialWalletUtxos.length}`);
     context.lucidService.selectWalletFromAddress(sendPacketOperator.signer, initialWalletUtxos);
+    let packetTreeTransition: IbcStateTreeJournalEntry | undefined;
 
     const { unsignedTx, walletOverride } = await timed(logger, scope, 'build send_packet tx skeleton', () =>
       buildUnsignedSendPacketTx(sendPacketOperator, {
@@ -1723,8 +1734,19 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
             logger.log(`${scope} load builder context completed in ${elapsedMs(loadContextStartedAt)}`);
           }
         },
-        buildHostStateUpdate: (inputChannelDatum, outputChannelDatum, channelIdForRoot) =>
-          timed(logger, scope, 'build host-state update', () => buildHostStateUpdateForHandlePacket(context, inputChannelDatum, outputChannelDatum, channelIdForRoot)),
+        buildHostStateUpdate: async (inputChannelDatum, outputChannelDatum, channelIdForRoot, packetStateUpdate) => {
+          const update = await timed(logger, scope, 'build host-state update', () =>
+            buildHostStateUpdateForHandlePacket(
+              context,
+              inputChannelDatum,
+              outputChannelDatum,
+              channelIdForRoot,
+              packetStateUpdate,
+            ),
+          );
+          packetTreeTransition = update.journalEntry;
+          return update;
+        },
         resolveIbcDenomHash: async (denomHash) => {
           const match = await timed(logger, scope, `resolve denom hash ${denomHash}`, () => context.traceRegistryClient.lookupIbcDenomTrace(denomHash));
           if (!match) {
@@ -1779,6 +1801,18 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
       );
 
       const unsignedTxCbor = completedUnsignedTx.toCBOR();
+      const unsignedTxHash = completedUnsignedTx.toHash();
+      if (!packetTreeTransition) {
+        throw new Error('sendPacket failed: packet tree transition was not produced');
+      }
+      if (!ibcTreeRecoveryStore?.prepare) {
+        throw new Error(
+          'sendPacket failed: root-authoritative packet state requires a writable IBC tree transition store',
+        );
+      }
+      await timed(logger, scope, 'durably prepare IBC tree transition', () =>
+        ibcTreeRecoveryStore.prepare!(unsignedTxHash, packetTreeTransition!),
+      );
       const feeLovelace = completedUnsignedTx.toTransaction().body().fee().toString();
       logger.log(`${scope} prepared unsigned Cardano transfer in ${elapsedMs(buildStartedAt)}`);
 
@@ -1809,16 +1843,35 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
       throw new Error('Invalid argument: "signed_tx_cbor" must be even-length hex CBOR');
     }
 
+    if (!config.ibcSubmitUrl) {
+      throw new Error(
+        'Root-authoritative packet transactions must be submitted through a confirming IBC Gateway; configure ibcSubmitUrl instead of submitting directly to Ogmios',
+      );
+    }
+
     logger.log(`${scope} submitting ${description}; signedTxLength=${signedTxCbor.length}`);
-    const context = await timed(logger, scope, 'get runtime context', getContext);
-    const txHash = await timed(logger, scope, 'submit signed transaction via Ogmios', () =>
-      submitSignedTxCbor(
-        context.ogmiosEndpoint,
-        signedTxCbor,
-        context.kupmiosHeaders?.ogmiosHeader,
-        config.fetchImpl ?? fetch,
-      ),
-    );
+    const txHash = await timed(logger, scope, 'submit and confirm signed transaction via IBC Gateway', async () => {
+      const response = await (config.fetchImpl ?? fetch)(config.ibcSubmitUrl!, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ signed_tx_cbor: signedTxCbor, description }),
+      });
+      const responseBody = await response.json() as { tx_hash?: unknown; message?: unknown };
+      if (!response.ok) {
+        throw new Error(
+          typeof responseBody.message === 'string'
+            ? responseBody.message
+            : `IBC Gateway submission failed: ${response.status} ${response.statusText}`,
+        );
+      }
+      if (typeof responseBody.tx_hash !== 'string' || !responseBody.tx_hash) {
+        throw new Error('IBC Gateway submission response did not contain tx_hash');
+      }
+      return responseBody.tx_hash;
+    });
     logger.log(`${scope} submitted signed Cardano transaction ${txHash} in ${elapsedMs(submitStartedAt)}`);
     return { txHash };
   }

@@ -56,7 +56,9 @@ use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateDatum, ModuleRegistration, empty_ibc_state_root,
   host_state_token_name,
 }
-use ibc/core/ics_025_handler_interface/host_state_redeemer.{HandlePacket}
+use ibc/core/ics_025_handler_interface/host_state_redeemer.{
+  HandlePacket, RecvPacketState,
+}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/utils/bits
 use ibc/utils/test_utils
@@ -206,9 +208,6 @@ fn check_recv_packet_with_timeout(
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -251,21 +250,7 @@ fn check_recv_packet_with_timeout(
       timeout_timestamp,
     }
 
-  let valid_output_channel_datum =
-    ChannelDatum {
-      ..input_channel_datum,
-      state: ChannelDatumState {
-        ..input_channel_datum.state,
-        packet_receipt: [
-          Pair(packet.sequence, ""),
-          ..input_channel_datum.state.packet_receipt
-        ],
-        packet_acknowledgement: [
-          Pair(packet.sequence, commit_ack),
-          ..input_channel_datum.state.packet_acknowledgement
-        ],
-      },
-    }
+  let valid_output_channel_datum = input_channel_datum
   let output_channel_datum =
     if mutate_successor {
       ChannelDatum { ..valid_output_channel_datum, port_id: "port-999" }
@@ -564,6 +549,7 @@ fn check_recv_packet_with_timeout(
   let recv_packet_redeemer: Redeemer = mock_data.channel_token
   let host_state_redeemer =
     HandlePacket {
+      transition: RecvPacketState { acknowledgement_commitment: commit_ack },
       channel_siblings: [],
       next_sequence_send_siblings: [],
       next_sequence_recv_siblings: [],
@@ -669,14 +655,14 @@ fn check_recv_packet_timeout(
     True,
     True,
     True,
-    False,
+    True,
     timeout_height,
     timeout_timestamp,
   )
 }
 
 test succeed_recv_packet() {
-  check_recv_packet(True, False, True, True, True, False)
+  check_recv_packet(True, False, True, True, True, True)
 }
 
 test prop_tx_recv_packet_accepts_atomic_successor_and_callback(
@@ -719,6 +705,17 @@ test prop_tx_recv_packet_rejects_callback_acknowledgement_mismatch(
   check_recv_packet(True, False, True, False, True, True)
 }
 
+test prop_tx_recv_packet_rejects_host_transition_acknowledgement_mismatch(
+  _seed via fuzz.int(),
+) fail {
+  fuzz.label(
+    @"regression.tx.packet.recv.invalid_host_transition_acknowledgement",
+  )
+  // The callback produces the alternate acknowledgement while HandlePacket
+  // still carries the commitment for the normal acknowledgement.
+  check_recv_packet(True, False, True, False, True, True)
+}
+
 test recv_packet_rejects_height_only_timeout() fail {
   check_recv_packet_timeout(
     Height { revision_number: 0, revision_height: 100 },
@@ -758,9 +755,6 @@ test recv_packet_fails_when_channel_is_closed() fail {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -857,32 +851,12 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: "port-100",
       token: channel_token,
     }
 
-  let updated_channel_datum =
-    ChannelDatum {
-      ..input_channel_datum,
-      state: ChannelDatumState {
-        ..input_channel_datum.state,
-        packet_receipt: [
-          Pair(1, ""),
-          ..input_channel_datum.state.packet_receipt
-        ],
-        packet_acknowledgement: [
-          Pair(
-            1,
-            #"08f7557ed51826fe18d84512bf24ec75001edbaf2123a477df72a0a9f3640a7c",
-          ),
-          ..input_channel_datum.state.packet_acknowledgement
-        ],
-      },
-    }
+  let updated_channel_datum = input_channel_datum
 
   let spend_channel_input =
     Input {

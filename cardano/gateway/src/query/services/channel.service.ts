@@ -37,6 +37,7 @@ import { HISTORY_SERVICE, HistoryService } from './history.service';
 import { resolveProofContextForQuery, resolveProofHeightForCurrentRoot } from './proof-context';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ProofQueryOptions } from '../helpers/query-height';
+import { listPacketStoreEntries } from '../../shared/helpers/packet-state-store';
 
 type CardanoChannelHealthResponse = {
   port_id: string;
@@ -75,7 +76,7 @@ export class ChannelService {
     if (isTreeAligned(onChainRoot)) return;
 
     this.logger.warn(
-      `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding from chain...`,
+      `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., recovering durable proof state...`,
     );
     await alignTreeWithChain();
   }
@@ -135,10 +136,7 @@ export class ChannelService {
 
   private async findChannelUtxo(channelTokenUnit: string) {
     const deploymentConfig = this.configService.get('deployment');
-    return this.lucidService.findUtxoAtWithUnit(
-      deploymentConfig.validators.spendChannel.address,
-      channelTokenUnit,
-    );
+    return this.lucidService.findUtxoAtWithUnit(deploymentConfig.validators.spendChannel.address, channelTokenUnit);
   }
 
   async getChannelHealth(channelId: string, expectedPortId = 'transfer'): Promise<CardanoChannelHealthResponse> {
@@ -161,9 +159,14 @@ export class ChannelService {
       );
     }
 
-    const pendingSequences = Array.from(channelDatumDecoded.state.packet_commitment.keys()).sort((left, right) =>
-      left === right ? 0 : left < right ? -1 : 1,
-    );
+    await this.ensureTreeAligned();
+    const pendingSequences = listPacketStoreEntries(
+      getCurrentTree(),
+      'commitments',
+      portId,
+      `${CHANNEL_ID_PREFIX}-${normalizedChannelId}`,
+      this.lucidService.LucidImporter,
+    ).map(({ sequence }) => sequence);
     const isOrdered = channelDatumDecoded.state.channel.ordering === 'Ordered';
     const status = isOrdered && pendingSequences.length > 0 ? 'blocked' : 'available';
     const earliestPendingPacketSequence = pendingSequences[0]?.toString() ?? null;

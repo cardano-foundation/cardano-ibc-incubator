@@ -6,16 +6,27 @@ import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { HistoryService } from '../services/history.service';
 import { decodeChannelDatum } from '../../shared/types/channel/channel-datum';
+import { listPacketStoreEntries } from '../../shared/helpers/packet-state-store';
 
 jest.mock('../../shared/types/channel/channel-datum', () => ({
   decodeChannelDatum: jest.fn(),
+}));
+
+jest.mock('../../shared/helpers/ibc-state-root', () => ({
+  getCurrentTree: jest.fn(() => ({})),
+  isTreeAligned: jest.fn(() => true),
+  alignTreeWithChain: jest.fn(),
+}));
+
+jest.mock('../../shared/helpers/packet-state-store', () => ({
+  listPacketStoreEntries: jest.fn(),
 }));
 
 function toHex(value: string): string {
   return Buffer.from(value, 'utf8').toString('hex');
 }
 
-function makeChannelDatum(ordering: 'Ordered' | 'Unordered', pendingSequences: bigint[]) {
+function makeChannelDatum(ordering: 'Ordered' | 'Unordered') {
   return {
     port: toHex('transfer'),
     state: {
@@ -32,9 +43,6 @@ function makeChannelDatum(ordering: 'Ordered' | 'Unordered', pendingSequences: b
       next_sequence_send: 9n,
       next_sequence_recv: 1n,
       next_sequence_ack: 1n,
-      packet_commitment: new Map(pendingSequences.map((sequence) => [sequence, 'commitment'])),
-      packet_receipt: new Map(),
-      packet_acknowledgement: new Map(),
     },
     token: {
       policyId: 'policy',
@@ -52,6 +60,8 @@ function makeService() {
       outputIndex: 0,
       datum: 'channel-datum',
     })),
+    findUtxoAtHostStateNFT: jest.fn(async () => ({ datum: 'host-state-datum' })),
+    decodeDatum: jest.fn(async () => ({ state: { ibc_state_root: 'ab'.repeat(32) } })),
   };
 
   const service = new ChannelService(
@@ -91,7 +101,11 @@ describe('ChannelService.getChannelHealth', () => {
   });
 
   it('marks ordered channels with pending packet commitments as blocked', async () => {
-    (decodeChannelDatum as jest.Mock).mockResolvedValue(makeChannelDatum('Ordered', [3n, 1n]));
+    (decodeChannelDatum as jest.Mock).mockResolvedValue(makeChannelDatum('Ordered'));
+    (listPacketStoreEntries as jest.Mock).mockReturnValue([
+      { sequence: 1n, value: 'aa' },
+      { sequence: 3n, value: 'bb' },
+    ]);
     const { service } = makeService();
 
     const response = await service.getChannelHealth('channel-0', 'transfer');
@@ -110,7 +124,8 @@ describe('ChannelService.getChannelHealth', () => {
   });
 
   it('leaves unordered channels available even when packet commitments are pending', async () => {
-    (decodeChannelDatum as jest.Mock).mockResolvedValue(makeChannelDatum('Unordered', [1n]));
+    (decodeChannelDatum as jest.Mock).mockResolvedValue(makeChannelDatum('Unordered'));
+    (listPacketStoreEntries as jest.Mock).mockReturnValue([{ sequence: 1n, value: 'aa' }]);
     const { service } = makeService();
 
     await expect(service.getChannelHealth('channel-0', 'transfer')).resolves.toMatchObject({

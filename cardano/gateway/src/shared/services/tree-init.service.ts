@@ -1,10 +1,11 @@
-import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { KupoService } from '../modules/kupo/kupo.service';
 import { LucidService } from '../modules/lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
-import { rebuildTreeFromChain, initTreeServices, setCurrentTree } from '../helpers/ibc-state-root';
-import { CURRENT_IBC_TREE_CACHE_ID, IbcTreeCacheService, ibcTreeCacheIdForRoot } from './ibc-tree-cache.service';
+import { rebuildTreeFromChain, initTreeServices } from '../helpers/ibc-state-root';
+import { CURRENT_IBC_TREE_CACHE_ID, IbcTreeCacheService } from './ibc-tree-cache.service';
 import { HostStateDatum } from '../types/host-state-datum';
+import { HISTORY_SERVICE, HistoryService } from '../../query/services/history.service';
 
 /**
  * TreeInitService - Initializes the IBC state tree on Gateway startup
@@ -29,54 +30,67 @@ export class TreeInitService implements OnModuleInit {
     private readonly lucidService: LucidService,
     private readonly configService: ConfigService,
     private readonly ibcTreeCacheService: IbcTreeCacheService,
+    @Inject(HISTORY_SERVICE) private readonly historyService: HistoryService,
   ) {}
 
   async onModuleInit() {
     this.logger.log('Initializing IBC state tree from on-chain UTXOs...');
 
     // Cache services for on-demand tree alignment (used by alignTreeWithChain)
-    initTreeServices(this.kupoService, this.lucidService);
+    initTreeServices(this.kupoService, this.lucidService, this.ibcTreeCacheService, this.historyService);
 
     try {
-      const cacheEnabled = process.env.IBC_TREE_CACHE_ENABLED !== 'false';
-      if (cacheEnabled) {
+      if (process.env.IBC_TREE_CACHE_ENABLED === 'false') {
+        throw new Error('IBC_TREE_CACHE_ENABLED=false is unsafe with root-authoritative packet state');
+      }
         await this.ibcTreeCacheService.ensureSchema();
 
-        const cached = await this.ibcTreeCacheService.load(CURRENT_IBC_TREE_CACHE_ID);
-        if (cached) {
-          // Verify cached root against the authoritative on-chain HostState commitment.
           const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
           if (!hostStateUtxo?.datum) {
-            throw new Error('HostState UTXO has no datum - cannot verify cached tree');
+        throw new Error('HostState UTXO has no datum - cannot verify persisted tree');
           }
           const hostStateDatum = await this.lucidService.decodeDatum<HostStateDatum>(hostStateUtxo.datum, 'host_state');
-          const onChainRoot = hostStateDatum.state.ibc_state_root;
+      const onChainRoot = hostStateDatum.state.ibc_state_root.toLowerCase();
 
-          if (onChainRoot === cached.root) {
-            setCurrentTree(cached.tree);
-            this.logger.log(`Loaded IBC state tree from cache, root: ${cached.root.substring(0, 16)}...`);
+      const cached = await this.ibcTreeCacheService.load(CURRENT_IBC_TREE_CACHE_ID);
+      if (cached?.root === onChainRoot) {
+        this.logger.log(`Loaded verified IBC proof store, root: ${cached.root.substring(0, 16)}...`);
             return;
           }
 
+      if (cached) {
           this.logger.warn(
-            `Cached tree root does not match on-chain root, cached=${cached.root.substring(0, 16)}..., onChain=${onChainRoot.substring(0, 16)}..., rebuilding from chain`,
+          `Persisted IBC root ${cached.root.substring(0, 16)}... trails on-chain root ${onChainRoot.substring(0, 16)}...; replaying durable journal`,
           );
+        const indexedHostStateTx = await this.historyService.findTxByHash(hostStateUtxo.txHash);
+        if (!indexedHostStateTx || !Number.isSafeInteger(indexedHostStateTx.height) || indexedHostStateTx.height < 0) {
+          throw new Error(`No authoritative inclusion height is indexed for HostState ${hostStateUtxo.txHash}`);
         }
+        const recovered = await this.ibcTreeCacheService.recoverToRoot(onChainRoot, {
+          expectedRootInclusionHeight: BigInt(indexedHostStateTx.height),
+          resolveTransitionInclusionHeight: async (txHash) => {
+            const tx = await this.historyService.findTxByHash(txHash);
+            if (!tx || !Number.isSafeInteger(tx.height) || tx.height < 0) {
+              throw new Error(`No authoritative inclusion height is indexed for IBC transition ${txHash}`);
+            }
+            return BigInt(tx.height);
+          },
+        });
+        this.logger.log(`Recovered verified IBC proof store to root: ${recovered.root.substring(0, 16)}...`);
+        return;
       }
 
+      // A first deployment with no packet history can still seed the durable
+      // store from bounded entity UTxOs. Once packet leaves exist, loss of the
+      // proof store is an availability failure and the root mismatch below
+      // deliberately prevents startup.
       const { tree, root } = await rebuildTreeFromChain(this.kupoService, this.lucidService);
 
       this.logger.log(`IBC state tree initialized successfully`);
       this.logger.log(`   Root: ${root.substring(0, 16)}...`);
 
-      if (process.env.IBC_TREE_CACHE_ENABLED !== 'false') {
-        try {
-          await this.ibcTreeCacheService.saveAliases(tree, [CURRENT_IBC_TREE_CACHE_ID, ibcTreeCacheIdForRoot(root)]);
-          this.logger.log(`Persisted IBC state tree cache, root: ${root.substring(0, 16)}...`);
-        } catch (error) {
-          this.logger.warn(`Failed to persist IBC state tree cache: ${error?.message ?? error}`);
-        }
-      }
+      await this.ibcTreeCacheService.bootstrapVerifiedTree(tree);
+      this.logger.log(`Persisted initial IBC proof-store checkpoint, root: ${root.substring(0, 16)}...`);
     } catch (error) {
       this.logger.error(`Failed to initialize IBC state tree: ${error.message}`);
       this.logger.error(`   Gateway cannot start without valid tree state`);

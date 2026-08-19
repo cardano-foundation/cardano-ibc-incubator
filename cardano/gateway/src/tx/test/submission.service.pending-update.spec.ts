@@ -13,6 +13,9 @@ describe('SubmissionService pending update strictness', () => {
     take: jest.Mock;
     takeByExpectedRoot: jest.Mock;
   };
+  let ibcTreeCacheServiceMock: {
+    confirmTransition: jest.Mock;
+  };
 
   beforeEach(() => {
     ibcTreePendingUpdatesServiceMock = {
@@ -39,7 +42,10 @@ describe('SubmissionService pending update strictness', () => {
       }),
     };
     const txEventsServiceMock = {};
-    const ibcTreeCacheServiceMock = { saveAliases: jest.fn() };
+    const verifiedTree = { getRoot: jest.fn().mockReturnValue('root-at-tx') };
+    ibcTreeCacheServiceMock = {
+      confirmTransition: jest.fn().mockResolvedValue({ root: 'root-at-tx', tree: verifiedTree }),
+    };
     const historyServiceMock = { findTxByHash: jest.fn() };
     const queryServiceMock = { queryPacketEventsByTxHash: jest.fn().mockResolvedValue({ events: [] }) };
 
@@ -54,13 +60,18 @@ describe('SubmissionService pending update strictness', () => {
     );
   });
 
-  it('fails hard when confirmed tx has no pending update entry', async () => {
+  it('recovers a durable transition after restart removed the in-memory pending update', async () => {
     jest.spyOn(service as any, 'readConfirmedTxRoot').mockResolvedValueOnce('root-at-tx');
 
-    await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'abc123', 1234)).rejects.toThrow();
+    await expect((service as any).applyPendingIbcTreeUpdate('deadbeef', 'abc123', 1234n)).resolves.toBe('root-at-tx');
 
     expect(ibcTreePendingUpdatesServiceMock.take).toHaveBeenCalledWith('abc123');
     expect(ibcTreePendingUpdatesServiceMock.takeByExpectedRoot).toHaveBeenCalledWith('root-at-tx');
+    expect(ibcTreeCacheServiceMock.confirmTransition).toHaveBeenCalledWith({
+      txHash: 'abc123',
+      newRoot: 'root-at-tx',
+      blockNo: 1234n,
+    });
   });
 
   it('fails hard on confirmed tx root lookup error instead of falling back to current HostState', async () => {

@@ -21,7 +21,7 @@ describe('SubmissionService confirmation strictness regressions', () => {
     take: jest.Mock;
   };
   let ibcTreeCacheServiceMock: {
-    saveAliases: jest.Mock;
+    confirmTransition: jest.Mock;
   };
   let historyServiceMock: {
     findTxByHash: jest.Mock;
@@ -69,7 +69,10 @@ describe('SubmissionService confirmation strictness regressions', () => {
     };
 
     ibcTreeCacheServiceMock = {
-      saveAliases: jest.fn().mockResolvedValue(undefined),
+      confirmTransition: jest.fn().mockResolvedValue({
+        root: 'ab'.repeat(32),
+        tree: { getRoot: jest.fn().mockReturnValue('ab'.repeat(32)) },
+      }),
     };
     historyServiceMock = { findTxByHash: jest.fn() };
     queryServiceMock = { queryPacketEventsByTxHash: jest.fn().mockResolvedValue({ events: [] }) };
@@ -113,7 +116,7 @@ describe('SubmissionService confirmation strictness regressions', () => {
     expect(historyServiceMock.findTxByHash).not.toHaveBeenCalled();
   });
 
-  it('persists confirmed IBC tree snapshots by current id, root, and block height', async () => {
+  it('promotes the durable IBC tree transition at the confirmed block height', async () => {
     const commit = jest.fn();
     ibcTreePendingUpdatesServiceMock.take.mockReturnValueOnce({
       expectedNewRoot: 'ab'.repeat(32),
@@ -121,12 +124,13 @@ describe('SubmissionService confirmation strictness regressions', () => {
     });
     jest.spyOn(service as any, 'readConfirmedTxRoot').mockResolvedValueOnce('ab'.repeat(32));
 
-    await (service as any).applyPendingIbcTreeUpdate('deadbeef', 'tx-hash-abc', 9999);
+    await (service as any).applyPendingIbcTreeUpdate('deadbeef', 'tx-hash-abc', 9999n);
 
-    expect(commit).toHaveBeenCalled();
-    expect(ibcTreeCacheServiceMock.saveAliases).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.arrayContaining(['current', `root:${'ab'.repeat(32)}`, 'height:9999']),
-    );
+    expect(commit).not.toHaveBeenCalled();
+    expect(ibcTreeCacheServiceMock.confirmTransition).toHaveBeenCalledWith({
+      txHash: 'tx-hash-abc',
+      newRoot: 'ab'.repeat(32),
+      blockNo: 9999n,
+    });
   });
 });

@@ -10,7 +10,6 @@ import { SubmissionService } from './submission.service';
 import { QueryModule } from '../query/query.module';
 import { TxEventsService } from './tx-events.service';
 import { KupoModule } from 'src/shared/modules/kupo/kupo.module';
-import { IbcTreeCacheService } from '../shared/services/ibc-tree-cache.service';
 import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { WalletContextService } from './wallet-context.service';
@@ -29,11 +28,10 @@ import { HostStateHeartbeatService } from './host-state-heartbeat.service';
     TxEventsService,
     TxOperationRunnerService,
     WalletContextService,
-    IbcTreeCacheService,
     IbcTreePendingUpdatesService,
     HostStateHeartbeatService,
     Logger,
   ],
-  exports: [IbcTreeCacheService, IbcTreePendingUpdatesService, PacketService],
+  exports: [IbcTreePendingUpdatesService, PacketService, SubmissionService],
 })
 export class TxModule {}

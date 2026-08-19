@@ -1,6 +1,6 @@
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
-use cardano/transaction.{Mint, Redeemer, ScriptPurpose, Transaction}
+use cardano/transaction.{Mint, Redeemer, ScriptPurpose, Spend, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -28,6 +28,9 @@ use ibc/core/ics_004/types/state as chan_state_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{Callback, OnRecvPacket}
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_024_host_requirements/packet_keys
+use ibc/core/ics_025_handler_interface/host_state_redeemer.{
+  HandlePacket, HostStateRedeemer, RecvPacketState,
+}
 use ibc/utils/validator_utils
 
 validator recv_packet(
@@ -84,13 +87,7 @@ validator recv_packet(
     trace @"recv_packet: tx context extracted"
 
     let ChannelDatum { state: cur_channel_state, port_id, .. } = datum
-    let ChannelDatumState {
-      channel: cur_channel,
-      packet_receipt: cur_packet_receipt,
-      packet_acknowledgement: cur_packet_acknowledgement,
-      // next_sequence_recv,
-      ..
-    } = cur_channel_state
+    let ChannelDatumState { channel: cur_channel, .. } = cur_channel_state
 
     expect [connection_id] = cur_channel.connection_hops
 
@@ -159,6 +156,25 @@ validator recv_packet(
       acknowledgement_mod.acknowledgement(acknowledgement)
     let acknowledgement_commitment =
       acknowledgement_mod.commit_acknowledgement(acknowledgement_bytes)
+
+    // Bind the acknowledgement authenticated by the application callback to
+    // the exact value inserted into the authoritative HostState Merkle root.
+    let (host_input, _) =
+      validator_utils.require_host_state_thread(
+        inputs,
+        outputs,
+        host_state_nft_policy_id,
+      )
+    expect Some(host_redeemer_data) =
+      pairs.get_first(redeemers, Spend(host_input.output_reference))
+    expect host_redeemer: HostStateRedeemer = host_redeemer_data
+    expect HandlePacket {
+      transition: RecvPacketState {
+        acknowledgement_commitment: committed_acknowledgement,
+      },
+      ..
+    } = host_redeemer
+    expect committed_acknowledgement == acknowledgement_commitment
     trace @"recv_packet: exact application callback matched"
 
     and {
@@ -170,20 +186,13 @@ validator recv_packet(
       (packet.source_port == cur_channel.counterparty.port_id)?,
       (packet.source_channel == cur_channel.counterparty.channel_id)?,
       valid_packet_proof?,
-      (!pairs.has_key(cur_packet_receipt, packet.sequence))?,
-      (!pairs.has_key(cur_packet_acknowledgement, packet.sequence))?,
       // Cardano transaction contexts authenticate time through the validity
       // interval, but do not expose an authenticated destination block height.
       // Reject height timeouts until that height can be checked safely.
       height_mod.is_zero(packet.timeout_height)?,
       (packet.timeout_timestamp != 0)?,
       (tx_valid_to * 1_000_000 < packet.timeout_timestamp)?,
-      channel_datum_mod.validate_recv_packet(
-        datum,
-        updated_datum,
-        packet,
-        acknowledgement_commitment,
-      )?,
+      channel_datum_mod.validate_recv_packet(datum, updated_datum, packet)?,
     }
   }
 

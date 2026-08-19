@@ -88,11 +88,7 @@ validator timeout_packet(
     trace @"timeout_packet: tx context extracted"
 
     let ChannelDatum { state: cur_channel_state, port_id, .. } = datum
-    let ChannelDatumState {
-      channel: cur_channel,
-      packet_commitment: cur_packet_commitment,
-      ..
-    } = cur_channel_state
+    let ChannelDatumState { channel: cur_channel, .. } = cur_channel_state
 
     expect [connection_id] = cur_channel.connection_hops
 
@@ -140,10 +136,6 @@ validator timeout_packet(
         packet.timeout_timestamp != 0 && proof_timestamp >= packet.timeout_timestamp,
       }
     trace @"timeout_packet: packet is timeout"
-
-    expect Some(commitment) =
-      pairs.get_first(cur_packet_commitment, packet.sequence)
-    trace @"timeout_packet: packet commitment existed"
 
     let valid_packet_timeout =
       when cur_channel.ordering is {
@@ -201,7 +193,6 @@ validator timeout_packet(
       is_valid_packet,
       valid_timestamp,
       channel_datum_mod.validate_timeout_packet(datum, updated_datum, packet),
-      commitment == packet_mod.commit_packet(packet),
       valid_packet_timeout,
     }
   }

@@ -22,12 +22,6 @@
       ],
       "@cardano-ibc/trace-registry": [
         "../../../packages/cardano-ibc-trace-registry/src/index.ts"
-      ],
-      "@cardano-ibc/tx-builder": [
-        "../../../packages/cardano-ibc-tx-builder/src/index.ts"
-      ],
-      "@cardano-ibc/tx-builder-runtime": [
-        "../../../packages/cardano-ibc-tx-builder-runtime/src/index.ts"
       ]
     }
   },

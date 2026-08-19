@@ -1,4 +1,3 @@
-use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/fuzz
 use aiken/interval
@@ -414,6 +413,7 @@ fn host_state_update_channel_redeemer() -> Redeemer {
 fn host_state_handle_packet_redeemer() -> Redeemer {
   let redeemer: Redeemer =
     host_state_redeemer.HandlePacket {
+      transition: host_state_redeemer.SendPacketState,
       channel_siblings: [],
       next_sequence_send_siblings: [],
       next_sequence_recv_siblings: [],
@@ -475,17 +475,11 @@ fn update_client(
 fn send_packet(packet: Packet, channel_datum: ChannelDatum) -> ChannelDatum {
   expect packet.sequence == channel_datum.state.next_sequence_send
 
-  let commitment = packet_mod.commit_packet(packet)
-
   ChannelDatum {
     ..channel_datum,
     state: ChannelDatumState {
       ..channel_datum.state,
       next_sequence_send: channel_datum.state.next_sequence_send + 1,
-      packet_commitment: [
-        Pair(packet.sequence, commitment),
-        ..channel_datum.state.packet_commitment
-      ],
     },
   }
 }
@@ -563,9 +557,6 @@ fn send_packet_spending_channel_tx_with_witness(
         next_sequence_send: packet.sequence,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -824,9 +815,6 @@ test chan_open_ack_succeed() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -874,9 +862,6 @@ test chan_open_ack_succeed() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -1056,9 +1041,6 @@ test chan_open_confirm_succeed() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -1276,9 +1258,6 @@ test recv_packet_succeed() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -1309,9 +1288,6 @@ test recv_packet_succeed() {
 
   //========================arrange outputs=======================
   let ack = acknowledgement_mod.new_result_acknowledgement("AQ==")
-  let bz_ack = acknowledgement_mod.acknowledgement(ack)
-  let commit_ack = acknowledgement_mod.commit_acknowledgement(bz_ack)
-
   let packet =
     Packet {
       sequence: 1,
@@ -1324,21 +1300,7 @@ test recv_packet_succeed() {
       timeout_timestamp: 1735689600000000000,
     }
 
-  let output_channel_datum =
-    ChannelDatum {
-      ..input_channel_datum,
-      state: ChannelDatumState {
-        ..input_channel_datum.state,
-        packet_receipt: [
-          Pair(packet.sequence, ""),
-          ..input_channel_datum.state.packet_receipt
-        ],
-        packet_acknowledgement: [
-          Pair(packet.sequence, commit_ack),
-          ..input_channel_datum.state.packet_acknowledgement
-        ],
-      },
-    }
+  let output_channel_datum = input_channel_datum
 
   let channel_output =
     build_channel_output(output_channel_datum, mock_data.channel_token)
@@ -1539,9 +1501,6 @@ test send_packet_succeed() {
         next_sequence_send: packet.sequence,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -1557,18 +1516,12 @@ test send_packet_succeed() {
   let reference_inputs = [mock_data.connection_input, mock_data.client_input]
 
   //========================arrange outputs=======================
-  let commitment = packet_mod.commit_packet(packet)
-
   let output_channel_datum =
     ChannelDatum {
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
         next_sequence_send: input_channel_datum.state.next_sequence_send + 1,
-        packet_commitment: [
-          Pair(packet.sequence, commitment),
-          ..input_channel_datum.state.packet_commitment
-        ],
       },
     }
 
@@ -1666,9 +1619,6 @@ test timeout_packet_succeed() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -1704,17 +1654,7 @@ test timeout_packet_succeed() {
   let reference_inputs = [mock_data.connection_input, client_input]
 
   //========================arrange outputs=======================
-  let output_channel_datum =
-    ChannelDatum {
-      ..input_channel_datum,
-      state: ChannelDatumState {
-        ..input_channel_datum.state,
-        packet_commitment: pairs.delete_first(
-          input_channel_datum.state.packet_commitment,
-          packet.sequence,
-        ),
-      },
-    }
+  let output_channel_datum = input_channel_datum
 
   let channel_output =
     build_channel_output(output_channel_datum, mock_data.channel_token)
@@ -1939,9 +1879,6 @@ test acknowledge_packet_succeed() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -1973,17 +1910,7 @@ test acknowledge_packet_succeed() {
   let reference_inputs = [mock_data.connection_input, client_input]
 
   //========================arrange outputs=======================
-  let output_channel_datum =
-    ChannelDatum {
-      ..input_channel_datum,
-      state: ChannelDatumState {
-        ..input_channel_datum.state,
-        packet_commitment: pairs.delete_first(
-          input_channel_datum.state.packet_commitment,
-          packet.sequence,
-        ),
-      },
-    }
+  let output_channel_datum = input_channel_datum
 
   let channel_output =
     build_channel_output(output_channel_datum, mock_data.channel_token)
@@ -2185,9 +2112,6 @@ test chan_close_init_succeed() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: "port-0",
       token: fake_data.channel_token,
@@ -2276,9 +2200,6 @@ test chan_close_init_fails_without_closed_channel_continuation() fail {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: "port-0",
       token: fake_data.channel_token,
@@ -2347,9 +2268,6 @@ test chan_close_init_fails_without_host_state_co_spend() fail {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: "port-0",
       token: fake_data.channel_token,
@@ -2414,9 +2332,6 @@ test chan_close_confirm_succeed() {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: "port-0",
       token: fake_data.channel_token,

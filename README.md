@@ -142,8 +142,9 @@ flowchart LR
   class HERMES,COSMOS relay
 ```
 
-Additional architecture diagrams:
+Additional architecture documentation:
 
+- Root-authoritative packet state and recovery: `docs/root-authoritative-packet-state.md`
 - Gateway escrow flow: `cardano/gateway/README.md#sendpacket-escrow-flow`
 - Denom trace lifecycle: `docs/denom-trace-mapping.md`
 - Probabilistic light client: `docs/probabilistic-light-client.md`

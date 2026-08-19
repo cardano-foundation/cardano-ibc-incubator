@@ -6,7 +6,6 @@ use aiken/crypto
 use aiken/fuzz
 use aiken/interval
 use aiken/primitive/bytearray
-use aiken/primitive/int
 use cardano/address.{Address, Script}
 use cardano/assets.{PolicyId, add, from_asset}
 use cardano/transaction.{
@@ -31,9 +30,7 @@ use ibc/core/ics_003_connection_semantics/types/counterparty as connection_count
 use ibc/core/ics_003_connection_semantics/types/keys as connection_keys
 use ibc/core/ics_003_connection_semantics/types/state as connection_state
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
-use ibc/core/ics_004/channel_datum.{
-  ChannelDatum, ChannelDatumState, max_packet_entries_per_channel,
-}
+use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, RecvPacket, SendPacket, SpendChannelRedeemer, TimeoutPacket,
 }
@@ -57,8 +54,10 @@ use ibc/core/ics_025_handler_interface/host_state.{
   max_port_number, validate_bind_port,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  BindPort, EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat,
-  HostStateRedeemer, UpdateChannel, UpdateClient, UpdateConnection,
+  AcknowledgePacketState, BindPort, EnterShutdown, FinalizeShutdown,
+  HandlePacket, Heartbeat, HostStateRedeemer, PacketStateTransition,
+  RecvPacketState, SendPacketState, TimeoutPacketState, UpdateChannel,
+  UpdateClient, UpdateConnection,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/testing/fuzz_dsl
@@ -70,21 +69,6 @@ fn repeat_bytearray(value: ByteArray, count: Int) -> List<ByteArray> {
     []
   } else {
     [value, ..repeat_bytearray(value, count - 1)]
-  }
-}
-
-fn packet_entries(
-  sequence: Int,
-  last_sequence: Int,
-  value: ByteArray,
-) -> Pairs<Int, ByteArray> {
-  if sequence > last_sequence {
-    []
-  } else {
-    [
-      Pair(sequence, value),
-      ..packet_entries(sequence + 1, last_sequence, value)
-    ]
   }
 }
 
@@ -192,20 +176,13 @@ fn test_channel(state: channel_state.ChannelState) -> Channel {
   }
 }
 
-fn test_channel_datum(
-  channel: Channel,
-  next_sequence_send: Int,
-  packet_commitment: Pairs<Int, ByteArray>,
-) -> ChannelDatum {
+fn test_channel_datum(channel: Channel, next_sequence_send: Int) -> ChannelDatum {
   ChannelDatum {
     state: ChannelDatumState {
       channel,
       next_sequence_send,
       next_sequence_recv: 1,
       next_sequence_ack: 1,
-      packet_commitment,
-      packet_receipt: [],
-      packet_acknowledgement: [],
     },
     port_id: "transfer",
     token: test_channel_token(),
@@ -229,6 +206,163 @@ fn full_empty_siblings() -> List<ByteArray> {
     ibc_state_commitment.empty_hash,
     ibc_state_commitment.merkle_depth_bits,
   )
+}
+
+/// Test-only sparse Merkle tree over explicit committed key/value leaves.
+///
+/// Production witnesses are built off-chain. These helpers deliberately build
+/// the complete authenticated fixture in Aiken so a capacity regression cannot
+/// be faked by passing discarded ChannelDatum map arguments.
+fn sparse_tree_set(
+  leaves: Pairs<ByteArray, ByteArray>,
+  key: ByteArray,
+  value: ByteArray,
+) -> Pairs<ByteArray, ByteArray> {
+  [Pair(key, value), ..list.filter(leaves, fn(leaf) { leaf.1st != key })]
+}
+
+fn sparse_tree_delete(
+  leaves: Pairs<ByteArray, ByteArray>,
+  key: ByteArray,
+) -> Pairs<ByteArray, ByteArray> {
+  list.filter(leaves, fn(leaf) { leaf.1st != key })
+}
+
+fn sparse_subtree_root(
+  leaves: Pairs<ByteArray, ByteArray>,
+  bit: Int,
+) -> ByteArray {
+  if list.is_empty(leaves) {
+    ibc_state_commitment.empty_hash
+  } else if bit < 0 {
+    // Distinct keys must not collide in the 64-bit sparse-tree index.
+    expect [Pair(key, value)] = leaves
+    let key_hash = builtin.sha2_256(key)
+    ibc_state_commitment.leaf_hash(
+      key_hash,
+      ibc_state_commitment.value_hash(value),
+    )
+  } else {
+    let left =
+      list.filter(
+        leaves,
+        fn(leaf) { key_bit(builtin.sha2_256(leaf.1st), bit) == 0 },
+      )
+    let right =
+      list.filter(
+        leaves,
+        fn(leaf) { key_bit(builtin.sha2_256(leaf.1st), bit) == 1 },
+      )
+    ibc_state_commitment.inner_hash(
+      sparse_subtree_root(left, bit - 1),
+      sparse_subtree_root(right, bit - 1),
+    )
+  }
+}
+
+fn sparse_tree_root(leaves: Pairs<ByteArray, ByteArray>) -> ByteArray {
+  sparse_subtree_root(leaves, ibc_state_commitment.merkle_depth_bits - 1)
+}
+
+fn sparse_tree_siblings_top_down(
+  leaves: Pairs<ByteArray, ByteArray>,
+  target_hash: ByteArray,
+  bit: Int,
+) -> List<ByteArray> {
+  if bit < 0 {
+    []
+  } else {
+    let left =
+      list.filter(
+        leaves,
+        fn(leaf) { key_bit(builtin.sha2_256(leaf.1st), bit) == 0 },
+      )
+    let right =
+      list.filter(
+        leaves,
+        fn(leaf) { key_bit(builtin.sha2_256(leaf.1st), bit) == 1 },
+      )
+    if key_bit(target_hash, bit) == 0 {
+      [
+        sparse_subtree_root(right, bit - 1),
+        ..sparse_tree_siblings_top_down(left, target_hash, bit - 1)
+      ]
+    } else {
+      [
+        sparse_subtree_root(left, bit - 1),
+        ..sparse_tree_siblings_top_down(right, target_hash, bit - 1)
+      ]
+    }
+  }
+}
+
+fn sparse_tree_siblings(
+  leaves: Pairs<ByteArray, ByteArray>,
+  target_key: ByteArray,
+) -> List<ByteArray> {
+  // The recursive traversal emits root-down bits 63..0; apply_update consumes
+  // the witness leaf-up in bits 0..63 order.
+  sparse_tree_siblings_top_down(
+    leaves,
+    builtin.sha2_256(target_key),
+    ibc_state_commitment.merkle_depth_bits - 1,
+  )
+    |> list.reverse
+}
+
+fn authenticated_commitment_leaves(
+  sequence: Int,
+  last_sequence: Int,
+) -> Pairs<ByteArray, ByteArray> {
+  if sequence > last_sequence {
+    []
+  } else {
+    [
+      Pair(
+        packet_keys.packet_commitment_path("transfer", "channel-0", sequence),
+        cbor.serialise("existing commitment"),
+      ),
+      ..authenticated_commitment_leaves(sequence + 1, last_sequence)
+    ]
+  }
+}
+
+fn authenticated_receipt_leaves(
+  sequence: Int,
+  last_sequence: Int,
+) -> Pairs<ByteArray, ByteArray> {
+  if sequence > last_sequence {
+    []
+  } else {
+    [
+      Pair(
+        packet_keys.packet_receipt_path("transfer", "channel-0", sequence),
+        cbor.serialise(""),
+      ),
+      ..authenticated_receipt_leaves(sequence + 1, last_sequence)
+    ]
+  }
+}
+
+fn authenticated_acknowledgement_leaves(
+  sequence: Int,
+  last_sequence: Int,
+) -> Pairs<ByteArray, ByteArray> {
+  if sequence > last_sequence {
+    []
+  } else {
+    [
+      Pair(
+        packet_keys.packet_acknowledgement_path(
+          "transfer",
+          "channel-0",
+          sequence,
+        ),
+        cbor.serialise("existing acknowledgement"),
+      ),
+      ..authenticated_acknowledgement_leaves(sequence + 1, last_sequence)
+    ]
+  }
 }
 
 fn key_bit(key_hash: ByteArray, depth: Int) -> Int {
@@ -838,9 +972,6 @@ fn test_channel_datum_full(
   next_sequence_send: Int,
   next_sequence_recv: Int,
   next_sequence_ack: Int,
-  packet_commitment: Pairs<Int, ByteArray>,
-  packet_receipt: Pairs<Int, ByteArray>,
-  packet_acknowledgement: Pairs<Int, ByteArray>,
 ) -> ChannelDatum {
   ChannelDatum {
     state: ChannelDatumState {
@@ -848,9 +979,6 @@ fn test_channel_datum_full(
       next_sequence_send,
       next_sequence_recv,
       next_sequence_ack,
-      packet_commitment,
-      packet_receipt,
-      packet_acknowledgement,
     },
     port_id: "transfer",
     token: test_channel_token(),
@@ -929,6 +1057,7 @@ fn test_committed_packet_root(
 }
 
 fn handle_packet_redeemer(
+  transition: PacketStateTransition,
   channel_siblings: List<ByteArray>,
   next_sequence_send_siblings: List<ByteArray>,
   next_sequence_recv_siblings: List<ByteArray>,
@@ -938,6 +1067,7 @@ fn handle_packet_redeemer(
   packet_acknowledgement_siblings: List<ByteArray>,
 ) -> HostStateRedeemer {
   HandlePacket {
+    transition,
     channel_siblings,
     next_sequence_send_siblings,
     next_sequence_recv_siblings,
@@ -1219,9 +1349,9 @@ test prop_host_update_channel_accepts_exact_root(seed via fuzz.int()) {
 
   let siblings = full_empty_siblings()
   let input_channel_datum =
-    test_channel_datum(test_channel(channel_state.Init), 1, [])
+    test_channel_datum(test_channel(channel_state.Init), 1)
   let output_channel_datum =
-    test_channel_datum(test_channel(channel_state.Open), 1, [])
+    test_channel_datum(test_channel(channel_state.Open), 1)
   let old_root = test_committed_channel_root(input_channel_datum, siblings)
   let new_root =
     test_update_channel_root(
@@ -1264,13 +1394,9 @@ test prop_host_update_channel_rejects_packet_field_change(
   // HandlePacket. Mutating sequence/commitment here must be rejected.
   let siblings = full_empty_siblings()
   let input_channel_datum =
-    test_channel_datum(test_channel(channel_state.Open), 1, [])
+    test_channel_datum(test_channel(channel_state.Open), 1)
   let output_channel_datum =
-    test_channel_datum(
-      test_channel(channel_state.Open),
-      2,
-      [Pair(1, #"010203")],
-    )
+    test_channel_datum(test_channel(channel_state.Open), 2)
   let old_root = test_committed_channel_root(input_channel_datum, siblings)
   let old_state = test_host_state(old_root, seed)
   let new_state =
@@ -1319,24 +1445,13 @@ test prop_host_handle_packet_accepts_send(seed via fuzz.int()) {
       commitment_key,
     )
   let input_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      sequence,
-      1,
-      1,
-      [],
-      [],
-      [],
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), sequence, 1, 1)
   let output_channel_datum =
     test_channel_datum_full(
       test_channel(channel_state.Open),
       sequence + 1,
       1,
       1,
-      [Pair(sequence, commitment)],
-      [],
-      [],
     )
   let new_root =
     test_handle_packet_send_root(
@@ -1359,7 +1474,16 @@ test prop_host_handle_packet_accepts_send(seed via fuzz.int()) {
     "handle_packet_send",
     "spend_host_state",
     spend_host_state_with_channel_redeemer(
-      handle_packet_redeemer([], siblings, [], [], commitment_siblings, [], []),
+      handle_packet_redeemer(
+        SendPacketState,
+        [],
+        siblings,
+        [],
+        [],
+        commitment_siblings,
+        [],
+        [],
+      ),
       SendPacket { packet },
       test_channel_input_full(input_channel_datum),
       [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
@@ -1381,25 +1505,9 @@ test prop_host_handle_packet_accepts_recv(seed via fuzz.int()) {
   let siblings = full_empty_siblings()
   let old_root = empty_ibc_state_root
   let input_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      [],
-      [],
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
   let output_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      [Pair(sequence, "")],
-      [Pair(sequence, acknowledgement_commitment)],
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
   let root_after_receipt =
     test_handle_packet_receipt_root(old_root, sequence, siblings)
   let receipt_key =
@@ -1434,6 +1542,7 @@ test prop_host_handle_packet_accepts_recv(seed via fuzz.int()) {
     "spend_host_state",
     spend_host_state_with_channel_redeemer(
       handle_packet_redeemer(
+        RecvPacketState { acknowledgement_commitment },
         [],
         [],
         [],
@@ -1458,33 +1567,16 @@ test prop_host_handle_packet_accepts_recv(seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
-test host_state_handle_packet_recv_succeeds_at_history_capacity() {
-  let sequence = max_packet_entries_per_channel - 1
+test host_state_handle_packet_recv_execution_budget() {
+  let sequence = 64 - 1
   let packet = test_packet(sequence)
   let acknowledgement = "new acknowledgement"
   let siblings = full_empty_siblings()
   let old_root = empty_ibc_state_root
-  let existing_receipts = packet_entries(1, sequence - 1, "")
   let input_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      existing_receipts,
-      [],
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
   let output_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      [Pair(sequence, ""), ..existing_receipts],
-      [Pair(sequence, acknowledgement)],
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
   let root_after_receipt =
     test_handle_packet_receipt_root(old_root, sequence, siblings)
   let receipt_key =
@@ -1514,6 +1606,7 @@ test host_state_handle_packet_recv_succeeds_at_history_capacity() {
 
   spend_host_state_with_channel_redeemer(
     handle_packet_redeemer(
+      RecvPacketState { acknowledgement_commitment: acknowledgement },
       [],
       [],
       [],
@@ -1536,65 +1629,50 @@ test host_state_handle_packet_recv_succeeds_at_history_capacity() {
   )
 }
 
-test prop_host_handle_packet_rejects_history_capacity_overflow(
-  seed via fuzz.int(),
-) fail {
-  fuzz.label(@"fuzz.contract.host.handle_packet.invalid_history_capacity")
-
-  let half_capacity = max_packet_entries_per_channel / 2
-  let sequence = half_capacity + 1
+test host_handle_packet_recv_succeeds_beyond_64_authenticated_packet_leaves() {
+  let existing_packet_count = 64
+  let sequence = existing_packet_count + 1
   let packet = test_packet(sequence)
   let acknowledgement = "new acknowledgement"
-  let siblings = full_empty_siblings()
-  let old_root = empty_ibc_state_root
-  let existing_receipts = packet_entries(1, half_capacity, "")
-  let existing_acknowledgements =
-    packet_entries(1, half_capacity, "existing acknowledgement")
+  // Sixty-four completed receives contribute one receipt and one
+  // acknowledgement each: 128 real authenticated packet leaves.
+  let existing_leaves =
+    list.concat(
+      authenticated_receipt_leaves(1, existing_packet_count),
+      authenticated_acknowledgement_leaves(1, existing_packet_count),
+    )
+  expect list.length(existing_leaves) == 128
+  let old_root = sparse_tree_root(existing_leaves)
   let input_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      existing_receipts,
-      existing_acknowledgements,
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
   let output_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      [Pair(sequence, ""), ..existing_receipts],
-      pairs.insert_by_ascending_key(
-        existing_acknowledgements,
-        sequence,
-        acknowledgement,
-        int.compare,
-      ),
-    )
-  let root_after_receipt =
-    test_handle_packet_receipt_root(old_root, sequence, siblings)
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
   let receipt_key =
     packet_keys.packet_receipt_path("transfer", "channel-0", sequence)
+  let receipt_siblings = sparse_tree_siblings(existing_leaves, receipt_key)
+  let root_after_receipt =
+    ibc_state_commitment.apply_update(
+      old_root,
+      receipt_key,
+      "",
+      cbor.serialise(""),
+      receipt_siblings,
+    )
+  let leaves_after_receipt =
+    sparse_tree_set(existing_leaves, receipt_key, cbor.serialise(""))
   let acknowledgement_key =
     packet_keys.packet_acknowledgement_path("transfer", "channel-0", sequence)
   let acknowledgement_siblings =
-    siblings_after_single_insert(
-      receipt_key,
-      cbor.serialise(""),
-      acknowledgement_key,
-    )
+    sparse_tree_siblings(leaves_after_receipt, acknowledgement_key)
   let new_root =
-    test_handle_packet_acknowledgement_root(
+    ibc_state_commitment.apply_update(
       root_after_receipt,
-      sequence,
-      acknowledgement,
+      acknowledgement_key,
+      "",
+      cbor.serialise(acknowledgement),
       acknowledgement_siblings,
     )
-  let old_state = test_host_state(old_root, seed)
+  let old_state = test_host_state(old_root, 0)
   let new_state =
     HostState {
       ..old_state,
@@ -1604,12 +1682,13 @@ test prop_host_handle_packet_rejects_history_capacity_overflow(
 
   spend_host_state_with_channel_redeemer(
     handle_packet_redeemer(
+      RecvPacketState { acknowledgement_commitment: acknowledgement },
       [],
       [],
       [],
       [],
       [],
-      siblings,
+      receipt_siblings,
       acknowledgement_siblings,
     ),
     RecvPacket {
@@ -1626,39 +1705,16 @@ test prop_host_handle_packet_rejects_history_capacity_overflow(
   )
 }
 
-test host_state_handle_packet_acknowledgement_succeeds_at_history_capacity() {
-  let sequence = max_packet_entries_per_channel - 1
+test host_state_handle_packet_acknowledgement_execution_budget() {
+  let sequence = 64 - 1
   let packet = test_packet(sequence)
   let acknowledgement = "new acknowledgement"
   let siblings = full_empty_siblings()
   let old_root = empty_ibc_state_root
-  let existing_acknowledgements =
-    packet_entries(1, sequence - 1, "existing acknowledgement")
   let input_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      [],
-      existing_acknowledgements,
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
   let output_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      [Pair(sequence, "")],
-      pairs.insert_by_ascending_key(
-        existing_acknowledgements,
-        sequence,
-        acknowledgement,
-        int.compare,
-      ),
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
   let root_after_receipt =
     test_handle_packet_receipt_root(old_root, sequence, siblings)
   let receipt_key =
@@ -1688,6 +1744,7 @@ test host_state_handle_packet_acknowledgement_succeeds_at_history_capacity() {
 
   spend_host_state_with_channel_redeemer(
     handle_packet_redeemer(
+      RecvPacketState { acknowledgement_commitment: acknowledgement },
       [],
       [],
       [],
@@ -1710,65 +1767,32 @@ test host_state_handle_packet_acknowledgement_succeeds_at_history_capacity() {
   )
 }
 
-test prop_host_handle_packet_rejects_acknowledgement_capacity_overflow(
-  seed via fuzz.int(),
-) fail {
-  fuzz.label(@"fuzz.contract.host.handle_packet.invalid_ack_capacity")
-
-  let half_capacity = max_packet_entries_per_channel / 2
-  let sequence = half_capacity + 1
+test host_handle_packet_ack_succeeds_with_64_authenticated_acknowledgements() {
+  let existing_packet_count = 64
+  let sequence = existing_packet_count + 1
   let packet = test_packet(sequence)
-  let acknowledgement = "new acknowledgement"
-  let siblings = full_empty_siblings()
-  let old_root = empty_ibc_state_root
-  let existing_receipts = packet_entries(1, half_capacity, "")
+  let commitment = packet_mod.commit_packet(packet)
+  let commitment_key =
+    packet_keys.packet_commitment_path("transfer", "channel-0", sequence)
+  // The permanent acknowledgement history is already at the old datum cap;
+  // the commitment being acknowledged is a 65th authenticated packet leaf.
   let existing_acknowledgements =
-    packet_entries(1, half_capacity - 1, "existing acknowledgement")
-  let input_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      existing_receipts,
+    authenticated_acknowledgement_leaves(1, existing_packet_count)
+  expect list.length(existing_acknowledgements) == 64
+  let old_leaves =
+    sparse_tree_set(
       existing_acknowledgements,
+      commitment_key,
+      cbor.serialise(commitment),
     )
-  let output_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      [Pair(sequence, ""), ..existing_receipts],
-      pairs.insert_by_ascending_key(
-        existing_acknowledgements,
-        sequence,
-        acknowledgement,
-        int.compare,
-      ),
-    )
-  let root_after_receipt =
-    test_handle_packet_receipt_root(old_root, sequence, siblings)
-  let receipt_key =
-    packet_keys.packet_receipt_path("transfer", "channel-0", sequence)
-  let acknowledgement_key =
-    packet_keys.packet_acknowledgement_path("transfer", "channel-0", sequence)
-  let acknowledgement_siblings =
-    siblings_after_single_insert(
-      receipt_key,
-      cbor.serialise(""),
-      acknowledgement_key,
-    )
+  expect list.length(old_leaves) == 65
+  let old_root = sparse_tree_root(old_leaves)
+  let commitment_siblings = sparse_tree_siblings(old_leaves, commitment_key)
   let new_root =
-    test_handle_packet_acknowledgement_root(
-      root_after_receipt,
-      sequence,
-      acknowledgement,
-      acknowledgement_siblings,
-    )
-  let old_state = test_host_state(old_root, seed)
+    sparse_tree_root(sparse_tree_delete(old_leaves, commitment_key))
+  let input_channel_datum =
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
+  let old_state = test_host_state(old_root, 0)
   let new_state =
     HostState {
       ..old_state,
@@ -1778,30 +1802,29 @@ test prop_host_handle_packet_rejects_acknowledgement_capacity_overflow(
 
   spend_host_state_with_channel_redeemer(
     handle_packet_redeemer(
+      AcknowledgePacketState,
       [],
       [],
       [],
       [],
+      commitment_siblings,
       [],
-      siblings,
-      acknowledgement_siblings,
+      [],
     ),
-    RecvPacket {
+    AcknowledgePacket {
       packet,
-      proof_commitment: empty_proof(),
+      acknowledgement: "acknowledgement",
+      proof_acked: empty_proof(),
       proof_height: test_height(1),
     },
     test_channel_input_full(input_channel_datum),
     [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
-    [
-      test_host_output(new_state),
-      test_channel_output_full(output_channel_datum),
-    ],
+    [test_host_output(new_state), test_channel_output_full(input_channel_datum)],
   )
 }
 
-test host_state_handle_packet_send_succeeds_at_commitment_capacity() {
-  let sequence = max_packet_entries_per_channel
+test host_state_handle_packet_send_execution_budget() {
+  let sequence = 64
   let packet = test_packet(sequence)
   let commitment = packet_mod.commit_packet(packet)
   let siblings = full_empty_siblings()
@@ -1815,32 +1838,14 @@ test host_state_handle_packet_send_succeeds_at_commitment_capacity() {
       cbor.serialise(sequence),
       siblings,
     )
-  let existing_commitments =
-    packet_entries(1, sequence - 1, "existing commitment")
   let input_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      sequence,
-      1,
-      1,
-      existing_commitments,
-      [],
-      [],
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), sequence, 1, 1)
   let output_channel_datum =
     test_channel_datum_full(
       test_channel(channel_state.Open),
       sequence + 1,
       1,
       1,
-      pairs.insert_by_ascending_key(
-        existing_commitments,
-        sequence,
-        commitment,
-        int.compare,
-      ),
-      [],
-      [],
     )
   let commitment_key =
     packet_keys.packet_commitment_path("transfer", "channel-0", sequence)
@@ -1867,7 +1872,16 @@ test host_state_handle_packet_send_succeeds_at_commitment_capacity() {
     }
 
   spend_host_state_with_channel_redeemer(
-    handle_packet_redeemer([], siblings, [], [], commitment_siblings, [], []),
+    handle_packet_redeemer(
+      SendPacketState,
+      [],
+      siblings,
+      [],
+      [],
+      commitment_siblings,
+      [],
+      [],
+    ),
     SendPacket { packet },
     test_channel_input_full(input_channel_datum),
     [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
@@ -1878,66 +1892,54 @@ test host_state_handle_packet_send_succeeds_at_commitment_capacity() {
   )
 }
 
-test prop_host_handle_packet_rejects_commitment_capacity_overflow(
-  seed via fuzz.int(),
-) fail {
-  fuzz.label(@"fuzz.contract.host.handle_packet.invalid_commitment_capacity")
-
-  let half_capacity = max_packet_entries_per_channel / 2
-  let sequence = half_capacity + 1
+test host_handle_packet_send_succeeds_beyond_64_authenticated_packet_leaves() {
+  let existing_packet_count = 64
+  let sequence = existing_packet_count + 1
   let packet = test_packet(sequence)
   let commitment = packet_mod.commit_packet(packet)
-  let siblings = full_empty_siblings()
   let next_sequence_send_key =
     packet_keys.next_sequence_send_path("transfer", "channel-0")
-  let old_root =
-    ibc_state_commitment.apply_update(
-      empty_ibc_state_root,
+  let existing_commitments =
+    authenticated_commitment_leaves(1, existing_packet_count)
+  expect list.length(existing_commitments) == 64
+  let old_leaves =
+    sparse_tree_set(
+      existing_commitments,
       next_sequence_send_key,
-      "",
       cbor.serialise(sequence),
-      siblings,
     )
-  let existing_receipts = packet_entries(1, half_capacity, "")
-  let existing_acknowledgements =
-    packet_entries(1, half_capacity, "existing acknowledgement")
+  expect list.length(old_leaves) == 65
+  let old_root = sparse_tree_root(old_leaves)
+  let next_sequence_send_siblings =
+    sparse_tree_siblings(old_leaves, next_sequence_send_key)
+  let leaves_after_sequence =
+    sparse_tree_set(
+      old_leaves,
+      next_sequence_send_key,
+      cbor.serialise(sequence + 1),
+    )
   let input_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      sequence,
-      1,
-      1,
-      [],
-      existing_receipts,
-      existing_acknowledgements,
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), sequence, 1, 1)
   let output_channel_datum =
     test_channel_datum_full(
       test_channel(channel_state.Open),
       sequence + 1,
       1,
       1,
-      [Pair(sequence, commitment)],
-      existing_receipts,
-      existing_acknowledgements,
     )
   let commitment_key =
     packet_keys.packet_commitment_path("transfer", "channel-0", sequence)
   let commitment_siblings =
-    siblings_after_single_insert(
-      next_sequence_send_key,
-      cbor.serialise(sequence + 1),
-      commitment_key,
-    )
+    sparse_tree_siblings(leaves_after_sequence, commitment_key)
   let new_root =
-    test_handle_packet_send_root(
-      old_root,
-      sequence,
-      commitment,
-      siblings,
-      commitment_siblings,
+    sparse_tree_root(
+      sparse_tree_set(
+        leaves_after_sequence,
+        commitment_key,
+        cbor.serialise(commitment),
+      ),
     )
-  let old_state = test_host_state(old_root, seed)
+  let old_state = test_host_state(old_root, 0)
   let new_state =
     HostState {
       ..old_state,
@@ -1946,7 +1948,16 @@ test prop_host_handle_packet_rejects_commitment_capacity_overflow(
     }
 
   spend_host_state_with_channel_redeemer(
-    handle_packet_redeemer([], siblings, [], [], commitment_siblings, [], []),
+    handle_packet_redeemer(
+      SendPacketState,
+      [],
+      next_sequence_send_siblings,
+      [],
+      [],
+      commitment_siblings,
+      [],
+      [],
+    ),
     SendPacket { packet },
     test_channel_input_full(input_channel_datum),
     [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
@@ -1969,15 +1980,7 @@ test prop_host_handle_packet_rejects_recv_with_unrelated_channel_mutation(
   let acknowledgement_commitment = #"010203"
   let siblings = full_empty_siblings()
   let input_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      [],
-      [],
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
   let mutated_channel =
     Channel {
       ..input_channel_datum.state.channel,
@@ -1992,10 +1995,9 @@ test prop_host_handle_packet_rejects_recv_with_unrelated_channel_mutation(
       state: ChannelDatumState {
         ..input_channel_datum.state,
         channel: mutated_channel,
-        packet_receipt: [Pair(sequence, "")],
-        packet_acknowledgement: [Pair(sequence, acknowledgement_commitment)],
       },
     }
+
   let channel_key = host_channel_keys.channel_path("transfer", "channel-0")
   let receipt_key =
     packet_keys.packet_receipt_path("transfer", "channel-0", sequence)
@@ -2055,6 +2057,7 @@ test prop_host_handle_packet_rejects_recv_with_unrelated_channel_mutation(
 
   spend_host_state_with_channel_redeemer(
     handle_packet_redeemer(
+      RecvPacketState { acknowledgement_commitment },
       siblings,
       [],
       [],
@@ -2086,25 +2089,9 @@ test prop_host_handle_packet_accepts_ack(seed via fuzz.int()) {
   let commitment = packet_mod.commit_packet(packet)
   let old_root = test_committed_packet_root(sequence, commitment, siblings)
   let input_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [Pair(sequence, commitment)],
-      [],
-      [],
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
   let output_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      [],
-      [],
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
   let new_root =
     test_handle_packet_commitment_delete_root(
       old_root,
@@ -2125,7 +2112,16 @@ test prop_host_handle_packet_accepts_ack(seed via fuzz.int()) {
     "handle_packet_ack",
     "spend_host_state",
     spend_host_state_with_channel_redeemer(
-      handle_packet_redeemer([], [], [], [], siblings, [], []),
+      handle_packet_redeemer(
+        AcknowledgePacketState,
+        [],
+        [],
+        [],
+        [],
+        siblings,
+        [],
+        [],
+      ),
       AcknowledgePacket {
         packet,
         acknowledgement: "acknowledgement",
@@ -2143,6 +2139,150 @@ test prop_host_handle_packet_accepts_ack(seed via fuzz.int()) {
     |> fuzz_dsl.assert_valid
 }
 
+test prop_host_handle_packet_rejects_recv_replay_nonmembership(
+  seed via fuzz.int(),
+) fail {
+  fuzz.label(
+    @"fuzz.contract.host.handle_packet.invalid_recv_replay_nonmembership",
+  )
+
+  let sequence = test_sequence(seed)
+  let packet = test_packet(sequence)
+  let acknowledgement_commitment = #"010203"
+  let siblings = full_empty_siblings()
+  // The receipt is already present in the authoritative tree. HandlePacket
+  // always proves absence before an unordered receive insertion, so replaying
+  // this sequence cannot reproduce the old root.
+  let old_root =
+    test_handle_packet_receipt_root(empty_ibc_state_root, sequence, siblings)
+  let old_state = test_host_state(old_root, seed)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: old_root,
+    }
+  let channel_datum =
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
+
+  spend_host_state_with_channel_redeemer(
+    handle_packet_redeemer(
+      RecvPacketState { acknowledgement_commitment },
+      [],
+      [],
+      [],
+      [],
+      [],
+      siblings,
+      siblings,
+    ),
+    RecvPacket {
+      packet,
+      proof_commitment: empty_proof(),
+      proof_height: test_height(1),
+    },
+    test_channel_input_full(channel_datum),
+    [test_host_input(old_state), test_channel_input_full(channel_datum)],
+    [test_host_output(new_state), test_channel_output_full(channel_datum)],
+  )
+}
+
+test prop_host_handle_packet_rejects_wrong_commitment_membership(
+  seed via fuzz.int(),
+) fail {
+  fuzz.label(
+    @"fuzz.contract.host.handle_packet.invalid_wrong_commitment_membership",
+  )
+
+  let sequence = test_sequence(seed)
+  let packet = test_packet(sequence)
+  let siblings = full_empty_siblings()
+  // The key exists, but commits to different bytes. Deletion must prove the
+  // exact packet commitment derived from the authenticated channel redeemer.
+  let old_root =
+    test_committed_packet_root(sequence, "wrong commitment", siblings)
+  let old_state = test_host_state(old_root, seed)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: empty_ibc_state_root,
+    }
+  let channel_datum =
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
+
+  spend_host_state_with_channel_redeemer(
+    handle_packet_redeemer(
+      AcknowledgePacketState,
+      [],
+      [],
+      [],
+      [],
+      siblings,
+      [],
+      [],
+    ),
+    AcknowledgePacket {
+      packet,
+      acknowledgement: "acknowledgement",
+      proof_acked: empty_proof(),
+      proof_height: test_height(1),
+    },
+    test_channel_input_full(channel_datum),
+    [test_host_input(old_state), test_channel_input_full(channel_datum)],
+    [test_host_output(new_state), test_channel_output_full(channel_datum)],
+  )
+}
+
+test prop_host_handle_packet_rejects_typed_transition_mismatch(
+  seed via fuzz.int(),
+) fail {
+  fuzz.label(
+    @"fuzz.contract.host.handle_packet.invalid_typed_transition_mismatch",
+  )
+
+  let sequence = test_sequence(seed)
+  let packet = test_packet(sequence)
+  let acknowledgement_commitment = #"010203"
+  let siblings = full_empty_siblings()
+  let old_state = test_host_state(empty_ibc_state_root, seed)
+  let new_state =
+    HostState {
+      ..old_state,
+      version: old_state.version + 1,
+      ibc_state_root: empty_ibc_state_root,
+    }
+  let input_channel_datum =
+    test_channel_datum_full(test_channel(channel_state.Open), sequence, 1, 1)
+  let output_channel_datum =
+    test_channel_datum_full(
+      test_channel(channel_state.Open),
+      sequence + 1,
+      1,
+      1,
+    )
+
+  spend_host_state_with_channel_redeemer(
+    handle_packet_redeemer(
+      RecvPacketState { acknowledgement_commitment },
+      [],
+      [],
+      [],
+      [],
+      [],
+      siblings,
+      siblings,
+    ),
+    SendPacket { packet },
+    test_channel_input_full(input_channel_datum),
+    [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
+    [
+      test_host_output(new_state),
+      test_channel_output_full(output_channel_datum),
+    ],
+  )
+}
+
 test prop_host_handle_packet_accepts_timeout(seed via fuzz.int()) {
   fuzz.label(@"fuzz.contract.host.handle_packet.valid_timeout")
 
@@ -2152,25 +2292,9 @@ test prop_host_handle_packet_accepts_timeout(seed via fuzz.int()) {
   let commitment = packet_mod.commit_packet(packet)
   let old_root = test_committed_packet_root(sequence, commitment, siblings)
   let input_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [Pair(sequence, commitment)],
-      [],
-      [],
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
   let output_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      1,
-      1,
-      1,
-      [],
-      [],
-      [],
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), 1, 1, 1)
   let new_root =
     test_handle_packet_commitment_delete_root(
       old_root,
@@ -2191,7 +2315,16 @@ test prop_host_handle_packet_accepts_timeout(seed via fuzz.int()) {
     "handle_packet_timeout",
     "spend_host_state",
     spend_host_state_with_channel_redeemer(
-      handle_packet_redeemer([], [], [], [], siblings, [], []),
+      handle_packet_redeemer(
+        TimeoutPacketState,
+        [],
+        [],
+        [],
+        [],
+        siblings,
+        [],
+        [],
+      ),
       TimeoutPacket {
         packet,
         proof_unreceived: empty_proof(),
@@ -2218,9 +2351,9 @@ test prop_host_handle_packet_rejects_channel_only_change(
   // channel with packet redeemer shape should fail even with a consistent root.
   let siblings = full_empty_siblings()
   let input_channel_datum =
-    test_channel_datum(test_channel(channel_state.Open), 1, [])
+    test_channel_datum(test_channel(channel_state.Open), 1)
   let output_channel_datum =
-    test_channel_datum(test_channel(channel_state.Closed), 1, [])
+    test_channel_datum(test_channel(channel_state.Closed), 1)
   let old_root = test_committed_channel_root(input_channel_datum, siblings)
   let new_root =
     test_update_channel_root(
@@ -2238,7 +2371,7 @@ test prop_host_handle_packet_rejects_channel_only_change(
     }
 
   spend_host_state(
-    handle_packet_redeemer(siblings, [], [], [], [], [], []),
+    handle_packet_redeemer(TimeoutPacketState, siblings, [], [], [], [], [], []),
     [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
     [
       test_host_output(new_state),
@@ -2257,25 +2390,9 @@ test prop_host_handle_packet_rejects_wrong_packet_key(seed via fuzz.int()) fail 
   let old_root = empty_ibc_state_root
   let commitment = #"010203"
   let input_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      sequence,
-      1,
-      1,
-      [],
-      [],
-      [],
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), sequence, 1, 1)
   let output_channel_datum =
-    test_channel_datum_full(
-      test_channel(channel_state.Open),
-      sequence,
-      1,
-      1,
-      [Pair(sequence, commitment)],
-      [],
-      [],
-    )
+    test_channel_datum_full(test_channel(channel_state.Open), sequence, 1, 1)
   let wrong_root =
     test_handle_packet_send_root(
       old_root,
@@ -2293,7 +2410,16 @@ test prop_host_handle_packet_rejects_wrong_packet_key(seed via fuzz.int()) fail 
     }
 
   spend_host_state(
-    handle_packet_redeemer([], siblings, [], [], siblings, [], []),
+    handle_packet_redeemer(
+      SendPacketState,
+      [],
+      siblings,
+      [],
+      [],
+      siblings,
+      [],
+      [],
+    ),
     [test_host_input(old_state), test_channel_input_full(input_channel_datum)],
     [
       test_host_output(new_state),
@@ -3173,7 +3299,7 @@ test host_state_update_channel_rejects_packet_field_changes() fail {
     )
 
   let input_channel_datum =
-    test_channel_datum(test_channel(channel_state.Open), 1, [])
+    test_channel_datum(test_channel(channel_state.Open), 1)
 
   let channel_key = host_channel_keys.channel_path("transfer", "channel-0")
   let channel_value = cbor.serialise(input_channel_datum.state.channel)
@@ -3231,11 +3357,7 @@ test host_state_update_channel_rejects_packet_field_changes() fail {
     }
 
   let output_channel_datum =
-    test_channel_datum(
-      test_channel(channel_state.Open),
-      2,
-      [Pair(1, #"010203")],
-    )
+    test_channel_datum(test_channel(channel_state.Open), 2)
 
   let channel_token = test_channel_token()
   let channel_input =
@@ -3297,8 +3419,8 @@ test host_state_handle_packet_rejects_channel_only_changes() fail {
 
   let input_channel = test_channel(channel_state.Open)
   let output_channel = test_channel(channel_state.Closed)
-  let input_channel_datum = test_channel_datum(input_channel, 1, [])
-  let output_channel_datum = test_channel_datum(output_channel, 1, [])
+  let input_channel_datum = test_channel_datum(input_channel, 1)
+  let output_channel_datum = test_channel_datum(output_channel, 1)
 
   let channel_key = host_channel_keys.channel_path("transfer", "channel-0")
   let old_root =
@@ -3394,6 +3516,7 @@ test host_state_handle_packet_rejects_channel_only_changes() fail {
 
   let redeemer: HostStateRedeemer =
     HandlePacket {
+      transition: TimeoutPacketState,
       channel_siblings,
       next_sequence_send_siblings: [],
       next_sequence_recv_siblings: [],

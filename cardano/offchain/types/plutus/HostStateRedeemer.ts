@@ -35,7 +35,19 @@ const UpdateChannelSchema = Data.Object({
   channel_siblings: SiblingHashesSchema,
 });
 
+export const PacketStateTransitionSchema = Data.Enum([
+  Data.Literal("SendPacketState"),
+  Data.Object({
+    RecvPacketState: Data.Object({
+      acknowledgement_commitment: Data.Bytes(),
+    }),
+  }),
+  Data.Literal("AcknowledgePacketState"),
+  Data.Literal("TimeoutPacketState"),
+]);
+
 const HandlePacketSchema = Data.Object({
+  transition: PacketStateTransitionSchema,
   channel_siblings: SiblingHashesSchema,
   next_sequence_send_siblings: SiblingHashesSchema,
   next_sequence_recv_siblings: SiblingHashesSchema,

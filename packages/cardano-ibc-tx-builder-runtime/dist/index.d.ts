@@ -1,4 +1,7 @@
+import { type IbcStateTreeRecoveryStore } from './ibcStateRoot';
 export { AsyncMutex } from './asyncMutex';
+export { createTreeCheckpoint, createFetchIbcTreeRecoveryStore, installVerifiedTreeRecovery, recoverTreeFromCheckpointAndJournal, } from './ibcStateRoot';
+export type { IbcStateTreeCheckpoint, IbcStateTreeJournalEntry, IbcStateTreeMutation, IbcStateTreeRecoveryState, IbcStateTreeRecoveryStore, } from './ibcStateRoot';
 export declare const OGMIOS_PROTOCOL_PARAMETERS_REQUEST_TIMEOUT_MS = 10000;
 export declare const OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS = 10000;
 type TransferApiRequestBody = {
@@ -59,6 +62,9 @@ type BuilderRuntimeConfig = {
     kupmiosHeaders?: KupmiosAuthHeaders;
     fetchImpl?: typeof fetch;
     logger?: RuntimeLogger;
+    ibcTreeRecoveryStore?: IbcStateTreeRecoveryStore;
+    ibcTreeRecoveryUrl?: string;
+    ibcSubmitUrl?: string;
 };
 export declare function ogmiosRequest<T>(ogmiosUrl: string, methodName: string, args: unknown, headers?: Record<string, string>, timeoutMs?: number): Promise<T>;
 export declare function mapOgmiosProtocolParameters(result: any): any;

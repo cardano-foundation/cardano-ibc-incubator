@@ -224,7 +224,7 @@ async function decodeChannelDatum(encoded, Lucid) {
         Data.Literal('Init'),
         Data.Literal('TryOpen'),
         Data.Literal('Open'),
-        Data.Literal('Close'),
+        Data.Literal('Closed'),
     ]);
     const OrderSchema = Data.Enum([
         Data.Literal('None'),
@@ -247,9 +247,6 @@ async function decodeChannelDatum(encoded, Lucid) {
         next_sequence_send: Data.Integer(),
         next_sequence_recv: Data.Integer(),
         next_sequence_ack: Data.Integer(),
-        packet_commitment: Data.Map(Data.Integer(), Data.Bytes()),
-        packet_receipt: Data.Map(Data.Integer(), Data.Bytes()),
-        packet_acknowledgement: Data.Map(Data.Integer(), Data.Bytes()),
     });
     const AuthTokenSchema = Data.Object({
         policyId: Data.Bytes(),
@@ -271,7 +268,7 @@ async function encodeChannelDatum(channelDatum, Lucid) {
             Data.Literal('Init'),
             Data.Literal('TryOpen'),
             Data.Literal('Open'),
-            Data.Literal('Close'),
+            Data.Literal('Closed'),
         ]);
         const OrderSchema = Data.Enum([
             Data.Literal('None'),
@@ -294,9 +291,6 @@ async function encodeChannelDatum(channelDatum, Lucid) {
             next_sequence_send: Data.Integer(),
             next_sequence_recv: Data.Integer(),
             next_sequence_ack: Data.Integer(),
-            packet_commitment: Data.Map(Data.Integer(), Data.Bytes()),
-            packet_receipt: Data.Map(Data.Integer(), Data.Bytes()),
-            packet_acknowledgement: Data.Map(Data.Integer(), Data.Bytes()),
         });
         const AuthTokenSchema = Data.Object({
             policyId: Data.Bytes(),
@@ -319,19 +313,12 @@ async function encodeChannelDatum(channelDatum, Lucid) {
         return list;
     };
     const constrData = (index, fields) => CML.PlutusData.new_constr_plutus_data(CML.ConstrPlutusData.new(BigInt(index), listData(fields)));
-    const mapData = (entries) => {
-        const map = CML.PlutusMap.new();
-        for (const [key, value] of entries.entries()) {
-            map.set(intData(key), bytesData(value));
-        }
-        return CML.PlutusData.new_map(map);
-    };
     const channelStateIndex = {
         Uninitialized: 0,
         Init: 1,
         TryOpen: 2,
         Open: 3,
-        Close: 4,
+        Closed: 4,
     };
     const channelOrderIndex = {
         None: 0,
@@ -363,9 +350,6 @@ async function encodeChannelDatum(channelDatum, Lucid) {
         intData(channelDatum.state.next_sequence_send),
         intData(channelDatum.state.next_sequence_recv),
         intData(channelDatum.state.next_sequence_ack),
-        mapData(channelDatum.state.packet_commitment),
-        mapData(channelDatum.state.packet_receipt),
-        mapData(channelDatum.state.packet_acknowledgement),
     ]);
     const tokenData = constrData(0, [
         bytesData(channelDatum.token.policyId),
@@ -422,7 +406,18 @@ async function encodeHostStateRedeemer(data, Lucid) {
         consensus_state_siblings: SiblingHashesSchema,
         removed_consensus_state_siblings: SiblingHashesListSchema,
     });
+    const PacketStateTransitionSchema = Data.Enum([
+        Data.Literal('SendPacketState'),
+        Data.Object({
+            RecvPacketState: Data.Object({
+                acknowledgement_commitment: Data.Bytes(),
+            }),
+        }),
+        Data.Literal('AcknowledgePacketState'),
+        Data.Literal('TimeoutPacketState'),
+    ]);
     const HandlePacketSchema = Data.Object({
+        transition: PacketStateTransitionSchema,
         channel_siblings: SiblingHashesSchema,
         next_sequence_send_siblings: SiblingHashesSchema,
         next_sequence_recv_siblings: SiblingHashesSchema,

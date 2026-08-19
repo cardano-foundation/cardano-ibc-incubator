@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS = exports.OGMIOS_PROTOCOL_PARAMETERS_REQUEST_TIMEOUT_MS = exports.AsyncMutex = void 0;
+exports.OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS = exports.OGMIOS_PROTOCOL_PARAMETERS_REQUEST_TIMEOUT_MS = exports.recoverTreeFromCheckpointAndJournal = exports.installVerifiedTreeRecovery = exports.createFetchIbcTreeRecoveryStore = exports.createTreeCheckpoint = exports.AsyncMutex = void 0;
 exports.withKupoStringQuantityHeader = withKupoStringQuantityHeader;
 exports.ogmiosRequest = ogmiosRequest;
 exports.mapOgmiosProtocolParameters = mapOgmiosProtocolParameters;
@@ -20,6 +20,11 @@ const ibcStateRoot_1 = require("./ibcStateRoot");
 const lucidIbcAdapter_1 = require("./lucidIbcAdapter");
 var asyncMutex_2 = require("./asyncMutex");
 Object.defineProperty(exports, "AsyncMutex", { enumerable: true, get: function () { return asyncMutex_2.AsyncMutex; } });
+var ibcStateRoot_2 = require("./ibcStateRoot");
+Object.defineProperty(exports, "createTreeCheckpoint", { enumerable: true, get: function () { return ibcStateRoot_2.createTreeCheckpoint; } });
+Object.defineProperty(exports, "createFetchIbcTreeRecoveryStore", { enumerable: true, get: function () { return ibcStateRoot_2.createFetchIbcTreeRecoveryStore; } });
+Object.defineProperty(exports, "installVerifiedTreeRecovery", { enumerable: true, get: function () { return ibcStateRoot_2.installVerifiedTreeRecovery; } });
+Object.defineProperty(exports, "recoverTreeFromCheckpointAndJournal", { enumerable: true, get: function () { return ibcStateRoot_2.recoverTreeFromCheckpointAndJournal; } });
 const LOOKUP_RETRY_OPTIONS = {
     maxAttempts: 6,
     retryDelayMs: 1000,
@@ -510,42 +515,6 @@ async function queryNetworkTipPoint(ogmiosUrl, headers) {
         id: result.id,
     };
 }
-async function submitSignedTxCbor(ogmiosUrl, signedTxCbor, headers, fetchImpl) {
-    const response = await fetchImpl(ogmiosUrl, {
-        method: 'POST',
-        headers: {
-            'content-type': 'application/json',
-            ...(headers ?? {}),
-        },
-        body: JSON.stringify({
-            jsonrpc: '2.0',
-            method: 'submitTransaction',
-            params: {
-                transaction: { cbor: signedTxCbor },
-            },
-            id: null,
-        }),
-    });
-    const responseText = await response.text();
-    let payload;
-    try {
-        payload = responseText ? JSON.parse(responseText) : null;
-    }
-    catch {
-        payload = null;
-    }
-    if (!response.ok) {
-        throw new Error(`Ogmios submitTransaction failed (${response.status} ${response.statusText}): ${responseText.slice(0, 1000)}`);
-    }
-    if (payload?.error) {
-        throw new Error(`Ogmios submitTransaction rejected: ${payload.error.message ?? JSON.stringify(payload.error)}`);
-    }
-    const txHash = payload?.result?.transaction?.id;
-    if (typeof txHash !== 'string' || txHash.trim().length === 0) {
-        throw new Error(`Ogmios submitTransaction returned an invalid response: ${responseText.slice(0, 1000)}`);
-    }
-    return txHash;
-}
 function toSafeCostModelInteger(value) {
     let parsedValue;
     if (typeof value === 'number') {
@@ -982,7 +951,7 @@ async function ensureTreeAlignedForRoot(context, onChainRoot) {
         await (0, ibcStateRoot_1.alignTreeWithChain)();
     }
 }
-async function buildHostStateUpdateForHandlePacket(context, inputChannelDatum, outputChannelDatum, channelIdForRoot) {
+async function buildHostStateUpdateForHandlePacket(context, inputChannelDatum, outputChannelDatum, channelIdForRoot, packetStateUpdate) {
     const hostStateUtxo = await context.lucidService.findUtxoAtHostStateNFT();
     if (!hostStateUtxo.datum) {
         throw new Error('HostState UTXO has no datum');
@@ -990,7 +959,7 @@ async function buildHostStateUpdateForHandlePacket(context, inputChannelDatum, o
     const hostStateDatum = await context.lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
     await ensureTreeAlignedForRoot(context, hostStateDatum.state.ibc_state_root);
     const portId = convertHex2String(inputChannelDatum.port);
-    const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings, packetCommitmentSiblings, packetReceiptSiblings, packetAcknowledgementSiblings, commit, } = await (0, ibcStateRoot_1.computeRootWithHandlePacketUpdate)(hostStateDatum.state.ibc_state_root, portId, channelIdForRoot, inputChannelDatum, outputChannelDatum, context.lucidService.LucidImporter);
+    const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings, packetCommitmentSiblings, packetReceiptSiblings, packetAcknowledgementSiblings, journalEntry, commit, } = await (0, ibcStateRoot_1.computeRootWithHandlePacketUpdate)(hostStateDatum.state.ibc_state_root, portId, channelIdForRoot, inputChannelDatum, outputChannelDatum, packetStateUpdate, context.lucidService.LucidImporter);
     const updatedHostStateDatum = {
         ...hostStateDatum,
         state: {
@@ -1002,6 +971,17 @@ async function buildHostStateUpdateForHandlePacket(context, inputChannelDatum, o
     };
     const hostStateRedeemer = {
         HandlePacket: {
+            transition: packetStateUpdate.kind === 'send'
+                ? 'SendPacketState'
+                : packetStateUpdate.kind === 'recv'
+                    ? {
+                        RecvPacketState: {
+                            acknowledgement_commitment: packetStateUpdate.acknowledgementCommitment,
+                        },
+                    }
+                    : packetStateUpdate.kind === 'acknowledge'
+                        ? 'AcknowledgePacketState'
+                        : 'TimeoutPacketState',
             channel_siblings: channelSiblings,
             next_sequence_send_siblings: nextSequenceSendSiblings,
             next_sequence_recv_siblings: nextSequenceRecvSiblings,
@@ -1016,6 +996,7 @@ async function buildHostStateUpdateForHandlePacket(context, inputChannelDatum, o
         encodedHostStateRedeemer: await context.lucidService.encode(hostStateRedeemer, 'host_state_redeemer'),
         encodedUpdatedHostStateDatum: await context.lucidService.encode(updatedHostStateDatum, 'host_state'),
         newRoot,
+        journalEntry,
         commit,
     };
 }
@@ -1040,6 +1021,10 @@ async function computeTxValidityWindow(context) {
 }
 function createTxBuilderRuntime(config) {
     const logger = config.logger ?? defaultLogger('txBuilderRuntime');
+    const ibcTreeRecoveryStore = config.ibcTreeRecoveryStore ??
+        (config.ibcTreeRecoveryUrl
+            ? (0, ibcStateRoot_1.createFetchIbcTreeRecoveryStore)(config.ibcTreeRecoveryUrl, config.fetchImpl ?? fetch)
+            : undefined);
     let cachedContextPromise = null;
     const transferBuildQueue = new asyncMutex_1.AsyncMutex();
     let transferBuildCounter = 0;
@@ -1078,8 +1063,8 @@ function createTxBuilderRuntime(config) {
         const lucidService = new lucidIbcAdapter_1.LucidIbcAdapter(lucidImporter, lucid, deployment);
         await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
         const kupoService = new RuntimeKupoService(lucidService, deployment);
-        (0, ibcStateRoot_1.initTreeServices)(kupoService, lucidService);
-        await timed(logger, '[context]', 'rebuild IBC state tree', () => (0, ibcStateRoot_1.rebuildTreeFromChain)(kupoService, lucidService));
+        (0, ibcStateRoot_1.initTreeServices)(kupoService, lucidService, ibcTreeRecoveryStore);
+        await timed(logger, '[context]', 'rebuild IBC state tree', () => (0, ibcStateRoot_1.rebuildTreeFromChain)(kupoService, lucidService, ibcTreeRecoveryStore));
         logger.log(`[context] initialized shared Cardano tx-builder runtime context in ${elapsedMs(contextStartedAt)}`);
         return {
             deployment,
@@ -1142,6 +1127,7 @@ function createTxBuilderRuntime(config) {
         }
         logger.log(`${scope} initial wallet UTxOs selected=${initialWalletUtxos.length}`);
         context.lucidService.selectWalletFromAddress(sendPacketOperator.signer, initialWalletUtxos);
+        let packetTreeTransition;
         const { unsignedTx, walletOverride } = await timed(logger, scope, 'build send_packet tx skeleton', () => (0, tx_builder_1.buildUnsignedSendPacketTx)(sendPacketOperator, {
             loadContext: async (operator) => {
                 const loadContextStartedAt = startTimer();
@@ -1189,7 +1175,11 @@ function createTxBuilderRuntime(config) {
                     logger.log(`${scope} load builder context completed in ${elapsedMs(loadContextStartedAt)}`);
                 }
             },
-            buildHostStateUpdate: (inputChannelDatum, outputChannelDatum, channelIdForRoot) => timed(logger, scope, 'build host-state update', () => buildHostStateUpdateForHandlePacket(context, inputChannelDatum, outputChannelDatum, channelIdForRoot)),
+            buildHostStateUpdate: async (inputChannelDatum, outputChannelDatum, channelIdForRoot, packetStateUpdate) => {
+                const update = await timed(logger, scope, 'build host-state update', () => buildHostStateUpdateForHandlePacket(context, inputChannelDatum, outputChannelDatum, channelIdForRoot, packetStateUpdate));
+                packetTreeTransition = update.journalEntry;
+                return update;
+            },
             resolveIbcDenomHash: async (denomHash) => {
                 const match = await timed(logger, scope, `resolve denom hash ${denomHash}`, () => context.traceRegistryClient.lookupIbcDenomTrace(denomHash));
                 if (!match) {
@@ -1231,6 +1221,14 @@ function createTxBuilderRuntime(config) {
                 setCollateral: TRANSACTION_SET_COLLATERAL,
             }));
             const unsignedTxCbor = completedUnsignedTx.toCBOR();
+            const unsignedTxHash = completedUnsignedTx.toHash();
+            if (!packetTreeTransition) {
+                throw new Error('sendPacket failed: packet tree transition was not produced');
+            }
+            if (!ibcTreeRecoveryStore?.prepare) {
+                throw new Error('sendPacket failed: root-authoritative packet state requires a writable IBC tree transition store');
+            }
+            await timed(logger, scope, 'durably prepare IBC tree transition', () => ibcTreeRecoveryStore.prepare(unsignedTxHash, packetTreeTransition));
             const feeLovelace = completedUnsignedTx.toTransaction().body().fee().toString();
             logger.log(`${scope} prepared unsigned Cardano transfer in ${elapsedMs(buildStartedAt)}`);
             return {
@@ -1257,9 +1255,30 @@ function createTxBuilderRuntime(config) {
         if (!/^[0-9a-f]+$/i.test(signedTxCbor) || signedTxCbor.length % 2 !== 0) {
             throw new Error('Invalid argument: "signed_tx_cbor" must be even-length hex CBOR');
         }
+        if (!config.ibcSubmitUrl) {
+            throw new Error('Root-authoritative packet transactions must be submitted through a confirming IBC Gateway; configure ibcSubmitUrl instead of submitting directly to Ogmios');
+        }
         logger.log(`${scope} submitting ${description}; signedTxLength=${signedTxCbor.length}`);
-        const context = await timed(logger, scope, 'get runtime context', getContext);
-        const txHash = await timed(logger, scope, 'submit signed transaction via Ogmios', () => submitSignedTxCbor(context.ogmiosEndpoint, signedTxCbor, context.kupmiosHeaders?.ogmiosHeader, config.fetchImpl ?? fetch));
+        const txHash = await timed(logger, scope, 'submit and confirm signed transaction via IBC Gateway', async () => {
+            const response = await (config.fetchImpl ?? fetch)(config.ibcSubmitUrl, {
+                method: 'POST',
+                headers: {
+                    accept: 'application/json',
+                    'content-type': 'application/json',
+                },
+                body: JSON.stringify({ signed_tx_cbor: signedTxCbor, description }),
+            });
+            const responseBody = await response.json();
+            if (!response.ok) {
+                throw new Error(typeof responseBody.message === 'string'
+                    ? responseBody.message
+                    : `IBC Gateway submission failed: ${response.status} ${response.statusText}`);
+            }
+            if (typeof responseBody.tx_hash !== 'string' || !responseBody.tx_hash) {
+                throw new Error('IBC Gateway submission response did not contain tx_hash');
+            }
+            return responseBody.tx_hash;
+        });
         logger.log(`${scope} submitted signed Cardano transaction ${txHash} in ${elapsedMs(submitStartedAt)}`);
         return { txHash };
     }

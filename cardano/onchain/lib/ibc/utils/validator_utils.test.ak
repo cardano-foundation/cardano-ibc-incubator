@@ -749,6 +749,7 @@ fn setup_require_host_state_redeemer() -> (PolicyId, Input, Output) {
 fn host_state_handle_packet_redeemer() -> Redeemer {
   let redeemer: Redeemer =
     host_state_redeemer.HandlePacket {
+      transition: host_state_redeemer.SendPacketState,
       channel_siblings: [],
       next_sequence_send_siblings: [],
       next_sequence_recv_siblings: [],

@@ -6,13 +6,7 @@ import { SubmitSignedTxRequest, SubmitSignedTxResponse } from './dto/submit-sign
 import { TxEventsService } from './tx-events.service';
 import { HostStateDatum } from '../shared/types/host-state-datum';
 import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pending-updates.service';
-import {
-  CURRENT_IBC_TREE_CACHE_ID,
-  IbcTreeCacheService,
-  ibcTreeCacheIdForHeight,
-  ibcTreeCacheIdForRoot,
-} from '../shared/services/ibc-tree-cache.service';
-import { getCurrentTree } from '../shared/helpers/ibc-state-root';
+import { IbcTreeCacheService } from '../shared/services/ibc-tree-cache.service';
 import { HISTORY_SERVICE, HistoryService } from '../query/services/history.service';
 import { QueryService } from '../query/services/query.service';
 import { GatewayEvent } from './tx-events.service';
@@ -128,9 +122,28 @@ export class SubmissionService {
     }
 
     if (!pending) {
+      confirmedRoot ??= await this.readConfirmedTxRoot(signedTxCbor, txHash);
+      // The process may have restarted between unsigned construction and
+      // submission. Recover the exact serializable delta persisted at build
+      // time instead of depending on an in-memory commit closure.
+      try {
+        const finalized = await this.ibcTreeCacheService.confirmTransition({
+          txHash,
+          newRoot: confirmedRoot,
+          blockNo: confirmedBlockNo,
+        });
+        if (finalized.tree.getRoot().toLowerCase() !== finalized.root.toLowerCase()) {
+          throw new Error(`durable proof store did not reach finalized root ${finalized.root}`);
+        }
+        this.logger.warn(
+          `Finalized tx ${txHash} from durable IBC journal after in-memory pending state was unavailable`,
+        );
+        return confirmedRoot;
+      } catch (error) {
       throw new GrpcInternalException(
-        `Missing pending IBC update for confirmed tx ${txHash}; refusing to skip state-tree finalization`,
+          `Missing recoverable IBC update for confirmed tx ${txHash}: ${error?.message ?? error}`,
       );
+    }
     }
 
     // Resolve HostState from the exact confirmed transaction.
@@ -147,18 +160,24 @@ export class SubmissionService {
       );
     }
 
-    pending.commit();
-
-    // Persist the updated tree so restarts don't require scanning all IBC UTxOs.
-    if (process.env.IBC_TREE_CACHE_ENABLED === 'false') return confirmedRoot;
+    // Atomically promote the durable prepared delta now that the exact root is
+    // confirmed. This leaves one current checkpoint plus a compact journal.
     try {
-      await this.ibcTreeCacheService.saveAliases(getCurrentTree(), [
-        CURRENT_IBC_TREE_CACHE_ID,
-        ibcTreeCacheIdForRoot(confirmedRoot),
-        ibcTreeCacheIdForHeight(confirmedBlockNo),
-      ]);
+      const finalized = await this.ibcTreeCacheService.confirmTransition({
+        txHash,
+        newRoot: confirmedRoot,
+        blockNo: confirmedBlockNo,
+      });
+      if (finalized.tree.getRoot().toLowerCase() !== finalized.root.toLowerCase()) {
+        throw new Error(`durable proof store did not reach finalized root ${finalized.root}`);
+      }
+      // IbcTreeCacheService installs the locked, verified DB tip before it
+      // releases its operation mutex. Re-installing this returned tree here can
+      // race a later confirmation and regress the process-global tip.
     } catch (error) {
-      this.logger.warn(`Failed to persist IBC tree cache after tx ${txHash}: ${error?.message ?? error}`);
+      throw new GrpcInternalException(
+        `Failed to finalize durable IBC proof state after tx ${txHash}: ${error?.message ?? error}`,
+      );
     }
 
     return confirmedRoot;

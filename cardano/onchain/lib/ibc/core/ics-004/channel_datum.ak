@@ -1,6 +1,3 @@
-use aiken/collection/list
-use aiken/collection/pairs
-use aiken/primitive/int
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
@@ -21,20 +18,6 @@ pub type ChannelDatumState {
   next_sequence_send: Int,
   next_sequence_recv: Int,
   next_sequence_ack: Int,
-  packet_commitment: Pairs<Int, ByteArray>,
-  packet_receipt: Pairs<Int, ByteArray>,
-  packet_acknowledgement: Pairs<Int, ByteArray>,
-}
-
-/// Ledger-safe upper bound for all packet entries retained in a channel datum.
-/// Packet insertion fails closed at this boundary so the combined commitment,
-/// receipt, and acknowledgement state cannot make the datum unspendable.
-pub const max_packet_entries_per_channel = 64
-
-pub fn packet_entry_count(state: ChannelDatumState) -> Int {
-  list.length(state.packet_commitment) + list.length(state.packet_receipt) + list.length(
-    state.packet_acknowledgement,
-  )
 }
 
 pub fn validate_chan_open_init(
@@ -48,9 +31,6 @@ pub fn validate_chan_open_init(
     next_sequence_send,
     next_sequence_recv,
     next_sequence_ack,
-    packet_commitment,
-    packet_receipt,
-    packet_acknowledgement,
   } = state
 
   let Channel { state: chan_state, counterparty, .. } = channel
@@ -63,11 +43,6 @@ pub fn validate_chan_open_init(
       next_sequence_send == 1,
       next_sequence_recv == 1,
       next_sequence_ack == 1,
-    },
-    and {
-      list.is_empty(packet_commitment),
-      list.is_empty(packet_receipt),
-      list.is_empty(packet_acknowledgement),
     },
     port_keys_mod.is_valid_port_id(port_id),
   }
@@ -84,9 +59,6 @@ pub fn validate_chan_open_try(
     next_sequence_send,
     next_sequence_recv,
     next_sequence_ack,
-    packet_commitment,
-    packet_receipt,
-    packet_acknowledgement,
   } = state
 
   let Channel { state: chan_state, counterparty, .. } = channel
@@ -100,11 +72,6 @@ pub fn validate_chan_open_try(
       next_sequence_send == 1,
       next_sequence_recv == 1,
       next_sequence_ack == 1,
-    },
-    and {
-      list.is_empty(packet_commitment),
-      list.is_empty(packet_receipt),
-      list.is_empty(packet_acknowledgement),
     },
     port_keys_mod.is_valid_port_id(port_id),
   }
@@ -210,7 +177,6 @@ pub fn validate_recv_packet(
   input_datum: ChannelDatum,
   output_datum: ChannelDatum,
   packet: Packet,
-  ack: ByteArray,
 ) -> Bool {
   let valid_sequence =
     when input_datum.state.channel.ordering is {
@@ -219,20 +185,10 @@ pub fn validate_recv_packet(
       _ -> False
     }
 
-  let (expected_packet_receipt, expected_next_sequence_recv, inserted_entries) =
+  let expected_next_sequence_recv =
     when input_datum.state.channel.ordering is {
-      order.Ordered ->
-        (
-          input_datum.state.packet_receipt,
-          input_datum.state.next_sequence_recv + 1,
-          1,
-        )
-      order.Unordered ->
-        (
-          [Pair(packet.sequence, ""), ..input_datum.state.packet_receipt],
-          input_datum.state.next_sequence_recv,
-          2,
-        )
+      order.Ordered -> input_datum.state.next_sequence_recv + 1
+      order.Unordered -> input_datum.state.next_sequence_recv
       _ -> fail
     }
 
@@ -242,19 +198,11 @@ pub fn validate_recv_packet(
       state: ChannelDatumState {
         ..input_datum.state,
         next_sequence_recv: expected_next_sequence_recv,
-        packet_receipt: expected_packet_receipt,
-        packet_acknowledgement: pairs.insert_by_ascending_key(
-          input_datum.state.packet_acknowledgement,
-          packet.sequence,
-          ack,
-          int.compare,
-        ),
       },
     }
 
   and {
     valid_sequence,
-    packet_entry_count(input_datum.state) + inserted_entries <= max_packet_entries_per_channel,
     expected_datum == output_datum,
   }
 }
@@ -263,47 +211,26 @@ pub fn validate_send_packet(
   input_datum: ChannelDatum,
   output_datum: ChannelDatum,
   packet: Packet,
-  commitment: ByteArray,
 ) -> Bool {
-  // WORKAROUND: cloned output_datum required to "replace" an "apparently" unbounded list to a bounded one, or it would fail
-  // to pass the equality check. This will make the validator to correctly pass
-  let cloned_output_datum =
-    ChannelDatum {
-      ..output_datum,
-      state: ChannelDatumState {
-        ..output_datum.state,
-        packet_commitment: pairs.map(
-          output_datum.state.packet_commitment,
-          fn(_k, v) { v },
-        ),
-      },
-    }
-
   let expected_datum =
     ChannelDatum {
       ..input_datum,
       state: ChannelDatumState {
         ..input_datum.state,
         next_sequence_send: input_datum.state.next_sequence_send + 1,
-        packet_commitment: pairs.insert_by_ascending_key(
-          input_datum.state.packet_commitment,
-          packet.sequence,
-          commitment,
-          int.compare,
-        ),
       },
     }
 
   and {
-    packet_entry_count(input_datum.state) < max_packet_entries_per_channel,
-    expected_datum == cloned_output_datum,
+    packet.sequence == input_datum.state.next_sequence_send,
+    expected_datum == output_datum,
   }
 }
 
 pub fn validate_timeout_packet(
   input_datum: ChannelDatum,
   output_datum: ChannelDatum,
-  packet: Packet,
+  _packet: Packet,
 ) -> Bool {
   let expected_channel_state =
     if input_datum.state.channel.ordering == order.Ordered {
@@ -321,10 +248,6 @@ pub fn validate_timeout_packet(
           ..input_datum.state.channel,
           state: expected_channel_state,
         },
-        packet_commitment: pairs.delete_first(
-          input_datum.state.packet_commitment,
-          packet.sequence,
-        ),
       },
     }
 
@@ -334,7 +257,7 @@ pub fn validate_timeout_packet(
 pub fn validate_acknowledge_packet(
   input_datum: ChannelDatum,
   output_datum: ChannelDatum,
-  packet: Packet,
+  _packet: Packet,
 ) -> Bool {
   let expected_next_seq_ack =
     if input_datum.state.channel.ordering == order.Ordered {
@@ -348,10 +271,6 @@ pub fn validate_acknowledge_packet(
       ..input_datum,
       state: ChannelDatumState {
         ..input_datum.state,
-        packet_commitment: pairs.delete_first(
-          input_datum.state.packet_commitment,
-          packet.sequence,
-        ),
         next_sequence_ack: expected_next_seq_ack,
       },
     }

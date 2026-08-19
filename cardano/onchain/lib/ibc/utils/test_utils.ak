@@ -9,7 +9,7 @@ use ibc/client/ics_007_tendermint_client/client_state.{ClientState}
 use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
-use ibc/core/ics_004/types/packet.{Packet} as packet_mod
+use ibc/core/ics_004/types/packet.{Packet}
 use ibc/utils/validator_utils
 
 pub fn build_channel_output(
@@ -95,17 +95,11 @@ pub fn update_client(
 pub fn send_packet(packet: Packet, channel_datum: ChannelDatum) -> ChannelDatum {
   expect packet.sequence == channel_datum.state.next_sequence_send
 
-  let commitment = packet_mod.commit_packet(packet)
-
   ChannelDatum {
     ..channel_datum,
     state: ChannelDatumState {
       ..channel_datum.state,
       next_sequence_send: channel_datum.state.next_sequence_send + 1,
-      packet_commitment: [
-        Pair(packet.sequence, commitment),
-        ..channel_datum.state.packet_commitment
-      ],
     },
   }
 }

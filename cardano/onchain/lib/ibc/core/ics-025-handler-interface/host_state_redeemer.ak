@@ -1,5 +1,17 @@
 use ibc/core/ics_025_handler_interface/host_state.{ModuleRegistration}
 
+/// The packet operation whose authenticated leaves are changed by HandlePacket.
+///
+/// Packet sequence and packet commitment values are derived from the co-spent
+/// channel redeemer. A receive additionally carries the acknowledgement
+/// commitment produced by the authenticated application callback.
+pub type PacketStateTransition {
+  SendPacketState
+  RecvPacketState { acknowledgement_commitment: ByteArray }
+  AcknowledgePacketState
+  TimeoutPacketState
+}
+
 pub type HostStateRedeemer {
   CreateClient {
     client_state_siblings: List<ByteArray>,
@@ -51,6 +63,7 @@ pub type HostStateRedeemer {
     channel_siblings: List<ByteArray>,
   }
   HandlePacket {
+    transition: PacketStateTransition,
     // Sibling hashes for the `channelEnds/ports/{portId}/channels/{channelId}` key update.
     //
     // Most packet operations do not change the channel end, but ordered timeouts do.

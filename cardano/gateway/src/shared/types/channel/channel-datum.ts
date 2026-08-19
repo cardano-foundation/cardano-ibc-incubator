@@ -6,9 +6,6 @@ export type ChannelDatumState = {
   next_sequence_send: bigint;
   next_sequence_recv: bigint;
   next_sequence_ack: bigint;
-  packet_commitment: Map<bigint, string>;
-  packet_receipt: Map<bigint, string>;
-  packet_acknowledgement: Map<bigint, string>;
 };
 
 export type ChannelDatum = {
@@ -34,7 +31,7 @@ export async function encodeChannelEndValue(
     Data.Literal('Init'),
     Data.Literal('TryOpen'),
     Data.Literal('Open'),
-    Data.Literal('Close'),
+    Data.Literal('Closed'),
   ]);
   const OrderSchema = Data.Enum([Data.Literal('None'), Data.Literal('Unordered'), Data.Literal('Ordered')]);
   const ChannelCounterpartySchema = Data.Object({
@@ -69,7 +66,7 @@ export async function encodeChannelDatum(channelDatum: ChannelDatum, Lucid: type
       Data.Literal('Init'),
       Data.Literal('TryOpen'),
       Data.Literal('Open'),
-      Data.Literal('Close'),
+      Data.Literal('Closed'),
     ]);
     const OrderSchema = Data.Enum([Data.Literal('None'), Data.Literal('Unordered'), Data.Literal('Ordered')]);
     const ChannelCounterpartySchema = Data.Object({
@@ -88,9 +85,6 @@ export async function encodeChannelDatum(channelDatum: ChannelDatum, Lucid: type
       next_sequence_send: Data.Integer(),
       next_sequence_recv: Data.Integer(),
       next_sequence_ack: Data.Integer(),
-      packet_commitment: Data.Map(Data.Integer(), Data.Bytes()),
-      packet_receipt: Data.Map(Data.Integer(), Data.Bytes()),
-      packet_acknowledgement: Data.Map(Data.Integer(), Data.Bytes()),
     });
     const AuthTokenSchema = Data.Object({
       policyId: Data.Bytes(),
@@ -117,22 +111,12 @@ export async function encodeChannelDatum(channelDatum: ChannelDatum, Lucid: type
   };
   const constrData = (index: number, fields: any[]) =>
     CML.PlutusData.new_constr_plutus_data(CML.ConstrPlutusData.new(BigInt(index), listData(fields)));
-  const mapData = (entries: Map<bigint, string>) => {
-    const map = CML.PlutusMap.new();
-    // Preserve insertion order: this is required for unordered recv packet validation
-    // where packet_receipt prepends the latest sequence.
-    for (const [key, value] of entries.entries()) {
-      map.set(intData(key), bytesData(value));
-    }
-    return CML.PlutusData.new_map(map);
-  };
-
   const channelStateIndex: Record<string, number> = {
     Uninitialized: 0,
     Init: 1,
     TryOpen: 2,
     Open: 3,
-    Close: 4,
+    Closed: 4,
   };
   const channelOrderIndex: Record<string, number> = {
     None: 0,
@@ -169,9 +153,6 @@ export async function encodeChannelDatum(channelDatum: ChannelDatum, Lucid: type
     intData(channelDatum.state.next_sequence_send),
     intData(channelDatum.state.next_sequence_recv),
     intData(channelDatum.state.next_sequence_ack),
-    mapData(channelDatum.state.packet_commitment),
-    mapData(channelDatum.state.packet_receipt),
-    mapData(channelDatum.state.packet_acknowledgement),
   ]);
 
   const tokenData = constrData(0, [bytesData(channelDatum.token.policyId), bytesData(channelDatum.token.name)]);
@@ -188,7 +169,7 @@ export async function decodeChannelDatum(channelDatum: string, Lucid: typeof imp
     Data.Literal('Init'),
     Data.Literal('TryOpen'),
     Data.Literal('Open'),
-    Data.Literal('Close'),
+    Data.Literal('Closed'),
   ]);
   const OrderSchema = Data.Enum([Data.Literal('None'), Data.Literal('Unordered'), Data.Literal('Ordered')]);
   const ChannelCounterpartySchema = Data.Object({
@@ -207,9 +188,6 @@ export async function decodeChannelDatum(channelDatum: string, Lucid: typeof imp
     next_sequence_send: Data.Integer(),
     next_sequence_recv: Data.Integer(),
     next_sequence_ack: Data.Integer(),
-    packet_commitment: Data.Map(Data.Integer(), Data.Bytes()),
-    packet_receipt: Data.Map(Data.Integer(), Data.Bytes()),
-    packet_acknowledgement: Data.Map(Data.Integer(), Data.Bytes()),
   });
   const AuthTokenSchema = Data.Object({
     policyId: Data.Bytes(),

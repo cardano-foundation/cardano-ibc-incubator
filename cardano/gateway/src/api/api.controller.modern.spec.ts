@@ -13,6 +13,8 @@ import { LocalOsmosisSwapPlannerService } from './swap-planner.service';
 import { TransferPlannerService } from './transfer-planner.service';
 import { BridgeManifestService } from '~@/query/services/bridge-manifest.service';
 import { QueryService } from '~@/query/services/query.service';
+import { IbcTreeCacheService } from '~@/shared/services/ibc-tree-cache.service';
+import { SubmissionService } from '~@/tx/submission.service';
 
 describe('ApiController (modern)', () => {
   let controller: ApiController;
@@ -94,6 +96,8 @@ describe('ApiController (modern)', () => {
         { provide: TransferPlannerService, useValue: transferPlannerServiceMock },
         { provide: BridgeManifestService, useValue: bridgeManifestServiceMock },
         { provide: QueryService, useValue: queryServiceMock },
+        { provide: IbcTreeCacheService, useValue: {} },
+        { provide: SubmissionService, useValue: {} },
       ],
     }).compile();
 

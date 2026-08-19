@@ -1,5 +1,5 @@
 // IBC State Root Computation - STT Architecture
-// 
+//
 // This module is responsible for computing the ICS-23 Merkle root commitment over all IBC host state.
 // The root covers: clients/, connections/, channels/, packets/, etc.
 //
@@ -17,29 +17,16 @@
 // CRASH RECOVERY / SELF-HEALING BEHAVIOR
 // ============================================================================
 //
-// The in-memory Merkle tree is ephemeral - it's lost when the Gateway process stops.
-// However, the Gateway is designed to be SELF-HEALING and requires NO MANUAL INTERVENTION
-// after a restart. Here's how it works:
+// The in-memory tree is ephemeral, while packet leaves intentionally do not live
+// in ChannelDatum. Recovery therefore uses one normalized durable checkpoint and
+// a chained mutation journal rather than rebuilding the complete tree from UTxOs.
+// Each unsigned HostState transaction persists its exact leaf deltas before it is
+// returned; confirmation promotes the delta, and restart replay recomputes every
+// intermediate root before accepting the exact root committed by HostState.
 //
-// 1. On Gateway restart, the in-memory tree starts empty.
-//
-// 2. When a query arrives that requires proof generation (e.g., queryClientState),
-//    the query service calls `ensureTreeAligned()` BEFORE generating the proof.
-//
-// 3. `ensureTreeAligned()` compares the in-memory tree's root with the on-chain
-//    `ibc_state_root` stored in the HostState UTXO.
-//
-// 4. If they don't match (which they won't after restart), `alignTreeWithChain()`
-//    is called automatically. This queries all IBC UTXOs (clients, connections,
-//    channels) and rebuilds the tree from scratch.
-//
-// 5. After rebuilding, the tree matches on-chain state and proofs can be generated.
-//
-// This "lazy rebuild on demand" approach means:
-// - The first proof-generating query after restart will be slower (rebuild overhead)
-// - Subsequent queries are fast (just a root comparison)
-// - No manual intervention or startup scripts needed
-// - The system is resilient to crashes at any point
+// Losing the proof store and all of its backups after packet history exists is an
+// availability failure: the on-chain root prevents forgery but cannot reveal its
+// preimage. Operators must replicate/back up this indexer state.
 //
 
 import { ICS23MerkleTree } from './ics23-merkle-tree';
@@ -51,7 +38,7 @@ import { encodeModuleRegistration } from '../types/host-state-datum';
 
 /**
  * Result of a state root computation
- * 
+ *
  * The computation is speculative until `commit()` is called.
  * This prevents the in-memory tree from becoming out-of-sync with on-chain state
  * when transactions fail or are retried.
@@ -65,14 +52,53 @@ export interface StateRootResult {
 
 /**
  * Current working tree - tracks the latest CONFIRMED IBC host state
- * 
- * This tree represents the actual on-chain state. It is only updated via:
- * 1. `commit()` after a transaction is confirmed
- * 2. `alignTreeWithChain()` to rebuild from on-chain UTXOs
- * 
+ *
+ * This tree represents the actual on-chain state. It is only updated via a
+ * confirmed commit or verified durable-store hydration/replay.
+ *
  * NEVER mutate this tree directly during speculative computation.
  */
 let currentTree: ICS23MerkleTree = new ICS23MerkleTree();
+
+export type IbcTreeLeafChange = {
+  path: string;
+  oldValue: string | null;
+  newValue: string | null;
+};
+
+type PreparedIbcTreeTransition = {
+  oldRoot: string;
+  newRoot: string;
+  changes: IbcTreeLeafChange[];
+};
+
+const preparedTransitionsByRoot = new Map<string, PreparedIbcTreeTransition>();
+
+function rememberPreparedTransition(oldRoot: string, newTree: ICS23MerkleTree): string {
+  const newRoot = newTree.getRoot();
+  const oldTree = oldRoot === '0'.repeat(64) ? new ICS23MerkleTree() : currentTree;
+  if (oldTree.getRoot() !== oldRoot) {
+    throw new Error(`Cannot journal tree transition: current root does not match ${oldRoot}`);
+  }
+
+  const changes = newTree.getChanges();
+
+  preparedTransitionsByRoot.set(newRoot.toLowerCase(), {
+    oldRoot: oldRoot.toLowerCase(),
+    newRoot: newRoot.toLowerCase(),
+    changes,
+  });
+  return newRoot;
+}
+
+export function getPreparedIbcTreeTransition(newRoot: string): PreparedIbcTreeTransition | undefined {
+  const transition = preparedTransitionsByRoot.get(newRoot.toLowerCase());
+  return transition ? { ...transition, changes: transition.changes.map((change) => ({ ...change })) } : undefined;
+}
+
+export function forgetPreparedIbcTreeTransition(newRoot: string): void {
+  preparedTransitionsByRoot.delete(newRoot.toLowerCase());
+}
 
 /**
  * Cached services for on-demand tree rebuild
@@ -80,14 +106,23 @@ let currentTree: ICS23MerkleTree = new ICS23MerkleTree();
  */
 let cachedKupoService: any = null;
 let cachedLucidService: any = null;
+let cachedTreeStoreService: any = null;
+let cachedHistoryService: any = null;
 
 /**
  * Initialize services for tree rebuild functionality
  * Must be called on Gateway startup before any IBC operations
  */
-export function initTreeServices(kupoService: any, lucidService: any): void {
+export function initTreeServices(
+  kupoService: any,
+  lucidService: any,
+  treeStoreService?: any,
+  historyService?: any,
+): void {
   cachedKupoService = kupoService;
   cachedLucidService = lucidService;
+  cachedTreeStoreService = treeStoreService ?? null;
+  cachedHistoryService = historyService ?? null;
 }
 
 /**
@@ -95,9 +130,7 @@ export function initTreeServices(kupoService: any, lucidService: any): void {
  */
 function serializeValue(value: any): Buffer {
   if (Buffer.isBuffer(value)) return value;
-  const json = JSON.stringify(value, (key, val) => 
-    typeof val === 'bigint' ? val.toString() : val
-  );
+  const json = JSON.stringify(value, (key, val) => (typeof val === 'bigint' ? val.toString() : val));
   return Buffer.from(json, 'utf8');
 }
 
@@ -142,13 +175,26 @@ export interface HandlePacketStateRootResult extends StateRootResult {
 }
 
 /**
+ * The packet-store mutation authenticated by a HandlePacket transition.
+ *
+ * Packet leaves deliberately do not live in ChannelDatum. The transaction
+ * supplies the operation-specific value, and the Merkle witness proves the
+ * corresponding absence/insertion or exact-value/deletion against HostState.
+ */
+export type PacketStateUpdate =
+  | { kind: 'send'; sequence: bigint; commitment: string }
+  | { kind: 'recv'; sequence: bigint; acknowledgementCommitment: string }
+  | { kind: 'acknowledge'; sequence: bigint; commitment: string }
+  | { kind: 'timeout'; sequence: bigint; commitment: string };
+
+/**
  * Get or reconstruct tree from root hash (returns a CLONE for speculative use)
- * 
+ *
  * Strategy:
  * 1. If root matches currentTree, clone and return (common case)
  * 2. If root is empty (zeros), return a new empty tree
  * 3. Otherwise, throw an error - tree is out of sync and must be rebuilt
- * 
+ *
  * @param rootHash - Target root hash from HostState UTXO (64-character hex string)
  * @returns A CLONED Merkle tree instance (safe to mutate)
  */
@@ -157,54 +203,55 @@ function getClonedTreeFromRoot(rootHash: string): ICS23MerkleTree {
   if (rootHash === '0'.repeat(64)) {
     return new ICS23MerkleTree();
   }
-  
+
   // Check if current tree matches the requested root
   const currentRoot = currentTree.getRoot();
   if (currentRoot === rootHash) {
     // CRITICAL: Return a CLONE so speculative mutations don't affect the canonical tree
     return currentTree.clone();
   }
-  
+
   // Root mismatch - tree is out of sync with on-chain state
   // This indicates a previous tx failed but we speculatively mutated the tree (bug),
   // or the Gateway restarted and lost in-memory state
   console.error(
     `STATE ROOT MISMATCH:\n` +
-    `  On-chain root: ${rootHash.substring(0, 16)}...\n` +
-    `  In-memory root: ${currentRoot.substring(0, 16)}...\n` +
-    `  The in-memory tree is stale. Call alignTreeWithChain() before retrying.`
+      `  On-chain root: ${rootHash.substring(0, 16)}...\n` +
+      `  In-memory root: ${currentRoot.substring(0, 16)}...\n` +
+      `  The in-memory tree is stale. Call alignTreeWithChain() before retrying.`,
   );
-  
+
   throw new Error(
     `Tree out of sync with on-chain state. ` +
-    `Expected root ${rootHash.substring(0, 16)}..., ` +
-    `but in-memory root is ${currentRoot.substring(0, 16)}...`
+      `Expected root ${rootHash.substring(0, 16)}..., ` +
+      `but in-memory root is ${currentRoot.substring(0, 16)}...`,
   );
 }
 
 /**
- * Align the in-memory tree with on-chain state (This is an automatic self-healing mechanism)
- * 
- * This is the core of the Gateway's crash recovery. It rebuilds the entire
- * Merkle tree from on-chain UTXOs, ensuring the in-memory state matches
- * what's actually committed on Cardano.
- * 
+ * Align the in-memory tree with the root committed on chain.
+ *
+ * Packet leaves are not present in ChannelDatum, so an established deployment
+ * recovers from the root-verified durable checkpoint/journal. A UTxO rebuild is
+ * only a first-deployment bootstrap when no packet history has been committed.
+ *
  * WHEN THIS IS CALLED:
  * - Automatically by `ensureTreeAligned()` when a query detects stale state
- * - After Gateway restart (triggered by first proof-generating query)
- * - If a transaction fails and the speculative tree becomes invalid
- * 
+ * - After Gateway restart
+ * - After the observed HostState moves to another retained journal branch
+ *
  * WHAT IT DOES:
  * 1. Queries the HostState UTXO to get the expected root
- * 2. Queries ALL IBC entity UTXOs (clients, connections, channels)
- * 3. Rebuilds the Merkle tree from scratch with all entries
- * 4. Verifies the computed root matches the on-chain commitment
- * 5. Replaces the in-memory tree with the rebuilt one
- * 
+ * 2. Loads a root-verified durable checkpoint
+ * 3. Replays or reverses authenticated journal mutations to the exact root
+ * 4. Verifies every intermediate and final root
+ * 5. Replaces the in-memory tree with the recovered tree
+ *
  * PERFORMANCE NOTE:
- * This is expensive (queries many UTXOs), but only runs when needed.
+ * Recovery may scan history and hydrate all checkpoint leaves, but only runs
+ * when needed.
  * In normal operation, `isTreeAligned()` returns true and this is skipped.
- * 
+ *
  * @returns Object containing the rebuilt tree's root hash
  * @throws Error if tree services not initialized via initTreeServices()
  */
@@ -212,19 +259,53 @@ export async function alignTreeWithChain(): Promise<{ root: string }> {
   if (!cachedKupoService || !cachedLucidService) {
     throw new Error('Tree services not initialized. Call initTreeServices() on Gateway startup.');
   }
-  
+
   console.log('Aligning in-memory tree with on-chain state...');
-  
+
+  if (cachedTreeStoreService) {
+    const hostStateUtxo = await cachedLucidService.findUtxoAtHostStateNFT();
+    if (!hostStateUtxo?.datum) {
+      throw new Error('HostState UTXO has no datum - cannot align proof store');
+    }
+    const hostStateDatum = await cachedLucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
+    const expectedRoot = hostStateDatum.state.ibc_state_root.toLowerCase();
+    const cached = await cachedTreeStoreService.load('current');
+    let aligned = cached;
+    if (cached?.root !== expectedRoot) {
+      if (!cachedHistoryService) {
+        throw new Error('History service is required to recover authoritative IBC transition heights');
+      }
+      const indexedHostStateTx = await cachedHistoryService.findTxByHash(hostStateUtxo.txHash);
+      if (!indexedHostStateTx || !Number.isSafeInteger(indexedHostStateTx.height) || indexedHostStateTx.height < 0) {
+        throw new Error(`No authoritative inclusion height is indexed for HostState ${hostStateUtxo.txHash}`);
+      }
+      aligned = await cachedTreeStoreService.recoverToRoot(expectedRoot, {
+        expectedRootInclusionHeight: BigInt(indexedHostStateTx.height),
+        resolveTransitionInclusionHeight: async (txHash: string) => {
+          const tx = await cachedHistoryService.findTxByHash(txHash);
+          if (!tx || !Number.isSafeInteger(tx.height) || tx.height < 0) {
+            throw new Error(`No authoritative inclusion height is indexed for IBC transition ${txHash}`);
+          }
+          return BigInt(tx.height);
+        },
+      });
+    }
+    if (!aligned) {
+      throw new Error(`No durable IBC proof state is available for on-chain root ${expectedRoot}`);
+    }
+    return { root: aligned.root };
+  }
+
   const result = await rebuildTreeFromChain(cachedKupoService, cachedLucidService);
   return { root: result.root };
 }
 
 /**
  * Check if the in-memory tree matches the given on-chain root
- * 
+ *
  * Use this to detect staleness before building transactions or generating proofs.
  * This is a cheap operation (just compares two hash strings).
- * 
+ *
  * @param onChainRoot - The ibc_state_root from the HostState UTXO (64-char hex)
  * @returns true if in-memory tree matches on-chain state, false if rebuild needed
  */
@@ -237,10 +318,10 @@ export function isTreeAligned(onChainRoot: string): boolean {
 
 /**
  * Computes the new IBC state root after adding/updating client state
- * 
+ *
  * SIDE-EFFECT FREE: Does not mutate the canonical tree.
  * Call result.commit() only after the transaction is confirmed.
- * 
+ *
  * @param oldRoot - Current IBC state root (64-character hex string)
  * @param clientId - Client identifier being created/updated
  * @param clientState - New client state value
@@ -257,13 +338,13 @@ export function computeRootWithClientUpdate(
 ): StateRootResult {
   // Get a CLONED tree (safe to mutate)
   const speculativeTree = getClonedTreeFromRoot(oldRoot);
-  
+
   // IBC path for client state: clients/{clientId}/clientState
   // This stores the overall client configuration (chain ID, trust level, latest height, etc.)
   const clientPath = `clients/${clientId}/clientState`;
   const clientValue = serializeValue(clientState);
   speculativeTree.set(clientPath, clientValue);
-  
+
   // If a consensus state is provided, also add it to the tree.
   // Consensus states are snapshots of the counterparty chain at specific heights.
   // They're used for proof verification - when verifying a packet commitment,
@@ -277,10 +358,10 @@ export function computeRootWithClientUpdate(
     speculativeTree.set(consensusPath, consensusValue);
     console.log(`Added consensus state for ${clientId} at height ${heightStr}`);
   }
-  
+
   // Compute new root
-  const newRoot = speculativeTree.getRoot();
-  
+  const newRoot = rememberPreparedTransition(oldRoot, speculativeTree);
+
   return {
     newRoot,
     commit: () => {
@@ -312,12 +393,10 @@ export function computeRootWithCreateClientUpdate(
 
   const heightStr = String(consensusHeight);
   const consensusPath = `clients/${clientId}/consensusStates/${heightStr}`;
-  const consensusStateSiblings = speculativeTree
-    .getSiblings(consensusPath)
-    .map((h) => h.toString('hex'));
+  const consensusStateSiblings = speculativeTree.getSiblings(consensusPath).map((h) => h.toString('hex'));
   speculativeTree.set(consensusPath, consensusStateValue);
 
-  const newRoot = speculativeTree.getRoot();
+  const newRoot = rememberPreparedTransition(oldRoot, speculativeTree);
 
   return {
     newRoot,
@@ -408,7 +487,7 @@ export function computeRootWithUpdateClientUpdate(
     speculativeTree.set(consensusPath, addedConsensusState.value);
   }
 
-  const newRoot = speculativeTree.getRoot();
+  const newRoot = rememberPreparedTransition(oldRoot, speculativeTree);
 
   return {
     newRoot,
@@ -439,7 +518,7 @@ export function computeRootWithCreateConnectionUpdate(
   const connectionSiblings = speculativeTree.getSiblings(path).map((h) => h.toString('hex'));
   speculativeTree.set(path, connectionValue);
 
-  const newRoot = speculativeTree.getRoot();
+  const newRoot = rememberPreparedTransition(oldRoot, speculativeTree);
 
   return {
     newRoot,
@@ -473,22 +552,18 @@ export function computeRootWithCreateChannelUpdate(
   speculativeTree.set(channelPath, channelValue);
 
   const nextSequenceSendPath = `nextSequenceSend/ports/${portId}/channels/${channelId}`;
-  const nextSequenceSendSiblings = speculativeTree
-    .getSiblings(nextSequenceSendPath)
-    .map((h) => h.toString('hex'));
+  const nextSequenceSendSiblings = speculativeTree.getSiblings(nextSequenceSendPath).map((h) => h.toString('hex'));
   speculativeTree.set(nextSequenceSendPath, nextSequenceSendValue);
 
   const nextSequenceRecvPath = `nextSequenceRecv/ports/${portId}/channels/${channelId}`;
-  const nextSequenceRecvSiblings = speculativeTree
-    .getSiblings(nextSequenceRecvPath)
-    .map((h) => h.toString('hex'));
+  const nextSequenceRecvSiblings = speculativeTree.getSiblings(nextSequenceRecvPath).map((h) => h.toString('hex'));
   speculativeTree.set(nextSequenceRecvPath, nextSequenceRecvValue);
 
   const nextSequenceAckPath = `nextSequenceAck/ports/${portId}/channels/${channelId}`;
   const nextSequenceAckSiblings = speculativeTree.getSiblings(nextSequenceAckPath).map((h) => h.toString('hex'));
   speculativeTree.set(nextSequenceAckPath, nextSequenceAckValue);
 
-  const newRoot = speculativeTree.getRoot();
+  const newRoot = rememberPreparedTransition(oldRoot, speculativeTree);
 
   return {
     newRoot,
@@ -498,9 +573,7 @@ export function computeRootWithCreateChannelUpdate(
     nextSequenceAckSiblings,
     commit: () => {
       currentTree = speculativeTree;
-      console.log(
-        `Committed CreateChannel: ${portId}/${channelId}, new root: ${newRoot.substring(0, 16)}...`,
-      );
+      console.log(`Committed CreateChannel: ${portId}/${channelId}, new root: ${newRoot.substring(0, 16)}...`);
     },
   };
 }
@@ -523,7 +596,7 @@ export function computeRootWithUpdateChannelUpdate(
   const channelSiblings = speculativeTree.getSiblings(channelPath).map((h) => h.toString('hex'));
   speculativeTree.set(channelPath, channelValue);
 
-  const newRoot = speculativeTree.getRoot();
+  const newRoot = rememberPreparedTransition(oldRoot, speculativeTree);
 
   return {
     newRoot,
@@ -540,13 +613,9 @@ export function computeRootWithUpdateChannelUpdate(
  *
  * This mirrors `validate_handle_packet_root` in `cardano/onchain/validators/host_state_stt.ak`.
  *
- * The packet store lives inside the ChannelDatum:
- * - packet commitments (insert on SendPacket, delete on Ack/Timeout)
- * - packet receipts (insert on RecvPacket for unordered channels)
- * - packet acknowledgements (insert when the module writes an acknowledgement)
- *
- * We derive which keys changed by diffing the old vs new ChannelDatum, then we
- * apply those key updates in the exact same order the validator uses.
+ * Packet leaves are derived from the authenticated packet operation, not copied
+ * from ChannelDatum. This keeps the channel UTxO bounded while preserving the
+ * same committed ICS-24 key/value store under HostState.ibc_state_root.
  */
 export async function computeRootWithHandlePacketUpdate(
   oldRoot: string,
@@ -554,6 +623,7 @@ export async function computeRootWithHandlePacketUpdate(
   channelId: string,
   inputChannelDatum: ChannelDatum,
   outputChannelDatum: ChannelDatum,
+  packetStateUpdate: PacketStateUpdate,
   Lucid: typeof import('@lucid-evolution/lucid'),
 ): Promise<HandlePacketStateRootResult> {
   const speculativeTree = getClonedTreeFromRoot(oldRoot);
@@ -568,10 +638,7 @@ export async function computeRootWithHandlePacketUpdate(
   const channelPath = `channelEnds/ports/${portId}/channels/${channelId}`;
   let channelSiblings: string[] = [];
   if (inputChannelDatum.state.channel !== outputChannelDatum.state.channel) {
-    const newChannelValue = Buffer.from(
-      await encodeChannelEndValue(outputChannelDatum.state.channel, Lucid),
-      'hex',
-    );
+    const newChannelValue = Buffer.from(await encodeChannelEndValue(outputChannelDatum.state.channel, Lucid), 'hex');
     channelSiblings = speculativeTree.getSiblings(channelPath).map((h) => h.toString('hex'));
     speculativeTree.set(channelPath, newChannelValue);
   }
@@ -613,91 +680,50 @@ export async function computeRootWithHandlePacketUpdate(
   }
 
   // 5) Packet commitment insertion/deletion.
-  //
-  // A single packet operation should only change ONE commitment:
-  // - SendPacket inserts exactly one commitment
-  // - AckPacket/TimeoutPacket delete exactly one commitment
-  const inputCommitments = Array.from(inputChannelDatum.state.packet_commitment.entries());
-  const outputCommitments = Array.from(outputChannelDatum.state.packet_commitment.entries());
-
-  const insertedCommitments = outputCommitments.filter(([seq]) => !inputChannelDatum.state.packet_commitment.has(seq));
-  const removedCommitments = inputCommitments.filter(([seq]) => !outputChannelDatum.state.packet_commitment.has(seq));
-
   let packetCommitmentSiblings: string[] = [];
-  if (insertedCommitments.length > 0) {
-    if (removedCommitments.length !== 0 || insertedCommitments.length !== 1) {
-      throw new Error(
-        `HandlePacket root update expects exactly one commitment insertion and no deletions; got ${insertedCommitments.length} insertions and ${removedCommitments.length} deletions`,
-      );
+  if (packetStateUpdate.kind === 'send') {
+    const key = `commitments/ports/${portId}/channels/${channelId}/sequences/${packetStateUpdate.sequence.toString()}`;
+    if (speculativeTree.get(key)) {
+      throw new Error(`SendPacket root update expects no existing packet commitment at '${key}'`);
     }
-    const [sequence, commitmentBytes] = insertedCommitments[0];
-    const key = `commitments/ports/${portId}/channels/${channelId}/sequences/${sequence.toString()}`;
-    const newValue = encodePacketStoreValue(commitmentBytes);
-
     packetCommitmentSiblings = speculativeTree.getSiblings(key).map((h) => h.toString('hex'));
-    speculativeTree.set(key, newValue);
-  } else if (removedCommitments.length > 0) {
-    if (removedCommitments.length !== 1) {
-      throw new Error(
-        `HandlePacket root update expects exactly one commitment deletion; got ${removedCommitments.length}`,
-      );
+    speculativeTree.set(key, encodePacketStoreValue(packetStateUpdate.commitment));
+  } else if (packetStateUpdate.kind === 'acknowledge' || packetStateUpdate.kind === 'timeout') {
+    const key = `commitments/ports/${portId}/channels/${channelId}/sequences/${packetStateUpdate.sequence.toString()}`;
+    const expectedValue = encodePacketStoreValue(packetStateUpdate.commitment);
+    const storedValue = speculativeTree.get(key);
+    if (!storedValue || !storedValue.equals(expectedValue)) {
+      throw new Error(`${packetStateUpdate.kind} root update expects the exact packet commitment at '${key}'`);
     }
-    const [sequence] = removedCommitments[0];
-    const key = `commitments/ports/${portId}/channels/${channelId}/sequences/${sequence.toString()}`;
-
     packetCommitmentSiblings = speculativeTree.getSiblings(key).map((h) => h.toString('hex'));
     speculativeTree.set(key, Buffer.alloc(0));
   }
 
   // 6) Packet receipt insertion (unordered RecvPacket).
-  const inputReceipts = Array.from(inputChannelDatum.state.packet_receipt.entries());
-  const outputReceipts = Array.from(outputChannelDatum.state.packet_receipt.entries());
-
-  const insertedReceipts = outputReceipts.filter(([seq]) => !inputChannelDatum.state.packet_receipt.has(seq));
-  const removedReceipts = inputReceipts.filter(([seq]) => !outputChannelDatum.state.packet_receipt.has(seq));
-
   let packetReceiptSiblings: string[] = [];
-  if (insertedReceipts.length > 0) {
-    if (removedReceipts.length !== 0 || insertedReceipts.length !== 1) {
-      throw new Error(
-        `HandlePacket root update expects receipts to only ever insert a single entry; got ${insertedReceipts.length} insertions and ${removedReceipts.length} deletions`,
-      );
+  if (packetStateUpdate.kind === 'recv' && inputChannelDatum.state.channel.ordering === 'Unordered') {
+    const key = `receipts/ports/${portId}/channels/${channelId}/sequences/${packetStateUpdate.sequence.toString()}`;
+    if (speculativeTree.get(key)) {
+      throw new Error(`RecvPacket root update expects no existing packet receipt at '${key}'`);
     }
-    const [sequence, receiptBytes] = insertedReceipts[0];
-    const key = `receipts/ports/${portId}/channels/${channelId}/sequences/${sequence.toString()}`;
-    const newValue = encodePacketStoreValue(receiptBytes);
-
     packetReceiptSiblings = speculativeTree.getSiblings(key).map((h) => h.toString('hex'));
-    speculativeTree.set(key, newValue);
-  } else if (removedReceipts.length > 0) {
-    throw new Error(`HandlePacket root update does not allow receipt deletions`);
+    // ICS-04's receipt marker is an empty byte array. CBOR wrapping produces
+    // the non-empty `0x40`, distinguishing it from an absent Merkle leaf.
+    speculativeTree.set(key, encodePacketStoreValue(''));
   }
 
   // 7) Packet acknowledgement insertion.
-  const inputAcks = Array.from(inputChannelDatum.state.packet_acknowledgement.entries());
-  const outputAcks = Array.from(outputChannelDatum.state.packet_acknowledgement.entries());
-
-  const insertedAcks = outputAcks.filter(([seq]) => !inputChannelDatum.state.packet_acknowledgement.has(seq));
-  const removedAcks = inputAcks.filter(([seq]) => !outputChannelDatum.state.packet_acknowledgement.has(seq));
-
   let packetAcknowledgementSiblings: string[] = [];
-  if (insertedAcks.length > 0) {
-    if (removedAcks.length !== 0 || insertedAcks.length !== 1) {
-      throw new Error(
-        `HandlePacket root update expects acknowledgements to only ever insert a single entry; got ${insertedAcks.length} insertions and ${removedAcks.length} deletions`,
-      );
+  if (packetStateUpdate.kind === 'recv') {
+    const key = `acks/ports/${portId}/channels/${channelId}/sequences/${packetStateUpdate.sequence.toString()}`;
+    if (speculativeTree.get(key)) {
+      throw new Error(`RecvPacket root update expects no existing packet acknowledgement at '${key}'`);
     }
-    const [sequence, ackBytes] = insertedAcks[0];
-    const key = `acks/ports/${portId}/channels/${channelId}/sequences/${sequence.toString()}`;
-    const newValue = encodePacketStoreValue(ackBytes);
-
     packetAcknowledgementSiblings = speculativeTree.getSiblings(key).map((h) => h.toString('hex'));
-    speculativeTree.set(key, newValue);
-  } else if (removedAcks.length > 0) {
-    throw new Error(`HandlePacket root update does not allow acknowledgement deletions`);
+    speculativeTree.set(key, encodePacketStoreValue(packetStateUpdate.acknowledgementCommitment));
   }
 
-  const newRoot = speculativeTree.getRoot();
+  const newRoot = rememberPreparedTransition(oldRoot, speculativeTree);
 
   return {
     newRoot,
@@ -710,16 +736,14 @@ export async function computeRootWithHandlePacketUpdate(
     packetAcknowledgementSiblings,
     commit: () => {
       currentTree = speculativeTree;
-      console.log(
-        `Committed HandlePacket: ${portId}/${channelId}, new root: ${newRoot.substring(0, 16)}...`,
-      );
+      console.log(`Committed HandlePacket: ${portId}/${channelId}, new root: ${newRoot.substring(0, 16)}...`);
     },
   };
 }
 
 /**
  * Computes the new IBC state root after adding/updating connection state
- * 
+ *
  * SIDE-EFFECT FREE: Does not mutate the canonical tree.
  * Call result.commit() only after the transaction is confirmed.
  */
@@ -730,17 +754,17 @@ export function computeRootWithConnectionUpdate(
 ): StateRootResult {
   // Get a CLONED tree (safe to mutate)
   const speculativeTree = getClonedTreeFromRoot(oldRoot);
-  
+
   // IBC path for connection state: connections/{connectionId}
   const path = `connections/${connectionId}`;
-  
+
   // Serialize and store the connection state in the SPECULATIVE tree
   const value = serializeValue(connectionState);
   speculativeTree.set(path, value);
-  
+
   // Compute new root
-  const newRoot = speculativeTree.getRoot();
-  
+  const newRoot = rememberPreparedTransition(oldRoot, speculativeTree);
+
   return {
     newRoot,
     commit: () => {
@@ -752,31 +776,27 @@ export function computeRootWithConnectionUpdate(
 
 /**
  * Computes the new IBC state root after adding/updating channel state
- * 
+ *
  * SIDE-EFFECT FREE: Does not mutate the canonical tree.
  * Call result.commit() only after the transaction is confirmed.
  */
-export function computeRootWithChannelUpdate(
-  oldRoot: string,
-  channelId: string,
-  channelState: any,
-): StateRootResult {
+export function computeRootWithChannelUpdate(oldRoot: string, channelId: string, channelState: any): StateRootResult {
   // Get a CLONED tree (safe to mutate)
   const speculativeTree = getClonedTreeFromRoot(oldRoot);
-  
+
   // Extract portId from channel state (default to 'transfer' if not provided)
   const portId = channelState?.port_id || 'transfer';
-  
+
   // IBC path for channel state: channelEnds/ports/{portId}/channels/{channelId}
   const path = `channelEnds/ports/${portId}/channels/${channelId}`;
-  
+
   // Serialize and store the channel state in the SPECULATIVE tree
   const value = serializeValue(channelState);
   speculativeTree.set(path, value);
-  
+
   // Compute new root
-  const newRoot = speculativeTree.getRoot();
-  
+  const newRoot = rememberPreparedTransition(oldRoot, speculativeTree);
+
   return {
     newRoot,
     commit: () => {
@@ -788,7 +808,7 @@ export function computeRootWithChannelUpdate(
 
 /**
  * Computes the new IBC state root after binding a port
- * 
+ *
  * SIDE-EFFECT FREE: Does not mutate the canonical tree.
  * Call result.commit() only after the transaction is confirmed.
  */
@@ -810,7 +830,7 @@ export function computeRootWithPortBind(
   const portSiblings = speculativeTree.getSiblings(path).map((h) => h.toString('hex'));
   speculativeTree.set(path, portValue);
 
-  const newRoot = speculativeTree.getRoot();
+  const newRoot = rememberPreparedTransition(oldRoot, speculativeTree);
 
   return {
     newRoot,
@@ -823,31 +843,31 @@ export function computeRootWithPortBind(
 }
 
 /**
- * Rebuild the IBC state tree from on-chain UTXOs (STT Architecture)
- * 
- * CRITICAL FOR PRODUCTION: This function makes the Gateway resilient to:
- * - Restarts (in-memory tree is lost)
- * - Failed transactions (speculative state becomes stale)
- * - Multiple Gateway instances (another instance may have updated state)
+ * Bootstrap the IBC state tree from live on-chain UTxOs.
+ *
+ * Packet leaves are intentionally absent from ChannelDatum, so this can only
+ * reproduce the authoritative root before packet history exists. Established
+ * deployments recover from the durable checkpoint and journal instead; a root
+ * mismatch here fails closed rather than constructing an incomplete tree.
  */
 export async function rebuildTreeFromChain(
   kupoService: any,
   lucidService: any,
 ): Promise<{ tree: ICS23MerkleTree; root: string }> {
   console.log('Rebuilding IBC state tree from on-chain UTXOs (STT architecture)...');
-  
+
   // Query HostState UTXO via NFT
   const hostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
   if (!hostStateUtxo?.datum) {
     throw new Error('HostState UTXO has no datum - STT architecture integrity compromised');
   }
-  
+
   const hostStateDatum = await lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
   const expectedRoot = hostStateDatum.state.ibc_state_root;
   const version = hostStateDatum.state.version;
-  
+
   console.log(`STT Architecture - HostState UTXO v${version}, expected root: ${expectedRoot.substring(0, 16)}...`);
-  
+
   try {
     // Create new tree
     const tree = new ICS23MerkleTree();
@@ -860,22 +880,19 @@ export async function rebuildTreeFromChain(
     if (boundPorts.size > 0) {
       for (const [portNumber, registration] of boundPorts.entries()) {
         const portId = `port-${portNumber.toString()}`;
-        const portValue = Buffer.from(
-          await encodeModuleRegistration(registration, lucidService.LucidImporter),
-          'hex',
-        );
+        const portValue = Buffer.from(await encodeModuleRegistration(registration, lucidService.LucidImporter), 'hex');
         tree.set(`ports/${portId}`, portValue);
       }
       console.log(`Added ${boundPorts.size} bound port(s)`);
     }
-    
+
     // Query and add all Client UTXOs
     const clientUtxos = await kupoService.queryAllClientUtxos();
     console.log(`Found ${clientUtxos.length} client UTXOs`);
-    
+
     for (const clientUtxo of clientUtxos) {
       if (!clientUtxo.datum) continue;
-      
+
       const clientDatum = await lucidService.decodeDatum(clientUtxo.datum, 'client');
       const clientUnit = Object.keys(clientUtxo.assets || {}).find((unit) => unit !== 'lovelace');
       if (!clientUnit || clientUnit.length < 56 + 48 + 2) continue;
@@ -884,7 +901,7 @@ export async function rebuildTreeFromChain(
       const postfixHex = tokenName.slice(48);
       const clientSequence = BigInt(Buffer.from(postfixHex, 'hex').toString('utf8'));
       const clientId = `07-tendermint-${clientSequence.toString()}`;
-      
+
       const clientStateValue = Buffer.from(
         await encodeClientStateValue(clientDatum.state.clientState, lucidService.LucidImporter),
         'hex',
@@ -892,7 +909,7 @@ export async function rebuildTreeFromChain(
       // Add client state to tree
       // ICS-24 path: clients/{clientId}/clientState
       tree.set(`clients/${clientId}/clientState`, clientStateValue);
-      
+
       // Add all consensus states to tree
       // ICS-24 path: clients/{clientId}/consensusStates/{height}
       // The consensusStates map stores consensus state snapshots at various heights.
@@ -900,10 +917,9 @@ export async function rebuildTreeFromChain(
       const consensusStates = clientDatum.state.consensusStates;
       if (consensusStates && (consensusStates instanceof Map || typeof consensusStates === 'object')) {
         // Handle both Map and plain object (depending on how it was decoded)
-        const entries = consensusStates instanceof Map 
-          ? Array.from(consensusStates.entries())
-          : Object.entries(consensusStates);
-        
+        const entries =
+          consensusStates instanceof Map ? Array.from(consensusStates.entries()) : Object.entries(consensusStates);
+
         for (const [heightKey, consensusState] of entries) {
           // Height key format varies - could be object {revisionNumber, revisionHeight} or string
           let heightStr: string;
@@ -918,7 +934,7 @@ export async function rebuildTreeFromChain(
             await encodeConsensusStateValue(consensusState, lucidService.LucidImporter),
             'hex',
           );
-          
+
           tree.set(`clients/${clientId}/consensusStates/${heightStr}`, consensusValue);
         }
         console.log(`  Added client: ${clientId} with ${entries.length} consensus state(s)`);
@@ -926,14 +942,14 @@ export async function rebuildTreeFromChain(
         console.log(`  Added client: ${clientId} (no consensus states)`);
       }
     }
-    
+
     // Query and add all Connection UTXOs
     const connectionUtxos = await kupoService.queryAllConnectionUtxos();
     console.log(`Found ${connectionUtxos.length} connection UTXOs`);
-    
+
     for (const connectionUtxo of connectionUtxos) {
       if (!connectionUtxo.datum) continue;
-      
+
       const connectionDatum = await lucidService.decodeDatum(connectionUtxo.datum, 'connection');
       const connectionUnit = Object.keys(connectionUtxo.assets || {}).find((unit) => unit !== 'lovelace');
       if (!connectionUnit || connectionUnit.length <= 56) continue;
@@ -956,17 +972,17 @@ export async function rebuildTreeFromChain(
         'hex',
       );
       tree.set(`connections/${connectionId}`, connectionValue);
-      
+
       console.log(`  Added connection: ${connectionId}`);
     }
-    
+
     // Query and add all Channel UTXOs
     const channelUtxos = await kupoService.queryAllChannelUtxos();
     console.log(`Found ${channelUtxos.length} channel UTXOs`);
-    
+
     for (const channelUtxo of channelUtxos) {
       if (!channelUtxo.datum) continue;
-      
+
       const channelDatum = await lucidService.decodeDatum(channelUtxo.datum, 'channel');
       const channelUnit = Object.keys(channelUtxo.assets || {}).find((unit) => unit !== 'lovelace');
       if (!channelUnit || channelUnit.length <= 56) continue;
@@ -1011,61 +1027,31 @@ export async function rebuildTreeFromChain(
       tree.set(`nextSequenceRecv/ports/${portId}/channels/${channelId}`, nextSequenceRecvValue);
       tree.set(`nextSequenceAck/ports/${portId}/channels/${channelId}`, nextSequenceAckValue);
 
-      // Packet store (commitments / receipts / acknowledgements).
-      //
-      // Each entry is stored under its ICS-24 path, and the value is the CBOR encoding
-      // of the raw bytes (equivalent to Aiken `cbor.serialise(ByteArray)`).
-      //
-      // This matters for receipts: the receipt bytes are often empty, but an *empty*
-      // receipt still needs to be distinguishable from "no receipt exists".
-      // CBOR encoding of empty bytes is `0x40`, which is non-empty and therefore
-      // survives the commitment scheme.
-      const packetCommitments = (channelDatum as any).state.packet_commitment as Map<bigint, string>;
-      const packetReceipts = (channelDatum as any).state.packet_receipt as Map<bigint, string>;
-      const packetAcks = (channelDatum as any).state.packet_acknowledgement as Map<bigint, string>;
-
-      const BytesSchema = Data.Bytes() as any;
-
-      for (const [sequence, bytesHex] of packetCommitments.entries()) {
-        const key = `commitments/ports/${portId}/channels/${channelId}/sequences/${sequence.toString()}`;
-        const value = Buffer.from(Data.to(bytesHex, BytesSchema) as any, 'hex');
-        tree.set(key, value);
-      }
-      for (const [sequence, bytesHex] of packetReceipts.entries()) {
-        const key = `receipts/ports/${portId}/channels/${channelId}/sequences/${sequence.toString()}`;
-        const value = Buffer.from(Data.to(bytesHex, BytesSchema) as any, 'hex');
-        tree.set(key, value);
-      }
-      for (const [sequence, bytesHex] of packetAcks.entries()) {
-        const key = `acks/ports/${portId}/channels/${channelId}/sequences/${sequence.toString()}`;
-        const value = Buffer.from(Data.to(bytesHex, BytesSchema) as any, 'hex');
-        tree.set(key, value);
-      }
-      
       console.log(`  Added channel: ${portId}/${channelId}`);
     }
-    
+
     // Compute root and verify
     const computedRoot = tree.getRoot();
     console.log(`Computed root from UTXOs: ${computedRoot.substring(0, 16)}...`);
-    
+
     if (computedRoot !== expectedRoot) {
       throw new Error(
         `Tree rebuild FAILED: Root mismatch!\n` +
-        `  Expected: ${expectedRoot}\n` +
-        `  Computed: ${computedRoot}\n` +
-        `This indicates stale Kupo data or datum decoding error.`
+          `  Expected: ${expectedRoot}\n` +
+          `  Computed: ${computedRoot}\n` +
+          `This indicates stale Kupo data or datum decoding error.`,
       );
     }
-    
+
     // Update global current tree
     currentTree = tree;
-    
+
     console.log('Tree rebuilt successfully and verified against on-chain root');
-    console.log(`   Clients: ${clientUtxos.length}, Connections: ${connectionUtxos.length}, Channels: ${channelUtxos.length}`);
-    
+    console.log(
+      `   Clients: ${clientUtxos.length}, Connections: ${connectionUtxos.length}, Channels: ${channelUtxos.length}`,
+    );
+
     return { tree, root: computedRoot };
-    
   } catch (error) {
     console.error('Failed to rebuild tree from chain:', error.message);
     throw new Error(`Tree rebuild failed: ${error.message}`);

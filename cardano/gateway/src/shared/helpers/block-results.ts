@@ -89,7 +89,7 @@ function normalizeEventChannel(evtType: ChannelState): string {
       return EVENT_TYPE_CHANNEL.OPEN_TRY;
     case ChannelState.Open:
       return EVENT_TYPE_CHANNEL.OPEN_ACK;
-    case ChannelState.Close:
+    case ChannelState.Closed:
       return EVENT_TYPE_CHANNEL.CLOSE;
     default:
       return '';

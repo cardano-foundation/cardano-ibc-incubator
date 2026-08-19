@@ -24,7 +24,9 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
   TransferModuleData,
 }
 use ibc/core/ics_005/types/keys as port_keys
-use ibc/core/ics_025_handler_interface/host_state_redeemer.{HandlePacket}
+use ibc/core/ics_025_handler_interface/host_state_redeemer.{
+  HandlePacket, SendPacketState,
+}
 use ibc/utils/test_utils
 use minting_transfer_escrow_shard
 use spending_channel
@@ -88,9 +90,6 @@ fn check_send_packet(mutation: CallbackMutation) {
         next_sequence_send: packet.sequence,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
@@ -169,10 +168,6 @@ fn check_send_packet(mutation: CallbackMutation) {
       state: ChannelDatumState {
         ..input_channel_datum.state,
         next_sequence_send: input_channel_datum.state.next_sequence_send + 1,
-        packet_commitment: [
-          Pair(packet.sequence, commitment),
-          ..input_channel_datum.state.packet_commitment
-        ],
       },
     }
 
@@ -269,6 +264,7 @@ fn check_send_packet(mutation: CallbackMutation) {
   let send_packet_redeemer: Redeemer = mock_data.channel_token
   let host_state_redeemer: Redeemer =
     HandlePacket {
+      transition: SendPacketState,
       channel_siblings: [],
       next_sequence_send_siblings: [],
       next_sequence_recv_siblings: [],

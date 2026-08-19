@@ -21,7 +21,9 @@ describe('TxOperationRunnerService', () => {
           walletSelectionState.activeScopeId !== scopeId ||
           walletSelectionState.explicitSelectionScopeId !== scopeId
         ) {
-          throw new Error(`${operationName} failed: no explicit address-backed wallet context was selected before complete()`);
+          throw new Error(
+            `${operationName} failed: no explicit address-backed wallet context was selected before complete()`,
+          );
         }
       }),
       endWalletSelectionScope: jest.fn((scopeId: number) => {
@@ -46,12 +48,16 @@ describe('TxOperationRunnerService', () => {
     const ibcTreePendingUpdatesService = {
       register: jest.fn(),
     } as any;
+    const ibcTreeCacheService = {
+      prepareTransition: jest.fn().mockResolvedValue(undefined),
+    } as any;
 
     const service = new TxOperationRunnerService(
       lucidService,
       walletContextService,
       txEventsService,
       ibcTreePendingUpdatesService,
+      ibcTreeCacheService,
     );
 
     return {
@@ -60,6 +66,7 @@ describe('TxOperationRunnerService', () => {
       walletContextService,
       txEventsService,
       ibcTreePendingUpdatesService,
+      ibcTreeCacheService,
     };
   };
 
@@ -70,6 +77,7 @@ describe('TxOperationRunnerService', () => {
       walletContextService,
       txEventsService,
       ibcTreePendingUpdatesService,
+      ibcTreeCacheService,
     } = makeService();
 
     const completedTx = {
@@ -106,10 +114,7 @@ describe('TxOperationRunnerService', () => {
       syntheticEvents,
     });
 
-    expect(walletContextService.selectWalletFromAddressWithRetry).toHaveBeenCalledWith(
-      'addr_test1xyz',
-      'createClient',
-    );
+    expect(walletContextService.selectWalletFromAddressWithRetry).toHaveBeenCalledWith('addr_test1xyz', 'createClient');
     expect(lucidService.beginWalletSelectionScope).toHaveBeenCalledTimes(1);
     expect(lucidService.assertWalletSelectionScopeSatisfied).toHaveBeenCalledTimes(1);
     expect(lucidService.endWalletSelectionScope).toHaveBeenCalledTimes(1);
@@ -117,9 +122,10 @@ describe('TxOperationRunnerService', () => {
       localUPLCEval: false,
       setCollateral: TRANSACTION_SET_COLLATERAL,
     });
-    expect(ibcTreePendingUpdatesService.register).toHaveBeenCalledWith(
+    expect(ibcTreePendingUpdatesService.register).toHaveBeenCalledWith('txhash-create-client', pendingTreeUpdate);
+    expect(ibcTreeCacheService.prepareTransition).toHaveBeenCalledWith(
       'txhash-create-client',
-      pendingTreeUpdate,
+      pendingTreeUpdate.expectedNewRoot,
     );
     expect(txEventsService.register).toHaveBeenCalledWith('txhash-create-client', syntheticEvents);
     expect(txEventsService.registerByExpectedRoot).toHaveBeenCalledWith('abc123', syntheticEvents);
@@ -129,13 +135,8 @@ describe('TxOperationRunnerService', () => {
   });
 
   it('runs custom wallet hook and returns extra response fields', async () => {
-    const {
-      service,
-      lucidService,
-      walletContextService,
-      txEventsService,
-      ibcTreePendingUpdatesService,
-    } = makeService();
+    const { service, lucidService, walletContextService, txEventsService, ibcTreePendingUpdatesService } =
+      makeService();
 
     const customWalletHook = jest.fn().mockImplementation(async () => {
       lucidService.selectWalletFromAddress();

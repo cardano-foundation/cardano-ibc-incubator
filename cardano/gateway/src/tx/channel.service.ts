@@ -577,9 +577,6 @@ export class ChannelService {
         next_sequence_send: 1n,
         next_sequence_recv: 1n,
         next_sequence_ack: 1n,
-        packet_commitment: new Map(),
-        packet_receipt: new Map(),
-        packet_acknowledgement: new Map(),
       },
       port: convertString2Hex(channelOpenInitOperator.port_id),
       token: channelToken,
@@ -636,10 +633,7 @@ export class ChannelService {
         },
       ],
     };
-    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
-      spendModuleRedeemer,
-      'iBCModuleRedeemer',
-    );
+    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(spendModuleRedeemer, 'iBCModuleRedeemer');
     const unsignedChannelOpenInitParams: UnsignedChannelOpenInitDto = {
       hostStateUtxo,
       encodedHostStateRedeemer,
@@ -729,9 +723,6 @@ export class ChannelService {
         next_sequence_send: 1n,
         next_sequence_recv: 1n,
         next_sequence_ack: 1n,
-        packet_commitment: new Map(),
-        packet_receipt: new Map(),
-        packet_acknowledgement: new Map(),
       },
       port: convertString2Hex(channelOpenTryOperator.port_id),
       token: channelToken,
@@ -784,10 +775,7 @@ export class ChannelService {
         },
       ],
     };
-    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
-      spendModuleRedeemer,
-      'iBCModuleRedeemer',
-    );
+    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(spendModuleRedeemer, 'iBCModuleRedeemer');
     return this.lucidService.createUnsignedChannelOpenTryTransaction({
       moduleKey: moduleConfig.key,
       hostStateUtxo,
@@ -1007,10 +995,7 @@ export class ChannelService {
         },
       ],
     };
-    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
-      spendModuleRedeemer,
-      'iBCModuleRedeemer',
-    );
+    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(spendModuleRedeemer, 'iBCModuleRedeemer');
     const unsignedChannelOpenAckParams: UnsignedChannelOpenAckDto = {
       hostStateUtxo,
       encodedHostStateRedeemer,
@@ -1226,10 +1211,7 @@ export class ChannelService {
         },
       ],
     };
-    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
-      spendModuleRedeemer,
-      'iBCModuleRedeemer',
-    );
+    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(spendModuleRedeemer, 'iBCModuleRedeemer');
     const unsignedChannelOpenConfirmParams: UnsignedChannelOpenConfirmDto = {
       hostStateUtxo,
       encodedHostStateRedeemer,
@@ -1299,7 +1281,7 @@ export class ChannelService {
     // Get client utxo by client unit associated
     const clientUtxo: UTxO = await this.lucidService.findUtxoByUnit(clientTokenUnit);
 
-    if (channelDatum.state.channel.state === ChannelState.Close) {
+    if (channelDatum.state.channel.state === ChannelState.Closed) {
       throw new GrpcInternalException('Channel is in Close State');
     }
 
@@ -1310,7 +1292,7 @@ export class ChannelService {
         ...channelDatum.state,
         channel: {
           ...channelDatum.state.channel,
-          state: ChannelState.Close,
+          state: ChannelState.Closed,
         },
       },
     };
@@ -1368,10 +1350,7 @@ export class ChannelService {
       ],
     };
 
-    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
-      spendModuleRedeemer,
-      'iBCModuleRedeemer',
-    );
+    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(spendModuleRedeemer, 'iBCModuleRedeemer');
 
     const spendChannelRedeemer: SpendChannelRedeemer = 'ChanCloseInit';
     const encodedSpendChannelRedeemer: string = await this.lucidService.encode(
@@ -1412,7 +1391,7 @@ export class ChannelService {
     const channelUtxo = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
 
-    if (channelDatum.state.channel.state === ChannelState.Close) {
+    if (channelDatum.state.channel.state === ChannelState.Closed) {
       throw new GrpcInternalException('ChanCloseConfirm to channel already in Close state');
     }
 
@@ -1454,7 +1433,7 @@ export class ChannelService {
         ...channelDatum.state,
         channel: {
           ...channelDatum.state.channel,
-          state: ChannelState.Close,
+          state: ChannelState.Closed,
         },
       },
     };
@@ -1573,10 +1552,7 @@ export class ChannelService {
         },
       ],
     };
-    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
-      spendModuleRedeemer,
-      'iBCModuleRedeemer',
-    );
+    const encodedSpendModuleRedeemer: string = await this.lucidService.encode(spendModuleRedeemer, 'iBCModuleRedeemer');
 
     const unsignedChannelCloseConfirmParams: UnsignedChannelCloseConfirmDto = {
       hostStateUtxo,

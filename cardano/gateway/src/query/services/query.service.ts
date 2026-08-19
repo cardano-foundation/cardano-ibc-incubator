@@ -198,9 +198,8 @@ export class QueryService {
   /**
    * Ensure the in-memory ICS-23 Merkle tree is aligned with on-chain state.
    *
-   * This is part of the Gateway's selfphealing mechanism. After a crash or restart,
-   * No manual intervention is required - this method automatically detects stale state
-   * and triggers a rebuild from on-chain data.
+   * This is part of the Gateway's self-healing mechanism. After a crash or restart,
+   * it detects stale state and recovers the exact authenticated tree from durable data.
    *
    * The Gateway maintains an in-memory Merkle tree for generating ICS-23 proofs.
    * This tree can become out of sync in several scenarios:
@@ -212,26 +211,18 @@ export class QueryService {
    * HOW IT WORKS:
    * We query the HostState UTXO (identified by a unique NFT in the STT architecture)
    * and compare its stored ibc_state_root with our in-memory tree's root.
-   * If they don't match, we call alignTreeWithChain() to rebuild from on-chain UTXOs.
+   * If they don't match, we call alignTreeWithChain() to replay the durable journal.
    *
    * CRASH RECOVERY FLOW:
    * 1. Gateway restarts -> in-memory tree is empty
    * 2. First query arrives (e.g., Hermes calls queryClientState)
    * 3. This method detects root mismatch (empty tree vs on-chain root)
-   * 4. alignTreeWithChain() queries all IBC UTXOs and rebuilds the tree
+   * 4. alignTreeWithChain() recovers the exact root from the durable proof store
    * 5. Proof generation proceeds normally
    * 6. Subsequent queries find the tree aligned (cheap root comparison)
-   * SCALING NOTE:
-   * The number of live IBC UTXOs is expected to scale roughly as:
-   *   total_live_ibc_utxos = 1 HostState + numClients + numConnections + numChannels
-   * so the raw UTXO scan is not expected to be the dominant scaling issue by itself.
-   * The more likely long-term pressure is datum growth inside those live UTXOs,
-   * especially client consensus states and channel packet maps
-   * (commitments / receipts / acknowledgements), since rebuild cost scales with the
-   * number of reconstructed ICS-24 tree entries, not just the count of live UTXOs.
-   * PERFORMANCE NOTE:
-   * Tree rebuilding is expensive (queries all IBC UTXOs), but it only happens when
-   * the tree is actually stale. In normal operation, this is a cheap root comparison.
+   * Packet leaves are not duplicated in ChannelDatum, so a stale tree cannot be
+   * reconstructed from live UTxOs. Recovery verifies the persisted checkpoint and
+   * journal against HostState and fails closed if no exact chain reaches that root.
    *
    * @returns Promise that resolves when tree is aligned (may trigger rebuild)
    * @throws GrpcInternalException if HostState UTXO is missing or invalid
@@ -261,17 +252,14 @@ export class QueryService {
       return;
     }
 
-    // Tree is stale. This happens after Gateway restart, failed transactions, etc.
-    // We need to rebuild the tree from on-chain UTXOs before we can generate valid proofs.
+    // Tree is stale. Recover the exact root-backed leaves before generating proofs.
     this.logger.warn(
-      `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., rebuilding from chain...`,
+      `Tree out of sync with on-chain root ${onChainRoot.substring(0, 16)}..., recovering durable proof state...`,
     );
 
-    // alignTreeWithChain() queries all IBC UTXOs (clients, connections, channels)
-    // and rebuilds the Merkle tree from scratch. This is expensive but necessary.
     const result = await alignTreeWithChain();
 
-    this.logger.log(`Tree rebuilt successfully, new root: ${result.root.substring(0, 16)}...`);
+    this.logger.log(`Tree recovered successfully, new root: ${result.root.substring(0, 16)}...`);
   }
 
   private async getProofHeight(context: string): Promise<bigint> {
@@ -1157,7 +1145,7 @@ export class QueryService {
             }
 
             const recvPacket = spendRedeemer['RecvPacket']?.packet as Packet | undefined;
-            if (recvPacket && !hasWriteAckEvent && channelDatumDecoded.state.packet_acknowledgement.has(recvPacket.sequence)) {
+            if (recvPacket && !hasWriteAckEvent && convertHex2String(channelDatumDecoded.port) === 'transfer') {
               const writeAckTxsResult = normalizeTxsResultFromRecvPacketSuccessAcknowledgement(
                 spendRedeemer,
                 channelDatumDecoded,
@@ -1836,10 +1824,7 @@ export class QueryService {
     }
     const effectiveTrustedHeight = this.normalizeStabilityTrustedHeight(BigInt(trustedHeight), BigInt(height));
 
-    const stabilityHeader = await this.buildBoundedStabilityHeader(
-      effectiveTrustedHeight,
-      BigInt(height),
-    );
+    const stabilityHeader = await this.buildBoundedStabilityHeader(effectiveTrustedHeight, BigInt(height));
 
     return {
       header: {

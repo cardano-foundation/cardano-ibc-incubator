@@ -1,22 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createTxBuilderRuntime } from '@cardano-ibc/tx-builder-runtime';
-import {
-  CARDANO_BRIDGE_MANIFEST_URL,
-  KUPMIOS_AUTH_HEADERS,
-  KUPMIOS_URL,
-} from '@/configs/runtime';
+import { GATEWAY_TX_BUILDER_ENDPOINT } from '@/configs/runtime';
 import { fetchCardanoResource } from '@/services/validatedBridgeManifestFetch';
 
-const submitRuntime = createTxBuilderRuntime({
-  bridgeManifestUrl: CARDANO_BRIDGE_MANIFEST_URL,
-  kupmiosUrl: KUPMIOS_URL,
-  kupmiosHeaders: KUPMIOS_AUTH_HEADERS,
-  fetchImpl: fetchCardanoResource,
-});
+type LocalSubmitSignedTransactionResponse = { txHash: string };
 
-type LocalSubmitSignedTransactionResponse = Awaited<
-  ReturnType<typeof submitRuntime.submitSignedTransaction>
->;
+type GatewaySubmitResponse = { tx_hash?: unknown };
 
 type ErrorResponse = {
   message: string;
@@ -90,7 +78,49 @@ export default async function handler(
   console.log(`[cardano-submit:${requestId}] submitting signed transfer`);
 
   try {
-    const response = await submitRuntime.submitSignedTransaction(req.body);
+    const signedTxCbor = req.body?.signed_tx_cbor;
+    if (
+      typeof signedTxCbor !== 'string' ||
+      signedTxCbor.length === 0 ||
+      signedTxCbor.length % 2 !== 0 ||
+      !/^[0-9a-f]+$/i.test(signedTxCbor)
+    ) {
+      return res.status(400).json({
+        message:
+          '"signed_tx_cbor" must be non-empty, even-length hexadecimal CBOR.',
+      });
+    }
+    const gatewayResponse = await fetchCardanoResource(
+      `${GATEWAY_TX_BUILDER_ENDPOINT}/api/cardano/submit`,
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          signed_tx_cbor: signedTxCbor,
+          description:
+            typeof req.body?.description === 'string'
+              ? req.body.description
+              : 'IBC transfer signed by browser wallet',
+        }),
+      },
+    );
+    const gatewayBody =
+      (await gatewayResponse.json()) as GatewaySubmitResponse & {
+        message?: string;
+      };
+    if (!gatewayResponse.ok) {
+      throw new Error(
+        gatewayBody.message ||
+          `Gateway submission failed: ${gatewayResponse.status} ${gatewayResponse.statusText}`,
+      );
+    }
+    if (typeof gatewayBody.tx_hash !== 'string' || !gatewayBody.tx_hash) {
+      throw new Error('Gateway submission response did not contain tx_hash');
+    }
+    const response = { txHash: gatewayBody.tx_hash };
     console.log(
       `[cardano-submit:${requestId}] submitted signed transfer in ${elapsedMs(
         startedAt,

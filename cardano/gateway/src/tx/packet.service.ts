@@ -19,20 +19,14 @@ import {
 import { Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import { parseChannelSequence, parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
 import { ChannelDatum } from 'src/shared/types/channel/channel-datum';
+import { ChannelState as DatumChannelState } from 'src/shared/types/channel/state';
 import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
 import { Packet } from 'src/shared/types/channel/packet';
 import { SpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
 import { ACK_RESULT, CHANNEL_ID_PREFIX, LOVELACE, ORDER_MAPPING_CHANNEL } from 'src/constant';
 import { ASYNC_ICQ_HOST_PORT } from '@shared/types/apps/async-icq/async-icq';
 import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
-import {
-  deleteKeySortMap,
-  deleteSortMap,
-  getDenomPrefix,
-  insertSortMapWithNumberKey,
-  prependToMap,
-  stringifyIcs20PacketData,
-} from '@shared/helpers/helper';
+import { getDenomPrefix, stringifyIcs20PacketData } from '@shared/helpers/helper';
 import { RpcException } from '@nestjs/microservices';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
 import { TransferEscrowDatum } from '@shared/types/apps/transfer/transfer-escrow-datum';
@@ -49,18 +43,12 @@ import {
   validateAndFormatRecvPacketParams,
   validateAndFormatSendPacketParams,
   validateAndFormatTimeoutPacketParams,
-  validateRecvPacketHistoryCapacity,
-  validateSendPacketCommitmentCapacity,
 } from './helper/packet.validate';
 import { encodeVerifyProofRedeemer, VerifyProofRedeemer } from '../shared/types/connection/verify-proof-redeemer';
 import { getBlockDelay, getHeightMapValue } from '../shared/helpers/verify';
 import { packetAcknowledgementPath, packetCommitmentPath, packetReceiptPath } from '../shared/helpers/packet-keys';
 import { Order as ChannelOrder } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/channel';
-import {
-  GrpcFailedPreconditionException,
-  GrpcInternalException,
-  GrpcInvalidArgumentException,
-} from '~@/exception/grpc_exceptions';
+import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
 import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import {
   AckPacketOperator,
@@ -85,7 +73,12 @@ import {
   UnsignedTimeoutPacketUnescrowDto,
 } from '~@/shared/modules/lucid/dtos';
 import { acknowledgementCommitmentFromResponse } from '../shared/helpers/acknowledgement';
-import { alignTreeWithChain, computeRootWithHandlePacketUpdate, isTreeAligned } from '../shared/helpers/ibc-state-root';
+import {
+  alignTreeWithChain,
+  computeRootWithHandlePacketUpdate,
+  isTreeAligned,
+  PacketStateUpdate,
+} from '../shared/helpers/ibc-state-root';
 import { splitFullDenomTrace } from '../shared/helpers/denom-trace';
 import { AsyncIcqHostService } from './async-icq-host.service';
 import { TxOperationRunnerService } from './tx-operation-runner.service';
@@ -102,6 +95,31 @@ import {
   buildUnsignedSendPacketTx as buildUnsignedSendPacketTxWithPackage,
   type SendPacketOperator as SharedSendPacketOperator,
 } from '@cardano-ibc/tx-builder';
+
+export function channelDatumAfterTimeout(channelDatum: ChannelDatum): ChannelDatum {
+  if (channelDatum.state.channel.ordering !== 'Ordered') return channelDatum;
+  return {
+    ...channelDatum,
+    state: {
+      ...channelDatum.state,
+      channel: {
+        ...channelDatum.state.channel,
+        state: DatumChannelState.Closed,
+      },
+    },
+  };
+}
+
+export function channelDatumAfterAcknowledgement(channelDatum: ChannelDatum): ChannelDatum {
+  if (channelDatum.state.channel.ordering !== 'Ordered') return channelDatum;
+  return {
+    ...channelDatum,
+    state: {
+      ...channelDatum.state,
+      next_sequence_ack: channelDatum.state.next_sequence_ack + 1n,
+    },
+  };
+}
 
 @Injectable()
 export class PacketService {
@@ -590,8 +608,9 @@ export class PacketService {
         return false;
       }
 
-      return (b === 0 ? remainingLength === 0 : remainingLength === 1 || remainingLength === 34) &&
-        Number(hashOp ?? 0) === 1;
+      return (
+        (b === 0 ? remainingLength === 0 : remainingLength === 1 || remainingLength === 34) && Number(hashOp ?? 0) === 1
+      );
     } catch {
       return false;
     }
@@ -888,14 +907,15 @@ export class PacketService {
   /**
    * Build the HostState STT update required for any packet-related channel update.
    *
-   * Every packet operation mutates some part of ChannelDatum (sequence counters and/or
-   * packet maps). The HostState commitment root must be updated in the same transaction,
-   * and the HostState redeemer must carry sibling hashes proving the root transition.
+   * Every packet operation mutates fixed-size channel metadata and/or packet leaves in
+   * the authoritative HostState tree. The HostState redeemer carries the sibling hashes
+   * that prove those exact changes from the input root to the output root.
    */
   private async buildHostStateUpdateForHandlePacket(
     inputChannelDatum: ChannelDatum,
     outputChannelDatum: ChannelDatum,
     channelIdForRoot: string,
+    packetStateUpdate: PacketStateUpdate,
   ): Promise<{
     hostStateUtxo: UTxO;
     encodedHostStateRedeemer: string;
@@ -933,6 +953,7 @@ export class PacketService {
       channelIdForRoot,
       inputChannelDatum,
       outputChannelDatum,
+      packetStateUpdate,
       this.lucidService.LucidImporter,
     );
 
@@ -948,6 +969,18 @@ export class PacketService {
 
     const hostStateRedeemer = {
       HandlePacket: {
+        transition:
+          packetStateUpdate.kind === 'send'
+            ? 'SendPacketState'
+            : packetStateUpdate.kind === 'recv'
+              ? {
+                  RecvPacketState: {
+                    acknowledgement_commitment: packetStateUpdate.acknowledgementCommitment,
+                  },
+                }
+              : packetStateUpdate.kind === 'acknowledge'
+                ? 'AcknowledgePacketState'
+                : 'TimeoutPacketState',
         channel_siblings: channelSiblings,
         next_sequence_send_siblings: nextSequenceSendSiblings,
         next_sequence_recv_siblings: nextSequenceRecvSiblings,
@@ -1329,7 +1362,6 @@ export class PacketService {
     const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     // Get channel datum
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
-    validateRecvPacketHistoryCapacity(channelDatum);
     const channelEnd = channelDatum.state.channel;
     if (channelEnd.state !== 'Open') {
       throw new Error('SendPacket to channel not in Open state');
@@ -1369,12 +1401,6 @@ export class PacketService {
         `Invalid proof height: ${recvPacketOperator.proofHeight.revisionNumber}/${recvPacketOperator.proofHeight.revisionHeight}`,
       );
     }
-    // check packet receipt has sequence packet
-    if (channelDatum.state.packet_receipt.has(recvPacketOperator.packetSequence)) {
-      throw new GrpcInternalException(
-        `PacketReceivedException: Packet with sequence ${recvPacketOperator.packetSequence} has recieved`,
-      );
-    }
     // channel id
     const channelId = convertString2Hex(recvPacketOperator.channelId);
     // Init packet
@@ -1392,9 +1418,6 @@ export class PacketService {
     const nextSequenceRecv = isOrderedChannel
       ? channelDatum.state.next_sequence_recv + 1n
       : channelDatum.state.next_sequence_recv;
-    const packetReceipt = isOrderedChannel
-      ? channelDatum.state.packet_receipt
-      : prependToMap(channelDatum.state.packet_receipt, packet.sequence, '');
 
     // build spend channel redeemer
     const spendChannelRedeemer: SpendChannelRedeemer = {
@@ -1476,14 +1499,10 @@ export class PacketService {
     if (convertHex2String(channelDatum.port) === ASYNC_ICQ_HOST_PORT) {
       // Async-icq rides the normal recv-packet path. The difference from ICS-20 is
       // only how the packet data is interpreted and how the ack is produced.
-      const moduleConfig = getGatewayModuleConfigForPortId(
-        this.configService.get('deployment'),
-        ASYNC_ICQ_HOST_PORT,
-      );
+      const moduleConfig = getGatewayModuleConfigForPortId(this.configService.get('deployment'), ASYNC_ICQ_HOST_PORT);
       const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);
-      const { acknowledgementResponse } = await this.asyncIcqHostService.executePacket(
-        Buffer.from(packet.data, 'hex'),
-      );
+      const { acknowledgementResponse } = await this.asyncIcqHostService.executePacket(Buffer.from(packet.data, 'hex'));
+      const acknowledgementCommitment = acknowledgementCommitmentFromResponse(acknowledgementResponse);
       // Reuse the existing module callback envelope so Cardano emits a regular
       // write_acknowledgement event and persists the ack commitment in channel state.
       const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
@@ -1509,13 +1528,6 @@ export class PacketService {
         state: {
           ...channelDatum.state,
           next_sequence_recv: nextSequenceRecv,
-          packet_receipt: packetReceipt,
-          // Commit the exact ack bytes produced by the async-icq host executor.
-          packet_acknowledgement: insertSortMapWithNumberKey(
-            channelDatum.state.packet_acknowledgement,
-            packet.sequence,
-            acknowledgementCommitmentFromResponse(acknowledgementResponse),
-          ),
         },
       };
       const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
@@ -1523,7 +1535,16 @@ export class PacketService {
         'channel',
       );
       const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-        await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
+        await this.buildHostStateUpdateForHandlePacket(
+          channelDatum,
+          updatedChannelDatum,
+          recvPacketOperator.channelId,
+          {
+            kind: 'recv',
+            sequence: packet.sequence,
+            acknowledgementCommitment,
+          },
+        );
       const unsignedRecvPacketModuleParams: UnsignedRecvPacketModuleDto = {
         hostStateUtxo,
         channelUtxo,
@@ -1618,12 +1639,6 @@ export class PacketService {
               state: {
                 ...channelDatum.state,
                 next_sequence_recv: nextSequenceRecv,
-                packet_receipt: packetReceipt,
-                packet_acknowledgement: insertSortMapWithNumberKey(
-                  channelDatum.state.packet_acknowledgement,
-                  packet.sequence,
-                  '08F7557ED51826FE18D84512BF24EC75001EDBAF2123A477DF72A0A9F3640A7C',
-                ),
               },
             };
 
@@ -1633,7 +1648,16 @@ export class PacketService {
             );
 
             const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-              await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
+            await this.buildHostStateUpdateForHandlePacket(
+              channelDatum,
+              updatedChannelDatum,
+              recvPacketOperator.channelId,
+              {
+                kind: 'recv',
+                sequence: packet.sequence,
+                acknowledgementCommitment: '08F7557ED51826FE18D84512BF24EC75001EDBAF2123A477DF72A0A9F3640A7C',
+              },
+            );
             const unescrowDenom = this._unwrapVoucherDenom(
               fungibleTokenPacketData.denom,
               packetSourcePort,
@@ -1762,12 +1786,6 @@ export class PacketService {
               state: {
                 ...channelDatum.state,
                 next_sequence_recv: nextSequenceRecv,
-                packet_receipt: packetReceipt,
-                packet_acknowledgement: insertSortMapWithNumberKey(
-                  channelDatum.state.packet_acknowledgement,
-                  packet.sequence,
-                  '08F7557ED51826FE18D84512BF24EC75001EDBAF2123A477DF72A0A9F3640A7C',
-                ),
               },
             };
 
@@ -1777,7 +1795,16 @@ export class PacketService {
             );
 
             const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-              await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, recvPacketOperator.channelId);
+            await this.buildHostStateUpdateForHandlePacket(
+              channelDatum,
+              updatedChannelDatum,
+              recvPacketOperator.channelId,
+              {
+                kind: 'recv',
+                sequence: packet.sequence,
+                acknowledgementCommitment: '08F7557ED51826FE18D84512BF24EC75001EDBAF2123A477DF72A0A9F3640A7C',
+              },
+            );
 
             const receiverAddress = this._resolveVoucherReceiverAddress(fungibleTokenPacketData.receiver);
             const buildUnsignedRecvPacketMintParams = (
@@ -1929,14 +1956,9 @@ export class PacketService {
     }
     const packetSequence: bigint = timeoutPacketOperator.packet.sequence;
     const packet: Packet = timeoutPacketOperator.packet;
-    // update channel datum
-    const updatedChannelDatum: ChannelDatum = {
-      ...channelDatum,
-      state: {
-        ...channelDatum.state,
-        packet_commitment: deleteSortMap(channelDatum.state.packet_commitment, packetSequence),
-      },
-    };
+    // Ordered-channel timeout closes the channel (ICS-04); unordered channels
+    // remain open. Packet commitment deletion itself lives only in HostState.
+    const updatedChannelDatum = channelDatumAfterTimeout(channelDatum);
     const spendChannelRedeemer: SpendChannelRedeemer = {
       TimeoutPacket: {
         packet: packet,
@@ -1986,7 +2008,16 @@ export class PacketService {
     );
 
     const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-      await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, convertHex2String(packet.source_channel));
+      await this.buildHostStateUpdateForHandlePacket(
+        channelDatum,
+        updatedChannelDatum,
+        convertHex2String(packet.source_channel),
+        {
+          kind: 'timeout',
+          sequence: packetSequence,
+          commitment: commitPacket(packet),
+        },
+      );
     const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
       spendTransferModuleRedeemer,
       'iBCModuleRedeemer',
@@ -2194,60 +2225,33 @@ export class PacketService {
     };
   }
 
-  async buildUnsignedSendPacketTx(
-    sendPacketOperator: SendPacketOperator,
-  ): Promise<{ unsignedTx: TxBuilder; pendingTreeUpdate: PendingTreeUpdate; walletOverride?: { address: string; utxos: UTxO[] } }> {
-    return buildUnsignedSendPacketTxWithPackage(
-      sendPacketOperator as SharedSendPacketOperator,
-      {
+  async buildUnsignedSendPacketTx(sendPacketOperator: SendPacketOperator): Promise<{
+    unsignedTx: TxBuilder;
+    pendingTreeUpdate: PendingTreeUpdate;
+    walletOverride?: { address: string; utxos: UTxO[] };
+  }> {
+    return buildUnsignedSendPacketTxWithPackage(sendPacketOperator as SharedSendPacketOperator, {
         loadContext: async (operator) => {
-          const channelSequence: string = operator.sourceChannel.replaceAll(
-            `${CHANNEL_ID_PREFIX}-`,
-            '',
+        const channelSequence: string = operator.sourceChannel.replaceAll(`${CHANNEL_ID_PREFIX}-`, '');
+        const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
+        const channelTokenUnit: string = mintChannelPolicyId + channelTokenName;
+        const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
+        const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+        const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
+          parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
           );
-          const [mintChannelPolicyId, channelTokenName] =
-            this.lucidService.getChannelTokenUnit(BigInt(channelSequence));
-          const channelTokenUnit: string =
-            mintChannelPolicyId + channelTokenName;
-          const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(
-            channelTokenUnit,
-          );
-          const channelDatum =
-            await this.lucidService.decodeDatum<ChannelDatum>(
-              channelUtxo.datum!,
-              'channel',
-            );
-          validateSendPacketCommitmentCapacity(channelDatum);
-          const [mintConnectionPolicyId, connectionTokenName] =
-            this.lucidService.getConnectionTokenUnit(
-              parseConnectionSequence(
-                convertHex2String(
-                  channelDatum.state.channel.connection_hops[0],
-                ),
-              ),
-            );
-          const connectionTokenUnit =
-            mintConnectionPolicyId + connectionTokenName;
-          const connectionUtxo = await this.lucidService.findUtxoByUnit(
-            connectionTokenUnit,
-          );
-          const connectionDatum =
-            await this.lucidService.decodeDatum<ConnectionDatum>(
+        const connectionTokenUnit = mintConnectionPolicyId + connectionTokenName;
+        const connectionUtxo = await this.lucidService.findUtxoByUnit(connectionTokenUnit);
+        const connectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
               connectionUtxo.datum!,
               'connection',
             );
           const clientTokenUnit = this.lucidService.getClientTokenUnit(
-            parseClientSequence(
-              convertHex2String(connectionDatum.state.client_id),
-            ),
+          parseClientSequence(convertHex2String(connectionDatum.state.client_id)),
           );
-          const clientUtxo = await this.lucidService.findUtxoByUnit(
-            clientTokenUnit,
-          );
+        const clientUtxo = await this.lucidService.findUtxoByUnit(clientTokenUnit);
           const transferModuleIdentifier = this.getTransferModuleIdentifier();
-          const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(
-            transferModuleIdentifier,
-          );
+        const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(transferModuleIdentifier);
           const deploymentConfig = this.configService.get('deployment');
 
           return {
@@ -2263,34 +2267,23 @@ export class PacketService {
               name: channelTokenName,
             },
             deployment: {
-              sendPacketPolicyId:
-                deploymentConfig.validators.spendChannel.refValidator
-                  .send_packet.scriptHash,
-              mintVoucherScriptHash:
-                deploymentConfig.validators.mintVoucher.scriptHash,
-              transferEscrowShardPolicyId:
-                deploymentConfig.validators.mintTransferEscrowShard.scriptHash,
-              spendChannelAddress:
-                deploymentConfig.validators.spendChannel.address,
-              transferModuleAddress:
-                deploymentConfig.modules.transfer.address,
+            sendPacketPolicyId: deploymentConfig.validators.spendChannel.refValidator.send_packet.scriptHash,
+            mintVoucherScriptHash: deploymentConfig.validators.mintVoucher.scriptHash,
+            transferEscrowShardPolicyId: deploymentConfig.validators.mintTransferEscrowShard.scriptHash,
+            spendChannelAddress: deploymentConfig.validators.spendChannel.address,
+            transferModuleAddress: deploymentConfig.modules.transfer.address,
             },
           };
         },
-        buildHostStateUpdate: async (
-          inputChannelDatum,
-          outputChannelDatum,
-          channelIdForRoot,
-        ) =>
+      buildHostStateUpdate: async (inputChannelDatum, outputChannelDatum, channelIdForRoot, packetStateUpdate) =>
           this.buildHostStateUpdateForHandlePacket(
             inputChannelDatum as ChannelDatum,
             outputChannelDatum as ChannelDatum,
             channelIdForRoot,
+          packetStateUpdate,
           ),
         resolveIbcDenomHash: async (denomHash) => {
-          const match = await this.denomTraceService.findByIbcDenomHash(
-            denomHash,
-          );
+        const match = await this.denomTraceService.findByIbcDenomHash(denomHash);
           if (!match) {
             return null;
           }
@@ -2301,29 +2294,18 @@ export class PacketService {
           };
         },
         commitPacket,
-        encode: (value, kind) =>
-          this.lucidService.encode(value, kind as any),
-        findUtxoAtWithUnit: (address, unit) =>
-          this.lucidService.findUtxoAtWithUnit(address, unit),
-        tryFindUtxosAt: (address, options) =>
-          this.lucidService.tryFindUtxosAt(address, options),
+      encode: (value, kind) => this.lucidService.encode(value, kind as any),
+      findUtxoAtWithUnit: (address, unit) => this.lucidService.findUtxoAtWithUnit(address, unit),
+      tryFindUtxosAt: (address, options) => this.lucidService.tryFindUtxosAt(address, options),
         findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) =>
           this.findTransferEscrowShard(channelId, packetDenom, denomToken, requiredAmount),
         createUnsignedSendPacketBurnTx: (dto) =>
-          this.lucidService.createUnsignedSendPacketBurnTx(
-            dto as UnsignedSendPacketBurnDto,
-          ),
+        this.lucidService.createUnsignedSendPacketBurnTx(dto as UnsignedSendPacketBurnDto),
         createUnsignedSendPacketEscrowTx: (dto) =>
-          this.lucidService.createUnsignedSendPacketEscrowTx(
-            dto as UnsignedSendPacketEscrowDto,
-          ),
-        invalidArgument: (message) =>
-          new GrpcInvalidArgumentException(message),
-        failedPrecondition: (message) =>
-          new GrpcFailedPreconditionException(message),
+        this.lucidService.createUnsignedSendPacketEscrowTx(dto as UnsignedSendPacketEscrowDto),
+      invalidArgument: (message) => new GrpcInvalidArgumentException(message),
         internalError: (message) => new GrpcInternalException(message),
-      },
-    );
+    });
   }
 
   async buildUnsignedSendModulePacketTx(
@@ -2340,7 +2322,6 @@ export class PacketService {
     const channelTokenUnit: string = mintChannelPolicyId + channelTokenName;
     const channelUtxo: UTxO = await this.lucidService.findUtxoByUnit(channelTokenUnit);
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
-    validateSendPacketCommitmentCapacity(channelDatum);
     const [mintConnectionPolicyId, connectionTokenName] = this.lucidService.getConnectionTokenUnit(
       parseConnectionSequence(convertHex2String(channelDatum.state.channel.connection_hops[0])),
     );
@@ -2418,11 +2399,6 @@ export class PacketService {
       state: {
         ...channelDatum.state,
         next_sequence_send: channelDatum.state.next_sequence_send + 1n,
-        packet_commitment: insertSortMapWithNumberKey(
-          channelDatum.state.packet_commitment,
-          packet.sequence,
-          packetCommitment,
-        ),
       },
     };
     const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
@@ -2431,7 +2407,16 @@ export class PacketService {
     );
 
     const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-      await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, sendPacketOperator.sourceChannel);
+      await this.buildHostStateUpdateForHandlePacket(
+        channelDatum,
+        updatedChannelDatum,
+        sendPacketOperator.sourceChannel,
+        {
+          kind: 'send',
+          sequence: packet.sequence,
+          commitment: packetCommitment,
+        },
+      );
     const deploymentConfig = this.configService.get('deployment');
     const sendPacketPolicyId = deploymentConfig.validators.spendChannel.refValidator.send_packet.scriptHash;
     const channelToken = {
@@ -2517,12 +2502,6 @@ export class PacketService {
         `Invalid proof height: ${ackPacketOperator.proofHeight.revisionNumber}/${ackPacketOperator.proofHeight.revisionHeight}`,
       );
     }
-    if (!channelDatum.state.packet_commitment.has(ackPacketOperator.packetSequence)) {
-      throw new GrpcInternalException(
-        `PacketAcknowledgedException: Packet with sequence ${ackPacketOperator.packetSequence} not exists in the packet commitment map`,
-      );
-    }
-
     // channel id
     const channelId = convertString2Hex(ackPacketOperator.channelId);
     // Init packet
@@ -2637,29 +2616,24 @@ export class PacketService {
       this.lucidService.LucidImporter,
     );
     if (convertHex2String(packet.source_port) === ASYNC_ICQ_HOST_PORT) {
-      const moduleConfig = getGatewayModuleConfigForPortId(
-        this.configService.get('deployment'),
-        ASYNC_ICQ_HOST_PORT,
-      );
+      const moduleConfig = getGatewayModuleConfigForPortId(this.configService.get('deployment'), ASYNC_ICQ_HOST_PORT);
       const moduleUtxo = await this.lucidService.findUtxoByUnit(moduleConfig.identifier);
       const normalizedAcknowledgementResponse = this.normalizeAcknowledgementResponse(acknowledgementResponse);
       const encodedSpendModuleRedeemer: string = await this.lucidService.encode(
         createModuleAckRedeemer(channelId, normalizedAcknowledgementResponse),
         'iBCModuleRedeemer',
       );
-      const updatedChannelDatum: ChannelDatum = {
-        ...channelDatum,
-        state: {
-          ...channelDatum.state,
-          packet_commitment: deleteKeySortMap(channelDatum.state.packet_commitment, ackPacketOperator.packetSequence),
-        },
-      };
+      const updatedChannelDatum = channelDatumAfterAcknowledgement(channelDatum);
       const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
         updatedChannelDatum,
         'channel',
       );
       const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-        await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
+        await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId, {
+          kind: 'acknowledge',
+          sequence: ackPacketOperator.packetSequence,
+          commitment: commitPacket(packet),
+        });
       const unsignedAckPacketModuleParams: UnsignedAckPacketModuleDto = {
         hostStateUtxo,
         channelUtxo,
@@ -2704,25 +2678,21 @@ export class PacketService {
       createTransferModuleRedeemer(channelId, fTokenPacketData, normalizedAcknowledgementResponse),
       'iBCModuleRedeemer',
     );
-    const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(
-      this.getTransferModuleIdentifier(),
-    );
+    const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(this.getTransferModuleIdentifier());
     const acknowledgementResult = this.extractAcknowledgementResult(acknowledgementResponse);
     if (acknowledgementResult) {
       // build update channel datum
-      const updatedChannelDatum: ChannelDatum = {
-        ...channelDatum,
-        state: {
-          ...channelDatum.state,
-          packet_commitment: deleteKeySortMap(channelDatum.state.packet_commitment, ackPacketOperator.packetSequence),
-        },
-      };
+      const updatedChannelDatum = channelDatumAfterAcknowledgement(channelDatum);
       const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
         updatedChannelDatum,
         'channel',
       );
       const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-        await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
+        await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId, {
+          kind: 'acknowledge',
+          sequence: ackPacketOperator.packetSequence,
+          commitment: commitPacket(packet),
+        });
       const unsignedAckPacketSucceedParams: UnsignedAckPacketSucceedDto = {
         hostStateUtxo,
         channelUtxo,
@@ -2804,19 +2774,17 @@ export class PacketService {
           )
         : undefined;
       // build update channel datum
-      const updatedChannelDatum: ChannelDatum = {
-        ...channelDatum,
-        state: {
-          ...channelDatum.state,
-          packet_commitment: deleteKeySortMap(channelDatum.state.packet_commitment, ackPacketOperator.packetSequence),
-        },
-      };
+      const updatedChannelDatum = channelDatumAfterAcknowledgement(channelDatum);
       const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
         updatedChannelDatum,
         'channel',
       );
       const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-        await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
+        await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId, {
+          kind: 'acknowledge',
+          sequence: ackPacketOperator.packetSequence,
+          commitment: commitPacket(packet),
+        });
       const unsignedAckPacketUnescrowParams: UnsignedAckPacketUnescrowDto = {
         hostStateUtxo,
         channelUtxo,
@@ -2885,19 +2853,17 @@ export class PacketService {
     const voucherMintDetails = this.buildVoucherMintDetails(fullDenomPath);
 
     // build update channel datum
-    const updatedChannelDatum: ChannelDatum = {
-      ...channelDatum,
-      state: {
-        ...channelDatum.state,
-        packet_commitment: deleteKeySortMap(channelDatum.state.packet_commitment, ackPacketOperator.packetSequence),
-      },
-    };
+    const updatedChannelDatum = channelDatumAfterAcknowledgement(channelDatum);
     const encodedUpdatedChannelDatum: string = await this.lucidService.encode<ChannelDatum>(
       updatedChannelDatum,
       'channel',
     );
     const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit } =
-      await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId);
+      await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, ackPacketOperator.channelId, {
+        kind: 'acknowledge',
+        sequence: ackPacketOperator.packetSequence,
+        commitment: commitPacket(packet),
+      });
     const buildUnsignedAckPacketMintParams = (
       traceRegistryUpdate: TraceRegistryInsertContext | null,
     ): UnsignedAckPacketMintDto => ({
@@ -3234,15 +3200,11 @@ export class PacketService {
       this.getTransferEscrowShardTokenName(channelId, packetDenom)
     );
   }
-  private escrowShardHasCanonicalAssets(
-    utxo: UTxO,
-    denomToken: string,
-    shardTokenUnit: string,
-  ): boolean {
+  private escrowShardHasCanonicalAssets(utxo: UTxO, denomToken: string, shardTokenUnit: string): boolean {
     return (
       (utxo.assets?.[shardTokenUnit] ?? 0n) === 1n &&
-      Object.keys(utxo.assets ?? {}).every((unit) =>
-        unit === LOVELACE || unit === denomToken || unit === shardTokenUnit
+      Object.keys(utxo.assets ?? {}).every(
+        (unit) => unit === LOVELACE || unit === denomToken || unit === shardTokenUnit,
       )
     );
   }

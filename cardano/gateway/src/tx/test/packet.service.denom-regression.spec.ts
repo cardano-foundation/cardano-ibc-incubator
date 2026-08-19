@@ -122,9 +122,6 @@ describe('PacketService denom regression coverage', () => {
           connection_hops: [convertString2Hex('connection-0')],
         },
         next_sequence_send: 1n,
-        packet_commitment: new Map<bigint, string>(),
-        packet_receipt: new Map<bigint, string>(),
-        packet_acknowledgement: new Map<bigint, string>(),
       },
     };
 
@@ -154,9 +151,7 @@ describe('PacketService denom regression coverage', () => {
       base_denom: 'factory/osmo1abcd/mytoken',
     });
 
-    const voucherTokenName = buildVoucherUserTokenNameFromDenomHash(
-      buildVoucherDenomHashFromFullDenom(canonicalDenom),
-    );
+    const voucherTokenName = buildVoucherUserTokenNameFromDenomHash(buildVoucherDenomHashFromFullDenom(canonicalDenom));
     const voucherTokenUnit = `mint-voucher-policy-id${voucherTokenName}`;
     const senderVoucherUtxo = {
       txHash: 'sender-voucher-utxo',
@@ -320,7 +315,6 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
             channel_id: convertString2Hex('channel-44'),
           },
         },
-        packet_commitment: new Map<bigint, string>([[packetSequence, 'commitment']]),
       },
     };
     const connectionDatum = {
@@ -405,10 +399,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
     expect(lucidServiceMock.createUnsignedAckPacketUnescrowTx).not.toHaveBeenCalled();
     expect(lucidServiceMock.createUnsignedAckPacketSucceedTx).not.toHaveBeenCalled();
 
-    expect(denomTraceServiceMock.prepareOnChainInsert).toHaveBeenCalledWith(
-      expectedVoucherDenomHash,
-      canonicalDenom,
-    );
+    expect(denomTraceServiceMock.prepareOnChainInsert).toHaveBeenCalledWith(expectedVoucherDenomHash, canonicalDenom);
   });
 
   it('maps packet denom hex(lovelace) back to lovelace asset unit in acknowledgement unescrow', async () => {
@@ -516,7 +507,6 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
             channel_id: convertString2Hex('channel-44'),
           },
         },
-        packet_commitment: new Map<bigint, string>([[packetSequence, 'commitment']]),
       },
     };
     const connectionDatum = {
@@ -724,9 +714,6 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
           connection_hops: [convertString2Hex('connection-0')],
         },
         next_sequence_recv: 1n,
-        packet_commitment: new Map<bigint, string>(),
-        packet_receipt: new Map<bigint, string>(),
-        packet_acknowledgement: new Map<bigint, string>(),
       },
     };
     const connectionDatum = {

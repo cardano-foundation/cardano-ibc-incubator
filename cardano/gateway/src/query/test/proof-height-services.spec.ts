@@ -18,6 +18,7 @@ import { getCurrentTree } from '../../shared/helpers/ibc-state-root';
 import { hashSHA256 } from '../../shared/helpers/hex';
 import { decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
+import { Data } from '@lucid-evolution/lucid';
 
 jest.mock('../../shared/types/channel/channel-datum', () => ({
   decodeChannelDatum: jest.fn(),
@@ -64,6 +65,7 @@ const CHANNEL_TOKEN_UNIT = 'policychannel-token';
 const CLIENT_TOKEN_UNIT = 'client-auth-token-unit';
 const SUCCESS_ACKNOWLEDGEMENT_HEX = toHex(JSON.stringify({ result: 'AQ==' }));
 const SUCCESS_ACKNOWLEDGEMENT_COMMITMENT = hashSHA256(SUCCESS_ACKNOWLEDGEMENT_HEX);
+const PACKET_COMMITMENT_HEX = 'deadbeef';
 
 function toHex(value: string): string {
   return Buffer.from(value, 'utf8').toString('hex');
@@ -95,9 +97,6 @@ function makeChannelDatum(overrides: Record<string, unknown> = {}) {
       next_sequence_send: 9n,
       next_sequence_recv: 10n,
       next_sequence_ack: 8n,
-      packet_commitment: new Map([[7n, 'commitment-bytes']]),
-      packet_receipt: new Map([[7n, 'AQ==']]),
-      packet_acknowledgement: new Map([[7n, 'AQ==']]),
       ...overrides,
     },
     token: {
@@ -108,7 +107,20 @@ function makeChannelDatum(overrides: Record<string, unknown> = {}) {
 }
 
 function makeHistoricalTree() {
+  const encodeBytes = (value: string) => Buffer.from(Data.to(value as any, Data.Bytes()), 'hex');
   return {
+    get: jest.fn((path: string) => {
+      if (path === 'commitments/ports/transfer/channels/channel-0/sequences/7') {
+        return encodeBytes(PACKET_COMMITMENT_HEX);
+      }
+      if (path === 'receipts/ports/transfer/channels/channel-0/sequences/7') {
+        return Buffer.from('40', 'hex');
+      }
+      if (path === 'acks/ports/transfer/channels/channel-0/sequences/7') {
+        return encodeBytes(SUCCESS_ACKNOWLEDGEMENT_COMMITMENT);
+      }
+      return undefined;
+    }),
     generateProof: jest.fn((path: string) => ({ path })),
     generateNonExistenceProof: jest.fn((path: string) => ({ path })),
   };
@@ -125,7 +137,7 @@ function makeDeps() {
     }),
   } as unknown as ConfigService;
   const lucidService = {
-    LucidImporter: {},
+    LucidImporter: { Data },
     decodeDatum: jest.fn(async (_datum: string, schema: string) => {
       if (schema === 'host_state') {
         return {
@@ -278,25 +290,16 @@ describe('proof-bearing services with historical query heights', () => {
       { queryHeight: HISTORICAL_HEIGHT },
     );
 
-    expect(deps.mocks.historyService.findUtxoByUnitAtOrBeforeBlockNo).toHaveBeenCalledWith(
-      CHANNEL_TOKEN_UNIT,
-      HISTORICAL_HEIGHT,
-    );
     expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
       'commitments/ports/transfer/channels/channel-0/sequences/7',
     );
     expect(getCurrentTree).not.toHaveBeenCalled();
-    expect(response.commitment).toBe('commitment-bytes');
+    expect(response.commitment).toEqual(Uint8Array.from(Buffer.from(PACKET_COMMITMENT_HEX, 'hex')));
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
 
   it('returns canonical JSON acknowledgement bytes for committed transfer success acknowledgements', async () => {
     const deps = makeDeps();
-    (decodeChannelDatum as jest.Mock).mockResolvedValueOnce(
-      makeChannelDatum({
-        packet_acknowledgement: new Map([[7n, SUCCESS_ACKNOWLEDGEMENT_COMMITMENT]]),
-      }),
-    );
     const service = new PacketService(
       deps.logger,
       deps.configService,
@@ -314,7 +317,7 @@ describe('proof-bearing services with historical query heights', () => {
     expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
       'acks/ports/transfer/channels/channel-0/sequences/7',
     );
-    expect(response.acknowledgement).toBe(SUCCESS_ACKNOWLEDGEMENT_HEX);
+    expect(response.acknowledgement).toEqual(Uint8Array.from(Buffer.from(SUCCESS_ACKNOWLEDGEMENT_HEX, 'hex')));
     expect(deps.mocks.historyService.findUtxosByPolicyIdAndPrefixTokenName).not.toHaveBeenCalled();
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
@@ -323,10 +326,9 @@ describe('proof-bearing services with historical query heights', () => {
     const deps = makeDeps();
     const errorAckHex = toHex(JSON.stringify({ error: 'async failed' }));
     const errorAckCommitment = hashSHA256(errorAckHex);
-    (decodeChannelDatum as jest.Mock).mockResolvedValueOnce(
-      makeChannelDatum({
-        packet_acknowledgement: new Map([[7n, errorAckCommitment]]),
-      }),
+    const encodeBytes = (value: string) => Buffer.from(Data.to(value as any, Data.Bytes()), 'hex');
+    deps.historicalTree.get.mockImplementation((path: string) =>
+      path === 'acks/ports/transfer/channels/channel-0/sequences/7' ? encodeBytes(errorAckCommitment) : undefined,
     );
     deps.mocks.historyService.findUtxosByPolicyIdAndPrefixTokenName.mockResolvedValueOnce([
       {
@@ -398,13 +400,12 @@ describe('proof-bearing services with historical query heights', () => {
       'channel-token',
     );
     expect(deps.mocks.historyService.findTransactionEvidenceByHash).toHaveBeenCalledWith('recv-packet-tx');
-    expect(response.acknowledgement).toBe(errorAckHex);
+    expect(response.acknowledgement).toEqual(Uint8Array.from(Buffer.from(errorAckHex, 'hex')));
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
 
   it('serves packet receipt non-existence proofs from the cached tree at the requested height', async () => {
     const deps = makeDeps();
-    (decodeChannelDatum as jest.Mock).mockResolvedValueOnce(makeChannelDatum({ packet_receipt: new Map() }));
     const service = new PacketService(
       deps.logger,
       deps.configService,
@@ -437,10 +438,9 @@ describe('proof-bearing services with historical query heights', () => {
       deps.ibcTreeCacheService as any,
     );
 
-    const response = await service.queryNextSequenceReceive(
-      { channel_id: 'channel-0', port_id: 'transfer' } as any,
-      { queryHeight: HISTORICAL_HEIGHT },
-    );
+    const response = await service.queryNextSequenceReceive({ channel_id: 'channel-0', port_id: 'transfer' } as any, {
+      queryHeight: HISTORICAL_HEIGHT,
+    });
 
     expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
       'nextSequenceRecv/ports/transfer/channels/channel-0',

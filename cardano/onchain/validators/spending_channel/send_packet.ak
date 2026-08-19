@@ -149,12 +149,7 @@ validator send_packet(
       packet_mod.validate_basic(packet)?,
       is_valid_packet?,
       (packet.timeout_timestamp == 0 || latest_timestamp < packet.timeout_timestamp)?,
-      channel_datum_mod.validate_send_packet(
-        datum,
-        updated_datum,
-        packet,
-        commitment,
-      )?,
+      channel_datum_mod.validate_send_packet(datum, updated_datum, packet)?,
     }
   }
 
@@ -283,12 +278,7 @@ validator send_packet(
       packet_mod.validate_basic(packet)?,
       is_valid_packet?,
       (packet.timeout_timestamp == 0 || latest_timestamp < packet.timeout_timestamp)?,
-      channel_datum_mod.validate_send_packet(
-        datum,
-        updated_datum,
-        packet,
-        commitment,
-      )?,
+      channel_datum_mod.validate_send_packet(datum, updated_datum, packet)?,
     }
   }
 

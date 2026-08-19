@@ -82,12 +82,8 @@ validator acknowledge_packet(
     trace @"acknowledge_packet: AcknowledgePacket branch"
 
     let ChannelDatum { state: cur_channel_state, port_id, .. } = datum
-    let ChannelDatumState {
-      channel: cur_channel,
-      packet_commitment: cur_packet_commitment,
-      next_sequence_ack,
-      ..
-    } = cur_channel_state
+    let ChannelDatumState { channel: cur_channel, next_sequence_ack, .. } =
+      cur_channel_state
 
     expect [connection_id] = cur_channel.connection_hops
 
@@ -125,11 +121,6 @@ validator acknowledge_packet(
       ) == client_status_mod.Active
     trace @"acknowledge_packet: client status is active"
 
-    expect Some(commitment) =
-      pairs.get_first(cur_packet_commitment, packet.sequence)
-    trace @"acknowledge_packet: packet commitment existed"
-
-    let valid_commitment = commitment == packet_mod.commit_packet(packet)
     let valid_packet_proof =
       validate_acknowledge_packet_proof(
         connection_datum.state,
@@ -182,7 +173,6 @@ validator acknowledge_packet(
       is_client_status_active,
       is_cur_chan_open,
       valid_packet,
-      valid_commitment,
       is_packet_acknowledged,
       valid_packet_proof,
       cur_channel.ordering != chan_order_mod.Ordered || packet.sequence == next_sequence_ack,

@@ -33,6 +33,9 @@ import { BridgeManifestService } from '~@/query/services/bridge-manifest.service
 import { QueryService } from '~@/query/services/query.service';
 import { CheqdIcqService } from './cheqd-icq.service';
 import { parseVoucherAssetName } from '../shared/helpers/voucher-asset';
+import { ibcTreeCacheIdForRoot, IbcTreeCacheService } from '../shared/services/ibc-tree-cache.service';
+import { NotFoundException } from '@nestjs/common';
+import { SubmissionService } from '../tx/submission.service';
 
 type ApiCardanoAssetDenomTrace = {
   asset_id: string;
@@ -76,6 +79,8 @@ export class ApiController {
     private readonly bridgeManifestService: BridgeManifestService,
     private readonly queryService: QueryService,
     private readonly cheqdIcqService: CheqdIcqService,
+    private readonly ibcTreeCacheService: IbcTreeCacheService,
+    private readonly submissionService: SubmissionService,
   ) {}
 
   @Get('channels')
@@ -145,6 +150,39 @@ export class ApiController {
     // Exposes the public bootstrap document for operators that want to point a
     // separate Gateway/relayer stack at this already-deployed Cardano bridge.
     return this.bridgeManifestService.getBridgeManifest();
+  }
+
+  @Get('ibc/tree-recovery')
+  async getIbcTreeRecovery(@Query('root') requestedRoot?: string) {
+    const normalizedRoot = requestedRoot?.trim().toLowerCase();
+    if (normalizedRoot && !/^[0-9a-f]{64}$/.test(normalizedRoot)) {
+      throw new BadRequestException('root must be a 64-character hexadecimal IBC state root');
+    }
+
+    const recovered = await this.ibcTreeCacheService.load(
+      normalizedRoot ? ibcTreeCacheIdForRoot(normalizedRoot) : undefined,
+    );
+    if (!recovered) {
+      throw new NotFoundException(`No verified IBC tree recovery state is available for root ${normalizedRoot}`);
+    }
+
+    // This is an exact-root checkpoint reconstructed from the normalized leaf
+    // store and compact delta journal. It is a wire response, not another
+    // persisted full-tree copy.
+    return {
+      checkpoint: {
+        formatVersion: 1,
+        root: recovered.root,
+        leaves: recovered.tree.toJSON().leaves,
+      },
+      journal: [],
+    };
+  }
+
+  @Post('cardano/submit')
+  @HttpCode(200)
+  async submitCardanoTransaction(@Body() body: { signed_tx_cbor: string; description?: string }) {
+    return this.submissionService.submitSignedTransaction(body);
   }
 
   @Post('transfer')
@@ -358,10 +396,7 @@ export class ApiController {
   }
 
   @Get('cardano/channels/:channelId/health')
-  async getCardanoChannelHealth(
-    @Param('channelId') channelId: string,
-    @Query('port_id') portId = 'transfer',
-  ) {
+  async getCardanoChannelHealth(@Param('channelId') channelId: string, @Query('port_id') portId = 'transfer') {
     return this.channelService.getChannelHealth(channelId, portId);
   }
 

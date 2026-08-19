@@ -5,6 +5,7 @@ import { TRANSACTION_SET_COLLATERAL } from '~@/config/constant.config';
 
 import { LucidService } from '../shared/modules/lucid/lucid.service';
 import { IbcTreePendingUpdatesService, PendingTreeUpdate } from '../shared/services/ibc-tree-pending-updates.service';
+import { IbcTreeCacheService } from '../shared/services/ibc-tree-cache.service';
 
 import { GatewayEvent, TxEventsService } from './tx-events.service';
 import { WalletContextService } from './wallet-context.service';
@@ -71,24 +72,25 @@ export class TxOperationRunnerService {
     private readonly walletContextService: WalletContextService,
     private readonly txEventsService: TxEventsService,
     private readonly ibcTreePendingUpdatesService: IbcTreePendingUpdatesService,
+    private readonly ibcTreeCacheService: IbcTreeCacheService,
   ) {}
 
   async run<TExtraResponseFields = Record<string, never>>(
     plan: TxOperationPlan<TExtraResponseFields>,
   ): Promise<TxOperationRunnerResult<TExtraResponseFields>> {
-    const completedUnsignedTx = await this.withCompletionLock(() =>
-      this.completeWithExplicitWalletSelection(plan),
-    );
+    const completedUnsignedTx = await this.withCompletionLock(() => this.completeWithExplicitWalletSelection(plan));
 
     const unsignedTxCbor = completedUnsignedTx.toCBOR();
     const unsignedTxHash = completedUnsignedTx.toHash();
     const unsignedTxBytes = new Uint8Array(Buffer.from(unsignedTxCbor, 'utf-8'));
 
     const pendingTreeUpdate =
-      typeof plan.pendingTreeUpdate === 'function'
-        ? plan.pendingTreeUpdate()
-        : plan.pendingTreeUpdate;
+      typeof plan.pendingTreeUpdate === 'function' ? plan.pendingTreeUpdate() : plan.pendingTreeUpdate;
     if (pendingTreeUpdate) {
+      // Persist the serializable delta before returning the unsigned tx. If the
+      // process dies after Cardano accepts it, startup can replay this exact
+      // transition to the authoritative on-chain root.
+      await this.ibcTreeCacheService.prepareTransition(unsignedTxHash, pendingTreeUpdate.expectedNewRoot);
       this.ibcTreePendingUpdatesService.register(unsignedTxHash, pendingTreeUpdate);
     }
 
@@ -130,10 +132,7 @@ export class TxOperationRunnerService {
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const txBuilder =
-        attempt === 1 || !plan.rebuildUnsignedTx
-          ? plan.unsignedTx
-          : await plan.rebuildUnsignedTx();
+      const txBuilder = attempt === 1 || !plan.rebuildUnsignedTx ? plan.unsignedTx : await plan.rebuildUnsignedTx();
       const txWithValidity = plan.validity.apply(txBuilder);
       const walletScopeId = this.lucidService.beginWalletSelectionScope();
       try {
@@ -148,10 +147,7 @@ export class TxOperationRunnerService {
       } catch (error) {
         lastError = error;
         const retryPolicy = plan.completeRetry;
-        const shouldRetry =
-          retryPolicy &&
-          attempt < maxAttempts &&
-          retryPolicy.isRetryable(error);
+        const shouldRetry = retryPolicy && attempt < maxAttempts && retryPolicy.isRetryable(error);
 
         if (!shouldRetry) {
           throw error;

@@ -3,5 +3,5 @@ export enum ChannelState {
   Init = 'Init',
   TryOpen = 'TryOpen',
   Open = 'Open',
-  Close = 'Close',
+  Closed = 'Closed',
 }

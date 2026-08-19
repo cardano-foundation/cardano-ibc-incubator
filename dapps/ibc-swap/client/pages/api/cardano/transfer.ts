@@ -1,11 +1,6 @@
 /* eslint-disable no-console */
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { createTxBuilderRuntime } from '@cardano-ibc/tx-builder-runtime';
-import {
-  CARDANO_BRIDGE_MANIFEST_URL,
-  KUPMIOS_AUTH_HEADERS,
-  KUPMIOS_URL,
-} from '@/configs/runtime';
+import { GATEWAY_TX_BUILDER_ENDPOINT } from '@/configs/runtime';
 import { fetchCardanoResource } from '@/services/validatedBridgeManifestFetch';
 
 export const config = {
@@ -22,16 +17,23 @@ const MAX_ASSETS_PER_UTXO = 100;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 20;
 
-const transferBuilderRuntime = createTxBuilderRuntime({
-  bridgeManifestUrl: CARDANO_BRIDGE_MANIFEST_URL,
-  kupmiosUrl: KUPMIOS_URL,
-  kupmiosHeaders: KUPMIOS_AUTH_HEADERS,
-  fetchImpl: fetchCardanoResource,
-});
+type LocalUnsignedTransferResponse = {
+  result: unknown;
+  unsignedTx: {
+    type_url: string;
+    unsignedTxCborHex: string;
+  };
+  feeLovelace?: string;
+};
 
-type LocalUnsignedTransferResponse = Awaited<
-  ReturnType<typeof transferBuilderRuntime.buildUnsignedTransfer>
->;
+type GatewayUnsignedTransferResponse = {
+  result?: unknown;
+  unsigned_tx?: {
+    type_url?: unknown;
+    value?: unknown;
+  };
+  message?: unknown;
+};
 
 type ErrorResponse = {
   code: string;
@@ -495,9 +497,62 @@ export default async function handler(
       hasWalletUtxos: Boolean(validatedBody.wallet_utxos?.length),
     });
 
-    const response = await transferBuilderRuntime.buildUnsignedTransfer(
-      validatedBody,
+    const gatewayResponse = await fetchCardanoResource(
+      `${GATEWAY_TX_BUILDER_ENDPOINT}/api/transfer`,
+      {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(validatedBody),
+      },
     );
+    const gatewayBody =
+      (await gatewayResponse.json()) as GatewayUnsignedTransferResponse;
+    if (!gatewayResponse.ok) {
+      const message =
+        typeof gatewayBody.message === 'string' && gatewayBody.message.trim()
+          ? gatewayBody.message
+          : `Gateway transfer build failed: ${gatewayResponse.status} ${gatewayResponse.statusText}`;
+      throw new ApiRouteError(
+        gatewayResponse.status >= 500 ? 502 : gatewayResponse.status,
+        'gateway_build_rejected',
+        message,
+      );
+    }
+    const encodedUnsignedTx = gatewayBody.unsigned_tx?.value;
+    if (typeof encodedUnsignedTx !== 'string' || !encodedUnsignedTx) {
+      throw new ApiRouteError(
+        502,
+        'invalid_gateway_response',
+        'Gateway response did not contain an unsigned transaction.',
+      );
+    }
+    const unsignedTxCborHex = Buffer.from(encodedUnsignedTx, 'base64').toString(
+      'utf8',
+    );
+    if (
+      !unsignedTxCborHex ||
+      unsignedTxCborHex.length % 2 !== 0 ||
+      /[^0-9a-f]/i.test(unsignedTxCborHex)
+    ) {
+      throw new ApiRouteError(
+        502,
+        'invalid_gateway_response',
+        'Gateway returned malformed unsigned transaction CBOR.',
+      );
+    }
+    const response: LocalUnsignedTransferResponse = {
+      result: gatewayBody.result ?? 0,
+      unsignedTx: {
+        type_url:
+          typeof gatewayBody.unsigned_tx?.type_url === 'string'
+            ? gatewayBody.unsigned_tx.type_url
+            : '',
+        unsignedTxCborHex,
+      },
+    };
     const durationMs = Date.now() - startedAt;
     res.setHeader('Server-Timing', `cardano_transfer_build;dur=${durationMs}`);
     logTransferBuildEvent('info', {

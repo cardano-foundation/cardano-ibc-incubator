@@ -1,5 +1,4 @@
 import { TxBuilder, UTxO } from '@lucid-evolution/lucid';
-export declare const MAX_PACKET_ENTRIES_PER_CHANNEL = 64;
 export type Height = {
     revisionNumber: bigint;
     revisionHeight: bigint;
@@ -36,9 +35,6 @@ export type ChannelDatumLike = {
     port: string;
     state: {
         next_sequence_send: bigint;
-        packet_commitment: Map<bigint, string>;
-        packet_receipt: Map<bigint, string>;
-        packet_acknowledgement: Map<bigint, string>;
         channel: {
             connection_hops: string[];
             counterparty: {
@@ -80,6 +76,11 @@ export type HostStateUpdate = {
 export type PendingTreeUpdate = {
     expectedNewRoot: string;
     commit: () => void;
+};
+export type PacketStateUpdate = {
+    kind: 'send';
+    sequence: bigint;
+    commitment: string;
 };
 export type VoucherDenomTrace = {
     path: string;
@@ -146,7 +147,7 @@ export type UnsignedSendPacketEscrowTxInput = {
 };
 export type SendPacketBuildDependencies = {
     loadContext: (sendPacketOperator: SendPacketOperator) => Promise<LoadedSendPacketContext>;
-    buildHostStateUpdate: (inputChannelDatum: ChannelDatumLike, outputChannelDatum: ChannelDatumLike, channelIdForRoot: string) => Promise<HostStateUpdate>;
+    buildHostStateUpdate: (inputChannelDatum: ChannelDatumLike, outputChannelDatum: ChannelDatumLike, channelIdForRoot: string, packetStateUpdate: PacketStateUpdate) => Promise<HostStateUpdate>;
     resolveIbcDenomHash: (denomHash: string) => Promise<VoucherDenomTrace | null>;
     commitPacket: (packet: Packet) => string;
     encode: (value: unknown, kind: string) => Promise<string>;
@@ -163,7 +164,6 @@ export type SendPacketBuildDependencies = {
     createUnsignedSendPacketBurnTx: (dto: UnsignedSendPacketBurnTxInput) => TxBuilder;
     createUnsignedSendPacketEscrowTx: (dto: UnsignedSendPacketEscrowTxInput) => TxBuilder;
     invalidArgument: (message: string) => Error;
-    failedPrecondition?: (message: string) => Error;
     internalError: (message: string) => Error;
 };
 export declare function buildUnsignedSendPacketTx(sendPacketOperator: SendPacketOperator, deps: SendPacketBuildDependencies): Promise<SendPacketBuildResult>;

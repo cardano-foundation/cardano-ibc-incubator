@@ -29,9 +29,6 @@ fn setup() -> (ChannelDatum, AuthToken) {
         next_sequence_send: 1,
         next_sequence_recv: 1,
         next_sequence_ack: 1,
-        packet_commitment: [],
-        packet_receipt: [],
-        packet_acknowledgement: [],
       },
       port_id: "port-1",
       token: mock_auth_token,
@@ -136,51 +133,6 @@ test fail_if_next_sequence_ack_is_not_1() fail {
     ChannelDatum {
       ..chan_datum,
       state: ChannelDatumState { ..chan_datum.state, next_sequence_ack: 0 },
-    }
-
-  channel_datum_mod.validate_chan_open_try(chan_datum, auth_token)
-}
-
-test fail_if_packet_commitment_is_not_empty() fail {
-  let (chan_datum, auth_token) = setup()
-
-  let chan_datum =
-    ChannelDatum {
-      ..chan_datum,
-      state: ChannelDatumState {
-        ..chan_datum.state,
-        packet_commitment: [Pair(1, "")],
-      },
-    }
-
-  channel_datum_mod.validate_chan_open_try(chan_datum, auth_token)
-}
-
-test fail_if_packet_receipt_is_not_empty() fail {
-  let (chan_datum, auth_token) = setup()
-
-  let chan_datum =
-    ChannelDatum {
-      ..chan_datum,
-      state: ChannelDatumState {
-        ..chan_datum.state,
-        packet_receipt: [Pair(1, "")],
-      },
-    }
-
-  channel_datum_mod.validate_chan_open_try(chan_datum, auth_token)
-}
-
-test fail_if_packet_acknowledgement_is_not_empty() fail {
-  let (chan_datum, auth_token) = setup()
-
-  let chan_datum =
-    ChannelDatum {
-      ..chan_datum,
-      state: ChannelDatumState {
-        ..chan_datum.state,
-        packet_acknowledgement: [Pair(1, "")],
-      },
     }
 
   channel_datum_mod.validate_chan_open_try(chan_datum, auth_token)

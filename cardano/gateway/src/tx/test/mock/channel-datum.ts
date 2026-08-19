@@ -18,22 +18,6 @@ class ChannelDatumMockBuilder {
         next_sequence_send: 1n,
         next_sequence_recv: 1n,
         next_sequence_ack: 1n,
-        packet_commitment: new Map(),
-        packet_receipt: new Map([
-          [0n, ''],
-          [4n, ''],
-          [5n, ''],
-          [6n, ''],
-          [7n, ''],
-          [8n, ''],
-          [9n, ''],
-          [13n, ''],
-          [14n, ''],
-          [15n, ''],
-          [16n, ''],
-          [17n, ''],
-        ]),
-        packet_acknowledgement: new Map(), // Initialize empty map
       },
       port: '706f72742d3939',
       token: {

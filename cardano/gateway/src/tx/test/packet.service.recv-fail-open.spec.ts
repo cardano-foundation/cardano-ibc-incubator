@@ -130,9 +130,6 @@ describe('PacketService recv packet fail-open regression', () => {
           connection_hops: [convertString2Hex('connection-0')],
         },
         next_sequence_recv: 1n,
-        packet_commitment: new Map<bigint, string>(),
-        packet_receipt: new Map<bigint, string>(),
-        packet_acknowledgement: new Map<bigint, string>(),
       },
     };
 
@@ -200,7 +197,7 @@ describe('PacketService recv packet fail-open regression', () => {
       port: convertString2Hex('transfer'),
       state: {
         channel: {
-          state: 'Close',
+          state: 'Closed',
           ordering: 'Unordered',
           counterparty: {
             port_id: convertString2Hex('transfer'),
@@ -209,9 +206,6 @@ describe('PacketService recv packet fail-open regression', () => {
           connection_hops: [convertString2Hex('connection-0')],
         },
         next_sequence_recv: 1n,
-        packet_commitment: new Map<bigint, string>(),
-        packet_receipt: new Map<bigint, string>(),
-        packet_acknowledgement: new Map<bigint, string>(),
       },
     };
 

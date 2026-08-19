@@ -329,22 +329,16 @@ invariants:
 
 ## Packet Lifecycle
 
+`ChannelDatum` has a fixed packet-state shape: channel metadata plus the send,
+receive, and acknowledgement sequence counters. Packet commitments, receipts,
+and acknowledgement commitments are not stored in the datum; their ICS-24
+leaves are committed by `HostState.ibc_state_root`, which is the authoritative
+on-chain packet state. Off-chain services retain the leaves and construct
+sparse-Merkle witnesses, but every transaction must prove its exact leaf
+transition from the old on-chain root to the new one.
+
 Required CI label suffixes:
 
-- `unit.packet.send.valid`
-- `unit.packet.send.invalid_wrong_sequence`
-- `unit.packet.send.invalid_missing_commitment_root_update`
-- `unit.packet.send.invalid_wrong_transfer_callback`
-- `unit.packet.send.invalid_commitment_capacity`
-- `unit.packet.recv.valid_receipt`
-- `unit.packet.recv.invalid_duplicate_receipt`
-- `unit.packet.recv.invalid_history_capacity`
-- `unit.packet.ack.valid_success`
-- `unit.packet.ack.valid_error`
-- `unit.packet.ack.invalid_wrong_ack_bytes`
-- `unit.packet.timeout.valid_unordered`
-- `unit.packet.timeout.valid_ordered`
-- `unit.packet.timeout.invalid_before_timeout`
 - `tx.packet.send.valid_channel_host_marker`
 - `tx.packet.send.invalid_missing_operation_marker`
 - `tx.packet.recv.valid_atomic_successor_callback`
@@ -353,30 +347,20 @@ Required CI label suffixes:
 - `tx.packet.recv.invalid_unrelated_successor_mutation`
 - `tx.packet.recv.invalid_callback_packet_data`
 - `tx.packet.recv.invalid_callback_acknowledgement`
+- `tx.packet.recv.invalid_host_transition_acknowledgement`
 - `tx.packet.recv.valid_sink_mints_voucher`
-- `model.packet.send_ack.valid_sequence`
-- `model.packet.send_recv_ack`
-- `model.packet.send_timeout`
 
 ### SendPacket
 
-Covered by `unit.packet.send.valid`, `unit.packet.send.invalid_wrong_sequence`,
-`unit.packet.send.invalid_missing_commitment_root_update`, and
-`unit.packet.send.invalid_wrong_transfer_callback`, with the collection bound
-covered by `unit.packet.send.invalid_commitment_capacity`, plus the composed
-`spending_channel/send_packet.test.ak` callback-atomicity cases.
+Covered by the deterministic `validate_send_packet` and
+`packet_lifecycle_contract` tests, the `tx.packet.send.*` properties, the
+composed `spending_channel/send_packet.test.ak` callback cases, and the
+HostState packet-root properties below. They prove these invariants:
 
-The SendPacket unit properties build a valid open-channel channel-datum
-packet-send transition and then mutate exactly one field per negative case.
-They do not run the full composed packet transaction. They prove these
-invariants:
-
-- A valid send increments `next_sequence_send` and inserts the exact packet
-  commitment under the packet sequence.
-- The packet sequence must equal the channel datum's current
-  `next_sequence_send`.
-- The packet commitment datum effect cannot be omitted while the sequence is
-  advanced.
+- A valid send increments only `next_sequence_send`; the packet sequence must
+  equal the input counter.
+- The typed HostState transition inserts the exact packet commitment at the
+  packet's ICS-24 commitment path and proves that the old leaf was absent.
 - The transfer callback/channel redeemer must refer to the same packet bytes;
   a callback for a different transfer payload is rejected.
 - The registered port-token UTxO must be spent, or referenced while exactly one
@@ -385,9 +369,8 @@ invariants:
   bytes, and packet commitment exactly.
 - A callback whose typed ICS-20 data disagrees with the packet bytes is rejected
   by the transfer-module validator in the same composed transaction.
-- A channel may retain at most 64 entries total across packet commitments,
-  receipts, and acknowledgements. A send may fill the final remaining entry;
-  another insertion is rejected before the datum is enlarged.
+- Because packet commitments do not enlarge `ChannelDatum`, sends beyond the
+  former 64-entry boundary remain valid.
 
 ### SendPacket Transaction Coupling
 
@@ -408,7 +391,7 @@ invariants:
   rejected by the real channel validator.
 - The operation marker redeemer must carry the channel auth token.
 - The channel continuation output must preserve the channel thread token while
-  recording the packet commitment.
+  advancing the send sequence.
 - The send-packet spend branch, send-packet mint branch, channel wrapper,
   transfer-module validator, and first-shard minting policy accept one atomic
   native send fixture together.
@@ -419,36 +402,33 @@ invariants:
   credential matches the credential anchored by the registered port-token
   reference input.
 
-The HostState root-transition validator remains covered separately because its
-fixture requires the full sparse-Merkle witness. The outbound native-send
-fixture does run the marker, channel, transfer-module, and escrow-shard policy
-checks over the same transaction, including exact escrow accounting.
+The HostState root-transition validator has a separate fixture because it
+requires the full sparse-Merkle witness. The outbound native-send fixture runs
+the marker, channel, transfer-module, and escrow-shard policy checks over the
+same transaction, including exact escrow accounting.
 
 ### RecvPacket
 
-Covered by `unit.packet.recv.valid_receipt`,
-`unit.packet.recv.invalid_duplicate_receipt`, and the `tx.packet.recv.*`
-receive-transition labels listed above, with the collection bound covered by
-`unit.packet.recv.invalid_history_capacity`. Sink-chain voucher mint coupling
-is additionally covered by `tx.packet.recv.valid_sink_mints_voucher`. The real
-receive policy's timeout boundary is covered by `succeed_recv_packet`,
+Covered by the deterministic `validate_recv_packet` and
+`packet_lifecycle_contract` tests, the `tx.packet.recv.*` labels above, and the
+HostState packet-root properties below. The real receive policy's timeout
+boundary is covered by `succeed_recv_packet`,
 `recv_packet_rejects_height_only_timeout`, and
-`recv_packet_rejects_mixed_height_and_timestamp_timeout`.
+`recv_packet_rejects_mixed_height_and_timestamp_timeout`. They prove these
+invariants:
 
-The RecvPacket unit properties construct an unordered channel-datum receive
-transition that writes the receipt and acknowledgement commitment, then mutate
-the input datum to already contain the receipt. They prove these invariants:
-
-- A valid unordered receive records a receipt for the packet sequence.
-- A valid receive records the acknowledgement commitment for the packet
-  sequence.
-- A packet cannot be received again if its receipt already exists.
-- A packet cannot be received again if its acknowledgement already exists.
+- An unordered receive leaves the fixed-size channel datum unchanged. An
+  ordered receive accepts only `next_sequence_recv` and increments that counter
+  exactly once.
+- An unordered receive inserts an absent receipt leaf and every receive inserts
+  an absent acknowledgement leaf in the HostState root. Existing leaves make
+  the sparse-Merkle non-membership transition fail, preventing replay.
 - A successful receive must atomically commit the unique canonical successor
   for that packet and an authenticated callback from the module registered to
   the destination port.
 - The callback must carry the exact packet bytes and acknowledgement whose
-  commitment is written to channel state.
+  commitment is inserted into the authenticated tree. The typed HostState
+  transition must carry that same acknowledgement commitment.
 - A root-module callback must preserve the registered port token at the same
   script address; a shard callback must be anchored to that immutable root.
 - Missing callbacks, unrelated channel mutations, moved port bindings, and
@@ -458,10 +438,8 @@ the input datum to already contain the receipt. They prove these invariants:
   therefore fail closed.
 - A receive must use a nonzero timeout timestamp, and the transaction validity
   interval must end strictly before that timestamp.
-- Each channel may retain at most 64 entries total across packet commitments,
-  receipts, and acknowledgements. An unordered receive may fill the final two
-  remaining entries; the next receive fails closed before permanent history
-  can make the channel datum too large for the ledger.
+- Receives beyond the former 64-entry boundary remain valid because packet
+  history changes the root, not the size of `ChannelDatum`.
 - A sink-chain RecvPacket voucher mint can be coupled to the trace-registry
   append that proves the new voucher denom trace.
 
@@ -472,16 +450,15 @@ accepting independently constructed states.
 
 ### AcknowledgePacket
 
-Covered by `unit.packet.ack.valid_success`, `unit.packet.ack.valid_error`, and
-`unit.packet.ack.invalid_wrong_ack_bytes`, together with the registered-root
-and escrow-shard callback cases in
-`spending_channel/acknowledge_packet.test.ak`.
+Covered by the deterministic `validate_acknowledge_packet` and
+`packet_lifecycle_contract` tests, the HostState packet-root properties, and
+the registered-root and escrow-shard callback cases in
+`spending_channel/acknowledge_packet.test.ak`. They prove these invariants:
 
-The acknowledgement unit properties construct a near-valid source-side channel
-datum packet commitment and apply success and error acknowledgement bytes. They
-prove these invariants:
-
-- A valid acknowledgement consumes the packet commitment.
+- A valid acknowledgement proves exact membership of the packet commitment in
+  the old HostState root and deletes that leaf.
+- An unordered acknowledgement leaves the fixed-size channel datum unchanged;
+  an ordered acknowledgement increments only `next_sequence_ack`.
 - Success acknowledgement bytes must be the canonical marshalled acknowledgement
   payload.
 - Error acknowledgement bytes must be the canonical marshalled acknowledgement
@@ -502,18 +479,15 @@ prove these invariants:
 
 ### TimeoutPacket
 
-Covered by `unit.packet.timeout.valid_unordered`,
-`unit.packet.timeout.valid_ordered`, and
-`unit.packet.timeout.invalid_before_timeout`, together with the registered-root
-and escrow-shard callback cases in
-`spending_channel/timeout_packet.test.ak`.
+Covered by the deterministic `validate_timeout_packet` and
+`packet_lifecycle_contract` tests, the HostState packet-root properties, and
+the registered-root and escrow-shard callback cases in
+`spending_channel/timeout_packet.test.ak`. They prove these invariants:
 
-The timeout unit properties construct committed channel datum packets and apply
-unordered and ordered timeout transitions. They prove these invariants:
-
-- A valid unordered timeout consumes the packet commitment and keeps the channel
-  open.
-- A valid ordered timeout consumes the packet commitment and closes the channel.
+- A timeout proves exact membership of the packet commitment in the old
+  HostState root and deletes that leaf.
+- A valid unordered timeout keeps the fixed-size channel datum unchanged and
+  the channel open; a valid ordered timeout closes the channel.
 - A timeout cannot execute before the packet timeout timestamp has been reached.
 - A timeout cannot consume the packet commitment unless the registered
   application callback for the exact channel and packet bytes is executed in
@@ -521,35 +495,10 @@ unordered and ordered timeout transitions. They prove these invariants:
 - Both voucher-remint root callbacks and native-unescrow shard callbacks reject
   omitted or mismatched refund witnesses.
 
-### Model Sequences
-
-Covered by `model.packet.send_ack.valid_sequence`,
-`model.packet.send_recv_ack`, and `model.packet.send_timeout`.
-
-The model properties construct explicit bounded packet lifecycle state
-sequences:
-
-- initial open channel -> SendPacket output state -> AcknowledgePacket output
-  state;
-- initial open channel -> SendPacket output state -> RecvPacket output state ->
-  AcknowledgePacket output state; and
-- initial open channel -> SendPacket output state -> TimeoutPacket output state.
-
-They run each step against the relevant channel datum transition helper and
-then assert the final modeled state. They prove these invariants:
-
-- A packet accepted by the send transition can be consumed by the ack
-  transition using the send output as the next model input.
-- A send output can also be the starting state for a receive of an independent
-  inbound packet before the original outbound packet is acknowledged.
-- The receive step records both receipt and acknowledgement commitments for the
-  inbound packet sequence.
-- A send output can be consumed by a mature timeout transition.
-- The timeout sequence removes the outbound packet commitment and keeps an
-  unordered channel open.
-- The final model state removes the packet commitment.
-- The final model state preserves the incremented send sequence from the first
-  step.
+The tree itself may grow in off-chain storage, but live channel UTxO size does
+not grow with packet count. A missing tree service can make witness production
+unavailable; it cannot fabricate state, because an invalid witness does not
+reproduce the on-chain root.
 
 ## Transfer Module Accounting
 
@@ -846,9 +795,9 @@ Required CI label suffixes:
 - `contract.host.handle_packet.valid_timeout`
 - `contract.host.handle_packet.invalid_channel_only_change`
 - `contract.host.handle_packet.invalid_recv_channel_mutation`
-- `contract.host.handle_packet.invalid_commitment_capacity`
-- `contract.host.handle_packet.invalid_history_capacity`
-- `contract.host.handle_packet.invalid_ack_capacity`
+- `contract.host.handle_packet.invalid_recv_replay_nonmembership`
+- `contract.host.handle_packet.invalid_wrong_commitment_membership`
+- `contract.host.handle_packet.invalid_typed_transition_mismatch`
 - `contract.host.handle_packet.invalid_wrong_packet_key`
 
 ### Port Binding
@@ -902,12 +851,11 @@ Covered by `contract.host.update_channel.valid` and
 
 The UpdateChannel properties construct a HostState UTxO plus a channel UTxO and
 require the channel-end update branch to commit only the channel end. The
-mutation changes packet/sequence fields under the UpdateChannel redeemer and
-must be rejected, proving these invariants:
+mutation changes sequence fields under the UpdateChannel redeemer and must be
+rejected, proving these invariants:
 
 - Channel-end changes must be reflected in the new HostState root.
-- Packet commitments, receipts, acknowledgements, and sequence fields cannot be
-  changed through the channel-end-only branch.
+- Packet sequence fields cannot be changed through the channel-end-only branch.
 
 ### Packet Root Updates
 
@@ -917,22 +865,39 @@ Covered by `contract.host.handle_packet.valid_send`,
 `contract.host.handle_packet.valid_timeout`,
 `contract.host.handle_packet.invalid_channel_only_change`,
 `contract.host.handle_packet.invalid_recv_channel_mutation`,
-`contract.host.handle_packet.invalid_commitment_capacity`,
-`contract.host.handle_packet.invalid_history_capacity`,
-`contract.host.handle_packet.invalid_ack_capacity`, and
+`contract.host.handle_packet.invalid_recv_replay_nonmembership`,
+`contract.host.handle_packet.invalid_wrong_commitment_membership`,
+`contract.host.handle_packet.invalid_typed_transition_mismatch`, and
 `contract.host.handle_packet.invalid_wrong_packet_key`.
 
+The deterministic
+`host_handle_packet_send_succeeds_beyond_64_authenticated_packet_leaves`,
+`host_handle_packet_recv_succeeds_beyond_64_authenticated_packet_leaves`, and
+`host_handle_packet_ack_succeeds_with_64_authenticated_acknowledgements`
+regressions build complete sparse Merkle fixtures with 64 or more authenticated
+packet leaves. They run once in the all-tests smoke pass instead of repeating a
+fixed large-tree fixture hundreds of times as a property test.
+
 The HandlePacket properties construct HostState plus channel UTxO transitions
-for packet commitment insertion, packet receipt insertion, and packet commitment
-deletion. These represent send, receive, acknowledge, and timeout root effects.
-The mutations prove these invariants:
+and apply the typed send, receive, acknowledge, and timeout leaf changes to the
+old authoritative root. The mutations prove these invariants:
 
 - Packet effects must use the packet-root HostState branch.
-- Send-like packet commitment insertion must update the committed packet key.
-- Recv-like receipt insertion must update the committed receipt key.
-- Packet-root insertion cannot grow a channel past the ledger-safe bound of 64
-  combined commitment, receipt, and acknowledgement entries.
-- Ack/timeout-like commitment deletion must update the committed packet key.
+- The transition constructor must match the co-spent channel packet redeemer;
+  proof fields for unrelated packet operations must be empty.
+- Send inserts the exact packet commitment at the derived ICS-24 path and proves
+  that the old leaf was absent.
+- An unordered receive proves receipt non-membership before inserting the
+  receipt, and every receive proves acknowledgement non-membership before
+  inserting the acknowledgement commitment supplied by the typed transition.
+- Acknowledgement and timeout prove membership of the exact packet commitment
+  derived from the channel redeemer before deleting it; a different value at
+  the right key is rejected.
+- Replaying an unordered receive is rejected by the receipt non-membership
+  transition.
+- More than 64 sends, receives, and acknowledgements remain valid because the
+  packet leaves are represented by the root rather than embedded in the channel
+  datum.
 - A channel-only change cannot be smuggled through the packet branch.
 - A receive cannot combine otherwise valid receipt and acknowledgement root
   updates with a counterparty or connection rebind.
@@ -1136,9 +1101,9 @@ These are the next useful improvements for the invariant suite:
   voucher refund, and native escrow/refund flows, because these are the paths
   that move user funds.
 - Make `ModelState` carry real protocol state instead of only protocol and
-  transition names. Start with a bounded packet lifecycle model containing:
-  channel state, packet commitments, packet receipts, packet acknowledgements,
-  escrow and voucher balances, and the HostState root.
+  transition names. Start with a packet lifecycle model containing channel
+  metadata and sequence counters, the authenticated off-chain packet leaves,
+  escrow and voucher balances, and the authoritative HostState root.
 - Add cross-language golden fixtures for exact bytes shared by Aiken, Gateway,
   Hermes, and Cosmos. These should cover CBOR, protobuf, commitment bytes,
   proof paths, voucher asset names, and CIP-68 metadata so the implementations
