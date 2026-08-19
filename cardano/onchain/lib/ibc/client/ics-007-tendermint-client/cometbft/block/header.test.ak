@@ -2,7 +2,7 @@ use ibc/client/ics_007_tendermint_client/cometbft/block/block_id.{
   BlockID, PartSetHeader,
 } as block_id_mod
 use ibc/client/ics_007_tendermint_client/cometbft/block/header.{
-  TmHeader, hash, validate_basic,
+  TmHeader, hash, null_tm_header, validate_basic,
 }
 use ibc/client/ics_007_tendermint_client/cometbft/protos/types_pb.{Consensus}
 
@@ -70,4 +70,30 @@ test test_tmheader_hash() {
       proposer_address: #[19],
     }
   hash(tmheader) == #"f6809c55c6e77bb067268253dcb2ca6e570846f88e4d48d80db0deb80ebaf33d"
+}
+
+test test_tmheader_hash_is_empty_without_a_validator_hash() {
+  hash(null_tm_header()) == #[]
+}
+
+test test_tmheader_hash_omits_empty_length_delimited_fields() {
+  let tmheader =
+    TmHeader {
+      version: Consensus { block: 0, app: 0 },
+      chain_id: #"",
+      height: 0,
+      time: 0,
+      last_block_id: block_id_mod.null_block_id(),
+      last_commit_hash: #"",
+      data_hash: #"",
+      validators_hash: #[13],
+      next_validators_hash: #"",
+      consensus_hash: #"",
+      app_hash: #"",
+      last_results_hash: #"",
+      evidence_hash: #"",
+      proposer_address: #"",
+    }
+
+  hash(tmheader) == #"36b1fee12c8a37fbb88aff6f3682edc9c133b64a6ada2c71b0153b29b26cbbb1"
 }

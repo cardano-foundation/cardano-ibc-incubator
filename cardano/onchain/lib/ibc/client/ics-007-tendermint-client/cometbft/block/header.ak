@@ -89,9 +89,26 @@ pub fn null_tm_header() -> TmHeader {
   }
 }
 
+fn encode_length_delimited_field(value: ByteArray) -> ByteArray {
+  if value == #[] {
+    #[]
+  } else {
+    let value_length = length(value)
+    let encoded_length =
+      if value_length < 128 {
+        push(#[], value_length)
+      } else {
+        encode_varint(value_length)
+      }
+    encoded_length
+      |> concat(value)
+      |> push(bytes.field_1_length_delimited)
+  }
+}
+
 pub fn hash(h: TmHeader) -> ByteArray {
   ite(
-    length(h.validators_hash) == 0,
+    h.validators_hash == #[],
     #[],
     {
       let TmHeader {
@@ -126,15 +143,7 @@ pub fn hash(h: TmHeader) -> ByteArray {
       hash_from_byte_slices_sha2_256(
         [
           hbz.2nd,
-          ite(
-            length(chain_id) == 0,
-            #[],
-            chain_id
-              |> length()
-              |> encode_varint()
-              |> concat(chain_id)
-              |> push(bytes.field_1_length_delimited),
-          ),
+          encode_length_delimited_field(chain_id),
           ite(
             height == 0,
             #[],
@@ -142,87 +151,15 @@ pub fn hash(h: TmHeader) -> ByteArray {
           ),
           pbt,
           bzbi,
-          ite(
-            length(last_commit_hash) == 0,
-            #[],
-            last_commit_hash
-              |> length()
-              |> encode_varint()
-              |> concat(last_commit_hash)
-              |> push(bytes.field_1_length_delimited),
-          ),
-          ite(
-            length(data_hash) == 0,
-            #[],
-            data_hash
-              |> length()
-              |> encode_varint()
-              |> concat(data_hash)
-              |> push(bytes.field_1_length_delimited),
-          ),
-          ite(
-            length(validators_hash) == 0,
-            #[],
-            validators_hash
-              |> length()
-              |> encode_varint()
-              |> concat(validators_hash)
-              |> push(bytes.field_1_length_delimited),
-          ),
-          ite(
-            length(next_validators_hash) == 0,
-            #[],
-            next_validators_hash
-              |> length()
-              |> encode_varint()
-              |> concat(next_validators_hash)
-              |> push(bytes.field_1_length_delimited),
-          ),
-          ite(
-            length(consensus_hash) == 0,
-            #[],
-            consensus_hash
-              |> length()
-              |> encode_varint()
-              |> concat(consensus_hash)
-              |> push(bytes.field_1_length_delimited),
-          ),
-          ite(
-            length(app_hash) == 0,
-            #[],
-            app_hash
-              |> length()
-              |> encode_varint()
-              |> concat(app_hash)
-              |> push(bytes.field_1_length_delimited),
-          ),
-          ite(
-            length(last_results_hash) == 0,
-            #[],
-            last_results_hash
-              |> length()
-              |> encode_varint()
-              |> concat(last_results_hash)
-              |> push(bytes.field_1_length_delimited),
-          ),
-          ite(
-            length(evidence_hash) == 0,
-            #[],
-            evidence_hash
-              |> length()
-              |> encode_varint()
-              |> concat(evidence_hash)
-              |> push(bytes.field_1_length_delimited),
-          ),
-          ite(
-            length(proposer_address) == 0,
-            #[],
-            proposer_address
-              |> length()
-              |> encode_varint()
-              |> concat(proposer_address)
-              |> push(bytes.field_1_length_delimited),
-          ),
+          encode_length_delimited_field(last_commit_hash),
+          encode_length_delimited_field(data_hash),
+          encode_length_delimited_field(validators_hash),
+          encode_length_delimited_field(next_validators_hash),
+          encode_length_delimited_field(consensus_hash),
+          encode_length_delimited_field(app_hash),
+          encode_length_delimited_field(last_results_hash),
+          encode_length_delimited_field(evidence_hash),
+          encode_length_delimited_field(proposer_address),
         ],
       )
     },

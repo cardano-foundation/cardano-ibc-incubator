@@ -23,15 +23,16 @@ pub fn validate_basic(c: CommitSig) -> Bool {
         c.timestamp == 0,
         bytearray.length(c.signature) == 0,
       }
-    2 -> and {
-        bytearray.length(c.validator_address) == address_size,
-        bytearray.length(c.signature) > 0,
-        bytearray.length(c.signature) <= max_signature_size,
-      }
-    3 -> and {
-        bytearray.length(c.validator_address) == address_size,
-        bytearray.length(c.signature) > 0,
-        bytearray.length(c.signature) <= max_signature_size,
+    2 | 3 ->
+      if bytearray.length(c.validator_address) != address_size {
+        False
+      } else {
+        let signature_length = bytearray.length(c.signature)
+
+        and {
+          signature_length > 0,
+          signature_length <= max_signature_size,
+        }
       }
     _n -> fail
   }
