@@ -90,7 +90,7 @@ export type IBCModuleRedeemer<TModuleData = Data, TModuleOperator = Data> =
       Operator: IBCModuleOperator<TModuleOperator>[];
     };
 
-export type IBCModuleCodecSchemas = {
+type IBCModuleCodecSchemas = {
   moduleData?: unknown;
   moduleOperator?: unknown;
 };
@@ -100,7 +100,7 @@ export type IBCModuleCodecSchemas = {
  * The defaults decode arbitrary Plutus Data and are suitable for core query
  * paths that never interpret the application payload.
  */
-export function ibcModuleRedeemerSchema(
+function ibcModuleRedeemerSchema(
   Lucid: typeof import('@lucid-evolution/lucid'),
   schemas: IBCModuleCodecSchemas = {},
 ) {
