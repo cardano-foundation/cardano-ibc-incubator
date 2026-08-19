@@ -1234,6 +1234,18 @@ export class LucidIbcAdapter {
     return [mintChannelPolicyId, channelTokenName];
   }
 
+  private payTransferModuleState(tx: TxBuilder, moduleUtxo: UTxO): TxBuilder {
+    const moduleAddress = this.deployment.modules.transfer.address;
+    if (moduleUtxo.datum) {
+      return tx.pay.ToContract(
+        moduleAddress,
+        { kind: 'inline', value: moduleUtxo.datum },
+        moduleUtxo.assets,
+      );
+    }
+    return tx.pay.ToContract(moduleAddress, undefined, moduleUtxo.assets);
+  }
+
   private payTransferEscrowDelta(
     tx: TxBuilder,
     transferModuleAddress: string,
@@ -1323,15 +1335,19 @@ export class LucidIbcAdapter {
         !dto.encodedMintTransferEscrowShardRedeemer
       ) {
         throw new Error(
-          'Transfer module reference UTxO, shard token, and shard mint redeemer are required to create an escrow shard',
+          'Transfer module state UTxO, shard token, and shard mint redeemer are required to create an escrow shard',
         );
       }
       tx
-        .readFrom([dto.transferModuleReferenceUtxo])
+        .collectFrom(
+          [dto.transferModuleReferenceUtxo],
+          dto.encodedSpendTransferModuleRedeemer,
+        )
         .mintAssets(
           { [dto.transferEscrowShardTokenUnit]: 1n },
           dto.encodedMintTransferEscrowShardRedeemer,
         );
+      this.payTransferModuleState(tx, dto.transferModuleReferenceUtxo);
     }
 
     this.payTransferEscrowDelta(

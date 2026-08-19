@@ -469,6 +469,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
           datum: 'encoded',
           assets: {
             lovelace: 10n,
+            [`mint-transfer-escrow-shard-policy-id${'cd'.repeat(28)}`]: 1n,
           },
         },
       ]),
@@ -672,6 +673,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
           datum: 'encoded',
           assets: {
             lovelace: 10n,
+            [`mint-transfer-escrow-shard-policy-id${'ef'.repeat(28)}`]: 1n,
           },
         },
       ]),

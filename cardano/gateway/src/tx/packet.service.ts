@@ -37,7 +37,7 @@ import { RpcException } from '@nestjs/microservices';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
 import { TransferEscrowDatum } from '@shared/types/apps/transfer/transfer-escrow-datum';
 import { mapLovelaceDenom, normalizeDenomTokenTransfer, sumLovelaceFromUtxos } from './helper/helper';
-import { convertHex2String, convertString2Hex, hashBlake2b224, hashSHA256 } from '../shared/helpers/hex';
+import { convertHex2String, convertString2Hex, hashSHA256 } from '../shared/helpers/hex';
 import { MintVoucherRedeemer } from '@shared/types/apps/transfer/mint_voucher_redeemer/mint-voucher-redeemer';
 import { commitPacket } from '../shared/helpers/commitment';
 import { ClientDatum } from '@shared/types/client-datum';
@@ -100,6 +100,7 @@ import {
 } from '../shared/helpers/voucher-asset';
 import {
   buildUnsignedSendPacketTx as buildUnsignedSendPacketTxWithPackage,
+  resolveTransferEscrowShard,
   type SendPacketOperator as SharedSendPacketOperator,
 } from '@cardano-ibc/tx-builder';
 
@@ -1645,6 +1646,7 @@ export class PacketService {
               channelId,
               convertString2Hex(unescrowDenom),
               requestedDenomToken,
+              transferModuleUtxo,
               transferAmount,
             );
             if (!transferEscrowShard.utxo) {
@@ -2058,6 +2060,7 @@ export class PacketService {
         packet.source_channel,
         convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.denom),
         denomToken,
+        transferModuleReferenceUtxo,
         transferAmount,
       );
       if (!transferEscrowShard.utxo) {
@@ -2307,8 +2310,20 @@ export class PacketService {
           this.lucidService.findUtxoAtWithUnit(address, unit),
         tryFindUtxosAt: (address, options) =>
           this.lucidService.tryFindUtxosAt(address, options),
-        findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) =>
-          this.findTransferEscrowShard(channelId, packetDenom, denomToken, requiredAmount),
+        findTransferEscrowShard: (
+          channelId,
+          packetDenom,
+          denomToken,
+          creationInput,
+          requiredAmount,
+        ) =>
+          this.findTransferEscrowShard(
+            channelId,
+            packetDenom,
+            denomToken,
+            creationInput,
+            requiredAmount,
+          ),
         createUnsignedSendPacketBurnTx: (dto) =>
           this.lucidService.createUnsignedSendPacketBurnTx(
             dto as UnsignedSendPacketBurnDto,
@@ -2777,6 +2792,7 @@ export class PacketService {
         channelId,
         fTokenPacketData.denom,
         denomToken,
+        transferModuleReferenceUtxo,
         transferAmount,
       );
       if (!transferEscrowShard.utxo) {
@@ -3223,56 +3239,36 @@ export class PacketService {
       'transferEscrow',
     );
   }
-  private getTransferEscrowShardTokenName(channelId: string, packetDenom: string): string {
-    return hashBlake2b224(
-      convertString2Hex('transfer-escrow') + channelId + packetDenom,
-    );
-  }
-  private getTransferEscrowShardTokenUnit(channelId: string, packetDenom: string): string {
-    return (
-      this.configService.get('deployment').validators.mintTransferEscrowShard.scriptHash +
-      this.getTransferEscrowShardTokenName(channelId, packetDenom)
-    );
-  }
-  private escrowShardHasCanonicalAssets(
-    utxo: UTxO,
-    denomToken: string,
-    shardTokenUnit: string,
-  ): boolean {
-    return (
-      (utxo.assets?.[shardTokenUnit] ?? 0n) === 1n &&
-      Object.keys(utxo.assets ?? {}).every((unit) =>
-        unit === LOVELACE || unit === denomToken || unit === shardTokenUnit
-      )
-    );
-  }
   private async findTransferEscrowShard(
     channelId: string,
     packetDenom: string,
     denomToken: string,
+    creationInput: UTxO,
     requiredAmount?: bigint,
   ): Promise<{ utxo?: UTxO; encodedDatum: string; shardTokenUnit: string }> {
     const encodedDatum = await this.encodeTransferEscrowDatum(channelId, packetDenom);
-    const shardTokenUnit = this.getTransferEscrowShardTokenUnit(channelId, packetDenom);
-    let utxo: UTxO | undefined;
+    const shardPolicyId =
+      this.configService.get('deployment').validators.mintTransferEscrowShard.scriptHash;
+    const moduleUtxos = await this.lucidService.findUtxoAt(
+      this.getTransferModuleAddress(),
+    );
+
     try {
-      utxo = await this.lucidService.findUtxoByUnit(shardTokenUnit);
-    } catch {
-      utxo = undefined;
+      return resolveTransferEscrowShard(
+        moduleUtxos,
+        shardPolicyId,
+        encodedDatum,
+        channelId,
+        packetDenom,
+        denomToken,
+        creationInput,
+        requiredAmount,
+      );
+    } catch (error) {
+      throw new GrpcFailedPreconditionException(
+        error instanceof Error ? error.message : String(error),
+      );
     }
-
-    const canonicalUtxo =
-      utxo?.datum === encodedDatum &&
-      this.escrowShardHasCanonicalAssets(utxo, denomToken, shardTokenUnit) &&
-      (requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
-        ? utxo
-        : undefined;
-
-    return {
-      utxo: canonicalUtxo,
-      encodedDatum,
-      shardTokenUnit,
-    };
   }
   private getTransferModuleIdentifier(): string {
     return this.configService.get('deployment').modules.transfer.identifier;

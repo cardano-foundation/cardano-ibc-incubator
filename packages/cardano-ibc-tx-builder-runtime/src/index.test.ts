@@ -6,6 +6,7 @@ import {
   encodeAcknowledgement,
   type Acknowledgement,
 } from './acknowledgementCodec';
+import { LucidIbcAdapter } from './lucidIbcAdapter';
 
 function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -103,6 +104,109 @@ describe('acknowledgement codec', () => {
         TestLucid,
       ),
       failure,
+    );
+  });
+});
+
+describe('escrow shard creation', () => {
+  it('consumes and recreates the transfer state used as the NFT nonce', () => {
+    const readFromCalls: unknown[][] = [];
+    const collectFromCalls: Array<[unknown[], string | undefined]> = [];
+    const payToContractCalls: Array<[
+      string,
+      unknown,
+      Record<string, bigint>,
+    ]> = [];
+    const tx: any = {
+      readFrom(utxos: unknown[]) {
+        readFromCalls.push(utxos);
+        return tx;
+      },
+      collectFrom(utxos: unknown[], redeemer?: string) {
+        collectFromCalls.push([utxos, redeemer]);
+        return tx;
+      },
+      mintAssets() {
+        return tx;
+      },
+      pay: {
+        ToContract(
+          address: string,
+          datum: unknown,
+          assets: Record<string, bigint>,
+        ) {
+          payToContractCalls.push([address, datum, assets]);
+          return tx;
+        },
+      },
+    };
+    const transferState = {
+      txHash: 'aa'.repeat(32),
+      outputIndex: 0,
+      address: 'addr_transfer',
+      assets: { module: 1n, lovelace: 2_000_000n },
+    };
+    const deployment: any = {
+      hostStateNFT: { policyId: 'host-policy', name: 'host-name' },
+      validators: {
+        hostStateStt: { address: 'addr_host' },
+      },
+      modules: { transfer: { address: 'addr_transfer' } },
+    };
+    const adapter = new LucidIbcAdapter(
+      TestLucid,
+      { newTx: () => tx } as any,
+      deployment,
+    );
+    (adapter as any).referenceScripts = {
+      spendChannel: { ref: 'spend-channel' },
+      spendTransferModule: { ref: 'spend-transfer' },
+      mintTransferEscrowShard: { ref: 'mint-shard' },
+      sendPacket: { ref: 'send-packet' },
+      hostStateStt: { ref: 'host-state' },
+    };
+
+    adapter.createUnsignedSendPacketEscrowTx({
+      hostStateUtxo: { txHash: 'host', outputIndex: 0, assets: {} },
+      channelUTxO: { txHash: 'channel', outputIndex: 0, assets: {} },
+      connectionUTxO: { txHash: 'connection', outputIndex: 0, assets: {} },
+      clientUTxO: { txHash: 'client', outputIndex: 0, assets: {} },
+      transferModuleReferenceUtxo: transferState,
+      encodedHostStateRedeemer: 'host-redeemer',
+      encodedSpendChannelRedeemer: 'channel-redeemer',
+      encodedSpendTransferModuleRedeemer: 'module-redeemer',
+      encodedMintTransferEscrowShardRedeemer: 'mint-shard-redeemer',
+      encodedUpdatedHostStateDatum: 'updated-host-datum',
+      encodedUpdatedChannelDatum: 'updated-channel-datum',
+      encodedTransferEscrowDatum: 'escrow-datum',
+      spendChannelAddress: 'addr_channel',
+      transferModuleAddress: 'addr_transfer',
+      channelTokenUnit: 'channel-token',
+      channelToken: { policyId: 'channel-policy', name: 'channel-name' },
+      sendPacketPolicyId: 'send-policy',
+      transferEscrowShardTokenUnit: 'shard-policy' + '11'.repeat(28),
+      denomToken: 'lovelace',
+      transferAmount: 10n,
+      walletUtxos: [{ txHash: 'wallet', outputIndex: 0, assets: {} }],
+    });
+
+    assert.ok(
+      collectFromCalls.some(
+        ([utxos, redeemer]) =>
+          utxos[0] === transferState && redeemer === 'module-redeemer',
+      ),
+    );
+    assert.ok(
+      payToContractCalls.some(
+        ([address, datum, assets]) =>
+          address === 'addr_transfer' &&
+          datum === undefined &&
+          assets === transferState.assets,
+      ),
+    );
+    assert.equal(
+      readFromCalls.some((utxos) => utxos.includes(transferState)),
+      false,
     );
   });
 });

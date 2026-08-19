@@ -1,8 +1,11 @@
 import crypto from 'crypto';
 import type { LucidEvolution, Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
-import { buildUnsignedSendPacketTx, type SendPacketOperator } from '@cardano-ibc/tx-builder';
+import {
+  buildUnsignedSendPacketTx,
+  resolveTransferEscrowShard,
+  type SendPacketOperator,
+} from '@cardano-ibc/tx-builder';
 import { createTraceRegistryClient } from '@cardano-ibc/trace-registry';
-import { blake2b } from '@noble/hashes/blake2b';
 import WebSocket from 'ws';
 import { AsyncMutex } from './asyncMutex';
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, initTreeServices, isTreeAligned, rebuildTreeFromChain } from './ibcStateRoot';
@@ -1407,51 +1410,32 @@ function utxoRef(utxo: Pick<UTxO, 'txHash' | 'outputIndex'>): string {
   return `${utxo.txHash}#${utxo.outputIndex}`;
 }
 
-function transferEscrowShardTokenName(channelId: string, packetDenom: string): string {
-  return Buffer.from(
-    blake2b(
-      Buffer.concat([
-        Buffer.from('transfer-escrow', 'utf8'),
-        Buffer.from(channelId, 'hex'),
-        Buffer.from(packetDenom, 'hex'),
-      ]),
-      { dkLen: 28 },
-    ),
-  ).toString('hex');
-}
-
 async function findTransferEscrowShard(
   context: BuilderContext,
   channelId: string,
   packetDenom: string,
   denomToken: string,
+  creationInput: UTxO,
   requiredAmount?: bigint,
 ): Promise<{ utxo?: UTxO; encodedDatum: string; shardTokenUnit: string }> {
   const encodedDatum = await context.lucidService.encode(
     { channel_id: channelId, denom: packetDenom },
     'transferEscrow',
   );
-  const shardTokenUnit =
-    context.deployment.validators.mintTransferEscrowShard.scriptHash +
-    transferEscrowShardTokenName(channelId, packetDenom);
-  let utxo: UTxO | undefined;
-  try {
-    utxo = await context.lucidService.findUtxoByUnit(shardTokenUnit);
-  } catch {
-    utxo = undefined;
-  }
+  const moduleUtxos = await context.lucidService.findUtxoAt(
+    context.deployment.modules.transfer.address,
+  );
 
-  const canonicalUtxo =
-    utxo?.datum === encodedDatum &&
-    (utxo.assets[shardTokenUnit] ?? 0n) === 1n &&
-    Object.keys(utxo.assets ?? {}).every((unit) =>
-      unit === 'lovelace' || unit === denomToken || unit === shardTokenUnit
-    ) &&
-    (requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
-      ? utxo
-      : undefined;
-
-  return { utxo: canonicalUtxo, encodedDatum, shardTokenUnit };
+  return resolveTransferEscrowShard(
+    moduleUtxos,
+    context.deployment.validators.mintTransferEscrowShard.scriptHash,
+    encodedDatum,
+    channelId,
+    packetDenom,
+    denomToken,
+    creationInput,
+    requiredAmount,
+  );
 }
 
 async function ensureTreeAlignedForRoot(context: BuilderContext, onChainRoot: string): Promise<void> {
@@ -1740,9 +1724,22 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
         encode: (value, kind) => context.lucidService.encode(value, kind as never),
         findUtxoAtWithUnit: findWalletUtxoAtWithUnit,
         tryFindUtxosAt: getWalletUtxos,
-        findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) =>
+        findTransferEscrowShard: (
+          channelId,
+          packetDenom,
+          denomToken,
+          creationInput,
+          requiredAmount,
+        ) =>
           timed(logger, scope, 'find transfer escrow shard', () =>
-            findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount),
+            findTransferEscrowShard(
+              context,
+              channelId,
+              packetDenom,
+              denomToken,
+              creationInput,
+              requiredAmount,
+            ),
           ),
         createUnsignedSendPacketBurnTx: (dto) => context.lucidService.createUnsignedSendPacketBurnTx(dto as never),
         createUnsignedSendPacketEscrowTx: (dto) => context.lucidService.createUnsignedSendPacketEscrowTx(dto as never),

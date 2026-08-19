@@ -2476,7 +2476,7 @@ export class LucidService implements OnModuleInit {
         !dto.encodedMintTransferEscrowShardRedeemer
       ) {
         throw new GrpcInternalException(
-          "Transfer module reference UTxO, shard token, and shard mint redeemer are required to create an escrow shard",
+          "Transfer module state UTxO, shard token, and shard mint redeemer are required to create an escrow shard",
         );
       }
       tx

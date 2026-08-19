@@ -91,7 +91,11 @@ fn escrow_output(
   quantity: Int,
 ) -> Output {
   let shard_token_name =
-    transfer_escrow_shard.shard_token_name(channel_id, denom)
+    transfer_escrow_shard.shard_token_name(
+      channel_id,
+      denom,
+      module_input().output_reference,
+    )
   Output {
     address: from_script("transfer-module"),
     value: from_asset(native_policy_id, native_token_name, quantity)

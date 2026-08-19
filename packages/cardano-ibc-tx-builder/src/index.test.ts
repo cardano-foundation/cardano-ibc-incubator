@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import type { TxBuilder, UTxO } from '@lucid-evolution/lucid';
 import {
   buildUnsignedSendPacketTx,
+  deriveTransferEscrowShardTokenName,
   MAX_PACKET_ENTRIES_PER_CHANNEL,
+  resolveTransferEscrowShard,
   type LoadedSendPacketContext,
   type SendPacketBuildDependencies,
   type SendPacketOperator,
@@ -95,6 +97,7 @@ function createDeps(overrides: Partial<SendPacketBuildDependencies> = {}) {
     channelId: string;
     packetDenom: string;
     denomToken: string;
+    creationInput: UTxO;
     requiredAmount?: bigint;
   }> = [];
   const deps: SendPacketBuildDependencies = {
@@ -118,12 +121,14 @@ function createDeps(overrides: Partial<SendPacketBuildDependencies> = {}) {
       channelId,
       packetDenom,
       denomToken,
+      creationInput,
       requiredAmount,
     ) => {
       findTransferEscrowShardCalls.push({
         channelId,
         packetDenom,
         denomToken,
+        creationInput,
         requiredAmount,
       });
       return {
@@ -170,6 +175,7 @@ describe('send-packet denom mapping', () => {
         Buffer.from('lovelace').toString('hex'),
       ).toString('hex'),
       denomToken: 'lovelace',
+      creationInput: baseContext().transferModuleReferenceUtxo,
       requiredAmount: undefined,
     });
 
@@ -328,5 +334,191 @@ describe('send-packet denom mapping', () => {
     assert.equal(hostStateBuilds, 0);
     assert.equal(harness.getCapturedEscrow(), undefined);
     assert.equal(harness.getCapturedBurn(), undefined);
+  });
+});
+
+describe('transfer escrow shard identity and lookup', () => {
+  const policyId = '55'.repeat(28);
+  const creationInput = utxo('aa'.repeat(32), 0);
+  const channelId = Buffer.from('channel-1').toString('hex');
+  const packetDenom = Buffer.from('2345').toString('hex');
+  const denomToken = 'lovelace';
+  const encodedDatum = 'encoded-transfer-escrow-datum';
+
+  it('matches the on-chain derivation vector', () => {
+    assert.equal(
+      deriveTransferEscrowShardTokenName(
+        Buffer.from('channel-0').toString('hex'),
+        Buffer.from('6c6f76656c616365').toString('hex'),
+        creationInput,
+      ),
+      'fe22c4038335c37cfb02186c038df753e56e6f54a1aecb1b9380db4f',
+    );
+  });
+
+  it('separates formerly ambiguous tuple boundaries', () => {
+    const aliasChannelId = Buffer.from('channel-123').toString('hex');
+    const aliasDenom = Buffer.from('45').toString('hex');
+    assert.equal(channelId + packetDenom, aliasChannelId + aliasDenom);
+
+    assert.notEqual(
+      deriveTransferEscrowShardTokenName(
+        channelId,
+        packetDenom,
+        creationInput,
+      ),
+      deriveTransferEscrowShardTokenName(
+        aliasChannelId,
+        aliasDenom,
+        creationInput,
+      ),
+    );
+  });
+
+  it('changes the NFT name when the authenticated creation input advances', () => {
+    assert.notEqual(
+      deriveTransferEscrowShardTokenName(
+        channelId,
+        packetDenom,
+        creationInput,
+      ),
+      deriveTransferEscrowShardTokenName(channelId, packetDenom, {
+        ...creationInput,
+        outputIndex: 1,
+      }),
+    );
+  });
+
+  it('enumerates and returns the sole canonical datum match', () => {
+    const shardTokenUnit =
+      policyId +
+      deriveTransferEscrowShardTokenName(
+        channelId,
+        packetDenom,
+        creationInput,
+      );
+    const matching = {
+      ...utxo('bb'.repeat(32), 0, {
+        lovelace: 10_000_000n,
+        [shardTokenUnit]: 1n,
+      }),
+      datum: encodedDatum,
+    } as UTxO;
+    const unrelated = {
+      ...utxo('cc'.repeat(32), 0, {
+        lovelace: 2_000_000n,
+        [policyId + '11'.repeat(28)]: 1n,
+      }),
+      datum: 'other-datum',
+    } as UTxO;
+
+    assert.deepEqual(
+      resolveTransferEscrowShard(
+        [unrelated, matching],
+        policyId,
+        encodedDatum,
+        channelId,
+        packetDenom,
+        denomToken,
+        creationInput,
+      ),
+      { utxo: matching, encodedDatum, shardTokenUnit },
+    );
+  });
+
+  it('rejects duplicate datum matches instead of selecting one', () => {
+    const shardTokenUnit =
+      policyId +
+      deriveTransferEscrowShardTokenName(
+        channelId,
+        packetDenom,
+        creationInput,
+      );
+    const matching = {
+      ...utxo('bb'.repeat(32), 0, {
+        lovelace: 10_000_000n,
+        [shardTokenUnit]: 1n,
+      }),
+      datum: encodedDatum,
+    } as UTxO;
+    const duplicate = {
+      ...matching,
+      txHash: 'cc'.repeat(32),
+      assets: {
+        lovelace: 10_000_000n,
+        [policyId + '22'.repeat(28)]: 1n,
+      },
+    } as UTxO;
+
+    assert.throws(
+      () =>
+        resolveTransferEscrowShard(
+          [matching, duplicate],
+          policyId,
+          encodedDatum,
+          channelId,
+          packetDenom,
+          denomToken,
+          creationInput,
+        ),
+      /Multiple transfer escrow shards match/,
+    );
+  });
+
+  it('rejects a malformed matching shard', () => {
+    const malformed = {
+      ...utxo('bb'.repeat(32), 0, {
+        lovelace: 10_000_000n,
+        [policyId + '11'.repeat(28)]: 1n,
+        [policyId + '22'.repeat(28)]: 1n,
+      }),
+      datum: encodedDatum,
+    } as UTxO;
+
+    assert.throws(
+      () =>
+        resolveTransferEscrowShard(
+          [malformed],
+          policyId,
+          encodedDatum,
+          channelId,
+          packetDenom,
+          denomToken,
+          creationInput,
+        ),
+      /exactly one shard-policy asset/,
+    );
+  });
+
+  it('rejects an underfunded existing shard instead of creating another', () => {
+    const shardTokenUnit =
+      policyId +
+      deriveTransferEscrowShardTokenName(
+        channelId,
+        packetDenom,
+        creationInput,
+      );
+    const underfunded = {
+      ...utxo('bb'.repeat(32), 0, {
+        lovelace: 10n,
+        [shardTokenUnit]: 1n,
+      }),
+      datum: encodedDatum,
+    } as UTxO;
+
+    assert.throws(
+      () =>
+        resolveTransferEscrowShard(
+          [underfunded],
+          policyId,
+          encodedDatum,
+          channelId,
+          packetDenom,
+          denomToken,
+          creationInput,
+          11n,
+        ),
+      /does not contain the required 11 units/,
+    );
   });
 });

@@ -1020,6 +1020,13 @@ class LucidIbcAdapter {
         const channelTokenName = this.generateTokenName(this.deployment.hostStateNFT, CHANNEL_TOKEN_PREFIX, channelId);
         return [mintChannelPolicyId, channelTokenName];
     }
+    payTransferModuleState(tx, moduleUtxo) {
+        const moduleAddress = this.deployment.modules.transfer.address;
+        if (moduleUtxo.datum) {
+            return tx.pay.ToContract(moduleAddress, { kind: 'inline', value: moduleUtxo.datum }, moduleUtxo.assets);
+        }
+        return tx.pay.ToContract(moduleAddress, undefined, moduleUtxo.assets);
+    }
     payTransferEscrowDelta(tx, transferModuleAddress, encodedTransferEscrowDatum, transferAmount, denomToken, transferEscrowUtxo, transferEscrowShardTokenUnit) {
         if (!encodedTransferEscrowDatum) {
             throw new Error('Transfer escrow datum is required for sharded escrow updates');
@@ -1070,11 +1077,12 @@ class LucidIbcAdapter {
             if (!dto.transferModuleReferenceUtxo ||
                 !dto.transferEscrowShardTokenUnit ||
                 !dto.encodedMintTransferEscrowShardRedeemer) {
-                throw new Error('Transfer module reference UTxO, shard token, and shard mint redeemer are required to create an escrow shard');
+                throw new Error('Transfer module state UTxO, shard token, and shard mint redeemer are required to create an escrow shard');
             }
             tx
-                .readFrom([dto.transferModuleReferenceUtxo])
+                .collectFrom([dto.transferModuleReferenceUtxo], dto.encodedSpendTransferModuleRedeemer)
                 .mintAssets({ [dto.transferEscrowShardTokenUnit]: 1n }, dto.encodedMintTransferEscrowShardRedeemer);
+            this.payTransferModuleState(tx, dto.transferModuleReferenceUtxo);
         }
         this.payTransferEscrowDelta(tx, dto.transferModuleAddress, dto.encodedTransferEscrowDatum, dto.transferAmount, dto.denomToken, dto.transferEscrowUtxo, dto.transferEscrowShardTokenUnit);
         return tx;

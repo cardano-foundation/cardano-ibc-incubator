@@ -1,15 +1,87 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MAX_PACKET_ENTRIES_PER_CHANNEL = void 0;
+exports.deriveTransferEscrowShardTokenName = deriveTransferEscrowShardTokenName;
+exports.resolveTransferEscrowShard = resolveTransferEscrowShard;
 exports.buildUnsignedSendPacketTx = buildUnsignedSendPacketTx;
 const blake2b_1 = require("@noble/hashes/blake2b");
 const LOVELACE = 'lovelace';
 const CIP67_FT_LABEL_HEX = '0014df10';
+const TRANSFER_ESCROW_SHARD_DOMAIN = Buffer.from('transfer-escrow-v2', 'utf8');
 exports.MAX_PACKET_ENTRIES_PER_CHANNEL = 64;
 const LOOKUP_RETRY_OPTIONS = {
     maxAttempts: 6,
     retryDelayMs: 1000,
 };
+function encodeUint64(value) {
+    if (value < 0n || value > 0xffffffffffffffffn) {
+        throw new Error(`Escrow shard identity integer is outside uint64: ${value}`);
+    }
+    const encoded = Buffer.alloc(8);
+    encoded.writeBigUInt64BE(value);
+    return encoded;
+}
+function frameBytes(value) {
+    return Buffer.concat([encodeUint64(BigInt(value.length)), Buffer.from(value)]);
+}
+/**
+ * Derive the one-shot escrow shard NFT name used by the Aiken minting policy.
+ * Channel and denom are already hex-encoded Plutus byte arrays.
+ */
+function deriveTransferEscrowShardTokenName(channelId, packetDenom, creationInput) {
+    const preimage = Buffer.concat([
+        frameBytes(TRANSFER_ESCROW_SHARD_DOMAIN),
+        frameBytes(Buffer.from(channelId, 'hex')),
+        frameBytes(Buffer.from(packetDenom, 'hex')),
+        frameBytes(Buffer.from(creationInput.txHash, 'hex')),
+        encodeUint64(BigInt(creationInput.outputIndex)),
+    ]);
+    return Buffer.from((0, blake2b_1.blake2b)(preimage, { dkLen: 28 })).toString('hex');
+}
+/**
+ * Select the only canonical shard matching an inline datum. Enumerating by
+ * address avoids trusting provider APIs that return an arbitrary UTxO when a
+ * duplicated asset unit exists, and also supports one-shot (non-deterministic)
+ * NFT names and legacy shards during migration.
+ */
+function resolveTransferEscrowShard(utxos, policyId, encodedDatum, channelId, packetDenom, denomToken, creationInput, requiredAmount) {
+    const candidates = utxos.filter((utxo) => {
+        if (utxo.datum !== encodedDatum) {
+            return false;
+        }
+        return Object.keys(utxo.assets ?? {}).some((unit) => unit.startsWith(policyId));
+    });
+    if (candidates.length > 1) {
+        throw new Error(`Multiple transfer escrow shards match channel ${channelId} and denom ${packetDenom}`);
+    }
+    if (candidates.length === 1) {
+        const utxo = candidates[0];
+        const assets = utxo.assets ?? {};
+        const shardTokenUnits = Object.keys(assets).filter((unit) => unit.startsWith(policyId));
+        if (shardTokenUnits.length !== 1) {
+            throw new Error(`Transfer escrow shard ${utxo.txHash}#${utxo.outputIndex} must carry exactly one shard-policy asset`);
+        }
+        const shardTokenUnit = shardTokenUnits[0];
+        const canonical = shardTokenUnit.length === policyId.length + 56 &&
+            (assets[shardTokenUnit] ?? 0n) === 1n &&
+            Object.keys(assets).every((unit) => unit === LOVELACE ||
+                unit === denomToken ||
+                unit === shardTokenUnit);
+        if (!canonical) {
+            throw new Error(`Transfer escrow shard ${utxo.txHash}#${utxo.outputIndex} has a non-canonical NFT or asset set`);
+        }
+        if (requiredAmount === undefined ||
+            (assets[denomToken] ?? 0n) >= requiredAmount) {
+            return { utxo, encodedDatum, shardTokenUnit };
+        }
+        throw new Error(`Transfer escrow shard ${utxo.txHash}#${utxo.outputIndex} does not contain the required ${requiredAmount} units of ${denomToken}`);
+    }
+    const shardTokenName = deriveTransferEscrowShardTokenName(channelId, packetDenom, creationInput);
+    return {
+        encodedDatum,
+        shardTokenUnit: policyId + shardTokenName,
+    };
+}
 async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
     const context = await deps.loadContext(sendPacketOperator);
     const retainedPacketEntryCount = context.channelDatum.state.packet_commitment.size +
@@ -138,7 +210,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
     }
     const walletUtxos = dedupeUtxos(senderWalletUtxos);
     const denomToken = resolveEscrowDenomToken(inputDenom, resolvedDenom, walletUtxos, deps);
-    const transferEscrowShard = await deps.findTransferEscrowShard(convertStringToHex(sendPacketOperator.sourceChannel), convertStringToHex(packetDenom), denomToken);
+    const transferEscrowShard = await deps.findTransferEscrowShard(convertStringToHex(sendPacketOperator.sourceChannel), convertStringToHex(packetDenom), denomToken, context.transferModuleReferenceUtxo);
     const unsignedTx = deps.createUnsignedSendPacketEscrowTx({
         hostStateUtxo,
         channelUTxO: context.channelUtxo,

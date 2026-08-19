@@ -8,6 +8,23 @@ export type AuthToken = {
     policyId: string;
     name: string;
 };
+export type TransferEscrowShardLookup = {
+    utxo?: UTxO;
+    encodedDatum: string;
+    shardTokenUnit: string;
+};
+/**
+ * Derive the one-shot escrow shard NFT name used by the Aiken minting policy.
+ * Channel and denom are already hex-encoded Plutus byte arrays.
+ */
+export declare function deriveTransferEscrowShardTokenName(channelId: string, packetDenom: string, creationInput: Pick<UTxO, 'txHash' | 'outputIndex'>): string;
+/**
+ * Select the only canonical shard matching an inline datum. Enumerating by
+ * address avoids trusting provider APIs that return an arbitrary UTxO when a
+ * duplicated asset unit exists, and also supports one-shot (non-deterministic)
+ * NFT names and legacy shards during migration.
+ */
+export declare function resolveTransferEscrowShard(utxos: UTxO[], policyId: string, encodedDatum: string, channelId: string, packetDenom: string, denomToken: string, creationInput: Pick<UTxO, 'txHash' | 'outputIndex'>, requiredAmount?: bigint): TransferEscrowShardLookup;
 export type SendPacketOperator = {
     sourcePort: string;
     sourceChannel: string;
@@ -155,11 +172,7 @@ export type SendPacketBuildDependencies = {
         maxAttempts: number;
         retryDelayMs: number;
     }) => Promise<UTxO[]>;
-    findTransferEscrowShard: (channelId: string, packetDenom: string, denomToken: string, requiredAmount?: bigint) => Promise<{
-        utxo?: UTxO;
-        encodedDatum: string;
-        shardTokenUnit: string;
-    }>;
+    findTransferEscrowShard: (channelId: string, packetDenom: string, denomToken: string, creationInput: UTxO, requiredAmount?: bigint) => Promise<TransferEscrowShardLookup>;
     createUnsignedSendPacketBurnTx: (dto: UnsignedSendPacketBurnTxInput) => TxBuilder;
     createUnsignedSendPacketEscrowTx: (dto: UnsignedSendPacketEscrowTxInput) => TxBuilder;
     invalidArgument: (message: string) => Error;

@@ -1,6 +1,7 @@
+use aiken/collection/dict
 use aiken/collection/list
 use cardano/address.{Address}
-use cardano/assets.{PolicyId, Value, quantity_of}
+use cardano/assets.{PolicyId, Value, quantity_of, tokens}
 use cardano/transaction.{InlineDatum, Input, NoDatum, Output}
 use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
@@ -112,17 +113,31 @@ pub fn transfer_escrow_datum(
   TransferEscrowDatum { channel_id, denom }
 }
 
-pub fn escrow_shard_token_name(datum: TransferEscrowDatum) -> ByteArray {
-  transfer_escrow_shard.shard_token_name(datum.channel_id, datum.denom)
+fn escrow_shard_token_name(
+  output: Output,
+  shard_policy_id: PolicyId,
+) -> ByteArray {
+  expect [shard_token_name] =
+    output.value
+      |> tokens(shard_policy_id)
+      |> dict.keys()
+  expect quantity_of(output.value, shard_policy_id, shard_token_name) == 1
+  shard_token_name
 }
 
 pub fn escrow_shard_has_nft(
   output: Output,
-  datum: TransferEscrowDatum,
+  _datum: TransferEscrowDatum,
   shard_policy_id: PolicyId,
 ) -> Bool {
-  // Shard NFT name is derived from the datum.
-  quantity_of(output.value, shard_policy_id, escrow_shard_token_name(datum)) == 1
+  // New shard NFTs are one-shot names; existing shards may also carry the
+  // legacy deterministic name during migration. In both cases there must be
+  // exactly one unit of exactly one shard-policy asset.
+  when output.value |> tokens(shard_policy_id) |> dict.keys() is {
+    [shard_token_name] ->
+      quantity_of(output.value, shard_policy_id, shard_token_name) == 1
+    _ -> False
+  }
 }
 
 fn find_matching_escrow_input(
@@ -144,7 +159,7 @@ fn find_matching_escrow_input(
 
 fn escrow_value_is_single_asset(
   output: Output,
-  datum: TransferEscrowDatum,
+  _datum: TransferEscrowDatum,
   shard_policy_id: PolicyId,
   escrowed_token_unit: ByteArray,
 ) -> Bool {
@@ -152,8 +167,8 @@ fn escrow_value_is_single_asset(
     validator_utils.extract_token_unit(escrowed_token_unit)
   let escrowed_quantity =
     quantity_of(output.value, escrowed_token_policy_id, escrowed_token_name)
-  let shard_nft_value =
-    assets.from_asset(shard_policy_id, escrow_shard_token_name(datum), 1)
+  let shard_token_name = escrow_shard_token_name(output, shard_policy_id)
+  let shard_nft_value = assets.from_asset(shard_policy_id, shard_token_name, 1)
   let expected_non_lovelace =
     // Canonical shards contain no unrelated non-lovelace assets.
     if escrowed_token_unit == "lovelace" {
@@ -179,6 +194,7 @@ fn validate_created_escrow_shard(
   mint: Value,
   transfer_amount: Int,
   escrowed_token_unit: ByteArray,
+  creation_input: Input,
 ) -> Bool {
   // First native send creates a canonical shard and mints exactly one shard NFT.
   expect [created_output] =
@@ -194,9 +210,22 @@ fn validate_created_escrow_shard(
       escrowed_token_policy_id,
       escrowed_token_name,
     )
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(
+      datum.channel_id,
+      datum.denom,
+      creation_input.output_reference,
+    )
   and {
-    escrow_shard_has_nft(created_output, datum, shard_policy_id)?,
-    quantity_of(mint, shard_policy_id, escrow_shard_token_name(datum)) == 1,
+    quantity_of(created_output.value, shard_policy_id, shard_token_name) == 1,
+    tokens(created_output.value, shard_policy_id) == (
+      dict.empty
+        |> dict.insert(shard_token_name, 1)
+    ),
+    tokens(mint, shard_policy_id) == (
+      dict.empty
+        |> dict.insert(shard_token_name, 1)
+    ),
     escrow_value_is_single_asset(
       created_output,
       datum,
@@ -231,7 +260,8 @@ fn validate_escrow_shard_update(
       |> assets.merge(expected_value_difference)
   let expected_escrow_quantity =
     quantity_of(expected_output, escrowed_token_policy_id, escrowed_token_name)
-  let shard_token_name = escrow_shard_token_name(expected_datum)
+  let shard_token_name =
+    escrow_shard_token_name(spent_input.output, shard_policy_id)
   let shard_mint_quantity = quantity_of(mint, shard_policy_id, shard_token_name)
 
   and {
@@ -257,7 +287,7 @@ fn validate_escrow_shard_update(
       expect Some(output) = updated_output
       and {
         shard_mint_quantity == 0,
-        escrow_shard_has_nft(output, expected_datum, shard_policy_id)?,
+        escrow_shard_token_name(output, shard_policy_id) == shard_token_name,
         value_delta.validate_output_amount(
           spent_input,
           output,
@@ -344,6 +374,7 @@ pub fn validate_module_escrow_transition(
                 mint,
                 transfer_amount,
                 escrowed_token_unit,
+                spent_input,
               )
           },
         }

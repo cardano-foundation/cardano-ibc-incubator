@@ -93,6 +93,24 @@ fn host_state_datum(
   }
 }
 
+fn module_state_output_reference() -> OutputReference {
+  OutputReference {
+    transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
+    output_index: 0,
+  }
+}
+
+fn transfer_escrow_shard_name(
+  channel_id: ByteArray,
+  denom: ByteArray,
+) -> ByteArray {
+  transfer_escrow_shard.shard_token_name(
+    channel_id,
+    denom,
+    module_state_output_reference(),
+  )
+}
+
 fn setup() -> MockData {
   let host_state_nft_policy_id: PolicyId = "mock host state nft policy id"
   let host_state_token_name = "ibc_host_state"
@@ -155,10 +173,7 @@ fn setup() -> MockData {
 
   let module_input =
     Input {
-      output_reference: OutputReference {
-        transaction_id: #"30b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
-        output_index: 0,
-      },
+      output_reference: module_state_output_reference(),
       output: module_output,
     }
 
@@ -372,8 +387,7 @@ fn transfer_escrow_input(
   denom: ByteArray,
   amount: Int,
 ) -> Input {
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(channel_id, denom)
+  let shard_token_name = transfer_escrow_shard_name(channel_id, denom)
   Input {
     output_reference: OutputReference {
       transaction_id: #"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -396,8 +410,7 @@ fn transfer_escrow_output(
   denom: ByteArray,
   amount: Int,
 ) -> Output {
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(channel_id, denom)
+  let shard_token_name = transfer_escrow_shard_name(channel_id, denom)
   Output {
     address: module_output.address,
     value: from_asset(ada_policy_id, ada_asset_name, amount)
@@ -417,8 +430,7 @@ fn transfer_native_asset_escrow_input(
   token_name: ByteArray,
   amount: Int,
 ) -> Input {
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(channel_id, denom)
+  let shard_token_name = transfer_escrow_shard_name(channel_id, denom)
   Input {
     output_reference: OutputReference {
       transaction_id: #"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -443,8 +455,7 @@ fn transfer_native_asset_escrow_output(
   token_name: ByteArray,
   amount: Int,
 ) -> Output {
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(channel_id, denom)
+  let shard_token_name = transfer_escrow_shard_name(channel_id, denom)
   Output {
     address: module_output.address,
     value: from_asset(token_policy_id, token_name, amount)
@@ -544,8 +555,7 @@ fn native_send_escrow_fixture(
   let source_port = "port-0"
   let source_channel = "channel-0"
   let denom = "6c6f76656c616365"
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(mock.channel_id, denom)
+  let shard_token_name = transfer_escrow_shard_name(mock.channel_id, denom)
   let escrow_output =
     transfer_escrow_output(
       mock.module_output,
@@ -656,7 +666,7 @@ fn recv_source_unescrow_fixture(
       transfer_amount,
     )
   let shard_token_name =
-    transfer_escrow_shard.shard_token_name(mock.channel_id, "6c6f76656c616365")
+    transfer_escrow_shard_name(mock.channel_id, "6c6f76656c616365")
   let inputs =
     [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
   let (ftpd, packet) =
@@ -745,8 +755,7 @@ fn timeout_unescrow_fixture(
       denom,
       transfer_amount,
     )
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(source_channel, denom)
+  let shard_token_name = transfer_escrow_shard_name(source_channel, denom)
   let inputs =
     [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
   let (ftpd, packet) =
@@ -1607,7 +1616,7 @@ test on_recv_packet_unescrow_succeed() {
       transfer_amount,
     )
   let shard_token_name =
-    transfer_escrow_shard.shard_token_name(mock.channel_id, "6c6f76656c616365")
+    transfer_escrow_shard_name(mock.channel_id, "6c6f76656c616365")
   let inputs =
     [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
 
@@ -1813,8 +1822,7 @@ test transfer_escrow_succeed() {
 
   // lovelace
   let denom = "6c6f76656c616365"
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(mock.channel_id, denom)
+  let shard_token_name = transfer_escrow_shard_name(mock.channel_id, denom)
 
   //==========================arrange outputs=========================
   let escrow_output =
@@ -1917,8 +1925,7 @@ test transfer_escrow_fails_when_host_state_is_shutting_down() fail {
   let source_port = "port-0"
   let source_channel = "channel-0"
   let denom = "6c6f76656c616365"
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(mock.channel_id, denom)
+  let shard_token_name = transfer_escrow_shard_name(mock.channel_id, denom)
 
   let escrow_output =
     transfer_escrow_output(
@@ -2000,8 +2007,7 @@ test transfer_escrow_native_asset_fails_with_short_created_shard() fail {
   let native_policy_id: PolicyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   let native_token_name = "coin"
   let denom = native_asset_denom()
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(mock.channel_id, denom)
+  let shard_token_name = transfer_escrow_shard_name(mock.channel_id, denom)
 
   let escrow_output =
     transfer_native_asset_escrow_output(
@@ -2082,8 +2088,7 @@ test transfer_escrow_native_asset_fails_with_extra_created_shard() fail {
   let native_policy_id: PolicyId = "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   let native_token_name = "coin"
   let denom = native_asset_denom()
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(mock.channel_id, denom)
+  let shard_token_name = transfer_escrow_shard_name(mock.channel_id, denom)
 
   let escrow_output =
     transfer_native_asset_escrow_output(
@@ -2451,8 +2456,7 @@ test on_timeout_packet_unescrow_succeed() {
       denom,
       transfer_amount,
     )
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(source_channel, denom)
+  let shard_token_name = transfer_escrow_shard_name(source_channel, denom)
   let inputs =
     [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
 
@@ -2949,8 +2953,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
       denom,
       transfer_amount,
     )
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(source_channel, denom)
+  let shard_token_name = transfer_escrow_shard_name(source_channel, denom)
   let inputs =
     [mock.module_input, escrow_input, mock.channel_input, mock.host_state_input]
 

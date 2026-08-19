@@ -22,11 +22,10 @@ validator mint_transfer_escrow_shard(transfer_port_token: AuthToken) {
     let Transaction { inputs, outputs, mint, .. } = transaction
 
     when redeemer is {
-      // First native send mints the canonical shard NFT.
+      // First native send mints a unique, one-shot shard NFT.
       CreateEscrowShard { channel_id, denom, data } ->
         validate_create_escrow_shard(
           inputs,
-          transaction.reference_inputs,
           outputs,
           mint,
           transfer_escrow_shard_policy_id,
@@ -56,7 +55,6 @@ validator mint_transfer_escrow_shard(transfer_port_token: AuthToken) {
 
 fn validate_create_escrow_shard(
   inputs: List<Input>,
-  reference_inputs: List<Input>,
   outputs: List<Output>,
   mint,
   transfer_escrow_shard_policy_id: PolicyId,
@@ -75,20 +73,24 @@ fn validate_create_escrow_shard(
     validator_utils.extract_token_unit(escrowed_token_unit)
   expect Some(transfer_amount) = int.from_utf8(data.amount)
 
+  // Shard creation must consume the authenticated transfer module state. Its
+  // out-ref is a one-shot nonce, so the resulting NFT cannot be replayed.
+  expect [module_state_input] =
+    list.filter(
+      inputs,
+      fn(input) { input.output |> auth.contain_auth_token(transfer_port_token) },
+    )
   let shard_token_name =
-    transfer_escrow_shard.shard_token_name(channel_id, denom)
+    transfer_escrow_shard.shard_token_name(
+      channel_id,
+      denom,
+      module_state_input.output_reference,
+    )
   let shard_token =
     AuthToken {
       policy_id: transfer_escrow_shard_policy_id,
       name: shard_token_name,
     }
-
-  // The transfer port/module root anchors the canonical shard address.
-  expect [module_state_input] =
-    list.filter(
-      list.concat(inputs, reference_inputs),
-      fn(input) { input.output |> auth.contain_auth_token(transfer_port_token) },
-    )
 
   expect [created_output] =
     list.filter(
@@ -141,21 +143,35 @@ fn validate_burn_escrow_shard(
   channel_id: ByteArray,
   denom: ByteArray,
 ) -> Bool {
-  let shard_token_name =
-    transfer_escrow_shard.shard_token_name(channel_id, denom)
+  // Unique shard names include their creation input, so recover the NFT from
+  // the consumed shard and bind its datum back to the burn redeemer.
+  expect [spent_shard] =
+    list.filter(
+      inputs,
+      fn(input) {
+        !(input.output.value
+          |> tokens(transfer_escrow_shard_policy_id)
+          |> dict.is_empty)
+      },
+    )
+  expect InlineDatum(spent_shard_data) = spent_shard.output.datum
+  expect spent_shard_datum: TransferEscrowDatum = spent_shard_data
+  expect spent_shard_datum == TransferEscrowDatum { channel_id, denom }
+  expect [shard_token_name] =
+    spent_shard.output.value
+      |> tokens(transfer_escrow_shard_policy_id)
+      |> dict.keys()
+  expect
+    quantity_of(
+      spent_shard.output.value,
+      transfer_escrow_shard_policy_id,
+      shard_token_name,
+    ) == 1
   let shard_token =
     AuthToken {
       policy_id: transfer_escrow_shard_policy_id,
       name: shard_token_name,
     }
-
-  // Burning requires consuming the matching shard UTxO.
-  expect [_spent_shard] =
-    list.filter(
-      inputs,
-      fn(input) { input.output |> auth.contain_auth_token(shard_token) },
-    )
-
   and {
     // Burn exactly one shard NFT and leave no successor shard.
     tokens(mint, transfer_escrow_shard_policy_id) == (

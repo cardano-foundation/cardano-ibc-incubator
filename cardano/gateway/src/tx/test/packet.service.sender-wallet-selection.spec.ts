@@ -12,6 +12,7 @@ describe('PacketService signer wallet selection for escrow', () => {
     getConnectionTokenUnit: jest.Mock;
     getClientTokenUnit: jest.Mock;
     findUtxoByUnit: jest.Mock;
+    findUtxoAt: jest.Mock;
     decodeDatum: jest.Mock;
     encode: jest.Mock;
     createUnsignedSendPacketEscrowTx: jest.Mock;
@@ -64,6 +65,7 @@ describe('PacketService signer wallet selection for escrow', () => {
       getConnectionTokenUnit: jest.fn().mockReturnValue(['connection-policy-id', 'connection-token-name']),
       getClientTokenUnit: jest.fn().mockReturnValue('client-token-unit'),
       findUtxoByUnit: jest.fn(),
+      findUtxoAt: jest.fn().mockResolvedValue([]),
       decodeDatum: jest.fn(),
       encode: jest.fn().mockResolvedValue('encoded'),
       createUnsignedSendPacketEscrowTx: jest.fn().mockReturnValue({ tag: 'unsigned-escrow' }),

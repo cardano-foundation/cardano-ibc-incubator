@@ -184,7 +184,11 @@ fn check_send_packet(mutation: CallbackMutation) {
 
   let transfer_escrow_shard_policy_id = "mock transfer escrow shard policy"
   let shard_token_name =
-    transfer_escrow_shard.shard_token_name("channel-0", transfer_data.denom)
+    transfer_escrow_shard.shard_token_name(
+      "channel-0",
+      transfer_data.denom,
+      registered_module_input.output_reference,
+    )
   let escrow_output =
     Output {
       address: registered_module_input.output.address,
