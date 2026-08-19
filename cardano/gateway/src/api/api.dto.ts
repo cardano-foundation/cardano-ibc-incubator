@@ -101,7 +101,7 @@ export class PlanTransferRouteDto {
   token_denom: string;
 }
 
-export class PrunePacketHistoryHeightDto {
+class PrunePacketHistoryHeightDto {
   @ApiProperty()
   @IsString()
   @Matches(/^\d+$/)

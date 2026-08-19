@@ -141,7 +141,7 @@ export interface HandlePacketStateRootResult extends StateRootResult {
   packetAcknowledgementSiblings: string[];
 }
 
-export interface PrunePacketHistoryStateRootResult extends StateRootResult {
+interface PrunePacketHistoryStateRootResult extends StateRootResult {
   packetReceiptSiblings: string[];
   packetAcknowledgementSiblings: string[];
 }
