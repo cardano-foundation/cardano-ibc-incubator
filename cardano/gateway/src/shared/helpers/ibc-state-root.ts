@@ -800,8 +800,7 @@ export function computeRootWithPortBind(
 ): BindPortStateRootResult {
   const speculativeTree = getClonedTreeFromRoot(oldRoot);
 
-  // IBC host store key for port binding.
-  //
+  // Exact case-sensitive port text becomes the commitment path without aliases or normalization.
   const path = `ports/${portId}`;
 
   // The on-chain validator replays this update using the per-level sibling hashes.
@@ -857,6 +856,7 @@ export async function rebuildTreeFromChain(
     const boundPorts = hostStateDatum.state.bound_port ?? new Map();
     if (boundPorts.size > 0) {
       for (const [portIdHex, registration] of boundPorts.entries()) {
+        // Datum keys are hex-encoded UTF-8 and must be decoded before rebuilding textual paths.
         const portId = convertHex2String(portIdHex);
         const portValue = Buffer.from(
           await encodeModuleRegistration(registration, lucidService.LucidImporter),

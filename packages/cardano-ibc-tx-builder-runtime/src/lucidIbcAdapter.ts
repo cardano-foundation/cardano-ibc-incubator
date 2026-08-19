@@ -732,6 +732,7 @@ async function encodeSpendChannelRedeemer(
   return Data.to(data, SpendChannelRedeemerSchema as any, { canonical: true });
 }
 
+// Preserve Aiken's constructor order and tuple arity here; only application-owned inner schemas may vary.
 function ibcModuleRedeemerSchema(
   Lucid: typeof import('@lucid-evolution/lucid'),
   moduleDataSchema?: unknown,

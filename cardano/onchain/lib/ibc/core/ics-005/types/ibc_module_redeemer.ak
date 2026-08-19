@@ -7,6 +7,7 @@ pub type IBCModulePacketData {
   OtherModuleData
 }
 
+/// Constructor and record-field order form the callback wire ABI, so append variants instead of reordering them.
 pub type IBCModuleCallback {
   OnChanOpenInit { channel_id: ByteArray }
   OnChanOpenTry { channel_id: ByteArray }

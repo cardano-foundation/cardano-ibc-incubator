@@ -6,6 +6,7 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
   ModuleDataV1, ModuleOperatorV1, OtherModuleData, OtherModuleOperator,
 }
 
+// Plutus Data encodes constructor indices and fields, not source names, so equal shapes prove wire compatibility.
 type LegacyModulePacketData {
   LegacyTransferModuleData(FungibleTokenPacketData)
   LegacyOtherModuleData

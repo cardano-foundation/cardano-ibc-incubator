@@ -39,6 +39,7 @@ validator spend_mock_module(host_state_nft_policy_id: PolicyId) {
     expect InlineDatum(_) = host_state_input.output.datum
 
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
+    // One byte-identical continuation prevents moving, splitting, or mutating the registered module witness.
     expect [continuing_output] =
       list.filter(
         outputs,
@@ -87,6 +88,7 @@ fn validate_callback(callback: IBCModuleCallback) -> Bool {
   }
 }
 
+// The Other* constructors are legacy no-payload/no-op sentinels retained unchanged for wire compatibility.
 fn validate_packet_data(
   packet_data: ByteArray,
   module_data: IBCModulePacketData,

@@ -273,6 +273,7 @@ async function rebuildTreeFromChain(kupoService, lucidService) {
             module_token: AuthTokenSchema,
         });
         for (const [portIdHex, registration] of boundPorts.entries()) {
+            // Datum keys are hex-encoded UTF-8 and must be decoded before rebuilding textual paths.
             const portId = Buffer.from(portIdHex, 'hex').toString('utf8');
             const portValue = Buffer.from(Data.to(registration, ModuleRegistrationSchema), 'hex');
             tree.set(`ports/${portId}`, portValue);

@@ -593,6 +593,7 @@ async function encodeSpendChannelRedeemer(data, Lucid) {
     ]);
     return Data.to(data, SpendChannelRedeemerSchema, { canonical: true });
 }
+// Preserve Aiken's constructor order and tuple arity here; only application-owned inner schemas may vary.
 function ibcModuleRedeemerSchema(Lucid, moduleDataSchema, moduleOperatorSchema) {
     const { Data } = Lucid;
     const AcknowledgementSchema = (0, acknowledgementCodec_1.acknowledgementSchema)(Lucid);

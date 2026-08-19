@@ -58,6 +58,7 @@ validator mint_port(host_state_nft_policy_id: PolicyId) {
     expect Some(spent_host_state_redeemer) =
       pairs.get_first(redeemers, Spend(host_state_input.output_reference))
     expect host_state_redeemer: HostStateRedeemer = spent_host_state_redeemer
+    // Minting must atomically bind this exact port, script, and token in HostState.
     let valid_host_state_operator =
       when host_state_redeemer is {
         BindPort { port_id: bound_port_id, registration, .. } -> and {

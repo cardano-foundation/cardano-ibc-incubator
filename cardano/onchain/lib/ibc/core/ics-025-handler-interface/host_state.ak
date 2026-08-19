@@ -40,6 +40,7 @@ pub const max_bound_ports = 10
 /// their payload lengths first and their bytes second produces that same order.
 /// Equal keys return `Greater` because `validate_bind_port` rejects duplicates
 /// and the insertion helper performs its own equality check.
+/// This branch-minimal specialization protects the near-limit HostState reference-script budget.
 fn compare_port_keys_for_insertion(
   left: ByteArray,
   right: ByteArray,

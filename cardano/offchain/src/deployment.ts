@@ -1210,6 +1210,7 @@ const isLikelyReferenceBatchTooLarge = (error: unknown) => {
   ].some((pattern) => normalizedMessage.includes(pattern));
 };
 
+// Mirror Aiken's canonical CBOR byte-key order so HostState maps serialize identically off-chain.
 const compareCanonicalBytes = (leftHex: string, rightHex: string): number => {
   const left = hexToBytes(leftHex);
   const right = hexToBytes(rightHex);
@@ -1937,6 +1938,7 @@ const deployGenericModule = async (
     spendModuleScriptHash,
     spendModuleAddress,
   ] = await readValidator(
+    // Parameterizing the shared script prevents mock or ICQ witnesses from crossing HostState deployments.
     GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
     lucid,
     [hostStateNFT.policy_id],

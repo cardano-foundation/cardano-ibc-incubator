@@ -89,6 +89,7 @@ pub fn get_tx_valid_from(validity_range: ValidityRange) -> PosixTime {
   }
 }
 
+/// Resolve a module witness through the exact port's immutable HostState registration and require its capability UTxO to be spent.
 pub fn extract_module_redeemer(
   inputs: List<Input>,
   redeemers: Pairs<ScriptPurpose, Redeemer>,

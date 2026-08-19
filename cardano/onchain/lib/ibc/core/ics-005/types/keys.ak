@@ -13,6 +13,7 @@ pub const port_token_domain = "cardano-ibc/port-token/v1"
 /// hashing the domain and complete identifier avoids truncation and aliasing.
 pub fn port_token_name(port_id: ByteArray) -> ByteArray {
   expect is_valid_port_id(port_id)?
+  // The zero-byte delimiter makes the domain and variable-length identifier framing explicit.
   port_token_domain
     |> bytearray.concat(#"00")
     |> bytearray.concat(port_id)

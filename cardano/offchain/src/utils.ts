@@ -27,7 +27,7 @@ import { AuthToken, OutputReference } from "../types/index.ts";
 
 export const PORT_TOKEN_DOMAIN = "cardano-ibc/port-token/v1";
 
-/** Derive the fixed-width capability-token name for an exact textual port ID. */
+/** Derive the capability-token name from hex-encoded UTF-8 port bytes using Aiken's exact preimage. */
 export const generatePortTokenName = (portId: string): string => {
   const domain = fromHex(fromText(PORT_TOKEN_DOMAIN));
   const id = fromHex(portId);

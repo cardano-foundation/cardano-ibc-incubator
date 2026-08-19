@@ -687,6 +687,7 @@ fn module_operator(
   }
 }
 
+// Transfer decodes opaque V1 envelopes only at its boundary so ICS-005 core never depends on transfer types.
 fn decode_transfer_packet_data(
   module_data: IBCModulePacketData,
 ) -> FungibleTokenPacketData {

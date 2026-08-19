@@ -1,10 +1,7 @@
 import { Data } from '@lucid-evolution/lucid';
 import { Acknowledgement } from '../channel/acknowledgement';
 
-// The application payload is deliberately opaque to the core module interface.
-// `ModuleDataV1` keeps the former constructor index and one-field layout, so this
-// source-level decoupling is byte-compatible with the previous transfer-specific
-// application-specific constructor.
+// ModuleDataV1 retains constructor index 0 and its one-field layout so opaque payloads preserve existing callback CBOR.
 export type IBCModulePacketData<TModuleData = Data> =
   | {
       ModuleDataV1: TModuleData[];
