@@ -19,6 +19,7 @@ pub fn shard_token_preimage(
   expect channel_id_length <= uint32_max
   expect denom_length <= uint32_max
 
+  // Keep this framing byte-for-byte aligned with the off-chain builders.
   shard_token_domain
     |> bytearray.concat(#[0])
     |> bytearray.concat(bytearray.from_int_big_endian(channel_id_length, 4))

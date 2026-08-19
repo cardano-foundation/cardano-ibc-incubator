@@ -167,6 +167,7 @@ function encodeTransferEscrowShardRedeemer(
     data: FungibleTokenPacketDatumSchema,
     registry_siblings: Data.Array(Data.Bytes()),
   });
+  // Lucid encodes Aiken's sole constructor from its fields, not a one-member enum.
   const createEscrowShard = (
     data as { CreateEscrowShard: Record<string, unknown> }
   ).CreateEscrowShard;

@@ -149,6 +149,7 @@ fn transfer_module_registry_transition(
     )
   expect module_state_output.address == module_state_input.output.address
 
+  // NoDatum is accepted only as the legacy empty root; every successor is inline.
   let old_datum =
     when module_state_input.output.datum is {
       NoDatum ->

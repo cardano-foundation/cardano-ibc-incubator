@@ -33,6 +33,7 @@ fn escrow_output_matches(
   shard_policy_id: PolicyId,
 ) -> Bool {
   // Shard successors keep the script address and exact `{channel_id, denom}` datum.
+  // Check the derived NFT first so unrelated inline datums cannot abort shard lookup.
   if output.address != address || !escrow_shard_has_nft(
     output,
     datum,
