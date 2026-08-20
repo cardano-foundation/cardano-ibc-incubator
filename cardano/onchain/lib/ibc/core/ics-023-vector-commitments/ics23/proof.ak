@@ -8,6 +8,9 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   ExistenceProof, InnerOp, InnerSpec, LeafOp, NonExistenceProof, ProofSpec,
 }
 
+/// ICS-23 interprets an unset max_depth as a 128-step cap.
+const default_max_depth = 128
+
 /// calculate() determines the root hash that matches a given Commitment proof
 pub fn calculate(p: CommitmentProof) -> CommitmentRoot {
   when p.proof is {
@@ -150,8 +153,15 @@ pub fn check_against_spec(p: ExistenceProof, spec: ProofSpec) -> Bool {
   let leaf = get_leaf_existence_proof(p)
   expect leaf != proofs.null_leaf_op()
   expect ops.check_against_spec_leaf_op(leaf, spec, is_iavl_spec)
-  expect !(spec.min_depth > 0 && list.length(p.path) < spec.min_depth)
-  expect !(spec.max_depth > 0 && list.length(p.path) > spec.max_depth)
+  let path_length = list.length(p.path)
+  expect !(spec.min_depth > 0 && path_length < spec.min_depth)
+  let max_depth =
+    if spec.max_depth == 0 {
+      default_max_depth
+    } else {
+      spec.max_depth
+    }
+  expect path_length <= max_depth
 
   let inner_spec = spec.inner_spec
   expect inner_spec != proofs.null_inner_spec()
@@ -169,7 +179,7 @@ pub fn check_against_spec(p: ExistenceProof, spec: ProofSpec) -> Bool {
           ops.check_against_spec_inner_op(
             inner,
             spec,
-            layer_num,
+            accum_layer_num,
             inner_spec,
             max_op_prefix_length,
             is_iavl_spec,
