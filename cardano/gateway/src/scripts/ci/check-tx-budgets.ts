@@ -324,6 +324,40 @@ function voucherRedeemer(kind: 'MintVoucher' | 'RefundVoucher'): string {
   );
 }
 
+function createTransferEscrowShardRedeemer(): string {
+  const encodedPacketDenom = Buffer.from('6c6f76656c616365').toString('hex');
+  const fungibleTokenPacketData = Lucid.Data.Object({
+    denom: Lucid.Data.Bytes(),
+    amount: Lucid.Data.Bytes(),
+    sender: Lucid.Data.Bytes(),
+    receiver: Lucid.Data.Bytes(),
+    memo: Lucid.Data.Bytes(),
+  });
+  const schema = Lucid.Data.Object({
+    channel_id: Lucid.Data.Bytes(),
+    denom: Lucid.Data.Bytes(),
+    data: fungibleTokenPacketData,
+    registry_siblings: Lucid.Data.Array(Lucid.Data.Bytes()),
+  });
+
+  return Lucid.Data.to(
+    {
+      channel_id: PACKET.source_channel,
+      denom: encodedPacketDenom,
+      data: {
+        denom: encodedPacketDenom,
+        amount: '31303030303030',
+        sender: '6f736d6f3173656e646572',
+        receiver: '616464725f74657374317265636569766572',
+        memo: '',
+      },
+      registry_siblings: Array.from({ length: 64 }, () => hexOfBytes(32, '00')),
+    } as never,
+    schema as never,
+    { canonical: true },
+  );
+}
+
 function traceShardDatum(entryCount: number): string {
   return encodeTraceRegistryDatum(
     {
@@ -367,6 +401,7 @@ async function buildScenarios(
     'minting_channel_stt.mint_channel_stt.mint',
     'minting_client_stt.mint_client_stt.mint',
     'minting_connection_stt.mint_connection_stt.mint',
+    'minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint',
     'minting_voucher.mint_voucher.mint',
     'spending_channel.spend_channel.spend',
     'spending_client.spend_client.spend',
@@ -484,15 +519,16 @@ async function buildScenarios(
       aikenTests: ['spending_connection.test.conn_open_ack_succeed'],
     },
     {
-      name: 'SendPacket at commitment capacity',
-      inputCount: 3,
-      outputCount: 3,
-      mintPolicyCount: 1,
+      name: 'First native SendPacket at commitment capacity',
+      inputCount: 4,
+      outputCount: 4,
+      mintPolicyCount: 2,
       referenceScriptTitles: [
         'host_state_stt.host_state_stt.spend',
         'spending_channel.spend_channel.spend',
         'spending_transfer_module.spend_transfer_module.spend',
         'spending_channel/send_packet.send_packet.spend',
+        'minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint',
       ],
       redeemers: [
         sized(
@@ -502,18 +538,22 @@ async function buildScenarios(
         // SendPacket carries one 64-level sparse-Merkle packet witness.
         dataBytes('host state redeemer', 2_400),
         dataBytes('transfer module redeemer', 384),
+        sized('create transfer escrow shard', createTransferEscrowShardRedeemer()),
       ],
       datums: [
         dataBytes('updated host state datum', 1000),
         dataBytes('updated channel datum', 2_800),
+        dataBytes('updated transfer module datum', 32),
         dataBytes('transfer escrow shard datum', 360),
       ],
-      largestProofPayloadBytes: 0,
+      largestProofPayloadBytes: 2_048,
       aikenTests: [
         'spending_channel.test.send_packet_succeed',
         'spending_channel/send_packet.test.succeed_send_packet',
         'ibc/core/ics_004/channel_datum_test/validate_send_packet.succeed_at_packet_commitment_capacity',
         'host_state_stt.test.host_state_handle_packet_send_succeeds_at_commitment_capacity',
+        'spending_transfer_module.test.transfer_escrow_succeed',
+        'minting_transfer_escrow_shard.test.create_transfer_escrow_shard_succeeds',
       ],
     },
     {

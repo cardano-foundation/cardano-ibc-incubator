@@ -1,14 +1,20 @@
 import crypto from 'crypto';
 import type { LucidEvolution, Network, TxBuilder, UTxO } from '@lucid-evolution/lucid';
-import { buildUnsignedSendPacketTx, type SendPacketOperator } from '@cardano-ibc/tx-builder';
+import {
+  buildUnsignedSendPacketTx,
+  type SendPacketOperator,
+} from '@cardano-ibc/tx-builder';
 import { createTraceRegistryClient } from '@cardano-ibc/trace-registry';
-import { blake2b } from '@noble/hashes/blake2b';
 import WebSocket from 'ws';
 import { AsyncMutex } from './asyncMutex';
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, initTreeServices, isTreeAligned, rebuildTreeFromChain } from './ibcStateRoot';
 import { LucidIbcAdapter } from './lucidIbcAdapter';
+import {
+  findTransferEscrowShard as findTransferEscrowShardFromRegistry,
+} from './transferEscrowShard';
 
 export { AsyncMutex } from './asyncMutex';
+export { transferEscrowShardTokenName } from './transferEscrowShard';
 
 const LOOKUP_RETRY_OPTIONS = {
   maxAttempts: 6,
@@ -1407,51 +1413,39 @@ function utxoRef(utxo: Pick<UTxO, 'txHash' | 'outputIndex'>): string {
   return `${utxo.txHash}#${utxo.outputIndex}`;
 }
 
-function transferEscrowShardTokenName(channelId: string, packetDenom: string): string {
-  return Buffer.from(
-    blake2b(
-      Buffer.concat([
-        Buffer.from('transfer-escrow', 'utf8'),
-        Buffer.from(channelId, 'hex'),
-        Buffer.from(packetDenom, 'hex'),
-      ]),
-      { dkLen: 28 },
-    ),
-  ).toString('hex');
-}
-
 async function findTransferEscrowShard(
   context: BuilderContext,
   channelId: string,
   packetDenom: string,
   denomToken: string,
   requiredAmount?: bigint,
-): Promise<{ utxo?: UTxO; encodedDatum: string; shardTokenUnit: string }> {
-  const encodedDatum = await context.lucidService.encode(
-    { channel_id: channelId, denom: packetDenom },
-    'transferEscrow',
+) {
+  const deployment = context.deployment;
+  return findTransferEscrowShardFromRegistry(
+    {
+      transferModuleAddress: deployment.modules.transfer.address,
+      transferModuleIdentifier: deployment.modules.transfer.identifier,
+      shardPolicyId: deployment.validators.mintTransferEscrowShard.scriptHash,
+      findUtxosAt: (address) => context.lucidService.findUtxoAt(address),
+      encodeTransferEscrowDatum: (datum) =>
+        context.lucidService.encode(datum, 'transferEscrow'),
+      decodeTransferEscrowDatum: (encodedDatum) =>
+        context.lucidService.decodeDatum<{
+          channel_id: string;
+          denom: string;
+        }>(encodedDatum, 'transferEscrow'),
+      encodeTransferModuleDatum: (datum) =>
+        context.lucidService.encode(datum, 'transferModule'),
+      decodeTransferModuleDatum: (encodedDatum) =>
+        context.lucidService.decodeDatum<{
+          escrow_shard_registry_root: string;
+        }>(encodedDatum, 'transferModule'),
+    },
+    channelId,
+    packetDenom,
+    denomToken,
+    requiredAmount,
   );
-  const shardTokenUnit =
-    context.deployment.validators.mintTransferEscrowShard.scriptHash +
-    transferEscrowShardTokenName(channelId, packetDenom);
-  let utxo: UTxO | undefined;
-  try {
-    utxo = await context.lucidService.findUtxoByUnit(shardTokenUnit);
-  } catch {
-    utxo = undefined;
-  }
-
-  const canonicalUtxo =
-    utxo?.datum === encodedDatum &&
-    (utxo.assets[shardTokenUnit] ?? 0n) === 1n &&
-    Object.keys(utxo.assets ?? {}).every((unit) =>
-      unit === 'lovelace' || unit === denomToken || unit === shardTokenUnit
-    ) &&
-    (requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
-      ? utxo
-      : undefined;
-
-  return { utxo: canonicalUtxo, encodedDatum, shardTokenUnit };
 }
 
 async function ensureTreeAlignedForRoot(context: BuilderContext, onChainRoot: string): Promise<void> {

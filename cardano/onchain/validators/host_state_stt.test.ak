@@ -2491,7 +2491,15 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
     Transaction {
       ..placeholder,
       inputs: [host_input],
-      outputs: [host_output, test_module_output(registration)],
+      outputs: [
+        host_output,
+        Output {
+          ..test_module_output(registration),
+          // Module datums are application-owned; transfer initializes its
+          // escrow-shard registry here when binding the port.
+          datum: InlineDatum(#"00"),
+        },
+      ],
       extra_signatories: [trusted_deployer],
     }
 

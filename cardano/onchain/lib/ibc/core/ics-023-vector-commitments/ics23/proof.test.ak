@@ -1,6 +1,37 @@
+use aiken/collection/list
 use ibc/core/ics_023_vector_commitments/ics23/proof
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, LeafOp,
+}
+
+fn valid_iavl_leaf() -> LeafOp {
+  LeafOp {
+    hash: 1,
+    prehash_key: 0,
+    prehash_value: 1,
+    length: 1,
+    prefix: #"000202",
+  }
+}
+
+fn iavl_inner_with_height_129() -> InnerOp {
+  InnerOp {
+    hash: 1,
+    prefix: #"8202060220",
+    suffix: #"20afca3de8c7aefe1041f185a34e977a976b37d6ce4cce80e5e4545b93413eca02",
+  }
+}
+
+fn iavl_inner_with_height_2() -> InnerOp {
+  InnerOp {
+    hash: 1,
+    prefix: #"04060220",
+    suffix: #"20afca3de8c7aefe1041f185a34e977a976b37d6ce4cce80e5e4545b93413eca02",
+  }
+}
+
+fn iavl_existence_proof(path: List<InnerOp>) -> ExistenceProof {
+  ExistenceProof { key: #"01", value: #"02", leaf: valid_iavl_leaf(), path }
 }
 
 test test_caculate_success() {
@@ -75,4 +106,19 @@ test test_caculate_success() {
   let expected_calculate_root =
     #"77e43ef93047a91fe457f5498bd7afc60b9dddd661d8f1225e5f40a91bda4623"
   proof.calculate(valid_proof) == expected_calculate_root
+}
+
+test test_check_against_iavl_spec_accepts_default_max_depth() {
+  let path = list.repeat(iavl_inner_with_height_129(), 128)
+  proof.check_against_spec(iavl_existence_proof(path), proofs.iavl_spec())
+}
+
+test test_check_against_iavl_spec_rejects_above_default_max_depth() fail {
+  let path = list.repeat(iavl_inner_with_height_129(), 129)
+  proof.check_against_spec(iavl_existence_proof(path), proofs.iavl_spec())
+}
+
+test test_check_against_iavl_spec_rejects_low_height_at_deeper_layer() fail {
+  let path = list.repeat(iavl_inner_with_height_2(), 3)
+  proof.check_against_spec(iavl_existence_proof(path), proofs.iavl_spec())
 }

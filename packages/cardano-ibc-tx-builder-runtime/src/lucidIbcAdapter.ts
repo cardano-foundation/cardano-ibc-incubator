@@ -55,6 +55,7 @@ export type CodecType =
   | 'connection'
   | 'channel'
   | 'transferEscrow'
+  | 'transferModule'
   | 'host_state'
   | 'host_state_redeemer'
   | 'spendChannelRedeemer'
@@ -64,10 +65,11 @@ export type CodecType =
   | 'mintPortRedeemer'
   | 'transferEscrowShardRedeemer';
 
-const DECODABLE_DATUM_TYPES = ['client', 'connection', 'channel', 'transferEscrow', 'host_state'] as const;
+const DECODABLE_DATUM_TYPES = ['client', 'connection', 'channel', 'transferEscrow', 'transferModule', 'host_state'] as const;
 const ENCODABLE_DATUM_TYPES = [
   'channel',
   'transferEscrow',
+  'transferModule',
   'host_state',
   'host_state_redeemer',
   'spendChannelRedeemer',
@@ -517,6 +519,24 @@ function decodeTransferEscrowDatum(
   return Data.from(encoded, TransferEscrowDatumSchema as any);
 }
 
+function encodeTransferModuleDatum(
+  datum: { escrow_shard_registry_root: string },
+  Lucid: typeof import('@lucid-evolution/lucid'),
+) {
+  const { Data } = Lucid;
+  const schema = Data.Object({ escrow_shard_registry_root: Data.Bytes() });
+  return Data.to(datum, schema as any, { canonical: true });
+}
+
+function decodeTransferModuleDatum(
+  encoded: string,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+) {
+  const { Data } = Lucid;
+  const schema = Data.Object({ escrow_shard_registry_root: Data.Bytes() });
+  return Data.from(encoded, schema as any);
+}
+
 async function encodeHostStateRedeemer(
   data: any,
   Lucid: typeof import('@lucid-evolution/lucid'),
@@ -906,22 +926,16 @@ function encodeTransferEscrowShardRedeemer(
     receiver: Data.Bytes(),
     memo: Data.Bytes(),
   });
-  const TransferEscrowShardRedeemerSchema = Data.Enum([
-    Data.Object({
-      CreateEscrowShard: Data.Object({
-        channel_id: Data.Bytes(),
-        denom: Data.Bytes(),
-        data: FungibleTokenPacketDatumSchema,
-      }),
-    }),
-    Data.Object({
-      BurnEscrowShard: Data.Object({
-        channel_id: Data.Bytes(),
-        denom: Data.Bytes(),
-      }),
-    }),
-  ]);
-  return Data.to(data, TransferEscrowShardRedeemerSchema as any, { canonical: true });
+  const TransferEscrowShardRedeemerSchema = Data.Object({
+    channel_id: Data.Bytes(),
+    denom: Data.Bytes(),
+    data: FungibleTokenPacketDatumSchema,
+    registry_siblings: Data.Array(Data.Bytes()),
+  });
+  // Lucid encodes Aiken's sole constructor from its fields, not a one-member enum.
+  return Data.to(data.CreateEscrowShard, TransferEscrowShardRedeemerSchema as any, {
+    canonical: true,
+  });
 }
 
 export class LucidIbcAdapter {
@@ -1191,6 +1205,8 @@ export class LucidIbcAdapter {
         return (await decodeChannelDatum(encodedDatum, this.LucidImporter)) as T;
       case 'transferEscrow':
         return decodeTransferEscrowDatum(encodedDatum, this.LucidImporter) as T;
+      case 'transferModule':
+        return decodeTransferModuleDatum(encodedDatum, this.LucidImporter) as T;
       case 'host_state':
         return (await decodeHostStateDatum(encodedDatum, this.LucidImporter)) as T;
       default:
@@ -1204,6 +1220,11 @@ export class LucidIbcAdapter {
         return encodeChannelDatum(data, this.LucidImporter);
       case 'transferEscrow':
         return encodeTransferEscrowDatum(data as { channel_id: string; denom: string }, this.LucidImporter);
+      case 'transferModule':
+        return encodeTransferModuleDatum(
+          data as { escrow_shard_registry_root: string },
+          this.LucidImporter,
+        );
       case 'host_state':
         return encodeHostStateDatum(data, this.LucidImporter);
       case 'host_state_redeemer':
@@ -1333,25 +1354,36 @@ export class LucidIbcAdapter {
       );
 
     if (dto.transferEscrowUtxo) {
-      tx.collectFrom(
-        [dto.transferEscrowUtxo],
-        dto.encodedSpendTransferModuleRedeemer,
-      );
+      tx
+        .readFrom([dto.transferModuleReferenceUtxo])
+        .collectFrom(
+          [dto.transferEscrowUtxo],
+          dto.encodedSpendTransferModuleRedeemer,
+        );
     } else {
       if (
         !dto.transferModuleReferenceUtxo ||
         !dto.transferEscrowShardTokenUnit ||
-        !dto.encodedMintTransferEscrowShardRedeemer
+        !dto.encodedMintTransferEscrowShardRedeemer ||
+        !dto.encodedUpdatedTransferModuleDatum
       ) {
         throw new Error(
           'Transfer module reference UTxO, shard token, and shard mint redeemer are required to create an escrow shard',
         );
       }
       tx
-        .readFrom([dto.transferModuleReferenceUtxo])
+        .collectFrom(
+          [dto.transferModuleReferenceUtxo],
+          dto.encodedSpendTransferModuleRedeemer,
+        )
         .mintAssets(
           { [dto.transferEscrowShardTokenUnit]: 1n },
           dto.encodedMintTransferEscrowShardRedeemer,
+        )
+        .pay.ToContract(
+          dto.transferModuleAddress,
+          { kind: 'inline', value: dto.encodedUpdatedTransferModuleDatum },
+          dto.transferModuleReferenceUtxo.assets,
         );
     }
 

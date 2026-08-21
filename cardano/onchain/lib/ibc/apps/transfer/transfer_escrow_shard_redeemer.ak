@@ -6,7 +6,6 @@ pub type TransferEscrowShardRedeemer {
     channel_id: ByteArray,
     denom: ByteArray,
     data: FungibleTokenPacketData,
+    registry_siblings: List<ByteArray>,
   }
-  // Final native unescrow/refund for an emptied shard.
-  BurnEscrowShard { channel_id: ByteArray, denom: ByteArray }
 }

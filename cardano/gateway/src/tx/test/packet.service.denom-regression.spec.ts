@@ -79,6 +79,14 @@ describe('PacketService denom regression coverage', () => {
       getConnectionTokenUnit: jest.fn().mockReturnValue(['connection-policy-id', 'connection-token-name']),
       getClientTokenUnit: jest.fn().mockReturnValue('client-token-unit'),
       findUtxoByUnit: jest.fn(),
+      findUtxoAt: jest.fn().mockResolvedValue([
+        {
+          txHash: 'transfer',
+          outputIndex: 0,
+          datum: 'transfer-datum',
+          assets: { 'transfer-module-identifier': 1n },
+        },
+      ]),
       decodeDatum: jest.fn(),
       encode: jest.fn().mockResolvedValue('encoded'),
       findUtxoAtWithUnit: jest.fn(),
@@ -498,6 +506,24 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
     );
 
     const refreshWalletContextSpy = jest.spyOn(service as any, 'refreshWalletContext').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'findTransferEscrowShard').mockResolvedValue({
+      kind: 'existing',
+      utxo: {
+        txHash: 'transfer-escrow',
+        outputIndex: 0,
+        datum: 'encoded',
+        assets: { lovelace: 10n, 'shard-policy.shard-token': 1n },
+      },
+      encodedDatum: 'encoded',
+      shardTokenUnit: 'shard-policy.shard-token',
+      transferModuleUtxo: {
+        txHash: 'transfer',
+        outputIndex: 0,
+        datum: 'transfer-datum',
+        assets: { 'transfer-module-identifier': 1n },
+      },
+      registrySiblings: Array(64).fill('00'.repeat(32)),
+    });
     jest.spyOn(service as any, 'buildHostStateUpdateForHandlePacket').mockResolvedValue({
       hostStateUtxo: { txHash: 'host', outputIndex: 0, assets: {} },
       encodedHostStateRedeemer: 'encoded-host-state-redeemer',
@@ -700,6 +726,24 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       { executePacket: jest.fn() } as any,
     );
 
+    jest.spyOn(service as any, 'findTransferEscrowShard').mockResolvedValue({
+      kind: 'existing',
+      utxo: {
+        txHash: 'transfer-escrow',
+        outputIndex: 0,
+        datum: 'encoded',
+        assets: { lovelace: 10n, 'shard-policy.shard-token': 1n },
+      },
+      encodedDatum: 'encoded',
+      shardTokenUnit: 'shard-policy.shard-token',
+      transferModuleUtxo: {
+        txHash: 'transfer-module',
+        outputIndex: 0,
+        datum: 'transfer-module-datum',
+        assets: { 'transfer-module-identifier': 1n },
+      },
+      registrySiblings: Array(64).fill('00'.repeat(32)),
+    });
     jest.spyOn(service as any, 'buildHostStateUpdateForHandlePacket').mockResolvedValue({
       hostStateUtxo: { txHash: 'host', outputIndex: 0, assets: {} },
       encodedHostStateRedeemer: 'encoded-host-state-redeemer',

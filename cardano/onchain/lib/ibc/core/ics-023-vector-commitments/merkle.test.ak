@@ -2,7 +2,7 @@ use ibc/core/ics_023_vector_commitments/ics23/ics23
 use ibc/core/ics_023_vector_commitments/ics23/proof
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, LeafOp,
-  NonExistenceProof,
+  NonExistenceProof, ProofSpec,
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerklePath}
 use ibc/core/ics_023_vector_commitments/merkle_prefix
@@ -528,7 +528,7 @@ test test_verify_membership_success_with_exist_middle_with_terdermint_spec() {
   )
 }
 
-test test_is_left_neighbor() {
+fn multi_level_neighbor_non_existence_proof() -> NonExistenceProof {
   let non_exist_proof =
     NonExistenceProof {
       key: #"72656365697074732f706f7274732f7472616e736665722f6368616e6e656c732f6368616e6e656c2d3337332f73657175656e6365732f31",
@@ -744,9 +744,70 @@ test test_is_left_neighbor() {
         ],
       },
     }
+  non_exist_proof
+}
+
+test test_is_left_neighbor() {
+  let non_exist_proof = multi_level_neighbor_non_existence_proof()
+
   proof.is_left_neighbor(
     proofs.iavl_spec().inner_spec,
     non_exist_proof.left.path,
     non_exist_proof.right.path,
+  )
+}
+
+test verify_non_existence_proof_with_both_neighbors() {
+  let non_exist_proof = multi_level_neighbor_non_existence_proof()
+  let root = proof.calculate_exist(non_exist_proof.left)
+
+  proof.verify_non_existence_proof(
+    non_exist_proof,
+    proofs.iavl_spec(),
+    root,
+    non_exist_proof.key,
+  )
+}
+
+test verify_non_existence_proof_with_both_neighbors_rejects_boundary_key() {
+  let non_exist_proof = multi_level_neighbor_non_existence_proof()
+  let root = proof.calculate_exist(non_exist_proof.left)
+
+  !proof.verify_non_existence_proof(
+    non_exist_proof,
+    proofs.iavl_spec(),
+    root,
+    non_exist_proof.left.key,
+  )
+}
+
+test multi_level_paths_reject_reversed_neighbor_order() {
+  let non_exist_proof = multi_level_neighbor_non_existence_proof()
+
+  !proof.is_left_neighbor(
+    proofs.iavl_spec().inner_spec,
+    non_exist_proof.right.path,
+    non_exist_proof.left.path,
+  )
+}
+
+test non_existence_proof_rejects_missing_neighbors_without_hashing_key() {
+  let base_spec = proofs.iavl_spec()
+  let invalid_hash_spec =
+    ProofSpec {
+      ..base_spec,
+      leaf_spec: LeafOp { ..base_spec.leaf_spec, prehash_key: 10 },
+      prehash_key_before_comparison: True,
+    }
+
+  !proof.verify_non_existence_proof(
+    NonExistenceProof {
+      key: #"6d697373696e67",
+      left: proofs.null_existance_proof(),
+      right: proofs.null_existance_proof(),
+    },
+    invalid_hash_spec,
+    #[],
+    #"6d697373696e67",
   )
 }

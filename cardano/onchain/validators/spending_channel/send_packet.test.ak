@@ -9,6 +9,9 @@ use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/transfer_escrow_shard_redeemer.{CreateEscrowShard}
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
+use ibc/apps/transfer/types/transfer_module_datum.{
+  TransferModuleDatum, empty_escrow_shard_registry_root,
+}
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/core/ics_004/channel_datum.{ChannelDatum,
@@ -25,6 +28,7 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
 }
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{HandlePacket}
+use ibc/core/ics_025_handler_interface/ibc_state_commitment
 use ibc/utils/test_utils
 use minting_transfer_escrow_shard
 use spending_channel
@@ -42,6 +46,21 @@ type CallbackMutation {
   WrongTypedPacketData
   ReferenceBoundShard
   WrongModuleCredential
+}
+
+fn repeat_bytearray(value: ByteArray, count: Int) -> List<ByteArray> {
+  if count <= 0 {
+    []
+  } else {
+    [value, ..repeat_bytearray(value, count - 1)]
+  }
+}
+
+fn full_empty_siblings() -> List<ByteArray> {
+  repeat_bytearray(
+    ibc_state_commitment.empty_hash,
+    ibc_state_commitment.merkle_depth_bits,
+  )
 }
 
 fn check_send_packet(mutation: CallbackMutation) {
@@ -107,7 +126,24 @@ fn check_send_packet(mutation: CallbackMutation) {
     }
   let module_token = mock_data.module_token
   let registered_module_input = mock_data.module_input
-  let module_output = registered_module_input.output
+  let registry_siblings = full_empty_siblings()
+  let updated_registry_root =
+    ibc_state_commitment.apply_update(
+      empty_escrow_shard_registry_root,
+      transfer_escrow_shard.shard_registry_key("channel-0", transfer_data.denom),
+      "",
+      transfer_escrow_shard.registered_shard_value,
+      registry_siblings,
+    )
+  let module_output =
+    Output {
+      ..registered_module_input.output,
+      datum: InlineDatum(
+        TransferModuleDatum {
+          escrow_shard_registry_root: updated_registry_root,
+        },
+      ),
+    }
   let host_state_input = mock_data.host_state_input
   let module_spend_input =
     Input {
@@ -276,6 +312,7 @@ fn check_send_packet(mutation: CallbackMutation) {
       channel_id: "channel-0",
       denom: transfer_data.denom,
       data: transfer_data,
+      registry_siblings,
     }
   let shard_mint_redeemer_data: Redeemer = shard_mint_redeemer
 

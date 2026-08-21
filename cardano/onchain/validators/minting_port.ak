@@ -2,7 +2,7 @@ use aiken/collection/dict
 use aiken/collection/list
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
-use cardano/transaction.{Input, NoDatum, Output, Spend, Transaction}
+use cardano/transaction.{Input, Output, Spend, Transaction}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_005/port_redeemer.{MintPortRedeemer}
 use ibc/core/ics_005/types/keys as port_keys
@@ -71,8 +71,6 @@ validator mint_port(host_state_nft_policy_id: PolicyId) {
     expect [module_output] =
       transaction.find_script_outputs(outputs, spend_module_script_hash)
 
-    trace @"mint_port: transfer module output datum": module_output.datum
-    expect NoDatum = module_output.datum
     and {
       valid_host_state_operator?,
       auth.mint_auth_token(mint, port_token)?,

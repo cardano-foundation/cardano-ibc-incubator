@@ -1,7 +1,7 @@
 use aiken/collection/list
 use cardano/address.{Address}
 use cardano/assets.{PolicyId, Value, quantity_of}
-use cardano/transaction.{InlineDatum, Input, NoDatum, Output}
+use cardano/transaction.{InlineDatum, Input, Output}
 use ibc/apps/transfer/transfer_escrow_shard
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/value_delta
@@ -10,8 +10,8 @@ use ibc/utils/validator_utils
 
 pub type TransferModuleSpend {
   // Setup/lifecycle spend of the transfer module root.
-  ModuleState(Output)
-  // `None` successor means the shard is emptied and its NFT must burn.
+  ModuleState { updated_output: Output, datum_changed: Bool }
+  // Escrow shards always retain a successor so their NFT cannot be re-minted.
   EscrowShard { datum: TransferEscrowDatum, updated_output: Option<Output> }
 }
 
@@ -30,9 +30,15 @@ fn escrow_output_matches(
   output: Output,
   address: Address,
   datum: TransferEscrowDatum,
+  shard_policy_id: PolicyId,
 ) -> Bool {
   // Shard successors keep the script address and exact `{channel_id, denom}` datum.
-  if output.address != address {
+  // Check the derived NFT first so unrelated inline datums cannot abort shard lookup.
+  if output.address != address || !escrow_shard_has_nft(
+    output,
+    datum,
+    shard_policy_id,
+  ) {
     False
   } else {
     when output.datum is {
@@ -49,12 +55,20 @@ fn find_escrow_output(
   outputs: List<Output>,
   spent_output: Output,
   datum: TransferEscrowDatum,
+  shard_policy_id: PolicyId,
 ) -> Option<Output> {
   // A shard has at most one successor with the same address and datum.
   when
     list.filter(
       outputs,
-      fn(output) { escrow_output_matches(output, spent_output.address, datum) },
+      fn(output) {
+        escrow_output_matches(
+          output,
+          spent_output.address,
+          datum,
+          shard_policy_id,
+        )
+      },
     )
   is {
     [] -> None
@@ -68,6 +82,7 @@ pub fn classify_transfer_module_spend(
   outputs: List<Output>,
   port_token: AuthToken,
   module_token: AuthToken,
+  shard_policy_id: PolicyId,
 ) -> TransferModuleSpend {
   // Root state is identified by both module auth tokens; everything else must be
   // an escrow shard with an inline shard datum.
@@ -86,22 +101,24 @@ pub fn classify_transfer_module_spend(
           )
         },
       )
-    expect NoDatum = updated_output.datum
-    // The port token permanently binds this module state to its original
-    // script credential/address.
-    expect updated_output.address == spent_output.address
-    ModuleState(updated_output)
+    ModuleState {
+      updated_output,
+      datum_changed: spent_output.datum != updated_output.datum,
+    }
   } else {
     // Non-root transfer spends are escrow shards.
     expect datum: TransferEscrowDatum =
       validator_utils.get_inline_datum(spent_output)
-    let updated_output = find_escrow_output(outputs, spent_output, datum)
+    expect escrow_shard_has_nft(spent_output, datum, shard_policy_id)
+    let updated_output =
+      find_escrow_output(outputs, spent_output, datum, shard_policy_id)
     EscrowShard { datum, updated_output }
   }
 }
 
 pub fn expect_module_state(spend: TransferModuleSpend) -> Output {
-  expect ModuleState(updated_output) = spend
+  expect ModuleState { updated_output, datum_changed } = spend
+  expect !datum_changed
   updated_output
 }
 
@@ -129,11 +146,14 @@ fn find_matching_escrow_input(
   inputs: List<Input>,
   address: Address,
   datum: TransferEscrowDatum,
+  shard_policy_id: PolicyId,
 ) -> Option<Input> {
   when
     list.filter(
       inputs,
-      fn(input) { escrow_output_matches(input.output, address, datum) },
+      fn(input) {
+        escrow_output_matches(input.output, address, datum, shard_policy_id)
+      },
     )
   is {
     [] -> None
@@ -184,7 +204,9 @@ fn validate_created_escrow_shard(
   expect [created_output] =
     list.filter(
       outputs,
-      fn(output) { escrow_output_matches(output, address, datum) },
+      fn(output) {
+        escrow_output_matches(output, address, datum, shard_policy_id)
+      },
     )
   let (escrowed_token_policy_id, escrowed_token_name) =
     validator_utils.extract_token_unit(escrowed_token_unit)
@@ -195,7 +217,6 @@ fn validate_created_escrow_shard(
       escrowed_token_name,
     )
   and {
-    escrow_shard_has_nft(created_output, datum, shard_policy_id)?,
     quantity_of(mint, shard_policy_id, escrow_shard_token_name(datum)) == 1,
     escrow_value_is_single_asset(
       created_output,
@@ -244,20 +265,11 @@ fn validate_escrow_shard_update(
       escrowed_token_unit,
     )?,
     // The signed value delta models send as positive and refund/unescrow as negative.
-    if expected_escrow_quantity < 0 {
-      False
-    } else if expected_escrow_quantity == 0 {
-      // Empty shards have no successor and burn the NFT.
-      when updated_output is {
-        None -> shard_mint_quantity == -1
-        Some(_) -> False
-      }
-    } else {
-      // Non-empty shards keep their NFT and datum.
+    if expected_escrow_quantity >= 0 {
+      // Empty and non-empty shards both retain their successor and NFT.
       expect Some(output) = updated_output
       and {
         shard_mint_quantity == 0,
-        escrow_shard_has_nft(output, expected_datum, shard_policy_id)?,
         value_delta.validate_output_amount(
           spent_input,
           output,
@@ -270,6 +282,8 @@ fn validate_escrow_shard_update(
           escrowed_token_unit,
         )?,
       }
+    } else {
+      False
     },
   }
 }
@@ -283,7 +297,8 @@ fn validate_matching_escrow_input_update(
   expected_value_difference: Value,
   escrowed_token_unit: ByteArray,
 ) -> Bool {
-  let updated_output = find_escrow_output(outputs, escrow_input.output, datum)
+  let updated_output =
+    find_escrow_output(outputs, escrow_input.output, datum, shard_policy_id)
   validate_escrow_shard_update(
     escrow_input,
     EscrowShard { datum, updated_output },
@@ -308,7 +323,7 @@ pub fn validate_module_escrow_transition(
   escrowed_token_unit: ByteArray,
 ) -> Bool {
   when spend is {
-    ModuleState(updated_output) -> {
+    ModuleState { updated_output, datum_changed } -> {
       // Root spends are lifecycle/setup state; any native packet-side escrow effect
       // must still be witnessed by the matching shard update or creation.
       let preserved_module_state =
@@ -318,52 +333,49 @@ pub fn validate_module_escrow_transition(
           assets.zero,
         )
       let matching_escrow_input =
-        find_matching_escrow_input(inputs, spent_input.output.address, datum)
+        find_matching_escrow_input(
+          inputs,
+          spent_input.output.address,
+          datum,
+          shard_policy_id,
+        )
+      let shard_mint_quantity =
+        quantity_of(mint, shard_policy_id, escrow_shard_token_name(datum))
+      // The mint policy validates the typed Merkle update; this callback only
+      // permits the module datum to change alongside that exact first mint.
+      let registry_transition_is_authorized =
+        if datum_changed {
+          shard_mint_quantity == 1
+        } else {
+          shard_mint_quantity == 0
+        }
 
-      if transfer_amount > 0 {
-        // Positive native sends update or create the shard.
-        and {
-          preserved_module_state?,
-          when matching_escrow_input is {
-            Some(escrow_input) ->
-              validate_matching_escrow_input_update(
-                escrow_input,
-                outputs,
-                datum,
-                shard_policy_id,
-                mint,
-                expected_value_difference,
-                escrowed_token_unit,
-              )
-            None ->
-              validate_created_escrow_shard(
-                outputs,
-                spent_input.output.address,
-                datum,
-                shard_policy_id,
-                mint,
-                transfer_amount,
-                escrowed_token_unit,
-              )
-          },
-        }
-      } else {
-        // Native refunds/unescrows require an existing shard.
+      and {
+        preserved_module_state?,
+        registry_transition_is_authorized?,
         when matching_escrow_input is {
-          Some(escrow_input) -> and {
-              preserved_module_state?,
-              validate_matching_escrow_input_update(
-                escrow_input,
-                outputs,
-                datum,
-                shard_policy_id,
-                mint,
-                expected_value_difference,
-                escrowed_token_unit,
-              )?,
-            }
-          None -> False
-        }
+          Some(escrow_input) ->
+            validate_matching_escrow_input_update(
+              escrow_input,
+              outputs,
+              datum,
+              shard_policy_id,
+              mint,
+              expected_value_difference,
+              escrowed_token_unit,
+            )
+          // Only a positive native send may create a previously absent shard.
+          None ->
+            transfer_amount > 0 && validate_created_escrow_shard(
+              outputs,
+              spent_input.output.address,
+              datum,
+              shard_policy_id,
+              mint,
+              transfer_amount,
+              escrowed_token_unit,
+            )
+        },
       }
     }
     EscrowShard { .. } ->

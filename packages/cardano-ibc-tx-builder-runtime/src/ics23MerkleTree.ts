@@ -92,8 +92,17 @@ export class ICS23MerkleTree {
       () => new Map<bigint, Buffer>(),
     );
 
+    const indexToKey = new Map<bigint, string>();
     for (const [key, value] of this.leaves.entries()) {
-      nodesByHeight[0].set(keyIndex64(key), leafHash(key, value));
+      const index = keyIndex64(key);
+      const previousKey = indexToKey.get(index);
+      if (previousKey && previousKey !== key) {
+        throw new Error(
+          `Merkle path collision between '${previousKey}' and '${key}'`,
+        );
+      }
+      indexToKey.set(index, key);
+      nodesByHeight[0].set(index, leafHash(key, value));
     }
 
     for (let height = 0; height < MERKLE_DEPTH_BITS; height += 1) {

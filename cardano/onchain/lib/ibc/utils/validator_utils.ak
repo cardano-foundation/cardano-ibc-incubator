@@ -9,8 +9,7 @@ use cardano/assets.{
   AssetName, PolicyId, Value, ada_asset_name, ada_policy_id, quantity_of, tokens,
 }
 use cardano/transaction.{
-  InlineDatum, Input, NoDatum, Output, Redeemer, ScriptPurpose, Spend,
-  ValidityRange,
+  InlineDatum, Input, Output, Redeemer, ScriptPurpose, Spend, ValidityRange,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{ClientDatum}
@@ -234,7 +233,7 @@ fn registered_module_state_is_exact(
   expect Script(script_hash) = output.address.payment_credential
   and {
     script_hash == registration.module_script_hash,
-    output.datum == NoDatum,
+    // Module datum contents belong to the registered application validator.
     auth.contains_only_auth_tokens(
       output,
       [registration.port_token, registration.module_token],
