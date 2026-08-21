@@ -91,17 +91,6 @@ export function initTreeServices(kupoService: any, lucidService: any): void {
   cachedLucidService = lucidService;
 }
 
-/**
- * Serialize a value to Buffer for tree storage
- */
-function serializeValue(value: any): Buffer {
-  if (Buffer.isBuffer(value)) return value;
-  const json = JSON.stringify(value, (key, val) => 
-    typeof val === 'bigint' ? val.toString() : val
-  );
-  return Buffer.from(json, 'utf8');
-}
-
 export interface CreateClientStateRootResult extends StateRootResult {
   clientStateSiblings: string[];
   consensusStateSiblings: string[];
@@ -239,62 +228,6 @@ export function isTreeAligned(onChainRoot: string): boolean {
     return currentTree.getRoot() === onChainRoot;
   }
   return currentTree.getRoot() === onChainRoot;
-}
-
-/**
- * Computes the new IBC state root after adding/updating client state
- * 
- * SIDE-EFFECT FREE: Does not mutate the canonical tree.
- * Call result.commit() only after the transaction is confirmed.
- * 
- * @param oldRoot - Current IBC state root (64-character hex string)
- * @param clientId - Client identifier being created/updated
- * @param clientState - New client state value
- * @param consensusState - Optional consensus state to add (required for CreateClient)
- * @param consensusHeight - Height key for the consensus state (e.g., "123" or the revisionHeight)
- * @returns StateRootResult with newRoot and commit function
- */
-export function computeRootWithClientUpdate(
-  oldRoot: string,
-  clientId: string,
-  clientState: any,
-  consensusState?: any,
-  consensusHeight?: string | number | bigint,
-): StateRootResult {
-  // Get a CLONED tree (safe to mutate)
-  const speculativeTree = getClonedTreeFromRoot(oldRoot);
-  
-  // IBC path for client state: clients/{clientId}/clientState
-  // This stores the overall client configuration (chain ID, trust level, latest height, etc.)
-  const clientPath = `clients/${clientId}/clientState`;
-  const clientValue = serializeValue(clientState);
-  speculativeTree.set(clientPath, clientValue);
-  
-  // If a consensus state is provided, also add it to the tree.
-  // Consensus states are snapshots of the counterparty chain at specific heights.
-  // They're used for proof verification - when verifying a packet commitment,
-  // we need the consensus state at the height the commitment was made.
-  //
-  // IBC path: clients/{clientId}/consensusStates/{height}
-  if (consensusState && consensusHeight !== undefined) {
-    const heightStr = String(consensusHeight);
-    const consensusPath = `clients/${clientId}/consensusStates/${heightStr}`;
-    const consensusValue = serializeValue(consensusState);
-    speculativeTree.set(consensusPath, consensusValue);
-    console.log(`Added consensus state for ${clientId} at height ${heightStr}`);
-  }
-  
-  // Compute new root
-  const newRoot = speculativeTree.getRoot();
-  
-  return {
-    newRoot,
-    commit: () => {
-      // Only called after tx confirmation - update canonical tree
-      currentTree = speculativeTree;
-      console.log(`Committed client update: ${clientId}, new root: ${newRoot.substring(0, 16)}...`);
-    },
-  };
 }
 
 /**
@@ -765,75 +698,6 @@ export function computeRootWithPrunePacketHistoryUpdate(
       console.log(
         `Committed PrunePacketHistory: ${portId}/${channelId}/${sequenceText}, new root: ${newRoot.substring(0, 16)}...`,
       );
-    },
-  };
-}
-
-/**
- * Computes the new IBC state root after adding/updating connection state
- * 
- * SIDE-EFFECT FREE: Does not mutate the canonical tree.
- * Call result.commit() only after the transaction is confirmed.
- */
-export function computeRootWithConnectionUpdate(
-  oldRoot: string,
-  connectionId: string,
-  connectionState: any,
-): StateRootResult {
-  // Get a CLONED tree (safe to mutate)
-  const speculativeTree = getClonedTreeFromRoot(oldRoot);
-  
-  // IBC path for connection state: connections/{connectionId}
-  const path = `connections/${connectionId}`;
-  
-  // Serialize and store the connection state in the SPECULATIVE tree
-  const value = serializeValue(connectionState);
-  speculativeTree.set(path, value);
-  
-  // Compute new root
-  const newRoot = speculativeTree.getRoot();
-  
-  return {
-    newRoot,
-    commit: () => {
-      currentTree = speculativeTree;
-      console.log(`Committed connection update: ${connectionId}, new root: ${newRoot.substring(0, 16)}...`);
-    },
-  };
-}
-
-/**
- * Computes the new IBC state root after adding/updating channel state
- * 
- * SIDE-EFFECT FREE: Does not mutate the canonical tree.
- * Call result.commit() only after the transaction is confirmed.
- */
-export function computeRootWithChannelUpdate(
-  oldRoot: string,
-  channelId: string,
-  channelState: any,
-): StateRootResult {
-  // Get a CLONED tree (safe to mutate)
-  const speculativeTree = getClonedTreeFromRoot(oldRoot);
-  
-  // Extract portId from channel state (default to 'transfer' if not provided)
-  const portId = channelState?.port_id || 'transfer';
-  
-  // IBC path for channel state: channelEnds/ports/{portId}/channels/{channelId}
-  const path = `channelEnds/ports/${portId}/channels/${channelId}`;
-  
-  // Serialize and store the channel state in the SPECULATIVE tree
-  const value = serializeValue(channelState);
-  speculativeTree.set(path, value);
-  
-  // Compute new root
-  const newRoot = speculativeTree.getRoot();
-  
-  return {
-    newRoot,
-    commit: () => {
-      currentTree = speculativeTree;
-      console.log(`Committed channel update: ${portId}/${channelId}, new root: ${newRoot.substring(0, 16)}...`);
     },
   };
 }
