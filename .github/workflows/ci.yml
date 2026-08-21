@@ -860,6 +860,10 @@ jobs:
             -m 'ibc/core/ics_004/channel_datum_test/validate_recv_packet.{succeed_at_packet_history_capacity}' \
             -m 'host_state_stt.{host_state_handle_packet_recv_succeeds_at_history_capacity}' \
             -m 'host_state_stt.{host_state_handle_packet_acknowledgement_succeeds_at_history_capacity}' \
+            -m 'spending_channel.{prune_packet_history_succeed}' \
+            -m 'spending_channel/prune_packet_history.{prune_packet_history_succeeds_at_capacity_boundary}' \
+            -m 'host_state_stt.{host_state_prune_packet_history_succeeds_at_full_packet_history_capacity}' \
+            -m 'verifying_proof.{verify_non_membership_succeed}' \
             -m 'spending_channel.{acknowledge_packet_succeed}' \
             -m 'spending_channel/acknowledge_packet.{succeed_acknowledge_packet}' \
             -m 'spending_transfer_module.{on_acknowledgement_packet_result_succeed}' \

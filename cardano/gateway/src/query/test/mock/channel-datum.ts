@@ -10,6 +10,8 @@ const channelDatumMock = {
     next_sequence_send: 1n,
     next_sequence_recv: 1n,
     next_sequence_ack: 1n,
+    minimum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
+    maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
     packet_commitment: new Map([[1n, '9a888e6fcbf89e9a0c461a84f448f5efb68791db772fd6426b48d34f7288b5fd']]),
     packet_receipt: new Map([
       [0n, ''],

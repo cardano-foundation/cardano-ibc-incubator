@@ -8,6 +8,14 @@ type ChannelStateLike = {
   packet_commitment: Map<bigint, string>;
   packet_receipt: Map<bigint, string>;
   packet_acknowledgement: Map<bigint, string>;
+  minimum_receive_proof_height: {
+    revisionNumber: bigint;
+    revisionHeight: bigint;
+  };
+  maximum_receive_proof_height: {
+    revisionNumber: bigint;
+    revisionHeight: bigint;
+  };
 };
 
 type ChannelDatumLike = {

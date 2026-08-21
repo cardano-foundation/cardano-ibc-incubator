@@ -5,7 +5,8 @@ use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{
   AcknowledgePacket, ChanCloseConfirm, ChanCloseInit, ChanOpenAck,
-  ChanOpenConfirm, RecvPacket, SendPacket, SpendChannelRedeemer, TimeoutPacket,
+  ChanOpenConfirm, PrunePacketHistory, RecvPacket, SendPacket,
+  SpendChannelRedeemer, TimeoutPacket,
 }
 use ibc/utils/validator_utils
 
@@ -18,6 +19,7 @@ validator spend_channel(
   send_packet_policy_id: PolicyId,
   timeout_packet_policy_id: PolicyId,
   acknowledge_packet_policy_id: PolicyId,
+  prune_packet_history_policy_id: PolicyId,
   host_state_nft_policy_id: PolicyId,
 ) {
   spend(
@@ -110,6 +112,16 @@ validator spend_channel(
           datum.token,
           host_state_nft_policy_id,
           acknowledge_packet_policy_id,
+          validator_utils.ExpectHandlePacket,
+          True,
+        )
+      PrunePacketHistory { .. } ->
+        validate_operation_witness(
+          transaction,
+          spent_output,
+          datum.token,
+          host_state_nft_policy_id,
+          prune_packet_history_policy_id,
           validator_utils.ExpectHandlePacket,
           True,
         )

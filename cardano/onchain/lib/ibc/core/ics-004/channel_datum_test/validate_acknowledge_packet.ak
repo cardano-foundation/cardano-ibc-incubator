@@ -42,6 +42,8 @@ fn setup_unordered() -> (ChannelDatum, ChannelDatum, Packet) {
   let input_channel_datum =
     ChannelDatum {
       state: ChannelDatumState {
+        maximum_receive_proof_height: height_mod.zero_height(),
+        minimum_receive_proof_height: height_mod.zero_height(),
         channel: input_channel,
         next_sequence_send: packet.sequence + 1,
         next_sequence_recv: 1,

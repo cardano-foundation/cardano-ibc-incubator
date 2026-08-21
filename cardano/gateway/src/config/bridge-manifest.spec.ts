@@ -39,6 +39,7 @@ function buildHandlerJsonDeployment() {
           chan_open_ack: { scriptHash: 'open-ack-hash', refUtxo: { txHash: 'open-ack-tx', outputIndex: 5 } },
           chan_open_confirm: { scriptHash: 'open-confirm-hash', refUtxo: { txHash: 'open-confirm-tx', outputIndex: 6 } },
           recv_packet: { scriptHash: 'recv-hash', refUtxo: { txHash: 'recv-tx', outputIndex: 7 } },
+          prune_packet_history: { scriptHash: 'prune-hash', refUtxo: { txHash: 'prune-tx', outputIndex: 10 } },
           send_packet: { scriptHash: 'send-hash', refUtxo: { txHash: 'send-tx', outputIndex: 8 } },
           timeout_packet: { scriptHash: 'timeout-hash', refUtxo: { txHash: 'timeout-tx', outputIndex: 9 } },
         },
@@ -87,7 +88,7 @@ describe('bridge manifest normalization', () => {
     });
 
     expect(loaded.bridgeManifest).toMatchObject({
-      schema_version: 3,
+      schema_version: 4,
       deployment_id: 'cardano-devnet:host-policy.host-token',
       deployed_at: '2026-04-01T12:34:56.000Z',
       cardano: {
@@ -114,6 +115,10 @@ describe('bridge manifest normalization', () => {
         tx_hash: 'open-ack-tx',
         output_index: 5,
       },
+    });
+    expect(loaded.bridgeManifest.validators.spend_channel.ref_validator.prune_packet_history).toEqual({
+      script_hash: 'prune-hash',
+      ref_utxo: { tx_hash: 'prune-tx', output_index: 10 },
     });
     expect(loaded.bridgeManifest.trace_registry).toEqual({
       address: 'trace-registry-address',
@@ -164,7 +169,7 @@ describe('bridge manifest normalization', () => {
     );
   });
 
-  it('rejects bridge manifests with the old schema version', () => {
+  it('rejects bridge manifests with an old schema version', () => {
     const legacy = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
       chain_id: 'cardano-devnet',
       network_magic: 42,
@@ -174,9 +179,9 @@ describe('bridge manifest normalization', () => {
     expect(() =>
       normalizeBridgeManifestConfig({
         ...legacy.bridgeManifest,
-        schema_version: 1,
+        schema_version: 3,
       }),
-    ).toThrow('Invalid bridge config: "schema_version" must be 2 or 3');
+    ).toThrow('Invalid bridge config: "schema_version" must be 4');
   });
 
   it('accepts legacy voucher_metadata validator payloads and normalizes them to address-only', () => {
@@ -188,7 +193,7 @@ describe('bridge manifest normalization', () => {
 
     const legacyManifest = {
       ...current.bridgeManifest,
-      schema_version: 2,
+      schema_version: 4,
       validators: {
         ...current.bridgeManifest.validators,
         voucher_metadata: {

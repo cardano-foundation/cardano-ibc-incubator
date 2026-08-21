@@ -11,7 +11,14 @@ import {
   MsgTransfer,
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/tx';
 import { FungibleTokenPacketDatum } from '@shared/types/apps/transfer/types/fungible-token-packet-data';
-import { AckPacketOperator, RecvPacketOperator, SendPacketOperator, TimeoutPacketOperator } from '../dto';
+import {
+  AckPacketOperator,
+  PrunePacketHistoryOperator,
+  RecvPacketOperator,
+  SendPacketOperator,
+  TimeoutPacketOperator,
+} from '../dto';
+import { MsgPrunePacketHistory } from '@cardano-ibc/proto-types/build/ibc/cardano/v1/tx';
 import { isSupportedGatewayPortId } from '@shared/helpers/module-port';
 import { ChannelDatum } from '@shared/types/channel/channel-datum';
 import { Order } from '@shared/types/channel/order';
@@ -93,6 +100,52 @@ export function validateAndFormatRecvPacketParams(data: MsgRecvPacket): {
     timeoutTimestamp: BigInt(data.packet?.timeout_timestamp),
   };
   return { constructedAddress, recvPacketOperator };
+}
+
+export function validateAndFormatPrunePacketHistoryParams(
+  data: MsgPrunePacketHistory,
+): PrunePacketHistoryOperator {
+  if (!data.signer) {
+    throw new GrpcInvalidArgumentException('Invalid argument: "signer" is required');
+  }
+  if (!data.port_id) {
+    throw new GrpcInvalidArgumentException('Invalid argument: "port_id" is required');
+  }
+  if (!data.channel_id?.startsWith(`${CHANNEL_ID_PREFIX}-`)) {
+    throw new GrpcInvalidArgumentException(
+      `Invalid argument: "channel_id". Please use the prefix "${CHANNEL_ID_PREFIX}-"`,
+    );
+  }
+
+  let sequence: bigint;
+  let proofHeight: { revisionNumber: bigint; revisionHeight: bigint };
+  try {
+    sequence = BigInt(data.sequence);
+    proofHeight = {
+      revisionNumber: BigInt(data.proof_height?.revision_number ?? 0),
+      revisionHeight: BigInt(data.proof_height?.revision_height ?? 0),
+    };
+  } catch {
+    throw new GrpcInvalidArgumentException('Invalid prune sequence or proof height');
+  }
+  if (sequence <= 0n) {
+    throw new GrpcInvalidArgumentException('Invalid argument: "sequence" must be positive');
+  }
+  if (proofHeight.revisionHeight <= 0n) {
+    throw new GrpcInvalidArgumentException('Invalid argument: "proof_height.revision_height" must be positive');
+  }
+  if (!data.proof_commitment_absence?.length) {
+    throw new GrpcInvalidArgumentException('Invalid argument: "proof_commitment_absence" is required');
+  }
+
+  return {
+    signer: data.signer,
+    portId: data.port_id,
+    channelId: data.channel_id,
+    sequence,
+    proofHeight,
+    proofCommitmentAbsence: initializeMerkleProof(decodeMerkleProof(data.proof_commitment_absence)),
+  };
 }
 
 export function validateAndFormatSendPacketParams(data: MsgTransfer): SendPacketOperator {

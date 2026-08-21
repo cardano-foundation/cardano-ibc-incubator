@@ -1,5 +1,9 @@
 import * as Lucid from '@lucid-evolution/lucid';
-import { encodeMintChannelRedeemer, encodeSpendChannelRedeemer } from './channel/channel-redeemer';
+import {
+  decodeSpendChannelRedeemer,
+  encodeMintChannelRedeemer,
+  encodeSpendChannelRedeemer,
+} from './channel/channel-redeemer';
 import { encodeMintConnectionRedeemer, encodeSpendConnectionRedeemer } from './connection/connection-redeemer';
 import { encodeVerifyProofRedeemer } from './connection/verify-proof-redeemer';
 import {
@@ -55,6 +59,21 @@ describe('Redeemer encoding regression', () => {
     );
 
     expect(encoded).toBe('d87d84d8798803487472616e73666572496368616e6e656c2d30487472616e73666572496368616e6e656c2d31427b7dd8798200186300426f6bd8798180d87982000b');
+  });
+
+  it('appends PrunePacketHistory after all existing SpendChannel constructors', async () => {
+    const redeemer = {
+      PrunePacketHistory: {
+        sequence: 3n,
+        proof_commitment_absence: EMPTY_PROOF as any,
+        proof_height: HEIGHT,
+      },
+    } as const;
+
+    const encoded = await encodeSpendChannelRedeemer(redeemer, Lucid);
+
+    expect(encoded).toBe('d905018303d8798180d87982000b');
+    expect(decodeSpendChannelRedeemer(encoded, Lucid)).toEqual(redeemer);
   });
 
   it('keeps MintConnection redeemer encoding stable', async () => {

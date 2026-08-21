@@ -24,6 +24,7 @@
     "fuzz.contract.host.handle_packet.valid_send",
     "fuzz.contract.host.handle_packet.valid_timeout",
     "fuzz.contract.host.update_channel.invalid_packet_field_change",
+    "fuzz.contract.host.update_channel.invalid_receive_height_mutation",
     "fuzz.contract.host.update_channel.valid",
     "fuzz.contract.host.update_client.invalid_wrong_redeemer",
     "fuzz.contract.host.update_client.invalid_wrong_root",

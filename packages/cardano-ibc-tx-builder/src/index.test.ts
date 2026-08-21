@@ -55,6 +55,8 @@ function baseContext(): LoadedSendPacketContext {
         packet_commitment: new Map([[1n, 'previous']]),
         packet_receipt: new Map(),
         packet_acknowledgement: new Map(),
+        minimum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
+        maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
         channel: {
           connection_hops: ['connection-0'],
           counterparty: {

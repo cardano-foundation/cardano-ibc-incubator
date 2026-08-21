@@ -103,6 +103,8 @@ fn check_send_packet(mutation: CallbackMutation) {
   let input_channel_datum =
     ChannelDatum {
       state: ChannelDatumState {
+        maximum_receive_proof_height: height_mod.zero_height(),
+        minimum_receive_proof_height: height_mod.zero_height(),
         channel: input_channel,
         next_sequence_send: packet.sequence,
         next_sequence_recv: 1,
@@ -422,6 +424,7 @@ fn check_send_packet(mutation: CallbackMutation) {
       mock_data.send_packet_policy_id,
       mock_data.timeout_packet_policy_id,
       mock_data.acknowledge_packet_policy_id,
+      mock_data.prune_packet_history_policy_id,
       mock_data.host_state_nft_policy_id,
       Some(input_channel_datum),
       SendPacket { packet },

@@ -133,6 +133,8 @@ describe('PacketService denom regression coverage', () => {
         packet_commitment: new Map<bigint, string>(),
         packet_receipt: new Map<bigint, string>(),
         packet_acknowledgement: new Map<bigint, string>(),
+        minimum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
+        maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
       },
     };
 
@@ -773,6 +775,8 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
         packet_commitment: new Map<bigint, string>(),
         packet_receipt: new Map<bigint, string>(),
         packet_acknowledgement: new Map<bigint, string>(),
+        minimum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
+        maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
       },
     };
     const connectionDatum = {
@@ -861,5 +865,13 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
     );
     expect(lucidServiceMock.createUnsignedRecvPacketMintTx).not.toHaveBeenCalled();
     expect(lucidServiceMock.createUnsignedRecvPacketTx).not.toHaveBeenCalled();
+    const encodedChannelDatum = lucidServiceMock.encode.mock.calls.find(
+      (call: unknown[]) => call[1] === 'channel',
+    )?.[0];
+    expect(encodedChannelDatum.state.minimum_receive_proof_height).toEqual({
+      revisionNumber: 0n,
+      revisionHeight: 0n,
+    });
+    expect(encodedChannelDatum.state.maximum_receive_proof_height).toEqual(proofHeight);
   });
 });

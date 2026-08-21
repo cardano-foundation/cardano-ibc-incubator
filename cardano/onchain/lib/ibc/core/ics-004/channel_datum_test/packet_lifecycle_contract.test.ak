@@ -74,6 +74,8 @@ fn base_packet(sequence: Int) -> Packet {
 fn base_datum(ordering: Order, next_sequence_send: Int) -> ChannelDatum {
   ChannelDatum {
     state: ChannelDatumState {
+      maximum_receive_proof_height: height_mod.zero_height(),
+      minimum_receive_proof_height: height_mod.zero_height(),
       channel: channel_mod.new(
         Open,
         ordering,
@@ -387,6 +389,7 @@ fn recv_contract(
       output_datum,
       packet,
       ack,
+      height_mod.zero_height(),
     ),
   }
 }

@@ -49,6 +49,9 @@ export class BridgeManifestService {
                 manifest.validators.spend_channel.ref_validator.chan_open_confirm,
               ),
               recv_packet: this.toGrpcRefValidator(manifest.validators.spend_channel.ref_validator.recv_packet),
+              prune_packet_history: this.toGrpcRefValidator(
+                manifest.validators.spend_channel.ref_validator.prune_packet_history,
+              ),
               send_packet: this.toGrpcRefValidator(manifest.validators.spend_channel.ref_validator.send_packet),
               timeout_packet: this.toGrpcRefValidator(manifest.validators.spend_channel.ref_validator.timeout_packet),
             },

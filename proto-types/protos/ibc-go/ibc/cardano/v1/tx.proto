@@ -3,6 +3,7 @@ syntax = "proto3";
 package ibc.cardano.v1;
 
 import "google/protobuf/any.proto";
+import "ibc/core/client/v1/client.proto";
 
 option go_package = "github.com/cosmos/ibc-go/v7/modules/cardano/types";
 
@@ -12,6 +13,11 @@ service CardanoMsg {
   // BuildHostStateHeartbeat builds a HostState-only transaction when the
   // current Cardano epoch does not yet contain a HostState anchor.
   rpc BuildHostStateHeartbeat(BuildHostStateHeartbeatRequest) returns (BuildHostStateHeartbeatResponse);
+
+  // PrunePacketHistory builds a Cardano transaction which removes one
+  // finalized unordered packet receipt/acknowledgement pair. Safety is
+  // authorized by a counterparty proof that the source commitment is absent.
+  rpc PrunePacketHistory(MsgPrunePacketHistory) returns (MsgPrunePacketHistoryResponse);
 
   // SubmitSignedTx submits a signed Cardano transaction.
   rpc SubmitSignedTx(SubmitSignedTxRequest) returns (SubmitSignedTxResponse);
@@ -33,6 +39,26 @@ message BuildHostStateHeartbeatResponse {
   // Present only when heartbeat_required is true. The value contains the
   // unsigned Cardano transaction CBOR encoded as UTF-8 hex.
   google.protobuf.Any unsigned_tx = 4;
+}
+
+message MsgPrunePacketHistory {
+  // Cardano address whose UTxOs fund and sign the pruning transaction.
+  string signer = 1;
+
+  // Local Cardano channel identifiers whose retained history is pruned.
+  string port_id = 2;
+  string channel_id = 3;
+  uint64 sequence = 4;
+
+  // ICS-23 non-membership proof for the corresponding source-chain packet
+  // commitment, evaluated at proof_height.
+  bytes proof_commitment_absence = 5;
+  ibc.core.client.v1.Height proof_height = 6;
+}
+
+message MsgPrunePacketHistoryResponse {
+  // Unsigned Cardano transaction CBOR encoded as UTF-8 hex.
+  google.protobuf.Any unsigned_tx = 1;
 }
 
 // SubmitSignedTxRequest contains a signed Cardano transaction in CBOR format.

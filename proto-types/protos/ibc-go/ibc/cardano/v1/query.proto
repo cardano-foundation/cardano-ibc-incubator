@@ -104,6 +104,7 @@ message BridgeManifestSpendChannelRefValidators {
   BridgeManifestReferredValidator recv_packet = 6;
   BridgeManifestReferredValidator send_packet = 7;
   BridgeManifestReferredValidator timeout_packet = 8;
+  BridgeManifestReferredValidator prune_packet_history = 9;
 }
 
 message BridgeManifestSpendChannelValidator {

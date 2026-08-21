@@ -10,10 +10,7 @@ import {
   encodeSpendConnectionRedeemer,
 } from '@shared/types/connection/connection-redeemer';
 import { encodeVerifyProofRedeemer } from '@shared/types/connection/verify-proof-redeemer';
-import {
-  encodeTraceRegistryDatum,
-  encodeTraceRegistryRedeemer,
-} from '@shared/types/trace-registry';
+import { encodeTraceRegistryDatum, encodeTraceRegistryRedeemer } from '@shared/types/trace-registry';
 
 type BlueprintValidator = {
   title: string;
@@ -121,10 +118,7 @@ function sized(name: string, hex: string): SizedPayload {
 }
 
 function dataBytes(name: string, bytes: number): SizedPayload {
-  return sized(
-    name,
-    Lucid.Data.to(hexOfBytes(bytes) as never, Lucid.Data.Bytes(), { canonical: true }),
-  );
+  return sized(name, Lucid.Data.to(hexOfBytes(bytes) as never, Lucid.Data.Bytes(), { canonical: true }));
 }
 
 function scriptBytes(validators: Map<string, BlueprintValidator>, title: string): number {
@@ -135,10 +129,7 @@ function scriptBytes(validators: Map<string, BlueprintValidator>, title: string)
   return byteLength(validator.compiledCode);
 }
 
-function requiredAikenTestUnits(
-  aikenTests: Map<string, ExUnits>,
-  testName: string,
-): ExUnits {
+function requiredAikenTestUnits(aikenTests: Map<string, ExUnits>, testName: string): ExUnits {
   const units = aikenTests.get(testName);
   if (!units) {
     throw new Error(`Missing Aiken execution-unit fixture: ${testName}`);
@@ -158,20 +149,20 @@ function sumExUnits(aikenTests: Map<string, ExUnits>, testNames: string[]): ExUn
     );
 }
 
-function estimateUnsignedBytes(
-  validators: Map<string, BlueprintValidator>,
-  scenario: ScenarioInput,
-): number {
+function estimateUnsignedBytes(validators: Map<string, BlueprintValidator>, scenario: ScenarioInput): number {
   if (scenario.unsignedBytesOverride !== undefined) {
     return scenario.unsignedBytesOverride;
   }
 
-  const inlineScriptBytes = (scenario.inlineScriptTitles ?? [])
-    .reduce((sum, title) => sum + scriptBytes(validators, title), 0);
+  const inlineScriptBytes = (scenario.inlineScriptTitles ?? []).reduce(
+    (sum, title) => sum + scriptBytes(validators, title),
+    0,
+  );
   const redeemerBytes = scenario.redeemers.reduce((sum, payload) => sum + payload.bytes, 0);
   const datumBytes = scenario.datums.reduce((sum, payload) => sum + payload.bytes, 0);
 
-  return TX_BASE_BYTES +
+  return (
+    TX_BASE_BYTES +
     scenario.inputCount * TX_INPUT_BYTES +
     scenario.outputCount * TX_OUTPUT_BYTES +
     scenario.mintPolicyCount * TX_MINT_POLICY_BYTES +
@@ -179,7 +170,8 @@ function estimateUnsignedBytes(
     inlineScriptBytes +
     redeemerBytes +
     datumBytes +
-    (scenario.extraBytes ?? 0);
+    (scenario.extraBytes ?? 0)
+  );
 }
 
 function toAikenTestMap(report: AikenCheckReport): Map<string, ExUnits> {
@@ -382,7 +374,7 @@ function traceDirectoryDatum(archivedCount: number): string {
             bucket_index: 7n,
             active_shard_name: hexOfBytes(32, '66'),
             archived_shard_names: Array.from({ length: archivedCount }, (_, index) =>
-              hexOfBytes(32, (80 + index).toString(16).padStart(2, '0'))
+              hexOfBytes(32, (80 + index).toString(16).padStart(2, '0')),
             ),
           },
         ],
@@ -410,6 +402,7 @@ async function buildScenarios(
     'trace_registry.spend_trace_registry.spend',
     'spending_channel/acknowledge_packet.acknowledge_packet.mint',
     'spending_channel/chan_open_ack.chan_open_ack.mint',
+    'spending_channel/prune_packet_history.prune_packet_history.mint',
     'spending_channel/recv_packet.recv_packet.mint',
     'spending_channel/send_packet.send_packet.spend',
     'spending_channel/timeout_packet.timeout_packet.mint',
@@ -429,8 +422,7 @@ async function buildScenarios(
       datums: [dataBytes('reference datum', 0)],
       largestProofPayloadBytes: 0,
       aikenTests: [],
-      unsignedBytesOverride: largestReferenceScript.bytes +
-        REFERENCE_SCRIPT_OUTPUT_OVERHEAD_BYTES,
+      unsignedBytesOverride: largestReferenceScript.bytes + REFERENCE_SCRIPT_OUTPUT_OVERHEAD_BYTES,
     },
     {
       name: 'BindPort at global cap',
@@ -486,10 +478,7 @@ async function buildScenarios(
         sized('verify proof', verifyProofRedeemer(1024)),
         dataBytes('host state redeemer', 512),
       ],
-      datums: [
-        dataBytes('updated host state datum', 1000),
-        dataBytes('connection datum', 768),
-      ],
+      datums: [dataBytes('updated host state datum', 1000), dataBytes('connection datum', 768)],
       largestProofPayloadBytes: 1024,
       aikenTests: [
         'ibc/core/ics_003_connection_semantics/connection_datum.test.test_is_conn_open_try_valid_succeed',
@@ -511,10 +500,7 @@ async function buildScenarios(
         sized('verify proof', verifyProofRedeemer(1536)),
         dataBytes('host state redeemer', 512),
       ],
-      datums: [
-        dataBytes('updated host state datum', 1000),
-        dataBytes('connection datum', 768),
-      ],
+      datums: [dataBytes('updated host state datum', 1000), dataBytes('connection datum', 768)],
       largestProofPayloadBytes: 1536,
       aikenTests: ['spending_connection.test.conn_open_ack_succeed'],
     },
@@ -586,10 +572,7 @@ async function buildScenarios(
         // carries a 64-level sparse-Merkle witness at the configured boundary.
         dataBytes('host state redeemer', 4_600),
       ],
-      datums: [
-        dataBytes('updated host state datum', 1000),
-        dataBytes('updated channel datum', 2_800),
-      ],
+      datums: [dataBytes('updated host state datum', 1000), dataBytes('updated channel datum', 2_800)],
       largestProofPayloadBytes: 1536,
       aikenTests: [
         'spending_channel.test.recv_packet_succeed',
@@ -597,6 +580,52 @@ async function buildScenarios(
         'ibc/core/ics_004/channel_datum_test/validate_recv_packet.succeed_at_packet_history_capacity',
         'host_state_stt.test.host_state_handle_packet_recv_succeeds_at_history_capacity',
         'host_state_stt.test.host_state_handle_packet_acknowledgement_succeeds_at_history_capacity',
+      ],
+    },
+    {
+      name: 'PrunePacketHistory at history capacity',
+      // Two spending inputs plus the referenced connection and client UTxOs.
+      inputCount: 4,
+      outputCount: 2,
+      mintPolicyCount: 2,
+      referenceScriptTitles: [
+        'host_state_stt.host_state_stt.spend',
+        'spending_channel.spend_channel.spend',
+        'spending_channel/prune_packet_history.prune_packet_history.mint',
+        'verifying_proof.verify_proof.mint',
+      ],
+      redeemers: [
+        sized(
+          'spend channel PrunePacketHistory',
+          await encodeSpendChannelRedeemer(
+            {
+              PrunePacketHistory: {
+                sequence: PACKET.sequence,
+                proof_commitment_absence: proofPayload(1536) as never,
+                proof_height: HEIGHT,
+              },
+            },
+            Lucid,
+          ),
+        ),
+        dataBytes('prune packet-history marker', 80),
+        // The membership-shaped fixture is deliberately at least as large as
+        // the corresponding non-membership witness carried by this path.
+        sized('verify non-membership proof', verifyProofRedeemer(1536)),
+        // Pruning deletes receipt then acknowledgement, so HostState carries
+        // two complete 64-level sparse-Merkle witnesses.
+        dataBytes('host state HandlePacket redeemer', 4_600),
+      ],
+      datums: [
+        dataBytes('updated host state datum', 1000),
+        dataBytes('updated channel datum at history capacity', 2_800),
+      ],
+      largestProofPayloadBytes: 1536,
+      aikenTests: [
+        'spending_channel.test.prune_packet_history_succeed',
+        'spending_channel/prune_packet_history.test.prune_packet_history_succeeds_at_capacity_boundary',
+        'host_state_stt.test.host_state_prune_packet_history_succeeds_at_full_packet_history_capacity',
+        'verifying_proof.test.verify_non_membership_succeed',
       ],
     },
     {
@@ -630,10 +659,7 @@ async function buildScenarios(
         sized('refund voucher', voucherRedeemer('RefundVoucher')),
         dataBytes('host state redeemer', 512),
       ],
-      datums: [
-        dataBytes('updated host state datum', 1000),
-        dataBytes('updated channel datum', 700),
-      ],
+      datums: [dataBytes('updated host state datum', 1000), dataBytes('updated channel datum', 700)],
       largestProofPayloadBytes: 1536,
       aikenTests: [
         'spending_channel.test.acknowledge_packet_succeed',
@@ -673,10 +699,7 @@ async function buildScenarios(
         sized('refund voucher', voucherRedeemer('RefundVoucher')),
         dataBytes('host state redeemer', 512),
       ],
-      datums: [
-        dataBytes('updated host state datum', 1000),
-        dataBytes('updated channel datum', 700),
-      ],
+      datums: [dataBytes('updated host state datum', 1000), dataBytes('updated channel datum', 700)],
       largestProofPayloadBytes: 1536,
       aikenTests: [
         'spending_channel.test.timeout_packet_succeed',
@@ -706,9 +729,7 @@ async function buildScenarios(
       ],
       datums: [sized('updated shard datum', traceShardDatum(72))],
       largestProofPayloadBytes: 0,
-      aikenTests: [
-        'trace_registry.test.trace_registry_insert_trace_succeeds_with_matching_voucher_mint',
-      ],
+      aikenTests: ['trace_registry.test.trace_registry_insert_trace_succeeds_with_matching_voucher_mint'],
     },
     {
       name: 'Trace registry rollover',
@@ -766,10 +787,7 @@ async function buildScenarios(
       inputCount: 3,
       outputCount: 4,
       mintPolicyCount: 2,
-      referenceScriptTitles: [
-        'minting_voucher.mint_voucher.mint',
-        'trace_registry.spend_trace_registry.spend',
-      ],
+      referenceScriptTitles: ['minting_voucher.mint_voucher.mint', 'trace_registry.spend_trace_registry.spend'],
       redeemers: [
         sized('mint voucher', voucherRedeemer('MintVoucher')),
         sized(
@@ -785,10 +803,7 @@ async function buildScenarios(
           ),
         ),
       ],
-      datums: [
-        sized('updated shard datum', traceShardDatum(72)),
-        dataBytes('CIP-68 voucher metadata datum', 900),
-      ],
+      datums: [sized('updated shard datum', traceShardDatum(72)), dataBytes('CIP-68 voucher metadata datum', 900)],
       largestProofPayloadBytes: 0,
       aikenTests: [
         'minting_voucher.test.test_mint_voucher',
@@ -847,14 +862,12 @@ function checkBudgets(
 ): string[] {
   const failures: string[] = [];
   const safeTxSize = maxTxSize - txHeadroomBytes;
-  const safeMem = Math.floor(maxTxExMem * (10_000 - exUnitHeadroomBps) / 10_000);
-  const safeSteps = Math.floor(maxTxExSteps * (10_000 - exUnitHeadroomBps) / 10_000);
+  const safeMem = Math.floor((maxTxExMem * (10_000 - exUnitHeadroomBps)) / 10_000);
+  const safeSteps = Math.floor((maxTxExSteps * (10_000 - exUnitHeadroomBps)) / 10_000);
 
   for (const report of reports) {
     if (report.unsignedBytes > safeTxSize) {
-      failures.push(
-        `${report.name}: unsigned bytes ${report.unsignedBytes} exceed safe budget ${safeTxSize}`,
-      );
+      failures.push(`${report.name}: unsigned bytes ${report.unsignedBytes} exceed safe budget ${safeTxSize}`);
     }
     if (report.signedBytesEstimate > safeTxSize) {
       failures.push(
@@ -878,29 +891,18 @@ async function main() {
   const maxTxExMem = readIntegerEnv('CARDANO_TX_BUDGET_MAX_TX_EX_MEM', DEFAULT_MAX_TX_EX_MEM);
   const maxTxExSteps = readIntegerEnv('CARDANO_TX_BUDGET_MAX_TX_EX_STEPS', DEFAULT_MAX_TX_EX_STEPS);
   const exUnitHeadroomBps = readIntegerEnv('CARDANO_TX_BUDGET_EX_UNIT_HEADROOM_BPS', DEFAULT_EX_UNIT_HEADROOM_BPS);
-  const blueprintPath = process.env.CARDANO_TX_BUDGET_BLUEPRINT ||
-    path.join(repoRoot, 'cardano/onchain/plutus.json');
-  const aikenCheckJsonPath = process.env.CARDANO_TX_BUDGET_AIKEN_CHECK_JSON ||
-    path.join(repoRoot, 'aiken-check.json');
+  const blueprintPath = process.env.CARDANO_TX_BUDGET_BLUEPRINT || path.join(repoRoot, 'cardano/onchain/plutus.json');
+  const aikenCheckJsonPath = process.env.CARDANO_TX_BUDGET_AIKEN_CHECK_JSON || path.join(repoRoot, 'aiken-check.json');
 
   const blueprint = readJson<Blueprint>(blueprintPath);
-  const validators = new Map(
-    blueprint.validators.map((validator) => [validator.title, validator]),
-  );
+  const validators = new Map(blueprint.validators.map((validator) => [validator.title, validator]));
   const aikenCheckReport = readJson<AikenCheckReport>(aikenCheckJsonPath);
   const aikenTests = toAikenTestMap(aikenCheckReport);
   const reports = await buildScenarios(validators, aikenTests);
 
   printReport(reports, maxTxSize);
 
-  const failures = checkBudgets(
-    reports,
-    maxTxSize,
-    txHeadroomBytes,
-    maxTxExMem,
-    maxTxExSteps,
-    exUnitHeadroomBps,
-  );
+  const failures = checkBudgets(reports, maxTxSize, txHeadroomBytes, maxTxExMem, maxTxExSteps, exUnitHeadroomBps);
 
   if (failures.length > 0) {
     console.error('\nTransaction budget check failed:');
@@ -916,6 +918,6 @@ async function main() {
 }
 
 void main().catch((error) => {
-  console.error(error instanceof Error ? error.stack ?? error.message : error);
+  console.error(error instanceof Error ? (error.stack ?? error.message) : error);
   process.exit(1);
 });

@@ -1,6 +1,8 @@
 import { AuthToken } from '../auth-token';
 import { Data } from '@lucid-evolution/lucid';
 import { Channel } from './channel';
+import { Height } from '../height';
+import { createHeightSchema } from '../schema-fragments';
 export type ChannelDatumState = {
   channel: Channel;
   next_sequence_send: bigint;
@@ -9,6 +11,8 @@ export type ChannelDatumState = {
   packet_commitment: Map<bigint, string>;
   packet_receipt: Map<bigint, string>;
   packet_acknowledgement: Map<bigint, string>;
+  minimum_receive_proof_height: Height;
+  maximum_receive_proof_height: Height;
 };
 
 export type ChannelDatum = {
@@ -91,6 +95,8 @@ export async function encodeChannelDatum(channelDatum: ChannelDatum, Lucid: type
       packet_commitment: Data.Map(Data.Integer(), Data.Bytes()),
       packet_receipt: Data.Map(Data.Integer(), Data.Bytes()),
       packet_acknowledgement: Data.Map(Data.Integer(), Data.Bytes()),
+      minimum_receive_proof_height: createHeightSchema(Data),
+      maximum_receive_proof_height: createHeightSchema(Data),
     });
     const AuthTokenSchema = Data.Object({
       policyId: Data.Bytes(),
@@ -172,6 +178,14 @@ export async function encodeChannelDatum(channelDatum: ChannelDatum, Lucid: type
     mapData(channelDatum.state.packet_commitment),
     mapData(channelDatum.state.packet_receipt),
     mapData(channelDatum.state.packet_acknowledgement),
+    constrData(0, [
+      intData(channelDatum.state.minimum_receive_proof_height.revisionNumber),
+      intData(channelDatum.state.minimum_receive_proof_height.revisionHeight),
+    ]),
+    constrData(0, [
+      intData(channelDatum.state.maximum_receive_proof_height.revisionNumber),
+      intData(channelDatum.state.maximum_receive_proof_height.revisionHeight),
+    ]),
   ]);
 
   const tokenData = constrData(0, [bytesData(channelDatum.token.policyId), bytesData(channelDatum.token.name)]);
@@ -210,6 +224,8 @@ export async function decodeChannelDatum(channelDatum: string, Lucid: typeof imp
     packet_commitment: Data.Map(Data.Integer(), Data.Bytes()),
     packet_receipt: Data.Map(Data.Integer(), Data.Bytes()),
     packet_acknowledgement: Data.Map(Data.Integer(), Data.Bytes()),
+    minimum_receive_proof_height: createHeightSchema(Data),
+    maximum_receive_proof_height: createHeightSchema(Data),
   });
   const AuthTokenSchema = Data.Object({
     policyId: Data.Bytes(),

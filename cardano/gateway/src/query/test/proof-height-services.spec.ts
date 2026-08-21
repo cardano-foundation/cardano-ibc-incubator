@@ -95,6 +95,8 @@ function makeChannelDatum(overrides: Record<string, unknown> = {}) {
       next_sequence_send: 9n,
       next_sequence_recv: 10n,
       next_sequence_ack: 8n,
+      minimum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
+      maximum_receive_proof_height: { revisionNumber: 0n, revisionHeight: 0n },
       packet_commitment: new Map([[7n, 'commitment-bytes']]),
       packet_receipt: new Map([[7n, 'AQ==']]),
       packet_acknowledgement: new Map([[7n, 'AQ==']]),
