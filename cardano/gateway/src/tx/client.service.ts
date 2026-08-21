@@ -42,7 +42,6 @@ import {
 import { sumLovelaceFromUtxos } from './helper/helper';
 import { TRANSACTION_SET_COLLATERAL, TRANSACTION_TIME_TO_LIVE } from '~@/config/constant.config';
 import {
-  computeRootWithClientUpdate as computeRootWithClientUpdateHelper,
   computeRootWithCreateClientUpdate,
   computeRootWithUpdateClientUpdate,
   alignTreeWithChain,
@@ -108,33 +107,6 @@ export class ClientService {
         },
       ],
     };
-  }
-
-  /**
-   * Computes the new IBC state root after client update
-   *
-   * IMPORTANT: This is now side-effect free. The result contains a commit()
-   * function that should be called after tx confirmation, but for simplicity
-   * we just return the newRoot and let the next operation rebuild from chain.
-   *
-   * @param oldRoot - Current IBC state root
-   * @param clientId - Client identifier (e.g., "07-tendermint-0")
-   * @param clientState - The client state to store
-   * @param consensusState - Optional consensus state (required for CreateClient)
-   * @param consensusHeight - Height key for the consensus state
-   * @returns The new IBC state root (64-character hex string)
-   */
-  private computeRootWithClientUpdate(
-    oldRoot: string,
-    clientId: string,
-    clientState: any,
-    consensusState?: any,
-    consensusHeight?: string | number | bigint,
-  ): string {
-    const result = computeRootWithClientUpdateHelper(oldRoot, clientId, clientState, consensusState, consensusHeight);
-    // Note: Not calling result.commit() - the tree will be rebuilt from chain on next operation
-    // This is safer because it handles failed transactions automatically
-    return result.newRoot;
   }
 
   /**

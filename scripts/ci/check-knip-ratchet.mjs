@@ -49,8 +49,6 @@ const allowed = new Set([
   'gateway:src/shared/helpers/hex.ts:exports:fromText',
   'gateway:src/shared/helpers/hex.ts:exports:toHexString',
   'gateway:src/shared/helpers/hex.ts:exports:toText',
-  'gateway:src/shared/helpers/ibc-state-root.ts:exports:computeRootWithChannelUpdate',
-  'gateway:src/shared/helpers/ibc-state-root.ts:exports:computeRootWithConnectionUpdate',
   'gateway:src/shared/helpers/ibc-state-root.ts:exports:getCurrentRoot',
   'gateway:src/shared/helpers/ibc-state-root.ts:exports:resetTreeState',
   'gateway:src/shared/helpers/ibc-state-root.ts:types:BindPortStateRootResult',
