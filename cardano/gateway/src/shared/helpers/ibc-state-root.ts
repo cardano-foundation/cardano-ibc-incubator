@@ -119,7 +119,7 @@ export interface CreateChannelStateRootResult extends StateRootResult {
   nextSequenceAckSiblings: string[];
 }
 
-export interface UpdateConnectionStateRootResult extends StateRootResult {
+interface UpdateConnectionStateRootResult extends StateRootResult {
   connectionSiblings: string[];
 }
 
@@ -152,23 +152,23 @@ interface PrunePacketHistoryStateRootResult extends StateRootResult {
   packetAcknowledgementSiblings: string[];
 }
 
-export interface PruneTerminalClientStateRootResult extends StateRootResult {
+interface PruneTerminalClientStateRootResult extends StateRootResult {
   removedConsensusStateSiblings: string[][];
 }
 
-export interface ReclaimClientStateRootResult extends StateRootResult {
+interface ReclaimClientStateRootResult extends StateRootResult {
   clientStateSiblings: string[];
   consensusStateSiblings: string[];
   clientConnectionCountSiblings: string[];
 }
 
-export interface ReclaimConnectionStateRootResult extends StateRootResult {
+interface ReclaimConnectionStateRootResult extends StateRootResult {
   connectionSiblings: string[];
   clientConnectionCount: bigint;
   clientConnectionCountSiblings: string[];
 }
 
-export interface ReclaimChannelStateRootResult extends StateRootResult {
+interface ReclaimChannelStateRootResult extends StateRootResult {
   channelSiblings: string[];
   nextSequenceSendSiblings: string[];
   nextSequenceRecvSiblings: string[];

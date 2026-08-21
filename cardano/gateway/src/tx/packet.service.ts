@@ -176,12 +176,12 @@ type CachedTransferEscrowShardRegistry = {
   channelLiveCounts: Map<string, bigint>;
 };
 
-export type TransferChannelNoLiveShardsWitness = {
+type TransferChannelNoLiveShardsWitness = {
   transferModuleUtxo: UTxO;
   channelLiveEscrowShardCountSiblings: string[];
 };
 
-export type TransferEscrowShardRetirementPreparation = {
+type TransferEscrowShardRetirementPreparation = {
   transferModuleUtxo: UTxO;
   shardUtxo: UTxO;
   shardTokenUnit: string;
@@ -192,7 +192,7 @@ export type TransferEscrowShardRetirementPreparation = {
   encodedShardDatum: string;
 };
 
-export type RetireTransferEscrowShardOperator = {
+type RetireTransferEscrowShardOperator = {
   /** Canonical textual channel id (for example, channel-7). */
   channelId: string;
   /** The exact textual ICS-20 denom stored in the shard datum. */

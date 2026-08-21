@@ -18,9 +18,7 @@ use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{VerificationKeyHash}
 use cardano/assets.{PolicyId, tokens}
-use cardano/transaction.{
-  Input, OutputReference, Spend, Transaction, find_input,
-}
+use cardano/transaction.{Input, OutputReference, Spend, Transaction, find_input}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
@@ -54,12 +52,7 @@ fn validate_utxo_consumed(
 /// 3. Burning is allowed only for the typed, sealed final-reclaim transition
 validator host_state_nft(utxo_ref: OutputReference) {
   mint(redeemer: NFTRedeemer, policy_id: PolicyId, transaction: Transaction) {
-    let Transaction {
-      inputs,
-      mint,
-      redeemers,
-      ..
-    } = transaction
+    let Transaction { inputs, mint, redeemers, .. } = transaction
 
     when redeemer is {
       MintInitial -> {

@@ -30,7 +30,7 @@ export type TransferEscrowShardRegistryDependencies = {
     decodeTransferModuleDatum: (encodedDatum: string) => Promise<TransferModuleDatum>;
     createRegistryTree?: () => RegistryTree;
 };
-export type TransferEscrowShardRegistrySnapshot = {
+type TransferEscrowShardRegistrySnapshot = {
     kind: 'registry';
     transferModuleUtxo: UTxO;
     moduleDatum: TransferModuleDatum;
@@ -44,7 +44,7 @@ export type TransferEscrowShardRegistrySnapshot = {
     channelLiveCounts: Map<string, bigint>;
     retiredShardUnits: Set<string>;
 };
-export type TransferEscrowShardRetirementPreparation = {
+type TransferEscrowShardRetirementPreparation = {
     transferModuleUtxo: UTxO;
     shardUtxo: UTxO;
     shardTokenUnit: string;

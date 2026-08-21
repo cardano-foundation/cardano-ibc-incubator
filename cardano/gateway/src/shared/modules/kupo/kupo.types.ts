@@ -5,7 +5,7 @@ export type KupoHistoryPoint = {
   headerHash: string;
 };
 
-export type CanonicalAuthToken = {
+type CanonicalAuthToken = {
   policyId: string;
   name: string;
   unit: string;

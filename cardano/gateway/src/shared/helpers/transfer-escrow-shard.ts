@@ -4,9 +4,8 @@ import { Data } from '@lucid-evolution/lucid';
 const TRANSFER_ESCROW_SHARD_DOMAIN = 'cardano-ibc/transfer-escrow-shard/v1';
 const TRANSFER_ESCROW_SHARD_REGISTRY_PREFIX = 'escrowShards/';
 const TRANSFER_ESCROW_SHARD_CHANNEL_COUNT_PREFIX = 'escrowShardCounts/';
-export const TRANSFER_ESCROW_SHARD_LIVE_VALUE = Buffer.from([1]);
 export const TRANSFER_ESCROW_SHARD_RETIRED_VALUE = Buffer.from([2]);
-export const TRANSFER_ESCROW_SHARD_REGISTERED_VALUE = TRANSFER_ESCROW_SHARD_LIVE_VALUE;
+export const TRANSFER_ESCROW_SHARD_REGISTERED_VALUE = Buffer.from([1]);
 
 const UINT32_MAX = 0xffff_ffff;
 

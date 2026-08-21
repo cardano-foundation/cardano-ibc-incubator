@@ -48,7 +48,7 @@ export type TransferEscrowShardRegistryDependencies = {
   createRegistryTree?: () => RegistryTree;
 };
 
-export type TransferEscrowShardRegistrySnapshot = {
+type TransferEscrowShardRegistrySnapshot = {
   kind: 'registry';
   transferModuleUtxo: UTxO;
   moduleDatum: TransferModuleDatum;
@@ -62,7 +62,7 @@ export type TransferEscrowShardRegistrySnapshot = {
   retiredShardUnits: Set<string>;
 };
 
-export type TransferEscrowShardRetirementPreparation = {
+type TransferEscrowShardRetirementPreparation = {
   transferModuleUtxo: UTxO;
   shardUtxo: UTxO;
   shardTokenUnit: string;

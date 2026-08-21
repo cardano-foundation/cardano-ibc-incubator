@@ -30,7 +30,7 @@ function hasSameHistoryPosition(a: KupoHistoricalOutput, b: KupoHistoricalOutput
  * canonical block that creates its successor, and at most the latest output
  * may remain unspent.
  */
-export function selectLatestKupoOutputByAuthToken(history: KupoHistoricalOutput[]): KupoHistoricalOutput[] {
+function selectLatestKupoOutputByAuthToken(history: KupoHistoricalOutput[]): KupoHistoricalOutput[] {
   const grouped = new Map<string, KupoHistoricalOutput[]>();
   for (const output of history) {
     const outputs = grouped.get(output.authToken.unit) ?? [];

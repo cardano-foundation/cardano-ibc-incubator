@@ -15,10 +15,6 @@ use cardano/transaction.{
   Transaction, placeholder,
 }
 use host_state_stt
-use minting_lifecycle_creation_marker
-use minting_lifecycle_marker
-use minting_lifecycle_operational_marker
-use minting_lifecycle_packet_marker
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
   ClientDatum, ClientDatumState,
@@ -89,6 +85,10 @@ use ibc/core/ics_025_handler_interface/lifecycle_marker.{
 use ibc/core/ics_025_handler_interface/reclamation
 use ibc/testing/fuzz_dsl
 use ibc/utils/bits
+use minting_lifecycle_creation_marker
+use minting_lifecycle_marker
+use minting_lifecycle_operational_marker
+use minting_lifecycle_packet_marker
 
 // Build a list with `count` copies of `value`.
 fn repeat_bytearray(value: ByteArray, count: Int) -> List<ByteArray> {
@@ -673,9 +673,7 @@ fn with_lifecycle_marker(
       let host_redeemer_data: Redeemer = redeemer
       let marker_redeemer_data: Redeemer =
         when redeemer is {
-          CreateClient { .. } |
-          CreateConnection { .. } |
-          CreateChannel { .. } -> {
+          CreateClient { .. } | CreateConnection { .. } | CreateChannel { .. } -> {
             let value: LifecycleCreationMarkerRedeemer = AuthorizeCreation
             let encoded: Redeemer = value
             encoded
@@ -683,7 +681,7 @@ fn with_lifecycle_marker(
           BindPort { .. } |
           UpdateClient { .. } |
           UpdateConnection { .. } |
-            UpdateChannel { .. } -> {
+          UpdateChannel { .. } -> {
             let value: LifecycleOperationalMarkerRedeemer = AuthorizeOperation
             let encoded: Redeemer = value
             encoded
@@ -724,8 +722,7 @@ fn with_lifecycle_marker(
         ..marked,
         validity_range: when redeemer is {
           UpdateClient { .. } -> interval.between(-1, 0)
-          PruneTerminalClient { .. } | ReclaimClient { .. } ->
-            interval.after(0)
+          PruneTerminalClient { .. } | ReclaimClient { .. } -> interval.after(0)
           _ -> marked.validity_range
         },
         redeemers: list.concat(
@@ -1037,16 +1034,18 @@ fn validate_bind_port_module_outputs(module_outputs: List<Output>) -> Bool {
 
 test lifecycle_operational_marker_rejects_bind_port_wrong_module_value() fail {
   let registration = test_module_registration(test_module_script_hash())
-  validate_bind_port_module_outputs([
-    Output {
-      ..test_module_output(registration),
-      value: from_asset(
-        registration.port_token.policy_id,
-        registration.port_token.name,
-        1,
-      ),
-    },
-  ])
+  validate_bind_port_module_outputs(
+    [
+      Output {
+        ..test_module_output(registration),
+        value: from_asset(
+          registration.port_token.policy_id,
+          registration.port_token.name,
+          1,
+        ),
+      },
+    ],
+  )
 }
 
 test lifecycle_operational_marker_rejects_bind_port_duplicate_module_output() fail {
@@ -1777,7 +1776,6 @@ test host_state_prunes_one_terminal_consensus_leaf_with_exact_witness() {
 test host_state_prune_terminal_client_rejects_forged_client_policy() fail {
   host_state_prune_terminal_client_fixture(test_nft_policy())
 }
-
 
 // Precomputed 64-deep sparse-Merkle witnesses used by execution-budget tests.
 // Keeping these literal prevents Aiken from charging sparse-tree fixture generation
@@ -3042,10 +3040,7 @@ test host_state_reclaim_channel_rejects_forged_channel_policy() fail {
 // and therefore approximate the validator invocation charged on-chain.
 test budget_precomputed_host_create_connection() {
   let host_token =
-    AuthToken {
-      policy_id: test_nft_policy(),
-      name: host_state_token_name,
-    }
+    AuthToken { policy_id: test_nft_policy(), name: host_state_token_name }
   let connection_token =
     AuthToken {
       policy_id: test_connection_token().policy_id,
@@ -3103,11 +3098,7 @@ test budget_precomputed_host_create_connection() {
             reference_script: None,
           },
         ],
-        mint: from_asset(
-          connection_token.policy_id,
-          connection_token.name,
-          1,
-        ),
+        mint: from_asset(connection_token.policy_id, connection_token.name, 1),
         redeemers: [
           Pair(Mint(connection_token.policy_id), object_mint_redeemer),
         ],
@@ -3159,8 +3150,7 @@ test budget_precomputed_host_prune_terminal_client() {
       state: ClientDatumState {
         client_state: terminal_state,
         consensus_states: [
-          Pair(latest_height, latest_consensus),
-          Pair(old_height, old_consensus),
+          Pair(latest_height, latest_consensus), Pair(old_height, old_consensus),
         ],
         processed_times: [Pair(latest_height, 0), Pair(old_height, 0)],
         processed_heights: [Pair(latest_height, 0), Pair(old_height, 0)],

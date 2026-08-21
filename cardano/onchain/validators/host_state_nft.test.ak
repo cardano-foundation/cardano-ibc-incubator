@@ -5,8 +5,8 @@ use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Redeemer, Spend,
   Transaction, placeholder,
 }
-use host_state_stt
 use host_state_nft
+use host_state_stt
 use ibc/core/ics_025_handler_interface/host_state.{
   HostState, HostStateDatum, Sealed, ShutdownState, ShuttingDown,
   empty_ibc_state_root, host_state_token_name,
