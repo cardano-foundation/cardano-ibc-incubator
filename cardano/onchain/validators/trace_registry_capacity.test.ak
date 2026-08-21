@@ -6,11 +6,11 @@ use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction, placeholder,
 }
 use ibc/apps/transfer/trace_registry.{
-  Directory, InsertTrace, Shard, TraceRegistryDatum,
-  TraceRegistryDirectoryBucket, TraceRegistryDirectoryDatum, TraceRegistryEntry,
-  TraceRegistryRedeemer, TraceRegistryShardDatum, bucket_index_for_hash,
-  directory_bucket_is_within_capacity, full_denom_is_within_limits,
-  max_entries_per_shard, max_full_denom_bytes, shard_is_within_capacity,
+  Directory, InsertTrace, Shard, TraceRegistryDirectoryBucket,
+  TraceRegistryDirectoryDatum, TraceRegistryEntry, TraceRegistryShardDatum,
+  bucket_index_for_hash, directory_bucket_is_within_capacity,
+  full_denom_is_within_limits, max_entries_per_shard, max_full_denom_bytes,
+  shard_is_within_capacity,
 }
 use ibc/apps/transfer/voucher_asset_name
 use ibc/auth.{AuthToken}
