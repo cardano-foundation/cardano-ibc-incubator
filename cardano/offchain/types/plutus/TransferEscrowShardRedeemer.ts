@@ -8,21 +8,12 @@ const FungibleTokenPacketDataSchema = Data.Object({
   memo: Data.Bytes(),
 });
 
-export const TransferEscrowShardRedeemerSchema = Data.Enum([
-  Data.Object({
-    CreateEscrowShard: Data.Object({
-      channel_id: Data.Bytes(),
-      denom: Data.Bytes(),
-      data: FungibleTokenPacketDataSchema,
-    }),
-  }),
-  Data.Object({
-    BurnEscrowShard: Data.Object({
-      channel_id: Data.Bytes(),
-      denom: Data.Bytes(),
-    }),
-  }),
-]);
+export const TransferEscrowShardRedeemerSchema = Data.Object({
+  channel_id: Data.Bytes(),
+  denom: Data.Bytes(),
+  data: FungibleTokenPacketDataSchema,
+  registry_siblings: Data.Array(Data.Bytes()),
+});
 export type TransferEscrowShardRedeemer = Data.Static<
   typeof TransferEscrowShardRedeemerSchema
 >;

@@ -48,6 +48,7 @@ import {
   OutputReferenceSchema,
   type TraceRegistryDirectoryDatum,
   type TraceRegistryShardDatum,
+  TransferModuleDatum,
 } from "../types/index.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -1853,8 +1854,16 @@ const deployTransferModule = async (
           [hostStateUnit]: 1n,
         },
       )
-      .pay.ToAddress(
+      .pay.ToContract(
         spendTransferModuleAddress,
+        {
+          kind: "inline",
+          value: Data.to(
+            { escrow_shard_registry_root: "00".repeat(32) },
+            TransferModuleDatum,
+            { canonical: true },
+          ),
+        },
         {
           [identifierTokenUnit]: 1n,
           [portTokenUnit]: 1n,

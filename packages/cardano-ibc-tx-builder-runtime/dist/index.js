@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS = exports.OGMIOS_PROTOCOL_PARAMETERS_REQUEST_TIMEOUT_MS = exports.AsyncMutex = void 0;
+exports.OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS = exports.OGMIOS_PROTOCOL_PARAMETERS_REQUEST_TIMEOUT_MS = exports.transferEscrowShardTokenName = exports.AsyncMutex = void 0;
 exports.withKupoStringQuantityHeader = withKupoStringQuantityHeader;
 exports.ogmiosRequest = ogmiosRequest;
 exports.mapOgmiosProtocolParameters = mapOgmiosProtocolParameters;
@@ -13,13 +13,15 @@ exports.createTxBuilderRuntime = createTxBuilderRuntime;
 const crypto_1 = __importDefault(require("crypto"));
 const tx_builder_1 = require("@cardano-ibc/tx-builder");
 const trace_registry_1 = require("@cardano-ibc/trace-registry");
-const blake2b_1 = require("@noble/hashes/blake2b");
 const ws_1 = __importDefault(require("ws"));
 const asyncMutex_1 = require("./asyncMutex");
 const ibcStateRoot_1 = require("./ibcStateRoot");
 const lucidIbcAdapter_1 = require("./lucidIbcAdapter");
+const transferEscrowShard_1 = require("./transferEscrowShard");
 var asyncMutex_2 = require("./asyncMutex");
 Object.defineProperty(exports, "AsyncMutex", { enumerable: true, get: function () { return asyncMutex_2.AsyncMutex; } });
+var transferEscrowShard_2 = require("./transferEscrowShard");
+Object.defineProperty(exports, "transferEscrowShardTokenName", { enumerable: true, get: function () { return transferEscrowShard_2.transferEscrowShardTokenName; } });
 const LOOKUP_RETRY_OPTIONS = {
     maxAttempts: 6,
     retryDelayMs: 1000,
@@ -950,31 +952,18 @@ function dedupeUtxos(utxos) {
 function utxoRef(utxo) {
     return `${utxo.txHash}#${utxo.outputIndex}`;
 }
-function transferEscrowShardTokenName(channelId, packetDenom) {
-    return Buffer.from((0, blake2b_1.blake2b)(Buffer.concat([
-        Buffer.from('transfer-escrow', 'utf8'),
-        Buffer.from(channelId, 'hex'),
-        Buffer.from(packetDenom, 'hex'),
-    ]), { dkLen: 28 })).toString('hex');
-}
 async function findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount) {
-    const encodedDatum = await context.lucidService.encode({ channel_id: channelId, denom: packetDenom }, 'transferEscrow');
-    const shardTokenUnit = context.deployment.validators.mintTransferEscrowShard.scriptHash +
-        transferEscrowShardTokenName(channelId, packetDenom);
-    let utxo;
-    try {
-        utxo = await context.lucidService.findUtxoByUnit(shardTokenUnit);
-    }
-    catch {
-        utxo = undefined;
-    }
-    const canonicalUtxo = utxo?.datum === encodedDatum &&
-        (utxo.assets[shardTokenUnit] ?? 0n) === 1n &&
-        Object.keys(utxo.assets ?? {}).every((unit) => unit === 'lovelace' || unit === denomToken || unit === shardTokenUnit) &&
-        (requiredAmount === undefined || (utxo.assets[denomToken] ?? 0n) >= requiredAmount)
-        ? utxo
-        : undefined;
-    return { utxo: canonicalUtxo, encodedDatum, shardTokenUnit };
+    const deployment = context.deployment;
+    return (0, transferEscrowShard_1.findTransferEscrowShard)({
+        transferModuleAddress: deployment.modules.transfer.address,
+        transferModuleIdentifier: deployment.modules.transfer.identifier,
+        shardPolicyId: deployment.validators.mintTransferEscrowShard.scriptHash,
+        findUtxosAt: (address) => context.lucidService.findUtxoAt(address),
+        encodeTransferEscrowDatum: (datum) => context.lucidService.encode(datum, 'transferEscrow'),
+        decodeTransferEscrowDatum: (encodedDatum) => context.lucidService.decodeDatum(encodedDatum, 'transferEscrow'),
+        encodeTransferModuleDatum: (datum) => context.lucidService.encode(datum, 'transferModule'),
+        decodeTransferModuleDatum: (encodedDatum) => context.lucidService.decodeDatum(encodedDatum, 'transferModule'),
+    }, channelId, packetDenom, denomToken, requiredAmount);
 }
 async function ensureTreeAlignedForRoot(context, onChainRoot) {
     if (!(0, ibcStateRoot_1.isTreeAligned)(onChainRoot)) {

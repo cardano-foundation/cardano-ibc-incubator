@@ -3,7 +3,6 @@ import {
   WithChannelSpend,
   WithConstructedAddress,
   WithHostStateUpdate,
-  WithMintTransferEscrowShardRedeemer,
   WithPacketPolicyAndChannelToken,
   WithTransferAmount,
   WithTransferEscrowShard,
@@ -18,7 +17,6 @@ export type UnsignedAckPacketUnescrowDto = WithHostStateUpdate &
   WithTransferModuleSpend &
   WithRequiredTransferModuleReferenceUtxo &
   WithTransferEscrowShard &
-  WithMintTransferEscrowShardRedeemer &
   WithTransferAmount &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'ackPacketPolicyId'> &

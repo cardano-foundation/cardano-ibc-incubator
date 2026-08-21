@@ -7,10 +7,11 @@ const acknowledgementCodec_1 = require("./acknowledgementCodec");
 const CHANNEL_TOKEN_PREFIX = '6368616e6e656c'; // fromText('channel')
 const CLIENT_PREFIX = '6962635f636c69656e74'; // fromText('ibc_client')
 const CONNECTION_TOKEN_PREFIX = '636f6e6e656374696f6e'; // fromText('connection')
-const DECODABLE_DATUM_TYPES = ['client', 'connection', 'channel', 'transferEscrow', 'host_state'];
+const DECODABLE_DATUM_TYPES = ['client', 'connection', 'channel', 'transferEscrow', 'transferModule', 'host_state'];
 const ENCODABLE_DATUM_TYPES = [
     'channel',
     'transferEscrow',
+    'transferModule',
     'host_state',
     'host_state_redeemer',
     'spendChannelRedeemer',
@@ -397,6 +398,16 @@ function decodeTransferEscrowDatum(encoded, Lucid) {
     });
     return Data.from(encoded, TransferEscrowDatumSchema);
 }
+function encodeTransferModuleDatum(datum, Lucid) {
+    const { Data } = Lucid;
+    const schema = Data.Object({ escrow_shard_registry_root: Data.Bytes() });
+    return Data.to(datum, schema, { canonical: true });
+}
+function decodeTransferModuleDatum(encoded, Lucid) {
+    const { Data } = Lucid;
+    const schema = Data.Object({ escrow_shard_registry_root: Data.Bytes() });
+    return Data.from(encoded, schema);
+}
 async function encodeHostStateRedeemer(data, Lucid) {
     const { Data } = Lucid;
     const SiblingHashesSchema = Data.Array(Data.Bytes());
@@ -734,22 +745,16 @@ function encodeTransferEscrowShardRedeemer(data, Lucid) {
         receiver: Data.Bytes(),
         memo: Data.Bytes(),
     });
-    const TransferEscrowShardRedeemerSchema = Data.Enum([
-        Data.Object({
-            CreateEscrowShard: Data.Object({
-                channel_id: Data.Bytes(),
-                denom: Data.Bytes(),
-                data: FungibleTokenPacketDatumSchema,
-            }),
-        }),
-        Data.Object({
-            BurnEscrowShard: Data.Object({
-                channel_id: Data.Bytes(),
-                denom: Data.Bytes(),
-            }),
-        }),
-    ]);
-    return Data.to(data, TransferEscrowShardRedeemerSchema, { canonical: true });
+    const TransferEscrowShardRedeemerSchema = Data.Object({
+        channel_id: Data.Bytes(),
+        denom: Data.Bytes(),
+        data: FungibleTokenPacketDatumSchema,
+        registry_siblings: Data.Array(Data.Bytes()),
+    });
+    // Lucid encodes Aiken's sole constructor from its fields, not a one-member enum.
+    return Data.to(data.CreateEscrowShard, TransferEscrowShardRedeemerSchema, {
+        canonical: true,
+    });
 }
 class LucidIbcAdapter {
     lucid;
@@ -975,6 +980,8 @@ class LucidIbcAdapter {
                 return (await decodeChannelDatum(encodedDatum, this.LucidImporter));
             case 'transferEscrow':
                 return decodeTransferEscrowDatum(encodedDatum, this.LucidImporter);
+            case 'transferModule':
+                return decodeTransferModuleDatum(encodedDatum, this.LucidImporter);
             case 'host_state':
                 return (await decodeHostStateDatum(encodedDatum, this.LucidImporter));
             default:
@@ -987,6 +994,8 @@ class LucidIbcAdapter {
                 return encodeChannelDatum(data, this.LucidImporter);
             case 'transferEscrow':
                 return encodeTransferEscrowDatum(data, this.LucidImporter);
+            case 'transferModule':
+                return encodeTransferModuleDatum(data, this.LucidImporter);
             case 'host_state':
                 return encodeHostStateDatum(data, this.LucidImporter);
             case 'host_state_redeemer':
@@ -1064,17 +1073,21 @@ class LucidIbcAdapter {
             .pay.ToContract(dto.spendChannelAddress, { kind: 'inline', value: dto.encodedUpdatedChannelDatum }, { [dto.channelTokenUnit]: 1n })
             .mintAssets({ [dto.sendPacketPolicyId]: 1n }, encodeAuthToken(dto.channelToken, this.LucidImporter));
         if (dto.transferEscrowUtxo) {
-            tx.collectFrom([dto.transferEscrowUtxo], dto.encodedSpendTransferModuleRedeemer);
+            tx
+                .readFrom([dto.transferModuleReferenceUtxo])
+                .collectFrom([dto.transferEscrowUtxo], dto.encodedSpendTransferModuleRedeemer);
         }
         else {
             if (!dto.transferModuleReferenceUtxo ||
                 !dto.transferEscrowShardTokenUnit ||
-                !dto.encodedMintTransferEscrowShardRedeemer) {
+                !dto.encodedMintTransferEscrowShardRedeemer ||
+                !dto.encodedUpdatedTransferModuleDatum) {
                 throw new Error('Transfer module reference UTxO, shard token, and shard mint redeemer are required to create an escrow shard');
             }
             tx
-                .readFrom([dto.transferModuleReferenceUtxo])
-                .mintAssets({ [dto.transferEscrowShardTokenUnit]: 1n }, dto.encodedMintTransferEscrowShardRedeemer);
+                .collectFrom([dto.transferModuleReferenceUtxo], dto.encodedSpendTransferModuleRedeemer)
+                .mintAssets({ [dto.transferEscrowShardTokenUnit]: 1n }, dto.encodedMintTransferEscrowShardRedeemer)
+                .pay.ToContract(dto.transferModuleAddress, { kind: 'inline', value: dto.encodedUpdatedTransferModuleDatum }, dto.transferModuleReferenceUtxo.assets);
         }
         this.payTransferEscrowDelta(tx, dto.transferModuleAddress, dto.encodedTransferEscrowDatum, dto.transferAmount, dto.denomToken, dto.transferEscrowUtxo, dto.transferEscrowShardTokenUnit);
         return tx;

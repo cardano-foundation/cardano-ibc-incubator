@@ -151,6 +151,7 @@ export type UnsignedSendPacketEscrowTxInput = {
   channelTokenUnit: string;
   encodedSpendTransferModuleRedeemer: string;
   encodedMintTransferEscrowShardRedeemer?: string;
+  encodedUpdatedTransferModuleDatum?: string;
   transferAmount: bigint;
   constructedAddress: string;
   sendPacketPolicyId: string;
@@ -165,6 +166,23 @@ export type UnsignedSendPacketEscrowTxInput = {
   encodedTransferEscrowDatum?: string;
   transferEscrowShardTokenUnit?: string;
 };
+
+export type TransferEscrowShardLookup =
+  | {
+      kind: 'existing';
+      transferModuleUtxo: UTxO;
+      utxo: UTxO;
+      encodedDatum: string;
+      shardTokenUnit: string;
+    }
+  | {
+      kind: 'missing';
+      transferModuleUtxo: UTxO;
+      encodedDatum: string;
+      shardTokenUnit: string;
+      registrySiblings: string[];
+      encodedUpdatedTransferModuleDatum: string;
+    };
 
 export type SendPacketBuildDependencies = {
   loadContext: (
@@ -193,7 +211,7 @@ export type SendPacketBuildDependencies = {
     packetDenom: string,
     denomToken: string,
     requiredAmount?: bigint,
-  ) => Promise<{ utxo?: UTxO; encodedDatum: string; shardTokenUnit: string }>;
+  ) => Promise<TransferEscrowShardLookup>;
   createUnsignedSendPacketBurnTx: (
     dto: UnsignedSendPacketBurnTxInput,
   ) => TxBuilder;
@@ -421,12 +439,12 @@ export async function buildUnsignedSendPacketTx(
     channelUTxO: context.channelUtxo,
     connectionUTxO: context.connectionUtxo,
     clientUTxO: context.clientUtxo,
-    transferModuleReferenceUtxo: context.transferModuleReferenceUtxo,
+    transferModuleReferenceUtxo: transferEscrowShard.transferModuleUtxo,
     encodedHostStateRedeemer,
     encodedUpdatedHostStateDatum,
     encodedSpendChannelRedeemer,
     encodedSpendTransferModuleRedeemer,
-    encodedMintTransferEscrowShardRedeemer: transferEscrowShard.utxo
+    encodedMintTransferEscrowShardRedeemer: transferEscrowShard.kind === 'existing'
       ? undefined
       : await deps.encode(
           {
@@ -434,6 +452,7 @@ export async function buildUnsignedSendPacketTx(
               channel_id: convertStringToHex(sendPacketOperator.sourceChannel),
               denom: convertStringToHex(packetDenom),
               data: fungibleTokenPacketData,
+              registry_siblings: transferEscrowShard.registrySiblings,
             },
           },
           'transferEscrowShardRedeemer',
@@ -448,7 +467,12 @@ export async function buildUnsignedSendPacketTx(
     channelTokenUnit: context.channelTokenUnit,
     transferModuleAddress: context.deployment.transferModuleAddress,
     denomToken,
-    transferEscrowUtxo: transferEscrowShard.utxo,
+    transferEscrowUtxo:
+      transferEscrowShard.kind === 'existing' ? transferEscrowShard.utxo : undefined,
+    encodedUpdatedTransferModuleDatum:
+      transferEscrowShard.kind === 'missing'
+        ? transferEscrowShard.encodedUpdatedTransferModuleDatum
+        : undefined,
     encodedTransferEscrowDatum: transferEscrowShard.encodedDatum,
     transferEscrowShardTokenUnit: transferEscrowShard.shardTokenUnit,
     sendPacketPolicyId: context.deployment.sendPacketPolicyId,
