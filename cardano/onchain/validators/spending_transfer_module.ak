@@ -8,7 +8,7 @@ use cardano/transaction.{
 }
 use ibc/apps/transfer/channel_callback as transfer_channel_callback
 use ibc/apps/transfer/escrow as transfer_escrow
-use ibc/apps/transfer/escrow.{EscrowShard, ModuleState, TransferModuleSpend}
+use ibc/apps/transfer/escrow.{TransferModuleSpend}
 use ibc/apps/transfer/ibc_module as transfer_ibc_module
 use ibc/apps/transfer/refund as transfer_refund
 use ibc/apps/transfer/transfer_module_redeemer.{OtherTransferOp, Transfer}
@@ -72,23 +72,8 @@ validator spend_transfer_module(
         transaction.outputs,
         port_token,
         module_token,
+        transfer_escrow_shard_policy_id,
       )
-    expect
-      when spend is {
-        ModuleState(_) ->
-          transfer_escrow.has_module_state_tokens(
-            spent_output,
-            port_token,
-            module_token,
-          )
-        EscrowShard { datum, .. } ->
-          // Datum-only escrow UTxOs are not canonical.
-          transfer_escrow.escrow_shard_has_nft(
-            spent_output,
-            datum,
-            transfer_escrow_shard_policy_id,
-          )
-      }
 
     // Channel auth tokens are minted by `mint_channel_stt` using the HostState NFT
     // as the base token. The transfer module must derive the *same* token name when
@@ -351,7 +336,7 @@ fn module_callback(
           )
             |> assets.negate()
 
-        // Negative shard delta may burn the NFT when emptied.
+        // Negative shard deltas retain an empty registered shard when depleted.
         let valid_transfer_amount =
           transfer_escrow.validate_module_escrow_transition(
             spent_input,

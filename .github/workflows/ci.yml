@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   pull-requests: read
 
@@ -28,58 +29,209 @@ jobs:
     timeout-minutes: 5
     outputs:
       aiken_changed: ${{ steps.detect.outputs.aiken_changed }}
+      aiken_files_changed: ${{ steps.detect.outputs.aiken_files_changed }}
+      aiken_pr_changed: ${{ steps.detect.outputs.aiken_pr_changed }}
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test Aiken change detector
+        run: node --test scripts/ci/detect-aiken-semantic-changes.test.mjs
+
       - name: Detect Aiken-relevant changes
         id: detect
         env:
+          EVENT_ACTION: ${{ github.event.action }}
+          EVENT_AFTER_SHA: ${{ github.event.after }}
+          EVENT_BEFORE_SHA: ${{ github.event.before }}
           GH_TOKEN: ${{ github.token }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPOSITORY: ${{ github.repository }}
         run: |
+          set_outputs() {
+            {
+              echo "aiken_changed=$1"
+              echo "aiken_files_changed=$2"
+              echo "aiken_pr_changed=$3"
+            } >> "$GITHUB_OUTPUT"
+          }
+
+          validate_classification() {
+            jq -e '
+              type == "object" and
+              (.aikenFilesChanged | type == "boolean") and
+              (.aikenRelevantChanged | type == "boolean") and
+              (.changedFiles | type == "array" and all(.[]; type == "string")) and
+              (.reasons | type == "array" and all(.[]; type == "string"))
+            ' >/dev/null <<<"$1"
+          }
+
           if [ "${{ github.event_name }}" != "pull_request" ]; then
-            echo "aiken_changed=true" >> "$GITHUB_OUTPUT"
+            set_outputs true true true
             echo "Running Aiken jobs for non-PR event ${{ github.event_name }}."
             exit 0
           fi
 
-          mapfile -t changed_files < <(
-            gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files" \
-              --paginate \
-              --jq '.[].filename'
-          )
+          pr_merge_base=$(git merge-base "${PR_BASE_SHA}" "${PR_HEAD_SHA}" || true)
+          if [ -z "${pr_merge_base}" ]; then
+            echo "Could not resolve the PR merge base; running the full suite."
+            set_outputs true true true
+            exit 0
+          fi
 
-          aiken_changed=false
-          for file in "${changed_files[@]}"; do
-            case "${file}" in
-              cardano/onchain/*)
-                aiken_changed=true
-                ;;
-              .github/workflows/ci.yml)
-                aiken_changed=true
-                ;;
-              scripts/ci/check-aiken-fuzz-coverage.mjs)
-                aiken_changed=true
-                ;;
-              scripts/ci/aiken-fuzz-required-labels.json)
-                aiken_changed=true
-                ;;
-              scripts/ci/check-aiken-fuzz-imports.sh)
-                aiken_changed=true
-                ;;
-              scripts/ci/check-generated-artifacts-clean.sh)
-                aiken_changed=true
-                ;;
-              scripts/ci/merge-aiken-check-reports.mjs)
-                aiken_changed=true
-                ;;
-              cardano/gateway/src/scripts/ci/check-tx-budgets.ts)
-                aiken_changed=true
-                ;;
-            esac
-          done
+          if ! full_pr=$(node scripts/ci/detect-aiken-semantic-changes.mjs \
+            "${pr_merge_base}" "${PR_HEAD_SHA}"); then
+            echo "Aiken detector failed; running the full suite."
+            set_outputs true true true
+            exit 0
+          fi
+          if ! validate_classification "${full_pr}"; then
+            echo "Aiken detector returned an invalid full-PR result; running the full suite."
+            set_outputs true true true
+            exit 0
+          fi
 
-          echo "aiken_changed=${aiken_changed}" >> "$GITHUB_OUTPUT"
+          classification="${full_pr}"
+          if [ "${EVENT_ACTION}" = "synchronize" ]; then
+            if ! classification=$(node scripts/ci/detect-aiken-semantic-changes.mjs \
+              "${EVENT_BEFORE_SHA}" "${EVENT_AFTER_SHA}"); then
+              echo "Aiken update detector failed; running the full suite."
+              set_outputs true true true
+              exit 0
+            fi
+            if ! validate_classification "${classification}"; then
+              echo "Aiken detector returned an invalid update result; running the full suite."
+              set_outputs true true true
+              exit 0
+            fi
+          fi
+
+          aiken_files_changed=$(jq -r '.aikenFilesChanged' <<<"${full_pr}")
+          aiken_changed=$(jq -r '.aikenRelevantChanged' <<<"${classification}")
+          aiken_pr_changed=$(jq -r '.aikenRelevantChanged' <<<"${full_pr}")
+          jq -r '.reasons[]?' <<<"${classification}"
+
+          # A synchronize event compares only the newly pushed commits. If the
+          # complete PR still contains Aiken changes, reuse the previous head's
+          # result only when the relevant checks passed against an unchanged base.
+          if [ "${EVENT_ACTION}" = "synchronize" ] && \
+            [ "${aiken_changed}" = "false" ] && \
+            [ "${aiken_pr_changed}" = "true" ]; then
+              can_reuse=true
+
+              if ! git merge-base --is-ancestor "${EVENT_BEFORE_SHA}" "${EVENT_AFTER_SHA}"; then
+                echo "Previous PR head is not an ancestor; running the full suite."
+                can_reuse=false
+              fi
+
+              if [ "${can_reuse}" = "true" ]; then
+                if previous_runs=$(gh api --method GET \
+                  "repos/${REPOSITORY}/actions/workflows/ci.yml/runs" \
+                  -f head_sha="${EVENT_BEFORE_SHA}" \
+                  -f event=pull_request \
+                  -f per_page=10); then
+                  if ! previous_run=$(jq -c \
+                    --arg before "${EVENT_BEFORE_SHA}" \
+                    --arg base "${PR_BASE_SHA}" \
+                    --argjson pr "${PR_NUMBER}" '
+                      [.workflow_runs[] |
+                        select(.path == ".github/workflows/ci.yml") |
+                        select(.head_sha == $before) |
+                        select(.event == "pull_request") |
+                        select(.status == "completed") |
+                        select(any(.pull_requests[]?;
+                          .number == $pr and .base.sha == $base))] |
+                      if length == 1 then .[0] else empty end
+                    ' <<<"${previous_runs}"); then
+                    echo "Previous CI run response was invalid; running the full suite."
+                    can_reuse=false
+                  elif [ -z "${previous_run}" ]; then
+                    echo "Could not identify one completed prior CI run for this PR and base; running the full suite."
+                    can_reuse=false
+                  else
+                    previous_run_id=$(jq -r '.id' <<<"${previous_run}")
+                    previous_run_attempt=$(jq -r '.run_attempt' <<<"${previous_run}")
+                  fi
+                else
+                  echo "Could not read previous CI runs; running the full suite."
+                  can_reuse=false
+                fi
+              fi
+
+              if [ "${can_reuse}" = "true" ]; then
+                if previous_jobs=$(gh api --method GET \
+                  "repos/${REPOSITORY}/actions/runs/${previous_run_id}/jobs" \
+                  -f filter=latest \
+                  -f per_page=100); then
+                  for required_check in \
+                    "Cardano Onchain Aiken"; do
+                    if ! check_result=$(jq -r \
+                      --arg name "${required_check}" \
+                      --argjson attempt "${previous_run_attempt}" '
+                        [.jobs[] |
+                          select(.name == $name and .run_attempt == $attempt)] |
+                        if length == 1 then
+                          "\(.[0].status):\(.[0].conclusion // "missing")"
+                        else
+                          "ambiguous:\(length)"
+                        end
+                      ' <<<"${previous_jobs}"); then
+                      echo "Previous CI jobs response was invalid; running the full suite."
+                      can_reuse=false
+                    elif [ "${check_result}" != "completed:success" ]; then
+                      echo "Previous ${required_check} result is ${check_result}; running the full suite."
+                      can_reuse=false
+                    fi
+                  done
+                  expected_base_step="Attest Aiken base ${PR_BASE_SHA}"
+                  if ! base_result=$(jq -r \
+                    --arg name "Cardano Onchain Aiken" \
+                    --arg step "${expected_base_step}" \
+                    --argjson attempt "${previous_run_attempt}" '
+                      [.jobs[] |
+                        select(.name == $name and .run_attempt == $attempt)] |
+                      if length == 1 then
+                        [.[0].steps[]? | select(.name == $step)] |
+                        if length == 1 then
+                          "\(.[0].status):\(.[0].conclusion // "missing")"
+                        else
+                          "ambiguous:\(length)"
+                        end
+                      else
+                        "missing-job"
+                      end
+                    ' <<<"${previous_jobs}"); then
+                    echo "Previous CI base attestation was invalid; running the full suite."
+                    can_reuse=false
+                  elif [ "${base_result}" != "completed:success" ]; then
+                    echo "Previous ${expected_base_step} result is ${base_result}; running the full suite."
+                    can_reuse=false
+                  fi
+                else
+                  echo "Could not read jobs from the previous CI run; running the full suite."
+                  can_reuse=false
+                fi
+              fi
+
+              if [ "${can_reuse}" = "true" ]; then
+                echo "The latest update changed only Aiken comments/whitespace or unrelated files."
+                echo "Reusing successful Aiken checks from ${EVENT_BEFORE_SHA}."
+              else
+                aiken_changed=true
+              fi
+          fi
+
+          set_outputs "${aiken_changed}" "${aiken_files_changed}" "${aiken_pr_changed}"
           if [ "${aiken_changed}" = "true" ]; then
             echo "Aiken-relevant changes detected."
           else
@@ -345,7 +497,7 @@ jobs:
 
   aiken-static:
     name: Cardano Onchain Aiken Static
-    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_changed == 'true' }}
+    if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && (needs.aiken-changes.outputs.aiken_files_changed == 'true' || needs.aiken-changes.outputs.aiken_changed == 'true') }}
     needs: aiken-changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -373,9 +525,11 @@ jobs:
       # checks should fail quickly and should not wait behind expensive
       # property-test execution.
       - name: Build blueprint
+        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         run: aiken build --deny
 
       - name: Type check without tests
+        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         run: aiken check --deny --skip-tests
 
   aiken-smoke:
@@ -564,14 +718,18 @@ jobs:
 
   aiken:
     name: Cardano Onchain Aiken
-    if: ${{ always() && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_changed == 'true' }}
-    needs: [aiken-changes, aiken-static, aiken-smoke, aiken-fuzz]
+    if: ${{ always() && (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) }}
+    needs:
+      [aiken-changes, aiken-static, aiken-smoke, aiken-fuzz, tx-budgets, generated-artifacts]
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
       - name: Check shard status
         env:
+          AIKEN_CHANGED: ${{ needs.aiken-changes.outputs.aiken_changed }}
+          AIKEN_FILES_CHANGED: ${{ needs.aiken-changes.outputs.aiken_files_changed }}
+          AIKEN_PR_CHANGED: ${{ needs.aiken-changes.outputs.aiken_pr_changed }}
           NEEDS_JSON: ${{ toJson(needs) }}
         run: |
           node - <<'NODE'
@@ -579,24 +737,55 @@ jobs:
           // "Cardano Onchain Aiken" while the actual work happens in parallel
           // prerequisite jobs.
           const needs = JSON.parse(process.env.NEEDS_JSON);
-          const failed = Object.entries(needs)
-            .filter(([, value]) => value.result !== 'success')
-            .map(([name, value]) => `${name}: ${value.result}`);
+          for (const name of [
+            'AIKEN_CHANGED',
+            'AIKEN_FILES_CHANGED',
+            'AIKEN_PR_CHANGED',
+          ]) {
+            if (!['true', 'false'].includes(process.env[name])) {
+              console.error(`${name} has invalid value ${JSON.stringify(process.env[name])}.`);
+              process.exit(1);
+            }
+          }
+          const required = process.env.AIKEN_CHANGED === 'true'
+            ? [
+                'aiken-changes',
+                'aiken-static',
+                'aiken-smoke',
+                'aiken-fuzz',
+                'tx-budgets',
+                'generated-artifacts',
+              ]
+            : [
+                'aiken-changes',
+                ...(process.env.AIKEN_FILES_CHANGED === 'true' ? ['aiken-static'] : []),
+                'generated-artifacts',
+              ];
+          const failed = required
+            .filter((name) => needs[name]?.result !== 'success')
+            .map((name) => [name, needs[name]])
+            .map(([name, value]) => `${name}: ${value?.result ?? 'missing'}`);
           if (failed.length > 0) {
             console.error(`Aiken shard failure(s): ${failed.join(', ')}`);
             process.exit(1);
           }
+          if (process.env.AIKEN_CHANGED !== 'true') {
+            console.log('No new Aiken semantics require the heavy test suite.');
+          }
           NODE
 
       - name: Checkout
+        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         uses: actions/checkout@v4
 
       - name: Setup Node.js
+        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         uses: actions/setup-node@v4
         with:
           node-version: 22
 
       - name: Download fuzz reports
+        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         uses: actions/download-artifact@v4
         with:
           pattern: aiken-fuzz-*
@@ -604,12 +793,17 @@ jobs:
           merge-multiple: true
 
       - name: Merge fuzz reports
+        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         run: node scripts/ci/merge-aiken-check-reports.mjs aiken-fuzz-reports aiken-fuzz.json
 
       # Labels are enforced globally, not per shard. That lets shard boundaries
       # follow runtime and protocol ownership without weakening coverage rules.
       - name: Check fuzz label coverage
+        if: ${{ needs.aiken-changes.outputs.aiken_changed == 'true' }}
         run: node scripts/ci/check-aiken-fuzz-coverage.mjs aiken-fuzz.json
+
+      - name: Attest Aiken base ${{ github.event.pull_request.base.sha || github.sha }}
+        run: echo "Aiken checks are valid for base ${{ github.event.pull_request.base.sha || github.sha }}."
 
   tx-budgets:
     name: Cardano Tx Budgets
@@ -655,6 +849,8 @@ jobs:
             -m 'spending_channel/send_packet.{succeed_send_packet}' \
             -m 'ibc/core/ics_004/channel_datum_test/validate_send_packet.{succeed_at_packet_commitment_capacity}' \
             -m 'host_state_stt.{host_state_handle_packet_send_succeeds_at_commitment_capacity}' \
+            -m 'spending_transfer_module.{transfer_escrow_succeed}' \
+            -m 'minting_transfer_escrow_shard.{create_transfer_escrow_shard_succeeds}' \
             -m 'spending_channel.{recv_packet_succeed}' \
             -m 'spending_channel/recv_packet.{succeed_recv_packet}' \
             -m 'ibc/core/ics_004/channel_datum_test/validate_recv_packet.{succeed_at_packet_history_capacity}' \

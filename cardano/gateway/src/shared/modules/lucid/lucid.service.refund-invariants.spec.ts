@@ -320,6 +320,7 @@ describe('LucidService voucher refund invariants', () => {
     const denomToken = 'policy-id.native-token';
     const transferEscrowShardTokenUnit = 'mint-port-policy.shard-token';
     const encodedTransferEscrowDatum = 'encoded-transfer-escrow-datum';
+    const encodedUpdatedTransferModuleDatum = 'encoded-updated-transfer-module-datum';
     const transferModuleAddress = 'addr_test1transfer_send_escrow';
     const transferModuleReferenceUtxo = {
       txHash: 'transfer-root-utxo',
@@ -338,6 +339,7 @@ describe('LucidService voucher refund invariants', () => {
       clientUTxO: { txHash: 'client-utxo', outputIndex: 0, assets: {} } as any,
       transferModuleReferenceUtxo,
       encodedTransferEscrowDatum,
+      encodedUpdatedTransferModuleDatum,
       encodedHostStateRedeemer: 'encoded-host-redeemer',
       encodedUpdatedHostStateDatum: 'encoded-host-datum',
       encodedSpendChannelRedeemer: 'encoded-channel-redeemer',
@@ -368,7 +370,7 @@ describe('LucidService voucher refund invariants', () => {
 
     expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
       deploymentConfig.modules.transfer.address,
-      undefined,
+      { kind: 'inline', value: encodedUpdatedTransferModuleDatum },
       transferModuleReferenceUtxo.assets,
     );
 
@@ -453,7 +455,7 @@ describe('LucidService voucher refund invariants', () => {
     ]);
   });
 
-  it('omits an empty transfer escrow shard in timeout native-token refunds', () => {
+  it('retains permanent shard membership after a final timeout native-token refund', () => {
     const txBuilder = createChainedTxBuilder();
     const service = createService(txBuilder);
     const denomToken = 'policy-id.native-token';
@@ -480,7 +482,6 @@ describe('LucidService voucher refund invariants', () => {
       transferModuleReferenceUtxo,
       encodedTransferEscrowDatum,
       transferEscrowShardTokenUnit,
-      encodedMintTransferEscrowShardRedeemer: 'encoded-shard-burn-redeemer',
       encodedHostStateRedeemer: 'encoded-host-redeemer',
       encodedUpdatedHostStateDatum: 'encoded-host-datum',
       encodedSpendChannelRedeemer: 'encoded-channel-redeemer',
@@ -506,23 +507,23 @@ describe('LucidService voucher refund invariants', () => {
     expect(txBuilder.readFrom).toHaveBeenCalledWith(
       expect.arrayContaining([transferModuleReferenceUtxo]),
     );
-    expect(txBuilder.mintAssets).toHaveBeenCalledWith(
+    expect(txBuilder.mintAssets).not.toHaveBeenCalledWith(
       { [transferEscrowShardTokenUnit]: -1n },
-      'encoded-shard-burn-redeemer',
+      expect.anything(),
     );
 
     const transferOutputs = txBuilder.pay.ToContract.mock.calls.filter((call: unknown[]) => {
       return call[0] === transferModuleAddress;
     });
-    expect(transferOutputs).toEqual([]);
-    expect(transferOutputs).not.toEqual(
-      expect.arrayContaining([
-        [
-          transferModuleAddress,
-          { kind: 'inline', value: encodedTransferEscrowDatum },
-          expect.anything(),
-        ],
-      ]),
-    );
+    expect(transferOutputs).toEqual([
+      [
+        transferModuleAddress,
+        { kind: 'inline', value: encodedTransferEscrowDatum },
+        {
+          lovelace: 2_000_000n,
+          [transferEscrowShardTokenUnit]: 1n,
+        },
+      ],
+    ]);
   });
 });

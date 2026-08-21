@@ -77,6 +77,11 @@ import {
   TransferEscrowDatum,
 } from "@shared/types/apps/transfer/transfer-escrow-datum";
 import {
+  decodeTransferModuleDatum,
+  encodeTransferModuleDatum,
+  TransferModuleDatum,
+} from "@shared/types/apps/transfer/transfer-module-datum";
+import {
   UnsignedAckPacketModuleDto,
   UnsignedAckPacketMintDto,
   UnsignedAckPacketSucceedDto,
@@ -108,6 +113,7 @@ export type CodecType =
   | "channel"
   | "mockModule"
   | "transferEscrow"
+  | "transferModule"
   | "host_state"
   | "host_state_redeemer"
   | "spendClientRedeemer"
@@ -156,25 +162,24 @@ function encodeTransferEscrowShardRedeemer(
     receiver: Data.Bytes(),
     memo: Data.Bytes(),
   });
-  const TransferEscrowShardRedeemerSchema = Data.Enum([
-    Data.Object({
-      CreateEscrowShard: Data.Object({
-        channel_id: Data.Bytes(),
-        denom: Data.Bytes(),
-        data: FungibleTokenPacketDatumSchema,
-      }),
-    }),
-    Data.Object({
-      BurnEscrowShard: Data.Object({
-        channel_id: Data.Bytes(),
-        denom: Data.Bytes(),
-      }),
-    }),
-  ]);
-
-  return Data.to(data as never, TransferEscrowShardRedeemerSchema as never, {
-    canonical: true,
+  const TransferEscrowShardRedeemerSchema = Data.Object({
+    channel_id: Data.Bytes(),
+    denom: Data.Bytes(),
+    data: FungibleTokenPacketDatumSchema,
+    registry_siblings: Data.Array(Data.Bytes()),
   });
+  // Lucid encodes Aiken's sole constructor from its fields, not a one-member enum.
+  const createEscrowShard = (
+    data as { CreateEscrowShard: Record<string, unknown> }
+  ).CreateEscrowShard;
+
+  return Data.to(
+    createEscrowShard as never,
+    TransferEscrowShardRedeemerSchema as never,
+    {
+      canonical: true,
+    },
+  );
 }
 
 type ReferenceScripts = {
@@ -710,6 +715,11 @@ export class LucidService implements OnModuleInit {
             encodedDatum,
             this.LucidImporter,
           ) as T;
+        case "transferModule":
+          return decodeTransferModuleDatum(
+            encodedDatum,
+            this.LucidImporter,
+          ) as T;
         case "host_state":
           return (await decodeHostStateDatum(
             encodedDatum,
@@ -751,6 +761,11 @@ export class LucidService implements OnModuleInit {
         case "transferEscrow":
           return encodeTransferEscrowDatum(
             data as TransferEscrowDatum,
+            this.LucidImporter,
+          );
+        case "transferModule":
+          return encodeTransferModuleDatum(
+            data as TransferModuleDatum,
             this.LucidImporter,
           );
         case "host_state":
@@ -1384,7 +1399,6 @@ export class LucidService implements OnModuleInit {
     denomToken: string,
     transferEscrowUtxo?: UTxO,
     transferEscrowShardTokenUnit?: string,
-    burnTransferEscrowShard = false,
   ): TxBuilder {
     const baseAssets = transferEscrowUtxo?.assets ?? {};
     const updatedAssets = updateTransferModuleAssets(
@@ -1395,9 +1409,6 @@ export class LucidService implements OnModuleInit {
     if (transferEscrowShardTokenUnit && !transferEscrowUtxo) {
       updatedAssets[transferEscrowShardTokenUnit] =
         (updatedAssets[transferEscrowShardTokenUnit] ?? 0n) + 1n;
-    }
-    if (transferEscrowShardTokenUnit && burnTransferEscrowShard) {
-      delete updatedAssets[transferEscrowShardTokenUnit];
     }
     const targetAmount = updatedAssets[denomToken] ?? 0n;
     const keepsNonLovelace = Object.keys(updatedAssets).some((unit) =>
@@ -1773,7 +1784,6 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
-      this.referenceScripts.mintTransferEscrowShard,
       this.referenceScripts.receivePacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
@@ -1833,20 +1843,7 @@ export class LucidService implements OnModuleInit {
       dto.denomToken,
       transferEscrowUtxo,
       dto.transferEscrowShardTokenUnit,
-      !!dto.encodedMintTransferEscrowShardRedeemer,
     );
-
-    if (dto.encodedMintTransferEscrowShardRedeemer) {
-      if (!dto.transferEscrowShardTokenUnit) {
-        throw new GrpcInternalException(
-          "Transfer escrow shard token unit is required for shard NFT burn",
-        );
-      }
-      tx.mintAssets(
-        { [dto.transferEscrowShardTokenUnit]: -1n },
-        dto.encodedMintTransferEscrowShardRedeemer,
-      );
-    }
 
     return tx;
   }
@@ -2269,7 +2266,6 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
-      this.referenceScripts.mintTransferEscrowShard,
       this.referenceScripts.ackPacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
@@ -2329,20 +2325,7 @@ export class LucidService implements OnModuleInit {
       dto.denomToken,
       transferEscrowUtxo,
       dto.transferEscrowShardTokenUnit,
-      !!dto.encodedMintTransferEscrowShardRedeemer,
     );
-
-    if (dto.encodedMintTransferEscrowShardRedeemer) {
-      if (!dto.transferEscrowShardTokenUnit) {
-        throw new GrpcInternalException(
-          "Transfer escrow shard token unit is required for shard NFT burn",
-        );
-      }
-      tx.mintAssets(
-        { [dto.transferEscrowShardTokenUnit]: -1n },
-        dto.encodedMintTransferEscrowShardRedeemer,
-      );
-    }
 
     return tx;
   }
@@ -2520,7 +2503,8 @@ export class LucidService implements OnModuleInit {
     } else {
       if (
         !dto.transferEscrowShardTokenUnit ||
-        !dto.encodedMintTransferEscrowShardRedeemer
+        !dto.encodedMintTransferEscrowShardRedeemer ||
+        !dto.encodedUpdatedTransferModuleDatum
       ) {
         throw new GrpcInternalException(
           "Transfer module reference UTxO, shard token, and shard mint redeemer are required to create an escrow shard",
@@ -2539,6 +2523,7 @@ export class LucidService implements OnModuleInit {
         tx,
         "transfer",
         dto.transferModuleReferenceUtxo,
+        dto.encodedUpdatedTransferModuleDatum,
       );
     }
 
@@ -2803,7 +2788,6 @@ export class LucidService implements OnModuleInit {
     tx.readFrom([
       this.referenceScripts.spendChannel,
       this.referenceScripts.spendTransferModule,
-      this.referenceScripts.mintTransferEscrowShard,
       this.referenceScripts.timeoutPacket,
       this.referenceScripts.verifyProof,
       this.referenceScripts.hostStateStt,
@@ -2863,20 +2847,7 @@ export class LucidService implements OnModuleInit {
       dto.denomToken,
       transferEscrowUtxo,
       dto.transferEscrowShardTokenUnit,
-      !!dto.encodedMintTransferEscrowShardRedeemer,
     );
-
-    if (dto.encodedMintTransferEscrowShardRedeemer) {
-      if (!dto.transferEscrowShardTokenUnit) {
-        throw new GrpcInternalException(
-          "Transfer escrow shard token unit is required for shard NFT burn",
-        );
-      }
-      tx.mintAssets(
-        { [dto.transferEscrowShardTokenUnit]: -1n },
-        dto.encodedMintTransferEscrowShardRedeemer,
-      );
-    }
 
     return tx;
   }

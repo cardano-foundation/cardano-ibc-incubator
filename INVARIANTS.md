@@ -649,6 +649,23 @@ inputs/outputs where the transition requires them. They prove these invariants:
   sender, or mint vouchers.
 - Receiving a packet back on the source chain must unescrow exactly the packet
   amount to the Cardano receiver.
+- Escrow-shard token names hash a domain-separated, length-framed channel ID
+  and denomination, so moving bytes across the field boundary cannot alias two
+  different shard identities.
+- First creation consumes the transfer-module root and proves an
+  absent-to-registered update against its fixed-size escrow-shard registry
+  root; the same `{channel_id, denom}` therefore cannot mint a second NFT.
+- Registry membership is permanent. A shard whose non-ADA escrow balance
+  reaches zero keeps its datum and NFT, and a later send reuses that UTxO
+  without changing the registry root.
+- Gateway and reusable runtime lookup rebuild the registry from every shard at
+  the module address and reject malformed holders, duplicates, path
+  collisions, or a root mismatch instead of treating lookup failures as
+  absence.
+
+Permanent membership means a deployment retains one shard UTxO for every
+observed `{channel_id, denom}` pair; this bounded-per-pair state cost is the
+tradeoff that makes creation non-replayable without growing the module datum.
 
 ### Voucher Mint, Burn, And Refunds
 

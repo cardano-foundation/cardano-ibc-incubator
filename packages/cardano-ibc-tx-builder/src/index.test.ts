@@ -129,8 +129,12 @@ function createDeps(overrides: Partial<SendPacketBuildDependencies> = {}) {
         requiredAmount,
       });
       return {
+        kind: 'missing',
+        transferModuleUtxo: utxo('scanned-transfer-module-root', 0),
         encodedDatum: 'transfer-escrow-datum',
         shardTokenUnit: `${'55'.repeat(28)}${channelId.slice(0, 8)}`,
+        registrySiblings: ['00'.repeat(32)],
+        encodedUpdatedTransferModuleDatum: 'updated-transfer-module-datum',
       };
     },
     createUnsignedSendPacketBurnTx: (dto) => {
@@ -217,8 +221,20 @@ describe('send-packet denom mapping', () => {
     });
     assert.deepEqual(
       captured.transferModuleReferenceUtxo,
-      baseContext().transferModuleReferenceUtxo,
+      utxo('scanned-transfer-module-root', 0),
     );
+    assert.equal(
+      captured.encodedUpdatedTransferModuleDatum,
+      'updated-transfer-module-datum',
+    );
+    const shardRedeemer = harness.encodedValues.find(
+      (entry) => entry.kind === 'transferEscrowShardRedeemer',
+    )?.value as {
+      CreateEscrowShard: { registry_siblings: string[] };
+    };
+    assert.deepEqual(shardRedeemer.CreateEscrowShard.registry_siblings, [
+      '00'.repeat(32),
+    ]);
   });
 
   it('reverse-resolves ibc hashes to voucher burns and deduplicates wallet UTxOs', async () => {

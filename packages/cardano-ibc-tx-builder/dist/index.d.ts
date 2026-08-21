@@ -132,6 +132,7 @@ export type UnsignedSendPacketEscrowTxInput = {
     channelTokenUnit: string;
     encodedSpendTransferModuleRedeemer: string;
     encodedMintTransferEscrowShardRedeemer?: string;
+    encodedUpdatedTransferModuleDatum?: string;
     transferAmount: bigint;
     constructedAddress: string;
     sendPacketPolicyId: string;
@@ -146,6 +147,20 @@ export type UnsignedSendPacketEscrowTxInput = {
     encodedTransferEscrowDatum?: string;
     transferEscrowShardTokenUnit?: string;
 };
+export type TransferEscrowShardLookup = {
+    kind: 'existing';
+    transferModuleUtxo: UTxO;
+    utxo: UTxO;
+    encodedDatum: string;
+    shardTokenUnit: string;
+} | {
+    kind: 'missing';
+    transferModuleUtxo: UTxO;
+    encodedDatum: string;
+    shardTokenUnit: string;
+    registrySiblings: string[];
+    encodedUpdatedTransferModuleDatum: string;
+};
 export type SendPacketBuildDependencies = {
     loadContext: (sendPacketOperator: SendPacketOperator) => Promise<LoadedSendPacketContext>;
     buildHostStateUpdate: (inputChannelDatum: ChannelDatumLike, outputChannelDatum: ChannelDatumLike, channelIdForRoot: string) => Promise<HostStateUpdate>;
@@ -157,11 +172,7 @@ export type SendPacketBuildDependencies = {
         maxAttempts: number;
         retryDelayMs: number;
     }) => Promise<UTxO[]>;
-    findTransferEscrowShard: (channelId: string, packetDenom: string, denomToken: string, requiredAmount?: bigint) => Promise<{
-        utxo?: UTxO;
-        encodedDatum: string;
-        shardTokenUnit: string;
-    }>;
+    findTransferEscrowShard: (channelId: string, packetDenom: string, denomToken: string, requiredAmount?: bigint) => Promise<TransferEscrowShardLookup>;
     createUnsignedSendPacketBurnTx: (dto: UnsignedSendPacketBurnTxInput) => TxBuilder;
     createUnsignedSendPacketEscrowTx: (dto: UnsignedSendPacketEscrowTxInput) => TxBuilder;
     invalidArgument: (message: string) => Error;

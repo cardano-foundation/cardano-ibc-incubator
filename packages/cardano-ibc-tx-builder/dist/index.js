@@ -144,18 +144,19 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
         channelUTxO: context.channelUtxo,
         connectionUTxO: context.connectionUtxo,
         clientUTxO: context.clientUtxo,
-        transferModuleReferenceUtxo: context.transferModuleReferenceUtxo,
+        transferModuleReferenceUtxo: transferEscrowShard.transferModuleUtxo,
         encodedHostStateRedeemer,
         encodedUpdatedHostStateDatum,
         encodedSpendChannelRedeemer,
         encodedSpendTransferModuleRedeemer,
-        encodedMintTransferEscrowShardRedeemer: transferEscrowShard.utxo
+        encodedMintTransferEscrowShardRedeemer: transferEscrowShard.kind === 'existing'
             ? undefined
             : await deps.encode({
                 CreateEscrowShard: {
                     channel_id: convertStringToHex(sendPacketOperator.sourceChannel),
                     denom: convertStringToHex(packetDenom),
                     data: fungibleTokenPacketData,
+                    registry_siblings: transferEscrowShard.registrySiblings,
                 },
             }, 'transferEscrowShardRedeemer'),
         encodedUpdatedChannelDatum: await deps.encode(updatedChannelDatum, 'channel'),
@@ -168,7 +169,10 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
         channelTokenUnit: context.channelTokenUnit,
         transferModuleAddress: context.deployment.transferModuleAddress,
         denomToken,
-        transferEscrowUtxo: transferEscrowShard.utxo,
+        transferEscrowUtxo: transferEscrowShard.kind === 'existing' ? transferEscrowShard.utxo : undefined,
+        encodedUpdatedTransferModuleDatum: transferEscrowShard.kind === 'missing'
+            ? transferEscrowShard.encodedUpdatedTransferModuleDatum
+            : undefined,
         encodedTransferEscrowDatum: transferEscrowShard.encodedDatum,
         transferEscrowShardTokenUnit: transferEscrowShard.shardTokenUnit,
         sendPacketPolicyId: context.deployment.sendPacketPolicyId,
