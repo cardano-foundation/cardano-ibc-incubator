@@ -2870,8 +2870,7 @@ export class LucidService implements OnModuleInit {
       traceRegistryUpdate?:
         | {
           kind: "existing";
-          traceRegistryDirectoryUtxo: UTxO;
-          traceRegistryShardWitnessUtxos: UTxO[];
+          traceRegistryMappingWitnessUtxos: UTxO[];
         }
         | {
           kind: "append";
@@ -2903,10 +2902,7 @@ export class LucidService implements OnModuleInit {
     }
 
     if (dto.traceRegistryUpdate.kind === "existing") {
-      tx.readFrom([
-        dto.traceRegistryUpdate.traceRegistryDirectoryUtxo,
-        ...dto.traceRegistryUpdate.traceRegistryShardWitnessUtxos,
-      ]);
+      tx.readFrom(dto.traceRegistryUpdate.traceRegistryMappingWitnessUtxos);
       return;
     }
 

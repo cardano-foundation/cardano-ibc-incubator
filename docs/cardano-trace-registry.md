@@ -23,7 +23,7 @@ The canonical mapping is:
 Where:
 
 - `voucher_hash` is the Cardano voucher token name bytes
-- `full_denom` is the exact ICS-20 trace string whose `sha3_256` hash produced
+- `full_denom` is the exact ICS-20 trace string whose `blake2b_224` hash produced
   that token name
 
 Everything else is derived from that canonical value:
@@ -35,7 +35,7 @@ Everything else is derived from that canonical value:
 
 ```mermaid
 flowchart LR
-  A["full_denom"] -->|"sha3_256"| B["voucher_hash"]
+  A["full_denom"] -->|"blake2b_224"| B["voucher_hash"]
   B -->|"first four bits"| C["owning shard"]
   C --> D["registry entry<br/>voucher_hash -> full_denom"]
   D --> E["path"]
@@ -64,7 +64,7 @@ Keeping the registry separate avoids:
 The registry uses 16 buckets plus a directory UTxO.
 
 - the first four bits of `voucher_hash` choose the owning bucket
-- each bucket has one active shard and zero or more archived shards
+- each bucket has one active shard and at most eight archived shards
 - a separate directory UTxO records the active shard token name for every bucket
 - each shard is its own UTxO protected by a unique shard NFT
 - each shard datum stores a list of `(voucher_hash, full_denom)` entries
@@ -81,6 +81,35 @@ Why the directory exists:
 - rollover can freeze an old shard exactly as-is and move future writes to a new shard
 - readers can still discover archived shards for historical entries
 
+## Protocol Capacity And Voucher Lifetime
+
+Registry growth is bounded by protocol constants enforced both on-chain and by
+the Gateway:
+
+| Resource | Limit |
+| --- | ---: |
+| Buckets | 16 |
+| Full denom UTF-8 bytes | 256 |
+| Trace hops | 8 |
+| Entries per shard | 32 |
+| Encoded shard datum | 3,072 bytes |
+| Archived shards per bucket | 8 |
+| Encoded directory datum | 6,144 bytes |
+
+An active shard rolls over only when appending the next entry would exceed its
+entry-count or encoded-CBOR limit. This prevents callers from cheaply creating
+empty archives. Once a bucket already has eight archives and its active shard is
+full, that bucket stops accepting first-seen denominations. The count-only upper
+bound is therefore 288 mappings per bucket and 4,608 mappings across all 16
+buckets; long denoms may reach the byte limit sooner.
+
+Admission exhaustion does **not** strand voucher holders. Every first-seen
+voucher also creates a deterministic CIP-68 reference NFT at an immutable
+metadata script. A repeated mint or refund proves the existing mapping with that
+single NFT and its canonical datum, independently of the directory and archived
+shard list. Existing vouchers therefore remain mintable, refundable, burnable,
+and resolvable even when their bucket cannot accept another denomination.
+
 ## Security Invariants
 
 The validator enforces these invariants:
@@ -94,6 +123,11 @@ The validator enforces these invariants:
    rolls the bucket to a fresh active shard and inserts there.
 6. A rollover preserves the old shard contents exactly and advances the directory
    pointer in the same transaction.
+7. Denom, shard, archive-list, and directory growth cannot exceed the protocol
+   limits above.
+8. Rollover is accepted only at the active shard's capacity boundary.
+9. Existing mappings are authenticated by exactly one immutable CIP-68 reference
+   NFT carrying the canonical voucher metadata datum.
 
 These rules ensure the registry cannot be populated by arbitrary off-chain
 claims. Only real voucher mint flows can create first-seen entries, and the
@@ -130,15 +164,17 @@ sequenceDiagram
   participant C as Cardano tx
 
   W->>G: full_denom
-  G->>G: voucher_hash = sha3_256(full_denom)
+  G->>G: voucher_hash = blake2b_224(full_denom)
   G->>D: load active shard for bucket
   G->>S: load active shard datum
-  alt append tx fits within safety budget
+  alt mapping already exists
+    G->>C: reference immutable CIP-68 mapping NFT
+  else append stays within shard capacity
     G->>C: mint voucher and append registry entry
-  else append tx is too large
+  else archive slot remains
     G->>C: mint voucher, mint fresh shard NFT, freeze old shard, advance directory
-  else mapping exists
-    G->>C: mint voucher only
+  else bucket admission is exhausted
+    G-->>W: reject this first-seen denomination
   end
 ```
 
@@ -183,10 +219,14 @@ The registry does not:
 
 - First-seen voucher mint transactions are slightly larger because they also
   spend and recreate one trace-registry shard.
-- Once an active shard gets close to the transaction-size budget, the next
+- Once the next append would exceed 32 entries or 3,072 encoded datum bytes, the
   first-seen insert rolls the bucket to a fresh active shard in the same tx.
-- Rollover is triggered off-chain by probing the actual unsigned tx size with a
-  fixed safety margin, not by a hard-coded entry count.
-- Repeated mints of an already-known voucher do not pay that extra shard cost.
+- The Gateway may still estimate a candidate transaction as a safety check, but
+  it cannot force an early rollover below the on-chain capacity boundary.
+- Repeated mints and refunds of an already-known voucher carry only its immutable
+  CIP-68 reference UTxO; they do not witness the directory or bucket shards.
+- An exhausted bucket rejects only new denominations. Operators should monitor
+  archive counts before the eighth rollover; increasing these protocol limits
+  requires a reviewed contract upgrade.
 - A Cardano dapp no longer needs the Gateway database for denom trace lookup,
   but it still needs some Cardano chain-data source to read shard UTxOs.

@@ -804,7 +804,9 @@ same transaction fixture. It proves these invariants:
 
 ### Existing Mapping Mint
 
-Covered by `unit.voucher.existing_mint.rejects_reference_nft`.
+Covered by `unit.voucher.existing_mint.rejects_reference_nft`,
+`minting_voucher.test.test_refund_voucher`, and
+`minting_voucher.test.test_refund_voucher_fails_with_wrong_metadata_mapping`.
 
 The existing-mapping property constructs the mint value for an already-registered
 voucher mapping and mutates it by adding a reference NFT. It proves this
@@ -812,6 +814,12 @@ invariant:
 
 - Existing voucher mappings may mint only the user voucher asset; reference NFT
   creation is reserved for first-seen mappings.
+- A repeated mint or refund must reference exactly one immutable CIP-68
+  reference NFT whose token name, script address, and canonical datum match the
+  voucher hash and full denom.
+- Existing mapping proofs do not depend on the trace-registry directory or its
+  archived shards, so later registry admission exhaustion cannot strand
+  existing voucher funds.
 
 ## Verifying Proof
 
@@ -1069,6 +1077,28 @@ active shard. The append must be rejected, proving these invariants:
 - Only the currently active shard for a bucket may be appended.
 - Archived shards cannot be mutated through the append path.
 
+### Bounded Registry Capacity
+
+Covered by
+`trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit`,
+`trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_near_byte_limit`,
+`trace_registry_capacity.test.trace_registry_capacity_accepts_exact_entry_and_denom_limits`,
+`trace_registry_capacity.test.trace_registry_capacity_rejects_oversized_denom_and_shard`,
+and
+`trace_registry_capacity.test.trace_registry_capacity_rejects_ninth_archive_and_ninth_hop`.
+
+These boundary fixtures prove these invariants:
+
+- A full denom is at most 256 UTF-8 bytes and contains at most eight trace hops.
+- A shard contains at most 32 entries and its encoded datum is at most 3,072
+  bytes.
+- A bucket lists at most eight archived shards, while the directory contains at
+  most 16 unique bucket indices and at most 6,144 encoded bytes.
+- A first-seen append remains within execution budget while checking all eight
+  maximally populated archived shards.
+- The ninth archive is rejected as new-denomination admission exhaustion; it is
+  not a condition required by existing voucher mapping proofs.
+
 ## Trace Registry Rollover
 
 Required CI label suffixes:
@@ -1099,6 +1129,8 @@ valid transition must satisfy these invariants:
 - The transaction mints the new active shard NFT.
 - The transaction includes the matching voucher mint that authorizes the trace
   registry write.
+- The previous active shard is itself within capacity, and appending the new
+  entry would cross either its count or encoded-byte limit.
 - The directory-side `AdvanceDirectory` redeemer and shard-side
   `RolloverInsertTrace` redeemer agree on bucket, voucher hash, full denom, old
   active shard, and new active shard.
@@ -1150,16 +1182,20 @@ mint. The rollover must be rejected, proving these invariants:
 - The trace registry cannot be written arbitrarily without the corresponding
   voucher asset flow.
 
+`trace_registry_rollover.test.trace_registry_rollover_insert_rejects_before_shard_capacity`
+also proves that callers cannot force early rollovers to create cheap empty
+archives.
+
 ### Append Rollover Lookup Model
 
 Covered by `model.trace.append_rollover_lookup`.
 
-The model property starts with an empty active shard, appends an existing trace
-entry into that active shard, rolls the bucket to a new active shard containing
-a newly inserted trace entry, and then performs lookup-style assertions across
-the active and archived shard sets. It also runs the shard-side and
-directory-side rollover validators for the rollover step. It proves these
-invariants:
+The model property starts one entry below the shard count limit, appends an
+existing trace entry to reach that limit, rolls the bucket to a new active shard
+containing a newly inserted trace entry, and then performs lookup-style
+assertions across the active and archived shard sets. It also runs the
+shard-side and directory-side rollover validators for the rollover step. It
+proves these invariants:
 
 - A trace entry appended before rollover remains discoverable after the old
   active shard becomes archived.
