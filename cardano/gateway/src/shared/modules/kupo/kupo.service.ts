@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { LucidService } from '../lucid/lucid.service';
 import { ConfigService } from '@nestjs/config';
 import { UTxO } from '@lucid-evolution/lucid';
+import { GrpcNotFoundException } from '../../../exception/grpc_exceptions';
 
 /**
  * KupoService - Provides IBC-specific queries to Kupo indexer (STT Architecture)
@@ -63,6 +64,9 @@ export class KupoService {
     tokenNamePrefix?: string,
   ): Promise<Array<UTxO & { matchedTokenNames: string[] }>> {
     try {
+      // The configured Kupmios provider resolves this through Kupo's
+      // address-level `?unspent` index. Do not fan out into per-out-ref checks:
+      // that provider path issues one sequential request per transaction hash.
       const utxos = await this.lucidService.findUtxoAt(address);
       return utxos
         .map((utxo) => ({
@@ -72,8 +76,12 @@ export class KupoService {
           matchedTokenNames: this.getMatchingAssetNames(utxo, policyId, tokenNamePrefix),
         }))
         .filter((utxo) => utxo.matchedTokenNames.length > 0);
-    } catch (_error) {
-      return [];
+    } catch (error) {
+      // LucidService represents an address with no live UTxOs as NOT_FOUND.
+      // Preserve that empty-list behavior, but do not turn provider/indexer
+      // failures into a false assertion that no IBC objects exist.
+      if (error instanceof GrpcNotFoundException) return [];
+      throw error;
     }
   }
 
@@ -94,9 +102,11 @@ export class KupoService {
           assetId.startsWith(this.clientTokenPrefix)
         );
       });
-    } catch (_error) {
-      // If no UTXOs found, return empty array (no clients exist yet)
-      return [];
+    } catch (error) {
+      // If no UTxOs exist yet, return an empty array. Provider failures must
+      // propagate so a tree rebuild cannot mistake an outage for an empty set.
+      if (error instanceof GrpcNotFoundException) return [];
+      throw error;
     }
   }
 
