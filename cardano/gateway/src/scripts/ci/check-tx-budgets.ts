@@ -10,7 +10,11 @@ import {
   encodeSpendConnectionRedeemer,
 } from '@shared/types/connection/connection-redeemer';
 import { encodeVerifyProofRedeemer } from '@shared/types/connection/verify-proof-redeemer';
-import { encodeTraceRegistryDatum, encodeTraceRegistryRedeemer } from '@shared/types/trace-registry';
+import {
+  encodeTraceRegistryDatum,
+  encodeTraceRegistryRedeemer,
+  TRACE_REGISTRY_LIMITS,
+} from '@shared/types/trace-registry';
 
 type BlueprintValidator = {
   title: string;
@@ -362,7 +366,7 @@ function traceShardDatum(entryCount: number): string {
       Shard: {
         bucket_index: 7n,
         entries: Array.from({ length: entryCount }, (_, index) => ({
-          voucher_hash: hexOfBytes(32, (10 + (index % 80)).toString(16).padStart(2, '0')),
+          voucher_hash: hexOfBytes(28, (10 + (index % 80)).toString(16).padStart(2, '0')),
           full_denom: `transfer/channel-${index}/uosmo`,
         })),
       },
@@ -375,15 +379,16 @@ function traceDirectoryDatum(archivedCount: number): string {
   return encodeTraceRegistryDatum(
     {
       Directory: {
-        buckets: [
-          {
-            bucket_index: 7n,
-            active_shard_name: hexOfBytes(32, '66'),
-            archived_shard_names: Array.from({ length: archivedCount }, (_, index) =>
-              hexOfBytes(32, (80 + index).toString(16).padStart(2, '0')),
-            ),
-          },
-        ],
+        buckets: Array.from({ length: TRACE_REGISTRY_LIMITS.bucketCount }, (_, bucketIndex) => ({
+          bucket_index: BigInt(bucketIndex),
+          active_shard_name: hexOfBytes(32, (32 + bucketIndex).toString(16).padStart(2, '0')),
+          archived_shard_names:
+            bucketIndex === 7
+              ? Array.from({ length: archivedCount }, (_, index) =>
+                  hexOfBytes(32, (80 + index).toString(16).padStart(2, '0')),
+                )
+              : [],
+        })),
       },
     },
     Lucid,
@@ -967,7 +972,7 @@ async function buildScenarios(
     },
     ...lifecycleAndShutdownScenarios(),
     {
-      name: 'Trace registry append',
+      name: 'Trace registry append at bounded worst-case history',
       inputCount: 2,
       outputCount: 1,
       mintPolicyCount: 0,
@@ -986,9 +991,10 @@ async function buildScenarios(
           ),
         ),
       ],
-      datums: [sized('updated shard datum', traceShardDatum(72))],
+      datums: [dataBytes('max encoded shard datum', TRACE_REGISTRY_LIMITS.maxShardDatumBytes)],
       largestProofPayloadBytes: 0,
-      aikenTests: ['trace_registry.test.trace_registry_insert_trace_succeeds_with_matching_voucher_mint'],
+      aikenTests: ['trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit'],
+      extraBytes: (1 + TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket) * TX_REFERENCE_INPUT_BYTES,
     },
     {
       name: 'Trace registry rollover',
@@ -1032,14 +1038,18 @@ async function buildScenarios(
       ],
       datums: [
         sized('updated directory datum', traceDirectoryDatum(8)),
-        sized('archived shard datum', traceShardDatum(96)),
+        dataBytes('max archived shard datum', TRACE_REGISTRY_LIMITS.maxShardDatumBytes),
         sized('new active shard datum', traceShardDatum(1)),
       ],
       largestProofPayloadBytes: 0,
       aikenTests: [
         'trace_registry_rollover.test.trace_registry_rollover_insert_succeeds_and_preserves_old_shard',
         'trace_registry_rollover.test.trace_registry_advance_directory_succeeds_for_valid_rollover',
+        // Conservatively charge a full archive scan to each rollover validator.
+        'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
+        'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
       ],
+      extraBytes: (TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket - 1) * TX_REFERENCE_INPUT_BYTES,
     },
     {
       name: 'First-seen voucher mint + CIP-68 metadata',
@@ -1062,12 +1072,19 @@ async function buildScenarios(
           ),
         ),
       ],
-      datums: [sized('updated shard datum', traceShardDatum(72)), dataBytes('CIP-68 voucher metadata datum', 900)],
+      datums: [
+        dataBytes('max encoded shard datum', TRACE_REGISTRY_LIMITS.maxShardDatumBytes),
+        dataBytes('CIP-68 voucher metadata datum', 900),
+      ],
       largestProofPayloadBytes: 0,
       aikenTests: [
         'minting_voucher.test.test_mint_voucher',
-        'trace_registry.test.trace_registry_insert_trace_succeeds_with_matching_voucher_mint',
+        // One boundary fixture covers the registry validator; the second is a
+        // conservative proxy for the voucher policy's own archive scan.
+        'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
+        'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
       ],
+      extraBytes: (1 + TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket) * TX_REFERENCE_INPUT_BYTES,
     },
   ];
 

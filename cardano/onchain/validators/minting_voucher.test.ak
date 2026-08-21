@@ -345,6 +345,28 @@ fn make_metadata_output_with_datum(
   }
 }
 
+fn make_metadata_reference_input(
+  voucher_metadata_script_hash: crypto.ScriptHash,
+  full_denom: ByteArray,
+  voucher_policy_id: PolicyId,
+  voucher_token_name: ByteArray,
+  reference_token_name: ByteArray,
+) -> Input {
+  Input {
+    output_reference: OutputReference {
+      transaction_id: #"47b9c5259b2a19052508957a025b5f150204027f1c6545fd886da6d281f6e926",
+      output_index: 0,
+    },
+    output: make_metadata_output(
+      voucher_metadata_script_hash,
+      full_denom,
+      voucher_policy_id,
+      voucher_token_name,
+      reference_token_name,
+    ),
+  }
+}
+
 fn metadata_description(denom: ByteArray) -> ByteArray {
   bytearray.concat("IBC voucher for ", denom)
 }
@@ -1774,21 +1796,17 @@ test test_refund_voucher() {
     voucher_asset_name.voucher_user_token_name_from_denom_hash(
       voucher_denom_hash,
     )
-  let bucket_index = bucket_index_for_hash(voucher_denom_hash)
-  let active_shard_name = "active-shard-0f"
-  let directory_input =
-    make_directory_input(
-      mock_data.directory_auth_token,
-      bucket_index,
-      active_shard_name,
-    )
-  let shard_reference_input =
-    make_shard_reference_input(
-      mock_data.directory_auth_token.policy_id,
-      active_shard_name,
-      bucket_index,
+  let reference_token_name =
+    voucher_asset_name.voucher_reference_token_name_from_denom_hash(
       voucher_denom_hash,
+    )
+  let metadata_reference_input =
+    make_metadata_reference_input(
+      mock_data.voucher_metadata_script_hash,
       ftpd.denom,
+      mock_data.voucher_minting_policy_id,
+      token_name,
+      reference_token_name,
     )
 
   expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
@@ -1838,7 +1856,7 @@ test test_refund_voucher() {
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input],
-      reference_inputs: [directory_input, shard_reference_input],
+      reference_inputs: [metadata_reference_input],
       outputs: [
         Output {
           address: from_verification_key(sender_public_key_hash),
@@ -1905,21 +1923,17 @@ test test_refund_voucher_fails_with_wrong_mint_quantity() fail {
     voucher_asset_name.voucher_user_token_name_from_denom_hash(
       voucher_denom_hash,
     )
-  let bucket_index = bucket_index_for_hash(voucher_denom_hash)
-  let active_shard_name = "active-shard-0f"
-  let directory_input =
-    make_directory_input(
-      mock_data.directory_auth_token,
-      bucket_index,
-      active_shard_name,
-    )
-  let shard_reference_input =
-    make_shard_reference_input(
-      mock_data.directory_auth_token.policy_id,
-      active_shard_name,
-      bucket_index,
+  let reference_token_name =
+    voucher_asset_name.voucher_reference_token_name_from_denom_hash(
       voucher_denom_hash,
+    )
+  let metadata_reference_input =
+    make_metadata_reference_input(
+      mock_data.voucher_metadata_script_hash,
       ftpd.denom,
+      mock_data.voucher_minting_policy_id,
+      token_name,
+      reference_token_name,
     )
 
   expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
@@ -1973,7 +1987,7 @@ test test_refund_voucher_fails_with_wrong_mint_quantity() fail {
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input],
-      reference_inputs: [directory_input, shard_reference_input],
+      reference_inputs: [metadata_reference_input],
       outputs: [
         Output {
           address: from_verification_key(sender_public_key_hash),
@@ -2012,7 +2026,7 @@ test test_refund_voucher_fails_with_wrong_mint_quantity() fail {
   )
 }
 
-test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail {
+test test_refund_voucher_fails_with_wrong_metadata_mapping() fail {
   let mock_data = prepare_mock_data()
 
   let packet_source_port = "port-99"
@@ -2040,33 +2054,17 @@ test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail 
     voucher_asset_name.voucher_user_token_name_from_denom_hash(
       voucher_denom_hash,
     )
-  let bucket_index = bucket_index_for_hash(voucher_denom_hash)
-  let active_shard_name = "active-shard-0f"
-  let archived_shard_name = "archived-shard-0f"
-  let directory_input =
-    make_directory_input_with_archived(
-      mock_data.directory_auth_token,
-      bucket_index,
-      active_shard_name,
-      [archived_shard_name],
-    )
-  let active_shard_reference_input =
-    make_shard_reference_input_with_output_index(
-      mock_data.directory_auth_token.policy_id,
-      active_shard_name,
-      bucket_index,
+  let reference_token_name =
+    voucher_asset_name.voucher_reference_token_name_from_denom_hash(
       voucher_denom_hash,
-      ftpd.denom,
-      1,
     )
-  let archived_duplicate_reference_input =
-    make_shard_reference_input_with_output_index(
-      mock_data.directory_auth_token.policy_id,
-      archived_shard_name,
-      bucket_index,
-      voucher_denom_hash,
-      ftpd.denom,
-      2,
+  let wrong_metadata_reference_input =
+    make_metadata_reference_input(
+      mock_data.voucher_metadata_script_hash,
+      "transfer/channel-0/not-the-voucher-denom",
+      mock_data.voucher_minting_policy_id,
+      token_name,
+      reference_token_name,
     )
 
   expect Some(sender_public_key_hash) = string_utils.hex_string_to_bytes(sender)
@@ -2116,10 +2114,7 @@ test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail 
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input],
-      reference_inputs: [
-        directory_input, active_shard_reference_input,
-        archived_duplicate_reference_input,
-      ],
+      reference_inputs: [wrong_metadata_reference_input],
       outputs: [
         Output {
           address: from_verification_key(sender_public_key_hash),

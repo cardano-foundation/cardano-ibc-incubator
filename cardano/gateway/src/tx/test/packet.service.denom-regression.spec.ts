@@ -17,16 +17,11 @@ const TRANSFER_MODULE_IDENTIFIER = `${'11'.repeat(28)}01`;
 
 const existingTraceRegistryProof = {
   kind: 'existing' as const,
-  traceRegistryDirectoryUtxo: {
-    txHash: 'trace-directory',
-    outputIndex: 0,
-    assets: { tracedir: 1n },
-  },
-  traceRegistryShardWitnessUtxos: [
+  traceRegistryMappingWitnessUtxos: [
     {
-      txHash: 'trace-shard',
-      outputIndex: 1,
-      assets: { traceshard: 1n },
+      txHash: 'voucher-metadata',
+      outputIndex: 0,
+      assets: { voucherreference: 1n },
     },
   ],
 };

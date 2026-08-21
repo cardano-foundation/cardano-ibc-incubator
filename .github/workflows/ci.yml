@@ -875,6 +875,7 @@ jobs:
             -m 'trace_registry.{trace_registry_insert_trace_succeeds_with_matching_voucher_mint}' \
             -m 'trace_registry_rollover.{trace_registry_rollover_insert_succeeds_and_preserves_old_shard}' \
             -m 'trace_registry_rollover.{trace_registry_advance_directory_succeeds_for_valid_rollover}' \
+            -m 'trace_registry_capacity.{trace_registry_boundary_append_eight_archives_at_entry_limit}' \
             -m 'minting_voucher.{test_mint_voucher}' \
             -m 'host_state_stt.{host_state_bind_tenth_port_succeeds_at_global_cap}' \
             -m 'minting_port.{mint_port_tenth_port_succeeds_at_module_cap}' \

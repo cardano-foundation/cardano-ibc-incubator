@@ -100,9 +100,9 @@ function parseArgs(argv: string[]): BenchmarkArgs {
 function printUsage(): void {
   console.log(`Usage: npm run benchmark:denom-registry -- [--bucket 0-15] [--simulated-inserts N] [--summary-only] [--json]
 
-Runs a live on-chain registry summary plus a size-only growth simulation for one bucket.
-This mode does not submit voucher-mint transactions; it projects growth using the exact
-shard datum encoding and a conservative upper bound of maxTxSize - txHeadroomBytes.`);
+Runs a live on-chain registry summary plus a protocol-capacity growth simulation for one bucket.
+This mode does not submit voucher-mint transactions; it projects the fixed shard entry/CBOR
+limits and reports when the bucket's archived-shard admission limit is exhausted.`);
 }
 
 function selectTargetBucket(summary: TraceRegistrySummary, requestedBucket?: number): TraceRegistryBucketStats {
@@ -125,14 +125,16 @@ function selectTargetBucket(summary: TraceRegistrySummary, requestedBucket?: num
 
 function printSummary(summary: TraceRegistrySummary): void {
   console.log('Denom-Registry Benchmark');
-  console.log('Mode: size-only projection against live on-chain registry state');
+  console.log('Mode: protocol-capacity projection against live on-chain registry state');
   console.log(
-    `Assumption: active shard datum bytes should stay <= maxTxSize - headroom = ${summary.projectedMaxShardDatumBytesUpperBound}`,
+    `Protocol shard datum limit: ${summary.projectedMaxShardDatumBytesUpperBound} bytes`,
   );
   console.log('');
   console.log('Protocol Parameters');
   console.log(`  maxTxSize: ${summary.maxTxSize}`);
   console.log(`  txHeadroomBytes: ${summary.txHeadroomBytes}`);
+  console.log(`  maxEntriesPerShard: ${summary.protocolLimits.maxEntriesPerShard}`);
+  console.log(`  maxArchivedShardsPerBucket: ${summary.protocolLimits.maxArchivedShardsPerBucket}`);
   console.log('');
   console.log('Current Registry');
   console.log(`  totalEntries: ${summary.totalEntries}`);
@@ -147,6 +149,11 @@ function printSimulation(simulation: TraceRegistryBucketGrowthSimulation): void 
   console.log('');
   console.log(`Bucket ${simulation.bucketIndex} Growth Projection`);
   console.log(`  simulatedInserts: ${simulation.simulatedInserts}`);
+  console.log(`  admittedInserts: ${simulation.admittedInserts}`);
+  console.log(`  admissionExhausted: ${simulation.admissionExhausted ? 'yes' : 'no'}`);
+  if (simulation.firstRejectedStep !== undefined) {
+    console.log(`  firstRejectedStep: ${simulation.firstRejectedStep}`);
+  }
   console.log(`  initialTotalEntries: ${simulation.initialBucket.totalEntries}`);
   console.log(`  projectedTotalEntries: ${simulation.projectedBucket.totalEntries}`);
   console.log(`  projectedShardCount: ${simulation.projectedBucket.shardCount}`);

@@ -19,11 +19,10 @@
 //
 // Operational model:
 // - the first four bits of the voucher core choose one of 16 buckets
-// - each bucket has one active shard NFT plus zero or more archived shard NFTs
+// - each bucket has one active shard NFT plus at most eight archived shard NFTs
 // - a separate directory UTxO tracks which shard token name is currently active
-// - first-seen voucher mints either append to the active shard or, if the
-//   off-chain builder predicts the tx is too large, atomically roll over the
-//   bucket and insert into a fresh active shard in the same transaction
+// - first-seen voucher mints append while the fixed shard entry/CBOR limits
+//   permit it, otherwise atomically roll over at that capacity boundary
 use aiken/collection/dict
 use aiken/collection/list
 use aiken/primitive/bytearray
@@ -33,7 +32,9 @@ use ibc/apps/transfer/trace_registry.{
   AdvanceDirectory, Directory, InsertTrace, RolloverInsertTrace, Shard,
   TraceRegistryDatum, TraceRegistryDirectoryBucket, TraceRegistryDirectoryDatum,
   TraceRegistryEntry, TraceRegistryRedeemer, TraceRegistryShardDatum,
-  bucket_index_for_hash,
+  bucket_index_for_hash, directory_is_within_capacity, entry_is_admissible,
+  full_denom_is_within_limits, max_archived_shards_per_bucket,
+  shard_is_within_capacity,
 }
 use ibc/apps/transfer/voucher_asset_name
 use ibc/auth.{AuthToken}
@@ -151,9 +152,10 @@ fn validate_insert_trace(
 ) -> Bool {
   expect
     bytearray.length(voucher_hash) == voucher_asset_name.voucher_denom_hash_length
-  expect bytearray.length(full_denom) > 0
+  expect full_denom_is_within_limits(full_denom)
 
   let expected_entry = TraceRegistryEntry { voucher_hash, full_denom }
+  expect entry_is_admissible(expected_entry)
   let shard_token =
     expect_single_registry_token(spent_output, shard_nft_policy_id)
   // Plain appends do not spend the directory. Instead they must carry the
@@ -167,6 +169,7 @@ fn validate_insert_trace(
     )
   expect Directory(directory_datum): TraceRegistryDatum =
     validator_utils.get_inline_datum(directory_input.output)
+  expect directory_is_within_capacity(directory_datum)
   expect Some(directory_bucket) =
     find_bucket(directory_datum.buckets, old_datum.bucket_index)
   let updated_output =
@@ -231,6 +234,7 @@ fn validate_insert_trace(
     voucher_hash_is_new,
     archived_shards_are_clean,
     appended_output_matches,
+    shard_is_within_capacity(updated_datum),
   }
 }
 
@@ -251,10 +255,11 @@ fn validate_rollover_insert_trace(
 ) -> Bool {
   expect
     bytearray.length(voucher_hash) == voucher_asset_name.voucher_denom_hash_length
-  expect bytearray.length(full_denom) > 0
+  expect full_denom_is_within_limits(full_denom)
   expect bytearray.length(new_active_shard_name) > 0
 
   let expected_entry = TraceRegistryEntry { voucher_hash, full_denom }
+  expect entry_is_admissible(expected_entry)
   let current_active_token =
     expect_single_registry_token(spent_output, shard_nft_policy_id)
   // Rollovers do spend the directory, so the old directory state is read from
@@ -268,6 +273,7 @@ fn validate_rollover_insert_trace(
     )
   expect Directory(old_directory): TraceRegistryDatum =
     validator_utils.get_inline_datum(directory_input.output)
+  expect directory_is_within_capacity(old_directory)
   expect Some(directory_bucket) =
     find_bucket(old_directory.buckets, old_datum.bucket_index)
 
@@ -317,6 +323,13 @@ fn validate_rollover_insert_trace(
     )
   expect Directory(updated_directory): TraceRegistryDatum =
     validator_utils.get_inline_datum(updated_directory_output)
+  expect directory_is_within_capacity(updated_directory)
+
+  let append_candidate =
+    TraceRegistryShardDatum {
+      bucket_index: old_datum.bucket_index,
+      entries: list.concat(old_datum.entries, [expected_entry]),
+    }
 
   and {
     old_datum.bucket_index == bucket_index_for_hash(voucher_hash),
@@ -340,6 +353,11 @@ fn validate_rollover_insert_trace(
       old_datum.entries,
       fn(entry) { entry.voucher_hash == voucher_hash },
     ) == None,
+    // Rollover is a capacity transition, not a caller-controlled way to create
+    // cheap archived shards. The old active shard must be valid and the same
+    // append must no longer fit its fixed entry/CBOR budget.
+    shard_is_within_capacity(old_datum),
+    !shard_is_within_capacity(append_candidate),
     // Rollover inserts must also prove global bucket uniqueness. The spent old
     // active shard is checked above, and every archived shard named in the old
     // directory must be carried as a reference witness and shown not to contain
@@ -356,6 +374,7 @@ fn validate_rollover_insert_trace(
       bucket_index: old_datum.bucket_index,
       entries: [expected_entry],
     },
+    shard_is_within_capacity(new_active_datum),
     // The shard validator independently rechecks the directory transition so a
     // malformed sibling directory output cannot sneak through even if the
     // directory spend validator is not the only script being inspected.
@@ -387,7 +406,7 @@ fn validate_advance_directory(
 ) -> Bool {
   expect
     bytearray.length(voucher_hash) == voucher_asset_name.voucher_denom_hash_length
-  expect bytearray.length(full_denom) > 0
+  expect full_denom_is_within_limits(full_denom)
   expect bytearray.length(previous_active_shard_name) > 0
   expect bytearray.length(new_active_shard_name) > 0
 
@@ -410,6 +429,8 @@ fn validate_advance_directory(
     )
   expect Directory(updated_directory): TraceRegistryDatum =
     validator_utils.get_inline_datum(updated_output)
+  expect directory_is_within_capacity(old_directory)
+  expect directory_is_within_capacity(updated_directory)
 
   let previous_active_token =
     AuthToken {
@@ -445,7 +466,13 @@ fn validate_advance_directory(
     validator_utils.get_inline_datum(new_active_output)
 
   let expected_entry = TraceRegistryEntry { voucher_hash, full_denom }
+  expect entry_is_admissible(expected_entry)
   expect Some(bucket) = find_bucket(old_directory.buckets, bucket_index)
+  let append_candidate =
+    TraceRegistryShardDatum {
+      bucket_index,
+      entries: list.concat(archived_datum.entries, [expected_entry]),
+    }
 
   and {
     // The spent output itself must also be the exact configured directory UTxO,
@@ -472,6 +499,8 @@ fn validate_advance_directory(
       archived_datum.entries,
       fn(entry) { entry.voucher_hash == voucher_hash },
     ) == None,
+    shard_is_within_capacity(archived_datum),
+    !shard_is_within_capacity(append_candidate),
     // The directory spend path independently proves bucket-wide uniqueness so a
     // malformed sibling shard spend cannot smuggle a duplicate through archived
     // history while still satisfying the directory transition shape.
@@ -486,6 +515,7 @@ fn validate_advance_directory(
       bucket_index,
       entries: [expected_entry],
     },
+    shard_is_within_capacity(new_active_datum),
   }
 }
 
@@ -524,7 +554,11 @@ fn expect_single_registry_token(
 }
 
 fn output_has_only_token(output: Output, token: AuthToken) -> Bool {
-  auth.contains_only_auth_tokens(output, [token])
+  assets.without_lovelace(output.value) == assets.from_asset(
+    token.policy_id,
+    token.name,
+    1,
+  )
 }
 
 fn has_directory_datum(output: Output) -> Bool {
@@ -624,6 +658,8 @@ fn bucket_shards_do_not_contain_hash(
   shard_names: List<ByteArray>,
   voucher_hash: ByteArray,
 ) -> Bool {
+  expect list.length(shard_names) <= max_archived_shards_per_bucket
+
   list.all(
     shard_names,
     fn(shard_name) {
@@ -636,7 +672,14 @@ fn bucket_shards_do_not_contain_hash(
       expect Shard(shard): TraceRegistryDatum =
         validator_utils.get_inline_datum(shard_input.output)
 
-      list.find(shard.entries, fn(entry) { entry.voucher_hash == voucher_hash }) == None
+      and {
+        shard.bucket_index == bucket_index_for_hash(voucher_hash),
+        shard_is_within_capacity(shard),
+        list.find(
+          shard.entries,
+          fn(entry) { entry.voucher_hash == voucher_hash },
+        ) == None,
+      }
     },
   )
 }

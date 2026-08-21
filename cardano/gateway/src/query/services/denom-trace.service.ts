@@ -23,6 +23,7 @@ import {
   decodeTraceRegistryDatum,
   encodeTraceRegistryDatum,
   encodeTraceRegistryRedeemer,
+  TRACE_REGISTRY_LIMITS,
   TraceRegistryDirectoryBucket,
   TraceRegistryDirectoryDatum,
   TraceRegistryShardDatum,
@@ -45,7 +46,6 @@ type OnChainTraceEntry = {
   bucketIndex: number;
   shardUtxo?: UTxO;
   shardTokenName?: string;
-  bucketShardUtxos?: UTxO[];
 };
 
 type LoadedBucketShard = {
@@ -57,8 +57,7 @@ type LoadedBucketShard = {
 
 type TraceRegistryExistingProofContext = {
   kind: "existing";
-  traceRegistryDirectoryUtxo: UTxO;
-  traceRegistryShardWitnessUtxos: UTxO[];
+  traceRegistryMappingWitnessUtxos: UTxO[];
 };
 
 type TraceRegistryAppendInsertContext = {
@@ -132,6 +131,7 @@ export type TraceRegistrySummary = {
   maxTxSize: number;
   txHeadroomBytes: number;
   projectedMaxShardDatumBytesUpperBound: number;
+  protocolLimits: typeof TRACE_REGISTRY_LIMITS;
   totalEntries: number;
   buckets: TraceRegistryBucketStats[];
 };
@@ -147,9 +147,12 @@ export type TraceRegistrySimulationSample = {
 };
 
 export type TraceRegistryBucketGrowthSimulation = {
-  sizeModel: "datum-only-upper-bound";
+  sizeModel: "protocol-capacity";
   bucketIndex: number;
   simulatedInserts: number;
+  admittedInserts: number;
+  admissionExhausted: boolean;
+  firstRejectedStep?: number;
   projectedRollovers: number;
   initialBucket: TraceRegistryBucketStats;
   projectedBucket: {
@@ -194,9 +197,9 @@ export class DenomTraceService {
     const { utxo: directoryUtxo, datum: directoryDatum } = await this
       .loadDirectoryState(registry);
 
-    // Every positive voucher mint must prove registry completeness. For a
-    // previously seen hash, that means carrying the canonical directory plus the
-    // shard that already holds the exact mapping.
+    // Existing mappings are proven with their immutable CIP-68 reference NFT.
+    // The registry scan detects conflicts, but the proof placed in the tx has
+    // constant size and does not grow with archived shard history.
     const existing = await this.findOnChainEntryByHash(
       normalizedHash,
       registry,
@@ -208,18 +211,18 @@ export class DenomTraceService {
           `Conflicting on-chain denom trace for hash ${normalizedHash}: existing=${existing.fullDenom}, incoming=${fullDenom}`,
         );
       }
-      if (!existing.shardUtxo) {
-        throw new Error(
-          `Trace-registry proof for hash ${normalizedHash} is missing its shard witness`,
-        );
-      }
+      const mappingWitness = await this.loadExistingMappingWitness(
+        normalizedHash,
+        fullDenom,
+      );
       return {
         kind: "existing",
-        traceRegistryDirectoryUtxo: directoryUtxo,
-        traceRegistryShardWitnessUtxos: existing.bucketShardUtxos ??
-          [existing.shardUtxo],
+        traceRegistryMappingWitnessUtxos: [mappingWitness],
       };
     }
+
+    this.assertNewDenomWithinLimits(fullDenom);
+    this.assertDirectoryWithinCapacity(directoryDatum);
 
     const bucketIndex = this.getBucketIndexForHash(normalizedHash);
     const bucket = this.getDirectoryBucket(directoryDatum, bucketIndex);
@@ -236,11 +239,24 @@ export class DenomTraceService {
         `Active trace-registry shard ${bucket.active_shard_name} is missing for bucket ${bucketIndex}`,
       );
     }
+    bucketShards.forEach((shard) => this.assertShardWithinCapacity(shard.datum));
     const archivedShardWitnessUtxos = bucketShards
       .filter((candidate) => candidate.tokenName !== bucket.active_shard_name)
       .map((candidate) => candidate.utxo);
 
-    if (!opts?.forceRollover) {
+    const updatedShardDatum: TraceRegistryShardDatum = {
+      bucket_index: activeShard.datum.bucket_index,
+      entries: [
+        ...activeShard.datum.entries,
+        {
+          voucher_hash: normalizedHash,
+          full_denom: fullDenom,
+        },
+      ],
+    };
+    const requiresRollover = !this.shardFitsCapacity(updatedShardDatum);
+
+    if (!requiresRollover && !opts?.forceRollover) {
       return {
         kind: "append",
         traceRegistryDirectoryUtxo: directoryUtxo,
@@ -257,20 +273,29 @@ export class DenomTraceService {
         ),
         encodedUpdatedTraceRegistryDatum: encodeTraceRegistryDatum(
           {
-            Shard: {
-              bucket_index: activeShard.datum.bucket_index,
-              entries: [
-                ...activeShard.datum.entries,
-                {
-                  voucher_hash: normalizedHash,
-                  full_denom: fullDenom,
-                },
-              ],
-            },
+            Shard: updatedShardDatum,
           },
           this.lucidService.LucidImporter,
         ),
       };
+    }
+
+    if (!requiresRollover) {
+      throw new Error(
+        "Trace-registry rollover was requested before the active shard reached its protocol capacity; " +
+          "the append transaction exceeded a ledger budget below the configured safe bound",
+      );
+    }
+
+    if (
+      bucket.archived_shard_names.length >=
+        TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket
+    ) {
+      throw new Error(
+        `Trace-registry bucket ${bucketIndex} has reached its admission limit ` +
+          `(${TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket} archived shards); ` +
+          "new denominations in this bucket cannot be registered, but existing vouchers remain usable",
+      );
     }
 
     const nonceUtxo = await this.selectUniqueIdentifierNonce(bucket);
@@ -289,6 +314,18 @@ export class DenomTraceService {
           : candidate
       ),
     };
+    this.assertDirectoryWithinCapacity(updatedDirectory);
+
+    const newActiveDatum: TraceRegistryShardDatum = {
+      bucket_index: BigInt(bucketIndex),
+      entries: [
+        {
+          voucher_hash: normalizedHash,
+          full_denom: fullDenom,
+        },
+      ],
+    };
+    this.assertShardWithinCapacity(newActiveDatum);
 
     return {
       kind: "rollover",
@@ -332,15 +369,7 @@ export class DenomTraceService {
       ),
       encodedNewActiveTraceRegistryDatum: encodeTraceRegistryDatum(
         {
-          Shard: {
-            bucket_index: BigInt(bucketIndex),
-            entries: [
-              {
-                voucher_hash: normalizedHash,
-                full_denom: fullDenom,
-              },
-            ],
-          },
+          Shard: newActiveDatum,
         },
         this.lucidService.LucidImporter,
       ),
@@ -504,6 +533,7 @@ export class DenomTraceService {
       txHeadroomBytes: TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES,
       projectedMaxShardDatumBytesUpperBound: this
         .getProjectedMaxShardDatumBytesUpperBound(),
+      protocolLimits: TRACE_REGISTRY_LIMITS,
       totalEntries: buckets.reduce(
         (sum, bucket) => sum + bucket.totalEntries,
         0,
@@ -556,6 +586,9 @@ export class DenomTraceService {
       allEntries.map((entry) => entry.voucher_hash.toLowerCase()),
     );
     let projectedRollovers = 0;
+    let admittedInserts = 0;
+    let admissionExhausted = false;
+    let firstRejectedStep: number | undefined;
     let activeShardSequence = 0;
     let activeEntries = [...activeShard.entries];
     const sampleInserts: TraceRegistrySimulationSample[] = [];
@@ -579,10 +612,18 @@ export class DenomTraceService {
       });
       let rolledOver = false;
 
-      // This is intentionally a size-only projection. We use the exact datum
-      // encoding and a conservative tx-size headroom, but we do not submit or
-      // evaluate a full voucher-mint transaction here.
-      if (activeShardDatumBytes > projectedMaxShardDatumBytesUpperBound) {
+      if (
+        appendedEntries.length > TRACE_REGISTRY_LIMITS.maxEntriesPerShard ||
+        activeShardDatumBytes > projectedMaxShardDatumBytesUpperBound
+      ) {
+        if (
+          initialBucket.rolloverCount + projectedRollovers >=
+            TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket
+        ) {
+          admissionExhausted = true;
+          firstRejectedStep = step;
+          break;
+        }
         rolledOver = true;
         projectedRollovers += 1;
         activeShardSequence += 1;
@@ -601,6 +642,7 @@ export class DenomTraceService {
       }
 
       seenHashes.add(synthetic.voucherHash);
+      admittedInserts += 1;
       if (sampleInserts.length < 5 || rolledOver || step == simulatedInserts) {
         sampleInserts.push({
           step,
@@ -615,13 +657,16 @@ export class DenomTraceService {
     }
 
     return {
-      sizeModel: "datum-only-upper-bound",
+      sizeModel: "protocol-capacity",
       bucketIndex,
       simulatedInserts,
+      admittedInserts,
+      admissionExhausted,
+      ...(firstRejectedStep === undefined ? {} : { firstRejectedStep }),
       projectedRollovers,
       initialBucket,
       projectedBucket: {
-        totalEntries: initialBucket.totalEntries + simulatedInserts,
+        totalEntries: initialBucket.totalEntries + admittedInserts,
         shardCount: initialBucket.shardCount + projectedRollovers,
         rolloverCount: initialBucket.rolloverCount + projectedRollovers,
         activeShardSequence,
@@ -713,10 +758,7 @@ export class DenomTraceService {
   }
 
   private getProjectedMaxShardDatumBytesUpperBound(): number {
-    return Math.max(
-      this.getMaxTxSize() - TRACE_REGISTRY_TX_SIZE_HEADROOM_BYTES,
-      0,
-    );
+    return TRACE_REGISTRY_LIMITS.maxShardDatumBytes;
   }
 
   private async findOnChainEntryByHash(
@@ -758,7 +800,6 @@ export class DenomTraceService {
         bucketIndex,
         shardUtxo: shard.utxo,
         shardTokenName: shard.tokenName,
-        bucketShardUtxos: bucketShards.map((candidate) => candidate.utxo),
       };
     }
 
@@ -993,6 +1034,174 @@ export class DenomTraceService {
     return decoded.Shard;
   }
 
+  private assertNewDenomWithinLimits(fullDenom: string): void {
+    const fullDenomBytes = Buffer.byteLength(fullDenom, "utf8");
+    if (
+      fullDenomBytes === 0 ||
+      fullDenomBytes > TRACE_REGISTRY_LIMITS.maxFullDenomBytes
+    ) {
+      throw new Error(
+        `New voucher denomination is ${fullDenomBytes} UTF-8 bytes; ` +
+          `the trace-registry limit is ${TRACE_REGISTRY_LIMITS.maxFullDenomBytes}`,
+      );
+    }
+
+    const trace = splitFullDenomTrace(fullDenom);
+    const traceHops = trace.path === "" ? 0 : trace.path.split("/").length / 2;
+    if (traceHops > TRACE_REGISTRY_LIMITS.maxTraceHops) {
+      throw new Error(
+        `New voucher denomination has ${traceHops} trace hops; ` +
+          `the trace-registry limit is ${TRACE_REGISTRY_LIMITS.maxTraceHops}`,
+      );
+    }
+  }
+
+  private assertDirectoryWithinCapacity(
+    directory: TraceRegistryDirectoryDatum,
+  ): void {
+    const directoryBytes = this.measureDirectoryDatumBytes(directory);
+    if (directory.buckets.length > TRACE_REGISTRY_LIMITS.bucketCount) {
+      throw new Error(
+        `Trace-registry directory has ${directory.buckets.length} buckets; ` +
+          `the protocol limit is ${TRACE_REGISTRY_LIMITS.bucketCount}`,
+      );
+    }
+    if (directoryBytes > TRACE_REGISTRY_LIMITS.maxDirectoryDatumBytes) {
+      throw new Error(
+        `Trace-registry directory datum is ${directoryBytes} bytes; ` +
+          `the protocol limit is ${TRACE_REGISTRY_LIMITS.maxDirectoryDatumBytes}`,
+      );
+    }
+
+    const bucketIndices = new Set<number>();
+    for (const bucket of directory.buckets) {
+      const bucketIndex = Number(bucket.bucket_index);
+      if (
+        !Number.isInteger(bucketIndex) ||
+        bucketIndex < 0 ||
+        bucketIndex >= TRACE_REGISTRY_LIMITS.bucketCount ||
+        bucketIndices.has(bucketIndex)
+      ) {
+        throw new Error(
+          `Trace-registry directory contains an invalid or duplicate bucket index ${bucketIndex}`,
+        );
+      }
+      bucketIndices.add(bucketIndex);
+
+      if (
+        bucket.archived_shard_names.length >
+          TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket
+      ) {
+        throw new Error(
+          `Trace-registry bucket ${bucketIndex} has ${bucket.archived_shard_names.length} archived shards; ` +
+            `the protocol limit is ${TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket}`,
+        );
+      }
+
+      const shardNames = [
+        bucket.active_shard_name,
+        ...bucket.archived_shard_names,
+      ];
+      const normalizedNames = shardNames.map((name) => name.toLowerCase());
+      if (new Set(normalizedNames).size !== normalizedNames.length) {
+        throw new Error(
+          `Trace-registry bucket ${bucketIndex} contains duplicate shard token names`,
+        );
+      }
+      for (const name of shardNames) {
+        if (
+          !/^[0-9a-f]+$/i.test(name) ||
+          name.length % 2 !== 0 ||
+          name.length > 64
+        ) {
+          throw new Error(
+            `Trace-registry bucket ${bucketIndex} contains an invalid shard token name`,
+          );
+        }
+      }
+    }
+  }
+
+  private shardFitsCapacity(shard: TraceRegistryShardDatum): boolean {
+    return shard.entries.length <= TRACE_REGISTRY_LIMITS.maxEntriesPerShard &&
+      this.measureShardDatumBytes(shard) <=
+        TRACE_REGISTRY_LIMITS.maxShardDatumBytes;
+  }
+
+  private assertShardWithinCapacity(shard: TraceRegistryShardDatum): void {
+    const bucketIndex = Number(shard.bucket_index);
+    if (
+      !Number.isInteger(bucketIndex) ||
+      bucketIndex < 0 ||
+      bucketIndex >= TRACE_REGISTRY_LIMITS.bucketCount
+    ) {
+      throw new Error(
+        `Trace-registry shard has invalid bucket index ${bucketIndex}`,
+      );
+    }
+
+    const datumBytes = this.measureShardDatumBytes(shard);
+    if (
+      shard.entries.length > TRACE_REGISTRY_LIMITS.maxEntriesPerShard ||
+      datumBytes > TRACE_REGISTRY_LIMITS.maxShardDatumBytes
+    ) {
+      throw new Error(
+        `Trace-registry shard ${bucketIndex} exceeds protocol capacity ` +
+          `(entries=${shard.entries.length}/${TRACE_REGISTRY_LIMITS.maxEntriesPerShard}, ` +
+          `datumBytes=${datumBytes}/${TRACE_REGISTRY_LIMITS.maxShardDatumBytes})`,
+      );
+    }
+  }
+
+  private async loadExistingMappingWitness(
+    voucherDenomHash: string,
+    fullDenom: string,
+  ): Promise<UTxO> {
+    const voucherPolicyId = this.getVoucherPolicyId();
+    const referenceAssetId = deriveVoucherReferenceAssetId(
+      voucherPolicyId,
+      voucherDenomHash,
+    );
+    let utxo: UTxO;
+    try {
+      utxo = await this.lucidService.findUtxoByUnit(referenceAssetId);
+    } catch (error) {
+      throw new Error(
+        `Existing trace-registry mapping ${voucherDenomHash} is missing its immutable ` +
+          `CIP-68 reference NFT ${referenceAssetId}: ${error.message}`,
+      );
+    }
+    if (!utxo.datum) {
+      throw new Error(
+        `Existing trace-registry mapping ${voucherDenomHash} has no CIP-68 metadata datum`,
+      );
+    }
+
+    const trace = splitFullDenomTrace(fullDenom);
+    try {
+      decodeVerifiedVoucherCip68MetadataDatum(
+        utxo.datum,
+        {
+          path: trace.path,
+          baseDenom: trace.baseDenom,
+          fullDenom,
+          voucherTokenName: buildVoucherUserTokenNameFromDenomHash(
+            voucherDenomHash,
+          ),
+          voucherPolicyId,
+          ibcDenomHash: this.computeIbcDenomHashFromFullDenom(fullDenom),
+        },
+        this.lucidService.LucidImporter,
+      );
+    } catch (error) {
+      throw new Error(
+        `Existing trace-registry mapping ${voucherDenomHash} has invalid CIP-68 metadata: ${error.message}`,
+      );
+    }
+
+    return utxo;
+  }
+
   private async materializeTrace(
     hash: string,
     fullDenom: string,
@@ -1085,6 +1294,19 @@ export class DenomTraceService {
       encodeTraceRegistryDatum(
         {
           Shard: shardDatum,
+        },
+        this.lucidService.LucidImporter,
+      ).length / 2
+    );
+  }
+
+  private measureDirectoryDatumBytes(
+    directoryDatum: TraceRegistryDirectoryDatum,
+  ): number {
+    return (
+      encodeTraceRegistryDatum(
+        {
+          Directory: directoryDatum,
         },
         this.lucidService.LucidImporter,
       ).length / 2

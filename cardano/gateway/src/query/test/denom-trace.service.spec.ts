@@ -4,6 +4,7 @@ import {
   buildVoucherCip68Metadata,
   encodeVoucherCip68MetadataDatum,
 } from '../../shared/helpers/cip68-voucher-metadata';
+import { splitFullDenomTrace } from '../../shared/helpers/denom-trace';
 import { DenomTraceService } from '../services/denom-trace.service';
 import { encodeTraceRegistryDatum } from '../../shared/types/trace-registry';
 import { convertString2Hex, hashSHA256 } from '../../shared/helpers/hex';
@@ -62,6 +63,23 @@ describe('DenomTraceService', () => {
     assets: {},
     datum,
   });
+
+  const makeCanonicalVoucherMetadataUtxo = (hash: string, fullDenom: string) => {
+    const trace = splitFullDenomTrace(fullDenom);
+    return makeVoucherMetadataUtxo(
+      encodeVoucherCip68MetadataDatum(
+        buildVoucherCip68Metadata({
+          path: trace.path,
+          baseDenom: trace.baseDenom,
+          fullDenom,
+          voucherTokenName: `0014df10${hash}`,
+          voucherPolicyId: 'mint-voucher-policy-id',
+          ibcDenomHash: hashSHA256(convertString2Hex(fullDenom)).toLowerCase(),
+        }),
+        Lucid,
+      ),
+    );
+  };
 
   beforeEach(() => {
     const loggerMock = {
@@ -166,9 +184,26 @@ describe('DenomTraceService', () => {
     expect(result.encodedUpdatedTraceRegistryDatum).toBeTruthy();
   });
 
+  it('rejects first-seen denominations beyond the byte and hop limits', async () => {
+    const hash = `a${'8'.repeat(55)}`;
+
+    await expect(service.prepareOnChainInsert(hash, 'x'.repeat(257))).rejects.toThrow(
+      'trace-registry limit is 256',
+    );
+    await expect(
+      service.prepareOnChainInsert(
+        hash,
+        'transfer/channel-0/transfer/channel-1/transfer/channel-2/transfer/channel-3/' +
+          'transfer/channel-4/transfer/channel-5/transfer/channel-6/transfer/channel-7/' +
+          'transfer/channel-8/uatom',
+      ),
+    ).rejects.toThrow('trace-registry limit is 8');
+  });
+
   it('skips an on-chain insert when the shard already contains the same mapping', async () => {
     const hash = `f${'2'.repeat(55)}`;
     const fullDenom = 'transfer/channel-44/factory/osmo1abcd/mytoken';
+    const referenceAssetId = `mint-voucher-policy-id000643b0${hash}`;
     lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
       if (unit === 'trace-shard-policy0f') {
         return makeShardUtxo([{ voucher_hash: hash, full_denom: fullDenom }], 15);
@@ -177,6 +212,9 @@ describe('DenomTraceService', () => {
         return makeDirectoryUtxo([
           { bucket_index: 15n, active_shard_name: '0f', archived_shard_names: [] },
         ]);
+      }
+      if (unit === referenceAssetId) {
+        return makeCanonicalVoucherMetadataUtxo(hash, fullDenom);
       }
       throw new Error(`unexpected unit lookup: ${unit}`);
     });
@@ -187,8 +225,9 @@ describe('DenomTraceService', () => {
     if (result.kind !== 'existing') {
       throw new Error('expected existing proof context');
     }
-    expect(result.traceRegistryDirectoryUtxo.txHash).toBe('trace-directory');
-    expect(result.traceRegistryShardWitnessUtxos.map((utxo) => utxo.txHash)).toEqual(['trace-shard-15']);
+    expect(result.traceRegistryMappingWitnessUtxos.map((utxo) => utxo.txHash)).toEqual([
+      'voucher-metadata',
+    ]);
   });
 
   it('fails hard when the same voucher hash resolves to a conflicting full denom', async () => {
@@ -409,11 +448,26 @@ describe('DenomTraceService', () => {
     await expect(service.getCount()).resolves.toBe(3);
   });
 
-  it('prepares a rollover context when forced', async () => {
+  it('automatically prepares a rollover at the active-shard entry limit', async () => {
     const hash = `a${'4'.repeat(55)}`;
     const fullDenom = 'transfer/channel-77/uatom';
+    const fullShardEntries = Array.from({ length: 32 }, (_, index) => ({
+      voucher_hash: `${(index % 10).toString()}${String(index).padStart(55, '0')}`,
+      full_denom: `u${index}`,
+    }));
+    lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
+      if (unit === 'trace-shard-policy0a') {
+        return makeShardUtxo(fullShardEntries, 10);
+      }
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          { bucket_index: 10n, active_shard_name: '0a', archived_shard_names: [] },
+        ]);
+      }
+      throw new Error(`unexpected unit lookup: ${unit}`);
+    });
 
-    const result = await service.prepareOnChainInsert(hash, fullDenom, { forceRollover: true });
+    const result = await service.prepareOnChainInsert(hash, fullDenom);
 
     expect(result).not.toBeNull();
     expect(result?.kind).toBe('rollover');
@@ -424,6 +478,109 @@ describe('DenomTraceService', () => {
     expect(result.traceRegistryShardUtxo.txHash).toBe('trace-shard-10');
     expect(result.traceRegistryArchivedShardWitnessUtxos).toEqual([]);
     expect(result.newActiveTraceRegistryShardTokenUnit.startsWith('trace-shard-policy')).toBe(true);
+  });
+
+  it('automatically prepares a rollover at the active-shard CBOR byte limit', async () => {
+    const hash = `a${'9'.repeat(55)}`;
+    const fullDenom = 'y'.repeat(256);
+    const nearByteLimitEntries = Array.from({ length: 10 }, (_, index) => ({
+      voucher_hash: `${(index % 10).toString()}${String(index).padStart(55, '0')}`,
+      full_denom: 'x'.repeat(256),
+    }));
+    lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
+      if (unit === 'trace-shard-policy0a') {
+        return makeShardUtxo(nearByteLimitEntries, 10);
+      }
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          { bucket_index: 10n, active_shard_name: '0a', archived_shard_names: [] },
+        ]);
+      }
+      throw new Error(`unexpected unit lookup: ${unit}`);
+    });
+
+    const result = await service.prepareOnChainInsert(hash, fullDenom);
+
+    expect(result.kind).toBe('rollover');
+  });
+
+  it('rejects a ninth rollover with an explicit admission-only error', async () => {
+    const hash = `a${'5'.repeat(55)}`;
+    const fullDenom = 'transfer/channel-77/uatom';
+    const archivedShardNames = ['10', '11', '12', '13', '14', '15', '16', '17'];
+    const fullShardEntries = Array.from({ length: 32 }, (_, index) => ({
+      voucher_hash: `${(index % 10).toString()}${String(index).padStart(55, '0')}`,
+      full_denom: `u${index}`,
+    }));
+    lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          {
+            bucket_index: 10n,
+            active_shard_name: '0a',
+            archived_shard_names: archivedShardNames,
+          },
+        ]);
+      }
+      if (unit === 'trace-shard-policy0a') {
+        return makeShardUtxo(fullShardEntries, 10);
+      }
+      if (archivedShardNames.some((name) => unit === `trace-shard-policy${name}`)) {
+        return makeShardUtxo([], 10);
+      }
+      throw new Error(`unexpected unit lookup: ${unit}`);
+    });
+
+    await expect(service.prepareOnChainInsert(hash, fullDenom)).rejects.toThrow(
+      'new denominations in this bucket cannot be registered, but existing vouchers remain usable',
+    );
+  });
+
+  it('keeps existing mappings usable when their bucket is at admission capacity', async () => {
+    const hash = `a${'6'.repeat(55)}`;
+    const fullDenom = 'transfer/channel-77/uatom';
+    const referenceAssetId = `mint-voucher-policy-id000643b0${hash}`;
+    const archivedShardNames = ['10', '11', '12', '13', '14', '15', '16', '17'];
+    lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
+      if (unit === 'trace-shard-policydir') {
+        return makeDirectoryUtxo([
+          {
+            bucket_index: 10n,
+            active_shard_name: '0a',
+            archived_shard_names: archivedShardNames,
+          },
+        ]);
+      }
+      if (unit === 'trace-shard-policy0a') {
+        return makeShardUtxo([{ voucher_hash: hash, full_denom: fullDenom }], 10);
+      }
+      if (archivedShardNames.some((name) => unit === `trace-shard-policy${name}`)) {
+        return makeShardUtxo([], 10);
+      }
+      if (unit === referenceAssetId) {
+        return makeCanonicalVoucherMetadataUtxo(hash, fullDenom);
+      }
+      throw new Error(`unexpected unit lookup: ${unit}`);
+    });
+
+    const result = await service.prepareOnChainInsert(hash, fullDenom);
+
+    expect(result).toEqual({
+      kind: 'existing',
+      traceRegistryMappingWitnessUtxos: [
+        expect.objectContaining({ txHash: 'voucher-metadata' }),
+      ],
+    });
+  });
+
+  it('rejects forced rollover before the protocol capacity threshold', async () => {
+    await expect(
+      service.prepareOnChainInsert(
+        `a${'7'.repeat(55)}`,
+        'transfer/channel-77/uatom',
+        { forceRollover: true },
+      ),
+    ).rejects.toThrow('rollover was requested before the active shard reached');
   });
 
   it('keeps append candidates that fit size and execution budgets', async () => {
@@ -485,7 +642,8 @@ describe('DenomTraceService', () => {
 
     expect(summary.maxTxSize).toBe(16_384);
     expect(summary.txHeadroomBytes).toBe(1_024);
-    expect(summary.projectedMaxShardDatumBytesUpperBound).toBe(15_360);
+    expect(summary.projectedMaxShardDatumBytesUpperBound).toBe(3_072);
+    expect(summary.protocolLimits.maxArchivedShardsPerBucket).toBe(8);
     expect(summary.totalEntries).toBe(3);
     expect(summary.buckets).toHaveLength(3);
     expect(summary.buckets[1]).toMatchObject({
@@ -503,7 +661,7 @@ describe('DenomTraceService', () => {
     );
   });
 
-  it('simulates bucket growth and projects rollovers with a size-only upper bound', async () => {
+  it('simulates bucket growth against the protocol capacity limits', async () => {
     lucidServiceMock.findUtxoByUnit.mockImplementation(async (unit: string) => {
       if (unit === 'trace-shard-policy0a') {
         return makeShardUtxo([], 10);
@@ -523,9 +681,11 @@ describe('DenomTraceService', () => {
       rolloverCount: 0,
       totalEntries: 0,
     });
-    expect(simulation.sizeModel).toBe('datum-only-upper-bound');
+    expect(simulation.sizeModel).toBe('protocol-capacity');
     expect(simulation.bucketIndex).toBe(10);
     expect(simulation.simulatedInserts).toBe(6);
+    expect(simulation.admittedInserts).toBe(6);
+    expect(simulation.admissionExhausted).toBe(false);
     expect(simulation.initialBucket.totalEntries).toBe(0);
     expect(simulation.projectedBucket.totalEntries).toBe(6);
     expect(simulation.projectedBucket.shardCount).toBeGreaterThanOrEqual(1);
