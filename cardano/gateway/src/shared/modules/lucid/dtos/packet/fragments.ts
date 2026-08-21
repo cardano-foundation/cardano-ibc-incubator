@@ -98,8 +98,7 @@ export type TraceRegistryAppendUpdate = {
 
 export type TraceRegistryExistingProof = {
   kind: "existing";
-  traceRegistryDirectoryUtxo: UTxO;
-  traceRegistryShardWitnessUtxos: UTxO[];
+  traceRegistryMappingWitnessUtxos: UTxO[];
 };
 
 export type TraceRegistryRolloverUpdate = {

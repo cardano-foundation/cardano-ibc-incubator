@@ -9,6 +9,7 @@ use ibc/apps/transfer/trace_registry.{
   AdvanceDirectory, Directory, RolloverInsertTrace, Shard, TraceRegistryDatum,
   TraceRegistryDirectoryBucket, TraceRegistryDirectoryDatum, TraceRegistryEntry,
   TraceRegistryRedeemer, TraceRegistryShardDatum, bucket_index_for_hash,
+  max_entries_per_shard,
 }
 use ibc/apps/transfer/voucher_asset_name
 use ibc/auth.{AuthToken}
@@ -106,6 +107,14 @@ fn test_expected_entry(full_denom: ByteArray) -> TraceRegistryEntry {
   }
 }
 
+fn rollover_filler_entry() -> TraceRegistryEntry {
+  test_expected_entry("transfer/channel-7/uosmo")
+}
+
+fn rollover_capacity_entries() -> List<TraceRegistryEntry> {
+  list.repeat(rollover_filler_entry(), max_entries_per_shard)
+}
+
 fn run_trace_registry_spend(
   datum: TraceRegistryDatum,
   redeemer: TraceRegistryRedeemer,
@@ -175,14 +184,12 @@ fn test_rollover_fixture(extra_bucket_seed: Int) -> TestRolloverFixture {
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let previous_active_shard_name = "active-0a"
   let new_active_shard_name = "active-0a-v2"
-  let old_entry =
-    TraceRegistryEntry {
-      voucher_hash: voucher_asset_name.voucher_denom_hash(
-        "transfer/channel-7/uosmo",
-      ),
-      full_denom: "transfer/channel-7/uosmo",
+  let old_entry = rollover_filler_entry()
+  let old_shard =
+    TraceRegistryShardDatum {
+      bucket_index,
+      entries: rollover_capacity_entries(),
     }
-  let old_shard = TraceRegistryShardDatum { bucket_index, entries: [old_entry] }
   let non_target_bucket_index =
     ( bucket_index + normalize_non_target_offset(extra_bucket_seed) ) % 16
   let old_directory =
@@ -431,7 +438,10 @@ test prop_model_trace_append_rollover_lookup(extra_bucket_seed via fuzz.int()) {
   let initial_model =
     trace_model(
       old_directory,
-      TraceRegistryShardDatum { ..old_shard, entries: [] },
+      TraceRegistryShardDatum {
+        ..old_shard,
+        entries: list.repeat(old_entry, max_entries_per_shard - 1),
+      },
     )
   let appended_model = model_append_trace(initial_model, old_entry)
   let inserted_entry = test_expected_entry(full_denom)
@@ -657,14 +667,11 @@ test trace_registry_rollover_insert_succeeds_and_preserves_old_shard() {
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let previous_active_shard_name = "active-0a"
   let new_active_shard_name = "active-0a-v2"
-  let old_entry =
-    TraceRegistryEntry {
-      voucher_hash: voucher_asset_name.voucher_denom_hash(
-        "transfer/channel-7/uosmo",
-      ),
-      full_denom: "transfer/channel-7/uosmo",
+  let old_shard =
+    TraceRegistryShardDatum {
+      bucket_index,
+      entries: rollover_capacity_entries(),
     }
-  let old_shard = TraceRegistryShardDatum { bucket_index, entries: [old_entry] }
   let spent_input =
     Input {
       output_reference: test_output_ref(0),
@@ -720,22 +727,92 @@ test trace_registry_rollover_insert_succeeds_and_preserves_old_shard() {
   )
 }
 
+test trace_registry_rollover_insert_rejects_before_shard_capacity() fail {
+  let full_denom = "transfer/channel-77/uatom"
+  let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
+  let bucket_index = bucket_index_for_hash(voucher_hash)
+  let previous_active_shard_name = "active-0a"
+  let new_active_shard_name = "active-0a-v2"
+  let old_entries = [rollover_filler_entry()]
+  let old_shard = TraceRegistryShardDatum { bucket_index, entries: old_entries }
+  let spent_input =
+    Input {
+      output_reference: test_output_ref(0),
+      output: test_shard_output(
+        bucket_index,
+        previous_active_shard_name,
+        old_entries,
+      ),
+    }
+  let directory_input =
+    test_directory_input(1, bucket_index, previous_active_shard_name, [])
+  let archived_output =
+    test_shard_output(bucket_index, previous_active_shard_name, old_entries)
+  let new_active_output =
+    test_shard_output(
+      bucket_index,
+      new_active_shard_name,
+      [test_expected_entry(full_denom)],
+    )
+  let updated_directory_output =
+    test_directory_output(
+      [
+        TraceRegistryDirectoryBucket {
+          bucket_index,
+          active_shard_name: new_active_shard_name,
+          archived_shard_names: [previous_active_shard_name],
+        },
+      ],
+    )
+  let transaction =
+    Transaction {
+      ..placeholder,
+      inputs: [spent_input, directory_input],
+      outputs: [archived_output, new_active_output, updated_directory_output],
+      mint: from_asset(
+        test_voucher_policy_id(),
+        voucher_asset_name.voucher_user_token_name_from_denom_hash(voucher_hash),
+        1,
+      )
+        |> add(test_shard_policy_id(), new_active_shard_name, 1),
+    }
+
+  run_trace_registry_spend(
+    Shard(old_shard),
+    RolloverInsertTrace { voucher_hash, full_denom, new_active_shard_name },
+    test_output_ref(0),
+    transaction,
+  )
+}
+
 test trace_registry_rollover_insert_fails_when_directory_does_not_advance() fail {
   let full_denom = "transfer/channel-77/uatom"
   let voucher_hash = voucher_asset_name.voucher_denom_hash(full_denom)
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let previous_active_shard_name = "active-0a"
   let new_active_shard_name = "active-0a-v2"
-  let old_shard = TraceRegistryShardDatum { bucket_index, entries: [] }
+  let old_shard =
+    TraceRegistryShardDatum {
+      bucket_index,
+      entries: rollover_capacity_entries(),
+    }
   let spent_input =
     Input {
       output_reference: test_output_ref(0),
-      output: test_shard_output(bucket_index, previous_active_shard_name, []),
+      output: test_shard_output(
+        bucket_index,
+        previous_active_shard_name,
+        rollover_capacity_entries(),
+      ),
     }
   let directory_input =
     test_directory_input(1, bucket_index, previous_active_shard_name, [])
   let archived_output =
-    test_shard_output(bucket_index, previous_active_shard_name, [])
+    test_shard_output(
+      bucket_index,
+      previous_active_shard_name,
+      rollover_capacity_entries(),
+    )
   let new_active_output =
     test_shard_output(
       bucket_index,
@@ -788,7 +865,11 @@ test trace_registry_rollover_insert_fails_when_spent_shard_is_not_old_active() f
       ),
       full_denom: "transfer/channel-7/uosmo",
     }
-  let old_shard = TraceRegistryShardDatum { bucket_index, entries: [old_entry] }
+  let old_shard =
+    TraceRegistryShardDatum {
+      bucket_index,
+      entries: list.repeat(old_entry, max_entries_per_shard),
+    }
   let spent_input =
     Input {
       output_reference: test_output_ref(0),
@@ -852,11 +933,19 @@ test trace_registry_rollover_insert_fails_when_hash_exists_in_archived_shard() f
   let previous_active_shard_name = "active-0a"
   let archived_shard_name = "archived-0a"
   let new_active_shard_name = "active-0a-v2"
-  let old_shard = TraceRegistryShardDatum { bucket_index, entries: [] }
+  let old_shard =
+    TraceRegistryShardDatum {
+      bucket_index,
+      entries: rollover_capacity_entries(),
+    }
   let spent_input =
     Input {
       output_reference: test_output_ref(0),
-      output: test_shard_output(bucket_index, previous_active_shard_name, []),
+      output: test_shard_output(
+        bucket_index,
+        previous_active_shard_name,
+        rollover_capacity_entries(),
+      ),
     }
   let directory_input =
     test_directory_input(
@@ -875,7 +964,11 @@ test trace_registry_rollover_insert_fails_when_hash_exists_in_archived_shard() f
       ),
     }
   let archived_output =
-    test_shard_output(bucket_index, previous_active_shard_name, [])
+    test_shard_output(
+      bucket_index,
+      previous_active_shard_name,
+      rollover_capacity_entries(),
+    )
   let new_active_output =
     test_shard_output(
       bucket_index,
@@ -923,16 +1016,28 @@ test trace_registry_rollover_insert_fails_when_updated_directory_output_uses_wro
   let bucket_index = bucket_index_for_hash(voucher_hash)
   let previous_active_shard_name = "active-0a"
   let new_active_shard_name = "active-0a-v2"
-  let old_shard = TraceRegistryShardDatum { bucket_index, entries: [] }
+  let old_shard =
+    TraceRegistryShardDatum {
+      bucket_index,
+      entries: rollover_capacity_entries(),
+    }
   let spent_input =
     Input {
       output_reference: test_output_ref(0),
-      output: test_shard_output(bucket_index, previous_active_shard_name, []),
+      output: test_shard_output(
+        bucket_index,
+        previous_active_shard_name,
+        rollover_capacity_entries(),
+      ),
     }
   let directory_input =
     test_directory_input(1, bucket_index, previous_active_shard_name, [])
   let archived_output =
-    test_shard_output(bucket_index, previous_active_shard_name, [])
+    test_shard_output(
+      bucket_index,
+      previous_active_shard_name,
+      rollover_capacity_entries(),
+    )
   let new_active_output =
     test_shard_output(
       bucket_index,
@@ -1004,7 +1109,11 @@ test trace_registry_advance_directory_succeeds_for_valid_rollover() {
       ],
     )
   let archived_output =
-    test_shard_output(bucket_index, previous_active_shard_name, [])
+    test_shard_output(
+      bucket_index,
+      previous_active_shard_name,
+      rollover_capacity_entries(),
+    )
   let new_active_output =
     test_shard_output(
       bucket_index,
@@ -1071,7 +1180,11 @@ test trace_registry_advance_directory_fails_when_previous_shard_is_not_archived(
       ],
     )
   let archived_output =
-    test_shard_output(bucket_index, previous_active_shard_name, [])
+    test_shard_output(
+      bucket_index,
+      previous_active_shard_name,
+      rollover_capacity_entries(),
+    )
   let new_active_output =
     test_shard_output(
       bucket_index,
@@ -1149,7 +1262,11 @@ test trace_registry_advance_directory_fails_when_bucket_set_is_not_bijective() f
       ],
     )
   let archived_output =
-    test_shard_output(bucket_index, previous_active_shard_name, [])
+    test_shard_output(
+      bucket_index,
+      previous_active_shard_name,
+      rollover_capacity_entries(),
+    )
   let new_active_output =
     test_shard_output(
       bucket_index,

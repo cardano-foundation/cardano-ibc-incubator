@@ -1,5 +1,17 @@
 import { convertHex2String, convertString2Hex } from '../helpers/hex';
 
+// Protocol constants mirrored by the Aiken trace-registry library. These are
+// consensus-facing limits, not relayer tuning knobs.
+export const TRACE_REGISTRY_LIMITS = {
+  bucketCount: 16,
+  maxFullDenomBytes: 256,
+  maxTraceHops: 8,
+  maxEntriesPerShard: 32,
+  maxShardDatumBytes: 3_072,
+  maxArchivedShardsPerBucket: 8,
+  maxDirectoryDatumBytes: 6_144,
+} as const;
+
 export type TraceRegistryEntry = {
   voucher_hash: string;
   full_denom: string;
