@@ -13,10 +13,15 @@ pub async fn run_token_swap_demo(
     network: Option<&str>,
 ) -> Result<(), String> {
     let resolved_chain = chain.unwrap_or(OptionalChainId::Osmosis);
-    let network_label = network.unwrap_or("local");
+    let default_network = match resolved_chain {
+        OptionalChainId::Cosmos => "v8-classic",
+        _ => "local",
+    };
+    let network_label = network.unwrap_or(default_network);
     let route_chain = match resolved_chain {
         OptionalChainId::Osmosis => RouteChain::Osmosis,
         OptionalChainId::Injective => RouteChain::Injective,
+        OptionalChainId::Cosmos => RouteChain::Cosmos,
         OptionalChainId::Cheqd => {
             return Err("ERROR: Token-swap demo is not implemented for chain 'cheqd'.".to_string())
         }
@@ -50,8 +55,63 @@ pub async fn run_token_swap_demo(
             transfer_route.direct_channel_pair.a_channel_id.as_str(),
             transfer_route.direct_channel_pair.b_channel_id.as_str(),
         ),
+        OptionalChainId::Cosmos => run_direct_cosmos_profile_token_swap(
+            project_root_path,
+            network_label,
+            transfer_route.cardano_chain_id.as_str(),
+            transfer_route.destination_chain_id.as_str(),
+            transfer_route.direct_channel_pair.a_channel_id.as_str(),
+            transfer_route.direct_channel_pair.b_channel_id.as_str(),
+        ),
         OptionalChainId::Cheqd => unreachable!("cheqd token-swap returned earlier"),
     }
+}
+
+fn run_direct_cosmos_profile_token_swap(
+    project_root_path: &Path,
+    profile: &str,
+    cardano_chain_id: &str,
+    cosmos_chain_id: &str,
+    cardano_cosmos_channel_id: &str,
+    cosmos_cardano_channel_id: &str,
+) -> Result<(), String> {
+    let script_path = project_root_path
+        .join("chains")
+        .join("cosmos")
+        .join("scripts")
+        .join("run_direct_token_swap.sh");
+    let script = script_path
+        .to_str()
+        .ok_or_else(|| "ERROR: Invalid Cosmos compatibility demo script path".to_string())?;
+    let project_root = project_root_path
+        .to_str()
+        .ok_or_else(|| "ERROR: Invalid project root path".to_string())?;
+
+    execute_script(
+        project_root_path,
+        script,
+        Vec::new(),
+        Some(vec![
+            ("CARIBIC_PROJECT_ROOT", project_root),
+            ("COSMOS_PROFILE", profile),
+            ("CARDANO_CHAIN_ID", cardano_chain_id),
+            ("COSMOS_CHAIN_ID", cosmos_chain_id),
+            ("CARDANO_COSMOS_CHANNEL_ID", cardano_cosmos_channel_id),
+            ("COSMOS_CARDANO_CHANNEL_ID", cosmos_cardano_channel_id),
+        ]),
+    )
+    .map_err(|error| {
+        format!(
+            "ERROR: Failed to run the {} Classic compatibility demo: {}",
+            profile, error
+        )
+    })?;
+
+    logger::log(&format!(
+        "PASS: Direct Cardano-to-{} Classic compatibility demo completed",
+        profile
+    ));
+    Ok(())
 }
 
 fn run_direct_osmosis_token_swap(

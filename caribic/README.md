@@ -46,6 +46,9 @@ caribic start dapp
 caribic chain start --chain osmosis
 caribic chain start --chain injective --network local
 caribic chain start --chain injective --network testnet
+caribic chain start --chain cosmos --network v8-classic
+caribic chain start --chain cosmos --network v10-classic
+caribic chain start --chain cosmos --network v10-v2
 ```
 
 Public-testnet Yaci checkpoint note:
@@ -66,6 +69,13 @@ Injective startup note:
 - `caribic chain start --chain injective --network testnet` starts a local `injectived` process bootstrapped from a public Injective testnet snapshot.
 - `caribic chain start --chain injective --network mainnet` is intentionally not implemented yet.
 - If `injectived` is missing, caribic prompts to install it from source (`InjectiveFoundation/injective-core`) and runs `make install`.
+
+Cosmos compatibility-profile note:
+
+- `v8-classic` and `v10-classic` are pinned local simd chains supported by direct Cardano route setup and the token-swap compatibility demo.
+- `v10-v2` is selectable and runnable, but Cardano/Hermes IBC v2 route and transfer testing is intentionally deferred.
+- A start recreates deterministic genesis by default; pass `--chain-flag stateful=true` to retain `~/.caribic/cosmos-profiles/<profile>`.
+- Full profile metadata and endpoints are documented in [`chains/cosmos/README.md`](../chains/cosmos/README.md).
 
 Hermes config note:
 - Hermes reads `~/.hermes/config.toml` when the process starts. Editing that file while Hermes is already running does not apply live.
@@ -88,15 +98,18 @@ caribic stop dapp
 caribic chain stop --chain osmosis
 caribic chain stop --chain injective --network local
 caribic chain stop --chain injective --network testnet
+caribic chain stop --chain cosmos --network v8-classic
 ```
 
 ### `caribic chain <start|stop|health> --chain <id>`
 
-Manages optional chains through the adapter registry. This is the canonical interface for non-core chains such as Osmosis, cheqd, and Injective.
+Manages optional chains through the adapter registry. This is the canonical interface for non-core chains such as the pinned Cosmos compatibility profiles, Osmosis, cheqd, and Injective.
 
 ```bash
 caribic chain start --chain osmosis
 caribic chain start --chain injective --network testnet --chain-flag stateful=false
+caribic chain start --chain cosmos --network v10-classic
+caribic chain health --chain cosmos --network v10-v2
 caribic chain health --chain cheqd --network testnet
 caribic chain stop --chain injective --network local
 ```
@@ -141,6 +154,20 @@ caribic create-channel --a-chain cardano-devnet --b-chain localosmosis --a-port 
 ### `caribic demo token-swap`
 
 `caribic demo token-swap` prepares direct Cardano-to-target transfer routes and runs the selected local demo against those direct channel ids.
+
+The Cosmos selector supports the currently testable Classic profiles:
+
+```bash
+caribic setup route --from cardano --to cosmos --to-network v8-classic
+caribic demo token-swap --chain cosmos --network v8-classic
+
+caribic setup route --from cardano --to cosmos --to-network v10-classic
+caribic demo token-swap --chain cosmos --network v10-classic
+```
+
+Selecting `v10-v2` is recognized but returns an explicit deferred-testing
+error until the Cardano/Hermes IBC v2 workflow is implemented and ready to
+exercise.
 
 If your machine is slower, tune retry windows in `caribic/config/default-config.json` (or whichever file you pass via `--config`).
 

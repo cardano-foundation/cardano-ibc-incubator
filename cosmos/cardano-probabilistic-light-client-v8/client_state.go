@@ -240,21 +240,25 @@ func ibcStateKeyFromPath(path exported.Path) ([]byte, error) {
 }
 
 func verifyDelayPeriodPassed(ctx sdk.Context, clientStore storetypes.KVStore, height exported.Height, delayTimePeriod, delayBlockPeriod uint64) error {
-	processedTime, found := GetProcessedTime(clientStore, height)
-	if !found {
-		return ErrProcessedTimeNotFound
+	if delayTimePeriod != 0 {
+		processedTime, found := GetProcessedTime(clientStore, height)
+		if !found {
+			return ErrProcessedTimeNotFound
+		}
+		currentTime := uint64(ctx.BlockTime().UnixNano())
+		if currentTime < processedTime+delayTimePeriod {
+			return ErrDelayPeriodNotPassed
+		}
 	}
-	currentTime := uint64(ctx.BlockTime().UnixNano())
-	if currentTime < processedTime+delayTimePeriod {
-		return ErrDelayPeriodNotPassed
-	}
-	processedHeight, found := GetProcessedHeight(clientStore, height)
-	if !found {
-		return ErrProcessedHeightNotFound
-	}
-	currentHeight := uint64(ctx.BlockHeight())
-	if currentHeight < processedHeight.GetRevisionHeight()+delayBlockPeriod {
-		return ErrDelayPeriodNotPassed
+	if delayBlockPeriod != 0 {
+		processedHeight, found := GetProcessedHeight(clientStore, height)
+		if !found {
+			return ErrProcessedHeightNotFound
+		}
+		currentHeight := clienttypes.GetSelfHeight(ctx)
+		if currentHeight.GetRevisionHeight() < processedHeight.GetRevisionHeight()+delayBlockPeriod {
+			return ErrDelayPeriodNotPassed
+		}
 	}
 	return nil
 }

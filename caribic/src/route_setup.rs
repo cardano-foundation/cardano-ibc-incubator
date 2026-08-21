@@ -6,6 +6,11 @@ use serde_json::Value;
 
 use crate::{
     chains::{
+        cosmos_profiles::{
+            chain_id as cosmos_profile_chain_id,
+            configure_hermes_for_classic_route as configure_cosmos_profile_hermes,
+            semantics as cosmos_profile_semantics, IbcSemantics,
+        },
         injective::{
             configure_hermes_for_demo as configure_injective_hermes_for_demo,
             configure_hermes_for_testnet_demo as configure_injective_hermes_for_testnet_demo,
@@ -31,6 +36,7 @@ const HERMES_CARDANO_QUERY_TIMEOUT_SECS: u64 = 20;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RouteChain {
     Cardano,
+    Cosmos,
     Injective,
     Osmosis,
 }
@@ -39,6 +45,7 @@ impl RouteChain {
     pub fn display_name(self) -> &'static str {
         match self {
             Self::Cardano => "Cardano",
+            Self::Cosmos => "Cosmos compatibility chain",
             Self::Injective => "Injective",
             Self::Osmosis => "Osmosis",
         }
@@ -98,6 +105,21 @@ pub fn setup_transfer_route(
         ));
     }
 
+    if destination.chain == RouteChain::Cardano {
+        return Err("Cardano-to-Cardano token-transfer route setup is not supported.".to_string());
+    }
+
+    let default_destination_network = match destination.chain {
+        RouteChain::Cosmos => "v8-classic",
+        _ => "local",
+    };
+    let destination_network = destination
+        .network
+        .as_deref()
+        .unwrap_or(default_destination_network);
+    let destination_chain_id =
+        destination_chain_id_for_network(destination.chain, destination_network)?;
+
     let active_cardano_network = config::active_core_cardano_network(project_root_path);
     if let Some(source_network) = source.network.as_deref() {
         if source_network != active_cardano_network.as_str() {
@@ -113,13 +135,6 @@ pub fn setup_transfer_route(
             .map_err(|error| format!("Failed to refresh local Cardano epoch nonce: {}", error))?;
     }
 
-    if destination.chain == RouteChain::Cardano {
-        return Err("Cardano-to-Cardano token-transfer route setup is not supported.".to_string());
-    }
-
-    let destination_network = destination.network.as_deref().unwrap_or("local");
-    let destination_chain_id =
-        destination_chain_id_for_network(destination.chain, destination_network)?;
     let direct_channel_pair = ensure_direct_transfer_channel(
         project_root_path,
         destination.chain,
@@ -289,6 +304,9 @@ fn configure_destination_chain_for_hermes(
                 .into()),
             }
         }
+        RouteChain::Cosmos => {
+            configure_cosmos_profile_hermes(project_root_path, destination_network)
+        }
         RouteChain::Cardano => Err("Cardano destination routes are not supported".into()),
     }
 }
@@ -300,6 +318,15 @@ fn destination_chain_id_for_network(
     match destination_chain {
         RouteChain::Injective => injective_chain_id_for_network(network),
         RouteChain::Osmosis => osmosis_demo_chain_id(network),
+        RouteChain::Cosmos => {
+            if cosmos_profile_semantics(network)? != IbcSemantics::Classic {
+                return Err(format!(
+                    "Cosmos profile '{}' uses IBC v2 semantics. Cardano/Hermes v2 route and token-swap testing is deferred; select v8-classic or v10-classic for current tests.",
+                    network
+                ));
+            }
+            cosmos_profile_chain_id(network)
+        }
         RouteChain::Cardano => {
             Err("Cardano-to-Cardano token-transfer route setup is not supported.".to_string())
         }
@@ -881,6 +908,150 @@ fn parse_hermes_channel_id(stdout: &str) -> Option<String> {
         .next()
 }
 
+fn parse_hermes_event_channel_id(output: &str, event_name: &str) -> Option<String> {
+    output
+        .lines()
+        .filter(|line| line.contains(event_name))
+        .filter_map(parse_hermes_channel_id)
+        .next_back()
+}
+
+fn resume_direct_transfer_channel_after_open_init(
+    cardano_channel_id: &str,
+    cardano_connection_id: &str,
+    destination_chain_id: &str,
+) -> Result<TransferChannelPair, String> {
+    let cardano_chain_id = cardano_chain_id();
+    let cardano_port_id = cardano_message_port_id();
+    let cardano_connection = query_connection_end_status(
+        cardano_chain_id.as_str(),
+        cardano_connection_id,
+    )?
+    .ok_or_else(|| {
+        format!(
+            "Cardano connection {cardano_connection_id} disappeared while resuming channel {cardano_channel_id}"
+        )
+    })?;
+    let destination_connection_id = cardano_connection.remote_connection_id.ok_or_else(|| {
+        format!("Cardano connection {cardano_connection_id} has no destination connection id")
+    })?;
+    let destination_connection =
+        query_connection_end_status(destination_chain_id, destination_connection_id.as_str())?
+            .ok_or_else(|| {
+                format!(
+                    "Destination connection {destination_connection_id} disappeared while resuming channel {cardano_channel_id}"
+                )
+            })?;
+    let destination_client_id = destination_connection.client_id.ok_or_else(|| {
+        format!("Destination connection {destination_connection_id} has no local client id")
+    })?;
+
+    logger::verbose(&format!(
+        "Cardano channel {cardano_channel_id} reached OpenInit; committing any probabilistic checkpoints before ChannelOpenTry"
+    ));
+    run_hermes_command_with_provider_retry(
+        &[
+            "update",
+            "client",
+            "--host-chain",
+            destination_chain_id,
+            "--client",
+            destination_client_id.as_str(),
+        ],
+        &format!("catch up {destination_chain_id} client before ChannelOpenTry"),
+    )?;
+
+    let open_try_output = run_hermes_command_with_provider_retry(
+        &[
+            "tx",
+            "chan-open-try",
+            "--dst-chain",
+            destination_chain_id,
+            "--src-chain",
+            cardano_chain_id.as_str(),
+            "--dst-connection",
+            destination_connection_id.as_str(),
+            "--dst-port",
+            TRANSFER_PORT_ID,
+            "--src-port",
+            cardano_port_id.as_str(),
+            "--src-channel",
+            cardano_channel_id,
+        ],
+        &format!("resume ChannelOpenTry for {cardano_channel_id}"),
+    )?;
+    let open_try_stdout = String::from_utf8_lossy(&open_try_output.stdout);
+    let destination_channel_id =
+        parse_hermes_event_channel_id(open_try_stdout.as_ref(), "OpenTryChannel").ok_or_else(
+            || {
+                format!(
+            "Failed to parse destination channel id from resumed ChannelOpenTry output:\n{}",
+            open_try_stdout.trim()
+        )
+            },
+        )?;
+
+    run_hermes_command_with_provider_retry(
+        &[
+            "tx",
+            "chan-open-ack",
+            "--dst-chain",
+            cardano_chain_id.as_str(),
+            "--src-chain",
+            destination_chain_id,
+            "--dst-connection",
+            cardano_connection_id,
+            "--dst-port",
+            cardano_port_id.as_str(),
+            "--src-port",
+            TRANSFER_PORT_ID,
+            "--dst-channel",
+            cardano_channel_id,
+            "--src-channel",
+            destination_channel_id.as_str(),
+        ],
+        &format!("resume ChannelOpenAck for {cardano_channel_id}"),
+    )?;
+
+    run_hermes_command_with_provider_retry(
+        &[
+            "update",
+            "client",
+            "--host-chain",
+            destination_chain_id,
+            "--client",
+            destination_client_id.as_str(),
+        ],
+        &format!("catch up {destination_chain_id} client before ChannelOpenConfirm"),
+    )?;
+    run_hermes_command_with_provider_retry(
+        &[
+            "tx",
+            "chan-open-confirm",
+            "--dst-chain",
+            destination_chain_id,
+            "--src-chain",
+            cardano_chain_id.as_str(),
+            "--dst-connection",
+            destination_connection_id.as_str(),
+            "--dst-port",
+            TRANSFER_PORT_ID,
+            "--src-port",
+            cardano_port_id.as_str(),
+            "--dst-channel",
+            destination_channel_id.as_str(),
+            "--src-channel",
+            cardano_channel_id,
+        ],
+        &format!("resume ChannelOpenConfirm for {cardano_channel_id}"),
+    )?;
+
+    Ok(TransferChannelPair {
+        a_channel_id: cardano_channel_id.to_string(),
+        b_channel_id: destination_channel_id,
+    })
+}
+
 fn create_direct_transfer_channel_on_connection(
     connection_id: &str,
     destination_chain_id: &str,
@@ -904,13 +1075,30 @@ fn create_direct_transfer_channel_on_connection(
             TRANSFER_PORT_ID,
         ],
         &format!("create channel {cardano_chain_id}->{destination_chain_id}"),
-    )
-    .map_err(|error| {
-        format!(
-            "Failed to create Cardano-{destination_chain_id} transfer channel on connection {}: {}",
-            connection_id, error
-        )
-    })?;
+    );
+
+    let output = match output {
+        Ok(output) => output,
+        Err(error) => {
+            if let Some(cardano_channel_id) =
+                parse_hermes_event_channel_id(error.as_str(), "OpenInitChannel")
+            {
+                return resume_direct_transfer_channel_after_open_init(
+                    cardano_channel_id.as_str(),
+                    connection_id,
+                    destination_chain_id,
+                )
+                .map_err(|resume_error| {
+                    format!(
+                        "Failed to create Cardano-{destination_chain_id} transfer channel on connection {connection_id}. Hermes created {cardano_channel_id}, but checkpoint-aware resume failed: {resume_error}\nOriginal create-channel error: {error}"
+                    )
+                });
+            }
+            return Err(format!(
+                "Failed to create Cardano-{destination_chain_id} transfer channel on connection {connection_id}: {error}"
+            ));
+        }
+    };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let cardano_channel_id = parse_hermes_channel_id(stdout.as_ref()).ok_or_else(|| {
@@ -961,4 +1149,48 @@ fn create_direct_transfer_channel_on_connection(
         "Created Cardano<->{destination_chain_id} transfer channel on connection {}, but it did not reach Open/Open on both ends in time (Cardano channel {}).",
         connection_id, cardano_channel_id
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classic_cosmos_profiles_resolve_to_revisioned_chain_ids() {
+        assert_eq!(
+            destination_chain_id_for_network(RouteChain::Cosmos, "v8-classic")
+                .expect("v8 Classic profile"),
+            "v8-classic-1"
+        );
+        assert_eq!(
+            destination_chain_id_for_network(RouteChain::Cosmos, "v10-classic")
+                .expect("v10 Classic profile"),
+            "v10-classic-1"
+        );
+    }
+
+    #[test]
+    fn v10_v2_route_testing_is_explicitly_deferred() {
+        let error = destination_chain_id_for_network(RouteChain::Cosmos, "v10-v2")
+            .expect_err("IBC v2 route should not use the Classic workflow");
+
+        assert!(error.contains("IBC v2 semantics"));
+        assert!(error.contains("deferred"));
+        assert!(error.contains("v8-classic or v10-classic"));
+    }
+
+    #[test]
+    fn parses_channel_ids_from_hermes_handshake_events() {
+        let open_init = "cardano-devnet => OpenInitChannel(OpenInit { port_id: transfer, channel_id: channel-3, counterparty_channel_id: None })";
+        let open_try = "v10-classic-1 => OpenTryChannel(OpenTry { port_id: transfer, channel_id: channel-1, counterparty_channel_id: channel-3 })";
+
+        assert_eq!(
+            parse_hermes_event_channel_id(open_init, "OpenInitChannel").as_deref(),
+            Some("channel-3")
+        );
+        assert_eq!(
+            parse_hermes_event_channel_id(open_try, "OpenTryChannel").as_deref(),
+            Some("channel-1")
+        );
+    }
 }

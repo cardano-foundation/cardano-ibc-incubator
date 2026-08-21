@@ -68,6 +68,7 @@ impl From<TransferRouteChainArg> for RouteChain {
     fn from(value: TransferRouteChainArg) -> Self {
         match value {
             TransferRouteChainArg::Cardano => Self::Cardano,
+            TransferRouteChainArg::Cosmos => Self::Cosmos,
             TransferRouteChainArg::Injective => Self::Injective,
             TransferRouteChainArg::Osmosis => Self::Osmosis,
         }

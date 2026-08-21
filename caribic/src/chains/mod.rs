@@ -8,11 +8,13 @@ use async_trait::async_trait;
 
 pub mod cheqd;
 pub(crate) mod cosmos_node;
+pub mod cosmos_profiles;
 pub(crate) mod hermes_support;
 pub mod injective;
 pub mod osmosis;
 
 pub use cheqd::CHEQD_CHAIN_ADAPTER;
+pub use cosmos_profiles::COSMOS_PROFILES_CHAIN_ADAPTER;
 pub use injective::INJECTIVE_CHAIN_ADAPTER;
 pub use osmosis::OSMOSIS_CHAIN_ADAPTER;
 
@@ -148,6 +150,7 @@ pub trait ChainAdapter: Sync {
 pub fn registered_chain_adapters() -> Vec<&'static dyn ChainAdapter> {
     vec![
         &OSMOSIS_CHAIN_ADAPTER,
+        &COSMOS_PROFILES_CHAIN_ADAPTER,
         &CHEQD_CHAIN_ADAPTER,
         &INJECTIVE_CHAIN_ADAPTER,
     ]
