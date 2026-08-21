@@ -10,6 +10,7 @@ export type MintVoucherRedeemer =
         packet_dest_port: string;
         packet_dest_channel: string;
         data: FungibleTokenPacketDatum;
+        module_token: { policy_id: string; name: string };
       };
     }
   | {
@@ -17,6 +18,7 @@ export type MintVoucherRedeemer =
         packet_source_port: string;
         packet_source_channel: string;
         data: FungibleTokenPacketDatum;
+        module_token: { policy_id: string; name: string };
       };
     }
   | {
@@ -25,6 +27,7 @@ export type MintVoucherRedeemer =
         packet_source_channel: string;
         data: FungibleTokenPacketDatum;
         acknowledgement: Acknowledgement | null;
+        module_token: { policy_id: string; name: string };
       };
     };
 
@@ -67,6 +70,10 @@ function mintVoucherRedeemerSchema(
   const FungibleTokenPacketDatumSchema =
     fungibleTokenPacketDatumSchema(DataApi);
   const AcknowledgementSchema = acknowledgementSchema(DataApi);
+  const AuthTokenSchema = DataApi.Object({
+    policy_id: DataApi.Bytes(),
+    name: DataApi.Bytes(),
+  });
 
   return DataApi.Enum([
     DataApi.Object({
@@ -76,6 +83,7 @@ function mintVoucherRedeemerSchema(
         packet_dest_port: DataApi.Bytes(),
         packet_dest_channel: DataApi.Bytes(),
         data: FungibleTokenPacketDatumSchema,
+        module_token: AuthTokenSchema,
       }),
     }),
     DataApi.Object({
@@ -83,6 +91,7 @@ function mintVoucherRedeemerSchema(
         packet_source_port: DataApi.Bytes(),
         packet_source_channel: DataApi.Bytes(),
         data: FungibleTokenPacketDatumSchema,
+        module_token: AuthTokenSchema,
       }),
     }),
     DataApi.Object({
@@ -91,6 +100,7 @@ function mintVoucherRedeemerSchema(
         packet_source_channel: DataApi.Bytes(),
         data: FungibleTokenPacketDatumSchema,
         acknowledgement: DataApi.Nullable(AcknowledgementSchema),
+        module_token: AuthTokenSchema,
       }),
     }),
   ]);

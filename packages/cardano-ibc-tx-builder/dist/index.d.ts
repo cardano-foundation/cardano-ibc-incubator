@@ -34,6 +34,11 @@ export type Packet = {
 };
 export type ChannelDatumLike = {
     port: string;
+    lifecycle: 'ChannelActive' | {
+        Abandoning: {
+            not_before: bigint;
+        };
+    };
     state: {
         next_sequence_send: bigint;
         packet_commitment: Map<bigint, string>;
@@ -54,6 +59,12 @@ export type ConnectionDatumLike = {
     state: {
         client_id: string;
     };
+    live_channel_count: bigint;
+    lifecycle: 'ConnectionActive' | {
+        Retiring: {
+            not_before: bigint;
+        };
+    };
 };
 export type LoadedSendPacketContext = {
     channelUtxo: UTxO;
@@ -70,6 +81,7 @@ export type LoadedSendPacketContext = {
         transferEscrowShardPolicyId: string;
         spendChannelAddress: string;
         transferModuleAddress: string;
+        transferModuleIdentifier: string;
     };
 };
 export type HostStateUpdate = {
@@ -107,6 +119,7 @@ export type UnsignedSendPacketBurnTxInput = {
     channelTokenUnit: string;
     encodedMintVoucherRedeemer: string;
     encodedSpendTransferModuleRedeemer: string;
+    encodedUpdatedTransferModuleDatum: string;
     transferModuleReferenceUtxo: UTxO;
     transferAmount: bigint;
     constructedAddress: string;
@@ -159,6 +172,8 @@ export type TransferEscrowShardLookup = {
     encodedDatum: string;
     shardTokenUnit: string;
     registrySiblings: string[];
+    oldChannelLiveEscrowShardCount: bigint;
+    channelLiveEscrowShardCountSiblings: string[];
     encodedUpdatedTransferModuleDatum: string;
 };
 export type SendPacketBuildDependencies = {
@@ -173,6 +188,7 @@ export type SendPacketBuildDependencies = {
         retryDelayMs: number;
     }) => Promise<UTxO[]>;
     findTransferEscrowShard: (channelId: string, packetDenom: string, denomToken: string, requiredAmount?: bigint) => Promise<TransferEscrowShardLookup>;
+    buildTransferModuleVoucherSupplyUpdate: (transferModuleUtxo: UTxO, voucherDelta: bigint) => Promise<string>;
     createUnsignedSendPacketBurnTx: (dto: UnsignedSendPacketBurnTxInput) => TxBuilder;
     createUnsignedSendPacketEscrowTx: (dto: UnsignedSendPacketEscrowTxInput) => TxBuilder;
     invalidArgument: (message: string) => Error;

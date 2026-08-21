@@ -50,6 +50,7 @@ function baseContext(): LoadedSendPacketContext {
     channelUtxo: utxo('channel', 0),
     channelDatum: {
       port: 'transfer',
+      lifecycle: 'ChannelActive',
       state: {
         next_sequence_send: 4n,
         packet_commitment: new Map([[1n, 'previous']]),
@@ -71,6 +72,8 @@ function baseContext(): LoadedSendPacketContext {
       state: {
         client_id: '07-tendermint-0',
       },
+      live_channel_count: 1n,
+      lifecycle: 'ConnectionActive',
     },
     clientUtxo: utxo('client', 0),
     transferModuleReferenceUtxo: utxo('transfer-module-ref', 0),
@@ -85,6 +88,7 @@ function baseContext(): LoadedSendPacketContext {
       transferEscrowShardPolicyId: '55'.repeat(28),
       spendChannelAddress: 'addr_spend_channel',
       transferModuleAddress: 'addr_transfer_module',
+      transferModuleIdentifier: `${'66'.repeat(28)}01`,
     },
   };
 }
@@ -134,9 +138,13 @@ function createDeps(overrides: Partial<SendPacketBuildDependencies> = {}) {
         encodedDatum: 'transfer-escrow-datum',
         shardTokenUnit: `${'55'.repeat(28)}${channelId.slice(0, 8)}`,
         registrySiblings: ['00'.repeat(32)],
+        oldChannelLiveEscrowShardCount: 0n,
+        channelLiveEscrowShardCountSiblings: ['11'.repeat(32)],
         encodedUpdatedTransferModuleDatum: 'updated-transfer-module-datum',
       };
     },
+    buildTransferModuleVoucherSupplyUpdate: async () =>
+      'updated-transfer-module-supply-datum',
     createUnsignedSendPacketBurnTx: (dto) => {
       capturedBurn = dto;
       return {} as TxBuilder;
@@ -176,7 +184,7 @@ describe('send-packet denom mapping', () => {
         Buffer.from('lovelace').toString('hex'),
       ).toString('hex'),
       denomToken: 'lovelace',
-      requiredAmount: undefined,
+        requiredAmount: 123n,
     });
 
     const spendRedeemer = harness.encodedValues.find(
@@ -230,11 +238,24 @@ describe('send-packet denom mapping', () => {
     const shardRedeemer = harness.encodedValues.find(
       (entry) => entry.kind === 'transferEscrowShardRedeemer',
     )?.value as {
-      CreateEscrowShard: { registry_siblings: string[] };
+      CreateEscrowShardV2: {
+        registry_siblings: string[];
+        old_channel_live_escrow_shard_count: bigint;
+        channel_live_escrow_shard_count_siblings: string[];
+      };
     };
-    assert.deepEqual(shardRedeemer.CreateEscrowShard.registry_siblings, [
+    assert.deepEqual(shardRedeemer.CreateEscrowShardV2.registry_siblings, [
       '00'.repeat(32),
     ]);
+    assert.equal(
+      shardRedeemer.CreateEscrowShardV2.old_channel_live_escrow_shard_count,
+      0n,
+    );
+    assert.deepEqual(
+      shardRedeemer.CreateEscrowShardV2
+        .channel_live_escrow_shard_count_siblings,
+      ['11'.repeat(32)],
+    );
   });
 
   it('reverse-resolves ibc hashes to voucher burns and deduplicates wallet UTxOs', async () => {
@@ -283,11 +304,20 @@ describe('send-packet denom mapping', () => {
     );
     const burnRedeemer = harness.encodedValues.find(
       (entry) => entry.kind === 'mintVoucherRedeemer',
-    )?.value as { BurnVoucher: { data: { denom: string } } };
+    )?.value as {
+      BurnVoucher: {
+        data: { denom: string };
+        module_token: { policy_id: string; name: string };
+      };
+    };
     assert.equal(
       Buffer.from(burnRedeemer.BurnVoucher.data.denom, 'hex').toString('utf8'),
       fullDenom,
     );
+    assert.deepEqual(burnRedeemer.BurnVoucher.module_token, {
+      policy_id: '66'.repeat(28),
+      name: '01',
+    });
   });
 
   it('rejects unresolved ibc hash denoms before building a transaction', async () => {
@@ -309,6 +339,25 @@ describe('send-packet denom mapping', () => {
       /not found in denom traces/,
     );
     assert.equal(harness.getCapturedEscrow(), undefined);
+    assert.equal(harness.getCapturedBurn(), undefined);
+  });
+
+  it('rejects a malformed transfer module identifier before encoding a voucher burn', async () => {
+    const context = baseContext();
+    context.deployment.transferModuleIdentifier = 'not-an-asset-unit';
+    const harness = createDeps({
+      loadContext: async () => context,
+      resolveIbcDenomHash: async () => ({ path: 'transfer/channel-7', baseDenom: 'uatom' }),
+    });
+
+    await assert.rejects(
+      () =>
+        buildUnsignedSendPacketTx(
+          baseOperator({ token: { denom: `ibc/${'c'.repeat(64)}`, amount: 1n } }),
+          harness.deps,
+        ),
+      /not a canonical Cardano asset unit/,
+    );
     assert.equal(harness.getCapturedBurn(), undefined);
   });
 

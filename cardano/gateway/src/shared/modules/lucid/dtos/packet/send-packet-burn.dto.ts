@@ -9,6 +9,7 @@ import {
   WithTransferAmount,
   WithTransferModuleReferenceUtxo,
   WithTransferModuleSpend,
+  WithUpdatedTransferModuleDatum,
 } from './fragments';
 
 export type UnsignedSendPacketBurnDto = WithHostStateUpdate &
@@ -17,6 +18,7 @@ export type UnsignedSendPacketBurnDto = WithHostStateUpdate &
   WithMintVoucherRedeemer &
   WithTransferModuleReferenceUtxo &
   WithTransferModuleSpend &
+  WithUpdatedTransferModuleDatum &
   WithTransferAmount &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'sendPacketPolicyId'> & {

@@ -6,7 +6,13 @@ pub const shard_token_domain = "cardano-ibc/transfer-escrow-shard/v1"
 
 pub const shard_registry_key_prefix = "escrowShards/"
 
+pub const channel_live_shard_count_key_prefix = "escrowShardCounts/"
+
 pub const registered_shard_value = #"01"
+
+pub const live_shard_value = registered_shard_value
+
+pub const retired_shard_value = #"02"
 
 const uint32_max = 4_294_967_295
 
@@ -41,6 +47,15 @@ pub fn shard_registry_key(channel_id: ByteArray, denom: ByteArray) -> ByteArray 
       |> string.to_bytearray
       |> ascii_lower
   bytearray.concat(shard_registry_key_prefix, token_name_hex)
+}
+
+pub fn channel_live_shard_count_key(channel_id: ByteArray) -> ByteArray {
+  let channel_id_hex =
+    channel_id
+      |> bytearray.to_hex
+      |> string.to_bytearray
+      |> ascii_lower
+  bytearray.concat(channel_live_shard_count_key_prefix, channel_id_hex)
 }
 
 fn ascii_lower(bytes: ByteArray) -> ByteArray {

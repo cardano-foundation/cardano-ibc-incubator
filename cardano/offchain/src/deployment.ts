@@ -550,6 +550,101 @@ export const createDeployment = async (
     ],
   );
   referredValidators.push(mintChannelSttValidator);
+
+  const [
+    mintLifecycleCreationMarkerValidator,
+    mintLifecycleCreationMarkerPolicyId,
+  ] = await readValidator(
+    "minting_lifecycle_creation_marker.mint_lifecycle_creation_marker.mint",
+    lucid,
+    [
+      mintHostStateNFTPolicyId,
+      mintClientSttPolicyId,
+      mintConnectionSttPolicyId,
+      mintChannelSttPolicyId,
+    ],
+    Data.Tuple([
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+    ]) as unknown as [string, string, string, string],
+  );
+  const [
+    mintLifecycleReclamationMarkerValidator,
+    mintLifecycleReclamationMarkerPolicyId,
+  ] = await readValidator(
+    "minting_lifecycle_marker.mint_lifecycle_marker.mint",
+    lucid,
+    [
+      mintHostStateNFTPolicyId,
+      mintClientSttPolicyId,
+      mintConnectionSttPolicyId,
+      mintChannelSttPolicyId,
+    ],
+    Data.Tuple([
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+    ]) as unknown as [string, string, string, string],
+  );
+  const [
+    mintLifecycleOperationalMarkerValidator,
+    mintLifecycleOperationalMarkerPolicyId,
+  ] = await readValidator(
+    "minting_lifecycle_operational_marker.mint_lifecycle_operational_marker.mint",
+    lucid,
+    [
+      mintHostStateNFTPolicyId,
+      spendClientScriptHash,
+      spendConnectionScriptHash,
+      spendingChannel.base.hash,
+      mintClientSttPolicyId,
+      mintConnectionSttPolicyId,
+      mintChannelSttPolicyId,
+    ],
+    Data.Tuple([
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+    ]) as unknown as [
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+      string,
+    ],
+  );
+  const [
+    mintLifecyclePacketMarkerValidator,
+    mintLifecyclePacketMarkerPolicyId,
+  ] = await readValidator(
+    "minting_lifecycle_packet_marker.mint_lifecycle_packet_marker.mint",
+    lucid,
+    [
+      mintHostStateNFTPolicyId,
+      spendingChannel.base.hash,
+      mintChannelSttPolicyId,
+    ],
+    Data.Tuple([
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+    ]) as unknown as [string, string, string],
+  );
+  referredValidators.push(
+    mintLifecycleCreationMarkerValidator,
+    mintLifecycleReclamationMarkerValidator,
+    mintLifecycleOperationalMarkerValidator,
+    mintLifecyclePacketMarkerValidator,
+  );
   assertDeploymentReferenceValidatorsFit(
     lucid,
     referredValidators,
@@ -569,6 +664,13 @@ export const createDeployment = async (
     spendClientScriptHash,
     spendConnectionScriptHash,
     spendingChannel.base.hash,
+    mintClientSttPolicyId,
+    mintConnectionSttPolicyId,
+    mintChannelSttPolicyId,
+    mintLifecycleCreationMarkerPolicyId,
+    mintLifecycleReclamationMarkerPolicyId,
+    mintLifecycleOperationalMarkerPolicyId,
+    mintLifecyclePacketMarkerPolicyId,
     deployerPaymentKeyHash,
   );
   referredValidators.push(hostStateStt.validator);
@@ -585,7 +687,12 @@ export const createDeployment = async (
   const bootstrapRefUtxosInfo = await createReferenceUtxos(
     lucid,
     mintHostStateNFTPolicyId,
-    [hostStateStt.validator, mintPortValidator, mintIdentifierValidator],
+    [
+      hostStateStt.validator,
+      mintPortValidator,
+      mintIdentifierValidator,
+      mintLifecycleOperationalMarkerValidator,
+    ],
     reservedDeploymentRefs,
     deploymentWalletAddress,
   );
@@ -605,6 +712,11 @@ export const createDeployment = async (
       bootstrapRefUtxosInfo,
       validatorToScriptHash(mintIdentifierValidator),
       "mint-identifier",
+    ),
+    mintLifecycleOperationalMarker: requireReferenceUtxo(
+      bootstrapRefUtxosInfo,
+      mintLifecycleOperationalMarkerPolicyId,
+      "lifecycle operational marker",
     ),
   };
 
@@ -637,6 +749,8 @@ export const createDeployment = async (
     mintChannelSttPolicyId,
     TRANSFER_MODULE_PORT,
     hostStateNFT,
+    mintLifecycleReclamationMarkerPolicyId,
+    mintLifecycleOperationalMarkerPolicyId,
     traceRegistryDirectoryAuthToken,
     transferModuleNonceUtxo,
     bootstrapReferenceScripts,
@@ -678,6 +792,7 @@ export const createDeployment = async (
     mintIdentifierValidator,
     MOCK_MODULE_PORT,
     hostStateNFT,
+    mintLifecycleOperationalMarkerPolicyId,
     mockModuleNonceUtxo,
     bootstrapReferenceScripts,
   );
@@ -695,6 +810,7 @@ export const createDeployment = async (
     mintIdentifierValidator,
     ICQ_MODULE_PORT,
     hostStateNFT,
+    mintLifecycleOperationalMarkerPolicyId,
     icqModuleNonceUtxo,
     bootstrapReferenceScripts,
   );
@@ -741,6 +857,7 @@ export const createDeployment = async (
   const deployedAt = new Date().toISOString();
 
   const deploymentInfo: DeploymentTemplate = {
+    schemaVersion: 6,
     deployedAt,
     validators: {
       spendClient: {
@@ -864,10 +981,42 @@ export const createDeployment = async (
         address: "",
         refUtxo: refUtxosInfo[mintChannelSttPolicyId],
       },
+      mintLifecycleCreationMarker: {
+        title:
+          "minting_lifecycle_creation_marker.mint_lifecycle_creation_marker.mint",
+        script: mintLifecycleCreationMarkerValidator.script,
+        scriptHash: mintLifecycleCreationMarkerPolicyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintLifecycleCreationMarkerPolicyId],
+      },
+      mintLifecycleReclamationMarker: {
+        title: "minting_lifecycle_marker.mint_lifecycle_marker.mint",
+        script: mintLifecycleReclamationMarkerValidator.script,
+        scriptHash: mintLifecycleReclamationMarkerPolicyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintLifecycleReclamationMarkerPolicyId],
+      },
+      mintLifecycleOperationalMarker: {
+        title:
+          "minting_lifecycle_operational_marker.mint_lifecycle_operational_marker.mint",
+        script: mintLifecycleOperationalMarkerValidator.script,
+        scriptHash: mintLifecycleOperationalMarkerPolicyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintLifecycleOperationalMarkerPolicyId],
+      },
+      mintLifecyclePacketMarker: {
+        title:
+          "minting_lifecycle_packet_marker.mint_lifecycle_packet_marker.mint",
+        script: mintLifecyclePacketMarkerValidator.script,
+        scriptHash: mintLifecyclePacketMarkerPolicyId,
+        address: "",
+        refUtxo: refUtxosInfo[mintLifecyclePacketMarkerPolicyId],
+      },
     },
     hostStateNFT: {
       policyId: hostStateNFT.policy_id,
       name: hostStateNFT.name,
+      script: hostStateNFT.script,
     },
     traceRegistry: {
       address: traceRegistry.base.address,
@@ -936,6 +1085,7 @@ type BootstrapReferenceScripts = {
   hostStateStt: UTxO;
   mintIdentifier: UTxO;
   mintPort: UTxO;
+  mintLifecycleOperationalMarker: UTxO;
 };
 
 const filterReservedWalletUtxos = (
@@ -1692,6 +1842,8 @@ const deployTransferModule = async (
   mintChannelPolicyId: string,
   portIdText: string,
   hostStateNFT: AuthToken,
+  mintLifecycleReclamationMarkerPolicyId: string,
+  mintLifecycleOperationalMarkerPolicyId: string,
   traceRegistryDirectoryAuthToken: AuthToken,
   nonceUtxo: UTxO,
   bootstrapReferenceScripts: BootstrapReferenceScripts,
@@ -1757,8 +1909,18 @@ const deployTransferModule = async (
   ] = await readValidator(
     "minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint",
     lucid,
-    [portToken],
-    Data.Tuple([AuthTokenSchema]) as unknown as [AuthToken],
+    [
+      portToken,
+      portId,
+      mintChannelPolicyId,
+      hostStateNFT.policy_id,
+    ],
+    Data.Tuple([
+      AuthTokenSchema,
+      Data.Bytes(),
+      Data.Bytes(),
+      Data.Bytes(),
+    ]) as unknown as [AuthToken, string, string, string],
   );
 
   const [
@@ -1776,10 +1938,12 @@ const deployTransferModule = async (
       mintChannelPolicyId,
       mintVoucherPolicyId,
       hostStateNFT.policy_id,
+      mintLifecycleReclamationMarkerPolicyId,
     ],
     Data.Tuple([
       AuthTokenSchema,
       AuthTokenSchema,
+      Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
       Data.Bytes(),
@@ -1793,10 +1957,13 @@ const deployTransferModule = async (
       string,
       string,
       string,
+      string,
     ],
   );
 
   const hostStateUnit = hostStateNFT.policy_id + hostStateNFT.name;
+  const lifecycleOperationalMarkerUnit =
+    mintLifecycleOperationalMarkerPolicyId + fromText("ibc_lifecycle");
   const hostStateUtxo = await lucid.utxoByUnit(hostStateUnit);
   const currentHostStateDatum = Data.from(hostStateUtxo.datum!, HostStateDatum);
   const registration: ModuleRegistration = {
@@ -1832,6 +1999,7 @@ const deployTransferModule = async (
         bootstrapReferenceScripts.hostStateStt,
         bootstrapReferenceScripts.mintPort,
         bootstrapReferenceScripts.mintIdentifier,
+        bootstrapReferenceScripts.mintLifecycleOperationalMarker,
       ])
       .collectFrom([nonceUtxo], Data.void())
       .collectFrom(
@@ -1852,6 +2020,12 @@ const deployTransferModule = async (
         },
         Data.to(outputReference, OutputReference, { canonical: true }),
       )
+      .mintAssets(
+        {
+          [lifecycleOperationalMarkerUnit]: 1n,
+        },
+        Data.void(),
+      )
       .pay.ToContract(
         hostStateStt.address,
         {
@@ -1861,7 +2035,10 @@ const deployTransferModule = async (
           }),
         },
         {
+          ...hostStateUtxo.assets,
           [hostStateUnit]: 1n,
+          [lifecycleOperationalMarkerUnit]:
+            (hostStateUtxo.assets[lifecycleOperationalMarkerUnit] ?? 0n) + 1n,
         },
       )
       .pay.ToContract(
@@ -1869,7 +2046,11 @@ const deployTransferModule = async (
         {
           kind: "inline",
           value: Data.to(
-            { escrow_shard_registry_root: "00".repeat(32) },
+            {
+              escrow_shard_registry_root: "00".repeat(32),
+              live_escrow_shard_count: 0n,
+              voucher_supply: 0n,
+            },
             TransferModuleDatum,
             { canonical: true },
           ),
@@ -1917,6 +2098,7 @@ const deployGenericModule = async (
   mintIdentifierValidator: MintingPolicy,
   portIdText: string,
   hostStateNFT: AuthToken,
+  mintLifecycleOperationalMarkerPolicyId: string,
   nonceUtxo: UTxO,
   bootstrapReferenceScripts: BootstrapReferenceScripts,
 ) => {
@@ -1955,6 +2137,8 @@ const deployGenericModule = async (
   );
 
   const hostStateUnit = hostStateNFT.policy_id + hostStateNFT.name;
+  const lifecycleOperationalMarkerUnit =
+    mintLifecycleOperationalMarkerPolicyId + fromText("ibc_lifecycle");
   const hostStateUtxo = await lucid.utxoByUnit(hostStateUnit);
   const currentHostStateDatum = Data.from(hostStateUtxo.datum!, HostStateDatum);
   const registration: ModuleRegistration = {
@@ -1986,6 +2170,7 @@ const deployGenericModule = async (
         bootstrapReferenceScripts.hostStateStt,
         bootstrapReferenceScripts.mintPort,
         bootstrapReferenceScripts.mintIdentifier,
+        bootstrapReferenceScripts.mintLifecycleOperationalMarker,
       ])
       .collectFrom([nonceUtxo], Data.void())
       .collectFrom(
@@ -2006,6 +2191,12 @@ const deployGenericModule = async (
         },
         Data.to(outputReference, OutputReference, { canonical: true }),
       )
+      .mintAssets(
+        {
+          [lifecycleOperationalMarkerUnit]: 1n,
+        },
+        Data.void(),
+      )
       .pay.ToContract(
         hostStateStt.address,
         {
@@ -2015,7 +2206,10 @@ const deployGenericModule = async (
           }),
         },
         {
+          ...hostStateUtxo.assets,
           [hostStateUnit]: 1n,
+          [lifecycleOperationalMarkerUnit]:
+            (hostStateUtxo.assets[lifecycleOperationalMarkerUnit] ?? 0n) + 1n,
         },
       )
       .pay.ToAddress(
@@ -2307,6 +2501,13 @@ const deployHostState = async (
   spendClientScriptHash: string,
   spendConnectionScriptHash: string,
   spendChannelScriptHash: string,
+  mintClientSttPolicyId: string,
+  mintConnectionSttPolicyId: string,
+  mintChannelSttPolicyId: string,
+  mintLifecycleCreationMarkerPolicyId: string,
+  mintLifecycleReclamationMarkerPolicyId: string,
+  mintLifecycleOperationalMarkerPolicyId: string,
+  mintLifecyclePacketMarkerPolicyId: string,
   deployerPaymentKeyHash: string,
 ) => {
   console.log("Deploy HostState (STT Architecture)");
@@ -2332,6 +2533,8 @@ const deployHostState = async (
   // 2) `spend_client_script_hash` (used to locate the created client output when enforcing root correctness)
   // 3) `spend_connection_script_hash` (used to locate the created connection output when enforcing root correctness)
   // 4) `spend_channel_script_hash` (used to locate the created channel output when enforcing root correctness)
+  // 5-7) the canonical client/connection/channel minting policies.
+  // 8-11) the creation, cleanup, normal-update, and packet authorization policies.
   const [hostStateSttValidator, hostStateSttScriptHash, hostStateSttAddress] =
     await readValidator(
       "host_state_stt.host_state_stt.spend",
@@ -2341,13 +2544,34 @@ const deployHostState = async (
         spendClientScriptHash,
         spendConnectionScriptHash,
         spendChannelScriptHash,
+        mintClientSttPolicyId,
+        mintConnectionSttPolicyId,
+        mintChannelSttPolicyId,
+        mintLifecycleCreationMarkerPolicyId,
+        mintLifecycleReclamationMarkerPolicyId,
+        mintLifecycleOperationalMarkerPolicyId,
+        mintLifecyclePacketMarkerPolicyId,
       ],
       Data.Tuple([
         Data.Bytes(),
         Data.Bytes(),
         Data.Bytes(),
         Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
+        Data.Bytes(),
       ]) as unknown as [
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
         string,
         string,
         string,
@@ -2373,6 +2597,9 @@ const deployHostState = async (
       next_channel_sequence: 0n,
       bound_port: new Map(),
       last_update_time: BigInt(currentTime),
+      live_client_count: 0n,
+      live_connection_count: 0n,
+      live_channel_count: 0n,
     },
     nft_policy: mintHostStateNFTPolicyId,
     deployer: deployerPaymentKeyHash,
@@ -2430,6 +2657,7 @@ const deployHostState = async (
     hostStateNFT: {
       policy_id: mintHostStateNFTPolicyId,
       name: HOST_STATE_TOKEN_NAME,
+      script: mintHostStateNFTValidator.script,
     },
   };
 };

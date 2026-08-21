@@ -28,6 +28,9 @@ const deploymentConfig = {
     mintTransferEscrowShard: {
       address: 'addr_test1transferescrowshard',
     },
+    mintLifecyclePacketMarker: {
+      scriptHash: 'packet-policy',
+    },
   },
   modules: {
     transfer: {
@@ -80,6 +83,10 @@ const createService = (txBuilder: ChainableTxBuilder): any => {
     mintTransferEscrowShard: {
       txHash: 'ref-mint-transfer-escrow-shard',
       outputIndex: 8,
+    },
+    mintLifecyclePacketMarker: {
+      txHash: 'ref-mint-lifecycle-packet-marker',
+      outputIndex: 9,
     },
   };
   service.LucidImporter = {
@@ -136,7 +143,7 @@ describe('LucidService voucher refund invariants', () => {
       undefined,
       transferModuleUtxo.assets,
     );
-    expect(txBuilder.readFrom.mock.calls[0][0]).toEqual(
+    expect(txBuilder.readFrom).toHaveBeenCalledWith(
       expect.arrayContaining([expect.objectContaining({ txHash: 'ref-spend-transfer' })]),
     );
   });
@@ -218,10 +225,7 @@ describe('LucidService voucher refund invariants', () => {
       encodedVerifyProofRedeemer: 'encoded-verify-proof-redeemer',
     });
 
-    expect(txBuilder.collectFrom).toHaveBeenCalledWith(
-      [transferModuleReferenceUtxo],
-      'encoded-transfer-redeemer',
-    );
+    expect(txBuilder.collectFrom).toHaveBeenCalledWith([transferModuleReferenceUtxo], 'encoded-transfer-redeemer');
     expect(txBuilder.pay.ToContract).toHaveBeenCalledWith(
       deploymentConfig.modules.transfer.address,
       { kind: 'inline', value: transferModuleReferenceUtxo.datum },
@@ -435,9 +439,7 @@ describe('LucidService voucher refund invariants', () => {
       return call[1] === 'encoded-transfer-redeemer';
     });
     expect(transferSpendCall?.[0]).toEqual([transferEscrowUtxo]);
-    expect(txBuilder.readFrom).toHaveBeenCalledWith(
-      expect.arrayContaining([transferModuleReferenceUtxo]),
-    );
+    expect(txBuilder.readFrom).toHaveBeenCalledWith(expect.arrayContaining([transferModuleReferenceUtxo]));
 
     const transferOutputs = txBuilder.pay.ToContract.mock.calls.filter((call: unknown[]) => {
       return call[0] === deploymentConfig.modules.transfer.address;
@@ -504,13 +506,8 @@ describe('LucidService voucher refund invariants', () => {
       return call[1] === 'encoded-transfer-redeemer';
     });
     expect(transferSpendCall?.[0]).toEqual([transferEscrowUtxo]);
-    expect(txBuilder.readFrom).toHaveBeenCalledWith(
-      expect.arrayContaining([transferModuleReferenceUtxo]),
-    );
-    expect(txBuilder.mintAssets).not.toHaveBeenCalledWith(
-      { [transferEscrowShardTokenUnit]: -1n },
-      expect.anything(),
-    );
+    expect(txBuilder.readFrom).toHaveBeenCalledWith(expect.arrayContaining([transferModuleReferenceUtxo]));
+    expect(txBuilder.mintAssets).not.toHaveBeenCalledWith({ [transferEscrowShardTokenUnit]: -1n }, expect.anything());
 
     const transferOutputs = txBuilder.pay.ToContract.mock.calls.filter((call: unknown[]) => {
       return call[0] === transferModuleAddress;

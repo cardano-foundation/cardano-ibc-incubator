@@ -1,4 +1,5 @@
 import {
+  fetchKupoHistoryAtAddressByPolicy,
   mapKupoValueToAssets,
   mapOgmiosProtocolParameters,
   queryProtocolParametersCompat,
@@ -89,9 +90,7 @@ describe('Ogmios protocol parameter compatibility', () => {
     );
 
     expect(mapped.costModels.PlutusV3).toEqual([]);
-    await expect(
-      Lucid(undefined, 'Preprod', { presetProtocolParameters: mapped }),
-    ).resolves.toBeDefined();
+    await expect(Lucid(undefined, 'Preprod', { presetProtocolParameters: mapped })).resolves.toBeDefined();
   });
 
   it('rejects malformed responses instead of silently manufacturing parameters', () => {
@@ -155,15 +154,8 @@ describe('Ogmios protocol parameter compatibility', () => {
       text: async () => new Promise<string>(() => undefined),
     }) as unknown as typeof fetch;
 
-    const request = queryProtocolParametersCompat(
-      'https://ogmios.test',
-      undefined,
-      fetchImpl,
-      50,
-    );
-    const rejection = expect(request).rejects.toThrow(
-      'Ogmios protocol parameters query timed out after 50ms',
-    );
+    const request = queryProtocolParametersCompat('https://ogmios.test', undefined, fetchImpl, 50);
+    const rejection = expect(request).rejects.toThrow('Ogmios protocol parameters query timed out after 50ms');
     await jest.advanceTimersByTimeAsync(50);
 
     await rejection;
@@ -188,13 +180,9 @@ describe('Ogmios protocol parameter compatibility', () => {
   });
 
   it('does not retry an ordinary client error', async () => {
-    const operation = jest
-      .fn()
-      .mockRejectedValue(Object.assign(new Error('bad request'), { status: 400 }));
+    const operation = jest.fn().mockRejectedValue(Object.assign(new Error('bad request'), { status: 400 }));
 
-    await expect(
-      retryWithBackoff(operation, 'test protocol parameters'),
-    ).rejects.toThrow('bad request');
+    await expect(retryWithBackoff(operation, 'test protocol parameters')).rejects.toThrow('bad request');
     expect(operation).toHaveBeenCalledTimes(1);
   });
 
@@ -215,20 +203,12 @@ describe('Ogmios protocol parameter compatibility', () => {
           headers: { 'retry-after': '30' },
         }),
       )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ result }), { status: 200 }),
-      ) as unknown as typeof fetch;
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result }), { status: 200 })) as unknown as typeof fetch;
     const waits: number[] = [];
 
     await expect(
       retryWithBackoff(
-        () =>
-          queryProtocolParametersCompat(
-            'https://ogmios.test',
-            undefined,
-            fetchImpl,
-            50,
-          ),
+        () => queryProtocolParametersCompat('https://ogmios.test', undefined, fetchImpl, 50),
         'test protocol parameters',
         async (durationMs) => {
           waits.push(durationMs);
@@ -273,5 +253,299 @@ describe('Kupo quantity handling', () => {
       lovelace: 9007199254740993n,
       aabb: 18446744073709551615n,
     });
+  });
+});
+
+describe('Kupo historical match compatibility', () => {
+  const policyId = 'a'.repeat(56);
+  const address = 'addr_test1history';
+  const tokenName = 'ab';
+  const datumHash1 = 'c'.repeat(64);
+  const datumHash2 = 'd'.repeat(64);
+  const headerHash1 = 'e'.repeat(64);
+  const headerHash2 = 'f'.repeat(64);
+  const txHash1 = '1'.repeat(64);
+  const txHash2 = '2'.repeat(64);
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('fetches spent and unspent matches, resolves inline datums, and retains auth headers', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async (input, _init) => {
+      const url = String(input);
+      if (url.includes('/patterns/')) {
+        return new Response(JSON.stringify(url.includes(encodeURIComponent(address)) ? ['*'] : []), { status: 200 });
+      }
+      if (url.includes('/matches/')) {
+        const searchParams = new URL(url).searchParams;
+        expect(searchParams.get('policy_id')).toBe(policyId);
+        expect(searchParams.has('order')).toBe(false);
+        expect(searchParams.has('unspent')).toBe(false);
+        expect(searchParams.has('spent')).toBe(false);
+        return new Response(
+          JSON.stringify([
+            {
+              transaction_index: 1,
+              transaction_id: txHash2,
+              output_index: 0,
+              address,
+              value: { coins: '3000000', assets: { [`${policyId}.${tokenName}`]: '1' } },
+              datum_hash: datumHash2,
+              datum_type: 'inline',
+              script_hash: null,
+              created_at: { slot_no: 12, header_hash: headerHash2 },
+              spent_at: null,
+            },
+            {
+              transaction_index: 2,
+              transaction_id: txHash1,
+              output_index: 0,
+              address,
+              value: { coins: '2000000', assets: { [`${policyId}.${tokenName}`]: '1' } },
+              datum_hash: datumHash1,
+              datum_type: 'inline',
+              script_hash: null,
+              created_at: { slot_no: 10, header_hash: headerHash1 },
+              spent_at: { slot_no: 12, header_hash: headerHash2 },
+            },
+          ]),
+          { status: 200 },
+        );
+      }
+      if (url.includes(`/datums/${datumHash1}`)) {
+        return new Response(JSON.stringify({ datum: 'd87980' }), { status: 200 });
+      }
+      if (url.includes(`/datums/${datumHash2}`)) {
+        return new Response(JSON.stringify({ datum: 'd8799f01ff' }), { status: 200 });
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+
+    const result = await fetchKupoHistoryAtAddressByPolicy('https://kupo.test', address, policyId, {
+      Accept: 'application/json',
+      'dmtr-api-key': 'secret',
+    });
+
+    expect(result.map((output) => output.txHash)).toEqual([txHash1, txHash2]);
+    expect(result[0]).toEqual(
+      expect.objectContaining({
+        datum: 'd87980',
+        inlineDatumHash: datumHash1,
+        transactionIndex: 2,
+        createdAt: { slotNo: 10, headerHash: headerHash1 },
+        spentAt: { slotNo: 12, headerHash: headerHash2 },
+        authToken: { policyId, name: tokenName, unit: `${policyId}${tokenName}` },
+      }),
+    );
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init?.headers).toEqual(
+        expect.objectContaining({
+          accept: 'application/json;asset-quantity=string',
+          'dmtr-api-key': 'secret',
+        }),
+      );
+    }
+  });
+
+  it('scopes a point-history request to an exact asset name', async () => {
+    const fetchMock = jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/patterns/')) {
+        return new Response(JSON.stringify(['*']), { status: 200 });
+      }
+      if (url.includes('/matches/')) {
+        const searchParams = new URL(url).searchParams;
+        expect(searchParams.get('policy_id')).toBe(policyId);
+        expect(searchParams.get('asset_name')).toBe(tokenName);
+        return new Response(
+          JSON.stringify([
+            {
+              transaction_index: 0,
+              transaction_id: txHash1,
+              output_index: 0,
+              address,
+              value: {
+                coins: '2000000',
+                assets: { [`${policyId}.${tokenName}`]: '1' },
+              },
+              datum_hash: datumHash1,
+              datum_type: 'inline',
+              script_hash: null,
+              created_at: { slot_no: 10, header_hash: headerHash1 },
+              spent_at: null,
+            },
+          ]),
+          { status: 200 },
+        );
+      }
+      if (url.includes(`/datums/${datumHash1}`)) {
+        return new Response(JSON.stringify({ datum: 'd87980' }), {
+          status: 200,
+        });
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+
+    await expect(
+      fetchKupoHistoryAtAddressByPolicy(
+        'https://kupo.test',
+        address,
+        policyId,
+        undefined,
+        tokenName,
+      ),
+    ).resolves.toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it.each(['', 'a', 'AB', 'zz', 'aa'.repeat(33)])(
+    'rejects malformed point-history asset name %p before querying Kupo',
+    async (assetName) => {
+      const fetchMock = jest.spyOn(global, 'fetch');
+      await expect(
+        fetchKupoHistoryAtAddressByPolicy(
+          'https://kupo.test',
+          address,
+          policyId,
+          undefined,
+          assetName,
+        ),
+      ).rejects.toThrow('Invalid Kupo history asset name');
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('fails closed when Kupo returns a different token than the requested asset name', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/patterns/')) {
+        return new Response(JSON.stringify(['*']), { status: 200 });
+      }
+      if (url.includes('/matches/')) {
+        return new Response(
+          JSON.stringify([
+            {
+              transaction_index: 0,
+              transaction_id: txHash1,
+              output_index: 0,
+              address,
+              value: {
+                coins: '2000000',
+                assets: { [`${policyId}.${tokenName}`]: '1' },
+              },
+              datum_hash: datumHash1,
+              datum_type: 'inline',
+              script_hash: null,
+              created_at: { slot_no: 10, header_hash: headerHash1 },
+              spent_at: null,
+            },
+          ]),
+          { status: 200 },
+        );
+      }
+      if (url.includes(`/datums/${datumHash1}`)) {
+        return new Response(JSON.stringify({ datum: 'd87980' }), {
+          status: 200,
+        });
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+
+    await expect(
+      fetchKupoHistoryAtAddressByPolicy(
+        'https://kupo.test',
+        address,
+        policyId,
+        undefined,
+        'cd',
+      ),
+    ).rejects.toThrow('auth-token name does not match');
+  });
+
+  it('fails closed when neither the address nor policy is covered by a configured Kupo pattern', async () => {
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockImplementation(async () => new Response(JSON.stringify([]), { status: 200 }));
+
+    await expect(fetchKupoHistoryAtAddressByPolicy('https://kupo.test', address, policyId)).rejects.toThrow(
+      'not configured to retain matches',
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails closed when an inline datum preimage cannot be resolved', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/patterns/')) {
+        return new Response(JSON.stringify(['*']), { status: 200 });
+      }
+      if (url.includes('/matches/')) {
+        return new Response(
+          JSON.stringify([
+            {
+              transaction_index: 0,
+              transaction_id: txHash1,
+              output_index: 0,
+              address,
+              value: { coins: '2000000', assets: { [`${policyId}.${tokenName}`]: '1' } },
+              datum_hash: datumHash1,
+              datum_type: 'inline',
+              script_hash: null,
+              created_at: { slot_no: 10, header_hash: headerHash1 },
+              spent_at: null,
+            },
+          ]),
+          { status: 200 },
+        );
+      }
+      return new Response('null', { status: 200 });
+    });
+
+    await expect(fetchKupoHistoryAtAddressByPolicy('https://kupo.test', address, policyId)).rejects.toThrow(
+      'could not be resolved',
+    );
+  });
+
+  it('fails closed when a match contains multiple auth tokens under the requested policy', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes('/patterns/')) {
+        return new Response(JSON.stringify(['*']), { status: 200 });
+      }
+      if (url.includes('/matches/')) {
+        return new Response(
+          JSON.stringify([
+            {
+              transaction_index: 0,
+              transaction_id: txHash1,
+              output_index: 0,
+              address,
+              value: {
+                coins: '2000000',
+                assets: {
+                  [`${policyId}.${tokenName}`]: '1',
+                  [`${policyId}.cd`]: '1',
+                },
+              },
+              datum_hash: datumHash1,
+              datum_type: 'inline',
+              script_hash: null,
+              created_at: { slot_no: 10, header_hash: headerHash1 },
+              spent_at: null,
+            },
+          ]),
+          { status: 200 },
+        );
+      }
+      if (url.includes(`/datums/${datumHash1}`)) {
+        return new Response(JSON.stringify({ datum: 'd87980' }), { status: 200 });
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+
+    await expect(fetchKupoHistoryAtAddressByPolicy('https://kupo.test', address, policyId)).rejects.toThrow(
+      'must contain exactly one token',
+    );
   });
 });

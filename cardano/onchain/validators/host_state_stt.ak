@@ -5,7 +5,8 @@ use aiken/collection/list
 use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script}
 use aiken/primitive/bytearray
-use cardano/assets.{AssetName, PolicyId}
+use cardano/address as address
+use cardano/assets.{AssetName, PolicyId, Value, quantity_of}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
   Transaction,
@@ -25,6 +26,7 @@ use ibc/core/ics_004/channel_redeemer.{
 use ibc/core/ics_004/types/keys as chan_id_keys
 use ibc/core/ics_004/types/order.{Ordered}
 use ibc/core/ics_004/types/packet as packet_mod
+use ibc/core/ics_005/types/ibc_module_redeemer.{IBCModuleRedeemer, Operator}
 use ibc/core/ics_024_host_requirements/channel_keys as host_channel_keys
 use ibc/core/ics_024_host_requirements/client_keys
 use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
@@ -32,16 +34,23 @@ use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
   HostState, HostStateDatum, ModuleRegistration, host_state_token_name,
-  validate_bind_port, validate_create_channel, validate_create_client,
-  validate_create_connection, validate_enter_shutdown,
-  validate_finalize_shutdown, validate_heartbeat, validate_update_only_root,
+  is_host_state_reclaimable, validate_bind_port, validate_create_channel,
+  validate_create_client, validate_create_connection, validate_enter_shutdown,
+  validate_heartbeat, validate_reclaim_channel, validate_reclaim_client,
+  validate_reclaim_connection, validate_reclaim_module, validate_seal_shutdown,
+  validate_update_module_state, validate_update_only_root,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
-  BindPort, CreateChannel, CreateClient, CreateConnection, EnterShutdown,
-  FinalizeShutdown, HandlePacket, Heartbeat, HostStateRedeemer, UpdateChannel,
-  UpdateClient, UpdateConnection,
+  BeginChannelAbandonment, BeginConnectionRetirement, BindPort, CreateChannel,
+  CreateClient, CreateConnection, EnterShutdown, FinalizeShutdown, HandlePacket,
+  Heartbeat, HostStateRedeemer, PruneTerminalClient, ReclaimChannel,
+  ReclaimClient, ReclaimConnection, ReclaimHostState, ReclaimModule,
+  SealShutdown, UpdateChannel, UpdateClient, UpdateConnection, UpdateModuleState,
 }
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/core/ics_025_handler_interface/lifecycle_marker.{
+  lifecycle_marker_token_name,
+}
 use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
@@ -92,12 +101,69 @@ fn find_input_with_auth_token(
   )
 }
 
-/// Derive a `07-tendermint-{N}` identifier from a client token name.
-///
-/// Client auth tokens are generated with `auth.generate_token_name(...)`, which
-/// appends the decimal sequence number as a postfix.
-///
-/// The on-chain code needs the IBC client identifier form for the ICS-24 store key.
+fn inputs_at_script(
+  inputs: List<Input>,
+  script_hash: Hash<Blake2b_224, Script>,
+) -> List<Input> {
+  list.filter(
+    inputs,
+    fn(input) {
+      when input.output.address.payment_credential is {
+        address.Script(actual_hash) -> actual_hash == script_hash
+        _ -> False
+      }
+    },
+  )
+}
+
+fn module_input_for_registration(
+  inputs: List<Input>,
+  registration: ModuleRegistration,
+) -> Input {
+  expect [module_input] =
+    list.filter(
+      inputs,
+      fn(input) {
+        and {
+          input.output.address.payment_credential == address.Script(
+            registration.module_script_hash,
+          ),
+          auth.contains_only_auth_tokens(
+            input.output,
+            [registration.port_token, registration.module_token],
+          ),
+        }
+      },
+    )
+  module_input
+}
+
+fn validate_module_operator(
+  host_datum: HostStateDatum,
+  port_id: ByteArray,
+  inputs: List<Input>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+) -> Bool {
+  expect Some(registration) =
+    pairs.get_first(host_datum.state.bound_port, port_id)
+  let module_input = module_input_for_registration(inputs, registration)
+
+  when module_input_redeemer(module_input, redeemers) is {
+    Operator(_) -> True
+    _ -> False
+  }
+}
+
+fn module_input_redeemer(
+  module_input: Input,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+) -> IBCModuleRedeemer {
+  expect Some(module_redeemer_data) =
+    pairs.get_first(redeemers, Spend(module_input.output_reference))
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer_data
+  module_redeemer
+}
+
 fn client_id_from_token_name(token_name: AssetName) -> ByteArray {
   let sequence = auth.extract_token_sequence(token_name)
   "07-tendermint-" |> bytearray.concat(sequence)
@@ -137,94 +203,6 @@ fn decode_host_state_datum(output: Output) -> HostStateDatum {
 /// In plain terms:
 /// - The new HostState datum is only accepted if its `ibc_state_root` equals
 ///   the old root with exactly the two CreateClient key updates applied.
-fn validate_create_client_root(
-  old_datum: HostStateDatum,
-  new_datum: HostStateDatum,
-  outputs: List<Output>,
-  spend_client_script_hash: Hash<Blake2b_224, Script>,
-  client_state_siblings: List<ByteArray>,
-  consensus_state_siblings: List<ByteArray>,
-) -> Bool {
-  // Find the newly created client output.
-  //
-  // `mint_client_stt` enforces there is exactly one client output for CreateClient,
-  // so we require exactly one here too.
-  expect [client_output] =
-    outputs |> transaction.find_script_outputs(spend_client_script_hash)
-
-  // Decode the client datum so we can derive the exact state bytes that must be
-  // committed into the Merkle root.
-  expect client_datum: ClientDatum =
-    validator_utils.get_inline_datum(client_output)
-
-  // Derive the client identifier from the HostState sequence.
-  //
-  // This matches the off-chain convention: `07-tendermint-{sequence}`.
-  let client_id =
-    "07-tendermint-"
-      |> bytearray.concat(
-          string_utils.int_to_string(old_datum.state.next_client_sequence),
-        )
-
-  // Commitment keys (IBC paths).
-  let client_state_key = client_keys.full_client_state_path(client_id)
-
-  // The initial consensus state is stored at the client's latest height.
-  let latest_height = client_datum.state.client_state.latest_height
-  let consensus_height =
-    string_utils.int_to_string(latest_height.revision_height)
-  let consensus_state_key =
-    client_keys.full_client_consensus_state_path(client_id, consensus_height)
-
-  // Commitment values.
-  //
-  // We commit the CBOR serialization of the on-chain types. The Gateway must
-  // use the same encoding when it computes the update witnesses.
-  let client_state_value = cbor.serialise(client_datum.state.client_state)
-
-  // `is_initialized_valid` guarantees there is exactly one consensus state and
-  // its key equals `latest_height`, so we can require a single value here.
-  expect [consensus_state] =
-    pairs.get_all(client_datum.state.consensus_states, latest_height)
-  let consensus_state_value = cbor.serialise(consensus_state)
-
-  // Apply the two updates in order, starting from the old root.
-  //
-  // For a newly created client, both keys were previously "empty", so we use
-  // the empty bytearray as the old value.
-  let root_after_client_state =
-    ibc_state_commitment.apply_update(
-      old_datum.state.ibc_state_root,
-      client_state_key,
-      "",
-      client_state_value,
-      client_state_siblings,
-    )
-
-  let root_after_consensus_state =
-    ibc_state_commitment.apply_update(
-      root_after_client_state,
-      consensus_state_key,
-      "",
-      consensus_state_value,
-      consensus_state_siblings,
-    )
-
-  root_after_consensus_state == new_datum.state.ibc_state_root
-}
-
-/// Apply a list of consensus state deletions to the commitment root.
-///
-/// Why this exists:
-/// - The `spend_client` validator may prune old consensus states (size bound)
-///   and/or drop expired consensus states (safety).
-/// - Each removed consensus state must also be removed from the `ibc_state_root`
-///   commitment tree, otherwise proofs become inconsistent.
-///
-/// How we make this verifiable:
-/// - The HostState redeemer carries one sibling list per removed consensus state.
-/// - On-chain we compute which consensus states were removed by comparing the
-///   input and output client datums, then apply the deletions in that order.
 fn apply_removed_consensus_state_updates(
   current_root: ByteArray,
   client_id: ByteArray,
@@ -285,6 +263,7 @@ fn validate_update_client_root(
   inputs: List<Input>,
   outputs: List<Output>,
   spend_client_script_hash: Hash<Blake2b_224, Script>,
+  client_minting_policy_id: PolicyId,
   client_state_siblings: List<ByteArray>,
   consensus_state_siblings: List<ByteArray>,
   removed_consensus_state_siblings: List<List<ByteArray>>,
@@ -298,6 +277,7 @@ fn validate_update_client_root(
 
   expect client_output_datum: ClientDatum =
     validator_utils.get_inline_datum(client_output)
+  expect client_output_datum.token.policy_id == client_minting_policy_id
 
   // Identify which client is being updated.
   let client_id = client_id_from_token_name(client_output_datum.token.name)
@@ -381,157 +361,6 @@ fn validate_update_client_root(
 /// In plain terms:
 /// - The new HostState datum is only accepted if its `ibc_state_root` equals
 ///   the old root with exactly the CreateConnection key update applied.
-fn validate_create_connection_root(
-  old_datum: HostStateDatum,
-  new_datum: HostStateDatum,
-  outputs: List<Output>,
-  spend_connection_script_hash: Hash<Blake2b_224, Script>,
-  connection_siblings: List<ByteArray>,
-) -> Bool {
-  // Find the newly created connection output.
-  //
-  // `mint_connection_stt` enforces there is exactly one connection output for CreateConnection,
-  // so we require exactly one here too.
-  expect [connection_output] =
-    outputs |> transaction.find_script_outputs(spend_connection_script_hash)
-
-  // Decode the connection datum so we can derive the exact state bytes that must be
-  // committed into the Merkle root.
-  expect connection_datum: ConnectionDatum =
-    validator_utils.get_inline_datum(connection_output)
-
-  // Derive the connection identifier from the HostState sequence.
-  //
-  // This matches the off-chain convention: `connection-{sequence}`.
-  let connection_id =
-    string_utils.int_to_string(old_datum.state.next_connection_sequence)
-      |> conn_id_keys.format_connection_identifier()
-
-  // Commitment key (IBC path).
-  let connection_key = host_connection_keys.connection_path(connection_id)
-
-  // Commitment value.
-  //
-  // We commit the CBOR serialization of the on-chain `ConnectionEnd`.
-  // The Gateway must use the same encoding when it computes the update witness.
-  let connection_value = cbor.serialise(connection_datum.state)
-
-  let root_after_connection =
-    ibc_state_commitment.apply_update(
-      old_datum.state.ibc_state_root,
-      connection_key,
-      "",
-      connection_value,
-      connection_siblings,
-    )
-
-  root_after_connection == new_datum.state.ibc_state_root
-}
-
-/// Enforce that `ibc_state_root` is updated correctly for CreateChannel.
-///
-/// In plain terms:
-/// - The new HostState datum is only accepted if its `ibc_state_root` equals
-///   the old root with the CreateChannel key updates applied.
-fn validate_create_channel_root(
-  old_datum: HostStateDatum,
-  new_datum: HostStateDatum,
-  outputs: List<Output>,
-  spend_channel_script_hash: Hash<Blake2b_224, Script>,
-  channel_siblings: List<ByteArray>,
-  next_sequence_send_siblings: List<ByteArray>,
-  next_sequence_recv_siblings: List<ByteArray>,
-  next_sequence_ack_siblings: List<ByteArray>,
-) -> Bool {
-  // Find the newly created channel output.
-  //
-  // `mint_channel_stt` enforces there is exactly one channel output for CreateChannel,
-  // so we require exactly one here too.
-  expect [channel_output] =
-    outputs |> transaction.find_script_outputs(spend_channel_script_hash)
-
-  // Decode the channel datum so we can derive the exact state bytes that must be
-  // committed into the Merkle root.
-  expect channel_datum: ChannelDatum =
-    validator_utils.get_inline_datum(channel_output)
-
-  // Derive the channel identifier from the HostState sequence.
-  //
-  // This matches the off-chain convention: `channel-{sequence}`.
-  let channel_id =
-    string_utils.int_to_string(old_datum.state.next_channel_sequence)
-      |> chan_id_keys.format_channel_identifier()
-
-  // Commitment keys (IBC paths).
-  let port_id = channel_datum.port_id
-  let channel_key = host_channel_keys.channel_path(port_id, channel_id)
-  let next_sequence_send_key =
-    packet_keys.next_sequence_send_path(port_id, channel_id)
-  let next_sequence_recv_key =
-    packet_keys.next_sequence_recv_path(port_id, channel_id)
-  let next_sequence_ack_key =
-    packet_keys.next_sequence_ack_path(port_id, channel_id)
-
-  // Commitment values.
-  //
-  // We commit the CBOR serialization of the on-chain types. The Gateway must
-  // use the same encoding when it computes the update witnesses.
-  let channel_value = cbor.serialise(channel_datum.state.channel)
-  let next_sequence_send_value =
-    cbor.serialise(channel_datum.state.next_sequence_send)
-  let next_sequence_recv_value =
-    cbor.serialise(channel_datum.state.next_sequence_recv)
-  let next_sequence_ack_value =
-    cbor.serialise(channel_datum.state.next_sequence_ack)
-
-  // Apply the 4 updates in order, starting from the old root.
-  //
-  // For a newly created channel, these keys were previously "empty", so we use
-  // the empty bytearray as the old value.
-  let root_after_channel =
-    ibc_state_commitment.apply_update(
-      old_datum.state.ibc_state_root,
-      channel_key,
-      "",
-      channel_value,
-      channel_siblings,
-    )
-
-  let root_after_next_sequence_send =
-    ibc_state_commitment.apply_update(
-      root_after_channel,
-      next_sequence_send_key,
-      "",
-      next_sequence_send_value,
-      next_sequence_send_siblings,
-    )
-
-  let root_after_next_sequence_recv =
-    ibc_state_commitment.apply_update(
-      root_after_next_sequence_send,
-      next_sequence_recv_key,
-      "",
-      next_sequence_recv_value,
-      next_sequence_recv_siblings,
-    )
-
-  let root_after_next_sequence_ack =
-    ibc_state_commitment.apply_update(
-      root_after_next_sequence_recv,
-      next_sequence_ack_key,
-      "",
-      next_sequence_ack_value,
-      next_sequence_ack_siblings,
-    )
-
-  root_after_next_sequence_ack == new_datum.state.ibc_state_root
-}
-
-/// Enforce that `ibc_state_root` is updated correctly for BindPort.
-///
-/// In plain terms:
-/// - The new HostState datum is only accepted if its `ibc_state_root` equals
-///   the old root with exactly the `ports/{portId}` key insertion applied.
 fn validate_bind_port_root(
   old_datum: HostStateDatum,
   new_datum: HostStateDatum,
@@ -588,6 +417,7 @@ fn validate_update_connection_root(
   inputs: List<Input>,
   outputs: List<Output>,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
+  connection_minting_policy_id: PolicyId,
   connection_siblings: List<ByteArray>,
 ) -> Bool {
   // Find the updated connection output.
@@ -602,6 +432,7 @@ fn validate_update_connection_root(
   // - compute the exact CBOR bytes that are committed into the Merkle root
   expect connection_output_datum: ConnectionDatum =
     validator_utils.get_inline_datum(connection_output)
+  expect connection_output_datum.token.policy_id == connection_minting_policy_id
 
   let connection_id =
     connection_id_from_token_name(connection_output_datum.token.name)
@@ -645,6 +476,7 @@ fn validate_update_channel_root(
   inputs: List<Input>,
   outputs: List<Output>,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
+  channel_minting_policy_id: PolicyId,
   channel_siblings: List<ByteArray>,
 ) -> Bool {
   // Find the updated channel output.
@@ -660,6 +492,7 @@ fn validate_update_channel_root(
   // - compute the exact CBOR bytes that are committed into the Merkle root
   expect channel_output_datum: ChannelDatum =
     validator_utils.get_inline_datum(channel_output)
+  expect channel_output_datum.token.policy_id == channel_minting_policy_id
 
   let channel_id = channel_id_from_token_name(channel_output_datum.token.name)
   let port_id = channel_output_datum.port_id
@@ -702,20 +535,6 @@ fn validate_update_channel_root(
   root_after_channel == new_datum.state.ibc_state_root
 }
 
-/// Enforce that `ibc_state_root` is updated correctly for packet lifecycle operations.
-///
-/// In this STT design, packet state lives inside the Channel datum:
-/// - sequences (next_sequence_*)
-/// - packet_commitment entries
-/// - packet_receipt entries
-/// - packet_acknowledgement entries
-///
-/// The HostState `ibc_state_root` must commit to those fields so that the counterparty
-/// can verify membership/non-membership proofs about packets.
-///
-/// The channel redeemer identifies the exact keys changed by each canonical
-/// transition. Applying only those operation-specific updates is both stricter
-/// and smaller than rediscovering the same changes by diffing every packet map.
 fn apply_packet_commitment_deletion(
   root: ByteArray,
   channel_datum: ChannelDatum,
@@ -742,6 +561,7 @@ fn validate_handle_packet_root(
   outputs: List<Output>,
   redeemers: Pairs<ScriptPurpose, Redeemer>,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
+  channel_minting_policy_id: PolicyId,
   channel_siblings: List<ByteArray>,
   next_sequence_send_siblings: List<ByteArray>,
   next_sequence_recv_siblings: List<ByteArray>,
@@ -756,6 +576,7 @@ fn validate_handle_packet_root(
 
   expect channel_output_datum: ChannelDatum =
     validator_utils.get_inline_datum(channel_output)
+  expect channel_output_datum.token.policy_id == channel_minting_policy_id
 
   let channel_id = channel_id_from_token_name(channel_output_datum.token.name)
   let port_id = channel_output_datum.port_id
@@ -893,8 +714,11 @@ fn validate_handle_packet_root(
             channel_output_datum,
             packet,
           )
+        let channel_changed =
+          channel_input_datum.state.channel != channel_output_datum.state.channel
         let channel_root =
-          if is_ordered {
+          if channel_changed {
+            expect is_ordered
             ibc_state_commitment.apply_update(
               old_root,
               host_channel_keys.channel_path(port_id, channel_id),
@@ -903,6 +727,7 @@ fn validate_handle_packet_root(
               channel_siblings,
             )
           } else {
+            expect channel_siblings == []
             old_root
           }
         apply_packet_commitment_deletion(
@@ -918,21 +743,29 @@ fn validate_handle_packet_root(
         // The prune marker validates the complete successor datum and the
         // authenticated absence proof. The HostState side binds that typed
         // operation to the same sequence and commits its paired deletions.
-        expect Some(receipt) =
-          pairs.get_first(channel_input_datum.state.packet_receipt, sequence)
         expect Some(acknowledgement) =
           pairs.get_first(
             channel_input_datum.state.packet_acknowledgement,
             sequence,
           )
         let receipt_root =
-          ibc_state_commitment.apply_update(
-            old_root,
-            packet_keys.packet_receipt_path(port_id, channel_id, sequence),
-            cbor.serialise(receipt),
-            "",
-            packet_receipt_siblings,
-          )
+          if is_ordered {
+            expect packet_receipt_siblings == []
+            old_root
+          } else {
+            expect Some(receipt) =
+              pairs.get_first(
+                channel_input_datum.state.packet_receipt,
+                sequence,
+              )
+            ibc_state_commitment.apply_update(
+              old_root,
+              packet_keys.packet_receipt_path(port_id, channel_id, sequence),
+              cbor.serialise(receipt),
+              "",
+              packet_receipt_siblings,
+            )
+          }
         ibc_state_commitment.apply_update(
           receipt_root,
           packet_keys.packet_acknowledgement_path(port_id, channel_id, sequence),
@@ -945,6 +778,26 @@ fn validate_handle_packet_root(
     }
 
   expected_root == new_datum.state.ibc_state_root
+}
+
+fn preserves_lifecycle_marker(
+  input: Output,
+  output: Output,
+  mint: Value,
+  policy: PolicyId,
+) -> Bool {
+  quantity_of(output.value, policy, lifecycle_marker_token_name) == quantity_of(
+    input.value,
+    policy,
+    lifecycle_marker_token_name,
+  ) + quantity_of(mint, policy, lifecycle_marker_token_name)
+}
+
+fn mints_lifecycle_marker(mint: Value, policy: PolicyId) -> Bool {
+  auth.mint_auth_token(
+    mint,
+    AuthToken { policy_id: policy, name: lifecycle_marker_token_name },
+  )
 }
 
 /// Main validator for HostState STT
@@ -960,6 +813,13 @@ validator host_state_stt(
   spend_client_script_hash: Hash<Blake2b_224, Script>,
   spend_connection_script_hash: Hash<Blake2b_224, Script>,
   spend_channel_script_hash: Hash<Blake2b_224, Script>,
+  client_minting_policy_id: PolicyId,
+  connection_minting_policy_id: PolicyId,
+  channel_minting_policy_id: PolicyId,
+  lifecycle_creation_policy_id: PolicyId,
+  lifecycle_reclamation_policy_id: PolicyId,
+  lifecycle_operational_policy_id: PolicyId,
+  lifecycle_packet_policy_id: PolicyId,
 ) {
   spend(
     _datum_opt: Option<HostStateDatum>,
@@ -971,6 +831,7 @@ validator host_state_stt(
     let Transaction {
       inputs,
       outputs,
+      mint,
       redeemers,
       extra_signatories,
       validity_range,
@@ -984,21 +845,27 @@ validator host_state_stt(
 
     // 4. Validate state transition based on operation.
     when redeemer is {
-      FinalizeShutdown -> and {
+      FinalizeShutdown -> False
+      ReclaimHostState { reclaim_to } -> and {
           list.has(extra_signatories, old_datum.deployer),
-          validate_finalize_shutdown(
+          is_host_state_reclaimable(
             old_datum,
             validator_utils.get_tx_valid_from(validity_range),
+          ),
+          auth.burn_auth_token(
+            mint,
+            AuthToken { policy_id: nft_policy, name: host_state_token_name },
           ),
           !list.any(
             outputs,
             fn(output) {
-              output.address == host_input.output.address && assets.has_nft(
-                output.value,
-                nft_policy,
-                host_state_token_name,
-              )
+              assets.has_nft(output.value, nft_policy, host_state_token_name)
             },
+          ),
+          validator_utils.pays_exact_ada_only_reclamation_bounty(
+            host_input.output,
+            outputs,
+            reclaim_to,
           ),
         }
       _ -> {
@@ -1013,139 +880,140 @@ validator host_state_stt(
         expect host_output.address == host_input.output.address
         expect new_datum.nft_policy == nft_policy
 
-        when redeemer is {
-          CreateClient { client_state_siblings, consensus_state_siblings } ->
-            and {
-              validate_create_client(old_datum, new_datum),
-              validate_create_client_root(
-                old_datum,
-                new_datum,
-                outputs,
-                spend_client_script_hash,
-                client_state_siblings,
-                consensus_state_siblings,
-              ),
-            }
-          CreateConnection { connection_siblings } -> and {
-              validate_create_connection(old_datum, new_datum),
-              validate_create_connection_root(
-                old_datum,
-                new_datum,
-                outputs,
-                spend_connection_script_hash,
-                connection_siblings,
-              ),
-            }
-          CreateChannel {
-            channel_siblings,
-            next_sequence_send_siblings,
-            next_sequence_recv_siblings,
-            next_sequence_ack_siblings,
-          } -> and {
-              validate_create_channel(old_datum, new_datum),
-              validate_create_channel_root(
-                old_datum,
-                new_datum,
-                outputs,
-                spend_channel_script_hash,
-                channel_siblings,
-                next_sequence_send_siblings,
-                next_sequence_recv_siblings,
-                next_sequence_ack_siblings,
-              ),
-            }
-          BindPort { port_id, registration, port_siblings } -> and {
-              // A permanent global registration is an administrative action.
-              // Requiring the deployment authority prevents port squatting and
-              // makes the protocol-wide bound useful rather than attacker-fillable.
-              list.has(extra_signatories, old_datum.deployer),
-              validate_bind_port(old_datum, new_datum, port_id, registration),
-              validate_bind_port_root(
-                old_datum,
-                new_datum,
-                port_id,
-                registration,
-                outputs,
-                port_siblings,
-              ),
-            }
-          UpdateClient {
-            client_state_siblings,
-            consensus_state_siblings,
-            removed_consensus_state_siblings,
-          } -> and {
-              // Client updates should not change HostState sequencing, only the root.
-              validate_update_only_root(old_datum, new_datum),
-              validate_update_client_root(
-                old_datum,
-                new_datum,
-                inputs,
-                outputs,
-                spend_client_script_hash,
-                client_state_siblings,
-                consensus_state_siblings,
-                removed_consensus_state_siblings,
-              ),
-            }
-          UpdateConnection { connection_siblings } -> and {
-              validate_update_only_root(old_datum, new_datum),
-              validate_update_connection_root(
-                old_datum,
-                new_datum,
-                inputs,
-                outputs,
-                spend_connection_script_hash,
-                connection_siblings,
-              ),
-            }
-          UpdateChannel { channel_siblings } -> and {
-              // Channel updates should not change HostState sequencing, only the root.
-              validate_update_only_root(old_datum, new_datum),
-              validate_update_channel_root(
-                old_datum,
-                new_datum,
-                inputs,
-                outputs,
-                spend_channel_script_hash,
-                channel_siblings,
-              ),
-            }
-          HandlePacket {
-            channel_siblings,
-            next_sequence_send_siblings,
-            next_sequence_recv_siblings,
-            next_sequence_ack_siblings,
-            packet_commitment_siblings,
-            packet_receipt_siblings,
-            packet_acknowledgement_siblings,
-          } -> and {
-              // Packet operations should not change HostState sequencing, only the root.
-              validate_update_only_root(old_datum, new_datum),
-              validate_handle_packet_root(
-                old_datum,
-                new_datum,
-                inputs,
-                outputs,
-                redeemers,
-                spend_channel_script_hash,
-                channel_siblings,
-                next_sequence_send_siblings,
-                next_sequence_recv_siblings,
-                next_sequence_ack_siblings,
-                packet_commitment_siblings,
-                packet_receipt_siblings,
-                packet_acknowledgement_siblings,
-              ),
-            }
-          EnterShutdown { grace_period_end } -> and {
-              list.has(extra_signatories, old_datum.deployer),
-              validate_enter_shutdown(old_datum, new_datum, grace_period_end),
-            }
-          Heartbeat -> and {
-              list.has(extra_signatories, old_datum.deployer),
-              validate_heartbeat(old_datum, new_datum),
-            }
-          FinalizeShutdown -> fail
+        and {
+          preserves_lifecycle_marker(
+            host_input.output,
+            host_output,
+            mint,
+            lifecycle_creation_policy_id,
+          ),
+          preserves_lifecycle_marker(
+            host_input.output,
+            host_output,
+            mint,
+            lifecycle_reclamation_policy_id,
+          ),
+          preserves_lifecycle_marker(
+            host_input.output,
+            host_output,
+            mint,
+            lifecycle_operational_policy_id,
+          ),
+          preserves_lifecycle_marker(
+            host_input.output,
+            host_output,
+            mint,
+            lifecycle_packet_policy_id,
+          ),
+          when redeemer is {
+            CreateClient { .. } -> and {
+                validate_create_client(old_datum, new_datum),
+                mints_lifecycle_marker(mint, lifecycle_creation_policy_id),
+              }
+            CreateConnection { .. } -> and {
+                validate_create_connection(old_datum, new_datum),
+                mints_lifecycle_marker(mint, lifecycle_creation_policy_id),
+              }
+            CreateChannel { .. } -> and {
+                validate_create_channel(old_datum, new_datum),
+                mints_lifecycle_marker(mint, lifecycle_creation_policy_id),
+              }
+            BindPort { port_id, registration, .. } -> and {
+                // A permanent global registration is an administrative action.
+                // Requiring the deployment authority prevents port squatting and
+                // makes the protocol-wide bound useful rather than attacker-fillable.
+                list.has(extra_signatories, old_datum.deployer),
+                validate_bind_port(old_datum, new_datum, port_id, registration),
+                mints_lifecycle_marker(mint, lifecycle_operational_policy_id),
+              }
+            UpdateClient { .. } -> and {
+                // Client updates should not change HostState sequencing, only the root.
+                validate_update_only_root(old_datum, new_datum),
+                mints_lifecycle_marker(mint, lifecycle_operational_policy_id),
+              }
+            UpdateConnection { .. } -> and {
+                validate_update_only_root(old_datum, new_datum),
+                mints_lifecycle_marker(mint, lifecycle_operational_policy_id),
+              }
+            UpdateChannel { .. } -> and {
+                // Channel updates should not change HostState sequencing, only the root.
+                validate_update_only_root(old_datum, new_datum),
+                mints_lifecycle_marker(mint, lifecycle_operational_policy_id),
+              }
+            HandlePacket { .. } -> and {
+                // Packet operations should not change HostState sequencing, only the root.
+                validate_update_only_root(old_datum, new_datum),
+                mints_lifecycle_marker(mint, lifecycle_packet_policy_id),
+              }
+            PruneTerminalClient { .. } -> and {
+                validate_update_only_root(old_datum, new_datum),
+                mints_lifecycle_marker(mint, lifecycle_reclamation_policy_id),
+              }
+            BeginConnectionRetirement -> and {
+                list.has(extra_signatories, old_datum.deployer),
+                validate_update_only_root(old_datum, new_datum),
+                new_datum.state.ibc_state_root == old_datum.state.ibc_state_root,
+                list.length(
+                  inputs_at_script(inputs, spend_connection_script_hash),
+                ) == 1,
+                list.length(
+                  transaction.find_script_outputs(
+                    outputs,
+                    spend_connection_script_hash,
+                  ),
+                ) == 1,
+              }
+            BeginChannelAbandonment -> and {
+                list.has(extra_signatories, old_datum.deployer),
+                validate_update_only_root(old_datum, new_datum),
+                new_datum.state.ibc_state_root == old_datum.state.ibc_state_root,
+                list.length(inputs_at_script(inputs, spend_channel_script_hash)) == 1,
+                list.length(
+                  transaction.find_script_outputs(
+                    outputs,
+                    spend_channel_script_hash,
+                  ),
+                ) == 1,
+              }
+            ReclaimChannel { .. } -> and {
+                validate_reclaim_channel(old_datum, new_datum),
+                mints_lifecycle_marker(mint, lifecycle_reclamation_policy_id),
+              }
+            ReclaimConnection { .. } -> and {
+                validate_reclaim_connection(old_datum, new_datum),
+                mints_lifecycle_marker(mint, lifecycle_reclamation_policy_id),
+              }
+            ReclaimClient { .. } -> and {
+                validate_reclaim_client(old_datum, new_datum),
+                mints_lifecycle_marker(mint, lifecycle_reclamation_policy_id),
+              }
+            EnterShutdown { grace_period_end } -> and {
+                list.has(extra_signatories, old_datum.deployer),
+                validate_enter_shutdown(old_datum, new_datum, grace_period_end),
+              }
+            SealShutdown -> and {
+                list.has(extra_signatories, old_datum.deployer),
+                validate_seal_shutdown(
+                  old_datum,
+                  new_datum,
+                  validator_utils.get_tx_valid_from(validity_range),
+                ),
+              }
+            ReclaimModule { port_id } -> and {
+                list.has(extra_signatories, old_datum.deployer),
+                validate_reclaim_module(old_datum, new_datum, port_id),
+                mints_lifecycle_marker(mint, lifecycle_reclamation_policy_id),
+              }
+            UpdateModuleState { port_id } -> and {
+                validate_update_module_state(old_datum, new_datum),
+                validate_module_operator(old_datum, port_id, inputs, redeemers),
+              }
+            Heartbeat -> and {
+                list.has(extra_signatories, old_datum.deployer),
+                validate_heartbeat(old_datum, new_datum),
+              }
+            FinalizeShutdown | ReclaimHostState { .. } -> fail
+          },
         }
       }
     }

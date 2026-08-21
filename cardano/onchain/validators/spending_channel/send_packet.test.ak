@@ -1,3 +1,4 @@
+use aiken/builtin
 use aiken/collection/list
 use cardano/address.{from_script}
 use cardano/assets.{ada_asset_name, ada_policy_id, add, from_asset}
@@ -6,7 +7,7 @@ use cardano/transaction.{
   Spend, Transaction,
 }
 use ibc/apps/transfer/transfer_escrow_shard
-use ibc/apps/transfer/transfer_escrow_shard_redeemer.{CreateEscrowShard}
+use ibc/apps/transfer/transfer_escrow_shard_redeemer.{CreateEscrowShardV2}
 use ibc/apps/transfer/types/escrow_datum.{TransferEscrowDatum}
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/types/transfer_module_datum.{
@@ -14,8 +15,9 @@ use ibc/apps/transfer/types/transfer_module_datum.{
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{SendPacket}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
@@ -29,6 +31,8 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
 use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{HandlePacket}
 use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/core/ics_025_handler_interface/reclamation
+use ibc/utils/bits
 use ibc/utils/test_utils
 use minting_transfer_escrow_shard
 use spending_channel
@@ -60,6 +64,103 @@ fn full_empty_siblings() -> List<ByteArray> {
   repeat_bytearray(
     ibc_state_commitment.empty_hash,
     ibc_state_commitment.merkle_depth_bits,
+  )
+}
+
+fn key_bit(key_hash: ByteArray, depth: Int) -> Int {
+  let byte_index = 7 - depth / 8
+  let bit_in_byte = depth % 8
+  bits.shr(builtin.index_bytearray(key_hash, byte_index), bit_in_byte) % 2
+}
+
+fn last_different_key_bit(
+  first_hash: ByteArray,
+  second_hash: ByteArray,
+  depth: Int,
+  last_difference: Int,
+) -> Int {
+  if depth == ibc_state_commitment.merkle_depth_bits {
+    expect last_difference >= 0
+    last_difference
+  } else {
+    last_different_key_bit(
+      first_hash,
+      second_hash,
+      depth + 1,
+      if key_bit(first_hash, depth) != key_bit(second_hash, depth) {
+        depth
+      } else {
+        last_difference
+      },
+    )
+  }
+}
+
+fn raise_single_leaf(
+  key_hash: ByteArray,
+  current: ByteArray,
+  depth: Int,
+  target_depth: Int,
+) -> ByteArray {
+  if depth == target_depth {
+    current
+  } else {
+    raise_single_leaf(
+      key_hash,
+      if key_bit(key_hash, depth) == 0 {
+        ibc_state_commitment.inner_hash(
+          current,
+          ibc_state_commitment.empty_hash,
+        )
+      } else {
+        ibc_state_commitment.inner_hash(
+          ibc_state_commitment.empty_hash,
+          current,
+        )
+      },
+      depth + 1,
+      target_depth,
+    )
+  }
+}
+
+fn single_sibling_list(
+  depth: Int,
+  sibling_depth: Int,
+  sibling: ByteArray,
+) -> List<ByteArray> {
+  if depth == ibc_state_commitment.merkle_depth_bits {
+    []
+  } else {
+    [
+      if depth == sibling_depth {
+        sibling
+      } else {
+        ibc_state_commitment.empty_hash
+      },
+      ..single_sibling_list(depth + 1, sibling_depth, sibling)
+    ]
+  }
+}
+
+fn siblings_after_single_insert(
+  existing_key: ByteArray,
+  existing_value: ByteArray,
+  target_key: ByteArray,
+) -> List<ByteArray> {
+  let existing_key_hash = builtin.sha2_256(existing_key)
+  let target_key_hash = builtin.sha2_256(target_key)
+  let divergence =
+    last_different_key_bit(existing_key_hash, target_key_hash, 0, -1)
+  let existing_leaf =
+    ibc_state_commitment.leaf_hash(
+      existing_key_hash,
+      ibc_state_commitment.value_hash(existing_value),
+    )
+  single_sibling_list(
+    0,
+    divergence,
+    raise_single_leaf(existing_key_hash, existing_leaf, 0, divergence),
   )
 }
 
@@ -115,6 +216,7 @@ fn check_send_packet(mutation: CallbackMutation) {
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
     }
 
   let channel_input =
@@ -127,9 +229,22 @@ fn check_send_packet(mutation: CallbackMutation) {
       name: port_token_name,
     }
   let module_token = mock_data.module_token
-  let registered_module_input = mock_data.module_input
+  let registered_module_input =
+    Input {
+      ..mock_data.module_input,
+      output: Output {
+        ..mock_data.module_input.output,
+        datum: InlineDatum(
+          TransferModuleDatum {
+            escrow_shard_registry_root: empty_escrow_shard_registry_root,
+            live_escrow_shard_count: 0,
+            voucher_supply: 0,
+          },
+        ),
+      },
+    }
   let registry_siblings = full_empty_siblings()
-  let updated_registry_root =
+  let root_after_live_marker =
     ibc_state_commitment.apply_update(
       empty_escrow_shard_registry_root,
       transfer_escrow_shard.shard_registry_key("channel-0", transfer_data.denom),
@@ -137,12 +252,28 @@ fn check_send_packet(mutation: CallbackMutation) {
       transfer_escrow_shard.registered_shard_value,
       registry_siblings,
     )
+  let channel_count_siblings =
+    siblings_after_single_insert(
+      transfer_escrow_shard.shard_registry_key("channel-0", transfer_data.denom),
+      transfer_escrow_shard.registered_shard_value,
+      transfer_escrow_shard.channel_live_shard_count_key("channel-0"),
+    )
+  let updated_registry_root =
+    ibc_state_commitment.apply_update(
+      root_after_live_marker,
+      transfer_escrow_shard.channel_live_shard_count_key("channel-0"),
+      "",
+      reclamation.encode_count(1),
+      channel_count_siblings,
+    )
   let module_output =
     Output {
       ..registered_module_input.output,
       datum: InlineDatum(
         TransferModuleDatum {
           escrow_shard_registry_root: updated_registry_root,
+          live_escrow_shard_count: 1,
+          voucher_supply: 0,
         },
       ),
     }
@@ -226,6 +357,7 @@ fn check_send_packet(mutation: CallbackMutation) {
         TransferEscrowDatum {
           channel_id: "channel-0",
           denom: transfer_data.denom,
+          escrowed_amount: 1000,
         },
       ),
       reference_script: None,
@@ -310,11 +442,13 @@ fn check_send_packet(mutation: CallbackMutation) {
       packet_acknowledgement_siblings: [],
     }
   let shard_mint_redeemer =
-    CreateEscrowShard {
+    CreateEscrowShardV2 {
       channel_id: "channel-0",
       denom: transfer_data.denom,
       data: transfer_data,
       registry_siblings,
+      old_channel_live_escrow_shard_count: 0,
+      channel_live_escrow_shard_count_siblings: channel_count_siblings,
     }
   let shard_mint_redeemer_data: Redeemer = shard_mint_redeemer
 
@@ -381,6 +515,7 @@ fn check_send_packet(mutation: CallbackMutation) {
             mock_data.channel_minting_policy_id,
             "mock voucher policy",
             mock_data.host_state_nft_policy_id,
+            "mock lifecycle marker policy",
             None,
             typed_module_redeemer,
             registered_module_input.output_reference,
@@ -388,6 +523,9 @@ fn check_send_packet(mutation: CallbackMutation) {
           )?,
           minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint(
             port_token,
+            mock_data.port_id,
+            mock_data.channel_minting_policy_id,
+            mock_data.host_state_nft_policy_id,
             shard_mint_redeemer,
             transfer_escrow_shard_policy_id,
             transaction,

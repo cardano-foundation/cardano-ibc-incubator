@@ -1,9 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BridgeManifest } from '../../config/bridge-manifest';
-import {
-  QueryBridgeManifestResponse,
-} from '@cardano-ibc/proto-types/build/ibc/cardano/v1/query';
+import { QueryBridgeManifestResponse } from '@cardano-ibc/proto-types/build/ibc/cardano/v1/query';
 
 @Injectable()
 export class BridgeManifestService {
@@ -41,8 +39,12 @@ export class BridgeManifestService {
           spend_channel: {
             ...this.toGrpcValidator(manifest.validators.spend_channel),
             ref_validator: {
-              acknowledge_packet: this.toGrpcRefValidator(manifest.validators.spend_channel.ref_validator.acknowledge_packet),
-              chan_close_confirm: this.toGrpcRefValidator(manifest.validators.spend_channel.ref_validator.chan_close_confirm),
+              acknowledge_packet: this.toGrpcRefValidator(
+                manifest.validators.spend_channel.ref_validator.acknowledge_packet,
+              ),
+              chan_close_confirm: this.toGrpcRefValidator(
+                manifest.validators.spend_channel.ref_validator.chan_close_confirm,
+              ),
               chan_close_init: this.toGrpcRefValidator(manifest.validators.spend_channel.ref_validator.chan_close_init),
               chan_open_ack: this.toGrpcRefValidator(manifest.validators.spend_channel.ref_validator.chan_open_ack),
               chan_open_confirm: this.toGrpcRefValidator(
@@ -62,6 +64,14 @@ export class BridgeManifestService {
           mint_connection_stt: this.toGrpcValidator(manifest.validators.mint_connection_stt),
           mint_channel_stt: this.toGrpcValidator(manifest.validators.mint_channel_stt),
           mint_voucher: this.toGrpcValidator(manifest.validators.mint_voucher),
+          mint_lifecycle_creation_marker: this.toGrpcValidator(manifest.validators.mint_lifecycle_creation_marker),
+          mint_lifecycle_reclamation_marker: this.toGrpcValidator(
+            manifest.validators.mint_lifecycle_reclamation_marker,
+          ),
+          mint_lifecycle_operational_marker: this.toGrpcValidator(
+            manifest.validators.mint_lifecycle_operational_marker,
+          ),
+          mint_lifecycle_packet_marker: this.toGrpcValidator(manifest.validators.mint_lifecycle_packet_marker),
         },
       },
     };

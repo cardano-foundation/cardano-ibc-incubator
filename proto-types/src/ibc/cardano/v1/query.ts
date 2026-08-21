@@ -172,6 +172,10 @@ export interface BridgeManifestValidators {
   mint_connection_stt?: BridgeManifestValidator;
   mint_channel_stt?: BridgeManifestValidator;
   mint_voucher?: BridgeManifestValidator;
+  mint_lifecycle_creation_marker?: BridgeManifestValidator;
+  mint_lifecycle_reclamation_marker?: BridgeManifestValidator;
+  mint_lifecycle_operational_marker?: BridgeManifestValidator;
+  mint_lifecycle_packet_marker?: BridgeManifestValidator;
 }
 /**
  * @name BridgeManifestModule
@@ -1261,6 +1265,10 @@ function createBaseBridgeManifestValidators(): BridgeManifestValidators {
     mint_connection_stt: undefined,
     mint_channel_stt: undefined,
     mint_voucher: undefined,
+    mint_lifecycle_creation_marker: undefined,
+    mint_lifecycle_reclamation_marker: undefined,
+    mint_lifecycle_operational_marker: undefined,
+    mint_lifecycle_packet_marker: undefined,
   };
 }
 /**
@@ -1301,6 +1309,30 @@ export const BridgeManifestValidators = {
     if (message.mint_voucher !== undefined) {
       BridgeManifestValidator.encode(message.mint_voucher, writer.uint32(90).fork()).ldelim();
     }
+    if (message.mint_lifecycle_creation_marker !== undefined) {
+      BridgeManifestValidator.encode(
+        message.mint_lifecycle_creation_marker,
+        writer.uint32(98).fork(),
+      ).ldelim();
+    }
+    if (message.mint_lifecycle_reclamation_marker !== undefined) {
+      BridgeManifestValidator.encode(
+        message.mint_lifecycle_reclamation_marker,
+        writer.uint32(106).fork(),
+      ).ldelim();
+    }
+    if (message.mint_lifecycle_operational_marker !== undefined) {
+      BridgeManifestValidator.encode(
+        message.mint_lifecycle_operational_marker,
+        writer.uint32(114).fork(),
+      ).ldelim();
+    }
+    if (message.mint_lifecycle_packet_marker !== undefined) {
+      BridgeManifestValidator.encode(
+        message.mint_lifecycle_packet_marker,
+        writer.uint32(122).fork(),
+      ).ldelim();
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): BridgeManifestValidators {
@@ -1340,6 +1372,18 @@ export const BridgeManifestValidators = {
         case 11:
           message.mint_voucher = BridgeManifestValidator.decode(reader, reader.uint32());
           break;
+        case 12:
+          message.mint_lifecycle_creation_marker = BridgeManifestValidator.decode(reader, reader.uint32());
+          break;
+        case 13:
+          message.mint_lifecycle_reclamation_marker = BridgeManifestValidator.decode(reader, reader.uint32());
+          break;
+        case 14:
+          message.mint_lifecycle_operational_marker = BridgeManifestValidator.decode(reader, reader.uint32());
+          break;
+        case 15:
+          message.mint_lifecycle_packet_marker = BridgeManifestValidator.decode(reader, reader.uint32());
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1366,6 +1410,22 @@ export const BridgeManifestValidators = {
     if (isSet(object.mint_channel_stt))
       obj.mint_channel_stt = BridgeManifestValidator.fromJSON(object.mint_channel_stt);
     if (isSet(object.mint_voucher)) obj.mint_voucher = BridgeManifestValidator.fromJSON(object.mint_voucher);
+    if (isSet(object.mint_lifecycle_creation_marker))
+      obj.mint_lifecycle_creation_marker = BridgeManifestValidator.fromJSON(
+        object.mint_lifecycle_creation_marker,
+      );
+    if (isSet(object.mint_lifecycle_reclamation_marker))
+      obj.mint_lifecycle_reclamation_marker = BridgeManifestValidator.fromJSON(
+        object.mint_lifecycle_reclamation_marker,
+      );
+    if (isSet(object.mint_lifecycle_operational_marker))
+      obj.mint_lifecycle_operational_marker = BridgeManifestValidator.fromJSON(
+        object.mint_lifecycle_operational_marker,
+      );
+    if (isSet(object.mint_lifecycle_packet_marker))
+      obj.mint_lifecycle_packet_marker = BridgeManifestValidator.fromJSON(
+        object.mint_lifecycle_packet_marker,
+      );
     return obj;
   },
   toJSON(message: BridgeManifestValidators): unknown {
@@ -1410,6 +1470,22 @@ export const BridgeManifestValidators = {
       (obj.mint_voucher = message.mint_voucher
         ? BridgeManifestValidator.toJSON(message.mint_voucher)
         : undefined);
+    message.mint_lifecycle_creation_marker !== undefined &&
+      (obj.mint_lifecycle_creation_marker = message.mint_lifecycle_creation_marker
+        ? BridgeManifestValidator.toJSON(message.mint_lifecycle_creation_marker)
+        : undefined);
+    message.mint_lifecycle_reclamation_marker !== undefined &&
+      (obj.mint_lifecycle_reclamation_marker = message.mint_lifecycle_reclamation_marker
+        ? BridgeManifestValidator.toJSON(message.mint_lifecycle_reclamation_marker)
+        : undefined);
+    message.mint_lifecycle_operational_marker !== undefined &&
+      (obj.mint_lifecycle_operational_marker = message.mint_lifecycle_operational_marker
+        ? BridgeManifestValidator.toJSON(message.mint_lifecycle_operational_marker)
+        : undefined);
+    message.mint_lifecycle_packet_marker !== undefined &&
+      (obj.mint_lifecycle_packet_marker = message.mint_lifecycle_packet_marker
+        ? BridgeManifestValidator.toJSON(message.mint_lifecycle_packet_marker)
+        : undefined);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<BridgeManifestValidators>, I>>(
@@ -1445,6 +1521,35 @@ export const BridgeManifestValidators = {
     }
     if (object.mint_voucher !== undefined && object.mint_voucher !== null) {
       message.mint_voucher = BridgeManifestValidator.fromPartial(object.mint_voucher);
+    }
+    if (
+      object.mint_lifecycle_creation_marker !== undefined &&
+      object.mint_lifecycle_creation_marker !== null
+    ) {
+      message.mint_lifecycle_creation_marker = BridgeManifestValidator.fromPartial(
+        object.mint_lifecycle_creation_marker,
+      );
+    }
+    if (
+      object.mint_lifecycle_reclamation_marker !== undefined &&
+      object.mint_lifecycle_reclamation_marker !== null
+    ) {
+      message.mint_lifecycle_reclamation_marker = BridgeManifestValidator.fromPartial(
+        object.mint_lifecycle_reclamation_marker,
+      );
+    }
+    if (
+      object.mint_lifecycle_operational_marker !== undefined &&
+      object.mint_lifecycle_operational_marker !== null
+    ) {
+      message.mint_lifecycle_operational_marker = BridgeManifestValidator.fromPartial(
+        object.mint_lifecycle_operational_marker,
+      );
+    }
+    if (object.mint_lifecycle_packet_marker !== undefined && object.mint_lifecycle_packet_marker !== null) {
+      message.mint_lifecycle_packet_marker = BridgeManifestValidator.fromPartial(
+        object.mint_lifecycle_packet_marker,
+      );
     }
     return message;
   },

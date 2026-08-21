@@ -20,6 +20,7 @@ describe('LucidService prune packet history transaction', () => {
         validators: {
           hostStateStt: { address: 'host-address' },
           spendChannel: { address: 'channel-address' },
+          mintLifecyclePacketMarker: { scriptHash: 'packet-policy' },
         },
       }),
     };
@@ -28,6 +29,7 @@ describe('LucidService prune packet history transaction', () => {
       prunePacketHistory: utxo('prune-ref', 0),
       verifyProof: utxo('verify-ref', 0),
       hostStateStt: utxo('host-ref', 0),
+      mintLifecyclePacketMarker: utxo('packet-marker-ref', 0),
     };
     service.LucidImporter = {
       Data: {
@@ -54,21 +56,23 @@ describe('LucidService prune packet history transaction', () => {
     };
 
     expect(service.createUnsignedPrunePacketHistoryTx(dto)).toBe(tx);
-    expect(tx.readFrom).toHaveBeenNthCalledWith(1, [
+    expect(tx.readFrom).toHaveBeenNthCalledWith(1, [service.referenceScripts.mintLifecyclePacketMarker]);
+    expect(tx.readFrom).toHaveBeenNthCalledWith(2, [
       service.referenceScripts.spendChannel,
       service.referenceScripts.prunePacketHistory,
       service.referenceScripts.verifyProof,
       service.referenceScripts.hostStateStt,
     ]);
-    expect(tx.readFrom).toHaveBeenNthCalledWith(2, [dto.connectionUtxo, dto.clientUtxo]);
+    expect(tx.readFrom).toHaveBeenNthCalledWith(3, [dto.connectionUtxo, dto.clientUtxo]);
     expect(tx.collectFrom).toHaveBeenCalledTimes(2);
-    expect(tx.mintAssets).toHaveBeenCalledWith(
-      { 'prune-policy': 1n },
-      'encoded-auth-token',
-    );
-    expect(tx.mintAssets).toHaveBeenCalledWith(
-      { 'verify-policy': 1n },
-      'proof-redeemer',
+    expect(tx.mintAssets).toHaveBeenCalledWith({ 'prune-policy': 1n }, 'encoded-auth-token');
+    expect(tx.mintAssets).toHaveBeenCalledWith({ 'verify-policy': 1n }, 'proof-redeemer');
+    const packetMarkerUnit = `packet-policy${Buffer.from('ibc_lifecycle').toString('hex')}`;
+    expect(tx.mintAssets).toHaveBeenCalledWith({ [packetMarkerUnit]: 1n }, 'd87980');
+    expect(tx.pay.ToContract).toHaveBeenCalledWith(
+      'host-address',
+      { kind: 'inline', value: 'updated-host' },
+      expect.objectContaining({ [packetMarkerUnit]: 1n }),
     );
   });
 });

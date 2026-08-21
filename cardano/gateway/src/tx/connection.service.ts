@@ -39,6 +39,7 @@ import { getBlockDelay, getHeightMapValue } from '../shared/helpers/verify';
 import { connectionPath } from '../shared/helpers/connection';
 import { 
 	  computeRootWithCreateConnectionUpdate as computeRootWithCreateConnectionUpdateHelper,
+	  computeRootWithUpdateConnectionUpdate as computeRootWithUpdateConnectionUpdateHelper,
 	  alignTreeWithChain,
 	  isTreeAligned,
 	  getCurrentTree,
@@ -300,9 +301,23 @@ export class ConnectionService {
     oldRoot: string,
     connectionId: string,
     connectionEndValue: Buffer,
+    clientId: string,
+  ): {
+    newRoot: string;
+    connectionSiblings: string[];
+    clientConnectionCount: bigint;
+    clientConnectionCountSiblings: string[];
+    commit: () => void;
+  } {
+    return computeRootWithCreateConnectionUpdateHelper(oldRoot, connectionId, connectionEndValue, clientId);
+  }
+
+  private computeRootWithUpdateConnectionUpdate(
+    oldRoot: string,
+    connectionId: string,
+    connectionEndValue: Buffer,
   ): { newRoot: string; connectionSiblings: string[]; commit: () => void } {
-    const result = computeRootWithCreateConnectionUpdateHelper(oldRoot, connectionId, connectionEndValue);
-    return { newRoot: result.newRoot, connectionSiblings: result.connectionSiblings, commit: result.commit };
+    return computeRootWithUpdateConnectionUpdateHelper(oldRoot, connectionId, connectionEndValue);
   }
   
   /**
@@ -737,11 +752,12 @@ export class ConnectionService {
     //
     // This means we must commit the exact bytes that the on-chain code uses:
     // `cbor.serialise(connection_end)`.
+    const canonicalClientId = `${CLIENT_ID_PREFIX}-${connectionOpenInitOperator.clientId}`;
     const connectionEnd: ConnectionDatum['state'] = {
       // IMPORTANT: The IBC store key for client state is derived from the client identifier string.
       // For Cardano↔Cosmos parity, this must use canonical IBC identifiers like `07-tendermint-{n}`,
       // not the internal NFT/token prefix used by the STT auth tokens.
-      client_id: convertString2Hex(`${CLIENT_ID_PREFIX}-${connectionOpenInitOperator.clientId}`),
+      client_id: convertString2Hex(canonicalClientId),
       counterparty: connectionOpenInitOperator.counterparty,
       delay_period: connectionOpenInitOperator.delayPeriod,
       versions: connectionOpenInitOperator.versions,
@@ -752,10 +768,17 @@ export class ConnectionService {
       'hex',
     );
 
-    const { newRoot, connectionSiblings, commit } = this.computeRootWithCreateConnectionUpdate(
+    const {
+      newRoot,
+      connectionSiblings,
+      clientConnectionCount,
+      clientConnectionCountSiblings,
+      commit,
+    } = this.computeRootWithCreateConnectionUpdate(
       hostStateDatum.state.ibc_state_root,
       connectionId,
       connectionEndValue,
+      canonicalClientId,
     );
 
     const updatedHostStateDatum: HostStateDatum = {
@@ -764,6 +787,7 @@ export class ConnectionService {
         ...hostStateDatum.state,
         version: hostStateDatum.state.version + 1n,
         next_connection_sequence: hostStateDatum.state.next_connection_sequence + 1n,
+        live_connection_count: hostStateDatum.state.live_connection_count + 1n,
         ibc_state_root: newRoot,
         last_update_time: BigInt(Date.now()),
       },
@@ -771,6 +795,8 @@ export class ConnectionService {
     const connectionDatum: ConnectionDatum = {
       state: connectionEnd,
       token: connToken,
+      live_channel_count: 0n,
+      lifecycle: 'ConnectionActive',
     };
     const mintConnectionRedeemer: MintConnectionRedeemer = 'ConnOpenInit';
     const encodedMintConnectionRedeemer: string = await this.lucidService.encode<MintConnectionRedeemer>(
@@ -780,6 +806,8 @@ export class ConnectionService {
     const hostStateRedeemer = {
       CreateConnection: {
         connection_siblings: connectionSiblings,
+        client_connection_count: clientConnectionCount,
+        client_connection_count_siblings: clientConnectionCountSiblings,
       },
     };
     const encodedHostStateRedeemer = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
@@ -842,9 +870,10 @@ export class ConnectionService {
       name: connectionTokenName,
     };
 
+    const canonicalClientId = `${CLIENT_ID_PREFIX}-${connectionOpenTryOperator.clientId}`;
     const connectionEnd: ConnectionDatum['state'] = {
       // See the note in `connectionOpenInit`: this must be the canonical IBC client identifier.
-      client_id: convertString2Hex(`${CLIENT_ID_PREFIX}-${connectionOpenTryOperator.clientId}`),
+      client_id: convertString2Hex(canonicalClientId),
       counterparty: connectionOpenTryOperator.counterparty,
       delay_period: connectionOpenTryOperator.delayPeriod,
       versions: connectionOpenTryOperator.versions,
@@ -855,10 +884,17 @@ export class ConnectionService {
       'hex',
     );
 
-    const { newRoot, connectionSiblings, commit } = this.computeRootWithCreateConnectionUpdate(
+    const {
+      newRoot,
+      connectionSiblings,
+      clientConnectionCount,
+      clientConnectionCountSiblings,
+      commit,
+    } = this.computeRootWithCreateConnectionUpdate(
       hostStateDatum.state.ibc_state_root,
       connectionId,
       connectionEndValue,
+      canonicalClientId,
     );
 
     const updatedHostStateDatum: HostStateDatum = {
@@ -867,6 +903,7 @@ export class ConnectionService {
         ...hostStateDatum.state,
         version: hostStateDatum.state.version + 1n,
         next_connection_sequence: hostStateDatum.state.next_connection_sequence + 1n,
+        live_connection_count: hostStateDatum.state.live_connection_count + 1n,
         ibc_state_root: newRoot,
         last_update_time: BigInt(Date.now()),
       },
@@ -874,6 +911,8 @@ export class ConnectionService {
     const connectionDatum: ConnectionDatum = {
       state: connectionEnd,
       token: connToken,
+      live_channel_count: 0n,
+      lifecycle: 'ConnectionActive',
     };
     const mintConnectionRedeemer: MintConnectionRedeemer = {
       ConnOpenTry: {
@@ -886,6 +925,8 @@ export class ConnectionService {
     const hostStateRedeemer = {
       CreateConnection: {
         connection_siblings: connectionSiblings,
+        client_connection_count: clientConnectionCount,
+        client_connection_count_siblings: clientConnectionCountSiblings,
       },
     };
     const encodedHostStateRedeemer = await this.lucidService.encode(hostStateRedeemer, 'host_state_redeemer');
@@ -1015,7 +1056,7 @@ export class ConnectionService {
 	    this.logConnOpenAckDebug(
 	      `[DEBUG] ConnOpenAck connection_end_value_len=${updatedConnectionEndValue.length} connection_id=${connectionId}`,
 	    );
-	    const { newRoot, connectionSiblings, commit } = this.computeRootWithCreateConnectionUpdate(
+	    const { newRoot, connectionSiblings, commit } = this.computeRootWithUpdateConnectionUpdate(
 	      hostStateDatum.state.ibc_state_root,
 	      connectionId,
 	      updatedConnectionEndValue,
@@ -1277,7 +1318,7 @@ export class ConnectionService {
       await encodeConnectionEndValue(updatedConnectionDatum.state, this.lucidService.LucidImporter),
       'hex',
     );
-    const { newRoot, connectionSiblings, commit } = this.computeRootWithCreateConnectionUpdate(
+    const { newRoot, connectionSiblings, commit } = this.computeRootWithUpdateConnectionUpdate(
       hostStateDatum.state.ibc_state_root,
       connectionId,
       updatedConnectionEndValue,

@@ -4,6 +4,7 @@ import {
   createHeightSchema,
   createIcs23MerkleProofSchema,
 } from '../schema-fragments';
+import { AuthToken } from '../auth-token';
 
 type LucidData = typeof import('@lucid-evolution/lucid').Data;
 
@@ -16,7 +17,8 @@ export type MintConnectionRedeemer =
         proof_client: MerkleProof;
         proof_height: Height;
       };
-    };
+    }
+  | { BurnConnection: { token: AuthToken; reclaim_to: string } };
 
 export type SpendConnectionRedeemer =
   | 'ConnOpenAck'
@@ -25,11 +27,16 @@ export type SpendConnectionRedeemer =
         proof_ack: MerkleProof;
         proof_height: Height;
       };
-    };
+    }
+  | 'IncrementChannelCount'
+  | 'DecrementChannelCount'
+  | { BeginConnectionRetirement: { not_before: bigint } }
+  | { ReclaimConnection: { reclaim_to: string } };
 
 function buildMintConnectionRedeemerSchema(Data: LucidData) {
   const HeightSchema = createHeightSchema(Data);
   const { MerkleProofSchema } = createIcs23MerkleProofSchema(Data);
+  const AuthTokenSchema = Data.Object({ policyId: Data.Bytes(), name: Data.Bytes() });
 
   return Data.Enum([
     Data.Literal('ConnOpenInit'),
@@ -40,6 +47,9 @@ function buildMintConnectionRedeemerSchema(Data: LucidData) {
         proof_client: MerkleProofSchema,
         proof_height: HeightSchema,
       }),
+    }),
+    Data.Object({
+      BurnConnection: Data.Object({ token: AuthTokenSchema, reclaim_to: Data.Bytes() }),
     }),
   ]);
 }
@@ -56,6 +66,10 @@ function buildSpendConnectionRedeemerSchema(Data: LucidData) {
         proof_height: HeightSchema,
       }),
     }),
+    Data.Literal('IncrementChannelCount'),
+    Data.Literal('DecrementChannelCount'),
+    Data.Object({ BeginConnectionRetirement: Data.Object({ not_before: Data.Integer() }) }),
+    Data.Object({ ReclaimConnection: Data.Object({ reclaim_to: Data.Bytes() }) }),
   ]);
 }
 

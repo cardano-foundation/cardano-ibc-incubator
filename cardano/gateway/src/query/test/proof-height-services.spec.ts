@@ -10,7 +10,7 @@ import { LucidService } from '../../shared/modules/lucid/lucid.service';
 import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-protocals.service';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { HistoryService } from '../services/history.service';
-import { decodeChannelDatum } from '../../shared/types/channel/channel-datum';
+import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { decodeClientDatum } from '@shared/types/client-datum';
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
 import { normalizeConsensusStateFromDatum } from '@shared/helpers/consensus-state';
@@ -18,6 +18,7 @@ import { getCurrentTree } from '../../shared/helpers/ibc-state-root';
 import { hashSHA256 } from '../../shared/helpers/hex';
 import { decodeSpendChannelRedeemer } from '../../shared/types/channel/channel-redeemer';
 import { decodeIBCModuleRedeemer } from '../../shared/types/port/ibc_module_redeemer';
+import { GrpcNotFoundException } from '../../exception/grpc_exceptions';
 
 jest.mock('../../shared/types/channel/channel-datum', () => ({
   decodeChannelDatum: jest.fn(),
@@ -78,7 +79,7 @@ function makeLogger(): Logger {
   } as unknown as Logger;
 }
 
-function makeChannelDatum(overrides: Record<string, unknown> = {}) {
+function makeChannelDatum(overrides: Record<string, unknown> = {}): ChannelDatum {
   return {
     port: toHex('transfer'),
     state: {
@@ -104,8 +105,50 @@ function makeChannelDatum(overrides: Record<string, unknown> = {}) {
     },
     token: {
       policyId: 'policy',
-      name: 'name',
+      name: 'channel-token',
     },
+    lifecycle: 'ChannelActive' as const,
+  } as ChannelDatum;
+}
+
+function makeClosedChannelDatum(
+  lifecycle: 'ChannelActive' | { Abandoning: { not_before: bigint } } = 'ChannelActive',
+): ChannelDatum {
+  const datum = makeChannelDatum({
+    channel: {
+      state: 'Close',
+      ordering: 'Unordered',
+      counterparty: {
+        port_id: toHex('transfer'),
+        channel_id: toHex('channel-7'),
+      },
+      connection_hops: [toHex('connection-0')],
+      version: toHex('ics20-1'),
+    },
+    packet_commitment: new Map(),
+    packet_receipt: new Map(),
+    packet_acknowledgement: new Map(),
+  });
+  return { ...datum, lifecycle };
+}
+
+function makeReclaimedChannelHistoryOutput(overrides: Record<string, unknown> = {}) {
+  return {
+    txHash: 'reclaimed-channel-tx',
+    outputIndex: 0,
+    transactionIndex: 0,
+    address: 'channel-address',
+    assets: { [CHANNEL_TOKEN_UNIT]: 1n },
+    datum: 'reclaimed-closed-datum',
+    inlineDatumHash: 'ab'.repeat(32),
+    createdAt: { slotNo: 10, headerHash: 'cd'.repeat(32) },
+    spentAt: { slotNo: 20, headerHash: 'ef'.repeat(32) },
+    authToken: {
+      policyId: 'policy',
+      name: 'channel-token',
+      unit: CHANNEL_TOKEN_UNIT,
+    },
+    ...overrides,
   };
 }
 
@@ -123,6 +166,13 @@ function makeDeps() {
     get: jest.fn((key: string) => {
       if (key === 'cardanoLightClientMode') return 'mithril';
       if (key === 'cardanoChainId') return 'cardano-devnet';
+      if (key === 'deployment') {
+        return {
+          validators: {
+            spendChannel: { address: 'channel-address' },
+          },
+        };
+      }
       return undefined;
     }),
   } as unknown as ConfigService;
@@ -147,6 +197,11 @@ function makeDeps() {
       datum: 'live-host-state-datum',
     })),
     findUtxoByUnit: jest.fn(async () => ({
+      txHash: 'live-utxo',
+      outputIndex: 0,
+      datum: 'live-datum',
+    })),
+    findUtxoAtWithUnit: jest.fn(async () => ({
       txHash: 'live-utxo',
       outputIndex: 0,
       datum: 'live-datum',
@@ -181,6 +236,9 @@ function makeDeps() {
       tree: historicalTree,
     })),
   };
+  const kupoService = {
+    queryLatestChannelUtxosFromHistory: jest.fn(async () => []),
+  };
 
   return {
     historicalTree,
@@ -190,11 +248,13 @@ function makeDeps() {
     historyService: historyService as unknown as HistoryService,
     mithrilService: mithrilService as unknown as MithrilService,
     ibcTreeCacheService,
+    kupoService: kupoService as unknown as KupoService,
     mocks: {
       lucidService,
       historyService,
       mithrilService,
       ibcTreeCacheService,
+      kupoService,
     },
   };
 }
@@ -428,6 +488,24 @@ describe('proof-bearing services with historical query heights', () => {
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
   });
 
+  it('rejects a receipt proof requested under a different port than the live channel', async () => {
+    const deps = makeDeps();
+    const service = new PacketService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      deps.mithrilService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+    );
+
+    await expect(
+      service.queryPacketReceipt({ channel_id: 'channel-0', port_id: 'bank', sequence: 8n } as any),
+    ).rejects.toThrow('Invalid port, found port transfer instead of bank in datum');
+
+    expect(getCurrentTree).not.toHaveBeenCalled();
+  });
+
   it('serves next sequence receive proofs from the cached tree at the requested height', async () => {
     const deps = makeDeps();
     const service = new PacketService(
@@ -439,16 +517,217 @@ describe('proof-bearing services with historical query heights', () => {
       deps.ibcTreeCacheService as any,
     );
 
-    const response = await service.queryNextSequenceReceive(
-      { channel_id: 'channel-0', port_id: 'transfer' } as any,
-      { queryHeight: HISTORICAL_HEIGHT },
-    );
+    const response = await service.queryNextSequenceReceive({ channel_id: 'channel-0', port_id: 'transfer' } as any, {
+      queryHeight: HISTORICAL_HEIGHT,
+    });
 
     expect(deps.historicalTree.generateProof).toHaveBeenCalledWith(
       'nextSequenceRecv/ports/transfer/channels/channel-0',
     );
     expect(response.next_sequence_receive).toBe('10');
     expect(response.proof_height?.revision_height).toBe(HISTORICAL_HEIGHT);
+  });
+
+  it('falls back to the canonical reclaimed closed channel for current channel-end proofs', async () => {
+    const deps = makeDeps();
+    const closedDatum = makeClosedChannelDatum();
+    deps.mocks.lucidService.findUtxoAtWithUnit.mockRejectedValueOnce(
+      new GrpcNotFoundException('live channel not found'),
+    );
+    deps.mocks.kupoService.queryLatestChannelUtxosFromHistory.mockResolvedValueOnce([
+      makeReclaimedChannelHistoryOutput(),
+    ] as any);
+    deps.mocks.lucidService.decodeDatum.mockImplementation(async (_datum: string, schema: string) => {
+      if (schema === 'host_state') return { state: { ibc_state_root: HISTORICAL_ROOT } };
+      if (schema === 'channel') return closedDatum;
+      return {};
+    });
+    (decodeChannelDatum as jest.Mock).mockResolvedValue(closedDatum);
+    const service = new ChannelService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      deps.kupoService,
+      deps.mithrilService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+    );
+
+    const response = await service.queryChannel({ channel_id: 'channel-0' } as any);
+
+    expect(deps.mocks.kupoService.queryLatestChannelUtxosFromHistory).toHaveBeenCalledTimes(1);
+    expect(deps.mocks.kupoService.queryLatestChannelUtxosFromHistory).toHaveBeenCalledWith(CHANNEL_TOKEN_UNIT);
+    expect(response.channel?.state).toBeDefined();
+    expect(response.proof_height?.revision_height).toBe(LATEST_ACCEPTED_HEIGHT);
+  });
+
+  it('uses reclaimed closed state for current receipt absence and nextSequenceRecv proofs', async () => {
+    const deps = makeDeps();
+    const closedDatum = makeClosedChannelDatum();
+    deps.mocks.lucidService.findUtxoAtWithUnit.mockRejectedValue(new GrpcNotFoundException('live channel not found'));
+    deps.mocks.kupoService.queryLatestChannelUtxosFromHistory.mockResolvedValue([
+      makeReclaimedChannelHistoryOutput(),
+    ] as any);
+    deps.mocks.lucidService.decodeDatum.mockImplementation(async (_datum: string, schema: string) => {
+      if (schema === 'host_state') return { state: { ibc_state_root: HISTORICAL_ROOT } };
+      if (schema === 'channel') return closedDatum;
+      return {};
+    });
+    (decodeChannelDatum as jest.Mock).mockResolvedValue(closedDatum);
+    const service = new PacketService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      deps.mithrilService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+      deps.kupoService,
+    );
+
+    const receipt = await service.queryPacketReceipt({
+      channel_id: 'channel-0',
+      port_id: 'transfer',
+      sequence: 11n,
+    } as any);
+    const unreceived = await service.queryProofUnreceivedPackets({
+      channel_id: 'channel-0',
+      port_id: 'transfer',
+      sequence: 11n,
+      revision_height: 0n,
+    } as any);
+    const nextSequence = await service.queryNextSequenceReceive({
+      channel_id: 'channel-0',
+      port_id: 'transfer',
+    } as any);
+
+    expect(receipt.received).toBe(false);
+    expect(unreceived.proof).toEqual(Buffer.from('non-existence-proof'));
+    expect(nextSequence.next_sequence_receive).toBe('10');
+    expect(deps.mocks.kupoService.queryLatestChannelUtxosFromHistory).toHaveBeenCalledTimes(3);
+    expect(deps.mocks.kupoService.queryLatestChannelUtxosFromHistory).toHaveBeenCalledWith(CHANNEL_TOKEN_UNIT);
+  });
+
+  it('rejects a next-sequence proof requested under a different port than the reclaimed channel', async () => {
+    const deps = makeDeps();
+    const closedDatum = makeClosedChannelDatum();
+    deps.mocks.lucidService.findUtxoAtWithUnit.mockRejectedValueOnce(
+      new GrpcNotFoundException('live channel not found'),
+    );
+    deps.mocks.kupoService.queryLatestChannelUtxosFromHistory.mockResolvedValueOnce([
+      makeReclaimedChannelHistoryOutput(),
+    ] as any);
+    deps.mocks.lucidService.decodeDatum.mockImplementation(async (_datum: string, schema: string) => {
+      if (schema === 'host_state') return { state: { ibc_state_root: HISTORICAL_ROOT } };
+      if (schema === 'channel') return closedDatum;
+      return {};
+    });
+    const service = new PacketService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      deps.mithrilService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+      deps.kupoService,
+    );
+
+    await expect(
+      service.queryNextSequenceReceive({ channel_id: 'channel-0', port_id: 'bank' } as any),
+    ).rejects.toThrow('Invalid port, found port transfer instead of bank in datum');
+
+    expect(getCurrentTree).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['an abandoning channel', makeClosedChannelDatum({ Abandoning: { not_before: 999n } })],
+    [
+      'a non-closed channel',
+      {
+        ...makeClosedChannelDatum(),
+        state: {
+          ...makeClosedChannelDatum().state,
+          channel: { ...makeClosedChannelDatum().state.channel, state: 'Open' },
+        },
+      },
+    ],
+  ])('rejects reclaimed history whose final datum is %s', async (_label, invalidDatum) => {
+    const deps = makeDeps();
+    deps.mocks.lucidService.findUtxoAtWithUnit.mockRejectedValueOnce(
+      new GrpcNotFoundException('live channel not found'),
+    );
+    deps.mocks.kupoService.queryLatestChannelUtxosFromHistory.mockResolvedValueOnce([
+      makeReclaimedChannelHistoryOutput(),
+    ] as any);
+    deps.mocks.lucidService.decodeDatum.mockImplementation(async (_datum: string, schema: string) => {
+      if (schema === 'host_state') return { state: { ibc_state_root: HISTORICAL_ROOT } };
+      if (schema === 'channel') return invalidDatum as ChannelDatum;
+      return {};
+    });
+    const service = new ChannelService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      deps.kupoService,
+      deps.mithrilService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+    );
+
+    await expect(service.queryChannel({ channel_id: 'channel-0' } as any)).rejects.toThrow(
+      /final historical datum is not an active closed channel/,
+    );
+  });
+
+  it('rejects ambiguous reclaimed history for the requested auth token', async () => {
+    const deps = makeDeps();
+    deps.mocks.lucidService.findUtxoAtWithUnit.mockRejectedValueOnce(
+      new GrpcNotFoundException('live channel not found'),
+    );
+    deps.mocks.kupoService.queryLatestChannelUtxosFromHistory.mockResolvedValueOnce([
+      makeReclaimedChannelHistoryOutput(),
+      makeReclaimedChannelHistoryOutput({ txHash: 'duplicate-latest-channel-tx' }),
+    ] as any);
+    const service = new ChannelService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      deps.kupoService,
+      deps.mithrilService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+    );
+
+    await expect(service.queryChannel({ channel_id: 'channel-0' } as any)).rejects.toThrow(
+      /expected one canonical historical output, found 2/,
+    );
+  });
+
+  it('preserves the normal live-UTxO path without consulting Kupo history', async () => {
+    const deps = makeDeps();
+    const channelService = new ChannelService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      deps.kupoService,
+      deps.mithrilService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+    );
+    const packetService = new PacketService(
+      deps.logger,
+      deps.configService,
+      deps.lucidService,
+      deps.mithrilService,
+      deps.historyService,
+      deps.ibcTreeCacheService as any,
+      deps.kupoService,
+    );
+
+    await channelService.queryChannel({ channel_id: 'channel-0' } as any);
+    await packetService.queryNextSequenceReceive({ channel_id: 'channel-0', port_id: 'transfer' } as any);
+
+    expect(deps.mocks.lucidService.findUtxoAtWithUnit).toHaveBeenCalledTimes(2);
+    expect(deps.mocks.kupoService.queryLatestChannelUtxosFromHistory).not.toHaveBeenCalled();
   });
 
   it('serves client state proofs from the cached tree at the requested height', async () => {

@@ -16,7 +16,7 @@ export function parseClientSequence(clientId: string): string {
 
   if (!clientType) throw new Error('Invalid client id format');
 
-  if (!/^\d+$/.test(sequence)) {
+  if (!/^(?:0|[1-9]\d*)$/.test(sequence)) {
     throw new Error('Invalid client id format');
   }
 
@@ -24,25 +24,17 @@ export function parseClientSequence(clientId: string): string {
 }
 
 export function parseConnectionSequence(connectionId: string): bigint {
-  const fragments = connectionId.split('-');
-
-  if (fragments.length != 2) throw new Error('Invalid connection id format');
-
-  if (!(fragments.slice(0, -1).join('') === 'connection')) {
+  const match = /^connection-(0|[1-9]\d*)$/.exec(connectionId);
+  if (!match) {
     throw new Error('Invalid connection id format');
   }
-
-  return BigInt(fragments.pop()!);
+  return BigInt(match[1]);
 }
 
-export function parseChannelSequence(connectionId: string): bigint {
-  const fragments = connectionId.split('-');
-
-  if (fragments.length != 2) throw new Error('Invalid connection id format');
-
-  if (!(fragments.slice(0, -1).join('') === 'channel')) {
+export function parseChannelSequence(channelId: string): bigint {
+  const match = /^channel-(0|[1-9]\d*)$/.exec(channelId);
+  if (!match) {
     throw new Error('Invalid channel id format');
   }
-
-  return BigInt(fragments.pop()!);
+  return BigInt(match[1]);
 }

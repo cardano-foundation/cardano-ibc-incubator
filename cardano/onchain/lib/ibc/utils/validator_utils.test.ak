@@ -18,7 +18,9 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/keys as client_keys
-use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
+use ibc/core/ics_003_connection_semantics/connection_datum.{
+  ConnectionActive, ConnectionDatum,
+}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
 use ibc/core/ics_003_connection_semantics/types/keys as connection_keys
@@ -307,6 +309,9 @@ fn setup_extract_module_redeemer() -> (
         next_channel_sequence: 0,
         bound_port: [Pair(port_id, registration)],
         last_update_time: 0,
+        live_client_count: 0,
+        live_connection_count: 0,
+        live_channel_count: 0,
       },
       nft_policy: host_state_nft_policy_id,
       deployer: "mock deployer key hash",
@@ -1043,6 +1048,8 @@ fn setup_validate_referred_connection() -> (
         delay_period: 1,
       },
       token: connection_token,
+      live_channel_count: 0,
+      lifecycle: ConnectionActive,
     }
 
   let connection_output =

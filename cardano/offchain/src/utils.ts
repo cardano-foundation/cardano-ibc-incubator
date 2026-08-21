@@ -792,13 +792,18 @@ type Validator =
   | "hostStateStt"
   | "mintClientStt"
   | "mintConnectionStt"
-  | "mintChannelStt";
+  | "mintChannelStt"
+  | "mintLifecycleCreationMarker"
+  | "mintLifecycleReclamationMarker"
+  | "mintLifecycleOperationalMarker"
+  | "mintLifecyclePacketMarker";
 
 type Module = "transfer" | "mock" | "icq";
 
 type Tokens = "mock";
 
 export type DeploymentTemplate = {
+  schemaVersion: 6;
   deployedAt: string;
   validators: {
     spendClient: {
@@ -923,10 +928,40 @@ export type DeploymentTemplate = {
       address: string;
       refUtxo: UTxO;
     };
+    mintLifecycleCreationMarker: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintLifecycleReclamationMarker: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintLifecycleOperationalMarker: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
+    mintLifecyclePacketMarker: {
+      title: string;
+      script: string;
+      scriptHash: string;
+      address: string;
+      refUtxo: UTxO;
+    };
   };
   hostStateNFT?: {
     policyId: string;
     name: string;
+    /** Parameterized minting policy required to burn the final HostState NFT. */
+    script: string;
   };
   traceRegistry?: {
     address: string;

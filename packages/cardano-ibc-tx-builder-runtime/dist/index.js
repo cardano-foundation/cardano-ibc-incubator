@@ -3,8 +3,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS = exports.OGMIOS_PROTOCOL_PARAMETERS_REQUEST_TIMEOUT_MS = exports.transferEscrowShardTokenName = exports.AsyncMutex = void 0;
+exports.OGMIOS_WEBSOCKET_REQUEST_TIMEOUT_MS = exports.OGMIOS_PROTOCOL_PARAMETERS_REQUEST_TIMEOUT_MS = exports.computeRootWithOrderedUpdates = exports.transferEscrowShardTokenName = exports.transferEscrowShardCountValue = exports.transferEscrowShardChannelLiveCountKey = exports.proveTransferChannelHasNoLiveShards = exports.prepareTransferEscrowShardRetirement = exports.TRANSFER_ESCROW_SHARD_RETIRED_VALUE = exports.TRANSFER_ESCROW_SHARD_LIVE_VALUE = exports.AsyncMutex = void 0;
 exports.withKupoStringQuantityHeader = withKupoStringQuantityHeader;
+exports.normalizeBridgeManifest = normalizeBridgeManifest;
 exports.ogmiosRequest = ogmiosRequest;
 exports.mapOgmiosProtocolParameters = mapOgmiosProtocolParameters;
 exports.queryProtocolParametersCompat = queryProtocolParametersCompat;
@@ -17,11 +18,20 @@ const ws_1 = __importDefault(require("ws"));
 const asyncMutex_1 = require("./asyncMutex");
 const ibcStateRoot_1 = require("./ibcStateRoot");
 const lucidIbcAdapter_1 = require("./lucidIbcAdapter");
+const kupoHistory_1 = require("./kupoHistory");
 const transferEscrowShard_1 = require("./transferEscrowShard");
 var asyncMutex_2 = require("./asyncMutex");
 Object.defineProperty(exports, "AsyncMutex", { enumerable: true, get: function () { return asyncMutex_2.AsyncMutex; } });
 var transferEscrowShard_2 = require("./transferEscrowShard");
+Object.defineProperty(exports, "TRANSFER_ESCROW_SHARD_LIVE_VALUE", { enumerable: true, get: function () { return transferEscrowShard_2.TRANSFER_ESCROW_SHARD_LIVE_VALUE; } });
+Object.defineProperty(exports, "TRANSFER_ESCROW_SHARD_RETIRED_VALUE", { enumerable: true, get: function () { return transferEscrowShard_2.TRANSFER_ESCROW_SHARD_RETIRED_VALUE; } });
+Object.defineProperty(exports, "prepareTransferEscrowShardRetirement", { enumerable: true, get: function () { return transferEscrowShard_2.prepareTransferEscrowShardRetirement; } });
+Object.defineProperty(exports, "proveTransferChannelHasNoLiveShards", { enumerable: true, get: function () { return transferEscrowShard_2.proveTransferChannelHasNoLiveShards; } });
+Object.defineProperty(exports, "transferEscrowShardChannelLiveCountKey", { enumerable: true, get: function () { return transferEscrowShard_2.transferEscrowShardChannelLiveCountKey; } });
+Object.defineProperty(exports, "transferEscrowShardCountValue", { enumerable: true, get: function () { return transferEscrowShard_2.transferEscrowShardCountValue; } });
 Object.defineProperty(exports, "transferEscrowShardTokenName", { enumerable: true, get: function () { return transferEscrowShard_2.transferEscrowShardTokenName; } });
+var ibcStateRoot_2 = require("./ibcStateRoot");
+Object.defineProperty(exports, "computeRootWithOrderedUpdates", { enumerable: true, get: function () { return ibcStateRoot_2.computeRootWithOrderedUpdates; } });
 const LOOKUP_RETRY_OPTIONS = {
     maxAttempts: 6,
     retryDelayMs: 1000,
@@ -131,7 +141,10 @@ function mapRefUtxo(refUtxo) {
         outputIndex: refUtxo.output_index,
     };
 }
-function mapValidator(validator) {
+function mapValidator(validator, label = 'validator') {
+    if (!validator) {
+        throw new Error(`Invalid bridge manifest: ${label} is required`);
+    }
     return {
         scriptHash: validator.script_hash,
         address: validator.address,
@@ -139,8 +152,12 @@ function mapValidator(validator) {
     };
 }
 function normalizeBridgeManifest(manifest) {
-    if (manifest.schema_version !== 4) {
-        throw new Error('Unsupported bridge manifest schema_version: expected 4');
+    if (manifest.schema_version !== 6) {
+        throw new Error('Unsupported bridge manifest schema_version: expected 6');
+    }
+    if (typeof manifest.host_state_nft?.script !== 'string' ||
+        manifest.host_state_nft.script.length === 0) {
+        throw new Error('Invalid bridge manifest: host_state_nft.script is required');
     }
     return {
         bridgeManifest: manifest,
@@ -149,6 +166,7 @@ function normalizeBridgeManifest(manifest) {
             hostStateNFT: {
                 policyId: manifest.host_state_nft.policy_id,
                 name: manifest.host_state_nft.token_name,
+                script: manifest.host_state_nft.script,
             },
             validators: {
                 hostStateStt: mapValidator(manifest.validators.host_state_stt),
@@ -206,6 +224,10 @@ function normalizeBridgeManifest(manifest) {
                 mintClientStt: mapValidator(manifest.validators.mint_client_stt),
                 mintConnectionStt: mapValidator(manifest.validators.mint_connection_stt),
                 mintChannelStt: mapValidator(manifest.validators.mint_channel_stt),
+                mintLifecycleCreationMarker: mapValidator(manifest.validators.mint_lifecycle_creation_marker, 'validators.mint_lifecycle_creation_marker'),
+                mintLifecycleReclamationMarker: mapValidator(manifest.validators.mint_lifecycle_reclamation_marker, 'validators.mint_lifecycle_reclamation_marker'),
+                mintLifecycleOperationalMarker: mapValidator(manifest.validators.mint_lifecycle_operational_marker, 'validators.mint_lifecycle_operational_marker'),
+                mintLifecyclePacketMarker: mapValidator(manifest.validators.mint_lifecycle_packet_marker, 'validators.mint_lifecycle_packet_marker'),
                 mintVoucher: mapValidator(manifest.validators.mint_voucher),
                 mintTransferEscrowShard: mapValidator(manifest.validators.mint_transfer_escrow_shard),
                 mintPort: mapValidator(manifest.validators.mint_port),
@@ -904,14 +926,20 @@ async function createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork, 
 }
 class RuntimeKupoService {
     lucidService;
+    kupoEndpoint;
+    headers;
+    fetchImpl;
     clientTokenPrefix;
     connectionTokenPrefix;
     channelTokenPrefix;
     clientAddress;
     connectionAddress;
     channelAddress;
-    constructor(lucidService, deployment) {
+    constructor(lucidService, deployment, kupoEndpoint, headers, fetchImpl) {
         this.lucidService = lucidService;
+        this.kupoEndpoint = kupoEndpoint;
+        this.headers = headers;
+        this.fetchImpl = fetchImpl;
         this.clientTokenPrefix = deployment.validators.mintClientStt.scriptHash;
         this.connectionTokenPrefix = deployment.validators.mintConnectionStt.scriptHash;
         this.channelTokenPrefix = deployment.validators.mintChannelStt.scriptHash;
@@ -930,8 +958,12 @@ class RuntimeKupoService {
             const utxos = await this.lucidService.findUtxoAt(address);
             return utxos.filter((utxo) => this.getMatchingAssetNames(utxo, policyId).length > 0);
         }
-        catch {
-            return [];
+        catch (error) {
+            if (error instanceof Error &&
+                error.message === `Unable to find UTxO at ${address}`) {
+                return [];
+            }
+            throw error;
         }
     }
     async queryAllClientUtxos() {
@@ -942,6 +974,20 @@ class RuntimeKupoService {
     }
     async queryAllChannelUtxos() {
         return this.queryUtxosAtAddressByPolicy(this.channelAddress, this.channelTokenPrefix);
+    }
+    async queryLatestChannelUtxosFromHistory() {
+        const outputs = await (0, kupoHistory_1.fetchLatestTransferEscrowShardHistory)({
+            kupoEndpoint: this.kupoEndpoint,
+            address: this.channelAddress,
+            policyId: this.channelTokenPrefix,
+            headers: this.headers,
+            fetchImpl: this.fetchImpl,
+        });
+        return outputs.map((output) => ({
+            ...output,
+            spentAt: output.spent ? {} : null,
+            authToken: { unit: output.shardTokenUnit },
+        }));
     }
 }
 function dedupeUtxos(utxos) {
@@ -959,18 +1005,25 @@ function dedupeUtxos(utxos) {
 function utxoRef(utxo) {
     return `${utxo.txHash}#${utxo.outputIndex}`;
 }
-async function findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount) {
+async function findTransferEscrowShard(context, channelId, packetDenom, denomToken, principalDelta) {
     const deployment = context.deployment;
     return (0, transferEscrowShard_1.findTransferEscrowShard)({
         transferModuleAddress: deployment.modules.transfer.address,
         transferModuleIdentifier: deployment.modules.transfer.identifier,
         shardPolicyId: deployment.validators.mintTransferEscrowShard.scriptHash,
         findUtxosAt: (address) => context.lucidService.findUtxoAt(address),
+        findLatestShardHistory: (address, policyId) => (0, kupoHistory_1.fetchLatestTransferEscrowShardHistory)({
+            kupoEndpoint: context.kupoEndpoint,
+            address,
+            policyId,
+            headers: context.kupmiosHeaders?.kupoHeader,
+            fetchImpl: context.fetchImpl,
+        }),
         encodeTransferEscrowDatum: (datum) => context.lucidService.encode(datum, 'transferEscrow'),
         decodeTransferEscrowDatum: (encodedDatum) => context.lucidService.decodeDatum(encodedDatum, 'transferEscrow'),
         encodeTransferModuleDatum: (datum) => context.lucidService.encode(datum, 'transferModule'),
         decodeTransferModuleDatum: (encodedDatum) => context.lucidService.decodeDatum(encodedDatum, 'transferModule'),
-    }, channelId, packetDenom, denomToken, requiredAmount);
+    }, channelId, packetDenom, denomToken, principalDelta);
 }
 async function ensureTreeAlignedForRoot(context, onChainRoot) {
     if (!(0, ibcStateRoot_1.isTreeAligned)(onChainRoot)) {
@@ -1073,7 +1126,7 @@ function createTxBuilderRuntime(config) {
         const { lucidImporter, lucid } = await createLucidRuntime(kupoEndpoint, ogmiosEndpoint, cardanoNetwork, logger, kupmiosHeaders, config.fetchImpl ?? fetch);
         const lucidService = new lucidIbcAdapter_1.LucidIbcAdapter(lucidImporter, lucid, deployment);
         await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
-        const kupoService = new RuntimeKupoService(lucidService, deployment);
+        const kupoService = new RuntimeKupoService(lucidService, deployment, kupoEndpoint, kupmiosHeaders?.kupoHeader, config.fetchImpl ?? fetch);
         (0, ibcStateRoot_1.initTreeServices)(kupoService, lucidService);
         await timed(logger, '[context]', 'rebuild IBC state tree', () => (0, ibcStateRoot_1.rebuildTreeFromChain)(kupoService, lucidService));
         logger.log(`[context] initialized shared Cardano tx-builder runtime context in ${elapsedMs(contextStartedAt)}`);
@@ -1083,7 +1136,9 @@ function createTxBuilderRuntime(config) {
             logger,
             cardanoNetwork,
             ogmiosEndpoint,
+            kupoEndpoint,
             kupmiosHeaders,
+            fetchImpl: config.fetchImpl ?? fetch,
             traceRegistryClient,
         };
     }
@@ -1178,6 +1233,7 @@ function createTxBuilderRuntime(config) {
                             transferEscrowShardPolicyId: deployment.validators.mintTransferEscrowShard.scriptHash,
                             spendChannelAddress,
                             transferModuleAddress: deployment.modules.transfer.address,
+                            transferModuleIdentifier: deployment.modules.transfer.identifier,
                         },
                     };
                 }
@@ -1200,7 +1256,18 @@ function createTxBuilderRuntime(config) {
             encode: (value, kind) => context.lucidService.encode(value, kind),
             findUtxoAtWithUnit: findWalletUtxoAtWithUnit,
             tryFindUtxosAt: getWalletUtxos,
-            findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) => timed(logger, scope, 'find transfer escrow shard', () => findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount)),
+            buildTransferModuleVoucherSupplyUpdate: async (moduleUtxo, voucherDelta) => {
+                if (!moduleUtxo.datum) {
+                    throw new Error('Transfer module datum is required for voucher supply accounting');
+                }
+                const datum = await context.lucidService.decodeDatum(moduleUtxo.datum, 'transferModule');
+                const voucherSupply = datum.voucher_supply + voucherDelta;
+                if (voucherSupply < 0n) {
+                    throw new Error('Voucher supply update would become negative');
+                }
+                return context.lucidService.encode({ ...datum, voucher_supply: voucherSupply }, 'transferModule');
+            },
+            findTransferEscrowShard: (channelId, packetDenom, denomToken, principalDelta) => timed(logger, scope, 'find transfer escrow shard', () => findTransferEscrowShard(context, channelId, packetDenom, denomToken, principalDelta)),
             createUnsignedSendPacketBurnTx: (dto) => context.lucidService.createUnsignedSendPacketBurnTx(dto),
             createUnsignedSendPacketEscrowTx: (dto) => context.lucidService.createUnsignedSendPacketEscrowTx(dto),
             invalidArgument: (message) => new Error(message),

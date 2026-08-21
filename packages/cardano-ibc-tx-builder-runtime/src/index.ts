@@ -9,12 +9,26 @@ import WebSocket from 'ws';
 import { AsyncMutex } from './asyncMutex';
 import { alignTreeWithChain, computeRootWithHandlePacketUpdate, initTreeServices, isTreeAligned, rebuildTreeFromChain } from './ibcStateRoot';
 import { LucidIbcAdapter } from './lucidIbcAdapter';
+import { fetchLatestTransferEscrowShardHistory } from './kupoHistory';
 import {
   findTransferEscrowShard as findTransferEscrowShardFromRegistry,
 } from './transferEscrowShard';
 
 export { AsyncMutex } from './asyncMutex';
-export { transferEscrowShardTokenName } from './transferEscrowShard';
+export {
+  TRANSFER_ESCROW_SHARD_LIVE_VALUE,
+  TRANSFER_ESCROW_SHARD_RETIRED_VALUE,
+  prepareTransferEscrowShardRetirement,
+  proveTransferChannelHasNoLiveShards,
+  transferEscrowShardChannelLiveCountKey,
+  transferEscrowShardCountValue,
+  transferEscrowShardTokenName,
+} from './transferEscrowShard';
+export {
+  computeRootWithOrderedUpdates,
+  type OrderedStateRootResult,
+  type OrderedStateRootUpdate,
+} from './ibcStateRoot';
 
 const LOOKUP_RETRY_OPTIONS = {
   maxAttempts: 6,
@@ -98,7 +112,7 @@ type DeploymentTraceRegistry = {
 
 type DeploymentConfig = {
   deployedAt: string;
-  hostStateNFT: AuthToken;
+  hostStateNFT: AuthToken & { script: string };
   validators: {
     hostStateStt: DeploymentValidator;
     spendClient: DeploymentValidator;
@@ -111,6 +125,10 @@ type DeploymentConfig = {
     mintClientStt: DeploymentValidator;
     mintConnectionStt: DeploymentValidator;
     mintChannelStt: DeploymentValidator;
+    mintLifecycleCreationMarker: DeploymentValidator;
+    mintLifecycleReclamationMarker: DeploymentValidator;
+    mintLifecycleOperationalMarker: DeploymentValidator;
+    mintLifecyclePacketMarker: DeploymentValidator;
     mintVoucher: DeploymentValidator;
     mintTransferEscrowShard: DeploymentValidator;
     mintPort: DeploymentValidator;
@@ -131,6 +149,7 @@ type BridgeManifest = {
   host_state_nft: {
     policy_id: string;
     token_name: string;
+    script: string;
   };
   validators: {
     host_state_stt: {
@@ -222,6 +241,26 @@ type BridgeManifest = {
       ref_utxo: { tx_hash: string; output_index: number };
     };
     mint_channel_stt: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
+    mint_lifecycle_creation_marker: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
+    mint_lifecycle_reclamation_marker: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
+    mint_lifecycle_operational_marker: {
+      script_hash: string;
+      address: string;
+      ref_utxo: { tx_hash: string; output_index: number };
+    };
+    mint_lifecycle_packet_marker: {
       script_hash: string;
       address: string;
       ref_utxo: { tx_hash: string; output_index: number };
@@ -339,7 +378,9 @@ type BuilderContext = {
   logger: RuntimeLogger;
   cardanoNetwork: Network;
   ogmiosEndpoint: string;
+  kupoEndpoint: string;
   kupmiosHeaders?: KupmiosAuthHeaders;
+  fetchImpl: typeof fetch;
   traceRegistryClient: ReturnType<typeof createTraceRegistryClient>;
 };
 
@@ -352,6 +393,7 @@ type KupoLikeService = {
   queryAllClientUtxos(): Promise<UTxO[]>;
   queryAllConnectionUtxos(): Promise<UTxO[]>;
   queryAllChannelUtxos(): Promise<UTxO[]>;
+  queryLatestChannelUtxosFromHistory(): Promise<any[]>;
 };
 
 function defaultLogger(scope: string): RuntimeLogger {
@@ -437,7 +479,13 @@ function mapRefUtxo(refUtxo: { tx_hash: string; output_index: number }): RefUtxo
   };
 }
 
-function mapValidator(validator: { script_hash: string; address: string; ref_utxo: { tx_hash: string; output_index: number } }): DeploymentValidator {
+function mapValidator(
+  validator: { script_hash: string; address: string; ref_utxo: { tx_hash: string; output_index: number } } | undefined,
+  label = 'validator',
+): DeploymentValidator {
+  if (!validator) {
+    throw new Error(`Invalid bridge manifest: ${label} is required`);
+  }
   return {
     scriptHash: validator.script_hash,
     address: validator.address,
@@ -445,12 +493,18 @@ function mapValidator(validator: { script_hash: string; address: string; ref_utx
   };
 }
 
-function normalizeBridgeManifest(manifest: BridgeManifest): {
+export function normalizeBridgeManifest(manifest: BridgeManifest): {
   deployment: DeploymentConfig;
   bridgeManifest: BridgeManifest;
 } {
-  if (manifest.schema_version !== 4) {
-    throw new Error('Unsupported bridge manifest schema_version: expected 4');
+  if (manifest.schema_version !== 6) {
+    throw new Error('Unsupported bridge manifest schema_version: expected 6');
+  }
+  if (
+    typeof manifest.host_state_nft?.script !== 'string' ||
+    manifest.host_state_nft.script.length === 0
+  ) {
+    throw new Error('Invalid bridge manifest: host_state_nft.script is required');
   }
   return {
     bridgeManifest: manifest,
@@ -459,6 +513,7 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
       hostStateNFT: {
         policyId: manifest.host_state_nft.policy_id,
         name: manifest.host_state_nft.token_name,
+        script: manifest.host_state_nft.script,
       },
       validators: {
         hostStateStt: mapValidator(manifest.validators.host_state_stt),
@@ -518,6 +573,22 @@ function normalizeBridgeManifest(manifest: BridgeManifest): {
         mintClientStt: mapValidator(manifest.validators.mint_client_stt),
         mintConnectionStt: mapValidator(manifest.validators.mint_connection_stt),
         mintChannelStt: mapValidator(manifest.validators.mint_channel_stt),
+        mintLifecycleCreationMarker: mapValidator(
+          manifest.validators.mint_lifecycle_creation_marker,
+          'validators.mint_lifecycle_creation_marker',
+        ),
+        mintLifecycleReclamationMarker: mapValidator(
+          manifest.validators.mint_lifecycle_reclamation_marker,
+          'validators.mint_lifecycle_reclamation_marker',
+        ),
+        mintLifecycleOperationalMarker: mapValidator(
+          manifest.validators.mint_lifecycle_operational_marker,
+          'validators.mint_lifecycle_operational_marker',
+        ),
+        mintLifecyclePacketMarker: mapValidator(
+          manifest.validators.mint_lifecycle_packet_marker,
+          'validators.mint_lifecycle_packet_marker',
+        ),
         mintVoucher: mapValidator(manifest.validators.mint_voucher),
         mintTransferEscrowShard: mapValidator(manifest.validators.mint_transfer_escrow_shard),
         mintPort: mapValidator(manifest.validators.mint_port),
@@ -1371,7 +1442,13 @@ class RuntimeKupoService implements KupoLikeService {
   private readonly connectionAddress: string;
   private readonly channelAddress: string;
 
-  constructor(private readonly lucidService: LucidIbcAdapter, deployment: DeploymentConfig) {
+  constructor(
+    private readonly lucidService: LucidIbcAdapter,
+    deployment: DeploymentConfig,
+    private readonly kupoEndpoint: string,
+    private readonly headers: Record<string, string> | undefined,
+    private readonly fetchImpl: typeof fetch,
+  ) {
     this.clientTokenPrefix = deployment.validators.mintClientStt.scriptHash;
     this.connectionTokenPrefix = deployment.validators.mintConnectionStt.scriptHash;
     this.channelTokenPrefix = deployment.validators.mintChannelStt.scriptHash;
@@ -1391,8 +1468,14 @@ class RuntimeKupoService implements KupoLikeService {
     try {
       const utxos = await this.lucidService.findUtxoAt(address);
       return utxos.filter((utxo) => this.getMatchingAssetNames(utxo, policyId).length > 0);
-    } catch {
-      return [];
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === `Unable to find UTxO at ${address}`
+      ) {
+        return [];
+      }
+      throw error;
     }
   }
 
@@ -1406,6 +1489,21 @@ class RuntimeKupoService implements KupoLikeService {
 
   async queryAllChannelUtxos(): Promise<UTxO[]> {
     return this.queryUtxosAtAddressByPolicy(this.channelAddress, this.channelTokenPrefix);
+  }
+
+  async queryLatestChannelUtxosFromHistory(): Promise<any[]> {
+    const outputs = await fetchLatestTransferEscrowShardHistory({
+      kupoEndpoint: this.kupoEndpoint,
+      address: this.channelAddress,
+      policyId: this.channelTokenPrefix,
+      headers: this.headers,
+      fetchImpl: this.fetchImpl,
+    });
+    return outputs.map((output) => ({
+      ...output,
+      spentAt: output.spent ? {} : null,
+      authToken: { unit: output.shardTokenUnit },
+    }));
   }
 }
 
@@ -1433,7 +1531,7 @@ async function findTransferEscrowShard(
   channelId: string,
   packetDenom: string,
   denomToken: string,
-  requiredAmount?: bigint,
+  principalDelta?: bigint,
 ) {
   const deployment = context.deployment;
   return findTransferEscrowShardFromRegistry(
@@ -1442,24 +1540,35 @@ async function findTransferEscrowShard(
       transferModuleIdentifier: deployment.modules.transfer.identifier,
       shardPolicyId: deployment.validators.mintTransferEscrowShard.scriptHash,
       findUtxosAt: (address) => context.lucidService.findUtxoAt(address),
+      findLatestShardHistory: (address, policyId) =>
+        fetchLatestTransferEscrowShardHistory({
+          kupoEndpoint: context.kupoEndpoint,
+          address,
+          policyId,
+          headers: context.kupmiosHeaders?.kupoHeader,
+          fetchImpl: context.fetchImpl,
+        }),
       encodeTransferEscrowDatum: (datum) =>
         context.lucidService.encode(datum, 'transferEscrow'),
       decodeTransferEscrowDatum: (encodedDatum) =>
         context.lucidService.decodeDatum<{
           channel_id: string;
           denom: string;
+          escrowed_amount: bigint;
         }>(encodedDatum, 'transferEscrow'),
       encodeTransferModuleDatum: (datum) =>
         context.lucidService.encode(datum, 'transferModule'),
       decodeTransferModuleDatum: (encodedDatum) =>
         context.lucidService.decodeDatum<{
           escrow_shard_registry_root: string;
+          live_escrow_shard_count: bigint;
+          voucher_supply: bigint;
         }>(encodedDatum, 'transferModule'),
     },
     channelId,
     packetDenom,
     denomToken,
-    requiredAmount,
+    principalDelta,
   );
 }
 
@@ -1599,7 +1708,13 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
     const lucidService = new LucidIbcAdapter(lucidImporter, lucid, deployment);
     await timed(logger, '[context]', 'initialize lucid adapter', () => lucidService.onModuleInit());
 
-    const kupoService = new RuntimeKupoService(lucidService, deployment);
+    const kupoService = new RuntimeKupoService(
+      lucidService,
+      deployment,
+      kupoEndpoint,
+      kupmiosHeaders?.kupoHeader,
+      config.fetchImpl ?? fetch,
+    );
     initTreeServices(kupoService, lucidService);
     await timed(logger, '[context]', 'rebuild IBC state tree', () => rebuildTreeFromChain(kupoService, lucidService));
 
@@ -1611,7 +1726,9 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
       logger,
       cardanoNetwork,
       ogmiosEndpoint,
+      kupoEndpoint,
       kupmiosHeaders,
+      fetchImpl: config.fetchImpl ?? fetch,
       traceRegistryClient,
     };
   }
@@ -1726,6 +1843,7 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
                   deployment.validators.mintTransferEscrowShard.scriptHash,
                 spendChannelAddress,
                 transferModuleAddress: deployment.modules.transfer.address,
+                transferModuleIdentifier: deployment.modules.transfer.identifier,
               },
             };
           } finally {
@@ -1749,9 +1867,27 @@ export function createTxBuilderRuntime(config: BuilderRuntimeConfig) {
         encode: (value, kind) => context.lucidService.encode(value, kind as never),
         findUtxoAtWithUnit: findWalletUtxoAtWithUnit,
         tryFindUtxosAt: getWalletUtxos,
-        findTransferEscrowShard: (channelId, packetDenom, denomToken, requiredAmount) =>
+        buildTransferModuleVoucherSupplyUpdate: async (moduleUtxo, voucherDelta) => {
+          if (!moduleUtxo.datum) {
+            throw new Error('Transfer module datum is required for voucher supply accounting');
+          }
+          const datum = await context.lucidService.decodeDatum<{
+            escrow_shard_registry_root: string;
+            live_escrow_shard_count: bigint;
+            voucher_supply: bigint;
+          }>(moduleUtxo.datum, 'transferModule');
+          const voucherSupply = datum.voucher_supply + voucherDelta;
+          if (voucherSupply < 0n) {
+            throw new Error('Voucher supply update would become negative');
+          }
+          return context.lucidService.encode(
+            { ...datum, voucher_supply: voucherSupply },
+            'transferModule',
+          );
+        },
+        findTransferEscrowShard: (channelId, packetDenom, denomToken, principalDelta) =>
           timed(logger, scope, 'find transfer escrow shard', () =>
-            findTransferEscrowShard(context, channelId, packetDenom, denomToken, requiredAmount),
+            findTransferEscrowShard(context, channelId, packetDenom, denomToken, principalDelta),
           ),
         createUnsignedSendPacketBurnTx: (dto) => context.lucidService.createUnsignedSendPacketBurnTx(dto as never),
         createUnsignedSendPacketEscrowTx: (dto) => context.lucidService.createUnsignedSendPacketEscrowTx(dto as never),

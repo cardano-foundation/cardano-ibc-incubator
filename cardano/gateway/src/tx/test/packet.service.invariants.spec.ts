@@ -49,6 +49,7 @@ describe('PacketService denom invariants', () => {
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as any,
       { executePacket: jest.fn() } as any,
+      {} as any,
     );
   });
 

@@ -14,7 +14,9 @@ use ibc/client/ics_007_tendermint_client/consensus_state.{ConsensusState}
 use ibc/client/ics_007_tendermint_client/height.{Height} as height_mod
 use ibc/client/ics_007_tendermint_client/types/unchecked_rational
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
-use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
+use ibc/core/ics_003_connection_semantics/connection_datum.{
+  ConnectionActive, ConnectionDatum,
+}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty} as conn_counterparty_mod
 use ibc/core/ics_003_connection_semantics/types/keys as conn_keys_mod
@@ -105,6 +107,8 @@ pub fn setup() -> MockData {
         delay_period: 0,
       },
       token: AuthToken { name: "", policy_id: "" },
+      live_channel_count: 0,
+      lifecycle: ConnectionActive,
     }
 
   let connection_id = "connection-134"
@@ -296,6 +300,9 @@ pub fn setup() -> MockData {
         next_client_sequence: 0,
         next_connection_sequence: 0,
         next_channel_sequence: 0,
+        live_client_count: 0,
+        live_connection_count: 0,
+        live_channel_count: 0,
         bound_port: [Pair(port_id, registration)],
         last_update_time: 0,
       },

@@ -15,6 +15,7 @@ import { IbcTreePendingUpdatesService } from '../shared/services/ibc-tree-pendin
 import { TxOperationRunnerService } from './tx-operation-runner.service';
 import { WalletContextService } from './wallet-context.service';
 import { HostStateHeartbeatService } from './host-state-heartbeat.service';
+import { CoreLifecycleService } from './core-lifecycle.service';
 
 @Module({
   imports: [LucidModule, QueryModule, KupoModule],
@@ -32,8 +33,9 @@ import { HostStateHeartbeatService } from './host-state-heartbeat.service';
     IbcTreeCacheService,
     IbcTreePendingUpdatesService,
     HostStateHeartbeatService,
+    CoreLifecycleService,
     Logger,
   ],
-  exports: [IbcTreeCacheService, IbcTreePendingUpdatesService, PacketService],
+  exports: [IbcTreeCacheService, IbcTreePendingUpdatesService, PacketService, CoreLifecycleService],
 })
 export class TxModule {}

@@ -5,6 +5,8 @@ import { ConnectionEnd } from './connection-end';
 export type ConnectionDatum = {
   state: ConnectionEnd;
   token: AuthToken;
+  live_channel_count: bigint;
+  lifecycle: 'ConnectionActive' | { Retiring: { not_before: bigint } };
 };
 
 /**
@@ -101,6 +103,11 @@ export async function encodeConnectionDatum(
   const ConnectionDatumSchema = Data.Object({
     state: ConnectionEndSchema,
     token: AuthTokenSchema,
+    live_channel_count: Data.Integer(),
+    lifecycle: Data.Enum([
+      Data.Literal('ConnectionActive'),
+      Data.Object({ Retiring: Data.Object({ not_before: Data.Integer() }) }),
+    ]),
   });
   type TConnectionDatum = Data.Static<typeof ConnectionDatumSchema>;
   const TConnectionDatum = ConnectionDatumSchema as unknown as ConnectionDatum;
@@ -147,6 +154,11 @@ export async function decodeConnectionDatum(connectionDatum: string, Lucid: type
   const ConnectionDatumSchema = Data.Object({
     state: ConnectionEndSchema,
     token: AuthTokenSchema,
+    live_channel_count: Data.Integer(),
+    lifecycle: Data.Enum([
+      Data.Literal('ConnectionActive'),
+      Data.Object({ Retiring: Data.Object({ not_before: Data.Integer() }) }),
+    ]),
   });
   type TConnectionDatum = Data.Static<typeof ConnectionDatumSchema>;
   const TConnectionDatum = ConnectionDatumSchema as unknown as ConnectionDatum;

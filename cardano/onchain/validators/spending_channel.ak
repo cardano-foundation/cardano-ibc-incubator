@@ -1,13 +1,20 @@
+use aiken/collection/list
 use aiken/collection/pairs
+use cardano/address
 use cardano/assets.{PolicyId}
-use cardano/transaction.{Input, Mint, Output, OutputReference, Transaction}
+use cardano/transaction.{
+  Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
+  Transaction,
+}
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{
-  AcknowledgePacket, ChanCloseConfirm, ChanCloseInit, ChanOpenAck,
-  ChanOpenConfirm, PrunePacketHistory, RecvPacket, SendPacket,
-  SpendChannelRedeemer, TimeoutPacket,
+  AcknowledgePacket, BeginChannelAbandonment, ChanCloseConfirm, ChanCloseInit,
+  ChanOpenAck, ChanOpenConfirm, PrunePacketHistory, ReclaimChannel, RecvPacket,
+  SendPacket, SpendChannelRedeemer, TimeoutPacket,
 }
+use ibc/core/ics_004/types/keys as channel_keys
+use ibc/core/ics_005/types/ibc_module_redeemer.{Callback, OnChanReclaim}
 use ibc/utils/validator_utils
 
 validator spend_channel(
@@ -28,11 +35,20 @@ validator spend_channel(
     spent_output_ref: OutputReference,
     transaction: Transaction,
   ) {
-    let Transaction { inputs, .. } = transaction
+    let Transaction {
+      inputs,
+      outputs,
+      mint,
+      validity_range,
+      redeemers,
+      extra_signatories,
+      ..
+    } = transaction
 
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
     expect Some(datum) = optional_datum
     let spent_output = spent_input.output
+    expect auth.contain_auth_token(spent_output, datum.token)
 
     when redeemer is {
       ChanOpenAck { .. } ->
@@ -125,12 +141,94 @@ validator spend_channel(
           validator_utils.ExpectHandlePacket,
           True,
         )
+      BeginChannelAbandonment { not_before } -> {
+        let (host_input, _) =
+          validator_utils.require_host_state_redeemer(
+            inputs,
+            outputs,
+            redeemers,
+            host_state_nft_policy_id,
+            validator_utils.ExpectBeginChannelAbandonment,
+          )
+        let host_datum = validator_utils.get_host_state_datum(host_input)
+        let valid_from = validator_utils.get_tx_valid_from(validity_range)
+        let updated_datum =
+          validate_output_datum(spent_output, outputs, datum.token)
+
+        and {
+          list.has(extra_signatories, host_datum.deployer),
+          channel_datum.validate_begin_abandonment(
+            datum,
+            updated_datum,
+            valid_from,
+            not_before,
+          ),
+        }
+      }
+      ReclaimChannel { reclaim_to } -> {
+        let (host_input, _) =
+          validator_utils.require_host_state_redeemer(
+            inputs,
+            outputs,
+            redeemers,
+            host_state_nft_policy_id,
+            validator_utils.ExpectReclaimChannel { reclaim_to },
+          )
+        let valid_from = validator_utils.get_tx_valid_from(validity_range)
+
+        and {
+          channel_datum.is_reclaimable(datum, valid_from),
+          auth.burn_auth_token(mint, datum.token),
+          validator_utils.no_output_contains_auth_token(outputs, datum.token),
+          validator_utils.pays_reclamation_bounty(
+            spent_output,
+            outputs,
+            reclaim_to,
+          ),
+          validate_reclaim_callback(inputs, redeemers, host_input, datum),
+        }
+      }
     }
   }
 
   else(_) {
     fail
   }
+}
+
+fn validate_reclaim_callback(
+  inputs: List<Input>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  host_input: Input,
+  datum: ChannelDatum,
+) -> Bool {
+  let host_datum = validator_utils.get_host_state_datum(host_input)
+  expect Some(registration) =
+    pairs.get_first(host_datum.state.bound_port, datum.port_id)
+  expect [module_input] =
+    list.filter(
+      inputs,
+      fn(input) {
+        auth.contain_auth_token(input.output, registration.port_token)
+      },
+    )
+  expect address.Script(module_script_hash) =
+    module_input.output.address.payment_credential
+  expect module_script_hash == registration.module_script_hash
+  expect
+    auth.contains_only_auth_tokens(
+      module_input.output,
+      [registration.port_token, registration.module_token],
+    )
+  expect Some(module_spend_redeemer) =
+    pairs.get_first(redeemers, Spend(module_input.output_reference))
+  expect Callback(OnChanReclaim { channel_id, .. }) = module_spend_redeemer
+
+  channel_id == (
+    datum.token.name
+      |> auth.extract_token_sequence()
+      |> channel_keys.format_channel_identifier()
+  )
 }
 
 fn validate_operation_witness(

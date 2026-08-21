@@ -1,10 +1,13 @@
+use aiken/builtin
+use aiken/collection/dict
 use aiken/collection/list
+use aiken/collection/pairs
 use aiken/primitive/bytearray
 use aiken/primitive/int
 use cardano/address.{from_verification_key}
-use cardano/assets.{PolicyId, quantity_of}
+use cardano/assets.{PolicyId, Value, quantity_of, tokens}
 use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Transaction,
+  Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose, Transaction,
 }
 use ibc/apps/transfer/channel_callback as transfer_channel_callback
 use ibc/apps/transfer/escrow as transfer_escrow
@@ -12,12 +15,11 @@ use ibc/apps/transfer/escrow.{TransferModuleSpend}
 use ibc/apps/transfer/ibc_module as transfer_ibc_module
 use ibc/apps/transfer/refund as transfer_refund
 use ibc/apps/transfer/transfer_module_redeemer.{
-  OtherTransferOp, Transfer, TransferModuleRedeemer,
+  OtherTransferOp, ReclaimEscrowShard, Transfer, TransferModuleRedeemer,
 }
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/value_delta as transfer_value_delta
-use ibc/apps/transfer/voucher_flow as transfer_voucher_flow
 use ibc/auth.{AuthToken}
 use ibc/core/ics_004/channel_datum.{ChannelDatum}
 use ibc/core/ics_004/channel_redeemer.{
@@ -32,8 +34,8 @@ use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, IBCModuleCallback, IBCModuleOperator, IBCModulePacketData,
   IBCModuleRedeemer, ModuleDataV1, ModuleOperatorV1, OnAcknowledgementPacket,
   OnChanCloseConfirm, OnChanCloseInit, OnChanOpenAck, OnChanOpenConfirm,
-  OnChanOpenInit, OnChanOpenTry, OnRecvPacket, OnSendPacket, OnTimeoutPacket,
-  Operator,
+  OnChanOpenInit, OnChanOpenTry, OnChanReclaim, OnHostStateSeal, OnRecvPacket,
+  OnSendPacket, OnTimeoutPacket, Operator,
 }
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/utils/string as string_utils
@@ -47,6 +49,7 @@ validator spend_transfer_module(
   channel_minting_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
   host_state_nft_policy_id: PolicyId,
+  lifecycle_marker_policy_id: PolicyId,
 ) {
   spend(
     _datum: Option<Data>,
@@ -54,65 +57,99 @@ validator spend_transfer_module(
     spent_output_ref: OutputReference,
     transaction: Transaction,
   ) {
-    let Transaction { inputs, outputs, .. } = transaction
-
-    // Transfer state transitions must be committed through HostState.
-    let (host_state_input, _) =
-      validator_utils.require_host_state_thread(
-        inputs,
-        outputs,
-        host_state_nft_policy_id,
-      )
-    // Force the HostState thread for callback branches as well as operators.
-    expect InlineDatum(_) = host_state_input.output.datum
-
-    expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
-    let spent_output = spent_input.output
-    // Classify whether this spend is root state or a packet escrow shard.
-    let spend =
-      transfer_escrow.classify_transfer_module_spend(
-        spent_output,
-        transaction.outputs,
-        port_token,
-        module_token,
-        transfer_escrow_shard_policy_id,
-      )
-
-    // Channel auth tokens are minted by `mint_channel_stt` using the HostState NFT
-    // as the base token. The transfer module must derive the *same* token name when
-    // locating the channel UTxO in the transaction.
-    let host_state_nft =
-      AuthToken {
-        policy_id: host_state_nft_policy_id,
-        name: host_state_token_name,
-      }
-
     when redeemer is {
-      Callback(cb) ->
-        module_callback(
-          cb,
-          host_state_nft,
-          spent_output_ref,
+      Callback(OnHostStateSeal) ->
+        validate_transfer_lifecycle_invocation(
           transaction,
-          spend,
-          host_state_input,
+          spent_output_ref,
+          lifecycle_marker_policy_id,
           port_id,
-          transfer_escrow_shard_policy_id,
-          channel_minting_policy_id,
-          voucher_minting_policy_id,
+          port_token,
+          module_token,
+          True,
         )
-      Operator(op) ->
-        module_operator(
-          decode_transfer_operator(op),
-          host_state_nft,
-          spent_output_ref,
+      Callback(OnChanReclaim { .. }) ->
+        validate_transfer_lifecycle_invocation(
           transaction,
-          spend,
-          host_state_input,
-          transfer_escrow_shard_policy_id,
-          channel_minting_policy_id,
-          voucher_minting_policy_id,
+          spent_output_ref,
+          lifecycle_marker_policy_id,
+          port_id,
+          port_token,
+          module_token,
+          False,
         )
+      _ -> {
+        let Transaction { inputs, outputs, redeemers, .. } = transaction
+
+        // A voucher policy can be reused accidentally, so bind any voucher
+        // action in this transaction to this exact module root before
+        // dispatching the callback or operator branch.
+        expect
+          voucher_action_absent_or_targets_module(
+            redeemers,
+            voucher_minting_policy_id,
+            module_token,
+          )
+
+        // Transfer state transitions must be committed through HostState.
+        let (host_state_input, _) =
+          validator_utils.require_host_state_thread(
+            inputs,
+            outputs,
+            host_state_nft_policy_id,
+          )
+        expect Some(spent_input) =
+          transaction.find_input(inputs, spent_output_ref)
+        let spent_output = spent_input.output
+        // Classify whether this spend is root state or a packet escrow shard.
+        let spend =
+          transfer_escrow.classify_transfer_module_spend(
+            spent_output,
+            transaction.outputs,
+            port_token,
+            module_token,
+            transfer_escrow_shard_policy_id,
+          )
+
+        // Channel auth tokens are minted by `mint_channel_stt` using the HostState NFT
+        // as the base token. The transfer module must derive the *same* token name when
+        // locating the channel UTxO in the transaction.
+        let host_state_nft =
+          AuthToken {
+            policy_id: host_state_nft_policy_id,
+            name: host_state_token_name,
+          }
+
+        when redeemer is {
+          Callback(cb) ->
+            module_callback(
+              cb,
+              host_state_nft,
+              spent_input,
+              transaction,
+              spend,
+              host_state_input,
+              port_id,
+              port_token,
+              transfer_escrow_shard_policy_id,
+              channel_minting_policy_id,
+              voucher_minting_policy_id,
+            )
+          Operator(op) ->
+            module_operator(
+              decode_transfer_operator(op),
+              host_state_nft,
+              spent_input,
+              transaction,
+              spend,
+              host_state_input,
+              port_token,
+              transfer_escrow_shard_policy_id,
+              channel_minting_policy_id,
+              voucher_minting_policy_id,
+            )
+        }
+      }
     }
   }
 
@@ -124,18 +161,17 @@ validator spend_transfer_module(
 fn module_callback(
   cb: IBCModuleCallback,
   host_state_nft: AuthToken,
-  spent_output_ref: OutputReference,
+  spent_input: Input,
   transaction: Transaction,
   spend: TransferModuleSpend,
   host_state_input: Input,
   port_id: ByteArray,
+  port_token: AuthToken,
   shard_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
 ) -> Bool {
   let Transaction { outputs, redeemers, inputs, mint, .. } = transaction
-
-  expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
 
   when cb is {
     OnSendPacket { channel_id, packet_data, packet_commitment, data } -> {
@@ -153,10 +189,11 @@ fn module_callback(
       module_operator(
         Transfer { channel_id, data: transfer_data },
         host_state_nft,
-        spent_output_ref,
+        spent_input,
         transaction,
         spend,
         host_state_input,
+        port_token,
         shard_policy_id,
         channel_minting_policy_id,
         voucher_minting_policy_id,
@@ -270,8 +307,9 @@ fn module_callback(
       }
     }
 
-    OnChanCloseInit { .. } -> False
-    OnChanCloseConfirm { .. } -> False
+    OnChanCloseInit { .. } | OnChanCloseConfirm { .. } ->
+      validate_unchanged_module_root(spent_input, spend)
+    OnChanReclaim { .. } | OnHostStateSeal -> False
     OnRecvPacket { channel_id, packet_data, acknowledgement, data } -> {
       trace @"spend_transfer_module: Callback.OnRecvPacket branch"
 
@@ -304,11 +342,7 @@ fn module_callback(
       ) {
         // Receiving on the source chain means the packet is returning escrowed
         // native value, not creating a voucher representation.
-        expect
-          transfer_voucher_flow.require_no_voucher_mint(
-            redeemers,
-            voucher_minting_policy_id,
-          )
+        expect !voucher_policy_is_used(mint, voucher_minting_policy_id)
 
         let voucher_prefix_len =
           transfer_coin.get_denom_prefix(
@@ -423,22 +457,14 @@ fn module_callback(
           ) >= transfer_amount)?,
         }
       } else {
-        let updated_output = transfer_escrow.expect_module_state(spend)
         // Non-source receive mints vouchers.
         trace @"mint_voucher: tx mint voucher token"
 
-        and {
-          transfer_value_delta.validate_output_amount(
-            spent_input,
-            updated_output,
-            assets.zero,
-          )?,
-          transfer_voucher_flow.validate_mint_voucher_packet(
-            redeemers,
-            voucher_minting_policy_id,
-            packet,
-          )?,
-        }
+        // The voucher policy owns the exact module-supply transition. Its
+        // policy id and packet redeemer are still bound here, so the policy is
+        // necessarily executed for this non-zero mint.
+        expect transfer_escrow.ModuleState { .. } = spend
+        voucher_policy_is_used(mint, voucher_minting_policy_id)
       }
     }
     OnTimeoutPacket { channel_id, packet_data, data } -> {
@@ -463,7 +489,6 @@ fn module_callback(
           voucher_minting_policy_id,
           inputs,
           outputs,
-          redeemers,
           spent_input,
           spend,
           shard_policy_id,
@@ -503,7 +528,6 @@ fn module_callback(
               voucher_minting_policy_id,
               inputs,
               outputs,
-              redeemers,
               spent_input,
               spend,
               shard_policy_id,
@@ -528,6 +552,18 @@ fn module_callback(
       }
     }
   }
+}
+
+fn validate_unchanged_module_root(
+  spent_input: Input,
+  spend: TransferModuleSpend,
+) -> Bool {
+  let updated_output = transfer_escrow.expect_module_state(spend)
+  transfer_value_delta.validate_output_amount(
+    spent_input,
+    updated_output,
+    assets.zero,
+  )
 }
 
 fn exact_send_callback_matches(
@@ -558,17 +594,16 @@ fn exact_send_callback_matches(
 fn module_operator(
   op: TransferModuleRedeemer,
   host_state_nft: AuthToken,
-  spent_output_ref: OutputReference,
+  spent_input: Input,
   transaction: Transaction,
   spend: TransferModuleSpend,
   host_state_input: Input,
+  port_token: AuthToken,
   shard_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
 ) -> Bool {
   let Transaction { redeemers, inputs, mint, .. } = transaction
-
-  expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
 
   when op is {
     Transfer { channel_id, data } -> {
@@ -601,11 +636,7 @@ fn module_operator(
         expect _ = validator_utils.require_active_host_state(host_state_input)
 
         // Sending from the source chain locks native value in escrow.
-        expect
-          transfer_voucher_flow.require_no_voucher_mint(
-            redeemers,
-            voucher_minting_policy_id,
-          )
+        expect !voucher_policy_is_used(mint, voucher_minting_policy_id)
         trace @"spend_transfer_module: tx not mint voucher token"
 
         expect Some(escrowed_token_unit) =
@@ -643,20 +674,33 @@ fn module_operator(
 
         valid_transfer_amount
       } else {
-        let updated_output = transfer_escrow.expect_module_state(spend)
         // Sending from a sink chain destroys the voucher representation.
-        and {
-          transfer_value_delta.validate_output_amount(
-            spent_input,
-            updated_output,
-            assets.zero,
-          )?,
-          transfer_voucher_flow.validate_burn_voucher_packet(
-            redeemers,
-            voucher_minting_policy_id,
-            packet,
-          )?,
+        // The voucher policy checks the matching negative supply delta on the
+        // module root while this validator binds that policy to the packet.
+        expect transfer_escrow.ModuleState { .. } = spend
+        voucher_policy_is_used(mint, voucher_minting_policy_id)
+      }
+    }
+
+    ReclaimEscrowShard { channel_id, denom } -> {
+      expect Some(raw_shard_redeemer) =
+        pairs.get_first(redeemers, Mint(shard_policy_id))
+      let Pair(_, shard_fields) = builtin.un_constr_data(raw_shard_redeemer)
+      expect Some(raw_target_port_token) = list.last(shard_fields)
+      // The companion shard policy validates the closed-channel witness, zero
+      // logical principal, registry/count transition, token burn, and value
+      // absorption. Bind each spending invocation to that exact policy action.
+      let authorized = and {
+          raw_target_port_token == auth_token_data(port_token),
+          !(mint |> tokens(shard_policy_id) |> dict.is_empty),
         }
+      when spend is {
+        transfer_escrow.ModuleState { .. } -> authorized
+        transfer_escrow.EscrowShard { datum, .. } -> and {
+            authorized,
+            datum.channel_id == channel_id,
+            datum.denom == denom,
+          }
       }
     }
 
@@ -679,4 +723,83 @@ fn decode_transfer_operator(
   expect ModuleOperatorV1(data) = module_operator
   expect transfer_operator: TransferModuleRedeemer = data
   transfer_operator
+}
+
+fn voucher_policy_is_used(mint: Value, policy_id: PolicyId) -> Bool {
+  !(mint |> tokens(policy_id) |> dict.is_empty)
+}
+
+fn voucher_action_absent_or_targets_module(
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  policy_id: PolicyId,
+  module_token: AuthToken,
+) -> Bool {
+  when pairs.get_first(redeemers, Mint(policy_id)) is {
+    None -> True
+    Some(raw_redeemer) -> {
+      let Pair(_, fields) = builtin.un_constr_data(raw_redeemer)
+      expect Some(raw_target) = list.last(fields)
+      raw_target == auth_token_data(module_token)
+    }
+  }
+}
+
+fn validate_transfer_lifecycle_invocation(
+  transaction: Transaction,
+  spent_output_ref: OutputReference,
+  policy_id: PolicyId,
+  port_id: ByteArray,
+  port_token: AuthToken,
+  module_token: AuthToken,
+  terminal: Bool,
+) -> Bool {
+  let Transaction { inputs, .. } = transaction
+  expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
+  and {
+    auth.contain_auth_token(spent_input.output, module_token),
+    validate_lifecycle_marker(
+      transaction,
+      policy_id,
+      port_id,
+      port_token,
+      module_token,
+      terminal,
+    ),
+  }
+}
+
+fn validate_lifecycle_marker(
+  transaction: Transaction,
+  policy_id: PolicyId,
+  port_id: ByteArray,
+  port_token: AuthToken,
+  module_token: AuthToken,
+  terminal: Bool,
+) -> Bool {
+  let Transaction { mint, redeemers, .. } = transaction
+  expect Some(raw_redeemer) = pairs.get_first(redeemers, Mint(policy_id))
+  let expected_redeemer =
+    builtin.constr_data(
+      if terminal {
+        2
+      } else {
+        1
+      },
+      [
+        builtin.b_data(port_id),
+        auth_token_data(port_token),
+        auth_token_data(module_token),
+      ],
+    )
+  and {
+    raw_redeemer == expected_redeemer,
+    !(mint |> tokens(policy_id) |> dict.is_empty),
+  }
+}
+
+fn auth_token_data(token: AuthToken) -> Data {
+  builtin.constr_data(
+    0,
+    [builtin.b_data(token.policy_id), builtin.b_data(token.name)],
+  )
 }

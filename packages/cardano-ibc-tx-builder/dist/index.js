@@ -77,11 +77,19 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
     };
     const { hostStateUtxo, encodedHostStateRedeemer, encodedUpdatedHostStateDatum, newRoot, commit, } = await deps.buildHostStateUpdate(context.channelDatum, updatedChannelDatum, sendPacketOperator.sourceChannel);
     if (isVoucher) {
+        const transferModuleIdentifier = context.deployment.transferModuleIdentifier;
+        if (!/^[0-9a-f]{56}(?:[0-9a-f]{2}){0,32}$/i.test(transferModuleIdentifier)) {
+            throw new Error('Transfer module identifier is not a canonical Cardano asset unit');
+        }
         const encodedMintVoucherRedeemer = await deps.encode({
             BurnVoucher: {
                 packet_source_port: packet.source_port,
                 packet_source_channel: packet.source_channel,
                 data: fungibleTokenPacketData,
+                module_token: {
+                    policy_id: transferModuleIdentifier.slice(0, 56),
+                    name: transferModuleIdentifier.slice(56),
+                },
             },
         }, 'mintVoucherRedeemer');
         const voucherTokenUnit = context.deployment.mintVoucherScriptHash +
@@ -105,6 +113,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
             encodedUpdatedHostStateDatum,
             encodedMintVoucherRedeemer,
             encodedSpendTransferModuleRedeemer,
+            encodedUpdatedTransferModuleDatum: await deps.buildTransferModuleVoucherSupplyUpdate(context.transferModuleReferenceUtxo, -sendPacketOperator.token.amount),
             transferModuleReferenceUtxo: context.transferModuleReferenceUtxo,
             encodedSpendChannelRedeemer,
             encodedUpdatedChannelDatum: await deps.encode(updatedChannelDatum, 'channel'),
@@ -138,7 +147,7 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
     }
     const walletUtxos = dedupeUtxos(senderWalletUtxos);
     const denomToken = resolveEscrowDenomToken(inputDenom, resolvedDenom, walletUtxos, deps);
-    const transferEscrowShard = await deps.findTransferEscrowShard(convertStringToHex(sendPacketOperator.sourceChannel), convertStringToHex(packetDenom), denomToken);
+    const transferEscrowShard = await deps.findTransferEscrowShard(convertStringToHex(sendPacketOperator.sourceChannel), convertStringToHex(packetDenom), denomToken, sendPacketOperator.token.amount);
     const unsignedTx = deps.createUnsignedSendPacketEscrowTx({
         hostStateUtxo,
         channelUTxO: context.channelUtxo,
@@ -152,11 +161,13 @@ async function buildUnsignedSendPacketTx(sendPacketOperator, deps) {
         encodedMintTransferEscrowShardRedeemer: transferEscrowShard.kind === 'existing'
             ? undefined
             : await deps.encode({
-                CreateEscrowShard: {
+                CreateEscrowShardV2: {
                     channel_id: convertStringToHex(sendPacketOperator.sourceChannel),
                     denom: convertStringToHex(packetDenom),
                     data: fungibleTokenPacketData,
                     registry_siblings: transferEscrowShard.registrySiblings,
+                    old_channel_live_escrow_shard_count: transferEscrowShard.oldChannelLiveEscrowShardCount,
+                    channel_live_escrow_shard_count_siblings: transferEscrowShard.channelLiveEscrowShardCountSiblings,
                 },
             }, 'transferEscrowShardRedeemer'),
         encodedUpdatedChannelDatum: await deps.encode(updatedChannelDatum, 'channel'),

@@ -6,7 +6,7 @@ import { packetCommitmentPath } from '../../shared/helpers/packet-keys';
 const sequence = 7n;
 const proofHeight = { revisionNumber: 0n, revisionHeight: 40n };
 
-function createService() {
+function createService(ordering: 'Unordered' | 'Ordered' = 'Unordered') {
   const deployment = {
     validators: {
       spendChannel: {
@@ -23,7 +23,7 @@ function createService() {
     state: {
       channel: {
         state: 'Open',
-        ordering: 'Unordered',
+        ordering,
         counterparty: {
           port_id: convertString2Hex('transfer'),
           channel_id: convertString2Hex('channel-44'),
@@ -96,6 +96,7 @@ function createService() {
     logger,
     { get: jest.fn().mockImplementation((key: string) => (key === 'deployment' ? deployment : undefined)) } as any,
     lucidService,
+    {} as any,
     {} as any,
     {} as any,
     {} as any,
@@ -175,5 +176,25 @@ describe('PacketService packet-history prune builder', () => {
     ).rejects.toThrow('below the channel receive high-water mark');
     expect(lucidService.findUtxoByUnit).toHaveBeenCalledTimes(1);
     expect(lucidService.createUnsignedPrunePacketHistoryTx).not.toHaveBeenCalled();
+  });
+
+  it('prunes only acknowledgements for ordered channels', async () => {
+    const { service, lucidService, channelDatum } = createService('Ordered');
+    channelDatum.state.packet_receipt = new Map();
+
+    await service.buildUnsignedPrunePacketHistoryTx({
+      signer: 'addr_test1signer',
+      portId: 'transfer',
+      channelId: 'channel-7',
+      sequence,
+      proofCommitmentAbsence: { proofs: [] },
+      proofHeight,
+    });
+
+    const updatedDatum = lucidService.encode.mock.calls.find(
+      (call: unknown[]) => call[1] === 'channel',
+    )[0];
+    expect(updatedDatum.state.packet_receipt).toEqual(new Map());
+    expect(updatedDatum.state.packet_acknowledgement.has(sequence)).toBe(false);
   });
 });

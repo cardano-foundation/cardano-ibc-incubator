@@ -20,6 +20,9 @@ use ibc/apps/transfer/trace_registry.{
 use ibc/apps/transfer/transfer_module_redeemer.{Transfer}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
+use ibc/apps/transfer/types/transfer_module_datum.{
+  TransferModuleDatum, empty_escrow_shard_registry_root,
+}
 use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_metadata
 use ibc/auth.{AuthToken}
@@ -76,7 +79,13 @@ fn prepare_mock_data() -> MockData {
       output: Output {
         address: from_script("spend module output address"),
         value: from_asset(module_token.policy_id, module_token.name, 1),
-        datum: NoDatum,
+        datum: InlineDatum(
+          TransferModuleDatum {
+            escrow_shard_registry_root: empty_escrow_shard_registry_root,
+            live_escrow_shard_count: 0,
+            voucher_supply: 1000,
+          },
+        ),
         reference_script: None,
       },
     }
@@ -92,6 +101,21 @@ fn prepare_mock_data() -> MockData {
     channel_minting_policy_id: "mint channel policy id",
     host_state_nft_policy_id: "host state nft policy id",
     module_input,
+  }
+}
+
+fn make_module_output(mock_data: MockData, voucher_delta: Int) -> Output {
+  let module_output = mock_data.module_input.output
+  expect InlineDatum(raw_datum) = module_output.datum
+  expect datum: TransferModuleDatum = raw_datum
+  Output {
+    ..module_output,
+    datum: InlineDatum(
+      TransferModuleDatum {
+        ..datum,
+        voucher_supply: datum.voucher_supply + voucher_delta,
+      },
+    ),
   }
 }
 
@@ -417,6 +441,7 @@ fn first_seen_voucher_fixture(
       packet_dest_port,
       packet_dest_channel,
       data: ftpd,
+      module_token: mock_data.module_token,
     }
   let source_prefix =
     transfer_coin.get_denom_prefix(packet_dest_port, packet_dest_channel)
@@ -530,7 +555,12 @@ fn first_seen_voucher_fixture(
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input, active_shard_input],
       reference_inputs: [directory_input],
-      outputs: [voucher_output, metadata_output, updated_shard_output],
+      outputs: [
+        voucher_output,
+        metadata_output,
+        updated_shard_output,
+        make_module_output(mock_data, transfer_amount),
+      ],
       redeemers,
       mint,
     }
@@ -946,6 +976,7 @@ test test_mint_voucher() {
       packet_dest_port,
       packet_dest_channel,
       data: ftpd,
+      module_token: mock_data.module_token,
     }
 
   let packet_data = ModuleDataV1(ftpd)
@@ -1065,7 +1096,11 @@ test test_mint_voucher() {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input, active_shard_input],
       reference_inputs: [directory_input],
-      outputs: [voucher_output, metadata_output],
+      outputs: [
+        voucher_output,
+        metadata_output,
+        make_module_output(mock_data, transfer_amount),
+      ],
       redeemers,
       mint,
     }
@@ -1109,6 +1144,7 @@ test test_mint_voucher_fails_with_wrong_mint_quantity() fail {
       packet_dest_port,
       packet_dest_channel,
       data: ftpd,
+      module_token: mock_data.module_token,
     }
   let spend_module_redeemer =
     Callback(
@@ -1205,7 +1241,11 @@ test test_mint_voucher_fails_with_wrong_mint_quantity() fail {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input, active_shard_input],
       reference_inputs: [directory_input],
-      outputs: [voucher_output, metadata_output],
+      outputs: [
+        voucher_output,
+        metadata_output,
+        make_module_output(mock_data, transfer_amount),
+      ],
       redeemers: [
         Pair(purpose, mint_voucher_redeemer_in_data),
         Pair(
@@ -1265,6 +1305,7 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
       packet_dest_port,
       packet_dest_channel,
       data: ftpd,
+      module_token: mock_data.module_token,
     }
 
   let packet_data = ModuleDataV1(ftpd)
@@ -1384,7 +1425,11 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input, active_shard_input],
       reference_inputs: [directory_input],
-      outputs: [voucher_output, metadata_output],
+      outputs: [
+        voucher_output,
+        metadata_output,
+        make_module_output(mock_data, transfer_amount),
+      ],
       redeemers,
       mint,
     }
@@ -1429,6 +1474,7 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
       packet_dest_port,
       packet_dest_channel,
       data: ftpd,
+      module_token: mock_data.module_token,
     }
 
   let source_prefix =
@@ -1482,6 +1528,7 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
           datum: NoDatum,
           reference_script: None,
         },
+        make_module_output(mock_data, transfer_amount),
       ],
       redeemers: [
         Pair(
@@ -1534,7 +1581,12 @@ test test_burn_voucher() {
     }
 
   let mint_voucher_redeemer =
-    BurnVoucher { packet_source_port, packet_source_channel, data: packet_data }
+    BurnVoucher {
+      packet_source_port,
+      packet_source_channel,
+      data: packet_data,
+      module_token: mock_data.module_token,
+    }
 
   let spend_module_redeemer =
     Operator(
@@ -1568,6 +1620,7 @@ test test_burn_voucher() {
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input],
+      outputs: [make_module_output(mock_data, 0 - transfer_amount)],
       redeemers: [
         Pair(
           Mint(mock_data.voucher_minting_policy_id),
@@ -1622,7 +1675,12 @@ test test_burn_voucher_fails_with_wrong_burn_quantity() fail {
     }
 
   let mint_voucher_redeemer =
-    BurnVoucher { packet_source_port, packet_source_channel, data: packet_data }
+    BurnVoucher {
+      packet_source_port,
+      packet_source_channel,
+      data: packet_data,
+      module_token: mock_data.module_token,
+    }
   let spend_module_redeemer =
     Operator(
       ModuleOperatorV1(
@@ -1654,6 +1712,7 @@ test test_burn_voucher_fails_with_wrong_burn_quantity() fail {
     Transaction {
       ..transaction.placeholder,
       inputs: [mock_data.module_input, channel_input],
+      outputs: [make_module_output(mock_data, 0 - transfer_amount)],
       redeemers: [
         Pair(
           Mint(mock_data.voucher_minting_policy_id),
@@ -1741,6 +1800,7 @@ test test_refund_voucher() {
       packet_source_port,
       packet_source_channel,
       data: ftpd,
+      module_token: mock_data.module_token,
       acknowledgement: None,
     }
   let spend_module_redeemer =
@@ -1786,6 +1846,7 @@ test test_refund_voucher() {
           datum: NoDatum,
           reference_script: None,
         },
+        make_module_output(mock_data, transfer_amount),
       ],
       redeemers: [
         Pair(
@@ -1874,6 +1935,7 @@ test test_refund_voucher_fails_with_wrong_mint_quantity() fail {
       packet_source_port,
       packet_source_channel,
       data: ftpd,
+      module_token: mock_data.module_token,
       acknowledgement: None,
     }
   let spend_module_redeemer =
@@ -1919,6 +1981,7 @@ test test_refund_voucher_fails_with_wrong_mint_quantity() fail {
           datum: NoDatum,
           reference_script: None,
         },
+        make_module_output(mock_data, transfer_amount),
       ],
       redeemers: [
         Pair(
@@ -2015,6 +2078,7 @@ test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail 
       packet_source_port,
       packet_source_channel,
       data: ftpd,
+      module_token: mock_data.module_token,
       acknowledgement: None,
     }
   let spend_module_redeemer =
@@ -2063,6 +2127,7 @@ test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail 
           datum: NoDatum,
           reference_script: None,
         },
+        make_module_output(mock_data, transfer_amount),
       ],
       redeemers: [
         Pair(
@@ -2150,6 +2215,7 @@ test test_refund_voucher_fail() fail {
       packet_source_port,
       packet_source_channel,
       data: ftpd,
+      module_token: mock_data.module_token,
       acknowledgement: Some(success_ack),
     }
   let spend_module_redeemer =
@@ -2196,6 +2262,7 @@ test test_refund_voucher_fail() fail {
           datum: NoDatum,
           reference_script: None,
         },
+        make_module_output(mock_data, transfer_amount),
       ],
       redeemers: [
         Pair(

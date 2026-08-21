@@ -6,6 +6,7 @@ import {
   createIcs23MerkleProofSchema,
   createPacketSchema,
 } from '../schema-fragments';
+import { AuthToken } from '../auth-token';
 
 type LucidData = typeof import('@lucid-evolution/lucid').Data;
 
@@ -17,7 +18,8 @@ export type MintChannelRedeemer =
         proof_init: MerkleProof;
         proof_height: Height;
       };
-    };
+    }
+  | { BurnChannel: { token: AuthToken; reclaim_to: string } };
 
 export type SpendChannelRedeemer =
   | {
@@ -74,11 +76,14 @@ export type SpendChannelRedeemer =
         proof_commitment_absence: MerkleProof;
         proof_height: Height;
       };
-    };
+    }
+  | { BeginChannelAbandonment: { not_before: bigint } }
+  | { ReclaimChannel: { reclaim_to: string } };
 
 function buildMintChannelRedeemerSchema(Data: LucidData) {
   const HeightSchema = createHeightSchema(Data);
   const { MerkleProofSchema } = createIcs23MerkleProofSchema(Data);
+  const AuthTokenSchema = Data.Object({ policyId: Data.Bytes(), name: Data.Bytes() });
 
   return Data.Enum([
     Data.Literal('ChanOpenInit'),
@@ -89,6 +94,7 @@ function buildMintChannelRedeemerSchema(Data: LucidData) {
         proof_height: HeightSchema,
       }),
     }),
+    Data.Object({ BurnChannel: Data.Object({ token: AuthTokenSchema, reclaim_to: Data.Bytes() }) }),
   ]);
 }
 
@@ -153,6 +159,8 @@ function buildSpendChannelRedeemerSchema(Data: LucidData) {
         proof_height: HeightSchema,
       }),
     }),
+    Data.Object({ BeginChannelAbandonment: Data.Object({ not_before: Data.Integer() }) }),
+    Data.Object({ ReclaimChannel: Data.Object({ reclaim_to: Data.Bytes() }) }),
   ]);
 }
 

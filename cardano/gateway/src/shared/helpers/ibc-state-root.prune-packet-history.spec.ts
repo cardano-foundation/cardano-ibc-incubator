@@ -49,4 +49,23 @@ describe('computeRootWithPrunePacketHistoryUpdate', () => {
       ),
     ).toThrow('expects an existing acknowledgement');
   });
+
+  it('deletes only the acknowledgement for ordered channels', () => {
+    const tree = new ICS23MerkleTree();
+    tree.set(acknowledgementPath, Buffer.from('41aa', 'hex'));
+    setCurrentTree(tree);
+
+    const update = computeRootWithPrunePacketHistoryUpdate(
+      tree.getRoot(),
+      'transfer',
+      'channel-0',
+      7n,
+      true,
+    );
+
+    expect(update.packetReceiptSiblings).toEqual([]);
+    expect(update.packetAcknowledgementSiblings).toHaveLength(64);
+    update.commit();
+    expect(getCurrentTree().get(acknowledgementPath)).toBeUndefined();
+  });
 });

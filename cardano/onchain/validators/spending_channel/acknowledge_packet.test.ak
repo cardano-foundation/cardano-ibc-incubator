@@ -16,8 +16,9 @@ use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty} as conn_counterparty_mod
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{AcknowledgePacket}
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/channel.{Channel}
@@ -50,6 +51,7 @@ fn operation_marker_with_junk(policy_id: PolicyId) -> Value {
 
 fn check_acknowledge_packet(
   transaction_mint: Value,
+  channel_state: chan_state_mod.ChannelState,
   use_escrow_shard: Bool,
   include_callback: Bool,
   callback_packet_matches: Bool,
@@ -72,7 +74,7 @@ fn check_acknowledge_packet(
   //========================arrange inputs=======================
   let input_channel =
     Channel {
-      state: chan_state_mod.Open,
+      state: channel_state,
       ordering: chan_order_mod.Unordered,
       counterparty: ChannelCounterparty {
         port_id: "port-1",
@@ -97,6 +99,7 @@ fn check_acknowledge_packet(
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
     }
 
   let input_channel_datum = test_utils.send_packet(packet, input_channel_datum)
@@ -387,6 +390,33 @@ test succeed_acknowledge_packet() {
 
   check_acknowledge_packet(
     operation_marker(mock_data.acknowledge_packet_policy_id),
+    chan_state_mod.Open,
+    False,
+    True,
+    True,
+    True,
+  )
+}
+
+test acknowledge_packet_accepts_closed_channel() {
+  let mock_data = setup()
+
+  check_acknowledge_packet(
+    operation_marker(mock_data.acknowledge_packet_policy_id),
+    chan_state_mod.Closed,
+    False,
+    True,
+    True,
+    True,
+  )
+}
+
+test acknowledge_packet_rejects_handshake_channel() fail {
+  let mock_data = setup()
+
+  check_acknowledge_packet(
+    operation_marker(mock_data.acknowledge_packet_policy_id),
+    chan_state_mod.Init,
     False,
     True,
     True,
@@ -399,6 +429,7 @@ test acknowledge_packet_rejects_extra_operation_marker() fail {
 
   check_acknowledge_packet(
     operation_marker_with_junk(mock_data.acknowledge_packet_policy_id),
+    chan_state_mod.Open,
     False,
     True,
     True,
@@ -411,6 +442,7 @@ test acknowledge_packet_accepts_registered_escrow_shard_callback() {
 
   check_acknowledge_packet(
     operation_marker(mock_data.acknowledge_packet_policy_id),
+    chan_state_mod.Open,
     True,
     True,
     True,
@@ -423,6 +455,7 @@ test acknowledge_packet_rejects_missing_voucher_callback() fail {
 
   check_acknowledge_packet(
     operation_marker(mock_data.acknowledge_packet_policy_id),
+    chan_state_mod.Open,
     False,
     False,
     True,
@@ -435,6 +468,7 @@ test acknowledge_packet_rejects_mismatched_voucher_callback_acknowledgement() fa
 
   check_acknowledge_packet(
     operation_marker(mock_data.acknowledge_packet_policy_id),
+    chan_state_mod.Open,
     False,
     True,
     True,
@@ -447,6 +481,7 @@ test acknowledge_packet_rejects_missing_native_refund_callback() fail {
 
   check_acknowledge_packet(
     operation_marker(mock_data.acknowledge_packet_policy_id),
+    chan_state_mod.Open,
     True,
     False,
     True,
@@ -459,6 +494,7 @@ test acknowledge_packet_rejects_mismatched_native_refund_packet() fail {
 
   check_acknowledge_packet(
     operation_marker(mock_data.acknowledge_packet_policy_id),
+    chan_state_mod.Open,
     True,
     True,
     False,

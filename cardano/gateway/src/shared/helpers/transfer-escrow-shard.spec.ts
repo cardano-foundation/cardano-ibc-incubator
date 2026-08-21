@@ -1,5 +1,9 @@
 import {
+  TRANSFER_ESCROW_SHARD_LIVE_VALUE,
+  TRANSFER_ESCROW_SHARD_RETIRED_VALUE,
   escrowDenomTokenFromPacketDenom,
+  transferEscrowShardChannelLiveCountKey,
+  transferEscrowShardCountValue,
   transferEscrowShardRegistryKey,
   transferEscrowShardTokenName,
 } from './transfer-escrow-shard';
@@ -26,6 +30,17 @@ describe('transfer escrow shard framing', () => {
     );
     expect(first).not.toBe(second);
     expect(transferEscrowShardRegistryKey(first)).toBe(`escrowShards/${first}`);
+  });
+
+  it('keeps lifecycle values and per-channel count paths aligned with Aiken', () => {
+    expect(TRANSFER_ESCROW_SHARD_LIVE_VALUE).toEqual(Buffer.from([1]));
+    expect(TRANSFER_ESCROW_SHARD_RETIRED_VALUE).toEqual(Buffer.from([2]));
+    expect(transferEscrowShardChannelLiveCountKey(Buffer.from('channel-1').toString('hex'))).toBe(
+      'escrowShardCounts/6368616e6e656c2d31',
+    );
+    expect(transferEscrowShardCountValue(0n)).toEqual(Buffer.from([0]));
+    expect(transferEscrowShardCountValue(24n)).toEqual(Buffer.from([0x18, 0x18]));
+    expect(() => transferEscrowShardCountValue(-1n)).toThrow('cannot be negative');
   });
 
   it('decodes the canonical packet denom representation', () => {
