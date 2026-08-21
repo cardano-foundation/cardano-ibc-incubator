@@ -7,6 +7,7 @@ use aiken/fuzz
 use aiken/interval
 use aiken/primitive/bytearray
 use aiken/primitive/int
+use aiken/primitive/string
 use cardano/address.{Address, Script}
 use cardano/assets.{PolicyId, add, from_asset}
 use cardano/transaction.{
@@ -43,7 +44,6 @@ use ibc/core/ics_004/types/keys as channel_keys
 use ibc/core/ics_004/types/order as channel_order
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
 use ibc/core/ics_004/types/state as channel_state
-use ibc/core/ics_005/types/keys as port_id_keys
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_024_host_requirements/channel_keys as host_channel_keys
@@ -54,7 +54,7 @@ use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateDatum, ModuleRegistration, ShutdownState,
   ShuttingDown, empty_ibc_state_root, host_state_token_name, max_bound_ports,
-  max_port_number, validate_bind_port,
+  validate_bind_port,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat,
@@ -88,11 +88,15 @@ fn packet_entries(
   }
 }
 
-fn port_commitment_key(port: Int) -> ByteArray {
-  let port_id = port_id_keys.format_port_identifier(port)
+fn port_commitment_key(port_id: ByteArray) -> ByteArray {
   key_port_prefix
     |> bytearray.concat("/")
     |> bytearray.concat(port_id)
+}
+
+fn test_port_id(port: Int) -> ByteArray {
+  let suffix = port |> string.from_int |> string.to_bytearray
+  bytearray.concat("port-", suffix)
 }
 
 fn test_module_registration(
@@ -440,21 +444,23 @@ fn test_host_state(root: ByteArray, seed: Int) -> HostState {
   }
 }
 
-fn test_bound_ports(ports: List<Int>) -> Pairs<Int, ModuleRegistration> {
+fn test_bound_ports(
+  ports: List<ByteArray>,
+) -> Pairs<ByteArray, ModuleRegistration> {
   when ports is {
     [] -> []
-    [port, ..rest] ->
+    [port_id, ..rest] ->
       [
-        Pair(port, test_module_registration(test_module_script_hash())),
+        Pair(port_id, test_module_registration(test_module_script_hash())),
         ..test_bound_ports(rest)
       ]
   }
 }
 
 fn test_bind_port_transition(
-  old_ports: List<Int>,
-  new_ports: List<Int>,
-  port: Int,
+  old_ports: List<ByteArray>,
+  new_ports: List<ByteArray>,
+  port_id: ByteArray,
 ) -> Bool {
   let nft_policy = test_nft_policy()
   let registration = test_module_registration(test_module_script_hash())
@@ -472,7 +478,7 @@ fn test_bind_port_transition(
   validate_bind_port(
     test_host_state_datum(old_state, nft_policy),
     test_host_state_datum(new_state, nft_policy),
-    port,
+    port_id,
     registration,
   )
 }
@@ -578,9 +584,9 @@ fn empty_proof() -> MerkleProof {
 }
 
 fn spend_test_bind_port(
-  old_ports: List<Int>,
-  new_ports: List<Int>,
-  port: Int,
+  old_ports: List<ByteArray>,
+  new_ports: List<ByteArray>,
+  port_id: ByteArray,
   extra_signatories: List<crypto.VerificationKeyHash>,
 ) -> Bool {
   let registration = test_module_registration(test_module_script_hash())
@@ -597,7 +603,7 @@ fn spend_test_bind_port(
   let new_root =
     ibc_state_commitment.apply_update(
       old_state.ibc_state_root,
-      port_commitment_key(port),
+      port_commitment_key(port_id),
       "",
       cbor.serialise(registration),
       port_siblings,
@@ -611,7 +617,7 @@ fn spend_test_bind_port(
     }
 
   spend_host_state_with_signatories(
-    BindPort { port, registration, port_siblings },
+    BindPort { port_id, registration, port_siblings },
     [test_host_input(old_state)],
     [test_host_output(new_state), test_module_output(registration)],
     extra_signatories,
@@ -2305,45 +2311,67 @@ test prop_host_handle_packet_rejects_wrong_packet_key(seed via fuzz.int()) fail 
 test prop_host_bind_port_rejects_missing_authority(seed via fuzz.int()) fail {
   fuzz.label(@"fuzz.contract.host.bind_port.invalid_unauthorized")
 
-  let port = positive_seed(seed % 1000)
-  spend_test_bind_port([], [port], port, [])
+  let port_id = test_port_id(positive_seed(seed % 1000))
+  spend_test_bind_port([], [port_id], port_id, [])
 }
 
 test prop_host_bind_port_rejects_global_overflow(seed via fuzz.int()) {
   fuzz.label(@"fuzz.unit.host.bind_port.invalid_capacity")
 
   expect max_bound_ports == 10
-  let port = 10 + positive_seed(seed % 1000)
+  let port_id = test_port_id(10 + positive_seed(seed % 1000))
   fuzz_dsl.mutated_check(
     "host",
     "bind_port",
     "global_capacity",
     "host_state.validate_bind_port",
     test_bind_port_transition(
-      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, port],
-      port,
+      [
+        "port-0", "port-1", "port-2", "port-3", "port-4", "port-5", "port-6",
+        "port-7", "port-8", "port-9",
+      ],
+      [
+        "port-0", "port-1", "port-2", "port-3", "port-4", "port-5", "port-6",
+        "port-7", "port-8", "port-9", port_id,
+      ],
+      port_id,
     ),
   )
     |> fuzz_dsl.assert_rejected
 }
 
-test prop_host_bind_port_rejects_out_of_range_identifier(seed via fuzz.int()) {
+test host_state_bind_port_rejects_duplicate_textual_id() fail {
+  test_bind_port_transition(["transfer"], ["transfer"], "transfer")
+}
+
+test host_state_bind_port_uses_canonical_cbor_bytearray_order() {
+  // Canonical CBOR orders byte-string map keys by encoded length first, then
+  // lexicographically. This is the order emitted by Lucid for the deployment's
+  // mixed-length port IDs.
+  test_bind_port_transition(
+    ["mock", "transfer"],
+    ["mock", "icqhost", "transfer"],
+    "icqhost",
+  )
+}
+
+test prop_host_bind_port_rejects_too_short_textual_identifier(
+  seed via fuzz.int(),
+) {
   fuzz.label(@"fuzz.unit.host.bind_port.invalid_identifier")
 
-  let offset = positive_seed(seed % 1000)
-  let port =
+  let port_id =
     if seed % 2 == 0 {
-      -1 - offset
+      "a"
     } else {
-      max_port_number + 1 + offset
+      "b"
     }
   fuzz_dsl.mutated_check(
     "host",
     "bind_port",
-    "identifier_range",
+    "identifier_length",
     "host_state.validate_bind_port",
-    test_bind_port_transition([], [port], port),
+    test_bind_port_transition([], [port_id], port_id),
   )
     |> fuzz_dsl.assert_rejected
 }
@@ -2353,9 +2381,15 @@ test prop_host_bind_port_rejects_out_of_range_identifier(seed via fuzz.int()) {
 test host_state_bind_tenth_port_succeeds_at_global_cap() {
   expect max_bound_ports == 10
   spend_test_bind_port(
-    [0, 1, 2, 3, 4, 5, 6, 7, 8],
-    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-    9,
+    [
+      "port-0", "port-1", "port-2", "port-3", "port-4", "port-5", "port-6",
+      "port-7", "port-8",
+    ],
+    [
+      "port-0", "port-1", "port-2", "port-3", "port-4", "port-5", "port-6",
+      "port-7", "port-8", "port-9",
+    ],
+    "port-9",
     [trusted_deployer],
   )
 }
@@ -2407,7 +2441,7 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
   // -------------------------------------------------------------------------
   // Arrange: the updated HostState UTxO after binding one port.
   // -------------------------------------------------------------------------
-  let port = 99
+  let port_id = "mock"
   let registration = test_module_registration(test_module_script_hash())
 
   // For an empty tree, every sibling hash along the path is the empty hash.
@@ -2417,7 +2451,7 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
       ibc_state_commitment.merkle_depth_bits,
     )
 
-  let port_key = port_commitment_key(port)
+  let port_key = port_commitment_key(port_id)
   let port_value = cbor.serialise(registration)
 
   let new_root =
@@ -2434,7 +2468,7 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
       ..old_state,
       version: old_state.version + 1,
       ibc_state_root: new_root,
-      bound_port: [Pair(port, registration)],
+      bound_port: [Pair(port_id, registration)],
     }
 
   let new_datum = test_host_state_datum(new_state, nft_policy)
@@ -2451,7 +2485,7 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
   // Act: evaluate the HostState STT validator for BindPort.
   // -------------------------------------------------------------------------
   let redeemer: HostStateRedeemer =
-    BindPort { port, registration, port_siblings }
+    BindPort { port_id, registration, port_siblings }
 
   let transaction =
     Transaction {
@@ -2518,7 +2552,7 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
       },
     )
 
-  let port = 99
+  let port_id = "mock"
   let registration = test_module_registration(test_module_script_hash())
   let port_siblings =
     repeat_bytearray(
@@ -2533,7 +2567,7 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
       ..old_state,
       version: old_state.version + 1,
       ibc_state_root: empty_ibc_state_root,
-      bound_port: [Pair(port, registration)],
+      bound_port: [Pair(port_id, registration)],
     }
 
   let new_datum = test_host_state_datum(new_state, nft_policy)
@@ -2547,7 +2581,7 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
     }
 
   let redeemer: HostStateRedeemer =
-    BindPort { port, registration, port_siblings }
+    BindPort { port_id, registration, port_siblings }
 
   let transaction =
     Transaction {
@@ -2617,7 +2651,7 @@ test host_state_cannot_move_nft_to_different_address() fail {
 
   // Arrange: a valid state transition (BindPort) that would succeed, except the
   // output tries to move the NFT to a different address.
-  let port = 99
+  let port_id = "mock"
   let registration = test_module_registration(test_module_script_hash())
   let port_siblings =
     repeat_bytearray(
@@ -2625,7 +2659,7 @@ test host_state_cannot_move_nft_to_different_address() fail {
       ibc_state_commitment.merkle_depth_bits,
     )
 
-  let port_key = port_commitment_key(port)
+  let port_key = port_commitment_key(port_id)
   let port_value = cbor.serialise(registration)
 
   let new_root =
@@ -2642,7 +2676,7 @@ test host_state_cannot_move_nft_to_different_address() fail {
       ..old_state,
       version: old_state.version + 1,
       ibc_state_root: new_root,
-      bound_port: [Pair(port, registration)],
+      bound_port: [Pair(port_id, registration)],
     }
 
   let new_datum = test_host_state_datum(new_state, nft_policy)
@@ -2656,7 +2690,7 @@ test host_state_cannot_move_nft_to_different_address() fail {
     }
 
   let redeemer: HostStateRedeemer =
-    BindPort { port, registration, port_siblings }
+    BindPort { port_id, registration, port_siblings }
 
   let transaction =
     Transaction {
@@ -2715,7 +2749,7 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
       },
     )
 
-  let port = 99
+  let port_id = "mock"
   let registration = test_module_registration(test_module_script_hash())
 
   // Compute the correct new root (still using the full witness list) so that the
@@ -2726,7 +2760,7 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
       ibc_state_commitment.merkle_depth_bits,
     )
 
-  let port_key = port_commitment_key(port)
+  let port_key = port_commitment_key(port_id)
   let port_value = cbor.serialise(registration)
   let new_root =
     ibc_state_commitment.apply_update(
@@ -2742,7 +2776,7 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
       ..old_state,
       version: old_state.version + 1,
       ibc_state_root: new_root,
-      bound_port: [Pair(port, registration)],
+      bound_port: [Pair(port_id, registration)],
     }
 
   let new_datum = test_host_state_datum(new_state, nft_policy)
@@ -2758,7 +2792,7 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
   // Pass an empty witness list. The validator expects exactly `merkle_depth_bits`
   // hashes, so this must fail.
   let redeemer: HostStateRedeemer =
-    BindPort { port, registration, port_siblings: [] }
+    BindPort { port_id, registration, port_siblings: [] }
 
   let transaction =
     Transaction {
@@ -2817,7 +2851,7 @@ test host_state_bind_port_fails_if_output_missing() fail {
       },
     )
 
-  let port = 99
+  let port_id = "mock"
   let registration = test_module_registration(test_module_script_hash())
   let port_siblings =
     repeat_bytearray(
@@ -2826,7 +2860,7 @@ test host_state_bind_port_fails_if_output_missing() fail {
     )
 
   let redeemer: HostStateRedeemer =
-    BindPort { port, registration, port_siblings }
+    BindPort { port_id, registration, port_siblings }
 
   // No HostState output is produced, so the STT validator must fail.
   let transaction =

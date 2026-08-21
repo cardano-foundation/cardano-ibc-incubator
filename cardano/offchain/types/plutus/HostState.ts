@@ -40,7 +40,7 @@ export const HostStateSchema = Data.Object({
   next_client_sequence: Data.Integer(),
   next_connection_sequence: Data.Integer(),
   next_channel_sequence: Data.Integer(),
-  bound_port: Data.Map(Data.Integer(), ModuleRegistrationSchema),
+  bound_port: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
   last_update_time: Data.Integer(), // Unix epoch milliseconds
 });
 

@@ -62,6 +62,10 @@ import {
   IBCModuleRedeemer,
 } from "@shared/types/port/ibc_module_redeemer";
 import {
+  encodeTransferIBCModuleRedeemer,
+  TransferIBCModuleRedeemer,
+} from "@shared/types/apps/transfer/transfer-ibc-module-redeemer";
+import {
   decodeMockModuleDatum,
   encodeMockModuleDatum,
   MockModuleDatum,
@@ -122,6 +126,7 @@ export type CodecType =
   | "mintChannelRedeemer"
   | "spendChannelRedeemer"
   | "iBCModuleRedeemer"
+  | "transferIBCModuleRedeemer"
   | "mintVoucherRedeemer"
   | "mintPortRedeemer"
   | "transferEscrowShardRedeemer";
@@ -131,18 +136,10 @@ function encodeMintPortRedeemer(
   Lucid: typeof import("@lucid-evolution/lucid"),
 ): string {
   const { Data } = Lucid;
-  const MintPortRedeemerSchema = Data.Enum([
-    Data.Object({
-      BindPort: Data.Object({
-        handler_token: Data.Object({
-          policy_id: Data.Bytes(),
-          name: Data.Bytes(),
-        }),
-        spend_module_script_hash: Data.Bytes(),
-        port_number: Data.Integer(),
-      }),
-    }),
-  ]);
+  const MintPortRedeemerSchema = Data.Object({
+    spend_module_script_hash: Data.Bytes(),
+    port_id: Data.Bytes(),
+  });
 
   return Data.to(data as never, MintPortRedeemerSchema as never, {
     canonical: true,
@@ -821,7 +818,7 @@ export class LucidService implements OnModuleInit {
             LucidData.Object({ CreateChannel: CreateChannelSchema }),
             LucidData.Object({
               BindPort: LucidData.Object({
-                port: LucidData.Integer(),
+                port_id: LucidData.Bytes(),
                 registration: ModuleRegistrationSchema,
                 port_siblings: SiblingHashesSchema,
               }),
@@ -872,6 +869,11 @@ export class LucidService implements OnModuleInit {
         case "iBCModuleRedeemer":
           return await encodeIBCModuleRedeemer(
             data as IBCModuleRedeemer,
+            this.LucidImporter,
+          );
+        case "transferIBCModuleRedeemer":
+          return await encodeTransferIBCModuleRedeemer(
+            data as TransferIBCModuleRedeemer,
             this.LucidImporter,
           );
         case "mintVoucherRedeemer":

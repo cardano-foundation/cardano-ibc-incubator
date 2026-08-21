@@ -1,15 +1,14 @@
 import { Data } from '@lucid-evolution/lucid';
 import { Acknowledgement } from '../channel/acknowledgement';
-import { TransferModuleRedeemer } from '../apps/transfer/transfer_module_redeemer/transfer-module-redeemer';
-import { FungibleTokenPacketDatum } from '../apps/transfer/types/fungible-token-packet-data';
 
-export type IBCModulePacketData =
+// ModuleDataV1 retains constructor index 0 and its one-field layout so opaque payloads preserve existing callback CBOR.
+export type IBCModulePacketData<TModuleData = Data> =
   | {
-      TransferModuleData: FungibleTokenPacketDatum[];
+      ModuleDataV1: TModuleData[];
     }
   | 'OtherModuleData';
 
-export type IBCModuleCallback =
+export type IBCModuleCallback<TModuleData = Data> =
   | {
       OnChanOpenInit: {
         channel_id: string;
@@ -35,14 +34,14 @@ export type IBCModuleCallback =
         channel_id: string;
         packet_data: string;
         acknowledgement: Acknowledgement;
-        data: IBCModulePacketData;
+        data: IBCModulePacketData<TModuleData>;
       };
     }
   | {
       OnTimeoutPacket: {
         channel_id: string;
         packet_data: string;
-        data: IBCModulePacketData;
+        data: IBCModulePacketData<TModuleData>;
       };
     }
   | {
@@ -50,7 +49,7 @@ export type IBCModuleCallback =
         channel_id: string;
         packet_data: string;
         acknowledgement: Acknowledgement;
-        data: IBCModulePacketData;
+        data: IBCModulePacketData<TModuleData>;
       };
     }
   | {
@@ -68,28 +67,44 @@ export type IBCModuleCallback =
         channel_id: string;
         packet_data: string;
         packet_commitment: string;
-        data: IBCModulePacketData;
+        data: IBCModulePacketData<TModuleData>;
       };
     };
 
-export type IBCModuleOperator =
+// As with ModuleDataV1, the operator is opaque core Data. The application that
+// owns the module output is responsible for decoding and validating it.
+export type IBCModuleOperator<TModuleOperator = Data> =
   | {
-      TransferModuleOperator: TransferModuleRedeemer[];
+      ModuleOperatorV1: TModuleOperator[];
     }
   | 'OtherModuleOperator';
 
-export type IBCModuleRedeemer =
+export type IBCModuleRedeemer<TModuleData = Data, TModuleOperator = Data> =
   | {
-      Callback: IBCModuleCallback[];
+      Callback: IBCModuleCallback<TModuleData>[];
     }
   | {
-      Operator: IBCModuleOperator[];
+      Operator: IBCModuleOperator<TModuleOperator>[];
     };
-export async function encodeIBCModuleRedeemer(
-  ibcModuleRedeemer: IBCModuleRedeemer,
+
+type IBCModuleCodecSchemas = {
+  moduleData?: unknown;
+  moduleOperator?: unknown;
+};
+
+/**
+ * Build the core callback schema around application-owned payload schemas.
+ * The defaults decode arbitrary Plutus Data and are suitable for core query
+ * paths that never interpret the application payload.
+ */
+function ibcModuleRedeemerSchema(
   Lucid: typeof import('@lucid-evolution/lucid'),
+  schemas: IBCModuleCodecSchemas = {},
 ) {
   const { Data } = Lucid;
+  const moduleDataSchema = schemas.moduleData ?? Data.Any();
+  const moduleOperatorSchema = schemas.moduleOperator ?? Data.Any();
+
   const AcknowledgementResponseSchema = Data.Enum([
     Data.Object({
       AcknowledgementResult: Data.Object({
@@ -106,17 +121,9 @@ export async function encodeIBCModuleRedeemer(
     response: AcknowledgementResponseSchema,
   });
 
-  const FungibleTokenPacketDatumSchema = Data.Object({
-    denom: Data.Bytes(),
-    amount: Data.Bytes(),
-    sender: Data.Bytes(),
-    receiver: Data.Bytes(),
-    memo: Data.Bytes(),
-  });
-
-  const IBCModulePacketData = Data.Enum([
+  const IBCModulePacketDataSchema = Data.Enum([
     Data.Object({
-      TransferModuleData: Data.Tuple([FungibleTokenPacketDatumSchema]),
+      ModuleDataV1: Data.Tuple([moduleDataSchema as never]),
     }),
     Data.Literal('OtherModuleData'),
   ]);
@@ -157,14 +164,14 @@ export async function encodeIBCModuleRedeemer(
         channel_id: Data.Bytes(),
         packet_data: Data.Bytes(),
         acknowledgement: AcknowledgementSchema,
-        data: IBCModulePacketData,
+        data: IBCModulePacketDataSchema,
       }),
     }),
     Data.Object({
       OnTimeoutPacket: Data.Object({
         channel_id: Data.Bytes(),
         packet_data: Data.Bytes(),
-        data: IBCModulePacketData,
+        data: IBCModulePacketDataSchema,
       }),
     }),
     Data.Object({
@@ -172,7 +179,7 @@ export async function encodeIBCModuleRedeemer(
         channel_id: Data.Bytes(),
         packet_data: Data.Bytes(),
         acknowledgement: AcknowledgementSchema,
-        data: IBCModulePacketData,
+        data: IBCModulePacketDataSchema,
       }),
     }),
     Data.Object({
@@ -180,28 +187,19 @@ export async function encodeIBCModuleRedeemer(
         channel_id: Data.Bytes(),
         packet_data: Data.Bytes(),
         packet_commitment: Data.Bytes(),
-        data: IBCModulePacketData,
+        data: IBCModulePacketDataSchema,
       }),
     }),
   ]);
 
-  const TransferModuleRedeemerSchema = Data.Enum([
-    Data.Object({
-      Transfer: Data.Object({
-        channel_id: Data.Bytes(),
-        data: FungibleTokenPacketDatumSchema,
-      }),
-    }),
-    Data.Literal('OtherTransferOp'),
-  ]);
   const IBCModuleOperatorSchema = Data.Enum([
     Data.Object({
-      TransferModuleOperator: Data.Tuple([TransferModuleRedeemerSchema]),
+      ModuleOperatorV1: Data.Tuple([moduleOperatorSchema as never]),
     }),
     Data.Literal('OtherModuleOperator'),
   ]);
 
-  const IBCModuleRedeemerSchema = Data.Enum([
+  return Data.Enum([
     Data.Object({
       Callback: Data.Tuple([IBCModuleCallbackSchema]),
     }),
@@ -209,134 +207,24 @@ export async function encodeIBCModuleRedeemer(
       Operator: Data.Tuple([IBCModuleOperatorSchema]),
     }),
   ]);
-
-  type TIBCModuleRedeemer = Data.Static<typeof IBCModuleRedeemerSchema>;
-  const TIBCModuleRedeemer = IBCModuleRedeemerSchema as unknown as IBCModuleRedeemer;
-  return Data.to(ibcModuleRedeemer, TIBCModuleRedeemer, { canonical: true });
 }
 
-export function decodeIBCModuleRedeemer(ibcModuleRedeemer: string, Lucid: typeof import('@lucid-evolution/lucid')) {
-  const { Data } = Lucid;
-  const AcknowledgementResponseSchema = Data.Enum([
-    Data.Object({
-      AcknowledgementResult: Data.Object({
-        result: Data.Bytes(),
-      }),
-    }),
-    Data.Object({
-      AcknowledgementError: Data.Object({
-        err: Data.Bytes(),
-      }),
-    }),
-  ]);
-  const AcknowledgementSchema = Data.Object({
-    response: AcknowledgementResponseSchema,
+export async function encodeIBCModuleRedeemer<TModuleData = Data, TModuleOperator = Data>(
+  ibcModuleRedeemer: IBCModuleRedeemer<TModuleData, TModuleOperator>,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+  schemas: IBCModuleCodecSchemas = {},
+) {
+  const schema = ibcModuleRedeemerSchema(Lucid, schemas);
+  return Lucid.Data.to(ibcModuleRedeemer as never, schema as never, {
+    canonical: true,
   });
+}
 
-  const FungibleTokenPacketDatumSchema = Data.Object({
-    denom: Data.Bytes(),
-    amount: Data.Bytes(),
-    sender: Data.Bytes(),
-    receiver: Data.Bytes(),
-    memo: Data.Bytes(),
-  });
-
-  const IBCModulePacketData = Data.Enum([
-    Data.Object({
-      TransferModuleData: Data.Tuple([FungibleTokenPacketDatumSchema]),
-    }),
-    Data.Literal('OtherModuleData'),
-  ]);
-
-  const IBCModuleCallbackSchema = Data.Enum([
-    Data.Object({
-      OnChanOpenInit: Data.Object({
-        channel_id: Data.Bytes(),
-      }),
-    }),
-    Data.Object({
-      OnChanOpenTry: Data.Object({
-        channel_id: Data.Bytes(),
-      }),
-    }),
-    Data.Object({
-      OnChanOpenAck: Data.Object({
-        channel_id: Data.Bytes(),
-      }),
-    }),
-    Data.Object({
-      OnChanOpenConfirm: Data.Object({
-        channel_id: Data.Bytes(),
-      }),
-    }),
-    Data.Object({
-      OnChanCloseInit: Data.Object({
-        channel_id: Data.Bytes(),
-      }),
-    }),
-    Data.Object({
-      OnChanCloseConfirm: Data.Object({
-        channel_id: Data.Bytes(),
-      }),
-    }),
-    Data.Object({
-      OnRecvPacket: Data.Object({
-        channel_id: Data.Bytes(),
-        packet_data: Data.Bytes(),
-        acknowledgement: AcknowledgementSchema,
-        data: IBCModulePacketData,
-      }),
-    }),
-    Data.Object({
-      OnTimeoutPacket: Data.Object({
-        channel_id: Data.Bytes(),
-        packet_data: Data.Bytes(),
-        data: IBCModulePacketData,
-      }),
-    }),
-    Data.Object({
-      OnAcknowledgementPacket: Data.Object({
-        channel_id: Data.Bytes(),
-        packet_data: Data.Bytes(),
-        acknowledgement: AcknowledgementSchema,
-        data: IBCModulePacketData,
-      }),
-    }),
-    Data.Object({
-      OnSendPacket: Data.Object({
-        channel_id: Data.Bytes(),
-        packet_data: Data.Bytes(),
-        packet_commitment: Data.Bytes(),
-        data: IBCModulePacketData,
-      }),
-    }),
-  ]);
-
-  const TransferModuleRedeemerSchema = Data.Enum([
-    Data.Object({
-      Transfer: Data.Object({
-        channel_id: Data.Bytes(),
-        data: FungibleTokenPacketDatumSchema,
-      }),
-    }),
-    Data.Literal('OtherTransferOp'),
-  ]);
-  const IBCModuleOperatorSchema = Data.Enum([
-    Data.Object({
-      TransferModuleOperator: Data.Tuple([TransferModuleRedeemerSchema]),
-    }),
-    Data.Literal('OtherModuleOperator'),
-  ]);
-
-  const IBCModuleRedeemerSchema = Data.Enum([
-    Data.Object({
-      Callback: Data.Tuple([IBCModuleCallbackSchema]),
-    }),
-    Data.Object({
-      Operator: Data.Tuple([IBCModuleOperatorSchema]),
-    }),
-  ]);
-  type TIBCModuleRedeemer = Data.Static<typeof IBCModuleRedeemerSchema>;
-  const TIBCModuleRedeemer = IBCModuleRedeemerSchema as unknown as IBCModuleRedeemer;
-  return Data.from(ibcModuleRedeemer, TIBCModuleRedeemer);
+export function decodeIBCModuleRedeemer<TModuleData = Data, TModuleOperator = Data>(
+  ibcModuleRedeemer: string,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+  schemas: IBCModuleCodecSchemas = {},
+): IBCModuleRedeemer<TModuleData, TModuleOperator> {
+  const schema = ibcModuleRedeemerSchema(Lucid, schemas);
+  return Lucid.Data.from(ibcModuleRedeemer, schema as never) as IBCModuleRedeemer<TModuleData, TModuleOperator>;
 }

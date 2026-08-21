@@ -25,6 +25,7 @@ import { SpendChannelRedeemer } from '@shared/types/channel/channel-redeemer';
 import { ACK_RESULT, CHANNEL_ID_PREFIX, LOVELACE, ORDER_MAPPING_CHANNEL } from 'src/constant';
 import { ASYNC_ICQ_HOST_PORT } from '@shared/types/apps/async-icq/async-icq';
 import { IBCModuleRedeemer } from '@shared/types/port/ibc_module_redeemer';
+import { TransferIBCModuleRedeemer } from '@shared/types/apps/transfer/transfer-ibc-module-redeemer';
 import {
   deleteKeySortMap,
   deleteSortMap,
@@ -1605,14 +1606,14 @@ export class PacketService {
             memo: convertString2Hex(fungibleTokenPacketData.memo),
           };
 
-          const spendTransferModuleRedeemer: IBCModuleRedeemer = {
+          const spendTransferModuleRedeemer: TransferIBCModuleRedeemer = {
             Callback: [
               {
                 OnRecvPacket: {
                   channel_id: channelId,
                   packet_data: packet.data,
                   data: {
-                    TransferModuleData: [fTokenPacketData],
+                    ModuleDataV1: [fTokenPacketData],
                   },
                   acknowledgement: {
                     response: {
@@ -1628,7 +1629,7 @@ export class PacketService {
 
           const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
             spendTransferModuleRedeemer,
-            'iBCModuleRedeemer',
+            'transferIBCModuleRedeemer',
           );
           const transferModuleUtxo = await this.lucidService.findUtxoByUnit(
             this.getTransferModuleIdentifier(),
@@ -1966,14 +1967,14 @@ export class PacketService {
     const transferAmount = BigInt(timeoutPacketOperator.fungibleTokenPacketData.amount);
     const senderPublicKeyHash = timeoutPacketOperator.fungibleTokenPacketData.sender;
     const denom = mapLovelaceDenom(timeoutPacketOperator.fungibleTokenPacketData.denom, 'packet_to_asset');
-    const spendTransferModuleRedeemer: IBCModuleRedeemer = {
+    const spendTransferModuleRedeemer: TransferIBCModuleRedeemer = {
       Callback: [
         {
           OnTimeoutPacket: {
             channel_id: packet.source_channel,
             packet_data: packet.data,
             data: {
-              TransferModuleData: [
+              ModuleDataV1: [
                 {
                   denom: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.denom),
                   amount: convertString2Hex(timeoutPacketOperator.fungibleTokenPacketData.amount.toString()),
@@ -2001,7 +2002,7 @@ export class PacketService {
       await this.buildHostStateUpdateForHandlePacket(channelDatum, updatedChannelDatum, convertHex2String(packet.source_channel));
     const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
       spendTransferModuleRedeemer,
-      'iBCModuleRedeemer',
+      'transferIBCModuleRedeemer',
     );
     const voucherHasPrefix = this._hasVoucherPrefix(
       timeoutPacketOperator.fungibleTokenPacketData.denom,
@@ -2577,7 +2578,7 @@ export class PacketService {
             channel_id: channelId,
             packet_data: packet.data,
             data: {
-              TransferModuleData: [fTokenPacketData],
+              ModuleDataV1: [fTokenPacketData],
             },
             acknowledgement: { response: acknowledgementResponse },
           },
@@ -2716,7 +2717,7 @@ export class PacketService {
     const normalizedAcknowledgementResponse = this.normalizeAcknowledgementResponse(acknowledgementResponse);
     const encodedSpendTransferModuleRedeemer: string = await this.lucidService.encode(
       createTransferModuleRedeemer(channelId, fTokenPacketData, normalizedAcknowledgementResponse),
-      'iBCModuleRedeemer',
+      'transferIBCModuleRedeemer',
     );
     const transferModuleReferenceUtxo = await this.lucidService.findUtxoByUnit(
       this.getTransferModuleIdentifier(),

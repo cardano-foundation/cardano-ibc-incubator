@@ -11,7 +11,9 @@ use ibc/apps/transfer/escrow as transfer_escrow
 use ibc/apps/transfer/escrow.{TransferModuleSpend}
 use ibc/apps/transfer/ibc_module as transfer_ibc_module
 use ibc/apps/transfer/refund as transfer_refund
-use ibc/apps/transfer/transfer_module_redeemer.{OtherTransferOp, Transfer}
+use ibc/apps/transfer/transfer_module_redeemer.{
+  OtherTransferOp, Transfer, TransferModuleRedeemer,
+}
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/value_delta as transfer_value_delta
@@ -27,10 +29,11 @@ use ibc/core/ics_004/types/keys as channel_keys
 use ibc/core/ics_004/types/packet.{Packet}
 use ibc/core/ics_004/types/packet as packet_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{
-  Callback, IBCModuleCallback, IBCModuleOperator, IBCModuleRedeemer,
-  OnAcknowledgementPacket, OnChanCloseConfirm, OnChanCloseInit, OnChanOpenAck,
-  OnChanOpenConfirm, OnChanOpenInit, OnChanOpenTry, OnRecvPacket, OnSendPacket,
-  OnTimeoutPacket, Operator, TransferModuleData, TransferModuleOperator,
+  Callback, IBCModuleCallback, IBCModuleOperator, IBCModulePacketData,
+  IBCModuleRedeemer, ModuleDataV1, ModuleOperatorV1, OnAcknowledgementPacket,
+  OnChanCloseConfirm, OnChanCloseInit, OnChanOpenAck, OnChanOpenConfirm,
+  OnChanOpenInit, OnChanOpenTry, OnRecvPacket, OnSendPacket, OnTimeoutPacket,
+  Operator,
 }
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
 use ibc/utils/string as string_utils
@@ -100,7 +103,7 @@ validator spend_transfer_module(
         )
       Operator(op) ->
         module_operator(
-          op,
+          decode_transfer_operator(op),
           host_state_nft,
           spent_output_ref,
           transaction,
@@ -136,7 +139,7 @@ fn module_callback(
 
   when cb is {
     OnSendPacket { channel_id, packet_data, packet_commitment, data } -> {
-      expect TransferModuleData(transfer_data) = data
+      let transfer_data = decode_transfer_packet_data(data)
       expect
         exact_send_callback_matches(
           transaction,
@@ -148,7 +151,7 @@ fn module_callback(
         )
 
       module_operator(
-        TransferModuleOperator(Transfer { channel_id, data: transfer_data }),
+        Transfer { channel_id, data: transfer_data },
         host_state_nft,
         spent_output_ref,
         transaction,
@@ -275,7 +278,7 @@ fn module_callback(
       expect transfer_ibc_module.validate_on_chan_recv_packet(acknowledgement)
       trace @"spend_transfer_module: acknowledgement is valid"
 
-      expect TransferModuleData(data) = data
+      let data = decode_transfer_packet_data(data)
       expect fungible_token_packet_data.validate_basic(data)
       trace @"spend_transfer_module: redeemer data is valid"
 
@@ -461,7 +464,7 @@ fn module_callback(
       trace @"spend_transfer_module: channel redeemer is valid"
 
       expect packet_data == packet.data
-      expect TransferModuleData(data) = data
+      let data = decode_transfer_packet_data(data)
       // Timeout refunds the sender-side packet effect.
       let valid_refund_packet =
         transfer_refund.validate_refund_packet_token(
@@ -498,7 +501,7 @@ fn module_callback(
       trace @"spend_transfer_module: channel redeemer is valid"
 
       expect packet_data == packet.data
-      expect TransferModuleData(tf_data) = data
+      let tf_data = decode_transfer_packet_data(data)
       when acknowledgement.response is {
         AcknowledgementError { .. } -> and {
             // Only error acknowledgements trigger transfer refunds.
@@ -561,7 +564,7 @@ fn exact_send_callback_matches(
 }
 
 fn module_operator(
-  op: IBCModuleOperator,
+  op: TransferModuleRedeemer,
   host_state_nft: AuthToken,
   spent_output_ref: OutputReference,
   transaction: Transaction,
@@ -571,7 +574,6 @@ fn module_operator(
   channel_minting_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
 ) -> Bool {
-  expect TransferModuleOperator(op) = op
   let Transaction { redeemers, inputs, mint, .. } = transaction
 
   expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
@@ -668,4 +670,21 @@ fn module_operator(
 
     OtherTransferOp -> False
   }
+}
+
+// Transfer decodes opaque V1 envelopes only at its boundary so ICS-005 core never depends on transfer types.
+fn decode_transfer_packet_data(
+  module_data: IBCModulePacketData,
+) -> FungibleTokenPacketData {
+  expect ModuleDataV1(data) = module_data
+  expect transfer_data: FungibleTokenPacketData = data
+  transfer_data
+}
+
+fn decode_transfer_operator(
+  module_operator: IBCModuleOperator,
+) -> TransferModuleRedeemer {
+  expect ModuleOperatorV1(data) = module_operator
+  expect transfer_operator: TransferModuleRedeemer = data
+  transfer_operator
 }

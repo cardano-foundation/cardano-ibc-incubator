@@ -31,8 +31,8 @@ use ibc/core/ics_004/types/acknowledgement
 use ibc/core/ics_004/types/keys as channel_keys
 use ibc/core/ics_004/types/packet.{Packet}
 use ibc/core/ics_005/types/ibc_module_redeemer.{
-  Callback, OnAcknowledgementPacket, OnRecvPacket, OnTimeoutPacket, Operator,
-  TransferModuleData, TransferModuleOperator,
+  Callback, ModuleDataV1, ModuleOperatorV1, OnAcknowledgementPacket,
+  OnRecvPacket, OnTimeoutPacket, Operator,
 }
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_025_handler_interface/host_state.{host_state_token_name}
@@ -469,7 +469,7 @@ fn first_seen_voucher_fixture(
         channel_id: packet_dest_channel,
         packet_data: fungible_token_packet_data.get_bytes(ftpd),
         acknowledgement: acknowledgement.new_result_acknowledgement(#[1]),
-        data: TransferModuleData(ftpd),
+        data: ModuleDataV1(ftpd),
       },
     )
   let spend_channel_redeemer_in_data: Redeemer = channel_redeemer
@@ -948,7 +948,7 @@ test test_mint_voucher() {
       data: ftpd,
     }
 
-  let packet_data = TransferModuleData(ftpd)
+  let packet_data = ModuleDataV1(ftpd)
 
   let spend_module_redeemer =
     Callback(
@@ -1116,7 +1116,7 @@ test test_mint_voucher_fails_with_wrong_mint_quantity() fail {
         channel_id: packet_dest_channel,
         packet_data: fungible_token_packet_data.get_bytes(ftpd),
         acknowledgement: acknowledgement.new_result_acknowledgement(#[1]),
-        data: TransferModuleData(ftpd),
+        data: ModuleDataV1(ftpd),
       },
     )
   let purpose = Mint(mock_data.voucher_minting_policy_id)
@@ -1267,7 +1267,7 @@ test test_mint_voucher_fails_with_noncanonical_metadata_datum() fail {
       data: ftpd,
     }
 
-  let packet_data = TransferModuleData(ftpd)
+  let packet_data = ModuleDataV1(ftpd)
 
   let spend_module_redeemer =
     Callback(
@@ -1464,7 +1464,7 @@ test test_mint_voucher_fails_without_trace_registry_witness() fail {
         channel_id: packet_dest_channel,
         packet_data: fungible_token_packet_data.get_bytes(ftpd),
         acknowledgement: acknowledgement.new_result_acknowledgement(#[1]),
-        data: TransferModuleData(ftpd),
+        data: ModuleDataV1(ftpd),
       },
     )
 
@@ -1538,7 +1538,7 @@ test test_burn_voucher() {
 
   let spend_module_redeemer =
     Operator(
-      TransferModuleOperator(
+      ModuleOperatorV1(
         Transfer { channel_id: packet_source_channel, data: packet_data },
       ),
     )
@@ -1625,7 +1625,7 @@ test test_burn_voucher_fails_with_wrong_burn_quantity() fail {
     BurnVoucher { packet_source_port, packet_source_channel, data: packet_data }
   let spend_module_redeemer =
     Operator(
-      TransferModuleOperator(
+      ModuleOperatorV1(
         Transfer { channel_id: packet_source_channel, data: packet_data },
       ),
     )
@@ -1748,7 +1748,7 @@ test test_refund_voucher() {
       OnTimeoutPacket {
         channel_id: packet_source_channel,
         packet_data: fungible_token_packet_data.get_bytes(ftpd),
-        data: TransferModuleData(ftpd),
+        data: ModuleDataV1(ftpd),
       },
     )
   let channel_input =
@@ -1881,7 +1881,7 @@ test test_refund_voucher_fails_with_wrong_mint_quantity() fail {
       OnTimeoutPacket {
         channel_id: packet_source_channel,
         packet_data: fungible_token_packet_data.get_bytes(ftpd),
-        data: TransferModuleData(ftpd),
+        data: ModuleDataV1(ftpd),
       },
     )
   let channel_input =
@@ -2022,7 +2022,7 @@ test test_refund_voucher_fails_when_hash_is_duplicated_in_archived_shard() fail 
       OnTimeoutPacket {
         channel_id: packet_source_channel,
         packet_data: fungible_token_packet_data.get_bytes(ftpd),
-        data: TransferModuleData(ftpd),
+        data: ModuleDataV1(ftpd),
       },
     )
   let channel_input =
@@ -2158,7 +2158,7 @@ test test_refund_voucher_fail() fail {
         channel_id: packet_dest_channel,
         packet_data: fungible_token_packet_data.get_bytes(ftpd),
         acknowledgement: success_ack,
-        data: TransferModuleData(ftpd),
+        data: ModuleDataV1(ftpd),
       },
     )
   let channel_input =

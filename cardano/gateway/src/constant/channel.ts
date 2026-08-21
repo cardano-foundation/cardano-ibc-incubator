@@ -41,12 +41,4 @@ export const KEY_CHANNEL_PREFIX = 'channels';
 
 export const KEY_CHANNEL_END_PREFIX = 'channelEnds';
 
-export const PORT_ID_PREFIX = 'port';
-
 export const KEY_PORT_PREFIX = 'ports';
-
-export const TRANSFER_MODULE_PORT = 100;
-
-export const MOCK_MODULE_PORT = 99;
-
-export const ICQ_MODULE_PORT = 101;

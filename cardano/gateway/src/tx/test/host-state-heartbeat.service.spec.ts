@@ -22,7 +22,7 @@ describe('HostStateHeartbeatService', () => {
       next_client_sequence: 2n,
       next_connection_sequence: 3n,
       next_channel_sequence: 4n,
-      bound_port: new Map([[7n, {
+      bound_port: new Map([['7472616e73666572', {
         module_script_hash: '44'.repeat(28),
         port_token: { policy_id: '55'.repeat(28), name: '01' },
         module_token: { policy_id: '66'.repeat(28), name: '02' },

@@ -1,23 +1,32 @@
 use aiken/collection/list
+use aiken/primitive/bytearray
 use ibc/core/ics_005/types/keys as keys_mod
 
-//============================format_port_identifier====================================
-
-test format_port_identifier_succeed() {
-  keys_mod.format_port_identifier(98) == "port-98"
+test port_token_name_is_full_width_and_identifier_specific() {
+  let transfer_name = keys_mod.port_token_name("transfer")
+  and {
+    bytearray.length(transfer_name) == 32,
+    transfer_name == #"04c1bb73a4a1a77a59b16e461d6ea244bac88d36050557ba026d36f46dd0f873",
+    transfer_name != keys_mod.port_token_name("icqhost"),
+    transfer_name != keys_mod.port_token_name("Transfer"),
+  }
 }
 
-test format_port_identifier_fail_with_negative_sequence() fail {
-  keys_mod.format_port_identifier(-1) == ""
+test port_token_name_rejects_invalid_identifier() fail {
+  keys_mod.port_token_name("ports/transfer") == ""
 }
 
-//============================parse_port_id_number====================================
-test parse_port_id_number_succeed() {
-  keys_mod.parse_port_id_number("port-932") == "932"
-}
-
-test parse_port_id_number_transfer_succeed() {
-  keys_mod.parse_port_id_number("transfer") == "100"
+test port_token_name_accepts_maximum_length_identifier() {
+  let segment = "abcdefghijklmnopqrstuvwxYZ012345"
+  let port_id =
+    segment
+      |> bytearray.concat(segment)
+      |> bytearray.concat(segment)
+      |> bytearray.concat(segment)
+  and {
+    bytearray.length(port_id) == 128,
+    bytearray.length(keys_mod.port_token_name(port_id)) == 32,
+  }
 }
 
 //============================is_valid_port_id====================================

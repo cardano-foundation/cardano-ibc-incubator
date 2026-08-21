@@ -1,20 +1,19 @@
 export const CLIENT_PREFIX = "6962635f636c69656e74"; // fromText("ibc_client")
 export const CONNECTION_PREFIX = "636f6e6e656374696f6e"; // fromText("connection")
 export const CHANNEL_PREFIX = "6368616e6e656c"; // fromText("channel")
-export const PORT_PREFIX = "706f7274"; // fromText("port")
 
 export const EMULATOR_ENV = "emulator";
 export const KUPMIOS_ENV = "kupmios";
 export const BLOCKFROST_ENV = "bf";
 export const LOCAL_ENV = "local";
 
-export const MOCK_MODULE_PORT = 99n;
+export const MOCK_MODULE_PORT = "mock";
 export const MOCK_MODULE_VERSION = "ics20-1"; // 69637332302d31
 
-export const TRANSFER_MODULE_PORT = 100n;
+export const TRANSFER_MODULE_PORT = "transfer";
 export const TRANSFER_MODULE_VERSION = "ics20-1"; // 69637332302d31
 
-export const ICQ_MODULE_PORT = 101n;
+export const ICQ_MODULE_PORT = "icqhost";
 export const ICQ_MODULE_VERSION = "icq-1"; // 6963712d31
 export const TRACE_REGISTRY_SHARD_COUNT = 16;
 export const TRACE_REGISTRY_DIRECTORY_NONCE_COUNT = 1;

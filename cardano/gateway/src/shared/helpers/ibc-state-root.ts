@@ -48,6 +48,7 @@ import { encodeConnectionEndValue } from '../types/connection/connection-datum';
 import { encodeChannelEndValue } from '../types/channel/channel-datum';
 import type { ChannelDatum } from '../types/channel/channel-datum';
 import { encodeModuleRegistration } from '../types/host-state-datum';
+import { convertHex2String } from './hex';
 
 /**
  * Result of a state root computation
@@ -794,16 +795,12 @@ export function computeRootWithChannelUpdate(
  */
 export function computeRootWithPortBind(
   oldRoot: string,
-  portNumber: number | bigint,
+  portId: string,
   portValue: Buffer,
 ): BindPortStateRootResult {
   const speculativeTree = getClonedTreeFromRoot(oldRoot);
 
-  // IBC host store key for port binding.
-  //
-  // Cosmos uses `ports/{portId}`. For Cardano we represent a port identifier as
-  // `port-{n}` where `n` is the numeric port index.
-  const portId = `port-${portNumber.toString()}`;
+  // Exact case-sensitive port text becomes the commitment path without aliases or normalization.
   const path = `ports/${portId}`;
 
   // The on-chain validator replays this update using the per-level sibling hashes.
@@ -858,8 +855,9 @@ export async function rebuildTreeFromChain(
     // tokens registered for the port.
     const boundPorts = hostStateDatum.state.bound_port ?? new Map();
     if (boundPorts.size > 0) {
-      for (const [portNumber, registration] of boundPorts.entries()) {
-        const portId = `port-${portNumber.toString()}`;
+      for (const [portIdHex, registration] of boundPorts.entries()) {
+        // Datum keys are hex-encoded UTF-8 and must be decoded before rebuilding textual paths.
+        const portId = convertHex2String(portIdHex);
         const portValue = Buffer.from(
           await encodeModuleRegistration(registration, lucidService.LucidImporter),
           'hex',

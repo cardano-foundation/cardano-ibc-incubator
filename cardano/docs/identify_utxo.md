@@ -45,8 +45,8 @@ connection_identity_token = sha3_256(handlerTokenUnit)[0:20] + sha3_256(toHex("c
 
 channel_identity_token = sha3_256(handlerTokenUnit)[0:20] + sha3_256(toHex("channel"))[0:4] + toHex(channel_sequence.toString())
 
-port_identity_token = sha3_256(handlerTokenUnit)[0:20] + sha3_256(toHex("port"))[0:4] + toHex(port_number.toString())
+port_identity_token = blake2b_256(to_bytes("cardano-ibc/port-token/v1") + 0x00 + to_bytes(port_id))
 
 ```
 
-Although calculation process is a bit complicated, it ensures that all minted tokens belong to a specific handler instance. With it, not only off-chain services easily query and update UTXOs, but also on-chain validator scripts can identify and cross-refer each other.
+The port token uses the complete, case-sensitive IBC port identifier rather than a protocol-specific number or alias. Its minting policy is parameterized by the HostState identity, so the policy ID still places every port token in a specific handler instance while the domain-separated, full-width digest keeps arbitrary valid textual port IDs within Cardano's 32-byte asset-name limit. With these identities, off-chain services can query protocol UTXOs and on-chain validators can authenticate cross-references without treating an address alone as authoritative.

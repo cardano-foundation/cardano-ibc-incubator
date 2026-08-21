@@ -18,7 +18,7 @@ import {
   DeploymentTemplate,
   formatTimestamp,
   generateIdentifierTokenName,
-  generateTokenName,
+  generatePortTokenName,
   getLiveWalletUtxos,
   isRetryableOgmiosTransportError,
   readValidator,
@@ -31,7 +31,6 @@ import {
   EMULATOR_ENV,
   ICQ_MODULE_PORT,
   MOCK_MODULE_PORT,
-  PORT_PREFIX,
   RESERVED_DEPLOYMENT_NONCE_COUNT,
   TRACE_REGISTRY_DIRECTORY_NONCE_COUNT,
   TRACE_REGISTRY_SHARD_COUNT,
@@ -114,6 +113,9 @@ const encodeRawDatum = (value: unknown): string =>
 
 const MERKLE_DEPTH_BITS = 64;
 const EMPTY_HASH = "00".repeat(32);
+
+export const GENERIC_MODULE_SPEND_VALIDATOR_TITLE =
+  "spending_mock_module.spend_mock_module.spend";
 
 const concatBytes = (...parts: Uint8Array[]): Uint8Array => {
   const length = parts.reduce((sum, part) => sum + part.length, 0);
@@ -245,12 +247,11 @@ export class DeploymentIbcTree {
   }
 }
 
-const portCommitmentKey = (portNumber: bigint): string =>
-  `ports/port-${portNumber.toString()}`;
+const portCommitmentKey = (portId: string): string => `ports/${portId}`;
 
 const buildBindPortHostStateUpdate = async (
   currentDatum: HostStateDatum,
-  portNumber: bigint,
+  portIdText: string,
   registration: ModuleRegistration,
   tree: DeploymentIbcTree,
 ): Promise<{
@@ -258,7 +259,8 @@ const buildBindPortHostStateUpdate = async (
   datum: HostStateDatum;
   commit: () => void;
 }> => {
-  const portKey = portCommitmentKey(portNumber);
+  const portId = fromText(portIdText);
+  const portKey = portCommitmentKey(portIdText);
   const portSiblings = await tree.getSiblings(portKey);
   const portValue = Data.to(registration, ModuleRegistration);
   tree.set(portKey, portValue);
@@ -270,7 +272,7 @@ const buildBindPortHostStateUpdate = async (
       version: currentDatum.state.version + 1n,
       ibc_state_root: newRoot,
       bound_port: sortPortRegistrations(
-        new Map(currentDatum.state.bound_port).set(portNumber, registration),
+        new Map(currentDatum.state.bound_port).set(portId, registration),
       ),
       last_update_time: BigInt(Date.now()),
     },
@@ -278,7 +280,7 @@ const buildBindPortHostStateUpdate = async (
 
   return {
     redeemer: {
-      BindPort: { port: portNumber, registration, port_siblings: portSiblings },
+      BindPort: { port_id: portId, registration, port_siblings: portSiblings },
     },
     datum: updatedDatum,
     commit: () => {},
@@ -675,7 +677,6 @@ export const createDeployment = async (
     mintPortValidator,
     mintIdentifierValidator,
     MOCK_MODULE_PORT,
-    "mock",
     hostStateNFT,
     mockModuleNonceUtxo,
     bootstrapReferenceScripts,
@@ -693,7 +694,6 @@ export const createDeployment = async (
     mintPortValidator,
     mintIdentifierValidator,
     ICQ_MODULE_PORT,
-    "icqhost",
     hostStateNFT,
     icqModuleNonceUtxo,
     bootstrapReferenceScripts,
@@ -773,7 +773,7 @@ export const createDeployment = async (
         refUtxo: refUtxosInfo[spendTransferModule.scriptHash],
       },
       spendMockModule: {
-        title: "spending_mock_module.spend_mock_module.else",
+        title: GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
         script: spendMockModule.validator.script,
         scriptHash: spendMockModule.scriptHash,
         address: spendMockModule.address,
@@ -1211,15 +1211,29 @@ const isLikelyReferenceBatchTooLarge = (error: unknown) => {
   ].some((pattern) => normalizedMessage.includes(pattern));
 };
 
-const sortPortRegistrations = (
-  registrations: Map<bigint, ModuleRegistration>,
-) =>
-  new Map([...registrations.entries()].sort(([left], [right]) => {
-    if (left === right) {
-      return 0;
+// Mirror Aiken's canonical CBOR byte-key order so HostState maps serialize identically off-chain.
+const compareCanonicalBytes = (leftHex: string, rightHex: string): number => {
+  const left = hexToBytes(leftHex);
+  const right = hexToBytes(rightHex);
+  if (left.length !== right.length) {
+    return left.length - right.length;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return left[index] - right[index];
     }
-    return left < right ? -1 : 1;
-  }));
+  }
+  return 0;
+};
+
+export const sortPortRegistrations = (
+  registrations: Map<string, ModuleRegistration>,
+) =>
+  new Map(
+    [...registrations.entries()].sort(([left], [right]) =>
+      compareCanonicalBytes(left, right)
+    ),
+  );
 
 async function mintMockToken(lucid: LucidEvolution) {
   // load mint mock token validator
@@ -1676,7 +1690,7 @@ const deployTransferModule = async (
   mintPortValidator: MintingPolicy,
   mintIdentifierValidator: MintingPolicy,
   mintChannelPolicyId: string,
-  portNumber: bigint,
+  portIdText: string,
   hostStateNFT: AuthToken,
   traceRegistryDirectoryAuthToken: AuthToken,
   nonceUtxo: UTxO,
@@ -1728,13 +1742,9 @@ const deployTransferModule = async (
   // NOTE: IBC port identifiers are part of on-chain commitment paths and are exchanged
   // over IBC. For the transfer module we use the canonical Cosmos port ID so Hermes can
   // operate without any Cardano-specific port mapping.
-  const portId = fromText("transfer");
+  const portId = fromText(portIdText);
   const mintPortPolicyId = validatorToScriptHash(mintPortValidator);
-  const portTokenName = await generateTokenName(
-    hostStateNFT,
-    PORT_PREFIX,
-    portNumber,
-  );
+  const portTokenName = generatePortTokenName(portId);
   const portTokenUnit = mintPortPolicyId + portTokenName;
   const portToken: AuthToken = {
     policy_id: mintPortPolicyId,
@@ -1796,14 +1806,14 @@ const deployTransferModule = async (
   };
   const hostStateUpdate = await buildBindPortHostStateUpdate(
     currentHostStateDatum,
-    portNumber,
+    portIdText,
     registration,
     hostStateTree,
   );
 
   const mintPortRedeemer: MintPortRedeemer = {
     spend_module_script_hash: spendTransferModuleScriptHash,
-    port_number: portNumber,
+    port_id: portId,
   };
   assertDeploymentReferenceValidatorsFit(
     lucid,
@@ -1905,7 +1915,6 @@ const deployGenericModule = async (
   hostStateTree: DeploymentIbcTree,
   mintPortValidator: MintingPolicy,
   mintIdentifierValidator: MintingPolicy,
-  portNumber: bigint,
   portIdText: string,
   hostStateNFT: AuthToken,
   nonceUtxo: UTxO,
@@ -1926,11 +1935,7 @@ const deployGenericModule = async (
 
   const portId = fromText(portIdText);
   const mintPortPolicyId = validatorToScriptHash(mintPortValidator);
-  const portTokenName = await generateTokenName(
-    hostStateNFT,
-    PORT_PREFIX,
-    portNumber,
-  );
+  const portTokenName = generatePortTokenName(portId);
   const portTokenUnit = mintPortPolicyId + portTokenName;
   const portToken: AuthToken = {
     policy_id: mintPortPolicyId,
@@ -1942,8 +1947,11 @@ const deployGenericModule = async (
     spendModuleScriptHash,
     spendModuleAddress,
   ] = await readValidator(
-    "spending_mock_module.spend_mock_module.else",
+    // Parameterizing the shared script prevents mock or ICQ witnesses from crossing HostState deployments.
+    GENERIC_MODULE_SPEND_VALIDATOR_TITLE,
     lucid,
+    [hostStateNFT.policy_id],
+    Data.Tuple([Data.Bytes()]) as unknown as [string],
   );
 
   const hostStateUnit = hostStateNFT.policy_id + hostStateNFT.name;
@@ -1956,14 +1964,14 @@ const deployGenericModule = async (
   };
   const hostStateUpdate = await buildBindPortHostStateUpdate(
     currentHostStateDatum,
-    portNumber,
+    portIdText,
     registration,
     hostStateTree,
   );
 
   const mintPortRedeemer: MintPortRedeemer = {
     spend_module_script_hash: spendModuleScriptHash,
-    port_number: portNumber,
+    port_id: portId,
   };
   assertDeploymentReferenceValidatorsFit(
     lucid,

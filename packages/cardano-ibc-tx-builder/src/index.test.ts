@@ -186,7 +186,7 @@ describe('send-packet denom mapping', () => {
     assert.equal(packetData.denom, Buffer.from('lovelace').toString('hex'));
     assert.equal(packetData.amount, '123');
     const moduleRedeemer = harness.encodedValues.find(
-      (entry) => entry.kind === 'iBCModuleRedeemer',
+      (entry) => entry.kind === 'transferIBCModuleRedeemer',
     )?.value as {
       Callback: [
         {
@@ -204,7 +204,7 @@ describe('send-packet denom mapping', () => {
       packet_data: spendRedeemer.SendPacket.packet.data,
       packet_commitment: 'packet-commitment',
       data: {
-        TransferModuleData: [
+        ModuleDataV1: [
           {
             denom: Buffer.from(
               Buffer.from('lovelace').toString('hex'),

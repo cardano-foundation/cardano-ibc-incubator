@@ -1,7 +1,6 @@
 use aiken/collection/list
 use aiken/interval.{Finite, Interval, IntervalBound, PositiveInfinity}
 use aiken/primitive/bytearray
-use aiken/primitive/int
 use cardano/address.{from_script}
 use cardano/assets.{
   PolicyId, ada_asset_name, ada_policy_id, add, from_asset, zero,
@@ -253,33 +252,15 @@ test test_validate_mint_fail_when_mint_value_not_contains_auth_token() fail {
 fn setup_extract_module_redeemer() -> (
   List<Input>,
   Pairs<ScriptPurpose, Redeemer>,
-  ByteArray,
   PolicyId,
   ByteArray,
   PolicyId,
   IBCModuleRedeemer,
 ) {
-  let channel_token_name =
-    auth.generate_token_name(
-      AuthToken {
-        policy_id: "mock handler policy_id",
-        name: "mock handler name",
-      },
-      channel_keys.channel_prefix,
-      "1",
-    )
-
-  let port_id = "port-100"
+  let port_id = "custom-module"
   let port_minting_policy_id = "mock port minting policy id"
 
-  let port_number_bytes = port_keys.parse_port_id_number(port_id)
-  expect Some(port_number) = int.from_utf8(port_number_bytes)
-  let port_token_name =
-    auth.generate_token_name_from_another(
-      channel_token_name,
-      port_keys.port_prefix,
-      port_number_bytes,
-    )
+  let port_token_name = port_keys.port_token_name(port_id)
   let port_token =
     AuthToken { policy_id: port_minting_policy_id, name: port_token_name }
   let module_token =
@@ -324,7 +305,7 @@ fn setup_extract_module_redeemer() -> (
         next_client_sequence: 0,
         next_connection_sequence: 0,
         next_channel_sequence: 0,
-        bound_port: [Pair(port_number, registration)],
+        bound_port: [Pair(port_id, registration)],
         last_update_time: 0,
       },
       nft_policy: host_state_nft_policy_id,
@@ -345,7 +326,6 @@ fn setup_extract_module_redeemer() -> (
   (
     [host_state_input, module_input],
     redeemers,
-    channel_token_name,
     port_minting_policy_id,
     port_id,
     host_state_nft_policy_id,
@@ -357,7 +337,6 @@ test extract_module_redeemer_succeed() {
   let (
     inputs,
     redeemers,
-    channel_token_name,
     port_minting_policy_id,
     port_id,
     host_state_nft_policy_id,
@@ -367,9 +346,27 @@ test extract_module_redeemer_succeed() {
   validator_utils.extract_module_redeemer(
     inputs,
     redeemers,
-    channel_token_name,
     port_minting_policy_id,
     port_id,
+    host_state_nft_policy_id,
+  ) == module_redeemer
+}
+
+test extract_module_redeemer_rejects_unregistered_case_variant() fail {
+  let (
+    inputs,
+    redeemers,
+    port_minting_policy_id,
+    _,
+    host_state_nft_policy_id,
+    module_redeemer,
+  ) = setup_extract_module_redeemer()
+
+  validator_utils.extract_module_redeemer(
+    inputs,
+    redeemers,
+    port_minting_policy_id,
+    "Custom-module",
     host_state_nft_policy_id,
   ) == module_redeemer
 }
@@ -378,7 +375,6 @@ test extract_module_redeemer_fail_if_inputs_not_contain_port_token() fail {
   let (
     inputs,
     redeemers,
-    channel_token_name,
     port_minting_policy_id,
     port_id,
     host_state_nft_policy_id,
@@ -391,7 +387,6 @@ test extract_module_redeemer_fail_if_inputs_not_contain_port_token() fail {
   validator_utils.extract_module_redeemer(
     inputs,
     redeemers,
-    channel_token_name,
     port_minting_policy_id,
     port_id,
     host_state_nft_policy_id,
@@ -402,7 +397,6 @@ test extract_module_redeemer_fail_if_redeemers_not_contain_module_redeemer() fai
   let (
     inputs,
     _,
-    channel_token_name,
     port_minting_policy_id,
     port_id,
     host_state_nft_policy_id,
@@ -414,7 +408,6 @@ test extract_module_redeemer_fail_if_redeemers_not_contain_module_redeemer() fai
   validator_utils.extract_module_redeemer(
     inputs,
     redeemers,
-    channel_token_name,
     port_minting_policy_id,
     port_id,
     host_state_nft_policy_id,
@@ -425,7 +418,6 @@ test extract_module_redeemer_fail_if_found_redeemer_is_not_ibc_redeemer() fail {
   let (
     inputs,
     _,
-    channel_token_name,
     port_minting_policy_id,
     port_id,
     host_state_nft_policy_id,
@@ -442,7 +434,6 @@ test extract_module_redeemer_fail_if_found_redeemer_is_not_ibc_redeemer() fail {
   validator_utils.extract_module_redeemer(
     inputs,
     redeemers,
-    channel_token_name,
     port_minting_policy_id,
     port_id,
     host_state_nft_policy_id,
@@ -453,7 +444,6 @@ test extract_module_redeemer_rejects_wrong_registered_credential() fail {
   let (
     inputs,
     _,
-    channel_token_name,
     port_minting_policy_id,
     port_id,
     host_state_nft_policy_id,
@@ -477,7 +467,6 @@ test extract_module_redeemer_rejects_wrong_registered_credential() fail {
     validator_utils.extract_module_redeemer(
       inputs,
       redeemers,
-      channel_token_name,
       port_minting_policy_id,
       port_id,
       host_state_nft_policy_id,
@@ -489,7 +478,6 @@ test extract_module_redeemer_rejects_incomplete_capability_set() fail {
   let (
     inputs,
     _redeemers,
-    channel_token_name,
     port_minting_policy_id,
     port_id,
     host_state_nft_policy_id,
@@ -520,7 +508,6 @@ test extract_module_redeemer_rejects_incomplete_capability_set() fail {
     validator_utils.extract_module_redeemer(
       inputs,
       redeemers,
-      channel_token_name,
       port_minting_policy_id,
       port_id,
       host_state_nft_policy_id,

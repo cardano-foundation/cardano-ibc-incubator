@@ -1,5 +1,6 @@
 import blueprint from "../../onchain/plutus.json" with { type: "json" };
 import { crypto } from "@std/crypto";
+import { blake2b } from "@noble/hashes/blake2b";
 import {
   resolveManagedKupoHeader,
   resolveManagedKupoRequestVariants,
@@ -23,6 +24,19 @@ import {
   validatorToScriptHash,
 } from "@lucid-evolution/lucid";
 import { AuthToken, OutputReference } from "../types/index.ts";
+
+export const PORT_TOKEN_DOMAIN = "cardano-ibc/port-token/v1";
+
+/** Derive the capability-token name from hex-encoded UTF-8 port bytes using Aiken's exact preimage. */
+export const generatePortTokenName = (portId: string): string => {
+  const domain = fromHex(fromText(PORT_TOKEN_DOMAIN));
+  const id = fromHex(portId);
+  const preimage = new Uint8Array(domain.length + 1 + id.length);
+  preimage.set(domain);
+  preimage[domain.length] = 0;
+  preimage.set(id, domain.length + 1);
+  return toHex(blake2b(preimage, { dkLen: 32 }));
+};
 
 const RETRYABLE_OGMIOS_TRANSPORT_MARKERS = [
   "WebSocket closed before evaluateTransaction returned a response",

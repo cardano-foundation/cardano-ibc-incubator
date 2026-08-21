@@ -13,7 +13,7 @@ export type HostStateDatum = {
     next_client_sequence: bigint;
     next_connection_sequence: bigint;
     next_channel_sequence: bigint;
-    bound_port: Map<bigint, ModuleRegistration>;
+    bound_port: Map<string, ModuleRegistration>;
     last_update_time: bigint;
   };
   nft_policy: string;
@@ -45,7 +45,7 @@ export async function encodeHostStateDatum(hostStateDatum: HostStateDatum, Lucid
     next_client_sequence: Data.Integer(),
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
-    bound_port: Data.Map(Data.Integer(), ModuleRegistrationSchema),
+    bound_port: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
     last_update_time: Data.Integer(),
   });
   const HostStateDatumSchema = Data.Object({
@@ -85,7 +85,7 @@ export async function decodeHostStateDatum(hostStateDatum: string, Lucid: typeof
     next_client_sequence: Data.Integer(),
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
-    bound_port: Data.Map(Data.Integer(), ModuleRegistrationSchema),
+    bound_port: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
     last_update_time: Data.Integer(),
   });
   const HostStateDatumSchema = Data.Object({

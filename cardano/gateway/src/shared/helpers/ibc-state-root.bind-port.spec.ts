@@ -22,7 +22,7 @@ describe('IBC state root - BindPort', () => {
       'd8799f581c11111111111111111111111111111111111111111111111111111111d8799f581c222222222222222222222222222222222222222222222222222222224101ffd8799f581c333333333333333333333333333333333333333333333333333333334102ffff',
     );
 
-    const result = computeRootWithPortBind(emptyRoot, 99, portValue);
+    const result = computeRootWithPortBind(emptyRoot, 'transfer', portValue);
     expect(result.portSiblings).toHaveLength(64);
     expect(result.newRoot).not.toBe(emptyRoot);
 
@@ -30,13 +30,13 @@ describe('IBC state root - BindPort', () => {
     // match the old on-chain root.
     expect(isTreeAligned(emptyRoot)).toBe(true);
 
-    // The helper must use the committed IBC store key `ports/port-<n>`.
+    // The helper must use the exact textual IBC store key `ports/{portId}`.
     const expectedTree = new ICS23MerkleTree();
-    expectedTree.set('ports/port-99', portValue);
+    expectedTree.set('ports/transfer', portValue);
     expect(result.newRoot).toBe(expectedTree.getRoot());
 
     const wrongTree = new ICS23MerkleTree();
-    wrongTree.set('ports/99', portValue);
+    wrongTree.set('ports/port-100', portValue);
     expect(result.newRoot).not.toBe(wrongTree.getRoot());
 
     // Calling commit() is the point where the Gateway updates its canonical tree.

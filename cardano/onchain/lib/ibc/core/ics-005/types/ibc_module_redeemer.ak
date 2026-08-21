@@ -1,12 +1,13 @@
-use ibc/apps/transfer/transfer_module_redeemer.{TransferModuleRedeemer}
-use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/core/ics_004/types/acknowledgement.{Acknowledgement}
 
 pub type IBCModulePacketData {
-  TransferModuleData(FungibleTokenPacketData)
+  /// Application-owned payload. Constructor index 0 and its single-field arity
+  /// are a stable wire contract; future envelope variants must be appended.
+  ModuleDataV1(Data)
   OtherModuleData
 }
 
+/// Constructor and record-field order form the callback wire ABI, so append variants instead of reordering them.
 pub type IBCModuleCallback {
   OnChanOpenInit { channel_id: ByteArray }
   OnChanOpenTry { channel_id: ByteArray }
@@ -33,7 +34,8 @@ pub type IBCModuleCallback {
   }
   // Application approval for an outbound packet. The raw packet bytes and
   // packet commitment bind the application effect to the exact IBC packet;
-  // `data` carries the module-specific typed payload used for accounting.
+  // `data` carries an opaque payload that the registered application owns,
+  // decodes, and binds to `packet_data`.
   OnSendPacket {
     channel_id: ByteArray,
     packet_data: ByteArray,
@@ -43,7 +45,9 @@ pub type IBCModuleCallback {
 }
 
 pub type IBCModuleOperator {
-  TransferModuleOperator(TransferModuleRedeemer)
+  /// Application-owned operator. Constructor index 0 and its single-field
+  /// arity are a stable wire contract; future variants must be appended.
+  ModuleOperatorV1(Data)
   OtherModuleOperator
 }
 

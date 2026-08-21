@@ -17,7 +17,8 @@ pub type HostStateRedeemer {
     next_sequence_ack_siblings: List<ByteArray>,
   }
   BindPort {
-    port: Int,
+    // Exact canonical IBC port identifier used in commitment paths.
+    port_id: ByteArray,
     // Immutable module credential and capability tokens for this port.
     registration: ModuleRegistration,
     // Sibling hashes for the `ports/{portId}` key update.

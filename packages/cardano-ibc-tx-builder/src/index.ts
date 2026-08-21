@@ -307,13 +307,13 @@ export async function buildUnsignedSendPacketTx(
             packet_data: packet.data,
             packet_commitment: packetCommitment,
             data: {
-              TransferModuleData: [fungibleTokenPacketData],
+              ModuleDataV1: [fungibleTokenPacketData],
             },
           },
         },
       ],
     },
-    'iBCModuleRedeemer',
+    'transferIBCModuleRedeemer',
   );
 
   const updatedChannelDatum: ChannelDatumLike = {

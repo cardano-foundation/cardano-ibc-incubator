@@ -60,6 +60,7 @@ export type CodecType =
   | 'host_state_redeemer'
   | 'spendChannelRedeemer'
   | 'iBCModuleRedeemer'
+  | 'transferIBCModuleRedeemer'
   | 'mintVoucherRedeemer'
   | 'mintPortRedeemer'
   | 'transferEscrowShardRedeemer';
@@ -73,6 +74,7 @@ const ENCODABLE_DATUM_TYPES = [
   'host_state_redeemer',
   'spendChannelRedeemer',
   'iBCModuleRedeemer',
+  'transferIBCModuleRedeemer',
   'mintVoucherRedeemer',
   'mintPortRedeemer',
   'transferEscrowShardRedeemer',
@@ -133,7 +135,7 @@ async function encodeHostStateDatum(
     next_client_sequence: Data.Integer(),
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
-    bound_port: Data.Map(Data.Integer(), ModuleRegistrationSchema),
+    bound_port: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
     last_update_time: Data.Integer(),
   });
   const HostStateDatumSchema = Data.Object({
@@ -173,7 +175,7 @@ async function decodeHostStateDatum(
     next_client_sequence: Data.Integer(),
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
-    bound_port: Data.Map(Data.Integer(), ModuleRegistrationSchema),
+    bound_port: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
     last_update_time: Data.Integer(),
   });
   const HostStateDatumSchema = Data.Object({
@@ -587,7 +589,7 @@ async function encodeHostStateRedeemer(
     Data.Object({ CreateChannel: CreateChannelSchema }),
     Data.Object({
       BindPort: Data.Object({
-        port: Data.Integer(),
+        port_id: Data.Bytes(),
         registration: ModuleRegistrationSchema,
         port_siblings: SiblingHashesSchema,
       }),
@@ -750,22 +752,17 @@ async function encodeSpendChannelRedeemer(
   return Data.to(data, SpendChannelRedeemerSchema as any, { canonical: true });
 }
 
-async function encodeIbcModuleRedeemer(
-  data: any,
+// Preserve Aiken's constructor order and tuple arity here; only application-owned inner schemas may vary.
+function ibcModuleRedeemerSchema(
   Lucid: typeof import('@lucid-evolution/lucid'),
+  moduleDataSchema?: unknown,
+  moduleOperatorSchema?: unknown,
 ) {
   const { Data } = Lucid;
-  const FungibleTokenPacketDatumSchema = Data.Object({
-    denom: Data.Bytes(),
-    amount: Data.Bytes(),
-    sender: Data.Bytes(),
-    receiver: Data.Bytes(),
-    memo: Data.Bytes(),
-  });
   const AcknowledgementSchema = acknowledgementSchema(Lucid);
   const IBCModulePacketData = Data.Enum([
     Data.Object({
-      TransferModuleData: Data.Tuple([FungibleTokenPacketDatumSchema]),
+      ModuleDataV1: Data.Tuple([(moduleDataSchema ?? Data.Any()) as never]),
     }),
     Data.Literal('OtherModuleData'),
   ]);
@@ -808,18 +805,11 @@ async function encodeIbcModuleRedeemer(
       }),
     }),
   ]);
-  const TransferModuleRedeemerSchema = Data.Enum([
-    Data.Object({
-      Transfer: Data.Object({
-        channel_id: Data.Bytes(),
-        data: FungibleTokenPacketDatumSchema,
-      }),
-    }),
-    Data.Literal('OtherTransferOp'),
-  ]);
   const IBCModuleOperatorSchema = Data.Enum([
     Data.Object({
-      TransferModuleOperator: Data.Tuple([TransferModuleRedeemerSchema]),
+      ModuleOperatorV1: Data.Tuple([
+        (moduleOperatorSchema ?? Data.Any()) as never,
+      ]),
     }),
     Data.Literal('OtherModuleOperator'),
   ]);
@@ -831,7 +821,44 @@ async function encodeIbcModuleRedeemer(
       Operator: Data.Tuple([IBCModuleOperatorSchema]),
     }),
   ]);
-  return Data.to(data, IBCModuleRedeemerSchema as any, { canonical: true });
+  return IBCModuleRedeemerSchema;
+}
+
+async function encodeIbcModuleRedeemer(
+  data: any,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+) {
+  const schema = ibcModuleRedeemerSchema(Lucid);
+  return Lucid.Data.to(data, schema as any, { canonical: true });
+}
+
+async function encodeTransferIbcModuleRedeemer(
+  data: any,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+) {
+  const { Data } = Lucid;
+  const FungibleTokenPacketDatumSchema = Data.Object({
+    denom: Data.Bytes(),
+    amount: Data.Bytes(),
+    sender: Data.Bytes(),
+    receiver: Data.Bytes(),
+    memo: Data.Bytes(),
+  });
+  const TransferModuleRedeemerSchema = Data.Enum([
+    Data.Object({
+      Transfer: Data.Object({
+        channel_id: Data.Bytes(),
+        data: FungibleTokenPacketDatumSchema,
+      }),
+    }),
+    Data.Literal('OtherTransferOp'),
+  ]);
+  const schema = ibcModuleRedeemerSchema(
+    Lucid,
+    FungibleTokenPacketDatumSchema,
+    TransferModuleRedeemerSchema,
+  );
+  return Data.to(data, schema as any, { canonical: true });
 }
 
 function encodeMintVoucherRedeemer(
@@ -880,18 +907,10 @@ function encodeMintPortRedeemer(
   Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
-  const MintPortRedeemerSchema = Data.Enum([
-    Data.Object({
-      BindPort: Data.Object({
-        handler_token: Data.Object({
-          policy_id: Data.Bytes(),
-          name: Data.Bytes(),
-        }),
-        spend_module_script_hash: Data.Bytes(),
-        port_number: Data.Integer(),
-      }),
-    }),
-  ]);
+  const MintPortRedeemerSchema = Data.Object({
+    spend_module_script_hash: Data.Bytes(),
+    port_id: Data.Bytes(),
+  });
   return Data.to(data, MintPortRedeemerSchema as any, { canonical: true });
 }
 
@@ -1214,6 +1233,8 @@ export class LucidIbcAdapter {
         return encodeSpendChannelRedeemer(data, this.LucidImporter);
       case 'iBCModuleRedeemer':
         return encodeIbcModuleRedeemer(data, this.LucidImporter);
+      case 'transferIBCModuleRedeemer':
+        return encodeTransferIbcModuleRedeemer(data, this.LucidImporter);
       case 'mintVoucherRedeemer':
         return encodeMintVoucherRedeemer(data, this.LucidImporter);
       case 'mintPortRedeemer':

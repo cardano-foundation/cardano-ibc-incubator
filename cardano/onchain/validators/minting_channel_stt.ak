@@ -160,7 +160,6 @@ validator mint_channel_stt(
       validator_utils.extract_module_redeemer(
         inputs,
         redeemers,
-        channel_token.name,
         port_minting_policy_id,
         channel_output_datum.port_id,
         host_state_nft_policy_id,
