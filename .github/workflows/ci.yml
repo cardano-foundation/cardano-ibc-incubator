@@ -586,6 +586,7 @@ jobs:
             match_tests: >-
               -m prop_host_update_channel_
           - suite: host-handle-packet
+            timeout_minutes: 30
             match_tests: >-
               -m prop_host_handle_packet_accepts_
               -m prop_host_handle_packet_rejects_channel_only_change
