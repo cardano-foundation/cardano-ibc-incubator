@@ -35,7 +35,7 @@ import { IdentifiedClientState } from '@cardano-ibc/proto-types/build/ibc/core/c
 import { LucidService } from '@shared/modules/lucid/lucid.service';
 import { KupoService } from '@shared/modules/kupo/kupo.service';
 import { ConfigService } from '@nestjs/config';
-import { decodeHostStateDatum, HostStateDatum } from '@shared/types/host-state-datum';
+import { HostStateDatum } from '@shared/types/host-state-datum';
 import { normalizeClientStateFromDatum } from '@shared/helpers/client-state';
 import { normalizeConsensusStateFromDatum } from '@shared/helpers/consensus-state';
 import { ClientDatum, decodeClientDatum } from '@shared/types/client-datum';
@@ -134,6 +134,8 @@ import {
 } from './stability-evidence';
 import { IbcTreeCacheService } from '../../shared/services/ibc-tree-cache.service';
 import { ProofQueryOptions } from '../helpers/query-height';
+import { validPagination } from '../helpers/helper';
+import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
 
 type ParsedTxRedeemer = {
   type: string;
@@ -612,11 +614,6 @@ export class QueryService {
     );
   }
 
-  private async getHostStateDatum(): Promise<HostStateDatum> {
-    const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
-    return decodeHostStateDatum(hostStateUtxo.datum, this.lucidService.LucidImporter);
-  }
-
   private async getClientDatum(clientId: string, queryHeight?: bigint): Promise<[ClientDatum, UtxoDto | UTxO]> {
     // Client auth tokens are derived from the host-state NFT + client sequence.
     // The sequence alone is enough to derive the token unit; the handler datum is
@@ -630,22 +627,82 @@ export class QueryService {
     return [clientDatum, spendClientUTXO];
   }
 
-  async queryClientStates(_request: QueryClientStatesRequest): Promise<QueryClientStatesResponse> {
+  private parseClientSequenceFromTokenName(tokenName: string, tokenNamePrefix: string): bigint | null {
+    if (!tokenName.startsWith(tokenNamePrefix)) return null;
+
+    const sequenceHex = tokenName.slice(tokenNamePrefix.length);
+    if (sequenceHex.length < 2 || sequenceHex.length > 16 || sequenceHex.length % 2 !== 0) return null;
+    if (!/^[0-9a-f]+$/.test(sequenceHex)) return null;
+
+    const clientId = Buffer.from(sequenceHex, 'hex').toString('utf8');
+    if (!/^(0|[1-9][0-9]*)$/.test(clientId)) return null;
+
+    const sequence = BigInt(clientId);
+    if (sequence.toString() !== clientId) return null;
+    if (Buffer.from(clientId, 'utf8').toString('hex') !== sequenceHex) return null;
+
+    return sequence;
+  }
+
+  async queryClientStates(request: QueryClientStatesRequest): Promise<QueryClientStatesResponse> {
     this.logger.log('queryClientStates');
 
-    const hostStateDatum = await this.getHostStateDatum();
-    const nextClientSequence = Number(hostStateDatum.state.next_client_sequence);
-    const clientStates: IdentifiedClientState[] = [];
+    const pagination = getPaginationParams(validPagination(request.pagination));
+    const {
+      'pagination.key': key,
+      'pagination.limit': limit,
+      'pagination.count_total': countTotal,
+      'pagination.reverse': reverse,
+    } = pagination;
+    let { 'pagination.offset': offset } = pagination;
+    if (key) offset = decodePaginationKey(key);
 
-    // Cardano stores clients as sequence-addressed UTxOs. There is no secondary
-    // index of "live client ids", so the batch query reconstructs the list by
-    // scanning the sequence space up to `next_client_sequence` and skipping holes.
-    // This matches how single-client queries resolve `07-tendermint-{n}` today,
-    // but does it across the full minted sequence range.
-    for (let clientSequence = 0; clientSequence < nextClientSequence; clientSequence += 1) {
-      try {
-        const clientId = clientSequence.toString();
-        const [clientDatum] = await this.getClientDatum(clientId);
+    const deploymentConfig = this.configService.get('deployment');
+    const baseToken = deploymentConfig.hostStateNFT as AuthToken;
+    const clientPolicyId = deploymentConfig.validators.mintClientStt.scriptHash;
+    const clientAddress = deploymentConfig.validators.spendClient.address;
+    const sampleClientTokenName = this.lucidService.generateTokenName(baseToken, CLIENT_PREFIX, 0n);
+    const clientTokenNamePrefix = sampleClientTokenName.slice(0, 48);
+    const utxos = await this.kupoService.queryUtxosAtAddressByPolicyAndTokenPrefix(
+      clientAddress,
+      clientPolicyId,
+      clientTokenNamePrefix,
+    );
+
+    const liveClients = new Map<string, { sequence: bigint; utxo: (typeof utxos)[number] }>();
+    for (const utxo of utxos) {
+      const clientSequences = utxo.matchedTokenNames
+        .map((tokenName) => this.parseClientSequenceFromTokenName(tokenName, clientTokenNamePrefix))
+        .filter((sequence): sequence is bigint => sequence !== null);
+
+      if (clientSequences.length === 0) continue;
+      if (clientSequences.length > 1) {
+        throw new GrpcInternalException(
+          `IBC client UTxO ${utxo.txHash}#${utxo.outputIndex} contains multiple client authentication tokens`,
+        );
+      }
+
+      const sequence = clientSequences[0];
+      const clientId = sequence.toString();
+      if (liveClients.has(clientId)) {
+        throw new GrpcInternalException(`Multiple live IBC client UTxOs found for 07-tendermint-${clientId}`);
+      }
+      liveClients.set(clientId, { sequence, utxo });
+    }
+
+    const orderedClients = Array.from(liveClients.values()).sort((left, right) => {
+      if (left.sequence === right.sequence) return 0;
+      const ascending = left.sequence < right.sequence ? -1 : 1;
+      return reverse ? -ascending : ascending;
+    });
+    const pageOffset = Number(offset);
+    const pageLimit = Number(limit);
+    const pageEnd = Math.min(pageOffset + pageLimit, orderedClients.length);
+    const clientPage = orderedClients.slice(pageOffset, pageEnd);
+
+    const clientStates: IdentifiedClientState[] = await Promise.all(
+      clientPage.map(async ({ sequence, utxo }) => {
+        const clientDatum = await decodeClientDatum(utxo.datum!, this.lucidService.LucidImporter);
 
         // Cardano currently hosts only Tendermint clients. Cardano-specific clients
         // (`08-cardano-probabilistic` and the deprecated Mithril type) are hosted on
@@ -656,24 +713,21 @@ export class QueryService {
           value: ClientStateTendermint.encode(clientStateTendermint).finish(),
         };
 
-        clientStates.push({
-          client_id: `07-tendermint-${clientId}`,
+        return {
+          client_id: `07-tendermint-${sequence}`,
           client_state: clientStateAny,
-        });
-      } catch (error) {
-        // Client auth tokens are sequence-derived. If a sequence is missing on-chain,
-        // skip it rather than failing the whole batch query. That preserves the
-        // monotonic sequence model while still letting Hermes enumerate the clients
-        // that actually exist.
-        if (error instanceof GrpcNotFoundException) {
-          continue;
-        }
-        throw error;
-      }
-    }
+        };
+      }),
+    );
+
+    const nextKey = pageEnd < orderedClients.length ? generatePaginationKey({ offset: pageEnd }) : new Uint8Array();
 
     return {
       client_states: clientStates,
+      pagination: {
+        next_key: nextKey,
+        total: countTotal && !key ? BigInt(orderedClients.length) : 0n,
+      },
     } as QueryClientStatesResponse;
   }
 

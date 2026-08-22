@@ -1,8 +1,9 @@
 use aiken/fuzz
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+} as channel_datum_mod
 use ibc/core/ics_004/types/channel.{Channel} as channel_mod
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order.{Unordered}
@@ -37,6 +38,7 @@ fn channel_datum(state, counterparty_channel_id: ByteArray) -> ChannelDatum {
     },
     port_id: "port-1",
     token: mock_token(),
+    lifecycle: ChannelActive,
   }
 }
 

@@ -19,6 +19,7 @@ use ibc/apps/transfer/trace_registry.{
 }
 use ibc/apps/transfer/types/coin as transfer_coin
 use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
+use ibc/apps/transfer/types/transfer_module_datum.{TransferModuleDatum}
 use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_metadata as voucher_metadata_datum
 use ibc/auth.{AuthToken}
@@ -33,7 +34,7 @@ use ibc/utils/string as string_utils
 use ibc/utils/validator_utils
 
 validator mint_voucher(
-  _module_token: AuthToken,
+  module_token: AuthToken,
   directory_auth_token: AuthToken,
   voucher_metadata_script_hash: crypto.ScriptHash,
   channel_minting_policy_id: PolicyId,
@@ -54,8 +55,10 @@ validator mint_voucher(
         packet_dest_port,
         packet_dest_channel,
         data,
+        module_token: target_module_token,
       } -> {
         trace @"mint_voucher: MintVoucher branch"
+        expect target_module_token == module_token
 
         // Validate the voucher mint against the spent RecvPacket channel UTxO.
         expect fungible_token_packet_data.validate_basic(data)
@@ -148,6 +151,12 @@ validator mint_voucher(
         and {
           valid_receiver?,
           valid_minted_tokens?,
+          validate_voucher_supply_transition(
+            inputs,
+            outputs,
+            module_token,
+            transfer_amount,
+          )?,
           metadata_output_valid(
             outputs,
             prefixed_denom,
@@ -165,8 +174,14 @@ validator mint_voucher(
           )?,
         }
       }
-      BurnVoucher { packet_source_port, packet_source_channel, data } -> {
+      BurnVoucher {
+        packet_source_port,
+        packet_source_channel,
+        data,
+        module_token: target_module_token,
+      } -> {
         trace @"mint_voucher: MintVoucher branch"
+        expect target_module_token == module_token
 
         // Validate the voucher burn against the spent SendPacket channel UTxO.
         expect fungible_token_packet_data.validate_basic(data)
@@ -205,6 +220,12 @@ validator mint_voucher(
         and {
           valid_sender,
           valid_minted_tokens,
+          validate_voucher_supply_transition(
+            inputs,
+            outputs,
+            module_token,
+            0 - transfer_amount,
+          ),
         }
       }
       RefundVoucher {
@@ -212,8 +233,10 @@ validator mint_voucher(
         packet_source_channel,
         data,
         acknowledgement,
+        module_token: target_module_token,
       } -> {
         trace @"mint_voucher: RefundVoucher branch"
+        expect target_module_token == module_token
 
         // Voucher refunds are authorized by timeout or ack-error channel spends.
         expect fungible_token_packet_data.validate_basic(data)
@@ -341,6 +364,12 @@ validator mint_voucher(
           outputs_token - inputs_token == transfer_amount,
           valid_minted_tokens,
           valid_sender,
+          validate_voucher_supply_transition(
+            inputs,
+            outputs,
+            module_token,
+            transfer_amount,
+          ),
           metadata_output_valid(
             outputs,
             data.denom,
@@ -357,6 +386,39 @@ validator mint_voucher(
 
   else(_) {
     fail
+  }
+}
+
+fn validate_voucher_supply_transition(
+  inputs: List<Input>,
+  outputs: List<Output>,
+  module_token: AuthToken,
+  voucher_delta: Int,
+) -> Bool {
+  expect [module_input] =
+    list.filter(
+      inputs,
+      fn(input) { input.output |> auth.contain_auth_token(module_token) },
+    )
+  expect [module_output] =
+    list.filter(
+      outputs,
+      fn(output) { output |> auth.contain_auth_token(module_token) },
+    )
+  expect input_datum: TransferModuleDatum =
+    validator_utils.get_inline_datum(module_input.output)
+  expect output_datum: TransferModuleDatum =
+    validator_utils.get_inline_datum(module_output)
+
+  and {
+    module_output.address == module_input.output.address,
+    module_output.value == module_input.output.value,
+    input_datum.live_escrow_shard_count >= 0,
+    input_datum.voucher_supply >= 0,
+    output_datum.escrow_shard_registry_root == input_datum.escrow_shard_registry_root,
+    output_datum.live_escrow_shard_count == input_datum.live_escrow_shard_count,
+    output_datum.voucher_supply == input_datum.voucher_supply + voucher_delta,
+    output_datum.voucher_supply >= 0,
   }
 }
 

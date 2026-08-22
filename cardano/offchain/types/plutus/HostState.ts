@@ -19,6 +19,12 @@ export const ShutdownStateSchema = Data.Enum([
       grace_period_end: Data.Integer(),
     }),
   }),
+  Data.Object({
+    Sealed: Data.Object({
+      sealed_at: Data.Integer(),
+      proof_window_end: Data.Integer(),
+    }),
+  }),
 ]);
 
 export type ShutdownState = Data.Static<typeof ShutdownStateSchema>;
@@ -42,6 +48,9 @@ export const HostStateSchema = Data.Object({
   next_channel_sequence: Data.Integer(),
   bound_port: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
   last_update_time: Data.Integer(), // Unix epoch milliseconds
+  live_client_count: Data.Integer(),
+  live_connection_count: Data.Integer(),
+  live_channel_count: Data.Integer(),
 });
 
 export type HostState = Data.Static<typeof HostStateSchema>;

@@ -1,4 +1,4 @@
-import { ICS23MerkleTree } from './ics23MerkleTree';
+import { ICS23MerkleTree } from "./ics23MerkleTree";
 
 type ChannelStateLike = {
   channel: any;
@@ -28,6 +28,17 @@ type StateRootResult = {
   commit: () => void;
 };
 
+export type OrderedStateRootUpdate = {
+  path: string;
+  /** An empty value deletes the leaf. */
+  newValue: Buffer | string;
+};
+
+export type OrderedStateRootResult = StateRootResult & {
+  /** Siblings are captured immediately before applying the update at the same index. */
+  siblings: string[][];
+};
+
 type HandlePacketStateRootResult = StateRootResult & {
   channelSiblings: string[];
   nextSequenceSendSiblings: string[];
@@ -48,7 +59,7 @@ export function initTreeServices(kupoService: any, lucidService: any): void {
 }
 
 export function isTreeAligned(onChainRoot: string): boolean {
-  if (onChainRoot === '0'.repeat(64)) {
+  if (onChainRoot === "0".repeat(64)) {
     return currentTree.getRoot() === onChainRoot;
   }
   return currentTree.getRoot() === onChainRoot;
@@ -56,15 +67,20 @@ export function isTreeAligned(onChainRoot: string): boolean {
 
 export async function alignTreeWithChain(): Promise<{ root: string }> {
   if (!cachedKupoService || !cachedLucidService) {
-    throw new Error('Tree services not initialized. Call initTreeServices() first.');
+    throw new Error(
+      "Tree services not initialized. Call initTreeServices() first.",
+    );
   }
 
-  const result = await rebuildTreeFromChain(cachedKupoService, cachedLucidService);
+  const result = await rebuildTreeFromChain(
+    cachedKupoService,
+    cachedLucidService,
+  );
   return { root: result.root };
 }
 
 function getClonedTreeFromRoot(rootHash: string): ICS23MerkleTree {
-  if (rootHash === '0'.repeat(64)) {
+  if (rootHash === "0".repeat(64)) {
     return new ICS23MerkleTree();
   }
 
@@ -78,9 +94,39 @@ function getClonedTreeFromRoot(rootHash: string): ICS23MerkleTree {
   );
 }
 
+/**
+ * Apply an ordered batch of HostState commitment updates atomically. This is
+ * intentionally generic so lifecycle builders can compose the exact leaf
+ * deletions and dependency-count updates required by their on-chain witnesses.
+ */
+export function computeRootWithOrderedUpdates(
+  oldRoot: string,
+  updates: OrderedStateRootUpdate[],
+): OrderedStateRootResult {
+  const speculativeTree = getClonedTreeFromRoot(oldRoot);
+  const siblings: string[][] = [];
+
+  for (const update of updates) {
+    siblings.push(
+      speculativeTree
+        .getSiblings(update.path)
+        .map((hash) => hash.toString("hex")),
+    );
+    speculativeTree.set(update.path, update.newValue);
+  }
+
+  return {
+    newRoot: speculativeTree.getRoot(),
+    siblings,
+    commit: () => {
+      currentTree = speculativeTree;
+    },
+  };
+}
+
 async function encodeClientStateValue(
   clientState: any,
-  Lucid: typeof import('@lucid-evolution/lucid'),
+  Lucid: typeof import("@lucid-evolution/lucid"),
 ): Promise<string> {
   const { Data } = Lucid;
   const RationalSchema = Data.Object({
@@ -129,7 +175,7 @@ async function encodeClientStateValue(
 
 async function encodeConsensusStateValue(
   consensusState: any,
-  Lucid: typeof import('@lucid-evolution/lucid'),
+  Lucid: typeof import("@lucid-evolution/lucid"),
 ): Promise<string> {
   const { Data } = Lucid;
   const MerkleRootSchema = Data.Object({
@@ -146,7 +192,7 @@ async function encodeConsensusStateValue(
 
 async function encodeConnectionEndValue(
   connectionEnd: any,
-  Lucid: typeof import('@lucid-evolution/lucid'),
+  Lucid: typeof import("@lucid-evolution/lucid"),
 ): Promise<string> {
   const { Data } = Lucid;
   const VersionSchema = Data.Object({
@@ -154,10 +200,10 @@ async function encodeConnectionEndValue(
     features: Data.Array(Data.Bytes()),
   });
   const StateSchema = Data.Enum([
-    Data.Literal('Uninitialized'),
-    Data.Literal('Init'),
-    Data.Literal('TryOpen'),
-    Data.Literal('Open'),
+    Data.Literal("Uninitialized"),
+    Data.Literal("Init"),
+    Data.Literal("TryOpen"),
+    Data.Literal("Open"),
   ]);
   const MerklePrefixSchema = Data.Object({
     key_prefix: Data.Bytes(),
@@ -180,20 +226,20 @@ async function encodeConnectionEndValue(
 
 async function encodeChannelEndValue(
   channelEnd: any,
-  Lucid: typeof import('@lucid-evolution/lucid'),
+  Lucid: typeof import("@lucid-evolution/lucid"),
 ): Promise<string> {
   const { Data } = Lucid;
   const StateSchema = Data.Enum([
-    Data.Literal('Uninitialized'),
-    Data.Literal('Init'),
-    Data.Literal('TryOpen'),
-    Data.Literal('Open'),
-    Data.Literal('Close'),
+    Data.Literal("Uninitialized"),
+    Data.Literal("Init"),
+    Data.Literal("TryOpen"),
+    Data.Literal("Open"),
+    Data.Literal("Close"),
   ]);
   const OrderSchema = Data.Enum([
-    Data.Literal('None'),
-    Data.Literal('Unordered'),
-    Data.Literal('Ordered'),
+    Data.Literal("None"),
+    Data.Literal("Unordered"),
+    Data.Literal("Ordered"),
   ]);
   const ChannelCounterpartySchema = Data.Object({
     port_id: Data.Bytes(),
@@ -216,61 +262,95 @@ export async function computeRootWithHandlePacketUpdate(
   channelId: string,
   inputChannelDatum: ChannelDatumLike,
   outputChannelDatum: ChannelDatumLike,
-  Lucid: typeof import('@lucid-evolution/lucid'),
+  Lucid: typeof import("@lucid-evolution/lucid"),
 ): Promise<HandlePacketStateRootResult> {
   const speculativeTree = getClonedTreeFromRoot(oldRoot);
   const { Data } = Lucid;
   const encodePacketStoreValue = (bytesHex: string): Buffer =>
-    Buffer.from(Data.to(bytesHex, Data.Bytes() as any) as any, 'hex');
+    Buffer.from(Data.to(bytesHex, Data.Bytes() as any) as any, "hex");
 
   const channelPath = `channelEnds/ports/${portId}/channels/${channelId}`;
   let channelSiblings: string[] = [];
   if (inputChannelDatum.state.channel !== outputChannelDatum.state.channel) {
     const newChannelValue = Buffer.from(
       await encodeChannelEndValue(outputChannelDatum.state.channel, Lucid),
-      'hex',
+      "hex",
     );
-    channelSiblings = speculativeTree.getSiblings(channelPath).map((h) => h.toString('hex'));
+    channelSiblings = speculativeTree
+      .getSiblings(channelPath)
+      .map((h) => h.toString("hex"));
     speculativeTree.set(channelPath, newChannelValue);
   }
 
   const nextSequenceSendPath = `nextSequenceSend/ports/${portId}/channels/${channelId}`;
   let nextSequenceSendSiblings: string[] = [];
-  if (inputChannelDatum.state.next_sequence_send !== outputChannelDatum.state.next_sequence_send) {
+  if (
+    inputChannelDatum.state.next_sequence_send !==
+    outputChannelDatum.state.next_sequence_send
+  ) {
     const newValue = Buffer.from(
-      Data.to(outputChannelDatum.state.next_sequence_send as any, Data.Integer() as any),
-      'hex',
+      Data.to(
+        outputChannelDatum.state.next_sequence_send as any,
+        Data.Integer() as any,
+      ),
+      "hex",
     );
-    nextSequenceSendSiblings = speculativeTree.getSiblings(nextSequenceSendPath).map((h) => h.toString('hex'));
+    nextSequenceSendSiblings = speculativeTree
+      .getSiblings(nextSequenceSendPath)
+      .map((h) => h.toString("hex"));
     speculativeTree.set(nextSequenceSendPath, newValue);
   }
 
   const nextSequenceRecvPath = `nextSequenceRecv/ports/${portId}/channels/${channelId}`;
   let nextSequenceRecvSiblings: string[] = [];
-  if (inputChannelDatum.state.next_sequence_recv !== outputChannelDatum.state.next_sequence_recv) {
+  if (
+    inputChannelDatum.state.next_sequence_recv !==
+    outputChannelDatum.state.next_sequence_recv
+  ) {
     const newValue = Buffer.from(
-      Data.to(outputChannelDatum.state.next_sequence_recv as any, Data.Integer() as any),
-      'hex',
+      Data.to(
+        outputChannelDatum.state.next_sequence_recv as any,
+        Data.Integer() as any,
+      ),
+      "hex",
     );
-    nextSequenceRecvSiblings = speculativeTree.getSiblings(nextSequenceRecvPath).map((h) => h.toString('hex'));
+    nextSequenceRecvSiblings = speculativeTree
+      .getSiblings(nextSequenceRecvPath)
+      .map((h) => h.toString("hex"));
     speculativeTree.set(nextSequenceRecvPath, newValue);
   }
 
   const nextSequenceAckPath = `nextSequenceAck/ports/${portId}/channels/${channelId}`;
   let nextSequenceAckSiblings: string[] = [];
-  if (inputChannelDatum.state.next_sequence_ack !== outputChannelDatum.state.next_sequence_ack) {
+  if (
+    inputChannelDatum.state.next_sequence_ack !==
+    outputChannelDatum.state.next_sequence_ack
+  ) {
     const newValue = Buffer.from(
-      Data.to(outputChannelDatum.state.next_sequence_ack as any, Data.Integer() as any),
-      'hex',
+      Data.to(
+        outputChannelDatum.state.next_sequence_ack as any,
+        Data.Integer() as any,
+      ),
+      "hex",
     );
-    nextSequenceAckSiblings = speculativeTree.getSiblings(nextSequenceAckPath).map((h) => h.toString('hex'));
+    nextSequenceAckSiblings = speculativeTree
+      .getSiblings(nextSequenceAckPath)
+      .map((h) => h.toString("hex"));
     speculativeTree.set(nextSequenceAckPath, newValue);
   }
 
-  const inputCommitments = Array.from(inputChannelDatum.state.packet_commitment.entries());
-  const outputCommitments = Array.from(outputChannelDatum.state.packet_commitment.entries());
-  const insertedCommitments = outputCommitments.filter(([seq]) => !inputChannelDatum.state.packet_commitment.has(seq));
-  const removedCommitments = inputCommitments.filter(([seq]) => !outputChannelDatum.state.packet_commitment.has(seq));
+  const inputCommitments = Array.from(
+    inputChannelDatum.state.packet_commitment.entries(),
+  );
+  const outputCommitments = Array.from(
+    outputChannelDatum.state.packet_commitment.entries(),
+  );
+  const insertedCommitments = outputCommitments.filter(
+    ([seq]) => !inputChannelDatum.state.packet_commitment.has(seq),
+  );
+  const removedCommitments = inputCommitments.filter(
+    ([seq]) => !outputChannelDatum.state.packet_commitment.has(seq),
+  );
 
   let packetCommitmentSiblings: string[] = [];
   if (insertedCommitments.length > 0) {
@@ -281,7 +361,9 @@ export async function computeRootWithHandlePacketUpdate(
     }
     const [sequence, commitmentBytes] = insertedCommitments[0];
     const key = `commitments/ports/${portId}/channels/${channelId}/sequences/${sequence.toString()}`;
-    packetCommitmentSiblings = speculativeTree.getSiblings(key).map((h) => h.toString('hex'));
+    packetCommitmentSiblings = speculativeTree
+      .getSiblings(key)
+      .map((h) => h.toString("hex"));
     speculativeTree.set(key, encodePacketStoreValue(commitmentBytes));
   } else if (removedCommitments.length > 0) {
     if (removedCommitments.length !== 1) {
@@ -291,14 +373,24 @@ export async function computeRootWithHandlePacketUpdate(
     }
     const [sequence] = removedCommitments[0];
     const key = `commitments/ports/${portId}/channels/${channelId}/sequences/${sequence.toString()}`;
-    packetCommitmentSiblings = speculativeTree.getSiblings(key).map((h) => h.toString('hex'));
+    packetCommitmentSiblings = speculativeTree
+      .getSiblings(key)
+      .map((h) => h.toString("hex"));
     speculativeTree.set(key, Buffer.alloc(0));
   }
 
-  const inputReceipts = Array.from(inputChannelDatum.state.packet_receipt.entries());
-  const outputReceipts = Array.from(outputChannelDatum.state.packet_receipt.entries());
-  const insertedReceipts = outputReceipts.filter(([seq]) => !inputChannelDatum.state.packet_receipt.has(seq));
-  const removedReceipts = inputReceipts.filter(([seq]) => !outputChannelDatum.state.packet_receipt.has(seq));
+  const inputReceipts = Array.from(
+    inputChannelDatum.state.packet_receipt.entries(),
+  );
+  const outputReceipts = Array.from(
+    outputChannelDatum.state.packet_receipt.entries(),
+  );
+  const insertedReceipts = outputReceipts.filter(
+    ([seq]) => !inputChannelDatum.state.packet_receipt.has(seq),
+  );
+  const removedReceipts = inputReceipts.filter(
+    ([seq]) => !outputChannelDatum.state.packet_receipt.has(seq),
+  );
 
   let packetReceiptSiblings: string[] = [];
   if (insertedReceipts.length > 0) {
@@ -309,16 +401,28 @@ export async function computeRootWithHandlePacketUpdate(
     }
     const [sequence, receiptBytes] = insertedReceipts[0];
     const key = `receipts/ports/${portId}/channels/${channelId}/sequences/${sequence.toString()}`;
-    packetReceiptSiblings = speculativeTree.getSiblings(key).map((h) => h.toString('hex'));
+    packetReceiptSiblings = speculativeTree
+      .getSiblings(key)
+      .map((h) => h.toString("hex"));
     speculativeTree.set(key, encodePacketStoreValue(receiptBytes));
   } else if (removedReceipts.length > 0) {
-    throw new Error('HandlePacket root update does not allow receipt deletions');
+    throw new Error(
+      "HandlePacket root update does not allow receipt deletions",
+    );
   }
 
-  const inputAcks = Array.from(inputChannelDatum.state.packet_acknowledgement.entries());
-  const outputAcks = Array.from(outputChannelDatum.state.packet_acknowledgement.entries());
-  const insertedAcks = outputAcks.filter(([seq]) => !inputChannelDatum.state.packet_acknowledgement.has(seq));
-  const removedAcks = inputAcks.filter(([seq]) => !outputChannelDatum.state.packet_acknowledgement.has(seq));
+  const inputAcks = Array.from(
+    inputChannelDatum.state.packet_acknowledgement.entries(),
+  );
+  const outputAcks = Array.from(
+    outputChannelDatum.state.packet_acknowledgement.entries(),
+  );
+  const insertedAcks = outputAcks.filter(
+    ([seq]) => !inputChannelDatum.state.packet_acknowledgement.has(seq),
+  );
+  const removedAcks = inputAcks.filter(
+    ([seq]) => !outputChannelDatum.state.packet_acknowledgement.has(seq),
+  );
 
   let packetAcknowledgementSiblings: string[] = [];
   if (insertedAcks.length > 0) {
@@ -329,10 +433,14 @@ export async function computeRootWithHandlePacketUpdate(
     }
     const [sequence, ackBytes] = insertedAcks[0];
     const key = `acks/ports/${portId}/channels/${channelId}/sequences/${sequence.toString()}`;
-    packetAcknowledgementSiblings = speculativeTree.getSiblings(key).map((h) => h.toString('hex'));
+    packetAcknowledgementSiblings = speculativeTree
+      .getSiblings(key)
+      .map((h) => h.toString("hex"));
     speculativeTree.set(key, encodePacketStoreValue(ackBytes));
   } else if (removedAcks.length > 0) {
-    throw new Error('HandlePacket root update does not allow acknowledgement deletions');
+    throw new Error(
+      "HandlePacket root update does not allow acknowledgement deletions",
+    );
   }
 
   const newRoot = speculativeTree.getRoot();
@@ -351,16 +459,40 @@ export async function computeRootWithHandlePacketUpdate(
   };
 }
 
+/** Map a local retired-module key (NUL + port bytes) back to its committed ICS port. */
+export function committedModulePortIdHex(hostPortIdHex: string): string {
+  const retired = hostPortIdHex.startsWith("00");
+  const committedPortId = retired ? hostPortIdHex.slice(2) : hostPortIdHex;
+  if (!isCanonicalIcsPortHex(committedPortId)) {
+    throw new Error(`Invalid HostState module port bytes '${hostPortIdHex}'`);
+  }
+  return committedPortId;
+}
+
+function isCanonicalIcsPortHex(portIdHex: string): boolean {
+  if (!/^(?:[0-9a-f]{2}){2,128}$/.test(portIdHex)) return false;
+  return Buffer.from(portIdHex, "hex").every(
+    (byte) =>
+      (byte >= 0x30 && byte <= 0x39) ||
+      (byte >= 0x41 && byte <= 0x5a) ||
+      (byte >= 0x61 && byte <= 0x7a) ||
+      [0x5f, 0x2e, 0x2b, 0x2d, 0x23, 0x5b, 0x5d, 0x3c, 0x3e].includes(byte),
+  );
+}
+
 export async function rebuildTreeFromChain(
   kupoService: any,
   lucidService: any,
 ): Promise<{ tree: ICS23MerkleTree; root: string }> {
   const hostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
   if (!hostStateUtxo?.datum) {
-    throw new Error('HostState UTXO has no datum');
+    throw new Error("HostState UTXO has no datum");
   }
 
-  const hostStateDatum = await lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
+  const hostStateDatum = await lucidService.decodeDatum(
+    hostStateUtxo.datum,
+    "host_state",
+  );
   const expectedRoot = hostStateDatum.state.ibc_state_root;
   const tree = new ICS23MerkleTree();
 
@@ -376,65 +508,99 @@ export async function rebuildTreeFromChain(
       port_token: AuthTokenSchema,
       module_token: AuthTokenSchema,
     });
-    for (const [portIdHex, registration] of boundPorts.entries()) {
+    const committedPortIds = new Set<string>();
+    for (const [hostPortIdHex, registration] of boundPorts.entries()) {
+      const portIdHex = committedModulePortIdHex(hostPortIdHex);
+      if (committedPortIds.has(portIdHex)) {
+        throw new Error(
+          `HostState contains duplicate active/retired registration for port ${portIdHex}`,
+        );
+      }
+      committedPortIds.add(portIdHex);
       // Datum keys are hex-encoded UTF-8 and must be decoded before rebuilding textual paths.
-      const portId = Buffer.from(portIdHex, 'hex').toString('utf8');
+      const portId = Buffer.from(portIdHex, "hex").toString("utf8");
       const portValue = Buffer.from(
         Data.to(registration as any, ModuleRegistrationSchema as any),
-        'hex',
+        "hex",
       );
       tree.set(`ports/${portId}`, portValue);
     }
   }
 
   const clientUtxos = await kupoService.queryAllClientUtxos();
+  const liveClientIds = new Set<string>();
   for (const clientUtxo of clientUtxos) {
     if (!clientUtxo.datum) {
       continue;
     }
 
-    const clientDatum = await lucidService.decodeDatum(clientUtxo.datum, 'client');
-    const clientUnit = Object.keys(clientUtxo.assets || {}).find((unit) => unit !== 'lovelace');
+    const clientDatum = await lucidService.decodeDatum(
+      clientUtxo.datum,
+      "client",
+    );
+    const clientUnit = Object.keys(clientUtxo.assets || {}).find(
+      (unit) => unit !== "lovelace",
+    );
     if (!clientUnit || clientUnit.length < 56 + 48 + 2) {
       continue;
     }
 
     const tokenName = clientUnit.slice(56);
     const postfixHex = tokenName.slice(48);
-    const clientSequence = BigInt(Buffer.from(postfixHex, 'hex').toString('utf8'));
+    const clientSequence = BigInt(
+      Buffer.from(postfixHex, "hex").toString("utf8"),
+    );
     const clientId = `07-tendermint-${clientSequence.toString()}`;
+    liveClientIds.add(clientId);
 
     const clientStateValue = Buffer.from(
-      await encodeClientStateValue(clientDatum.state.clientState, lucidService.LucidImporter),
-      'hex',
+      await encodeClientStateValue(
+        clientDatum.state.clientState,
+        lucidService.LucidImporter,
+      ),
+      "hex",
     );
     tree.set(`clients/${clientId}/clientState`, clientStateValue);
 
     const consensusStates = clientDatum.state.consensusStates;
-    const entries = consensusStates instanceof Map
-      ? Array.from(consensusStates.entries())
-      : Object.entries(consensusStates ?? {});
+    const entries =
+      consensusStates instanceof Map
+        ? Array.from(consensusStates.entries())
+        : Object.entries(consensusStates ?? {});
 
     for (const [heightKey, consensusState] of entries) {
-      const heightStr = typeof heightKey === 'object' && heightKey !== null
-        ? `${(heightKey as { revisionHeight?: bigint | number }).revisionHeight || 0}`
-        : String(heightKey);
+      const heightStr =
+        typeof heightKey === "object" && heightKey !== null
+          ? `${(heightKey as { revisionHeight?: bigint | number }).revisionHeight || 0}`
+          : String(heightKey);
       const consensusValue = Buffer.from(
-        await encodeConsensusStateValue(consensusState, lucidService.LucidImporter),
-        'hex',
+        await encodeConsensusStateValue(
+          consensusState,
+          lucidService.LucidImporter,
+        ),
+        "hex",
       );
-      tree.set(`clients/${clientId}/consensusStates/${heightStr}`, consensusValue);
+      tree.set(
+        `clients/${clientId}/consensusStates/${heightStr}`,
+        consensusValue,
+      );
     }
   }
 
   const connectionUtxos = await kupoService.queryAllConnectionUtxos();
+  const liveConnectionCounts = new Map<string, bigint>();
   for (const connectionUtxo of connectionUtxos) {
     if (!connectionUtxo.datum) {
       continue;
     }
 
-    const connectionDatum = await lucidService.decodeDatum(connectionUtxo.datum, 'connection');
-    const connectionUnit = Object.keys(connectionUtxo.assets || {}).find((unit) => unit !== 'lovelace');
+    const connectionDatum = await lucidService.decodeDatum(
+      connectionUtxo.datum,
+      "connection",
+    );
+    const connectionUnit = Object.keys(connectionUtxo.assets || {}).find(
+      (unit) => unit !== "lovelace",
+    );
     if (!connectionUnit || connectionUnit.length <= 56) {
       continue;
     }
@@ -445,17 +611,50 @@ export async function rebuildTreeFromChain(
     }
 
     const postfixHex = tokenNameHex.slice(48);
-    const connectionSequenceStr = Buffer.from(postfixHex, 'hex').toString('utf8');
+    const connectionSequenceStr = Buffer.from(postfixHex, "hex").toString(
+      "utf8",
+    );
     if (!/^\d+$/.test(connectionSequenceStr)) {
       continue;
     }
 
     const connectionId = `connection-${connectionSequenceStr}`;
     const connectionValue = Buffer.from(
-      await encodeConnectionEndValue(connectionDatum.state, lucidService.LucidImporter),
-      'hex',
+      await encodeConnectionEndValue(
+        connectionDatum.state,
+        lucidService.LucidImporter,
+      ),
+      "hex",
     );
     tree.set(`connections/${connectionId}`, connectionValue);
+    const owningClientId = Buffer.from(
+      connectionDatum.state.client_id,
+      "hex",
+    ).toString("utf8");
+    if (!liveClientIds.has(owningClientId)) {
+      throw new Error(
+        `Tree rebuild failed: live connection ${connectionId} references missing client ${owningClientId}`,
+      );
+    }
+    liveConnectionCounts.set(
+      owningClientId,
+      (liveConnectionCounts.get(owningClientId) ?? 0n) + 1n,
+    );
+  }
+
+  const { Data: CountData } = lucidService.LucidImporter;
+  for (const clientId of liveClientIds) {
+    tree.set(
+      `cardano/dependencies/v1/clients/${clientId}/liveConnections`,
+      Buffer.from(
+        CountData.to(
+          (liveConnectionCounts.get(clientId) ?? 0n) as any,
+          CountData.Integer() as any,
+          { canonical: true },
+        ),
+        "hex",
+      ),
+    );
   }
 
   const channelUtxos = await kupoService.queryAllChannelUtxos();
@@ -464,8 +663,13 @@ export async function rebuildTreeFromChain(
       continue;
     }
 
-    const channelDatum = await lucidService.decodeDatum(channelUtxo.datum, 'channel');
-    const channelUnit = Object.keys(channelUtxo.assets || {}).find((unit) => unit !== 'lovelace');
+    const channelDatum = await lucidService.decodeDatum(
+      channelUtxo.datum,
+      "channel",
+    );
+    const channelUnit = Object.keys(channelUtxo.assets || {}).find(
+      (unit) => unit !== "lovelace",
+    );
     if (!channelUnit || channelUnit.length <= 56) {
       continue;
     }
@@ -476,53 +680,171 @@ export async function rebuildTreeFromChain(
     }
 
     const postfixHex = tokenNameHex.slice(48);
-    const channelSequenceStr = Buffer.from(postfixHex, 'hex').toString('utf8');
+    const channelSequenceStr = Buffer.from(postfixHex, "hex").toString("utf8");
     if (!/^\d+$/.test(channelSequenceStr)) {
       continue;
     }
 
     const channelId = `channel-${channelSequenceStr}`;
     const portHex = (channelDatum as any).port;
-    const portId = portHex ? Buffer.from(portHex, 'hex').toString('utf8') : 'transfer';
+    const portId = portHex
+      ? Buffer.from(portHex, "hex").toString("utf8")
+      : "transfer";
     const channelValue = Buffer.from(
-      await encodeChannelEndValue(channelDatum.state.channel, lucidService.LucidImporter),
-      'hex',
+      await encodeChannelEndValue(
+        channelDatum.state.channel,
+        lucidService.LucidImporter,
+      ),
+      "hex",
     );
     tree.set(`channelEnds/ports/${portId}/channels/${channelId}`, channelValue);
 
     const { Data } = lucidService.LucidImporter;
     tree.set(
       `nextSequenceSend/ports/${portId}/channels/${channelId}`,
-      Buffer.from(Data.to(channelDatum.state.next_sequence_send as any, Data.Integer() as any), 'hex'),
+      Buffer.from(
+        Data.to(
+          channelDatum.state.next_sequence_send as any,
+          Data.Integer() as any,
+        ),
+        "hex",
+      ),
     );
     tree.set(
       `nextSequenceRecv/ports/${portId}/channels/${channelId}`,
-      Buffer.from(Data.to(channelDatum.state.next_sequence_recv as any, Data.Integer() as any), 'hex'),
+      Buffer.from(
+        Data.to(
+          channelDatum.state.next_sequence_recv as any,
+          Data.Integer() as any,
+        ),
+        "hex",
+      ),
     );
     tree.set(
       `nextSequenceAck/ports/${portId}/channels/${channelId}`,
-      Buffer.from(Data.to(channelDatum.state.next_sequence_ack as any, Data.Integer() as any), 'hex'),
+      Buffer.from(
+        Data.to(
+          channelDatum.state.next_sequence_ack as any,
+          Data.Integer() as any,
+        ),
+        "hex",
+      ),
     );
 
     const bytesSchema = Data.Bytes() as any;
-    for (const [sequence, bytesHex] of (channelDatum as any).state.packet_commitment.entries()) {
+    for (const [sequence, bytesHex] of (
+      channelDatum as any
+    ).state.packet_commitment.entries()) {
       tree.set(
         `commitments/ports/${portId}/channels/${channelId}/sequences/${sequence.toString()}`,
-        Buffer.from(Data.to(bytesHex, bytesSchema) as any, 'hex'),
+        Buffer.from(Data.to(bytesHex, bytesSchema) as any, "hex"),
       );
     }
-    for (const [sequence, bytesHex] of (channelDatum as any).state.packet_receipt.entries()) {
+    for (const [sequence, bytesHex] of (
+      channelDatum as any
+    ).state.packet_receipt.entries()) {
       tree.set(
         `receipts/ports/${portId}/channels/${channelId}/sequences/${sequence.toString()}`,
-        Buffer.from(Data.to(bytesHex, bytesSchema) as any, 'hex'),
+        Buffer.from(Data.to(bytesHex, bytesSchema) as any, "hex"),
       );
     }
-    for (const [sequence, bytesHex] of (channelDatum as any).state.packet_acknowledgement.entries()) {
+    for (const [sequence, bytesHex] of (
+      channelDatum as any
+    ).state.packet_acknowledgement.entries()) {
       tree.set(
         `acks/ports/${portId}/channels/${channelId}/sequences/${sequence.toString()}`,
-        Buffer.from(Data.to(bytesHex, bytesSchema) as any, 'hex'),
+        Buffer.from(Data.to(bytesHex, bytesSchema) as any, "hex"),
       );
     }
+  }
+
+  const channelHistory = await kupoService.queryLatestChannelUtxosFromHistory();
+  const liveChannelOutRefs = new Set(
+    channelUtxos.map((utxo: any) => `${utxo.txHash}#${utxo.outputIndex}`),
+  );
+  const historyLiveOutRefs = new Set<string>();
+  for (const historicalChannel of channelHistory) {
+    const outRef = `${historicalChannel.txHash}#${historicalChannel.outputIndex}`;
+    if (historicalChannel.spentAt === null) {
+      if (!liveChannelOutRefs.has(outRef)) {
+        throw new Error(
+          `Tree rebuild failed: Kupo channel history is not aligned at ${outRef}`,
+        );
+      }
+      historyLiveOutRefs.add(outRef);
+      continue;
+    }
+    if (!historicalChannel.datum) {
+      throw new Error(
+        `Tree rebuild failed: historical channel ${outRef} has no datum`,
+      );
+    }
+    const channelDatum = await lucidService.decodeDatum(
+      historicalChannel.datum,
+      "channel",
+    );
+    const isAbandoned =
+      typeof channelDatum.lifecycle === "object" &&
+      channelDatum.lifecycle !== null &&
+      "Abandoning" in channelDatum.lifecycle;
+    if (isAbandoned) {
+      continue;
+    }
+    if (
+      channelDatum.lifecycle !== "ChannelActive" ||
+      channelDatum.state.channel.state !== "Close"
+    ) {
+      throw new Error(
+        `Tree rebuild failed: spent channel ${outRef} is neither reclaimed Closed nor abandoned`,
+      );
+    }
+    const channelUnit =
+      historicalChannel.authToken?.unit ??
+      Object.keys(historicalChannel.assets || {}).find(
+        (unit) => unit !== "lovelace",
+      );
+    if (!channelUnit || channelUnit.length < 56 + 48 + 2) {
+      throw new Error(
+        `Tree rebuild failed: historical channel ${outRef} has no canonical NFT`,
+      );
+    }
+    const sequenceText = Buffer.from(
+      channelUnit.slice(56 + 48),
+      "hex",
+    ).toString("utf8");
+    if (!/^(?:0|[1-9][0-9]*)$/.test(sequenceText)) {
+      throw new Error(
+        `Tree rebuild failed: historical channel ${outRef} has an invalid id`,
+      );
+    }
+    const channelId = `channel-${sequenceText}`;
+    const portId = Buffer.from(channelDatum.port, "hex").toString("utf8");
+    tree.set(
+      `channelEnds/ports/${portId}/channels/${channelId}`,
+      Buffer.from(
+        await encodeChannelEndValue(
+          channelDatum.state.channel,
+          lucidService.LucidImporter,
+        ),
+        "hex",
+      ),
+    );
+    const { Data } = lucidService.LucidImporter;
+    tree.set(
+      `nextSequenceRecv/ports/${portId}/channels/${channelId}`,
+      Buffer.from(
+        Data.to(
+          channelDatum.state.next_sequence_recv as any,
+          Data.Integer() as any,
+        ),
+        "hex",
+      ),
+    );
+  }
+  if (historyLiveOutRefs.size !== liveChannelOutRefs.size) {
+    throw new Error(
+      "Tree rebuild failed: Kupo channel history is incomplete for live channels",
+    );
   }
 
   const computedRoot = tree.getRoot();

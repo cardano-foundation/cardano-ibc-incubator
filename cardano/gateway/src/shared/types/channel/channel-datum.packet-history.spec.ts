@@ -28,6 +28,7 @@ describe('ChannelDatum packet-history heights', () => {
       },
       port: Buffer.from('transfer').toString('hex'),
       token: { policyId: '11'.repeat(28), name: '22' },
+      lifecycle: 'ChannelActive',
     };
 
     const encoded = await encodeChannelDatum(datum, Lucid);

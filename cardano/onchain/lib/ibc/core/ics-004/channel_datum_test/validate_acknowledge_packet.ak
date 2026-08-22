@@ -1,13 +1,14 @@
 use aiken/collection/pairs
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+} as channel_datum_mod
 use ibc/core/ics_004/types/channel.{Channel} as channel_mod
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order.{Ordered, Unordered}
 use ibc/core/ics_004/types/packet.{Packet} as packet_mod
-use ibc/core/ics_004/types/state.{Open}
+use ibc/core/ics_004/types/state.{Closed, Init, Open}
 
 fn setup_unordered() -> (ChannelDatum, ChannelDatum, Packet) {
   let mock_auth_token =
@@ -54,6 +55,7 @@ fn setup_unordered() -> (ChannelDatum, ChannelDatum, Packet) {
       },
       port_id: "port-1",
       token: mock_auth_token,
+      lifecycle: ChannelActive,
     }
 
   let output_channel_datum =
@@ -110,6 +112,84 @@ test succeed_with_ordered_channel() {
   let (input_datum, output_datum, packet) = setup_ordered()
 
   channel_datum_mod.validate_acknowledge_packet(
+    input_datum,
+    output_datum,
+    packet,
+  )
+}
+
+test succeed_with_closed_channel() {
+  let (input_datum, output_datum, packet) = setup_unordered()
+  let input_datum =
+    ChannelDatum {
+      ..input_datum,
+      state: ChannelDatumState {
+        ..input_datum.state,
+        channel: Channel { ..input_datum.state.channel, state: Closed },
+      },
+    }
+  let output_datum =
+    ChannelDatum {
+      ..output_datum,
+      state: ChannelDatumState {
+        ..output_datum.state,
+        channel: Channel { ..output_datum.state.channel, state: Closed },
+      },
+    }
+
+  channel_datum_mod.validate_acknowledge_packet(
+    input_datum,
+    output_datum,
+    packet,
+  )
+}
+
+test succeed_with_closed_ordered_channel() {
+  let (input_datum, output_datum, packet) = setup_ordered()
+  let input_datum =
+    ChannelDatum {
+      ..input_datum,
+      state: ChannelDatumState {
+        ..input_datum.state,
+        channel: Channel { ..input_datum.state.channel, state: Closed },
+      },
+    }
+  let output_datum =
+    ChannelDatum {
+      ..output_datum,
+      state: ChannelDatumState {
+        ..output_datum.state,
+        channel: Channel { ..output_datum.state.channel, state: Closed },
+      },
+    }
+
+  channel_datum_mod.validate_acknowledge_packet(
+    input_datum,
+    output_datum,
+    packet,
+  )
+}
+
+test fail_with_handshake_channel() {
+  let (input_datum, output_datum, packet) = setup_unordered()
+  let input_datum =
+    ChannelDatum {
+      ..input_datum,
+      state: ChannelDatumState {
+        ..input_datum.state,
+        channel: Channel { ..input_datum.state.channel, state: Init },
+      },
+    }
+  let output_datum =
+    ChannelDatum {
+      ..output_datum,
+      state: ChannelDatumState {
+        ..output_datum.state,
+        channel: Channel { ..output_datum.state.channel, state: Init },
+      },
+    }
+
+  !channel_datum_mod.validate_acknowledge_packet(
     input_datum,
     output_datum,
     packet,

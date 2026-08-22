@@ -9,6 +9,7 @@ import {
   WithTransferAmount,
   WithRequiredTransferModuleReferenceUtxo,
   WithTransferModuleSpend,
+  WithUpdatedTransferModuleDatum,
   WithVoucherMetadataOutput,
   WithVerifyProof,
 } from './fragments';
@@ -23,6 +24,7 @@ export type UnsignedAckPacketMintDto = WithHostStateUpdate &
   WithOptionalTraceRegistryUpdate &
   WithRequiredTransferModuleReferenceUtxo &
   WithTransferModuleSpend &
+  WithUpdatedTransferModuleDatum &
   WithTransferAmount &
   WithConstructedAddress &
   WithPacketPolicyAndChannelToken<'ackPacketPolicyId'> &

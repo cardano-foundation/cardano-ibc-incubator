@@ -16,8 +16,9 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty} as conn_counterparty_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{TimeoutPacket}
 use ibc/core/ics_004/types/channel.{Channel}
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
@@ -40,6 +41,8 @@ use spending_channel/spending_channel_fixture.{MockData, setup}
 use spending_channel/timeout_packet
 
 fn check_timeout_unordered_packet(
+  input_channel_state: chan_state_mod.ChannelState,
+  output_channel_state: chan_state_mod.ChannelState,
   use_escrow_shard: Bool,
   include_callback: Bool,
   callback_packet_matches: Bool,
@@ -63,7 +66,7 @@ fn check_timeout_unordered_packet(
   //========================arrange inputs=======================
   let input_channel =
     Channel {
-      state: chan_state_mod.Open,
+      state: input_channel_state,
       ordering: chan_order_mod.Unordered,
       counterparty: ChannelCounterparty {
         port_id: "port-1",
@@ -88,6 +91,7 @@ fn check_timeout_unordered_packet(
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
     }
 
   let input_channel_datum = test_utils.send_packet(packet, input_channel_datum)
@@ -146,6 +150,10 @@ fn check_timeout_unordered_packet(
       ..input_channel_datum,
       state: ChannelDatumState {
         ..input_channel_datum.state,
+        channel: Channel {
+          ..input_channel_datum.state.channel,
+          state: output_channel_state,
+        },
         packet_commitment: pairs.delete_first(
           input_channel_datum.state.packet_commitment,
           packet.sequence,
@@ -373,27 +381,93 @@ fn check_timeout_unordered_packet(
 }
 
 test succeed_timeout_unordered_packet() {
-  check_timeout_unordered_packet(False, True, True)
+  check_timeout_unordered_packet(
+    chan_state_mod.Open,
+    chan_state_mod.Open,
+    False,
+    True,
+    True,
+  )
+}
+
+test timeout_unordered_packet_accepts_closed_channel_without_reopening() {
+  check_timeout_unordered_packet(
+    chan_state_mod.Closed,
+    chan_state_mod.Closed,
+    False,
+    True,
+    True,
+  )
+}
+
+test timeout_unordered_packet_rejects_reopening_closed_channel() fail {
+  check_timeout_unordered_packet(
+    chan_state_mod.Closed,
+    chan_state_mod.Open,
+    False,
+    True,
+    True,
+  )
+}
+
+test timeout_unordered_packet_rejects_handshake_channel() fail {
+  check_timeout_unordered_packet(
+    chan_state_mod.Init,
+    chan_state_mod.Init,
+    False,
+    True,
+    True,
+  )
 }
 
 test timeout_packet_accepts_registered_escrow_shard_callback() {
-  check_timeout_unordered_packet(True, True, True)
+  check_timeout_unordered_packet(
+    chan_state_mod.Open,
+    chan_state_mod.Open,
+    True,
+    True,
+    True,
+  )
 }
 
 test timeout_packet_rejects_missing_voucher_refund_callback() fail {
-  check_timeout_unordered_packet(False, False, True)
+  check_timeout_unordered_packet(
+    chan_state_mod.Open,
+    chan_state_mod.Open,
+    False,
+    False,
+    True,
+  )
 }
 
 test timeout_packet_rejects_mismatched_voucher_refund_packet() fail {
-  check_timeout_unordered_packet(False, True, False)
+  check_timeout_unordered_packet(
+    chan_state_mod.Open,
+    chan_state_mod.Open,
+    False,
+    True,
+    False,
+  )
 }
 
 test timeout_packet_rejects_missing_native_refund_callback() fail {
-  check_timeout_unordered_packet(True, False, True)
+  check_timeout_unordered_packet(
+    chan_state_mod.Open,
+    chan_state_mod.Open,
+    True,
+    False,
+    True,
+  )
 }
 
 test timeout_packet_rejects_mismatched_native_refund_packet() fail {
-  check_timeout_unordered_packet(True, True, False)
+  check_timeout_unordered_packet(
+    chan_state_mod.Open,
+    chan_state_mod.Open,
+    True,
+    True,
+    False,
+  )
 }
 
 test succeed_timeout_ordered_packet() {
@@ -443,6 +517,7 @@ test succeed_timeout_ordered_packet() {
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
     }
 
   let input_channel_datum = test_utils.send_packet(packet, input_channel_datum)

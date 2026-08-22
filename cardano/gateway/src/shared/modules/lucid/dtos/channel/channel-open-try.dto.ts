@@ -4,6 +4,8 @@ import { GatewayModuleKey } from '@shared/helpers/module-port';
 export type UnsignedChannelOpenTryDto = {
   moduleKey: GatewayModuleKey;
   connectionUtxo: UTxO;
+  encodedSpendConnectionRedeemer: string;
+  encodedUpdatedConnectionDatum: string;
   clientUtxo: UTxO;
   moduleUtxo: UTxO;
   encodedSpendModuleRedeemer: string;

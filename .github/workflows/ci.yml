@@ -541,7 +541,7 @@ jobs:
     if: ${{ (github.event_name != 'pull_request' || !startsWith(github.head_ref, 'docs/')) && needs.aiken-changes.outputs.aiken_changed == 'true' }}
     needs: aiken-changes
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: cardano/onchain
@@ -848,7 +848,9 @@ jobs:
             --exact-match \
             -m 'ibc/core/ics_003_connection_semantics/connection_datum.{test_is_conn_open_try_valid_succeed}' \
             -m 'spending_transfer_module.{on_chan_open_try_succeed}' \
+            -m 'host_state_stt.{budget_precomputed_host_create_connection}' \
             -m 'spending_connection.{conn_open_ack_succeed}' \
+            -m 'host_state_stt.{host_state_bind_port_succeeds_with_correct_root_witness}' \
             -m 'spending_channel.{send_packet_succeed}' \
             -m 'spending_channel/send_packet.{succeed_send_packet}' \
             -m 'ibc/core/ics_004/channel_datum_test/validate_send_packet.{succeed_at_packet_commitment_capacity}' \
@@ -878,6 +880,26 @@ jobs:
             -m 'host_state_stt.{host_state_bind_tenth_port_succeeds_at_global_cap}' \
             -m 'minting_port.{mint_port_tenth_port_succeeds_at_module_cap}' \
             -m 'minting_identifier.{mints_identifier_from_nonce_output_reference}' \
+            -m 'host_state_stt.{budget_precomputed_host_prune_terminal_client}' \
+            -m 'host_state_stt.{budget_precomputed_host_reclaim_client}' \
+            -m 'host_state_stt.{budget_precomputed_host_reclaim_connection}' \
+            -m 'host_state_stt.{budget_precomputed_host_reclaim_closed_channel}' \
+            -m 'host_state_stt.{budget_precomputed_host_reclaim_abandoned_channel}' \
+            -m 'host_state_stt.{host_state_update_module_state_accepts_active_operator}' \
+            -m 'host_state_stt.{host_state_reclaim_module_accepts_drained_shutdown_and_terminal_callback}' \
+            -m 'host_state_stt.{host_state_seals_fully_drained_shutdown_for_fixed_proof_window}' \
+            -m 'host_state_stt.{host_state_final_reclaim_burns_sealed_anchor_after_proof_window}' \
+            -m 'client_connection_reclamation.{client_reclaim_spend_and_burn_accept_exact_terminal_cleanup}' \
+            -m 'client_connection_reclamation.{connection_reclaim_spend_and_burn_accept_zero_child_cleanup}' \
+            -m 'channel_reclamation.{closed_drained_channel_reclaim_spend_and_burn_succeed}' \
+            -m 'channel_reclamation.{transfer_channel_reclaim_marker_accepts_settled_channel}' \
+            -m 'channel_reclamation.{abandoned_drained_channel_reclaim_succeeds_at_deadline}' \
+            -m 'transfer_escrow_shard_retirement.{retire_zero_balance_escrow_shard_module_root_spend_succeeds}' \
+            -m 'transfer_escrow_shard_retirement.{retire_zero_balance_escrow_shard_spend_succeeds}' \
+            -m 'transfer_escrow_shard_retirement.{retire_zero_balance_escrow_shard_mint_succeeds}' \
+            -m 'terminal_module_reclaim.{transfer_module_reclaim_pays_settled_root_to_deployer}' \
+            -m 'reference_validator.{reference_validator_reclaim_succeeds_after_proof_window}' \
+            -m 'host_state_nft.{burn_final_accepts_sealed_anchor_after_proof_window}' \
             > ../../aiken-check.json
 
       - name: Install gateway dependencies

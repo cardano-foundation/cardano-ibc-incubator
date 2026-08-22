@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LucidService } from '@shared/modules/lucid/lucid.service';
+import { KupoService } from '@shared/modules/kupo/kupo.service';
 import {
   QueryPacketAcknowledgementRequest,
   QueryPacketAcknowledgementResponse,
@@ -22,7 +23,13 @@ import {
   QueryNextSequenceReceiveResponse,
 } from '@cardano-ibc/proto-types/build/ibc/core/channel/v1/query';
 import { decodePaginationKey, generatePaginationKey, getPaginationParams } from '../../shared/helpers/pagination';
-import { ACK_RESULT, CHANNEL_ID_PREFIX, CHANNEL_TOKEN_PREFIX, REDEEMER_EMPTY_DATA, REDEEMER_TYPE } from '../../constant';
+import {
+  ACK_RESULT,
+  CHANNEL_ID_PREFIX,
+  CHANNEL_TOKEN_PREFIX,
+  REDEEMER_EMPTY_DATA,
+  REDEEMER_TYPE,
+} from '../../constant';
 import { ChannelDatum, decodeChannelDatum } from '../../shared/types/channel/channel-datum';
 import { PaginationKeyDto } from '../dtos/pagination.dto';
 import { bytesFromBase64 } from '@cardano-ibc/proto-types/build/helpers';
@@ -39,7 +46,11 @@ import {
 } from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
 import { convertHex2String, convertString2Hex, hashSHA256 } from '../../shared/helpers/hex';
-import { GrpcInvalidArgumentException, GrpcInternalException, GrpcNotFoundException } from '~@/exception/grpc_exceptions';
+import {
+  GrpcInvalidArgumentException,
+  GrpcInternalException,
+  GrpcNotFoundException,
+} from '~@/exception/grpc_exceptions';
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof, serializeNonExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
@@ -67,7 +78,17 @@ export class PacketService {
     @Inject(MithrilService) private mithrilService: MithrilService,
     @Inject(HISTORY_SERVICE) private historyService: HistoryService,
     @Inject(IbcTreeCacheService) private ibcTreeCacheService: IbcTreeCacheService,
+    @Inject(KupoService) private kupoService?: KupoService,
   ) {}
+
+  private assertRequestedPort(channelDatum: ChannelDatum, requestedPortId: string): void {
+    const datumPortId = convertHex2String(channelDatum.port);
+    if (datumPortId !== requestedPortId) {
+      throw new GrpcInvalidArgumentException(
+        `Invalid port, found port ${datumPortId} instead of ${requestedPortId} in datum`,
+      );
+    }
+  }
 
   private async ensureTreeAligned(): Promise<void> {
     const hostStateUtxo = await this.lucidService.findUtxoAtHostStateNFT();
@@ -128,10 +149,7 @@ export class PacketService {
 
   private async findChannelUtxo(channelTokenUnit: string) {
     const deploymentConfig = this.configService.get('deployment');
-    return this.lucidService.findUtxoAtWithUnit(
-      deploymentConfig.validators.spendChannel.address,
-      channelTokenUnit,
-    );
+    return this.lucidService.findUtxoAtWithUnit(deploymentConfig.validators.spendChannel.address, channelTokenUnit);
   }
 
   private async getChannelUtxo(channelId: string, queryHeight?: bigint) {
@@ -140,6 +158,59 @@ export class PacketService {
     return queryHeight
       ? this.historyService.findUtxoByUnitAtOrBeforeBlockNo(channelTokenUnit, queryHeight)
       : this.findChannelUtxo(channelTokenUnit);
+  }
+
+  /**
+   * Recover the final datum for a reclaimed closed channel. This is deliberately
+   * narrower than getChannelUtxo: only the retained channel end,
+   * nextSequenceRecv, and receipt non-membership proof paths use it; queries for
+   * packet leaves deleted during draining keep their live-UTxO semantics.
+   */
+  private async getCurrentOrReclaimedClosedChannelUtxo(channelId: string) {
+    const [mintChannelPolicyId, channelTokenName] = this.lucidService.getChannelTokenUnit(BigInt(channelId));
+    const channelTokenUnit = mintChannelPolicyId + channelTokenName;
+    try {
+      return await this.findChannelUtxo(channelTokenUnit);
+    } catch (error) {
+      if (!(error instanceof GrpcNotFoundException)) throw error;
+    }
+
+    if (!this.kupoService) {
+      throw new GrpcInternalException(
+        `Cannot recover reclaimed channel ${channelTokenUnit}: Kupo history service is unavailable`,
+      );
+    }
+
+    const historicalMatches = (await this.kupoService.queryLatestChannelUtxosFromHistory(channelTokenUnit)).filter(
+      (output) => output.authToken.unit === channelTokenUnit,
+    );
+    if (historicalMatches.length !== 1) {
+      throw new GrpcInternalException(
+        `Cannot recover reclaimed channel ${channelTokenUnit}: expected one canonical historical output, found ${historicalMatches.length}`,
+      );
+    }
+
+    const historicalOutput = historicalMatches[0];
+    if (!historicalOutput.spentAt || !historicalOutput.datum) {
+      throw new GrpcInternalException(
+        `Cannot recover reclaimed channel ${channelTokenUnit}: canonical historical output is not spent or has no inline datum`,
+      );
+    }
+
+    const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(historicalOutput.datum, 'channel');
+    const datumTokenUnit = `${channelDatum.token.policyId}${channelDatum.token.name}`;
+    if (
+      historicalOutput.authToken.unit !== channelTokenUnit ||
+      datumTokenUnit !== channelTokenUnit ||
+      channelDatum.lifecycle !== 'ChannelActive' ||
+      channelDatum.state.channel.state !== 'Close'
+    ) {
+      throw new GrpcInternalException(
+        `Cannot recover reclaimed channel ${channelTokenUnit}: final historical datum is not an active closed channel with the expected auth token`,
+      );
+    }
+
+    return historicalOutput;
   }
 
   private packetMatchesAcknowledgementQuery(
@@ -206,7 +277,8 @@ export class PacketService {
           const acknowledgementResponse = callback.OnRecvPacket?.acknowledgement?.response;
           if (!acknowledgementResponse) continue;
 
-          const acknowledgementCommitment = acknowledgementCommitmentFromResponse(acknowledgementResponse).toLowerCase();
+          const acknowledgementCommitment =
+            acknowledgementCommitmentFromResponse(acknowledgementResponse).toLowerCase();
           if (acknowledgementCommitment === normalizedCommitment) {
             return acknowledgementHexFromResponse(acknowledgementResponse);
           }
@@ -519,8 +591,11 @@ export class PacketService {
     this.logger.log(`channelId = ${channelId}, portId = ${portId}, sequence=${sequence}`, 'QueryPacketReceiptRequest');
 
     const proofContext = await this.getProofContext(options.queryHeight);
-    const utxo = await this.getChannelUtxo(channelId, proofContext.historical ? proofContext.proofHeight : undefined);
+    const utxo = proofContext.historical
+      ? await this.getChannelUtxo(channelId, proofContext.proofHeight)
+      : await this.getCurrentOrReclaimedClosedChannelUtxo(channelId);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
+    this.assertRequestedPort(channelDatumDecoded, portId);
     const packetReceipt = channelDatumDecoded.state.packet_receipt.has(BigInt(sequence));
 
     // if (!packetReceipt) throw new GrpcNotFoundException("Not found: 'Packet Receipt' not found");
@@ -638,13 +713,11 @@ export class PacketService {
     );
 
     const proofContext = await this.getProofContext(revisionHeight);
-    const utxo = await this.getChannelUtxo(channelId, proofContext.historical ? proofContext.proofHeight : undefined);
+    const utxo = proofContext.historical
+      ? await this.getChannelUtxo(channelId, proofContext.proofHeight)
+      : await this.getCurrentOrReclaimedClosedChannelUtxo(channelId);
     const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
-    if (convertHex2String(channelDatumDecoded.port) !== portId) {
-      throw new GrpcInvalidArgumentException(
-        `Invalid port, found port ${channelDatumDecoded.port} instead of ${portId} in datum`,
-      );
-    }
+    this.assertRequestedPort(channelDatumDecoded, portId);
     if (channelDatumDecoded.state.packet_receipt.has(sequence)) {
       throw new GrpcInvalidArgumentException(
         `Invalid sequence, sequence ${sequence} already exists in packet_receipt map`,
@@ -694,11 +767,11 @@ export class PacketService {
     this.logger.log(`channelId = ${channelId}, portId = ${portId}`, 'QueryNextSequenceReceiveRequest');
 
     const proofContext = await this.getProofContext(options.queryHeight);
-    const channelUtxo = await this.getChannelUtxo(
-      channelId,
-      proofContext.historical ? proofContext.proofHeight : undefined,
-    );
+    const channelUtxo = proofContext.historical
+      ? await this.getChannelUtxo(channelId, proofContext.proofHeight)
+      : await this.getCurrentOrReclaimedClosedChannelUtxo(channelId);
     const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(channelUtxo.datum!, 'channel');
+    this.assertRequestedPort(channelDatum, portId);
     const nextSequenceRecv = channelDatum.state.next_sequence_recv;
 
     if (!proofContext.historical) {

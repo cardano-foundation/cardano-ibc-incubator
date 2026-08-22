@@ -20,7 +20,9 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   VerifyMembership,
 }
 use ibc/core/ics_002_client_semantics/types/keys as client_keys_mod
-use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
+use ibc/core/ics_003_connection_semantics/connection_datum.{
+  ConnectionActive, ConnectionDatum,
+}
 use ibc/core/ics_003_connection_semantics/connection_redeemer.{
   ConnOpenAck, ConnOpenConfirm, SpendConnectionRedeemer,
 }
@@ -281,7 +283,12 @@ test conn_open_ack_succeed() {
     }
 
   let input_conn_datum =
-    ConnectionDatum { state: input_conn, token: mock.connection_token }
+    ConnectionDatum {
+      state: input_conn,
+      token: mock.connection_token,
+      live_channel_count: 0,
+      lifecycle: ConnectionActive,
+    }
 
   let conn_input = build_input(input_conn, mock.connection_token)
 
@@ -435,7 +442,12 @@ fn run_conn_open_confirm(client_is_active: Bool) -> Bool {
       delay_period: 0,
     }
   let input_conn_datum =
-    ConnectionDatum { state: input_conn, token: mock.connection_token }
+    ConnectionDatum {
+      state: input_conn,
+      token: mock.connection_token,
+      live_channel_count: 0,
+      lifecycle: ConnectionActive,
+    }
   let conn_input = build_input(input_conn_datum, mock.connection_token)
 
   let proof_height = Height { revision_number: 0, revision_height: 188485 }
@@ -573,7 +585,12 @@ test conn_open_ack_fails_without_host_state_co_spend() fail {
     }
 
   let input_conn_datum =
-    ConnectionDatum { state: input_conn, token: mock.connection_token }
+    ConnectionDatum {
+      state: input_conn,
+      token: mock.connection_token,
+      live_channel_count: 0,
+      lifecycle: ConnectionActive,
+    }
 
   let conn_input = build_input(input_conn, mock.connection_token)
 

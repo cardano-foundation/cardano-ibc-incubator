@@ -19,6 +19,8 @@ use aiken/collection/pairs
 use aiken/crypto.{Blake2b_224, Hash, Script, VerificationKeyHash}
 use aiken/primitive/bytearray
 use ibc/auth.{AuthToken}
+use ibc/core/ics_005/types/keys as port_keys
+use ibc/core/ics_025_handler_interface/reclamation
 
 // Empty ICS-23 Merkle tree root (32 bytes of zeros)
 pub const empty_ibc_state_root =
@@ -31,6 +33,31 @@ pub const host_state_token_name = "ibc_host_state"
 /// must have a ledger-safe upper bound. The deployment currently registers
 /// three ports and can add up to this fixed protocol-wide maximum.
 pub const max_bound_ports = 10
+
+/// Retired module registrations move under a reserved NUL-prefixed key. Valid
+/// ICS port identifiers can never start with NUL, so normal module lookups stop
+/// finding them while cold rebuild retains the original registration value and
+/// can strip the marker to reconstruct the immutable `ports/{port}` leaf.
+pub fn retired_port_marker(port_id: ByteArray) -> ByteArray {
+  bytearray.concat(#"00", port_id)
+}
+
+pub fn is_retired_port_marker(key: ByteArray) -> Bool {
+  if bytearray.length(key) == 0 {
+    False
+  } else {
+    and {
+      bytearray.at(key, 0) == 0,
+      port_keys.is_valid_port_id(bytearray.drop(key, 1)),
+    }
+  }
+}
+
+pub fn has_only_retired_ports(
+  registrations: Pairs<ByteArray, ModuleRegistration>,
+) -> Bool {
+  list.all(registrations, fn(pair) { is_retired_port_marker(pair.1st) })
+}
 
 /// Order byte-string map keys for `pairs.insert_by_ascending_key` using the
 /// order required by canonical CBOR.
@@ -63,6 +90,7 @@ fn compare_port_keys_for_insertion(
 pub type ShutdownState {
   Active
   ShuttingDown { initiated_at: Int, grace_period_end: Int }
+  Sealed { sealed_at: Int, proof_window_end: Int }
 }
 
 /// The immutable authority registered for a bound IBC port.
@@ -96,6 +124,12 @@ pub type HostState {
   // Optional: Timestamp of last update (Unix epoch milliseconds)
   // Useful for debugging and monitoring
   last_update_time: Int,
+  // Authenticated live-object counts. Creation increments exactly one count;
+  // reclamation decrements it exactly once. Creation sequence counters above
+  // remain historical totals and are never decremented or reused.
+  live_client_count: Int,
+  live_connection_count: Int,
+  live_channel_count: Int,
 }
 
 /// HostStateDatum wraps the state with the NFT policy for verification
@@ -115,6 +149,7 @@ pub fn is_active(shutdown: ShutdownState) -> Bool {
   when shutdown is {
     Active -> True
     ShuttingDown { .. } -> False
+    Sealed { .. } -> False
   }
 }
 
@@ -122,6 +157,14 @@ pub fn is_shutting_down(shutdown: ShutdownState) -> Bool {
   when shutdown is {
     Active -> False
     ShuttingDown { .. } -> True
+    Sealed { .. } -> False
+  }
+}
+
+pub fn is_sealed(shutdown: ShutdownState) -> Bool {
+  when shutdown is {
+    Sealed { .. } -> True
+    Active | ShuttingDown { .. } -> False
   }
 }
 
@@ -143,6 +186,9 @@ pub fn is_initialized_valid(
     state.next_client_sequence == 0,
     state.next_connection_sequence == 0,
     state.next_channel_sequence == 0,
+    state.live_client_count == 0,
+    state.live_connection_count == 0,
+    state.live_channel_count == 0,
     state.bound_port == [],
     state.ibc_state_root == empty_ibc_state_root,
     shutdown == Active,
@@ -161,6 +207,95 @@ pub fn validate_version_increment(old: HostState, new: HostState) -> Bool {
   new.version == old.version + 1
 }
 
+/// Validate that no operation changed any live-object count.
+pub fn validate_live_counts_unchanged(old: HostState, new: HostState) -> Bool {
+  and {
+    new.live_client_count == old.live_client_count,
+    new.live_connection_count == old.live_connection_count,
+    new.live_channel_count == old.live_channel_count,
+  }
+}
+
+pub fn validate_live_client_count_increment(
+  old: HostState,
+  new: HostState,
+) -> Bool {
+  and {
+    old.live_client_count >= 0,
+    new.live_client_count == old.live_client_count + 1,
+    new.live_connection_count == old.live_connection_count,
+    new.live_channel_count == old.live_channel_count,
+  }
+}
+
+pub fn validate_live_client_count_decrement(
+  old: HostState,
+  new: HostState,
+) -> Bool {
+  and {
+    old.live_client_count > 0,
+    new.live_client_count == old.live_client_count - 1,
+    new.live_connection_count == old.live_connection_count,
+    new.live_channel_count == old.live_channel_count,
+  }
+}
+
+pub fn validate_live_connection_count_increment(
+  old: HostState,
+  new: HostState,
+) -> Bool {
+  and {
+    old.live_connection_count >= 0,
+    new.live_client_count == old.live_client_count,
+    new.live_connection_count == old.live_connection_count + 1,
+    new.live_channel_count == old.live_channel_count,
+  }
+}
+
+pub fn validate_live_connection_count_decrement(
+  old: HostState,
+  new: HostState,
+) -> Bool {
+  and {
+    old.live_connection_count > 0,
+    new.live_client_count == old.live_client_count,
+    new.live_connection_count == old.live_connection_count - 1,
+    new.live_channel_count == old.live_channel_count,
+  }
+}
+
+pub fn validate_live_channel_count_increment(
+  old: HostState,
+  new: HostState,
+) -> Bool {
+  and {
+    old.live_channel_count >= 0,
+    new.live_client_count == old.live_client_count,
+    new.live_connection_count == old.live_connection_count,
+    new.live_channel_count == old.live_channel_count + 1,
+  }
+}
+
+pub fn validate_live_channel_count_decrement(
+  old: HostState,
+  new: HostState,
+) -> Bool {
+  and {
+    old.live_channel_count > 0,
+    new.live_client_count == old.live_client_count,
+    new.live_connection_count == old.live_connection_count,
+    new.live_channel_count == old.live_channel_count - 1,
+  }
+}
+
+pub fn has_no_live_objects(state: HostState) -> Bool {
+  and {
+    state.live_client_count == 0,
+    state.live_connection_count == 0,
+    state.live_channel_count == 0,
+  }
+}
+
 /// Validate HostState transition for client creation
 /// 
 /// Requirements:
@@ -176,6 +311,7 @@ pub fn validate_create_client(old: HostStateDatum, new: HostStateDatum) -> Bool 
     new.state.next_client_sequence == old.state.next_client_sequence + 1,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
+    validate_live_client_count_increment(old.state, new.state),
     new.state.bound_port == old.state.bound_port,
     old.shutdown |> is_active,
     new.shutdown == old.shutdown,
@@ -194,6 +330,7 @@ pub fn validate_create_connection(
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence + 1,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
+    validate_live_connection_count_increment(old.state, new.state),
     new.state.bound_port == old.state.bound_port,
     old.shutdown |> is_active,
     new.shutdown == old.shutdown,
@@ -209,6 +346,7 @@ pub fn validate_create_channel(old: HostStateDatum, new: HostStateDatum) -> Bool
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence + 1,
+    validate_live_channel_count_increment(old.state, new.state),
     new.state.bound_port == old.state.bound_port,
     old.shutdown |> is_active,
     new.shutdown == old.shutdown,
@@ -224,23 +362,21 @@ pub fn validate_bind_port(
   port_id: ByteArray,
   registration: ModuleRegistration,
 ) -> Bool {
-  let port_id_length = bytearray.length(port_id)
-
   // A port can only be bound once.
   //
   // If a port already has a registration, we reject the transition.
   expect (!pairs.has_key(old.state.bound_port, port_id))?
 
   and {
-    // The minting policy enforces the complete ICS identifier alphabet while
-    // HostState cheaply retains the consensus-critical textual length bound.
-    port_id_length >= 2,
-    port_id_length <= 128,
+    // Revalidate the complete identifier here so a Host-only transition can
+    // never install a reserved retirement marker as a live registration.
+    port_keys.is_valid_port_id(port_id),
     list.length(old.state.bound_port) < max_bound_ports,
     validate_version_increment(old.state, new.state),
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
+    validate_live_counts_unchanged(old.state, new.state),
     // Port registrations are immutable and kept in canonical CBOR map order.
     new.state.bound_port == pairs.insert_by_ascending_key(
       old.state.bound_port,
@@ -275,10 +411,53 @@ pub fn validate_update_only_root(
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
+    validate_live_counts_unchanged(old.state, new.state),
     new.state.bound_port == old.state.bound_port,
     new.shutdown == old.shutdown,
+    !is_sealed(old.shutdown),
     new.nft_policy == old.nft_policy,
     new.deployer == old.deployer,
+  }
+}
+
+fn validate_reclamation_shape(old: HostStateDatum, new: HostStateDatum) -> Bool {
+  and {
+    validate_version_increment(old.state, new.state),
+    new.state.next_client_sequence == old.state.next_client_sequence,
+    new.state.next_connection_sequence == old.state.next_connection_sequence,
+    new.state.next_channel_sequence == old.state.next_channel_sequence,
+    new.state.bound_port == old.state.bound_port,
+    new.shutdown == old.shutdown,
+    !is_sealed(old.shutdown),
+    new.nft_policy == old.nft_policy,
+    new.deployer == old.deployer,
+  }
+}
+
+pub fn validate_reclaim_client(old: HostStateDatum, new: HostStateDatum) -> Bool {
+  and {
+    validate_reclamation_shape(old, new),
+    validate_live_client_count_decrement(old.state, new.state),
+  }
+}
+
+pub fn validate_reclaim_connection(
+  old: HostStateDatum,
+  new: HostStateDatum,
+) -> Bool {
+  and {
+    validate_reclamation_shape(old, new),
+    validate_live_connection_count_decrement(old.state, new.state),
+  }
+}
+
+pub fn validate_reclaim_channel(
+  old: HostStateDatum,
+  new: HostStateDatum,
+) -> Bool {
+  and {
+    validate_reclamation_shape(old, new),
+    validate_live_channel_count_decrement(old.state, new.state),
   }
 }
 
@@ -295,6 +474,60 @@ pub fn validate_heartbeat(old: HostStateDatum, new: HostStateDatum) -> Bool {
     old.shutdown |> is_active,
     new.state.ibc_state_root == old.state.ibc_state_root,
     new.state.last_update_time > old.state.last_update_time,
+  }
+}
+
+/// Advance a registered application's independent state while preserving the
+/// canonical IBC commitment. This remains available during the drain phase so
+/// application children (for example zero-principal transfer escrow shards)
+/// cannot strand shutdown. The top-level HostState validator binds `port_id`
+/// to the registered module root and requires an operator redeemer.
+pub fn validate_update_module_state(
+  old: HostStateDatum,
+  new: HostStateDatum,
+) -> Bool {
+  and {
+    validate_update_only_root(old, new),
+    new.state.ibc_state_root == old.state.ibc_state_root,
+    new.state.last_update_time > old.state.last_update_time,
+  }
+}
+
+/// Remove exactly one settled module registration during the bounded shutdown
+/// cleanup phase. The IBC root is preserved deliberately: the `ports/{port}`
+/// commitment remains a historical fact even after its local capability root
+/// has been reclaimed.
+pub fn validate_reclaim_module(
+  old: HostStateDatum,
+  new: HostStateDatum,
+  port_id: ByteArray,
+) -> Bool {
+  expect Some(registration) = pairs.get_first(old.state.bound_port, port_id)
+  let marker = retired_port_marker(port_id)
+  expect (!pairs.has_key(old.state.bound_port, marker))?
+  let without_active_port = pairs.delete_first(old.state.bound_port, port_id)
+  let expected_registrations =
+    pairs.insert_by_ascending_key(
+      without_active_port,
+      marker,
+      registration,
+      compare_port_keys_for_insertion,
+    )
+
+  and {
+    old.shutdown |> is_shutting_down,
+    has_no_live_objects(old.state),
+    validate_version_increment(old.state, new.state),
+    validate_live_counts_unchanged(old.state, new.state),
+    new.state.ibc_state_root == old.state.ibc_state_root,
+    new.state.next_client_sequence == old.state.next_client_sequence,
+    new.state.next_connection_sequence == old.state.next_connection_sequence,
+    new.state.next_channel_sequence == old.state.next_channel_sequence,
+    new.state.bound_port == expected_registrations,
+    new.state.last_update_time > old.state.last_update_time,
+    new.shutdown == old.shutdown,
+    new.nft_policy == old.nft_policy,
+    new.deployer == old.deployer,
   }
 }
 
@@ -315,6 +548,7 @@ pub fn validate_enter_shutdown(
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
+    validate_live_counts_unchanged(old.state, new.state),
     new.state.bound_port == old.state.bound_port,
     new.nft_policy == old.nft_policy,
     new.deployer == old.deployer,
@@ -327,6 +561,50 @@ pub fn validate_finalize_shutdown(
 ) -> Bool {
   when datum.shutdown is {
     ShuttingDown { grace_period_end, .. } -> valid_from >= grace_period_end
-    Active -> False
+    Active | Sealed { .. } -> False
+  }
+}
+
+/// Seal a fully drained HostState at the same commitment root for a fixed proof
+/// window. Root-shape validation remains the responsibility of the typed
+/// HostState transition; this helper establishes the lifecycle/count invariants.
+pub fn validate_seal_shutdown(
+  old: HostStateDatum,
+  new: HostStateDatum,
+  valid_from: Int,
+) -> Bool {
+  when old.shutdown is {
+    ShuttingDown { grace_period_end, .. } -> and {
+        valid_from >= grace_period_end,
+        has_no_live_objects(old.state),
+        old.state.bound_port |> has_only_retired_ports,
+        validate_version_increment(old.state, new.state),
+        validate_live_counts_unchanged(old.state, new.state),
+        new.state.ibc_state_root == old.state.ibc_state_root,
+        new.state.next_client_sequence == old.state.next_client_sequence,
+        new.state.next_connection_sequence == old.state.next_connection_sequence,
+        new.state.next_channel_sequence == old.state.next_channel_sequence,
+        new.state.bound_port == old.state.bound_port,
+        new.state.last_update_time == valid_from,
+        new.shutdown == Sealed {
+          sealed_at: valid_from,
+          proof_window_end: reclamation.proof_window_end(valid_from),
+        },
+        new.nft_policy == old.nft_policy,
+        new.deployer == old.deployer,
+      }
+    Active | Sealed { .. } -> False
+  }
+}
+
+/// The HostState NFT may only enter its final burn after the terminal proof
+/// window and while all authenticated global dependency counts remain zero.
+pub fn is_host_state_reclaimable(datum: HostStateDatum, valid_from: Int) -> Bool {
+  when datum.shutdown is {
+    Sealed { proof_window_end, .. } -> and {
+        has_no_live_objects(datum.state),
+        reclamation.has_reached_not_before(valid_from, proof_window_end),
+      }
+    Active | ShuttingDown { .. } -> False
   }
 }

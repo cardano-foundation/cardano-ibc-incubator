@@ -79,6 +79,7 @@ describe('PacketService signer wallet selection for escrow', () => {
       {} as DenomTraceService,
       {} as any,
       { executePacket: jest.fn() } as any,
+      {} as any,
     );
 
     // Keep this test scoped to escrow wallet-selection behavior instead of HostState internals.
@@ -133,6 +134,10 @@ describe('PacketService signer wallet selection for escrow', () => {
       shardTokenUnit: 'shard-policy.shard-token',
       transferModuleUtxo,
       registrySiblings: Array(64).fill('00'.repeat(32)),
+      oldChannelLiveEscrowShardCount: 0n,
+      channelLiveEscrowShardCountSiblings: Array(64).fill(
+        '00'.repeat(32),
+      ),
       encodedUpdatedTransferModuleDatum: 'encoded-updated-transfer-module-datum',
     });
 
@@ -189,8 +194,12 @@ describe('PacketService signer wallet selection for escrow', () => {
     );
     expect(lucidServiceMock.encode).toHaveBeenCalledWith(
       expect.objectContaining({
-        CreateEscrowShard: expect.objectContaining({
+        CreateEscrowShardV2: expect.objectContaining({
           registry_siblings: Array(64).fill('00'.repeat(32)),
+          old_channel_live_escrow_shard_count: 0n,
+          channel_live_escrow_shard_count_siblings: Array(64).fill(
+            '00'.repeat(32),
+          ),
         }),
       }),
       'transferEscrowShardRedeemer',

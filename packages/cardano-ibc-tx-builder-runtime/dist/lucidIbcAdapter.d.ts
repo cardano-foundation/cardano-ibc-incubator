@@ -38,6 +38,22 @@ type DeploymentConfig = {
             refUtxo: RefUtxo;
             scriptHash: string;
         };
+        mintLifecycleCreationMarker: {
+            refUtxo: RefUtxo;
+            scriptHash: string;
+        };
+        mintLifecycleReclamationMarker: {
+            refUtxo: RefUtxo;
+            scriptHash: string;
+        };
+        mintLifecycleOperationalMarker: {
+            refUtxo: RefUtxo;
+            scriptHash: string;
+        };
+        mintLifecyclePacketMarker: {
+            refUtxo: RefUtxo;
+            scriptHash: string;
+        };
         mintConnectionStt: {
             scriptHash: string;
         };
@@ -89,6 +105,8 @@ export declare class LucidIbcAdapter {
     getConnectionTokenUnit(connectionId: bigint): [string, string];
     getChannelTokenUnit(channelId: bigint): [string, string];
     private payTransferEscrowDelta;
+    private hostStateContinuationAssets;
+    private authorizePacketHostTransition;
     createUnsignedSendPacketEscrowTx(dto: any): TxBuilder;
     createUnsignedSendPacketBurnTx(dto: any): TxBuilder;
     private generateTokenName;

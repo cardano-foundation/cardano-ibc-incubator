@@ -55,6 +55,10 @@ export type WithTransferModuleRegistryUpdate = {
   encodedUpdatedTransferModuleDatum?: string;
 };
 
+export type WithUpdatedTransferModuleDatum = {
+  encodedUpdatedTransferModuleDatum: string;
+};
+
 export type WithChannelSpend = {
   encodedSpendChannelRedeemer: string;
   encodedUpdatedChannelDatum: string;

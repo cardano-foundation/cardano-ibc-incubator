@@ -21,6 +21,7 @@ import {
 import { HostStateDatum } from 'src/shared/types/host-state-datum';
 import { parseClientSequence, parseConnectionSequence } from 'src/shared/helpers/sequence';
 import { ConnectionDatum } from 'src/shared/types/connection/connection-datum';
+import { SpendConnectionRedeemer } from 'src/shared/types/connection/connection-redeemer';
 import { MintChannelRedeemer, SpendChannelRedeemer } from 'src/shared/types/channel/channel-redeemer';
 import { ConfigService } from '@nestjs/config';
 import { AuthToken } from 'src/shared/types/auth-token';
@@ -545,6 +546,22 @@ export class ChannelService {
       connectionUtxo.datum!,
       'connection',
     );
+    if (connectionDatum.lifecycle !== 'ConnectionActive') {
+      throw new GrpcInternalException('Cannot create a channel on a retiring connection');
+    }
+    const updatedConnectionDatum: ConnectionDatum = {
+      ...connectionDatum,
+      live_channel_count: connectionDatum.live_channel_count + 1n,
+    };
+    const spendConnectionRedeemer: SpendConnectionRedeemer = 'IncrementChannelCount';
+    const encodedSpendConnectionRedeemer = await this.lucidService.encode<SpendConnectionRedeemer>(
+      spendConnectionRedeemer,
+      'spendConnectionRedeemer',
+    );
+    const encodedUpdatedConnectionDatum = await this.lucidService.encode<ConnectionDatum>(
+      updatedConnectionDatum,
+      'connection',
+    );
     const connectionClientSequence = parseClientSequence(convertHex2String(connectionDatum.state.client_id));
     // Get the token unit associated with the client
     const clientTokenUnit = this.lucidService.getClientTokenUnit(connectionClientSequence);
@@ -585,6 +602,7 @@ export class ChannelService {
       },
       port: convertString2Hex(channelOpenInitOperator.port_id),
       token: channelToken,
+      lifecycle: 'ChannelActive',
     };
 
     const {
@@ -607,6 +625,7 @@ export class ChannelService {
         ...hostStateDatum.state,
         version: hostStateDatum.state.version + 1n,
         next_channel_sequence: hostStateDatum.state.next_channel_sequence + 1n,
+        live_channel_count: hostStateDatum.state.live_channel_count + 1n,
         ibc_state_root: newRoot,
         last_update_time: BigInt(Date.now()),
       },
@@ -646,6 +665,8 @@ export class ChannelService {
       hostStateUtxo,
       encodedHostStateRedeemer,
       connectionUtxo,
+      encodedSpendConnectionRedeemer,
+      encodedUpdatedConnectionDatum,
       clientUtxo,
       moduleKey: moduleConfig.key,
       moduleUtxo,
@@ -690,6 +711,22 @@ export class ChannelService {
     const connectionUtxo = await this.lucidService.findUtxoByUnit(connectionTokenUnit);
     const connectionDatum: ConnectionDatum = await this.lucidService.decodeDatum<ConnectionDatum>(
       connectionUtxo.datum!,
+      'connection',
+    );
+    if (connectionDatum.lifecycle !== 'ConnectionActive') {
+      throw new GrpcInternalException('Cannot create a channel on a retiring connection');
+    }
+    const updatedConnectionDatum: ConnectionDatum = {
+      ...connectionDatum,
+      live_channel_count: connectionDatum.live_channel_count + 1n,
+    };
+    const spendConnectionRedeemer: SpendConnectionRedeemer = 'IncrementChannelCount';
+    const encodedSpendConnectionRedeemer = await this.lucidService.encode<SpendConnectionRedeemer>(
+      spendConnectionRedeemer,
+      'spendConnectionRedeemer',
+    );
+    const encodedUpdatedConnectionDatum = await this.lucidService.encode<ConnectionDatum>(
+      updatedConnectionDatum,
       'connection',
     );
     const connectionClientSequence = parseClientSequence(convertHex2String(connectionDatum.state.client_id));
@@ -739,6 +776,7 @@ export class ChannelService {
       },
       port: convertString2Hex(channelOpenTryOperator.port_id),
       token: channelToken,
+      lifecycle: 'ChannelActive',
     };
 
     const { newRoot, channelSiblings, nextSequenceSendSiblings, nextSequenceRecvSiblings, nextSequenceAckSiblings } =
@@ -755,6 +793,7 @@ export class ChannelService {
         ...hostStateDatum.state,
         version: hostStateDatum.state.version + 1n,
         next_channel_sequence: hostStateDatum.state.next_channel_sequence + 1n,
+        live_channel_count: hostStateDatum.state.live_channel_count + 1n,
         ibc_state_root: newRoot,
         last_update_time: BigInt(Date.now()),
       },
@@ -797,6 +836,8 @@ export class ChannelService {
       hostStateUtxo,
       encodedHostStateRedeemer,
       connectionUtxo,
+      encodedSpendConnectionRedeemer,
+      encodedUpdatedConnectionDatum,
       clientUtxo,
       moduleUtxo,
       encodedSpendModuleRedeemer,

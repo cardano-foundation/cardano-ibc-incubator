@@ -5,6 +5,7 @@ export * from './ack-packet-unescrow.dto';
 export * from './recv-packet-mint.dto';
 export * from './recv-packet-unescrow.dto';
 export * from './prune-packet-history.dto';
+export * from './retire-transfer-escrow-shard.dto';
 export * from './send-packet-module.dto';
 export * from './send-packet-escrow.dto';
 export * from './send-packet-burn.dto';

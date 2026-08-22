@@ -94,6 +94,7 @@ describe('PacketService recv packet fail-open regression', () => {
       {} as DenomTraceService,
       {} as any,
       { executePacket: jest.fn() } as any,
+      {} as any,
     );
   });
 

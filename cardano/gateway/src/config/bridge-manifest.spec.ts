@@ -21,10 +21,12 @@ function buildValidator(name: string) {
 
 function buildHandlerJsonDeployment() {
   return {
+    schemaVersion: 6 as const,
     deployedAt: '2026-04-01T12:34:56.000Z',
     hostStateNFT: {
       policyId: 'host-policy',
       name: 'host-token',
+      script: 'host-policy-script',
     },
     validators: {
       hostStateStt: buildValidator('hostStateStt'),
@@ -34,10 +36,16 @@ function buildHandlerJsonDeployment() {
         ...buildValidator('spendChannel'),
         refValidator: {
           acknowledge_packet: { scriptHash: 'ack-hash', refUtxo: { txHash: 'ack-tx', outputIndex: 2 } },
-          chan_close_confirm: { scriptHash: 'close-confirm-hash', refUtxo: { txHash: 'close-confirm-tx', outputIndex: 3 } },
+          chan_close_confirm: {
+            scriptHash: 'close-confirm-hash',
+            refUtxo: { txHash: 'close-confirm-tx', outputIndex: 3 },
+          },
           chan_close_init: { scriptHash: 'close-init-hash', refUtxo: { txHash: 'close-init-tx', outputIndex: 4 } },
           chan_open_ack: { scriptHash: 'open-ack-hash', refUtxo: { txHash: 'open-ack-tx', outputIndex: 5 } },
-          chan_open_confirm: { scriptHash: 'open-confirm-hash', refUtxo: { txHash: 'open-confirm-tx', outputIndex: 6 } },
+          chan_open_confirm: {
+            scriptHash: 'open-confirm-hash',
+            refUtxo: { txHash: 'open-confirm-tx', outputIndex: 6 },
+          },
           recv_packet: { scriptHash: 'recv-hash', refUtxo: { txHash: 'recv-tx', outputIndex: 7 } },
           prune_packet_history: { scriptHash: 'prune-hash', refUtxo: { txHash: 'prune-tx', outputIndex: 10 } },
           send_packet: { scriptHash: 'send-hash', refUtxo: { txHash: 'send-tx', outputIndex: 8 } },
@@ -51,6 +59,10 @@ function buildHandlerJsonDeployment() {
       mintClientStt: buildValidator('mintClientStt'),
       mintConnectionStt: buildValidator('mintConnectionStt'),
       mintChannelStt: buildValidator('mintChannelStt'),
+      mintLifecycleCreationMarker: buildValidator('mintLifecycleCreationMarker'),
+      mintLifecycleReclamationMarker: buildValidator('mintLifecycleReclamationMarker'),
+      mintLifecycleOperationalMarker: buildValidator('mintLifecycleOperationalMarker'),
+      mintLifecyclePacketMarker: buildValidator('mintLifecyclePacketMarker'),
       mintVoucher: buildValidator('mintVoucher'),
       mintTransferEscrowShard: buildValidator('mintTransferEscrowShard'),
       mintPort: buildValidator('mintPort'),
@@ -88,7 +100,7 @@ describe('bridge manifest normalization', () => {
     });
 
     expect(loaded.bridgeManifest).toMatchObject({
-      schema_version: 4,
+      schema_version: 6,
       deployment_id: 'cardano-devnet:host-policy.host-token',
       deployed_at: '2026-04-01T12:34:56.000Z',
       cardano: {
@@ -99,6 +111,7 @@ describe('bridge manifest normalization', () => {
       host_state_nft: {
         policy_id: 'host-policy',
         token_name: 'host-token',
+        script: 'host-policy-script',
       },
     });
     expect(loaded.deployment.validators.voucherMetadata).toEqual({
@@ -120,6 +133,18 @@ describe('bridge manifest normalization', () => {
       script_hash: 'prune-hash',
       ref_utxo: { tx_hash: 'prune-tx', output_index: 10 },
     });
+    expect(loaded.bridgeManifest.validators.mint_lifecycle_creation_marker.script_hash).toBe(
+      'mintLifecycleCreationMarker-hash',
+    );
+    expect(loaded.bridgeManifest.validators.mint_lifecycle_reclamation_marker.script_hash).toBe(
+      'mintLifecycleReclamationMarker-hash',
+    );
+    expect(loaded.bridgeManifest.validators.mint_lifecycle_operational_marker.script_hash).toBe(
+      'mintLifecycleOperationalMarker-hash',
+    );
+    expect(loaded.bridgeManifest.validators.mint_lifecycle_packet_marker.script_hash).toBe(
+      'mintLifecyclePacketMarker-hash',
+    );
     expect(loaded.bridgeManifest.trace_registry).toEqual({
       address: 'trace-registry-address',
       shard_policy_id: 'trace-shard-policy',
@@ -151,8 +176,24 @@ describe('bridge manifest normalization', () => {
         chain_id: 'cardano-devnet',
         network_magic: 42,
         network: 'Custom',
-      })
+      }),
     ).toThrow('Invalid bridge config: "deployedAt" must be a non-empty string');
+  });
+
+  it('rejects unversioned and pre-v6 handler.json deployments', () => {
+    const { schemaVersion: _schemaVersion, ...unversioned } = buildHandlerJsonDeployment();
+    const cardano = {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    };
+
+    expect(() => normalizeHandlerJsonDeploymentConfig(unversioned, cardano)).toThrow(
+      'Invalid bridge config: "schemaVersion" must be a non-negative integer',
+    );
+    expect(() =>
+      normalizeHandlerJsonDeploymentConfig({ ...buildHandlerJsonDeployment(), schemaVersion: 5 }, cardano),
+    ).toThrow('Invalid bridge config: "schemaVersion" must be 6');
   });
 
   it('rejects bridge manifests without deployed_at', () => {
@@ -181,7 +222,41 @@ describe('bridge manifest normalization', () => {
         ...legacy.bridgeManifest,
         schema_version: 3,
       }),
-    ).toThrow('Invalid bridge config: "schema_version" must be 4');
+    ).toThrow('Invalid bridge config: "schema_version" must be 6');
+  });
+
+  it('rejects schema-v6 configs that omit either required lifecycle policy', () => {
+    const deployment = buildHandlerJsonDeployment();
+    const withoutCreation = structuredClone(deployment) as any;
+    delete withoutCreation.validators.mintLifecycleCreationMarker;
+    expect(() =>
+      normalizeHandlerJsonDeploymentConfig(withoutCreation, {
+        chain_id: 'cardano-devnet',
+        network_magic: 42,
+        network: 'Custom',
+      }),
+    ).toThrow(/validators\.mintLifecycleCreationMarker/);
+
+    const loaded = normalizeHandlerJsonDeploymentConfig(deployment, {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+    const withoutReclamation = structuredClone(loaded.bridgeManifest) as any;
+    delete withoutReclamation.validators.mint_lifecycle_reclamation_marker;
+    expect(() => normalizeBridgeManifestConfig(withoutReclamation)).toThrow(
+      /validators\.mint_lifecycle_reclamation_marker/,
+    );
+
+    const withoutOperational = structuredClone(loaded.bridgeManifest) as any;
+    delete withoutOperational.validators.mint_lifecycle_operational_marker;
+    expect(() => normalizeBridgeManifestConfig(withoutOperational)).toThrow(
+      /validators\.mint_lifecycle_operational_marker/,
+    );
+
+    const withoutPacket = structuredClone(loaded.bridgeManifest) as any;
+    delete withoutPacket.validators.mint_lifecycle_packet_marker;
+    expect(() => normalizeBridgeManifestConfig(withoutPacket)).toThrow(/validators\.mint_lifecycle_packet_marker/);
   });
 
   it('accepts legacy voucher_metadata validator payloads and normalizes them to address-only', () => {
@@ -193,7 +268,7 @@ describe('bridge manifest normalization', () => {
 
     const legacyManifest = {
       ...current.bridgeManifest,
-      schema_version: 4,
+      schema_version: 6,
       validators: {
         ...current.bridgeManifest.validators,
         voucher_metadata: {
@@ -254,6 +329,18 @@ describe('bridge manifest normalization', () => {
 
     expect(fs.readFileSync).toHaveBeenCalledWith('/tmp/bridge-manifest.json', 'utf8');
     expect(loaded.deployment).toEqual(legacy.deployment);
+  });
+
+  it('rejects a v6 manifest that omits the final-burn HostState policy script', () => {
+    const loaded = normalizeHandlerJsonDeploymentConfig(buildHandlerJsonDeployment(), {
+      chain_id: 'cardano-devnet',
+      network_magic: 42,
+      network: 'Custom',
+    });
+    const manifest = structuredClone(loaded.bridgeManifest) as any;
+    delete manifest.host_state_nft.script;
+
+    expect(() => normalizeBridgeManifestConfig(manifest)).toThrow(/host_state_nft\.script/);
   });
 
   it('falls back to the default handler.json path when no explicit startup source is set', () => {

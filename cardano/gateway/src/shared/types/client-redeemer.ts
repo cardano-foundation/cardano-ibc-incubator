@@ -1,7 +1,10 @@
 import { type Data } from '@lucid-evolution/lucid';
 import { ClientMessage } from './msgs/client-message';
+import { AuthToken } from './auth-token';
 
-type MintClientRedeemer = 'MintClient';
+export type MintClientRedeemer =
+  | 'MintClient'
+  | { BurnClient: { token: AuthToken; reclaim_to: string } };
 
 export type SpendClientRedeemer =
   | 'Other'
@@ -9,16 +12,21 @@ export type SpendClientRedeemer =
       UpdateClient: {
         msg: ClientMessage;
       };
-    };
+    }
+  | 'PruneTerminalConsensusStates'
+  | { ReclaimClient: { reclaim_to: string } };
 
 export function decodeMintClientRedeemer(
   mintClientRedeemer: string,
   Lucid: typeof import('@lucid-evolution/lucid'),
 ): MintClientRedeemer {
   const { Data } = Lucid;
-  const MintClientRedeemerSchema = Data.Enum([Data.Literal('MintClient')]);
-  Data.from(mintClientRedeemer, MintClientRedeemerSchema as unknown as undefined);
-  return 'MintClient';
+  const AuthTokenSchema = Data.Object({ policyId: Data.Bytes(), name: Data.Bytes() });
+  const MintClientRedeemerSchema = Data.Enum([
+    Data.Literal('MintClient'),
+    Data.Object({ BurnClient: Data.Object({ token: AuthTokenSchema, reclaim_to: Data.Bytes() }) }),
+  ]);
+  return Data.from(mintClientRedeemer, MintClientRedeemerSchema as unknown as MintClientRedeemer);
 }
 
 export async function encodeMintClientRedeemer(
@@ -26,11 +34,12 @@ export async function encodeMintClientRedeemer(
   Lucid: typeof import('@lucid-evolution/lucid'),
 ) {
   const { Data } = Lucid;
-  const MintClientRedeemerSchema = Data.Enum([Data.Literal('MintClient')]);
-  if (mintClientRedeemer !== 'MintClient') {
-    throw new Error(`Unsupported mint client redeemer: ${String(mintClientRedeemer)}`);
-  }
-  return Data.to(undefined, MintClientRedeemerSchema as unknown as undefined, {
+  const AuthTokenSchema = Data.Object({ policyId: Data.Bytes(), name: Data.Bytes() });
+  const MintClientRedeemerSchema = Data.Enum([
+    Data.Literal('MintClient'),
+    Data.Object({ BurnClient: Data.Object({ token: AuthTokenSchema, reclaim_to: Data.Bytes() }) }),
+  ]);
+  return Data.to(mintClientRedeemer, MintClientRedeemerSchema as unknown as MintClientRedeemer, {
     canonical: true,
   });
 }
@@ -122,6 +131,8 @@ export async function encodeSpendClientRedeemer(
       UpdateClient: Data.Object({ msg: ClientMessageSchema }),
     }),
     Data.Literal('Other'),
+    Data.Literal('PruneTerminalConsensusStates'),
+    Data.Object({ ReclaimClient: Data.Object({ reclaim_to: Data.Bytes() }) }),
   ]);
   type TSpendClientRedeemer = Data.Static<typeof SpendClientRedeemerSchema>;
   const TSpendClientRedeemer = SpendClientRedeemerSchema as unknown as SpendClientRedeemer;
@@ -215,6 +226,8 @@ export function decodeSpendClientRedeemer(
       UpdateClient: Data.Object({ msg: ClientMessageSchema }),
     }),
     Data.Literal('Other'),
+    Data.Literal('PruneTerminalConsensusStates'),
+    Data.Object({ ReclaimClient: Data.Object({ reclaim_to: Data.Bytes() }) }),
   ]);
   type TSpendClientRedeemer = Data.Static<typeof SpendClientRedeemerSchema>;
   const TSpendClientRedeemer = SpendClientRedeemerSchema as unknown as SpendClientRedeemer;

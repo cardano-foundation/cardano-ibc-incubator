@@ -19,6 +19,7 @@ export type ChannelDatum = {
   state: ChannelDatumState;
   port: string;
   token: AuthToken;
+  lifecycle: 'ChannelActive' | { Abandoning: { not_before: bigint } };
 };
 
 /**
@@ -106,6 +107,10 @@ export async function encodeChannelDatum(channelDatum: ChannelDatum, Lucid: type
       state: ChannelDatumStateSchema,
       port: Data.Bytes(),
       token: AuthTokenSchema,
+      lifecycle: Data.Enum([
+        Data.Literal('ChannelActive'),
+        Data.Object({ Abandoning: Data.Object({ not_before: Data.Integer() }) }),
+      ]),
     });
     type TChannelDatum = Data.Static<typeof ChannelDatumSchema>;
     const TChannelDatum = ChannelDatumSchema as unknown as ChannelDatum;
@@ -189,7 +194,11 @@ export async function encodeChannelDatum(channelDatum: ChannelDatum, Lucid: type
   ]);
 
   const tokenData = constrData(0, [bytesData(channelDatum.token.policyId), bytesData(channelDatum.token.name)]);
-  const channelDatumData = constrData(0, [stateData, bytesData(channelDatum.port), tokenData]);
+  const lifecycleData =
+    channelDatum.lifecycle === 'ChannelActive'
+      ? constrData(0, [])
+      : constrData(1, [intData(channelDatum.lifecycle.Abandoning.not_before)]);
+  const channelDatumData = constrData(0, [stateData, bytesData(channelDatum.port), tokenData, lifecycleData]);
 
   return channelDatumData.to_cbor_hex();
 }
@@ -236,6 +245,10 @@ export async function decodeChannelDatum(channelDatum: string, Lucid: typeof imp
     state: ChannelDatumStateSchema,
     port: Data.Bytes(),
     token: AuthTokenSchema,
+    lifecycle: Data.Enum([
+      Data.Literal('ChannelActive'),
+      Data.Object({ Abandoning: Data.Object({ not_before: Data.Integer() }) }),
+    ]),
   });
   type TChannelDatum = Data.Static<typeof ChannelDatumSchema>;
   const TChannelDatum = ChannelDatumSchema as unknown as ChannelDatum;

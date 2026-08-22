@@ -13,6 +13,8 @@ jest.mock('../../shared/types/connection/verify-proof-redeemer', () => ({
   encodeVerifyProofRedeemer: jest.fn(() => 'encoded-verify-proof-redeemer'),
 }));
 
+const TRANSFER_MODULE_IDENTIFIER = `${'11'.repeat(28)}01`;
+
 const existingTraceRegistryProof = {
   kind: 'existing' as const,
   traceRegistryMappingWitnessUtxos: [
@@ -61,7 +63,7 @@ describe('PacketService denom regression coverage', () => {
           },
           modules: {
             transfer: {
-              identifier: 'transfer-module-identifier',
+              identifier: TRANSFER_MODULE_IDENTIFIER,
               address: 'addr_test1transfermodule',
             },
           },
@@ -79,7 +81,7 @@ describe('PacketService denom regression coverage', () => {
           txHash: 'transfer',
           outputIndex: 0,
           datum: 'transfer-datum',
-          assets: { 'transfer-module-identifier': 1n },
+          assets: { [TRANSFER_MODULE_IDENTIFIER]: 1n },
         },
       ]),
       decodeDatum: jest.fn(),
@@ -102,6 +104,7 @@ describe('PacketService denom regression coverage', () => {
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as any,
       { executePacket: jest.fn() } as any,
+      {} as any,
     );
 
     jest.spyOn(service as any, 'buildHostStateUpdateForHandlePacket').mockResolvedValue({
@@ -148,6 +151,13 @@ describe('PacketService denom regression coverage', () => {
     lucidServiceMock.decodeDatum.mockImplementation((_datum: string, type: string) => {
       if (type === 'channel') return channelDatum;
       if (type === 'connection') return connectionDatum;
+      if (type === 'transferModule') {
+        return {
+          escrow_shard_registry_root: '00'.repeat(32),
+          live_escrow_shard_count: 0n,
+          voucher_supply: 100n,
+        };
+      }
       return {};
     });
 
@@ -159,9 +169,7 @@ describe('PacketService denom regression coverage', () => {
       base_denom: 'factory/osmo1abcd/mytoken',
     });
 
-    const voucherTokenName = buildVoucherUserTokenNameFromDenomHash(
-      buildVoucherDenomHashFromFullDenom(canonicalDenom),
-    );
+    const voucherTokenName = buildVoucherUserTokenNameFromDenomHash(buildVoucherDenomHashFromFullDenom(canonicalDenom));
     const voucherTokenUnit = `mint-voucher-policy-id${voucherTokenName}`;
     const senderVoucherUtxo = {
       txHash: 'sender-voucher-utxo',
@@ -215,8 +223,7 @@ describe('PacketService denom regression coverage', () => {
       ([, type]) => type === 'transferIBCModuleRedeemer',
     );
     expect(transferModuleCall).toBeDefined();
-    const transferModuleDenomHex =
-      transferModuleCall?.[0]?.Callback?.[0]?.OnSendPacket?.data?.ModuleDataV1?.[0]?.denom;
+    const transferModuleDenomHex = transferModuleCall?.[0]?.Callback?.[0]?.OnSendPacket?.data?.ModuleDataV1?.[0]?.denom;
     expect(transferModuleDenomHex).toBe(convertString2Hex(canonicalDenom));
   });
 });
@@ -260,7 +267,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
           },
           modules: {
             transfer: {
-              identifier: 'transfer-module-identifier',
+              identifier: TRANSFER_MODULE_IDENTIFIER,
               address: 'addr_test1transfermodule',
             },
           },
@@ -304,6 +311,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as any,
       { executePacket: jest.fn() } as any,
+      {} as any,
     );
 
     jest.spyOn(service as any, 'refreshWalletContext').mockResolvedValue(undefined);
@@ -366,6 +374,13 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       if (type === 'channel') return channelDatum;
       if (type === 'connection') return connectionDatum;
       if (type === 'client') return clientDatum;
+      if (type === 'transferModule') {
+        return {
+          escrow_shard_registry_root: '00'.repeat(32),
+          live_escrow_shard_count: 0n,
+          voucher_supply: 0n,
+        };
+      }
       return {};
     });
 
@@ -412,10 +427,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
     expect(lucidServiceMock.createUnsignedAckPacketUnescrowTx).not.toHaveBeenCalled();
     expect(lucidServiceMock.createUnsignedAckPacketSucceedTx).not.toHaveBeenCalled();
 
-    expect(denomTraceServiceMock.prepareOnChainInsert).toHaveBeenCalledWith(
-      expectedVoucherDenomHash,
-      canonicalDenom,
-    );
+    expect(denomTraceServiceMock.prepareOnChainInsert).toHaveBeenCalledWith(expectedVoucherDenomHash, canonicalDenom);
   });
 
   it('maps packet denom hex(lovelace) back to lovelace asset unit in acknowledgement unescrow', async () => {
@@ -456,7 +468,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
           },
           modules: {
             transfer: {
-              identifier: 'transfer-module-identifier',
+              identifier: TRANSFER_MODULE_IDENTIFIER,
               address: 'addr_test1transfermodule',
             },
           },
@@ -500,6 +512,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as any,
       { executePacket: jest.fn() } as any,
+      {} as any,
     );
 
     const refreshWalletContextSpy = jest.spyOn(service as any, 'refreshWalletContext').mockResolvedValue(undefined);
@@ -517,7 +530,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
         txHash: 'transfer',
         outputIndex: 0,
         datum: 'transfer-datum',
-        assets: { 'transfer-module-identifier': 1n },
+        assets: { [TRANSFER_MODULE_IDENTIFIER]: 1n },
       },
       registrySiblings: Array(64).fill('00'.repeat(32)),
     });
@@ -677,7 +690,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
           },
           modules: {
             transfer: {
-              identifier: 'transfer-module-identifier',
+              identifier: TRANSFER_MODULE_IDENTIFIER,
               address: 'addr_test1transfermodule',
             },
           },
@@ -721,6 +734,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       denomTraceServiceMock as unknown as DenomTraceService,
       {} as any,
       { executePacket: jest.fn() } as any,
+      {} as any,
     );
 
     jest.spyOn(service as any, 'findTransferEscrowShard').mockResolvedValue({
@@ -737,7 +751,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
         txHash: 'transfer-module',
         outputIndex: 0,
         datum: 'transfer-module-datum',
-        assets: { 'transfer-module-identifier': 1n },
+        assets: { [TRANSFER_MODULE_IDENTIFIER]: 1n },
       },
       registrySiblings: Array(64).fill('00'.repeat(32)),
     });
@@ -803,7 +817,7 @@ describe('PacketService acknowledgement and recv denom regression coverage', () 
       .mockResolvedValueOnce({
         txHash: 'transfer-module',
         outputIndex: 0,
-        assets: { 'transfer-module-identifier': 1n },
+        assets: { [TRANSFER_MODULE_IDENTIFIER]: 1n },
       })
       .mockImplementationOnce(async (shardTokenUnit: string) => ({
         txHash: 'transfer-escrow',

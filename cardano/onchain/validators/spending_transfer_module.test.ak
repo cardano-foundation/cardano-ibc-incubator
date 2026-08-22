@@ -22,10 +22,13 @@ use ibc/apps/transfer/types/transfer_module_datum.{
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height.{Height}
-use ibc/core/ics_004/channel_datum.{ChannelDatum, ChannelDatumState}
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+}
 use ibc/core/ics_004/channel_redeemer.{
-  AcknowledgePacket, ChanOpenAck, ChanOpenConfirm, ChanOpenInit, ChanOpenTry,
-  RecvPacket, SendPacket, TimeoutPacket,
+  AcknowledgePacket, ChanCloseConfirm, ChanCloseInit, ChanOpenAck,
+  ChanOpenConfirm, ChanOpenInit, ChanOpenTry, RecvPacket, SendPacket,
+  TimeoutPacket,
 }
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/channel.{Channel}
@@ -37,8 +40,8 @@ use ibc/core/ics_004/types/state as chan_state_mod
 use ibc/core/ics_005/types/ibc_module_redeemer.{
   Callback, IBCModuleRedeemer, ModuleDataV1, ModuleOperatorV1,
   OnAcknowledgementPacket, OnChanCloseConfirm, OnChanCloseInit, OnChanOpenAck,
-  OnChanOpenConfirm, OnChanOpenInit, OnChanOpenTry, OnRecvPacket, OnSendPacket,
-  OnTimeoutPacket, Operator,
+  OnChanOpenConfirm, OnChanOpenInit, OnChanOpenTry, OnChanReclaim, OnRecvPacket,
+  OnSendPacket, OnTimeoutPacket, Operator,
 }
 use ibc/core/ics_023_vector_commitments/ics23/proofs.{
   CommitmentProof, CommitmentProof_Exist, ExistenceProof, InnerOp, LeafOp,
@@ -48,11 +51,23 @@ use ibc/core/ics_025_handler_interface/host_state.{
   Active, HostState, HostStateDatum, ShutdownState, ShuttingDown,
   empty_ibc_state_root,
 }
+use ibc/core/ics_025_handler_interface/ibc_state_commitment
+use ibc/core/ics_025_handler_interface/lifecycle_marker.{
+  AuthorizeTransferChannelReclaim, lifecycle_marker_token_name,
+}
 use ibc/testing/fuzz_dsl
 use ibc/utils/string as string_utils
 use spending_transfer_module
 
 //=====================================Test================================================
+
+fn repeat_bytearray(value: ByteArray, count: Int) -> List<ByteArray> {
+  if count <= 0 {
+    []
+  } else {
+    [value, ..repeat_bytearray(value, count - 1)]
+  }
+}
 
 type MockData {
   host_state_nft_policy_id: PolicyId,
@@ -65,6 +80,7 @@ type MockData {
   transfer_escrow_shard_policy_id: PolicyId,
   channel_minting_policy_id: PolicyId,
   voucher_minting_policy_id: PolicyId,
+  lifecycle_marker_policy_id: PolicyId,
   channel_id: ByteArray,
   module_output: Output,
   module_input: Input,
@@ -89,10 +105,30 @@ fn host_state_datum(
       next_channel_sequence: 0,
       bound_port: [],
       last_update_time: 0,
+      live_client_count: 0,
+      live_connection_count: 0,
+      live_channel_count: 0,
     },
     nft_policy,
     deployer: #"00000000000000000000000000000000000000000000000000000000",
     shutdown,
+  }
+}
+
+fn module_output_with_voucher_delta(
+  output: Output,
+  voucher_delta: Int,
+) -> Output {
+  expect InlineDatum(raw_datum) = output.datum
+  expect datum: TransferModuleDatum = raw_datum
+  Output {
+    ..output,
+    datum: InlineDatum(
+      TransferModuleDatum {
+        ..datum,
+        voucher_supply: datum.voucher_supply + voucher_delta,
+      },
+    ),
   }
 }
 
@@ -144,6 +180,8 @@ fn setup() -> MockData {
 
   let voucher_minting_policy_id = "mock voucher minting policy id"
 
+  let lifecycle_marker_policy_id = "mock lifecycle marker policy id"
+
   let channel_id = "channel-0"
 
   let module_output =
@@ -155,6 +193,8 @@ fn setup() -> MockData {
       datum: InlineDatum(
         TransferModuleDatum {
           escrow_shard_registry_root: empty_escrow_shard_registry_root,
+          live_escrow_shard_count: 0,
+          voucher_supply: 10000,
         },
       ),
       reference_script: None,
@@ -207,6 +247,7 @@ fn setup() -> MockData {
       },
       port_id,
       token: channel_token,
+      lifecycle: ChannelActive,
     }
 
   let output_channel_datum =
@@ -361,6 +402,7 @@ fn setup() -> MockData {
     transfer_escrow_shard_policy_id,
     channel_minting_policy_id,
     voucher_minting_policy_id,
+    lifecycle_marker_policy_id,
     channel_id,
     module_output,
     module_input,
@@ -371,6 +413,74 @@ fn setup() -> MockData {
     cardano_public_key_hash,
     cosmos_address,
   }
+}
+
+fn run_channel_reclaim_callback(target_module_token: AuthToken) -> Bool {
+  let mock = setup()
+  let module_output =
+    Output {
+      ..mock.module_output,
+      datum: InlineDatum(
+        TransferModuleDatum {
+          escrow_shard_registry_root: empty_escrow_shard_registry_root,
+          live_escrow_shard_count: 0,
+          voucher_supply: 0,
+        },
+      ),
+    }
+  let module_input = Input { ..mock.module_input, output: module_output }
+  let module_redeemer: IBCModuleRedeemer =
+    Callback(
+      OnChanReclaim {
+        channel_id: mock.channel_id,
+        channel_live_escrow_shard_count_siblings: repeat_bytearray(
+          ibc_state_commitment.empty_hash,
+          ibc_state_commitment.merkle_depth_bits,
+        ),
+      },
+    )
+  let marker_redeemer: Redeemer =
+    AuthorizeTransferChannelReclaim {
+      port_id: mock.port_id,
+      port_token: mock.port_token,
+      module_token: target_module_token,
+    }
+
+  spending_transfer_module.spend_transfer_module.spend(
+    mock.port_token,
+    mock.module_token,
+    mock.port_id,
+    mock.transfer_escrow_shard_policy_id,
+    mock.channel_minting_policy_id,
+    mock.voucher_minting_policy_id,
+    mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
+    None,
+    module_redeemer,
+    module_input.output_reference,
+    Transaction {
+      ..transaction.placeholder,
+      inputs: [module_input, mock.host_state_input],
+      outputs: [module_output, mock.host_state_output],
+      mint: from_asset(
+        mock.lifecycle_marker_policy_id,
+        lifecycle_marker_token_name,
+        1,
+      ),
+      redeemers: [Pair(Mint(mock.lifecycle_marker_policy_id), marker_redeemer)],
+    },
+  )
+}
+
+test transfer_channel_reclaim_accepts_its_authenticated_module_target() {
+  let mock = setup()
+  run_channel_reclaim_callback(mock.module_token)
+}
+
+test transfer_channel_reclaim_rejects_marker_for_another_module_root() fail {
+  run_channel_reclaim_callback(
+    AuthToken { policy_id: "other module policy", name: "other module token" },
+  )
 }
 
 fn receive_channel_output(mock: MockData) -> Output {
@@ -410,7 +520,9 @@ fn transfer_escrow_input(
       address: module_output.address,
       value: from_asset(ada_policy_id, ada_asset_name, amount)
         |> add(transfer_escrow_shard_policy_id, shard_token_name, 1),
-      datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
+      datum: InlineDatum(
+        TransferEscrowDatum { channel_id, denom, escrowed_amount: amount },
+      ),
       reference_script: None,
     },
   }
@@ -429,7 +541,9 @@ fn transfer_escrow_output(
     address: module_output.address,
     value: from_asset(ada_policy_id, ada_asset_name, amount)
       |> add(transfer_escrow_shard_policy_id, shard_token_name, 1),
-    datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
+    datum: InlineDatum(
+      TransferEscrowDatum { channel_id, denom, escrowed_amount: amount },
+    ),
     reference_script: None,
   }
 }
@@ -440,6 +554,8 @@ fn module_output_with_registered_shard(module_output: Output) -> Output {
     datum: InlineDatum(
       TransferModuleDatum {
         escrow_shard_registry_root: #"1111111111111111111111111111111111111111111111111111111111111111",
+        live_escrow_shard_count: 1,
+        voucher_supply: 0,
       },
     ),
   }
@@ -466,7 +582,9 @@ fn transfer_native_asset_escrow_input(
       address: module_output.address,
       value: from_asset(token_policy_id, token_name, amount)
         |> add(transfer_escrow_shard_policy_id, shard_token_name, 1),
-      datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
+      datum: InlineDatum(
+        TransferEscrowDatum { channel_id, denom, escrowed_amount: amount },
+      ),
       reference_script: None,
     },
   }
@@ -487,7 +605,9 @@ fn transfer_native_asset_escrow_output(
     address: module_output.address,
     value: from_asset(token_policy_id, token_name, amount)
       |> add(transfer_escrow_shard_policy_id, shard_token_name, 1),
-    datum: InlineDatum(TransferEscrowDatum { channel_id, denom }),
+    datum: InlineDatum(
+      TransferEscrowDatum { channel_id, denom, escrowed_amount: amount },
+    ),
     reference_script: None,
   }
 }
@@ -555,6 +675,7 @@ fn run_transfer_module_transition(
           mock.channel_minting_policy_id,
           mock.voucher_minting_policy_id,
           mock.host_state_nft_policy_id,
+          mock.lifecycle_marker_policy_id,
           None,
           module_redeemer,
           mock.module_input.output_reference,
@@ -974,13 +1095,18 @@ fn ack_success_fixture(
 
 fn voucher_send_burn_fixture(
   mutation: fuzz_dsl.Mutation,
+  target_another_module: Bool,
 ) -> fuzz_dsl.ProtocolTxFixture {
   let mock = setup()
   let transfer_amount = 1234
   let receiver = mock.cardano_public_key_hash
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
   let outputs =
-    [mock.module_output, mock.channel_output, mock.host_state_output]
+    [
+      module_output_with_voucher_delta(mock.module_output, 0 - transfer_amount),
+      mock.channel_output,
+      mock.host_state_output,
+    ]
   let source_port = mock.port_id
   let source_channel = mock.channel_id
   let denom =
@@ -1012,6 +1138,14 @@ fn voucher_send_burn_fixture(
       packet_source_port: packet.source_port,
       packet_source_channel: packet.source_channel,
       data: ftpd,
+      module_token: if target_another_module {
+        AuthToken {
+          policy_id: "other module policy",
+          name: "other module token",
+        }
+      } else {
+        mock.module_token
+      },
     }
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
@@ -1020,7 +1154,17 @@ fn voucher_send_burn_fixture(
       Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
     ]
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      mint: from_asset(
+        mock.voucher_minting_policy_id,
+        "voucher action marker",
+        0 - transfer_amount,
+      ),
+      redeemers,
+    }
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   run_transfer_module_transition(mock, transaction, module_redeemer, mutation)
@@ -1032,7 +1176,11 @@ fn voucher_recv_sink_fixture(
   let mock = setup()
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
   let outputs =
-    [mock.module_output, mock.channel_output, mock.host_state_output]
+    [
+      module_output_with_voucher_delta(mock.module_output, 1234),
+      mock.channel_output,
+      mock.host_state_output,
+    ]
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
   let (ftpd, packet) =
     build_packet(
@@ -1067,6 +1215,7 @@ fn voucher_recv_sink_fixture(
       packet_dest_port: packet.destination_port,
       packet_dest_channel: packet.destination_channel,
       data: ftpd,
+      module_token: mock.module_token,
     }
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
     [
@@ -1075,7 +1224,17 @@ fn voucher_recv_sink_fixture(
       Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
     ]
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      mint: from_asset(
+        mock.voucher_minting_policy_id,
+        "voucher action marker",
+        1234,
+      ),
+      redeemers,
+    }
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   run_transfer_module_transition(mock, transaction, module_redeemer, mutation)
@@ -1088,7 +1247,11 @@ fn voucher_error_ack_refund_fixture(
   let receiver = mock.cardano_public_key_hash
   let inputs = [mock.module_input, mock.channel_input, mock.host_state_input]
   let outputs =
-    [mock.module_output, mock.channel_output, mock.host_state_output]
+    [
+      module_output_with_voucher_delta(mock.module_output, 1234),
+      mock.channel_output,
+      mock.host_state_output,
+    ]
   let source_port = mock.port_id
   let source_channel = mock.channel_id
   let denom =
@@ -1128,6 +1291,7 @@ fn voucher_error_ack_refund_fixture(
       packet_source_port: packet.source_port,
       packet_source_channel: packet.source_channel,
       data: ftpd,
+      module_token: mock.module_token,
       acknowledgement: Some(acknowledgement),
     }
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
@@ -1137,7 +1301,17 @@ fn voucher_error_ack_refund_fixture(
       Pair(Mint(mock.voucher_minting_policy_id), mint_voucher_redeemer),
     ]
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      mint: from_asset(
+        mock.voucher_minting_policy_id,
+        "voucher action marker",
+        1234,
+      ),
+      redeemers,
+    }
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
   run_transfer_module_transition(mock, transaction, module_redeemer, mutation)
@@ -1246,7 +1420,12 @@ test prop_transfer_module_voucher_send_burns_exactly(_seed via fuzz.int()) {
 
   // Sending a voucher back toward its source burns voucher supply rather than
   // increasing native escrow.
-  voucher_send_burn_fixture(fuzz_dsl.no_mutation())
+  voucher_send_burn_fixture(fuzz_dsl.no_mutation(), False)
+    |> fuzz_dsl.assert_protocol_valid
+}
+
+test transfer_module_rejects_voucher_action_for_another_module_root() fail {
+  voucher_send_burn_fixture(fuzz_dsl.no_mutation(), True)
     |> fuzz_dsl.assert_protocol_valid
 }
 
@@ -1316,6 +1495,8 @@ test transfer_module_root_rejects_registry_mutation_without_mint() fail {
       datum: InlineDatum(
         TransferModuleDatum {
           escrow_shard_registry_root: #"1111111111111111111111111111111111111111111111111111111111111111",
+          live_escrow_shard_count: 0,
+          voucher_supply: 0,
         },
       ),
     }
@@ -1345,7 +1526,12 @@ test transfer_escrow_rejects_missing_empty_successor() fail {
       denom,
       escrow_amount,
     )
-  let datum = TransferEscrowDatum { channel_id: mock.channel_id, denom }
+  let datum =
+    TransferEscrowDatum {
+      channel_id: mock.channel_id,
+      denom,
+      escrowed_amount: escrow_amount,
+    }
 
   transfer_escrow.validate_module_escrow_transition(
     escrow_input,
@@ -1397,6 +1583,7 @@ test on_chan_open_init_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1435,6 +1622,7 @@ test on_chan_open_init_fails_without_host_state_co_spend() fail {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1483,6 +1671,7 @@ test on_chan_open_try_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1531,6 +1720,7 @@ test on_chan_open_ack_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1575,6 +1765,7 @@ test on_chan_open_confirm_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1590,7 +1781,11 @@ test on_recv_packet_mint_voucher_succeed() {
 
   //==========================arrange outputs=========================
   let outputs =
-    [mock.module_output, mock.channel_output, mock.host_state_output]
+    [
+      module_output_with_voucher_delta(mock.module_output, 1234),
+      mock.channel_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let acknowledgement = acknowledgement_mod.new_result_acknowledgement("AQ==")
@@ -1633,6 +1828,7 @@ test on_recv_packet_mint_voucher_succeed() {
       packet_dest_port: packet.destination_port,
       packet_dest_channel: packet.destination_channel,
       data: ftpd,
+      module_token: mock.module_token,
     }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
@@ -1644,7 +1840,17 @@ test on_recv_packet_mint_voucher_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      mint: from_asset(
+        mock.voucher_minting_policy_id,
+        "voucher action marker",
+        1234,
+      ),
+      redeemers,
+    }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -1656,6 +1862,7 @@ test on_recv_packet_mint_voucher_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1774,6 +1981,7 @@ test on_recv_packet_unescrow_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1868,6 +2076,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
       packet_dest_port: packet.destination_port,
       packet_dest_channel: packet.destination_channel,
       data: ftpd,
+      module_token: mock.module_token,
     }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
@@ -1891,6 +2100,7 @@ test on_recv_packet_unescrow_fail_unwanted_voucher() fail {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -1984,6 +2194,7 @@ test transfer_escrow_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2083,6 +2294,7 @@ test transfer_escrow_fails_when_host_state_is_shutting_down() fail {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2163,6 +2375,7 @@ test transfer_escrow_native_asset_fails_with_short_created_shard() fail {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2243,6 +2456,7 @@ test transfer_escrow_native_asset_fails_with_extra_created_shard() fail {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2262,7 +2476,11 @@ test transfer_burn_voucher_succeed() {
 
   //==========================arrange outputs=========================
   let outputs =
-    [mock.module_output, mock.channel_output, mock.host_state_output]
+    [
+      module_output_with_voucher_delta(mock.module_output, 0 - transfer_amount),
+      mock.channel_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -2296,6 +2514,7 @@ test transfer_burn_voucher_succeed() {
       packet_source_port: packet.source_port,
       packet_source_channel: packet.source_channel,
       data: ftpd,
+      module_token: mock.module_token,
     }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
@@ -2307,7 +2526,17 @@ test transfer_burn_voucher_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      mint: from_asset(
+        mock.voucher_minting_policy_id,
+        "voucher action marker",
+        0 - transfer_amount,
+      ),
+      redeemers,
+    }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -2319,6 +2548,7 @@ test transfer_burn_voucher_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2348,7 +2578,11 @@ test transfer_burn_voucher_succeeds_when_host_state_is_shutting_down() {
   let inputs =
     [mock.module_input, mock.channel_input, shutdown_host_state_input]
   let outputs =
-    [mock.module_output, mock.channel_output, shutdown_host_state_output]
+    [
+      module_output_with_voucher_delta(mock.module_output, 0 - transfer_amount),
+      mock.channel_output,
+      shutdown_host_state_output,
+    ]
 
   let source_port = mock.port_id
   let source_channel = mock.channel_id
@@ -2378,6 +2612,7 @@ test transfer_burn_voucher_succeeds_when_host_state_is_shutting_down() {
       packet_source_port: packet.source_port,
       packet_source_channel: packet.source_channel,
       data: ftpd,
+      module_token: mock.module_token,
     }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
@@ -2388,7 +2623,17 @@ test transfer_burn_voucher_succeeds_when_host_state_is_shutting_down() {
     ]
 
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      mint: from_asset(
+        mock.voucher_minting_policy_id,
+        "voucher action marker",
+        0 - transfer_amount,
+      ),
+      redeemers,
+    }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -2400,6 +2645,7 @@ test transfer_burn_voucher_succeeds_when_host_state_is_shutting_down() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2417,7 +2663,11 @@ test on_timeout_packet_mint_voucher_succeed() {
 
   //==========================arrange outputs=========================
   let outputs =
-    [mock.module_output, mock.channel_output, mock.host_state_output]
+    [
+      module_output_with_voucher_delta(mock.module_output, 1234),
+      mock.channel_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -2463,6 +2713,7 @@ test on_timeout_packet_mint_voucher_succeed() {
       packet_source_port: packet.source_port,
       packet_source_channel: packet.source_channel,
       data: ftpd,
+      module_token: mock.module_token,
       acknowledgement: None,
     }
 
@@ -2475,7 +2726,17 @@ test on_timeout_packet_mint_voucher_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      mint: from_asset(
+        mock.voucher_minting_policy_id,
+        "voucher action marker",
+        1234,
+      ),
+      redeemers,
+    }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -2487,6 +2748,7 @@ test on_timeout_packet_mint_voucher_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2604,6 +2866,7 @@ test on_timeout_packet_unescrow_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2703,6 +2966,7 @@ test on_timeout_packet_native_refund_fails_with_wrong_escrow_delta() fail {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2812,6 +3076,7 @@ test on_recv_packet_source_fails_with_short_native_payout() fail {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2895,6 +3160,7 @@ test on_acknowledgement_packet_result_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -2912,7 +3178,11 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
 
   //==========================arrange outputs=========================
   let outputs =
-    [mock.module_output, mock.channel_output, mock.host_state_output]
+    [
+      module_output_with_voucher_delta(mock.module_output, 1234),
+      mock.channel_output,
+      mock.host_state_output,
+    ]
 
   //==========================arrange redeemers=========================
   let source_port = mock.port_id
@@ -2963,6 +3233,7 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
       packet_source_port: packet.source_port,
       packet_source_channel: packet.source_channel,
       data: ftpd,
+      module_token: mock.module_token,
       acknowledgement: Some(acknowledgement),
     }
 
@@ -2975,7 +3246,17 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
 
   //==========================arrange context=========================
   let transaction =
-    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+    Transaction {
+      ..transaction.placeholder,
+      inputs,
+      outputs,
+      mint: from_asset(
+        mock.voucher_minting_policy_id,
+        "voucher action marker",
+        1234,
+      ),
+      redeemers,
+    }
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
 
@@ -2987,6 +3268,7 @@ test on_acknowledgement_packet_error_mint_voucher_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -3106,6 +3388,7 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     mock.module_input.output_reference,
@@ -3113,11 +3396,16 @@ test on_acknowledgement_packet_error_unescrow_succeed() {
   )
 }
 
-test on_chan_close_init_given_any_input_returns_false() {
+test on_chan_close_init_preserves_module_state() {
   let fake_data = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [fake_data.module_input, fake_data.host_state_input]
+  let inputs =
+    [
+      fake_data.module_input,
+      fake_data.channel_input,
+      fake_data.host_state_input,
+    ]
 
   //==========================arrange outputs=========================
   let module_output = fake_data.module_input.output
@@ -3127,9 +3415,13 @@ test on_chan_close_init_given_any_input_returns_false() {
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
     Callback(OnChanCloseInit { channel_id: fake_data.channel_id })
+  let channel_redeemer: Redeemer = ChanCloseInit
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [Pair(Spend(fake_data.module_input.output_reference), module_redeemer)]
+    [
+      Pair(Spend(fake_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(fake_data.channel_input.output_reference), channel_redeemer),
+    ]
   //==========================arrange context=========================
   let transaction =
     Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
@@ -3144,18 +3436,68 @@ test on_chan_close_init_given_any_input_returns_false() {
     fake_data.channel_minting_policy_id,
     fake_data.voucher_minting_policy_id,
     fake_data.host_state_nft_policy_id,
+    fake_data.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     fake_data.module_input.output_reference,
     transaction,
-  ) == False
+  )
 }
 
-test on_chan_close_confirm_given_any_input_returns_false() {
+test on_chan_close_init_rejects_module_datum_mutation() fail {
+  let fake_data = setup()
+
+  let inputs =
+    [
+      fake_data.module_input,
+      fake_data.channel_input,
+      fake_data.host_state_input,
+    ]
+
+  let mutated_module_output =
+    module_output_with_voucher_delta(fake_data.module_input.output, 1)
+  let outputs = [mutated_module_output, fake_data.host_state_output]
+
+  let module_redeemer: Redeemer =
+    Callback(OnChanCloseInit { channel_id: fake_data.channel_id })
+  let channel_redeemer: Redeemer = ChanCloseInit
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(fake_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(fake_data.channel_input.output_reference), channel_redeemer),
+    ]
+
+  let transaction =
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+
+  spending_transfer_module.spend_transfer_module.spend(
+    fake_data.port_token,
+    fake_data.module_token,
+    fake_data.port_id,
+    fake_data.transfer_escrow_shard_policy_id,
+    fake_data.channel_minting_policy_id,
+    fake_data.voucher_minting_policy_id,
+    fake_data.host_state_nft_policy_id,
+    fake_data.lifecycle_marker_policy_id,
+    None,
+    module_redeemer,
+    fake_data.module_input.output_reference,
+    transaction,
+  )
+}
+
+test on_chan_close_confirm_preserves_module_state() {
   let fake_data = setup()
 
   //==========================arrange inputs=========================
-  let inputs = [fake_data.module_input, fake_data.host_state_input]
+  let inputs =
+    [
+      fake_data.module_input,
+      fake_data.channel_input,
+      fake_data.host_state_input,
+    ]
 
   //==========================arrange outputs=========================
   let module_output = fake_data.module_input.output
@@ -3165,9 +3507,17 @@ test on_chan_close_confirm_given_any_input_returns_false() {
   //==========================arrange redeemers=========================
   let module_redeemer: Redeemer =
     Callback(OnChanCloseConfirm { channel_id: fake_data.channel_id })
+  let channel_redeemer: Redeemer =
+    ChanCloseConfirm {
+      proof_init: fake_data.proof,
+      proof_height: fake_data.proof_height,
+    }
 
   let redeemers: Pairs<ScriptPurpose, Redeemer> =
-    [Pair(Spend(fake_data.module_input.output_reference), module_redeemer)]
+    [
+      Pair(Spend(fake_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(fake_data.channel_input.output_reference), channel_redeemer),
+    ]
   //==========================arrange context=========================
   let transaction =
     Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
@@ -3182,11 +3532,60 @@ test on_chan_close_confirm_given_any_input_returns_false() {
     fake_data.channel_minting_policy_id,
     fake_data.voucher_minting_policy_id,
     fake_data.host_state_nft_policy_id,
+    fake_data.lifecycle_marker_policy_id,
     None,
     module_redeemer,
     fake_data.module_input.output_reference,
     transaction,
-  ) == False
+  )
+}
+
+test on_chan_close_confirm_rejects_module_datum_mutation() fail {
+  let fake_data = setup()
+
+  let inputs =
+    [
+      fake_data.module_input,
+      fake_data.channel_input,
+      fake_data.host_state_input,
+    ]
+
+  let mutated_module_output =
+    module_output_with_voucher_delta(fake_data.module_input.output, 1)
+  let outputs = [mutated_module_output, fake_data.host_state_output]
+
+  let module_redeemer: Redeemer =
+    Callback(OnChanCloseConfirm { channel_id: fake_data.channel_id })
+  let channel_redeemer: Redeemer =
+    ChanCloseConfirm {
+      proof_init: fake_data.proof,
+      proof_height: fake_data.proof_height,
+    }
+  let redeemers: Pairs<ScriptPurpose, Redeemer> =
+    [
+      Pair(Spend(fake_data.module_input.output_reference), module_redeemer),
+      Pair(Spend(fake_data.channel_input.output_reference), channel_redeemer),
+    ]
+
+  let transaction =
+    Transaction { ..transaction.placeholder, inputs, outputs, redeemers }
+
+  expect module_redeemer: IBCModuleRedeemer = module_redeemer
+
+  spending_transfer_module.spend_transfer_module.spend(
+    fake_data.port_token,
+    fake_data.module_token,
+    fake_data.port_id,
+    fake_data.transfer_escrow_shard_policy_id,
+    fake_data.channel_minting_policy_id,
+    fake_data.voucher_minting_policy_id,
+    fake_data.host_state_nft_policy_id,
+    fake_data.lifecycle_marker_policy_id,
+    None,
+    module_redeemer,
+    fake_data.module_input.output_reference,
+    transaction,
+  )
 }
 
 test transfer_escrow_zero_balance_shard_reuse_succeeds() {
@@ -3272,7 +3671,11 @@ test transfer_escrow_zero_balance_shard_reuse_succeeds() {
 
   expect module_redeemer: IBCModuleRedeemer = module_redeemer
   let shard_datum: Data =
-    TransferEscrowDatum { channel_id: mock.channel_id, denom }
+    TransferEscrowDatum {
+      channel_id: mock.channel_id,
+      denom,
+      escrowed_amount: transfer_amount,
+    }
 
   spending_transfer_module.spend_transfer_module.spend(
     mock.port_token,
@@ -3282,6 +3685,7 @@ test transfer_escrow_zero_balance_shard_reuse_succeeds() {
     mock.channel_minting_policy_id,
     mock.voucher_minting_policy_id,
     mock.host_state_nft_policy_id,
+    mock.lifecycle_marker_policy_id,
     Some(shard_datum),
     module_redeemer,
     shard_input.output_reference,

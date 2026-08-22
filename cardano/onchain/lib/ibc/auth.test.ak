@@ -225,6 +225,22 @@ test mint_auth_token_fail() fail {
   auth.mint_auth_token(mint, token)
 }
 
+test burn_auth_token_succeed() {
+  let token = AuthToken { policy_id: "mock policy_id", name: "mock name" }
+  let burn = from_asset(token.policy_id, token.name, -1)
+
+  auth.burn_auth_token(burn, token)
+}
+
+test burn_auth_token_rejects_another_policy_asset() {
+  let token = AuthToken { policy_id: "mock policy_id", name: "mock name" }
+  let burn =
+    from_asset(token.policy_id, token.name, -1)
+      |> add(token.policy_id, "another state", -1)
+
+  !auth.burn_auth_token(burn, token)
+}
+
 test test_contains_only_auth_tokens() {
   let hash_sample =
     #"a4a054a554354a85a54a054a554354a854a054a554a054a554a054a554a054a5"

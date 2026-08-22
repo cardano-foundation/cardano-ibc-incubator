@@ -96,8 +96,12 @@ validator timeout_packet(
 
     expect [connection_id] = cur_channel.connection_hops
 
-    expect cur_channel.state == chan_state_mod.Open
-    trace @"timeout_packet: channel state is open"
+    // A local close prevents new sends but must not strand commitments that
+    // were created while the channel was open. Those packets may still follow
+    // the ordinary timeout path after closing.
+    expect
+      cur_channel.state == chan_state_mod.Open || cur_channel.state == chan_state_mod.Closed
+    trace @"timeout_packet: channel can settle existing commitments"
 
     let is_valid_packet = and {
         packet.source_port == port_id,

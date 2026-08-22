@@ -59,6 +59,10 @@ const deploymentConfig = {
       scriptHash: 'verify-proof-policy-id',
     },
     hostStateStt: buildValidator('host-state', 22),
+    mintLifecycleOperationalMarker: {
+      ...buildValidator('mint-lifecycle-operational-marker', 24),
+      scriptHash: 'operational-policy-id',
+    },
   },
   modules: {
     mock: {
@@ -94,6 +98,7 @@ const createService = (txBuilder: ChainableTxBuilder): any => {
     channelOpenConfirm: buildRefUtxo('ref-channel-open-confirm', 2),
     verifyProof: buildRefUtxo('ref-verify-proof', 3),
     hostStateStt: buildRefUtxo('ref-host-state', 4),
+    mintLifecycleOperationalMarker: buildRefUtxo('ref-lifecycle-operational-marker', 5),
   };
   service.LucidImporter = {
     Data: {
@@ -158,19 +163,22 @@ describe('LucidService channel open confirm wiring', () => {
       service.referenceScripts.verifyProof,
       service.referenceScripts.hostStateStt,
     ]);
-    expect(txBuilder.mintAssets).toHaveBeenNthCalledWith(
-      1,
+    expect(txBuilder.mintAssets).toHaveBeenCalledWith(
       {
         'chan-open-confirm-policy-id': 1n,
       },
       'encoded-auth-token',
     );
-    expect(txBuilder.mintAssets).toHaveBeenNthCalledWith(
-      2,
+    expect(txBuilder.mintAssets).toHaveBeenCalledWith(
       {
         'verify-proof-policy-id': 1n,
       },
       'encoded-verify-proof-redeemer',
+    );
+    expect(txBuilder.readFrom).toHaveBeenCalledWith([service.referenceScripts.mintLifecycleOperationalMarker]);
+    expect(txBuilder.mintAssets).toHaveBeenCalledWith(
+      { [`operational-policy-id${Buffer.from('ibc_lifecycle').toString('hex')}`]: 1n },
+      'd87980',
     );
   });
 
@@ -208,19 +216,18 @@ describe('LucidService channel open confirm wiring', () => {
       service.referenceScripts.verifyProof,
       service.referenceScripts.hostStateStt,
     ]);
-    expect(txBuilder.mintAssets).toHaveBeenNthCalledWith(
-      1,
+    expect(txBuilder.mintAssets).toHaveBeenCalledWith(
       {
         'chan-close-confirm-policy-id': 1n,
       },
       'encoded-auth-token',
     );
-    expect(txBuilder.mintAssets).toHaveBeenNthCalledWith(
-      2,
+    expect(txBuilder.mintAssets).toHaveBeenCalledWith(
       {
         'verify-proof-policy-id': 1n,
       },
       'encoded-verify-proof-redeemer',
     );
+    expect(txBuilder.readFrom).toHaveBeenCalledWith([service.referenceScripts.mintLifecycleOperationalMarker]);
   });
 });

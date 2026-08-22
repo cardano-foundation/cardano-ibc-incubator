@@ -3,6 +3,7 @@ export * from "./HostStateRedeemer.ts";
 export * from "./AuthToken.ts";
 export * from "./MintPortRedeemer.ts";
 export * from "./TransferEscrowShardRedeemer.ts";
+export * from "./TransferEscrowDatum.ts";
 export * from "./TransferModuleDatum.ts";
 export * from "./OutputReference.ts";
 export * from "./TraceRegistry.ts";

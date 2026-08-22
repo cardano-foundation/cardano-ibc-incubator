@@ -278,6 +278,10 @@ function verifyProofRedeemer(proofBytes: number, valueBytes = 128): string {
 }
 
 function voucherRedeemer(kind: 'MintVoucher' | 'RefundVoucher'): string {
+  const moduleToken = {
+    policy_id: hexOfBytes(28, '0a'),
+    name: '01',
+  };
   const data = {
     denom: '756f736d6f',
     amount: '31303030303030',
@@ -295,6 +299,7 @@ function voucherRedeemer(kind: 'MintVoucher' | 'RefundVoucher'): string {
           packet_dest_port: PACKET.destination_port,
           packet_dest_channel: PACKET.destination_channel,
           data,
+          module_token: moduleToken,
         },
       },
       Lucid,
@@ -314,6 +319,7 @@ function voucherRedeemer(kind: 'MintVoucher' | 'RefundVoucher'): string {
             },
           },
         },
+        module_token: moduleToken,
       },
     },
     Lucid,
@@ -389,6 +395,234 @@ function traceDirectoryDatum(archivedCount: number): string {
   );
 }
 
+function lifecycleAndShutdownScenarios(): ScenarioInput[] {
+  return [
+    {
+      name: 'Terminal client prune',
+      inputCount: 2,
+      outputCount: 2,
+      mintPolicyCount: 1,
+      referenceScriptTitles: [
+        'host_state_stt.host_state_stt.spend',
+        'spending_client.spend_client.spend',
+        'minting_lifecycle_marker.mint_lifecycle_marker.mint',
+      ],
+      redeemers: [
+        dataBytes('HostState two-consensus prune witness', 4_500),
+        dataBytes('client prune redeemer', 32),
+        sized('lifecycle cleanup receipt', 'd87980'),
+      ],
+      datums: [
+        dataBytes('updated HostState datum', 1_000),
+        dataBytes('terminal client datum retaining latest consensus state', 5_000),
+      ],
+      largestProofPayloadBytes: 4_096,
+      aikenTests: [
+        'host_state_stt.test.budget_precomputed_host_prune_terminal_client',
+        'client_connection_reclamation.test.client_reclaim_spend_and_burn_accept_exact_terminal_cleanup',
+      ],
+    },
+    {
+      name: 'Final client reclaim',
+      inputCount: 2,
+      outputCount: 2,
+      mintPolicyCount: 2,
+      referenceScriptTitles: [
+        'host_state_stt.host_state_stt.spend',
+        'spending_client.spend_client.spend',
+        'minting_client_stt.mint_client_stt.mint',
+        'minting_lifecycle_marker.mint_lifecycle_marker.mint',
+      ],
+      redeemers: [
+        dataBytes('HostState client and dependency witnesses', 6_500),
+        dataBytes('client reclaim redeemer', 64),
+        dataBytes('client burn redeemer', 128),
+        sized('lifecycle cleanup receipt', 'd87980'),
+      ],
+      datums: [dataBytes('updated HostState datum', 1_000)],
+      largestProofPayloadBytes: 6_144,
+      aikenTests: [
+        'host_state_stt.test.budget_precomputed_host_reclaim_client',
+        'client_connection_reclamation.test.client_reclaim_spend_and_burn_accept_exact_terminal_cleanup',
+      ],
+    },
+    {
+      name: 'Connection reclaim',
+      inputCount: 2,
+      outputCount: 2,
+      mintPolicyCount: 2,
+      referenceScriptTitles: [
+        'host_state_stt.host_state_stt.spend',
+        'spending_connection.spend_connection.spend',
+        'minting_connection_stt.mint_connection_stt.mint',
+        'minting_lifecycle_marker.mint_lifecycle_marker.mint',
+      ],
+      redeemers: [
+        dataBytes('HostState connection and parent-count witnesses', 4_500),
+        dataBytes('connection reclaim redeemer', 64),
+        dataBytes('connection burn redeemer', 128),
+        sized('lifecycle cleanup receipt', 'd87980'),
+      ],
+      datums: [dataBytes('updated HostState datum', 1_000)],
+      largestProofPayloadBytes: 4_096,
+      aikenTests: [
+        'host_state_stt.test.budget_precomputed_host_reclaim_connection',
+        'client_connection_reclamation.test.connection_reclaim_spend_and_burn_accept_zero_child_cleanup',
+      ],
+    },
+    {
+      name: 'Closed transfer channel reclaim',
+      inputCount: 4,
+      outputCount: 4,
+      mintPolicyCount: 2,
+      referenceScriptTitles: [
+        'host_state_stt.host_state_stt.spend',
+        'spending_channel.spend_channel.spend',
+        'minting_channel_stt.mint_channel_stt.mint',
+        'spending_connection.spend_connection.spend',
+        'spending_transfer_module.spend_transfer_module.spend',
+        'minting_lifecycle_marker.mint_lifecycle_marker.mint',
+      ],
+      redeemers: [
+        dataBytes('HostState channel and sequence witnesses', 8_500),
+        dataBytes('channel reclaim redeemer', 64),
+        dataBytes('channel burn redeemer', 128),
+        dataBytes('connection decrement redeemer', 64),
+        dataBytes('transfer channel cleanup callback', 128),
+        dataBytes('transfer cleanup target receipt', 160),
+      ],
+      datums: [
+        dataBytes('updated HostState datum', 1_000),
+        dataBytes('updated connection datum', 768),
+        dataBytes('settled transfer root datum', 96),
+      ],
+      largestProofPayloadBytes: 8_192,
+      aikenTests: [
+        'host_state_stt.test.budget_precomputed_host_reclaim_closed_channel',
+        'channel_reclamation.test.closed_drained_channel_reclaim_spend_and_burn_succeed',
+        'channel_reclamation.test.transfer_channel_reclaim_marker_accepts_settled_channel',
+      ],
+    },
+    {
+      name: 'Abandoned channel reclaim',
+      inputCount: 4,
+      outputCount: 4,
+      mintPolicyCount: 2,
+      referenceScriptTitles: [
+        'host_state_stt.host_state_stt.spend',
+        'spending_channel.spend_channel.spend',
+        'minting_channel_stt.mint_channel_stt.mint',
+        'spending_connection.spend_connection.spend',
+        'spending_mock_module.spend_mock_module.spend',
+        'minting_lifecycle_marker.mint_lifecycle_marker.mint',
+      ],
+      redeemers: [
+        dataBytes('HostState abandoned-channel witnesses', 8_500),
+        dataBytes('channel reclaim redeemer', 64),
+        dataBytes('channel burn redeemer', 128),
+        dataBytes('connection decrement redeemer', 64),
+        dataBytes('module cleanup callback', 128),
+        sized('lifecycle cleanup receipt', 'd87980'),
+      ],
+      datums: [dataBytes('updated HostState datum', 1_000), dataBytes('updated connection datum', 768)],
+      largestProofPayloadBytes: 8_192,
+      aikenTests: [
+        'host_state_stt.test.budget_precomputed_host_reclaim_abandoned_channel',
+        'channel_reclamation.test.abandoned_drained_channel_reclaim_succeeds_at_deadline',
+      ],
+    },
+    {
+      name: 'Transfer escrow shard retirement',
+      inputCount: 3,
+      outputCount: 2,
+      mintPolicyCount: 1,
+      referenceScriptTitles: [
+        'host_state_stt.host_state_stt.spend',
+        'spending_transfer_module.spend_transfer_module.spend',
+        'minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint',
+      ],
+      redeemers: [
+        dataBytes('HostState module-state redeemer', 96),
+        dataBytes('transfer shard retirement spend witnesses', 4_500),
+        dataBytes('transfer shard retirement burn witnesses', 4_500),
+      ],
+      datums: [dataBytes('updated HostState datum', 1_000), dataBytes('updated transfer root datum', 96)],
+      largestProofPayloadBytes: 4_096,
+      aikenTests: [
+        'host_state_stt.test.host_state_update_module_state_accepts_active_operator',
+        'transfer_escrow_shard_retirement.test.retire_zero_balance_escrow_shard_module_root_spend_succeeds',
+        'transfer_escrow_shard_retirement.test.retire_zero_balance_escrow_shard_spend_succeeds',
+        'transfer_escrow_shard_retirement.test.retire_zero_balance_escrow_shard_mint_succeeds',
+      ],
+    },
+    {
+      name: 'Transfer module reclaim',
+      inputCount: 2,
+      outputCount: 2,
+      mintPolicyCount: 1,
+      referenceScriptTitles: [
+        'host_state_stt.host_state_stt.spend',
+        'spending_transfer_module.spend_transfer_module.spend',
+        'minting_lifecycle_marker.mint_lifecycle_marker.mint',
+      ],
+      redeemers: [
+        dataBytes('HostState module reclaim redeemer', 128),
+        dataBytes('module seal callback', 16),
+        dataBytes('transfer module cleanup target receipt', 160),
+      ],
+      datums: [dataBytes('updated HostState datum', 1_500)],
+      largestProofPayloadBytes: 0,
+      aikenTests: [
+        'host_state_stt.test.host_state_reclaim_module_accepts_drained_shutdown_and_terminal_callback',
+        'terminal_module_reclaim.test.transfer_module_reclaim_pays_settled_root_to_deployer',
+      ],
+    },
+    {
+      name: 'Seal drained HostState',
+      inputCount: 1,
+      outputCount: 1,
+      mintPolicyCount: 0,
+      referenceScriptTitles: ['host_state_stt.host_state_stt.spend'],
+      redeemers: [dataBytes('seal redeemer', 4)],
+      datums: [dataBytes('sealed HostState datum', 1_500)],
+      largestProofPayloadBytes: 0,
+      aikenTests: ['host_state_stt.test.host_state_seals_fully_drained_shutdown_for_fixed_proof_window'],
+    },
+    {
+      name: 'Reference script cleanup batch',
+      inputCount: 10,
+      outputCount: 1,
+      mintPolicyCount: 0,
+      referenceScriptTitles: [],
+      inlineScriptTitles: ['reference_validator.refer_only.else'],
+      redeemers: Array.from({ length: 10 }, (_, index) => dataBytes(`reference reclaim ${index + 1}`, 4)),
+      datums: [],
+      largestProofPayloadBytes: 0,
+      extraBytes: TX_REFERENCE_INPUT_BYTES,
+      aikenTests: Array.from(
+        { length: 10 },
+        () => 'reference_validator.test.reference_validator_reclaim_succeeds_after_proof_window',
+      ),
+    },
+    {
+      name: 'Final HostState reclaim and NFT burn',
+      inputCount: 1,
+      outputCount: 2,
+      mintPolicyCount: 1,
+      referenceScriptTitles: [],
+      inlineScriptTitles: ['host_state_stt.host_state_stt.spend', 'host_state_nft.host_state_nft.mint'],
+      redeemers: [dataBytes('HostState reclaim redeemer', 64), dataBytes('HostState NFT burn redeemer', 64)],
+      datums: [],
+      largestProofPayloadBytes: 0,
+      extraBytes: 300,
+      aikenTests: [
+        'host_state_stt.test.host_state_final_reclaim_burns_sealed_anchor_after_proof_window',
+        'host_state_nft.test.burn_final_accepts_sealed_anchor_after_proof_window',
+      ],
+    },
+  ];
+}
+
 async function buildScenarios(
   validators: Map<string, BlueprintValidator>,
   aikenTests: Map<string, ExUnits>,
@@ -400,6 +634,10 @@ async function buildScenarios(
     'minting_connection_stt.mint_connection_stt.mint',
     'minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint',
     'minting_voucher.mint_voucher.mint',
+    'minting_lifecycle_creation_marker.mint_lifecycle_creation_marker.mint',
+    'minting_lifecycle_marker.mint_lifecycle_marker.mint',
+    'minting_lifecycle_operational_marker.mint_lifecycle_operational_marker.mint',
+    'minting_lifecycle_packet_marker.mint_lifecycle_packet_marker.mint',
     'spending_channel.spend_channel.spend',
     'spending_client.spend_client.spend',
     'spending_connection.spend_connection.spend',
@@ -433,11 +671,12 @@ async function buildScenarios(
       name: 'BindPort at global cap',
       inputCount: 2,
       outputCount: 2,
-      mintPolicyCount: 2,
+      mintPolicyCount: 3,
       referenceScriptTitles: [
         'host_state_stt.host_state_stt.spend',
         'minting_port.mint_port.mint',
         'minting_identifier.minting_identifier.mint',
+        'minting_lifecycle_operational_marker.mint_lifecycle_operational_marker.mint',
       ],
       redeemers: [
         // A BindPort witness contains one 32-byte sibling for every level of
@@ -446,6 +685,7 @@ async function buildScenarios(
         dataBytes('host state BindPort redeemer', 9_000),
         dataBytes('mint port redeemer', 80),
         dataBytes('mint identifier redeemer', 40),
+        sized('lifecycle operational receipt', 'd87980'),
       ],
       datums: [dataBytes('updated HostState datum with ten ports', 512)],
       largestProofPayloadBytes: 8_192,
@@ -459,11 +699,12 @@ async function buildScenarios(
       name: 'ConnOpenTry',
       inputCount: 2,
       outputCount: 3,
-      mintPolicyCount: 2,
+      mintPolicyCount: 3,
       referenceScriptTitles: [
         'host_state_stt.host_state_stt.spend',
         'minting_connection_stt.mint_connection_stt.mint',
         'verifying_proof.verify_proof.mint',
+        'minting_lifecycle_creation_marker.mint_lifecycle_creation_marker.mint',
       ],
       redeemers: [
         sized(
@@ -482,44 +723,52 @@ async function buildScenarios(
         ),
         sized('verify proof', verifyProofRedeemer(1024)),
         dataBytes('host state redeemer', 512),
+        sized('lifecycle creation receipt', 'd87980'),
       ],
       datums: [dataBytes('updated host state datum', 1000), dataBytes('connection datum', 768)],
       largestProofPayloadBytes: 1024,
       aikenTests: [
         'ibc/core/ics_003_connection_semantics/connection_datum.test.test_is_conn_open_try_valid_succeed',
         'spending_transfer_module.test.on_chan_open_try_succeed',
+        'host_state_stt.test.budget_precomputed_host_create_connection',
       ],
     },
     {
       name: 'ConnOpenAck',
       inputCount: 3,
       outputCount: 3,
-      mintPolicyCount: 1,
+      mintPolicyCount: 2,
       referenceScriptTitles: [
         'host_state_stt.host_state_stt.spend',
         'spending_connection.spend_connection.spend',
         'verifying_proof.verify_proof.mint',
+        'minting_lifecycle_operational_marker.mint_lifecycle_operational_marker.mint',
       ],
       redeemers: [
         sized('spend connection ConnOpenAck', await encodeSpendConnectionRedeemer('ConnOpenAck', Lucid)),
         sized('verify proof', verifyProofRedeemer(1536)),
         dataBytes('host state redeemer', 512),
+        sized('lifecycle operational receipt', 'd87980'),
       ],
       datums: [dataBytes('updated host state datum', 1000), dataBytes('connection datum', 768)],
       largestProofPayloadBytes: 1536,
-      aikenTests: ['spending_connection.test.conn_open_ack_succeed'],
+      aikenTests: [
+        'spending_connection.test.conn_open_ack_succeed',
+        'host_state_stt.test.host_state_bind_port_succeeds_with_correct_root_witness',
+      ],
     },
     {
       name: 'First native SendPacket at commitment capacity',
       inputCount: 4,
       outputCount: 4,
-      mintPolicyCount: 2,
+      mintPolicyCount: 3,
       referenceScriptTitles: [
         'host_state_stt.host_state_stt.spend',
         'spending_channel.spend_channel.spend',
         'spending_transfer_module.spend_transfer_module.spend',
         'spending_channel/send_packet.send_packet.spend',
         'minting_transfer_escrow_shard.mint_transfer_escrow_shard.mint',
+        'minting_lifecycle_packet_marker.mint_lifecycle_packet_marker.mint',
       ],
       redeemers: [
         sized(
@@ -530,6 +779,7 @@ async function buildScenarios(
         dataBytes('host state redeemer', 2_400),
         dataBytes('transfer module redeemer', 384),
         sized('create transfer escrow shard', createTransferEscrowShardRedeemer()),
+        sized('lifecycle packet receipt', 'd87980'),
       ],
       datums: [
         dataBytes('updated host state datum', 1000),
@@ -551,12 +801,13 @@ async function buildScenarios(
       name: 'RecvPacket at history capacity',
       inputCount: 3,
       outputCount: 3,
-      mintPolicyCount: 2,
+      mintPolicyCount: 3,
       referenceScriptTitles: [
         'host_state_stt.host_state_stt.spend',
         'spending_channel.spend_channel.spend',
         'spending_channel/recv_packet.recv_packet.mint',
         'verifying_proof.verify_proof.mint',
+        'minting_lifecycle_packet_marker.mint_lifecycle_packet_marker.mint',
       ],
       redeemers: [
         sized(
@@ -576,6 +827,7 @@ async function buildScenarios(
         // RecvPacket updates both receipt and acknowledgement paths. Each path
         // carries a 64-level sparse-Merkle witness at the configured boundary.
         dataBytes('host state redeemer', 4_600),
+        sized('lifecycle packet receipt', 'd87980'),
       ],
       datums: [dataBytes('updated host state datum', 1000), dataBytes('updated channel datum', 2_800)],
       largestProofPayloadBytes: 1536,
@@ -592,12 +844,13 @@ async function buildScenarios(
       // Two spending inputs plus the referenced connection and client UTxOs.
       inputCount: 4,
       outputCount: 2,
-      mintPolicyCount: 2,
+      mintPolicyCount: 3,
       referenceScriptTitles: [
         'host_state_stt.host_state_stt.spend',
         'spending_channel.spend_channel.spend',
         'spending_channel/prune_packet_history.prune_packet_history.mint',
         'verifying_proof.verify_proof.mint',
+        'minting_lifecycle_packet_marker.mint_lifecycle_packet_marker.mint',
       ],
       redeemers: [
         sized(
@@ -620,6 +873,7 @@ async function buildScenarios(
         // Pruning deletes receipt then acknowledgement, so HostState carries
         // two complete 64-level sparse-Merkle witnesses.
         dataBytes('host state HandlePacket redeemer', 4_600),
+        sized('lifecycle packet receipt', 'd87980'),
       ],
       datums: [
         dataBytes('updated host state datum', 1000),
@@ -637,13 +891,14 @@ async function buildScenarios(
       name: 'AcknowledgePacket',
       inputCount: 4,
       outputCount: 3,
-      mintPolicyCount: 2,
+      mintPolicyCount: 3,
       referenceScriptTitles: [
         'host_state_stt.host_state_stt.spend',
         'spending_channel.spend_channel.spend',
         'spending_transfer_module.spend_transfer_module.spend',
         'spending_channel/acknowledge_packet.acknowledge_packet.mint',
         'verifying_proof.verify_proof.mint',
+        'minting_lifecycle_packet_marker.mint_lifecycle_packet_marker.mint',
       ],
       redeemers: [
         sized(
@@ -663,6 +918,7 @@ async function buildScenarios(
         sized('verify proof', verifyProofRedeemer(1536)),
         sized('refund voucher', voucherRedeemer('RefundVoucher')),
         dataBytes('host state redeemer', 512),
+        sized('lifecycle packet receipt', 'd87980'),
       ],
       datums: [dataBytes('updated host state datum', 1000), dataBytes('updated channel datum', 700)],
       largestProofPayloadBytes: 1536,
@@ -676,7 +932,7 @@ async function buildScenarios(
       name: 'TimeoutPacket',
       inputCount: 4,
       outputCount: 4,
-      mintPolicyCount: 3,
+      mintPolicyCount: 4,
       referenceScriptTitles: [
         'host_state_stt.host_state_stt.spend',
         'spending_channel.spend_channel.spend',
@@ -684,6 +940,7 @@ async function buildScenarios(
         'spending_channel/timeout_packet.timeout_packet.mint',
         'verifying_proof.verify_proof.mint',
         'minting_voucher.mint_voucher.mint',
+        'minting_lifecycle_packet_marker.mint_lifecycle_packet_marker.mint',
       ],
       redeemers: [
         sized(
@@ -703,6 +960,7 @@ async function buildScenarios(
         sized('verify proof', verifyProofRedeemer(1536)),
         sized('refund voucher', voucherRedeemer('RefundVoucher')),
         dataBytes('host state redeemer', 512),
+        sized('lifecycle packet receipt', 'd87980'),
       ],
       datums: [dataBytes('updated host state datum', 1000), dataBytes('updated channel datum', 700)],
       largestProofPayloadBytes: 1536,
@@ -712,6 +970,7 @@ async function buildScenarios(
         'spending_transfer_module.test.on_timeout_packet_mint_voucher_succeed',
       ],
     },
+    ...lifecycleAndShutdownScenarios(),
     {
       name: 'Trace registry append at bounded worst-case history',
       inputCount: 2,
@@ -734,9 +993,7 @@ async function buildScenarios(
       ],
       datums: [dataBytes('max encoded shard datum', TRACE_REGISTRY_LIMITS.maxShardDatumBytes)],
       largestProofPayloadBytes: 0,
-      aikenTests: [
-        'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
-      ],
+      aikenTests: ['trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit'],
       extraBytes: (1 + TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket) * TX_REFERENCE_INPUT_BYTES,
     },
     {
@@ -792,8 +1049,7 @@ async function buildScenarios(
         'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
         'trace_registry_capacity.test.trace_registry_boundary_append_eight_archives_at_entry_limit',
       ],
-      extraBytes:
-        (TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket - 1) * TX_REFERENCE_INPUT_BYTES,
+      extraBytes: (TRACE_REGISTRY_LIMITS.maxArchivedShardsPerBucket - 1) * TX_REFERENCE_INPUT_BYTES,
     },
     {
       name: 'First-seen voucher mint + CIP-68 metadata',

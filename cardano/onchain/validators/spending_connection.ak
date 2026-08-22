@@ -1,7 +1,9 @@
+use aiken/collection/list
 use aiken/collection/pairs
 use cardano/assets.{PolicyId}
 use cardano/transaction.{
-  Input, Mint, OutputReference, Redeemer, ScriptPurpose, Transaction,
+  Input, Mint, Output, OutputReference, Redeemer, ScriptPurpose, Spend,
+  Transaction,
 }
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/client_datum.{
@@ -16,7 +18,8 @@ use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
 use ibc/core/ics_002_client_semantics/types/client.{Active}
 use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
 use ibc/core/ics_003_connection_semantics/connection_redeemer.{
-  ConnOpenAck, ConnOpenConfirm, SpendConnectionRedeemer,
+  BeginConnectionRetirement, ConnOpenAck, ConnOpenConfirm, DecrementChannelCount,
+  IncrementChannelCount, ReclaimConnection, SpendConnectionRedeemer,
 }
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
@@ -26,7 +29,44 @@ use ibc/core/ics_003_connection_semantics/verify as verify_mod
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof}
 use ibc/core/ics_023_vector_commitments/merkle_prefix
 use ibc/core/ics_024_host_requirements/connection_keys.{default_merkle_prefix}
+use ibc/core/ics_025_handler_interface/host_state_redeemer
 use ibc/utils/validator_utils
+
+fn require_host_companion(
+  inputs: List<Input>,
+  outputs: List<Output>,
+  redeemers: Pairs<ScriptPurpose, Redeemer>,
+  host_state_nft_policy_id: PolicyId,
+) -> (Input, host_state_redeemer.HostStateRedeemer) {
+  let (host_input, _) =
+    validator_utils.require_host_state_thread(
+      inputs,
+      outputs,
+      host_state_nft_policy_id,
+    )
+  expect Some(spent_host_state_redeemer) =
+    pairs.get_first(redeemers, Spend(host_input.output_reference))
+  expect host_redeemer: host_state_redeemer.HostStateRedeemer =
+    spent_host_state_redeemer
+  (host_input, host_redeemer)
+}
+
+fn connection_continuation(
+  spent_output: Output,
+  outputs: List<Output>,
+  token: AuthToken,
+) -> ConnectionDatum {
+  let updated_output =
+    validator_utils.find_unique_continuation_output(
+      spent_output,
+      outputs,
+      token,
+    )
+  expect auth.contains_only_auth_tokens(updated_output, [token])
+  expect updated_datum: ConnectionDatum =
+    validator_utils.get_inline_datum(updated_output)
+  updated_datum
+}
 
 validator spend_connection(
   client_minting_policy_id: PolicyId,
@@ -43,19 +83,19 @@ validator spend_connection(
       inputs,
       outputs,
       reference_inputs,
+      mint,
       validity_range,
       redeemers,
+      extra_signatories,
       ..
     } = transaction
 
-    // Connection handshakes must use the matching HostState root verifier branch.
-    expect _ =
-      validator_utils.require_host_state_redeemer(
+    let (host_input, host_redeemer) =
+      require_host_companion(
         inputs,
         outputs,
         redeemers,
         host_state_nft_policy_id,
-        validator_utils.ExpectUpdateConnection,
       )
 
     expect Some(spent_input) = transaction.find_input(inputs, spent_output_ref)
@@ -66,50 +106,30 @@ validator spend_connection(
     expect auth.contain_auth_token(spent_output, datum.token)
     trace @"spend_connection: input contains auth token"
 
-    let updated_output =
-      validator_utils.find_unique_continuation_output(
-        spent_output,
-        outputs,
-        datum.token,
-      )
-    expect updated_datum: ConnectionDatum =
-      validator_utils.get_inline_datum(updated_output)
-    trace @"spend_connection: found connection output"
-
-    expect auth.contains_only_auth_tokens(updated_output, [datum.token])
-    trace @"spend_connection: output contains connection token"
-
-    let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
-    trace @"spend_connection: extract tx valid_to"
-
-    let connection_sequence = auth.extract_token_sequence(datum.token.name)
-    let connection_id =
-      conn_keys.format_connection_identifier(connection_sequence)
-    trace @"spend_connection: extract connection_id"
-
-    // Both connection-spend variants authenticate the same referred client and
-    // require it to be active. Resolve that shared state once before dispatching
-    // to the branch-specific proof and transition checks.
-    let client_datum =
-      validator_utils.validate_referred_client(
-        reference_inputs,
-        datum.token.name,
-        client_minting_policy_id,
-        datum.state.client_id,
-      )
-    trace @"spend_connection: validator_utils.validate_referred_client"
-
-    let connection_state_active =
-      client_state.status(
-        client_datum.state.client_state,
-        tx_valid_to * 1_000_000,
-        client_datum.state.consensus_states,
-      ) == Active
-    trace @"spend_connection: client status is active"
-
     when redeemer is {
       ConnOpenAck -> {
         trace @"spend_connection: ConnOpenAck branch"
+
+        expect host_state_redeemer.UpdateConnection { .. } = host_redeemer
+        let updated_datum =
+          connection_continuation(spent_output, outputs, datum.token)
+        let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
+        let connection_sequence = auth.extract_token_sequence(datum.token.name)
+        let connection_id =
+          conn_keys.format_connection_identifier(connection_sequence)
+        let client_datum =
+          validator_utils.validate_referred_client(
+            reference_inputs,
+            datum.token.name,
+            client_minting_policy_id,
+            datum.state.client_id,
+          )
+        let connection_state_active =
+          client_state.status(
+            client_datum.state.client_state,
+            tx_valid_to * 1_000_000,
+            client_datum.state.consensus_states,
+          ) == Active
 
         let valid_connection =
           validate_conn_open_ack_proof(
@@ -128,6 +148,27 @@ validator spend_connection(
       }
       ConnOpenConfirm { proof_ack, proof_height } -> {
         trace @"spend_connection: ConnOpenConfirm branch"
+
+        expect host_state_redeemer.UpdateConnection { .. } = host_redeemer
+        let updated_datum =
+          connection_continuation(spent_output, outputs, datum.token)
+        let tx_valid_to = validator_utils.get_tx_valid_to(validity_range)
+        let connection_sequence = auth.extract_token_sequence(datum.token.name)
+        let connection_id =
+          conn_keys.format_connection_identifier(connection_sequence)
+        let client_datum =
+          validator_utils.validate_referred_client(
+            reference_inputs,
+            datum.token.name,
+            client_minting_policy_id,
+            datum.state.client_id,
+          )
+        let connection_state_active =
+          client_state.status(
+            client_datum.state.client_state,
+            tx_valid_to * 1_000_000,
+            client_datum.state.consensus_states,
+          ) == Active
 
         let is_connection_open =
           connection_datum.is_connection_open_confirm_valid(
@@ -151,6 +192,62 @@ validator spend_connection(
           connection_state_active?,
           is_connection_open?,
           valid_connection?,
+        }
+      }
+      IncrementChannelCount -> {
+        trace @"spend_connection: IncrementChannelCount branch"
+
+        expect host_state_redeemer.CreateChannel { .. } = host_redeemer
+        let updated_datum =
+          connection_continuation(spent_output, outputs, datum.token)
+        connection_datum.validate_increment_channel_count(datum, updated_datum)
+      }
+      DecrementChannelCount -> {
+        trace @"spend_connection: DecrementChannelCount branch"
+
+        expect host_state_redeemer.ReclaimChannel { .. } = host_redeemer
+        let updated_datum =
+          connection_continuation(spent_output, outputs, datum.token)
+        connection_datum.validate_decrement_channel_count(datum, updated_datum)
+      }
+      BeginConnectionRetirement { not_before } -> {
+        trace @"spend_connection: BeginConnectionRetirement branch"
+
+        expect host_state_redeemer.BeginConnectionRetirement = host_redeemer
+        let host_datum = validator_utils.get_host_state_datum(host_input)
+        let valid_from = validator_utils.get_tx_valid_from(validity_range)
+        let updated_datum =
+          connection_continuation(spent_output, outputs, datum.token)
+
+        and {
+          list.has(extra_signatories, host_datum.deployer),
+          connection_datum.validate_begin_retirement(
+            datum,
+            updated_datum,
+            valid_from,
+            not_before,
+          ),
+        }
+      }
+      ReclaimConnection { reclaim_to } -> {
+        trace @"spend_connection: ReclaimConnection branch"
+
+        expect host_state_redeemer.ReclaimConnection {
+          reclaim_to: host_reclaim_to,
+          ..
+        } = host_redeemer
+        let valid_from = validator_utils.get_tx_valid_from(validity_range)
+
+        and {
+          host_reclaim_to == reclaim_to,
+          connection_datum.is_reclaimable(datum, valid_from),
+          auth.burn_auth_token(mint, datum.token),
+          validator_utils.no_output_contains_auth_token(outputs, datum.token),
+          validator_utils.pays_reclamation_bounty(
+            spent_output,
+            outputs,
+            reclaim_to,
+          ),
         }
       }
     }

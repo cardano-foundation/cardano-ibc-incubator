@@ -1,5 +1,5 @@
 // IBC State Root Computation - STT Architecture
-// 
+//
 // This module is responsible for computing the ICS-23 Merkle root commitment over all IBC host state.
 // The root covers: clients/, connections/, channels/, packets/, etc.
 //
@@ -47,12 +47,12 @@ import { encodeClientStateValue, encodeConsensusStateValue } from '../types/clie
 import { encodeConnectionEndValue } from '../types/connection/connection-datum';
 import { encodeChannelEndValue } from '../types/channel/channel-datum';
 import type { ChannelDatum } from '../types/channel/channel-datum';
-import { encodeModuleRegistration } from '../types/host-state-datum';
+import { encodeModuleRegistration, type HostStateDatum } from '../types/host-state-datum';
 import { convertHex2String } from './hex';
 
 /**
  * Result of a state root computation
- * 
+ *
  * The computation is speculative until `commit()` is called.
  * This prevents the in-memory tree from becoming out-of-sync with on-chain state
  * when transactions fail or are retried.
@@ -66,11 +66,11 @@ export interface StateRootResult {
 
 /**
  * Current working tree - tracks the latest CONFIRMED IBC host state
- * 
+ *
  * This tree represents the actual on-chain state. It is only updated via:
  * 1. `commit()` after a transaction is confirmed
  * 2. `alignTreeWithChain()` to rebuild from on-chain UTXOs
- * 
+ *
  * NEVER mutate this tree directly during speculative computation.
  */
 let currentTree: ICS23MerkleTree = new ICS23MerkleTree();
@@ -96,19 +96,20 @@ export function initTreeServices(kupoService: any, lucidService: any): void {
  */
 function serializeValue(value: any): Buffer {
   if (Buffer.isBuffer(value)) return value;
-  const json = JSON.stringify(value, (key, val) => 
-    typeof val === 'bigint' ? val.toString() : val
-  );
+  const json = JSON.stringify(value, (key, val) => (typeof val === 'bigint' ? val.toString() : val));
   return Buffer.from(json, 'utf8');
 }
 
 export interface CreateClientStateRootResult extends StateRootResult {
   clientStateSiblings: string[];
   consensusStateSiblings: string[];
+  clientConnectionCountSiblings: string[];
 }
 
 export interface CreateConnectionStateRootResult extends StateRootResult {
   connectionSiblings: string[];
+  clientConnectionCountSiblings: string[];
+  clientConnectionCount: bigint;
 }
 
 export interface CreateChannelStateRootResult extends StateRootResult {
@@ -116,6 +117,10 @@ export interface CreateChannelStateRootResult extends StateRootResult {
   nextSequenceSendSiblings: string[];
   nextSequenceRecvSiblings: string[];
   nextSequenceAckSiblings: string[];
+}
+
+interface UpdateConnectionStateRootResult extends StateRootResult {
+  connectionSiblings: string[];
 }
 
 export interface BindPortStateRootResult extends StateRootResult {
@@ -147,14 +152,188 @@ interface PrunePacketHistoryStateRootResult extends StateRootResult {
   packetAcknowledgementSiblings: string[];
 }
 
+interface PruneTerminalClientStateRootResult extends StateRootResult {
+  removedConsensusStateSiblings: string[][];
+}
+
+interface ReclaimClientStateRootResult extends StateRootResult {
+  clientStateSiblings: string[];
+  consensusStateSiblings: string[];
+  clientConnectionCountSiblings: string[];
+}
+
+interface ReclaimConnectionStateRootResult extends StateRootResult {
+  connectionSiblings: string[];
+  clientConnectionCount: bigint;
+  clientConnectionCountSiblings: string[];
+}
+
+interface ReclaimChannelStateRootResult extends StateRootResult {
+  channelSiblings: string[];
+  nextSequenceSendSiblings: string[];
+  nextSequenceRecvSiblings: string[];
+  nextSequenceAckSiblings: string[];
+}
+
+export function clientConnectionCountPath(clientId: string): string {
+  return `cardano/dependencies/v1/clients/${clientId}/liveConnections`;
+}
+
+const RETIRED_MODULE_PORT_PREFIX = '00';
+const VALID_ICS_PORT_BYTE = (byte: number): boolean =>
+  (byte >= 0x30 && byte <= 0x39) ||
+  (byte >= 0x41 && byte <= 0x5a) ||
+  (byte >= 0x61 && byte <= 0x7a) ||
+  [0x5f, 0x2e, 0x2b, 0x2d, 0x23, 0x5b, 0x5d, 0x3c, 0x3e].includes(byte);
+
+function isCanonicalIcsPortHex(portIdHex: string): boolean {
+  if (!/^(?:[0-9a-f]{2}){2,128}$/.test(portIdHex)) return false;
+  return Buffer.from(portIdHex, 'hex').every(VALID_ICS_PORT_BYTE);
+}
+
+/**
+ * During bounded shutdown a registered module key is prefixed with a NUL byte
+ * in HostState. The original registration remains committed at its ordinary
+ * ICS port path, so a cold rebuild strips that local marker before deriving the
+ * path. Valid textual ICS port identifiers cannot begin with NUL.
+ */
+export function committedModulePortIdHex(hostPortIdHex: string): string {
+  const retired = hostPortIdHex.startsWith(RETIRED_MODULE_PORT_PREFIX);
+  const committedPortId = retired ? hostPortIdHex.slice(RETIRED_MODULE_PORT_PREFIX.length) : hostPortIdHex;
+  if (!isCanonicalIcsPortHex(committedPortId)) {
+    throw new Error(`Invalid HostState module port bytes '${hostPortIdHex}'`);
+  }
+  return committedPortId;
+}
+
+async function restoreCommittedModulePorts(
+  tree: ICS23MerkleTree,
+  boundPorts: HostStateDatum['state']['bound_port'],
+  lucidImporter: typeof import('@lucid-evolution/lucid'),
+): Promise<number> {
+  const committedPortIds = new Set<string>();
+  for (const [hostPortIdHex, registration] of boundPorts.entries()) {
+    const portIdHex = committedModulePortIdHex(hostPortIdHex);
+    if (committedPortIds.has(portIdHex)) {
+      throw new Error(`HostState contains duplicate active/retired registration for port ${portIdHex}`);
+    }
+    committedPortIds.add(portIdHex);
+    const portId = convertHex2String(portIdHex);
+    const portValue = Buffer.from(await encodeModuleRegistration(registration, lucidImporter), 'hex');
+    tree.set(`ports/${portId}`, portValue);
+  }
+  return committedPortIds.size;
+}
+
+async function restoreLiveClients(
+  tree: ICS23MerkleTree,
+  kupoService: any,
+  lucidService: any,
+): Promise<{ liveClientIds: Set<string>; liveConnectionCounts: Map<string, bigint> }> {
+  const clientUtxos = await kupoService.queryAllClientUtxos();
+  console.log(`Found ${clientUtxos.length} client UTXOs`);
+  const liveClientIds = new Set<string>();
+  const liveConnectionCounts = new Map<string, bigint>();
+
+  for (const clientUtxo of clientUtxos) {
+    if (!clientUtxo.datum) continue;
+
+    const clientDatum = await lucidService.decodeDatum(clientUtxo.datum, 'client');
+    const clientUnit = Object.keys(clientUtxo.assets || {}).find((unit) => unit !== 'lovelace');
+    if (!clientUnit || clientUnit.length < 56 + 48 + 2) continue;
+
+    const tokenName = clientUnit.slice(56);
+    const postfixHex = tokenName.slice(48);
+    const clientSequence = BigInt(Buffer.from(postfixHex, 'hex').toString('utf8'));
+    const clientId = `07-tendermint-${clientSequence.toString()}`;
+    liveClientIds.add(clientId);
+    liveConnectionCounts.set(clientId, 0n);
+
+    const clientStateValue = Buffer.from(
+      await encodeClientStateValue(clientDatum.state.clientState, lucidService.LucidImporter),
+      'hex',
+    );
+    tree.set(`clients/${clientId}/clientState`, clientStateValue);
+
+    const consensusStates = clientDatum.state.consensusStates;
+    if (consensusStates && (consensusStates instanceof Map || typeof consensusStates === 'object')) {
+      const entries =
+        consensusStates instanceof Map ? Array.from(consensusStates.entries()) : Object.entries(consensusStates);
+
+      for (const [heightKey, consensusState] of entries) {
+        let heightStr: string;
+        if (typeof heightKey === 'object' && heightKey !== null) {
+          const height = heightKey as { revisionHeight?: bigint | number };
+          heightStr = `${height.revisionHeight || 0}`;
+        } else {
+          heightStr = String(heightKey);
+        }
+        const consensusValue = Buffer.from(
+          await encodeConsensusStateValue(consensusState, lucidService.LucidImporter),
+          'hex',
+        );
+        tree.set(`clients/${clientId}/consensusStates/${heightStr}`, consensusValue);
+      }
+      console.log(`  Added client: ${clientId} with ${entries.length} consensus state(s)`);
+    } else {
+      console.log(`  Added client: ${clientId} (no consensus states)`);
+    }
+  }
+
+  return { liveClientIds, liveConnectionCounts };
+}
+
+/** Canonical CBOR encoding shared with Aiken `cbor.serialise(Int)`. */
+export function encodeDependencyCount(value: bigint | number): Buffer {
+  const count = typeof value === 'bigint' ? value : BigInt(value);
+  if (count < 0n) throw new Error('Dependency count cannot be negative');
+  if (count <= 23n) return Buffer.from([Number(count)]);
+  if (count <= 0xffn) return Buffer.from([0x18, Number(count)]);
+  if (count <= 0xffffn) {
+    const encoded = Buffer.alloc(3);
+    encoded[0] = 0x19;
+    encoded.writeUInt16BE(Number(count), 1);
+    return encoded;
+  }
+  if (count <= 0xffff_ffffn) {
+    const encoded = Buffer.alloc(5);
+    encoded[0] = 0x1a;
+    encoded.writeUInt32BE(Number(count), 1);
+    return encoded;
+  }
+  if (count <= 0xffff_ffff_ffff_ffffn) {
+    const encoded = Buffer.alloc(9);
+    encoded[0] = 0x1b;
+    encoded.writeBigUInt64BE(count, 1);
+    return encoded;
+  }
+  throw new Error('Dependency count exceeds the supported uint64 range');
+}
+
+export function decodeDependencyCount(encoded: Buffer): bigint {
+  if (encoded.length === 1 && encoded[0] <= 23) return BigInt(encoded[0]);
+  if (encoded.length === 2 && encoded[0] === 0x18) return BigInt(encoded[1]);
+  if (encoded.length === 3 && encoded[0] === 0x19) return BigInt(encoded.readUInt16BE(1));
+  if (encoded.length === 5 && encoded[0] === 0x1a) return BigInt(encoded.readUInt32BE(1));
+  if (encoded.length === 9 && encoded[0] === 0x1b) return encoded.readBigUInt64BE(1);
+  throw new Error('Invalid canonical dependency-count encoding');
+}
+
+function requireCommittedValue(tree: ICS23MerkleTree, path: string, expectedValue: Buffer, operation: string): void {
+  const committedValue = tree.get(path);
+  if (!committedValue || !committedValue.equals(expectedValue)) {
+    throw new Error(`${operation} expected the canonical committed value at '${path}'`);
+  }
+}
+
 /**
  * Get or reconstruct tree from root hash (returns a CLONE for speculative use)
- * 
+ *
  * Strategy:
  * 1. If root matches currentTree, clone and return (common case)
  * 2. If root is empty (zeros), return a new empty tree
  * 3. Otherwise, throw an error - tree is out of sync and must be rebuilt
- * 
+ *
  * @param rootHash - Target root hash from HostState UTXO (64-character hex string)
  * @returns A CLONED Merkle tree instance (safe to mutate)
  */
@@ -163,54 +342,54 @@ function getClonedTreeFromRoot(rootHash: string): ICS23MerkleTree {
   if (rootHash === '0'.repeat(64)) {
     return new ICS23MerkleTree();
   }
-  
+
   // Check if current tree matches the requested root
   const currentRoot = currentTree.getRoot();
   if (currentRoot === rootHash) {
     // CRITICAL: Return a CLONE so speculative mutations don't affect the canonical tree
     return currentTree.clone();
   }
-  
+
   // Root mismatch - tree is out of sync with on-chain state
   // This indicates a previous tx failed but we speculatively mutated the tree (bug),
   // or the Gateway restarted and lost in-memory state
   console.error(
     `STATE ROOT MISMATCH:\n` +
-    `  On-chain root: ${rootHash.substring(0, 16)}...\n` +
-    `  In-memory root: ${currentRoot.substring(0, 16)}...\n` +
-    `  The in-memory tree is stale. Call alignTreeWithChain() before retrying.`
+      `  On-chain root: ${rootHash.substring(0, 16)}...\n` +
+      `  In-memory root: ${currentRoot.substring(0, 16)}...\n` +
+      `  The in-memory tree is stale. Call alignTreeWithChain() before retrying.`,
   );
-  
+
   throw new Error(
     `Tree out of sync with on-chain state. ` +
-    `Expected root ${rootHash.substring(0, 16)}..., ` +
-    `but in-memory root is ${currentRoot.substring(0, 16)}...`
+      `Expected root ${rootHash.substring(0, 16)}..., ` +
+      `but in-memory root is ${currentRoot.substring(0, 16)}...`,
   );
 }
 
 /**
  * Align the in-memory tree with on-chain state (This is an automatic self-healing mechanism)
- * 
+ *
  * This is the core of the Gateway's crash recovery. It rebuilds the entire
  * Merkle tree from on-chain UTXOs, ensuring the in-memory state matches
  * what's actually committed on Cardano.
- * 
+ *
  * WHEN THIS IS CALLED:
  * - Automatically by `ensureTreeAligned()` when a query detects stale state
  * - After Gateway restart (triggered by first proof-generating query)
  * - If a transaction fails and the speculative tree becomes invalid
- * 
+ *
  * WHAT IT DOES:
  * 1. Queries the HostState UTXO to get the expected root
  * 2. Queries ALL IBC entity UTXOs (clients, connections, channels)
  * 3. Rebuilds the Merkle tree from scratch with all entries
  * 4. Verifies the computed root matches the on-chain commitment
  * 5. Replaces the in-memory tree with the rebuilt one
- * 
+ *
  * PERFORMANCE NOTE:
  * This is expensive (queries many UTXOs), but only runs when needed.
  * In normal operation, `isTreeAligned()` returns true and this is skipped.
- * 
+ *
  * @returns Object containing the rebuilt tree's root hash
  * @throws Error if tree services not initialized via initTreeServices()
  */
@@ -218,19 +397,19 @@ export async function alignTreeWithChain(): Promise<{ root: string }> {
   if (!cachedKupoService || !cachedLucidService) {
     throw new Error('Tree services not initialized. Call initTreeServices() on Gateway startup.');
   }
-  
+
   console.log('Aligning in-memory tree with on-chain state...');
-  
+
   const result = await rebuildTreeFromChain(cachedKupoService, cachedLucidService);
   return { root: result.root };
 }
 
 /**
  * Check if the in-memory tree matches the given on-chain root
- * 
+ *
  * Use this to detect staleness before building transactions or generating proofs.
  * This is a cheap operation (just compares two hash strings).
- * 
+ *
  * @param onChainRoot - The ibc_state_root from the HostState UTXO (64-char hex)
  * @returns true if in-memory tree matches on-chain state, false if rebuild needed
  */
@@ -243,10 +422,10 @@ export function isTreeAligned(onChainRoot: string): boolean {
 
 /**
  * Computes the new IBC state root after adding/updating client state
- * 
+ *
  * SIDE-EFFECT FREE: Does not mutate the canonical tree.
  * Call result.commit() only after the transaction is confirmed.
- * 
+ *
  * @param oldRoot - Current IBC state root (64-character hex string)
  * @param clientId - Client identifier being created/updated
  * @param clientState - New client state value
@@ -263,13 +442,13 @@ export function computeRootWithClientUpdate(
 ): StateRootResult {
   // Get a CLONED tree (safe to mutate)
   const speculativeTree = getClonedTreeFromRoot(oldRoot);
-  
+
   // IBC path for client state: clients/{clientId}/clientState
   // This stores the overall client configuration (chain ID, trust level, latest height, etc.)
   const clientPath = `clients/${clientId}/clientState`;
   const clientValue = serializeValue(clientState);
   speculativeTree.set(clientPath, clientValue);
-  
+
   // If a consensus state is provided, also add it to the tree.
   // Consensus states are snapshots of the counterparty chain at specific heights.
   // They're used for proof verification - when verifying a packet commitment,
@@ -283,10 +462,10 @@ export function computeRootWithClientUpdate(
     speculativeTree.set(consensusPath, consensusValue);
     console.log(`Added consensus state for ${clientId} at height ${heightStr}`);
   }
-  
+
   // Compute new root
   const newRoot = speculativeTree.getRoot();
-  
+
   return {
     newRoot,
     commit: () => {
@@ -318,10 +497,12 @@ export function computeRootWithCreateClientUpdate(
 
   const heightStr = String(consensusHeight);
   const consensusPath = `clients/${clientId}/consensusStates/${heightStr}`;
-  const consensusStateSiblings = speculativeTree
-    .getSiblings(consensusPath)
-    .map((h) => h.toString('hex'));
+  const consensusStateSiblings = speculativeTree.getSiblings(consensusPath).map((h) => h.toString('hex'));
   speculativeTree.set(consensusPath, consensusStateValue);
+
+  const connectionCountPath = clientConnectionCountPath(clientId);
+  const clientConnectionCountSiblings = speculativeTree.getSiblings(connectionCountPath).map((h) => h.toString('hex'));
+  speculativeTree.set(connectionCountPath, encodeDependencyCount(0n));
 
   const newRoot = speculativeTree.getRoot();
 
@@ -329,6 +510,7 @@ export function computeRootWithCreateClientUpdate(
     newRoot,
     clientStateSiblings,
     consensusStateSiblings,
+    clientConnectionCountSiblings,
     commit: () => {
       currentTree = speculativeTree;
       console.log(`Committed CreateClient: ${clientId}, new root: ${newRoot.substring(0, 16)}...`);
@@ -438,6 +620,7 @@ export function computeRootWithCreateConnectionUpdate(
   oldRoot: string,
   connectionId: string,
   connectionValue: Buffer,
+  clientId: string,
 ): CreateConnectionStateRootResult {
   const speculativeTree = getClonedTreeFromRoot(oldRoot);
 
@@ -445,6 +628,41 @@ export function computeRootWithCreateConnectionUpdate(
   const connectionSiblings = speculativeTree.getSiblings(path).map((h) => h.toString('hex'));
   speculativeTree.set(path, connectionValue);
 
+  const connectionCountPath = clientConnectionCountPath(clientId);
+  const committedCount = speculativeTree.get(connectionCountPath);
+  if (!committedCount) {
+    throw new Error(`CreateConnection is missing the live-connection count for '${clientId}'`);
+  }
+  const clientConnectionCount = decodeDependencyCount(committedCount);
+  const clientConnectionCountSiblings = speculativeTree.getSiblings(connectionCountPath).map((h) => h.toString('hex'));
+  speculativeTree.set(connectionCountPath, encodeDependencyCount(clientConnectionCount + 1n));
+
+  const newRoot = speculativeTree.getRoot();
+
+  return {
+    newRoot,
+    connectionSiblings,
+    clientConnectionCountSiblings,
+    clientConnectionCount,
+    commit: () => {
+      currentTree = speculativeTree;
+      console.log(`Committed CreateConnection: ${connectionId}, new root: ${newRoot.substring(0, 16)}...`);
+    },
+  };
+}
+
+export function computeRootWithUpdateConnectionUpdate(
+  oldRoot: string,
+  connectionId: string,
+  connectionValue: Buffer,
+): UpdateConnectionStateRootResult {
+  const speculativeTree = getClonedTreeFromRoot(oldRoot);
+  const path = `connections/${connectionId}`;
+  if (!speculativeTree.get(path)) {
+    throw new Error(`UpdateConnection expected an existing value at '${path}'`);
+  }
+  const connectionSiblings = speculativeTree.getSiblings(path).map((h) => h.toString('hex'));
+  speculativeTree.set(path, connectionValue);
   const newRoot = speculativeTree.getRoot();
 
   return {
@@ -452,7 +670,7 @@ export function computeRootWithCreateConnectionUpdate(
     connectionSiblings,
     commit: () => {
       currentTree = speculativeTree;
-      console.log(`Committed CreateConnection: ${connectionId}, new root: ${newRoot.substring(0, 16)}...`);
+      console.log(`Committed UpdateConnection: ${connectionId}, new root: ${newRoot.substring(0, 16)}...`);
     },
   };
 }
@@ -479,15 +697,11 @@ export function computeRootWithCreateChannelUpdate(
   speculativeTree.set(channelPath, channelValue);
 
   const nextSequenceSendPath = `nextSequenceSend/ports/${portId}/channels/${channelId}`;
-  const nextSequenceSendSiblings = speculativeTree
-    .getSiblings(nextSequenceSendPath)
-    .map((h) => h.toString('hex'));
+  const nextSequenceSendSiblings = speculativeTree.getSiblings(nextSequenceSendPath).map((h) => h.toString('hex'));
   speculativeTree.set(nextSequenceSendPath, nextSequenceSendValue);
 
   const nextSequenceRecvPath = `nextSequenceRecv/ports/${portId}/channels/${channelId}`;
-  const nextSequenceRecvSiblings = speculativeTree
-    .getSiblings(nextSequenceRecvPath)
-    .map((h) => h.toString('hex'));
+  const nextSequenceRecvSiblings = speculativeTree.getSiblings(nextSequenceRecvPath).map((h) => h.toString('hex'));
   speculativeTree.set(nextSequenceRecvPath, nextSequenceRecvValue);
 
   const nextSequenceAckPath = `nextSequenceAck/ports/${portId}/channels/${channelId}`;
@@ -504,9 +718,7 @@ export function computeRootWithCreateChannelUpdate(
     nextSequenceAckSiblings,
     commit: () => {
       currentTree = speculativeTree;
-      console.log(
-        `Committed CreateChannel: ${portId}/${channelId}, new root: ${newRoot.substring(0, 16)}...`,
-      );
+      console.log(`Committed CreateChannel: ${portId}/${channelId}, new root: ${newRoot.substring(0, 16)}...`);
     },
   };
 }
@@ -574,10 +786,7 @@ export async function computeRootWithHandlePacketUpdate(
   const channelPath = `channelEnds/ports/${portId}/channels/${channelId}`;
   let channelSiblings: string[] = [];
   if (inputChannelDatum.state.channel !== outputChannelDatum.state.channel) {
-    const newChannelValue = Buffer.from(
-      await encodeChannelEndValue(outputChannelDatum.state.channel, Lucid),
-      'hex',
-    );
+    const newChannelValue = Buffer.from(await encodeChannelEndValue(outputChannelDatum.state.channel, Lucid), 'hex');
     channelSiblings = speculativeTree.getSiblings(channelPath).map((h) => h.toString('hex'));
     speculativeTree.set(channelPath, newChannelValue);
   }
@@ -716,9 +925,7 @@ export async function computeRootWithHandlePacketUpdate(
     packetAcknowledgementSiblings,
     commit: () => {
       currentTree = speculativeTree;
-      console.log(
-        `Committed HandlePacket: ${portId}/${channelId}, new root: ${newRoot.substring(0, 16)}...`,
-      );
+      console.log(`Committed HandlePacket: ${portId}/${channelId}, new root: ${newRoot.substring(0, 16)}...`);
     },
   };
 }
@@ -734,21 +941,26 @@ export function computeRootWithPrunePacketHistoryUpdate(
   portId: string,
   channelId: string,
   sequence: bigint,
+  ordered = false,
 ): PrunePacketHistoryStateRootResult {
   const speculativeTree = getClonedTreeFromRoot(oldRoot);
   const sequenceText = sequence.toString();
   const receiptPath = `receipts/ports/${portId}/channels/${channelId}/sequences/${sequenceText}`;
   const acknowledgementPath = `acks/ports/${portId}/channels/${channelId}/sequences/${sequenceText}`;
 
-  if (!speculativeTree.get(receiptPath)) {
+  if (!ordered && !speculativeTree.get(receiptPath)) {
     throw new Error(`PrunePacketHistory expects an existing receipt at '${receiptPath}'`);
   }
   if (!speculativeTree.get(acknowledgementPath)) {
     throw new Error(`PrunePacketHistory expects an existing acknowledgement at '${acknowledgementPath}'`);
   }
 
-  const packetReceiptSiblings = speculativeTree.getSiblings(receiptPath).map((hash) => hash.toString('hex'));
-  speculativeTree.set(receiptPath, Buffer.alloc(0));
+  const packetReceiptSiblings = ordered
+    ? []
+    : speculativeTree.getSiblings(receiptPath).map((hash) => hash.toString('hex'));
+  if (!ordered) {
+    speculativeTree.set(receiptPath, Buffer.alloc(0));
+  }
 
   const packetAcknowledgementSiblings = speculativeTree
     .getSiblings(acknowledgementPath)
@@ -770,8 +982,178 @@ export function computeRootWithPrunePacketHistoryUpdate(
 }
 
 /**
+ * Remove one or two non-latest consensus leaves from a terminal client. The
+ * caller supplies heights in the exact order in which they are removed from
+ * the client datum; witness ordering must match HostState validation.
+ */
+export function computeRootWithPruneTerminalClientUpdate(
+  oldRoot: string,
+  clientId: string,
+  removedConsensusStates: Array<{ height: bigint; value: Buffer }>,
+): PruneTerminalClientStateRootResult {
+  if (removedConsensusStates.length < 1 || removedConsensusStates.length > 2) {
+    throw new Error('PruneTerminalClient must remove one or two consensus states');
+  }
+  const speculativeTree = getClonedTreeFromRoot(oldRoot);
+  const removedConsensusStateSiblings: string[][] = [];
+
+  for (const removed of removedConsensusStates) {
+    const path = `clients/${clientId}/consensusStates/${removed.height.toString()}`;
+    requireCommittedValue(speculativeTree, path, removed.value, 'PruneTerminalClient');
+    removedConsensusStateSiblings.push(speculativeTree.getSiblings(path).map((hash) => hash.toString('hex')));
+    speculativeTree.set(path, Buffer.alloc(0));
+  }
+
+  const newRoot = speculativeTree.getRoot();
+  return {
+    newRoot,
+    removedConsensusStateSiblings,
+    commit: () => {
+      currentTree = speculativeTree;
+      console.log(`Committed PruneTerminalClient: ${clientId}, new root: ${newRoot.substring(0, 16)}...`);
+    },
+  };
+}
+
+/** Delete a terminal client's last three authenticated leaves in validator order. */
+export function computeRootWithReclaimClientUpdate(
+  oldRoot: string,
+  clientId: string,
+  clientStateValue: Buffer,
+  latestConsensusHeight: bigint,
+  latestConsensusStateValue: Buffer,
+): ReclaimClientStateRootResult {
+  const speculativeTree = getClonedTreeFromRoot(oldRoot);
+  const clientPath = `clients/${clientId}/clientState`;
+  const consensusPath = `clients/${clientId}/consensusStates/${latestConsensusHeight.toString()}`;
+  const countPath = clientConnectionCountPath(clientId);
+
+  requireCommittedValue(speculativeTree, clientPath, clientStateValue, 'ReclaimClient');
+  const clientStateSiblings = speculativeTree.getSiblings(clientPath).map((hash) => hash.toString('hex'));
+  speculativeTree.set(clientPath, Buffer.alloc(0));
+
+  requireCommittedValue(speculativeTree, consensusPath, latestConsensusStateValue, 'ReclaimClient');
+  const consensusStateSiblings = speculativeTree.getSiblings(consensusPath).map((hash) => hash.toString('hex'));
+  speculativeTree.set(consensusPath, Buffer.alloc(0));
+
+  requireCommittedValue(speculativeTree, countPath, encodeDependencyCount(0n), 'ReclaimClient');
+  const clientConnectionCountSiblings = speculativeTree.getSiblings(countPath).map((hash) => hash.toString('hex'));
+  speculativeTree.set(countPath, Buffer.alloc(0));
+
+  const newRoot = speculativeTree.getRoot();
+  return {
+    newRoot,
+    clientStateSiblings,
+    consensusStateSiblings,
+    clientConnectionCountSiblings,
+    commit: () => {
+      currentTree = speculativeTree;
+      console.log(`Committed ReclaimClient: ${clientId}, new root: ${newRoot.substring(0, 16)}...`);
+    },
+  };
+}
+
+/** Delete a retiring connection and decrement its authenticated per-client count. */
+export function computeRootWithReclaimConnectionUpdate(
+  oldRoot: string,
+  connectionId: string,
+  connectionValue: Buffer,
+  clientId: string,
+): ReclaimConnectionStateRootResult {
+  const speculativeTree = getClonedTreeFromRoot(oldRoot);
+  const connectionPath = `connections/${connectionId}`;
+  const countPath = clientConnectionCountPath(clientId);
+
+  requireCommittedValue(speculativeTree, connectionPath, connectionValue, 'ReclaimConnection');
+  const connectionSiblings = speculativeTree.getSiblings(connectionPath).map((hash) => hash.toString('hex'));
+  speculativeTree.set(connectionPath, Buffer.alloc(0));
+
+  const encodedCount = speculativeTree.get(countPath);
+  if (!encodedCount) {
+    throw new Error(`ReclaimConnection is missing the live-connection count for '${clientId}'`);
+  }
+  const clientConnectionCount = decodeDependencyCount(encodedCount);
+  if (clientConnectionCount <= 0n) {
+    throw new Error(`ReclaimConnection requires a positive live-connection count for '${clientId}'`);
+  }
+  const clientConnectionCountSiblings = speculativeTree.getSiblings(countPath).map((hash) => hash.toString('hex'));
+  speculativeTree.set(countPath, encodeDependencyCount(clientConnectionCount - 1n));
+
+  const newRoot = speculativeTree.getRoot();
+  return {
+    newRoot,
+    connectionSiblings,
+    clientConnectionCount,
+    clientConnectionCountSiblings,
+    commit: () => {
+      currentTree = speculativeTree;
+      console.log(`Committed ReclaimConnection: ${connectionId}, new root: ${newRoot.substring(0, 16)}...`);
+    },
+  };
+}
+
+/**
+ * Apply channel reclamation in HostState's exact order. Closed channels retain
+ * their channel end and nextSequenceRecv; abandoned pre-open channels delete
+ * all four leaves.
+ */
+export function computeRootWithReclaimChannelUpdate(
+  oldRoot: string,
+  portId: string,
+  channelId: string,
+  values: {
+    channel: Buffer;
+    nextSequenceSend: Buffer;
+    nextSequenceRecv: Buffer;
+    nextSequenceAck: Buffer;
+  },
+  abandoned: boolean,
+): ReclaimChannelStateRootResult {
+  const speculativeTree = getClonedTreeFromRoot(oldRoot);
+  const channelPath = `channelEnds/ports/${portId}/channels/${channelId}`;
+  const nextSendPath = `nextSequenceSend/ports/${portId}/channels/${channelId}`;
+  const nextRecvPath = `nextSequenceRecv/ports/${portId}/channels/${channelId}`;
+  const nextAckPath = `nextSequenceAck/ports/${portId}/channels/${channelId}`;
+
+  let channelSiblings: string[] = [];
+  let nextSequenceRecvSiblings: string[] = [];
+  if (abandoned) {
+    requireCommittedValue(speculativeTree, channelPath, values.channel, 'ReclaimChannel');
+    channelSiblings = speculativeTree.getSiblings(channelPath).map((hash) => hash.toString('hex'));
+    speculativeTree.set(channelPath, Buffer.alloc(0));
+  }
+
+  requireCommittedValue(speculativeTree, nextSendPath, values.nextSequenceSend, 'ReclaimChannel');
+  const nextSequenceSendSiblings = speculativeTree.getSiblings(nextSendPath).map((hash) => hash.toString('hex'));
+  speculativeTree.set(nextSendPath, Buffer.alloc(0));
+
+  if (abandoned) {
+    requireCommittedValue(speculativeTree, nextRecvPath, values.nextSequenceRecv, 'ReclaimChannel');
+    nextSequenceRecvSiblings = speculativeTree.getSiblings(nextRecvPath).map((hash) => hash.toString('hex'));
+    speculativeTree.set(nextRecvPath, Buffer.alloc(0));
+  }
+
+  requireCommittedValue(speculativeTree, nextAckPath, values.nextSequenceAck, 'ReclaimChannel');
+  const nextSequenceAckSiblings = speculativeTree.getSiblings(nextAckPath).map((hash) => hash.toString('hex'));
+  speculativeTree.set(nextAckPath, Buffer.alloc(0));
+
+  const newRoot = speculativeTree.getRoot();
+  return {
+    newRoot,
+    channelSiblings,
+    nextSequenceSendSiblings,
+    nextSequenceRecvSiblings,
+    nextSequenceAckSiblings,
+    commit: () => {
+      currentTree = speculativeTree;
+      console.log(`Committed ReclaimChannel: ${portId}/${channelId}, new root: ${newRoot.substring(0, 16)}...`);
+    },
+  };
+}
+
+/**
  * Computes the new IBC state root after adding/updating connection state
- * 
+ *
  * SIDE-EFFECT FREE: Does not mutate the canonical tree.
  * Call result.commit() only after the transaction is confirmed.
  */
@@ -782,17 +1164,17 @@ export function computeRootWithConnectionUpdate(
 ): StateRootResult {
   // Get a CLONED tree (safe to mutate)
   const speculativeTree = getClonedTreeFromRoot(oldRoot);
-  
+
   // IBC path for connection state: connections/{connectionId}
   const path = `connections/${connectionId}`;
-  
+
   // Serialize and store the connection state in the SPECULATIVE tree
   const value = serializeValue(connectionState);
   speculativeTree.set(path, value);
-  
+
   // Compute new root
   const newRoot = speculativeTree.getRoot();
-  
+
   return {
     newRoot,
     commit: () => {
@@ -804,31 +1186,27 @@ export function computeRootWithConnectionUpdate(
 
 /**
  * Computes the new IBC state root after adding/updating channel state
- * 
+ *
  * SIDE-EFFECT FREE: Does not mutate the canonical tree.
  * Call result.commit() only after the transaction is confirmed.
  */
-export function computeRootWithChannelUpdate(
-  oldRoot: string,
-  channelId: string,
-  channelState: any,
-): StateRootResult {
+export function computeRootWithChannelUpdate(oldRoot: string, channelId: string, channelState: any): StateRootResult {
   // Get a CLONED tree (safe to mutate)
   const speculativeTree = getClonedTreeFromRoot(oldRoot);
-  
+
   // Extract portId from channel state (default to 'transfer' if not provided)
   const portId = channelState?.port_id || 'transfer';
-  
+
   // IBC path for channel state: channelEnds/ports/{portId}/channels/{channelId}
   const path = `channelEnds/ports/${portId}/channels/${channelId}`;
-  
+
   // Serialize and store the channel state in the SPECULATIVE tree
   const value = serializeValue(channelState);
   speculativeTree.set(path, value);
-  
+
   // Compute new root
   const newRoot = speculativeTree.getRoot();
-  
+
   return {
     newRoot,
     commit: () => {
@@ -840,15 +1218,11 @@ export function computeRootWithChannelUpdate(
 
 /**
  * Computes the new IBC state root after binding a port
- * 
+ *
  * SIDE-EFFECT FREE: Does not mutate the canonical tree.
  * Call result.commit() only after the transaction is confirmed.
  */
-export function computeRootWithPortBind(
-  oldRoot: string,
-  portId: string,
-  portValue: Buffer,
-): BindPortStateRootResult {
+export function computeRootWithPortBind(oldRoot: string, portId: string, portValue: Buffer): BindPortStateRootResult {
   const speculativeTree = getClonedTreeFromRoot(oldRoot);
 
   // Exact case-sensitive port text becomes the commitment path without aliases or normalization.
@@ -872,7 +1246,7 @@ export function computeRootWithPortBind(
 
 /**
  * Rebuild the IBC state tree from on-chain UTXOs (STT Architecture)
- * 
+ *
  * CRITICAL FOR PRODUCTION: This function makes the Gateway resilient to:
  * - Restarts (in-memory tree is lost)
  * - Failed transactions (speculative state becomes stale)
@@ -883,19 +1257,19 @@ export async function rebuildTreeFromChain(
   lucidService: any,
 ): Promise<{ tree: ICS23MerkleTree; root: string }> {
   console.log('Rebuilding IBC state tree from on-chain UTXOs (STT architecture)...');
-  
+
   // Query HostState UTXO via NFT
   const hostStateUtxo = await lucidService.findUtxoAtHostStateNFT();
   if (!hostStateUtxo?.datum) {
     throw new Error('HostState UTXO has no datum - STT architecture integrity compromised');
   }
-  
+
   const hostStateDatum = await lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
   const expectedRoot = hostStateDatum.state.ibc_state_root;
   const version = hostStateDatum.state.version;
-  
+
   console.log(`STT Architecture - HostState UTXO v${version}, expected root: ${expectedRoot.substring(0, 16)}...`);
-  
+
   try {
     // Create new tree
     const tree = new ICS23MerkleTree();
@@ -906,83 +1280,20 @@ export async function rebuildTreeFromChain(
     // tokens registered for the port.
     const boundPorts = hostStateDatum.state.bound_port ?? new Map();
     if (boundPorts.size > 0) {
-      for (const [portIdHex, registration] of boundPorts.entries()) {
-        // Datum keys are hex-encoded UTF-8 and must be decoded before rebuilding textual paths.
-        const portId = convertHex2String(portIdHex);
-        const portValue = Buffer.from(
-          await encodeModuleRegistration(registration, lucidService.LucidImporter),
-          'hex',
-        );
-        tree.set(`ports/${portId}`, portValue);
-      }
-      console.log(`Added ${boundPorts.size} bound port(s)`);
+      const restoredPorts = await restoreCommittedModulePorts(tree, boundPorts, lucidService.LucidImporter);
+      console.log(`Added ${restoredPorts} active or retired bound port(s)`);
     }
-    
-    // Query and add all Client UTXOs
-    const clientUtxos = await kupoService.queryAllClientUtxos();
-    console.log(`Found ${clientUtxos.length} client UTXOs`);
-    
-    for (const clientUtxo of clientUtxos) {
-      if (!clientUtxo.datum) continue;
-      
-      const clientDatum = await lucidService.decodeDatum(clientUtxo.datum, 'client');
-      const clientUnit = Object.keys(clientUtxo.assets || {}).find((unit) => unit !== 'lovelace');
-      if (!clientUnit || clientUnit.length < 56 + 48 + 2) continue;
 
-      const tokenName = clientUnit.slice(56);
-      const postfixHex = tokenName.slice(48);
-      const clientSequence = BigInt(Buffer.from(postfixHex, 'hex').toString('utf8'));
-      const clientId = `07-tendermint-${clientSequence.toString()}`;
-      
-      const clientStateValue = Buffer.from(
-        await encodeClientStateValue(clientDatum.state.clientState, lucidService.LucidImporter),
-        'hex',
-      );
-      // Add client state to tree
-      // ICS-24 path: clients/{clientId}/clientState
-      tree.set(`clients/${clientId}/clientState`, clientStateValue);
-      
-      // Add all consensus states to tree
-      // ICS-24 path: clients/{clientId}/consensusStates/{height}
-      // The consensusStates map stores consensus state snapshots at various heights.
-      // These are needed for proof generation when verifying packet commitments, etc.
-      const consensusStates = clientDatum.state.consensusStates;
-      if (consensusStates && (consensusStates instanceof Map || typeof consensusStates === 'object')) {
-        // Handle both Map and plain object (depending on how it was decoded)
-        const entries = consensusStates instanceof Map 
-          ? Array.from(consensusStates.entries())
-          : Object.entries(consensusStates);
-        
-        for (const [heightKey, consensusState] of entries) {
-          // Height key format varies - could be object {revisionNumber, revisionHeight} or string
-          let heightStr: string;
-          if (typeof heightKey === 'object' && heightKey !== null) {
-            // Height is an object like {revisionNumber: 0, revisionHeight: 123}
-            const h = heightKey as { revisionNumber?: bigint | number; revisionHeight?: bigint | number };
-            heightStr = `${h.revisionHeight || 0}`;
-          } else {
-            heightStr = String(heightKey);
-          }
-          const consensusValue = Buffer.from(
-            await encodeConsensusStateValue(consensusState, lucidService.LucidImporter),
-            'hex',
-          );
-          
-          tree.set(`clients/${clientId}/consensusStates/${heightStr}`, consensusValue);
-        }
-        console.log(`  Added client: ${clientId} with ${entries.length} consensus state(s)`);
-      } else {
-        console.log(`  Added client: ${clientId} (no consensus states)`);
-      }
-    }
-    
+    // Query and add all Client UTXOs
+    const { liveClientIds, liveConnectionCounts } = await restoreLiveClients(tree, kupoService, lucidService);
+
     // Query and add all Connection UTXOs
     const connectionUtxos = await kupoService.queryAllConnectionUtxos();
     console.log(`Found ${connectionUtxos.length} connection UTXOs`);
-    
+
     for (const connectionUtxo of connectionUtxos) {
       if (!connectionUtxo.datum) continue;
-      
+
       const connectionDatum = await lucidService.decodeDatum(connectionUtxo.datum, 'connection');
       const connectionUnit = Object.keys(connectionUtxo.assets || {}).find((unit) => unit !== 'lovelace');
       if (!connectionUnit || connectionUnit.length <= 56) continue;
@@ -1005,17 +1316,27 @@ export async function rebuildTreeFromChain(
         'hex',
       );
       tree.set(`connections/${connectionId}`, connectionValue);
-      
+
+      const clientId = convertHex2String(connectionDatum.state.client_id);
+      if (!liveClientIds.has(clientId)) {
+        throw new Error(`Live connection '${connectionId}' refers to missing client '${clientId}'`);
+      }
+      liveConnectionCounts.set(clientId, (liveConnectionCounts.get(clientId) ?? 0n) + 1n);
+
       console.log(`  Added connection: ${connectionId}`);
     }
-    
+
+    for (const clientId of liveClientIds) {
+      tree.set(clientConnectionCountPath(clientId), encodeDependencyCount(liveConnectionCounts.get(clientId) ?? 0n));
+    }
+
     // Query and add all Channel UTXOs
     const channelUtxos = await kupoService.queryAllChannelUtxos();
     console.log(`Found ${channelUtxos.length} channel UTXOs`);
-    
+
     for (const channelUtxo of channelUtxos) {
       if (!channelUtxo.datum) continue;
-      
+
       const channelDatum = await lucidService.decodeDatum(channelUtxo.datum, 'channel');
       const channelUnit = Object.keys(channelUtxo.assets || {}).find((unit) => unit !== 'lovelace');
       if (!channelUnit || channelUnit.length <= 56) continue;
@@ -1090,31 +1411,65 @@ export async function rebuildTreeFromChain(
         const value = Buffer.from(Data.to(bytesHex, BytesSchema) as any, 'hex');
         tree.set(key, value);
       }
-      
+
       console.log(`  Added channel: ${portId}/${channelId}`);
     }
-    
+
+    // A reclaimed Closed channel deliberately keeps its channel end and
+    // nextSequenceRecv leaves for counterparty proofs even though its UTxO and
+    // auth token are gone. Recover those two immutable values from Kupo's
+    // canonical history; an abandoned pre-open channel leaves nothing behind.
+    const channelHistory = await kupoService.queryLatestChannelUtxosFromHistory();
+    for (const historicalOutput of channelHistory) {
+      if (historicalOutput.spentAt === null || !historicalOutput.datum) continue;
+      const channelDatum = await lucidService.decodeDatum(historicalOutput.datum, 'channel');
+      if (channelDatum.lifecycle !== 'ChannelActive' || channelDatum.state.channel.state !== 'Close') {
+        continue;
+      }
+
+      const postfixHex = historicalOutput.authToken.name.slice(48);
+      const channelSequence = Buffer.from(postfixHex, 'hex').toString('utf8');
+      if (!/^\d+$/.test(channelSequence)) {
+        throw new Error(`Malformed historical channel token '${historicalOutput.authToken.unit}'`);
+      }
+      const channelId = `channel-${channelSequence}`;
+      const portId = Buffer.from(channelDatum.port, 'hex').toString('utf8');
+      const channelValue = Buffer.from(
+        await encodeChannelEndValue(channelDatum.state.channel, lucidService.LucidImporter),
+        'hex',
+      );
+      const { Data } = lucidService.LucidImporter;
+      const nextSequenceRecvValue = Buffer.from(
+        Data.to(channelDatum.state.next_sequence_recv as any, Data.Integer() as any),
+        'hex',
+      );
+      tree.set(`channelEnds/ports/${portId}/channels/${channelId}`, channelValue);
+      tree.set(`nextSequenceRecv/ports/${portId}/channels/${channelId}`, nextSequenceRecvValue);
+      console.log(`  Restored reclaimed Closed channel proof state: ${portId}/${channelId}`);
+    }
+
     // Compute root and verify
     const computedRoot = tree.getRoot();
     console.log(`Computed root from UTXOs: ${computedRoot.substring(0, 16)}...`);
-    
+
     if (computedRoot !== expectedRoot) {
       throw new Error(
         `Tree rebuild FAILED: Root mismatch!\n` +
-        `  Expected: ${expectedRoot}\n` +
-        `  Computed: ${computedRoot}\n` +
-        `This indicates stale Kupo data or datum decoding error.`
+          `  Expected: ${expectedRoot}\n` +
+          `  Computed: ${computedRoot}\n` +
+          `This indicates stale Kupo data or datum decoding error.`,
       );
     }
-    
+
     // Update global current tree
     currentTree = tree;
-    
+
     console.log('Tree rebuilt successfully and verified against on-chain root');
-    console.log(`   Clients: ${clientUtxos.length}, Connections: ${connectionUtxos.length}, Channels: ${channelUtxos.length}`);
-    
+    console.log(
+      `   Clients: ${liveClientIds.size}, Connections: ${connectionUtxos.length}, Channels: ${channelUtxos.length}`,
+    );
+
     return { tree, root: computedRoot };
-    
   } catch (error) {
     console.error('Failed to rebuild tree from chain:', error.message);
     throw new Error(`Tree rebuild failed: ${error.message}`);

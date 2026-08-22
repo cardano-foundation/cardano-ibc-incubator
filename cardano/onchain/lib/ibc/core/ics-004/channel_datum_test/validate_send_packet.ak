@@ -2,8 +2,9 @@ use aiken/collection/pairs
 use aiken/primitive/int
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+} as channel_datum_mod
 use ibc/core/ics_004/types/channel.{Channel} as channel_mod
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order.{Unordered}
@@ -70,6 +71,7 @@ fn setup() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
       },
       port_id: "port-1",
       token: mock_auth_token,
+      lifecycle: ChannelActive,
     }
 
   let output_channel_datum =
@@ -87,6 +89,7 @@ fn setup() -> (ChannelDatum, ChannelDatum, Packet, ByteArray) {
       },
       port_id: "port-1",
       token: mock_auth_token,
+      lifecycle: ChannelActive,
     }
 
   (input_channel_datum, output_channel_datum, packet, commitment)
@@ -120,6 +123,7 @@ test succeed() {
         policy_id: #"0151eb42845171292d1342cdcf9ccd2a4e6236244e00dd6ccd4e826c",
         name: #"5217438dba7f0c1bedaeae4c467cbd01ff45d62c239b722031",
       },
+      lifecycle: ChannelActive,
     }
 
   let output_datum_2 =
@@ -154,6 +158,7 @@ test succeed() {
         policy_id: #"0151eb42845171292d1342cdcf9ccd2a4e6236244e00dd6ccd4e826c",
         name: #"5217438dba7f0c1bedaeae4c467cbd01ff45d62c239b722031",
       },
+      lifecycle: ChannelActive,
     }
 
   let packet_2 =

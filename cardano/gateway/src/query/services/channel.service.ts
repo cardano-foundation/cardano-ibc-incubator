@@ -26,7 +26,11 @@ import { convertHex2String } from '../../shared/helpers/hex';
 import { validQueryChannelParam, validQueryConnectionChannelsParam } from '../helpers/channel.validate';
 import { validPagination } from '../helpers/helper';
 import { MithrilService } from '~@/shared/modules/mithril/mithril.service';
-import { GrpcInternalException, GrpcInvalidArgumentException } from '~@/exception/grpc_exceptions';
+import {
+  GrpcInternalException,
+  GrpcInvalidArgumentException,
+  GrpcNotFoundException,
+} from '~@/exception/grpc_exceptions';
 import { alignTreeWithChain, getCurrentTree, isTreeAligned } from '../../shared/helpers/ibc-state-root';
 import { serializeExistenceProof } from '../../shared/helpers/ics23-proof-serialization';
 import { HostStateDatum } from '../../shared/types/host-state-datum';
@@ -135,10 +139,52 @@ export class ChannelService {
 
   private async findChannelUtxo(channelTokenUnit: string) {
     const deploymentConfig = this.configService.get('deployment');
-    return this.lucidService.findUtxoAtWithUnit(
-      deploymentConfig.validators.spendChannel.address,
-      channelTokenUnit,
+    return this.lucidService.findUtxoAtWithUnit(deploymentConfig.validators.spendChannel.address, channelTokenUnit);
+  }
+
+  /**
+   * Reclaimed closed channels no longer have a live channel UTxO, but their
+   * channel-end commitment deliberately remains in the HostState tree. Use the
+   * canonical final Kupo output only after the ordinary live lookup reports
+   * NOT_FOUND. Any other live-provider failure must remain a hard failure.
+   */
+  private async findCurrentOrReclaimedClosedChannelUtxo(channelTokenUnit: string) {
+    try {
+      return await this.findChannelUtxo(channelTokenUnit);
+    } catch (error) {
+      if (!(error instanceof GrpcNotFoundException)) throw error;
+    }
+
+    const historicalMatches = (await this.kupoService.queryLatestChannelUtxosFromHistory(channelTokenUnit)).filter(
+      (output) => output.authToken.unit === channelTokenUnit,
     );
+    if (historicalMatches.length !== 1) {
+      throw new GrpcInternalException(
+        `Cannot recover reclaimed channel ${channelTokenUnit}: expected one canonical historical output, found ${historicalMatches.length}`,
+      );
+    }
+
+    const historicalOutput = historicalMatches[0];
+    if (!historicalOutput.spentAt || !historicalOutput.datum) {
+      throw new GrpcInternalException(
+        `Cannot recover reclaimed channel ${channelTokenUnit}: canonical historical output is not spent or has no inline datum`,
+      );
+    }
+
+    const channelDatum = await this.lucidService.decodeDatum<ChannelDatum>(historicalOutput.datum, 'channel');
+    const datumTokenUnit = `${channelDatum.token.policyId}${channelDatum.token.name}`;
+    if (
+      historicalOutput.authToken.unit !== channelTokenUnit ||
+      datumTokenUnit !== channelTokenUnit ||
+      channelDatum.lifecycle !== 'ChannelActive' ||
+      channelDatum.state.channel.state !== 'Close'
+    ) {
+      throw new GrpcInternalException(
+        `Cannot recover reclaimed channel ${channelTokenUnit}: final historical datum is not an active closed channel with the expected auth token`,
+      );
+    }
+
+    return historicalOutput;
   }
 
   async getChannelHealth(channelId: string, expectedPortId = 'transfer'): Promise<CardanoChannelHealthResponse> {
@@ -300,7 +346,7 @@ export class ChannelService {
       const proofContext = await this.getProofContext('queryChannel', options.queryHeight);
       const utxo = proofContext.historical
         ? await this.historyService.findUtxoByUnitAtOrBeforeBlockNo(channelTokenUnit, proofContext.proofHeight)
-        : await this.findChannelUtxo(channelTokenUnit);
+        : await this.findCurrentOrReclaimedClosedChannelUtxo(channelTokenUnit);
       const channelDatumDecoded: ChannelDatum = await decodeChannelDatum(utxo.datum!, this.lucidService.LucidImporter);
 
       if (!proofContext.historical) {

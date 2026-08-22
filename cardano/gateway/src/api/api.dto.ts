@@ -145,3 +145,63 @@ export class PrunePacketHistoryDto {
   @Type(() => PrunePacketHistoryHeightDto)
   proof_height: PrunePacketHistoryHeightDto;
 }
+
+export class ClientLifecycleDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  signer: string;
+
+  @ApiProperty()
+  @IsString()
+  @Matches(/^\d{2}-[a-z0-9-]+-(?:0|[1-9]\d*)$/)
+  client_id: string;
+}
+
+export class ConnectionLifecycleDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  signer: string;
+
+  @ApiProperty()
+  @IsString()
+  @Matches(/^connection-(?:0|[1-9]\d*)$/)
+  connection_id: string;
+}
+
+export class ChannelLifecycleDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  signer: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  port_id: string;
+
+  @ApiProperty()
+  @IsString()
+  @Matches(/^channel-(?:0|[1-9]\d*)$/)
+  channel_id: string;
+}
+
+export class TransferEscrowShardLifecycleDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  signer: string;
+
+  @ApiProperty()
+  @IsString()
+  @Matches(/^channel-(?:0|[1-9]\d*)$/)
+  channel_id: string;
+
+  @ApiProperty({
+    description: 'Exact textual ICS-20 denomination stored in the escrow shard',
+  })
+  @IsString()
+  @IsNotEmpty()
+  denom: string;
+}

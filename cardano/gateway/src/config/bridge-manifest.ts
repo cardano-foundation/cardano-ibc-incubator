@@ -54,8 +54,9 @@ type DeploymentTraceRegistry = {
 };
 
 export type DeploymentConfig = {
+  schemaVersion: 6;
   deployedAt: string;
-  hostStateNFT: AuthToken;
+  hostStateNFT: AuthToken & { script: string };
   validators: {
     hostStateStt: DeploymentValidator;
     spendClient: DeploymentValidator;
@@ -69,6 +70,10 @@ export type DeploymentConfig = {
     mintClientStt: DeploymentValidator;
     mintConnectionStt: DeploymentValidator;
     mintChannelStt: DeploymentValidator;
+    mintLifecycleCreationMarker: DeploymentValidator;
+    mintLifecycleReclamationMarker: DeploymentValidator;
+    mintLifecycleOperationalMarker: DeploymentValidator;
+    mintLifecyclePacketMarker: DeploymentValidator;
     mintVoucher: DeploymentValidator;
     mintTransferEscrowShard: DeploymentValidator;
     mintPort: DeploymentValidator;
@@ -90,6 +95,7 @@ type BridgeManifestRefUtxo = {
 type BridgeManifestAuthToken = {
   policy_id: string;
   token_name: string;
+  script: string;
 };
 
 type BridgeManifestRefValidator = {
@@ -163,6 +169,10 @@ export type BridgeManifest = {
     mint_client_stt: BridgeManifestValidator;
     mint_connection_stt: BridgeManifestValidator;
     mint_channel_stt: BridgeManifestValidator;
+    mint_lifecycle_creation_marker: BridgeManifestValidator;
+    mint_lifecycle_reclamation_marker: BridgeManifestValidator;
+    mint_lifecycle_operational_marker: BridgeManifestValidator;
+    mint_lifecycle_packet_marker: BridgeManifestValidator;
     mint_voucher: BridgeManifestValidator;
     mint_transfer_escrow_shard: BridgeManifestValidator;
     mint_port: BridgeManifestValidator;
@@ -261,11 +271,20 @@ function requireAuthToken(value: unknown, path: string): AuthToken {
   };
 }
 
+function requireHostStateNft(value: unknown, path: string): AuthToken & { script: string } {
+  const authToken = requireObject(value, path);
+  return {
+    ...requireAuthToken(value, path),
+    script: requireNonEmptyString(authToken.script, `${path}.script`),
+  };
+}
+
 function requireManifestAuthToken(value: unknown, path: string): BridgeManifestAuthToken {
   const authToken = requireObject(value, path);
   return {
     policy_id: requireNonEmptyString(authToken.policy_id, `${path}.policy_id`),
     token_name: requireNonEmptyString(authToken.token_name, `${path}.token_name`),
+    script: requireNonEmptyString(authToken.script, `${path}.script`),
   };
 }
 
@@ -332,7 +351,10 @@ function requireDeploymentSpendChannelValidator(value: unknown, path: string): D
         refValidator.chan_close_confirm,
         `${path}.refValidator.chan_close_confirm`,
       ),
-      chan_close_init: requireDeploymentRefValidator(refValidator.chan_close_init, `${path}.refValidator.chan_close_init`),
+      chan_close_init: requireDeploymentRefValidator(
+        refValidator.chan_close_init,
+        `${path}.refValidator.chan_close_init`,
+      ),
       chan_open_ack: requireDeploymentRefValidator(refValidator.chan_open_ack, `${path}.refValidator.chan_open_ack`),
       chan_open_confirm: requireDeploymentRefValidator(
         refValidator.chan_open_confirm,
@@ -364,7 +386,10 @@ function requireManifestSpendChannelValidator(value: unknown, path: string): Bri
         refValidator.chan_close_confirm,
         `${path}.ref_validator.chan_close_confirm`,
       ),
-      chan_close_init: requireManifestRefValidator(refValidator.chan_close_init, `${path}.ref_validator.chan_close_init`),
+      chan_close_init: requireManifestRefValidator(
+        refValidator.chan_close_init,
+        `${path}.ref_validator.chan_close_init`,
+      ),
       chan_open_ack: requireManifestRefValidator(refValidator.chan_open_ack, `${path}.ref_validator.chan_open_ack`),
       chan_open_confirm: requireManifestRefValidator(
         refValidator.chan_open_confirm,
@@ -437,17 +462,19 @@ function buildDeploymentId(cardano: BridgeManifestCardanoIdentity, hostStateNFT:
   return `${cardano.chain_id}:${hostStateNFT.policyId}.${hostStateNFT.name}`;
 }
 
-function deploymentAuthTokenToManifest(authToken: AuthToken): BridgeManifestAuthToken {
+function deploymentAuthTokenToManifest(authToken: AuthToken & { script: string }): BridgeManifestAuthToken {
   return {
     policy_id: authToken.policyId,
     token_name: authToken.name,
+    script: authToken.script,
   };
 }
 
-function manifestAuthTokenToDeployment(authToken: BridgeManifestAuthToken): AuthToken {
+function manifestAuthTokenToDeployment(authToken: BridgeManifestAuthToken): AuthToken & { script: string } {
   return {
     policyId: authToken.policy_id,
     name: authToken.token_name,
+    script: authToken.script,
   };
 }
 
@@ -481,17 +508,13 @@ function manifestValidatorToDeployment(validator: BridgeManifestValidator): Depl
   };
 }
 
-function deploymentVoucherMetadataToManifest(
-  validator: DeploymentVoucherMetadata,
-): BridgeManifestVoucherMetadata {
+function deploymentVoucherMetadataToManifest(validator: DeploymentVoucherMetadata): BridgeManifestVoucherMetadata {
   return {
     address: validator.address,
   };
 }
 
-function manifestVoucherMetadataToDeployment(
-  validator: BridgeManifestVoucherMetadata,
-): DeploymentVoucherMetadata {
+function manifestVoucherMetadataToDeployment(validator: BridgeManifestVoucherMetadata): DeploymentVoucherMetadata {
   return {
     address: validator.address,
   };
@@ -533,7 +556,9 @@ function manifestTraceRegistryToDeployment(traceRegistry: BridgeManifestTraceReg
   };
 }
 
-function deploymentSpendChannelToManifest(validator: DeploymentSpendChannelValidator): BridgeManifestSpendChannelValidator {
+function deploymentSpendChannelToManifest(
+  validator: DeploymentSpendChannelValidator,
+): BridgeManifestSpendChannelValidator {
   return {
     ...deploymentValidatorToManifest(validator),
     ref_validator: {
@@ -550,7 +575,9 @@ function deploymentSpendChannelToManifest(validator: DeploymentSpendChannelValid
   };
 }
 
-function manifestSpendChannelToDeployment(validator: BridgeManifestSpendChannelValidator): DeploymentSpendChannelValidator {
+function manifestSpendChannelToDeployment(
+  validator: BridgeManifestSpendChannelValidator,
+): DeploymentSpendChannelValidator {
   return {
     ...manifestValidatorToDeployment(validator),
     refValidator: {
@@ -573,8 +600,9 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
   const modules = requireObject(deploymentAny.modules, 'modules');
 
   return {
+    schemaVersion: requireNonNegativeInteger(deploymentAny.schemaVersion, 'schemaVersion') as 6,
     deployedAt: requireIsoTimestamp(deploymentAny.deployedAt, 'deployedAt'),
-    hostStateNFT: requireAuthToken(deploymentAny.hostStateNFT, 'hostStateNFT'),
+    hostStateNFT: requireHostStateNft(deploymentAny.hostStateNFT, 'hostStateNFT'),
     validators: {
       hostStateStt: requireDeploymentValidator(validators.hostStateStt, 'validators.hostStateStt'),
       spendClient: requireDeploymentValidator(validators.spendClient, 'validators.spendClient'),
@@ -584,7 +612,12 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
         ? { spendMockModule: requireDeploymentValidator(validators.spendMockModule, 'validators.spendMockModule') }
         : {}),
       ...(validators.spendTraceRegistry
-        ? { spendTraceRegistry: requireDeploymentValidator(validators.spendTraceRegistry, 'validators.spendTraceRegistry') }
+        ? {
+            spendTraceRegistry: requireDeploymentValidator(
+              validators.spendTraceRegistry,
+              'validators.spendTraceRegistry',
+            ),
+          }
         : {}),
       spendTransferModule: requireDeploymentValidator(validators.spendTransferModule, 'validators.spendTransferModule'),
       mintIdentifier: requireDeploymentValidator(validators.mintIdentifier, 'validators.mintIdentifier'),
@@ -592,6 +625,22 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
       mintClientStt: requireDeploymentValidator(validators.mintClientStt, 'validators.mintClientStt'),
       mintConnectionStt: requireDeploymentValidator(validators.mintConnectionStt, 'validators.mintConnectionStt'),
       mintChannelStt: requireDeploymentValidator(validators.mintChannelStt, 'validators.mintChannelStt'),
+      mintLifecycleCreationMarker: requireDeploymentValidator(
+        validators.mintLifecycleCreationMarker,
+        'validators.mintLifecycleCreationMarker',
+      ),
+      mintLifecycleReclamationMarker: requireDeploymentValidator(
+        validators.mintLifecycleReclamationMarker,
+        'validators.mintLifecycleReclamationMarker',
+      ),
+      mintLifecycleOperationalMarker: requireDeploymentValidator(
+        validators.mintLifecycleOperationalMarker,
+        'validators.mintLifecycleOperationalMarker',
+      ),
+      mintLifecyclePacketMarker: requireDeploymentValidator(
+        validators.mintLifecyclePacketMarker,
+        'validators.mintLifecyclePacketMarker',
+      ),
       mintVoucher: requireDeploymentValidator(validators.mintVoucher, 'validators.mintVoucher'),
       mintTransferEscrowShard: requireDeploymentValidator(
         validators.mintTransferEscrowShard,
@@ -599,7 +648,9 @@ export function requireSttDeploymentConfig(deployment: unknown): DeploymentConfi
       ),
       mintPort: requireDeploymentValidator(validators.mintPort, 'validators.mintPort'),
       ...(validators.voucherMetadata
-        ? { voucherMetadata: requireDeploymentVoucherMetadata(validators.voucherMetadata, 'validators.voucherMetadata') }
+        ? {
+            voucherMetadata: requireDeploymentVoucherMetadata(validators.voucherMetadata, 'validators.voucherMetadata'),
+          }
         : {}),
     },
     modules: {
@@ -618,6 +669,7 @@ export function normalizeHandlerJsonDeploymentConfig(
   cardano: BridgeManifestCardanoIdentity,
 ): LoadedBridgeConfig {
   const normalizedDeployment = requireSttDeploymentConfig(deployment);
+  assert(normalizedDeployment.schemaVersion === 6, 'Invalid bridge config: "schemaVersion" must be 6');
   const normalizedCardano = requireCardanoIdentity(cardano);
 
   // Normalize deployment JSON once so both startup sources feed the same public
@@ -625,7 +677,7 @@ export function normalizeHandlerJsonDeploymentConfig(
   return {
     deployment: normalizedDeployment,
     bridgeManifest: {
-      schema_version: 4,
+      schema_version: 6,
       deployment_id: buildDeploymentId(normalizedCardano, normalizedDeployment.hostStateNFT),
       deployed_at: normalizedDeployment.deployedAt,
       cardano: normalizedCardano,
@@ -649,6 +701,18 @@ export function normalizeHandlerJsonDeploymentConfig(
         mint_client_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintClientStt),
         mint_connection_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintConnectionStt),
         mint_channel_stt: deploymentValidatorToManifest(normalizedDeployment.validators.mintChannelStt),
+        mint_lifecycle_creation_marker: deploymentValidatorToManifest(
+          normalizedDeployment.validators.mintLifecycleCreationMarker,
+        ),
+        mint_lifecycle_reclamation_marker: deploymentValidatorToManifest(
+          normalizedDeployment.validators.mintLifecycleReclamationMarker,
+        ),
+        mint_lifecycle_operational_marker: deploymentValidatorToManifest(
+          normalizedDeployment.validators.mintLifecycleOperationalMarker,
+        ),
+        mint_lifecycle_packet_marker: deploymentValidatorToManifest(
+          normalizedDeployment.validators.mintLifecyclePacketMarker,
+        ),
         mint_voucher: deploymentValidatorToManifest(normalizedDeployment.validators.mintVoucher),
         mint_transfer_escrow_shard: deploymentValidatorToManifest(
           normalizedDeployment.validators.mintTransferEscrowShard,
@@ -684,7 +748,9 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
     schema_version: requireNonNegativeInteger(manifestAny.schema_version, 'schema_version'),
     deployment_id: requireNonEmptyString(manifestAny.deployment_id, 'deployment_id'),
     deployed_at: requireIsoTimestamp(manifestAny.deployed_at, 'deployed_at'),
-    cardano: requireCardanoIdentity(requireObject(manifestAny.cardano, 'cardano') as unknown as BridgeManifestCardanoIdentity),
+    cardano: requireCardanoIdentity(
+      requireObject(manifestAny.cardano, 'cardano') as unknown as BridgeManifestCardanoIdentity,
+    ),
     host_state_nft: requireManifestAuthToken(manifestAny.host_state_nft, 'host_state_nft'),
     validators: {
       host_state_stt: requireManifestValidator(validators.host_state_stt, 'validators.host_state_stt'),
@@ -702,12 +768,31 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
             ),
           }
         : {}),
-      spend_transfer_module: requireManifestValidator(validators.spend_transfer_module, 'validators.spend_transfer_module'),
+      spend_transfer_module: requireManifestValidator(
+        validators.spend_transfer_module,
+        'validators.spend_transfer_module',
+      ),
       mint_identifier: requireManifestValidator(validators.mint_identifier, 'validators.mint_identifier'),
       verify_proof: requireManifestValidator(validators.verify_proof, 'validators.verify_proof'),
       mint_client_stt: requireManifestValidator(validators.mint_client_stt, 'validators.mint_client_stt'),
       mint_connection_stt: requireManifestValidator(validators.mint_connection_stt, 'validators.mint_connection_stt'),
       mint_channel_stt: requireManifestValidator(validators.mint_channel_stt, 'validators.mint_channel_stt'),
+      mint_lifecycle_creation_marker: requireManifestValidator(
+        validators.mint_lifecycle_creation_marker,
+        'validators.mint_lifecycle_creation_marker',
+      ),
+      mint_lifecycle_reclamation_marker: requireManifestValidator(
+        validators.mint_lifecycle_reclamation_marker,
+        'validators.mint_lifecycle_reclamation_marker',
+      ),
+      mint_lifecycle_operational_marker: requireManifestValidator(
+        validators.mint_lifecycle_operational_marker,
+        'validators.mint_lifecycle_operational_marker',
+      ),
+      mint_lifecycle_packet_marker: requireManifestValidator(
+        validators.mint_lifecycle_packet_marker,
+        'validators.mint_lifecycle_packet_marker',
+      ),
       mint_voucher: requireManifestValidator(validators.mint_voucher, 'validators.mint_voucher'),
       mint_transfer_escrow_shard: requireManifestValidator(
         validators.mint_transfer_escrow_shard,
@@ -715,7 +800,12 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       ),
       mint_port: requireManifestValidator(validators.mint_port, 'validators.mint_port'),
       ...(validators.voucher_metadata
-        ? { voucher_metadata: requireManifestVoucherMetadata(validators.voucher_metadata, 'validators.voucher_metadata') }
+        ? {
+            voucher_metadata: requireManifestVoucherMetadata(
+              validators.voucher_metadata,
+              'validators.voucher_metadata',
+            ),
+          }
         : {}),
     },
     modules: {
@@ -728,14 +818,12 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       : {}),
   };
 
-  assert(
-    bridgeManifest.schema_version === 4,
-    'Invalid bridge config: "schema_version" must be 4',
-  );
+  assert(bridgeManifest.schema_version === 6, 'Invalid bridge config: "schema_version" must be 6');
 
   return {
     bridgeManifest,
     deployment: {
+      schemaVersion: 6,
       deployedAt: bridgeManifest.deployed_at,
       hostStateNFT: manifestAuthTokenToDeployment(bridgeManifest.host_state_nft),
       validators: {
@@ -757,10 +845,20 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
         mintClientStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_client_stt),
         mintConnectionStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_connection_stt),
         mintChannelStt: manifestValidatorToDeployment(bridgeManifest.validators.mint_channel_stt),
-        mintVoucher: manifestValidatorToDeployment(bridgeManifest.validators.mint_voucher),
-        mintTransferEscrowShard: manifestValidatorToDeployment(
-          bridgeManifest.validators.mint_transfer_escrow_shard,
+        mintLifecycleCreationMarker: manifestValidatorToDeployment(
+          bridgeManifest.validators.mint_lifecycle_creation_marker,
         ),
+        mintLifecycleReclamationMarker: manifestValidatorToDeployment(
+          bridgeManifest.validators.mint_lifecycle_reclamation_marker,
+        ),
+        mintLifecycleOperationalMarker: manifestValidatorToDeployment(
+          bridgeManifest.validators.mint_lifecycle_operational_marker,
+        ),
+        mintLifecyclePacketMarker: manifestValidatorToDeployment(
+          bridgeManifest.validators.mint_lifecycle_packet_marker,
+        ),
+        mintVoucher: manifestValidatorToDeployment(bridgeManifest.validators.mint_voucher),
+        mintTransferEscrowShard: manifestValidatorToDeployment(bridgeManifest.validators.mint_transfer_escrow_shard),
         mintPort: manifestValidatorToDeployment(bridgeManifest.validators.mint_port),
         ...(bridgeManifest.validators.voucher_metadata
           ? {
@@ -770,8 +868,12 @@ export function normalizeBridgeManifestConfig(manifest: unknown): LoadedBridgeCo
       },
       modules: {
         transfer: requireDeploymentModule(bridgeManifest.modules.transfer, 'modules.transfer'),
-        ...(bridgeManifest.modules.mock ? { mock: requireDeploymentModule(bridgeManifest.modules.mock, 'modules.mock') } : {}),
-        ...(bridgeManifest.modules.icq ? { icq: requireDeploymentModule(bridgeManifest.modules.icq, 'modules.icq') } : {}),
+        ...(bridgeManifest.modules.mock
+          ? { mock: requireDeploymentModule(bridgeManifest.modules.mock, 'modules.mock') }
+          : {}),
+        ...(bridgeManifest.modules.icq
+          ? { icq: requireDeploymentModule(bridgeManifest.modules.icq, 'modules.icq') }
+          : {}),
       },
       ...(bridgeManifest.trace_registry
         ? { traceRegistry: manifestTraceRegistryToDeployment(bridgeManifest.trace_registry) }
@@ -798,9 +900,7 @@ export function loadBridgeConfigFromEnv(
   // Startup must have a single source of truth. If both are set, we stop early
   // instead of guessing which deployment description should win.
   if (bridgeManifestPath && explicitHandlerPath) {
-    throw new Error(
-      'BRIDGE_MANIFEST_PATH and HANDLER_JSON_PATH are mutually exclusive; set only one startup source',
-    );
+    throw new Error('BRIDGE_MANIFEST_PATH and HANDLER_JSON_PATH are mutually exclusive; set only one startup source');
   }
 
   const cardanoNetworkMagic = Number(env.CARDANO_CHAIN_NETWORK_MAGIC || 42);

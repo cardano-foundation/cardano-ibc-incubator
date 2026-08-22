@@ -2,7 +2,9 @@ use aiken/collection/list
 use aiken/fuzz
 use aiken/primitive/bytearray
 use cardano/address.{Address, from_script, from_verification_key}
-use cardano/assets.{Value, add, from_asset, quantity_of}
+use cardano/assets.{
+  Value, ada_asset_name, ada_policy_id, add, from_asset, quantity_of,
+}
 use cardano/transaction.{
   InlineDatum, Input, Mint, NoDatum, Output, OutputReference, Redeemer,
   ScriptPurpose,
@@ -18,6 +20,7 @@ use ibc/apps/transfer/types/fungible_token_packet_data.{FungibleTokenPacketData}
 use ibc/apps/transfer/value_delta
 use ibc/apps/transfer/voucher_asset_name
 use ibc/apps/transfer/voucher_flow
+use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/packet.{Packet}
@@ -43,6 +46,10 @@ const shard_policy_id = "mock transfer escrow shard policy id"
 const voucher_policy_id = "mock voucher minting policy id"
 
 const amount = 20
+
+fn module_token() -> AuthToken {
+  AuthToken { policy_id: "module-policy", name: "module-token" }
+}
 
 const valid_cardano_receiver =
   #"3532356636653262306638613135613363393564383263383131336239396466656266653430663132346362326263373165653939653232"
@@ -81,8 +88,12 @@ fn module_input() -> Input {
   }
 }
 
-fn escrow_datum(channel_id: ByteArray, denom: ByteArray) -> TransferEscrowDatum {
-  TransferEscrowDatum { channel_id, denom }
+fn escrow_datum(
+  channel_id: ByteArray,
+  denom: ByteArray,
+  escrowed_amount: Int,
+) -> TransferEscrowDatum {
+  TransferEscrowDatum { channel_id, denom, escrowed_amount }
 }
 
 fn escrow_output(
@@ -90,13 +101,22 @@ fn escrow_output(
   denom: ByteArray,
   quantity: Int,
 ) -> Output {
+  escrow_output_with_principal(channel_id, denom, quantity, quantity)
+}
+
+fn escrow_output_with_principal(
+  channel_id: ByteArray,
+  denom: ByteArray,
+  quantity: Int,
+  escrowed_amount: Int,
+) -> Output {
   let shard_token_name =
     transfer_escrow_shard.shard_token_name(channel_id, denom)
   Output {
     address: from_script("transfer-module"),
     value: from_asset(native_policy_id, native_token_name, quantity)
       |> add(shard_policy_id, shard_token_name, 1),
-    datum: InlineDatum(escrow_datum(channel_id, denom)),
+    datum: InlineDatum(escrow_datum(channel_id, denom, escrowed_amount)),
     reference_script: None,
   }
 }
@@ -221,11 +241,11 @@ fn native_escrow_contract(
   let denom = native_denom()
   let input = escrow_input(1, actual_channel_id, denom, input_quantity)
   let output = escrow_output(actual_channel_id, denom, output_quantity)
-  let expected_datum = escrow_datum(expected_channel_id, denom)
+  let expected_datum = escrow_datum(expected_channel_id, denom, input_quantity)
   transfer_escrow.validate_module_escrow_transition(
     input,
     EscrowShard {
-      datum: escrow_datum(actual_channel_id, denom),
+      datum: escrow_datum(actual_channel_id, denom, input_quantity),
       updated_output: Some(output),
     },
     [input],
@@ -236,6 +256,160 @@ fn native_escrow_contract(
     delta,
     native_value(delta),
     native_policy_id |> bytearray.concat(native_token_name),
+  )
+}
+
+fn native_escrow_principal_contract(
+  input_quantity: Int,
+  input_principal: Int,
+  output_quantity: Int,
+  output_principal: Int,
+  delta: Int,
+) -> Bool {
+  let denom = native_denom()
+  let input_output =
+    escrow_output_with_principal(
+      channel_id,
+      denom,
+      input_quantity,
+      input_principal,
+    )
+  let input =
+    Input {
+      output_reference: OutputReference {
+        transaction_id: #"0303030303030303030303030303030303030303030303030303030303030303",
+        output_index: 0,
+      },
+      output: input_output,
+    }
+  let output =
+    escrow_output_with_principal(
+      channel_id,
+      denom,
+      output_quantity,
+      output_principal,
+    )
+  transfer_escrow.validate_module_escrow_transition(
+    input,
+    EscrowShard {
+      datum: escrow_datum(channel_id, denom, input_principal),
+      updated_output: Some(output),
+    },
+    [input],
+    [output],
+    escrow_datum(channel_id, denom, input_principal),
+    shard_policy_id,
+    empty_mint(),
+    delta,
+    native_value(delta),
+    native_policy_id |> bytearray.concat(native_token_name),
+  )
+}
+
+fn ada_escrow_output(physical_lovelace: Int, escrowed_amount: Int) -> Output {
+  let denom = "6c6f76656c616365"
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(channel_id, denom)
+  Output {
+    address: from_script("transfer-module"),
+    value: from_asset(ada_policy_id, ada_asset_name, physical_lovelace)
+      |> add(shard_policy_id, shard_token_name, 1),
+    datum: InlineDatum(escrow_datum(channel_id, denom, escrowed_amount)),
+    reference_script: None,
+  }
+}
+
+fn ada_escrow_principal_contract(
+  input_lovelace: Int,
+  input_principal: Int,
+  output_lovelace: Int,
+  output_principal: Int,
+  delta: Int,
+) -> Bool {
+  let denom = "6c6f76656c616365"
+  let input =
+    Input {
+      output_reference: OutputReference {
+        transaction_id: #"0404040404040404040404040404040404040404040404040404040404040404",
+        output_index: 0,
+      },
+      output: ada_escrow_output(input_lovelace, input_principal),
+    }
+  let output = ada_escrow_output(output_lovelace, output_principal)
+  transfer_escrow.validate_module_escrow_transition(
+    input,
+    EscrowShard {
+      datum: escrow_datum(channel_id, denom, input_principal),
+      updated_output: Some(output),
+    },
+    [input],
+    [output],
+    escrow_datum(channel_id, denom, input_principal),
+    shard_policy_id,
+    empty_mint(),
+    delta,
+    from_asset(ada_policy_id, ada_asset_name, delta),
+    "lovelace",
+  )
+}
+
+fn create_native_escrow_contract(
+  physical_quantity: Int,
+  logical_principal: Int,
+) -> Bool {
+  let denom = native_denom()
+  let input = module_input()
+  let updated_module_output = Output { ..input.output, datum: InlineDatum(1) }
+  let created_output =
+    escrow_output_with_principal(
+      channel_id,
+      denom,
+      physical_quantity,
+      logical_principal,
+    )
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(channel_id, denom)
+  transfer_escrow.validate_module_escrow_transition(
+    input,
+    transfer_escrow.ModuleState {
+      updated_output: updated_module_output,
+      datum_changed: True,
+    },
+    [input],
+    [updated_module_output, created_output],
+    escrow_datum(channel_id, denom, 0),
+    shard_policy_id,
+    from_asset(shard_policy_id, shard_token_name, 1),
+    amount,
+    native_value(amount),
+    native_policy_id |> bytearray.concat(native_token_name),
+  )
+}
+
+fn create_ada_escrow_contract(
+  physical_lovelace: Int,
+  logical_principal: Int,
+) -> Bool {
+  let denom = "6c6f76656c616365"
+  let input = module_input()
+  let updated_module_output = Output { ..input.output, datum: InlineDatum(1) }
+  let created_output = ada_escrow_output(physical_lovelace, logical_principal)
+  let shard_token_name =
+    transfer_escrow_shard.shard_token_name(channel_id, denom)
+  transfer_escrow.validate_module_escrow_transition(
+    input,
+    transfer_escrow.ModuleState {
+      updated_output: updated_module_output,
+      datum_changed: True,
+    },
+    [input],
+    [updated_module_output, created_output],
+    escrow_datum(channel_id, denom, 0),
+    shard_policy_id,
+    from_asset(shard_policy_id, shard_token_name, 1),
+    amount,
+    from_asset(ada_policy_id, ada_asset_name, amount),
+    "lovelace",
   )
 }
 
@@ -256,12 +430,12 @@ fn native_unescrow_contract(
     transfer_escrow.validate_module_escrow_transition(
       input,
       EscrowShard {
-        datum: escrow_datum(channel_id, denom),
+        datum: escrow_datum(channel_id, denom, escrow_quantity),
         updated_output: Some(output),
       },
       [input],
       outputs,
-      escrow_datum(channel_id, denom),
+      escrow_datum(channel_id, denom, escrow_quantity),
       shard_policy_id,
       empty_mint(),
       0 - amount,
@@ -297,6 +471,7 @@ fn voucher_send_contract(
       packet_source_port: packet.source_port,
       packet_source_channel: packet.source_channel,
       data,
+      module_token: module_token(),
     }
   let input = module_input()
 
@@ -323,6 +498,7 @@ fn voucher_refund_contract(
       packet_source_channel: packet.source_channel,
       data,
       acknowledgement: Some(ack),
+      module_token: module_token(),
     }
   let input = module_input()
 
@@ -356,6 +532,7 @@ fn recv_sink_contract(
       packet_dest_port: packet.destination_port,
       packet_dest_channel: packet.destination_channel,
       data,
+      module_token: module_token(),
     }
   let input = module_input()
 
@@ -382,6 +559,26 @@ test prop_transfer_native_send_escrow_increases_exactly(_seed via fuzz.int()) {
     native_escrow_contract(100, 120, amount, channel_id, channel_id),
   )
     |> fuzz_dsl.assert_valid
+}
+
+test transfer_creation_sets_exact_native_logical_principal() {
+  create_native_escrow_contract(amount, amount)
+}
+
+test transfer_creation_rejects_wrong_native_logical_principal() fail {
+  create_native_escrow_contract(amount, amount - 1)
+}
+
+test transfer_creation_accepts_ada_min_utxo_reserve_above_principal() {
+  create_ada_escrow_contract(2_000_000, amount)
+}
+
+test transfer_creation_rejects_ada_below_logical_principal() fail {
+  create_ada_escrow_contract(amount - 1, amount)
+}
+
+test transfer_creation_rejects_wrong_ada_logical_principal() fail {
+  create_ada_escrow_contract(2_000_000, amount - 1)
 }
 
 test prop_transfer_native_timeout_refunds_exactly(_seed via fuzz.int()) {
@@ -527,6 +724,22 @@ test prop_transfer_rejects_wrong_escrow_delta(_seed via fuzz.int()) {
     native_escrow_contract(100, 119, amount, channel_id, channel_id),
   )
     |> fuzz_dsl.assert_rejected
+}
+
+test transfer_rejects_wrong_logical_principal_with_correct_native_value_delta() fail {
+  native_escrow_principal_contract(100, 100, 120, 119, amount)
+}
+
+test transfer_accepts_ada_reserve_above_exact_logical_principal() {
+  ada_escrow_principal_contract(2_000_000, 100, 2_000_020, 120, amount)
+}
+
+test transfer_rejects_ada_physical_lovelace_below_logical_principal() fail {
+  ada_escrow_principal_contract(99, 100, 119, 120, amount)
+}
+
+test transfer_rejects_wrong_ada_logical_principal_delta() fail {
+  ada_escrow_principal_contract(2_000_000, 100, 2_000_020, 119, amount)
 }
 
 test prop_transfer_rejects_wrong_native_refund_amount(_seed via fuzz.int()) {

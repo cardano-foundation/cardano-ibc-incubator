@@ -5,12 +5,117 @@ import { createServer, type Server, type Socket } from 'node:net';
 import WebSocket, { WebSocketServer } from 'ws';
 import {
   mapOgmiosProtocolParameters,
+  normalizeBridgeManifest,
   ogmiosRequest,
   queryProtocolParametersCompat,
   retryWithBackoff,
   withKupoStringQuantityHeader,
 } from './index';
 import { Lucid } from '@lucid-evolution/lucid';
+
+function bridgeManifestV6(): any {
+  const validator = {
+    script_hash: '11'.repeat(28),
+    address: 'addr_test1_validator',
+    ref_utxo: { tx_hash: '22'.repeat(32), output_index: 0 },
+  };
+  const channelRefValidator = {
+    script_hash: '33'.repeat(28),
+    ref_utxo: { tx_hash: '44'.repeat(32), output_index: 0 },
+  };
+
+  return {
+    schema_version: 6,
+    deployed_at: '2026-08-21T00:00:00.000Z',
+    cardano: { network: 'preprod' },
+    host_state_nft: {
+      policy_id: '55'.repeat(28),
+      token_name: 'aa',
+      script: '5901',
+    },
+    validators: {
+      host_state_stt: validator,
+      spend_client: validator,
+      spend_connection: validator,
+      spend_channel: {
+        ...validator,
+        ref_validator: {
+          acknowledge_packet: channelRefValidator,
+          chan_close_confirm: channelRefValidator,
+          chan_close_init: channelRefValidator,
+          chan_open_ack: channelRefValidator,
+          chan_open_confirm: channelRefValidator,
+          recv_packet: channelRefValidator,
+          prune_packet_history: channelRefValidator,
+          send_packet: channelRefValidator,
+          timeout_packet: channelRefValidator,
+        },
+      },
+      spend_transfer_module: validator,
+      mint_identifier: validator,
+      verify_proof: validator,
+      mint_client_stt: validator,
+      mint_connection_stt: validator,
+      mint_channel_stt: validator,
+      mint_lifecycle_creation_marker: validator,
+      mint_lifecycle_reclamation_marker: validator,
+      mint_lifecycle_operational_marker: validator,
+      mint_lifecycle_packet_marker: validator,
+      mint_voucher: validator,
+      mint_transfer_escrow_shard: validator,
+      mint_port: validator,
+    },
+    modules: {
+      transfer: {
+        identifier: '66'.repeat(28) + 'aa',
+        address: 'addr_test1_transfer',
+      },
+    },
+  };
+}
+
+describe('bridge manifest compatibility', () => {
+  it('rejects immutable pre-v6 validator manifests', () => {
+    assert.throws(
+      () => normalizeBridgeManifest({ schema_version: 5 } as never),
+      /schema_version: expected 6/,
+    );
+  });
+
+  it('requires the parameterized HostState NFT policy for final burn', () => {
+    assert.throws(
+      () =>
+        normalizeBridgeManifest({
+          schema_version: 6,
+          host_state_nft: {
+            policy_id: 'host-policy',
+            token_name: 'host-token',
+          },
+        } as never),
+      /host_state_nft\.script is required/,
+    );
+  });
+
+  it('requires every lifecycle policy in schema v6', () => {
+    const policyNames = [
+      'mint_lifecycle_creation_marker',
+      'mint_lifecycle_reclamation_marker',
+      'mint_lifecycle_operational_marker',
+      'mint_lifecycle_packet_marker',
+    ] as const;
+
+    for (const policyName of policyNames) {
+      const manifest = bridgeManifestV6();
+      delete manifest.validators[policyName];
+
+      assert.throws(
+        () => normalizeBridgeManifest(manifest),
+        new RegExp(`validators\\.${policyName} is required`),
+        policyName,
+      );
+    }
+  });
+});
 
 function protocolParameters(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {

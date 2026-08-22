@@ -1,13 +1,14 @@
 use aiken/collection/pairs
 use ibc/auth.{AuthToken}
 use ibc/client/ics_007_tendermint_client/height as height_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+} as channel_datum_mod
 use ibc/core/ics_004/types/channel.{Channel} as channel_mod
 use ibc/core/ics_004/types/counterparty.{ChannelCounterparty}
 use ibc/core/ics_004/types/order.{Ordered, Unordered}
 use ibc/core/ics_004/types/packet.{Packet}
-use ibc/core/ics_004/types/state.{Open}
+use ibc/core/ics_004/types/state.{Closed, Init, Open}
 
 const sequence = 11
 
@@ -42,6 +43,7 @@ fn input_datum() -> ChannelDatum {
     },
     port_id: "transfer",
     token: AuthToken { policy_id: "policy", name: "channel token" },
+    lifecycle: ChannelActive,
   }
 }
 
@@ -50,8 +52,15 @@ fn expected_output(input: ChannelDatum, proof_height: height_mod.Height) {
     ..input,
     state: ChannelDatumState {
       ..input.state,
-      packet_receipt: [],
-      packet_acknowledgement: [],
+      packet_receipt: if input.state.channel.ordering == Ordered {
+        input.state.packet_receipt
+      } else {
+        pairs.delete_first(input.state.packet_receipt, sequence)
+      },
+      packet_acknowledgement: pairs.delete_first(
+        input.state.packet_acknowledgement,
+        sequence,
+      ),
       minimum_receive_proof_height: proof_height,
     },
   }
@@ -240,7 +249,7 @@ test prune_rejects_wrong_sequence() {
   )
 }
 
-test prune_rejects_ordered_channel() {
+test prune_ordered_channel_deletes_acknowledgement_only() {
   let input = input_datum()
   let ordered_input =
     ChannelDatum {
@@ -248,13 +257,79 @@ test prune_rejects_ordered_channel() {
       state: ChannelDatumState {
         ..input.state,
         channel: Channel { ..input.state.channel, ordering: Ordered },
+        packet_receipt: [],
+      },
+    }
+  let proof_height = height_mod.new_height(1, 12)
+
+  channel_datum_mod.validate_prune_packet_history(
+    ordered_input,
+    expected_output(ordered_input, proof_height),
+    sequence,
+    proof_height,
+  )
+}
+
+test prune_succeeds_on_closed_unordered_channel() {
+  let input = input_datum()
+  let closed_input =
+    ChannelDatum {
+      ..input,
+      state: ChannelDatumState {
+        ..input.state,
+        channel: Channel { ..input.state.channel, state: Closed },
+      },
+    }
+  let proof_height = height_mod.new_height(1, 12)
+
+  channel_datum_mod.validate_prune_packet_history(
+    closed_input,
+    expected_output(closed_input, proof_height),
+    sequence,
+    proof_height,
+  )
+}
+
+test prune_succeeds_on_closed_ordered_channel() {
+  let input = input_datum()
+  let closed_input =
+    ChannelDatum {
+      ..input,
+      state: ChannelDatumState {
+        ..input.state,
+        channel: Channel {
+          ..input.state.channel,
+          state: Closed,
+          ordering: Ordered,
+        },
+        packet_receipt: [],
+      },
+    }
+  let proof_height = height_mod.new_height(1, 12)
+
+  channel_datum_mod.validate_prune_packet_history(
+    closed_input,
+    expected_output(closed_input, proof_height),
+    sequence,
+    proof_height,
+  )
+}
+
+test prune_rejects_handshake_channel() {
+  let input = input_datum()
+  let handshake_input =
+    ChannelDatum {
+      ..input,
+      state: ChannelDatumState {
+        ..input.state,
+        channel: Channel { ..input.state.channel, state: Init },
       },
     }
   let proof_height = height_mod.new_height(1, 12)
 
   !channel_datum_mod.validate_prune_packet_history(
-    ordered_input,
-    expected_output(ordered_input, proof_height),
+    handshake_input,
+    expected_output(handshake_input, proof_height),
     sequence,
     proof_height,
   )

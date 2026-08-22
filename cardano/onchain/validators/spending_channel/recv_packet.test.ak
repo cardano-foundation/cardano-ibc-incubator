@@ -23,14 +23,17 @@ use ibc/client/ics_007_tendermint_client/types/unchecked_rational.{
 use ibc/client/ics_007_tendermint_client/types/verify_proof_redeemer.{
   VerifyMembership,
 }
-use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
+use ibc/core/ics_003_connection_semantics/connection_datum.{
+  ConnectionActive, ConnectionDatum,
+}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty} as conn_counterparty_mod
 use ibc/core/ics_003_connection_semantics/types/state.{Open}
 use ibc/core/ics_003_connection_semantics/types/version.{Version}
 use ibc/core/ics_003_connection_semantics/verify as verify_mod
-use ibc/core/ics_004/channel_datum.{ChannelDatum,
-  ChannelDatumState} as channel_datum_mod
+use ibc/core/ics_004/channel_datum.{
+  ChannelActive, ChannelDatum, ChannelDatumState,
+} as channel_datum_mod
 use ibc/core/ics_004/channel_redeemer.{RecvPacket}
 use ibc/core/ics_004/types/acknowledgement as acknowledgement_mod
 use ibc/core/ics_004/types/channel.{Channel}
@@ -214,6 +217,7 @@ fn check_recv_packet_with_timeout(
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
     }
 
   let channel_input =
@@ -356,6 +360,8 @@ fn check_recv_packet_with_timeout(
   let host_output =
     Output {
       ..host_input.output,
+      value: host_input.output.value
+        |> add("lifecycle packet policy", "ibc_lifecycle", 1),
       datum: InlineDatum(
         HostStateDatum {
           state: new_host_state,
@@ -609,7 +615,12 @@ fn check_recv_packet_with_timeout(
       outputs,
       redeemers,
       validity_range,
-      mint: from_asset(mock_data.recv_packet_policy_id, "", 1),
+      mint: if compose_host_state {
+        from_asset(mock_data.recv_packet_policy_id, "", 1)
+          |> add("lifecycle packet policy", "ibc_lifecycle", 1)
+      } else {
+        from_asset(mock_data.recv_packet_policy_id, "", 1)
+      },
     }
 
   let recv_packet_valid =
@@ -631,6 +642,13 @@ fn check_recv_packet_with_timeout(
         "unused client script hash",
         "unused connection script hash",
         "mock spend channel script hash",
+        mock_data.client_minting_policy_id,
+        mock_data.connection_minting_policy_id,
+        mock_data.channel_token.policy_id,
+        "lifecycle creation policy",
+        "lifecycle reclamation policy",
+        "lifecycle operational policy",
+        "lifecycle packet policy",
         None,
         host_state_redeemer,
         host_input.output_reference,
@@ -769,6 +787,7 @@ test recv_packet_fails_when_channel_is_closed() fail {
       },
       port_id: mock_data.port_id,
       token: mock_data.channel_token,
+      lifecycle: ChannelActive,
     }
 
   let channel_input =
@@ -870,6 +889,7 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
       },
       port_id: "port-100",
       token: channel_token,
+      lifecycle: ChannelActive,
     }
 
   let updated_channel_datum =
@@ -948,6 +968,9 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
               next_client_sequence: 0,
               next_connection_sequence: 0,
               next_channel_sequence: 0,
+              live_client_count: 0,
+              live_connection_count: 0,
+              live_channel_count: 0,
               bound_port: [
                 Pair(input_channel_datum.port_id, module_registration),
               ],
@@ -1387,7 +1410,12 @@ test recv_packet_non_mock_data_rejects_mixed_timeout() fail {
     }
 
   let connection_datum =
-    ConnectionDatum { state: connection_end, token: connection_token }
+    ConnectionDatum {
+      state: connection_end,
+      token: connection_token,
+      live_channel_count: 0,
+      lifecycle: ConnectionActive,
+    }
 
   let reference_inputs =
     [

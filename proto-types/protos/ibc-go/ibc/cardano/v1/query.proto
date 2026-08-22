@@ -125,6 +125,10 @@ message BridgeManifestValidators {
   BridgeManifestValidator mint_connection_stt = 9;
   BridgeManifestValidator mint_channel_stt = 10;
   BridgeManifestValidator mint_voucher = 11;
+  BridgeManifestValidator mint_lifecycle_creation_marker = 12;
+  BridgeManifestValidator mint_lifecycle_reclamation_marker = 13;
+  BridgeManifestValidator mint_lifecycle_operational_marker = 14;
+  BridgeManifestValidator mint_lifecycle_packet_marker = 15;
 }
 
 message BridgeManifestModule {

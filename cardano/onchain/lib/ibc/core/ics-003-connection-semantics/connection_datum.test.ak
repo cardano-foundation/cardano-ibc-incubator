@@ -1,6 +1,8 @@
 use aiken/fuzz
 use ibc/auth.{AuthToken}
-use ibc/core/ics_003_connection_semantics/connection_datum.{ConnectionDatum}
+use ibc/core/ics_003_connection_semantics/connection_datum.{
+  ConnectionActive, ConnectionDatum,
+}
 use ibc/core/ics_003_connection_semantics/types/connection_end.{ConnectionEnd}
 use ibc/core/ics_003_connection_semantics/types/counterparty.{Counterparty}
 use ibc/core/ics_003_connection_semantics/types/state.{State}
@@ -40,12 +42,24 @@ fn create_mock_connection_end(
   }
 }
 
+fn active_connection_datum(
+  state: ConnectionEnd,
+  token: AuthToken,
+) -> ConnectionDatum {
+  ConnectionDatum {
+    state,
+    token,
+    live_channel_count: 0,
+    lifecycle: ConnectionActive,
+  }
+}
+
 test test_is_conn_open_init_valid_succeed() {
   let mock_connection_end = create_mock_connection_end(state.Init, "")
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
-    ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
+    active_connection_datum(mock_connection_end, mock_auth_token)
 
   connection_datum.is_conn_open_init_valid(
     mock_connection_datum,
@@ -60,7 +74,7 @@ test test_is_conn_open_init_valid_fail_at_validate_basic() fail {
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
-    ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
+    active_connection_datum(mock_connection_end, mock_auth_token)
   connection_datum.is_conn_open_init_valid(
     ConnectionDatum {
       ..mock_connection_datum,
@@ -78,7 +92,7 @@ test test_is_conn_open_init_valid_fail_when_auth_token_not_match_with_connection
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
-    ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
+    active_connection_datum(mock_connection_end, mock_auth_token)
   let mock_auth_token_invalid = AuthToken { policy_id: "", name: "" }
 
   connection_datum.is_conn_open_init_valid(
@@ -93,7 +107,7 @@ test test_is_conn_open_init_valid_fail_when_version_is_not_supported() fail {
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
-    ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
+    active_connection_datum(mock_connection_end, mock_auth_token)
   connection_datum.is_conn_open_init_valid(
     ConnectionDatum {
       ..mock_connection_datum,
@@ -116,7 +130,7 @@ test test_is_conn_open_init_valid_fail_when_connection_end_state_is_not_init() f
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
-    ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
+    active_connection_datum(mock_connection_end, mock_auth_token)
 
   connection_datum.is_conn_open_init_valid(
     ConnectionDatum {
@@ -140,7 +154,7 @@ test test_is_conn_open_init_valid_fail_when_counterparty_connection_id_is_not_em
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
-    ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
+    active_connection_datum(mock_connection_end, mock_auth_token)
 
   connection_datum.is_conn_open_init_valid(
     mock_connection_datum,
@@ -154,7 +168,7 @@ test test_is_conn_open_try_valid_succeed() {
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
-    ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
+    active_connection_datum(mock_connection_end, mock_auth_token)
 
   fuzz_dsl.valid_check(
     "conn",
@@ -176,7 +190,7 @@ test prop_conn_open_try_accepts_valid_try_open(_seed via fuzz.int()) {
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
-    ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
+    active_connection_datum(mock_connection_end, mock_auth_token)
 
   connection_datum.is_conn_open_try_valid(
     mock_connection_datum,
@@ -192,7 +206,7 @@ test test_is_conn_open_try_valid_fail_at_validate_basic() fail {
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
-    ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
+    active_connection_datum(mock_connection_end, mock_auth_token)
   connection_datum.is_conn_open_init_valid(
     ConnectionDatum {
       ..mock_connection_datum,
@@ -211,7 +225,7 @@ test test_is_conn_open_try_valid_fail_when_auth_token_not_match_with_connection_
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
-    ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
+    active_connection_datum(mock_connection_end, mock_auth_token)
   let mock_auth_token_invalid = AuthToken { policy_id: "", name: "" }
 
   connection_datum.is_conn_open_try_valid(
@@ -227,7 +241,7 @@ test test_is_conn_open_try_valid_fail_when_version_is_not_supported() fail {
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
-    ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
+    active_connection_datum(mock_connection_end, mock_auth_token)
   connection_datum.is_conn_open_try_valid(
     ConnectionDatum {
       ..mock_connection_datum,
@@ -251,7 +265,7 @@ test test_is_conn_open_try_valid_fail_when_connection_end_state_is_not_try_open(
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
-    ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
+    active_connection_datum(mock_connection_end, mock_auth_token)
 
   connection_datum.is_conn_open_try_valid(
     ConnectionDatum {
@@ -272,7 +286,7 @@ test test_is_conn_open_try_valid_fail_when_counterparty_connection_id_is_empty()
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum =
-    ConnectionDatum { state: mock_connection_end, token: mock_auth_token }
+    active_connection_datum(mock_connection_end, mock_auth_token)
 
   connection_datum.is_conn_open_try_valid(
     mock_connection_datum,
@@ -287,7 +301,7 @@ test test_is_connection_open_ack_valid_succeed() {
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
 
   let mock_connection_datum_input =
-    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
+    active_connection_datum(mock_connection_end_input, mock_auth_token)
 
   let output_connection_datum =
     ConnectionDatum {
@@ -321,7 +335,7 @@ test prop_conn_open_ack_accepts_valid_transition(_seed via fuzz.int()) {
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum_input =
-    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
+    active_connection_datum(mock_connection_end_input, mock_auth_token)
   let output_connection_datum =
     ConnectionDatum {
       ..mock_connection_datum_input,
@@ -348,7 +362,7 @@ test test_is_connection_open_ack_valid_fail_when_input_datum_state_is_not_init()
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
 
   let mock_connection_datum_input =
-    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
+    active_connection_datum(mock_connection_end_input, mock_auth_token)
 
   let output_connection_datum =
     ConnectionDatum {
@@ -376,7 +390,7 @@ test test_is_connection_open_ack_valid_fail_when_output_counterparty_conn_id_is_
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
 
   let mock_connection_datum_input =
-    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
+    active_connection_datum(mock_connection_end_input, mock_auth_token)
 
   let output_connection_datum =
     ConnectionDatum {
@@ -404,7 +418,7 @@ test test_is_connection_open_ack_valid_fail_when_output_datum_state_is_not_open(
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
 
   let mock_connection_datum_input =
-    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
+    active_connection_datum(mock_connection_end_input, mock_auth_token)
 
   let output_connection_datum =
     ConnectionDatum {
@@ -432,7 +446,7 @@ test test_is_connection_open_ack_valid_fail_when_output_datum_state_not_match_wi
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
 
   let mock_connection_datum_input =
-    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
+    active_connection_datum(mock_connection_end_input, mock_auth_token)
 
   let output_connection_datum =
     ConnectionDatum {
@@ -461,7 +475,7 @@ test test_is_connection_open_ack_valid_fail_when_output_datum_token_not_match_wi
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
 
   let mock_connection_datum_input =
-    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
+    active_connection_datum(mock_connection_end_input, mock_auth_token)
 
   let output_connection_datum =
     ConnectionDatum {
@@ -478,6 +492,8 @@ test test_is_connection_open_ack_valid_fail_when_output_datum_token_not_match_wi
         ..mock_connection_datum_input.token,
         name: "invalid token name",
       },
+      live_channel_count: mock_connection_datum_input.live_channel_count,
+      lifecycle: mock_connection_datum_input.lifecycle,
     }
 
   connection_datum.is_connection_open_ack_valid(
@@ -492,7 +508,7 @@ test test_is_connection_open_confirm_valid_succeed() {
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum_input =
-    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
+    active_connection_datum(mock_connection_end_input, mock_auth_token)
 
   let output_connection_datum =
     ConnectionDatum {
@@ -514,7 +530,7 @@ test test_is_connection_open_confirm_valid_fail_when_input_datum_state_is_not_tr
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum_input =
-    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
+    active_connection_datum(mock_connection_end_input, mock_auth_token)
 
   let output_connection_datum =
     ConnectionDatum {
@@ -536,7 +552,7 @@ test test_is_connection_open_confirm_valid_fail_when_output_datum_state_is_not_o
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum_input =
-    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
+    active_connection_datum(mock_connection_end_input, mock_auth_token)
 
   let output_connection_datum =
     ConnectionDatum {
@@ -558,7 +574,7 @@ test test_is_connection_open_confirm_valid_fail_when_output_datum_state_not_matc
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum_input =
-    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
+    active_connection_datum(mock_connection_end_input, mock_auth_token)
 
   let output_connection_datum =
     ConnectionDatum {
@@ -581,7 +597,7 @@ test test_is_connection_open_confirm_valid_fail_when_output_datum_token_not_matc
   let mock_auth_token =
     AuthToken { policy_id: mock_policy_id, name: mock_asset_name }
   let mock_connection_datum_input =
-    ConnectionDatum { state: mock_connection_end_input, token: mock_auth_token }
+    active_connection_datum(mock_connection_end_input, mock_auth_token)
 
   let output_connection_datum =
     ConnectionDatum {
@@ -593,6 +609,8 @@ test test_is_connection_open_confirm_valid_fail_when_output_datum_token_not_matc
         ..mock_connection_datum_input.token,
         name: "invalid token name",
       },
+      live_channel_count: mock_connection_datum_input.live_channel_count,
+      lifecycle: mock_connection_datum_input.lifecycle,
     }
 
   connection_datum.is_connection_open_confirm_valid(

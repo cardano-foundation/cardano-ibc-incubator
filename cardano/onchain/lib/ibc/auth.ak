@@ -37,6 +37,17 @@ pub fn mint_auth_token(mint: Value, token: AuthToken) -> Bool {
   minted_tokens == ( dict.empty |> dict.insert(token.name, 1) )
 }
 
+/// Burn exactly one authentication token and nothing else under its policy.
+///
+/// Reclamation transitions use this stricter helper instead of checking only
+/// the target asset quantity. That prevents an otherwise valid cleanup from
+/// minting or burning a second state token under the same policy.
+pub fn burn_auth_token(mint: Value, token: AuthToken) -> Bool {
+  let minted_tokens = mint |> tokens(token.policy_id)
+
+  minted_tokens == ( dict.empty |> dict.insert(token.name, -1) )
+}
+
 pub fn generate_token_name(
   base_token: AuthToken,
   prefix: ByteArray,

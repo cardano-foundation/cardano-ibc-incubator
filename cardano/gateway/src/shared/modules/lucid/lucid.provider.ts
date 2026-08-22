@@ -10,6 +10,7 @@ import {
   resolveManagedKupoEndpoint,
   resolveManagedOgmiosHttpEndpoint,
 } from '../../helpers/managed-cardano-endpoints';
+import type { KupoHistoricalOutput, KupoHistoryPoint, KupoHistoryProvider } from '../kupo/kupo.types';
 export const LUCID_CLIENT = 'LUCID_CLIENT';
 export const LUCID_IMPORTER = 'LUCID_IMPORTER';
 
@@ -794,6 +795,257 @@ async function fetchKupoUtxosByOutRef(
   return kupoMatchesToUtxos(kupoEndpoint, filteredMatches, headers);
 }
 
+const KUPO_POLICY_ID_PATTERN = /^[0-9a-f]{56}$/;
+const KUPO_HASH_PATTERN = /^[0-9a-f]{64}$/;
+const KUPO_ASSET_ID_PATTERN = /^[0-9a-f]{56}(?:\.[0-9a-f]{2,64})?$/;
+const HEX_BYTES_PATTERN = /^(?:[0-9a-f]{2})+$/;
+
+function requireRecord(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`Malformed Kupo history response: ${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`Malformed Kupo history response: ${label} must be a non-empty string`);
+  }
+  return value;
+}
+
+function requireSafeIndex(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`Malformed Kupo history response: ${label} must be a non-negative safe integer`);
+  }
+  return value;
+}
+
+function requireHex(value: unknown, pattern: RegExp, label: string): string {
+  const parsed = requireString(value, label);
+  if (!pattern.test(parsed)) {
+    throw new Error(`Malformed Kupo history response: ${label} is not canonical base16`);
+  }
+  return parsed;
+}
+
+function requireNonNegativeQuantity(value: unknown, label: string): bigint {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    throw new Error(`Malformed Kupo history response: ${label} must be an integer quantity`);
+  }
+  if (typeof value === 'number' && !Number.isSafeInteger(value)) {
+    throw new Error(`Malformed Kupo history response: ${label} must be a safe integer or decimal string`);
+  }
+  const text = String(value);
+  if (!/^(?:0|[1-9][0-9]*)$/.test(text)) {
+    throw new Error(`Malformed Kupo history response: ${label} must be a non-negative canonical integer`);
+  }
+  return BigInt(text);
+}
+
+function requireHistoryPoint(value: unknown, label: string): KupoHistoryPoint {
+  const point = requireRecord(value, label);
+  return {
+    slotNo: requireSafeIndex(point.slot_no, `${label}.slot_no`),
+    headerHash: requireHex(point.header_hash, KUPO_HASH_PATTERN, `${label}.header_hash`),
+  };
+}
+
+function parseHistoricalValue(
+  value: unknown,
+  expectedPolicyId: string,
+  label: string,
+): {
+  assets: Record<string, bigint>;
+  authToken: KupoHistoricalOutput['authToken'];
+} {
+  const parsedValue = requireRecord(value, `${label}.value`);
+  const assets: Record<string, bigint> = {
+    lovelace: requireNonNegativeQuantity(parsedValue.coins, `${label}.value.coins`),
+  };
+  const parsedAssets = requireRecord(parsedValue.assets, `${label}.value.assets`);
+  const matchingTokens: Array<KupoHistoricalOutput['authToken']> = [];
+
+  for (const [assetId, rawQuantity] of Object.entries(parsedAssets)) {
+    if (!KUPO_ASSET_ID_PATTERN.test(assetId)) {
+      throw new Error(`Malformed Kupo history response: ${label}.value.assets contains invalid asset id`);
+    }
+    const [policyId, assetName = ''] = assetId.split('.');
+    if (assetName.length % 2 !== 0) {
+      throw new Error(`Malformed Kupo history response: ${label}.value.assets contains odd-length base16`);
+    }
+    const quantity = requireNonNegativeQuantity(rawQuantity, `${label}.value.assets[${assetId}]`);
+    const unit = `${policyId}${assetName}`;
+    assets[unit] = quantity;
+
+    if (policyId === expectedPolicyId) {
+      if (!assetName) {
+        throw new Error(`Malformed Kupo history response: ${label} has an empty auth-token name`);
+      }
+      if (quantity !== 1n) {
+        throw new Error(`Ambiguous Kupo history response: ${label} auth-token quantity must equal one`);
+      }
+      matchingTokens.push({ policyId, name: assetName, unit });
+    }
+  }
+
+  if (matchingTokens.length !== 1) {
+    throw new Error(
+      `Ambiguous Kupo history response: ${label} must contain exactly one token under policy ${expectedPolicyId}`,
+    );
+  }
+
+  return { assets, authToken: matchingTokens[0] };
+}
+
+function compareHistoricalOutputs(a: KupoHistoricalOutput, b: KupoHistoricalOutput): number {
+  return (
+    a.createdAt.slotNo - b.createdAt.slotNo ||
+    a.transactionIndex - b.transactionIndex ||
+    a.outputIndex - b.outputIndex ||
+    a.txHash.localeCompare(b.txHash)
+  );
+}
+
+async function requireKupoHistoryCoverage(
+  kupoEndpoint: string,
+  address: string,
+  policyId: string,
+  headers?: Record<string, string>,
+): Promise<void> {
+  const patterns = [address, `${policyId}.*`];
+  const configuredPatterns = await Promise.all(
+    patterns.map(async (pattern) => {
+      const response = await fetchJson<unknown>(`${kupoEndpoint}/patterns/${encodeURIComponent(pattern)}`, headers);
+      if (!Array.isArray(response) || !response.every((item) => typeof item === 'string' && item.length > 0)) {
+        throw new Error('Malformed Kupo pattern-coverage response');
+      }
+      return response;
+    }),
+  );
+
+  if (configuredPatterns.every((matches) => matches.length === 0)) {
+    throw new Error(`Kupo is not configured to retain matches for address ${address} or policy ${policyId}`);
+  }
+}
+
+/**
+ * Fetch all canonical Kupo matches (spent and unspent) for one address/policy.
+ *
+ * Kupo v2.9 returns both statuses when neither status flag is present. Its
+ * documented ordering is reinforced locally so callers never depend on HTTP
+ * response order. Historical recovery requires Kupo to run without
+ * `--prune-utxo`; a configured address/policy coverage check prevents an empty
+ * result from silently standing in for an address Kupo never indexed.
+ */
+export async function fetchKupoHistoryAtAddressByPolicy(
+  kupoEndpoint: string,
+  address: string,
+  policyId: string,
+  headers?: Record<string, string>,
+  assetName?: string,
+): Promise<KupoHistoricalOutput[]> {
+  if (typeof address !== 'string' || address.length === 0 || address.trim() !== address) {
+    throw new Error('Invalid Kupo history address');
+  }
+  if (!KUPO_POLICY_ID_PATTERN.test(policyId)) {
+    throw new Error('Invalid Kupo history policy id');
+  }
+  if (
+    assetName !== undefined &&
+    (assetName.length === 0 ||
+      assetName.length > 64 ||
+      assetName.length % 2 !== 0 ||
+      !/^[0-9a-f]+$/.test(assetName))
+  ) {
+    throw new Error('Invalid Kupo history asset name');
+  }
+
+  await requireKupoHistoryCoverage(kupoEndpoint, address, policyId, headers);
+
+  // Deliberately omit both `spent` and `unspent`: Kupo's NoStatusFlag query is
+  // the single-snapshot API for retrieving both kinds of matches.
+  const response = await fetchJson<unknown>(
+    `${kupoEndpoint}/matches/${encodeURIComponent(address)}?policy_id=${policyId}` +
+      (assetName === undefined ? '' : `&asset_name=${assetName}`),
+    headers,
+  );
+  if (!Array.isArray(response)) {
+    throw new Error('Malformed Kupo history response: matches must be an array');
+  }
+
+  const resolvedDatums = new Map<string, string>();
+  const outputReferences = new Set<string>();
+  const slotHeaders = new Map<number, string>();
+  const outputs: KupoHistoricalOutput[] = [];
+
+  for (const [index, rawMatch] of response.entries()) {
+    const label = `matches[${index}]`;
+    const match = requireRecord(rawMatch, label);
+    const transactionId = requireHex(match.transaction_id, KUPO_HASH_PATTERN, `${label}.transaction_id`);
+    const outputIndex = requireSafeIndex(match.output_index, `${label}.output_index`);
+    const transactionIndex = requireSafeIndex(match.transaction_index, `${label}.transaction_index`);
+    const matchAddress = requireString(match.address, `${label}.address`);
+    if (matchAddress !== address) {
+      throw new Error(`Malformed Kupo history response: ${label}.address does not match the requested address`);
+    }
+
+    const outputReference = `${transactionId}#${outputIndex}`;
+    if (outputReferences.has(outputReference)) {
+      throw new Error(`Ambiguous Kupo history response: duplicate output reference ${outputReference}`);
+    }
+    outputReferences.add(outputReference);
+
+    const createdAt = requireHistoryPoint(match.created_at, `${label}.created_at`);
+    const spentAt = match.spent_at === null ? null : requireHistoryPoint(match.spent_at, `${label}.spent_at`);
+    if (spentAt && spentAt.slotNo < createdAt.slotNo) {
+      throw new Error(`Malformed Kupo history response: ${label} was spent before it was created`);
+    }
+    for (const point of spentAt ? [createdAt, spentAt] : [createdAt]) {
+      const knownHeader = slotHeaders.get(point.slotNo);
+      if (knownHeader && knownHeader !== point.headerHash) {
+        throw new Error(`Ambiguous Kupo history response: slot ${point.slotNo} has conflicting headers`);
+      }
+      slotHeaders.set(point.slotNo, point.headerHash);
+    }
+
+    if (match.datum_type !== 'inline') {
+      throw new Error(`Malformed Kupo history response: ${label} must carry an inline datum`);
+    }
+    const datumHash = requireHex(match.datum_hash, KUPO_HASH_PATTERN, `${label}.datum_hash`);
+    let datum = resolvedDatums.get(datumHash);
+    if (!datum) {
+      const resolved = await fetchKupoDatum(kupoEndpoint, 'inline', datumHash, headers);
+      if (typeof resolved !== 'string' || !HEX_BYTES_PATTERN.test(resolved)) {
+        throw new Error(`Malformed Kupo history response: inline datum ${datumHash} could not be resolved`);
+      }
+      datum = resolved;
+      resolvedDatums.set(datumHash, datum);
+    }
+
+    const { assets, authToken } = parseHistoricalValue(match.value, policyId, label);
+    if (assetName !== undefined && authToken.name !== assetName) {
+      throw new Error(
+        `Malformed Kupo history response: ${label} auth-token name does not match the requested asset name`,
+      );
+    }
+    outputs.push({
+      txHash: transactionId,
+      outputIndex,
+      transactionIndex,
+      address: matchAddress,
+      assets,
+      datum,
+      inlineDatumHash: datumHash,
+      createdAt,
+      spentAt,
+      authToken,
+    });
+  }
+
+  return outputs.sort(compareHistoricalOutputs);
+}
+
 export async function retryWithBackoff<T>(
   operation: () => Promise<T>,
   label: string,
@@ -875,6 +1127,19 @@ export const LucidClient = {
     );
 
     const provider: any = new Lucid.Kupmios(kupoEndpoint, ogmiosEndpoint, kupmiosHeaders);
+    const historyProvider = provider as typeof provider & KupoHistoryProvider;
+    historyProvider.getKupoHistoryAtAddressByPolicy = async (
+      address: string,
+      policyId: string,
+      assetName?: string,
+    ) =>
+      fetchKupoHistoryAtAddressByPolicy(
+        kupoEndpoint,
+        address,
+        policyId,
+        kupmiosHeaders?.kupoHeader,
+        assetName,
+      );
     console.log(
       `[startup] Lucid provider endpoints kupo=${redactManagedEndpoint(kupoEndpoint, kupoApiKey)} ogmiosHttp=${redactManagedEndpoint(ogmiosEndpoint, ogmiosApiKey)} ogmiosWs=${redactManagedEndpoint(configService.get('ogmiosEndpoint'), ogmiosApiKey)} kupoAuth=${kupoApiKey ? 'set' : 'missing'} ogmiosAuth=${ogmiosApiKey ? 'set' : 'missing'}`,
     );
