@@ -1,6 +1,6 @@
 import { type Data } from '@lucid-evolution/lucid';
 
-type ModuleRegistration = {
+export type ModuleRegistration = {
   module_script_hash: string;
   port_token: { policy_id: string; name: string };
   module_token: { policy_id: string; name: string };
@@ -13,20 +13,31 @@ export type HostStateDatum = {
     next_client_sequence: bigint;
     next_connection_sequence: bigint;
     next_channel_sequence: bigint;
-    bound_port: Map<string, ModuleRegistration>;
+    // Retained as an empty integer list for the HostState ABI shipped by Injective.
+    bound_port: bigint[];
     last_update_time: bigint;
   };
   nft_policy: string;
   deployer: string;
-  shutdown: 'Active' | {
-    ShuttingDown: {
-      initiated_at: bigint;
-      grace_period_end: bigint;
-    };
+  // Injective decodes this fourth datum field as opaque CBOR, so Cardano-owned
+  // control state can evolve here without changing its light client.
+  control: {
+    port_registry: Map<string, ModuleRegistration>;
+    shutdown:
+      | 'Active'
+      | {
+          ShuttingDown: {
+            initiated_at: bigint;
+            grace_period_end: bigint;
+          };
+        };
   };
 };
 
-export async function encodeHostStateDatum(hostStateDatum: HostStateDatum, Lucid: typeof import('@lucid-evolution/lucid')) {
+export async function encodeHostStateDatum(
+  hostStateDatum: HostStateDatum,
+  Lucid: typeof import('@lucid-evolution/lucid'),
+) {
   const { Data } = Lucid;
 
   const AuthTokenSchema = Data.Object({
@@ -45,22 +56,25 @@ export async function encodeHostStateDatum(hostStateDatum: HostStateDatum, Lucid
     next_client_sequence: Data.Integer(),
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
-    bound_port: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
+    bound_port: Data.Array(Data.Integer()),
     last_update_time: Data.Integer(),
   });
   const HostStateDatumSchema = Data.Object({
     state: HostStateStateSchema,
     nft_policy: Data.Bytes(),
     deployer: Data.Bytes(),
-    shutdown: Data.Enum([
-      Data.Literal('Active'),
-      Data.Object({
-        ShuttingDown: Data.Object({
-          initiated_at: Data.Integer(),
-          grace_period_end: Data.Integer(),
+    control: Data.Object({
+      port_registry: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
+      shutdown: Data.Enum([
+        Data.Literal('Active'),
+        Data.Object({
+          ShuttingDown: Data.Object({
+            initiated_at: Data.Integer(),
+            grace_period_end: Data.Integer(),
+          }),
         }),
-      }),
-    ]),
+      ]),
+    }),
   });
   type THostStateDatum = Data.Static<typeof HostStateDatumSchema>;
   const THostStateDatum = HostStateDatumSchema as unknown as HostStateDatum;
@@ -85,22 +99,25 @@ export async function decodeHostStateDatum(hostStateDatum: string, Lucid: typeof
     next_client_sequence: Data.Integer(),
     next_connection_sequence: Data.Integer(),
     next_channel_sequence: Data.Integer(),
-    bound_port: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
+    bound_port: Data.Array(Data.Integer()),
     last_update_time: Data.Integer(),
   });
   const HostStateDatumSchema = Data.Object({
     state: HostStateStateSchema,
     nft_policy: Data.Bytes(),
     deployer: Data.Bytes(),
-    shutdown: Data.Enum([
-      Data.Literal('Active'),
-      Data.Object({
-        ShuttingDown: Data.Object({
-          initiated_at: Data.Integer(),
-          grace_period_end: Data.Integer(),
+    control: Data.Object({
+      port_registry: Data.Map(Data.Bytes(), ModuleRegistrationSchema),
+      shutdown: Data.Enum([
+        Data.Literal('Active'),
+        Data.Object({
+          ShuttingDown: Data.Object({
+            initiated_at: Data.Integer(),
+            grace_period_end: Data.Integer(),
+          }),
         }),
-      }),
-    ]),
+      ]),
+    }),
   });
   type THostStateDatum = Data.Static<typeof HostStateDatumSchema>;
   const THostStateDatum = HostStateDatumSchema as unknown as HostStateDatum;

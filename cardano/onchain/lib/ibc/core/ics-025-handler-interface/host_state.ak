@@ -75,6 +75,17 @@ pub type ModuleRegistration {
   module_token: AuthToken,
 }
 
+/// Cardano-owned HostState fields that the probabilistic light client treats
+/// as opaque.
+///
+/// Keeping the textual registry here lets Cardano evolve module authority and
+/// lifecycle semantics without changing the positional `HostState` wire shape
+/// decoded by existing counterparty nodes.
+pub type HostStateControl {
+  port_registry: Pairs<ByteArray, ModuleRegistration>,
+  shutdown: ShutdownState,
+}
+
 /// HostState represents the canonical IBC host state on Cardano
 /// 
 /// This state is maintained in a single UTXO identified by the IBC Host State NFT.
@@ -91,8 +102,10 @@ pub type HostState {
   next_client_sequence: Int,
   next_connection_sequence: Int,
   next_channel_sequence: Int,
-  // Exact textual port ID -> immutable module authority and capability tokens.
-  bound_port: Pairs<ByteArray, ModuleRegistration>,
+  // Legacy positional ABI field decoded by deployed probabilistic light clients
+  // as []uint64. It is initialized empty and remains immutable; authoritative
+  // textual port registrations live in HostStateControl.port_registry.
+  bound_port: List<Int>,
   // Optional: Timestamp of last update (Unix epoch milliseconds)
   // Useful for debugging and monitoring
   last_update_time: Int,
@@ -107,8 +120,9 @@ pub type HostStateDatum {
   // Trusted deployer key hash allowed to enter shutdown and reclaim deployment
   // infrastructure after the grace period.
   deployer: VerificationKeyHash,
-  // Lifecycle mode for controlled shutdown and eventual min-ADA reclaim.
-  shutdown: ShutdownState,
+  // Cardano-owned module registry and lifecycle state. Counterparty light
+  // clients intentionally decode this fourth positional field opaquely.
+  control: HostStateControl,
 }
 
 pub fn is_active(shutdown: ShutdownState) -> Bool {
@@ -137,15 +151,16 @@ pub fn is_initialized_valid(
   datum: HostStateDatum,
   expected_nft_policy: ByteArray,
 ) -> Bool {
-  let HostStateDatum { state, nft_policy, shutdown, .. } = datum
+  let HostStateDatum { state, nft_policy, control, .. } = datum
   and {
     state.version == 0,
     state.next_client_sequence == 0,
     state.next_connection_sequence == 0,
     state.next_channel_sequence == 0,
     state.bound_port == [],
+    control.port_registry == [],
     state.ibc_state_root == empty_ibc_state_root,
-    shutdown == Active,
+    control.shutdown == Active,
     nft_policy == expected_nft_policy,
   }
 }
@@ -167,7 +182,7 @@ pub fn validate_version_increment(old: HostState, new: HostState) -> Bool {
 /// - Version increments by 1
 /// - next_client_sequence increments by 1
 /// - All other sequences unchanged
-/// - bound_port unchanged
+/// - legacy bound_port remains empty
 /// - ibc_state_root MAY change (updated by Gateway)
 /// - NFT policy unchanged
 pub fn validate_create_client(old: HostStateDatum, new: HostStateDatum) -> Bool {
@@ -176,9 +191,9 @@ pub fn validate_create_client(old: HostStateDatum, new: HostStateDatum) -> Bool 
     new.state.next_client_sequence == old.state.next_client_sequence + 1,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
-    new.state.bound_port == old.state.bound_port,
-    old.shutdown |> is_active,
-    new.shutdown == old.shutdown,
+    new.state.bound_port == [],
+    old.control.shutdown |> is_active,
+    new.control == old.control,
     new.nft_policy == old.nft_policy,
     new.deployer == old.deployer,
   }
@@ -194,9 +209,9 @@ pub fn validate_create_connection(
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence + 1,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
-    new.state.bound_port == old.state.bound_port,
-    old.shutdown |> is_active,
-    new.shutdown == old.shutdown,
+    new.state.bound_port == [],
+    old.control.shutdown |> is_active,
+    new.control == old.control,
     new.nft_policy == old.nft_policy,
     new.deployer == old.deployer,
   }
@@ -209,9 +224,9 @@ pub fn validate_create_channel(old: HostStateDatum, new: HostStateDatum) -> Bool
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence + 1,
-    new.state.bound_port == old.state.bound_port,
-    old.shutdown |> is_active,
-    new.shutdown == old.shutdown,
+    new.state.bound_port == [],
+    old.control.shutdown |> is_active,
+    new.control == old.control,
     new.nft_policy == old.nft_policy,
     new.deployer == old.deployer,
   }
@@ -229,27 +244,31 @@ pub fn validate_bind_port(
   // A port can only be bound once.
   //
   // If a port already has a registration, we reject the transition.
-  expect (!pairs.has_key(old.state.bound_port, port_id))?
+  expect (!pairs.has_key(old.control.port_registry, port_id))?
 
   and {
     // The minting policy enforces the complete ICS identifier alphabet while
     // HostState cheaply retains the consensus-critical textual length bound.
     port_id_length >= 2,
     port_id_length <= 128,
-    list.length(old.state.bound_port) < max_bound_ports,
+    list.length(old.control.port_registry) < max_bound_ports,
     validate_version_increment(old.state, new.state),
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
+    // The legacy integer list is ABI padding and must never be repurposed.
+    new.state.bound_port == [],
     // Port registrations are immutable and kept in canonical CBOR map order.
-    new.state.bound_port == pairs.insert_by_ascending_key(
-      old.state.bound_port,
-      port_id,
-      registration,
-      compare_port_keys_for_insertion,
-    ),
-    old.shutdown |> is_active,
-    new.shutdown == old.shutdown,
+    new.control == HostStateControl {
+      port_registry: pairs.insert_by_ascending_key(
+        old.control.port_registry,
+        port_id,
+        registration,
+        compare_port_keys_for_insertion,
+      ),
+      shutdown: old.control.shutdown,
+    },
+    old.control.shutdown |> is_active,
     new.nft_policy == old.nft_policy,
     new.deployer == old.deployer,
   }
@@ -259,7 +278,7 @@ pub fn validate_bind_port(
 ///
 /// These operations should not:
 /// - create new clients/connections/channels (so the "next_*_sequence" fields must not change)
-/// - change the set of bound ports
+/// - populate the legacy bound_port compatibility field
 /// - change which NFT policy identifies the HostState UTxO
 ///
 /// They are still allowed to:
@@ -275,8 +294,8 @@ pub fn validate_update_only_root(
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
-    new.state.bound_port == old.state.bound_port,
-    new.shutdown == old.shutdown,
+    new.state.bound_port == [],
+    new.control == old.control,
     new.nft_policy == old.nft_policy,
     new.deployer == old.deployer,
   }
@@ -292,7 +311,7 @@ pub fn validate_update_only_root(
 pub fn validate_heartbeat(old: HostStateDatum, new: HostStateDatum) -> Bool {
   and {
     validate_update_only_root(old, new),
-    old.shutdown |> is_active,
+    old.control.shutdown |> is_active,
     new.state.ibc_state_root == old.state.ibc_state_root,
     new.state.last_update_time > old.state.last_update_time,
   }
@@ -305,17 +324,20 @@ pub fn validate_enter_shutdown(
 ) -> Bool {
   and {
     validate_version_increment(old.state, new.state),
-    old.shutdown |> is_active,
-    new.shutdown == ShuttingDown {
-      initiated_at: new.state.last_update_time,
-      grace_period_end,
+    old.control.shutdown |> is_active,
+    new.control == HostStateControl {
+      port_registry: old.control.port_registry,
+      shutdown: ShuttingDown {
+        initiated_at: new.state.last_update_time,
+        grace_period_end,
+      },
     },
     grace_period_end > new.state.last_update_time,
     new.state.ibc_state_root == old.state.ibc_state_root,
     new.state.next_client_sequence == old.state.next_client_sequence,
     new.state.next_connection_sequence == old.state.next_connection_sequence,
     new.state.next_channel_sequence == old.state.next_channel_sequence,
-    new.state.bound_port == old.state.bound_port,
+    new.state.bound_port == [],
     new.nft_policy == old.nft_policy,
     new.deployer == old.deployer,
   }
@@ -325,7 +347,7 @@ pub fn validate_finalize_shutdown(
   datum: HostStateDatum,
   valid_from: Int,
 ) -> Bool {
-  when datum.shutdown is {
+  when datum.control.shutdown is {
     ShuttingDown { grace_period_end, .. } -> valid_from >= grace_period_end
     Active -> False
   }

@@ -22,16 +22,24 @@ describe('HostStateHeartbeatService', () => {
       next_client_sequence: 2n,
       next_connection_sequence: 3n,
       next_channel_sequence: 4n,
-      bound_port: new Map([['7472616e73666572', {
-        module_script_hash: '44'.repeat(28),
-        port_token: { policy_id: '55'.repeat(28), name: '01' },
-        module_token: { policy_id: '66'.repeat(28), name: '02' },
-      }]]),
+      bound_port: [],
       last_update_time: 1_000n,
     },
     nft_policy: '22'.repeat(28),
     deployer: '33'.repeat(28),
-    shutdown: 'Active',
+    control: {
+      port_registry: new Map([
+        [
+          '7472616e73666572',
+          {
+            module_script_hash: '44'.repeat(28),
+            port_token: { policy_id: '55'.repeat(28), name: '01' },
+            module_token: { policy_id: '66'.repeat(28), name: '02' },
+          },
+        ],
+      ]),
+      shutdown: 'Active',
+    },
   } as const;
 
   let lucidService: any;
@@ -125,40 +133,35 @@ describe('HostStateHeartbeatService', () => {
       address: 'addr_test1signer',
       context: 'hostStateHeartbeat',
     });
-    expect(runnerPlan.pendingTreeUpdate.expectedNewRoot).toBe(
-      hostStateDatum.state.ibc_state_root,
-    );
+    expect(runnerPlan.pendingTreeUpdate.expectedNewRoot).toBe(hostStateDatum.state.ibc_state_root);
   });
 
   it('fails closed while the current HostState transaction is not indexed', async () => {
     historyService.findTransactionEvidenceByHash.mockResolvedValue(null);
 
-    await expect(
-      service.buildHeartbeat({ signer: 'addr_test1signer' }),
-    ).rejects.toThrow();
+    await expect(service.buildHeartbeat({ signer: 'addr_test1signer' })).rejects.toThrow();
     expect(txOperationRunner.run).not.toHaveBeenCalled();
   });
 
   it('does not build heartbeats after shutdown begins', async () => {
     lucidService.decodeDatum.mockResolvedValue({
       ...hostStateDatum,
-      shutdown: {
-        ShuttingDown: { initiated_at: 1_000n, grace_period_end: 2_000n },
+      control: {
+        ...hostStateDatum.control,
+        shutdown: {
+          ShuttingDown: { initiated_at: 1_000n, grace_period_end: 2_000n },
+        },
       },
     });
 
-    await expect(
-      service.buildHeartbeat({ signer: 'addr_test1signer' }),
-    ).rejects.toThrow();
+    await expect(service.buildHeartbeat({ signer: 'addr_test1signer' })).rejects.toThrow();
     expect(txOperationRunner.run).not.toHaveBeenCalled();
   });
 
   it('rejects a heartbeat signer that is not the deployment authority', async () => {
     lucidService.getPublicKeyHash.mockReturnValue('44'.repeat(28));
 
-    await expect(
-      service.buildHeartbeat({ signer: 'addr_test1other' }),
-    ).rejects.toThrow();
+    await expect(service.buildHeartbeat({ signer: 'addr_test1other' })).rejects.toThrow();
     expect(txOperationRunner.run).not.toHaveBeenCalled();
   });
 });

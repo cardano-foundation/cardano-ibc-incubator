@@ -53,9 +53,9 @@ use ibc/core/ics_024_host_requirements/connection_keys as host_connection_keys
 use ibc/core/ics_024_host_requirements/packet_keys
 use ibc/core/ics_024_host_requirements/port_keys.{key_port_prefix}
 use ibc/core/ics_025_handler_interface/host_state.{
-  Active, HostState, HostStateDatum, ModuleRegistration, ShutdownState,
-  ShuttingDown, empty_ibc_state_root, host_state_token_name, max_bound_ports,
-  validate_bind_port,
+  Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
+  ShutdownState, ShuttingDown, empty_ibc_state_root, host_state_token_name,
+  max_bound_ports, validate_bind_port,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer.{
   BindPort, EnterShutdown, FinalizeShutdown, HandlePacket, Heartbeat,
@@ -152,6 +152,46 @@ test module_registration_cbor_matches_offchain_codec() {
   cbor.serialise(registration) == #"d8799f581c11111111111111111111111111111111111111111111111111111111d8799f581c222222222222222222222222222222222222222222222222222222224101ffd8799f581c333333333333333333333333333333333333333333333333333333334102ffff"
 }
 
+test host_state_datum_decodes_injective_compatibility_fixture() {
+  let fixture =
+    #"d87984d8798701582042424242424242424242424242424242424242424242424242424242424242420203048007581c24242424242424242424242424242424242424242424242424242424581c17171717171717171717171717171717171717171717171717171717d87982a1487472616e73666572d87983581c11111111111111111111111111111111111111111111111111111111d87982581c222222222222222222222222222222222222222222222222222222224101d87982581c333333333333333333333333333333333333333333333333333333334102d87980"
+  expect Some(data) = cbor.deserialise(fixture)
+  expect decoded: HostStateDatum = data
+
+  decoded == HostStateDatum {
+    state: HostState {
+      version: 1,
+      ibc_state_root: #"4242424242424242424242424242424242424242424242424242424242424242",
+      next_client_sequence: 2,
+      next_connection_sequence: 3,
+      next_channel_sequence: 4,
+      bound_port: [],
+      last_update_time: 7,
+    },
+    nft_policy: #"24242424242424242424242424242424242424242424242424242424",
+    deployer: #"17171717171717171717171717171717171717171717171717171717",
+    control: HostStateControl {
+      port_registry: [
+        Pair(
+          "transfer",
+          ModuleRegistration {
+            module_script_hash: #"11111111111111111111111111111111111111111111111111111111",
+            port_token: AuthToken {
+              policy_id: #"22222222222222222222222222222222222222222222222222222222",
+              name: #"01",
+            },
+            module_token: AuthToken {
+              policy_id: #"33333333333333333333333333333333333333333333333333333333",
+              name: #"02",
+            },
+          },
+        ),
+      ],
+      shutdown: Active,
+    },
+  }
+}
+
 const trusted_deployer =
   #"00000000000000000000000000000000000000000000000000000000"
 
@@ -159,11 +199,20 @@ fn test_host_state_datum(
   state: HostState,
   nft_policy: PolicyId,
 ) -> HostStateDatum {
+  test_host_state_datum_with_control(state, nft_policy, [], Active)
+}
+
+fn test_host_state_datum_with_control(
+  state: HostState,
+  nft_policy: PolicyId,
+  port_registry: Pairs<ByteArray, ModuleRegistration>,
+  shutdown: ShutdownState,
+) -> HostStateDatum {
   HostStateDatum {
     state,
     nft_policy,
     deployer: trusted_deployer,
-    shutdown: Active,
+    control: HostStateControl { port_registry, shutdown },
   }
 }
 
@@ -172,7 +221,7 @@ fn test_host_state_datum_with_shutdown(
   nft_policy: PolicyId,
   shutdown: ShutdownState,
 ) -> HostStateDatum {
-  HostStateDatum { state, nft_policy, deployer: trusted_deployer, shutdown }
+  test_host_state_datum_with_control(state, nft_policy, [], shutdown)
 }
 
 fn test_channel_token() -> AuthToken {
@@ -467,44 +516,73 @@ fn test_bind_port_transition(
 ) -> Bool {
   let nft_policy = test_nft_policy()
   let registration = test_module_registration(test_module_script_hash())
-  let old_state =
-    HostState {
-      ..test_host_state(empty_ibc_state_root, 0),
-      bound_port: test_bound_ports(old_ports),
-    }
-  let new_state =
-    HostState {
-      ..old_state,
-      version: old_state.version + 1,
-      bound_port: test_bound_ports(new_ports),
-    }
+  let old_state = test_host_state(empty_ibc_state_root, 0)
+  let new_state = HostState { ..old_state, version: old_state.version + 1 }
   validate_bind_port(
-    test_host_state_datum(old_state, nft_policy),
-    test_host_state_datum(new_state, nft_policy),
+    test_host_state_datum_with_control(
+      old_state,
+      nft_policy,
+      test_bound_ports(old_ports),
+      Active,
+    ),
+    test_host_state_datum_with_control(
+      new_state,
+      nft_policy,
+      test_bound_ports(new_ports),
+      Active,
+    ),
     port_id,
     registration,
   )
 }
 
 fn test_host_input(state: HostState) -> Input {
+  test_host_input_with_registry(state, [])
+}
+
+fn test_host_input_with_registry(
+  state: HostState,
+  port_registry: Pairs<ByteArray, ModuleRegistration>,
+) -> Input {
   let nft_policy = test_nft_policy()
   Input(
     test_host_ref(),
     Output {
       address: Address(Script(test_host_script_hash()), None),
       value: from_asset(nft_policy, host_state_token_name, 1),
-      datum: InlineDatum(test_host_state_datum(state, nft_policy)),
+      datum: InlineDatum(
+        test_host_state_datum_with_control(
+          state,
+          nft_policy,
+          port_registry,
+          Active,
+        ),
+      ),
       reference_script: None,
     },
   )
 }
 
 fn test_host_output(state: HostState) -> Output {
+  test_host_output_with_registry(state, [])
+}
+
+fn test_host_output_with_registry(
+  state: HostState,
+  port_registry: Pairs<ByteArray, ModuleRegistration>,
+) -> Output {
   let nft_policy = test_nft_policy()
   Output {
     address: Address(Script(test_host_script_hash()), None),
     value: from_asset(nft_policy, host_state_token_name, 1),
-    datum: InlineDatum(test_host_state_datum(state, nft_policy)),
+    datum: InlineDatum(
+      test_host_state_datum_with_control(
+        state,
+        nft_policy,
+        port_registry,
+        Active,
+      ),
+    ),
     reference_script: None,
   }
 }
@@ -598,11 +676,7 @@ fn spend_test_bind_port(
       ibc_state_commitment.empty_hash,
       ibc_state_commitment.merkle_depth_bits,
     )
-  let old_state =
-    HostState {
-      ..test_host_state(empty_ibc_state_root, 0),
-      bound_port: test_bound_ports(old_ports),
-    }
+  let old_state = test_host_state(empty_ibc_state_root, 0)
   let new_root =
     ibc_state_commitment.apply_update(
       old_state.ibc_state_root,
@@ -616,13 +690,15 @@ fn spend_test_bind_port(
       ..old_state,
       version: old_state.version + 1,
       ibc_state_root: new_root,
-      bound_port: test_bound_ports(new_ports),
     }
 
   spend_host_state_with_signatories(
     BindPort { port_id, registration, port_siblings },
-    [test_host_input(old_state)],
-    [test_host_output(new_state), test_module_output(registration)],
+    [test_host_input_with_registry(old_state, test_bound_ports(old_ports))],
+    [
+      test_host_output_with_registry(new_state, test_bound_ports(new_ports)),
+      test_module_output(registration),
+    ],
     extra_signatories,
   )
 }
@@ -2575,6 +2651,27 @@ test host_state_bind_port_rejects_duplicate_textual_id() fail {
   test_bind_port_transition(["transfer"], ["transfer"], "transfer")
 }
 
+test host_state_bind_port_rejects_legacy_abi_list_mutation() fail {
+  let nft_policy = test_nft_policy()
+  let port_id = "transfer"
+  let registration = test_module_registration(test_module_script_hash())
+  let old_state = test_host_state(empty_ibc_state_root, 0)
+  let new_state =
+    HostState { ..old_state, version: old_state.version + 1, bound_port: [0] }
+
+  validate_bind_port(
+    test_host_state_datum_with_control(old_state, nft_policy, [], Active),
+    test_host_state_datum_with_control(
+      new_state,
+      nft_policy,
+      [Pair(port_id, registration)],
+      Active,
+    ),
+    port_id,
+    registration,
+  )
+}
+
 test host_state_bind_port_uses_canonical_cbor_bytearray_order() {
   // Canonical CBOR orders byte-string map keys by encoded length first, then
   // lexicographically. This is the order emitted by Lucid for the deployment's
@@ -2607,7 +2704,7 @@ test prop_host_bind_port_rejects_too_short_textual_identifier(
     |> fuzz_dsl.assert_rejected
 }
 
-/// This is the maximum-size HostState port-list transition permitted by the
+/// This is the maximum-size HostState port-registry transition permitted by the
 /// protocol and is also collected by the transaction-budget CI job.
 test host_state_bind_tenth_port_succeeds_at_global_cap() {
   expect max_bound_ports == 10
@@ -2699,10 +2796,15 @@ test host_state_bind_port_succeeds_with_correct_root_witness() {
       ..old_state,
       version: old_state.version + 1,
       ibc_state_root: new_root,
-      bound_port: [Pair(port_id, registration)],
     }
 
-  let new_datum = test_host_state_datum(new_state, nft_policy)
+  let new_datum =
+    test_host_state_datum_with_control(
+      new_state,
+      nft_policy,
+      [Pair(port_id, registration)],
+      Active,
+    )
 
   let host_output =
     Output {
@@ -2798,10 +2900,15 @@ test host_state_bind_port_fails_with_arbitrary_root() fail {
       ..old_state,
       version: old_state.version + 1,
       ibc_state_root: empty_ibc_state_root,
-      bound_port: [Pair(port_id, registration)],
     }
 
-  let new_datum = test_host_state_datum(new_state, nft_policy)
+  let new_datum =
+    test_host_state_datum_with_control(
+      new_state,
+      nft_policy,
+      [Pair(port_id, registration)],
+      Active,
+    )
 
   let host_output =
     Output {
@@ -2907,10 +3014,15 @@ test host_state_cannot_move_nft_to_different_address() fail {
       ..old_state,
       version: old_state.version + 1,
       ibc_state_root: new_root,
-      bound_port: [Pair(port_id, registration)],
     }
 
-  let new_datum = test_host_state_datum(new_state, nft_policy)
+  let new_datum =
+    test_host_state_datum_with_control(
+      new_state,
+      nft_policy,
+      [Pair(port_id, registration)],
+      Active,
+    )
 
   let host_output =
     Output {
@@ -3007,10 +3119,15 @@ test host_state_bind_port_fails_without_required_sibling_hashes() fail {
       ..old_state,
       version: old_state.version + 1,
       ibc_state_root: new_root,
-      bound_port: [Pair(port_id, registration)],
     }
 
-  let new_datum = test_host_state_datum(new_state, nft_policy)
+  let new_datum =
+    test_host_state_datum_with_control(
+      new_state,
+      nft_policy,
+      [Pair(port_id, registration)],
+      Active,
+    )
 
   let host_output =
     Output {

@@ -28,8 +28,8 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_025_handler_interface/host_state.{
-  Active, HostState, HostStateDatum, ModuleRegistration, empty_ibc_state_root,
-  host_state_token_name,
+  Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
+  empty_ibc_state_root, host_state_token_name,
 }
 
 pub type MockData {
@@ -296,12 +296,15 @@ pub fn setup() -> MockData {
         next_client_sequence: 0,
         next_connection_sequence: 0,
         next_channel_sequence: 0,
-        bound_port: [Pair(port_id, registration)],
+        bound_port: [],
         last_update_time: 0,
       },
       nft_policy: host_state_nft_policy_id,
       deployer: "mock deployer key hash",
-      shutdown: Active,
+      control: HostStateControl {
+        port_registry: [Pair(port_id, registration)],
+        shutdown: Active,
+      },
     }
   let host_state_input =
     Input {

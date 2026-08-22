@@ -221,7 +221,7 @@ fn registered_module_for_port(
   expect host_state_datum: HostStateDatum =
     get_inline_datum(host_state_input.output)
   expect Some(registration) =
-    pairs.get_first(host_state_datum.state.bound_port, port_id)
+    pairs.get_first(host_state_datum.control.port_registry, port_id)
   expect registration.port_token == expected_port_token
   registration
 }
@@ -630,7 +630,7 @@ pub fn get_host_state_datum(input: Input) -> HostStateDatum {
 
 pub fn require_active_host_state(input: Input) {
   let host_state_datum = get_host_state_datum(input)
-  expect host_state_datum.shutdown |> is_active
+  expect host_state_datum.control.shutdown |> is_active
 }
 
 pub fn compare_purpose(_key1: ScriptPurpose, _key2: ScriptPurpose) -> Ordering {

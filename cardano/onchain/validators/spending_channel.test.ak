@@ -49,7 +49,8 @@ use ibc/core/ics_023_vector_commitments/ics23/proofs.{
 use ibc/core/ics_023_vector_commitments/merkle.{MerkleProof, MerkleRoot}
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_025_handler_interface/host_state.{
-  Active, HostState, HostStateDatum, ShutdownState, empty_ibc_state_root,
+  Active, HostState, HostStateControl, HostStateDatum, ShutdownState,
+  empty_ibc_state_root,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
 use ibc/testing/fuzz_dsl
@@ -105,7 +106,7 @@ fn host_state_datum(
     },
     nft_policy,
     deployer: #"00000000000000000000000000000000000000000000000000000000",
-    shutdown,
+    control: HostStateControl { port_registry: [], shutdown },
   }
 }
 

@@ -260,7 +260,7 @@ async function rebuildTreeFromChain(kupoService, lucidService) {
     const hostStateDatum = await lucidService.decodeDatum(hostStateUtxo.datum, 'host_state');
     const expectedRoot = hostStateDatum.state.ibc_state_root;
     const tree = new ics23MerkleTree_1.ICS23MerkleTree();
-    const boundPorts = hostStateDatum.state.bound_port ?? new Map();
+    const boundPorts = hostStateDatum.control.port_registry ?? new Map();
     if (boundPorts.size > 0) {
         const { Data } = lucidService.LucidImporter;
         const AuthTokenSchema = Data.Object({

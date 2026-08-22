@@ -271,10 +271,13 @@ const buildBindPortHostStateUpdate = async (
       ...currentDatum.state,
       version: currentDatum.state.version + 1n,
       ibc_state_root: newRoot,
-      bound_port: sortPortRegistrations(
-        new Map(currentDatum.state.bound_port).set(portId, registration),
-      ),
       last_update_time: BigInt(Date.now()),
+    },
+    control: {
+      ...currentDatum.control,
+      port_registry: sortPortRegistrations(
+        new Map(currentDatum.control.port_registry).set(portId, registration),
+      ),
     },
   };
 
@@ -2371,12 +2374,15 @@ const deployHostState = async (
       next_client_sequence: 0n,
       next_connection_sequence: 0n,
       next_channel_sequence: 0n,
-      bound_port: new Map(),
+      bound_port: [],
       last_update_time: BigInt(currentTime),
     },
     nft_policy: mintHostStateNFTPolicyId,
     deployer: deployerPaymentKeyHash,
-    shutdown: "Active",
+    control: {
+      port_registry: new Map(),
+      shutdown: "Active",
+    },
   };
 
   // Create and send tx to mint NFT and create HostState UTXO

@@ -29,10 +29,10 @@ validator refer_only(host_state_nft_policy_id: PolicyId) {
       )
     expect host_state_datum: HostStateDatum =
       validator_utils.get_inline_datum(host_input.output)
-    expect host_state_datum.shutdown |> is_shutting_down
+    expect host_state_datum.control.shutdown |> is_shutting_down
     expect list.has(extra_signatories, host_state_datum.deployer)
 
-    when host_state_datum.shutdown is {
+    when host_state_datum.control.shutdown is {
       ShuttingDown { grace_period_end, .. } ->
         validator_utils.get_tx_valid_from(validity_range) >= grace_period_end
       Active -> False

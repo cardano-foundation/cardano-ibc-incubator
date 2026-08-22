@@ -32,8 +32,8 @@ use ibc/core/ics_005/types/keys as port_keys
 use ibc/core/ics_023_vector_commitments/merkle
 use ibc/core/ics_023_vector_commitments/merkle_prefix.{MerklePrefix}
 use ibc/core/ics_025_handler_interface/host_state.{
-  Active, HostState, HostStateDatum, ModuleRegistration, empty_ibc_state_root,
-  host_state_token_name,
+  Active, HostState, HostStateControl, HostStateDatum, ModuleRegistration,
+  empty_ibc_state_root, host_state_token_name,
 }
 use ibc/core/ics_025_handler_interface/host_state_redeemer as host_state_redeemer
 use ibc/utils/validator_utils
@@ -305,12 +305,15 @@ fn setup_extract_module_redeemer() -> (
         next_client_sequence: 0,
         next_connection_sequence: 0,
         next_channel_sequence: 0,
-        bound_port: [Pair(port_id, registration)],
+        bound_port: [],
         last_update_time: 0,
       },
       nft_policy: host_state_nft_policy_id,
       deployer: "mock deployer key hash",
-      shutdown: Active,
+      control: HostStateControl {
+        port_registry: [Pair(port_id, registration)],
+        shutdown: Active,
+      },
     }
   let host_state_input =
     Input {
@@ -486,7 +489,7 @@ test extract_module_redeemer_rejects_incomplete_capability_set() fail {
   expect [host_state_input, module_input] = inputs
   expect host_state_datum: HostStateDatum =
     validator_utils.get_inline_datum(host_state_input.output)
-  expect [Pair(_, registration)] = host_state_datum.state.bound_port
+  expect [Pair(_, registration)] = host_state_datum.control.port_registry
   let incomplete_module_input =
     Input {
       ..module_input,
