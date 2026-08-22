@@ -19,7 +19,7 @@ func TestExtractIbcStateRootFromFourFieldHostStateDatum(t *testing.T) {
 			NextClientSequence:   2,
 			NextConnectionSeq:    3,
 			NextChannelSeq:       4,
-			BoundPort:            []uint64{5, 6},
+			BoundPort:            cbor.RawMessage{0xa0},
 			LastUpdateTimeMillis: 7,
 		},
 		NftPolicy: nftPolicy,

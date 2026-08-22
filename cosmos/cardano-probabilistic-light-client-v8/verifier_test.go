@@ -603,6 +603,15 @@ func TestSetConsensusMetadataStoresParseableProcessedHeight(t *testing.T) {
 	require.Equal(t, clienttypes.GetSelfHeight(ctx), processedHeight)
 }
 
+func TestVerifyDelayPeriodPassedSkipsMetadataForZeroDelays(t *testing.T) {
+	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-zero-delay")
+	height := NewHeight(0, 42)
+
+	require.NoError(t, verifyDelayPeriodPassed(ctx, clientStore, height, 0, 0))
+	require.ErrorIs(t, verifyDelayPeriodPassed(ctx, clientStore, height, uint64(time.Second), 0), ErrProcessedTimeNotFound)
+	require.ErrorIs(t, verifyDelayPeriodPassed(ctx, clientStore, height, 0, 1), ErrProcessedHeightNotFound)
+}
+
 func TestInitializeCreatesCheckpointCursorAtInitialConsensusState(t *testing.T) {
 	cdc := newProbabilisticTestCodec()
 	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-initial-checkpoint")

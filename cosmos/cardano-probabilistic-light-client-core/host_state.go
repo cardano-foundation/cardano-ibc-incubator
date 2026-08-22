@@ -34,7 +34,7 @@ type HostState struct {
 	NextClientSequence   uint64
 	NextConnectionSeq    uint64
 	NextChannelSeq       uint64
-	BoundPort            []uint64
+	BoundPort            cbor.RawMessage
 	LastUpdateTimeMillis uint64
 }
 
