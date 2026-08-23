@@ -626,7 +626,10 @@ jobs:
               -m prop_conn_open_try_
               -m prop_tx_conn_open_try_
           - suite: channel-packet
-            timeout_minutes: 30
+            # This is the broadest shard and now covers the per-channel voucher
+            # accounting paths as well as the existing handshake and packet
+            # properties. Leave enough room for all 500 generated cases.
+            timeout_minutes: 45
             match_tests: >-
               -m ibc/core/ics_004/channel_datum_test/channel_handshake_contract
               -m ibc/core/ics_004/channel_datum_test/packet_lifecycle_contract
