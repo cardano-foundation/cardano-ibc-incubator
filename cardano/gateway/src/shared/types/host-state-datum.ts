@@ -1,6 +1,6 @@
 import { type Data } from '@lucid-evolution/lucid';
 
-export type ModuleRegistration = {
+type ModuleRegistration = {
   module_script_hash: string;
   port_token: { policy_id: string; name: string };
   module_token: { policy_id: string; name: string };
