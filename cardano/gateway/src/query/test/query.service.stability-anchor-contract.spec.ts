@@ -63,6 +63,7 @@ describe('QueryService stability anchor contract', () => {
   };
   let miniProtocalsServiceMock: {
     fetchBlocksCbor: jest.Mock;
+    extractBlockHeaderCbor: jest.Mock;
   };
 
   beforeEach(() => {
@@ -195,6 +196,7 @@ describe('QueryService stability anchor contract', () => {
     };
     miniProtocalsServiceMock = {
       fetchBlocksCbor: jest.fn(),
+      extractBlockHeaderCbor: jest.fn((blockCbor: Buffer) => Buffer.alloc(860, blockCbor[0] ?? 0)),
     };
 
     service = new QueryService(
@@ -306,6 +308,52 @@ describe('QueryService stability anchor contract', () => {
 
     expect(header.trusted_height?.revision_height).toBe(99n);
     expect(header.anchor_block?.height?.revision_height).toBe(100n);
+    expect(header.anchor_block?.block_cbor).toEqual(Buffer.from([1]));
+    expect(header.anchor_block?.header_cbor).toHaveLength(0);
+    expect(header.descendant_blocks.every((block) => block.block_cbor.length === 0)).toBe(true);
+    expect(header.descendant_blocks.every((block) => block.header_cbor.length === 860)).toBe(true);
+  });
+
+  it('fits a minimum root update by keeping full CBOR only on its HostState anchor', async () => {
+    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
+      txHash: 'host-state-tx',
+      txId: 1,
+      outputIndex: 0,
+      address: 'addr_test1...',
+      assetsPolicy: 'a'.repeat(56),
+      assetsName: 'b'.repeat(64),
+      datumHash: 'cd'.repeat(32),
+      datum: 'datum-cbor',
+      blockNo: 100,
+      blockId: 100,
+      index: 0,
+    });
+    historyServiceMock.findBridgeBlocks.mockResolvedValue([]);
+    const fullBlockWitnesses = Array.from({ length: 25 }, (_, index) => Buffer.alloc(32 * 1024, index + 1));
+    miniProtocalsServiceMock.fetchBlocksCbor.mockResolvedValue(fullBlockWitnesses);
+
+    const response = await service.queryIBCHeader({ height: 100n, trusted_height: 99n } as any);
+    const header = ProbabilisticHeader.decode(response.header!.value);
+    const legacyHeader: ProbabilisticHeader = {
+      ...header,
+      anchor_block: {
+        ...header.anchor_block!,
+        block_cbor: fullBlockWitnesses[0],
+        header_cbor: new Uint8Array(),
+      },
+      descendant_blocks: header.descendant_blocks.map((block, index) => ({
+        ...block,
+        block_cbor: fullBlockWitnesses[index + 1],
+        header_cbor: new Uint8Array(),
+      })),
+    };
+
+    expect(header.anchor_block!.block_cbor).toHaveLength(32 * 1024);
+    expect(header.anchor_block!.header_cbor).toHaveLength(0);
+    expect(header.descendant_blocks.every((block) => block.block_cbor.length === 0)).toBe(true);
+    expect(header.descendant_blocks.every((block) => block.header_cbor.length === 860)).toBe(true);
+    expect(response.header!.value.length).toBeLessThan(209_715);
+    expect(ProbabilisticHeader.encode(legacyHeader).finish().length).toBeGreaterThan(768 * 1024);
   });
 
   it('returns a bounded rootless checkpoint when the requested HostState height is far ahead', async () => {
@@ -342,6 +390,12 @@ describe('QueryService stability anchor contract', () => {
     expect(header.trusted_height?.revision_height).toBe(100n);
     expect(header.anchor_block?.height?.revision_height).toBe(133n);
     expect(header.bridge_blocks).toHaveLength(32);
+    expect(header.anchor_block?.block_cbor).toHaveLength(0);
+    expect(header.anchor_block?.header_cbor).toHaveLength(860);
+    expect(header.bridge_blocks.every((block) => block.block_cbor.length === 0)).toBe(true);
+    expect(header.bridge_blocks.every((block) => block.header_cbor.length === 860)).toBe(true);
+    expect(header.descendant_blocks.every((block) => block.block_cbor.length === 0)).toBe(true);
+    expect(header.descendant_blocks.every((block) => block.header_cbor.length === 860)).toBe(true);
     expect(header.host_state_tx_hash).toBe('');
     expect(header.host_state_tx_output_index).toBe(0);
     expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).not.toHaveBeenCalled();
@@ -467,7 +521,7 @@ describe('QueryService stability anchor contract', () => {
     expect(historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo).toHaveBeenCalledWith(targetHeight);
   });
 
-  it('shrinks a checkpoint until its encoded header fits the configured transaction budget', async () => {
+  it('keeps the maximum bounded checkpoint compact when source blocks are large', async () => {
     const blockAt = (height: number) => {
       const slot = 1000n + BigInt(height - 100) * 10n;
       return {
@@ -498,11 +552,14 @@ describe('QueryService stability anchor contract', () => {
     const header = ProbabilisticHeader.decode(response.header!.value);
 
     expect(header.is_checkpoint).toBe(true);
-    expect(header.anchor_block!.height!.revision_height).toBeGreaterThan(100n);
-    expect(header.anchor_block!.height!.revision_height).toBeLessThan(133n);
+    expect(header.anchor_block!.height!.revision_height).toBe(133n);
+    expect(header.bridge_blocks).toHaveLength(32);
+    expect(header.anchor_block!.block_cbor).toHaveLength(0);
+    expect(header.anchor_block!.header_cbor).toHaveLength(860);
     expect(response.header!.value).toHaveLength(ProbabilisticHeader.encode(header).finish().length);
     expect(response.header!.value.length).toBeLessThanOrEqual(768 * 1024);
-    expect(miniProtocalsServiceMock.fetchBlocksCbor.mock.calls.length).toBeGreaterThan(1);
+    expect(response.header!.value.length).toBeLessThan(100_000);
+    expect(miniProtocalsServiceMock.fetchBlocksCbor).toHaveBeenCalledTimes(1);
   });
 
   it('does not return the live HostState tx height as latest stability height when the root was not accepted', async () => {

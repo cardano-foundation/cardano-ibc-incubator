@@ -123,7 +123,16 @@ export interface ProbabilisticBlock {
   hash: string;
   epoch: bigint;
   timestamp: bigint;
+  /**
+   * Full block CBOR. A root-bearing anchor requires this representation so
+   * its HostState transaction can be authenticated against the signed body.
+   */
   block_cbor: Uint8Array;
+  /**
+   * Raw Cardano header CBOR. This compact representation is sufficient for
+   * bridge blocks, descendant blocks, and rootless checkpoint anchors.
+   */
+  header_cbor: Uint8Array;
 }
 /**
  * @name ProbabilisticHeader
@@ -1096,6 +1105,7 @@ function createBaseProbabilisticBlock(): ProbabilisticBlock {
     epoch: BigInt(0),
     timestamp: BigInt(0),
     block_cbor: new Uint8Array(),
+    header_cbor: new Uint8Array(),
   };
 }
 /**
@@ -1124,6 +1134,9 @@ export const ProbabilisticBlock = {
     if (message.block_cbor.length !== 0) {
       writer.uint32(74).bytes(message.block_cbor);
     }
+    if (message.header_cbor.length !== 0) {
+      writer.uint32(82).bytes(message.header_cbor);
+    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ProbabilisticBlock {
@@ -1151,6 +1164,9 @@ export const ProbabilisticBlock = {
         case 9:
           message.block_cbor = reader.bytes();
           break;
+        case 10:
+          message.header_cbor = reader.bytes();
+          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -1166,6 +1182,7 @@ export const ProbabilisticBlock = {
     if (isSet(object.epoch)) obj.epoch = BigInt(object.epoch.toString());
     if (isSet(object.timestamp)) obj.timestamp = BigInt(object.timestamp.toString());
     if (isSet(object.block_cbor)) obj.block_cbor = bytesFromBase64(object.block_cbor);
+    if (isSet(object.header_cbor)) obj.header_cbor = bytesFromBase64(object.header_cbor);
     return obj;
   },
   toJSON(message: ProbabilisticBlock): unknown {
@@ -1178,6 +1195,10 @@ export const ProbabilisticBlock = {
     message.block_cbor !== undefined &&
       (obj.block_cbor = base64FromBytes(
         message.block_cbor !== undefined ? message.block_cbor : new Uint8Array(),
+      ));
+    message.header_cbor !== undefined &&
+      (obj.header_cbor = base64FromBytes(
+        message.header_cbor !== undefined ? message.header_cbor : new Uint8Array(),
       ));
     return obj;
   },
@@ -1197,6 +1218,7 @@ export const ProbabilisticBlock = {
       message.timestamp = BigInt(object.timestamp.toString());
     }
     message.block_cbor = object.block_cbor ?? new Uint8Array();
+    message.header_cbor = object.header_cbor ?? new Uint8Array();
     return message;
   },
 };
