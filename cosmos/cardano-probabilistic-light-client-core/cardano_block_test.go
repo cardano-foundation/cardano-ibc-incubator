@@ -242,12 +242,17 @@ func TestVerifyOperationalCertificateRejectsInvalidParametersAndShapes(t *testin
 	}
 }
 
-func TestVerifyNativeBlockChecksOperationalCertificateBeforeKes(t *testing.T) {
+func TestVerifyNativeBlockAndHeaderCheckOperationalCertificateBeforeKes(t *testing.T) {
 	header, _ := signedOperationalCertificateHeader(t, 7, 10, 1_000)
 	header.Body.OpCert.Signature[0] ^= 0xff
 	block := &ledger.BabbageBlock{Header: header}
 
-	_, _, err := VerifyNativeBlock(block, make([]byte, 32), 100, 4)
+	_, _, err := VerifyNativeHeader(header, make([]byte, 32), 100, 4)
+	if err == nil || !strings.Contains(err.Error(), "cold-key signature is invalid") {
+		t.Fatalf("expected invalid header operational certificate error, got %v", err)
+	}
+
+	_, _, err = VerifyNativeBlock(block, make([]byte, 32), 100, 4)
 	if err == nil || !strings.Contains(err.Error(), "cold-key signature is invalid") {
 		t.Fatalf("expected invalid operational certificate error, got %v", err)
 	}
@@ -270,7 +275,7 @@ func TestVerifyNativeBlockReturnsErrorForMalformedKesSignature(t *testing.T) {
 	}
 }
 
-func TestVerifyNativeBlockAcceptsRealMainnetBabbageAndConwayBlocks(t *testing.T) {
+func TestVerifyNativeBlockAndHeaderAcceptRealMainnetBabbageAndConwayBlocks(t *testing.T) {
 	// These Apache-2.0 fixtures are real mainnet blocks from gouroboros testdata
 	// at commit 11659ae4676150c105d83ca249e3c9de2d5669b2.
 	testCases := []struct {
@@ -332,7 +337,68 @@ func TestVerifyNativeBlockAcceptsRealMainnetBabbageAndConwayBlocks(t *testing.T)
 					tc.wantSequenceNumber,
 				)
 			}
+
+			header, err := nativeBabbageHeader(block)
+			if err != nil {
+				t.Fatalf("get native header: %v", err)
+			}
+			headerValid, headerResult, err := VerifyNativeHeader(header, epochNonce, 129600, 62)
+			if err != nil {
+				t.Fatalf("verify native header: %v", err)
+			}
+			if !headerValid {
+				t.Fatal("expected real mainnet header to pass native verification")
+			}
+			if headerResult.OperationalCertificateSequenceNumber != tc.wantSequenceNumber {
+				t.Fatalf(
+					"header operational certificate sequence mismatch: got %d want %d",
+					headerResult.OperationalCertificateSequenceNumber,
+					tc.wantSequenceNumber,
+				)
+			}
+			if !bytes.Equal(headerResult.VrfKey, result.VrfKey) {
+				t.Fatal("full block and compact header returned different VRF keys")
+			}
 		})
+	}
+}
+
+func TestDecodeLedgerHeaderRequiresExactInput(t *testing.T) {
+	original := &ledger.BabbageBlockHeader{}
+	original.Body.BlockNumber = 42
+	original.Body.Slot = 84
+
+	headerCbor, err := cbor.Encode(original)
+	if err != nil {
+		t.Fatalf("encode header: %v", err)
+	}
+	decoded, err := DecodeLedgerHeader(headerCbor)
+	if err != nil {
+		t.Fatalf("decode exact header: %v", err)
+	}
+	if decoded.BlockNumber() != original.BlockNumber() || decoded.SlotNumber() != original.SlotNumber() {
+		t.Fatalf(
+			"decoded header fields mismatch: got height=%d slot=%d want height=%d slot=%d",
+			decoded.BlockNumber(),
+			decoded.SlotNumber(),
+			original.BlockNumber(),
+			original.SlotNumber(),
+		)
+	}
+	if !bytes.Equal(decoded.Cbor(), headerCbor) {
+		t.Fatal("decoded header did not preserve the exact signed CBOR bytes")
+	}
+
+	withTrailingByte := append(bytes.Clone(headerCbor), 0x00)
+	if _, err := DecodeLedgerHeader(withTrailingByte); err == nil {
+		t.Fatal("expected trailing header bytes to be rejected")
+	}
+
+	if len(headerCbor) < 2 {
+		t.Fatal("encoded test header is unexpectedly short")
+	}
+	if _, err := DecodeLedgerHeader(headerCbor[:len(headerCbor)-1]); err == nil {
+		t.Fatal("expected truncated header CBOR to be rejected")
 	}
 }
 

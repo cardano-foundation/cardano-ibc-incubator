@@ -1956,6 +1956,18 @@ export class QueryService {
     const blockWitnessByHeight = new Map<number, Buffer>(
       requestedBlocks.map((block, index) => [block.height, blockWitnesses[index]]),
     );
+    const headerWitnessBlocks = isCheckpoint
+      ? requestedBlocks
+      : [...stabilityEvidence.bridgeBlocks, ...stabilityEvidence.descendantBlocks];
+    const headerWitnessByHeight = new Map<number, Buffer>(
+      headerWitnessBlocks.map((block) => {
+        const blockCbor = blockWitnessByHeight.get(block.height);
+        if (!blockCbor) {
+          throw new GrpcInternalException(`Missing Cardano block witness at height ${block.height}`);
+        }
+        return [block.height, this.miniProtocalsService.extractBlockHeaderCbor(blockCbor, block.hash)];
+      }),
+    );
 
     const newEpochContext =
       stabilityEvidence.anchorEpoch !== stabilityEvidence.trustedEpoch
@@ -1973,13 +1985,14 @@ export class QueryService {
       },
       anchor_block: this.toStabilityBlock(
         stabilityEvidence.anchorBlock,
-        blockWitnessByHeight.get(stabilityEvidence.anchorBlock.height),
+        isCheckpoint ? undefined : blockWitnessByHeight.get(stabilityEvidence.anchorBlock.height),
+        isCheckpoint ? headerWitnessByHeight.get(stabilityEvidence.anchorBlock.height) : undefined,
       ),
       bridge_blocks: stabilityEvidence.bridgeBlocks.map((block) =>
-        this.toStabilityBlock(block, blockWitnessByHeight.get(block.height)),
+        this.toStabilityBlock(block, undefined, headerWitnessByHeight.get(block.height)),
       ),
       descendant_blocks: stabilityEvidence.descendantBlocks.map((block) =>
-        this.toStabilityBlock(block, blockWitnessByHeight.get(block.height)),
+        this.toStabilityBlock(block, undefined, headerWitnessByHeight.get(block.height)),
       ),
       host_state_tx_hash: hostStateUtxo?.txHash ?? '',
       host_state_tx_output_index: hostStateUtxo?.outputIndex ?? 0,
@@ -2186,7 +2199,7 @@ export class QueryService {
       }));
   }
 
-  private toStabilityBlock(block: HistoryBlock, blockCbor?: Buffer): ProbabilisticBlock {
+  private toStabilityBlock(block: HistoryBlock, blockCbor?: Buffer, headerCbor?: Buffer): ProbabilisticBlock {
     return {
       height: {
         revision_number: 0n,
@@ -2196,7 +2209,8 @@ export class QueryService {
       hash: block.hash,
       epoch: BigInt(block.epochNo),
       timestamp: block.timestampUnixNs,
-      block_cbor: blockCbor,
+      block_cbor: blockCbor ?? new Uint8Array(),
+      header_cbor: headerCbor ?? new Uint8Array(),
     };
   }
 
