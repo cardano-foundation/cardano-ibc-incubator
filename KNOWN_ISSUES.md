@@ -106,13 +106,9 @@ ICS-31 cross-chain queries are a work in progress for Cardano, but will need to 
 
 ### Client Upgrade
 
-Standard IBC client upgrades are not currently supported, so existing Cardano clients require the recovery process described below.
+Standard IBC client upgrade is not currently supported for the Cardano light client. The probabilistic Cardano light clients reject `VerifyUpgradeAndUpdateState`.
 
-This fix needs information that older clients never stored: the certificate number currently in use by each Cardano stake pool at the client's starting block. A pool increases this number when it replaces its short-lived block-signing key. For example, if a pool has moved from certificate 11 to certificate 12, the light client must reject certificate 11; assuming an unknown starting value of zero could allow that retired certificate. New clients therefore store a trusted snapshot of these numbers from the same Cardano block used as their initial checkpoint, together with the network rule that limits how long each signing key remains valid.
-
-After the Cosmos light-client code is upgraded, older clients safely report as expired because they do not contain this starting snapshot. This pauses new relaying activity but does not delete their client IDs, connections, channels, previously stored proof roots, or users' funds. Upgrade the Cosmos binary first, then upgrade the Gateway, and use Ogmios v6.12.0 or newer. Upgrading the Gateway first is unsafe because the old Cosmos code would accept the new fields without checking them.
-
-To resume an existing route, use the upgraded Gateway to create a second client at a later Cardano checkpoint. Verify that client's checkpoint and network settings, then use the authorized IBC client-recovery process to copy its current state into the existing client. Recovery preserves the existing client, connection, and channel identifiers. Future header updates must begin from the recovery checkpoint, while older stored roots remain available for proofs at earlier heights. New mainnet routes should be created only after this deployment sequence is complete.
+Operational-certificate validation adds information that must be present when a client is created: the certificate number currently in use by each Cardano stake pool and the network limit on a block-signing key's lifetime. Cardano IBC is not live today, so there are no deployed clients or routes to migrate for this change. The first deployment must create every client with this information from its initial Cardano checkpoint. Before allowing the Gateway to create those clients, deploy the upgraded Cosmos light-client code and use Ogmios v6.12.0 or newer.
 
 This may be a target for further development.
 
