@@ -826,7 +826,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: cardano/gateway/package-lock.json
+          cache-dependency-path: |
+            cardano/gateway/package-lock.json
+            packages/cardano-ibc-trace-registry/package-lock.json
 
       - name: Setup Aiken
         uses: aiken-lang/setup-aiken@v1
@@ -903,6 +905,11 @@ jobs:
             -m 'reference_validator.{final_reference_reclaim_atomically_burns_the_host_anchor}' \
             -m 'host_state_nft.{burn_final_accepts_sealed_anchor_after_proof_window}' \
             > ../../aiken-check.json
+
+      - name: Build voucher metadata dependency
+        run: |
+          npm ci --prefix packages/cardano-ibc-trace-registry --legacy-peer-deps
+          npm run --prefix packages/cardano-ibc-trace-registry build
 
       - name: Install gateway dependencies
         run: npm ci --prefix cardano/gateway --legacy-peer-deps
