@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "wireSchemaVersion": 1,
+  "wireSchemaVersion": 2,
   "source": "cardano/onchain/plutus.json",
-  "schemaFingerprint": "sha256:49d10144fa135485025d67d003fdade89d743266802cab665b7127d097938a63",
+  "schemaFingerprint": "sha256:8fc35d089d45e4194a369e5e9fc99babf962ca9fa7098f58c7a74c039b093e66",
   "roots": [
     "ibc/core/ics_025_handler_interface/host_state/HostStateDatum",
     "ibc/client/ics_007_tendermint_client/client_state/ClientState",
@@ -672,13 +672,36 @@
             {
               "name": "bound_port",
               "type": {
-                "ref": "Pairs<ByteArray,ibc/core/ics_025_handler_interface/host_state/ModuleRegistration>"
+                "ref": "List<Int>"
               }
             },
             {
               "name": "last_update_time",
               "type": {
                 "ref": "Int"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "ibc/core/ics_025_handler_interface/host_state/HostStateControl": {
+      "type": "sum",
+      "constructors": [
+        {
+          "name": "HostStateControl",
+          "index": 0,
+          "fields": [
+            {
+              "name": "port_registry",
+              "type": {
+                "ref": "Pairs<ByteArray,ibc/core/ics_025_handler_interface/host_state/ModuleRegistration>"
+              }
+            },
+            {
+              "name": "shutdown",
+              "type": {
+                "ref": "ibc/core/ics_025_handler_interface/host_state/ShutdownState"
               }
             }
           ]
@@ -711,9 +734,9 @@
               }
             },
             {
-              "name": "shutdown",
+              "name": "control",
               "type": {
-                "ref": "ibc/core/ics_025_handler_interface/host_state/ShutdownState"
+                "ref": "ibc/core/ics_025_handler_interface/host_state/HostStateControl"
               }
             }
           ]
