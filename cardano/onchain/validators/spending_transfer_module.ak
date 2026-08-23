@@ -294,7 +294,7 @@ fn module_callback(
       trace @"spend_transfer_module: channel redeemer is valid"
 
       expect packet_data == packet.data
-      expect fungible_token_packet_data.get_bytes(data) == packet.data
+      expect fungible_token_packet_data.matches_bytes(data, packet.data)
       trace @"spend_transfer_module: FungibleTokenPacketData is unmarshal valid"
 
       if transfer_coin.receiver_chain_is_source(
@@ -474,7 +474,7 @@ fn module_callback(
 
       and {
         valid_refund_packet?,
-        (fungible_token_packet_data.get_bytes(data) == packet.data)?,
+        fungible_token_packet_data.matches_bytes(data, packet.data)?,
       }
     }
     OnAcknowledgementPacket { channel_id, packet_data, acknowledgement, data } -> {
@@ -497,7 +497,7 @@ fn module_callback(
       when acknowledgement.response is {
         AcknowledgementError { .. } -> and {
             // Only error acknowledgements trigger transfer refunds.
-            fungible_token_packet_data.get_bytes(tf_data) == packet.data,
+            fungible_token_packet_data.matches_bytes(tf_data, packet.data),
             acknowledgement_mod.marshal_json(acknowledgement) == channel_ack,
             transfer_refund.validate_refund_packet_token(
               voucher_minting_policy_id,
@@ -521,7 +521,7 @@ fn module_callback(
               updated_output,
               assets.zero,
             )?,
-            (fungible_token_packet_data.get_bytes(tf_data) == packet.data)?,
+            fungible_token_packet_data.matches_bytes(tf_data, packet.data)?,
             (acknowledgement_mod.marshal_json(acknowledgement) == channel_ack)?,
           }
         }
@@ -588,7 +588,7 @@ fn module_operator(
       expect SendPacket { packet } = channel_redeemer
       trace @"spend_transfer_module: channel redeemer is valid"
 
-      expect fungible_token_packet_data.get_bytes(data) == packet.data
+      expect fungible_token_packet_data.matches_bytes(data, packet.data)
       trace @"spend_transfer_module: FungibleTokenPacketData is unmarshal valid"
 
       if transfer_coin.sender_chain_is_source(

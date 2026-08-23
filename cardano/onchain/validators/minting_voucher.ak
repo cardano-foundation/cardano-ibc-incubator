@@ -72,7 +72,7 @@ validator mint_voucher(
         expect packet.source_channel == packet_source_channel
         expect packet.destination_port == packet_dest_port
         expect packet.destination_channel == packet_dest_channel
-        expect fungible_token_packet_data.get_bytes(data) == packet.data
+        expect fungible_token_packet_data.matches_bytes(data, packet.data)
         trace @"mint_voucher: module redeemer is valid"
 
         // Non-source receives mint vouchers; source receives unescrow natively.
@@ -181,7 +181,7 @@ validator mint_voucher(
         expect SendPacket { packet } = channel_redeemer
         expect packet.source_port == packet_source_port
         expect packet.source_channel == packet_source_channel
-        expect fungible_token_packet_data.get_bytes(data) == packet.data
+        expect fungible_token_packet_data.matches_bytes(data, packet.data)
         trace @"mint_voucher: module redeemer is valid"
 
         // Source-chain sends escrow natively instead of burning vouchers.
@@ -231,7 +231,7 @@ validator mint_voucher(
             expect acknowledgement == None
             expect packet.source_port == packet_source_port
             expect packet.source_channel == packet_source_channel
-            expect fungible_token_packet_data.get_bytes(data) == packet.data
+            expect fungible_token_packet_data.matches_bytes(data, packet.data)
           }
           AcknowledgePacket { packet, acknowledgement: channel_ack, .. } -> {
             // Ack-error refunds must match the channel acknowledgement bytes.
@@ -240,7 +240,7 @@ validator mint_voucher(
             expect acknowledgement_mod.marshal_json(ack) == channel_ack
             expect packet.source_port == packet_source_port
             expect packet.source_channel == packet_source_channel
-            expect fungible_token_packet_data.get_bytes(data) == packet.data
+            expect fungible_token_packet_data.matches_bytes(data, packet.data)
           }
           _ -> fail
         }
