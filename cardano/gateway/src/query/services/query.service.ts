@@ -540,7 +540,6 @@ export class QueryService {
       latest_checkpoint_epoch: BigInt(stabilityEvidence.anchorEpoch),
       max_kes_evolutions: BigInt(stabilityEvidence.epochVerificationContext.maxKesEvolutions),
       latest_checkpoint_operational_certificate_counters: operationalCertificateCounters,
-      operational_certificate_state_initialized: true,
       operational_certificate_counter_history_start_height: {
         revision_number: 0n,
         revision_height: BigInt(stabilityEvidence.anchorHeight),
@@ -555,7 +554,6 @@ export class QueryService {
       unique_pools_count: BigInt(stabilityEvidence.metrics.qualifiedUniquePoolsCount),
       unique_stake_bps: BigInt(stabilityEvidence.metrics.qualifiedUniqueStakeBps),
       security_score_bps: BigInt(stabilityEvidence.metrics.securityScoreBps),
-      operational_certificate_state_initialized: true,
     };
 
     return {

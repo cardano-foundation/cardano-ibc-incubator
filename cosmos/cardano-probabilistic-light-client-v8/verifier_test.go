@@ -285,18 +285,16 @@ func TestVerifyHeaderRejectsMissingTrustedConsensus(t *testing.T) {
 	require.ErrorContains(t, err, "trusted consensus state not found")
 }
 
-func TestLegacyClientWithoutOperationalCertificateBaselineCannotUpdate(t *testing.T) {
+func TestVerifyHeaderRejectsMissingOperationalCertificateBaseline(t *testing.T) {
 	cdc := newProbabilisticTestCodec()
-	_, clientStore := newProbabilisticTestClientStore(t, "probabilistic-legacy-opcert-state")
+	_, clientStore := newProbabilisticTestClientStore(t, "probabilistic-missing-opcert-baseline")
 	cs := newProbabilisticTestClientState()
 	header := newVerifiedTestHeader(t)
 
 	decodedBridge, err := decodeLedgerBlock(header.BridgeBlocks[0].BlockCbor)
 	require.NoError(t, err)
 	cs.EpochContexts[0].StakeDistribution[0].PoolId = decodedBridge.IssuerVkey().PoolId()
-	cs.MaxKesEvolutions = 0
-	cs.OperationalCertificateStateInitialized = false
-	cs.LatestCheckpointOperationalCertificateCounters = nil
+	cs.OperationalCertificateCounterHistoryStartHeight = nil
 	setConsensusState(
 		clientStore,
 		cdc,
@@ -305,7 +303,7 @@ func TestLegacyClientWithoutOperationalCertificateBaselineCannotUpdate(t *testin
 	)
 
 	err = cs.verifyHeader(sdk.Context{}, clientStore, cdc, header)
-	require.ErrorContains(t, err, "operational certificate state must be initialized")
+	require.ErrorContains(t, err, "operational certificate counter history start height must be present")
 }
 
 func TestVerifyHeaderRejectsCrossEpochBlock(t *testing.T) {
@@ -825,6 +823,32 @@ func TestInitializeRejectsOperationalCertificateHistoryStartingAtAnotherHeight(t
 	require.ErrorContains(t, err, "must start at the initial client height")
 }
 
+func TestStatusRejectsInvalidOperationalCertificateHistoryStart(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		historyStart *Height
+	}{
+		{name: "missing", historyStart: nil},
+		{name: "zero", historyStart: ZeroHeight()},
+		{name: "newer than checkpoint", historyStart: NewHeight(0, 11)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cdc := newProbabilisticTestCodec()
+			ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-invalid-counter-history-status")
+			clientState := newProbabilisticTestClientState()
+			clientState.OperationalCertificateCounterHistoryStartHeight = tc.historyStart
+			setConsensusState(
+				clientStore,
+				cdc,
+				newProbabilisticTestConsensusState("initial-block-hash"),
+				clientState.LatestHeight,
+			)
+
+			require.Equal(t, exported.Expired, clientState.Status(ctx, clientStore, cdc))
+		})
+	}
+}
+
 func TestCheckpointCursorDoesNotCreateConsensusStateOrRenewTrust(t *testing.T) {
 	cdc := newProbabilisticTestCodec()
 	ctx, clientStore := newProbabilisticTestClientStore(t, "probabilistic-checkpoint-trust")
@@ -951,11 +975,7 @@ func TestOperationalCertificateCounterHistoryCompactsToOldestUsableConsensus(t *
 		[]*OperationalCertificateCounter{{PoolId: poolID, SequenceNumber: 11}},
 	))
 	clientState.setLatestCheckpoint(NewHeight(0, 15), "block-15", 7)
-	legacyConsensus := newProbabilisticTestConsensusState("block-10")
-	legacyConsensus.OperationalCertificateStateInitialized = false
-	setConsensusState(clientStore, cdc, legacyConsensus, NewHeight(0, 10))
 	setConsensusState(clientStore, cdc, newProbabilisticTestConsensusState("block-12"), NewHeight(0, 12))
-	SetIterationKey(clientStore, NewHeight(0, 10))
 	SetIterationKey(clientStore, NewHeight(0, 12))
 
 	require.NoError(t, clientState.compactOperationalCertificateCounterHistory(clientStore, cdc))
@@ -1035,18 +1055,6 @@ func TestExportMetadataPreservesConsensusAndOperationalCertificateMetadata(t *te
 	restored, err := clientState.operationalCertificateCounterMapAtHeight(restoredStore, NewHeight(0, 10))
 	require.NoError(t, err)
 	require.Equal(t, uint64(4), restored[hex.EncodeToString(poolID)])
-}
-
-func TestTrustedBlockStateRejectsUninitializedHistoricalConsensus(t *testing.T) {
-	cdc := newProbabilisticTestCodec()
-	_, clientStore := newProbabilisticTestClientStore(t, "probabilistic-latest-counter-mismatch")
-	clientState := newProbabilisticTestClientState()
-	latestConsensus := newProbabilisticTestConsensusState("latest-block-hash")
-	latestConsensus.OperationalCertificateStateInitialized = false
-	setConsensusState(clientStore, cdc, latestConsensus, clientState.LatestHeight)
-
-	_, err := clientState.latestTrustedBlockState(clientStore, cdc)
-	require.ErrorContains(t, err, "predates operational certificate validation")
 }
 
 func TestPersistCheckpointAdvancesCursorWithoutAdvancingIbcRoot(t *testing.T) {
@@ -1270,18 +1278,17 @@ func newProbabilisticTestClientState() *ClientState {
 	}
 	epochNonce := bytes.Repeat([]byte{0x03}, 32)
 	return &ClientState{
-		ChainId:                                "cardano-test",
-		LatestHeight:                           &Height{RevisionHeight: 10},
-		FrozenHeight:                           zeroHeight,
-		CurrentEpoch:                           7,
-		TrustingPeriod:                         24 * time.Hour,
-		HostStateNftPolicyId:                   bytes.Repeat([]byte{0x01}, 28),
-		HostStateNftTokenName:                  []byte("host-state"),
-		EpochStakeDistribution:                 cloneStakeDistributionEntries(epochStakeDistribution),
-		EpochNonce:                             bytes.Clone(epochNonce),
-		SlotsPerKesPeriod:                      129600,
-		MaxKesEvolutions:                       62,
-		OperationalCertificateStateInitialized: true,
+		ChainId:                "cardano-test",
+		LatestHeight:           &Height{RevisionHeight: 10},
+		FrozenHeight:           zeroHeight,
+		CurrentEpoch:           7,
+		TrustingPeriod:         24 * time.Hour,
+		HostStateNftPolicyId:   bytes.Repeat([]byte{0x01}, 28),
+		HostStateNftTokenName:  []byte("host-state"),
+		EpochStakeDistribution: cloneStakeDistributionEntries(epochStakeDistribution),
+		EpochNonce:             bytes.Clone(epochNonce),
+		SlotsPerKesPeriod:      129600,
+		MaxKesEvolutions:       62,
 		OperationalCertificateCounterHistoryStartHeight: NewHeight(0, 10),
 		CurrentEpochStartSlot:                           0,
 		CurrentEpochEndSlotExclusive:                    1_000_000,
@@ -1302,14 +1309,13 @@ func newProbabilisticTestClientState() *ClientState {
 
 func newProbabilisticTestConsensusState(acceptedBlockHash string) *ConsensusState {
 	return &ConsensusState{
-		Timestamp:                              uint64(time.Unix(1_700_000_000, 0).UnixNano()),
-		IbcStateRoot:                           bytes.Repeat([]byte{0x11}, 32),
-		AcceptedBlockHash:                      acceptedBlockHash,
-		AcceptedEpoch:                          7,
-		UniquePoolsCount:                       1,
-		UniqueStakeBps:                         10_000,
-		SecurityScoreBps:                       10_000,
-		OperationalCertificateStateInitialized: true,
+		Timestamp:         uint64(time.Unix(1_700_000_000, 0).UnixNano()),
+		IbcStateRoot:      bytes.Repeat([]byte{0x11}, 32),
+		AcceptedBlockHash: acceptedBlockHash,
+		AcceptedEpoch:     7,
+		UniquePoolsCount:  1,
+		UniqueStakeBps:    10_000,
+		SecurityScoreBps:  10_000,
 	}
 }
 

@@ -80,11 +80,6 @@ export interface ClientState {
    */
   latest_checkpoint_operational_certificate_counters: OperationalCertificateCounter[];
   /**
-   * Distinguishes an authenticated empty counter snapshot from legacy state
-   * that predates operational-certificate validation.
-   */
-  operational_certificate_state_initialized: boolean;
-  /**
    * Oldest height whose counter state can be reconstructed from the current
    * snapshot and the light client's private rollback history.
    */
@@ -103,7 +98,6 @@ export interface ConsensusState {
   unique_pools_count: bigint;
   unique_stake_bps: bigint;
   security_score_bps: bigint;
-  operational_certificate_state_initialized: boolean;
 }
 /**
  * @name Misbehaviour
@@ -522,7 +516,6 @@ function createBaseClientState(): ClientState {
     latest_checkpoint_epoch: BigInt(0),
     max_kes_evolutions: BigInt(0),
     latest_checkpoint_operational_certificate_counters: [],
-    operational_certificate_state_initialized: false,
     operational_certificate_counter_history_start_height: undefined,
   };
 }
@@ -597,13 +590,10 @@ export const ClientState = {
     for (const v of message.latest_checkpoint_operational_certificate_counters) {
       OperationalCertificateCounter.encode(v!, writer.uint32(186).fork()).ldelim();
     }
-    if (message.operational_certificate_state_initialized === true) {
-      writer.uint32(192).bool(message.operational_certificate_state_initialized);
-    }
     if (message.operational_certificate_counter_history_start_height !== undefined) {
       Height.encode(
         message.operational_certificate_counter_history_start_height,
-        writer.uint32(202).fork(),
+        writer.uint32(194).fork(),
       ).ldelim();
     }
     return writer;
@@ -681,9 +671,6 @@ export const ClientState = {
           );
           break;
         case 24:
-          message.operational_certificate_state_initialized = reader.bool();
-          break;
-        case 25:
           message.operational_certificate_counter_history_start_height = Height.decode(
             reader,
             reader.uint32(),
@@ -738,10 +725,6 @@ export const ClientState = {
         object.latest_checkpoint_operational_certificate_counters.map((e: any) =>
           OperationalCertificateCounter.fromJSON(e),
         );
-    if (isSet(object.operational_certificate_state_initialized))
-      obj.operational_certificate_state_initialized = Boolean(
-        object.operational_certificate_state_initialized,
-      );
     if (isSet(object.operational_certificate_counter_history_start_height))
       obj.operational_certificate_counter_history_start_height = Height.fromJSON(
         object.operational_certificate_counter_history_start_height,
@@ -820,8 +803,6 @@ export const ClientState = {
     } else {
       obj.latest_checkpoint_operational_certificate_counters = [];
     }
-    message.operational_certificate_state_initialized !== undefined &&
-      (obj.operational_certificate_state_initialized = message.operational_certificate_state_initialized);
     message.operational_certificate_counter_history_start_height !== undefined &&
       (obj.operational_certificate_counter_history_start_height =
         message.operational_certificate_counter_history_start_height
@@ -883,8 +864,6 @@ export const ClientState = {
       object.latest_checkpoint_operational_certificate_counters?.map((e) =>
         OperationalCertificateCounter.fromPartial(e),
       ) || [];
-    message.operational_certificate_state_initialized =
-      object.operational_certificate_state_initialized ?? false;
     if (
       object.operational_certificate_counter_history_start_height !== undefined &&
       object.operational_certificate_counter_history_start_height !== null
@@ -905,7 +884,6 @@ function createBaseConsensusState(): ConsensusState {
     unique_pools_count: BigInt(0),
     unique_stake_bps: BigInt(0),
     security_score_bps: BigInt(0),
-    operational_certificate_state_initialized: false,
   };
 }
 /**
@@ -937,9 +915,6 @@ export const ConsensusState = {
     if (message.security_score_bps !== BigInt(0)) {
       writer.uint32(56).uint64(message.security_score_bps);
     }
-    if (message.operational_certificate_state_initialized === true) {
-      writer.uint32(64).bool(message.operational_certificate_state_initialized);
-    }
     return writer;
   },
   decode(input: BinaryReader | Uint8Array, length?: number): ConsensusState {
@@ -970,9 +945,6 @@ export const ConsensusState = {
         case 7:
           message.security_score_bps = reader.uint64();
           break;
-        case 8:
-          message.operational_certificate_state_initialized = reader.bool();
-          break;
         default:
           reader.skipType(tag & 7);
           break;
@@ -991,10 +963,6 @@ export const ConsensusState = {
     if (isSet(object.unique_stake_bps)) obj.unique_stake_bps = BigInt(object.unique_stake_bps.toString());
     if (isSet(object.security_score_bps))
       obj.security_score_bps = BigInt(object.security_score_bps.toString());
-    if (isSet(object.operational_certificate_state_initialized))
-      obj.operational_certificate_state_initialized = Boolean(
-        object.operational_certificate_state_initialized,
-      );
     return obj;
   },
   toJSON(message: ConsensusState): unknown {
@@ -1013,8 +981,6 @@ export const ConsensusState = {
       (obj.unique_stake_bps = (message.unique_stake_bps || BigInt(0)).toString());
     message.security_score_bps !== undefined &&
       (obj.security_score_bps = (message.security_score_bps || BigInt(0)).toString());
-    message.operational_certificate_state_initialized !== undefined &&
-      (obj.operational_certificate_state_initialized = message.operational_certificate_state_initialized);
     return obj;
   },
   fromPartial<I extends Exact<DeepPartial<ConsensusState>, I>>(object: I): ConsensusState {
@@ -1036,8 +1002,6 @@ export const ConsensusState = {
     if (object.security_score_bps !== undefined && object.security_score_bps !== null) {
       message.security_score_bps = BigInt(object.security_score_bps.toString());
     }
-    message.operational_certificate_state_initialized =
-      object.operational_certificate_state_initialized ?? false;
     return message;
   },
 };

@@ -25,8 +25,6 @@ func (cs ConsensusState) GetTime() time.Time {
 }
 
 func (cs ConsensusState) ValidateBasic() error {
-	// Legacy consensus states must remain serializable for genesis export and
-	// import. Initialization and header trust checks require the marker before use.
 	if cs.Timestamp == 0 {
 		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, "timestamp must be a positive Unix time")
 	}

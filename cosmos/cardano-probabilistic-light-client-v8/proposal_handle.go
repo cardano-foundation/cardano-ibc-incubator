@@ -16,14 +16,13 @@ import (
 )
 
 type recoveryInvariantClientState struct {
-	UpgradePath                            []string
-	HostStateNftPolicyId                   []byte
-	HostStateNftTokenName                  []byte
-	SystemStartUnixNs                      uint64
-	SlotLengthNs                           uint64
-	SlotsPerKesPeriod                      uint64
-	MaxKesEvolutions                       uint64
-	OperationalCertificateStateInitialized bool
+	UpgradePath           []string
+	HostStateNftPolicyId  []byte
+	HostStateNftTokenName []byte
+	SystemStartUnixNs     uint64
+	SlotLengthNs          uint64
+	SlotsPerKesPeriod     uint64
+	MaxKesEvolutions      uint64
 }
 
 func (cs ClientState) CheckSubstituteAndUpdateState(
@@ -64,9 +63,6 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	}
 	if err := consensusState.ValidateBasic(); err != nil {
 		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
-	}
-	if !consensusState.OperationalCertificateStateInitialized {
-		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, "substitute consensus state predates operational certificate validation")
 	}
 	if substituteClientState.LatestCheckpointHeight != nil &&
 		substituteClientState.LatestCheckpointHeight.EQ(height) &&
@@ -118,7 +114,6 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	cs.ChainId = substituteClientState.ChainId
 	cs.TrustingPeriod = substituteClientState.TrustingPeriod
 	cs.MaxKesEvolutions = substituteClientState.MaxKesEvolutions
-	cs.OperationalCertificateStateInitialized = substituteClientState.OperationalCertificateStateInitialized
 	if err := syncCurrentEpochFields(&cs, contexts, substituteClientState.CurrentEpoch); err != nil {
 		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
 	}
@@ -127,10 +122,6 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 }
 
 func validateOperationalCertificateCounterRecovery(subject, substitute ClientState) error {
-	if subject.hasLegacyOperationalCertificateState() {
-		return nil
-	}
-
 	subjectCounters, err := operationalCertificateCounterMap(
 		subject.LatestCheckpointOperationalCertificateCounters,
 	)
@@ -166,25 +157,20 @@ func (cs ClientState) effectiveCheckpointHeight() *Height {
 }
 
 func IsMatchingClientState(subject, substitute ClientState) bool {
-	subjectProjection := recoveryInvariantProjection(subject)
-	substituteProjection := recoveryInvariantProjection(substitute)
-	if subject.hasLegacyOperationalCertificateState() {
-		subjectProjection.MaxKesEvolutions = substituteProjection.MaxKesEvolutions
-		subjectProjection.OperationalCertificateStateInitialized =
-			substituteProjection.OperationalCertificateStateInitialized
-	}
-	return reflect.DeepEqual(subjectProjection, substituteProjection)
+	return reflect.DeepEqual(
+		recoveryInvariantProjection(subject),
+		recoveryInvariantProjection(substitute),
+	)
 }
 
 func recoveryInvariantProjection(cs ClientState) recoveryInvariantClientState {
 	return recoveryInvariantClientState{
-		UpgradePath:                            append([]string(nil), cs.UpgradePath...),
-		HostStateNftPolicyId:                   bytes.Clone(cs.HostStateNftPolicyId),
-		HostStateNftTokenName:                  bytes.Clone(cs.HostStateNftTokenName),
-		SystemStartUnixNs:                      cs.SystemStartUnixNs,
-		SlotLengthNs:                           cs.SlotLengthNs,
-		SlotsPerKesPeriod:                      cs.SlotsPerKesPeriod,
-		MaxKesEvolutions:                       cs.MaxKesEvolutions,
-		OperationalCertificateStateInitialized: cs.OperationalCertificateStateInitialized,
+		UpgradePath:           append([]string(nil), cs.UpgradePath...),
+		HostStateNftPolicyId:  bytes.Clone(cs.HostStateNftPolicyId),
+		HostStateNftTokenName: bytes.Clone(cs.HostStateNftTokenName),
+		SystemStartUnixNs:     cs.SystemStartUnixNs,
+		SlotLengthNs:          cs.SlotLengthNs,
+		SlotsPerKesPeriod:     cs.SlotsPerKesPeriod,
+		MaxKesEvolutions:      cs.MaxKesEvolutions,
 	}
 }

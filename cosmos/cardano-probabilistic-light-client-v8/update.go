@@ -533,14 +533,13 @@ func (cs *ClientState) UpdateState(
 	consensusTimestamp := authenticatedHeader.anchorBlock.timestamp
 
 	newConsensusState := &ConsensusState{
-		Timestamp:                              consensusTimestamp,
-		IbcStateRoot:                           ibcStateRoot,
-		AcceptedBlockHash:                      authenticatedHeader.anchorBlock.hash,
-		AcceptedEpoch:                          authenticatedHeader.anchorBlock.epoch,
-		UniquePoolsCount:                       qualifiedUniquePools,
-		UniqueStakeBps:                         qualifiedUniqueStakeBps,
-		SecurityScoreBps:                       securityScoreBps,
-		OperationalCertificateStateInitialized: true,
+		Timestamp:         consensusTimestamp,
+		IbcStateRoot:      ibcStateRoot,
+		AcceptedBlockHash: authenticatedHeader.anchorBlock.hash,
+		AcceptedEpoch:     authenticatedHeader.anchorBlock.epoch,
+		UniquePoolsCount:  qualifiedUniquePools,
+		UniqueStakeBps:    qualifiedUniqueStakeBps,
+		SecurityScoreBps:  securityScoreBps,
 	}
 
 	setConsensusState(clientStore, cdc, newConsensusState, header.GetHeight())

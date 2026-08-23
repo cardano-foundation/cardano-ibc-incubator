@@ -7,7 +7,6 @@ import (
 	"time"
 
 	clienttypes "github.com/cosmos/ibc-go/v8/modules/core/02-client/types"
-	"github.com/cosmos/ibc-go/v8/modules/core/exported"
 	"github.com/stretchr/testify/require"
 )
 
@@ -80,27 +79,6 @@ func TestIsMatchingClientStateRejectsStaticParameterMismatch(t *testing.T) {
 	}
 }
 
-func TestIsMatchingClientStateAllowsOnlyOneWayLegacyOperationalCertificateMigration(t *testing.T) {
-	legacy := newProbabilisticTestClientState()
-	legacy.MaxKesEvolutions = 0
-	legacy.OperationalCertificateStateInitialized = false
-	legacy.OperationalCertificateCounterHistoryStartHeight = nil
-	legacy.LatestCheckpointOperationalCertificateCounters = nil
-	current := newProbabilisticTestClientState()
-
-	require.True(t, IsMatchingClientState(*legacy, *current))
-	require.False(t, IsMatchingClientState(*current, *legacy))
-
-	legacy.LatestCheckpointOperationalCertificateCounters = []*OperationalCertificateCounter{
-		{PoolId: bytes.Repeat([]byte{0x28}, 28), SequenceNumber: 1},
-	}
-	require.False(t, IsMatchingClientState(*legacy, *current))
-
-	legacy.LatestCheckpointOperationalCertificateCounters = nil
-	legacy.OperationalCertificateCounterHistoryStartHeight = NewHeight(0, 10)
-	require.False(t, IsMatchingClientState(*legacy, *current))
-}
-
 func TestZeroCustomFieldsDropsEpochVerificationState(t *testing.T) {
 	clientState := newProbabilisticTestClientState()
 	clientState.EpochContexts = []*EpochContext{
@@ -116,7 +94,6 @@ func TestZeroCustomFieldsDropsEpochVerificationState(t *testing.T) {
 	require.Empty(t, zeroed.EpochNonce)
 	require.Equal(t, clientState.SlotsPerKesPeriod, zeroed.SlotsPerKesPeriod)
 	require.Equal(t, clientState.MaxKesEvolutions, zeroed.MaxKesEvolutions)
-	require.True(t, zeroed.OperationalCertificateStateInitialized)
 	require.Nil(t, zeroed.OperationalCertificateCounterHistoryStartHeight)
 	require.Zero(t, zeroed.CurrentEpochStartSlot)
 	require.Zero(t, zeroed.CurrentEpochEndSlotExclusive)
@@ -187,7 +164,6 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 	recoveredConsensus, found := GetConsensusState(subjectStore, cdc, substitute.LatestHeight)
 	require.True(t, found)
 	require.EqualValues(t, 9, recoveredConsensus.AcceptedEpoch)
-	require.True(t, recoveredConsensus.OperationalCertificateStateInitialized)
 
 	processedHeight, found := GetProcessedHeight(subjectStore, substitute.LatestHeight)
 	require.True(t, found)
@@ -196,25 +172,6 @@ func TestCheckSubstituteAndUpdateStateAcceptsDifferentEpochContext(t *testing.T)
 	processedTime, found := GetProcessedTime(subjectStore, substitute.LatestHeight)
 	require.True(t, found)
 	require.EqualValues(t, 123456789, processedTime)
-}
-
-func TestCheckSubstituteAndUpdateStateRejectsUninitializedLatestConsensus(t *testing.T) {
-	cdc := newProbabilisticTestCodec()
-	ctx, subjectStore := newProbabilisticTestClientStore(t, "probabilistic-subject-counter-mismatch")
-	_, substituteStore := newProbabilisticTestClientStore(t, "probabilistic-substitute-counter-mismatch")
-	subject := newProbabilisticTestClientState()
-	substitute := newProbabilisticTestClientState()
-	substitute.LatestHeight = NewHeight(0, 20)
-	substitute.setLatestCheckpoint(substitute.LatestHeight, "latest-hash", 7)
-	substitute.LatestCheckpointOperationalCertificateCounters = []*OperationalCertificateCounter{
-		{PoolId: bytes.Repeat([]byte{0x2a}, 28), SequenceNumber: 2},
-	}
-	consensusState := newProbabilisticTestConsensusState("latest-hash")
-	consensusState.OperationalCertificateStateInitialized = false
-	setConsensusState(substituteStore, cdc, consensusState, substitute.LatestHeight)
-
-	err := subject.CheckSubstituteAndUpdateState(ctx, cdc, subjectStore, substituteStore, substitute)
-	require.ErrorContains(t, err, "predates operational certificate validation")
 }
 
 func TestCheckSubstituteAndUpdateStateRejectsOperationalCertificateCounterRegression(t *testing.T) {
@@ -278,22 +235,16 @@ func TestCheckSubstituteAndUpdateStateRejectsOperationalCertificateCounterRegres
 	}
 }
 
-func TestIBCGenesisValidationAcceptsLegacyAndRecoveredOperationalCertificateState(t *testing.T) {
+func TestIBCGenesisValidationAcceptsOperationalCertificateState(t *testing.T) {
 	clientID := ModuleName + "-0"
-	legacyClient := newProbabilisticTestClientState()
-	legacyClient.MaxKesEvolutions = 0
-	legacyClient.OperationalCertificateStateInitialized = false
-	legacyClient.OperationalCertificateCounterHistoryStartHeight = nil
-	legacyClient.LatestCheckpointOperationalCertificateCounters = nil
-	legacyConsensus := newProbabilisticTestConsensusState("legacy-hash")
-	legacyConsensus.OperationalCertificateStateInitialized = false
-
-	legacyGenesis := clienttypes.NewGenesisState(
-		[]clienttypes.IdentifiedClientState{clienttypes.NewIdentifiedClientState(clientID, legacyClient)},
+	clientState := newProbabilisticTestClientState()
+	consensusState := newProbabilisticTestConsensusState("initial-hash")
+	genesis := clienttypes.NewGenesisState(
+		[]clienttypes.IdentifiedClientState{clienttypes.NewIdentifiedClientState(clientID, clientState)},
 		clienttypes.ClientsConsensusStates{clienttypes.NewClientConsensusStates(
 			clientID,
 			[]clienttypes.ConsensusStateWithHeight{
-				clienttypes.NewConsensusStateWithHeight(clienttypes.NewHeight(0, 10), legacyConsensus),
+				clienttypes.NewConsensusStateWithHeight(clienttypes.NewHeight(0, 10), consensusState),
 			},
 		)},
 		nil,
@@ -301,28 +252,7 @@ func TestIBCGenesisValidationAcceptsLegacyAndRecoveredOperationalCertificateStat
 		false,
 		1,
 	)
-	require.NoError(t, legacyGenesis.Validate())
-
-	recoveredClient := newProbabilisticTestClientState()
-	recoveredClient.LatestHeight = NewHeight(0, 20)
-	recoveredClient.setLatestCheckpoint(recoveredClient.LatestHeight, "recovered-hash", 7)
-	recoveredClient.OperationalCertificateCounterHistoryStartHeight = NewHeight(0, 20)
-	recoveredConsensus := newProbabilisticTestConsensusState("recovered-hash")
-	recoveredGenesis := clienttypes.NewGenesisState(
-		[]clienttypes.IdentifiedClientState{clienttypes.NewIdentifiedClientState(clientID, recoveredClient)},
-		clienttypes.ClientsConsensusStates{clienttypes.NewClientConsensusStates(
-			clientID,
-			[]clienttypes.ConsensusStateWithHeight{
-				clienttypes.NewConsensusStateWithHeight(clienttypes.NewHeight(0, 10), legacyConsensus),
-				clienttypes.NewConsensusStateWithHeight(clienttypes.NewHeight(0, 20), recoveredConsensus),
-			},
-		)},
-		nil,
-		clienttypes.DefaultParams(),
-		false,
-		1,
-	)
-	require.NoError(t, recoveredGenesis.Validate())
+	require.NoError(t, genesis.Validate())
 }
 
 func TestCheckSubstituteAndUpdateStateRejectsCardanoCheckpointRegression(t *testing.T) {
@@ -332,10 +262,6 @@ func TestCheckSubstituteAndUpdateStateRejectsCardanoCheckpointRegression(t *test
 	subject := newProbabilisticTestClientState()
 	subject.LatestHeight = NewHeight(0, 10)
 	subject.setLatestCheckpoint(NewHeight(0, 100), "checkpoint-100", 7)
-	subject.MaxKesEvolutions = 0
-	subject.OperationalCertificateStateInitialized = false
-	subject.OperationalCertificateCounterHistoryStartHeight = nil
-	subject.LatestCheckpointOperationalCertificateCounters = nil
 	substitute := newProbabilisticTestClientState()
 	substitute.LatestHeight = NewHeight(0, 20)
 	substitute.OperationalCertificateCounterHistoryStartHeight = NewHeight(0, 20)
@@ -350,10 +276,6 @@ func TestRecoveryFromRootlessSubstituteStartsCounterHistoryAtCheckpoint(t *testi
 	ctx, subjectStore := newProbabilisticTestClientStore(t, "probabilistic-rootless-recovery-subject")
 	_, substituteStore := newProbabilisticTestClientStore(t, "probabilistic-rootless-recovery-substitute")
 	subject := newProbabilisticTestClientState()
-	subject.MaxKesEvolutions = 0
-	subject.OperationalCertificateStateInitialized = false
-	subject.OperationalCertificateCounterHistoryStartHeight = nil
-	subject.LatestCheckpointOperationalCertificateCounters = nil
 	substitute := newProbabilisticTestClientState()
 	substitute.LatestHeight = NewHeight(0, 20)
 	substitute.setLatestCheckpoint(NewHeight(0, 30), "checkpoint-30", 7)
@@ -382,25 +304,26 @@ func TestRecoveryFromRootlessSubstituteStartsCounterHistoryAtCheckpoint(t *testi
 	require.Equal(t, consensusState.IbcStateRoot, retainedRoot.IbcStateRoot)
 }
 
-func TestCheckSubstituteAndUpdateStateMigratesLegacyOperationalCertificateState(t *testing.T) {
+func TestCheckSubstituteAndUpdateStateReplacesOperationalCertificateState(t *testing.T) {
 	cdc := newProbabilisticTestCodec()
-	ctx, subjectStore := newProbabilisticTestClientStore(t, "probabilistic-legacy-subject")
-	_, substituteStore := newProbabilisticTestClientStore(t, "probabilistic-current-substitute")
+	ctx, subjectStore := newProbabilisticTestClientStore(t, "probabilistic-recovery-subject")
+	_, substituteStore := newProbabilisticTestClientStore(t, "probabilistic-recovery-substitute")
 
+	poolID := bytes.Repeat([]byte{0x2b}, 28)
 	subject := newProbabilisticTestClientState()
-	subject.MaxKesEvolutions = 0
-	subject.OperationalCertificateStateInitialized = false
-	subject.OperationalCertificateCounterHistoryStartHeight = nil
-	subject.LatestCheckpointOperationalCertificateCounters = nil
+	require.NoError(t, subject.persistOperationalCertificateCounterSnapshot(
+		subjectStore,
+		NewHeight(0, 11),
+		[]*OperationalCertificateCounter{{PoolId: poolID, SequenceNumber: 4}},
+	))
+	subject.setLatestCheckpoint(NewHeight(0, 11), "subject-checkpoint-11", 7)
 	setClientState(subjectStore, cdc, subject)
-	subjectStore.Set(operationalCertificateCounterHistoryKey(NewHeight(0, 11)), bytes.Repeat([]byte{0x01}, operationalCertificateCounterRollbackEntrySize))
-	require.Equal(t, exported.Expired, subject.Status(ctx, subjectStore, cdc))
+	require.NotEmpty(t, subjectStore.Get(operationalCertificateCounterHistoryKey(NewHeight(0, 11))))
 
 	substitute := newProbabilisticTestClientState()
 	substitute.LatestHeight = NewHeight(0, 20)
 	substitute.setLatestCheckpoint(substitute.LatestHeight, "hash-20", 7)
 	substitute.OperationalCertificateCounterHistoryStartHeight = NewHeight(0, 20)
-	poolID := bytes.Repeat([]byte{0x2b}, 28)
 	substitute.LatestCheckpointOperationalCertificateCounters = []*OperationalCertificateCounter{
 		{PoolId: poolID, SequenceNumber: 6},
 	}
@@ -412,7 +335,6 @@ func TestCheckSubstituteAndUpdateStateMigratesLegacyOperationalCertificateState(
 	require.NoError(t, subject.CheckSubstituteAndUpdateState(ctx, cdc, subjectStore, substituteStore, substitute))
 	recovered, found := getClientState(subjectStore, cdc)
 	require.True(t, found)
-	require.True(t, recovered.OperationalCertificateStateInitialized)
 	require.Equal(t, uint64(62), recovered.MaxKesEvolutions)
 	require.Equal(t, uint64(20), recovered.OperationalCertificateCounterHistoryStartHeight.RevisionHeight)
 	require.Equal(t, substitute.LatestCheckpointOperationalCertificateCounters, recovered.LatestCheckpointOperationalCertificateCounters)

@@ -214,18 +214,18 @@ func (cs *ClientState) compactOperationalCertificateCounterHistory(
 	clientStore storetypes.KVStore,
 	cdc codec.BinaryCodec,
 ) error {
-	var oldestInitializedConsensusHeight *Height
+	var oldestConsensusHeight *Height
 	IterateConsensusStateAscending(clientStore, func(height exported.Height) bool {
-		consensusState, found := GetConsensusState(clientStore, cdc, height)
-		if found && consensusState.OperationalCertificateStateInitialized {
-			oldestInitializedConsensusHeight = NewHeight(height.GetRevisionNumber(), height.GetRevisionHeight())
+		_, found := GetConsensusState(clientStore, cdc, height)
+		if found {
+			oldestConsensusHeight = NewHeight(height.GetRevisionNumber(), height.GetRevisionHeight())
 			return true
 		}
 		return false
 	})
-	if oldestInitializedConsensusHeight == nil ||
+	if oldestConsensusHeight == nil ||
 		cs.OperationalCertificateCounterHistoryStartHeight == nil ||
-		!oldestInitializedConsensusHeight.GT(cs.OperationalCertificateCounterHistoryStartHeight) {
+		!oldestConsensusHeight.GT(cs.OperationalCertificateCounterHistoryStartHeight) {
 		return nil
 	}
 
@@ -237,7 +237,7 @@ func (cs *ClientState) compactOperationalCertificateCounterHistory(
 			_ = iterator.Close()
 			return err
 		}
-		if height.LTE(oldestInitializedConsensusHeight) {
+		if height.LTE(oldestConsensusHeight) {
 			keys = append(keys, bytes.Clone(iterator.Key()))
 		}
 	}
@@ -247,7 +247,7 @@ func (cs *ClientState) compactOperationalCertificateCounterHistory(
 	for _, key := range keys {
 		clientStore.Delete(key)
 	}
-	cs.OperationalCertificateCounterHistoryStartHeight = oldestInitializedConsensusHeight
+	cs.OperationalCertificateCounterHistoryStartHeight = oldestConsensusHeight
 	return nil
 }
 
@@ -378,18 +378,12 @@ func (cs ClientState) operationalCertificateCounterMapAtHeight(
 }
 
 func (cs ClientState) validateCheckpointFields() error {
-	legacyOperationalCertificateState := cs.hasLegacyOperationalCertificateState()
-	if !legacyOperationalCertificateState {
-		if !cs.OperationalCertificateStateInitialized {
-			return errorsmod.Wrap(clienttypes.ErrInvalidClient, "operational certificate state must be initialized")
-		}
-		if _, err := normalizeOperationalCertificateCounters(cs.LatestCheckpointOperationalCertificateCounters); err != nil {
-			return err
-		}
-		if cs.OperationalCertificateCounterHistoryStartHeight == nil ||
-			cs.OperationalCertificateCounterHistoryStartHeight.IsZero() {
-			return errorsmod.Wrap(clienttypes.ErrInvalidClient, "operational certificate counter history start height must be present")
-		}
+	if _, err := normalizeOperationalCertificateCounters(cs.LatestCheckpointOperationalCertificateCounters); err != nil {
+		return err
+	}
+	if cs.OperationalCertificateCounterHistoryStartHeight == nil ||
+		cs.OperationalCertificateCounterHistoryStartHeight.IsZero() {
+		return errorsmod.Wrap(clienttypes.ErrInvalidClient, "operational certificate counter history start height must be present")
 	}
 	if cs.LatestCheckpointHeight == nil || cs.LatestCheckpointHeight.IsZero() {
 		if cs.LatestCheckpointBlockHash != "" || cs.LatestCheckpointEpoch != 0 {
@@ -398,7 +392,7 @@ func (cs ClientState) validateCheckpointFields() error {
 		if cs.LatestHeight == nil || cs.LatestHeight.IsZero() {
 			return errorsmod.Wrap(ErrInvalidHeaderHeight, "latest height must be present")
 		}
-		if !legacyOperationalCertificateState && cs.OperationalCertificateCounterHistoryStartHeight.GT(cs.LatestHeight) {
+		if cs.OperationalCertificateCounterHistoryStartHeight.GT(cs.LatestHeight) {
 			return errorsmod.Wrap(ErrInvalidHeaderHeight, "operational certificate counter history cannot start after the latest height")
 		}
 		return nil
@@ -417,17 +411,10 @@ func (cs ClientState) validateCheckpointFields() error {
 	if strings.TrimSpace(cs.LatestCheckpointBlockHash) == "" {
 		return errorsmod.Wrap(ErrInvalidAcceptedBlock, "checkpoint block hash cannot be empty")
 	}
-	if !legacyOperationalCertificateState && cs.OperationalCertificateCounterHistoryStartHeight.GT(cs.LatestCheckpointHeight) {
+	if cs.OperationalCertificateCounterHistoryStartHeight.GT(cs.LatestCheckpointHeight) {
 		return errorsmod.Wrap(ErrInvalidHeaderHeight, "operational certificate counter history cannot start after the latest checkpoint")
 	}
 	return nil
-}
-
-func (cs ClientState) hasLegacyOperationalCertificateState() bool {
-	return !cs.OperationalCertificateStateInitialized &&
-		cs.MaxKesEvolutions == 0 &&
-		len(cs.LatestCheckpointOperationalCertificateCounters) == 0 &&
-		cs.OperationalCertificateCounterHistoryStartHeight == nil
 }
 
 func (cs *ClientState) latestTrustedBlockState(
@@ -451,10 +438,6 @@ func (cs *ClientState) trustedBlockStateAtHeight(
 	if height == nil || height.IsZero() {
 		return nil, errorsmod.Wrap(ErrInvalidHeaderHeight, "trusted height must be present")
 	}
-	if !cs.OperationalCertificateStateInitialized {
-		return nil, errorsmod.Wrap(clienttypes.ErrInvalidClient, "operational certificate state must be initialized")
-	}
-
 	if cs.LatestCheckpointHeight != nil &&
 		!cs.LatestCheckpointHeight.IsZero() &&
 		height.EQ(cs.LatestCheckpointHeight) {
@@ -473,8 +456,7 @@ func (cs *ClientState) trustedBlockStateAtHeight(
 			if !found {
 				return nil, errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "height (%s)", height.String())
 			}
-			if !consensusState.OperationalCertificateStateInitialized ||
-				!strings.EqualFold(state.blockHash, consensusState.AcceptedBlockHash) ||
+			if !strings.EqualFold(state.blockHash, consensusState.AcceptedBlockHash) ||
 				state.epoch != consensusState.AcceptedEpoch {
 				return nil, errorsmod.Wrap(
 					ErrInvalidAcceptedBlock,
@@ -491,12 +473,6 @@ func (cs *ClientState) trustedBlockStateAtHeight(
 			clienttypes.ErrConsensusStateNotFound,
 			"trusted consensus state not found at height %s",
 			height.String(),
-		)
-	}
-	if !consensusState.OperationalCertificateStateInitialized {
-		return nil, errorsmod.Wrap(
-			clienttypes.ErrInvalidConsensus,
-			"trusted consensus state predates operational certificate validation",
 		)
 	}
 	counters, err := cs.operationalCertificateCounterMapAtHeight(clientStore, height)
@@ -520,12 +496,6 @@ func (cs *ClientState) setLatestCheckpoint(height *Height, blockHash string, epo
 func (cs *ClientState) initializeCheckpoint(consensusState *ConsensusState) error {
 	if consensusState == nil {
 		return errorsmod.Wrap(clienttypes.ErrInvalidConsensus, "initial consensus state is missing")
-	}
-	if !cs.OperationalCertificateStateInitialized || !consensusState.OperationalCertificateStateInitialized {
-		return errorsmod.Wrap(
-			clienttypes.ErrInvalidClient,
-			"initial operational certificate state must be explicitly initialized",
-		)
 	}
 	clientCounters, err := normalizeOperationalCertificateCounters(cs.LatestCheckpointOperationalCertificateCounters)
 	if err != nil {

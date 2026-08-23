@@ -253,7 +253,6 @@ describe('QueryService stability anchor contract', () => {
     expect(clientState.latest_checkpoint_block_hash).toBe('anchor-hash');
     expect(clientState.latest_checkpoint_epoch).toBe(7n);
     expect(clientState.max_kes_evolutions).toBe(62n);
-    expect(clientState.operational_certificate_state_initialized).toBe(true);
     expect(clientState.operational_certificate_counter_history_start_height).toEqual(clientState.latest_height);
     expect(
       clientState.latest_checkpoint_operational_certificate_counters.map((counter) => ({
@@ -265,7 +264,6 @@ describe('QueryService stability anchor contract', () => {
       { poolId: 'ff'.repeat(28), sequenceNumber: 9n },
     ]);
     expect(consensusState.timestamp).toBe(timestampForSlot(1000n));
-    expect(consensusState.operational_certificate_state_initialized).toBe(true);
     expect(historyServiceMock.findOperationalCertificateCountersAtBlock).toHaveBeenCalledWith(
       expect.objectContaining({ height: 100, hash: 'anchor-hash' }),
     );
