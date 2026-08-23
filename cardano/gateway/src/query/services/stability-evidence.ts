@@ -29,6 +29,7 @@ import {
 
 declare const cardanoHeightBrand: unique symbol;
 declare const epochNumberBrand: unique symbol;
+const MAX_SUPPORTED_KES_EVOLUTIONS = 64;
 
 export type CardanoHeight = bigint & {
   readonly [cardanoHeightBrand]: 'CardanoHeight';
@@ -124,6 +125,13 @@ function assertEpochVerificationContextAvailable(
   }
   if (epochVerificationContext.slotsPerKesPeriod <= 0) {
     throw new GrpcInternalException(`Slots-per-KES-period unavailable for ${context} in epoch ${epoch}`);
+  }
+  if (
+    !Number.isSafeInteger(epochVerificationContext.maxKesEvolutions) ||
+    epochVerificationContext.maxKesEvolutions <= 0 ||
+    epochVerificationContext.maxKesEvolutions > MAX_SUPPORTED_KES_EVOLUTIONS
+  ) {
+    throw new GrpcInternalException(`Max KES evolutions unavailable for ${context} in epoch ${epoch}`);
   }
   if (epochVerificationContext.currentEpochEndSlotExclusive <= epochVerificationContext.currentEpochStartSlot) {
     throw new GrpcInternalException(`Invalid epoch slot bounds for ${context} in epoch ${epoch}`);

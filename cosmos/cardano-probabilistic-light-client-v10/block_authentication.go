@@ -2,6 +2,7 @@ package probabilistic
 
 import (
 	"bytes"
+	"encoding/hex"
 	"strings"
 
 	errorsmod "cosmossdk.io/errors"
@@ -12,19 +13,21 @@ import (
 )
 
 type authenticatedProbabilisticBlock struct {
-	height     uint64
-	slot       uint64
-	hash       string
-	prevHash   string
-	epoch      uint64
-	timestamp  uint64
-	slotLeader string
+	height                               uint64
+	slot                                 uint64
+	hash                                 string
+	prevHash                             string
+	epoch                                uint64
+	timestamp                            uint64
+	slotLeader                           string
+	operationalCertificateSequenceNumber uint64
 }
 
 type authenticatedProbabilisticHeader struct {
-	anchorBlock      *authenticatedProbabilisticBlock
-	bridgeBlocks     []*authenticatedProbabilisticBlock
-	descendantBlocks []*authenticatedProbabilisticBlock
+	anchorBlock                          *authenticatedProbabilisticBlock
+	bridgeBlocks                         []*authenticatedProbabilisticBlock
+	descendantBlocks                     []*authenticatedProbabilisticBlock
+	anchorOperationalCertificateCounters []*OperationalCertificateCounter
 }
 
 func (cs *ClientState) authenticateHeaderBlocks(header *ProbabilisticHeader) (*authenticatedProbabilisticHeader, error) {
@@ -36,31 +39,47 @@ func (cs *ClientState) authenticateHeaderBlocks(header *ProbabilisticHeader) (*a
 	if err != nil {
 		return nil, err
 	}
-	return cs.authenticateHeaderBlocksWithContexts(header, epochContexts)
+	trustedCounters, err := operationalCertificateCounterMap(cs.LatestCheckpointOperationalCertificateCounters)
+	if err != nil {
+		return nil, err
+	}
+	return cs.authenticateHeaderBlocksWithContexts(header, epochContexts, trustedCounters)
 }
 
-func (cs *ClientState) authenticateHeaderBlocksWithContexts(header *ProbabilisticHeader, epochContexts []*EpochContext) (*authenticatedProbabilisticHeader, error) {
+func (cs *ClientState) authenticateHeaderBlocksWithContexts(
+	header *ProbabilisticHeader,
+	epochContexts []*EpochContext,
+	trustedCounters map[string]uint64,
+) (*authenticatedProbabilisticHeader, error) {
 	if header == nil {
 		return nil, errorsmod.Wrap(ErrInvalidHeader, "probabilistic header missing")
 	}
-
-	anchorBlock, err := cs.authenticateProbabilisticBlock(header.AnchorBlock, "anchor", epochContexts)
-	if err != nil {
+	if err := cs.validateEpochContextParameters(epochContexts); err != nil {
 		return nil, err
+	}
+	counters := make(map[string]uint64, len(trustedCounters))
+	for poolID, sequenceNumber := range trustedCounters {
+		counters[strings.ToLower(poolID)] = sequenceNumber
 	}
 
 	bridgeBlocks := make([]*authenticatedProbabilisticBlock, 0, len(header.BridgeBlocks))
 	for _, block := range header.BridgeBlocks {
-		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "bridge", epochContexts)
+		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "bridge", epochContexts, counters)
 		if authErr != nil {
 			return nil, authErr
 		}
 		bridgeBlocks = append(bridgeBlocks, authenticatedBlock)
 	}
 
+	anchorBlock, err := cs.authenticateProbabilisticBlock(header.AnchorBlock, "anchor", epochContexts, counters)
+	if err != nil {
+		return nil, err
+	}
+	anchorCounters := operationalCertificateCountersFromMap(counters)
+
 	descendantBlocks := make([]*authenticatedProbabilisticBlock, 0, len(header.DescendantBlocks))
 	for _, block := range header.DescendantBlocks {
-		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "descendant", epochContexts)
+		authenticatedBlock, authErr := cs.authenticateProbabilisticBlock(block, "descendant", epochContexts, counters)
 		if authErr != nil {
 			return nil, authErr
 		}
@@ -74,13 +93,19 @@ func (cs *ClientState) authenticateHeaderBlocksWithContexts(header *Probabilisti
 	}
 
 	return &authenticatedProbabilisticHeader{
-		anchorBlock:      anchorBlock,
-		bridgeBlocks:     bridgeBlocks,
-		descendantBlocks: descendantBlocks,
+		anchorBlock:                          anchorBlock,
+		bridgeBlocks:                         bridgeBlocks,
+		descendantBlocks:                     descendantBlocks,
+		anchorOperationalCertificateCounters: anchorCounters,
 	}, nil
 }
 
-func (cs *ClientState) authenticateProbabilisticBlock(block *ProbabilisticBlock, label string, epochContexts []*EpochContext) (*authenticatedProbabilisticBlock, error) {
+func (cs *ClientState) authenticateProbabilisticBlock(
+	block *ProbabilisticBlock,
+	label string,
+	epochContexts []*EpochContext,
+	operationalCertificateCounters map[string]uint64,
+) (*authenticatedProbabilisticBlock, error) {
 	if block == nil || block.Height == nil {
 		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block missing height", label)
 	}
@@ -159,14 +184,14 @@ func (cs *ClientState) authenticateProbabilisticBlock(block *ProbabilisticBlock,
 		return nil, err
 	}
 
-	decodedPoolID, decodedVrfKeyHash, err := cs.verifyNativeProbabilisticBlock(decodedBlock, label, epochContext)
-	if err != nil {
-		return nil, err
-	}
-
+	decodedPoolID := decodedBlock.IssuerVkey().PoolId()
 	stakeEntry, err := findStakeDistributionEntryInContext(epochContext, decodedPoolID)
 	if err != nil {
 		return nil, errorsmod.Wrapf(ErrInvalidCurrentEpoch, "%s block issuer %s is not trusted for epoch %d", label, decodedPoolID, epochContext.Epoch)
+	}
+	decodedVrfKeyHash, sequenceNumber, err := cs.verifyNativeProbabilisticBlock(decodedBlock, label, epochContext)
+	if err != nil {
+		return nil, err
 	}
 	if !bytes.Equal(stakeEntry.VrfKeyHash, decodedVrfKeyHash) {
 		return nil, errorsmod.Wrapf(
@@ -176,43 +201,75 @@ func (cs *ClientState) authenticateProbabilisticBlock(block *ProbabilisticBlock,
 			decodedPoolID,
 		)
 	}
+	if err := advanceOperationalCertificateCounter(
+		operationalCertificateCounters,
+		decodedBlock.IssuerVkey().Hash().Bytes(),
+		sequenceNumber,
+	); err != nil {
+		return nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block: %v", label, err)
+	}
 
 	return &authenticatedProbabilisticBlock{
-		height:     decodedBlock.BlockNumber(),
-		slot:       decodedBlock.SlotNumber(),
-		hash:       decodedBlock.Hash(),
-		prevHash:   decodedPrevHash,
-		epoch:      epochContext.Epoch,
-		timestamp:  expectedTimestamp,
-		slotLeader: decodedPoolID,
+		height:                               decodedBlock.BlockNumber(),
+		slot:                                 decodedBlock.SlotNumber(),
+		hash:                                 decodedBlock.Hash(),
+		prevHash:                             decodedPrevHash,
+		epoch:                                epochContext.Epoch,
+		timestamp:                            expectedTimestamp,
+		slotLeader:                           decodedPoolID,
+		operationalCertificateSequenceNumber: sequenceNumber,
 	}, nil
+}
+
+func advanceOperationalCertificateCounter(counters map[string]uint64, poolID []byte, sequenceNumber uint64) error {
+	if len(poolID) != 28 {
+		return errorsmod.Wrapf(
+			ErrInvalidAcceptedBlock,
+			"operational certificate pool id must be 28 bytes, got %d",
+			len(poolID),
+		)
+	}
+	poolKey := hex.EncodeToString(poolID)
+	previousSequenceNumber := counters[poolKey]
+	if sequenceNumber < previousSequenceNumber {
+		return errorsmod.Wrapf(
+			ErrInvalidAcceptedBlock,
+			"operational certificate sequence number %d for pool %s is older than authenticated counter %d",
+			sequenceNumber,
+			poolKey,
+			previousSequenceNumber,
+		)
+	}
+	counters[poolKey] = sequenceNumber
+	return nil
 }
 
 func (cs *ClientState) verifyNativeProbabilisticBlock(
 	decodedBlock ledger.Block,
 	label string,
 	epochContext *EpochContext,
-) (poolID string, vrfKeyHash []byte, err error) {
+) (vrfKeyHash []byte, sequenceNumber uint64, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = errorsmod.Wrapf(ErrInvalidAcceptedBlock, "native verification panicked for %s block: %v", label, recovered)
 		}
 	}()
 
-	isValid, vrfKeyBytes, verifyErr := probabilisticcore.VerifyNativeBlock(
+	isValid, result, verifyErr := probabilisticcore.VerifyNativeBlock(
 		decodedBlock,
 		epochContext.EpochNonce,
-		int(epochContext.SlotsPerKesPeriod),
+		cs.SlotsPerKesPeriod,
+		cs.MaxKesEvolutions,
 	)
 	if verifyErr != nil {
-		return "", nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "native verification failed for %s block: %v", label, verifyErr)
+		return nil, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "native verification failed for %s block: %v", label, verifyErr)
 	}
 	if !isValid {
-		return "", nil, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block failed native Cardano verification", label)
+		return nil, 0, errorsmod.Wrapf(ErrInvalidAcceptedBlock, "%s block failed native Cardano verification", label)
 	}
 
-	vrfKeyHashBytes := blake2b.Sum256(vrfKeyBytes)
-	return decodedBlock.IssuerVkey().PoolId(), vrfKeyHashBytes[:], nil
+	vrfKeyHashBytes := blake2b.Sum256(result.VrfKey)
+	return vrfKeyHashBytes[:], result.OperationalCertificateSequenceNumber, nil
 }
 
 func buildBlockVerificationArtifacts(decodedBlock ledger.Block) (string, string, []byte, error) {

@@ -2,6 +2,8 @@ package probabilisticcore
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"strings"
@@ -11,6 +13,13 @@ import (
 	fxcbor "github.com/fxamacker/cbor/v2"
 	"golang.org/x/crypto/blake2b"
 )
+
+const maxSupportedKesEvolutions = uint64(1 << 6)
+
+type NativeBlockVerificationResult struct {
+	VrfKey                               []byte
+	OperationalCertificateSequenceNumber uint64
+}
 
 type rawBlockBodyFields struct {
 	transactionBodies      []byte
@@ -137,44 +146,146 @@ func BuildBlockVerificationArtifacts(decodedBlock ledger.Block) (string, string,
 	}
 }
 
-func VerifyNativeBlock(decodedBlock ledger.Block, epochNonce []byte, slotsPerKesPeriod int) (bool, []byte, error) {
+func VerifyNativeBlock(
+	decodedBlock ledger.Block,
+	epochNonce []byte,
+	slotsPerKesPeriod uint64,
+	maxKesEvolutions uint64,
+) (valid bool, result NativeBlockVerificationResult, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			valid = false
+			result = NativeBlockVerificationResult{}
+			err = fmt.Errorf("native block verification panicked: %v", recovered)
+		}
+	}()
+
 	header, err := nativeBabbageHeader(decodedBlock)
 	if err != nil {
-		return false, nil, err
+		return false, NativeBlockVerificationResult{}, err
 	}
 
-	isKesValid, err := ledger.VerifyKes(header, uint64(slotsPerKesPeriod))
+	opCertSequenceNumber, err := verifyOperationalCertificate(
+		header,
+		slotsPerKesPeriod,
+		maxKesEvolutions,
+	)
 	if err != nil {
-		return false, nil, fmt.Errorf("KES invalid: %w", err)
+		return false, NativeBlockVerificationResult{}, err
+	}
+
+	isKesValid, err := ledger.VerifyKes(header, slotsPerKesPeriod)
+	if err != nil {
+		return false, NativeBlockVerificationResult{}, fmt.Errorf("KES invalid: %w", err)
 	}
 
 	vrfResult, ok := header.Body.VrfResult.([]interface{})
 	if !ok || len(vrfResult) < 2 {
-		return false, nil, fmt.Errorf("invalid VRF result shape")
+		return false, NativeBlockVerificationResult{}, fmt.Errorf("invalid VRF result shape")
 	}
 	vrfOutputBytes, ok := vrfResult[0].([]byte)
 	if !ok {
-		return false, nil, fmt.Errorf("invalid VRF output shape")
+		return false, NativeBlockVerificationResult{}, fmt.Errorf("invalid VRF output shape")
 	}
 	vrfProofBytes, ok := vrfResult[1].([]byte)
 	if !ok {
-		return false, nil, fmt.Errorf("invalid VRF proof shape")
+		return false, NativeBlockVerificationResult{}, fmt.Errorf("invalid VRF proof shape")
 	}
 
 	vrfKeyBytes := append([]byte(nil), header.Body.VrfKey...)
 	seed := ledger.MkInputVrf(int64(header.Body.Slot), epochNonce)
 	output, err := ledger.VrfVerifyAndHash(vrfKeyBytes, vrfProofBytes, seed)
 	if err != nil {
-		return false, nil, fmt.Errorf("VRF invalid: %w", err)
+		return false, NativeBlockVerificationResult{}, fmt.Errorf("VRF invalid: %w", err)
 	}
 	isVrfValid := bytes.Equal(output, vrfOutputBytes)
 
 	isBodyValid, err := verifyNativeBlockBody(decodedBlock, header.Body.BlockBodyHash.String())
 	if err != nil {
-		return false, nil, err
+		return false, NativeBlockVerificationResult{}, err
 	}
 
-	return isKesValid && isVrfValid && isBodyValid, vrfKeyBytes, nil
+	return isKesValid && isVrfValid && isBodyValid, NativeBlockVerificationResult{
+		VrfKey:                               vrfKeyBytes,
+		OperationalCertificateSequenceNumber: opCertSequenceNumber,
+	}, nil
+}
+
+func verifyOperationalCertificate(
+	header *ledger.BabbageBlockHeader,
+	slotsPerKesPeriod uint64,
+	maxKesEvolutions uint64,
+) (uint64, error) {
+	if header == nil {
+		return 0, fmt.Errorf("operational certificate header is nil")
+	}
+	if slotsPerKesPeriod == 0 {
+		return 0, fmt.Errorf("slots per KES period must be greater than zero")
+	}
+	if maxKesEvolutions == 0 || maxKesEvolutions > maxSupportedKesEvolutions {
+		return 0, fmt.Errorf(
+			"max KES evolutions must be between 1 and %d",
+			maxSupportedKesEvolutions,
+		)
+	}
+
+	opCert := header.Body.OpCert
+	if len(opCert.HotVkey) != ed25519.PublicKeySize {
+		return 0, fmt.Errorf(
+			"operational certificate hot KES key must be %d bytes, got %d",
+			ed25519.PublicKeySize,
+			len(opCert.HotVkey),
+		)
+	}
+	if len(opCert.Signature) != ed25519.SignatureSize {
+		return 0, fmt.Errorf(
+			"operational certificate signature must be %d bytes, got %d",
+			ed25519.SignatureSize,
+			len(opCert.Signature),
+		)
+	}
+
+	currentKesPeriod := header.Body.Slot / slotsPerKesPeriod
+	startKesPeriod := uint64(opCert.KesPeriod)
+	if currentKesPeriod < startKesPeriod {
+		return 0, fmt.Errorf(
+			"operational certificate starts at KES period %d after current KES period %d",
+			startKesPeriod,
+			currentKesPeriod,
+		)
+	}
+	if currentKesPeriod-startKesPeriod >= maxKesEvolutions {
+		return 0, fmt.Errorf(
+			"operational certificate expired at current KES period %d (start %d, max evolutions %d)",
+			currentKesPeriod,
+			startKesPeriod,
+			maxKesEvolutions,
+		)
+	}
+
+	sequenceNumber := uint64(opCert.SequenceNumber)
+	signable := operationalCertificateSignableBytes(
+		opCert.HotVkey,
+		sequenceNumber,
+		startKesPeriod,
+	)
+	if !ed25519.Verify(header.Body.IssuerVkey[:], signable, opCert.Signature) {
+		return 0, fmt.Errorf("operational certificate cold-key signature is invalid")
+	}
+
+	return sequenceNumber, nil
+}
+
+func operationalCertificateSignableBytes(
+	hotVkey []byte,
+	sequenceNumber uint64,
+	startKesPeriod uint64,
+) []byte {
+	signable := make([]byte, ed25519.PublicKeySize+8+8)
+	copy(signable, hotVkey)
+	binary.BigEndian.PutUint64(signable[ed25519.PublicKeySize:], sequenceNumber)
+	binary.BigEndian.PutUint64(signable[ed25519.PublicKeySize+8:], startKesPeriod)
+	return signable
 }
 
 func nativeBabbageHeader(decodedBlock ledger.Block) (*ledger.BabbageBlockHeader, error) {

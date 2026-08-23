@@ -106,6 +106,7 @@ describe('stability-evidence', () => {
   const epochVerificationContext = {
     epochNonce: '11'.repeat(32),
     slotsPerKesPeriod: 129600,
+    maxKesEvolutions: 62,
     currentEpochStartSlot: 900n,
     currentEpochEndSlotExclusive: 1200n,
   };
@@ -391,6 +392,27 @@ describe('stability-evidence', () => {
         stabilityPolicy,
       }),
     ).rejects.toThrow('Epoch verification context unavailable');
+  });
+
+  it('rejects a max KES evolution count above the supported Sum6 depth', async () => {
+    historyServiceMock.findDescendantBlocks = jest.fn().mockResolvedValue(descendantBlocks);
+    historyServiceMock.findEpochContextAtBlock = jest.fn().mockResolvedValue({
+      epoch: 7,
+      stakeDistribution: epochStakeDistribution,
+      verificationContext: {
+        ...epochVerificationContext,
+        maxKesEvolutions: 65,
+      },
+    });
+
+    await expect(
+      loadStakeWeightedStabilityEvidenceByHeight({
+        historyService: historyServiceMock as HistoryService,
+        height: 100n,
+        logger: { warn: jest.fn() } as unknown as Logger,
+        stabilityPolicy,
+      }),
+    ).rejects.toThrow('Max KES evolutions unavailable');
   });
 
   it('rejects stability headers that skip more than one epoch', async () => {

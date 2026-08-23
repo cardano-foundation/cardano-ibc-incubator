@@ -12,9 +12,11 @@ import { MiniProtocalsService } from '../../shared/modules/mini-protocals/mini-p
 import { MithrilService } from '../../shared/modules/mithril/mithril.service';
 import { DenomTraceService } from '../services/denom-trace.service';
 import { HistoryService } from '../services/history.service';
+import { bech32 } from 'bech32';
 
 const STABILITY_SLOT_ORIGIN_NS = 1_700_000_000_000_000_000n;
 const timestampForSlot = (slot: bigint) => STABILITY_SLOT_ORIGIN_NS + slot * 1_000_000_000n;
+const operationalCertificatePoolId = (byte: number) => bech32.encode('pool', bech32.toWords(Buffer.alloc(28, byte)));
 const stabilityDescendantBlocks = Array.from({ length: 24 }, (_, index) => {
   const height = 101 + index;
   const slot = 1000n + BigInt(index + 1) * 10n;
@@ -54,6 +56,7 @@ describe('QueryService stability anchor contract', () => {
     findBlockByHeight: jest.Mock;
     findDescendantBlocks: jest.Mock;
     findEpochContextAtBlock: jest.Mock;
+    findOperationalCertificateCountersAtBlock: jest.Mock;
     findBridgeBlocks: jest.Mock;
     findHostStateUtxoAtOrBeforeBlockNo: jest.Mock;
     findTransactionEvidenceByHash: jest.Mock;
@@ -132,10 +135,18 @@ describe('QueryService stability anchor contract', () => {
         verificationContext: {
           epochNonce: '11'.repeat(32),
           slotsPerKesPeriod: 129600,
+          maxKesEvolutions: 62,
           currentEpochStartSlot: 900n,
           currentEpochEndSlotExclusive: 3000n,
         },
       }),
+      findOperationalCertificateCountersAtBlock: jest.fn().mockResolvedValue(
+        new Map([
+          [operationalCertificatePoolId(0xff), 9n],
+          [operationalCertificatePoolId(0), 3n],
+          [operationalCertificatePoolId(0x11), 0n],
+        ]),
+      ),
       findBridgeBlocks: jest.fn().mockResolvedValue([
         {
           height: 99,
@@ -241,7 +252,36 @@ describe('QueryService stability anchor contract', () => {
     expect(clientState.latest_checkpoint_height).toEqual(clientState.latest_height);
     expect(clientState.latest_checkpoint_block_hash).toBe('anchor-hash');
     expect(clientState.latest_checkpoint_epoch).toBe(7n);
+    expect(clientState.max_kes_evolutions).toBe(62n);
+    expect(clientState.operational_certificate_state_initialized).toBe(true);
+    expect(clientState.operational_certificate_counter_history_start_height).toEqual(clientState.latest_height);
+    expect(
+      clientState.latest_checkpoint_operational_certificate_counters.map((counter) => ({
+        poolId: Buffer.from(counter.pool_id).toString('hex'),
+        sequenceNumber: counter.sequence_number,
+      })),
+    ).toEqual([
+      { poolId: '00'.repeat(28), sequenceNumber: 3n },
+      { poolId: 'ff'.repeat(28), sequenceNumber: 9n },
+    ]);
     expect(consensusState.timestamp).toBe(timestampForSlot(1000n));
+    expect(consensusState.operational_certificate_state_initialized).toBe(true);
+    expect(historyServiceMock.findOperationalCertificateCountersAtBlock).toHaveBeenCalledWith(
+      expect.objectContaining({ height: 100, hash: 'anchor-hash' }),
+    );
+  });
+
+  it('rejects stability new-client creation without an exact operational certificate response', async () => {
+    historyServiceMock.findHostStateUtxoAtOrBeforeBlockNo.mockResolvedValue({
+      txHash: 'host-state-tx',
+      datum: 'datum-cbor',
+      blockNo: 100,
+    });
+    historyServiceMock.findOperationalCertificateCountersAtBlock.mockResolvedValue(undefined);
+
+    await expect(service.queryNewClient({ height: 100n } as any)).rejects.toThrow(
+      'operational certificate counter snapshot is unavailable',
+    );
   });
 
   it('normalizes equal trusted and anchor heights to the previous trusted block for stability headers', async () => {
@@ -343,6 +383,7 @@ describe('QueryService stability anchor contract', () => {
         verificationContext: {
           epochNonce: epoch.toString(16).padStart(64, '0'),
           slotsPerKesPeriod: 129600,
+          maxKesEvolutions: 62,
           currentEpochStartSlot,
           currentEpochEndSlotExclusive,
         },

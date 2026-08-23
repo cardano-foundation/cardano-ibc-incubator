@@ -139,7 +139,32 @@ func normalizeEpochContexts(contexts []*EpochContext) ([]*EpochContext, error) {
 }
 
 func (cs ClientState) normalizedEpochContexts() ([]*EpochContext, error) {
-	return normalizeEpochContexts(cs.EpochContexts)
+	contexts, err := normalizeEpochContexts(cs.EpochContexts)
+	if err != nil {
+		return nil, err
+	}
+	if err := cs.validateEpochContextParameters(contexts); err != nil {
+		return nil, err
+	}
+	return contexts, nil
+}
+
+func (cs ClientState) validateEpochContextParameters(contexts []*EpochContext) error {
+	if cs.SlotsPerKesPeriod == 0 {
+		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "client slots per KES period must be greater than zero")
+	}
+	for _, ctx := range contexts {
+		if ctx != nil && ctx.SlotsPerKesPeriod != cs.SlotsPerKesPeriod {
+			return errorsmod.Wrapf(
+				ErrInvalidCurrentEpoch,
+				"epoch %d slots per KES period %d must match immutable client value %d",
+				ctx.Epoch,
+				ctx.SlotsPerKesPeriod,
+				cs.SlotsPerKesPeriod,
+			)
+		}
+	}
+	return nil
 }
 
 func mergeEpochContexts(base []*EpochContext, candidate *EpochContext) ([]*EpochContext, error) {
@@ -228,12 +253,14 @@ func syncCurrentEpochFields(cs *ClientState, contexts []*EpochContext, currentEp
 	if currentCtx == nil {
 		return errorsmod.Wrapf(ErrInvalidCurrentEpoch, "missing epoch context for current epoch %d", currentEpoch)
 	}
+	if err := cs.validateEpochContextParameters(contexts); err != nil {
+		return err
+	}
 
 	cs.CurrentEpoch = currentEpoch
 	cs.EpochContexts = cloneEpochContexts(contexts)
 	cs.EpochStakeDistribution = cloneStakeDistributionEntries(currentCtx.StakeDistribution)
 	cs.EpochNonce = bytes.Clone(currentCtx.EpochNonce)
-	cs.SlotsPerKesPeriod = currentCtx.SlotsPerKesPeriod
 	cs.CurrentEpochStartSlot = currentCtx.EpochStartSlot
 	cs.CurrentEpochEndSlotExclusive = currentCtx.EpochEndSlotExclusive
 	return nil

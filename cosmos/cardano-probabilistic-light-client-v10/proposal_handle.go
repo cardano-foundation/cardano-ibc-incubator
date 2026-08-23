@@ -3,6 +3,7 @@ package probabilistic
 import (
 	"bytes"
 	"reflect"
+	"strings"
 
 	errorsmod "cosmossdk.io/errors"
 	storetypes "cosmossdk.io/store/types"
@@ -15,11 +16,14 @@ import (
 )
 
 type recoveryInvariantClientState struct {
-	UpgradePath           []string
-	HostStateNftPolicyId  []byte
-	HostStateNftTokenName []byte
-	SystemStartUnixNs     uint64
-	SlotLengthNs          uint64
+	UpgradePath                            []string
+	HostStateNftPolicyId                   []byte
+	HostStateNftTokenName                  []byte
+	SystemStartUnixNs                      uint64
+	SlotLengthNs                           uint64
+	SlotsPerKesPeriod                      uint64
+	MaxKesEvolutions                       uint64
+	OperationalCertificateStateInitialized bool
 }
 
 func (cs ClientState) CheckSubstituteAndUpdateState(
@@ -36,8 +40,22 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	if !IsMatchingClientState(cs, *substituteClientState) {
 		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, "subject client state does not match substitute client state")
 	}
+	if err := validateOperationalCertificateCounterRecovery(cs, *substituteClientState); err != nil {
+		return err
+	}
 	if substituteClientState.LatestHeight == nil {
 		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, "substitute client latest height cannot be nil")
+	}
+	subjectCheckpointHeight := cs.effectiveCheckpointHeight()
+	substituteCheckpointHeight := substituteClientState.effectiveCheckpointHeight()
+	if subjectCheckpointHeight == nil || substituteCheckpointHeight == nil ||
+		!substituteCheckpointHeight.GT(subjectCheckpointHeight) {
+		return errorsmod.Wrapf(
+			clienttypes.ErrInvalidSubstitute,
+			"substitute Cardano checkpoint %v must be newer than subject checkpoint %v",
+			substituteCheckpointHeight,
+			subjectCheckpointHeight,
+		)
 	}
 	height := substituteClientState.LatestHeight
 	consensusState, found := GetConsensusState(substituteClientStore, cdc, height)
@@ -46,6 +64,18 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	}
 	if err := consensusState.ValidateBasic(); err != nil {
 		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
+	}
+	if !consensusState.OperationalCertificateStateInitialized {
+		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, "substitute consensus state predates operational certificate validation")
+	}
+	if substituteClientState.LatestCheckpointHeight != nil &&
+		substituteClientState.LatestCheckpointHeight.EQ(height) &&
+		(!strings.EqualFold(substituteClientState.LatestCheckpointBlockHash, consensusState.AcceptedBlockHash) ||
+			substituteClientState.LatestCheckpointEpoch != consensusState.AcceptedEpoch) {
+		return errorsmod.Wrap(
+			clienttypes.ErrInvalidSubstitute,
+			"substitute checkpoint cursor does not match its latest consensus state",
+		)
 	}
 	processedHeight, found := GetProcessedHeight(substituteClientStore, height)
 	if !found {
@@ -66,6 +96,9 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	setConsensusState(subjectClientStore, cdc, consensusState, height)
 	setConsensusMetadataWithValues(subjectClientStore, height, processedHeight, processedTime)
 	cs.LatestHeight = substituteClientState.LatestHeight
+	if err := clearOperationalCertificateCounterHistory(subjectClientStore); err != nil {
+		return err
+	}
 	if substituteClientState.LatestCheckpointHeight != nil && !substituteClientState.LatestCheckpointHeight.IsZero() {
 		cs.setLatestCheckpoint(
 			substituteClientState.LatestCheckpointHeight,
@@ -75,8 +108,17 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	} else {
 		cs.setLatestCheckpoint(height, consensusState.AcceptedBlockHash, consensusState.AcceptedEpoch)
 	}
+	cs.LatestCheckpointOperationalCertificateCounters = cloneOperationalCertificateCounters(
+		substituteClientState.LatestCheckpointOperationalCertificateCounters,
+	)
+	cs.OperationalCertificateCounterHistoryStartHeight = NewHeight(
+		cs.LatestCheckpointHeight.RevisionNumber,
+		cs.LatestCheckpointHeight.RevisionHeight,
+	)
 	cs.ChainId = substituteClientState.ChainId
 	cs.TrustingPeriod = substituteClientState.TrustingPeriod
+	cs.MaxKesEvolutions = substituteClientState.MaxKesEvolutions
+	cs.OperationalCertificateStateInitialized = substituteClientState.OperationalCertificateStateInitialized
 	if err := syncCurrentEpochFields(&cs, contexts, substituteClientState.CurrentEpoch); err != nil {
 		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
 	}
@@ -84,19 +126,65 @@ func (cs ClientState) CheckSubstituteAndUpdateState(
 	return nil
 }
 
-func IsMatchingClientState(subject, substitute ClientState) bool {
-	return reflect.DeepEqual(
-		recoveryInvariantProjection(subject),
-		recoveryInvariantProjection(substitute),
+func validateOperationalCertificateCounterRecovery(subject, substitute ClientState) error {
+	if subject.hasLegacyOperationalCertificateState() {
+		return nil
+	}
+
+	subjectCounters, err := operationalCertificateCounterMap(
+		subject.LatestCheckpointOperationalCertificateCounters,
 	)
+	if err != nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidClient, err.Error())
+	}
+	substituteCounters, err := operationalCertificateCounterMap(
+		substitute.LatestCheckpointOperationalCertificateCounters,
+	)
+	if err != nil {
+		return errorsmod.Wrap(clienttypes.ErrInvalidSubstitute, err.Error())
+	}
+	for poolID, subjectSequenceNumber := range subjectCounters {
+		substituteSequenceNumber := substituteCounters[poolID]
+		if substituteSequenceNumber < subjectSequenceNumber {
+			return errorsmod.Wrapf(
+				clienttypes.ErrInvalidSubstitute,
+				"operational certificate counter for pool %s regressed from %d to %d",
+				poolID,
+				subjectSequenceNumber,
+				substituteSequenceNumber,
+			)
+		}
+	}
+	return nil
+}
+
+func (cs ClientState) effectiveCheckpointHeight() *Height {
+	if cs.LatestCheckpointHeight != nil && !cs.LatestCheckpointHeight.IsZero() {
+		return cs.LatestCheckpointHeight
+	}
+	return cs.LatestHeight
+}
+
+func IsMatchingClientState(subject, substitute ClientState) bool {
+	subjectProjection := recoveryInvariantProjection(subject)
+	substituteProjection := recoveryInvariantProjection(substitute)
+	if subject.hasLegacyOperationalCertificateState() {
+		subjectProjection.MaxKesEvolutions = substituteProjection.MaxKesEvolutions
+		subjectProjection.OperationalCertificateStateInitialized =
+			substituteProjection.OperationalCertificateStateInitialized
+	}
+	return reflect.DeepEqual(subjectProjection, substituteProjection)
 }
 
 func recoveryInvariantProjection(cs ClientState) recoveryInvariantClientState {
 	return recoveryInvariantClientState{
-		UpgradePath:           append([]string(nil), cs.UpgradePath...),
-		HostStateNftPolicyId:  bytes.Clone(cs.HostStateNftPolicyId),
-		HostStateNftTokenName: bytes.Clone(cs.HostStateNftTokenName),
-		SystemStartUnixNs:     cs.SystemStartUnixNs,
-		SlotLengthNs:          cs.SlotLengthNs,
+		UpgradePath:                            append([]string(nil), cs.UpgradePath...),
+		HostStateNftPolicyId:                   bytes.Clone(cs.HostStateNftPolicyId),
+		HostStateNftTokenName:                  bytes.Clone(cs.HostStateNftTokenName),
+		SystemStartUnixNs:                      cs.SystemStartUnixNs,
+		SlotLengthNs:                           cs.SlotLengthNs,
+		SlotsPerKesPeriod:                      cs.SlotsPerKesPeriod,
+		MaxKesEvolutions:                       cs.MaxKesEvolutions,
+		OperationalCertificateStateInitialized: cs.OperationalCertificateStateInitialized,
 	}
 }

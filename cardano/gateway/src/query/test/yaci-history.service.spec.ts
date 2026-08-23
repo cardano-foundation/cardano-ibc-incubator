@@ -4,6 +4,7 @@ import {
   queryCurrentEpochStakeDistribution,
   queryCurrentEpochVerificationData,
   queryEpochContextAtPoint,
+  queryOperationalCertificateCountersAtPoint,
 } from '../../shared/helpers/ogmios';
 import { YaciHistoryService } from '../services/yaci-history.service';
 
@@ -11,6 +12,7 @@ jest.mock('../../shared/helpers/ogmios', () => ({
   queryCurrentEpochStakeDistribution: jest.fn(),
   queryCurrentEpochVerificationData: jest.fn(),
   queryEpochContextAtPoint: jest.fn(),
+  queryOperationalCertificateCountersAtPoint: jest.fn(),
 }));
 
 describe('YaciHistoryService', () => {
@@ -63,6 +65,7 @@ describe('YaciHistoryService', () => {
       currentEpoch: 7,
       epochNonce: '11'.repeat(32),
       slotsPerKesPeriod: 129600,
+      maxKesEvolutions: 62,
     });
     (queryCurrentEpochStakeDistribution as jest.Mock).mockResolvedValue([]);
 
@@ -90,6 +93,7 @@ describe('YaciHistoryService', () => {
       currentEpoch: 7,
       epochNonce: '11'.repeat(32),
       slotsPerKesPeriod: 129600,
+      maxKesEvolutions: 62,
       stakeDistribution: [
         {
           poolId: 'pool1ogmiospool',
@@ -112,6 +116,7 @@ describe('YaciHistoryService', () => {
       verificationContext: {
         epochNonce: '11'.repeat(32),
         slotsPerKesPeriod: 129600,
+        maxKesEvolutions: 62,
         currentEpochStartSlot: 1000n,
         currentEpochEndSlotExclusive: 1200n,
       },
@@ -135,6 +140,32 @@ describe('YaciHistoryService', () => {
     );
   });
 
+  it('queries operational certificate counters at the exact block point', async () => {
+    const snapshot = new Map([
+      ['pool1a', 2n],
+      ['pool1b', 5n],
+    ]);
+    (queryOperationalCertificateCountersAtPoint as jest.Mock).mockResolvedValue(snapshot);
+
+    await expect(service.findOperationalCertificateCountersAtBlock(block)).resolves.toBe(snapshot);
+    expect(queryOperationalCertificateCountersAtPoint).toHaveBeenCalledTimes(1);
+    expect(queryOperationalCertificateCountersAtPoint).toHaveBeenCalledWith('ws://ogmios.local', {
+      slot: 1100n,
+      hash: 'ab'.repeat(32),
+    });
+    expect(queryEpochContextAtPoint).not.toHaveBeenCalled();
+  });
+
+  it('does not substitute a same-epoch point when the exact counter snapshot is stale', async () => {
+    (queryOperationalCertificateCountersAtPoint as jest.Mock).mockRejectedValue(
+      new Error('Failed to acquire requested point. Target point is too old.'),
+    );
+
+    await expect(service.findOperationalCertificateCountersAtBlock(block)).rejects.toThrow('Target point is too old');
+    expect(queryOperationalCertificateCountersAtPoint).toHaveBeenCalledTimes(1);
+    expect(entityManagerMock.query).not.toHaveBeenCalled();
+  });
+
   it('hydrates first registration slots from the cache before local or external lookups', async () => {
     entityManagerMock.query
       .mockResolvedValueOnce([{ start_slot: '1000' }])
@@ -145,6 +176,7 @@ describe('YaciHistoryService', () => {
       currentEpoch: 7,
       epochNonce: '11'.repeat(32),
       slotsPerKesPeriod: 129600,
+      maxKesEvolutions: 62,
       stakeDistribution: [
         {
           poolId: 'pool1cachedpool',
@@ -178,6 +210,7 @@ describe('YaciHistoryService', () => {
       currentEpoch: 7,
       epochNonce: '11'.repeat(32),
       slotsPerKesPeriod: 129600,
+      maxKesEvolutions: 62,
       stakeDistribution: [
         {
           poolId: 'pool1assumedpoola',
@@ -218,6 +251,7 @@ describe('YaciHistoryService', () => {
       currentEpoch: 7,
       epochNonce: '11'.repeat(32),
       slotsPerKesPeriod: 129600,
+      maxKesEvolutions: 62,
       stakeDistribution: [
         {
           poolId: 'pool1localpool',
@@ -308,6 +342,7 @@ describe('YaciHistoryService', () => {
       currentEpoch: 7,
       epochNonce: '11'.repeat(32),
       slotsPerKesPeriod: 129600,
+      maxKesEvolutions: 62,
       stakeDistribution: [
         {
           poolId: 'pool1externalpool',
@@ -382,6 +417,7 @@ describe('YaciHistoryService', () => {
       currentEpoch: 8,
       epochNonce: '22'.repeat(32),
       slotsPerKesPeriod: 129600,
+      maxKesEvolutions: 62,
       stakeDistribution: [],
     });
 
@@ -508,6 +544,7 @@ describe('YaciHistoryService', () => {
       currentEpoch: 7,
       epochNonce: '33'.repeat(32),
       slotsPerKesPeriod: 129600,
+      maxKesEvolutions: 62,
       stakeDistribution: [
         {
           poolId: 'pool1fallbackpool',
@@ -531,6 +568,7 @@ describe('YaciHistoryService', () => {
       verificationContext: {
         epochNonce: '33'.repeat(32),
         slotsPerKesPeriod: 129600,
+        maxKesEvolutions: 62,
         currentEpochStartSlot: 0n,
         currentEpochEndSlotExclusive: 432000n,
       },
@@ -558,6 +596,7 @@ describe('YaciHistoryService', () => {
         currentEpoch: 7,
         epochNonce: '44'.repeat(32),
         slotsPerKesPeriod: 129600,
+        maxKesEvolutions: 62,
         stakeDistribution: [
           {
             poolId: 'pool1retrypool',
@@ -580,6 +619,7 @@ describe('YaciHistoryService', () => {
       verificationContext: {
         epochNonce: '44'.repeat(32),
         slotsPerKesPeriod: 129600,
+        maxKesEvolutions: 62,
         currentEpochStartSlot: 1000n,
         currentEpochEndSlotExclusive: 1200n,
       },
@@ -644,6 +684,7 @@ describe('YaciHistoryService', () => {
       currentEpoch: 9,
       epochNonce: '11'.repeat(32),
       slotsPerKesPeriod: 129600,
+      maxKesEvolutions: 62,
     });
     (global.fetch as jest.Mock).mockImplementation(async (url: URL) => {
       if (url.pathname.endsWith('/epoch_params')) {
@@ -719,6 +760,7 @@ describe('YaciHistoryService', () => {
       verificationContext: {
         epochNonce: '11'.repeat(32),
         slotsPerKesPeriod: 129600,
+        maxKesEvolutions: 62,
         currentEpochStartSlot: 1000n,
         currentEpochEndSlotExclusive: 1200n,
       },
@@ -760,6 +802,7 @@ describe('YaciHistoryService current epoch stake snapshots', () => {
       currentEpoch: 7,
       epochNonce: '11'.repeat(32),
       slotsPerKesPeriod: 129600,
+      maxKesEvolutions: 62,
       stakeDistribution: [
         {
           poolId: 'pool1active',
@@ -852,6 +895,7 @@ describe('YaciHistoryService current epoch stake snapshots', () => {
       verificationContext: {
         epochNonce: '11'.repeat(32),
         slotsPerKesPeriod: 129600,
+        maxKesEvolutions: 62,
         currentEpochStartSlot: 1000n,
         currentEpochEndSlotExclusive: 1200n,
       },

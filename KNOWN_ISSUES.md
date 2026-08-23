@@ -108,6 +108,8 @@ ICS-31 cross-chain queries are a work in progress for Cardano, but will need to 
 
 Standard IBC client upgrade is not currently supported for the Cardano light client. The probabilistic Cardano light clients reject `VerifyUpgradeAndUpdateState`.
 
+Operational-certificate validation requires an authenticated counter snapshot at the exact initial Cardano checkpoint, plus the immutable maximum KES lifetime from the Shelley genesis configuration. Clients created with an older schema do not contain that state and intentionally report a non-active status after the upgraded light-client module is deployed; treating the missing counters as zero would make retired certificates usable again. Deploy the upgraded Cosmos light-client binary before the upgraded Gateway, because an older binary ignores the new protobuf fields and could otherwise accept a newly created client without enforcing them. To preserve an existing client identifier and its connection and channel bindings, create a newer substitute client from a Gateway backed by Ogmios v6.12.0 or newer, audit its Cardano genesis parameters and exact-point counter baseline, and submit the authority-gated IBC client-recovery message. Recovery adopts that baseline and deliberately prevents old consensus states from being used as header-verification anchors, while leaving their commitment roots available for ordinary membership proofs. Mainnet routes should be created only with the new state format.
+
 This may be a target for further development.
 
 ## Denom Display in Wallets + CIP-26 Token Metadata Registry
