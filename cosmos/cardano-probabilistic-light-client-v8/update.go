@@ -117,7 +117,11 @@ func (cs *ClientState) verifyHeaderWithMode(
 		return err
 	}
 
-	authenticatedHeader, err := cs.authenticateHeaderBlocksWithContexts(header, epochContexts)
+	authenticatedHeader, err := cs.authenticateHeaderBlocksWithContexts(
+		header,
+		epochContexts,
+		trustedBlock.operationalCertificateCounters,
+	)
 	if err != nil {
 		return err
 	}
@@ -487,14 +491,17 @@ func (cs *ClientState) UpdateState(
 	if err != nil {
 		panic(fmt.Errorf("failed to merge epoch contexts for verified ProbabilisticHeader: %w", err))
 	}
-	authenticatedHeader, err := cs.authenticateHeaderBlocksWithContexts(header, epochContexts)
-	if err != nil {
-		panic(fmt.Errorf("failed to authenticate verified ProbabilisticHeader blocks: %w", err))
-	}
-
 	trustedBlock, err := cs.trustedBlockStateAtHeight(clientStore, cdc, header.TrustedHeight)
 	if err != nil {
 		panic(fmt.Errorf("trusted block state missing for verified ProbabilisticHeader at height %s: %w", header.TrustedHeight.String(), err))
+	}
+	authenticatedHeader, err := cs.authenticateHeaderBlocksWithContexts(
+		header,
+		epochContexts,
+		trustedBlock.operationalCertificateCounters,
+	)
+	if err != nil {
+		panic(fmt.Errorf("failed to authenticate verified ProbabilisticHeader blocks: %w", err))
 	}
 	if err := verifyHeaderEpochTransition(header, trustedBlock, authenticatedHeader); err != nil {
 		panic(fmt.Errorf("verified ProbabilisticHeader violated epoch transition rules: %w", err))
@@ -526,13 +533,14 @@ func (cs *ClientState) UpdateState(
 	consensusTimestamp := authenticatedHeader.anchorBlock.timestamp
 
 	newConsensusState := &ConsensusState{
-		Timestamp:         consensusTimestamp,
-		IbcStateRoot:      ibcStateRoot,
-		AcceptedBlockHash: authenticatedHeader.anchorBlock.hash,
-		AcceptedEpoch:     authenticatedHeader.anchorBlock.epoch,
-		UniquePoolsCount:  qualifiedUniquePools,
-		UniqueStakeBps:    qualifiedUniqueStakeBps,
-		SecurityScoreBps:  securityScoreBps,
+		Timestamp:                              consensusTimestamp,
+		IbcStateRoot:                           ibcStateRoot,
+		AcceptedBlockHash:                      authenticatedHeader.anchorBlock.hash,
+		AcceptedEpoch:                          authenticatedHeader.anchorBlock.epoch,
+		UniquePoolsCount:                       qualifiedUniquePools,
+		UniqueStakeBps:                         qualifiedUniqueStakeBps,
+		SecurityScoreBps:                       securityScoreBps,
+		OperationalCertificateStateInitialized: true,
 	}
 
 	setConsensusState(clientStore, cdc, newConsensusState, header.GetHeight())
@@ -549,7 +557,17 @@ func (cs *ClientState) UpdateState(
 		panic(fmt.Errorf("failed to persist rollover epoch contexts after verified ProbabilisticHeader: %w", err))
 	}
 	cs.LatestHeight = height
+	if err := cs.persistOperationalCertificateCounterSnapshot(
+		clientStore,
+		height,
+		authenticatedHeader.anchorOperationalCertificateCounters,
+	); err != nil {
+		panic(fmt.Errorf("failed to persist operational certificate counter state: %w", err))
+	}
 	cs.setLatestCheckpoint(height, authenticatedHeader.anchorBlock.hash, authenticatedHeader.anchorBlock.epoch)
+	if err := cs.compactOperationalCertificateCounterHistory(clientStore, cdc); err != nil {
+		panic(fmt.Errorf("failed to compact operational certificate counter history: %w", err))
+	}
 	setClientState(clientStore, cdc, cs)
 	return []exported.Height{height}
 }

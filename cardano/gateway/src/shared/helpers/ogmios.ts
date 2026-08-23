@@ -1,15 +1,18 @@
 import WebSocket from 'ws';
+import { bech32 } from 'bech32';
 import { resolveManagedOgmiosWsEndpoint, resolveManagedOgmiosWsOptions } from './managed-cardano-endpoints';
 
 type OgmiosShelleyGenesisConfig = {
   era?: unknown;
   slotsPerKesPeriod?: unknown;
+  maxKesEvolutions?: unknown;
 };
 
 type OgmiosCurrentEpochVerificationData = {
   currentEpoch: number;
   epochNonce: string;
   slotsPerKesPeriod: number;
+  maxKesEvolutions: number;
 };
 
 type OgmiosStakePool = {
@@ -45,7 +48,16 @@ type OgmiosSession = {
   request<T>(methodname: string, args?: unknown): Promise<T>;
 };
 
+type OgmiosShelleyGenesisVerificationConfig = {
+  slotsPerKesPeriod: number;
+  maxKesEvolutions: number;
+};
+
+type OgmiosOperationalCertificateCounters = Map<string, bigint>;
+
 const STAKE_DISTRIBUTION_WEIGHT_SCALE = 1_000_000_000_000n;
+const MAX_UINT64 = (1n << 64n) - 1n;
+const MAX_SUPPORTED_KES_EVOLUTIONS = 64;
 const OGMIOS_OPEN_TIMEOUT_MS = readPositiveIntegerEnv('OGMIOS_OPEN_TIMEOUT_MS', 10_000);
 const OGMIOS_REQUEST_TIMEOUT_MS = readPositiveIntegerEnv('OGMIOS_REQUEST_TIMEOUT_MS', 20_000);
 const OGMIOS_TRANSIENT_MAX_ATTEMPTS = 10;
@@ -94,10 +106,7 @@ const retryOgmiosOperation = async <T>(operationName: string, operation: () => P
         throw error;
       }
 
-      const delayMs = Math.min(
-        OGMIOS_TRANSIENT_MAX_DELAY_MS,
-        OGMIOS_TRANSIENT_BASE_DELAY_MS * 2 ** (attempt - 1),
-      );
+      const delayMs = Math.min(OGMIOS_TRANSIENT_MAX_DELAY_MS, OGMIOS_TRANSIENT_BASE_DELAY_MS * 2 ** (attempt - 1));
       // Bounded retry for managed-endpoint transport/auth races; deterministic failure after the budget.
       await sleep(delayMs);
     }
@@ -107,12 +116,8 @@ const retryOgmiosOperation = async <T>(operationName: string, operation: () => P
 };
 
 const openOgmiosConnection = async (ogmiosUrl: string): Promise<WebSocket> => {
-  const resolvedUrl =
-    resolveManagedOgmiosWsEndpoint(ogmiosUrl, process.env.OGMIOS_API_KEY) ?? ogmiosUrl;
-  const client = new WebSocket(
-    resolvedUrl,
-    resolveManagedOgmiosWsOptions(ogmiosUrl, process.env.OGMIOS_API_KEY),
-  );
+  const resolvedUrl = resolveManagedOgmiosWsEndpoint(ogmiosUrl, process.env.OGMIOS_API_KEY) ?? ogmiosUrl;
+  const client = new WebSocket(resolvedUrl, resolveManagedOgmiosWsOptions(ogmiosUrl, process.env.OGMIOS_API_KEY));
 
   await new Promise<void>((resolve, reject) => {
     let settled = false;
@@ -173,7 +178,7 @@ const parseInteger = (value: unknown, field: string): number => {
     throw new Error(`Ogmios returned invalid ${field}`);
   }
 
-  if (!Number.isInteger(parsed) || parsed < 0) {
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
     throw new Error(`Ogmios returned invalid ${field}`);
   }
 
@@ -193,12 +198,84 @@ const parseEpochNonce = (epochNonce: unknown): string => {
   return normalized;
 };
 
-const parseShelleyGenesisConfig = (config: OgmiosShelleyGenesisConfig): number => {
-  if (config.era !== 'shelley') {
+const parsePositiveInteger = (value: unknown, field: string): number => {
+  const parsed = parseInteger(value, field);
+  if (parsed === 0) {
+    throw new Error(`Ogmios returned invalid ${field}`);
+  }
+  return parsed;
+};
+
+const parseShelleyGenesisConfig = (config: OgmiosShelleyGenesisConfig): OgmiosShelleyGenesisVerificationConfig => {
+  if (!config || config.era !== 'shelley') {
     throw new Error('Ogmios returned a non-Shelley genesis configuration');
   }
 
-  return parseInteger(config.slotsPerKesPeriod, 'slotsPerKesPeriod');
+  const maxKesEvolutions = parsePositiveInteger(config.maxKesEvolutions, 'maxKesEvolutions');
+  if (maxKesEvolutions > MAX_SUPPORTED_KES_EVOLUTIONS) {
+    throw new Error('Ogmios returned invalid maxKesEvolutions');
+  }
+
+  return {
+    slotsPerKesPeriod: parsePositiveInteger(config.slotsPerKesPeriod, 'slotsPerKesPeriod'),
+    maxKesEvolutions,
+  };
+};
+
+const parseUint64 = (value: unknown, field: string): bigint => {
+  let parsed: bigint;
+  if (typeof value === 'bigint') {
+    parsed = value;
+  } else if (typeof value === 'number') {
+    if (!Number.isSafeInteger(value)) {
+      throw new Error(`Ogmios returned invalid ${field}`);
+    }
+    parsed = BigInt(value);
+  } else if (typeof value === 'string' && /^(0|[1-9][0-9]*)$/.test(value)) {
+    parsed = BigInt(value);
+  } else {
+    throw new Error(`Ogmios returned invalid ${field}`);
+  }
+
+  if (parsed < 0n || parsed > MAX_UINT64) {
+    throw new Error(`Ogmios returned invalid ${field}`);
+  }
+  return parsed;
+};
+
+const parseOperationalCertificateCounters = (value: unknown): OgmiosOperationalCertificateCounters => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('Ogmios returned invalid operational certificate counters');
+  }
+
+  const counters = new Map<string, bigint>();
+  for (const [poolId, counter] of Object.entries(value)) {
+    const normalizedPoolId = poolId.trim().toLowerCase();
+    operationalCertificatePoolIdBytes(normalizedPoolId);
+    if (counters.has(normalizedPoolId)) {
+      throw new Error(`Ogmios returned duplicate operational certificate pool id: ${normalizedPoolId}`);
+    }
+    counters.set(
+      normalizedPoolId,
+      parseUint64(counter, `operational certificate counter for pool ${normalizedPoolId}`),
+    );
+  }
+
+  return counters;
+};
+
+const operationalCertificatePoolIdBytes = (poolId: string): Buffer => {
+  const normalizedPoolId = poolId.trim().toLowerCase();
+  try {
+    const decoded = bech32.decode(normalizedPoolId, 1023);
+    const bytes = Buffer.from(bech32.fromWords(decoded.words));
+    if (decoded.prefix !== 'pool' || bytes.length !== 28) {
+      throw new Error('invalid pool id payload');
+    }
+    return bytes;
+  } catch {
+    throw new Error(`Ogmios returned an invalid operational certificate pool id: ${poolId}`);
+  }
 };
 
 const parseStakeFraction = (value: unknown): { numerator: bigint; denominator: bigint } => {
@@ -444,12 +521,24 @@ const queryEpochContextAtPoint = async (
       {},
     );
 
+    const genesisVerificationConfig = parseShelleyGenesisConfig(shelleyGenesisConfig);
     return {
       currentEpoch: parseInteger(currentEpoch, 'epoch'),
       epochNonce: parseEpochNonce(epochNonce),
-      slotsPerKesPeriod: parseShelleyGenesisConfig(shelleyGenesisConfig),
+      slotsPerKesPeriod: genesisVerificationConfig.slotsPerKesPeriod,
+      maxKesEvolutions: genesisVerificationConfig.maxKesEvolutions,
       stakeDistribution: parseStakeDistributionRows(stakePools, liveStakeDistribution),
     };
+  });
+};
+
+const queryOperationalCertificateCountersAtPoint = async (
+  ogmiosUrl: string,
+  point: OgmiosLedgerPoint,
+): Promise<OgmiosOperationalCertificateCounters> => {
+  return withAcquiredLedgerState(ogmiosUrl, point, async (session) => {
+    const counters = await session.request<unknown>('queryLedgerState/operationalCertificates', {});
+    return parseOperationalCertificateCounters(counters);
   });
 };
 
@@ -462,10 +551,12 @@ const queryCurrentEpochVerificationData = async (
     ogmiosRequest<OgmiosShelleyGenesisConfig>(ogmiosUrl, 'queryNetwork/genesisConfiguration', { era: 'shelley' }),
   ]);
 
+  const genesisVerificationConfig = parseShelleyGenesisConfig(shelleyGenesisConfig);
   return {
     currentEpoch: parseInteger(currentEpoch, 'epoch'),
     epochNonce: parseEpochNonce(epochNonce),
-    slotsPerKesPeriod: parseShelleyGenesisConfig(shelleyGenesisConfig),
+    slotsPerKesPeriod: genesisVerificationConfig.slotsPerKesPeriod,
+    maxKesEvolutions: genesisVerificationConfig.maxKesEvolutions,
   };
 };
 
@@ -482,9 +573,13 @@ const queryCurrentEpochStakeDistribution = async (
 
 export {
   ogmiosRequest,
+  operationalCertificatePoolIdBytes,
+  parseOperationalCertificateCounters,
+  parseShelleyGenesisConfig,
   queryCurrentEpochStakeDistribution,
   queryCurrentEpochVerificationData,
   queryEpochContextAtPoint,
+  queryOperationalCertificateCountersAtPoint,
   type OgmiosCurrentEpochStakeDistributionEntry,
   type OgmiosCurrentEpochVerificationData,
   type OgmiosEpochContextAtPoint,

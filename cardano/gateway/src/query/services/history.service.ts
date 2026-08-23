@@ -46,6 +46,7 @@ export type HistoryStakeDistributionEntry = {
 export type HistoryEpochVerificationContext = {
   epochNonce: string;
   slotsPerKesPeriod: number;
+  maxKesEvolutions: number;
   currentEpochStartSlot: bigint;
   currentEpochEndSlotExclusive: bigint;
 };
@@ -66,6 +67,7 @@ export type HistoryService = {
   findBridgeBlocks(trustedHeight: bigint, anchorHeight: bigint): Promise<HistoryBlock[]>;
   findDescendantBlocks(anchorHeight: bigint, limit: number): Promise<HistoryBlock[]>;
   findEpochContextAtBlock(block: HistoryBlock): Promise<HistoryEpochContextAtBlock | null>;
+  findOperationalCertificateCountersAtBlock(block: HistoryBlock): Promise<Map<string, bigint>>;
   findFirstPoolRegistrationSlots(
     poolIds: string[],
     referenceBlock: Pick<HistoryBlock, 'slotNo' | 'timestampUnixNs'>,

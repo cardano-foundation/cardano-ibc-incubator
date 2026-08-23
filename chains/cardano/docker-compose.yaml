@@ -130,7 +130,7 @@ services:
         ipv4_address: 172.29.0.15
 
   cardano-node-ogmios:
-    image: cardanosolutions/ogmios:v6.10.0
+    image: cardanosolutions/ogmios:v6.12.0
     user: "${UID:-1000}:${GID:-1000}"
     logging:
       driver: "json-file"
