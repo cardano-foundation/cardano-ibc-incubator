@@ -524,6 +524,23 @@ pub fn start_relayer(
             )
         })?;
     }
+    if cardano_chain_id == "cardano-devnet" {
+        // Local Cardano transactions must accumulate the Gateway's full
+        // stake-weighted stability window before Hermes can continue a
+        // handshake. Two 20-second retry windows are routinely shorter than
+        // that acceptance delay on the five-pool devnet.
+        replace_text_in_file(
+            hermes_config_path.as_path(),
+            "max_block_time = '20000ms'",
+            "max_block_time = '40000ms'",
+        )
+        .map_err(|e| {
+            format!(
+                "Failed to widen Hermes Cardano max_block_time for local devnet: {}",
+                e
+            )
+        })?;
+    }
 
     log_or_show_progress(
         &format!("Configuration copied to {}", hermes_config_path.display()),
@@ -3418,6 +3435,7 @@ pub(crate) enum OptionalChainId {
     Osmosis,
     Cheqd,
     Injective,
+    Cosmos,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]

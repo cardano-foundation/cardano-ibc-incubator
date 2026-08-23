@@ -29,6 +29,19 @@
 !manifests/preview/cardano-preview-handler.json
 !manifests/preview/cardano-preview-bridge-manifest.json
 
+# Local ibc-go compatibility-chain images copy only the Cardano light-client
+# sources and their deterministic chain entrypoint into the build context.
+!cosmos/
+!cosmos/cardano-probabilistic-light-client-core/
+!cosmos/cardano-probabilistic-light-client-core/**
+!cosmos/cardano-probabilistic-light-client-v8/
+!cosmos/cardano-probabilistic-light-client-v8/**
+!cosmos/cardano-probabilistic-light-client-v10/
+!cosmos/cardano-probabilistic-light-client-v10/**
+!chains/
+!chains/cosmos/
+!chains/cosmos/**
+
 # Never send local state, credentials, override configs, or build products to
 # the Docker daemon, even if a broader source directory is included above.
 **/.git
